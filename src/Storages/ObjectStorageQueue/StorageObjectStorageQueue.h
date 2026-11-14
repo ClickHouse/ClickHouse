@@ -185,6 +185,8 @@ private:
     };
     mutable std::mutex streaming_tasks_mutex;
     std::vector<std::unique_ptr<StreamingTask>> streaming_tasks TSA_GUARDED_BY(streaming_tasks_mutex);
+    /// Set while `ALTER` waits for the streaming tasks to stop before re-creating them.
+    std::atomic<bool> restarting_streaming_tasks{false};
     std::atomic<size_t> max_files_override{0};
 
     LoggerPtr log;

@@ -1095,7 +1095,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
     LOG_TRACE(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {}, async deduplicate: {})",
         threads, processing_threads_num, use_parallel_inserts, is_deduplication_v2);
 
-    while (!shutdown_called && !file_iterator->isFinished() && !stream_control.isCancelRequested(cycle_epoch))
+    while (!shutdown_called && !file_iterator->isFinished() && !stream_control.isCancelRequested(cycle_epoch) && !restarting_streaming_tasks)
     {
         /// All tasks share a single batch size override so that the halving
         /// converges regardless of which task encounters the bad file.
@@ -1175,7 +1175,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
                 executor.setCancelCallback(
                     [this, cycle_epoch, &cancelled_mid_insert]
                     {
-                        if (stream_control.isCancelRequested(cycle_epoch))
+                        if (stream_control.isCancelRequested(cycle_epoch) || restarting_streaming_tasks)
                         {
                             cancelled_mid_insert = true;
                             return true;
@@ -1887,11 +1887,13 @@ void StorageObjectStorageQueue::alter(
         /// The number of streaming tasks changes, so they are re-created once the running ones finish.
         const bool recreate_streaming_tasks = parallel_inserts_changed || (processing_threads_num_changed && new_parallel_inserts);
         const bool restart_streaming = requires_detached_mv || recreate_streaming_tasks;
-        /// Otherwise the running tasks finish only once the whole backlog is processed.
-        if (recreate_streaming_tasks)
-            stream_control.requestCancel();
         if (restart_streaming)
         {
+            /// Otherwise the running tasks finish only once the whole backlog is processed.
+            /// Not `stream_control.requestCancel()`, since it aborts direct `SELECT` too.
+            restarting_streaming_tasks = recreate_streaming_tasks;
+            SCOPE_EXIT({ restarting_streaming_tasks = false; });
+
             std::lock_guard lock(streaming_tasks_mutex);
             LOG_TRACE(log, "Deactivating {} streaming tasks", streaming_tasks.size());
 
