@@ -18,6 +18,7 @@
 
 #include <Common/AlignedBuffer.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Core/Block.h>
 
 #include <optional>
@@ -61,7 +62,6 @@ class WindowTransform final : public IProcessor
     void computeReadyRows();
     void recordCurrentRowBounds();
     void evaluateRowsBatch();
-    void packReadyBlock();
     void startNextPartition();
     void releaseUnusedBlocks();
 
@@ -97,7 +97,6 @@ private:
     VectorWithMemoryTracking<GeneralWindowFunctionSlot> general_functions;
     VectorWithMemoryTracking<AggregateWindowFunctionSlot> aggregate_functions;
     MutableColumns current_results;
-    WindowFunctionRequirements required;
     Int64 first_row_read_by_functions = 0;
 
     /// Pending batch for evaluation.

@@ -9,7 +9,6 @@ keywords: ['ClickHouse Observability', 'getting started', 'fully managed']
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge label="Beta offering" />
 
@@ -34,7 +33,15 @@ Choose the path that matches your environment.
 <Tabs>
 <Tab title="Use an existing OpenTelemetry setup">
 
-<Image img="/images/clickstack/getting-started/observability-connection-details.png" alt="Set up OpenTelemetry dialog with URL, Collector config, and Env vars options and masked connection details" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Set up OpenTelemetry dialog with URL, Collector config, and Env vars options and masked connection details](/images/clickstack/getting-started/observability-connection-details.png)
+
+</Frame>
+
+</div>
 
 Use this path if your application, agent, or collector already produces OpenTelemetry data.
 
@@ -53,7 +60,15 @@ For an optional quick check, select **send a test log** on the getting started p
 </Tab>
 <Tab title="Instrument with AI">
 
-<Image img="/images/clickstack/getting-started/observability-ai-instrumentation.png" alt="Set it up with an AI agent dialog showing the instrumentation prompt and masked endpoint and API key environment variables" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Set it up with an AI agent dialog showing the instrumentation prompt and masked endpoint and API key environment variables](/images/clickstack/getting-started/observability-ai-instrumentation.png)
+
+</Frame>
+
+</div>
 
 Use this path if you have application code and want your coding assistant to help add OpenTelemetry instrumentation.
 
@@ -69,7 +84,15 @@ For a complete example with application code and an instrumentation prompt, foll
 </Tab>
 <Tab title="Follow setup guides">
 
-<Image img="/images/clickstack/getting-started/observability-setup-guides.png" alt="Send data dialog with searchable setup guides for languages, frameworks, infrastructure, and collectors" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Send data dialog with searchable setup guides for languages, frameworks, infrastructure, and collectors](/images/clickstack/getting-started/observability-setup-guides.png)
+
+</Frame>
+
+</div>
 
 Use this path if you want instructions for a specific application or infrastructure source.
 
@@ -88,7 +111,15 @@ After completing your chosen path, select **Start exploring** to open [Search](/
 
 For logs, select the **Logs** source and a time range that includes when you sent the event. The example below shows a log sent using the UI's **send a test log** button, with `example-service` as its service name. Expand an event to inspect its attributes.
 
-<Image img="/images/clickstack/getting-started/observability-verify-ingestion.png" alt="Search showing a UI test log for example-service with its event attributes expanded" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Search showing a UI test log for example-service with its event attributes expanded](/images/clickstack/getting-started/observability-verify-ingestion.png)
+
+</Frame>
+
+</div>
 
 ## Next steps {#next-steps}
 

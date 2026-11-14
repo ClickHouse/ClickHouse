@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) にあり、[ソース](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
@@ -36,6 +37,38 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 
 分散 shuffle-hash-join のデフォルトのバケット数。
 ルールベースの分散プランナーで使用されます。コストベースのオプティマイザは推定コストに基づいてファンアウトを選択するため、この設定は使用しません。
+
+## distributed_plan_exchange_compression_method {#distributed_plan_exchange_compression_method}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="String" default_value="LZ4" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "LZ4"},{"label": "新しい設定: 分散クエリプランの streaming エクスチェンジ は、`network_compression_method` のコーデックではなく `LZ4` で圧縮されるようになりました。"}]}]} />
+
+分散クエリプランのタスク間で行われる streaming エクスチェンジ において、パケットの圧縮に使用するコーデックです。一時ファイルを介したエクスチェンジには、サーバーのデフォルトコーデックが使用されます。
+
+設定可能な値:
+
+* `''` — [network&#95;compression&#95;method](/ja/reference/settings/session-settings/network#network_compression_method) のコーデックを使用します。
+* `NONE` — 圧縮しません。
+* `LZ4` — LZ4 コーデックを使用します。
+* `LZ4HC` — LZ4HC コーデックをデフォルトのレベル 9 で使用します。圧縮速度は `LZ4` の数倍以上遅くなります。
+* `ZSTD` — [distributed&#95;plan&#95;exchange&#95;zstd&#95;compression&#95;level](/ja/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_zstd_compression_level) で指定したレベルで ZSTD コーデックを使用します。
+
+## distributed_plan_exchange_zstd_compression_level {#distributed_plan_exchange_zstd_compression_level}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Int64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "分散クエリプランの streaming exchange における ZSTD 圧縮レベルを指定する新しい設定。"}]}]} />
+
+分散クエリプランの streaming exchange で使用する ZSTD 圧縮のレベルです。[distributed&#95;plan&#95;exchange&#95;compression&#95;method](/ja/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_compression_method) が `ZSTD` に設定されている場合にのみ使用されます。
+
+設定可能な値:
+
+* 1 から 22 までの整数。レベルが高いほど圧縮率は高くなりますが、処理速度は低下します。
 
 ## distributed_plan_execute_locally {#distributed_plan_execute_locally}
 
@@ -82,6 +115,16 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 分散クエリプランでは、PartialAggregation + Merge の代わりに Shuffle 集約戦略を使用します。
 Shuffle 戦略が正しい結果を生成できない場合、たとえば `GROUPING SETS` の場合や、集約が bucket 順で結果を生成しなければならない場合には無視されます。
 
+## distributed_plan_join_runtime_filters {#distributed_plan_join_runtime_filters}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新しい実験的な設定"}]}]} />
+
+`make_distributed_plan` 使用時に、あるステージで構築された JOINランタイムフィルタを、プローブ側を読み取るステージへ送信します。これにより、それらのステージは行を送信する前にフィルタリングできます。フィルタが届かなかった場合、行はフィルタリングされずにそのまま渡されます。`enable_join_runtime_filters` を有効にする必要があります。
+
 ## distributed_plan_max_buffered_log_rows {#distributed_plan_max_buffered_log_rows}
 
 <ExperimentalBadge />
@@ -111,6 +154,18 @@ Shuffle 戦略が正しい結果を生成できない場合、たとえば `GROU
 
 分散クエリプラン内の不要な Exchange を削除します。デバッグ時は無効にしてください。
 
+## distributed_plan_partial_aggregation_before_shuffle {#distributed_plan_partial_aggregation_before_shuffle}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新しい実験的設定: 分散集約において、入力行ではなく部分集約状態をshuffleします。"}]}]} />
+
+分散集約が `GROUP BY` キーに基づいてデータをshuffleする前に、データを読み取るノード上で部分集約を行います。これにより、shuffle時にはすべての入力行ではなく、各ノードからグループごとに 1 つの集約状態のみが送信され、各バケットは担当するキーの状態をマージします。
+ルールベースのプランナーは、カラム STATISTICS に基づき、部分集約を行ってもデータ量が半分以下にならないと判断した場合は、従来どおり入力行をshuffleします。`enable_cascades_optimizer` が有効な場合、この設定により、オプティマイザはバケットごとにこのマージを行うかどうかをコストに基づいて選択できます。
+この設定は `make_distributed_plan = 1` と併用した場合にのみ有効です。入力行をshuffleする `distributed_plan_force_shuffle_aggregation` と併用した場合は効果がありません。
+
 ## distributed_plan_prefer_replicas_over_workers {#distributed_plan_prefer_replicas_over_workers}
 
 <PrivatePreviewBadge />
@@ -132,6 +187,14 @@ Shuffle 戦略が正しい結果を生成できない場合、たとえば `GROU
 分散クエリプランにおける `ORDER BY` の read-in-order 最適化を許可します。これにより、スキャンしてソートする代わりに、テーブルのソーティングキー順に読み取ることでソートを省略し、早期に処理を打ち切れます。
 
 デフォルトでは無効です。ソートを分散させる rewrite は、対象のソートが「入力が既に順序付けられていること」に依存しないことを前提としていますが、実際に依存するソートに対しては、順序を保持しない exchange を経由して行が供給される可能性があります。現時点で安全なのは、読み取りとソートの間に exchange が残らない shape のみです。
+
+## distributed_plan_worker_cluster {#distributed_plan_worker_cluster}
+
+<PrivatePreviewBadge />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "分散実行計画の実行に使用するステートレスワーカークラスターを選択するための新しい設定。"}]}]} />
+
+このクエリの分散実行計画を実行するステートレスワーカークラスターの名前です。デフォルト値 (空文字列) の場合は、設定済みのデフォルトクラスターが選択されます。その他のクラスターは `stateless_worker_client.clusters` で設定します。
 
 ## distributed_plan_workers_num {#distributed_plan_workers_num}
 

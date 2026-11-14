@@ -22,8 +22,11 @@ Ces paramètres sont disponibles dans [system.merge&#95;tree&#95;settings](/fr/r
 Il s’agit d’un disque de table : le chemin/l’endpoint pointe vers les données de la table, et non vers celles de la base de données.
 Pris en charge pour les disques de stockage d’objets dont les métadonnées résident dans le stockage d’objets lui-même
 (s3&#95;plain, s3&#95;plain&#95;rewritable, web, web&#95;index) ainsi que leurs variantes mises en cache. Les variantes
-chiffrées sont prises en charge uniquement avec les disques s3&#95;plain / s3&#95;plain&#95;rewritable inscriptibles, et non
+chiffrées sont prises en charge uniquement avec les disques s3&#95;plain / s3&#95;plain&#95;rewritable accessibles en écriture, et non
 avec les disques web / web&#95;index en lecture seule.
+Un disque accessible en écriture ne contient les données que d’une seule table : les autres tables utilisant le même chemin,
+ou un chemin situé à l’intérieur ou au-dessus de celui-ci, doivent utiliser un disque en lecture seule.
+`ALTER` ne peut pas modifier le disque d’une table utilisant ce paramètre.
 Les parts déjà présentes sous ce chemin sont présumées correspondre aux colonnes et à la clé de tri
 déclarées par cette table. La clé de tri utilisée lors de l’écriture d’une part n’étant enregistrée nulle part, une
 table qui déclare une clé différente sur les mêmes parts renvoie des résultats erronés ou une erreur.
@@ -48,7 +51,6 @@ mais n’avait pas commencé. Les parts encore non chargées le sont dès que le
 avant la validation de l’instruction `ALTER` qui active le paramètre : aucun nettoyage ni chargement de part ne démarre ainsi sur une table déjà passée durablement en lecture seule. Les autres
 opérations en cours, notamment les chargements de parts déjà commencés, peuvent se terminer.
 
-Le cache des statistiques en mémoire continue d’être rafraîchi périodiquement. Définissez `refresh_statistics_interval = 0` pour désactiver également cette tâche en arrière-plan.
 Les lectures en flux (`SELECT ... STREAM`) continuent de fonctionner : la tâche en arrière-plan qui gère leurs abonnements se contente de lire les parts et s’exécute également sur les tables en lecture seule.
 
 Le paramètre peut toujours être désactivé avec `ALTER TABLE ... MODIFY SETTING table_readonly = 0` (ou `RESET SETTING`). Les workers en arrière-plan
