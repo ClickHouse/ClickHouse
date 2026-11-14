@@ -630,6 +630,61 @@ def generate_unparseable_footer_json() -> None:
     )
 
 
+def generate_other_blob_types() -> None:
+    """Blobs other than deletion-vector-v1: PuffinMetadata lists them, Puffin rejects them."""
+    bitmap = pyroaring.BitMap([2, 5])
+    dv_blob = wrap_deletion_vector_blob(struct.pack("<qi", 1, 0) + bitmap.serialize())
+    theta_blob = b"\x01" * 8
+    other_blob = b"\x02" * 4
+    dv_entry = {
+        "type": "deletion-vector-v1",
+        "fields": [],
+        "snapshot-id": -1,
+        "sequence-number": -1,
+        "offset": 4,
+        "length": len(dv_blob),
+        "properties": default_dv_properties(cardinality="2"),
+    }
+    theta_entry = {
+        "type": "apache-datasketches-theta-v1",
+        "fields": [1],
+        "snapshot-id": 1,
+        "sequence-number": 1,
+        "offset": 4 + len(dv_blob),
+        "length": len(theta_blob),
+        "compression-codec": "zstd",
+        "properties": {"ndv": "1"},
+    }
+    other_entry = {
+        "type": "some-blob",
+        "fields": [2],
+        "snapshot-id": 2,
+        "sequence-number": 2,
+        "offset": 4 + len(dv_blob) + len(theta_blob),
+        "length": len(other_blob),
+        "compression-codec": None,
+    }
+    payload = {"blobs": [dv_entry, theta_entry, other_entry]}
+    write_fixture(
+        "mixed_blob_types.puffin",
+        build_puffin_file_from_blobs(
+            [dv_blob, theta_blob, other_blob], json.dumps(payload, separators=(", ", ": ")).encode("utf-8")
+        ),
+    )
+
+    cases: dict[str, tuple[str, object]] = {
+        "other_blob_codec_number.puffin": ("compression-codec", 1),
+        "other_blob_null_properties.puffin": ("properties", None),
+    }
+    for name, (key, value) in cases.items():
+        entry = dict(theta_entry, offset=4)
+        entry[key] = value
+        write_fixture(
+            name,
+            build_puffin_file(theta_blob, json.dumps({"blobs": [entry]}, separators=(", ", ": ")).encode("utf-8")),
+        )
+
+
 def main() -> None:
     spark_fixture = OUTPUT_DIR / "spark_deletion_vector.puffin"
     if not spark_fixture.exists():
@@ -653,6 +708,7 @@ def main() -> None:
     generate_missing_footer_leading_magic()
     generate_invalid_file_metadata_properties()
     generate_unparseable_footer_json()
+    generate_other_blob_types()
 
     generate_cardinality_mismatch_large_bitmap()
     generate_dense_range_100k()

@@ -1,0 +1,22 @@
+--- Iceberg statistics file written by Spark
+apache-datasketches-theta-v1	3773046976092282465	1	[1]	4	24030	zstd	{'ndv':'3000'}
+apache-datasketches-theta-v1	3773046976092282465	1	[2]	24034	109	zstd	{'ndv':'10'}
+apache-datasketches-theta-v1	3773046976092282465	1	[3]	24143	430	zstd	{'ndv':'50'}
+apache-datasketches-theta-v1	3773046976092282465	1	[4]	24573	77	zstd	{'ndv':'6'}
+apache-datasketches-theta-v1	3773046976092282465	1	[5]	24650	117	zstd	{'ndv':'11'}
+apache-datasketches-theta-v1	3773046976092282465	1	[6]	24767	24030	zstd	{'ndv':'3000'}
+apache-datasketches-theta-v1	3773046976092282465	1	[7]	48797	85	zstd	{'ndv':'7'}
+--- Iceberg statistics file written by Trino
+apache-datasketches-theta-v1	75667572448823849	2	[1]	4	2430	zstd	{'ndv':'300'}
+apache-datasketches-theta-v1	75667572448823849	2	[2]	2434	430	zstd	{'ndv':'50'}
+apache-datasketches-theta-v1	4459882726943271934	3	[3]	2864	350	zstd	{'ndv':'40'}
+--- deletion vector, theta sketch and an unknown blob type
+deletion-vector-v1	-1	-1	[]	4	44		{'cardinality':'2','referenced-data-file':'/data/table/part-00000.parquet'}
+apache-datasketches-theta-v1	1	1	[1]	48	8	zstd	{'ndv':'1'}
+some-blob	2	2	[2]	56	4		{}
+--- Puffin rejects the same file
+Puffin blob 1: unsupported blob type 'apache-datasketches-theta-v1'
+Puffin blob 1: unsupported blob type 'apache-datasketches-theta-v1'
+--- the generic blob metadata rules still apply
+Puffin blob 0: field 'compression-codec' must be a string
+Puffin blob 0: field 'properties' must be an object
