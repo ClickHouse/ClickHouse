@@ -400,7 +400,7 @@ static bool isEqualExceptTypes(const IQueryTreeNode & lhs, const IQueryTreeNode 
                 || lhs_function->isOrdinaryFunction() != rhs_function.isOrdinaryFunction())
                 return false;
         }
-        else if (node_type != QueryTreeNodeType::LIST)
+        else if (node_type != QueryTreeNodeType::LIST && node_type != QueryTreeNodeType::LAMBDA)
         {
             if (!lhs_node->isEqual(*rhs_node, {.compare_aliases = false}))
                 return false;

@@ -44,6 +44,13 @@ or, group_by_use_nulls
 \N	2
 \N	2
 1	5	9
+0	2
+1	6
+\N	2
+\N	2
+\N	2
+\N	2
+1	5	9
 and
 0	2
 0	2

@@ -19,6 +19,8 @@ SELECT countIf(e IS NULL), count() FROM (SELECT x, (x = 1) OR (x = 2) OR (x = 3)
 SELECT countIf(e IS NULL), count() FROM (SELECT x, (x = 1) OR (x = 2) OR (x = 3) AS e FROM (SELECT number % 4 AS x FROM numbers(8)) GROUP BY ROLLUP(x, e, if(e, x, 0) = 1)) SETTINGS enable_identifier_resolve_cache = 1, group_by_use_nulls = 1;
 SELECT (x = 1) OR (x = 2) OR (x = 3) AS e, count() FROM (SELECT number % 4 AS x FROM numbers(8)) GROUP BY GROUPING SETS ((e, e = 1), (x)) ORDER BY ALL SETTINGS enable_identifier_resolve_cache = 1, group_by_use_nulls = 1;
 SELECT countIf(e IS NULL), countIf(e), count() FROM (SELECT x, (x = 1) OR (x = 2) OR (x = 3) AS e FROM (SELECT number % 4 AS x FROM numbers(8)) GROUP BY ROLLUP(e, e = 1, x)) SETTINGS enable_identifier_resolve_cache = 1, group_by_use_nulls = 1;
+SELECT arrayExists(v -> (v > x) AND ((x = 1) OR (x = 2) OR (x = 3)), [4]) AS e, count() FROM (SELECT number % 4 AS x FROM numbers(8)) GROUP BY GROUPING SETS ((e, e = 1), (x)) ORDER BY ALL SETTINGS enable_identifier_resolve_cache = 1, group_by_use_nulls = 1;
+SELECT countIf(e IS NULL), countIf(e), count() FROM (SELECT x, arrayMap(v -> (x = 1) OR (x = 2) OR (x = 3), [1])[1] AS e FROM (SELECT number % 4 AS x FROM numbers(8)) GROUP BY ROLLUP(e, e = 1, x)) SETTINGS enable_identifier_resolve_cache = 1, group_by_use_nulls = 1;
 
 SELECT 'and';
 SELECT (x != 1) AND (x != 2) AND (x != 3) AS e, count() FROM (SELECT number % 4 AS x FROM numbers(8)) GROUP BY x != 1, x != 2, x != 3 ORDER BY ALL;
