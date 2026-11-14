@@ -42,7 +42,7 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 
 echo '-- The archive syntax can be switched off'
-${CLICKHOUSE_LOCAL} --allow_archive_path_syntax 0 --query "SELECT * FROM '${ARCHIVE}.tar::${DATA}'" 2>&1 | grep -c 'UNKNOWN_TABLE'
+${CLICKHOUSE_LOCAL} --allow_archive_path_syntax 0 --query "SELECT * FROM '${ARCHIVE}.tar::${DATA}'" 2>&1 | grep -c 'FILE_DOESNT_EXIST'
 
 echo '-- The interpretation of an ambiguous name is not shared between the two modes'
 # A file whose name is literally the archive syntax, next to the archive of the same name: the
@@ -64,8 +64,8 @@ ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${CLICKHOUSE_DATABASE}_ambiguous"
 rm "${USER_FILES_PATH}/${AMBIGUOUS}" "${USER_FILES_PATH}/${AMBIGUOUS}::${DATA}"
 
 echo '-- A missing archive and a missing file inside an archive'
-${CLICKHOUSE_LOCAL} --query "SELECT * FROM '${ARCHIVE}_nonexistent.tar::${DATA}'" 2>&1 | grep -c 'UNKNOWN_TABLE'
-${CLICKHOUSE_LOCAL} --query "SELECT * FROM '${ARCHIVE}.tar::nonexistent.csv'" 2>&1 | grep -c 'UNKNOWN_TABLE'
+${CLICKHOUSE_LOCAL} --query "SELECT * FROM '${ARCHIVE}_nonexistent.tar::${DATA}'" 2>&1 | grep -c 'FILE_DOESNT_EXIST'
+${CLICKHOUSE_LOCAL} --query "SELECT * FROM '${ARCHIVE}.tar::nonexistent.csv'" 2>&1 | grep -c 'FILE_DOESNT_EXIST'
 
 echo '-- A file that is not in the archive is a missing table, not a table that fails to resolve'
 ${CLICKHOUSE_CLIENT} --query "
@@ -87,7 +87,7 @@ ${CLICKHOUSE_CLIENT} --query \
 
 ${CLICKHOUSE_CLIENT} --query \
     "SELECT * FROM ${CLICKHOUSE_DATABASE}_missing_url.\`${CLICKHOUSE_TEST_UNIQUE_NAME}.tar::nonexistent.csv\`" 2>&1 \
-    | grep -om1 'UNKNOWN_TABLE'
+    | grep -om1 'FILE_DOESNT_EXIST'
 ${CLICKHOUSE_CLIENT} --query \
     "SELECT * FROM ${CLICKHOUSE_DATABASE}_missing_fs.\`${CLICKHOUSE_TEST_UNIQUE_NAME}.zip::nonexistent.csv\`" 2>&1 \
     | grep -om1 'UNKNOWN_TABLE'

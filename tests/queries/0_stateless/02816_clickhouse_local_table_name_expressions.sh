@@ -32,7 +32,7 @@ $CLICKHOUSE_LOCAL -q "SELECT * FROM \"${dir}/tmp.csv\""
 #################
 echo "Test 1a: check double quotes no parsing overflow"
 
-$CLICKHOUSE_LOCAL -q "SELECT * FROM \"${dir}/tmp.csv\"\"bad\"" 2>&1 | grep -c "UNKNOWN_TABLE"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM \"${dir}/tmp.csv\"\"bad\"" 2>&1 | grep -c "FILE_DOESNT_EXIST"
 #################
 echo "Test 1b: check double quotes empty"
 
@@ -44,7 +44,7 @@ $CLICKHOUSE_LOCAL -q "SELECT * FROM \`${dir}/tmp.csv\`"
 #################
 echo "Test 2a: check back quotes no parsing overflow"
 
-$CLICKHOUSE_LOCAL -q "SELECT * FROM \`${dir}/tmp.csv\`\`bad\`" 2>&1 | grep -c "UNKNOWN_TABLE"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM \`${dir}/tmp.csv\`\`bad\`" 2>&1 | grep -c "FILE_DOESNT_EXIST"
 #################
 echo "Test 2b: check back quotes empty"
 

@@ -390,6 +390,15 @@ StoragePtr DatabaseURL::tryGetTable(const String & name, ContextPtr context_) co
     return getTableImpl(name, context_, false);
 }
 
+bool DatabaseURL::canExplainMissingTable(const String & name, ContextPtr /*context*/) const
+{
+    if (name.find_first_of("./") == String::npos)
+        return false;
+
+    const String url = getTableURL(name);
+    return !url.empty() && classifyURLScheme(url) == URLSchemeTarget::File;
+}
+
 ASTPtr DatabaseURL::getCreateDatabaseQueryImpl() const
 {
     const auto & settings = getContext()->getSettingsRef();
