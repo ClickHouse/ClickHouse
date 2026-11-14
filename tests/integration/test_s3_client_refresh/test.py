@@ -76,6 +76,7 @@ def test_named_collection_credentials_survive_restricted_read(scope, partitioned
 @pytest.mark.parametrize("named_collection", [False, True])
 def test_explicit_keys_survive_client_refresh(named_collection):
     # Static keys must also survive a session change, even with conflicting endpoint credentials.
+    # The table is created restricted: one created with the opt-in serves no restricted session.
     table = f"refresh_keys_{int(named_collection)}"
     url = f"http://minio1:9001/root/refresh/keys/{table}.tsv"
     if named_collection:
@@ -86,7 +87,7 @@ def test_explicit_keys_survive_client_refresh(named_collection):
     else:
         arguments = f"'{url}', '{minio_access_key}', '{minio_secret_key}', 'TSV'"
     node.query(
-        f"CREATE TABLE {table} (x UInt8) ENGINE = S3({arguments})", settings=TRUSTED
+        f"CREATE TABLE {table} (x UInt8) ENGINE = S3({arguments})", settings=RESTRICTED
     )
     try:
         node.query(f"INSERT INTO {table} VALUES (7)", settings=TRUSTED)

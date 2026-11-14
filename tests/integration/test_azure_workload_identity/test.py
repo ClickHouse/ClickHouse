@@ -19,6 +19,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/disable_cert_verification.xml"],
+    stay_alive=True,
     env_variables={
         "AZURE_TENANT_ID": TENANT_ID,
         "AZURE_CLIENT_ID": CLIENT_ID,
@@ -154,3 +155,33 @@ def test_truncate_follows_the_session(started_cluster):
     assert get_storage_hits(started_cluster)[before:] == []
 
     node.query("DROP TABLE t_truncate SYNC")
+
+
+def test_table_loaded_anonymously_stays_anonymous(started_cluster):
+    """A table that used the server's identity is loaded at startup without credentials. An opted-in session does not
+    give the identity back to the shared client; attaching the table again in such a session does."""
+
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    allow = {"s3_allow_server_credentials_in_user_queries": 1, "azure_sdk_max_retries": 0}
+    node.query("DROP TABLE IF EXISTS t_reload SYNC")
+    node.query(
+        f"CREATE TABLE t_reload (c UInt64) ENGINE = AzureBlobStorage('https://127.0.0.1:{TOKEN_PORT}/account', 'cont', 'data.csv', 'CSV')",
+        settings=allow,
+    )
+
+    node.restart_clickhouse()
+
+    before = len(get_storage_hits(started_cluster))
+    node.query_and_get_error("SELECT * FROM t_reload", settings=allow)
+    hits = get_storage_hits(started_cluster)[before:]
+    assert hits, "the read sent no request to the storage"
+    assert not any(hit["authorization"] for hit in hits), hits
+
+    node.query("DETACH TABLE t_reload")
+    node.query("ATTACH TABLE t_reload", settings=allow)
+
+    before = len(get_storage_hits(started_cluster))
+    node.query_and_get_error("SELECT * FROM t_reload", settings=allow)
+    assert any(hit["authorization"] for hit in get_storage_hits(started_cluster)[before:])
+
+    node.query("DROP TABLE t_reload SYNC")
