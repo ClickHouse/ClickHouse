@@ -59,7 +59,7 @@ ORDER BY event_time_microseconds DESC LIMIT 1"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS text_log"
 ${CLICKHOUSE_CLIENT} --query "
 SELECT count() > 0 FROM system.text_log
-WHERE query_id = '$retry_query_id' AND logger_name = 'LocalSourceReader'
-  AND message LIKE 'open: file=%/.lock, size=%'"
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$retry_query_id'
+  AND logger_name = 'LocalSourceReader' AND message LIKE 'open: file=%/.lock, size=%'"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t"
