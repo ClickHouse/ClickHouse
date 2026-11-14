@@ -23,6 +23,7 @@
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
 #include <Functions/FunctionsMiscellaneous.h>
+#include <Storages/ColumnSize.h>
 
 
 #if defined(MEMORY_SANITIZER)
@@ -1253,6 +1254,34 @@ NameAndTypePair ExpressionActions::getSmallestColumn(const NamesAndTypesList & c
 
     if (!min_size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No available columns");
+
+    return result;
+}
+
+NameAndTypePair ExpressionActions::getCheapestColumnToRead(
+    const NamesAndTypesList & columns, const std::unordered_map<std::string, ColumnSize> & column_sizes, bool skip_subcolumns)
+{
+    std::optional<std::tuple<size_t, size_t, size_t>> min_cost;
+    NameAndTypePair result;
+
+    for (const auto & column : columns)
+    {
+        auto it = column_sizes.find(column.name);
+        if (it == column_sizes.end())
+            continue;
+
+        size_t type_size = column.type->haveMaximumSizeOfValue() ? column.type->getMaximumSizeOfValueInMemory() : 100;
+        std::tuple<size_t, size_t, size_t> cost{it->second.data_compressed, type_size, it->second.data_uncompressed};
+
+        if (!min_cost || cost < *min_cost)
+        {
+            min_cost = cost;
+            result = column;
+        }
+    }
+
+    if (!min_cost)
+        return getSmallestColumn(columns, skip_subcolumns);
 
     return result;
 }
