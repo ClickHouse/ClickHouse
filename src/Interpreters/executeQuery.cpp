@@ -3284,9 +3284,9 @@ static BlockIO executeQueryImpl(
 
             insert_query->tail.reset();
         }
-        else if (out_ast->as<ASTCreateQuery>() && dynamic_cast<const ASTCreateQuery*>(out_ast.get())->insert_select && dynamic_cast<const ASTCreateQuery*>(out_ast.get())->insert_data)
+        else if (const auto * create_query = out_ast ? out_ast->as<ASTCreateQuery>() : nullptr;
+                create_query && create_query->insert_select && create_query->insert_data)
         {
-            const auto * create_query = out_ast->as<ASTCreateQuery>();
             ASTPtr input_function;
 
             auto synthetic_insert = make_intrusive<ASTInsertQuery>();
