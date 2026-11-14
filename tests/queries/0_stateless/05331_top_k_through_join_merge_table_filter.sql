@@ -20,6 +20,11 @@ DROP TABLE IF EXISTS t_merge_filter_merge;
 DROP TABLE IF EXISTS t_merge_filter_a;
 DROP TABLE IF EXISTS t_merge_filter_b;
 DROP TABLE IF EXISTS t_merge_filter_right;
+DROP TABLE IF EXISTS t_merge_filter_with_bad_type;
+DROP TABLE IF EXISTS t_merge_filter_with_bad_view;
+DROP TABLE IF EXISTS t_merge_filter_bad_type;
+DROP TABLE IF EXISTS t_merge_filter_bad_view;
+DROP TABLE IF EXISTS t_merge_filter_dropped;
 
 CREATE TABLE t_merge_filter_a (k Int64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE t_merge_filter_b (k Int64) ENGINE = MergeTree ORDER BY k;
@@ -41,6 +46,41 @@ FROM ( EXPLAIN actions = 0
 SELECT l.k, r.v FROM t_merge_filter_merge AS l LEFT JOIN t_merge_filter_right AS r ON r.k = l.k
 WHERE l._table = 't_merge_filter_a'
 ORDER BY l.k DESC LIMIT 3;
+
+-- A table excluded by the condition is not planned at all, so it cannot fail the query: the type of `k` in
+-- `t_merge_filter_bad_type` cannot be converted to the one of the `Merge` table, `t_merge_filter_bad_view` reads a dropped table.
+CREATE TABLE t_merge_filter_bad_type (k Array(Int64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_merge_filter_bad_type VALUES ([1, 2]);
+CREATE TABLE t_merge_filter_dropped (k Int64) ENGINE = MergeTree ORDER BY k;
+CREATE VIEW t_merge_filter_bad_view AS SELECT k FROM t_merge_filter_dropped;
+DROP TABLE t_merge_filter_dropped;
+CREATE TABLE t_merge_filter_with_bad_type (k Int64) ENGINE = Merge(currentDatabase(), '^t_merge_filter_(a|bad_type)$');
+CREATE TABLE t_merge_filter_with_bad_view (k Int64) ENGINE = Merge(currentDatabase(), '^t_merge_filter_(a|bad_view)$');
+
+-- Still read in order through the join: no second `Sorting`.
+SELECT countIf(explain LIKE '%Sorting%'), countIf(explain LIKE '%ReadFromMergeTree%t_merge_filter_bad_type%')
+FROM ( EXPLAIN actions = 0
+    SELECT l.k, r.v FROM t_merge_filter_with_bad_type AS l LEFT JOIN t_merge_filter_right AS r ON r.k = l.k
+    WHERE l._table = 't_merge_filter_a'
+    ORDER BY l.k DESC LIMIT 3
+);
+
+SELECT l.k, r.v FROM t_merge_filter_with_bad_type AS l LEFT JOIN t_merge_filter_right AS r ON r.k = l.k
+WHERE l._table = 't_merge_filter_a'
+ORDER BY l.k DESC LIMIT 3;
+
+SELECT l.k, r.v FROM t_merge_filter_with_bad_type AS l LEFT JOIN t_merge_filter_right AS r ON r.k = l.k
+WHERE l._table = 't_merge_filter_a'
+ORDER BY l.k ASC LIMIT 3;
+
+SELECT l.k, r.v FROM t_merge_filter_with_bad_view AS l LEFT JOIN t_merge_filter_right AS r ON r.k = l.k
+WHERE l._table = 't_merge_filter_a'
+ORDER BY l.k DESC LIMIT 3;
+
+DROP TABLE t_merge_filter_with_bad_type;
+DROP TABLE t_merge_filter_with_bad_view;
+DROP TABLE t_merge_filter_bad_type;
+DROP TABLE t_merge_filter_bad_view;
 
 DROP TABLE t_merge_filter_merge;
 DROP TABLE t_merge_filter_a;
