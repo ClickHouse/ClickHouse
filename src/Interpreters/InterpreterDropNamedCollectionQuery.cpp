@@ -193,6 +193,7 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
                 const auto dictionary_name
                     = dep.database_name.empty() ? dep.table_name : dep.database_name + "." + dep.table_name;
                 const auto & dictionaries_loader = current_context->getExternalDictionariesLoader();
+                bool obsolete_dictionary_entry = false;
                 if (dictionaries_loader.has(dictionary_name))
                 {
                     /// The definition may have changed since the dependency was registered: a reload
@@ -215,6 +216,7 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
 
                     /// An entry with a database name can also belong to a table of the same name:
                     /// resolve it through the catalog below.
+                    obsolete_dictionary_entry = true;
                 }
 
                 if (dep.database_name.empty())
@@ -222,6 +224,24 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
                     NamedCollectionFactory::instance().removeDependency(query.collection_name, dep);
                     continue;
                 }
+
+                /// Whether the table found under the recorded name is the one the entry was registered for.
+                /// An entry with a UUID belongs only to the table with that UUID. An entry without a UUID
+                /// is taken for the dependency of any table under that name, with one exception: when the
+                /// entry is the obsolete registration of a configuration dictionary of the same name (its
+                /// current definition does not reference the collection), a table with a UUID cannot have
+                /// registered it - such a table records its dependencies under its UUID, and those entries
+                /// are checked on their own. A table without a UUID (e.g. of an `Ordinary` database) records
+                /// the same entry as the dictionary, so the two cannot be told apart, and the entry is kept.
+                const auto table_matches_entry = [&](const StoragePtr & candidate_table)
+                {
+                    if (!candidate_table)
+                        return false;
+                    const auto candidate_uuid = candidate_table->getStorageID().uuid;
+                    if (dep.hasUUID())
+                        return candidate_uuid == dep.uuid;
+                    return !obsolete_dictionary_entry || candidate_uuid == UUIDHelpers::Nil;
+                };
 
                 /// A table of an `Atomic` database is identified by its UUID: `RENAME` and
                 /// `EXCHANGE` change its name but keep the UUID recorded in the dependency, so the
@@ -237,7 +257,7 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
 
                 const auto table = DatabaseCatalog::instance().tryGetTable(
                     StorageID{dep.database_name, dep.table_name}, current_context);
-                if (table && (!dep.hasUUID() || table->getStorageID().uuid == dep.uuid))
+                if (table_matches_entry(table))
                 {
                     dependent_names.push_back(dep.getFullTableName());
                     continue;
@@ -260,7 +280,7 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
 
                 const auto updated_table = DatabaseCatalog::instance().tryGetTable(
                     StorageID{dep.database_name, dep.table_name}, current_context);
-                if (updated_table && (!dep.hasUUID() || updated_table->getStorageID().uuid == dep.uuid))
+                if (table_matches_entry(updated_table))
                 {
                     dependent_names.push_back(dep.getFullTableName());
                     continue;

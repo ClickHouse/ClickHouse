@@ -1756,6 +1756,69 @@ def test_drop_collection_replaced_in_config_dictionary_source(cluster):
     node.query("DROP NAMED COLLECTION config_dict_collection_new")
 
 
+
+def test_drop_collection_replaced_in_database_qualified_config_dictionary_source(cluster):
+    """Like `test_drop_collection_replaced_in_config_dictionary_source`, but for the dictionary
+    `config_dict_db.config_dict_in_database`, whose definition sets a `<database>`, while an unrelated
+    table of an `Atomic` database has the same qualified name. The table neither registered the entry
+    of the old collection nor references it, so it must not keep the collection from being dropped."""
+    node = cluster.instances["node"]
+    dictionary_config = "/etc/clickhouse-server/dictionaries/config_dict_in_database.xml"
+    uri = "uri = 'mongodb://mongo-is-not-running:27017/db?serverSelectionTimeoutMS=1000&connectTimeoutMS=1000', collection = 'c'"
+
+    node.query("DROP NAMED COLLECTION IF EXISTS config_dict_db_collection")
+    node.query("DROP NAMED COLLECTION IF EXISTS config_dict_db_collection_new")
+    node.query(f"CREATE NAMED COLLECTION config_dict_db_collection AS {uri}")
+    node.query(f"CREATE NAMED COLLECTION config_dict_db_collection_new AS {uri}")
+
+    node.query("DROP DATABASE IF EXISTS config_dict_db")
+    node.query("CREATE DATABASE config_dict_db ENGINE = Atomic")
+    node.query("CREATE TABLE config_dict_db.config_dict_in_database (key UInt64) ENGINE = Memory")
+
+    # The load registers the dependency and then fails to connect, which does not matter here.
+    node.query_and_get_error(
+        "SYSTEM RELOAD DICTIONARY 'config_dict_db.config_dict_in_database'"
+    )
+    assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+        "DROP NAMED COLLECTION config_dict_db_collection"
+    )
+
+    def replace_in_dictionary_config(old, new):
+        # See `test_drop_collection_replaced_in_config_dictionary_source` for the modification time.
+        previous_mtime = int(
+            node.exec_in_container(["stat", "-c", "%Y", dictionary_config]).strip()
+        )
+        node.replace_in_config(dictionary_config, old, new)
+        node.exec_in_container(
+            ["touch", "-d", f"@{previous_mtime + 1}", dictionary_config]
+        )
+
+    try:
+        replace_in_dictionary_config(
+            "<name>config_dict_db_collection</name>",
+            "<name>config_dict_db_collection_new</name>",
+        )
+        node.query_and_get_error(
+            "SYSTEM RELOAD DICTIONARY 'config_dict_db.config_dict_in_database'"
+        )
+
+        node.query("DROP NAMED COLLECTION config_dict_db_collection")
+        assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+            "DROP NAMED COLLECTION config_dict_db_collection_new"
+        )
+    finally:
+        replace_in_dictionary_config(
+            "<name>config_dict_db_collection_new</name>",
+            "<name>config_dict_db_collection</name>",
+        )
+        node.query_and_get_error(
+            "SYSTEM RELOAD DICTIONARY 'config_dict_db.config_dict_in_database'"
+        )
+        node.query("DROP DATABASE IF EXISTS config_dict_db")
+
+    # The definition references the old collection again, so the new one is no longer used.
+    node.query("DROP NAMED COLLECTION config_dict_db_collection_new")
+
 def test_drop_while_used_by_never_loaded_config_dictionary(cluster):
     """A dictionary defined in the configuration files registers its dependency only when it is
     loaded. The dictionary `config_dict_lazy_using_collection` (defined in
