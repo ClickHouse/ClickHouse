@@ -7476,7 +7476,7 @@ VectorWithMemoryTracking<size_t> ReadFromMergeTree::getLazilyReadablePositions(c
         {
             return isFilledFromDefaultInSomePart(column, getParts(), storage_snapshot->metadata, mutations_snapshot, context);
         }, context);
-    std::vector<size_t> readable_positions;
+    VectorWithMemoryTracking<size_t> readable_positions;
     for (size_t i = 0; i < positions.size(); ++i)
     {
         if (!non_deterministic.contains(column_names[i]))
