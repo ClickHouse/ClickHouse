@@ -9,6 +9,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool query_plan_merge_filters;
+    extern const SettingsBool aggregation_in_order_shuffle;
+    extern const SettingsUInt64 aggregation_in_order_shuffle_max_buffered_bytes;
     extern const SettingsBool allow_preliminary_distinct_abandoning;
     extern const SettingsBool optimize_uniq_exact_radix_partitioning;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
@@ -27,6 +29,8 @@ BuildQueryPipelineSettings::BuildQueryPipelineSettings(ContextPtr from)
     progress_callback = from->getProgressCallback();
 
     max_threads = getEffectiveMaxThreads(settings);
+    aggregation_in_order_shuffle = from->getSettingsRef()[Setting::aggregation_in_order_shuffle];
+    aggregation_in_order_shuffle_max_buffered_bytes = from->getSettingsRef()[Setting::aggregation_in_order_shuffle_max_buffered_bytes];
     aggregation_memory_efficient_merge_threads = from->getSettingsRef()[Setting::aggregation_memory_efficient_merge_threads];
     min_outstreams_per_resize_after_split = from->getSettingsRef()[Setting::min_outstreams_per_resize_after_split];
     max_streams_for_union_step = from->getSettingsRef()[Setting::max_streams_for_union_step];
