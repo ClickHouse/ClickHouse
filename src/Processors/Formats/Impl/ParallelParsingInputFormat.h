@@ -13,7 +13,6 @@
 #include <IO/ReadBuffer.h>
 #include <IO/SharedThreadPools.h>
 #include <Processors/Formats/IRowInputFormat.h>
-#include <Poco/Event.h>
 
 
 namespace DB
@@ -68,6 +67,7 @@ class Context;
  *  2) take the blocks from the processing unit to return them to the caller
  *  3) signal that the processing unit is empty
  *  4) repeat until it encounters unit that is marked as "past_the_end"
+ * The reader thread cuts and parses the first unit itself and starts the segmentator only if more data follows.
  * All threads must also check for cancel/eof/exception flags.
  */
 class ParallelParsingInputFormat final : public IInputFormat
@@ -237,8 +237,6 @@ private:
     std::condition_variable reader_condvar;
     std::condition_variable segmentator_condvar;
 
-    Poco::Event first_parser_finished;
-
     std::atomic<bool> parsing_started{false};
     std::atomic<bool> parsing_finished{false};
 
@@ -291,13 +289,11 @@ private:
 
     void scheduleParserThreadForUnitWithNumber(size_t ticket_number)
     {
+        chassert(ticket_number != 0);
         runner.enqueueAndKeepTrack([this, ticket_number]()
         {
             parserThreadFunction(ticket_number);
         });
-        /// We have to wait here to possibly extract ColumnMappingPtr from the first parser.
-        if (ticket_number == 0)
-            first_parser_finished.wait();
     }
 
     void finishAndWait() noexcept
@@ -336,6 +332,9 @@ private:
 
     void segmentatorThreadFunction(ThreadGroupPtr thread_group);
     void parserThreadFunction(size_t current_ticket_number);
+
+    /// Cuts the next segment of the input into `unit`. Returns whether more data follows.
+    bool segmentUnit(ProcessingUnit & unit);
 
     /// Save/log a background exception, set termination flag, wake up all
     /// threads. This function is used by segmentator and parsed threads.
