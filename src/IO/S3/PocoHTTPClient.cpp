@@ -681,14 +681,21 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 }
             }
 
+            const Poco::Net::HTTPHeaderLimits response_header_limits{
+                .fields = static_cast<int>(http_max_fields),
+                .name_length = static_cast<int>(http_max_field_name_size),
+                .value_length = static_cast<int>(http_max_field_value_size)};
+
+            /// The limits of the response are used only by `receiveEarlyHTTPResponse`.
             Poco::Net::HTTPResponse poco_response;
-            poco_response.setFieldLimit(static_cast<int>(http_max_fields));
-            poco_response.setNameLengthLimit(static_cast<int>(http_max_field_name_size));
-            poco_response.setValueLengthLimit(static_cast<int>(http_max_field_value_size));
+            poco_response.setFieldLimit(response_header_limits.fields);
+            poco_response.setNameLengthLimit(response_header_limits.name_length);
+            poco_response.setValueLengthLimit(response_header_limits.value_length);
 
             Stopwatch watch;
 
-            auto request_body = sendHTTPRequest(*session, poco_request, DBMS_DEFAULT_BUFFER_SIZE, &connect_time, &first_byte_time);
+            auto request_body = sendHTTPRequest(
+                *session, poco_request, DBMS_DEFAULT_BUFFER_SIZE, &connect_time, &first_byte_time, response_header_limits);
             /// We record connect time here and not earlier, so that if an exception occurs while sending a request,
             /// we won't record the same latency twice.
             observeLatency(request, S3LatencyType::Connect, static_cast<HistogramMetrics::Value>(connect_time));
