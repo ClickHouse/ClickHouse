@@ -1,8 +1,8 @@
 ---
 sidebarTitle: 'hypequery'
 slug: /integrations/hypequery
-keywords: ['clickhouse', 'hypequery', 'connect', 'integrate', 'embedded', 'analytics', 'typescript', 'python', 'semantic', 'mcp', 'react']
-description: 'hypequery is an open-source embedded analytics toolkit for ClickHouse. Define metrics once in TypeScript or Python and serve them to dashboards, APIs, and AI agents from your own backend.'
+keywords: ['clickhouse', 'hypequery', 'connect', 'integrate', 'embedded', 'analytics', 'typescript', 'python', 'semantic', 'semantic layer', 'mcp', 'react']
+description: 'hypequery is an open-source semantic layer for embedded analytics on ClickHouse. Define metrics once in TypeScript or Python and serve them to dashboards, APIs, and AI agents from your own backend.'
 title: 'Connecting hypequery to ClickHouse'
 doc_type: 'guide'
 integration:
@@ -15,9 +15,9 @@ import { CommunityMaintainedBadge } from "/snippets/components/CommunityMaintain
 
 <CommunityMaintainedBadge/>
 
-[hypequery](https://hypequery.com) is an open-source, Apache 2.0 embedded analytics toolkit for ClickHouse that runs inside your own application. You define datasets in TypeScript or Python, with their dimensions, measures, metrics, and tenant rules, and then query them by name. The same definitions can be served as authenticated HTTP endpoints with OpenAPI, typed React hooks, and Model Context Protocol (MCP) tools for AI agents. The TypeScript SDK also includes a type-safe ClickHouse query builder.
+[hypequery](https://hypequery.com) is an open-source, Apache 2.0 semantic layer for teams building embedded analytics and AI agents on ClickHouse. You define datasets in TypeScript or Python, with their dimensions, measures, metrics, relationships, and tenant rules, and then query them by name. The same definitions can be served as authenticated HTTP endpoints with OpenAPI, typed React hooks, and Model Context Protocol (MCP) tools for AI agents. The TypeScript SDK also includes a type-safe ClickHouse query builder.
 
-hypequery isn't a hosted BI tool or a separate server. It's a set of libraries you install and deploy with your backend, so your ClickHouse credentials stay on your servers. It connects to ClickHouse over the HTTP interface, using [`@clickhouse/client`](/integrations/language-clients/js/index) in TypeScript and [`clickhouse-connect`](/integrations/language-clients/python/index) in Python.
+hypequery isn't a hosted BI tool or a separate semantic-layer server. It's a set of libraries you install and deploy with your backend, so your ClickHouse credentials stay on your servers. It connects to ClickHouse over the HTTP interface, using [`@clickhouse/client`](/integrations/language-clients/js/index) in TypeScript and [`clickhouse-connect`](/integrations/language-clients/python/index) in Python.
 
 ## Prerequisites {#prerequisites}
 
