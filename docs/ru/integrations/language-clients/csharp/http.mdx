@@ -11,7 +11,6 @@ integration:
   - website: 'https://github.com/ClickHouse/clickhouse-cs'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 
 Официальный C#-клиент для подключения к ClickHouse.
 Исходный код клиента доступен в [репозитории GitHub](https://github.com/ClickHouse/clickhouse-cs).
@@ -310,11 +309,27 @@ await client.InsertBinaryAsync("my_table", columns, batch2, options);
 
 Выберите сервис и нажмите **Подключение**:
 
-<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="Кнопка подключения к сервису ClickHouse Cloud" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Кнопка подключения к сервису ClickHouse Cloud](/images/_snippets/cloud-connect-button.webp)
+
+</Frame>
+
+</div>
 
 Выберите **C#**. Ниже появятся сведения о подключении.
 
-<Image img="/images/_snippets/connection-details-csharp.webp" size="md" alt="Сведения о подключении к ClickHouse Cloud для C#" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Сведения о подключении к ClickHouse Cloud для C#](/images/_snippets/connection-details-csharp.webp)
+
+</Frame>
+
+</div>
 
 Если вы используете самоуправляемый ClickHouse, сведения о подключении предоставляет администратор ClickHouse.
 

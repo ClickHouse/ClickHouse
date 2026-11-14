@@ -204,9 +204,9 @@ openSSL:
             # Use for self-signed: name: AcceptCertificateHandler
             name: RejectCertificateHandler
 
-# Default root page on http[s] server. For example load UI from https://tabix.io/ when opening http://localhost:8123
+# Default root page on http[s] server. For example open the built-in Web UI when opening http://localhost:8123
 # http_server_default_response: |-
-#     <html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>
+#     <html><head><meta http-equiv="refresh" content="0; url=/play"></head><body><a href="/play">ClickHouse Web UI</a></body></html>
 
 # Maximum number of concurrent queries.
 max_concurrent_queries: 100
@@ -515,6 +515,26 @@ remap_executable: false
 # The policy is implemented for x86_64 and aarch64 only. On other architectures the server only sets
 # PR_SET_NO_NEW_PRIVS, logs a warning and runs without a seccomp policy.
 seccomp: trap
+
+# Isolate the server from the filesystem of the host at startup (Linux only): it moves into a new mount
+# namespace where only the paths it needs according to this configuration are visible - its data, logs,
+# configuration, certificates, a few system files - and nothing else, in particular no shell.
+# With "best_effort", if the kernel or a container runtime does not allow it, the server logs a warning and
+# runs without the isolation; with "enforce", it does not start then. "disabled" (the default without this
+# line) turns it off.
+# Executable user defined functions and dictionaries that run scripts need their interpreters and libraries:
+# list them in "filesystem_isolation_paths", or disable the isolation.
+# Without CAP_SYS_ADMIN the server has to create a user namespace as well, and loses its other capabilities,
+# such as CAP_NET_BIND_SERVICE (ports below 1024) and CAP_IPC_LOCK.
+filesystem_isolation: best_effort
+# filesystem_isolation_paths:
+#     read_only:
+#         - /bin
+#         - /usr/bin
+#         - /lib
+#         - /lib64
+#         - /usr/lib
+#     read_write: /mnt/exchange
 
 # Uncomment below in order to use JDBC table engine and function.
 # To install and run JDBC bridge in background:

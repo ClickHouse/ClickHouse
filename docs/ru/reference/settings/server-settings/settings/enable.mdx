@@ -12,33 +12,27 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки задают конфигурацию сервера ClickHouse и автоматически сгенерированы из исходного кода ClickHouse.
 
-<div id="enable_azure_sdk_logging">
-  ## enable_azure_sdk_logging
-</div>
+## enable_azure_sdk_logging {#enable_azure_sdk_logging}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Нет" />Включает логирование Azure SDK
 
-<div id="enable_read_through_distributed_cache">
-  ## enable_read_through_distributed_cache
-</div>
+## enable_gpu {#enable_gpu}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Захватывать GPU при запуске сервера для выполнения на нём запросов. Сервер не запустится, если он собран без поддержки GPU или в системе нет устройства CUDA.
+
+## enable_read_through_distributed_cache {#enable_read_through_distributed_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />Действует только в ClickHouse Cloud. Разрешает чтение из распределённого кэша. Это переключатель уровня сервера, применяемый без перезапуска; ему также подчиняются фоновые операции без собственного профиля запроса (слияния, мутации, сбросы таблиц `Buffer`). Отдельные запросы могут переопределять его с помощью настройки `force_read_through_distributed_cache`.
 
-<div id="enable_silk_runtime">
-  ## enable_silk_runtime
-</div>
+## enable_silk_runtime {#enable_silk_runtime}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Включает экспериментальную поддержку среды выполнения волокон Silk: при запуске сервера инициализируется планировщик волокон Silk, что позволяет поддерживающим его подсистемам выполнять задачи на волокнах.
 
-<div id="enable_webterminal">
-  ## enable_webterminal
-</div>
+## enable_webterminal {#enable_webterminal}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Включает интерфейс веб-терминала на HTTP-конечной точке `/webterminal`. Предоставляет интерактивный сеанс клиента ClickHouse в браузере через WebSocket. Если установлено значение `false`, запросы к `/webterminal` возвращают HTTP-статус `403 Forbidden`.
 
-<div id="enable_write_through_distributed_cache">
-  ## enable_write_through_distributed_cache
-</div>
+## enable_write_through_distributed_cache {#enable_write_through_distributed_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />Действует только в ClickHouse Cloud. Разрешает запись в распределённый кэш (запись в S3 также будет выполняться через распределённый кэш). Это переключатель уровня сервера, применяемый без перезапуска, поэтому его также используют фоновые операции без собственного профиля запроса (слияния, мутации, сброс таблицы `Buffer`). Отдельные запросы могут переопределять это поведение с помощью настройки `force_write_through_distributed_cache`.
 

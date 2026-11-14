@@ -18,7 +18,7 @@ namespace
         return radians;
     }
 
-    using FunctionRadians = FunctionMathUnary<UnaryFunctionVectorized<RadiansName, radians>>;
+    using FunctionRadians = FunctionMathUnary<UnaryFunctionVectorized<RadiansName, radians, true>>;
 }
 
 REGISTER_FUNCTION(Radians)

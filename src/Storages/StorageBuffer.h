@@ -208,7 +208,8 @@ private:
     bool checkThresholdsImpl(bool direct, size_t rows, size_t bytes, time_t time_passed) const;
 
     /// `table` argument is passed, as it is sometimes evaluated beforehand. It must match the `destination`.
-    void writeBlockToDestination(const Block & block, StoragePtr table);
+    /// `query_context` is the context of the `INSERT` that writes the block directly, or `nullptr` for a flush.
+    void writeBlockToDestination(const Block & block, StoragePtr table, const Context * query_context = nullptr);
 
     void backgroundFlush();
     void reschedule(size_t min_delay);

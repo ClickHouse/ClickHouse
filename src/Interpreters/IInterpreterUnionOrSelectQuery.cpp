@@ -53,7 +53,7 @@ IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(const ASTPtr & qu
 
 IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(
     const ASTPtr & query_ptr_, const ContextMutablePtr & context_, const SelectQueryOptions & options_)
-    : query_ptr(query_ptr_), context(context_), options(options_), max_streams(getEffectiveMaxThreads(context->getSettingsRef()))
+    : query_ptr(query_ptr_), context(context_), options(options_), max_streams(getEffectiveMaxThreads(*context))
 {
     if (options.shard_num)
         context->addSpecialScalar(
