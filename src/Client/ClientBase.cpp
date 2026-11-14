@@ -5533,7 +5533,8 @@ void ClientBase::runNonInteractive()
                 return;
         }
 
-        return;
+        if (queries.empty())
+            return;
     }
 
     if (buzz_house)

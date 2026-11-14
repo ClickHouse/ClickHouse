@@ -23,11 +23,11 @@ DROP TABLE 01523_test;" > "$TEMP_SQL_FILE_NAME"
 
 echo -e "1,2\n3,4" | $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" 2>&1
 
-# Simultaneously passing --queries-file + --query is prohibited.
+# Simultaneously passing --queries-file + --query executes the file first, then the query.
 echo "SELECT 1;" > "$TEMP_SQL_FILE_NAME"
-$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q "SELECT 1;" 2>&1 | grep -o 'BAD_ARGUMENTS'
-$CLICKHOUSE_CLIENT --queries-file="$TEMP_SQL_FILE_NAME" -q "SELECT 2;" 2>&1 | grep -o 'BAD_ARGUMENTS'
-$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" --query "SELECT 3;" 2>&1 | grep -o 'BAD_ARGUMENTS'
-$CLICKHOUSE_CLIENT --queries-file="$TEMP_SQL_FILE_NAME" --query "SELECT 4;" 2>&1 | grep -o 'BAD_ARGUMENTS'
+$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q "SELECT 1;" 2>&1
+$CLICKHOUSE_CLIENT --queries-file="$TEMP_SQL_FILE_NAME" -q "SELECT 2;" 2>&1
+$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" --query "SELECT 3;" 2>&1
+$CLICKHOUSE_CLIENT --queries-file="$TEMP_SQL_FILE_NAME" --query "SELECT 4;" 2>&1
 
 rm "$TEMP_SQL_FILE_NAME"
