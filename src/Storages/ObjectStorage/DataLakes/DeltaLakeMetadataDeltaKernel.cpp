@@ -3,7 +3,6 @@
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
@@ -19,6 +18,8 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/transformTypesRecursively.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -405,6 +406,24 @@ static DataTypePtr replaceTypeNamesToPhysicalRecursively(
     if (physical_names_map.empty())
         return type;
 
+    /// The fields of a struct inside an array or a map have physical names of their own. The schema visitor
+    /// stores them under the special names the kernel gives to an array element and to a map key and value,
+    /// and, as the element, key and value have no physical names, without a physical parent prefix.
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        return std::make_shared<DataTypeArray>(replaceTypeNamesToPhysicalRecursively(
+            array_type->getNestedType(), DeltaLake::appendToLogicalPath(parent_logical_name, "array_element"), "", physical_names_map));
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        return std::make_shared<DataTypeMap>(
+            replaceTypeNamesToPhysicalRecursively(
+                map_type->getKeyType(), DeltaLake::appendToLogicalPath(parent_logical_name, "map_key"), "", physical_names_map),
+            replaceTypeNamesToPhysicalRecursively(
+                map_type->getValueType(), DeltaLake::appendToLogicalPath(parent_logical_name, "map_value"), "", physical_names_map));
+    }
+
     const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
     if (!tuple_type || !tuple_type->hasExplicitNames())
         return type;
@@ -569,17 +588,38 @@ static String getPhysicalSubcolumnName(const DataTypePtr & type, const DataTypeP
         ErrorCodes::LOGICAL_ERROR, "Cannot find subcolumn {} of type {} in type {}", subcolumn_name, type->getName(), physical_type->getName());
 }
 
+/// A requested subcolumn can come as an ordinary column named by its full name. If the name is not a struct field with
+/// a logical path in `physical_names_map`, e.g. a field of a struct inside an array or a map (`array_of_structs.field`),
+/// returns it as a subcolumn of its table column, so that its physical name is derived from the physical type.
+static NameAndTypePair resolveSubcolumn(
+    const NameAndTypePair & column,
+    const ColumnsDescription & table_columns,
+    const NamesAndTypesList & delta_schema,
+    const NameToNameMap & physical_names_map)
+{
+    if (column.isSubcolumn() || physical_names_map.empty()
+        || physical_names_map.contains(getLogicalPath(column.name, table_columns, delta_schema, physical_names_map)))
+        return column;
+
+    auto found = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name);
+    if (!found || !found->isSubcolumn())
+        return column;
+
+    return NameAndTypePair(found->getNameInStorage(), found->getSubcolumnName(), found->getTypeInStorage(), column.type);
+}
+
 /// Returns physical column and whether it is readable from data file.
 /// We do not change given column actual type,
 /// but can only change names inside the type (in case of Tuple).
 static std::pair<NameAndTypePair, bool> getPhysicalNameAndType(
-    const NameAndTypePair & column,
+    const NameAndTypePair & requested_column,
     const NamesAndTypesList & read_schema,
     const NameToNameMap & physical_names_map,
     const ColumnsDescription & table_columns,
     const NamesAndTypesList & delta_schema,
     LoggerPtr log)
 {
+    const auto column = resolveSubcolumn(requested_column, table_columns, delta_schema, physical_names_map);
     const auto logical_path = getLogicalPath(column.getNameInStorage(), table_columns, delta_schema, physical_names_map);
     auto physical_name_in_storage = DeltaLake::getPhysicalName(logical_path, physical_names_map);
     auto physical_type_in_storage = replaceTypeNamesToPhysicalRecursively(column.getTypeInStorage(), logical_path, physical_name_in_storage, physical_names_map);
@@ -612,6 +652,10 @@ static std::pair<NameAndTypePair, bool> getPhysicalNameAndType(
     {
         result_column = NameAndTypePair(physical_name_in_storage, physical_type_in_storage);
     }
+
+    /// Keep the form of the requested column: a subcolumn requested by its full name is read by its full physical name.
+    if (!requested_column.isSubcolumn() && result_column.isSubcolumn())
+        result_column = NameAndTypePair(result_column.name, result_column.type);
 
     return {result_column, /* readable */read_schema_column.has_value()};
 }
@@ -697,6 +741,8 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             storage_columns,
             delta_schema,
             log);
+        if (result_name_and_type.name != name_and_type.name)
+            info.columns_read_under_other_names.insert(name_and_type.name);
         name_and_type = result_name_and_type;
     }
 
@@ -742,10 +788,19 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             info.format_header.insert(ColumnWithTypeAndName{result_name_and_type.type, result_name_and_type.name});
     }
 
-    for (const auto & name_and_type : info.columns_description)
-        info.columns_description.rename(
-            name_and_type.name,
-            DeltaLake::getPhysicalName(getLogicalPath(name_and_type.name, storage_columns, delta_schema, physical_names_map), physical_names_map));
+    /// Build a new description rather than rename in place: the physical name of a column may be the logical name of
+    /// another column that is not renamed yet (`k` renamed to `k_old` under column mapping keeps the physical name `k`),
+    /// and `ColumnsDescription::rename` to an existing name erases the column, under the iteration over the description.
+    ColumnsDescription physical_columns_description;
+    for (const auto & column : info.columns_description)
+    {
+        ColumnDescription physical_column = column;
+        physical_column.name = getPhysicalNameAndType(
+            NameAndTypePair(column.name, column.type), readable_columns_with_subcolumns, physical_names_map, storage_columns, delta_schema, log)
+            .first.name;
+        physical_columns_description.add(std::move(physical_column));
+    }
+    info.columns_description = std::move(physical_columns_description);
 
     LOG_TEST(log, "Format header: {}", info.format_header.dumpStructure());
     LOG_TEST(log, "Source header: {}", info.source_header.dumpStructure());

@@ -4,6 +4,7 @@
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteHelpers.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Processors/Port.h>
 
 

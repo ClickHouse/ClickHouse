@@ -6,7 +6,6 @@
 #include <WindowFunctions/Common/WindowFunctionRequirements.h>
 
 #include <memory>
-#include <optional>
 
 namespace DB
 {
@@ -26,15 +25,13 @@ public:
     const DataTypePtr & getResultType() const override;
 
     virtual WindowFunctionRequirements getRequirements(const WindowDescription & window) const = 0;
-    virtual std::optional<WindowFrame> getDefaultFrame() const;
-    virtual void checkWindowFrameType(const WindowDescription & window) const;
 
     virtual size_t sizeOfState() const;
     virtual size_t alignOfState() const;
     virtual void createState(char * place) const;
     virtual void destroyState(char * place) const noexcept;
     virtual void resetPartition(char * place) const;
-    virtual void evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const = 0;
+    virtual Int64 evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const = 0;
 
 protected:
     const String name;

@@ -30,7 +30,7 @@ struct LazyObjectStorageFileRegistry
     static constexpr UInt64 MAX_FILES = 1ul << (64 - ROW_INDEX_BITS);
 
     std::mutex mutex;
-    std::vector<ObjectInfoPtr> files;
+    VectorWithMemoryTracking<ObjectInfoPtr> files;
     /// The number of sources of the main branch.
     size_t main_read_streams = 0;
 

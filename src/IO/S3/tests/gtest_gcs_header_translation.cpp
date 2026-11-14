@@ -16,6 +16,9 @@
 
 #include <aws/core/utils/memory/stl/AWSStringStream.h>
 
+#include <Poco/StreamCopier.h>
+
+#include <functional>
 #include <mutex>
 
 namespace
@@ -124,6 +127,17 @@ TEST(GCSHeaderTranslation, RecognisesTheSameNamesComingBack)
 
 /// A mixed-case name would otherwise be classified as an ordinary header by both `x-amz-` checks,
 /// attached to the request after signing, and never reach the rename.
+TEST(GCSHeaderTranslation, CreateIfAbsentBecomesGenerationZero)
+{
+    const auto translated = DB::S3::translateHeadersToGCS({{"if-none-match", "*"}, {"x-amz-acl", "private"}});
+    EXPECT_EQ(headerOrEmpty(translated, "x-goog-if-generation-match"), "0");
+    EXPECT_EQ(headerOrEmpty(translated, "x-goog-acl"), "private");
+    EXPECT_EQ(translated.count("x-amz-acl"), 0u);
+
+    const auto not_a_create = DB::S3::translateHeadersToGCS({{"if-none-match", "\"etag\""}});
+    EXPECT_EQ(not_a_create.count("x-goog-if-generation-match"), 0u);
+}
+
 TEST(GCSHeaderTranslation, NormalizesHeaderNames)
 {
     const DB::NormalizedHTTPHeaderEntries headers(DB::HTTPHeaderEntries{
@@ -240,21 +254,122 @@ private:
     std::unique_ptr<Poco::Net::HTTPServer> server;
 };
 
+struct ScriptedGCSRequest
+{
+    std::string method;
+    Poco::Net::MessageHeader headers;
+};
+
+/// Answers each request with `script`, which gets the request number, method and headers.
+class ScriptedGCSServer
+{
+public:
+    using Script = std::function<void(size_t, const Poco::Net::HTTPServerRequest &, Poco::Net::HTTPServerResponse &)>;
+
+    explicit ScriptedGCSServer(Script script_)
+        : script(std::move(script_))
+        , server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
+        , server(std::make_unique<Poco::Net::HTTPServer>(new Factory(*this), *server_socket, makeMockServerParams()))
+    {
+        server->start();
+    }
+
+    ~ScriptedGCSServer() { server->stop(); }
+
+    UInt16 getPort() const { return server_socket->address().port(); }
+
+    std::vector<ScriptedGCSRequest> getRequests()
+    {
+        std::lock_guard lock(mutex);
+        return requests;
+    }
+
+private:
+    class Handler : public Poco::Net::HTTPRequestHandler
+    {
+    public:
+        explicit Handler(ScriptedGCSServer & server_) : server(server_) {}
+
+        void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
+        {
+            std::string body;
+            Poco::StreamCopier::copyToString(request.stream(), body);
+
+            size_t number = 0;
+            {
+                std::lock_guard lock(server.mutex);
+                number = server.requests.size();
+                server.requests.push_back({request.getMethod(), request});
+            }
+            server.script(number, request, response);
+        }
+
+    private:
+        ScriptedGCSServer & server;
+    };
+
+    class Factory : public Poco::Net::HTTPRequestHandlerFactory
+    {
+    public:
+        explicit Factory(ScriptedGCSServer & server_) : server(server_) {}
+        Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override { return new Handler(server); }
+
+    private:
+        ScriptedGCSServer & server;
+    };
+
+    Script script;
+    std::mutex mutex;
+    std::vector<ScriptedGCSRequest> requests;
+    std::unique_ptr<Poco::Net::ServerSocket> server_socket;
+    std::unique_ptr<Poco::Net::HTTPServer> server;
+};
+
+void respond(Poco::Net::HTTPServerResponse & response, Poco::Net::HTTPResponse::HTTPStatus status, const std::string & body = "")
+{
+    response.setStatus(status);
+    response.setContentLength(body.size());
+    if (!body.empty())
+        response.setContentType("application/xml");
+    response.send() << body;
+}
+
+const std::string PRECONDITION_FAILED_BODY
+    = "<?xml version='1.0' encoding='UTF-8'?><Error><Code>PreconditionFailed</Code><Message>At least one of the pre-conditions you specified did not hold.</Message></Error>";
+
+DB::S3::PutObjectRequest makeCreateIfAbsentRequest(const std::string & idempotency_id)
+{
+    DB::S3::PutObjectRequest request;
+    request.SetBucket("test-bucket");
+    request.SetKey("table(1)/metadata/v2.metadata.json");
+    request.SetMetadata({{"owner", "analytics"}, {DB::S3::IDEMPOTENCY_ID_METADATA_KEY, idempotency_id}});
+    request.setIdempotencyId(idempotency_id);
+    request.SetIfNoneMatch("*");
+    request.SetContentType("binary/octet-stream");
+    request.SetBody(std::make_shared<Aws::StringStream>("content"));
+    return request;
+}
+
 /// The API mode is GCS only when the endpoint is Google's and the credentials are empty, so the
 /// endpoint has to carry the real name. It is never resolved: the request is routed to the mock
 /// through a proxy, and `HTTPConnectionPool` connects to the proxy without consulting the resolver.
 std::unique_ptr<DB::S3::Client> makeClientTalkingToMockGCS(
-    UInt16 mock_port, const DB::RemoteHostFilter & remote_host_filter, DB::NormalizedHTTPHeaderEntries headers = {})
+    UInt16 mock_port,
+    const DB::RemoteHostFilter & remote_host_filter,
+    DB::NormalizedHTTPHeaderEntries headers = {},
+    const std::string & access_key_id = "",
+    const std::string & secret_access_key = "",
+    unsigned int max_retries = 0)
 {
     auto client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
         "us-east-1",
         remote_host_filter,
         /* s3_max_redirects = */ 10,
-        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = max_retries, .initial_delay_ms = 1, .max_delay_ms = 1},
         /* s3_slow_all_threads_after_network_error = */ false,
         /* s3_slow_all_threads_after_retryable_error = */ false,
         /* enable_s3_requests_logging = */ false,
-        /* for_disk_s3 = */ false,
+        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
         /* opt_disk_name = */ {},
         /* request_throttler = */ {},
         "http");
@@ -278,13 +393,13 @@ std::unique_ptr<DB::S3::Client> makeClientTalkingToMockGCS(
     return DB::S3::ClientFactory::instance().create(
         client_configuration,
         client_settings,
-        /* access_key_id = */ "",
-        /* secret_access_key = */ "",
+        access_key_id,
+        secret_access_key,
         /* server_side_encryption_customer_key_base64 = */ "",
         /* sse_kms_config = */ {},
         std::move(headers),
         DB::S3::CredentialsConfiguration{
-            .no_sign_request = true,
+            .no_sign_request = access_key_id.empty(),
             .forbid_implicit_credentials = true,
         });
 }
@@ -369,6 +484,116 @@ TEST(GCSHeaderTranslation, ResponseMetadataReachesTheSDK)
     const auto it = metadata.find("owner");
     ASSERT_NE(it, metadata.end());
     EXPECT_EQ(it->second, "analytics");
+}
+
+/// With OAuth the request is not signed by the SDK, so the GCS spelling of the condition can be added to it.
+TEST(GCSHeaderTranslation, CreateIfAbsentWithoutHMACCarriesGenerationZero)
+{
+    MockGCSServer mock_gcs;
+    DB::RemoteHostFilter remote_host_filter;
+    auto client = makeClientTalkingToMockGCS(mock_gcs.getPort(), remote_host_filter);
+    ASSERT_TRUE(client);
+
+    auto request = makeCreateIfAbsentRequest("id");
+    const auto outcome = client->PutObject(request);
+    ASSERT_TRUE(outcome.IsSuccess()) << outcome.GetError().GetMessage();
+
+    EXPECT_EQ(mock_gcs.getLastRequestHeader().get("x-goog-if-generation-match", ""), "0");
+}
+
+/// With HMAC the create is signed with GOOG4 and carries the condition, the metadata and the configured ACL, all signed.
+TEST(GCSHeaderTranslation, CreateIfAbsentWithHMACIsSignedWithGOOG4)
+{
+    ScriptedGCSServer server([](size_t, const Poco::Net::HTTPServerRequest &, Poco::Net::HTTPServerResponse & response)
+        { respond(response, Poco::Net::HTTPResponse::HTTP_OK); });
+    DB::RemoteHostFilter remote_host_filter;
+    auto client = makeClientTalkingToMockGCS(
+        server.getPort(), remote_host_filter, DB::NormalizedHTTPHeaderEntries(DB::HTTPHeaderEntries{{"x-amz-acl", "private"}}),
+        "GOOG1EXAMPLE", "secret");
+    ASSERT_TRUE(client);
+
+    auto request = makeCreateIfAbsentRequest("id");
+    const auto outcome = client->PutObject(request);
+    ASSERT_TRUE(outcome.IsSuccess()) << outcome.GetError().GetMessage();
+
+    const auto requests = server.getRequests();
+    ASSERT_EQ(requests.size(), 1u);
+    const auto & headers = requests[0].headers;
+    EXPECT_EQ(requests[0].method, "PUT");
+    EXPECT_EQ(headers.get("x-goog-if-generation-match", ""), "0");
+    EXPECT_EQ(headers.get("x-goog-acl", ""), "private");
+    EXPECT_EQ(headers.get("x-goog-meta-owner", ""), "analytics");
+    EXPECT_EQ(headers.get("x-goog-meta-clickhouse-idempotency-id", ""), "id");
+
+    const auto authorization = headers.get("authorization", "");
+    EXPECT_TRUE(authorization.starts_with("GOOG4-HMAC-SHA256 Credential=GOOG1EXAMPLE/")) << authorization;
+    for (const auto * name : {"x-goog-acl", "x-goog-if-generation-match", "x-goog-meta-clickhouse-idempotency-id", "x-goog-meta-owner"})
+        EXPECT_TRUE(authorization.contains(name)) << name << " is not signed: " << authorization;
+
+    for (const auto & [name, _] : headers)
+        EXPECT_FALSE(name.starts_with("x-amz-")) << name;
+}
+
+/// The first attempt lands but its response is lost; the retry fails the condition, and the
+/// idempotency id proves the object is this write's.
+TEST(GCSHeaderTranslation, CreateIfAbsentWithHMACRetriesAndProvesAReplay)
+{
+    std::mutex mutex;
+    std::string stored_id;
+    ScriptedGCSServer server([&](size_t number, const Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+    {
+        if (number == 0)
+        {
+            std::lock_guard lock(mutex);
+            stored_id = request.get("x-goog-meta-clickhouse-idempotency-id", "");
+            respond(response, Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
+        }
+        else if (request.getMethod() == "PUT")
+            respond(response, Poco::Net::HTTPResponse::HTTP_PRECONDITION_FAILED, PRECONDITION_FAILED_BODY);
+        else
+        {
+            std::lock_guard lock(mutex);
+            response.set("x-goog-meta-clickhouse-idempotency-id", stored_id);
+            respond(response, Poco::Net::HTTPResponse::HTTP_OK);
+        }
+    });
+    DB::RemoteHostFilter remote_host_filter;
+    auto client = makeClientTalkingToMockGCS(server.getPort(), remote_host_filter, {}, "GOOG1EXAMPLE", "secret", /* max_retries = */ 2);
+    ASSERT_TRUE(client);
+
+    auto request = makeCreateIfAbsentRequest("this-write");
+    const auto outcome = client->PutObject(request);
+    ASSERT_TRUE(outcome.IsSuccess()) << outcome.GetError().GetMessage();
+
+    const auto requests = server.getRequests();
+    ASSERT_EQ(requests.size(), 3u);
+    EXPECT_EQ(requests[0].method, "PUT");
+    EXPECT_EQ(requests[1].method, "PUT");
+    EXPECT_EQ(requests[2].method, "HEAD");
+}
+
+/// Another writer's object fails the condition and is not mistaken for this write.
+TEST(GCSHeaderTranslation, CreateIfAbsentWithHMACReportsALostRace)
+{
+    ScriptedGCSServer server([](size_t, const Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+    {
+        if (request.getMethod() == "PUT")
+            respond(response, Poco::Net::HTTPResponse::HTTP_PRECONDITION_FAILED, PRECONDITION_FAILED_BODY);
+        else
+        {
+            response.set("x-goog-meta-clickhouse-idempotency-id", "other-write");
+            respond(response, Poco::Net::HTTPResponse::HTTP_OK);
+        }
+    });
+    DB::RemoteHostFilter remote_host_filter;
+    auto client = makeClientTalkingToMockGCS(server.getPort(), remote_host_filter, {}, "GOOG1EXAMPLE", "secret", /* max_retries = */ 2);
+    ASSERT_TRUE(client);
+
+    auto request = makeCreateIfAbsentRequest("this-write");
+    const auto outcome = client->PutObject(request);
+    ASSERT_FALSE(outcome.IsSuccess());
+    EXPECT_EQ(outcome.GetError().GetExceptionName(), "PreconditionFailed");
+    EXPECT_EQ(server.getRequests().size(), 2u);
 }
 
 #endif
