@@ -17,7 +17,7 @@ trap 'rm -f "$DATA_FILE" "$KILL_OUTPUT"' EXIT
 function words_row()
 {
     local row
-    row=$(yes a | head -n "$1" | paste -sd $'\t' -)
+    row=$(seq "$1" | sed 's/.*/a/' | paste -sd $'\t' -)
     for _ in 1 2; do echo "$row"; done > "$DATA_FILE"
 }
 
@@ -56,7 +56,7 @@ echo "A long validation of the candidates stops at the time limit"
 # A short first row keeps the search within the default bound, and long later rows make every candidate's validation
 # expensive. The last checked row fails every candidate, so only the time limit can stop the query early.
 word=$(head -c 16384 /dev/zero | tr '\0' a)
-long_row=$(yes "$word" | head -n 10 | paste -sd $'\t' -)
+long_row=$(for _ in $(seq 1 10); do echo "$word"; done | paste -sd $'\t' -)
 {
     printf 'a\tb\tc\td\te\tf\tg\th\ti\tj\n'
     for _ in $(seq 1 98); do echo "$long_row"; done
