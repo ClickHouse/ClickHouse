@@ -66,12 +66,15 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Columns/IColumn.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/convertColumnToType.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageDictionary.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageLoop.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageView.h>
@@ -507,7 +510,8 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const TableExpressionNodePt
         case QueryTreeNodeType::TABLE_FUNCTION:
         {
             QueryExpressionsAliasVisitor expressions_alias_visitor(scope.aliases);
-            resolveTableFunction(node, scope, expressions_alias_visitor, false /*nested_table_function*/);
+            /// A table function analyzed on its own is the table of remote() or cluster(), or comes from a received query plan.
+            resolveTableFunction(node, scope, expressions_alias_visitor, false /*nested_table_function*/, true /*remote_target*/);
             break;
         }
         default:
@@ -5502,7 +5506,8 @@ static bool findIdentifier(const FunctionNode & function)
 void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     IdentifierResolveScope & scope,
     QueryExpressionsAliasVisitor & expressions_visitor,
-    bool nested_table_function)
+    bool nested_table_function,
+    bool remote_target)
 {
     auto & table_function_node_typed = table_function_node->as<TableFunctionNode &>();
 
@@ -5717,10 +5722,9 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 table_function_node_to_resolve_typed->getArgumentsNode() = table_function_argument_function->getArgumentsNode();
 
                 QueryTreeNodePtr table_function_node_to_resolve = std::move(table_function_node_to_resolve_typed);
-                if (table_function_argument_function_name == "view"
-                    || (table_function_argument_function_name == "merge"
-                        && (table_function_name == "remote" || table_function_name == "remoteSecure"
-                            || table_function_name == "cluster" || table_function_name == "clusterAllReplicas")))
+                const bool parent_is_remote = table_function_name == "remote" || table_function_name == "remoteSecure"
+                    || table_function_name == "cluster" || table_function_name == "clusterAllReplicas";
+                if (table_function_argument_function_name == "view" || (table_function_argument_function_name == "merge" && parent_is_remote))
                 {
                     /// The `view` table function contains a subquery that may reference tables
                     /// not available on the initiator.
@@ -5732,7 +5736,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 }
                 else
                 {
-                    resolveTableFunction(table_function_node_to_resolve, scope, expressions_visitor, true /*nested_table_function*/);
+                    resolveTableFunction(table_function_node_to_resolve, scope, expressions_visitor, true /*nested_table_function*/, remote_target || parent_is_remote);
                 }
 
                 result_table_function_arguments.push_back(std::move(table_function_node_to_resolve));
@@ -5983,6 +5987,13 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         execution_context = overridden_context;
     }
     auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr, execution_context);
+    /// The table of remote() or cluster() is read, and its structure described, by the remote server in its own database.
+    /// A query printed from a resolved query tree (e.g. a shard's plan built on the initiator) already went through the binders below.
+    if (remote_target || positional_arguments_already_resolved)
+    {
+        table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context, std::move(skip_analysis_arguments_indexes));
+        return;
+    }
 
     /// The one-argument `merge` reads the current database, which the servers this query is sent to do not share.
     /// A secondary query is left as sent: its `IN` set names are hashed from the query tree and must match the sender's.
@@ -5992,6 +6003,35 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     {
         auto & argument_nodes = table_function_node_typed.getArguments().getNodes();
         argument_nodes.insert(argument_nodes.begin(), std::make_shared<ConstantNode>(merge_storage->getSourceDatabaseNameOrRegexp()));
+    }
+
+    /// `loop` and `dictionary` with a name without a database read the current database as well.
+    if (scope_context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        auto & argument_nodes = table_function_node_typed.getArguments().getNodes();
+        if (typeid_cast<const StorageLoop *>(table_function_storage.get()))
+        {
+            const auto * table_identifier = argument_nodes.size() == 1 ? argument_nodes[0]->as<IdentifierNode>() : nullptr;
+            const auto * database_node = argument_nodes.size() == 2 ? argument_nodes[0]->as<ConstantNode>() : nullptr;
+            if (table_identifier && !table_identifier->getIdentifier().getFullName().contains('.'))
+            {
+                QueryTreeNodePtr table_name_node = std::make_shared<ConstantNode>(table_identifier->getIdentifier().getFullName());
+                argument_nodes = {std::make_shared<ConstantNode>(scope_context->getCurrentDatabase()), std::move(table_name_node)};
+            }
+            else if (database_node && database_node->getValue().getType() == Field::Types::String
+                     && database_node->getValue().safeGet<String>().empty())
+                argument_nodes[0] = std::make_shared<ConstantNode>(scope_context->getCurrentDatabase());
+        }
+        else if (const auto * dictionary_storage = typeid_cast<const StorageDictionary *>(table_function_storage.get());
+                 dictionary_storage && argument_nodes.size() == 1)
+        {
+            const auto dictionary_name = dictionary_storage->getDictionaryName();
+            const auto qualified_name = scope_context->getExternalDictionariesLoader()
+                .qualifyDictionaryNameWithDatabase(dictionary_name, scope_context);
+            /// A dictionary name cannot carry a database name that contains a dot.
+            if (!qualified_name.database.contains('.') && qualified_name.getFullName() != dictionary_name)
+                argument_nodes[0] = std::make_shared<ConstantNode>(qualified_name.getFullName());
+        }
     }
 
     table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context, std::move(skip_analysis_arguments_indexes));
@@ -7106,7 +7146,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         }
         case QueryTreeNodeType::TABLE_FUNCTION:
         {
-            resolveTableFunction(join_tree_node, scope, expressions_visitor, false /*nested_table_function*/);
+            resolveTableFunction(join_tree_node, scope, expressions_visitor, false /*nested_table_function*/, false /*remote_target*/);
             break;
         }
         case QueryTreeNodeType::TABLE:
