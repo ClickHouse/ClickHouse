@@ -218,6 +218,8 @@ std::map<String, Documentation> ParserShowTablesQuery::getDocumentation() const
     documentation["SHOW"] =
     {
         .description = R"DOCS_MD(
+import { CloudOnlyBadge } from "/snippets/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+
 <Note>
 
 `SHOW CREATE (TABLE|DATABASE|USER)` hides secrets unless the following settings are turned on:
@@ -678,7 +680,7 @@ To view user accounts parameters, see system table [`system.row_policies`](/refe
 ### Syntax {#syntax-16}
 
 ```sql title="Syntax"
-SHOW [ROW] POLICIES [ON [db.]table]
+SHOW [ROW] POLICIES [name | ON [db.]table]
 ```
 
 ## SHOW QUOTAS {#show-quotas}
@@ -858,6 +860,7 @@ SHOW FILESYSTEM CACHES
 ### See also {#see-also-5}
 
 - [`system.settings`](/reference/system-tables/settings) table
+- [DESCRIBE FILESYSTEM CACHE](/reference/statements/describe-filesystem-cache)
 
 ## SHOW ENGINES {#show-engines}
 
@@ -943,6 +946,36 @@ The `SHOW CREATE MASKING POLICY` statement shows parameters which were used at [
 ```sql title="Syntax"
 SHOW CREATE MASKING POLICY name ON [database.]table
 ```
+
+## SHOW MASKING POLICIES {#show-masking-policies}
+
+Introduced in: v25.12.0
+
+<CloudOnlyBadge/>
+
+The `SHOW MASKING POLICIES` statement returns a list of [masking policies](/reference/statements/create/masking-policy) for the specified table.
+To view masking policy parameters, see the system table [`system.masking_policies`](/reference/system-tables/masking_policies).
+Masking policies can be created only in ClickHouse Cloud, so in open-source ClickHouse the list is empty.
+
+### Syntax {#syntax-27}
+
+```sql title="Syntax"
+SHOW MASKING POLICIES [name | ON [db.]table]
+```
+
+With a `name`, the statement lists the policies with that name on all tables. With `ON`, it lists the short names of the policies of that table.
+
+## SHOW PRIVILEGES {#show-privileges}
+
+Introduced in: v20.6.0
+
+The `SHOW PRIVILEGES` statement returns the privileges that can be granted with [`GRANT`](/reference/statements/grant), in the same form as the system table [`system.privileges`](/reference/system-tables/privileges).
+
+### Syntax {#syntax-28}
+
+```sql title="Syntax"
+SHOW PRIVILEGES
+```
 )DOCS_MD",
         .syntax = R"(
 SHOW [CREATE] TABLE | DICTIONARY | VIEW | DATABASE [db.]name [INTO OUTFILE filename] [FORMAT format]
@@ -955,6 +988,8 @@ SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 SHOW GRANTS [FOR user1 [, user2 ...]] [WITH IMPLICIT] [FINAL]
 SHOW [CREATE] USER | ROLE | ROW POLICY | MASKING POLICY | QUOTA | [SETTINGS] PROFILE ...
 SHOW USERS | ROLES | PROFILES | POLICIES | QUOTAS | QUOTA | ACCESS
+SHOW MASKING POLICIES [name | ON [db.]table]
+SHOW PRIVILEGES
 SHOW [SETTINGS] PROFILES
 SHOW CLUSTER '<name>' | CLUSTERS [[NOT] LIKE|ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 SHOW [CHANGED] SETTINGS LIKE | ILIKE '<name>'

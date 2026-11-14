@@ -66,6 +66,45 @@ And that's it! You now have a PostgreSQL client connected to ClickHouse, and all
 The PostgreSQL protocol currently only supports plain-text passwords.
 </Note>
 
+## COPY {#copy}
+
+Introduced in: v25.8.0
+
+Over the PostgreSQL protocol, ClickHouse runs the PostgreSQL `COPY` statement, which transfers rows between a table and the client. Other interfaces do not support `COPY` and return `UNKNOWN_TYPE_OF_QUERY`.
+
+```sql
+COPY table_name [(column [, ...])] TO STDOUT [[WITH] (option [, ...])]
+COPY (query) TO STDOUT [[WITH] (option [, ...])]
+COPY table_name [(column [, ...])] FROM STDIN [[WITH] (option [, ...])]
+```
+
+- `COPY ... TO STDOUT` sends the rows of a table, or the result of a query, to the client. `COPY ... FROM STDIN` inserts the rows that the client sends. The rows are inserted only after the client has sent all of them and they have all been parsed, so a copy that the client aborts, or whose data cannot be parsed, inserts no rows.
+- The data is in the PostgreSQL text format (tab-separated, the default) or in CSV (`FORMAT csv`). `HEADER` adds a first line with the column names, or skips it when reading. The binary format is not supported.
+- `DELIMITER` and `QUOTE` are accepted only with their default values for the format (`QUOTE` only with CSV), and `NULL` only as `'\N'` or, with CSV, as the empty string, which is the CSV default. Other options, such as `ENCODING` or `FORCE_QUOTE`, are not supported. Copying to or from a file or a program on the server is not supported.
+
+For example, with `psql`:
+
+```bash
+psql -p 9005 -h 127.0.0.1 -U alice default -c "COPY (SELECT number, number * 2 AS doubled FROM numbers(3)) TO STDOUT WITH (FORMAT csv, HEADER)"
+```
+
+```response
+"number","doubled"
+0,0
+1,2
+2,4
+```
+
+The `\copy` command of `psql` uses `COPY ... FROM STDIN` to load a local file:
+
+```bash
+psql -p 9005 -h 127.0.0.1 -U alice default -c "\copy events FROM 'events.csv' WITH (FORMAT csv)"
+```
+
+```response
+COPY 3
+```
+
 ## Using SSL {#using-ssl}
 
 If you have SSL/TLS configured on your ClickHouse instance, then `postgresql_port` will use the same settings (the port is shared for both secure and insecure clients).
