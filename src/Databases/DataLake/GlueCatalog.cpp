@@ -54,8 +54,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Common/FailPoint.h>
 #include <Common/UTF8Helpers.h>
-
-#include <algorithm>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
@@ -63,6 +61,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
+
+#include <algorithm>
 
 namespace DB::ErrorCodes
 {
@@ -763,14 +763,17 @@ bool isValidGlueColumnText(const String & text, size_t max_length)
     return length <= max_length;
 }
 
-/// Whether Glue accepts these columns. Comments are already made acceptable by `glueColumnComment`.
+/// Whether Glue accepts these columns: a name of 1 to 255 characters and a type of up to 131072 characters.
+/// Comments are already made acceptable by `glueColumnComment`.
 bool canRegisterGlueColumns(const Aws::Vector<Aws::Glue::Model::Column> & columns)
 {
     static constexpr size_t max_name_length = 255;
     static constexpr size_t max_type_length = 131072;
     return std::ranges::all_of(columns, [](const auto & column)
     {
-        return isValidGlueColumnText(column.GetName(), max_name_length) && isValidGlueColumnText(column.GetType(), max_type_length);
+        return !column.GetName().empty()
+            && isValidGlueColumnText(column.GetName(), max_name_length)
+            && isValidGlueColumnText(column.GetType(), max_type_length);
     });
 }
 

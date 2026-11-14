@@ -2905,7 +2905,7 @@ def test_glue_commit_with_unknown_outcome(started_cluster, mode):
 
 @pytest.mark.parametrize("operation", ["delete", "optimize_manifest"])
 def test_glue_unknown_commit_keeps_files_of_mutation_and_compaction(started_cluster, operation):
-    # Like `superseded_unknown` of test_glue_update_conditional_on_version_id, for the other writers that clean up
+    # Like `superseded_unknown` of `test_glue_commit_with_unknown_outcome`, for the other writers that clean up
     # after a failed commit: a mutation and a manifest compaction.
     node = started_cluster.instances["node1"]
     test_ref = uuid.uuid4().hex[:12]

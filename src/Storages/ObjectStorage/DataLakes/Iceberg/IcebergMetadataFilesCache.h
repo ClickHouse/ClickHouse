@@ -41,7 +41,8 @@ struct MetadataFileWithInfo
     Int32 version{};
     String path;
     CompressionMethod compression_method{};
-    /// The catalog pointer `path` was resolved from, exactly as the catalog returned it. Empty without a catalog.
+    /// The catalog pointer `path` was resolved from, exactly as the catalog returned it. Empty without a catalog,
+    /// and when the catalog has no pointer and `path` is the latest metadata file under the table location.
     String catalog_metadata_location{};
 };
 }

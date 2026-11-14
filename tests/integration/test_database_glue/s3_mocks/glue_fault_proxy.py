@@ -115,15 +115,16 @@ def take_update_fault(database):
     return None
 
 
-def is_valid_column_text(text, max_length):
-    return len(text.encode("utf-16-le")) // 2 <= max_length and GLUE_COLUMN_TEXT.fullmatch(text) is not None
+def is_valid_column_text(text, min_length, max_length):
+    length = len(text.encode("utf-16-le")) // 2
+    return min_length <= length <= max_length and GLUE_COLUMN_TEXT.fullmatch(text) is not None
 
 
 def has_invalid_column(table_input):
     return any(
-        not is_valid_column_text(column.get(key, ""), max_length)
+        not is_valid_column_text(column.get(key, ""), min_length, max_length)
         for column in table_input.get("StorageDescriptor", {}).get("Columns", [])
-        for key, max_length in (("Name", 255), ("Comment", 255), ("Type", 131072))
+        for key, min_length, max_length in (("Name", 1, 255), ("Comment", 0, 255), ("Type", 0, 131072))
     )
 
 
