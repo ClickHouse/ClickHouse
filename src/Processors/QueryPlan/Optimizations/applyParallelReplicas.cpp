@@ -41,6 +41,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/StorageFromMergeTreeProjection.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageMerge.h>
 #include <Common/logger_useful.h>
@@ -120,6 +121,13 @@ bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
     /// is planted above it, and a join whose broadcast side reads it is not lifted into one - while the other
     /// subtrees of the query can still be distributed.
     if (mergetree_data.getStorageID().database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+        return false;
+
+    /// A read through `mergeTreeProjection` reads the parts of a projection, but it is serialized as a read of the
+    /// parent table, so a replica would read the parent's own parts instead: a wrong result, or `NOT_FOUND_COLUMN_IN_BLOCK`
+    /// for a column only the projection has. Query-based parallel replicas does not distribute such a read either.
+    /// A projection the optimizer picks for a read of the table keeps the table's storage, so it is not affected.
+    if (typeid_cast<const StorageFromMergeTreeProjection *>(&read.getStorageSnapshot()->storage))
         return false;
 
     /// Top-K filtering puts an internal `__topKFilter` function into the read's PREWHERE and shares a runtime
