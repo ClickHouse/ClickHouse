@@ -45,7 +45,9 @@ struct ExpressionProperties
     StreamLayout stream_layout = StreamLayout::Unknown;
     DistributionColumns stream_disjoint_columns;    /// Nonempty exactly for `Disjoint`; set via `setDisjointStreams`
     /// The sorting is required by a window (`SortingStep::isWindowSorting`). The enforced `SortingStep` carries it, so that
-    /// reading in order applies the restrictions of a window sorting to it.
+    /// reading in order applies the restrictions of a window sorting to it. Every rule that passes a required sorting on
+    /// to an input passes this mark with it, and the expressions that deliver such a sorting keep it in their properties.
+    /// It does not take part in `isSatisfiedBy`.
     bool sorting_for_window = false;
 
     /// Marks the streams disjoint on the columns (must be nonempty sets). Orders the column

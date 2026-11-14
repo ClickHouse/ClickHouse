@@ -103,6 +103,9 @@ std::vector<GroupExpressionPtr> SortingEnforcer::applyImpl(GroupExpressionPtr ex
     /// partition columns.
     ExpressionProperties output_properties = expression->properties;
     output_properties.sorting = sort_desc;
+    /// A sort built for a window differs from a plain sort by the same columns: it must not be dropped as a structural
+    /// duplicate of the plain one, and a sorted gather above it must require the window sort again.
+    output_properties.sorting_for_window = required_properties.sorting_for_window;
     if (partition_by.empty())
     {
         output_properties.stream_layout = StreamLayout::Single;

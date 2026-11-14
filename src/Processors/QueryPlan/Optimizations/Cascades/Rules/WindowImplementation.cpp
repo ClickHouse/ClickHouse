@@ -76,12 +76,16 @@ static DistributionColumns partitionKeyColumns(const WindowStep & window_step)
 /// stream (or one stream in total if the partition keys cannot be hashed). The planner can
 /// omit the sort before a window, so this cannot be taken from that sort. A window without
 /// `ORDER BY` and `PARTITION BY` needs nothing: `WindowStep` merges the streams itself.
+/// The sorting is marked as required by a window, so that the sort built for it is read in order with the restrictions of
+/// a window sorting (`SortingStep::isWindowSorting`). This requirement replaces the one taken from the planner's sort,
+/// so the mark has to be set here, also for a window whose keys cannot be hashed and that demands a single stream.
 static ExpressionProperties windowInputRequirement(const WindowStep & window_step, const DistributionColumns & partition_columns)
 {
     ExpressionProperties required;
     required.sorting = window_step.getWindowDescription().full_sort_description;
     if (required.sorting.empty())
         return required;
+    required.sorting_for_window = true;
     if (partition_columns.empty())
         required.stream_layout = StreamLayout::Single;
     else
