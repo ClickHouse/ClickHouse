@@ -14,6 +14,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int DECIMAL_OVERFLOW;
     extern const int ARGUMENT_OUT_OF_BOUND;
@@ -47,7 +48,7 @@ namespace
     }
 
 
-class FunctionFuzzBits final : public IFunction
+class FunctionFuzzBits : public IFunction
 {
 public:
     static constexpr auto name = "fuzzBits";
@@ -62,13 +63,19 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    /// `useDefaultImplementationForConstants` is deliberately not enabled: it would execute the
-    /// function on a single row and stamp that one fuzzed value onto every row of the result.
+    bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; } // indexing from 0
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(T : StringOrFixedString, const Float) -> T";
+        if (!isStringOrFixedString(arguments[0].type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must be String or FixedString",
+                getName());
+
+        if (!arguments[1].column || !isFloat(arguments[1].type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument of function {} must be constant float", getName());
+
+        return arguments[0].type;
     }
 
     bool isDeterministic() const override { return false; }
@@ -78,9 +85,8 @@ public:
     {
         auto col_in_untyped = arguments[0].column;
 
-        /// Not a constant even for 0 rows: the header must not claim that every row holds the unfuzzed value.
         if (input_rows_count == 0)
-            return col_in_untyped->convertToFullColumnIfConst();
+            return col_in_untyped;
 
         const double inverse_probability = assert_cast<const ColumnConst &>(*arguments[1].column).getValue<double>();
 
@@ -89,8 +95,10 @@ public:
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Second argument of function {} must be from `0.0` to `1.0`", getName());
         }
 
-        /// Expanded, not unwrapped to its single row: each row is fuzzed independently.
-        col_in_untyped = col_in_untyped->convertToFullColumnIfConst();
+        if (const ColumnConst * col_in_untyped_const = checkAndGetColumnConstStringOrFixedString(col_in_untyped.get()))
+        {
+            col_in_untyped = col_in_untyped_const->getDataColumnPtr();
+        }
 
         if (const ColumnString * col_in = checkAndGetColumn<ColumnString>(col_in_untyped.get()))
         {
@@ -113,7 +121,7 @@ public:
             auto col_to = ColumnFixedString::create(n);
             ColumnFixedString::Chars & chars_to = col_to->getChars();
 
-            size_t total_size = 0;
+            size_t total_size;
             if (common::mulOverflow(input_rows_count, n, total_size))
                 throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
 

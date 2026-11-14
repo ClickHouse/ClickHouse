@@ -39,6 +39,8 @@ namespace DB
          * */
         struct provider_token {};
 
+        static constexpr auto C_ARES_POLL_EVENTS = POLLRDNORM | POLLIN;
+
     public:
         explicit CaresPTRResolver(provider_token);
 
@@ -66,6 +68,8 @@ namespace DB
         int64_t calculate_timeout(ares_channel channel);
 
         void process_possible_timeout(ares_channel channel);
+
+        void process_readable_sockets(std::span<pollfd> readable_sockets, ares_channel channel);
     };
 }
 

@@ -175,7 +175,7 @@ macro(enable_heavy_build_check_if_needed)
         set(HEAVY_BUILD_CHECK_LAUNCHER "${CMAKE_SOURCE_DIR}/cmake/heavy_build_check_scripts/prlimit_generic.sh")
 
         # Sanitizers are too heavy. Some architectures too.
-        if (SANITIZE OR WITH_COVERAGE OR ARCH_RISCV64 OR ARCH_LOONGARCH64)
+        if (SANITIZE OR SANITIZE_COVERAGE OR WITH_COVERAGE OR ARCH_RISCV64 OR ARCH_LOONGARCH64)
             set(HEAVY_BUILD_CHECK_LAUNCHER "${CMAKE_SOURCE_DIR}/cmake/heavy_build_check_scripts/prlimit_sanitizers.sh")
         endif()
 
@@ -185,10 +185,3 @@ macro(enable_heavy_build_check_if_needed)
         set(USING_HEAVY_BUILD_CHECK_LAUNCHER 1)
     endif()
 endmacro()
-
-# Like file(WRITE), but leaves the file untouched when it already has this content, so its dependents are not rebuilt.
-function(write_file_if_changed path content)
-    file(WRITE "${path}.tmp" "${content}")
-    file(COPY_FILE "${path}.tmp" "${path}" ONLY_IF_DIFFERENT)
-    file(REMOVE "${path}.tmp")
-endfunction()

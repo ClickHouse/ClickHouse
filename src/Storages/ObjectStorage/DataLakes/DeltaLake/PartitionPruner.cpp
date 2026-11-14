@@ -46,8 +46,7 @@ namespace
 
     DB::ColumnsDescription getPartitionColumnsDescription(
         const DB::Names & partition_columns,
-        const DB::NamesAndTypesList & table_schema,
-        bool keep_nullable)
+        const DB::NamesAndTypesList & table_schema)
     {
         DB::NamesAndTypesList names_and_types;
         for (const auto & column_name : partition_columns)
@@ -55,7 +54,7 @@ namespace
             auto column = table_schema.tryGetByName(column_name);
             if (!column.has_value())
                 throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Not found partition column in schema: {}", column_name);
-            names_and_types.emplace_back(column_name, keep_nullable ? column->type : removeNullable(column->type));
+            names_and_types.emplace_back(column_name, removeNullable(column->type));
         }
         return DB::ColumnsDescription(names_and_types);
     }
@@ -71,31 +70,22 @@ PartitionPruner::PartitionPruner(
 {
     if (!partition_columns_.empty())
     {
-        const auto partition_columns_description
-            = getPartitionColumnsDescription(partition_columns_, table_schema_, /* keep_nullable */ false);
+        const auto partition_columns_description = getPartitionColumnsDescription(partition_columns_, table_schema_);
         const auto partition_key_ast = createPartitionKeyAST(partition_columns_);
 
         partition_key = DB::KeyDescription::getKeyFromAST(
             partition_key_ast,
             partition_columns_description,
-            {},
-            context);
-        nullable_partition_key = DB::KeyDescription::getKeyFromAST(
-            partition_key_ast,
-            getPartitionColumnsDescription(partition_columns_, table_schema_, /* keep_nullable */ true),
-            {},
             context);
 
-        DB::ActionsDAGWithInversionPushDown inverted_dag(filter_dag.getOutputs().front(), context, /* boolean_context */ true);
+        DB::ActionsDAGWithInversionPushDown inverted_dag(filter_dag.getOutputs().front(), context);
         key_condition.emplace(
             inverted_dag, context, partition_key.column_names, partition_key.expression, true /* single_point */);
-        nullable_key_condition.emplace(
-            inverted_dag, context, nullable_partition_key.column_names, nullable_partition_key.expression, true /* single_point */);
     }
     if (!physical_names_map_.empty())
     {
         for (auto & name : physical_partition_columns)
-            name = getPhysicalName(appendToLogicalPath({}, name), physical_names_map_);
+            name = getPhysicalName(name, physical_names_map_);
     }
 }
 
@@ -119,28 +109,20 @@ bool PartitionPruner::canBePruned(const DB::ObjectInfo & object_info) const
     DB::Row partition_key_values;
     partition_key_values.reserve(partition_values.size());
 
-    bool holds_null = false;
     for (auto && value : partition_values)
     {
         if (value.isNull())
-        {
-            holds_null = true;
             partition_key_values.push_back(DB::POSITIVE_INFINITY); /// NULL_LAST
-        }
         else
             partition_key_values.push_back(std::move(value));
     }
 
-    /// The key without Nullable drops the NULL elements of a set, so it is exact only for a tuple without NULL.
-    const auto & key = holds_null ? nullable_partition_key : partition_key;
-    const auto & condition = holds_null ? *nullable_key_condition : *key_condition;
-
     std::vector<DB::FieldRef> partition_key_values_ref(partition_key_values.begin(), partition_key_values.end());
-    bool can_be_true = condition.mayBeTrueInRange(
+    bool can_be_true = key_condition->mayBeTrueInRange(
         partition_key_values_ref.size(),
         partition_key_values_ref.data(),
         partition_key_values_ref.data(),
-        key.data_types);
+        partition_key.data_types);
 
     return !can_be_true;
 }

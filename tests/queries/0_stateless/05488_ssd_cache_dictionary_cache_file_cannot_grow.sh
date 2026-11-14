@@ -49,7 +49,7 @@ SELECT 'alive';
     ulimit -c 0
     trap '' XFSZ
     ulimit -f 100
-    $CLICKHOUSE_LOCAL --ignore-error --query "$query" 2>"$dir/stderr"
+    $CLICKHOUSE_LOCAL --ignore-error --send_logs_level=error --query "$query" 2>"$dir/stderr"
 )
 
 # Each of the four failed updates reports the failed allocation, and none of them was refused by the backoff.

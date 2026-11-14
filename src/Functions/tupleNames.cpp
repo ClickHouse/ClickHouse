@@ -20,7 +20,7 @@ namespace
 
 /** Transform a named tuple into names, which is a constant array of strings.
   */
-class ExecutableFunctionTupleNames final : public IExecutableFunction
+class ExecutableFunctionTupleNames : public IExecutableFunction
 {
 public:
     static constexpr auto name = "tupleNames";
@@ -40,7 +40,7 @@ private:
     Array name_fields;
 };
 
-class FunctionBaseTupleNames final : public IFunctionBase
+class FunctionBaseTupleNames : public IFunctionBase
 {
 public:
     static constexpr auto name = "tupleNames";
@@ -71,7 +71,7 @@ private:
     Array name_fields;
 };
 
-class TupleNamesOverloadResolver final : public IFunctionOverloadResolver
+class TupleNamesOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "tupleNames";
@@ -84,9 +84,14 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(MaybeNullable(Tuple)) -> Array(String)";
+        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(removeNullable(arguments[0].type).get());
+
+        if (!tuple)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a Tuple or Nullable(Tuple)", getName());
+
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
@@ -114,7 +119,7 @@ REGISTER_FUNCTION(TupleNames)
 Converts a tuple into an array of column names. For a tuple in the form `Tuple(a T, b T, ...)`, it returns an array of strings representing the named columns of the tuple. If the tuple elements do not have explicit names, their indices will be used as the column names instead.
 )",
         .syntax = "tupleNames(tuple)",
-        .examples{{"typical", "SELECT tupleNames(tuple(1 as a, 2 as b))", "['1','2']"}},
+        .examples{{"typical", "SELECT tupleNames(tuple(1 as a, 2 as b))", "['a','b']"}},
         .introduced_in = {24, 8},
         .category = FunctionDocumentation::Category::Tuple});
 }

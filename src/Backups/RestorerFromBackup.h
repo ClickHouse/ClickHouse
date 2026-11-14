@@ -9,7 +9,6 @@
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 
 #include <filesystem>
-#include <unordered_set>
 
 
 namespace DB
@@ -32,6 +31,7 @@ public:
         std::shared_ptr<IRestoreCoordination> restore_coordination_,
         const BackupPtr & backup_,
         const ContextMutablePtr & context_,
+        const ContextPtr & query_context_,
         ThreadPool & thread_pool_,
         const std::function<void()> & after_task_callback_);
 
@@ -62,6 +62,7 @@ public:
     /// Adds a data restore task which will be later returned by getDataRestoreTasks().
     /// This function can be called by implementations of IStorage::restoreFromBackup() in inherited storage classes.
     void addDataRestoreTask(DataRestoreTask && new_task);
+    void addDataRestoreTasks(DataRestoreTasks && new_tasks);
 
     /// Returns the list of access entities to restore.
     AccessEntitiesToRestore getAccessEntitiesToRestore(const String & data_path_in_backup) const;
@@ -79,33 +80,12 @@ private:
     Mode mode = Mode::RESTORE;
     Strings all_hosts;
 
-    /// Whether named collections are restored into this host's storage - by this host or, with a
-    /// shared (replicated) storage, possibly by another host, in which case this host reloads them
-    /// after the stage barrier that follows restoreNamedCollections.
-    bool named_collections_restored = false;
-
     void findDatabasesAndTablesInBackup();
 
     void logNumberOfDatabasesAndTablesToRestore() const;
 
     void loadSystemAccessTables();
     void checkAccessForObjectsFoundInBackup() const;
-
-    /// Returns the data path of the "system.named_collections" table in the backup, or an empty
-    /// string when this host's part of the backup holds no named collections.
-    String findNamedCollectionsDataPathInBackup() const;
-
-    /// Registers with the restore coordination the directory this host would restore the named
-    /// collections from, so that with a shared (replicated) named-collections storage the one host
-    /// restoring it can process the directories of every host sharing it. Runs in the
-    /// FINDING_TABLES_IN_BACKUP stage: the stage barrier before CHECKING_ACCESS_RIGHTS separates
-    /// every registration from the restore.
-    void registerNamedCollectionsForRestore();
-
-    /// Restores named collections from the backup (if the backup has the "system.named_collections"
-    /// table) before any database or table is created, because database and table engines resolve
-    /// named collections inside CREATE. Runs at the end of the CHECKING_ACCESS_RIGHTS stage.
-    void restoreNamedCollections();
 
     void createAndCheckDatabases();
     void createAndCheckDatabase(const String & database_name);
@@ -128,10 +108,6 @@ private:
     void insertDataToTable(const QualifiedTableName & table_name);
     void insertDataToTableImpl(const QualifiedTableName & table_name, StoragePtr storage, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
 
-    /// The data of a table on a storage policy marked `backup_metadata_only` is not restored, see `BackupUtils`.
-    void skipTableDataOnBackupMetadataOnlyStoragePolicy(
-        const QualifiedTableName & table_name, const StoragePtr & storage, const std::optional<ASTs> & partitions, const ASTPtr & create_table_query_from_backup) const;
-
     void runDataRestoreTasks();
 
     void finalizeTables();
@@ -145,10 +121,6 @@ private:
 
     std::vector<DataRestoreTask> data_restore_tasks TSA_GUARDED_BY(mutex);
     std::unique_ptr<AccessRestorerFromBackup> access_restorer TSA_GUARDED_BY(mutex);
-
-    /// Databases skipped during restore because they use external engines
-    /// and restore_replace_external_engines_to_null is set.
-    std::unordered_set<String> skipped_databases TSA_GUARDED_BY(mutex);
 };
 
 }

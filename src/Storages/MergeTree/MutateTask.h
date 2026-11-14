@@ -37,21 +37,24 @@ public:
         const MergeTreeTransactionPtr & txn,
         MergeTreeData & data_,
         MergeTreeDataMergerMutator & mutator_,
-        PartitionActionBlocker & merges_blocker_);
+        PartitionActionBlocker & merges_blocker_,
+        bool need_prefix_);
 
     bool execute();
     void cancel() noexcept;
 
     void updateProfileEvents() const;
 
-    MergeTreeData::MutableDataPartPtr takeResultPart() { return std::exchange(result_part, nullptr); }
+    std::future<MergeTreeData::MutableDataPartPtr> getFuture()
+    {
+        return promise.get_future();
+    }
 
     const HardlinkedFiles & getHardlinkedFiles() const;
 
 private:
 
     bool prepare();
-    void setResultPart(MergeTreeData::MutableDataPartPtr part);
 
     enum class State : uint8_t
     {
@@ -61,8 +64,7 @@ private:
 
     State state{State::NEED_PREPARE};
 
-    /// The finished part until the owner takes it. `cancel` rolls back a part that is still here.
-    MergeTreeData::MutableDataPartPtr result_part;
+    std::promise<MergeTreeData::MutableDataPartPtr> promise;
 
     std::shared_ptr<MutationContext> ctx;
     ExecutableTaskPtr task;
@@ -71,16 +73,8 @@ private:
 
 [[ maybe_unused]] static MergeTreeData::MutableDataPartPtr executeHere(MutateTaskPtr task)
 {
-    try
-    {
-        while (task->execute()) {}
-    }
-    catch (...)
-    {
-        task->cancel();
-        throw;
-    }
-    return task->takeResultPart();
+    while (task->execute()) {}
+    return task->getFuture().get();
 }
 
 }

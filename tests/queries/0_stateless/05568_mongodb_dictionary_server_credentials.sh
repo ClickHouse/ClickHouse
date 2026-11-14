@@ -3,8 +3,8 @@
 # no-fasttest: the MongoDB dictionary source needs USE_MONGODB
 
 # A MongoDB dictionary created with a DDL query may never make the server authenticate with credentials of the server
-# process, whatever `s3_allow_server_credentials_in_user_queries` is: the source is built when the server loads the
-# dictionary, also after the named collection it refers to has changed. The dictionaries are loaded by `dictGet`.
+# process: the source is built when the server loads the dictionary, also after the named collection it refers to
+# has changed. The dictionaries are loaded by `dictGet`.
 # Nothing listens on 127.0.0.1:1, so a dictionary that is not refused fails to connect.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -31,10 +31,10 @@ classify()
     fi
 }
 
-# Runs the queries $1 in a session where the setting is enabled.
+# Runs the queries $1.
 check()
 {
-    $CLICKHOUSE_CLIENT --s3_allow_server_credentials_in_user_queries 1 -m -q "$1" 2>&1 | classify
+    $CLICKHOUSE_CLIENT -m -q "$1" 2>&1 | classify
 }
 
 # Creates the dictionary $1 with the source $2 and prints whether reading it is refused.
@@ -59,7 +59,7 @@ cleanup()
 trap cleanup EXIT
 cleanup
 
-echo 'Refused even in a session where the setting is enabled'
+echo 'Refused'
 check_source d_uri "URI '${OIDC_URI}'"
 check_source d_options "HOST '127.0.0.1' PORT 1 DB 'db' USER '' PASSWORD '' OPTIONS '${TIMEOUTS}&authMechanism=MONGODB-OIDC'"
 

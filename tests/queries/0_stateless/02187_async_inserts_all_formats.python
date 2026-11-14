@@ -35,12 +35,10 @@ def run_test(data_format, gen_data_template, settings):
         exit(1)
 
 
-# Vortex is excluded because it is not available in all builds (it is disabled under MSan),
-# so its presence in the list would make the output differ between builds.
 formats = (
     client.query(
         "SELECT name FROM system.formats WHERE is_input AND is_output \
-    AND name NOT IN ('CapnProto', 'RawBLOB', 'Template', 'ProtobufSingle', 'LineAsString', 'Protobuf', 'ProtobufList', 'Npy', 'HiveText', 'GeoJSON', 'Vortex') ORDER BY name"
+    AND name NOT IN ('CapnProto', 'RawBLOB', 'Template', 'ProtobufSingle', 'LineAsString', 'Protobuf', 'ProtobufList', 'Npy') ORDER BY name"
     )
     .strip()
     .split("\n")
@@ -57,12 +55,7 @@ for data_format in formats:
     run_test(
         data_format,
         gen_data_query,
-        settings={
-            "async_insert": 1,
-            "wait_for_async_insert": 1,
-            "output_format_avro_confluent_subject": "test_subject_02187", # Subject name should be unique to avoid conflicts with other tests
-            "format_avro_schema_registry_url": "http://127.0.0.1:8081"
-        },
+        settings={"async_insert": 1, "wait_for_async_insert": 1},
     )
 
 # LineAsString

@@ -20,10 +20,6 @@ macro(set_rust_target)
             set(Rust_CARGO_TARGET "x86_64-unknown-freebsd" CACHE INTERNAL "Rust config")
         elseif(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-riscv64")
             set(Rust_CARGO_TARGET "riscv64gc-unknown-linux-gnu" CACHE INTERNAL "Rust config")
-        elseif(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-loongarch64")
-            set(Rust_CARGO_TARGET "loongarch64-unknown-linux-gnu" CACHE INTERNAL "Rust config")
-        elseif(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-s390x")
-            set(Rust_CARGO_TARGET "s390x-unknown-linux-gnu" CACHE INTERNAL "Rust config")
         else()
             message(FATAL_ERROR "Unknown rust target for toolchain ${CMAKE_TOOLCHAIN_FILE}")
         endif()
@@ -39,7 +35,7 @@ endmacro()
 
 # Keep in sync with toolchain in docker images
 # (must be called before find_package(Rust) and inclusion of Corrosion.cmake)
-set(Rust_TOOLCHAIN "nightly-2026-11-02")
+set(Rust_TOOLCHAIN "nightly-2025-07-07")
 
 macro(find_rust)
     set_rust_target()
@@ -78,59 +74,12 @@ include ("${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake/Corrosion.cmake")
 
 set(CXX_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libcxx/include")
 
-# For musl, libc++ headers must come before musl's, but the toolchain puts musl includes
-# into CMAKE_*_FLAGS. Strip them and re-add them after libc++ for CXXFLAGS.
-if (USE_MUSL)
-    string(REGEX REPLACE "-isystem [^ ]*musl[^ ]*" "" CMAKE_C_FLAGS_STRIPPED "${CMAKE_C_FLAGS}")
-    string(REGEX REPLACE "-isystem [^ ]*musl[^ ]*" "" CMAKE_CXX_FLAGS_STRIPPED "${CMAKE_CXX_FLAGS}")
-
-    set(MUSL_STUB_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl-cmake/include")
-    set(MUSL_GENERATED_DIR "${ClickHouse_BINARY_DIR}/contrib/musl-cmake/include")
-    set(MUSL_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl/include")
-    set(MUSL_ARCH_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/${MUSL_ARCH}")
-    set(MUSL_GENERIC_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/generic")
-    set(MUSL_KERNEL_HEADERS_DIR "${ClickHouse_BINARY_DIR}/contrib/musl-cmake/kernel-headers")
-
-    # The regex above strips every "-isystem ...musl..." entry, so we must reconstruct the full
-    # musl header surface that cmake/linux/toolchain-*-musl.cmake puts into CMAKE_*_FLAGS via
-    # MUSL_INCLUDE_FLAGS. Keep this in sync with that toolchain: the stub headers (e.g.
-    # execinfo.h) and the kernel-headers directory are part of the set and must not be dropped,
-    # otherwise Cargo cc/cxx builds compile against a narrower header surface than the rest of
-    # the tree. The order matches the toolchain's -isystem order.
-    set(MUSL_C_INCLUDES "-isystem ${MUSL_STUB_INCLUDE_DIR} -isystem ${MUSL_GENERATED_DIR} -isystem ${MUSL_INCLUDE_DIR} -isystem ${MUSL_ARCH_DIR} -isystem ${MUSL_GENERIC_DIR} -isystem ${MUSL_KERNEL_HEADERS_DIR}")
-
-    set(MUSL_CXX_INCLUDES "-isystem ${CXX_INCLUDE_DIR} -nostdinc++ ${MUSL_C_INCLUDES} -D_LIBCPP_HAS_MUSL_LIBC=1")
-
-    # Mirror the per-build-type selection of the non-musl branch below so that Release and
-    # MinSizeRel musl artifacts do not silently compile Cargo cc/cxx shims with RelWithDebInfo
-    # optimisation/debug flags.
-    if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
-        set(RUST_CFLAGS "${CMAKE_C_FLAGS_STRIPPED} ${CMAKE_C_FLAGS_DEBUG} ${MUSL_C_INCLUDES}")
-        set(RUST_CXXFLAGS "${CMAKE_CXX_FLAGS_STRIPPED} ${CMAKE_CXX_FLAGS_DEBUG} ${MUSL_CXX_INCLUDES}")
-    elseif (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
-        set(RUST_CFLAGS "${CMAKE_C_FLAGS_STRIPPED} ${CMAKE_C_FLAGS_RELEASE} ${MUSL_C_INCLUDES}")
-        set(RUST_CXXFLAGS "${CMAKE_CXX_FLAGS_STRIPPED} ${CMAKE_CXX_FLAGS_RELEASE} ${MUSL_CXX_INCLUDES}")
-    elseif (CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
-        set(RUST_CFLAGS "${CMAKE_C_FLAGS_STRIPPED} ${CMAKE_C_FLAGS_MINSIZEREL} ${MUSL_C_INCLUDES}")
-        set(RUST_CXXFLAGS "${CMAKE_CXX_FLAGS_STRIPPED} ${CMAKE_CXX_FLAGS_MINSIZEREL} ${MUSL_CXX_INCLUDES}")
-    else ()
-        set(RUST_CFLAGS "${CMAKE_C_FLAGS_STRIPPED} ${CMAKE_C_FLAGS_RELWITHDEBINFO} ${MUSL_C_INCLUDES}")
-        set(RUST_CXXFLAGS "${CMAKE_CXX_FLAGS_STRIPPED} ${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${MUSL_CXX_INCLUDES}")
-    endif()
-else()
-    if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
-        set(RUST_CFLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_DEBUG}")
-        set(RUST_CXXFLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_DEBUG} -isystem ${CXX_INCLUDE_DIR} -nostdinc++")
-    elseif (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
-        set(RUST_CFLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_RELEASE}")
-        set(RUST_CXXFLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELEASE} -isystem ${CXX_INCLUDE_DIR} -nostdinc++")
-    elseif (CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
-        set(RUST_CFLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_MINSIZEREL}")
-        set(RUST_CXXFLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_MINSIZEREL} -isystem ${CXX_INCLUDE_DIR} -nostdinc++")
-    else ()
-        set(RUST_CFLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_RELWITHDEBINFO}")
-        set(RUST_CXXFLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -isystem ${CXX_INCLUDE_DIR} -nostdinc++")
-    endif()
+if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
+    set(RUST_CFLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_DEBUG}")
+    set(RUST_CXXFLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_DEBUG} -isystem ${CXX_INCLUDE_DIR} -nostdinc++")
+else ()
+    set(RUST_CFLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_RELWITHDEBINFO}")
+    set(RUST_CXXFLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -isystem ${CXX_INCLUDE_DIR} -nostdinc++")
 endif()
 
 if (CMAKE_OSX_SYSROOT)
@@ -146,14 +95,11 @@ if (CMAKE_OSX_DEPLOYMENT_TARGET)
     set(RUST_CFLAGS "${RUST_CFLAGS} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
 endif()
 
-get_target_property(CXX_PUBLIC_DEFS cxx INTERFACE_COMPILE_DEFINITIONS)
-if (CXX_PUBLIC_DEFS)
-    list(TRANSFORM CXX_PUBLIC_DEFS PREPEND "-D")
-    list(JOIN CXX_PUBLIC_DEFS " " CXX_PUBLIC_DEFS)
-    set(RUST_CXXFLAGS "${RUST_CXXFLAGS} ${CXX_PUBLIC_DEFS}")
-endif()
+if (USE_MUSL)
+    set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -D_LIBCPP_HAS_MUSL_LIBC=1")
+endif ()
 
-if(CCACHE_EXECUTABLE MATCHES "/sccache$")
+if(CCACHE_EXECUTABLE MATCHES "/chcache$" OR CCACHE_EXECUTABLE MATCHES "/sccache$")
     message(STATUS "Using RUSTC_WRAPPER: ${CCACHE_EXECUTABLE}")
     set(RUSTCWRAPPER "${CCACHE_EXECUTABLE}")
 else()
@@ -196,38 +142,11 @@ elseif (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
     list(APPEND RUSTFLAGS "-Zsanitizer=address")
 endif()
 
-# rustc refuses to combine a sanitizer with a statically linked libc (the musl Rust target
-# defaults to `crt-static`). Disabling it only switches Rust's thread-locals to the
-# general-dynamic TLS model, which calls __tls_get_addr - already provided by musl's static
-# libc for exactly this case - so the resulting staticlib still needs no dynamic loader.
-if (USE_MUSL AND NOT SANITIZE STREQUAL "")
-    list(APPEND RUSTFLAGS "-C" "target-feature=-crt-static")
-endif()
-
-# Force `rustix` to use its libc backend under sanitizers.
-# On Linux `rustix` defaults to the `linux_raw` backend, which issues `mmap`, `munmap` and
-# other syscalls directly via the `syscall` instruction, bypassing libc. The sanitizers
-# intercept these operations at the libc symbol boundary, so with the raw backend they never
-# observe `rustix`'s memory mappings. For ThreadSanitizer this means the shadow memory of a
-# region is not reset when `rustix` (used by `wasmtime` for compiled-code `mmap` allocations)
-# maps or unmaps it, so a freshly mapped region inherits the stale shadow of whatever
-# previously occupied that virtual address, producing false-positive data races. The same gap
-# affects MemorySanitizer (freshly mapped memory looks uninitialized) and AddressSanitizer.
-# `--cfg=rustix_use_libc` is the mechanism `rustix` provides for transitive consumers to select
-# the libc backend; it also activates the `libc` dependency (already pinned in `Cargo.lock`).
-#
-# Note: "no sanitizer" must be tested with CMake truthiness, not `STREQUAL ""`: in build
-# directories configured before SANITIZE became a STRING cache variable, the cache holds
-# the BOOL value `OFF`, which is not equal to the empty string (see cmake/sanitize.cmake).
-if (SANITIZE)
-    list(APPEND RUSTFLAGS "--cfg" "rustix_use_libc")
-endif()
-
 # Set metadata flag to force different hashes for different sanitizers
-if (SANITIZE)
-    list(APPEND RUSTFLAGS "-C" "metadata=with-sanitizer-${SANITIZE}")
-else()
+if (SANITIZE STREQUAL "")
     list(APPEND RUSTFLAGS "-C" "metadata=no-sanitizer")
+else()
+    list(APPEND RUSTFLAGS "-C" "metadata=with-sanitizer-${SANITIZE}")
 endif()
 
 # Use v0 symbol mangling for shorter symbol names.
@@ -254,86 +173,6 @@ message(STATUS "RUSTFLAGS: ${RUSTFLAGS}")
 message(STATUS "RUST_CARGO_BUILD_STD: ${RUST_CARGO_BUILD_STD}")
 
 set(RUST_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../rust_vendor")
-
-# Every member of the workspace is imported with exactly this path: corrosion names the cargo target directory
-# after the manifest path string, so this is what makes them share one.
-set(RUST_CONTRIB_WORKSPACE_MANIFEST "${ClickHouse_SOURCE_DIR}/contrib/rust-contrib-workspace/Cargo.toml" CACHE INTERNAL "Rust config")
-
-# Sanitizer instrumentation combined with opt-level=3 and the default codegen-units=16
-# causes LLVM to use too much memory while compiling large crates like cranelift-codegen
-# and polyglot-sql (with all-dialects). Set opt-level and codegen-units via the Cargo
-# profile so that there is no conflict with the default profile flags.
-#
-# This condition used to be `NOT SANITIZE STREQUAL ""`, which also matched the value `OFF`
-# that the cache holds when the user does not pass -DSANITIZE=... (see cmake/sanitize.cmake),
-# so every default-configured local build silently compiled all vendored Rust crates with
-# `opt-level = 0` — up to an order of magnitude slower at runtime (e.g. the `PCO` codec,
-# Delta Lake reads). CI was unaffected only because it always passes -DSANITIZE= explicitly.
-if (SANITIZE)
-    set(RUST_RELEASE_PROFILE_EXTRA "opt-level = 1
-codegen-units = 4")
-    message(STATUS "Rust release profile: opt-level = 1, to limit LLVM memory usage under sanitizers")
-else()
-    set(RUST_RELEASE_PROFILE_EXTRA "")
-    message(STATUS "Rust release profile: optimized")
-endif()
-
-# The vendored Rust crates otherwise build with cargo's default dev profile (full DWARF debug=2 +
-# incremental). debug=1 is cargo's "limited" level: line tables plus function/scope info - so Rust
-# backtraces still resolve file:line - but no type or variable-level info; and dropping the
-# incremental cache stops target/debug/incremental growing unbounded across rebuilds. On by default
-# to keep Debug build dirs lean; set -DREDUCE_RUST_DEBUG_INFO=OFF for full DWARF + incremental when
-# stepping into the crates. Affects Debug only (Release uses profile.release, where this is inert).
-option(REDUCE_RUST_DEBUG_INFO "Build vendored Rust crates with reduced debug info (cargo debug=1, the \"limited\" level) and no incremental caches" ON)
-if (REDUCE_RUST_DEBUG_INFO)
-    set(RUST_DEV_PROFILE "[profile.dev]
-debug = 1
-incremental = false
-")
-else()
-    set(RUST_DEV_PROFILE "")
-endif()
-
-# ccache cannot wrap rustc, so a new build directory compiles every Rust crate again. With RUST_BUILD_CACHE_DIR, Cargo keeps
-# its intermediate artifacts (`build.build-dir`) there, one subdirectory per Rust configuration, and other build directories
-# reuse them; Cargo's fingerprints decide what to rebuild. The directory is not size-limited.
-set(RUST_BUILD_CACHE_DIR "" CACHE PATH "Directory where Cargo keeps compiled Rust crates for other build directories to reuse (empty: in the build directory)")
-set(RUST_BUILD_DIR_CONFIG "")
-if (RUST_BUILD_CACHE_DIR)
-    if (Rust_CARGO_VERSION VERSION_LESS "1.91")
-        message(FATAL_ERROR "RUST_BUILD_CACHE_DIR needs Cargo 1.91 or newer (`build.build-dir`), found ${Rust_CARGO_VERSION}")
-    endif()
-    # Cargo does not track the headers that build scripts compile C/C++ code against (libc++ and the compiler's implicit include
-    # directories: libc and the compiler's own headers), so their contents are part of the key, and changing them (directories
-    # included, for added and removed files) re-runs CMake.
-    set(_rust_native_dirs ${CXX_INCLUDE_DIR} ${CMAKE_C_IMPLICIT_INCLUDE_DIRECTORIES} ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})
-    list(REMOVE_DUPLICATES _rust_native_dirs)
-    set(_rust_native_headers "")
-    foreach (_dir IN LISTS _rust_native_dirs)
-        file(GLOB_RECURSE _files LIST_DIRECTORIES true "${_dir}/*")
-        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_dir}" ${_files})
-        foreach (_file IN LISTS _files)
-            if (IS_SYMLINK "${_file}" AND IS_DIRECTORY "${_file}")
-                file(READ_SYMLINK "${_file}" _file_hash)
-            elseif (IS_DIRECTORY "${_file}")
-                continue()
-            else()
-                file(SHA256 "${_file}" _file_hash)
-            endif()
-            string(APPEND _rust_native_headers "${_file} ${_file_hash}\n")
-        endforeach()
-    endforeach()
-    string(SHA256 _rust_native_headers "${_rust_native_headers}")
-    set(_rust_build_key "${Rust_CARGO_TARGET}|${Rust_COMPILER_CACHED}|${Rust_VERSION}|${Rust_CARGO_CACHED}|${Rust_CARGO_VERSION}|${CMAKE_C_COMPILER}|${CMAKE_C_COMPILER_VERSION}|${CMAKE_CXX_COMPILER}|${CMAKE_CXX_COMPILER_VERSION}|${CMAKE_BUILD_TYPE_UC}|${ENABLE_THINLTO}|${RUSTFLAGS}|${RUST_CARGO_BUILD_STD}|${RUST_CFLAGS}|${RUST_CXXFLAGS}|${RUSTCWRAPPER}|${RUST_RELEASE_PROFILE_EXTRA}|${RUST_DEV_PROFILE}|${_rust_native_headers}")
-    string(FIND "${_rust_build_key}" "${CMAKE_BINARY_DIR}/" _rust_build_key_has_build_dir)
-    if (NOT _rust_build_key_has_build_dir EQUAL -1)
-        message(FATAL_ERROR "RUST_BUILD_CACHE_DIR does not work for this configuration: its Rust compiler flags contain the build directory (as in musl builds), so no other build directory could reuse the cache")
-    endif()
-    string(SHA256 _rust_build_key "${_rust_build_key}")
-    string(SUBSTRING "${_rust_build_key}" 0 16 _rust_build_key)
-    set(RUST_BUILD_DIR_CONFIG "[build]\nbuild-dir = \"${RUST_BUILD_CACHE_DIR}/${_rust_build_key}/{workspace-path-hash}\"\n")
-    message(STATUS "Cargo build directory: ${RUST_BUILD_CACHE_DIR}/${_rust_build_key}")
-endif()
 
 # We now prepare a custom config.toml with all the flags and add it to cargo via flags
 configure_file("config.toml.in" "config.toml" @ONLY)
@@ -368,78 +207,10 @@ function(clickhouse_import_crate)
             LOCKED
             FLAGS --offline
             NO_DEFAULT_FEATURES
-            # Without it every cargo build runs in the Ninja `console` pool, which has depth 1,
-            # so the cargo builds run one after another and block the C++ compilation that waits for them
-            NO_USES_TERMINAL
     )
     enable_dummy_launchers_if_needed()
 endfunction()
 
-# Set the location of an imported library the way Corrosion does: generic and per configuration.
-function(_clickhouse_set_rust_lib_location target_name location)
-    set_property(TARGET ${target_name} PROPERTY IMPORTED_LOCATION "${location}")
-    foreach (_config IN LISTS CMAKE_CONFIGURATION_TYPES)
-        string(TOUPPER "${_config}" _config)
-        set_property(TARGET ${target_name} PROPERTY "IMPORTED_LOCATION_${_config}" "${location}")
-    endforeach()
-endfunction()
-
-# Post-process the static library of a Rust crate with
-#     bash SCRIPT <library.a> ARGS...
-# where SCRIPT rewrites the library in place.
-#
-# Corrosion runs cargo on every build and copies its output to IMPORTED_LOCATION with
-# `copy_if_different`, so an unchanged library keeps its timestamp and nothing is relinked.
-# Rewriting that copy in place would break this: it no longer matches the cargo output, so
-# every build copies it again, rewrites it again and relinks every binary that uses it.
-# Instead, the result of each step goes to its own file, the step runs only when its input
-# changes, and the binaries link the result of the last step.
-#
-#     clickhouse_postprocess_rust_lib(<target> STEP <name> SCRIPT <script> [ARGS ...] [DEPENDS ...] [COMMENT ...])
-function(clickhouse_postprocess_rust_lib target_name)
-    cmake_parse_arguments(ARG "" "STEP;SCRIPT;COMMENT" "ARGS;DEPENDS" ${ARGN})
-
-    # The input is the result of the previous step, if any, otherwise the copy made by Corrosion.
-    get_target_property(_input ${target_name} CLICKHOUSE_RUST_LIB)
-    get_target_property(_previous_step ${target_name} CLICKHOUSE_RUST_LIB_STEP)
-    if (NOT _previous_step)
-        set(_previous_step cargo-build_${target_name})
-    endif()
-    if (NOT _input)
-        get_target_property(_input ${target_name} IMPORTED_LOCATION)
-        if (NOT _input OR _input MATCHES "NOTFOUND")
-            set(_input "${CMAKE_CURRENT_BINARY_DIR}/lib${target_name}.a")
-        endif()
-    endif()
-    get_filename_component(_name "${_input}" NAME)
-    set(_output "${CMAKE_CURRENT_BINARY_DIR}/${ARG_STEP}/${_name}")
-
-    add_custom_command(OUTPUT "${_output}"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/${ARG_STEP}"
-        COMMAND ${CMAKE_COMMAND} -E copy "${_input}" "${_output}.tmp"
-        COMMAND bash "${ARG_SCRIPT}" "${_output}.tmp" ${ARG_ARGS}
-        COMMAND ${CMAKE_COMMAND} -E rename "${_output}.tmp" "${_output}"
-        DEPENDS "${_input}" "${ARG_SCRIPT}" ${ARG_DEPENDS}
-        COMMENT "${ARG_COMMENT}"
-        VERBATIM
-    )
-    add_custom_target(${ARG_STEP}_${target_name} DEPENDS "${_output}")
-    # Each step runs after the previous one: other generators attach the previous step's rule to this target too.
-    add_dependencies(${ARG_STEP}_${target_name} ${_previous_step})
-    add_dependencies(${target_name} ${ARG_STEP}_${target_name})
-    set_property(TARGET ${target_name} PROPERTY CLICKHOUSE_RUST_LIB "${_output}")
-    set_property(TARGET ${target_name} PROPERTY CLICKHOUSE_RUST_LIB_STEP ${ARG_STEP}_${target_name})
-
-    # Link the result. Corrosion sets IMPORTED_LOCATION of `<target>-static` in a call deferred to
-    # the end of the directory that imported the crate, so override it at the end of the top-level
-    # one. A deferred call expands variables when it runs, hence EVAL with the values substituted now.
-    cmake_language(EVAL CODE "
-        cmake_language(DEFER DIRECTORY [[${CMAKE_SOURCE_DIR}]] CALL
-            _clickhouse_set_rust_lib_location [[${target_name}-static]] [[${_output}]])
-    ")
-endfunction()
-
-# Configure a Rust crate target with ClickHouse-specific flags.
 function(clickhouse_config_crate_flags target_name)
     corrosion_set_env_vars(${target_name} "CFLAGS=${RUST_CFLAGS}")
     corrosion_set_env_vars(${target_name} "CXXFLAGS=${RUST_CXXFLAGS}")
@@ -470,147 +241,4 @@ function(clickhouse_config_crate_flags target_name)
     # Refs: https://github.com/rust-lang/cargo/issues/15099#issuecomment-2732847355
     corrosion_set_env_vars(${target_name} "CARGO_NET_OFFLINE=true")
     corrosion_link_libraries(${target_name} cxx)
-
-    # Localize all C-namespace symbols from Rust static libraries so they
-    # don't shadow our own implementations (libllvmlibc, glibc-compat).
-    # Rust's compiler_builtins exports cbrt, fma, sin, etc. as global symbols;
-    # without this, they silently win at link time and bypass our -falign-functions=64
-    # and -march flags, causing performance regressions.
-    #
-    # For workspace crates the .a may land in a parent directory rather than
-    # CMAKE_CURRENT_BINARY_DIR.  Set IMPORTED_LOCATION on the target before
-    # calling this function if the default path is wrong.
-    get_target_property(_rust_lib_path ${target_name} IMPORTED_LOCATION)
-    if (NOT _rust_lib_path OR _rust_lib_path MATCHES "NOTFOUND")
-        set(_rust_lib_path "${CMAKE_CURRENT_BINARY_DIR}/lib${target_name}.a")
-    endif()
-
-    # Skip on Darwin (Mach-O), ppc64le (broken .eh_frame), and dummy builds.
-    if (CMAKE_OBJCOPY AND NOT OS_DARWIN
-        AND NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "ppc64le"
-        AND NOT CMAKE_AR MATCHES "dummy_compiler_linker")
-        # Verify the library path looks plausible at configure time.  The file
-        # won't exist yet (cargo hasn't run), but the parent directory must exist
-        # and the filename must end in .a — otherwise someone forgot to set
-        # IMPORTED_LOCATION for a workspace subcrate.
-        get_filename_component(_rust_lib_dir "${_rust_lib_path}" DIRECTORY)
-        if (NOT IS_DIRECTORY "${_rust_lib_dir}")
-            message(FATAL_ERROR
-                "localize_rust_c_symbols: output directory '${_rust_lib_dir}' for "
-                "target '${target_name}' does not exist.  If this is a workspace "
-                "subcrate, set IMPORTED_LOCATION on the target before calling "
-                "clickhouse_config_crate_flags().  Expected library: ${_rust_lib_path}")
-        endif()
-
-        # Reference libraries that define the C symbols Rust bundles.  The script
-        # localizes exactly the symbols defined by both these libraries and the
-        # Rust archive, so the binary's own copies win at link time.
-        #
-        # libllvmlibc (our optimized libm, AMD64/AARCH64 only) and clang_rt_builtins
-        # (compiler-rt, every ELF target) are contrib targets, defined before any
-        # caller of this function.
-        set(_localize_ref_libs "")
-        set(_localize_ref_deps "")
-        foreach (_ref_target libllvmlibc aor clang_rt_builtins)
-            if (TARGET ${_ref_target})
-                list(APPEND _localize_ref_libs "$<TARGET_FILE:${_ref_target}>")
-                list(APPEND _localize_ref_deps ${_ref_target})
-            endif()
-        endforeach()
-
-        # Platform math provider: the library supplying the libm functions
-        # libllvmlibc lacks (round, copysign, the ceil/rint/trunc IFUNCs, ...) and
-        # the only such provider on arches without libllvmlibc.
-        if (USE_MUSL)
-            # musl has no separate libm: the math lives in libc, and libc is the
-            # in-tree `musl` target built from sources (contrib/musl-cmake) — the
-            # -static link uses it instead of a sysroot libc.a / -lc (see
-            # cmake/musl.cmake and cmake/linux/default_libs.cmake).  Probing the
-            # toolchain with -print-file-name would find a glibc library or
-            # nothing, so use the built archive itself as the reference and add a
-            # build dependency on it.
-            list(APPEND _localize_ref_libs "$<TARGET_FILE:musl>")
-            list(APPEND _localize_ref_deps musl)
-        else()
-            # Glibc keeps the math in libm (dynamic, -lm).  It is a prebuilt
-            # sysroot/toolchain file, so no build dependency is needed.
-            #
-            # Resolve it once with the same constraints the toolchain compiles
-            # with (--target/--sysroot/--gcc-toolchain/--no-default-config);
-            # otherwise -print-file-name can return a host multiarch library.
-            # Reject any result outside the sysroot/toolchain tree, or one
-            # defining no symbols (an empty stub): a wrong or empty reference
-            # would leave Rust's libm exports global and shadow the platform's.
-            if (NOT DEFINED CACHE{CH_RUST_LOCALIZE_MATHLIB})
-                set(_math_probe_flags "")
-                set(_math_roots "")
-                if (CMAKE_C_COMPILER_TARGET)
-                    list(APPEND _math_probe_flags "--target=${CMAKE_C_COMPILER_TARGET}")
-                endif()
-                if (CMAKE_SYSROOT)
-                    list(APPEND _math_probe_flags "--sysroot=${CMAKE_SYSROOT}")
-                    list(APPEND _math_roots "${CMAKE_SYSROOT}")
-                endif()
-                if (TOOLCHAIN_PATH)
-                    list(APPEND _math_probe_flags "--gcc-toolchain=${TOOLCHAIN_PATH}" "--no-default-config")
-                    list(APPEND _math_roots "${TOOLCHAIN_PATH}")
-                endif()
-
-                set(_found_math "")
-                foreach (_math_name libm.so.6 libm.a libm.so)
-                    execute_process(
-                        COMMAND "${CMAKE_C_COMPILER}" ${_math_probe_flags} "-print-file-name=${_math_name}"
-                        OUTPUT_VARIABLE _math_out OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
-                    if (NOT _math_out OR NOT EXISTS "${_math_out}")
-                        continue()
-                    endif()
-                    # Must live inside the sysroot/toolchain tree (skipped only for a
-                    # sysroot-less native build, where the host library is correct).
-                    if (_math_roots)
-                        set(_in_tree FALSE)
-                        get_filename_component(_math_real "${_math_out}" REALPATH)
-                        foreach (_root ${_math_roots})
-                            get_filename_component(_root_real "${_root}" REALPATH)
-                            string(FIND "${_math_real}" "${_root_real}/" _math_pos)
-                            if (_math_pos EQUAL 0)
-                                set(_in_tree TRUE)
-                                break()
-                            endif()
-                        endforeach()
-                        if (NOT _in_tree)
-                            continue()
-                        endif()
-                    endif()
-                    # Must define symbols (static archive: nm; shared object: nm -D);
-                    # an empty stub is unusable.
-                    execute_process(COMMAND "${NM_PATH}" "${_math_out}" OUTPUT_VARIABLE _nm_a ERROR_QUIET)
-                    execute_process(COMMAND "${NM_PATH}" -D "${_math_out}" OUTPUT_VARIABLE _nm_d ERROR_QUIET)
-                    if (NOT "${_nm_a}${_nm_d}" MATCHES "[0-9a-f] [TDBCWVi] ")
-                        continue()
-                    endif()
-                    set(_found_math "${_math_out}")
-                    break()
-                endforeach()
-                set(CH_RUST_LOCALIZE_MATHLIB "${_found_math}" CACHE INTERNAL
-                    "Platform libm used as a reference for localizing Rust C symbols")
-            endif()
-            if (CH_RUST_LOCALIZE_MATHLIB)
-                list(APPEND _localize_ref_libs "${CH_RUST_LOCALIZE_MATHLIB}")
-            endif()
-        endif()
-
-        if (_localize_ref_libs)
-            clickhouse_postprocess_rust_lib(${target_name}
-                STEP localize_rust_c
-                SCRIPT "${ClickHouse_SOURCE_DIR}/cmake/localize_rust_c_symbols.sh"
-                ARGS "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${NM_PATH}" ${_localize_ref_libs}
-                DEPENDS ${_localize_ref_deps} ${CH_RUST_LOCALIZE_MATHLIB}
-                COMMENT "Localizing C-namespace symbols in ${target_name}"
-            )
-        else()
-            message(STATUS
-                "localize_rust_c_symbols: no reference C libraries for this "
-                "platform; skipping symbol localization for ${target_name}")
-        endif()
-    endif()
 endfunction()

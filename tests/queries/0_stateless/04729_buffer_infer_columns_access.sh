@@ -20,6 +20,7 @@ CREATE USER $user;
 -- The user may create tables in its own database, but starts without any rights on the destination
 -- the engine points at, so the check below is exercised in isolation.
 GRANT CREATE TABLE, DROP TABLE, SELECT, INSERT ON $db.* TO $user;
+GRANT CREATE TEMPORARY TABLE ON *.* TO $user;
 GRANT TABLE ENGINE ON Buffer TO $user;
 REVOKE SELECT, INSERT ON $db.protected_target FROM $user;
 EOF
@@ -55,7 +56,12 @@ ${CLICKHOUSE_CLIENT} --user "$user" --query \
     "SELECT name, type FROM system.columns WHERE database = '$db' AND table = 'b_explicit' ORDER BY position"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE $db.b_explicit"
 
-echo "-- 5. SELECT on the destination implies SHOW COLUMNS, so reading users are unaffected"
+echo "-- 5. a temporary table with omitted columns is checked too"
+${CLICKHOUSE_CLIENT} --user "$user" --query \
+    "CREATE TEMPORARY TABLE tmp_b ENGINE = Buffer('$db', 'protected_target', 1, 10, 100, 10000, 1000000, 10000000, 100000000)" 2>&1 \
+    | grep -c -m1 "ACCESS_DENIED\|Not enough privileges"
+
+echo "-- 6. SELECT on the destination implies SHOW COLUMNS, so reading users are unaffected"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.protected_target TO $user"
 ${CLICKHOUSE_CLIENT} --user "$user" --query \
     "CREATE TABLE $db.b_select ENGINE = Buffer('$db', 'protected_target', 1, 10, 100, 10000, 1000000, 10000000, 100000000)"

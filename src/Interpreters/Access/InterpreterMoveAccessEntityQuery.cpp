@@ -23,11 +23,10 @@ BlockIO InterpreterMoveAccessEntityQuery::execute()
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(getRequiredAccess());
 
-    /// Must be done before replication: a DDL worker resolves a bare table name in its own current database.
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
-
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, getContext());
+
+    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
 
     std::vector<UUID> ids;
     if (query.type == AccessEntityType::ROW_POLICY)
@@ -105,7 +104,6 @@ AccessRightsElements InterpreterMoveAccessEntityQuery::getRequiredAccess() const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by DROP query", toString(query.type));
 }
 
-void registerInterpreterMoveAccessEntityQuery(InterpreterFactory & factory);
 void registerInterpreterMoveAccessEntityQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
