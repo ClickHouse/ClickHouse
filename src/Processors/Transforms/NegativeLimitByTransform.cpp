@@ -446,13 +446,27 @@ void NegativeLimitBySortedStreamTransform::dropOffsetRows(GroupWindow & window) 
     }
 }
 
+void NegativeLimitBySortedStreamTransform::appendToPending(const ChunkSlice::ColumnsPtr & columns, UInt64 start, UInt64 length)
+{
+    if (!pending.empty())
+    {
+        auto & last = pending.back();
+        if (last.columns == columns && last.start + last.length == start)
+        {
+            last.length += length;
+            return;
+        }
+    }
+    pending.push_back({columns, start, length});
+}
+
 void NegativeLimitBySortedStreamTransform::finalizeWindow(GroupWindow & window)
 {
     dropOffsetRows(window);
     for (const auto & slice : window.slices)
     {
         chassert(slice.length > 0);
-        pending.push_back(slice);
+        appendToPending(slice.columns, slice.start, slice.length);
     }
     window = {};
 }
@@ -495,11 +509,22 @@ void NegativeLimitBySortedStreamTransform::consume(Chunk chunk)
     {
         const UInt64 run_end = getEqualRangeEndAssumeSorted(key_runs, normalized_keys, run_start, num_rows, 1);
 
-        append_run(run_start, run_end - run_start);
+        if (run_end != num_rows && current_group_window.slices.empty())
+        {
+            /// The whole group is in this chunk: its last `group_window_size` rows without the trailing `group_offset` ones.
+            const UInt64 kept = std::min(run_end - run_start, group_window_size);
+            const UInt64 dropped = std::min(group_offset, kept);
+            if (kept > dropped)
+                appendToPending(columns_ptr, run_end - kept, kept - dropped);
+        }
+        else
+        {
+            append_run(run_start, run_end - run_start);
 
-        /// Group boundary: close the current run, finalize, start a new run.
-        if (run_end != num_rows)
-            finalizeWindow(current_group_window);
+            /// Group boundary: close the current run, finalize, start a new run.
+            if (run_end != num_rows)
+                finalizeWindow(current_group_window);
+        }
 
         run_start = run_end;
     }

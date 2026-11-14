@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <bit>
 #include <limits>
 #include <mutex>
@@ -299,7 +301,7 @@ void forEachColumnHashBatch(const IColumn & original_column, UInt64 seed, Proces
     if (row_count == 0)
         return;
 
-    std::vector<BloomFilterHashPair> hash_pairs(std::min(HASH_BATCH_SIZE, row_count));
+    VectorWithMemoryTracking<BloomFilterHashPair> hash_pairs(std::min(HASH_BATCH_SIZE, row_count));
 
     if (!isColumnConst(column) && column.isFixedAndContiguous())
     {
@@ -1133,10 +1135,10 @@ public:
 
 private:
     mutable SharedMutex mutex;
-    std::unordered_map<String, SharedRuntimeFilterPtr> filters_by_name TSA_GUARDED_BY(mutex);
+    UnorderedMapWithMemoryTracking<String, SharedRuntimeFilterPtr> filters_by_name TSA_GUARDED_BY(mutex);
     /// Readable structural name per rendezvous key, for logging. Kept under the same lock and
     /// preserved across `replace` because the replacement keeps the original registration's name.
-    std::unordered_map<String, String> display_names TSA_GUARDED_BY(mutex);
+    UnorderedMapWithMemoryTracking<String, String> display_names TSA_GUARDED_BY(mutex);
 };
 
 RuntimeFilterLookupPtr createRuntimeFilterLookup()
@@ -1227,7 +1229,7 @@ static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
 
 const ActionsDAG::Node * buildRuntimeRangePredicate(
     const IRuntimeFilterLookup & lookup,
-    const std::vector<RuntimeFilterIndexAnalysisDescriptor> & descriptors,
+    const VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> & descriptors,
     ActionsDAG & dag,
     const ContextPtr & context)
 {

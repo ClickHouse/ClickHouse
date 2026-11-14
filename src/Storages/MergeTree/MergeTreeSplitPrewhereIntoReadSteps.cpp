@@ -252,6 +252,31 @@ const ActionsDAG::Node & addFunction(
 
 }
 
+bool isDynamicRuntimePrewhereFilter(const ActionsDAG::Node * node)
+{
+    if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
+        return false;
+
+    const auto & name = node->function_base->getName();
+    /// `__topKFilter`: the dynamic threshold filter `optimizeTopK` injects for `ORDER BY ... LIMIT`.
+    /// `__applyFilter`: a join runtime filter pushed into the probe-side scan.
+    if (name == "__topKFilter" || name == "__applyFilter")
+        return true;
+
+    /// An ANTI join wraps its runtime filter as `or(__applyFilter(...), isNull(key))`.
+    if (name == "or")
+        return std::ranges::any_of(node->children, [](const auto * child) { return isDynamicRuntimePrewhereFilter(child); });
+
+    return false;
+}
+
+bool prewhereIsEntirelyQueryPredicate(const ActionsDAG & prewhere_actions, const String & filter_column_name)
+{
+    ActionsDAG::NodeRawConstPtrs atoms;
+    flattenConjunction(&prewhere_actions.findInOutputs(filter_column_name), atoms);
+    return std::ranges::none_of(atoms, [](const auto * node) { return isDynamicRuntimePrewhereFilter(node); });
+}
+
 /// We want to build a sequence of steps that will compute parts of the prewhere condition.
 /// Each step reads some new columns and computes some new expressions and a filter condition.
 /// The last step computes the final filter condition and the remaining expressions that are required for the main query.
@@ -496,6 +521,15 @@ bool tryBuildPrewhereSteps(
             const bool next_step_can_see_rejected_rows = can_skip_forced_filters && next < steps.size()
                 && std::ranges::all_of(condition_groups[next], canBeMovedToTheFrontOfAndChain)
                 && (next + 1 < steps.size() || std::ranges::all_of(outputs_computed_in_last_step, canBeMovedToTheFrontOfAndChain));
+
+            /// Count the step toward the PREWHERE-effectiveness events only when every one of its conditions is
+            /// a user query predicate. A step that carries any synthesized dynamic filter (`ORDER BY ... LIMIT`
+            /// top-K, a join runtime filter) is not attributed to PREWHERE: its conditions are evaluated together
+            /// on the same block, so a mixed step's rejections cannot be split between the user predicate and the
+            /// dynamic filter, and counting it would attribute the dynamic filter's rejections to PREWHERE.
+            const bool step_is_query_prewhere = std::ranges::none_of(
+                condition_groups[step_index], [](const auto * node) { return isDynamicRuntimePrewhereFilter(node); });
+
             PrewhereExprStep new_step
             {
                 .type = PrewhereExprStep::Filter,
@@ -514,7 +548,10 @@ bool tryBuildPrewhereSteps(
                 .columns_overwritten_by_chain = {},
                 .mutation_version = std::nullopt,
                 .query_condition_cache_attribution_boundary = step_index + 1 == num_attributed_steps,
-                .is_query_prewhere = true,
+                .is_query_prewhere = step_is_query_prewhere,
+                /// A split step that is not entirely a user predicate carries a synthesized dynamic filter: the
+                /// only non-user conjuncts the splitter sees come from the query predicate's dynamic filters.
+                .is_synthesized_dynamic_filter = !step_is_query_prewhere,
             };
 
             prewhere.steps.push_back(std::make_shared<PrewhereExprStep>(std::move(new_step)));

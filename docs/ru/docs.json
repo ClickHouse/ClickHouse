@@ -39,7 +39,7 @@
           "item": "Развертывания"
         },
         {
-          "$ref": "./products/cloud/navigation.json"
+        "$ref": "./products/cloud/navigation.json"
         },
         {
           "item": "BYOC",
@@ -54,6 +54,9 @@
         },
         {
           "$ref": "./clickstack/navigation.json"
+        },
+        {
+          "$ref": "./agents/navigation.json"
         },
         {
           "href": "https://langfuse.com/docs",

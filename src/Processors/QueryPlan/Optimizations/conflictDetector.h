@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Joins.h>
 #include <Common/logger_useful.h>
 #include <base/types.h>
@@ -70,7 +71,7 @@ struct ConflictOperator
     /// kind. False for outer/semi/anti/full joins, which pin orientation and fix the kind.
     bool freely_reorderable = true;
     /// CD-C conflict rules attached to this operator (always empty for CD-A).
-    std::vector<ConflictRule> rules;
+    VectorWithMemoryTracking<ConflictRule> rules;
 
     /// Whether the operator is applied where `left` and `right` are joined: its ON clause is complete
     /// there and spans the two sides, which happens at exactly one join of a plan. An operator whose
@@ -102,7 +103,7 @@ struct ConflictOperator
 
 /// Compute the per-operator conflict descriptors from the operators of the original join tree,
 /// using the requested detector (CD-A or CD-C).
-std::vector<ConflictOperator>
-computeConflictOperators(const std::vector<ConflictOpMask> & ops, ConflictDetector detector, LoggerPtr log);
+VectorWithMemoryTracking<ConflictOperator>
+computeConflictOperators(const VectorWithMemoryTracking<ConflictOpMask> & ops, ConflictDetector detector, LoggerPtr log);
 
 }
