@@ -3,6 +3,7 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
@@ -790,6 +791,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
         getRootActionsNoMakeSet(function_node.clone(), actions);
 
         const ASTs & arguments = function_node.arguments->children;
+        ColumnsWithTypeAndName argument_columns(arguments.size());
         window_function.argument_types.resize(arguments.size());
         window_function.argument_names.resize(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -806,16 +808,28 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
 
             window_function.argument_types[i] = node->result_type;
             window_function.argument_names[i] = name;
+            argument_columns[i] = ColumnWithTypeAndName(node->column, node->result_type, name);
         }
 
-        AggregateFunctionProperties properties;
-        window_function.aggregate_function = AggregateFunctionFactory::instance().get(
-            function_node.name,
-            function_node.getNullsAction(),
-            window_function.argument_types,
-            window_function.function_parameters,
-            properties,
-            AggregateFunctionStateVariant::Window);
+        if (WindowFunctionFactory::instance().isWindowFunctionName(function_node.name))
+        {
+            if (function_node.getNullsAction() == NullsAction::RESPECT_NULLS)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} does not support RESPECT NULLS", function_node.name);
+
+            window_function.general_function = WindowFunctionFactory::instance().get(
+                function_node.name, argument_columns, window_function.function_parameters, getContext()->getSettingsRef());
+        }
+        else
+        {
+            AggregateFunctionProperties properties;
+            window_function.aggregate_function = AggregateFunctionFactory::instance().get(
+                function_node.name,
+                function_node.getNullsAction(),
+                window_function.argument_types,
+                window_function.function_parameters,
+                properties,
+                AggregateFunctionStateVariant::Window);
+        }
 
         // Find the window corresponding to this function. It may be either
         // referenced by name and previously defined in WINDOW clause, or it
