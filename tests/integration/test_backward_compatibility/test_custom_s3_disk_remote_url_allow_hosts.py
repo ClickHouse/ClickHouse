@@ -107,6 +107,11 @@ def test_table_on_custom_s3_disk_loads_after_upgrade(started_cluster):
         f"ATTACH TABLE t_attached UUID '{uuid.uuid4()}' (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS disk = {s3_disk('attached_disk')}"
     )
     assert "UNACCEPTABLE_URL" in error, error
+    # An identical definition reuses the disk built at start with only a warning, so it is checked.
+    error = node.query_and_get_error(
+        f"CREATE TABLE t_reuse (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS disk = {s3_disk('upgrade_disk')}"
+    )
+    assert "UNACCEPTABLE_URL" in error, error
 
     # The operator adds the entry that the warning names; the parked table attaches without a restart.
     node.replace_config(
@@ -116,6 +121,11 @@ def test_table_on_custom_s3_disk_loads_after_upgrade(started_cluster):
     node.query("SYSTEM RELOAD CONFIG")
     node.query("ATTACH TABLE t_detached")
     assert node.query("SELECT id FROM t_detached ORDER BY id") == "4\n5\n"
+    # The reused disk is checked by its bucket, like the `s3` table function, not only by its host.
+    node.query(
+        f"CREATE TABLE t_reuse (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS disk = {s3_disk('upgrade_disk')}"
+    )
+    node.query("DROP TABLE t_reuse SYNC")
 
 
 def test_database_on_custom_s3_disk_loads_after_upgrade(started_cluster):
@@ -136,3 +146,9 @@ def test_database_on_custom_s3_disk_loads_after_upgrade(started_cluster):
     node_db.query("DETACH DATABASE db")
     node_db.query("ATTACH DATABASE db")
     assert node_db.query("SELECT id FROM db.t ORDER BY id") == "1\n2\n3\n"
+
+    # A new database with an identical definition reuses that disk, so it is checked.
+    error = node_db.query_and_get_error(
+        f"CREATE DATABASE db2 ENGINE = Atomic SETTINGS disk = {s3_disk('upgrade_db_disk', 's3_plain_rewritable')}"
+    )
+    assert "UNACCEPTABLE_URL" in error, error

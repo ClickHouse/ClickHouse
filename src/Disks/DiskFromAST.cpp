@@ -2,6 +2,8 @@
 #include <Disks/getDiskConfigurationFromAST.h>
 #include <Disks/DiskSelector.h>
 #include <Disks/IStoragePolicy.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/ReadOnlyDiskWrapper.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/SipHash.h>
@@ -18,6 +20,8 @@
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 
+#include "config.h"
+
 #include <algorithm>
 #include <memory>
 #include <set>
@@ -29,6 +33,38 @@ namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
+}
+
+/// Checks the endpoints a custom disk and the custom disks it wraps were built with, in every location:
+/// macros in a definition may expand to another host by now. Disks from the server config are exempt.
+static void checkCustomDiskRemoteHosts(DiskPtr disk, const ContextPtr & context)
+{
+    const auto & filter = context->getGlobalContext()->getRemoteHostFilter();
+    while (disk && disk->isCustomDisk())
+    {
+        DiskPtr inner = disk;
+        /// `read_only = true` wraps the disk built for the same definition; only the wrapper is marked as custom.
+        if (dynamic_cast<const ReadOnlyDiskWrapper *>(inner.get()))
+            inner = inner->getDelegateDiskIfExists();
+
+        const auto * object_disk = dynamic_cast<const DiskObjectStorage *>(inner.get());
+        if (!object_disk)
+        {
+            /// `encrypted`.
+            disk = inner->getDelegateDiskIfExists();
+        }
+        else if (auto wrapped = object_disk->getWrappedDisk())
+        {
+            /// A `cache` layer holds copies of the object storages of the disk it wraps, which may come from the server config.
+            disk = std::const_pointer_cast<DiskObjectStorage>(wrapped);
+        }
+        else
+        {
+            for (const auto & [_, storage] : object_disk->getObjectStorages())
+                storage->checkRemoteHostFilter(filter);
+            return;
+        }
+    }
 }
 
 /// Resolve `include`, `from_env` and `from_zk` in a disk definition.
@@ -183,6 +219,9 @@ static std::vector<std::pair<size_t, std::string>> getOrCreateCustomDisk(
     if (!attach && (disk_name.empty() || disk_name == "." || disk_name == ".." || disk_name.contains('/')))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk name cannot be empty, `.`, `..` or contain `/` ({})", disk_name);
 
+    /// A short `ATTACH` is exempt like loading at start: it uses the disks of its own stored definition.
+    const bool check_remote_hosts = !attach && !stored_definition;
+
     auto disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
         /// A wrapper (`encrypted`, `cache`) names a disk another session may have created with the opt-in. It is looked up
         /// in the map the wrapper is created from, so that it cannot be registered in between.
@@ -197,6 +236,10 @@ static std::vector<std::pair<size_t, std::string>> getOrCreateCustomDisk(
 #endif
                 , wrapped->first);
 
+        /// A wrapper takes the disk it names from the map, so no object storage is built (and checked) for it.
+        /// Checked before the wrapper is built: `cache` starts the wrapped disk, which writes to it.
+        if (check_remote_hosts && wrapped != disks_map.end())
+            checkCustomDiskRemoteHosts(wrapped->second, context);
         auto result = DiskFactory::instance().create(
             disk_name, *config, /* config_path */"", context, disks_map, /* attach */attach, /* custom_disk */true);
         /// Mark that disk can be used without storage policy.
@@ -226,6 +269,11 @@ static std::vector<std::pair<size_t, std::string>> getOrCreateCustomDisk(
             " Enable the setting `s3_allow_server_credentials_in_user_queries` to allow it."
 #endif
             , disk_name);
+
+    /// A reused disk was checked against an older `remote_url_allow_hosts` or only warned about on load, so check the
+    /// disks it holds, not those its definition names now. For a disk created just now this repeats the factory check.
+    if (check_remote_hosts)
+        checkCustomDiskRemoteHosts(disk, context);
 
     return matches;
 }
@@ -484,7 +532,7 @@ std::string DiskFromAST::createCustomDisk(
     return assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>();
 }
 
-void DiskFromAST::ensureDiskIsAllowed(const DiskPtr & disk, ContextPtr context)
+void DiskFromAST::ensureDiskIsAllowed(const DiskPtr & disk, ContextPtr context, bool check_remote_hosts)
 {
     /// A custom disk can be named by another session than the one that created it.
     if (disk->customDiskUsesServerCredentials() && context->shouldRestrictUserQueryS3Credentials())
@@ -495,15 +543,18 @@ void DiskFromAST::ensureDiskIsAllowed(const DiskPtr & disk, ContextPtr context)
             " Enable the setting `s3_allow_server_credentials_in_user_queries` to allow it."
 #endif
             , disk->getName());
+
+    if (check_remote_hosts)
+        checkCustomDiskRemoteHosts(disk, context);
 }
 
-void DiskFromAST::ensureStoragePolicyIsAllowed(const std::string & storage_policy_name, ContextPtr context)
+void DiskFromAST::ensureStoragePolicyIsAllowed(const std::string & storage_policy_name, ContextPtr context, bool check_remote_hosts)
 {
     /// `__<disk>` is the policy a table on a disk gets, so it names a custom disk as well.
     if (const auto storage_policy = context->tryGetStoragePolicy(storage_policy_name))
     {
         for (const auto & disk : storage_policy->getDisks())
-            ensureDiskIsAllowed(disk, context);
+            ensureDiskIsAllowed(disk, context, check_remote_hosts);
     }
 }
 

@@ -719,6 +719,17 @@ def test_endpoint_host_filter_on_restart(cluster):
             f"CREATE TABLE test_host_filter_new (a Int32) ENGINE = MergeTree() ORDER BY tuple() SETTINGS disk = {azure_disk('cont5')}"
         )
         assert "UNACCEPTABLE_URL" in error, error
+
+        # An identical definition reuses the disk loaded from metadata with only a warning, so it is checked.
+        error = node.query_and_get_error(
+            f"CREATE TABLE test_host_filter_reuse (a Int32) ENGINE = MergeTree() ORDER BY tuple() SETTINGS disk = {azure_disk('cont4')}"
+        )
+        assert "UNACCEPTABLE_URL" in error, error
+
+        # A short ATTACH reuses the disk of its stored definition, so it is not checked.
+        node.query("DETACH TABLE test_host_filter")
+        node.query("ATTACH TABLE test_host_filter")
+        assert 10 == int(node.query("SELECT count() FROM test_host_filter"))
     finally:
         node.exec_in_container(["rm", "-f", allow_hosts_config])
         node.restart_clickhouse()

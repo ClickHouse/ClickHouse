@@ -253,6 +253,8 @@ using RelativePathWithMetadataPtr = std::shared_ptr<RelativePathWithMetadata>;
 using RelativePathsWithMetadata = std::vector<RelativePathWithMetadataPtr>;
 using ObjectKeysWithMetadata = std::vector<ObjectKeyWithMetadata>;
 
+class RemoteHostFilter;
+
 class IObjectStorageIterator;
 using ObjectStorageIteratorPtr = std::shared_ptr<IObjectStorageIterator>;
 
@@ -370,6 +372,11 @@ public:
         const WriteSettings & write_settings = {}) = 0;
 
     virtual bool isRemote() const = 0;
+
+    /// Throws `UNACCEPTABLE_URL` if `remote_url_allow_hosts` does not allow a host this storage connects to.
+    /// A storage that connects to an endpoint from its configuration must override it. `local` has no host,
+    /// and `web` checks the URL of every request.
+    virtual void checkRemoteHostFilter(const RemoteHostFilter & /* filter */) const {}
 
     /// Remove object on path if exists
     virtual void removeObjectIfExists(const StoredObject & object) = 0;
