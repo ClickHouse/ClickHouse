@@ -283,6 +283,7 @@ directories_to_lint_std_containers_usages=(
     src/Loggers
     src/Processors/Formats
     src/Processors/Merges
+    src/Processors/QueryPlan
     src/Processors/Executors
     src/Processors/Sources
     src/Processors/Transforms

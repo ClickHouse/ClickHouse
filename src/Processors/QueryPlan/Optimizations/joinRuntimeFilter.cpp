@@ -28,6 +28,7 @@
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -711,7 +712,7 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
     /// (which then fails the bare-column check) instead of colliding with a physical
     /// column's name. Unlike that pass, nothing is attached to the step's filter and no
     /// index analysis is redone: only the applied `__applyFilter` conjuncts are registered.
-    std::vector<const ActionsDAG *> expression_dags;
+    VectorWithMemoryTracking<const ActionsDAG *> expression_dags;
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {
         if (const auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))

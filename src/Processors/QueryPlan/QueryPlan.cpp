@@ -385,7 +385,7 @@ JSONBuilder::ItemPtr QueryPlan::explainPlanSteps(const ExplainPlanOptions & opti
     auto steps = std::make_unique<JSONBuilder::JSONArray>();
 
     /// Pre-order: the inputs of a node and then its nested plans are pushed in reverse, so they are popped in order.
-    std::vector<const Node *> stack{root};
+    VectorWithMemoryTracking<const Node *> stack{root};
     while (!stack.empty())
     {
         const auto * node = stack.back();

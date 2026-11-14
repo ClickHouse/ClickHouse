@@ -25,8 +25,8 @@ void enableMemoryBoundMerging(QueryPlan::Node & node)
     if (!union_step)
         return;
 
-    std::vector<ReadFromRemote *> reading_steps;
-    std::vector<ReadFromParallelRemoteReplicasStep *> async_reading_steps;
+    VectorWithMemoryTracking<ReadFromRemote *> reading_steps;
+    VectorWithMemoryTracking<ReadFromParallelRemoteReplicasStep *> async_reading_steps;
     IQueryPlanStep * local_plan = nullptr;
 
     reading_steps.reserve((union_node.children.size()));

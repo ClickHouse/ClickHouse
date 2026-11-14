@@ -66,7 +66,7 @@ struct DeserializedSetsRegistry;
 class SettingsChanges;
 
 /// The id of the exchange that each send and receive step writes to or reads from.
-using MapStepToExchangeIds = std::unordered_map<const IQueryPlanStep *, UInt32>;
+using MapStepToExchangeIds = UnorderedMapWithMemoryTracking<const IQueryPlanStep *, UInt32>;
 
 /// Options from EXPLAIN queries based on plan.
 struct ExplainPlanOptions

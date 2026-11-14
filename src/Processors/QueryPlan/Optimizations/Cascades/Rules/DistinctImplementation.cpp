@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Common/typeid_cast.h>
 #include <memory>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -35,10 +36,10 @@ public:
     bool isTransformation() const override { return false; }
 
 protected:
-    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override
+    VectorWithMemoryTracking<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override
     {
         const auto & step = *typeid_cast<const DistinctStep *>(expression->getQueryPlanStep());
-        std::vector<GroupExpressionPtr> result;
+        VectorWithMemoryTracking<GroupExpressionPtr> result;
 
         auto add_alternative = [&](ImplementationStrategyPtr strategy, const DistributionDescription & distribution, String strategy_name)
         {
