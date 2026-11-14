@@ -19,7 +19,8 @@ public:
     static constexpr auto name = (target_kind == ViewTarget::Samples)
         ? "timeSeriesSamples"
         : ((target_kind == ViewTarget::Tags) ? "timeSeriesTags"
-        : ((target_kind == ViewTarget::TimeRanges) ? "timeSeriesTimeRanges" : "timeSeriesMetricFamilies"));
+        : ((target_kind == ViewTarget::TimeRanges) ? "timeSeriesTimeRanges"
+        : ((target_kind == ViewTarget::MetricFamilies) ? "timeSeriesMetricFamilies" : "timeSeriesHistograms")));
 
     String getName() const override { return name; }
 
