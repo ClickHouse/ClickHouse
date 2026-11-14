@@ -1,0 +1,6 @@
+<clickhouse>
+    <!-- Identify this server in distributed DDL by an explicit name that differs from `replica_host` -->
+    <distributed_ddl>
+        <host_name>node1</host_name>
+    </distributed_ddl>
+</clickhouse>
