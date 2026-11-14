@@ -24,8 +24,8 @@ CREATE TABLE squality_temporal_string_check
 (
     x DateTime('UTC'),
     y String,
-    CONSTRAINT c CHECK x NOT IN (y)
+    CONSTRAINT c CHECK x NOT IN [y]
 ) ENGINE = Memory;
 INSERT INTO squality_temporal_string_check VALUES ('2020-01-01 00:00:00', 'not-a-date');
-SELECT x NOT IN (y) FROM squality_temporal_string_check;
+SELECT x NOT IN [y] FROM squality_temporal_string_check;
 DROP TABLE squality_temporal_string_check;

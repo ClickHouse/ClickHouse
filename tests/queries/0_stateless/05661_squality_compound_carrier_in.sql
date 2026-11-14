@@ -12,10 +12,10 @@ SELECT
 SETTINGS in_null_as_unknown = 1;
 
 SELECT
-    map('a', toUInt8(1)) IN [CAST(map('a', toUInt8(1)) AS Dynamic)],
-    map('a', toUInt8(1)) IN [CAST('other' AS Dynamic)],
-    map('a', toUInt8(1)) IN [CAST(map(toUInt8(1), toUInt8(1)) AS Dynamic)],
-    [toUInt8(1)] IN [CAST([toUInt8(1)] AS Dynamic)]
+    map('a', toUInt8(1)) IN materialize([CAST(map('a', toUInt8(1)) AS Dynamic)]),
+    map('a', toUInt8(1)) IN materialize([CAST('other' AS Dynamic)]),
+    map('a', toUInt8(1)) IN materialize([CAST(map(toUInt8(1), toUInt8(1)) AS Dynamic)]),
+    [toUInt8(1)] IN materialize([CAST([toUInt8(1)] AS Dynamic)])
 SETTINGS in_null_as_unknown = 1;
 
 SELECT count() FROM numbers(1)
