@@ -136,6 +136,7 @@ bool canBeReattached(const StoragePtr & table, const std::unordered_set<const IS
 /// so require the grants for both.
 /// `ATTACH` also requires `TABLE ENGINE` on the engine from the metadata (see `InterpreterCreateQuery`),
 /// so read the metadata as `ATTACH` does, which works for a table which is not loaded yet as well.
+/// A table defined with a table function is not reattached at all.
 bool isGrantedToReattach(const DatabasePtr & database, const String & table_name, const ContextPtr & context, const ContextPtr & query_context)
 {
     const String & database_name = database->getDatabaseName();
@@ -150,6 +151,13 @@ bool isGrantedToReattach(const DatabasePtr & database, const String & table_name
         return false;
 
     const auto & create = create_query->as<const ASTCreateQuery &>();
+
+    /// A table defined as `AS <table function>` is recreated by executing the table function on `ATTACH`,
+    /// which checks the access to the engine and the source of the function. The table function is not known
+    /// without parsing and resolving it, so such tables are never reattached.
+    if (create.as_table_function)
+        return false;
+
     if (create.storage && create.storage->engine && !access->isGranted(AccessType::TABLE_ENGINE, create.storage->engine->name))
         return false;
 

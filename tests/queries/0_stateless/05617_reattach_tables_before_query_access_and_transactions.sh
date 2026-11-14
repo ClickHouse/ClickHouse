@@ -55,6 +55,25 @@ $CLICKHOUSE_CLIENT --user "$user" -q "SELECT 1 FORMAT Null SETTINGS reattach_tab
 after=$(sample)
 [ "$before" = "$after" ] && echo "user with TABLE ENGINE: not reattached" || echo "user with TABLE ENGINE: reattached"
 
+# A table defined with a table function is recreated by executing the function on `ATTACH`, which has its own access checks,
+# so it is not reattached even for the default user. `generateRandom` without a seed also chooses a new seed when it is attached.
+$CLICKHOUSE_CLIENT -q "CREATE TABLE gen_func AS generateRandom('x UInt64')"
+
+function sample_func()
+{
+    $CLICKHOUSE_CLIENT -q "SELECT x FROM gen_func LIMIT 1 SETTINGS max_threads = 1"
+}
+
+before=$(sample_func)
+$CLICKHOUSE_CLIENT --user "$user" -q "SELECT 1 FORMAT Null SETTINGS reattach_tables_before_query_execution_probability = 1"
+after=$(sample_func)
+[ "$before" = "$after" ] && echo "table function, restricted user: not reattached" || echo "table function, restricted user: reattached"
+
+before=$(sample_func)
+$CLICKHOUSE_CLIENT -q "SELECT 1 FORMAT Null SETTINGS reattach_tables_before_query_execution_probability = 1"
+after=$(sample_func)
+[ "$before" = "$after" ] && echo "table function, default user: not reattached" || echo "table function, default user: reattached"
+
 $CLICKHOUSE_CLIENT -q "DROP USER $user"
 
 # A transaction keeps the tables it has modified until it is finished, so the queries inside it must not reattach tables,
