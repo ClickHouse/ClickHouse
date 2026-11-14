@@ -772,10 +772,18 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         /// the values from the session that differ from the server's.
         PostgreSQLSettings postgresql_settings;
 
-        /// The SETTINGS clause overrides the collection like its key-value arguments do, so it is checked the same way.
+        /// The server's own replay of stored metadata, see the check of the hosts below.
+        const bool is_internal_metadata_replay = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
+        /// A definition the user gives is held to the user's constraints, not one the server stored itself.
+        const bool is_stored_definition = is_internal_metadata_replay || isLoadingFromExistingMetadata(args.mode)
+            || args.create_query.attach_short_syntax;
+
+        /// The SETTINGS clause overrides the collection like its key-value arguments do, so it is checked the same way, when
+        /// the definition is given: a stored definition was checked when it was written, and a key that the collection marks
+        /// `NOT OVERRIDABLE` later must not make the database fail to load, also at the startup of the server.
         auto named_collection = tryGetNamedCollectionWithOverrides(
             engine_args, args.context, /*throw_unknown_collection=*/ true, /*complex_args=*/ nullptr,
-            /*dependent_table_id=*/ nullptr, engine_define->settings);
+            /*dependent_table_id=*/ nullptr, is_stored_definition ? nullptr : engine_define->settings);
         if (named_collection)
         {
             configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, &postgresql_settings, args.context, /*require_table=*/ false);
@@ -836,16 +844,12 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         /// that cannot boot. The loader flag, not `internal`, is the discriminator: wrappers such as
         /// `PARALLEL WITH` run user statements as internal ones, and a user-issued `ATTACH DATABASE`
         /// is not a replay and stays fail-closed, otherwise it would be a direct bypass of the policy.
-        const bool is_internal_metadata_replay = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
         if (!is_internal_metadata_replay)
         {
             for (const auto & address : configuration.addresses)
                 args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
         }
 
-        /// A definition the user gives is held to the user's constraints, not one the server stored itself.
-        const bool is_stored_definition = is_internal_metadata_replay || isLoadingFromExistingMetadata(args.mode)
-            || args.create_query.attach_short_syntax;
         if (!is_stored_definition)
             checkSettingsOfDefinition(*engine_define, named_collection.get(), args.context);
         postgresql_settings.loadFromQuery(*engine_define);
@@ -923,7 +927,7 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password')
 SETTINGS postgresql_connection_pool_size = 32;
 ```
 
-The `SETTINGS` clause takes precedence over a named collection, unless the collection marks the setting `NOT OVERRIDABLE`. When a setting is set by neither, it defaults to the value of the corresponding query-level `postgresql_*` setting. A new database, except one restored from a backup, adds the values it takes this way that differ from the server's values, e.g. set with `SET` or a settings profile of the user, to its `SETTINGS`, so that it keeps them after a server restart. A value equal to the server's is not stored, so such a database follows the server's value if it changes later. A setting that a named collection sets is not taken from the query-level setting, so nothing is stored for it. A stored value is a part of the `SETTINGS` of the database, so it overrides the same key added to the named collection later, and if that key is `NOT OVERRIDABLE`, the database fails to load with `Override not allowed`. In the `SETTINGS` clause of a database, a setting reset with `name = DEFAULT` is not taken from the query-level setting.
+The `SETTINGS` clause takes precedence over a named collection, unless the collection marks the setting `NOT OVERRIDABLE`. A setting set by neither defaults to the corresponding query-level `postgresql_*` setting; a new database (not one restored from a backup) stores the values it takes this way that differ from the server's in its `SETTINGS`, so it keeps them after a restart. A stored value keeps applying if the named collection later marks the key `NOT OVERRIDABLE`. A setting reset with `name = DEFAULT` is not taken from the query-level setting.
 
 <a id="data_types-support"></a>
 ## Data types support {#data-types-support}
