@@ -563,7 +563,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         }
     }
 
-    /// Mark columns whose type contains `Float32` or `Float64` (at any nesting level)
+    /// Mark columns whose type contains `Float32`, `Float64` or `Variant` (at any nesting level)
     /// for bit-exact copy in `setRow`.
     ///
     /// The `Field` roundtrip for a `Float32` value goes through `Float64` storage. On x86 this
@@ -574,6 +574,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     /// Wrappers such as `Nullable(Float32)`, `LowCardinality(Nullable(Float32))`, `Array(Float32)`,
     /// `Tuple(..., Float32, ...)`, and `Map(K, Float32)` all route through the same `Field` layer,
     /// so they are affected too. We use `anyInTypeTree` to walk the whole type tree.
+    /// A `Field` has no `Variant` alternative, so inserting it back picks the first alternative that accepts the value.
     def.columns_need_exact_copy.resize(num_columns, false);
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -581,7 +582,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         if (!col.type)
             continue;
 
-        if (anyInTypeTree(*col.type, [](const IDataType & type) { return WhichDataType(type).isFloat(); }))
+        if (anyInTypeTree(*col.type, [](const IDataType & type) { return isFloat(type) || isVariant(type); }))
             def.columns_need_exact_copy[i] = true;
     }
 
@@ -686,6 +687,7 @@ static void setRow(
                 ///   a signaling NaN (SNaN) to a quiet NaN (QNaN), changing the bit pattern.
                 ///   When the sort key is a hash of such a column (e.g. `ORDER BY gccMurmurHash(c1)`),
                 ///   this silently changes the hash value and breaks sort order during merges.
+                /// - For any type that contains `Variant`: a `Field` loses the alternative.
                 auto column = raw_columns[i]->cloneEmpty();
                 column->reserve(1);
                 column->insertFrom(*raw_columns[i], row_num);

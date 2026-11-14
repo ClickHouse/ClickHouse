@@ -71,8 +71,8 @@ public:
         /// Does SimpleAggregateFunction allocates memory in arena?
         bool allocates_memory_in_arena = false;
 
-        /// Per-column flag: true for Float32/Float64 columns that need bit-exact
-        /// copy via insertFrom() to avoid SNaN→QNaN conversion in Field roundtrip.
+        /// Per-column flag: true for columns whose `Field` roundtrip changes the value (floats: SNaN to QNaN,
+        /// `Variant`: the alternative), so `setRow` copies them via insertFrom().
         VectorWithMemoryTracking<bool> columns_need_exact_copy;
 
         /// Record the origin header before tuple flattening.
