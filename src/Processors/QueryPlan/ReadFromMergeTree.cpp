@@ -4740,30 +4740,46 @@ bool ReadFromMergeTree::isPartitionIndependentProcessingProfitable(ProcessorKind
 
 void ReadFromMergeTree::addReadColumn(const String & column)
 {
-    if (std::ranges::find(all_column_names, column) != all_column_names.end())
+    addReadColumns({column});
+}
+
+void ReadFromMergeTree::addReadColumns(const Names & columns)
+{
+    NameSet read_columns(all_column_names.begin(), all_column_names.end());
+    Names added_columns;
+    for (const auto & column : columns)
+        if (read_columns.insert(column).second)
+            added_columns.push_back(column);
+
+    if (added_columns.empty())
         return;
 
-    all_column_names.emplace_back(column);
+    all_column_names.insert(all_column_names.end(), added_columns.begin(), added_columns.end());
 
     /// A PREWHERE / row-level-filter ActionsDAG only outputs the columns it was built with, and `transformHeader` below
     /// runs the read header through it. A column added here after analysis (e.g. the `Quantize` companion subcolumns
     /// pulled in by the quantized-vector-search rewrite) is neither an input nor an output of those DAGs, so it would be
     /// dropped after PREWHERE and the rewrite would then fail to find it. Pass it through, mirroring
     /// `restorePrewhereInputs` but also for a column that is not yet an input of the DAG.
-    const auto column_type = storage_snapshot->getSampleBlockForColumns({column}).getByName(column).type;
+    const auto added = storage_snapshot->getSampleBlockForColumns(added_columns);
     auto pass_through_filter = [&](ActionsDAG & dag)
     {
-        if (dag.tryFindInOutputs(column))
-            return;
+        NameSet outputs;
+        for (const auto * output : dag.getOutputs())
+            outputs.insert(output->result_name);
+        std::unordered_map<std::string_view, const ActionsDAG::Node *> inputs;
         for (const auto * input : dag.getInputs())
+            inputs.emplace(input->result_name, input);
+
+        for (const auto & column : added)
         {
-            if (input->result_name == column)
-            {
-                dag.getOutputs().push_back(input);
-                return;
-            }
+            if (outputs.contains(column.name))
+                continue;
+            if (auto it = inputs.find(column.name); it != inputs.end())
+                dag.getOutputs().push_back(it->second);
+            else
+                dag.getOutputs().push_back(&dag.addInput(column.name, column.type));
         }
-        dag.getOutputs().push_back(&dag.addInput(column, column_type));
     };
     if (query_info.row_level_filter)
         pass_through_filter(query_info.row_level_filter->actions);
@@ -4779,6 +4795,160 @@ void ReadFromMergeTree::addReadColumn(const String & column)
     /// then update columns to read in analysis result.
     if (analyzed_result_ptr)
         analyzed_result_ptr->column_names_to_read = all_column_names;
+}
+
+const NameSet & ReadFromMergeTree::getColumnsUnsafeForSubcolumnReads() const
+{
+    if (columns_unsafe_for_subcolumn_reads)
+        return *columns_unsafe_for_subcolumn_reads;
+
+    NameSet read_storage_columns;
+    for (const auto & column_name : all_column_names)
+        if (auto column = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), column_name))
+            read_storage_columns.insert(column->getNameInStorage());
+
+    const auto & metadata_columns = storage_snapshot->metadata->getColumns();
+    NameSet unsafe;
+    auto check_part = [&](const IMergeTreeDataPart & part)
+    {
+        /// Such a part cannot read a subcolumn without the whole column, and reading the null map of a sparse
+        /// `Nullable` alone from it is broken.
+        if (part.getType() == MergeTreeDataPartType::Compact && !part.index_granularity_info.mark_type.with_substreams)
+        {
+            unsafe.insert(read_storage_columns.begin(), read_storage_columns.end());
+            return;
+        }
+
+        const auto & serialization_infos = part.getSerializationInfos();
+        for (const auto & column_name : read_storage_columns)
+        {
+            auto metadata_column = metadata_columns.tryGetPhysical(column_name);
+            if (auto part_column = part.getColumnsDescription().tryGetPhysical(column_name))
+            {
+                if (!metadata_column || !metadata_column->type->equals(*part_column->type))
+                    unsafe.insert(column_name);
+            }
+            /// An omitted column is read as the default of the type it had when the part was written.
+            else if (const auto * missing = serialization_infos.getMissingColumnInfo(column_name);
+                     missing && !missing->type_name.empty() && (!metadata_column || metadata_column->type->getName() != missing->type_name))
+            {
+                unsafe.insert(column_name);
+            }
+        }
+    };
+
+    for (const auto & part : getParts())
+    {
+        check_part(*part.data_part);
+        for (const auto & [_, projection_part] : part.data_part->getProjectionParts())
+            check_part(*projection_part);
+    }
+
+    columns_unsafe_for_subcolumn_reads = std::move(unsafe);
+    return *columns_unsafe_for_subcolumn_reads;
+}
+
+std::vector<bool> ReadFromMergeTree::canReadSubcolumnsOfColumns(const std::vector<std::pair<String, bool>> & columns) const
+{
+    std::vector<bool> result(columns.size(), false);
+    if (!output_header || !canRemoveUnusedColumns())
+        return result;
+
+    /// The on-fly reader also recomputes the columns that depend on a changed one, but only for a whole-column read.
+    if (mutations_snapshot && (mutations_snapshot->hasMetadataMutations() || !mutations_snapshot->getColumnsChangedOnFly().empty()))
+        return result;
+
+    if (data.hasEnabledMaskingPolicies(context))
+        return result;
+
+    /// A stream also reads the parts committed after planning, which the part check below does not see.
+    if (query_info.isStream())
+        return result;
+
+    /// Key, index and projection analysis match their own expressions, which a function form would hide. The partition key,
+    /// aggregate projections and `set` indexes also evaluate any function of the columns they require, so a subcolumn read
+    /// in place of `getSubcolumn` of such a column hides it too.
+    const auto & metadata = storage_snapshot->metadata;
+    NameSet key_columns;
+    NameSet function_key_columns;
+    auto add_columns = [](NameSet & set, const Names & names) { set.insert(names.begin(), names.end()); };
+    add_columns(key_columns, metadata->getColumnsRequiredForPartitionKey());
+    add_columns(function_key_columns, metadata->getColumnsRequiredForSortingKey());
+    for (const auto & projection : metadata->getProjections())
+        add_columns(projection.type == ProjectionDescription::Type::Aggregate ? key_columns : function_key_columns, projection.getRequiredColumns());
+    for (const auto & index : metadata->getSecondaryIndices())
+        add_columns(index.type == "set" ? key_columns : function_key_columns, index.expression->getRequiredColumns());
+    function_key_columns.insert(key_columns.begin(), key_columns.end());
+
+    std::unordered_map<std::string_view, size_t> storage_positions;
+    for (size_t position = 0; position < all_column_names.size(); ++position)
+        storage_positions.emplace(all_column_names[position], position);
+
+    const auto & unsafe_columns = getColumnsUnsafeForSubcolumnReads();
+    std::vector<size_t> checked;
+    VectorWithMemoryTracking<size_t> output_positions;
+    std::vector<size_t> storage_positions_of_checked;
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        const auto & [column, function_forms] = columns[i];
+        const auto * output_column = output_header->findByName(column);
+        auto storage_it = storage_positions.find(column);
+        if (!output_column || storage_it == storage_positions.end())
+            continue;
+
+        auto column_in_storage = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), column);
+        if (!column_in_storage || !column_in_storage->type->equals(*output_column->type))
+            continue;
+
+        const String storage_column = column_in_storage->getNameInStorage();
+
+        /// `FINAL` of the engines that combine values merges a subcolumn as a column of its own.
+        if (query_info.isFinal()
+            && (function_forms
+                || (data.merging_params.mode != MergeTreeData::MergingParams::Ordinary
+                    && data.merging_params.mode != MergeTreeData::MergingParams::Replacing)))
+            continue;
+
+        if (unsafe_columns.contains(storage_column))
+            continue;
+
+        const auto & keys = function_forms ? function_key_columns : key_columns;
+        if (keys.contains(storage_column) || keys.contains(column))
+            continue;
+
+        checked.push_back(i);
+        output_positions.push_back(output_header->getPositionByName(column));
+        storage_positions_of_checked.push_back(storage_it->second);
+    }
+
+    if (checked.empty())
+        return result;
+
+    /// Neither PREWHERE, nor the row policy, nor FINAL still needs the columns.
+    auto unneeded_output_positions = output_positions;
+    std::ranges::sort(unneeded_output_positions);
+    auto pruning = pruneColumns(unneeded_output_positions);
+    for (size_t i = 0; i < checked.size(); ++i)
+        result[checked[i]] = std::ranges::binary_search(pruning.dropped_output_positions, output_positions[i])
+            && std::ranges::binary_search(pruning.dropped_storage_positions, storage_positions_of_checked[i]);
+
+    return result;
+}
+
+void ReadFromMergeTree::readSubcolumnsInsteadOfColumns(const Names & columns, const Names & subcolumns)
+{
+    addReadColumns(subcolumns);
+
+    VectorWithMemoryTracking<size_t> output_positions;
+    for (const auto & column : columns)
+        output_positions.push_back(output_header->getPositionByName(column));
+    std::ranges::sort(output_positions);
+
+    auto result = removeUnusedColumns(output_positions, {});
+    const NameSet read_columns(all_column_names.begin(), all_column_names.end());
+    if (result.dropped_output_positions != output_positions
+        || std::ranges::any_of(columns, [&](const auto & column) { return read_columns.contains(column); }))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not stop reading columns {} in favour of their subcolumns", fmt::join(columns, ", "));
 }
 
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForAggregation()
@@ -5118,6 +5288,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         read_task_callback,
         number_of_current_replica);
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
+    cloned_step->columns_unsafe_for_subcolumn_reads = columns_unsafe_for_subcolumn_reads;
     cloned_step->allow_top_k_prewhere_query_condition_cache = allow_top_k_prewhere_query_condition_cache;
     cloned_step->distributed_read_bucket_count = distributed_read_bucket_count;
     /// The coordinator-computed mark buckets and their per-task grouping; without them the
