@@ -83,6 +83,7 @@ public:
         QueryPlanPtrs & local_plans,
         Shards & remote_shards,
         UInt32 shard_count,
+        const String & shard_scope_identity,
         bool parallel_replicas_enabled,
         AdditionalShardFilterGenerator shard_filter_generator,
         const UnavailableShardTrackerPtr & unavailable_shard_tracker);
@@ -96,6 +97,7 @@ public:
         QueryPlanPtrs & local_plans,
         Shards & remote_shards,
         UInt32 shard_count,
+        const String & shard_scope_identity,
         bool parallel_replicas_enabled,
         AdditionalShardFilterGenerator shard_filter_generator,
         const UnavailableShardTrackerPtr & unavailable_shard_tracker);
@@ -115,6 +117,7 @@ private:
         QueryPlanPtrs & local_plans,
         Shards & remote_shards,
         UInt32 shard_count,
+        const String & shard_scope_identity,
         bool parallel_replicas_enabled,
         AdditionalShardFilterGenerator shard_filter_generator,
         const UnavailableShardTrackerPtr & unavailable_shard_tracker) const;
