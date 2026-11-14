@@ -127,6 +127,15 @@ public:
     void checkTableCanBeRenamed(const StorageID & new_name) const override;
     void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override;
 
+    /// `checkTableCanBeRenamedByDatabaseRename` for a table that has no storage object, answered from its `CREATE` query;
+    /// `table_id.database_name` is the database the table would be loaded into.
+    static void checkCreateQueryCanBeRenamedByDatabaseRename(
+        const ASTCreateQuery & query,
+        const StorageID & table_id,
+        UUID database_uuid,
+        const String & new_database_name,
+        const ContextPtr & context_);
+
 private:
     friend class ReadFromObjectStorageQueue;
     using FileIterator = ObjectStorageQueueSource::FileIterator;
