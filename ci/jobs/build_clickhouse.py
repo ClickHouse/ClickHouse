@@ -292,10 +292,11 @@ def main():
     assert (
         build_type in BUILD_TYPE_TO_CMAKE
     ), f"--build_type option is invalid [{build_type}]"
-    assert not args.build_examples or build_type in (
-        BuildTypes.ARM_RELEASE,
-        BuildTypes.ARM_RELEASE_PERFORMANCE_REFERENCE,
-    ), "--build-examples is only supported for ARM release builds"
+    # Only for a build without ThinLTO: with it, `clickhouse-examples` costs a second ThinLTO
+    # backend run over the same modules as `clickhouse`.
+    assert (
+        not args.build_examples or build_type == BuildTypes.ARM_BINARY
+    ), "--build-examples is only supported for the arm_binary build"
 
     shard = parse_shard(args.shard) if args.shard else None
     assert not shard or build_type in (
