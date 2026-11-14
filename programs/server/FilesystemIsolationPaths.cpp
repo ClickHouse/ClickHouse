@@ -264,15 +264,16 @@ private:
 
     /// The configurations matching a pattern, each processed on its own, as `ExternalLoaderXMLConfigRepository`
     /// does for the definitions of dictionaries and executable functions. For a pattern with wildcards, the directory
-    /// up to the first wildcard as well, for the files added later.
-    void addIndependentConfigPattern(const fs::path & pattern, const std::string & source)
+    /// up to the first wildcard as well, for the files added later, if `with_directory`.
+    void addIndependentConfigPattern(const fs::path & pattern, const std::string & source, bool with_directory = true)
     {
         fs::path prefix;
         for (const auto & component : pattern)
         {
             if (hasWildcard(component.string()))
             {
-                add(prefix, Access::ReadOnly, source);
+                if (with_directory)
+                    add(prefix, Access::ReadOnly, source);
                 std::set<std::string> files;
                 Poco::Glob::glob(pattern.string(), files, 0);
                 for (const auto & file : files)
@@ -450,8 +451,11 @@ private:
             return;
         std::set<std::string> files;
         Poco::Glob::glob(next_to_config.string(), files, 0);
+        /// Only the files that match in the working directory, not the directory: it is `/` for a server started by
+        /// systemd, with the default `dictionaries_config` pattern `*_dictionary.*ml` of the packages, and it is not
+        /// where the configuration is meant to be. A file added there later is seen after a restart.
         if (files.empty())
-            addIndependentConfigPattern(absolute(pattern, runtime_directory), source);
+            addIndependentConfigPattern(absolute(pattern, runtime_directory), source, /* with_directory = */ false);
     }
 
     void addDataPaths()
