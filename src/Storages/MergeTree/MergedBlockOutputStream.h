@@ -15,6 +15,14 @@ namespace DB
 class MergedBlockOutputStream final : public IMergedBlockOutputStream
 {
 public:
+    struct FinishedColumns
+    {
+        SerializationInfoByName serialization_infos;
+        MergeTreeDataPartChecksums checksums;
+        ColumnsSubstreams columns_substreams;
+        MergeTreeIndexGranularityPtr index_granularity;
+    };
+
     MergedBlockOutputStream(
         const MergeTreeMutableDataPartPtr & data_part,
         MergeTreeSettingsPtr data_settings,
@@ -35,7 +43,8 @@ public:
         /// versions (the ones a table snapshot leaves at zero fall back to it). A merge passes the
         /// context its memory reservation was priced against, so the writer cannot resolve different
         /// settings than the admission gate did; an empty pointer means the table's live context.
-        const ContextPtr & writer_context = nullptr);
+        const ContextPtr & writer_context = nullptr,
+        std::optional<FinishedColumns> finished_columns = {});
 
     Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
 
@@ -81,6 +90,10 @@ public:
         const NamesAndTypesList * total_columns_list = nullptr);
 
     void finalizeIndexGranularity();
+
+    /// Finish the files of the columns before the part, for a merge checkpoint. The finalization then only writes metadata.
+    /// Once finished, returns the same columns.
+    const FinishedColumns & finalizeDataFiles(const MergeTreeMutableDataPartPtr & part, bool sync);
 
 private:
     /** If `permutation` is given, it rearranges the values in the columns when writing.

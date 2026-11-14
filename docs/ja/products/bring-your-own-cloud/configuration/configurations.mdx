@@ -56,38 +56,39 @@ BYOC デプロイメントでプライベートロードバランサーを使用
 
 ## Kubernetes API のプライベート接続 {#k8s-api-private-connection}
 
-デフォルトでは、BYOC クラスターの Kubernetes API サーバーのエンドポイントはパブリックインターネットからアクセス可能です。AWS では、IP フィルタリングにより、ClickHouse NAT ゲートウェイの IP からのアクセスのみに制限されています。GCP と Azure では、代わりにクラウドの IAM によって制御されます ([Kubernetes API サーバーの公開](/ja/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)を参照) 。より強固なセキュリティを実現するには、Kubernetes API サーバーを、プライベートネットワーク接続経由でのみアクセスできるように制限できます。
+デフォルトでは、BYOC クラスターの Kubernetes API サーバーのエンドポイントはパブリックインターネットからアクセス可能です。AWS では、IP フィルタリングにより、ClickHouse NAT ゲートウェイの IP からのアクセスのみに制限されています。GCP と Azure では、代わりにクラウドの IAM によって制御されます ([Kubernetes API サーバーの公開](/ja/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)を参照) 。より強固なセキュリティを実現するには、Kubernetes API サーバーをプライベートアクセスのみに制限できます。この場合、AWS と Azure ではプライベートネットワーク接続経由でのみアクセスできるようになります。GCP ではパブリック IP エンドポイントが無効化されますが、管理サービスは IAM で認可された DNS ベースのエンドポイントを使用します。このエンドポイントはお客様の VPC ネットワークの外部に置かれたままとなります。
 
 利用可能なプライベート接続オプションは、クラウドプロバイダーによって異なります:
 
-### Tailscale (デフォルト) {#k8s-api-private-connection-tailscale}
-
-プライベート API エンドポイントが有効になっている場合、ClickHouse 管理サービスは、トラブルシューティングアクセスに使用されるものと同じ Tailscale のゼロトラストネットワークを介して Kubernetes API サーバーに接続します。この接続の仕組みの詳細については、[Tailscale Private Network](/ja/products/bring-your-own-cloud/reference/network-security#tailscale-private-network) を参照してください。
-
-<Note>
-  プライベート接続を Tailscale のみに依存している場合、Tailscale エージェントが利用できなくなると、ClickHouse Support がお使いの環境にアクセスできなくなるリスクがあります。その結果、トラブルシューティングやサポート対応に時間がかかる可能性があります。
-</Note>
-
 ### AWS VPC Lattice {#k8s-api-private-connection-vpc-lattice}
 
-<Info>
-  VPC Lattice 接続は現在プライベートプレビューです。お使いのデプロイメントで有効にするには、ClickHouse Support にお問い合わせください。
-</Info>
-
-AWS のデプロイメントでは、サードパーティ製コンポーネントを使わずに、[AWS VPC Lattice](https://aws.amazon.com/vpc/lattice/) 経由で Kubernetes API サーバーにプライベート接続することもできます。
+AWS の Deployment では、サードパーティ製コンポーネントを使わずに、[AWS VPC Lattice](https://aws.amazon.com/vpc/lattice/) 経由で Kubernetes API サーバーにプライベート接続できます。
 
 * ClickHouse Cloud は、BYOC VPC 内の EKS API サーバーのエンドポイントを対象とする VPC Lattice Resource Gateway と Resource Configuration を自動的にプロビジョニングし、AWS Resource Access Manager (RAM) を通じて、その Resource Configuration を ClickHouse Cloud の管理アカウントと共有します。
 * ClickHouse の管理サービスとお使いの Kubernetes API サーバーとの間のトラフィックは、すべて AWS のプライベートネットワーク内にとどまります。
 * RAM 共有はお使いのアカウントから作成され、単一の BYOC クラスターに限定されます。これを削除すると、プライベートアクセス経路はただちに無効になります。
 * Kubernetes クラスター内で動作するエージェントにアクセスが依存しないため、クラスター内コンポーネントが利用できない場合でも、ClickHouse Support はトラブルシューティングのためのアクセスを維持できます。
 
-### GCP のプライベートコントロールプレーンエンドポイント {#k8s-api-private-connection-gcp}
+### Tailscale {#k8s-api-private-connection-tailscale}
 
-GCP へのデプロイメントでは、GKE クラスターの IP ベースのコントロールプレーンエンドポイントを無効化して、パブリックインターネットから到達できないようにできます。この場合、ClickHouse の管理サービスは DNS ベースのエンドポイント (`*.gke.goog`) 経由でコントロールプレーンにアクセスします。このアクセスは、送信元 IP の許可リストではなく、お客様のプロジェクト内で ClickHouse が借用する service account に付与された `container.clusters.connect` IAM 権限によって承認されます。
+<Warning>
+  EKS API サーバーへのプライベート接続として Tailscale を使用する方法は非推奨です。AWS では、代わりに [AWS VPC Lattice](#k8s-api-private-connection-vpc-lattice) を使用してください。現在、AWS 上のデプロイメントでプライベートな Kubernetes API アクセスに Tailscale を使用している場合は、ClickHouse Support に連絡して VPC Lattice へ移行してください。
+</Warning>
 
-* アクセスは完全にお客様のプロジェクト内のクラウド IAM によって管理されるため、その権限を取り消せば、このアクセスパスも無効になります。
-* リクエストはお客様の VPC ネットワーク内ではなく Google のフロントエンドで終端されます。そのため、ネットワーク的にプライベートな接続としてではなく、コントロールプレーンへのアクセスパスの一つとして評価してください。
-* ClickHouse エンジニアによるトラブルシューティングアクセスには、引き続き Tailscale を使用します。
+プライベート API エンドポイントが有効になっている場合、ClickHouse 管理サービスは、トラブルシューティングアクセスに使用されるものと同じ Tailscale のゼロトラストネットワークを介して Kubernetes API サーバーに接続します。GCP では、デプロイ用ツール、監視、トラブルシューティングの通信は Tailscale が担い、管理サービスは DNS ベースのエンドポイントを使用します ([GCP プライベート control-plane エンドポイント](#k8s-api-private-connection-gcp) を参照) 。この接続の仕組みの詳細については、[Tailscale Private Network](/ja/products/bring-your-own-cloud/reference/network-security#tailscale-private-network) を参照してください。
+
+<Note>
+  プライベート接続を Tailscale のみに依存している場合、Tailscale エージェントが利用できなくなると、ClickHouse Support がお使いの環境にアクセスできなくなるリスクがあります。その結果、トラブルシューティングやサポート対応に時間がかかる可能性があります。
+</Note>
+
+### GCP のプライベートな control-plane エンドポイント {#k8s-api-private-connection-gcp}
+
+GCP では、ClickHouse 管理サービスはデフォルトで GKE control-plane のパブリック IP エンドポイント経由で接続します。このエンドポイントを無効化すると、パブリック IP アドレスから control-plane に接続できなくなります。
+
+* 無効化後も、control-plane には VPC ネットワーク内からのみ接続可能な内部 IP エンドポイントと、常に有効な DNS ベースのエンドポイント (`*.gke.goog`) が残ります。
+* ClickHouse 管理サービスは、DNS ベースのエンドポイント経由で control-plane に接続します。このアクセスは、送信元 IP の許可リストではなく、ClickHouse がお客様のプロジェクト内で権限借用する service account に付与された `container.clusters.connect` IAM アクセス許可によって認可されます。そのため、このアクセス許可を取り消せば、この経路も遮断されます。リクエストは VPC ネットワーク内ではなく Google のフロントエンドで終端されるため、ネットワーク的にプライベートな接続ではなく、control-plane へのアクセス経路の 1 つとして評価してください。
+* デプロイ用ツール、監視、および ClickHouse エンジニアによるトラブルシューティングアクセスは、Tailscale 経由で内部 IP エンドポイントに接続します。Tailscale エージェントは初期セットアップ時にクラスターへデプロイされるため、このモードを有効化できるのはセットアップ完了後のみです。
+* `container.googleapis.com` を制限する VPC Service Controls の境界を設定している場合、DNS ベースのエンドポイントも制限されます。ClickHouse の管理用アイデンティティを許可するイングレスルールを追加してください。対象のアイデンティティは、お客様のデプロイメントに応じて ClickHouseチームが提供します。
 
 ### Azure プライベートリンク {#k8s-api-private-connection-azure}
 

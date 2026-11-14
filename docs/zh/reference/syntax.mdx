@@ -9,9 +9,7 @@ doc_type: 'reference'
 本节将介绍 ClickHouse 的 SQL 语法。
 ClickHouse 使用基于 SQL 的语法，同时提供了多种扩展和优化。
 
-<div id="query-parsing">
-  ## 查询解析
-</div>
+## 查询解析 {#query-parsing}
 
 ClickHouse 中有两种解析器：
 
@@ -54,16 +52,12 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
   有关格式解析器的更多信息，请参见 [Formats](/zh/reference/formats/index) 部分。
 </Note>
 
-<div id="spaces">
-  ## 空格
-</div>
+## 空格 {#spaces}
 
 * 语法结构之间 (包括查询的开头和结尾) 可以有任意数量的空白字符。
 * 空白字符包括空格、制表符、换行符、CR 和换页符。
 
-<div id="comments">
-  ## 注释
-</div>
+## 注释 {#comments}
 
 ClickHouse 同时支持 SQL 风格注释和 C 风格注释：
 
@@ -87,9 +81,7 @@ SELECT
     # TODO: 添加小时/分钟版本
 ```
 
-<div id="keywords">
-  ## 关键字
-</div>
+## 关键字 {#keywords}
 
 ClickHouse 中的关键字是否 *区分大小写* 或 *不区分大小写*，取决于具体上下文。
 
@@ -114,9 +106,7 @@ ClickHouse 中的关键字是否 *区分大小写* 或 *不区分大小写*，�
 SELECT "FROM" FROM table_name
 ```
 
-<div id="identifiers">
-  ## 标识符
-</div>
+## 标识符 {#identifiers}
 
 标识符包括：
 
@@ -127,12 +117,20 @@ SELECT "FROM" FROM table_name
 
 标识符可以带引号，也可以不带引号，不过更推荐后者。
 
-不带引号的标识符必须匹配正则表达式 `^[a-zA-Z_][0-9a-zA-Z_]*$`，且不能与[关键字](#keywords)相同。
+不带引号的标识符由 ASCII 字母、数字、下划线 (`_`) 和美元符号 (`$`) 组成，并遵循以下规则：
+
+* 以字母或 `_` 开头的标识符需匹配正则表达式 `^[a-zA-Z_][0-9a-zA-Z_$]*$`，例如 `xyz` 或 `a$b`。
+* 若紧随其后的字符是字母、数字或 `_`，标识符可以以 `$` 开头，例如 `$doc` 或 `$1`。单独的 `$` 不是标识符。
+* 只要不是[数值字面量](#numeric)，标识符就可以以数字开头，例如 `1x` 或 `2nd_col`，但 `1e5` 或 `0x1F` 不行。此类标识符不能包含 `$`。
+* 如果标识符以 `$tag$` 开头 (其中 `tag` 由一个或多个字母、数字或下划线组成) ，且相同的 `$tag$` 在查询后文中再次出现，则从第一个 `$tag$` 到第二个 `$tag$` 之间的文本会被解析为 [Here 文档](#heredoc)。例如，`SELECT 1 AS $a$b, 2 AS $a$c` 会执行失败。请为此类标识符加上引号：`` `$a$b` ``。
+
+按这种方式拼写的单词并不一定会被解析为标识符：如果所在位置的上下文同样允许[关键字](#keywords)或字面量，该单词就可能被解析为关键字或字面量。例如，`SELECT 1 AS from` 可以正常执行，但在 `SELECT 1 from` 中，`from` 会被视为 `FROM` 子句的开头；而在表达式中，名为 `inf`、`nan`、`true` 或 `false` 的列会被解析为字面量。请为此类标识符加上引号，例如 `"from"` 或 `` `inf` ``。
+
 有效和无效标识符的示例见下表：
 
-| 有效标识符                                          | 无效标识符                                  |
-| ---------------------------------------------- | -------------------------------------- |
-| `xyz`, `_internal`, `Id_with_underscores_123_` | `1x`, `tom@gmail.com`, `äußerst_schön` |
+| 有效标识符                                                               | 无效标识符                                         |
+| ------------------------------------------------------------------- | --------------------------------------------- |
+| `xyz`, `_internal`, `Id_with_underscores_123_`, `a$b`, `$doc`, `1x` | `1a$b`, `$`, `tom@gmail.com`, `äußerst_schön` |
 
 如果你想使用与关键字相同的标识符，或者想在标识符中使用其他符号，请用双引号或反引号将其括起来，例如 `"id"`、`` `id` ``。
 
@@ -149,9 +147,7 @@ SELECT "FROM" FROM table_name
   除非你确实需要 `Nested` 语义，否则请使用下划线 (`_`) 或其他分隔符来代替列名中的点号。
 </Tip>
 
-<div id="literals">
-  ## 字面量
-</div>
+## 字面量 {#literals}
 
 在 ClickHouse 中，字面量是指在查询中直接写出的值。
 换句话说，它是在查询执行过程中不会改变的固定值。
@@ -166,9 +162,7 @@ SELECT "FROM" FROM table_name
 
 下面各节将更详细地介绍这些类型。
 
-<div id="string">
-  ### String
-</div>
+### String {#string}
 
 String 字面量必须用单引号括起来。不支持双引号。
 
@@ -206,9 +200,7 @@ String 字面量必须用单引号括起来。不支持双引号。
   在字符串字面量中，至少需要使用转义码 `\'` (或 `''`) 和 `\\` 对 `'` 和 `\` 进行转义。
 </Note>
 
-<div id="numeric">
-  ### 数值
-</div>
+### 数值 {#numeric}
 
 数值字面量按以下方式解析：
 
@@ -263,9 +255,7 @@ String 字面量必须用单引号括起来。不支持双引号。
   为避免解释时出现意外错误，不支持八进制字面量。
 </Note>
 
-<div id="compound">
-  ### 复合字面量
-</div>
+### 复合字面量 {#compound}
 
 数组使用 `[]` 构造，例如 `[1, 2, 3]`。Tuple 使用 `()` 构造，例如 `(1, 'Hello, world!', 2)`。
 严格来说，这些并不是字面量，而是分别使用数组创建运算符和 Tuple 创建运算符的表达式。
@@ -276,9 +266,7 @@ String 字面量必须用单引号括起来。不支持双引号。
   查询结果可以包含 Tuple，但 Tuple 不能保存到数据库中 (使用 [Memory](/zh/reference/engines/table-engines/special/memory) 引擎的表除外) 。
 </Note>
 
-<div id="null">
-  ### NULL
-</div>
+### NULL {#null}
 
 `NULL` 用于表示值缺失。
 要在表字段中存储 `NULL`，该字段必须为 [Nullable](/zh/reference/data-types/nullable) 类型。
@@ -291,9 +279,7 @@ String 字面量必须用单引号括起来。不支持双引号。
   * 在查询中，可以使用 [`IS NULL`](/zh/reference/functions/regular-functions/functions-for-nulls#isNull) 和 [`IS NOT NULL`](/zh/reference/functions/regular-functions/functions-for-nulls#isNotNull) 运算符，以及相关函数 `isNull` 和 `isNotNull` 来检查 `NULL`。
 </Note>
 
-<div id="heredoc">
-  ### Heredoc
-</div>
+### Heredoc {#heredoc}
 
 [heredoc](https://en.wikipedia.org/wiki/Here_document) 是一种定义字符串 (通常是多行字符串) 的方法，同时保留原始格式。
 heredoc 是一种自定义字符串字面量，位于两个 `$` 符号之间。
@@ -316,9 +302,7 @@ SELECT $heredoc$SHOW CREATE VIEW my_view$heredoc$;
   * 你可以使用 heredoc 嵌入 SQL、HTML 或 XML 等代码片段。
 </Tip>
 
-<div id="defining-and-using-query-parameters">
-  ## 定义和使用查询参数
-</div>
+## 定义和使用查询参数 {#defining-and-using-query-parameters}
 
 查询参数可让你编写通用查询，在查询中使用抽象占位符，而不是具体标识符。
 执行带有查询参数的查询时，
@@ -387,9 +371,7 @@ SELECT $heredoc$SHOW CREATE VIEW my_view$heredoc$;
   它们主要设计用于在 `SELECT` 语句中替代标识符或字面量。
 </Note>
 
-<div id="functions">
-  ## 函数
-</div>
+## 函数 {#functions}
 
 函数调用的写法类似于一个标识符，后面跟着一组放在 `()` 中的参数列表 (可以为空) 。
 与标准 SQL 不同，即使参数列表为空，也必须使用括号。
@@ -417,9 +399,7 @@ quantile (0.9)(x)
   不带参数的聚合函数，其语法与常规函数相同。
 </Note>
 
-<div id="operators">
-  ## 运算符
-</div>
+## 运算符 {#operators}
 
 在解析查询时，运算符会根据其优先级和结合性转换为相应的函数。
 
@@ -435,9 +415,7 @@ quantile (0.9)(x)
 plus(plus(1, multiply(2, 3)), 4)`
 ```
 
-<div id="data-types-and-database-table-engines">
-  ## 数据类型和数据库表引擎
-</div>
+## 数据类型和数据库表引擎 {#data-types-and-database-table-engines}
 
 `CREATE` 查询中的数据类型和表引擎，写法与标识符或函数相同。
 也就是说，它们可以带括号中的参数列表，也可以不带。
@@ -448,9 +426,7 @@ plus(plus(1, multiply(2, 3)), 4)`
 * [表引擎](/zh/reference/engines/table-engines/index)
 * [CREATE](/zh/reference/statements/create/index)。
 
-<div id="expressions">
-  ## 表达式
-</div>
+## 表达式 {#expressions}
 
 表达式可以是以下任意一种：
 
@@ -470,9 +446,7 @@ plus(plus(1, multiply(2, 3)), 4)`
 常量表达式是指其结果在查询分析期间 (即执行之前) 即可确定的表达式。
 例如，仅由字面量构成的表达式就是常量表达式。
 
-<div id="expression-aliases">
-  ## 表达式别名
-</div>
+## 表达式别名 {#expression-aliases}
 
 别名是查询中某个[表达式](#expressions)的用户自定义名称。
 
@@ -488,9 +462,7 @@ expr AS alias
 | `expr`  | ClickHouse 支持的任意 表达式。                           | `SELECT column_name * 2 AS double FROM some_table`                      |                                                                                                                |
 | `alias` | `expr` 的名称。别名应符合 [identifiers](#identifiers) 的语法。      | `SELECT "table t".column_name FROM table_name AS "table t"`.            |                                                                                                                |
 
-<div id="notes-on-usage">
-  ### 使用说明
-</div>
+### 使用说明 {#notes-on-usage}
 
 * 别名在查询或子查询中是全局生效的，你可以在查询的任何部分为任何表达式定义别名。例如：
 
@@ -539,9 +511,7 @@ ClickHouse 将表达式 `argMax(a, b)` 中的字面量 `b` 替换成了表达式
   你可以将 [prefer&#95;column&#95;name&#95;to&#95;alias](/zh/reference/settings/session-settings/prefer#prefer_column_name_to_alias) 设置为 `1`，以更改这一默认行为。
 </Note>
 
-<div id="asterisk">
-  ## 星号
-</div>
+## 星号 {#asterisk}
 
 在 `SELECT` 查询中，星号可用于替代表达式。
 更多信息，请参见 [SELECT](/zh/reference/statements/select/index#asterisk) 一节。

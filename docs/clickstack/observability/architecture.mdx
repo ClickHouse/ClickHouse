@@ -10,7 +10,6 @@ sidebarTitle: 'Architecture'
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge label="Beta offering" />
 
@@ -18,7 +17,15 @@ ClickHouse Observability runs entirely within **ClickHouse Cloud**, providing a 
 
 In this model, **ClickHouse, the ClickStack UI, and the OpenTelemetry (OTel) ingestion collector** are hosted, operated, and secured by ClickHouse Cloud. Users are responsible for instrumenting their applications and sending telemetry from their environment to the managed service.
 
-<Image img="/images/use-cases/observability/clickstack-managed-architecture.svg" alt="Fully managed architecture with the OpenTelemetry collector, ClickHouse, and ClickStack UI operated by ClickHouse Cloud" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Fully managed architecture with the OpenTelemetry collector, ClickHouse, and ClickStack UI operated by ClickHouse Cloud](/images/use-cases/observability/clickstack-managed-architecture.svg)
+
+</Frame>
+
+</div>
 
 ### OpenTelemetry collector: data ingestion {#open-telemetry-collector-managed}
 

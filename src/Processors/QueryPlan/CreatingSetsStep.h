@@ -93,7 +93,7 @@ public:
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders, const BuildQueryPipelineSettings &) override;
 
-    static std::vector<std::unique_ptr<QueryPlan>> makePlansForSets(
+    static VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> makePlansForSets(
         DelayedCreatingSetsStep && step,
         const QueryPlanOptimizationSettings & optimization_settings);
 
