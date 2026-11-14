@@ -177,11 +177,12 @@ ProcessorPtr blobSource(const String & blob)
     return std::make_shared<SourceFromSingleChunk>(runtimeFilterPartialsHeader(), makePartialsChunk({blob}));
 }
 
-void expectRange(const std::optional<Range> & range, UInt64 min, UInt64 max)
+/// Checks the envelope of the cover.
+void expectRange(const std::vector<Range> & ranges, UInt64 min, UInt64 max)
 {
-    ASSERT_TRUE(range.has_value());
-    EXPECT_EQ(range->left, Field(min));
-    EXPECT_EQ(range->right, Field(max));
+    ASSERT_FALSE(ranges.empty());
+    EXPECT_EQ(ranges.front().left, Field(min));
+    EXPECT_EQ(ranges.back().right, Field(max));
 }
 
 }
@@ -341,7 +342,7 @@ TEST(MergeRuntimeFiltersTransform, KeyRangeSurvivesTheBloomState)
     /// A merge task forwards the union; an empty partial must not stop the range tracking.
     auto blobs = runForward({partialSource(100, 300, true), partialSource(5, 5, true), partialSource(1000, 1100, true)});
     ASSERT_EQ(blobs.size(), 1u);
-    expectRange(deserializeBlob(blobs.front()).getKeyRange(), 100, 1099);
+    expectRange(deserializeBlob(blobs.front()).getKeyRanges(), 100, 1099);
 
     TestPipeline pipeline;
     pipeline.enable_index_analysis = true;
@@ -359,7 +360,7 @@ TEST(MergeRuntimeFiltersTransform, KeyRangeIsDroppedWhenAPartialHasNone)
     /// The partial without tracking has keys outside the range of the others.
     auto blobs = runForward({partialSource(100, 300, true), partialSource(0, 10)});
     ASSERT_EQ(blobs.size(), 1u);
-    EXPECT_FALSE(deserializeBlob(blobs.front()).getKeyRange().has_value());
+    EXPECT_TRUE(deserializeBlob(blobs.front()).getKeyRanges().empty());
 }
 
 TEST(MergeRuntimeFiltersTransform, SameTaskPublicationKeepsTheKeyRange)
