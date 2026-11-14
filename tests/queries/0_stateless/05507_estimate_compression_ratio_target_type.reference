@@ -1,0 +1,47 @@
+parameters
+1
+1
+1	1
+0
+1	1	1
+errors
+1
+1
+1
+1
+1
+1	1
+1	1
+1
+numerator
+1	5
+1	2
+ranking
+1	1
+1
+1
+block size
+1	3
+1	4
+1	4
+aggregation
+1
+1
+1
+1
+1000	1
+states
+1	AggregateFunction(estimateCompressionRatio(\'LZ4\', \'String\'), String)
+1
+1
+1
+1
+0	1	3
+1	1	3
+2
+1	2
+1
+sparse
+Sparse
+1
+1
