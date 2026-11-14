@@ -1,6 +1,7 @@
 #include <optional>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/Expect404ResponseScope.h>
+#include <Common/StringUtils.h>
 
 #if USE_AWS_S3
 
@@ -100,11 +101,22 @@ bool isAuthenticationError(Aws::S3::S3Errors error)
         || error == Aws::S3::S3Errors::INVALID_SIGNATURE;
 }
 
-static String getAuthenticationErrorHint(Aws::S3::S3Errors error)
+static std::string_view getMessageWithoutTrailingPeriod(const Aws::S3::S3Error & error)
 {
-    if (isAuthenticationError(error))
-        return " Please check your AWS credentials and permissions.";
-    return "";
+    std::string_view message = error.GetMessage();
+    trimRight(message, '.');
+    return message;
+}
+
+static String getAuthenticationErrorHint(const Aws::S3::S3Error & error)
+{
+    if (!isAuthenticationError(error.GetErrorType()))
+        return "";
+    /// The SDK leaves the exception name empty when it guessed the error from the status code alone (no response body).
+    if (error.GetExceptionName().empty())
+        return " S3 did not say why. The credentials or permissions may be wrong, or, for a requester-pays bucket,"
+               " the `x-amz-request-payer: requester` header may be missing.";
+    return " Please check your AWS credentials and permissions.";
 }
 
 ObjectAttributes getObjectTags(
@@ -123,10 +135,10 @@ ObjectAttributes getObjectTags(
             "Failed to get object tags of key {} in bucket {}: {}. HTTP response code: {}, error type: {}.{}",
             key,
             bucket,
-            error.GetMessage(),
+            getMessageWithoutTrailingPeriod(error),
             error.GetResponseCode(),
             error.GetErrorType(),
-            getAuthenticationErrorHint(error.GetErrorType()));
+            getAuthenticationErrorHint(error));
     }
 
     for (const auto & tag : tag_outcome.GetResult().GetTagSet())
@@ -157,10 +169,10 @@ ObjectInfo getObjectInfoIfExists(
         "Failed to get object info for key {} in bucket {}: {}. HTTP response code: {}, error type: {}.{}",
         key,
         bucket,
-        error.GetMessage(),
+        getMessageWithoutTrailingPeriod(error),
         error.GetResponseCode(),
         error.GetErrorType(),
-        getAuthenticationErrorHint(error.GetErrorType()));
+        getAuthenticationErrorHint(error));
 }
 
 ObjectInfo getObjectInfo(
@@ -183,10 +195,10 @@ ObjectInfo getObjectInfo(
         "Failed to get object info for key {} in bucket {}: {}. HTTP response code: {}, error type: {}.{}",
         key,
         bucket,
-        error.GetMessage(),
+        getMessageWithoutTrailingPeriod(error),
         error.GetResponseCode(),
         error.GetErrorType(),
-        getAuthenticationErrorHint(error.GetErrorType()));
+        getAuthenticationErrorHint(error));
 }
 
 size_t getObjectSize(
@@ -216,8 +228,8 @@ bool objectExists(
 
     throw S3Exception(error.GetErrorType(),
         "Failed to check existence of key {} in bucket {}: {}. HTTP response code: {}, error type: {}.{}",
-        key, bucket, error.GetMessage(), error.GetResponseCode(),
-        error.GetErrorType(), getAuthenticationErrorHint(error.GetErrorType()));
+        key, bucket, getMessageWithoutTrailingPeriod(error), error.GetResponseCode(),
+        error.GetErrorType(), getAuthenticationErrorHint(error));
 }
 
 void checkObjectExists(

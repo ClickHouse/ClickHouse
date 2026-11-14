@@ -224,7 +224,7 @@ def test_no_sign_config(started_cluster):
 
 
 def test_error_message_includes_auth_hint(started_cluster):
-    """Test that authentication errors include a hint to check credentials."""
+    """A refused HEAD request has no body, so the error must say that S3 gave no reason."""
     instance = started_cluster.instances["s3_with_invalid_environment_credentials"]
     bucket = started_cluster.minio_restricted_bucket
 
@@ -244,4 +244,9 @@ def test_error_message_includes_auth_hint(started_cluster):
 
     # Check that the error message contains the authentication error hint
     assert "HTTP response code: 403" in error_message
-    assert "Please check your AWS credentials and permissions" in error_message
+    assert (
+        "S3 did not say why. The credentials or permissions may be wrong, or, for a requester-pays bucket, "
+        "the `x-amz-request-payer: requester` header may be missing" in error_message
+    )
+    assert "Please check your AWS credentials and permissions" not in error_message
+    assert "No response body.." not in error_message
