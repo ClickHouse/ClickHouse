@@ -1,0 +1,8 @@
+Two parts in granules 200 and 800, granules 201..798 between them are not merged
+Non intersecting ranges in data parts 1 parts: [all_1_1_1[(0, 199),(201, 799),(801, 1000)]]
+Intersecting ranges in data parts 3 parts: [all_1_1_1[(199, 201),(799, 801)], all_2_2_1[(0, 1)], all_3_3_1[(0, 1)]]
+100000
+Two parts in granule 200, no granule between them
+Non intersecting ranges in data parts 1 parts: [all_1_1_1[(0, 199),(201, 1000)]]
+Intersecting ranges in data parts 3 parts: [all_1_1_1[(199, 201)], all_2_2_1[(0, 1)], all_3_3_1[(0, 1)]]
+100000
