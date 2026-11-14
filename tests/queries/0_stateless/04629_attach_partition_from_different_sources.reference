@@ -1,0 +1,3 @@
+after attach from src1	3
+after attach from src2	6
+after repeated attach from src1	6
