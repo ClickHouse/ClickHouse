@@ -6,10 +6,12 @@
 #include <Core/SortDescription.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
+#include <base/defines.h>
 
 #include <array>
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <queue>
 
 namespace DB
@@ -25,40 +27,53 @@ public:
     /// A paused input keeps its reader open, so only merges with at most this many inputs use a tracker.
     static constexpr size_t max_inputs = 128;
 
-    ReadInOrderReadAheadTracker(size_t num_inputs, const Block & header, const SortDescription & description_, size_t limit_);
+    /// `merge_has_limit_` is false when the sort is finished after the merge.
+    ReadInOrderReadAheadTracker(
+        size_t num_inputs, const Block & header, const SortDescription & description_, size_t limit_, bool merge_has_limit_);
 
-    /// The limit of the sort. The merge itself has no limit when the sort is finished after it.
+    /// The limit of the sort.
     size_t getLimit() const { return limit; }
 
-    /// Called once per input, with its first chunk that has rows.
-    void setFirstRow(size_t input, const Chunk & chunk);
-    void setProducedRows(size_t input, size_t rows);
+    /// Called with every chunk of `input` that has rows; `rows` counts all rows `input` has produced so far.
+    void addChunk(size_t input, const Chunk & chunk, size_t rows);
+
+    struct InputBefore
+    {
+        size_t input = 0;
+        size_t rows = 0;
+        bool overlaps = false;
+    };
 
     /// Comparison results of `input` against the inputs in `published`, owned by the transform of `input`.
     struct InputsBefore
     {
         size_t num_compared = 0;
-        VectorWithMemoryTracking<size_t> inputs;
+        VectorWithMemoryTracking<InputBefore> inputs;
     };
 
     /// Rows produced by the inputs in `published` whose first row sorts strictly before the first row of `input`.
-    /// Requires `setFirstRow(input, ...)`.
+    /// A merge without a limit can need all rows of overlapping inputs to fill a block, so then only the rows
+    /// produced while the other input had not reached the first row of `input` count. Requires `addChunk(input, ...)`.
     size_t rowsProducedBefore(size_t input, InputsBefore & inputs_before) const;
 
 private:
     struct InputState
     {
-        std::atomic<size_t> produced{0};
         Columns first_row; /// One row per sort column; written before the input enters `published`, read-only afterwards.
+        mutable std::mutex mutex;
+        Columns last_row TSA_GUARDED_BY(mutex); /// Kept only when the merge has no limit.
+        std::atomic<size_t> produced{0};
     };
 
-    int compareFirstRows(size_t lhs, size_t rhs) const;
+    Columns cutRow(const Chunk & chunk, size_t row) const;
+    int compareRows(const Columns & lhs, const Columns & rhs) const;
 
     const SortDescription description;
     const size_t limit;
+    const bool merge_has_limit;
     VectorWithMemoryTracking<size_t> sort_column_positions;
     VectorWithMemoryTracking<InputState> inputs; /// Sized in the constructor, never resized.
-    /// `input + 1` for the inputs that called `setFirstRow`, in that order; 0 in a slot not written yet.
+    /// `input + 1` for the inputs that called `addChunk`, in that order; 0 in a slot not written yet.
     std::array<std::atomic<size_t>, max_inputs> published{};
     std::atomic<size_t> num_published{0};
 };

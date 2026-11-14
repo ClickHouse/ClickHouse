@@ -456,7 +456,7 @@ void SortingStep::mergingSorted(
             bool has_collation = std::ranges::any_of(result_sort_desc, [](const auto & column) { return column.collator != nullptr; });
             if (read_ahead_limit && !always_read_till_end && !has_collation && num_streams <= ReadInOrderReadAheadTracker::max_inputs)
                 read_ahead_tracker = std::make_shared<ReadInOrderReadAheadTracker>(
-                    num_streams, pipeline.getHeader(), result_sort_desc, read_ahead_limit);
+                    num_streams, pipeline.getHeader(), result_sort_desc, read_ahead_limit, limit_ != 0);
 
             size_t next_input_index = 0;
             pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr

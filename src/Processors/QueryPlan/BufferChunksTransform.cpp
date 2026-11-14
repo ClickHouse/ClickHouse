@@ -10,9 +10,10 @@ namespace DB
 {
 
 ReadInOrderReadAheadTracker::ReadInOrderReadAheadTracker(
-    size_t num_inputs, const Block & header, const SortDescription & description_, size_t limit_)
+    size_t num_inputs, const Block & header, const SortDescription & description_, size_t limit_, bool merge_has_limit_)
     : description(description_)
     , limit(limit_)
+    , merge_has_limit(merge_has_limit_)
     , inputs(num_inputs)
 {
     sort_column_positions.reserve(description.size());
@@ -20,34 +21,48 @@ ReadInOrderReadAheadTracker::ReadInOrderReadAheadTracker(
         sort_column_positions.push_back(header.getPositionByName(column_description.column_name));
 }
 
-void ReadInOrderReadAheadTracker::setFirstRow(size_t input, const Chunk & chunk)
+Columns ReadInOrderReadAheadTracker::cutRow(const Chunk & chunk, size_t row) const
 {
-    chassert(input < inputs.size());
-    auto & state = inputs[input];
-    chassert(state.first_row.empty() && chunk.getNumRows() > 0);
-
     const auto & columns = chunk.getColumns();
-    state.first_row.reserve(sort_column_positions.size());
+    Columns res;
+    res.reserve(sort_column_positions.size());
     /// Without `LowCardinality`, so that one row does not keep the whole dictionary alive.
     for (size_t position : sort_column_positions)
-        state.first_row.push_back(recursiveRemoveLowCardinality(columns[position]->cut(0, 1)->convertToFullIfWrapped()));
+        res.push_back(recursiveRemoveLowCardinality(columns[position]->cut(row, 1)->convertToFullIfWrapped()));
+    return res;
+}
 
+void ReadInOrderReadAheadTracker::addChunk(size_t input, const Chunk & chunk, size_t rows)
+{
+    chassert(input < inputs.size() && chunk.getNumRows() > 0);
+    auto & state = inputs[input];
+
+    if (merge_has_limit)
+    {
+        state.produced.store(rows, std::memory_order_relaxed);
+    }
+    else
+    {
+        Columns last_row = cutRow(chunk, chunk.getNumRows() - 1);
+        std::lock_guard lock(state.mutex);
+        state.last_row.swap(last_row);
+        state.produced.store(rows, std::memory_order_relaxed);
+    }
+
+    if (!state.first_row.empty())
+        return;
+
+    state.first_row = cutRow(chunk, 0);
     size_t slot = num_published.fetch_add(1, std::memory_order_relaxed);
     if (slot < published.size())
         published[slot].store(input + 1, std::memory_order_release);
 }
 
-void ReadInOrderReadAheadTracker::setProducedRows(size_t input, size_t rows)
-{
-    inputs[input].produced.store(rows, std::memory_order_relaxed);
-}
-
-int ReadInOrderReadAheadTracker::compareFirstRows(size_t lhs, size_t rhs) const
+int ReadInOrderReadAheadTracker::compareRows(const Columns & lhs, const Columns & rhs) const
 {
     for (size_t i = 0; i < description.size(); ++i)
     {
-        if (int res = description[i].direction
-                * inputs[lhs].first_row[i]->compareAt(0, 0, *inputs[rhs].first_row[i], description[i].nulls_direction))
+        if (int res = description[i].direction * lhs[i]->compareAt(0, 0, *rhs[i], description[i].nulls_direction))
             return res;
     }
     return 0;
@@ -55,7 +70,8 @@ int ReadInOrderReadAheadTracker::compareFirstRows(size_t lhs, size_t rhs) const
 
 size_t ReadInOrderReadAheadTracker::rowsProducedBefore(size_t input, InputsBefore & inputs_before) const
 {
-    chassert(!inputs[input].first_row.empty());
+    const auto & first_row = inputs[input].first_row;
+    chassert(!first_row.empty());
 
     for (; inputs_before.num_compared < published.size(); ++inputs_before.num_compared)
     {
@@ -63,13 +79,31 @@ size_t ReadInOrderReadAheadTracker::rowsProducedBefore(size_t input, InputsBefor
         if (entry == 0)
             break;
 
-        if (compareFirstRows(entry - 1, input) < 0)
-            inputs_before.inputs.push_back(entry - 1);
+        if (compareRows(inputs[entry - 1].first_row, first_row) < 0)
+            inputs_before.inputs.push_back({.input = entry - 1});
     }
 
     size_t rows = 0;
-    for (size_t j : inputs_before.inputs)
-        rows += inputs[j].produced.load(std::memory_order_relaxed);
+    for (auto & before : inputs_before.inputs)
+    {
+        const auto & state = inputs[before.input];
+        if (merge_has_limit)
+        {
+            rows += state.produced.load(std::memory_order_relaxed);
+            continue;
+        }
+
+        /// Once the other input reaches our first row, the rows counted until then still sort before ours.
+        if (!before.overlaps && state.produced.load(std::memory_order_relaxed) != before.rows)
+        {
+            std::lock_guard lock(state.mutex);
+            if (compareRows(state.last_row, first_row) < 0)
+                before.rows = state.produced.load(std::memory_order_relaxed);
+            else
+                before.overlaps = true;
+        }
+        rows += before.rows;
+    }
     return rows;
 }
 
@@ -168,11 +202,18 @@ IProcessor::Status BufferChunksTransform::prepare()
 
     /// Pausing is safe only while the output port is not ready: the merge taking our chunk
     /// or asking for data reschedules us.
-    if (read_ahead_tracker && first_row_published && !output.canPush() && chunks_taken_by_merge <= 1
-        && read_ahead_tracker->rowsProducedBefore(input_index, inputs_before) + num_processed_rows >= read_ahead_tracker->getLimit())
+    if (read_ahead_tracker && first_row_published && !output.canPush() && chunks_taken_by_merge <= 1)
     {
-        input.setNotNeeded();
-        return Status::PortFull;
+        size_t rows = read_ahead_tracker->rowsProducedBefore(input_index, inputs_before);
+        /// A merge without a limit of its own can need all our rows, e.g. to fill a block from overlapping inputs.
+        if (limit)
+            rows += num_processed_rows;
+
+        if (rows >= read_ahead_tracker->getLimit())
+        {
+            input.setNotNeeded();
+            return Status::PortFull;
+        }
     }
 
     if (input.hasData() && (num_buffered_rows < max_rows_to_buffer || num_buffered_bytes < max_bytes_to_buffer))
@@ -208,14 +249,10 @@ Chunk BufferChunksTransform::pullChunk(bool & virtual_row)
     if (!virtual_row)
     {
         num_processed_rows += chunk.getNumRows();
-        if (read_ahead_tracker)
+        if (read_ahead_tracker && chunk.getNumRows() > 0)
         {
-            read_ahead_tracker->setProducedRows(input_index, num_processed_rows);
-            if (!first_row_published && chunk.getNumRows() > 0)
-            {
-                read_ahead_tracker->setFirstRow(input_index, chunk);
-                first_row_published = true;
-            }
+            read_ahead_tracker->addChunk(input_index, chunk, num_processed_rows);
+            first_row_published = true;
         }
     }
 
