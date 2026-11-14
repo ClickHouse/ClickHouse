@@ -127,6 +127,7 @@ build_digest_config = Job.CacheDigestConfig(
         "./programs",
         "./ci/jobs/build_clickhouse.py",
         "./ci/jobs/scripts/relocation_headroom.py",
+        "./ci/jobs/scripts/qemu_smoke.py",
         "./ci/jobs/scripts/job_hooks/build_profile_hook.py",
         "./ci/jobs/scripts/log_cluster.py",
         "./utils/prepare-time-trace/prepare-time-trace.sh",
