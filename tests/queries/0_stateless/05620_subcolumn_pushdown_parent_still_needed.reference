@@ -1,0 +1,13 @@
+only the subcolumn
+2	0
+10
+the whole column is used by the outer query
+0	1
+85097028237687335	10
+85097028237687335	10
+the whole column is exposed under another name
+0	1
+85097028237687335	10
+the whole column is used by the subquery
+0	1
+10
