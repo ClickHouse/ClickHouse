@@ -7242,12 +7242,12 @@ static void executeQueryFailpoints()
 
     fiu_do_on(FailPoints::segfault_read_access,
     {
-        [[maybe_unused]] int value = *reinterpret_cast<volatile int *>(16);
+        [[maybe_unused]] int value = *reinterpret_cast<volatile int *>(16); // NOLINT(clang-analyzer-core.FixedAddressDereference)
     });
 
     fiu_do_on(FailPoints::segfault_write_access,
     {
-        *reinterpret_cast<volatile int *>(16) = 1;
+        *reinterpret_cast<volatile int *>(16) = 1; // NOLINT(clang-analyzer-core.FixedAddressDereference)
     });
 }
 
