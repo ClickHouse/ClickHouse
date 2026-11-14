@@ -104,6 +104,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/NamesAndTypes.h>
 #include <Functions/FunctionFactory.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -2088,6 +2089,8 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
         auto child_select_query_options = SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved();
         child_select_query_options.is_local_plan_for_distributed_query = true;
+        child_select_query_options.view_source_in_subqueries
+            = modified_query_info.planner_context && modified_query_info.planner_context->isViewSourceInSubqueries();
 
         /// The query tree passes already ran on the whole query, and this child plan's header must
         /// stay convertible to the common header derived from it. Re-running the optimization passes
@@ -2102,10 +2105,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         /// A child that is the source table itself reads the table, as it does at `FetchColumns`.
         auto view_source = modified_context->isViewInnerQuery() ? nullptr : modified_context->getViewSource();
         if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
-        {
-            modified_context->clearViewSource();
             view_source = nullptr;
-        }
         InterpreterSelectQueryAnalyzer interpreter(ast,
             modified_context,
             child_select_query_options,
@@ -3183,7 +3183,7 @@ QueryPlan ReadFromMerge::expandForParallelReplicas()
     chassert(child_plans && !child_plans->empty());
 
     SharedHeaders input_headers;
-    std::vector<std::unique_ptr<QueryPlan>> plans;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> plans;
     input_headers.reserve(child_plans->size());
     plans.reserve(child_plans->size());
     for (auto & child : *child_plans)

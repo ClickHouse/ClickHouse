@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tarfile
@@ -39,6 +40,38 @@ from ci.praktika.result import Result
 from ci.praktika.utils import Utils
 
 EXPORT_RESERVE = 20 * 60
+
+
+def stop_server(server, grace_seconds=10):
+    """Wait for the dedicated server group, not just its launching shell."""
+    process = server.proc
+    # CHServer starts a new session. Keep this ID even after its shell exits.
+    group = process.pid
+    try:
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                os.killpg(group, sig)
+            except ProcessLookupError:
+                return
+            deadline = time.monotonic() + grace_seconds
+            while time.monotonic() < deadline:
+                process.poll()  # Reap the shell if it has exited.
+                states = subprocess.check_output(
+                    ["ps", "-eo", "pgid=,stat="], text=True, timeout=5
+                )
+                # Container PID 1 may not reap orphaned zombies promptly.
+                # They cannot hold the data-directory lock or execute queries.
+                if not any(
+                    int(pgid) == group and not state.startswith("Z")
+                    for pgid, state in (line.split() for line in states.splitlines())
+                ):
+                    return
+                time.sleep(0.1)
+        raise RuntimeError(f"Coverage server process group {group} did not stop")
+    finally:
+        process.poll()
+        if server.log_fd:
+            server.log_fd.close()
 
 
 def record_phase_manifests(output, manifest):
@@ -116,8 +149,35 @@ def configure(binary):
     (Path(perf.perf_right) / "coordination").mkdir()
 
 
+def coverage_command(path, output, warm_runs):
+    return [
+        sys.executable,
+        "tests/performance/scripts/perf.py",
+        str(path),
+        "--host",
+        "localhost",
+        "--port",
+        str(perf.CHServer.RIGHT_SERVER_PORT),
+        "--coverage-output",
+        str(output),
+        "--coverage-warm-runs",
+        str(warm_runs),
+        "--stop-merges",
+        "--jemalloc-purge",
+        "disabled",
+    ]
+
+
 def run_tests(
-    paths, output, deadline, warm_runs, manifest, save_manifest, cleanup, results=None
+    paths,
+    output,
+    deadline,
+    warm_runs,
+    manifest,
+    save_manifest,
+    cleanup,
+    results=None,
+    recover=None,
 ):
     if results is None:
         results = []
@@ -152,24 +212,7 @@ def run_tests(
                 "Collection budget exhausted; remaining tests are marked not_run"
             )
         log = output / f"{path.stem}.log"
-        command = [
-            sys.executable,
-            "tests/performance/scripts/perf.py",
-            str(path),
-            "--host",
-            "localhost",
-            "--port",
-            str(perf.CHServer.RIGHT_SERVER_PORT),
-            "--coverage-output",
-            str(output),
-            "--coverage-warm-runs",
-            str(warm_runs),
-            "--stop-merges",
-            "--jemalloc-purge",
-            "disabled",
-            "--prewarm-max-query-seconds",
-            "1800",
-        ]
+        command = coverage_command(path, output, warm_runs)
         sw = Utils.Stopwatch()
         state["status"] = "running"
         save_manifest()
@@ -180,13 +223,15 @@ def run_tests(
                     stdout=out,
                     stderr=subprocess.STDOUT,
                     # Large XML files can legitimately need more than an hour.
-                    # SQL statements have their own limits; bound the complete
-                    # runner by the shard's remaining collection budget.
+                    # Bound setup, queries and teardown together by the shard's
+                    # remaining collection budget, not release-query limits.
                     timeout=remaining,
                 )
             except subprocess.TimeoutExpired:
                 state.update(
-                    status="failed", reason="collection budget exhausted during test"
+                    status="failed",
+                    reason="collection budget exhausted during test",
+                    wall_seconds=sw.duration,
                 )
                 save_manifest()
                 raise
@@ -205,11 +250,29 @@ def run_tests(
             state.update(
                 status="failed",
                 reason=f"runner exit {process.returncode}, manifest={complete}, teardown={clean}",
+                wall_seconds=sw.duration,
             )
             save_manifest()
-            # A failed/timed-out query can still be running on the server. Stop
-            # the batch instead of attributing it to the next test.
-            raise RuntimeError(f"{path.name}: {state['reason']}; see {log}")
+            results.append(
+                Result.create_from(
+                    name=path.stem,
+                    status=Result.Status.FAIL,
+                    stopwatch=sw,
+                    info=f"{state['reason']}; see {log}",
+                )
+            )
+            # Restart and remove leftover test objects before attributing any
+            # more coverage. If recovery fails, publish earlier completed tests.
+            if recover is None:
+                raise RuntimeError(f"Cannot recover after {path.name}")
+            recover(path)
+            if (
+                test_discovery.test_requires_s3(path)
+                and not s3_service.clear_write_namespaces()
+            ):
+                raise RuntimeError("S3 cleanup failed")
+            cleanup()
+            continue
         if skipped:
             state.update(status="skipped", reason=skipped)
         else:
@@ -231,6 +294,35 @@ def run_tests(
             raise RuntimeError("S3 cleanup failed")
         cleanup()
     return results
+
+
+def publish_coverage(binary, output, dest, job_name, check_start_time, manifest):
+    """Publish only completed XMLs, retaining failed artifacts for diagnosis."""
+    record_phase_manifests(output, manifest)
+    collected = [
+        name
+        for name, state in manifest["tests"].items()
+        if state["status"] == "collected"
+    ]
+    export = output / "export"
+    export.mkdir()
+    for name in collected:
+        source = output / f"{Path(name).stem}.lines.tsv"
+        if not source.is_file() or not source.stat().st_size:
+            raise ValueError(f"Missing coverage rows for {name}")
+        (export / source.name).symlink_to(source.resolve())
+    if dest:
+        if collected:
+            IntegrationCoverageExporter(
+                str(binary), str(export), dest, job_name, check_start_time
+            ).do()
+        # Separate usable coverage from the job verdict. Failed/not-run XMLs
+        # remain absent from the selector's covered set and are always selected.
+        manifest["coverage_published"] = True
+    manifest["complete"] = all(
+        state["status"] in ("collected", "skipped")
+        for state in manifest["tests"].values()
+    )
 
 
 def main():
@@ -307,6 +399,8 @@ def main():
         "check_name": info.job_name,
         "warm_runs": args.warm_runs,
         "complete": False,
+        "publication_version": 1,
+        "coverage_published": False,
         "resume_protocol": RESUME_PROTOCOL,
         "source_identity": source_identity("HEAD"),
         "max_hours": int(args.max_hours),
@@ -320,6 +414,7 @@ def main():
     save_manifest()
     results = []
     server = None
+    collection_started = False
     needs_s3 = any(
         test_discovery.test_requires_s3(path)
         for path in paths
@@ -435,6 +530,38 @@ def main():
                 else:
                     path.unlink()
 
+        def recover(path):
+            # A failed query, mutation or failpoint must not survive into the
+            # next test. Preserve the stopped process's log before restarting.
+            client.disconnect()
+            stop_server(server)
+            shutil.copyfile(server.log_file, output / f"{path.stem}.server.log")
+            if not server.start():
+                raise RuntimeError(
+                    f"Coverage server failed to restart after {path.name}"
+                )
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError("Collection budget exhausted during recovery")
+            log = output / f"{path.stem}.cleanup.log"
+            with log.open("w") as out:
+                process = subprocess.run(
+                    coverage_command(path, output, args.warm_runs)
+                    + ["--coverage-cleanup-only"],
+                    stdout=out,
+                    stderr=subprocess.STDOUT,
+                    timeout=remaining,
+                )
+            if (
+                process.returncode
+                or "teardown-complete" not in log.read_text().splitlines()
+            ):
+                raise RuntimeError(
+                    f"Teardown failed after restarting {path.name}; see {log}"
+                )
+
+        collection_started = True
         run_tests(
             paths,
             output,
@@ -444,33 +571,50 @@ def main():
             save_manifest,
             cleanup,
             results,
+            recover,
         )
-        if not any(
-            state["status"] == "collected" for state in manifest["tests"].values()
-        ):
-            raise RuntimeError("No tests produced coverage")
-        record_phase_manifests(output, manifest)
-        # The TSV layout is the integration collector's file-sink format, so
-        # use its existing aggregation and eight-column CIDB export unchanged.
-        if dest:
-            IntegrationCoverageExporter(
-                str(binary), str(output), dest, info.job_name, check_start_time
-            ).do()
-        manifest["complete"] = True
     except Exception as error:
         results.append(
             Result(name="Collection", status=Result.Status.ERROR, info=str(error))
         )
     finally:
+        for state in manifest["tests"].values():
+            if state["status"] == "running":
+                state.update(
+                    status="failed", reason="collector interrupted during test"
+                )
         save_manifest()
         if server and hasattr(server, "proc"):
-            server.terminate()
+            try:
+                stop_server(server)
+            except Exception as error:
+                results.append(
+                    Result(
+                        name="Coverage server shutdown",
+                        status=Result.Status.ERROR,
+                        info=str(error),
+                    )
+                )
         if needs_s3:
             s3_service.stop()
+    # Even a failed test or exhausted job budget must not discard completed
+    # exports. Publish after stopping the server so interrupted work is gone.
+    if collection_started:
+        try:
+            publish_coverage(
+                binary, output, dest, info.job_name, check_start_time, manifest
+            )
+        except Exception as error:
+            results.append(
+                Result(
+                    name="Coverage export", status=Result.Status.ERROR, info=str(error)
+                )
+            )
+    save_manifest()
     archive = output.parent / "performance_coverage.tar.gz"
     with tarfile.open(archive, "w:gz") as tar:
         for path in sorted(output.iterdir()):
-            if path.suffix != ".profraw":
+            if path.is_file() and path.suffix != ".profraw":
                 tar.add(path, arcname=path.name)
     files = [str(archive), str(output / "manifest.json")]
     if server and Path(server.log_file).is_file():

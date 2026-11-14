@@ -2,7 +2,7 @@
 sidebarTitle: 'Introduction'
 description: 'Run analytics queries on ClickHouse right from PostgreSQL without rewriting any SQL'
 slug: '/cloud/managed-postgres/extensions/pg_clickhouse'
-title: 'pg_clickhouse reference documentation'
+title: 'pg_clickhouse documentation'
 doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhouse', 'extension']
 ---
@@ -66,6 +66,8 @@ with 36 GB of memory.
 | [Query 20] |     473 ms |         28 ms |          |
 | [Query 21] |    1145 ms |       4470 ms |          |
 | [Query 22] |     270 ms |         45 ms |     ✼    |
+
+## Installation {#installation}
 
 ### Compile from source {#compile-from-source}
 
@@ -211,6 +213,42 @@ You need to run the test suite using a super user, such as the default
 make installcheck PGUSER=postgres
 ```
 
+### CloudNativePG {#cloudnativepg}
+
+Add pg_clickhouse to a [CloudNativePG] cluster using [ExtensionConfiguration]:
+
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: cluster-example
+spec:
+  # ... <snip>
+  postgresql:
+    # ExtensionConfiguration
+    extensions:
+      - name: pg_clickhouse
+        image:
+        reference: ghcr.io/ClickHouse/cnpg-pg_clickhouse:{pg_major_version}-{pg_clickhouse_version}
+```
+
+To load it into a database, use [ExtensionSpec]:
+
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: pg_clickhouse-cluster
+spec:
+  name: app
+  owner: app
+  cluster:
+    name: pg_clickhouse-cluster
+  extensions:
+    - name: pg_clickhouse
+      version: {pg_clickhouse_version}
+```
+
 ### Loading {#loading}
 
 Once `pg_clickhouse` is installed, you can add it to a database by connecting
@@ -246,8 +284,6 @@ adding DML features. Our road map:
 *   Allow server-level and session-level ClickHouse settings via CREATE SERVER
     and GUCs
 *   Support all ClickHouse data types
-*   Support lightweight DELETEs and UPDATEs
-*   Support batch insertion via COPY
 *   Add a function to execute an arbitrary ClickHouse query and return its
     results as a tables
 *   Add support for pushdown of UNION queries when they all query the remote
@@ -258,6 +294,7 @@ adding DML features. Our road map:
 *   [David E. Wheeler](https://justatheory.com/)
 *   [serprex](https://github.com/serprex)
 *   [Josh Ventura](https://github.com/JoshDreamland)
+*   [Kaushik Iska](https://github.com/iskakaushik)
 *   [Ildus Kurbangaliev](https://github.com/ildus)
 *   [Ibrar Ahmed](https://github.com/ibrarahmad)
 
@@ -290,6 +327,11 @@ adding DML features. Our road map:
   [LibSSL]: https://openssl-library.org "OpenSSL Library"
   [TPC-H]: https://www.tpc.org/tpch/
   [re2]: https://github.com/ClickHouse/pg_re2 "pg_re2: ClickHouse-compatible regex functions using RE2"
+  [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
+  [ExtensionConfiguration]: https://cloudnative-pg.io/docs/devel/cloudnative-pg.v1#extensionconfiguration
+    "CloudNativePG Docs: ExtensionConfiguration:
+  [ExtensionSpec]: https://cloudnative-pg.io/docs/devel/cloudnative-pg.v1#extensionspec
+    "CloudNativePG Docs: ExtensionSpec:
 
   [Query 1] https://github.com/ClickHouse/pg_clickhouse/blob/main/dev/tpch/queries/1.sql
   [Query 2] https://github.com/ClickHouse/pg_clickhouse/blob/main/dev/tpch/queries/2.sql

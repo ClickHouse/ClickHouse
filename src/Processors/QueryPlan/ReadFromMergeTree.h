@@ -1,5 +1,9 @@
 #pragma once
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Processors/QueryPlan/MergeTreeFinalMerge.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
@@ -25,7 +29,7 @@ class ParallelReadingExtension;
 
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+using PartitionIdToMaxBlock = UnorderedMapWithMemoryTracking<String, Int64>;
 using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 
 class LazilyReadFromMergeTree;
@@ -45,13 +49,13 @@ struct UsefulSkipIndexes
 {
     bool empty() const { return useful_indices.empty() && !skip_index_for_top_k_filtering; }
 
-    std::vector<MergeTreeIndexWithCondition> useful_indices;
+    VectorWithMemoryTracking<MergeTreeIndexWithCondition> useful_indices;
     MergeTreeIndexPtr skip_index_for_top_k_filtering{nullptr};
     TopKThresholdTrackerPtr threshold_tracker{nullptr};
 };
 
 /// The order in which the useful skip indexes are applied to a single part: cheapest and coarsest first.
-using SkipIndexOrder = std::shared_ptr<const std::vector<size_t>>;
+using SkipIndexOrder = std::shared_ptr<const VectorWithMemoryTracking<size_t>>;
 
 /// Memoizes `SkipIndexOrder` per part for one `ReadFromMergeTree::Indexes` object.
 /// The order is derived from the part's index formats and file sizes, so it is stable for a given part,
@@ -61,7 +65,7 @@ using SkipIndexOrder = std::shared_ptr<const std::vector<size_t>>;
 struct SkipIndexOrderCache
 {
     std::mutex mutex;
-    std::unordered_map<String, SkipIndexOrder> orders TSA_GUARDED_BY(mutex);
+    UnorderedMapWithMemoryTracking<String, SkipIndexOrder> orders TSA_GUARDED_BY(mutex);
 
     /// The key must be unique within the table: a projection part is named after the projection,
     /// which repeats in every parent part, so it is qualified with the parent part name.
@@ -70,14 +74,14 @@ struct SkipIndexOrderCache
 using SkipIndexOrderCachePtr = std::shared_ptr<SkipIndexOrderCache>;
 
 /// Contains parts each from different projection index
-using ProjectionIndexReadRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
+using ProjectionIndexReadRangesByIndex = UnorderedMapWithMemoryTracking<size_t, RangesInDataParts>;
 
 struct ProjectionIndexReadInfo
 {
     ProjectionDescriptionRawPtr projection;
     PrewhereInfoPtr prewhere_info;
 };
-using ProjectionIndexReadInfos = std::vector<ProjectionIndexReadInfo>;
+using ProjectionIndexReadInfos = VectorWithMemoryTracking<ProjectionIndexReadInfo>;
 
 struct ProjectionIndexReadDescription
 {
@@ -170,15 +174,15 @@ public:
         std::string part_name = {};
         std::string description = {};
         std::string condition = {};
-        std::vector<std::string> used_keys = {};
+        std::vector<std::string> used_keys = {}; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- filled from `KeyCondition::Description::used_keys` and `StatisticsPartPruner::getUsedColumns`
         size_t num_parts_after;
         size_t num_granules_after;
         MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};
 
-        std::vector<DistributedIndexStat> distributed = {};
+        VectorWithMemoryTracking<DistributedIndexStat> distributed = {};
     };
 
-    using IndexStats = std::vector<IndexStat>;
+    using IndexStats = VectorWithMemoryTracking<IndexStat>;
 
     /// Information about used projections.
     struct ProjectionStat
@@ -195,7 +199,7 @@ public:
     };
 
     /// `deque` is used to ensure stable addresses during projection analysis stats building.
-    using ProjectionStats = std::deque<ProjectionStat>;
+    using ProjectionStats = DequeWithMemoryTracking<ProjectionStat>;
 
     using ReadType = MergeTreeReadType;
 
@@ -371,12 +375,12 @@ public:
         bool use_skip_indexes_for_disjunctions;
         bool use_skip_indexes_if_final_exact_mode;
         bool use_skip_indexes_on_data_read;
-        std::optional<std::unordered_set<String>> part_values;
+        std::optional<std::unordered_set<String>> part_values; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- returned by `MergeTreeDataSelectExecutor::filterPartsByVirtualColumns`
     };
 
     void addJoinRuntimeFilterIndexAnalysisOnDataRead(
         const String & filter_id, const String & column_name, const DataTypePtr & column_type, bool is_global_row_index = false);
-    const std::vector<RuntimeFilterIndexAnalysisDescriptor> & getJoinRuntimeFiltersForIndexAnalysis() const
+    const VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> & getJoinRuntimeFiltersForIndexAnalysis() const
     {
         return join_runtime_filters_for_index_analysis;
     }
@@ -630,7 +634,7 @@ public:
     /// then prune mark ranges at task-cut time (see RuntimeFilterReadRangesRefiner).
     /// Ungatable shapes (FINAL, parallel replicas, sharded joins) ignore the mark and fall
     /// back to ungated reading; see the gating decision in initializePipeline.
-    void enableSealGatedReading(std::vector<RuntimeFilterIndexAnalysisDescriptor> pk_prefix_filters)
+    void enableSealGatedReading(VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> pk_prefix_filters)
     {
         seal_gated_reading = SealGatedReading{std::move(pk_prefix_filters)};
     }
@@ -648,12 +652,12 @@ public:
     size_t setupDistributedReadBuckets(size_t target_buckets, size_t max_total_buckets);
     /// Serializes each bucket (its marks, the merge flag, and a merge layer's borders + index) into a
     /// per-bucket blob shipped as the per-read bucket task parameter; empty unless this is a distributed read.
-    std::vector<String> serializeDistributedReadBuckets() const;
+    VectorWithMemoryTracking<String> serializeDistributedReadBuckets() const;
     /// Makes a list of shards to read in parallel in distributed query plan
     Strings getShardsForDistributedRead() const;
 
     bool canRemoveUnusedColumns() const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions, const VectorWithMemoryTracking<PrunedInput> & inputs) override;
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
     const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }
@@ -705,11 +709,11 @@ public:
     /// Of `unneeded_output_positions`, the ones whose storage column `removeUnusedColumns` would stop reading, so that a
     /// lazy read can read it instead. The read keeps the others: FINAL merges by them, PREWHERE or the row policy reads
     /// them, or they are virtual.
-    std::vector<size_t> getLazilyReadablePositions(const std::vector<size_t> & unneeded_output_positions) const;
+    VectorWithMemoryTracking<size_t> getLazilyReadablePositions(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const;
     /// `removeUnusedColumns`, and a lazy read of the columns at `lazy_output_positions`, which are among the ones
     /// `getLazilyReadablePositions` returns for `unneeded_output_positions`. Without them, it is `removeUnusedColumns`.
     std::pair<RemoveUnusedColumnsResult, std::unique_ptr<LazilyReadFromMergeTree>> removeUnusedColumnsAndCreateLazyReadStep(
-        const std::vector<size_t> & unneeded_output_positions, const std::vector<size_t> & lazy_output_positions);
+        const VectorWithMemoryTracking<size_t> & unneeded_output_positions, const VectorWithMemoryTracking<size_t> & lazy_output_positions);
 
     /// Whether some columns of this read were moved to a lazy read, which addresses the rows of this one by
     /// their part offsets. Reading a projection instead would address other rows.
@@ -774,17 +778,17 @@ private:
     struct ColumnPruning
     {
         /// The output positions that go away.
-        std::vector<size_t> dropped_output_positions;
+        VectorWithMemoryTracking<size_t> dropped_output_positions;
         /// The output positions of the row policy filter, which PREWHERE reads, that nothing needs.
-        std::vector<size_t> unneeded_row_level_output_positions;
+        VectorWithMemoryTracking<size_t> unneeded_row_level_output_positions;
         /// The positions in `all_column_names` the read stops reading, sorted.
-        std::vector<size_t> dropped_storage_positions;
+        VectorWithMemoryTracking<size_t> dropped_storage_positions;
         /// For each output position, the position in `all_column_names` of the column it is, unchanged, if it is one.
-        std::vector<std::optional<size_t>> storage_position_of_output;
+        VectorWithMemoryTracking<std::optional<size_t>> storage_position_of_output;
     };
-    ColumnPruning pruneColumns(const std::vector<size_t> & unneeded_output_positions) const;
+    ColumnPruning pruneColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const;
     /// Of the dropped output positions, the ones a lazy read can read: storage columns the read stops reading.
-    std::vector<size_t> getLazilyReadablePositions(const ColumnPruning & pruning) const;
+    VectorWithMemoryTracking<size_t> getLazilyReadablePositions(const ColumnPruning & pruning) const;
     /// Prunes the filters and the columns of this read as `pruning` says.
     RemoveUnusedColumnsResult applyColumnPruning(const ColumnPruning & pruning);
 
@@ -831,7 +835,7 @@ private:
     /// its own while optimizing it. A read that ends up without them reads its share unpruned, which is
     /// what still happens with `make_distributed_plan`, and is pinned by
     /// `05153_join_runtime_filters_index_analysis_modes`.
-    std::vector<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filters_for_index_analysis;
+    VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filters_for_index_analysis;
 
     /// Row policy / prewhere deferred to after FINAL, if needed
     FilterDAGInfoPtr deferred_row_level_filter;
@@ -992,7 +996,7 @@ private:
     struct SealGatedReading
     {
         /// Runtime filters covering a prefix of the primary key, in the key order.
-        std::vector<RuntimeFilterIndexAnalysisDescriptor> pk_prefix_filters;
+        VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> pk_prefix_filters;
     };
     std::optional<SealGatedReading> seal_gated_reading;
 
@@ -1010,11 +1014,11 @@ private:
     String distributed_read_param_name;
     /// Initiator side: every virtual bucket across all tasks; `serializeDistributedReadBuckets` groups
     /// `distributed_read_lanes_per_task` of them into each task's bucket parameter. Empty on a worker.
-    std::vector<DistributedReadBucket> distributed_read_buckets;
+    VectorWithMemoryTracking<DistributedReadBucket> distributed_read_buckets;
     size_t distributed_read_lanes_per_task = 1;
     /// Worker side: the virtual buckets (lanes) of this worker's task, filled from its bucket
     /// parameter. A FINAL worker builds one merge/non-merge pipe per lane and unites them.
-    std::vector<DistributedReadBucket> distributed_read_task_buckets;
+    VectorWithMemoryTracking<DistributedReadBucket> distributed_read_task_buckets;
 };
 
 }

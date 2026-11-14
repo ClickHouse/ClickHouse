@@ -966,7 +966,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// `LoadingStrictnessLevel::ATTACH` and must still be subject to these checks.
         storage_settings->loadFromQuery(
             *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
-            args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE, /* stored_definition */ args.query.attach_short_syntax);
+            args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE,
+            /* stored_definition */ args.query.attach_short_syntax || is_stored_definition);
 
         /// What this query changes from the settings the server has in effect, which already include the
         /// `merge_tree` config section and `compatibility`: those are not changes made by the query. A
@@ -1318,6 +1319,8 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_parallel_insert = true,
         .supports_unique_key = true,
         .has_builtin_setting_fn = MergeTreeSettings::hasBuiltin,
+        .stores_data_on_disk = true,
+        .supports_temporary = true,
     };
 
     factory.registerStorage("MergeTree", create, SecretArgumentsSpec{}, features, Documentation{
@@ -4445,6 +4448,8 @@ This is a very inefficient way to select data. Don't use it for large tables.
     features.supports_deduplication = true;
     features.supports_schema_inference = true;
     features.supports_unique_key = false;
+    /// A replicated/shared MergeTree is not a lightweight session object and must not be a temporary table.
+    features.supports_temporary = false;
 
     factory.registerStorage("ReplicatedMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(

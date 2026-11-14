@@ -2137,7 +2137,7 @@ void RestCatalog::createTableAtDefaultLocation(const String & namespace_name, co
 }
 
 
-bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr new_snapshot) const
+bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, const String & /*base_catalog_metadata_location*/, Poco::JSON::Object::Ptr new_snapshot, Poco::JSON::Object::Ptr /*new_metadata*/) const
 {
     const auto state_snapshot = state.get();
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
@@ -2157,12 +2157,15 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
         requirement->set("type", "assert-ref-snapshot-id");
         requirement->set("ref", "main");
 
+        /// `snapshot-id` is required; `null` asserts that `main` does not exist yet.
+        Poco::Dynamic::Var expected_main_snapshot_id;
         if (new_snapshot->has("parent-snapshot-id"))
         {
             auto parent_snapshot_id = new_snapshot->getValue<Int64>("parent-snapshot-id");
             if (parent_snapshot_id != -1)
-                requirement->set("snapshot-id", parent_snapshot_id);
+                expected_main_snapshot_id = parent_snapshot_id;
         }
+        requirement->set("snapshot-id", expected_main_snapshot_id);
 
         Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
         requirements->add(requirement);
@@ -2338,6 +2341,7 @@ bool RestCatalog::updateSchema(
     const String & namespace_name,
     const String & table_name,
     const String & /*new_metadata_path*/,
+    const String & /*base_catalog_metadata_location*/,
     Poco::JSON::Object::Ptr new_schema,
     Int32 previous_schema_id) const
 {

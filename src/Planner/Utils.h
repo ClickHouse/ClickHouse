@@ -22,6 +22,7 @@
 #include <Storages/SelectQueryInfo.h>
 
 #include <Interpreters/WindowDescription.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -39,7 +40,7 @@ Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUni
 
 /// Add converting to common header actions if needed for each plan
 void addConvertingToCommonHeaderActionsIfNeeded(
-    std::vector<std::unique_ptr<QueryPlan>> & query_plans,
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> & query_plans,
     const Block & union_common_header,
     SharedHeaders & query_plans_headers,
     ContextPtr context);
@@ -119,9 +120,11 @@ NameSet checkAccessRights(
     const ContextPtr & query_context);
 
 /// Build and resolve a filter against the table expression; `check_access_rights` checks column-level SELECT for the columns it reads.
+/// `view_source_in_subqueries`: see `SelectQueryOptions`.
 QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
         const TableExpressionNodePtr & table_expression,
         const ContextPtr & query_context,
+        bool view_source_in_subqueries,
         bool check_access_rights = false);
 
 /// Build filter for specific table_expression
@@ -150,11 +153,6 @@ bool makeFilterKeepHeader(ActionsDAG & dag, const Block & header, const ActionsD
 
 using UsefulSets = std::unordered_set<FutureSetPtr>;
 void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
-
-/// If the window frame is not set in sql, try to use the default frame from window function
-/// if it have any one. Otherwise return empty.
-/// If the window frame is set in sql, use it anyway.
-std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node);
 
 ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate);
 

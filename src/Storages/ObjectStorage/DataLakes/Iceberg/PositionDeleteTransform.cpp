@@ -306,8 +306,9 @@ void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
     ///  * this transform should be immediately after the IInputFormat
     ///    (typically ParquetV3BlockInputFormat) in the pipeline,
     ///  * IInputFormat outputs chunks in order of row number even if it uses multiple threads
-    ///    internally; for parquet IcebergMetadata::modifyFormatSettings sets
-    ///    `format_settings.parquet.preserve_order = true` to ensure this, other formats return
+    ///    internally; for parquet StorageObjectStorageSource::createReader sets
+    ///    `format_settings.parquet.preserve_order = true` for the files this transform is applied to
+    ///    (see IcebergDataObjectInfo::usesStreamingPositionDeletes), other formats return
     ///    chunks in order by default.
     if (previous_chunk_end_offset && previous_chunk_end_offset.value() > chunk_info->row_num_offset)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunks offsets should increase.");

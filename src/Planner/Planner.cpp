@@ -108,6 +108,7 @@
 #include <Planner/PlannerWindowFunctions.h>
 #include <Planner/Utils.h>
 #include <base/types.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace ProfileEvents
@@ -2490,15 +2491,10 @@ void addReadFromQueryResultCacheStep(
     std::unique_ptr<SourceFromChunks> source_totals,
     std::unique_ptr<SourceFromChunks> source_extremes)
 {
-    auto pipe = Pipe();
-    if (source)
-        pipe.addSource(std::shared_ptr<SourceFromChunks>(source.release()));
-    if (source_totals)
-        pipe.addTotalsSource(std::shared_ptr<SourceFromChunks>(source_totals.release()));
-    if (source_extremes)
-        pipe.addExtremesSource(std::shared_ptr<SourceFromChunks>(source_extremes.release()));
-
-    auto read_from_query_result_cache_step = std::make_unique<ReadFromQueryResultCacheStep>(std::move(pipe));
+    auto read_from_query_result_cache_step = std::make_unique<ReadFromQueryResultCacheStep>(
+        std::shared_ptr<SourceFromChunks>(std::move(source)),
+        std::shared_ptr<SourceFromChunks>(std::move(source_totals)),
+        std::shared_ptr<SourceFromChunks>(std::move(source_extremes)));
     query_plan.addStep(std::move(read_from_query_result_cache_step));
 }
 
@@ -2897,7 +2893,7 @@ void Planner::buildPlanForUnionNode()
     const auto & union_queries_nodes = union_node.getQueries().getNodes();
     size_t queries_size = union_queries_nodes.size();
 
-    std::vector<std::unique_ptr<QueryPlan>> query_plans;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> query_plans;
     query_plans.reserve(queries_size);
 
     SharedHeaders query_plans_headers;
