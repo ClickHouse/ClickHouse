@@ -1,0 +1,156 @@
+#!/usr/bin/expect -f
+
+# Editing with the `--vim` keymap of the client. Every query is edited so that its result differs
+# from any text displayed while typing it, so that matching the result checks the edit.
+# Escape is followed by a pause much longer than the escape delay of the vim mode (10 ms), so that it
+# is not read as Meta. The pause is short, and the cases are split between `05394_client_vim_mode_{1,2,3,4,5}.expect`,
+# so that each test fits into the time limit of the fast test (60 seconds), also on macOS.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+proc escape {} {
+    send -- "\033"
+    sleep 0.1
+}
+
+# Ctrl-J submits the query: Enter inserts a new line in the vim mode.
+proc submit {} {
+    send -- "\n"
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file --vim"
+expect ":) "
+
+# `v` makes `cw` on an empty line inclusive: it also changes the first character of the next line.
+send -- "SELECT 44000\r\r+234"
+escape
+send -- "ggjcvw+ 1"
+escape
+submit
+expect "45234"
+expect ":) "
+
+send -- "SELECT 44100\r\r+234"
+escape
+send -- "ggjcvW+ 1"
+escape
+submit
+expect "45334"
+expect ":) "
+
+# Backspace stops on an empty previous line. A separate `send`: old Tcl versions read all hex digits after `\x`.
+send -- "SELECT 44200\r\r+ 234"
+escape
+send -- "0\x7f"
+send -- "i+1 -- "
+escape
+submit
+expect "44435"
+expect ":) "
+
+# A count before `%` is a percentage of the input, not a bracket match.
+send -- "SELECT (44300\r* 2\r+ 34\r+ 45)"
+escape
+send -- "gg50%r+"
+submit
+expect "44381"
+expect ":) "
+
+send -- "SELECT 44400 +\r1000\r+ 2\r+ 3"
+escape
+send -- "Gd75%"
+submit
+expect "45400"
+expect ":) "
+
+# A characterwise delete over whole lines becomes linewise.
+send -- "SELECT 44500 +\r(234\r+345)\r+456"
+escape
+send -- "ggjd%i+1 -- "
+escape
+submit
+expect "44501"
+expect ":) "
+
+send -- "SELECT 44600 +\r(234\r+345)\r+456"
+escape
+send -- "ggjd4ei+1 -- "
+escape
+submit
+expect "44601"
+expect ":) "
+
+# `v` toggles the inclusivity of a multiline bracket object. When the closing bracket is in the first
+# column or after blanks, `i(` is exclusive up to it, and `v` also takes the closing bracket.
+send -- "SELECT (\r1000\r+234\r) + 44700"
+escape
+send -- "ggjcvi(9000)"
+escape
+submit
+expect "53700"
+expect ":) "
+
+send -- "SELECT 2 * (\r1000\r+234\r  ) + 45000"
+escape
+send -- "ggjcvi(9"
+escape
+submit
+expect "45018"
+expect ":) "
+
+# Otherwise `i(` is inclusive, and `v` leaves the last character before the closing bracket.
+send -- "SELECT (\r1000\r+234) + 44800"
+escape
+send -- "ggjdvi("
+escape
+submit
+expect "44804"
+expect ":) "
+
+# An exclusive range that ends in the first column ends at the end of the previous line, here linewise.
+send -- "SELECT (\r1000\r+234\r5) + 44900"
+escape
+send -- "ggjdvi("
+escape
+submit
+expect "44905"
+expect ":) "
+
+send -- "SELECT 45100 + (1\r+2\r) * 3"
+escape
+send -- "ggjcva(4 + (5"
+escape
+submit
+expect "45119"
+expect ":) "
+
+# A single-line inner object loses its last character.
+send -- "SELECT 45200 + (1) * 3"
+escape
+send -- "ggf(cvi(4"
+escape
+submit
+expect "45323"
+expect ":) "
+
+send -- "\4"
+expect eof

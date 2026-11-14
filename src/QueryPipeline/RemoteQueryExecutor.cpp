@@ -17,6 +17,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/SelectQueryInfo.h>
@@ -1380,6 +1381,10 @@ void RemoteQueryExecutor::sendExternalTables()
                         read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
 
                     auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context));
+
+                    /// The receiver accepts only the default serialization, while a table that is not filled
+                    /// through the insert chain (a materialized CTE) keeps `Sparse` columns.
+                    builder->addSimpleTransform([](const SharedHeader & table_header) { return std::make_shared<MaterializingTransform>(table_header); });
 
                     builder->resize(1);
                     builder->addTransform(std::make_shared<LimitsCheckingTransform>(builder->getSharedHeader(), limits));
