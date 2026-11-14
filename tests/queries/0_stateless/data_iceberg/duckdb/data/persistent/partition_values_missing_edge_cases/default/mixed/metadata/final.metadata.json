@@ -1,0 +1,219 @@
+{
+  "location": "data/persistent/partition_values_missing_edge_cases/default/mixed",
+  "table-uuid": "94425ba9-4d13-4210-8d7e-d620bec13c72",
+  "last-updated-ms": 1791884047396,
+  "last-column-id": 9,
+  "schemas": [
+    {
+      "type": "struct",
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "type": "int",
+          "required": false
+        },
+        {
+          "id": 2,
+          "name": "region",
+          "type": "string",
+          "required": false,
+          "initial-default": "unknown-region"
+        },
+        {
+          "id": 3,
+          "name": "address",
+          "type": {
+            "type": "struct",
+            "fields": [
+              {
+                "id": 5,
+                "name": "country",
+                "type": "string",
+                "required": false,
+                "initial-default": "unknown-country"
+              },
+              {
+                "id": 6,
+                "name": "city",
+                "type": "string",
+                "required": false,
+                "initial-default": "unknown-city"
+              },
+              {
+                "id": 7,
+                "name": "geo",
+                "type": {
+                  "type": "struct",
+                  "fields": [
+                    {
+                      "id": 8,
+                      "name": "code",
+                      "type": "int",
+                      "required": false,
+                      "initial-default": -1
+                    },
+                    {
+                      "id": 9,
+                      "name": "label",
+                      "type": "string",
+                      "required": false,
+                      "initial-default": "unknown-label"
+                    }
+                  ]
+                },
+                "required": false
+              }
+            ]
+          },
+          "required": false
+        },
+        {
+          "id": 4,
+          "name": "extra",
+          "type": "string",
+          "required": false,
+          "initial-default": "unpartitioned-default"
+        }
+      ],
+      "schema-id": 0,
+      "identifier-field-ids": []
+    }
+  ],
+  "current-schema-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": [
+        {
+          "source-id": 2,
+          "field-id": 1000,
+          "transform": "identity",
+          "name": "region"
+        },
+        {
+          "source-id": 2,
+          "field-id": 1001,
+          "transform": "bucket[16]",
+          "name": "region_bucket"
+        },
+        {
+          "source-id": 5,
+          "field-id": 1002,
+          "transform": "bucket[16]",
+          "name": "country_bucket"
+        },
+        {
+          "source-id": 5,
+          "field-id": 1003,
+          "transform": "identity",
+          "name": "country"
+        },
+        {
+          "source-id": 8,
+          "field-id": 1004,
+          "transform": "identity",
+          "name": "code"
+        }
+      ]
+    },
+    {
+      "spec-id": 1,
+      "fields": [
+        {
+          "source-id": 2,
+          "field-id": 1001,
+          "transform": "bucket[16]",
+          "name": "region_bucket"
+        },
+        {
+          "source-id": 5,
+          "field-id": 1002,
+          "transform": "bucket[16]",
+          "name": "country_bucket"
+        }
+      ]
+    }
+  ],
+  "default-spec-id": 1,
+  "last-partition-id": 1004,
+  "properties": {
+    "schema.name-mapping.default": "[{\"field-id\": 1, \"names\": [\"id\", \"legacy_id\"]}, {\"field-id\": 2, \"names\": [\"region\", \"legacy_region\"]}, {\"field-id\": 3, \"names\": [\"address\", \"legacy_address\"], \"fields\": [{\"field-id\": 5, \"names\": [\"country\"]}, {\"field-id\": 6, \"names\": [\"city\"]}, {\"field-id\": 7, \"names\": [\"geo\"], \"fields\": [{\"field-id\": 8, \"names\": [\"code\"]}, {\"field-id\": 9, \"names\": [\"label\"]}]}]}, {\"field-id\": 4, \"names\": [\"extra\"]}]"
+  },
+  "current-snapshot-id": 6579303542646472184,
+  "snapshots": [
+    {
+      "snapshot-id": 3948048698559303266,
+      "sequence-number": 1,
+      "timestamp-ms": 1791884047370,
+      "manifest-list": "data/persistent/partition_values_missing_edge_cases/default/mixed/metadata/v3-snap-1.avro",
+      "summary": {
+        "operation": "append",
+        "added-files-size": "12579",
+        "added-data-files": "9",
+        "added-records": "10",
+        "changed-partition-count": "7",
+        "total-data-files": "9",
+        "total-delete-files": "0",
+        "total-records": "10",
+        "total-files-size": "12579",
+        "total-position-deletes": "0",
+        "total-equality-deletes": "0"
+      },
+      "schema-id": 0,
+      "first-row-id": 0,
+      "added-rows": 10
+    },
+    {
+      "snapshot-id": 6579303542646472184,
+      "parent-snapshot-id": 3948048698559303266,
+      "sequence-number": 2,
+      "timestamp-ms": 1791884047396,
+      "manifest-list": "data/persistent/partition_values_missing_edge_cases/default/mixed/metadata/v3-snap-2.avro",
+      "summary": {
+        "operation": "append",
+        "added-files-size": "1555",
+        "added-data-files": "1",
+        "added-records": "1",
+        "changed-partition-count": "1",
+        "total-data-files": "10",
+        "total-delete-files": "0",
+        "total-records": "11",
+        "total-files-size": "14134",
+        "total-position-deletes": "0",
+        "total-equality-deletes": "0"
+      },
+      "schema-id": 0,
+      "first-row-id": 10,
+      "added-rows": 1
+    }
+  ],
+  "snapshot-log": [
+    {
+      "snapshot-id": 3948048698559303266,
+      "timestamp-ms": 1791884047370
+    },
+    {
+      "snapshot-id": 6579303542646472184,
+      "timestamp-ms": 1791884047396
+    }
+  ],
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": []
+    }
+  ],
+  "default-sort-order-id": 0,
+  "refs": {
+    "main": {
+      "snapshot-id": 6579303542646472184,
+      "type": "branch"
+    }
+  },
+  "statistics": [],
+  "partition-statistics": [],
+  "format-version": 3,
+  "last-sequence-number": 2,
+  "next-row-id": 11
+}

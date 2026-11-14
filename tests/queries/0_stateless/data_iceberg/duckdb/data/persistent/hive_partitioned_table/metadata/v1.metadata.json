@@ -1,0 +1,58 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "86d0c44c-b287-47c1-b9bb-cbff310b393f",
+  "location" : "data/persistent/hive_partitioned_table",
+  "last-sequence-number" : 0,
+  "last-updated-ms" : 1746793270313,
+  "last-column-id" : 3,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "event_date",
+      "required" : false,
+      "type" : "date"
+    }, {
+      "id" : 2,
+      "name" : "user_id",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 3,
+      "name" : "event_type",
+      "required" : false,
+      "type" : "string"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "event_date",
+      "transform" : "identity",
+      "source-id" : 1,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "thijs",
+    "write.update.mode" : "merge-on-read",
+    "write.parquet.write-partition-values" : "false",
+    "write.parquet.compression-codec" : "zstd",
+    "write.data.partition-columns" : "false"
+  },
+  "current-snapshot-id" : -1,
+  "refs" : { },
+  "snapshots" : [ ],
+  "statistics" : [ ],
+  "snapshot-log" : [ ],
+  "metadata-log" : [ ]
+}

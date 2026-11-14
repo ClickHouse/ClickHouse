@@ -1,0 +1,89 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "503d6957-d392-4f75-a8a8-76eea9f901c0",
+  "location" : "data/persistent/partition_float",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1746881395914,
+  "last-column-id" : 3,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "partition_col",
+      "required" : false,
+      "type" : "float"
+    }, {
+      "id" : 2,
+      "name" : "user_id",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 3,
+      "name" : "event_type",
+      "required" : false,
+      "type" : "string"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "partition_col",
+      "transform" : "identity",
+      "source-id" : 1,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "thijs",
+    "write.update.mode" : "merge-on-read",
+    "write.parquet.write-partition-values" : "false",
+    "write.parquet.compression-codec" : "zstd",
+    "write.data.partition-columns" : "false"
+  },
+  "current-snapshot-id" : 7743143018202347074,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 7743143018202347074,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 7743143018202347074,
+    "timestamp-ms" : 1746881395914,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1746881393399",
+      "added-data-files" : "2",
+      "added-records" : "2",
+      "added-files-size" : "1884",
+      "changed-partition-count" : "2",
+      "total-records" : "2",
+      "total-files-size" : "1884",
+      "total-data-files" : "2",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "data/persistent/partition_float/metadata/snap-7743143018202347074-1-e1a2fb23-87df-4e86-b168-6bf5f432a0a0.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1746881395914,
+    "snapshot-id" : 7743143018202347074
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1746881394503,
+    "metadata-file" : "data/persistent/partition_float/metadata/v1.metadata.json"
+  } ]
+}
