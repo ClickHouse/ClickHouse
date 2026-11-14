@@ -8,7 +8,6 @@ keywords: ['clickstack', 'vector', 'traces', 'observability', 'telemetry']
 sidebarTitle: 'Vector'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 import InstallingVector from '/snippets/_installing_vector.mdx';
 import VectorSampleData from '/snippets/_vector_sample_data.mdx';
 
@@ -109,13 +108,29 @@ The example above uses the default user for Self-managed ClickHouse Observabilit
 
 Navigate to your Self-managed ClickHouse Observability service and select "ClickStack" from the left-hand menu. If you’ve already completed the onboarding, this will launch the observability UI in a new tab, and you will be automatically authenticated. If not, you can proceed through the onboarding and select “Launch ClickStack” once you’ve selected Vector as your input source.
 
-<Image img="/images/clickstack/launch-clickstack-vector.webp" alt="Launch ClickStack for vector" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Launch ClickStack for vector](/images/clickstack/launch-clickstack-vector.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Create a datasource" id="create-a-datasource-managed-self-configured">
 
 Create a logs data source. If no data sources exist, you will be prompted to create one on your first login. Otherwise, navigate to Team Settings and add a new data source.
 
-<Image img="/images/clickstack/create-vector-datasource.webp" alt="Create datasource - vector" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Create datasource - vector](/images/clickstack/create-vector-datasource.webp)
+
+</Frame>
+
+</div>
 
 The configuration above assumes an Nginx-style schema with a `time_local` column used as the timestamp. This should be, where possible, the timestamp column declared in the primary key. This column is mandatory.
 
@@ -129,7 +144,15 @@ For other possible options, see the [configuration reference](/clickstack/self-c
 
 Navigate to the logs view to explore the data and begin using the service.
 
-<Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Nginx logs in the observability UI" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Nginx logs in the observability UI](/images/clickstack/nginx-logs-vector-search.webp)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
@@ -245,13 +268,29 @@ vector --config nginx.yaml
 
 Navigate to your Self-managed ClickHouse Observability service and select "ClickStack" from the left-hand menu. If you’ve already completed the onboarding, this will launch the observability UI in a new tab, and you will be automatically authenticated. If not, you can proceed through the onboarding and select “Launch ClickStack” once you’ve selected Vector as your input source.
 
-<Image img="/images/clickstack/launch-clickstack-vector.webp" alt="Launch ClickStack for vector" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Launch ClickStack for vector](/images/clickstack/launch-clickstack-vector.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Create a datasource" id="create-a-datasource-nginx-managed-self-configured">
 
 Create a logs data source. If no data sources exist, you will be prompted to create one on first login. Otherwise, navigate to Team Settings and add a new data source.
 
-<Image img="/images/clickstack/create-vector-datasource.webp" alt="Create datasource - vector" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Create datasource - vector](/images/clickstack/create-vector-datasource.webp)
+
+</Frame>
+
+</div>
 
 The configuration assumes the Nginx schema with a `time_local` column used as the timestamp. This is the timestamp column declared in the primary key. This column is mandatory.
 
@@ -284,7 +323,15 @@ For other possible options, see the [configuration reference](/clickstack/self-c
 
 Navigate to the search view for `October 20th, 2025` to explore the data and begin using the service.
 
-<Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Observability UI" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Observability UI](/images/clickstack/nginx-logs-vector-search.webp)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 

@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'visualization', 'monitoring', 'observability']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 
 ClickHouse Observability supports visualizing events, with built-in support for charting in the UI. These charts can be added to dashboards for sharing with other users.
 
@@ -34,7 +33,15 @@ For the examples below, we use the remote dataset available at [sql.clickhouse.c
 
 Select `Chart Explorer` from the left menu.
 
-<Image img="/images/use-cases/observability/clickstack-visualization-1.webp" alt="Chart Explorer" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Chart Explorer](/images/use-cases/observability/clickstack-visualization-1.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Create visualization" id="create-visualization">
 
@@ -48,17 +55,41 @@ Select the `Time Series` visualization type from the top menu, followed by the `
 - Group By: `ServiceName`
 - Alias: `Average Time`
 
-<Image img="/images/use-cases/observability/clickstack-visualization-2.webp" alt="Simple visualization" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Simple visualization](/images/use-cases/observability/clickstack-visualization-2.webp)
+
+</Frame>
+
+</div>
 
 Note that you can filter events using either a SQL `WHERE` clause or Lucene syntax and set the time frame over which events should be visualized. Multiple series are also supported.
 
 For example, filter by the service `frontend` by adding the filter `ServiceName:"frontend"`. Add a second series for the count of events over time with the alias `Count` by clicking `Add Series`.
 
-<Image img="/images/use-cases/observability/clickstack-visualization-3.webp" alt="Simple visualization 2" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Simple visualization 2](/images/use-cases/observability/clickstack-visualization-3.webp)
+
+</Frame>
+
+</div>
 
 To build a series similar to an existing one, you can duplicate it instead of starting from scratch. Click the copy icon (`Duplicate series`) on a series row to insert a copy directly below. The copy keeps the source series' settings, such as the metric, column, and filter. You then change only the fields that differ (for example the aggregation) and give the copy its own alias. Duplicating is available wherever multiple series are supported. It is hidden for visualization types that allow only one series, such as `Number`, `Pie`, and `Heatmap`.
 
-<Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="The Duplicate series copy icon and its tooltip on a chart series row" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![The Duplicate series copy icon and its tooltip on a chart series row](/images/use-cases/observability/clickstack-duplicate-series.webp)
+
+</Frame>
+
+</div>
 
 <Note>
 Visualizations can be created from any data source — metrics, traces, or logs. ClickHouse Observability treats all of these as wide events. Any **numeric column** can be charted over time, and **string**, **date**, or **numeric** columns can be used for groupings.
@@ -81,7 +112,15 @@ We create a dashboard with two visualizations below using the log and trace data
 
 Select `Dashboards` from the left menu. Then click `New Dashboard` to create a temporary or saved dashboard.
 
-<Image img="/images/clickstack/observability-new-dashboard.png" alt="Dashboards page with the New Dashboard menu showing Saved Dashboard and Temporary Dashboard options" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Dashboards page with the New Dashboard menu showing Saved Dashboard and Temporary Dashboard options](/images/clickstack/observability-new-dashboard.png)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Create a visualization – average request time by service" id="create-a-tile">
 
@@ -98,11 +137,27 @@ Select the `Time Series` visualization type from the top menu, followed by the `
 
 Click `Run` to preview the chart, then click `Save`.
 
-<Image img="/images/clickstack/observability-dashboard-average-duration.png" alt="Time Series chart editor showing average duration grouped by ServiceName" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Time Series chart editor showing average duration grouped by ServiceName](/images/clickstack/observability-dashboard-average-duration.png)
+
+</Frame>
+
+</div>
 
 Resize the visualization to occupy the full width of the dashboard.
 
-<Image img="/images/clickstack/observability-dashboard-duration-tile.png" alt="Dashboard with the Average duration by service chart spanning the full width" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Dashboard with the Average duration by service chart spanning the full width](/images/clickstack/observability-dashboard-duration-tile.png)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Create a visualization – events over time by service" id="create-a-tile-2">
 
@@ -118,11 +173,27 @@ Select the `Time Series` visualization type from the top menu, followed by the `
 
 Click `Run` to preview the chart, then click `Save`.
 
-<Image img="/images/clickstack/observability-dashboard-event-count.png" alt="Time Series chart editor showing event counts grouped by ServiceName" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Time Series chart editor showing event counts grouped by ServiceName](/images/clickstack/observability-dashboard-event-count.png)
+
+</Frame>
+
+</div>
 
 Resize the visualization to occupy the full width of the dashboard.
 
-<Image img="/images/clickstack/observability-dashboard-two-charts.png" alt="Dashboard with full-width charts showing average duration and event count by service" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Dashboard with full-width charts showing average duration and event count by service](/images/clickstack/observability-dashboard-two-charts.png)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Add a heatmap tile for span duration" id="create-a-tile-heatmap">
 
@@ -147,11 +218,27 @@ To customize the heatmap further, click **Display Settings** to open a drawer fo
 
 Click `Run` to preview the chart, then `Save`.
 
-<Image img="/images/clickstack/observability-dashboard-heatmap-editor.png" alt="Heatmap editor showing payment service span durations with a ServiceName filter and Display Settings button" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Heatmap editor showing payment service span durations with a ServiceName filter and Display Settings button](/images/clickstack/observability-dashboard-heatmap-editor.png)
+
+</Frame>
+
+</div>
 
 The saved tile renders as a heatmap on the dashboard. Hover any cell to see the bucket bounds and event count.
 
-<Image img="/images/clickstack/observability-dashboard-heatmap-tile.png" alt="Dashboard with a payment span duration heatmap tile and a tooltip showing duration and event count" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Dashboard with a payment span duration heatmap tile and a tooltip showing duration and event count](/images/clickstack/observability-dashboard-heatmap-tile.png)
+
+</Frame>
+
+</div>
 
 <Tip>
 **Two ClickHouse queries per heatmap**
@@ -163,7 +250,15 @@ The heatmap runs as two sequential queries: a small **bounds query** that resolv
 
 Click any cell on a rendered heatmap tile to open a **View in Event Deltas** action.
 
-<Image img="/images/clickstack/dashboards/heatmap-tile-drilldown.webp" alt="Heatmap cell click revealing the View in Event Deltas action" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Heatmap cell click revealing the View in Event Deltas action](/images/clickstack/dashboards/heatmap-tile-drilldown.webp)
+
+</Frame>
+
+</div>
 
 Selecting it opens the [Event Deltas](/clickstack/observability/features/event-deltas) view with the tile's data source, `Where` clause, and time range carried over. From there you can examine the same distribution interactively, slice by attribute to see what makes the slow spans different from the fast ones, and inspect the individual spans behind any cell, without rebuilding the query by hand.
 </Step>
@@ -171,13 +266,29 @@ Selecting it opens the [Event Deltas](/clickstack/observability/features/event-d
 
 Lucene or SQL filters, along with the time range, can be applied at the dashboard level and will automatically propagate to all visualizations.
 
-<Image img="/images/clickstack/observability-dashboard-filter.png" alt="Dashboard filtered to the frontend service, showing average duration and event count charts" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Dashboard filtered to the frontend service, showing average duration and event count charts](/images/clickstack/observability-dashboard-filter.png)
+
+</Frame>
+
+</div>
 
 To demonstrate, apply the Lucene filter `ServiceName:"frontend"` to the dashboard and select a time window containing data. Note how the visualizations now reflect data only from the `frontend` service.
 
 The dashboard will be auto-saved. To set the dashboard name, select the title and modify it before clicking `Save Name`.
 
-<Image img="/images/clickstack/observability-dashboard-save-name.png" alt="Dashboard with the My Dashboard name selected for editing" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Dashboard with the My Dashboard name selected for editing](/images/clickstack/observability-dashboard-save-name.png)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
@@ -185,7 +296,15 @@ The dashboard will be auto-saved. To set the dashboard name, select the title an
 
 To remove, edit, or duplicate a visualization, hover over it and use the corresponding action buttons.
 
-<Image img="/images/clickstack/observability-dashboard-edit.png" alt="Dashboard chart menu showing Duplicate, Edit, and Delete options" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Dashboard chart menu showing Duplicate, Edit, and Delete options](/images/clickstack/observability-dashboard-edit.png)
+
+</Frame>
+
+</div>
 
 ### Tile display settings {#tile-display-settings}
 
@@ -232,7 +351,15 @@ Number tiles can show a **background chart**: a trend sparkline drawn behind the
 
 With a number tile selected, open **Display Settings** and set **Background chart** to **Line** or **Area** (or **None** to turn it off). The sparkline is derived from a time-bucketed version of the tile's query, so no extra configuration is needed. It inherits the tile color by default; set a **Background color** to override it with a specific palette color.
 
-<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="Display Settings drawer for a number tile, with Background chart set to Area" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Display Settings drawer for a number tile, with Background chart set to Area](/images/clickstack/dashboards/number-tile-background-chart.webp)
+
+</Frame>
+
+</div>
 
 Background charts apply to query-builder number tiles. Raw SQL number tiles return a single value with no time dimension to bucket, so the option appears but is disabled for them.
 
@@ -240,7 +367,15 @@ Table tiles can stripe their rows with **Alternate Row Background**, which tints
 
 With a table tile selected, open **Display Settings** and turn on **Alternate Row Background**. Striping is purely visual, so it works on both query-builder and raw SQL table tiles.
 
-<Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Display Settings drawer for a table tile, with Alternate Row Background turned on" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Display Settings drawer for a table tile, with Alternate Row Background turned on](/images/clickstack/dashboards/table-tile-display-settings.webp)
+
+</Frame>
+
+</div>
 
 Table tiles also keep a separator between the header row and the data as you scroll, so the column headers stay distinct.
 
@@ -288,7 +423,15 @@ Dashboards are accessible on the dashboards page. They are organized by tag, wit
 
 Dashboards can be favorited for easy access on the sidebar and at the top of the listing page. Favorites are individual to each user.
 
-<Image img="/images/clickstack/observability-dashboard-listing.png" alt="Dashboard listing with a search field, sorting controls, and My Dashboard containing three tiles" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Dashboard listing with a search field, sorting controls, and My Dashboard containing three tiles](/images/clickstack/observability-dashboard-listing.png)
+
+</Frame>
+
+</div>
 
 ## Dashboards - tagging {#tagging}
 
@@ -306,13 +449,29 @@ This makes it easy to find related items and maintain an organized workspace as 
 
 Open the dashboard's **Tags** menu to select or create tags. You can assign multiple tags to the same dashboard, as shown below:
 
-<Image img="/images/clickstack/observability-dashboard-tags.png" alt="Dashboard Tags menu with API and MONITORING selected" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Dashboard Tags menu with API and MONITORING selected](/images/clickstack/observability-dashboard-tags.png)
+
+</Frame>
+
+</div>
 
 ## Custom filters and variables {#custom-filters}
 
 In addition to the [free-text filters](#filter-dashboards) available on all dashboards, saved dashboards support custom dropdown filters populated by data queried from ClickHouse. These provide reusable, point-and-click filter controls so that dashboard viewers can filter without writing expressions manually.
 
-<Image img="/images/clickstack/dashboards/filter-dropdown.webp" alt="Services dropdown filter showing available service names" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Services dropdown filter showing available service names](/images/clickstack/dashboards/filter-dropdown.webp)
+
+</Frame>
+
+</div>
 
 Each filter allows the viewer to choose one or more values, and does one or both of the following with them:
 
@@ -328,7 +487,15 @@ The following steps demonstrate adding a filter to the dashboard created in the 
 
 Open a saved dashboard and select **Edit Filters and Variables** from the toolbar.
 
-<Image img="/images/clickstack/dashboards/edit-filters.webp" alt="Edit Filters button in the dashboard toolbar" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Edit Filters button in the dashboard toolbar](/images/clickstack/dashboards/edit-filters.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Add a new filter" id="add-new-filter">
 
@@ -336,25 +503,57 @@ Click **Add new filter**. Configure the filter by providing a **Display Name**, 
 
 For example, to add a service filter for trace data, use `ServiceName` as the filter expression with the `Traces` data source. The "Dropdown values filter" is optional, and provides a way to restrict which values appear in the dropdown.
 
-<Image img="/images/clickstack/dashboards/add-filter.webp" alt="Add filter dialog with Display Name, Data source, and Filter expression fields" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Add filter dialog with Display Name, Data source, and Filter expression fields](/images/clickstack/dashboards/add-filter.webp)
+
+</Frame>
+
+</div>
 
 The same dialog also controls whether the filter [broadcasts](#broadcast-filters) its value and whether it is [available as a variable](#dashboard-variables), both described below.
 
 The **Filters and Variables** dialog shows all configured filters for the dashboard. From here you can edit or delete existing filters, or add additional ones.
 
-<Image img="/images/clickstack/observability-dashboard-saved-filters.png" alt="Filters and Variables dialog showing a Services filter using Demo Traces and broadcasting to all sources" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Filters and Variables dialog showing a Services filter using Demo Traces and broadcasting to all sources](/images/clickstack/observability-dashboard-saved-filters.png)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Use the filter" id="use-filter">
 
 Close the **Filters and Variables** dialog. The new dropdown filter appears below the search bar. Click it to see the available values, then select one to filter all visualizations on the dashboard.
 
-<Image img="/images/clickstack/observability-dashboard-filtered.png" alt="Dashboard filtered to the accounting service with the Services dropdown open" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Dashboard filtered to the accounting service with the Services dropdown open](/images/clickstack/observability-dashboard-filtered.png)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="(Optional) Save filter values as default" id="save-default-filters">
 
 To persist a filter selection as the dashboard default, choose **Save Query & Filters as Default** from the dashboard menu. The dashboard will always open with the selected filters applied. To reset, select **Remove Default Query & Filters** from the same menu.
 
-<Image img="/images/clickstack/observability-dashboard-save-filter-values.png" alt="Dashboard menu showing Save Query & Filters as Default with the accounting service selected" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Dashboard menu showing Save Query & Filters as Default with the accounting service selected](/images/clickstack/observability-dashboard-save-filter-values.png)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
@@ -440,7 +639,15 @@ Dashboard tiles support drilldown to the Search page. Click on a data point in a
 - **Copy label** — copies the series label.
 - **Focus** — focuses on the selected series in the chart.
 
-<Image img="/images/clickstack/observability-dashboard-drilldown.png" alt="Dashboard chart tooltip showing per-service values and the View All Events action" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Dashboard chart tooltip showing per-service values and the View All Events action](/images/clickstack/observability-dashboard-drilldown.png)
+
+</Frame>
+
+</div>
 
 This is useful for investigating specific spikes or anomalies spotted in a dashboard — you can quickly pivot from an aggregated view to the underlying individual events.
 
@@ -456,7 +663,15 @@ Service names are auto-detected from the trace data, with a series of prebuilt v
 
 Visualizations can be filtered using Lucene or SQL syntax, and the time window can be adjusted for focused analysis.
 
-<Image img="/images/clickstack/observability-dashboard-services.png" alt="Services dashboard HTTP Service tab showing request error rate, throughput, time-consuming endpoints, and latency" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Services dashboard HTTP Service tab showing request error rate, throughput, time-consuming endpoints, and latency](/images/clickstack/observability-dashboard-services.png)
+
+</Frame>
+
+</div>
 
 ### Kubernetes dashboard {#kubernetes-dashboard}
 
@@ -464,4 +679,12 @@ This dashboard allows you to explore Kubernetes events collected via OpenTelemet
 
 Kubernetes data is organized across three tabs for easy navigation: Pods, Nodes, and Namespaces.
 
-<Image img="/images/clickstack/observability-dashboard-kubernetes.png" alt="Kubernetes dashboard Pods tab showing CPU usage, memory usage, pod status, and cluster filters" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Kubernetes dashboard Pods tab showing CPU usage, memory usage, pod status, and cluster filters](/images/clickstack/observability-dashboard-kubernetes.png)
+
+</Frame>
+
+</div>
