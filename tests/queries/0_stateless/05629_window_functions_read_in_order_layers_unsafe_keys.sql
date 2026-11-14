@@ -63,6 +63,13 @@ SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1, max_block_s
 SELECT count(), (SELECT sum(cityHash64(dt, b, w)) FROM (SELECT dt, b, count() OVER (PARTITION BY formatDateTime(dt, '%M'), dt) AS w FROM t_window_layers_function_settings) SETTINGS optimize_read_in_order = 0) = (SELECT sum(cityHash64(dt, b, w)) FROM (SELECT dt, b, count() OVER (PARTITION BY formatDateTime(dt, '%M'), dt) AS w FROM t_window_layers_function_settings))
 FROM (SELECT dt, b, count() OVER (PARTITION BY formatDateTime(dt, '%M'), dt) AS w FROM t_window_layers_function_settings)
 SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1, max_block_size = 1000;
+-- A `UNION ALL` of a branch read in order and a branch sorted by a helper sorting, which feeds the window.
+DROP TABLE IF EXISTS t_window_layers_function_settings_raw;
+CREATE TABLE t_window_layers_function_settings_raw (k String, b UInt32) ENGINE = MergeTree ORDER BY (k, b) SETTINGS index_granularity = 100;
+INSERT INTO t_window_layers_function_settings_raw SELECT formatDateTime(dt, '%M'), b FROM t_window_layers_function_settings;
+SELECT count(), min(w), max(w) FROM (SELECT count() OVER (PARTITION BY k) AS w FROM (SELECT k, b FROM t_window_layers_function_settings_raw UNION ALL SELECT formatDateTime(dt, '%M') AS k, b FROM t_window_layers_function_settings))
+SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1, max_block_size = 1000;
+DROP TABLE t_window_layers_function_settings_raw;
 DROP TABLE t_window_layers_function_settings;
 
 -- Windows without scatter keys: a floating-point `PARTITION BY` key, and a window with only `ORDER BY`.
@@ -86,6 +93,12 @@ SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, distri
 SELECT count(), (SELECT sum(cityHash64(dt, f, b, w)) FROM (SELECT dt, f, b, row_number() OVER (ORDER BY formatDateTime(dt, '%M'), f, b) AS w FROM t_window_function_settings_no_scatter) SETTINGS optimize_read_in_order = 0) = (SELECT sum(cityHash64(dt, f, b, w)) FROM (SELECT dt, f, b, row_number() OVER (ORDER BY formatDateTime(dt, '%M'), f, b) AS w FROM t_window_function_settings_no_scatter))
 FROM (SELECT dt, f, b, row_number() OVER (ORDER BY formatDateTime(dt, '%M'), f, b) AS w FROM t_window_function_settings_no_scatter)
 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0, distributed_plan_fallback_to_local_execution = 0, max_rows_to_group_by = 0, max_block_size = 1000;
+-- The same windows with the Cascades optimizer, which rebuilds the sorting from the required properties.
+SELECT count(), min(w), max(w) FROM (SELECT count() OVER (PARTITION BY formatDateTime(dt, '%M'), f) AS w FROM t_window_function_settings_no_scatter)
+SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0, distributed_plan_fallback_to_local_execution = 0, max_rows_to_group_by = 0, enable_cascades_optimizer = 1, distributed_plan_workers_num = 1, max_block_size = 1000;
+SELECT count(), (SELECT sum(cityHash64(dt, f, b, w)) FROM (SELECT dt, f, b, row_number() OVER (ORDER BY formatDateTime(dt, '%M'), f, b) AS w FROM t_window_function_settings_no_scatter) SETTINGS optimize_read_in_order = 0) = (SELECT sum(cityHash64(dt, f, b, w)) FROM (SELECT dt, f, b, row_number() OVER (ORDER BY formatDateTime(dt, '%M'), f, b) AS w FROM t_window_function_settings_no_scatter))
+FROM (SELECT dt, f, b, row_number() OVER (ORDER BY formatDateTime(dt, '%M'), f, b) AS w FROM t_window_function_settings_no_scatter)
+SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0, distributed_plan_fallback_to_local_execution = 0, max_rows_to_group_by = 0, enable_cascades_optimizer = 1, distributed_plan_workers_num = 1, max_block_size = 1000;
 DROP TABLE t_window_function_settings_no_scatter;
 
 -- The sorting key column `payload` is not used by the query and must not be read.

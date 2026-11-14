@@ -2075,6 +2075,10 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
 
             if (additional_sorting)
             {
+                /// The helper sorting feeds the window sorting, so it is read in order with the same restrictions.
+                if (sorting->isWindowSorting() || sorting->hasPartitions())
+                    typeid_cast<SortingStep &>(*additional_sorting).setWindowSorting();
+
                 auto & sort_node = nodes.emplace_back();
                 sort_node.step = std::move(additional_sorting);
                 sort_node.children.push_back(child);

@@ -44,6 +44,9 @@ struct ExpressionProperties
     DistributionDescription distribution;
     StreamLayout stream_layout = StreamLayout::Unknown;
     DistributionColumns stream_disjoint_columns;    /// Nonempty exactly for `Disjoint`; set via `setDisjointStreams`
+    /// The sorting is required by a window (`SortingStep::isWindowSorting`). The enforced `SortingStep` carries it, so that
+    /// reading in order applies the restrictions of a window sorting to it.
+    bool sorting_for_window = false;
 
     /// Marks the streams disjoint on the columns (must be nonempty sets). Orders the column
     /// sets canonically, so equal layouts compare and hash equal (disjointness has no key order).
@@ -78,6 +81,7 @@ struct ExpressionPropertiesHash
         for (const auto & type_name : props.distribution.hash_type_names)
             boost::hash_combine(h, type_name);
         boost::hash_combine(h, static_cast<UInt8>(props.stream_layout));
+        boost::hash_combine(h, props.sorting_for_window);
         for (const auto & col_set : props.stream_disjoint_columns)
         {
             /// Equal sets must hash equally regardless of insertion order.
