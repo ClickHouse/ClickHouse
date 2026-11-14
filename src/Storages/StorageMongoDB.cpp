@@ -463,8 +463,14 @@ static DataTypePtr listMemberType(const DataTypePtr & list_type, size_t index)
     return list_type;
 }
 
-/// The set of `IN` reads a member of type `Bool` as `true` or `false`, although the member, e.g. from `reinterpret`, may hold
-/// another byte. A number member keeps its value.
+static bool isNonCanonicalBool(const Field & value, const DataTypePtr & type)
+{
+    return type && isBool(removeLowCardinalityAndNullable(type))
+        && (value.getType() == Field::Types::UInt64 || value.getType() == Field::Types::Bool)
+        && value.safeGet<UInt64>() > 1;
+}
+
+/// A `Bool` set probes truth values. Other column types may instead batch-cast a `Bool` member and keep its byte.
 static Field setMemberValue(const Field & member, const DataTypePtr & member_type)
 {
     if (member_type && isBool(removeLowCardinalityAndNullable(member_type))
@@ -841,6 +847,27 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
     auto column_type = column_node->getResultType();
     auto const_value = const_node->getValue();
 
+    if (!isBool(removeNullable(column_type)))
+    {
+        if (func_name == "$in" || func_name == "$nin")
+        {
+            const Array members = listMembers(const_value);
+            for (size_t i = 0; i < members.size(); ++i)
+            {
+                if (isNonCanonicalBool(members[i], listMemberType(const_type, i)))
+                {
+                    LOG_DEBUG(log, "Cannot push down a non-canonical `Bool` set member for column type {}", column_type->getName());
+                    return {};
+                }
+            }
+        }
+        else if (isNonCanonicalBool(const_value, const_type))
+        {
+            LOG_DEBUG(log, "Cannot push down a non-canonical `Bool` bound for column type {}", column_type->getName());
+            return {};
+        }
+    }
+
     /// `$ne` and `$nin` also match a missing field, a `null` and a value of another BSON type, which the reader may convert
     /// to an excluded value (`NULL`, the default, or a number read as a string), so the local `WHERE` drops them.
     if (func_name == "$ne" || func_name == "$nin")
@@ -995,15 +1022,36 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
         if (function_name != "isNull" && function_name != "isNotNull" && function_name != "empty" && function_name != "notEmpty")
             return {};
 
-        /// The reader reads any BSON value into a `String`: `null`, a missing field, `""` and an empty binary as an empty string
-        /// (or `NULL`), the others as non-empty strings. The emptiness of other types, e.g. of an empty array, has no filter.
-        if ((function_name == "empty" || function_name == "notEmpty") && !isString(removeNullable(column->getResultType())))
-            return {};
-
-        /// A `null` also matches an array with a `null` element, which the reader takes as a non-`NULL`, non-empty string, so the
-        /// filters below keep every array, and the `WHERE` decides the documents they match.
-        is_superset = true;
         const auto & column_name = column->getColumnName();
+        const auto column_type = removeNullable(column->getResultType());
+        if (function_name == "empty" || function_name == "notEmpty")
+        {
+            if (isArray(column_type))
+            {
+                if (function_name == "empty")
+                {
+                    /// MongoDB also matches `[null]` against `null`, so the local filter must run before the limit.
+                    is_superset = true;
+                    return make_document(kvp("$or", make_array(
+                        make_document(kvp(column_name, bsoncxx::types::b_null{})),
+                        make_document(kvp(column_name, make_document(kvp("$size", 0)))))));
+                }
+                return make_document(kvp(column_name, make_document(
+                    kvp("$type", "array"), kvp("$not", make_document(kvp("$size", 0))))));
+            }
+            if (!isString(column_type))
+                return {};
+        }
+
+        if (!isString(column_type))
+            return make_document(kvp(column_name, make_document(
+                kvp(function_name == "isNull" ? "$eq" : "$ne", bsoncxx::types::b_null{}))));
+
+        /// The reader reads any BSON value into a `String`: `null`, a missing field, `""` and an empty binary as an empty string
+        /// (or `NULL`), the others as non-empty strings.
+        /// A `null` also matches an array with a `null` element and an `undefined`, which the reader takes as non-`NULL`, non-empty
+        /// strings, so the filters below keep them, and the `WHERE` decides the documents they match.
+        is_superset = true;
         if (function_name == "isNull")
             return make_document(kvp(column_name, make_document(kvp("$eq", bsoncxx::types::b_null{}))));
         if (function_name == "empty")
@@ -1014,7 +1062,7 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
         auto excluded = function_name == "isNotNull" ? make_array(bsoncxx::types::b_null{}) : make_array(bsoncxx::types::b_null{}, "");
         return make_document(kvp("$or", make_array(
             make_document(kvp(column_name, make_document(kvp("$nin", std::move(excluded))))),
-            make_document(kvp(column_name, make_document(kvp("$type", "array")))))));
+            make_document(kvp(column_name, make_document(kvp("$type", make_array("array", "undefined"))))))));
     }
 
     if (argumnet_nodes.size() == 2)
