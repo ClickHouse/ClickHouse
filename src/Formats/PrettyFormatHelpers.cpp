@@ -270,16 +270,37 @@ std::pair<String, size_t> truncateName(String name, size_t cut_to, size_t hyster
     /// We cut characters in the middle and insert filler there.
     const char * filler = ascii ? "~" : "⋯";
 
-    size_t prefix_chars = cut_to / 2;
-    size_t suffix_chars = (cut_to - 1) / 2;
-    size_t suffix_chars_begin = length - suffix_chars;
+    const auto * data = reinterpret_cast<const UInt8 *>(name.data());
+    size_t prefix_bytes = UTF8::computeBytesBeforeWidth(data, name.size(), 0, cut_to / 2);
+    size_t prefix_width = UTF8::computeWidth(data, prefix_bytes);
 
-    size_t prefix_bytes = UTF8::computeBytesBeforeWidth(reinterpret_cast<const UInt8 *>(name.data()), name.size(), 0, prefix_chars);
-    size_t suffix_bytes_begin = UTF8::computeBytesBeforeWidth(reinterpret_cast<const UInt8 *>(name.data()), name.size(), 0, suffix_chars_begin);
+    /// Give the suffix the remaining space after the prefix and filler.
+    size_t suffix_start_width = length - (cut_to - prefix_width - 1);
+    size_t suffix_bytes_begin = UTF8::computeBytesBeforeWidth(data, name.size(), 0, suffix_start_width);
+
+    /// Skip a character that straddles the suffix boundary so it does not exceed the remaining space.
+    if (suffix_bytes_begin < name.size() && UTF8::computeWidth(data, suffix_bytes_begin) < suffix_start_width)
+        suffix_bytes_begin += UTF8::seqLength(data[suffix_bytes_begin]);
+
+    /// A tab can become wider at its new position after the prefix and filler.
+    /// Drop leading suffix characters until the suffix fits at that position.
+    while (suffix_bytes_begin < name.size()
+        && UTF8::computeWidth(data + suffix_bytes_begin, name.size() - suffix_bytes_begin, prefix_width + 1) > cut_to - prefix_width - 1)
+    {
+        /// Skip zero-width sequences together to avoid repeatedly measuring the same suffix.
+        suffix_bytes_begin += UTF8::computeBytesBeforeWidth(
+            data + suffix_bytes_begin, name.size() - suffix_bytes_begin, prefix_width + 1, 0);
+        if (suffix_bytes_begin == name.size())
+            break;
+
+        const UInt8 * suffix_begin = data + suffix_bytes_begin + 1;
+        UTF8::syncForward(suffix_begin, data + name.size());
+        suffix_bytes_begin = suffix_begin - data;
+    }
 
     name = name.substr(0, prefix_bytes) + filler + name.substr(suffix_bytes_begin, std::string::npos);
 
-    return {name, cut_to};
+    return {name, UTF8::computeWidth(reinterpret_cast<const UInt8 *>(name.data()), name.size())};
 }
 
 }
