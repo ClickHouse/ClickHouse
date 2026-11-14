@@ -209,7 +209,9 @@ void StorageSet::checkNoRowPolicy(const ContextPtr & context) const
 {
     auto storage_id = getStorageID();
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
-    context->checkAccess(AccessType::SELECT, storage_id, metadata_snapshot->getColumns().getNamesOfPhysical());
+    const auto & columns = metadata_snapshot->getColumns();
+    context->checkAccess(
+        AccessType::SELECT, storage_id, columns.getColumnNamesForSelectAccessCheck(columns.getNamesOfPhysical(), context, storage_id));
 
     auto row_policy_filter
         = context->getRowPolicyFilter(storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);

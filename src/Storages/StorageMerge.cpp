@@ -3237,14 +3237,7 @@ bool StorageMerge::supportsTrivialCountOptimization(const StorageSnapshotPtr &, 
         if (!has_select_access)
         {
             const auto metadata = table->getInMemoryMetadataPtr(ctx, false);
-            for (const auto & column : metadata->getColumns())
-            {
-                if (access->isGranted(AccessType::SELECT, id.database_name, id.table_name, column.name))
-                {
-                    has_select_access = true;
-                    break;
-                }
-            }
+            has_select_access = !getColumnsSelectableByTrivialQuery(table, id, metadata->getColumns(), ctx).empty();
         }
 
         return !has_select_access || !table->supportsTrivialCountOptimization(nullptr, ctx) || getEffectiveRowPolicyFilter(*table, ctx);
