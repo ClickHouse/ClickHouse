@@ -61,6 +61,13 @@ struct CrossTabCountsState
 
     void merge(const CrossTabCountsState & other)
     {
+        /// Copying the hash tables whole is much faster than inserting their elements one by one.
+        if (count == 0)
+        {
+            *this = other;
+            return;
+        }
+
         count += other.count;
         for (const auto & [key, value] : other.count_a)
             count_a[key] += value;

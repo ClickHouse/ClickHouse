@@ -26,6 +26,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageFactory.h>
 #include <Common/FailPoint.h>
 #include <Common/NamedCollections/NamedCollectionsBackup.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
@@ -118,6 +119,20 @@ namespace
         return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "resources");
     }
 
+    /// Engine name if the database is skipped by the restore, so neither it nor any table under it
+    /// is created; empty otherwise.
+    String getSkippedDatabaseEngine(const ASTPtr & create_database_query, const ContextPtr & context)
+    {
+        if (!context->getSettingsRef()[Setting::restore_replace_external_engines_to_null] || !create_database_query)
+            return {};
+
+        const auto & create = create_database_query->as<const ASTCreateQuery &>();
+        if (create.storage && create.storage->engine
+            && DatabaseFactory::instance().isDatabaseExternal(create.storage->engine->name))
+            return create.storage->engine->name;
+
+        return {};
+    }
  }
 
 
@@ -427,7 +442,34 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 continue;
             }
 
-            if (table_name.database == DatabaseCatalog::TEMPORARY_DATABASE)
+            const ASTCreateQuery & create = table_info.create_table_query->as<const ASTCreateQuery &>();
+            const bool is_temporary = (table_name.database == DatabaseCatalog::TEMPORARY_DATABASE);
+
+            /// The definition comes from the backup, and the table is created by an internal query that checks
+            /// nothing, so settings that send the data elsewhere are authorized here, as for `CREATE`.
+            /// An external engine replaced by `Null` sends nothing, but temporary tables keep their engine.
+            if (restore_settings.create_table != RestoreTableCreationMode::kMustExist
+                && (is_temporary || !context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]))
+                required_access.append_range(StorageFactory::instance().getExportAccess(create));
+
+            /// A skipped database creates none of its tables, so their targets are never written to.
+            const auto database_it = database_infos.find(table_name.database);
+            const bool database_skipped = (database_it != database_infos.end())
+                && !getSkippedDatabaseEngine(database_it->second.create_database_query, context).empty();
+
+            /// The restored `CREATE` runs as internal, so `getRequiredAccess` imposes nothing; targets are authorized here.
+            if (restore_settings.create_table != RestoreTableCreationMode::kMustExist && create.targets && !database_skipped)
+            {
+                for (const auto & target : create.targets->targets)
+                {
+                    const auto & target_id = target.table_id;
+                    if (target_id)
+                        required_access.emplace_back(
+                            AccessType::SELECT | AccessType::INSERT, target_id.database_name, target_id.table_name);
+                }
+            }
+
+            if (is_temporary)
             {
                 if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
                     required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
@@ -435,7 +477,6 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             }
 
             AccessFlags flags;
-            const ASTCreateQuery & create = table_info.create_table_query->as<const ASTCreateQuery &>();
 
             if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
             {
@@ -445,6 +486,32 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                     flags |= AccessType::CREATE_VIEW;
                 else
                     flags |= AccessType::CREATE_TABLE;
+
+                /// The hosts of `RESTORE ... ON CLUSTER` create the tables without the user, so the engines they will
+                /// create are checked here. Only a value in the query reaches every host: a host may drop a session value.
+                if (mode == Mode::CHECK_ACCESS_ONLY)
+                {
+                    const bool hosts_replace_external_engines_to_null
+                        = context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]
+                        && restore_settings.core_settings.tryGet("restore_replace_external_engines_to_null") != nullptr;
+                    auto add_engine = [&](const ASTStorage & storage)
+                    {
+                        if (!storage.engine)
+                            return;
+                        if (hosts_replace_external_engines_to_null
+                            && StorageFactory::instance().getStorageFeatures(storage.engine->name).source_access_type)
+                            required_access.emplace_back(AccessType::TABLE_ENGINE, "Null");
+                        else
+                            required_access.emplace_back(AccessType::TABLE_ENGINE, storage.engine->name);
+                    };
+                    if (create.storage)
+                        add_engine(*create.storage);
+                    if (create.targets)
+                    {
+                        for (const ASTStorage * inner_engine : create.targets->getInnerEngines())
+                            add_engine(*inner_engine);
+                    }
+                }
             }
 
             if (restore_settings.shouldRestoreTableData() && table_info.has_data)
@@ -549,21 +616,15 @@ void RestorerFromBackup::createAndCheckDatabaseImpl(const String & database_name
     /// Skip external database engines (e.g. MySQL, PostgreSQL, S3, DataLakeCatalog) when
     /// restore_replace_external_engines_to_null is set - there is no meaningful way to
     /// replace a database engine with Null, so we skip both creation and verification.
-    if (context->getSettingsRef()[Setting::restore_replace_external_engines_to_null])
     {
         std::lock_guard lock{mutex};
-        const auto & database_info = database_infos.at(database_name);
-        if (database_info.create_database_query)
+        const String skipped_engine = getSkippedDatabaseEngine(database_infos.at(database_name).create_database_query, context);
+        if (!skipped_engine.empty())
         {
-            const auto & create = database_info.create_database_query->as<const ASTCreateQuery &>();
-            if (create.storage && create.storage->engine
-                && DatabaseFactory::instance().isDatabaseExternal(create.storage->engine->name))
-            {
-                LOG_TRACE(log, "Skipping external database {} with engine {} because restore_replace_external_engines_to_null is set",
-                    backQuoteIfNeed(database_name), create.storage->engine->name);
-                skipped_databases.emplace(database_name);
-                return;
-            }
+            LOG_TRACE(log, "Skipping external database {} with engine {} because restore_replace_external_engines_to_null is set",
+                backQuoteIfNeed(database_name), skipped_engine);
+            skipped_databases.emplace(database_name);
+            return;
         }
     }
 
@@ -795,7 +856,14 @@ void RestorerFromBackup::applyCustomStoragePolicy(ASTPtr query_ptr)
     constexpr auto setting_name = "storage_policy";
     if (query_ptr && restore_settings.storage_policy.has_value())
     {
-        ASTStorage * storage = query_ptr->as<ASTCreateQuery &>().storage;
+        auto & create_query = query_ptr->as<ASTCreateQuery &>();
+
+        /// A materialized view with an inner table keeps its engine (and thus its `storage_policy` setting)
+        /// in the target definition rather than in `storage`, so we have to look there too.
+        ASTStorage * storage = create_query.storage;
+        if (!storage && create_query.is_materialized_view_with_inner_table())
+            storage = create_query.getTargetInnerEngine(ViewTarget::To);
+
         if (storage && storage->settings)
         {
             if (restore_settings.storage_policy.value().empty())

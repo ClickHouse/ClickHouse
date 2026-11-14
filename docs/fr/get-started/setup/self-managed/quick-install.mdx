@@ -18,21 +18,30 @@ Si vous n’avez pas besoin d’installer ClickHouse pour un environnement de pr
     curl https://clickhouse.com/ | sh
     ```
 
-    Sous Linux et macOS, cela installe également [`clickhousectl`](/fr/get-started/setup/self-managed/clickhousectl),
-    la ClickHouse CLI, dans `~/.local/bin` (avec un alias `chctl`). `clickhousectl`
-    vous aide à installer et gérer plusieurs versions locales de ClickHouse, à exécuter des serveurs
-    en arrière-plan et à gérer ClickHouse Cloud. Consultez la [page d’installation de clickhousectl](/fr/get-started/setup/self-managed/clickhousectl)
+    Sous Linux et macOS (x86&#95;64 et ARM64), cela installe également [`clickhousectl`](/fr/get-started/setup/self-managed/clickhousectl),
+    la ClickHouse CLI, dans `~/.local/bin` (avec un alias `chctl`). Si le script
+    indique que `~/.local/bin` ne figure pas dans votre `PATH`, ajoutez-le :
+
+    ```bash
+    export PATH="$HOME/.local/bin:$PATH"
+    ```
+
+    `clickhousectl` vous aide à installer et gérer plusieurs versions locales de ClickHouse,
+    à exécuter des serveurs ClickHouse et Postgres en arrière-plan et à gérer ClickHouse Cloud.
+
+    Si vous préférez que `clickhousectl` installe et gère les versions de ClickHouse à votre place,
+    exécutez `clickhousectl local use latest`. Consultez la [page d’installation de clickhousectl](/fr/get-started/setup/self-managed/clickhousectl)
     pour le workflow basé sur la CLI.
 
     Pour installer uniquement le binaire `clickhouse` sans `clickhousectl`, définissez
-    `CLICKHOUSE_ONLY=1` :
+    `CLICKHOUSE_ONLY=1` :
 
     ```bash
     curl https://clickhouse.com/ | CLICKHOUSE_ONLY=1 sh
     ```
 
     <Note>
-      Utilisateurs Mac : si vous obtenez des erreurs indiquant que le développeur du binaire ne peut pas être vérifié, veuillez consulter [cette page](/fr/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos).
+      Utilisateurs Mac : si vous obtenez des erreurs indiquant que le développeur du binaire ne peut pas être vérifié, veuillez consulter [cette page](/fr/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos).
     </Note>
   </Step>
 
@@ -42,7 +51,7 @@ Si vous n’avez pas besoin d’installer ClickHouse pour un environnement de pr
     dans un emplacement temporaire, ce qui signifie qu’après un redémarrage de `clickhouse-local`,
     les tables créées précédemment ne sont plus disponibles.
 
-    Exécutez la commande suivante pour démarrer [clickhouse-local](/fr/concepts/features/tools-and-utilities/clickhouse-local) :
+    Exécutez la commande suivante pour démarrer [clickhouse-local](/fr/concepts/features/tools-and-utilities/clickhouse-local) :
 
     ```bash
     ./clickhouse
@@ -51,7 +60,7 @@ Si vous n’avez pas besoin d’installer ClickHouse pour un environnement de pr
 
   <Step title="Démarrer clickhouse-server" id="start-clickhouse-server">
     Si vous souhaitez conserver les données, exécutez `clickhouse-server`. Vous pouvez
-    démarrer le serveur ClickHouse à l’aide de la commande suivante :
+    démarrer le serveur ClickHouse à l’aide de la commande suivante :
 
     ```bash
     ./clickhouse server
@@ -60,13 +69,13 @@ Si vous n’avez pas besoin d’installer ClickHouse pour un environnement de pr
 
   <Step title="Démarrer clickhouse-client" id="start-clickhouse-client">
     Une fois le serveur démarré, ouvrez une nouvelle fenêtre de terminal et exécutez la commande suivante
-    pour lancer `clickhouse-client` :
+    pour lancer `clickhouse-client` :
 
     ```bash
     ./clickhouse client
     ```
 
-    Vous verrez quelque chose comme ceci :
+    Vous verrez quelque chose comme ceci :
 
     ```response
     ./clickhouse client
@@ -85,10 +94,10 @@ Si vous n’avez pas besoin d’installer ClickHouse pour un environnement de pr
     [modèle de fichier de configuration
     d’exemple](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml).
 
-    Vous êtes maintenant prêt à envoyer des commandes SQL à ClickHouse !
+    Vous êtes maintenant prêt à envoyer des commandes SQL à ClickHouse !
 
     <Tip>
-      Le [Quick Start](/fr/get-started/setup/install) vous guide à travers les étapes de création de tables et d’insertion de données.
+      [Créer des tables dans ClickHouse](/fr/get-started/quickstarts/creating-tables) vous explique comment créer des tables et insérer des données.
     </Tip>
   </Step>
 </Steps>

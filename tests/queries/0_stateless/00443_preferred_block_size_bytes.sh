@@ -11,9 +11,10 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS preferred_block_size_bytes"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE preferred_block_size_bytes (p Date, s String) ENGINE = MergeTree PARTITION BY p ORDER BY p SETTINGS index_granularity=1, index_granularity_bytes=0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1"
 $CLICKHOUSE_CLIENT -q "INSERT INTO preferred_block_size_bytes (s) SELECT '16_bytes_-_-_-_' AS s FROM system.numbers LIMIT 10, 90"
 $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE preferred_block_size_bytes"
-$CLICKHOUSE_CLIENT --preferred_block_size_bytes=26 -q "SELECT DISTINCT blockSize(), ignore(p, s) FROM preferred_block_size_bytes"
-$CLICKHOUSE_CLIENT --preferred_block_size_bytes=52 -q "SELECT DISTINCT blockSize(), ignore(p, s) FROM preferred_block_size_bytes"
-$CLICKHOUSE_CLIENT --preferred_block_size_bytes=90 -q "SELECT DISTINCT blockSize(), ignore(p) FROM preferred_block_size_bytes"
+# `blockSize()` depends on how parallel replicas split the ranges between replicas.
+$CLICKHOUSE_CLIENT --preferred_block_size_bytes=26 --enable_parallel_replicas=0 -q "SELECT DISTINCT blockSize(), ignore(p, s) FROM preferred_block_size_bytes"
+$CLICKHOUSE_CLIENT --preferred_block_size_bytes=52 --enable_parallel_replicas=0 -q "SELECT DISTINCT blockSize(), ignore(p, s) FROM preferred_block_size_bytes"
+$CLICKHOUSE_CLIENT --preferred_block_size_bytes=90 --enable_parallel_replicas=0 -q "SELECT DISTINCT blockSize(), ignore(p) FROM preferred_block_size_bytes"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS preferred_block_size_bytes"
 
 # PREWHERE using empty column

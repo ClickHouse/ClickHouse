@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/GeoJSONRowOutputFormat.h>
+#include <IO/writeJSONNumber.h>
 
 #include <algorithm>
 #include <cmath>
