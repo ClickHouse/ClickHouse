@@ -448,8 +448,8 @@ static_assert(sizeof(SingleValueReference) <= SingleValueDataBase::MAX_STORAGE_S
 bool canUseFieldForValueData(const DataTypePtr & value_type);
 /// False only for types whose values cannot hold strings in a `Field`: numbers and `Nullable`/`Array`/`Tuple`/`Map` of them.
 bool singleValueTypeHoldsStrings(const DataTypePtr & value_type);
-/// Checks the memory limits when the memory of this thread has changed by 1 MiB since its last check, or when it is
-/// charged to another tracker than at that check.
+/// Checks the memory limits when the memory of this thread has grown by 1 MiB or shrunk since its last check, or when
+/// it is charged to another tracker than at that check.
 void checkMemoryLimitAfterStoringField();
 
 /// min, max, any, anyLast, anyHeavy, etc...

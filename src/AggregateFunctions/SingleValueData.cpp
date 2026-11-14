@@ -1853,8 +1853,6 @@ bool needsColumnForValueData(const IDataType & type)
     return isVariant(type) || isDynamic(type) || isObject(type);
 }
 
-/// Only numbers and `Nullable`, `Array`, `Tuple`, `Map` of them are known to keep no strings in a `Field`; any other
-/// type (`String`, `FixedString`, `QBit`, `Dynamic`, `Variant`, `JSON`, `AggregateFunction`, a future one) is checked.
 bool mayHoldStringsInField(const IDataType & type)
 {
     WhichDataType which(type);
@@ -1876,8 +1874,7 @@ bool singleValueTypeHoldsStrings(const DataTypePtr & value_type)
 void checkMemoryLimitAfterStoringField()
 {
     static constexpr UInt64 check_every_bytes = 1024 * 1024;
-    /// The memory of this thread can be charged to different trackers over time (another query, `MemoryTrackerSwitcher`),
-    /// the parent of its tracker, so a store charged to another one checks at once. Any decrease re-bases.
+    /// The parent of a thread's tracker changes when the thread serves another query or under `MemoryTrackerSwitcher`.
     static thread_local const MemoryTracker * checked_parent = nullptr;
     static thread_local Int64 checked_amount = 0;
 
