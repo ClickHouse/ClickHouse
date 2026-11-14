@@ -29,7 +29,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Columns/ColumnArray.h>
@@ -707,26 +706,9 @@ ASTPtr makeComplexNonConstantInReplacement(
             if (isMap(left_bare_type))
                 match = makeASTFunction(
                     "__mapValueEqualsForIn", left_operand->clone(), elements[i]->clone());
-            else if (const auto * variant = typeid_cast<const DataTypeVariant *>(source_bare_type.get());
-                variant && !variant->tryGetVariantDiscriminator(left_bare_type->getName()))
-                match = make_intrusive<ASTLiteral>(0u);
             else
-            {
-                ASTPtr actual_type = makeASTFunction(
-                    isDynamic(source_bare_type) ? "dynamicType" : "variantType", elements[i]->clone());
-                if (isVariant(source_bare_type))
-                    actual_type = makeASTFunction("toString", std::move(actual_type));
-                auto matches_type = makeASTFunction(
-                    "equals", std::move(actual_type), make_intrusive<ASTLiteral>(left_bare_type->getName()));
-                auto extracted = makeASTFunction(
-                    isDynamic(source_bare_type) ? "dynamicElement" : "variantElement",
-                    elements[i]->clone(), make_intrusive<ASTLiteral>(left_bare_type->getName()));
-                auto equal = makeASTFunction("equals", left_operand->clone(), std::move(extracted));
                 match = makeASTFunction(
-                    "if", std::move(matches_type),
-                    makeASTFunction("ifNull", std::move(equal), make_intrusive<ASTLiteral>(0u)),
-                    make_intrusive<ASTLiteral>(0u));
-            }
+                    "__arrayValueEqualsForIn", left_operand->clone(), elements[i]->clone());
         }
         else if (isStringOrFixedString(source_bare_type))
         {

@@ -1267,10 +1267,9 @@ static bool isCompoundCarrierForIn(const DataTypePtr & left_type, const DataType
 
 static QueryTreeNodePtr buildCompoundCarrierInComparison(
     const QueryTreeNodePtr & left, const QueryTreeNodePtr & right,
-    const DataTypePtr & left_type, const DataTypePtr & right_type)
+    const DataTypePtr & left_type)
 {
     const auto left_bare = removeNullable(removeLowCardinality(left_type));
-    const auto right_bare = removeNullable(removeLowCardinality(right_type));
     if (isMap(left_bare))
     {
         auto compare = std::make_shared<FunctionNode>("__mapValueEqualsForIn");
@@ -1279,34 +1278,11 @@ static QueryTreeNodePtr buildCompoundCarrierInComparison(
         non_null_match->getArguments().getNodes() = {std::move(compare), std::make_shared<ConstantNode>(Field{0u})};
         return non_null_match;
     }
-    if (const auto * variant = typeid_cast<const DataTypeVariant *>(right_bare.get());
-        variant && !variant->tryGetVariantDiscriminator(left_bare->getName()))
-        return std::make_shared<ConstantNode>(Field{0u});
-
-    auto actual_type = std::make_shared<FunctionNode>(isDynamic(right_bare) ? "dynamicType" : "variantType");
-    actual_type->getArguments().getNodes().push_back(right);
-    QueryTreeNodePtr actual_type_name = std::move(actual_type);
-    if (isVariant(right_bare))
-    {
-        auto to_string = std::make_shared<FunctionNode>("toString");
-        to_string->getArguments().getNodes().push_back(std::move(actual_type_name));
-        actual_type_name = std::move(to_string);
-    }
-    auto matches_type = std::make_shared<FunctionNode>("equals");
-    matches_type->getArguments().getNodes() = {
-        std::move(actual_type_name),
-        std::make_shared<ConstantNode>(left_bare->getName(), std::make_shared<DataTypeString>())};
-    auto extracted = std::make_shared<FunctionNode>(isDynamic(right_bare) ? "dynamicElement" : "variantElement");
-    extracted->getArguments().getNodes() = {
-        right, std::make_shared<ConstantNode>(left_bare->getName(), std::make_shared<DataTypeString>())};
-    auto equal = std::make_shared<FunctionNode>("equals");
-    equal->getArguments().getNodes() = {left, std::move(extracted)};
-    auto non_null_equal = std::make_shared<FunctionNode>("ifNull");
-    non_null_equal->getArguments().getNodes() = {std::move(equal), std::make_shared<ConstantNode>(Field{0u})};
-    auto guarded = std::make_shared<FunctionNode>("if");
-    guarded->getArguments().getNodes() = {
-        std::move(matches_type), std::move(non_null_equal), std::make_shared<ConstantNode>(Field{0u})};
-    return guarded;
+    auto compare = std::make_shared<FunctionNode>("__arrayValueEqualsForIn");
+    compare->getArguments().getNodes() = {left, right};
+    auto non_null_match = std::make_shared<FunctionNode>("ifNull");
+    non_null_match->getArguments().getNodes() = {std::move(compare), std::make_shared<ConstantNode>(Field{0u})};
+    return non_null_match;
 }
 
 static QueryTreeNodePtr buildNumericInEquality(
@@ -1583,7 +1559,7 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
             const String candidate_name = "__in_compound_carrier_array_candidate";
             auto comparison = buildCompoundCarrierInComparison(
                 element_arg, std::make_shared<IdentifierNode>(Identifier{candidate_name}),
-                element_arg->getResultType(), source_array_type->getNestedType());
+                element_arg->getResultType());
             auto lambda = std::make_shared<LambdaNode>(
                 std::make_shared<LambdaArgumentsNode>(Names{candidate_name}), std::move(comparison), false /*is_operator*/);
             auto any_match = std::make_shared<FunctionNode>("arrayExists");
@@ -3830,7 +3806,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     {
                         QueryTreeNodePtr match = buildCompoundCarrierInComparison(
                             in_first_argument, source_carrier,
-                            in_first_argument->getResultType(), source_carrier->getResultType());
+                            in_first_argument->getResultType());
                         resolveFunction(match, scope);
                         if (extra_match_predicate)
                         {
@@ -3935,7 +3911,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     if (use_standard_null_semantics && isCompoundCarrierForIn(left_type, non_const_set_candidate->getResultType()))
                     {
                         auto match = buildCompoundCarrierInComparison(
-                            fn_args[0], fn_args[1], left_type, non_const_set_candidate->getResultType());
+                            fn_args[0], fn_args[1], left_type);
                         auto source_is_null = std::make_shared<FunctionNode>("isNull");
                         source_is_null->getArguments().getNodes().push_back(fn_args[1]);
                         auto result = std::make_shared<FunctionNode>("if");

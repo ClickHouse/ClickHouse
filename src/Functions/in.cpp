@@ -8,12 +8,16 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
@@ -96,6 +100,107 @@ public:
             if (!converted)
                 continue;
             values[row] = maps->compareAt(row, 0, *converted, 1) == 0;
+        }
+        if (canContainNull(*arguments[1].type))
+            return ColumnNullable::create(std::move(result), std::move(null_map));
+        return result;
+    }
+};
+
+class FunctionArrayValueEqualsForIn final : public IFunction
+{
+public:
+    static constexpr auto name = "__arrayValueEqualsForIn";
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayValueEqualsForIn>(); }
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!isArray(removeNullable(removeLowCardinality(arguments[0]))))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} must be an Array", getName());
+        const auto source_type = removeNullable(removeLowCardinality(arguments[1]));
+        if (!isDynamic(source_type) && !isVariant(source_type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument for function {} must be a Dynamic or Variant", getName());
+        auto result_type = std::make_shared<DataTypeUInt8>();
+        if (canContainNull(*arguments[1]))
+            return std::make_shared<DataTypeNullable>(result_type);
+        return result_type;
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        const auto left_type = removeNullable(removeLowCardinality(arguments[0].type));
+        const auto & left_array_type = assert_cast<const DataTypeArray &>(*left_type);
+        auto left_values = recursiveRemoveLowCardinality(arguments[0].column->convertToFullColumnIfConst());
+        auto sources = recursiveRemoveLowCardinality(arguments[1].column->convertToFullColumnIfConst());
+        const IColumn * carrier = sources.get();
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(carrier))
+            carrier = &nullable->getNestedColumn();
+        const auto source_type = removeNullable(removeLowCardinality(arguments[1].type));
+
+        auto result = ColumnUInt8::create(input_rows_count, UInt8{0});
+        auto null_map = ColumnUInt8::create(input_rows_count, UInt8{0});
+        auto & values = result->getData();
+        auto & null_values = null_map->getData();
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            if (sources->isNullAt(row))
+            {
+                null_values[row] = 1;
+                continue;
+            }
+            if (left_values->isNullAt(row))
+                continue;
+
+            DataTypePtr active_type;
+            if (const auto * dynamic = checkAndGetColumn<ColumnDynamic>(carrier))
+                active_type = dynamic->getTypeAt(row);
+            else if (const auto * variant = checkAndGetColumn<ColumnVariant>(carrier))
+            {
+                const auto discriminator = variant->globalDiscriminatorAt(row);
+                const auto & variant_type = assert_cast<const DataTypeVariant &>(*source_type);
+                if (discriminator < variant_type.getVariants().size())
+                    active_type = variant_type.getVariant(discriminator);
+            }
+            const auto * active_array_type = active_type ? typeid_cast<const DataTypeArray *>(active_type.get()) : nullptr;
+            if (!active_array_type)
+                continue;
+
+            auto left_row = left_values->cut(row, 1);
+            auto source_row = carrier->cut(row, 1);
+            const auto left_element_type = removeNullable(removeLowCardinality(left_array_type.getNestedType()));
+            const auto source_element_type = removeNullable(removeLowCardinality(active_array_type->getNestedType()));
+            if (!left_element_type->equals(*source_element_type)
+                && (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_element_type)
+                    || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(source_element_type)))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Setting 'in_null_as_unknown' does not yet support comparing {} with an array carrier of {}",
+                    left_type->getName(), active_type->getName());
+            if (isFloat(left_element_type) && isDecimal(source_element_type))
+            {
+                /// Compare in the decimal domain so a decimal member is not rounded to float.
+                auto converted_left = tryConvertColumnToTypeOrNull(
+                    *left_row, arguments[0].type, active_type, {}, /*strict=*/true);
+                auto extracted_source = tryConvertColumnToTypeOrNull(
+                    *source_row, source_type, active_type, {}, /*strict=*/true);
+                values[row] = converted_left && extracted_source
+                    && converted_left->compareAt(0, 0, *extracted_source, 1) == 0;
+            }
+            else
+            {
+                auto converted_source = tryConvertColumnToTypeOrNull(
+                    *source_row, source_type, left_type, {}, /*strict=*/true);
+                values[row] = converted_source && left_row->compareAt(0, 0, *converted_source, 1) == 0;
+            }
         }
         if (canContainNull(*arguments[1].type))
             return ColumnNullable::create(std::move(result), std::move(null_map));
@@ -713,6 +818,7 @@ REGISTER_FUNCTION(In)
     registerFunctionsInImpl(factory, false);
     registerFunctionsInImpl(factory, true);
     factory.registerFunction<FunctionMapValueEqualsForIn>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
+    factory.registerFunction<FunctionArrayValueEqualsForIn>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 }
 
 }
