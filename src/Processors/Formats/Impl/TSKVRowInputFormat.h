@@ -62,6 +62,8 @@ class TSKVSchemaReader final : public IRowWithNamesSchemaReader
 public:
     TSKVSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
 

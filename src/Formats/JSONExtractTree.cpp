@@ -1408,7 +1408,7 @@ public:
     bool insertResultToColumn(
         IColumn & column,
         const typename JSONParser::Element & element,
-        const JSONExtractInsertSettings &,
+        const JSONExtractInsertSettings & insert_settings,
         const FormatSettings & format_settings,
         String & error) const override
     {
@@ -1425,6 +1425,13 @@ public:
         }
 
         auto data = element.getString();
+        /// Reading an IPv4 address as IPv6 is a type conversion, so a Dynamic variant inferred as IPv6 does not take one.
+        if (!insert_settings.allow_type_conversion && !data.contains(':'))
+        {
+            error = fmt::format("cannot read IPv6 value from an IPv4 address without type conversion: {}", data);
+            return false;
+        }
+
         IPv6 value;
         if (!tryParse(value, data))
         {
@@ -2079,6 +2086,9 @@ private:
                 if (auto type = tryInferDateOrDateTimeFromString(data, format_settings))
                     return type;
 
+                if (auto type = tryInferIPv4OrIPv6FromString(data, format_settings))
+                    return type;
+
                 if (format_settings.json.try_infer_numbers_from_strings)
                 {
                     if (auto type = tryInferJSONNumberFromString(data, format_settings, &json_inference_info))
@@ -2625,9 +2635,10 @@ private:
             {
                 std::string_view data = element.getString();
 
-                /// With String value we should consider Date/DateTime/DateTime64 inference.
-                /// If inference is disabled, just insert String.
-                if (!format_settings.try_infer_dates && !format_settings.try_infer_datetimes)
+                /// With String value we should consider Date/DateTime/DateTime64/IPv4/IPv6 inference.
+                /// If all inference is disabled, just insert String.
+                if (!format_settings.try_infer_dates && !format_settings.try_infer_datetimes
+                    && !format_settings.try_infer_ipv4 && !format_settings.try_infer_ipv6)
                 {
                     if (variant_info.variant_name_to_discriminator.contains("String") || column_dynamic.addNewVariant(getDataTypesCache().getType("String"), "String"))
                     {
@@ -2666,6 +2677,32 @@ private:
                     {
                         insertValueIntoNumericVariant<ColumnDateTime64, DateTime64>(variant_info, variant_column, value, "DateTime64(9)");
                         return true;
+                    }
+                }
+
+                if (format_settings.try_infer_ipv4)
+                {
+                    if (auto it = variant_info.variant_name_to_discriminator.find("IPv4"); it != variant_info.variant_name_to_discriminator.end())
+                    {
+                        IPv4 value;
+                        if (IPv4Node<JSONParser>::tryParse(value, data))
+                        {
+                            insertValueIntoNumericVariant<ColumnIPv4, IPv4>(variant_info, variant_column, value, "IPv4");
+                            return true;
+                        }
+                    }
+                }
+
+                if (format_settings.try_infer_ipv6 && data.contains(':'))
+                {
+                    if (auto it = variant_info.variant_name_to_discriminator.find("IPv6"); it != variant_info.variant_name_to_discriminator.end())
+                    {
+                        IPv6 value;
+                        if (IPv6Node<JSONParser>::tryParse(value, data))
+                        {
+                            insertValueIntoNumericVariant<ColumnIPv6, IPv6>(variant_info, variant_column, value, "IPv6");
+                            return true;
+                        }
                     }
                 }
 
@@ -2784,7 +2821,7 @@ private:
         DateTime64 datetime64 = 0;
     };
 
-    /// Returns false for elements that are not scalars (null, array, object).
+    /// Returns false for elements that are not scalars (null, array, object) and for inferred IP addresses.
     bool inferScalar(const typename JSONParser::Element & element, const FormatSettings & format_settings, InferredScalar & scalar) const
     {
         switch (element.type())
@@ -2811,6 +2848,8 @@ private:
                              data, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference,
                              is_datetime64, scalar.datetime, scalar.datetime64))
                     scalar.kind = is_datetime64 ? ScalarKind::DateTime64 : ScalarKind::DateTime;
+                else if (isInferredIPAddress(data, format_settings))
+                    return false; /// The generic path writes it with the IPv4/IPv6 serialization.
                 else
                     scalar.kind = ScalarKind::String;
                 return true;
@@ -2818,6 +2857,14 @@ private:
             default:
                 return false;
         }
+    }
+
+    static bool isInferredIPAddress(std::string_view data, const FormatSettings & format_settings)
+    {
+        IPv4 ipv4_value;
+        IPv6 ipv6_value;
+        return (format_settings.try_infer_ipv4 && IPv4Node<JSONParser>::tryParse(ipv4_value, data))
+            || (format_settings.try_infer_ipv6 && data.contains(':') && IPv6Node<JSONParser>::tryParse(ipv6_value, data));
     }
 
     static DataTypePtr getScalarType(ScalarKind kind)

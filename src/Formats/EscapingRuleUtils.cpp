@@ -360,8 +360,16 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
                 if (auto date_type = tryInferDateOrDateTimeFromString(data, format_settings))
                     return date_type;
 
+                if (auto ip_type = tryInferIPv4OrIPv6FromString(data, format_settings))
+                    return ip_type;
+
                 /// Try to determine the type of value inside quotes
                 auto type = tryInferDataTypeForSingleField(data, format_settings);
+
+                /// A bare IP address inside the quotes is handled above. If an IP type comes from here, the address is wrapped
+                /// in its own single quotes, which the CSV reader keeps as a part of the value.
+                if (type && (isIPv4(type) || isIPv6(type)))
+                    return std::make_shared<DataTypeString>();
 
                 /// Return String type if one of the following conditions apply
                 ///  - we couldn't infer any type
@@ -380,6 +388,9 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
 
             if (auto date_type = tryInferDateOrDateTimeFromString(field, format_settings))
                 return date_type;
+
+            if (auto ip_type = tryInferIPv4OrIPv6FromString(field, format_settings))
+                return ip_type;
 
             return std::make_shared<DataTypeString>();
         }
@@ -401,7 +412,15 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
             if (auto date_type = tryInferDateOrDateTimeFromString(field, format_settings))
                 return date_type;
 
+            if (auto ip_type = tryInferIPv4OrIPv6FromString(field, format_settings))
+                return ip_type;
+
             auto type = tryInferDataTypeForSingleField(field, format_settings);
+
+            /// A bare IP address is handled above. If an IP type comes from here, the address is wrapped in single quotes,
+            /// which the Escaped and Raw readers keep as a part of the value, so it is a String.
+            if (type && (isIPv4(type) || isIPv6(type)))
+                return std::make_shared<DataTypeString>();
 
             /// A leading zero carries information in these formats (zip codes, phone numbers), so a field
             /// that starts with one and infers an integer stays a `String`. `allow_number_leading_zeros`
@@ -490,11 +509,13 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
     String result = getAdditionalFormatInfoForAllRowBasedFormats(settings);
     /// First, settings that are common for all text formats:
     result += fmt::format(
-        ", try_infer_integers={}, try_infer_dates={}, try_infer_datetimes={}, try_infer_datetimes_only_datetime64={}",
+        ", try_infer_integers={}, try_infer_dates={}, try_infer_datetimes={}, try_infer_datetimes_only_datetime64={}, try_infer_ipv4={}, try_infer_ipv6={}",
         settings.try_infer_integers,
         settings.try_infer_dates,
         settings.try_infer_datetimes,
-        settings.try_infer_datetimes_only_datetime64);
+        settings.try_infer_datetimes_only_datetime64,
+        settings.try_infer_ipv4,
+        settings.try_infer_ipv6);
 
     /// Second, format-specific settings:
     switch (escaping_rule)

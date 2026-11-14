@@ -1,0 +1,19 @@
+Literal quotes stay String: 192.168.1.1
+1	13
+1	13
+1	13
+1	13
+Literal quotes stay String: 2001:db8::1
+1	13
+1	13
+1	13
+1	13
+Quoted and nested values infer IP types
+1	192.168.1.1
+1	2001:db8::1
+1	192.168.1.1
+1	2001:db8::1
+1	['192.168.1.1']
+1	['2001:db8::1']
+1	192.168.1.1
+1	2001:db8::1
