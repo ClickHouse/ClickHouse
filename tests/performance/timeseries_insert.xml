@@ -1,0 +1,55 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
+    </settings>
+
+    <!-- Fixed UUIDs give the inner tables known names, so merges are stopped only on them. UUIDs need an Atomic database. -->
+    <create_query>CREATE DATABASE IF NOT EXISTS timeseries_insert_db ENGINE = Atomic</create_query>
+    <create_query>CREATE TABLE timeseries_insert_db.timeseries_insert UUID '7e5a0000-0000-4000-8000-000000000001' ENGINE = TimeSeries</create_query>
+    <create_query>CREATE TABLE timeseries_insert_db.timeseries_insert_no_recent UUID '7e5a0000-0000-4000-8000-000000000002' ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0</create_query>
+    <create_query>SYSTEM STOP MERGES timeseries_insert_db.`.inner_id.samples.7e5a0000-0000-4000-8000-000000000001`</create_query>
+    <create_query>SYSTEM STOP MERGES timeseries_insert_db.`.inner_id.recentsamples.7e5a0000-0000-4000-8000-000000000001`</create_query>
+    <create_query>SYSTEM STOP MERGES timeseries_insert_db.`.inner_id.tags.7e5a0000-0000-4000-8000-000000000001`</create_query>
+    <create_query>SYSTEM STOP MERGES timeseries_insert_db.`.inner_id.samples.7e5a0000-0000-4000-8000-000000000002`</create_query>
+    <create_query>SYSTEM STOP MERGES timeseries_insert_db.`.inner_id.tags.7e5a0000-0000-4000-8000-000000000002`</create_query>
+    <!-- Tables of TimeSeries version 8 and later also have a time ranges table. -->
+    <create_query>SYSTEM STOP MERGES timeseries_insert_db.`.inner_id.timeranges.7e5a0000-0000-4000-8000-000000000001`</create_query>
+    <create_query>SYSTEM STOP MERGES timeseries_insert_db.`.inner_id.timeranges.7e5a0000-0000-4000-8000-000000000002`</create_query>
+    <!-- STOP MERGES ignores a missing table, so fail if an inner table that takes inserts is not in the list above. -->
+    <create_query>
+        SELECT throwIf(5 > count() OR countIf(name NOT IN (
+            '.inner_id.samples.7e5a0000-0000-4000-8000-000000000001',
+            '.inner_id.recentsamples.7e5a0000-0000-4000-8000-000000000001',
+            '.inner_id.tags.7e5a0000-0000-4000-8000-000000000001',
+            '.inner_id.timeranges.7e5a0000-0000-4000-8000-000000000001',
+            '.inner_id.samples.7e5a0000-0000-4000-8000-000000000002',
+            '.inner_id.tags.7e5a0000-0000-4000-8000-000000000002',
+            '.inner_id.timeranges.7e5a0000-0000-4000-8000-000000000002')) != 0,
+            'timeseries_insert: an inner table name changed, so merges are not stopped on it')
+        FROM system.tables
+        WHERE database = 'timeseries_insert_db' AND name LIKE '.inner_id.%' AND name NOT LIKE '.inner_id.metric%'
+    </create_query>
+
+    <substitutions>
+        <substitution>
+            <name>table</name>
+            <values>
+                <value>timeseries_insert</value>
+                <value>timeseries_insert_no_recent</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- 20000 series with 60 samples each, pushed through TimeSeriesSink in blocks of 2000 series. -->
+    <query>
+        INSERT INTO timeseries_insert_db.{table} (metric_name, tags, samples)
+        SELECT
+            'metric_' || toString(number % 10),
+            map('instance', toString(number), 'job', 'job_' || toString(number % 100), 'env', 'prod'),
+            arrayMap(step -> (toDateTime64(toStartOfHour(now()) - 3600 + step * 15, 3), (sipHash64(number, step) % 1000000) / 1000), range(60))
+        FROM numbers(20000)
+        SETTINGS max_block_size = 2000, min_insert_block_size_rows = 2000
+    </query>
+
+    <drop_query>DROP DATABASE IF EXISTS timeseries_insert_db SYNC</drop_query>
+</test>
