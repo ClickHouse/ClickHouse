@@ -1,5 +1,6 @@
 import base64
 import datetime
+import itertools
 import json
 import uuid
 import urllib
@@ -1792,6 +1793,11 @@ def test_where_string_reader_values(started_cluster, column_type):
             "s IN ('', 'b')",
             "s = 'a' OR id = 3",
             "s > '0' AND id > 2",
+            "s BETWEEN '1' AND 'a'",
+            "s > '1' AND s < 'b'",
+            "'b' > s AND s >= ''",
+            "s BETWEEN '[' AND '[z'",
+            "s BETWEEN 'a' AND 'b' AND id > 13",
         ]
         for source in (collection_name, f"mongodb({arguments}, '{structure}')"):
             for predicate in predicates:
@@ -1850,15 +1856,20 @@ def test_where_string_reader_index(started_cluster, with_symbol):
     )
     previous_profile = db.command("profile", -1)
     try:
-        for source in (
-            collection_name,
-            f"mongodb({arguments}, 'id Int32, s String')",
+        for source, (predicate, expected) in itertools.product(
+            (collection_name, f"mongodb({arguments}, 'id Int32, s String')"),
+            (
+                ("s = 'v000123'", "123\n"),
+                ("s BETWEEN 'v000010' AND 'v000012'", "10\n11\n12\n"),
+            ),
         ):
             try:
                 db.command("profile", 2)
                 assert (
-                    node.query(f"SELECT id FROM {source} WHERE s = 'v000123'")
-                    == "123\n"
+                    node.query(
+                        f"SELECT id FROM {source} WHERE {predicate} ORDER BY id"
+                    )
+                    == expected
                 )
             finally:
                 db.command(

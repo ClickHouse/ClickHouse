@@ -50,6 +50,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <map>
 #include <memory>
 
 using bsoncxx::builder::basic::document;
@@ -789,14 +790,20 @@ static std::optional<bsoncxx::document::value> numberColumnFilter(
 /// A filter on a `String` column. The reader writes every BSON value as text: a number, a bool, an `ObjectId`, a binary,
 /// a date, an array or a document, and reads a missing field or a `null` as the default (`BSONElementAsString`). A MongoDB
 /// comparison with a string takes only strings and the arrays with a matching element, so the filter takes every document
-/// that the reader may write as a matching string, and the `WHERE` decides them.
+/// that the reader may write as a text matching all `comparisons`, and the `WHERE` decides them.
+/// Several comparisons are only the two bounds of a range, which stay in one member, so that MongoDB bounds an index scan by both.
 static bsoncxx::document::value stringColumnFilter(
-    const std::string & column_name, const std::string & func_name, const bsoncxx::types::bson_value::value & func_value, const DataTypePtr & column_type)
+    const std::string & column_name,
+    const std::vector<std::pair<std::string, bsoncxx::types::bson_value::value>> & comparisons,
+    const DataTypePtr & column_type)
 {
     auto filters = bsoncxx::builder::basic::array{};
-    filters.append(make_document(kvp(column_name, make_document(kvp(func_name, func_value)))));
+    auto comparison = bsoncxx::builder::basic::document{};
+    for (const auto & [func_name, func_value] : comparisons)
+        comparison.append(kvp(func_name, func_value));
+    filters.append(make_document(kvp(column_name, comparison.extract())));
     /// Arrays are written as JSON starting with `[`. Avoid an unbounded index scan when that text cannot match.
-    auto array_may_match = [&](const bsoncxx::types::bson_value::view & value)
+    auto array_may_match = [](const std::string & func_name, const bsoncxx::types::bson_value::view & value)
     {
         if (value.type() != bsoncxx::type::k_string)
             return false;
@@ -807,17 +814,28 @@ static bsoncxx::document::value stringColumnFilter(
             return bound.empty() || static_cast<unsigned char>(bound.front()) <= '[';
         return !bound.empty() && bound.front() == '[';
     };
-    bool include_arrays = func_name == "$ne" || func_name == "$nin";
-    if (func_name == "$in")
+    bool include_arrays = true;
+    bool is_negative = false;
+    for (const auto & [func_name, func_value] : comparisons)
     {
-        for (const auto & element : func_value.view().get_array().value)
-            include_arrays |= array_may_match(element.get_value());
+        if (func_name == "$ne" || func_name == "$nin")
+        {
+            is_negative = true;
+            continue;
+        }
+        bool may_match = false;
+        if (func_name == "$in")
+        {
+            for (const auto & element : func_value.view().get_array().value)
+                may_match |= array_may_match(func_name, element.get_value());
+        }
+        else
+            may_match = array_may_match(func_name, func_value.view());
+        include_arrays &= may_match;
     }
-    else if (!include_arrays)
-        include_arrays = array_may_match(func_value.view());
     if (include_arrays)
         filters.append(make_document(kvp(column_name, make_document(kvp("$type", "array")))));
-    if (func_name != "$ne" && func_name != "$nin")
+    if (!is_negative)
     {
         filters.append(make_document(kvp(column_name, make_document(kvp("$type", make_array(
             "objectId", "binData", "bool", "int", "long", "double", "decimal", "date", "timestamp", "object", "regex", "dbPointer",
@@ -1045,7 +1063,7 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
     if (isString(removeNullable(column_node->getResultType())) && !is_oid)
     {
         is_superset = true;
-        return stringColumnFilter(column_node->getColumnName(), func_name, func_value, column_node->getResultType());
+        return stringColumnFilter(column_node->getColumnName(), {{func_name, std::move(func_value)}}, column_node->getResultType());
     }
 
     return make_document(kvp(column_node->getColumnName(), make_document(kvp(func_name, std::move(func_value)))));
@@ -1141,9 +1159,69 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
 
     auto arr = bsoncxx::builder::basic::array{};
 
-    for (const auto & elem : func->getArguments().getNodes())
+    /// The two bounds of a `String` range stay in one member, so that MongoDB bounds an index scan by both.
+    std::vector<bool> is_merged(argumnet_nodes.size());
+    if (func->getFunctionName() == "and")
     {
-        auto res_value = visitWhereNode(context, elem, join_node, is_superset);
+        struct StringBound
+        {
+            size_t argument;
+            std::string func_name;
+            String value;
+            DataTypePtr column_type;
+        };
+        std::map<std::string, std::vector<StringBound>> column_bounds;
+        for (size_t i = 0; i < argumnet_nodes.size(); ++i)
+        {
+            const auto * bound = argumnet_nodes[i]->as<FunctionNode>();
+            if (!bound || bound->getArguments().getNodes().size() != 2)
+                continue;
+            const auto & bound_name = bound->getFunctionName();
+            if (bound_name != "less" && bound_name != "lessOrEquals" && bound_name != "greater" && bound_name != "greaterOrEquals")
+                continue;
+
+            const auto & bound_arguments = bound->getArguments().getNodes();
+            auto bound_func_name = mongoFuncName(bound_name);
+            const auto * column = getColumnNode(bound_arguments[0], join_node, getStorageID());
+            const auto * constant = bound_arguments[1]->as<ConstantNode>();
+            if (!column || !constant)
+            {
+                column = getColumnNode(bound_arguments[1], join_node, getStorageID());
+                constant = bound_arguments[0]->as<ConstantNode>();
+                bound_func_name = invertMongoComparison(bound_func_name);
+            }
+            if (!column || !constant || !isString(removeNullable(column->getResultType())) || configuration.isOidColumn(column->getColumnName()))
+                continue;
+            if (!isString(constant->getResultType()) || constant->getValue().getType() != Field::Types::String)
+                continue;
+
+            column_bounds[column->getColumnName()].push_back(
+                {i, bound_func_name, constant->getValue().safeGet<String>(), column->getResultType()});
+        }
+
+        auto is_lower = [](const StringBound & bound) { return bound.func_name == "$gt" || bound.func_name == "$gte"; };
+        for (const auto & [column_name, bounds] : column_bounds)
+        {
+            if (bounds.size() != 2 || is_lower(bounds[0]) == is_lower(bounds[1]))
+                continue;
+
+            std::vector<std::pair<std::string, bsoncxx::types::bson_value::value>> comparisons;
+            for (const auto & bound : bounds)
+            {
+                comparisons.emplace_back(bound.func_name, bsoncxx::types::b_string{bound.value});
+                is_merged[bound.argument] = true;
+            }
+            is_superset = true;
+            arr.append(stringColumnFilter(column_name, comparisons, bounds.front().column_type));
+        }
+    }
+
+    for (size_t i = 0; i < argumnet_nodes.size(); ++i)
+    {
+        if (is_merged[i])
+            continue;
+
+        auto res_value = visitWhereNode(context, argumnet_nodes[i], join_node, is_superset);
         if (!res_value)
             return {};
 
