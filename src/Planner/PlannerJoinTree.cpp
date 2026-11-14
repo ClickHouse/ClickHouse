@@ -272,6 +272,7 @@ bool containsNonDeterministicFunction(const QueryTreeNodePtr & node)
 /// Table functions that generate random rows (`generateRandom`, `fuzzJSON`, `fuzzQuery`) count as well, and
 /// so do tables with their engines (`GenerateRandom`, `FuzzQuery`, `FuzzJSON`) and script-backed reads
 /// (the `executable` table function, `Executable` and `ExecutablePool` tables).
+/// `arrayJoin` is accepted: it returns the same rows for the same argument.
 bool containsFunctionVolatileInScopeOfQuery(const QueryTreeNodePtr & node)
 {
     if (!node)
@@ -279,8 +280,8 @@ bool containsFunctionVolatileInScopeOfQuery(const QueryTreeNodePtr & node)
 
     if (const auto * function_node = node->as<FunctionNode>())
     {
-        if (auto function = function_node->getFunction();
-            function && (!function->isDeterministicInScopeOfQuery() || function->isStateful()))
+        if (auto function = function_node->getFunction(); function && function_node->getFunctionName() != "arrayJoin"
+            && (!function->isDeterministicInScopeOfQuery() || function->isStateful()))
             return true;
     }
     else if (const auto * table_function_node = node->as<TableFunctionNode>())
@@ -4075,31 +4076,15 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "NATURAL JOIN is not supported with LATERAL");
 
-                /// Reject USING expressions — LATERAL JOIN only supports ON true or no ON clause
+                /// Reject USING: LATERAL JOIN matches on the correlated columns and on the ON expression.
                 if (join_node.isUsingJoinExpression())
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "LATERAL JOIN does not support USING clause");
 
-                /// Reject non-trivial ON predicates — only ON true (constant true) is allowed.
-                /// The LATERAL planning path joins on correlated-column equality only;
-                /// an arbitrary ON predicate would be silently ignored.
+                /// The ON expression becomes a predicate of the final join of the decorrelation.
+                QueryTreeNodePtr lateral_join_on_expression;
                 if (join_node.isOnJoinExpression())
-                {
-                    const auto * constant_node = join_node.getJoinExpression()->as<ConstantNode>();
-                    bool is_constant_true = false;
-                    if (constant_node)
-                    {
-                        const auto & value = constant_node->getValue();
-                        /// Accept any numeric/boolean constant that is truthy (e.g. ON true, ON 1)
-                        is_constant_true = !value.isNull() && value.getType() == Field::Types::UInt64 && value.safeGet<UInt64>() != 0;
-                    }
-                    if (!is_constant_true)
-                    {
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                            "LATERAL JOIN does not support non-trivial ON conditions. Use ON true and move "
-                            "filter predicates into the lateral subquery's WHERE clause");
-                    }
-                }
+                    lateral_join_on_expression = join_node.getJoinExpression();
 
                 /// Reject unsupported join kinds: only INNER and LEFT are supported
                 auto lateral_kind = join_node.getKind();
@@ -4170,9 +4155,18 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                     action_node_name,
                     std::move(correlated_column_identifiers));
                 correlated_subquery.lateral_join_kind = join_node.getKind();
+                correlated_subquery.lateral_join_on_expression = lateral_join_on_expression;
 
                 buildQueryPlanForCorrelatedSubquery(
                     planner_context, left_query_plan.query_plan, correlated_subquery, select_query_options);
+
+                if (correlated_subquery.lateral_join_on_expression)
+                {
+                    auto * lateral_join_step = typeid_cast<JoinStepLogical *>(left_query_plan.query_plan.getRootNode()->step.get());
+                    if (!lateral_join_step)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected the LATERAL JOIN step at the root of the plan");
+                    appendSetsFromActionsDAG(lateral_join_step->getActionsDAG(), left_query_plan.useful_sets);
+                }
 
                 query_plans_stack.push_back(std::move(left_query_plan));
             }

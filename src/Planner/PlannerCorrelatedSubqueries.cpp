@@ -4,8 +4,10 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
 
 #include <Common/EquivalenceClasses.h>
 #include <Common/Exception.h>
@@ -77,6 +79,7 @@ namespace DB
 namespace ErrorCodes
 {
 
+extern const int INVALID_JOIN_ON_EXPRESSION;
 extern const int NOT_IMPLEMENTED;
 extern const int LOGICAL_ERROR;
 
@@ -1483,6 +1486,25 @@ QueryPlan buildLogicalJoinForLateral(
     JoinKind lateral_join_kind
 )
 {
+    auto on_expression = correlated_subquery.lateral_join_on_expression;
+    if (auto on_constant = tryExtractConstantFromConditionNode(on_expression); on_constant.has_value())
+    {
+        if (!*on_constant)
+        {
+            ActionsDAG filter_dag(decorrelated_plan.getCurrentHeader()->getNamesAndTypesList());
+            auto filter_type = std::make_shared<DataTypeUInt8>();
+            String filter_column_name = "__lateral_join_on_false_" + correlated_subquery.action_node_name;
+            filter_dag.getOutputs().push_back(&filter_dag.materializeNode(
+                filter_dag.addColumn(filter_type->createColumnConst(0, 0u), filter_type, filter_column_name)));
+
+            auto filter_step = std::make_unique<FilterStep>(
+                decorrelated_plan.getCurrentHeader(), std::move(filter_dag), filter_column_name, /*remove_filter_column_=*/true);
+            filter_step->setStepDescription("Filter out all rows for constant false LATERAL JOIN ON expression");
+            decorrelated_plan.addStep(std::move(filter_step));
+        }
+        on_expression = nullptr;
+    }
+
     auto lhs_plan_header = decorrelated_plan.getCurrentHeader();
     auto rhs_plan_header = input_stream_plan.getCurrentHeader();
 
@@ -1543,6 +1565,31 @@ QueryPlan buildLogicalJoinForLateral(
         /// null-safely.
         auto eq_node = JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::NullSafeEquals));
         predicates.push_back(std::move(eq_node));
+    }
+
+    if (on_expression)
+    {
+        if (on_expression->getNodeType() == QueryTreeNodeType::CONSTANT)
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Wrong type {} of JOIN expression {}",
+                on_expression->getResultType()->getName(), on_expression->formatASTForErrorMessage());
+
+        if (on_expression->getNodeType() != QueryTreeNodeType::FUNCTION)
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                "JOIN {} join expression expected function", on_expression->formatASTForErrorMessage());
+
+        auto join_dag = join_expression_actions.getActionsDAG();
+        std::function<void(const QueryTreeNodePtr &)> add_conjuncts = [&](const QueryTreeNodePtr & node)
+        {
+            if (const auto * function_node = node->as<FunctionNode>(); function_node && function_node->getFunctionName() == "and")
+            {
+                for (const auto & argument : function_node->getArguments())
+                    add_conjuncts(argument);
+                return;
+            }
+            predicates.emplace_back(
+                appendJoinExpression(*join_dag, node, planner_context, lhs_plan_header, rhs_plan_header), join_expression_actions);
+        };
+        add_conjuncts(on_expression);
     }
 
     /// Determine the physical join kind based on the LATERAL JOIN semantics:

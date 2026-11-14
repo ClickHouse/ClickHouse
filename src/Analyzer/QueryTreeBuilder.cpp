@@ -1208,6 +1208,13 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             JoinStrictness result_join_strictness = table_join.strictness;
             JoinKind result_join_kind = table_join.kind;
 
+            /// `t, LATERAL (...)` and `t CROSS JOIN LATERAL (...)` are `t INNER JOIN LATERAL (...) ON true`.
+            if (table_join.lateral && (result_join_kind == JoinKind::Cross || result_join_kind == JoinKind::Comma))
+            {
+                result_join_kind = JoinKind::Inner;
+                join_expression = buildExpression(make_intrusive<ASTLiteral>(true), context);
+            }
+
             /// `LATERAL JOIN` supports only `ALL` semantics, so an unspecified strictness must not
             /// depend on `join_default_strictness` or `any_join_distinct_right_table_keys`.
             if (table_join.lateral && result_join_strictness == JoinStrictness::Unspecified
