@@ -7,8 +7,6 @@ title: 'ClickHouse と Databricks の統合'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -53,9 +51,25 @@ ClickHouse Spark コネクタは Databricks とシームレスに連携します
    * **DBFS** または **Workspace** を選択し、アップロードした JAR ファイルを指定します
    * **Install** をクリックします
 
-<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp" alt="Databricks の Libraries タブ" />
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp" alt="ワークスペース volume からライブラリをインストールする" />
+<Frame>
+
+![Databricks の Libraries タブ](/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![ワークスペース volume からライブラリをインストールする](/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp)
+
+</Frame>
+
+</div>
 
 4. ライブラリを読み込むため、クラスターを再起動します
 
@@ -90,7 +104,15 @@ databricks libraries install \
 com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}
 ```
 
-<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp" alt="Databricks Maven ライブラリの設定" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Databricks Maven ライブラリの設定](/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp)
+
+</Frame>
+
+</div>
 
 3. **Install** をクリックし、ライブラリを読み込むためにクラスターを再起動します
 

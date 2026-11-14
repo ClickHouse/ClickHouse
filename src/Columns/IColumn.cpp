@@ -932,6 +932,14 @@ static ColumnPtr updateFrom(const Derived & dst, const IColumn::Patch & patch)
 
         if (src_version > patch.dst_versions[dst_row])
         {
+            /// Destination indices originate from on-disk data (_part_offset of a patch part).
+            /// A duplicate or descending index would make the range below negative, so it must
+            /// be rejected before the subtraction wraps around and reads out of bounds.
+            if (dst_row < current_row)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Destination row indices in patch must be strictly increasing, got {} after {}",
+                    dst_row, current_row - 1);
+
             patch.dst_versions[dst_row] = src_version;
 
             res_typed.insertRangeFrom(dst, current_row, dst_row - current_row);
@@ -980,6 +988,17 @@ static void assertPatch(const Derived & dst, const IColumn::Patch & patch)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Size of destination versions ({}) doesn't match the size of destination column ({})",
             patch.dst_versions.size(), dst.size());
+
+    /// Indices originate from on-disk data (_part_offset of a patch part), so validate
+    /// their contents and not only their sizes: updateAt and dst_versions are written
+    /// with these indices without any further bounds check.
+    for (auto dst_row : patch.dst_row_indices)
+    {
+        if (dst_row >= dst.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Destination row index {} in patch is out of bounds of destination column with {} rows",
+                dst_row, dst.size());
+    }
 
     if (patch.sources.size() != 1 && !patch.src_col_indices)
         throw Exception(ErrorCodes::LOGICAL_ERROR,

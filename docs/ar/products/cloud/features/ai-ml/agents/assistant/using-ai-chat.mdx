@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يتيح لك Assistant استخدام اللغة الطبيعية لتحليل البيانات في خدمة ClickHouse Cloud. ويمكنه إنشاء استعلامات وتصورات وملخصات باستخدام سياق مثل علامات التبويب النشطة والاستعلامات المحفوظة والمخططات ولوحات المعلومات.
 
 يتضمن Assistant أيضًا وضع Docs AI لطرح أسئلة تستند إلى وثائق ClickHouse. استخدم هذا الدليل لتمكين Assistant والعمل مع كلا الوضعين في وحدة تحكم ClickHouse Cloud.
@@ -24,14 +22,30 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     2. في الشريط الجانبي الأيسر، انقر على أيقونة اللمعان المسمّاة “Assistant”.
     3. (اختصار) اضغط <kbd>⌘</kbd> + <kbd>&#39;</kbd> (macOS) أو <kbd>Ctrl</kbd> + <kbd>&#39;</kbd> (Linux/Windows) لفتح اللوحة أو إغلاقها.
 
-    <Image img="/images/use-cases/AI_ML/AIChat/1_open_chat.webp" alt="فتح لوحة AI Chat الجانبية" size="md" />
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![فتح لوحة AI Chat الجانبية](/images/use-cases/AI_ML/AIChat/1_open_chat.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
   <Step title="قبول الموافقة على استخدام البيانات (عند أول تشغيل)" id="consent">
     1. عند الاستخدام لأول مرة، سيظهر لك مربع حوار للموافقة يوضح كيفية التعامل مع البيانات والمعالِجات الفرعية الخارجية الخاصة بـ LLM.
     2. راجعه ووافق عليه للمتابعة. إذا رفضت، فلن تفتح اللوحة.
 
-    <Image img="/images/use-cases/AI_ML/AIChat/2_consent.webp" alt="مربع حوار الموافقة" size="md" />
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![مربع حوار الموافقة](/images/use-cases/AI_ML/AIChat/2_consent.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
   <Step title="اختيار وضع الدردشة" id="modes">
@@ -42,7 +56,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     استخدم محدد الوضع في أسفل يسار اللوحة الجانبية للتبديل بين الأوضاع.
 
-    <Image img="/images/use-cases/AI_ML/AIChat/3_modes.webp" alt="اختيار الوضع" size="sm" />
+    <div className="ch-image-sm">
+
+    <Frame>
+
+    ![اختيار الوضع](/images/use-cases/AI_ML/AIChat/3_modes.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
   <Step title="كتابة رسالة وإرسالها" id="compose">
@@ -54,7 +76,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="فهم خطوات Thinking في “Agent”" id="thinking-steps">
     في وضع Agent، قد تظهر لك خطوات وسيطة قابلة للتوسيع خاصة بـ “thinking” أو التخطيط. توفّر هذه الخطوات شفافية حول كيفية صياغة المساعد لإجابته. قم بطيّها أو توسيعها حسب الحاجة.
 
-    <Image img="/images/use-cases/AI_ML/AIChat/4_thinking.webp" alt="خطوات Thinking" size="md" />
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![خطوات Thinking](/images/use-cases/AI_ML/AIChat/4_thinking.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
   <Step title="بدء دردشات جديدة" id="new-chats">
@@ -66,7 +96,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     2. اختر دردشة سابقة لتحميل رسائلها.
     3. احذف conversation باستخدام أيقونة سلة المهملات.
 
-    <Image img="/images/use-cases/AI_ML/AIChat/5_history.webp" alt="قائمة history الدردشة" size="md" />
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![قائمة history الدردشة](/images/use-cases/AI_ML/AIChat/5_history.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
   <Step title="العمل مع generated SQL" id="sql-actions">
@@ -76,9 +114,25 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     * انقر على “Open in editor” لتحميل query في tab SQL جديدة.
     * عدّله ونفّذه داخل Console.
 
-    <Image img="/images/use-cases/AI_ML/AIChat/6_result_actions.webp" alt="إجراءات النتائج" size="md" />
+    <div className="ch-image-md">
 
-    <Image img="/images/use-cases/AI_ML/AIChat/7_open_in_editor.webp" alt="فتح query المُنشأ في المحرر" size="md" />
+    <Frame>
+
+    ![إجراءات النتائج](/images/use-cases/AI_ML/AIChat/6_result_actions.webp)
+
+    </Frame>
+
+    </div>
+
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![فتح query المُنشأ في المحرر](/images/use-cases/AI_ML/AIChat/7_open_in_editor.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
   <Step title="إيقاف response أو مقاطعته" id="interrupt">

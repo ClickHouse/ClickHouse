@@ -4,6 +4,7 @@
 #include <Interpreters/ArrayJoin.h>
 
 #include <optional>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -59,8 +60,8 @@ public:
     /// its elements. The step cannot drop a column, and the ones it reads are always needed: the array joined ones decide
     /// how many rows there are, and the filter of the elements reads row columns as well.
     bool canRemoveUnusedColumns() const override;
-    UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
+    UnneededInputPositions getUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions, const VectorWithMemoryTracking<PrunedInput> & inputs) override;
 
 private:
     void updateOutputHeader() override;
