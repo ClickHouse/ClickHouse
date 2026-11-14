@@ -813,7 +813,31 @@ a local file on a disk rather than to ClickHouse Keeper.
     DECLARE(UInt64, max_parts_to_merge_at_once, 100, R"(
 Max amount of parts which can be merged at once (0 - disabled). Doesn't affect
 OPTIMIZE FINAL query.
+
+Also lowered automatically when merging that many parts of this table would not fit in memory, see
+`merge_memory_estimate_per_source_part_column`.
 )", 0) \
+    DECLARE(UInt64, merge_memory_estimate_per_source_part_column, 4096, R"(
+Estimated memory, in bytes, that a merge needs per (source part, column) regardless of how much data the
+parts hold, used to lower `max_parts_to_merge_at_once` so that one merge takes at most a sixteenth of the
+server's memory limit (`max_server_memory_usage`).
+
+A merge keeps one block from every source part alive at the same time, and every column of every one of
+those blocks costs at least a minimum allocation even when the block holds a handful of rows. For a table
+with thousands of columns - `system.metric_log` has over two thousand - merging the default 100 parts at
+once takes hundreds of megabytes before a single row is read. On a server with little memory the merge
+then fails with `MEMORY_LIMIT_EXCEEDED`, its source parts stay where they were, and the next selection
+round picks the same parts again, so the table stops compacting altogether.
+
+The estimate counts every physical column of the table (or of its widest projection), as if the merge
+holds all of them at once. A vertical merge (see `enable_vertical_merge_algorithm`) holds only the key
+columns, so it is narrowed more than it needs to be. The estimate applies to the regular merges selected
+by the `Simple`, `StochasticSimple` and `Trivial` merge selectors, not to the merges that apply TTL, and
+not to `OPTIMIZE ... FINAL`.
+
+Set to `0` to disable this and select merges by `max_parts_to_merge_at_once` alone.
+)", 0, \
+        {"26.11", 0, 4096, "New setting. Lowers `max_parts_to_merge_at_once` when merging that many parts of a very wide table would not fit in memory, so that such merges stop failing with `MEMORY_LIMIT_EXCEEDED` on small servers. The previous value disables the estimate, preserving pre-26.11 behavior."}) \
     DECLARE(Bool, materialize_statistics_on_merge, true, R"(When enabled, merges will build and store statistics for new parts.
     Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/sql-reference/statements/alter/statistics.md)
     or [during INSERTs](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert))", 0, \
