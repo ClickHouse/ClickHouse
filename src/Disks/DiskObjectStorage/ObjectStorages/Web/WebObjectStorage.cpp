@@ -243,7 +243,10 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
         read_settings,
         use_external_buffer,
         /* read_until_position */ 0,
-        headers);
+        headers,
+        /// Set by a read that has to be pinned to the generation of the object that it has seen (`HEAD`),
+        /// e.g. because the ETag keys the page cache.
+        object.etag);
 }
 
 void WebObjectStorage::throwNotAllowed()
@@ -420,7 +423,12 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
             const auto & header_value = tuple[1].safeGet<String>();
             metadata.attributes.emplace(header_name, header_value);
             if (header_name == "ETag")
+            {
                 metadata.etag = header_value;
+                /// A weak validator (`W/"..."`) allows different bytes of the same representation
+                /// (RFC 9110, section 8.8.1), so it must not identify the content in the caches.
+                metadata.etag_is_strong = !header_value.starts_with("W/");
+            }
         }
         return metadata;
     };

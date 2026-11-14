@@ -7,6 +7,10 @@
 -- byte, and nothing else the server exposes distinguishes them: DiskConnectionsReused says a session
 -- came out of the pool, not how long it had been sitting there.
 
+-- The repeated reads must go to S3 from this server: not through the distributed cache (used by default where it
+-- is enabled), and not from the page cache.
+SET table_engine_read_through_distributed_cache = 0, use_page_cache_for_object_storage = 0;
+
 SET enable_blob_storage_log_for_read_operations = 1;
 
 -- s3_check_objects_after_upload issues a HeadObject right after the Upload row has been written.

@@ -8,6 +8,9 @@
 -- suppressed the small-object prefetch (it was gated on `!supportsReadAt()`), turning tiny-file
 -- reads synchronous and latency-bound.
 
+-- The reads go through the distributed cache by default where it is enabled, but the test checks the reads of this server.
+SET table_engine_read_through_distributed_cache = 0;
+
 -- Write 16 tiny files. Each is far below 2 * max_download_buffer_size, i.e. "object_too_small",
 -- so it takes the prefetch path.
 INSERT INTO FUNCTION s3(s3_conn, filename='04000_prefetch_{_partition_id}.tsv', format='TSV', partition_strategy='wildcard')

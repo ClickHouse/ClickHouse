@@ -12,6 +12,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# The reads go through the distributed cache by default where it is enabled, but the test checks the reads of this server.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --table_engine_read_through_distributed_cache 0"
+
 TABLE_PATH="${CLICKHOUSE_TEST_UNIQUE_NAME}/t0"
 Q="${CLICKHOUSE_TEST_UNIQUE_NAME}_"
 DELTA_SETTINGS="--allow_experimental_delta_kernel_rs 1 --allow_delta_lake_writes 1 --allow_delta_lake_create_table 1"
