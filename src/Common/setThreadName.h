@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+#include <string>
 #include <string_view>
 
 namespace DB
@@ -154,7 +156,6 @@ namespace DB
     M(RESTORE_MAKE_TABLE, "Restore_MakeTbl") \
     M(RESTORE_TABLE_DATA, "Restore_TblData") \
     M(RESTORE_TABLE_TASK, "Restore_TblTask") \
-    M(RUNTIME_DATA, "RuntimeData") \
     M(S3_BACKUP_READER, "BackupReaderS3") \
     M(S3_BACKUP_WRITER, "BackupWriterS3") \
     M(S3_COPY_POOL, "S3ObjStor_copy") \
@@ -219,6 +220,17 @@ ThreadName getThreadName();
 /// The calling thread's cached name, by reference: valid while the thread lives, and current after a
 /// later setThreadName. The macOS query profiler reads it for a stopped thread (StackTrace::SuspendedThread).
 const ThreadName & getThreadNameRef();
+
+struct ThreadNamePair
+{
+    /// If cached == UNKNOWN, restore comm
+    std::string comm;
+    /// Otherwise ThreadName
+    ThreadName cached = ThreadName::UNKNOWN;
+};
+
+std::optional<ThreadNamePair> saveThreadName();
+void restoreThreadName(const ThreadNamePair & snapshot);
 
 std::string_view toString(ThreadName name);
 
