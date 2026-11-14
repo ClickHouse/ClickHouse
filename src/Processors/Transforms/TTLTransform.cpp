@@ -8,6 +8,7 @@
 #include <Columns/ColumnConst.h>
 #include <Common/quoteString.h>
 #include <Interpreters/addTypeConversionToAST.h>
+#include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/Context.h>
 
@@ -195,6 +196,10 @@ TTLTransform::TTLTransform(
             return Result{};
         const auto & column = storage_columns.get(name);
         auto default_ast = it->second.expression->clone();
+        /// An `ALIAS` column is computed on read and is never present in the block this transform
+        /// processes, so a default expression reading one has to be expanded to the alias definition
+        /// (cast to the alias's declared type); otherwise the reset fails with `NOT_FOUND_COLUMN_IN_BLOCK`.
+        replaceAliasColumnsInQuery(default_ast, storage_columns, {}, storage_.getContext());
         default_ast = addTypeConversionToAST(std::move(default_ast), column.type->getName());
         auto syntax_result = TreeRewriter(storage_.getContext()).analyze(default_ast, storage_columns.getAll());
         auto actions = ExpressionAnalyzer{default_ast, syntax_result, storage_.getContext()}.getActions(true);
