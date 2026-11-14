@@ -1,4 +1,4 @@
-<test>
+<test iceberg="0">
     <!--
         Merges of 50 small parts sorted by (sid, ts): with the default and with the batch sorting queue,
         of a table without fixed-size columns, and reading the 50 parts in order.
@@ -6,6 +6,7 @@
         Each timed merge first re-attaches the 50 source parts (a second `OPTIMIZE ... FINAL` would find
         one part and do nothing). Neither the source nor the destination tables merge in the background
         (`max_bytes_to_merge_at_*_space_in_pool = 1`).
+        Not on Iceberg tables: the test measures MergeTree merges of parts.
     -->
     <create_query>
         CREATE TABLE merge_src (sid UInt64, ts DateTime64(3), value Float64, v1 Float64, v2 Int32, v3 Int32, v4 UInt8, v5 Float32, host LowCardinality(String))
