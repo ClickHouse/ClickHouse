@@ -33,6 +33,7 @@
 #include <chrono>
 #include <map>
 #include <filesystem>
+#include <future>
 #include <ranges>
 #include <thread>
 
@@ -352,6 +353,67 @@ TEST_F(MetadataPlainRewritableDiskTest, RefreshSkipsUnchangedDirectoryReads)
     /// A forced reload must still read all directory bodies.
     reader.dropCache();
     EXPECT_EQ(object_storage->reads, 12);
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, ExplicitRefreshWaitsForReloadInFlight)
+{
+    /// Parks the first listing of the directories after `block_next_listing` is set, once it is taken,
+    /// until `release_listing` is ready.
+    class BlockingStorage : public LocalObjectStorage
+    {
+    public:
+        using LocalObjectStorage::LocalObjectStorage;
+        mutable std::atomic<bool> block_next_listing = false;
+        mutable std::promise<void> listing_blocked;
+        std::shared_future<void> release_listing;
+
+        void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override
+        {
+            LocalObjectStorage::listObjects(path, children, max_keys);
+            if (path.ends_with("/" + PlainRewritableLayout::METADATA_DIRECTORY_TOKEN) && block_next_listing.exchange(false))
+            {
+                listing_blocked.set_value();
+                release_listing.wait();
+            }
+        }
+    };
+
+    auto writer = getMetadataStorage("ExplicitRefreshWaitsForReloadInFlight");
+    auto create_directory = [&](const std::string & path)
+    {
+        auto tx = writer->createTransaction();
+        tx->createDirectory(path);
+        tx->commit(DB::NoCommitOptions{});
+    };
+    create_directory("A");
+
+    auto object_storage = std::make_shared<BlockingStorage>(LocalObjectStorageSettings(
+        "reader", getObjectStorage("ExplicitRefreshWaitsForReloadInFlight")->getCommonKeyPrefix(), false));
+    MetadataStorageFromPlainRewritableObjectStorage reader(object_storage, "", hard_links_enabled, PlainRewritableSnapshotSettings{.enabled = false});
+    ASSERT_TRUE(reader.existsDirectory("A"));
+
+    std::promise<void> release;
+    object_storage->release_listing = release.get_future().share();
+    auto blocked = object_storage->listing_blocked.get_future();
+    object_storage->block_next_listing = true;
+
+    /// This reload holds the load mutex until its listing is released, and does not see what is created meanwhile.
+    auto in_flight = std::async(std::launch::async, [&] { reader.refresh(0); });
+    ASSERT_EQ(blocked.wait_for(std::chrono::seconds(60)), std::future_status::ready);
+    create_directory("B");
+
+    auto periodic = std::async(std::launch::async, [&] { reader.refresh(1); });
+    auto explicit_refresh = std::async(std::launch::async, [&] { reader.refresh(0); });
+
+    /// A periodic refresh skips a busy disk, an explicit one waits for it and then reloads.
+    EXPECT_EQ(periodic.wait_for(std::chrono::seconds(60)), std::future_status::ready);
+    EXPECT_EQ(explicit_refresh.wait_for(std::chrono::milliseconds(500)), std::future_status::timeout);
+
+    release.set_value();
+    in_flight.get();
+    explicit_refresh.get();
+    periodic.get();
+    EXPECT_TRUE(reader.existsDirectory("B"));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, Ls)

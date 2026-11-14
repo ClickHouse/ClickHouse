@@ -73,6 +73,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
+#include <Common/ThreadStatus.h>
 #include <Common/TransactionID.h>
 #include <Common/UniqueLock.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -1184,6 +1185,9 @@ void IMergeTreeDataPart::removeIfNeeded()
 
     if (!is_temp && state != MergeTreeDataPartState::DeleteOnDestroy)
         return;
+
+    /// Keep the retries of this cleanup when the query or merge is cancelled (`plain_rewritable` removes synchronously).
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
 
     try
     {

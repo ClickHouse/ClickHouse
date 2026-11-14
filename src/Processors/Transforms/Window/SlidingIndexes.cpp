@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <ranges>
 
 namespace DB
 {
@@ -15,7 +16,7 @@ namespace DB
 namespace
 {
 
-bool haveSameKeys(const Columns & lhs, size_t lhs_row, const Columns & rhs, size_t rhs_row, const VectorWithMemoryTracking<size_t> & key_indices)
+bool haveSamePartitionKeys(const Columns & lhs, size_t lhs_row, const Columns & rhs, size_t rhs_row, const VectorWithMemoryTracking<size_t> & key_indices)
 {
     for (const size_t key : key_indices)
         if (lhs[key]->compareAt(lhs_row, rhs_row, *rhs[key], /*nan_direction_hint=*/1) != 0)
@@ -24,10 +25,25 @@ bool haveSameKeys(const Columns & lhs, size_t lhs_row, const Columns & rhs, size
     return true;
 }
 
+bool haveSamePeerGroupKeys(const Columns & lhs, size_t lhs_row, const Columns & rhs, size_t rhs_row, const WindowTransformParams & params)
+{
+    for (auto && [key, description] : std::views::zip(params.order_by_indices, params.window_description.order_by))
+    {
+        const int order = description.collator
+            ? lhs[key]->compareAtWithCollation(lhs_row, rhs_row, *rhs[key], /*nan_direction_hint=*/1, *description.collator)
+            : lhs[key]->compareAt(lhs_row, rhs_row, *rhs[key], /*nan_direction_hint=*/1);
+
+        if (order != 0)
+            return false;
+    }
+
+    return true;
+}
+
 VectorWithMemoryTracking<bool> markPartitionStarts(const Columns & columns, size_t rows_count, const VectorWithMemoryTracking<size_t> & partition_by_indices, const std::optional<Columns> & previous_partition_key)
 {
     VectorWithMemoryTracking<bool> starts(rows_count, false);
-    starts[0] = !previous_partition_key || !haveSameKeys(*previous_partition_key, 0, columns, 0, partition_by_indices);
+    starts[0] = !previous_partition_key || !haveSamePartitionKeys(*previous_partition_key, 0, columns, 0, partition_by_indices);
 
     size_t next_start = getEqualRangeEndAssumeSorted(columns, partition_by_indices, 0, rows_count, /*nan_direction_hint=*/1);
     while (next_start < rows_count)
@@ -52,7 +68,8 @@ VectorWithMemoryTracking<int64_t> assignPeerGroupIndexes(
     if (order_by_indices.empty())
         return peer_group_indexes;
 
-    const bool first_row_continues_last_group = previous_order_key && haveSameKeys(*previous_order_key, 0, columns, 0, order_by_indices);
+    const bool has_collation = std::ranges::any_of(params.window_description.order_by, [](const SortColumnDescription & key) { return key.collator != nullptr; });
+    const bool first_row_continues_last_group = previous_order_key && haveSamePeerGroupKeys(*previous_order_key, 0, columns, 0, params);
     int64_t group = partition_starts[0] ? 0 : (first_row_continues_last_group ? last_peer_group_index : last_peer_group_index + 1);
 
     SortedKeyRuns runs(order_by_indices.size());
@@ -63,7 +80,10 @@ VectorWithMemoryTracking<int64_t> assignPeerGroupIndexes(
         size_t run_begin = partition_begin;
         while (run_begin < partition_end)
         {
-            const size_t run_end = getEqualRangeEndAssumeSorted(runs, columns, order_by_indices, run_begin, partition_end, /*nan_direction_hint=*/1);
+            const size_t run_end = has_collation
+                ? findEqualRangeEndAssumeSorted(run_begin, partition_end, /*linear_probe=*/8, [&](size_t row) { return haveSamePeerGroupKeys(columns, run_begin, columns, row, params); })
+                : getEqualRangeEndAssumeSorted(runs, columns, order_by_indices, run_begin, partition_end, /*nan_direction_hint=*/1);
+
             std::fill(peer_group_indexes.begin() + run_begin, peer_group_indexes.begin() + run_end, group);
             group += 1;
             run_begin = run_end;

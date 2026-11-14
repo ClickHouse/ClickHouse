@@ -145,6 +145,7 @@ private:
     /// `std::filesystem::path` round-trip can re-encode it or swap its separators.
     String zk_path;
     const bool enable_logging_to_queue_log;
+    const bool parallel_inserts;
     mutable std::mutex mutex;
     UInt64 polling_min_timeout_ms TSA_GUARDED_BY(mutex);
     UInt64 polling_max_timeout_ms TSA_GUARDED_BY(mutex);

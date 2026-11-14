@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
@@ -37,6 +38,38 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 分布式 shuffle-hash join 的默认桶数。
 由基于规则的分布式查询计划器使用。基于成本的优化器会根据估算成本选择扇出，不使用此设置。
 
+## distributed_plan_exchange_compression_method {#distributed_plan_exchange_compression_method}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="String" default_value="LZ4" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "LZ4"},{"label": "新增设置：分布式查询计划的流式数据 exchange 改用 `LZ4` 压缩，不再沿用 `network_compression_method` 所指定的编解码器。"}]}]} />
+
+指定分布式查询计划中各任务之间进行流式数据 exchange 时，用于压缩数据包的编解码器。通过临时 File 进行的 exchange 则使用服务器的默认编解码器。
+
+可选值：
+
+* `''` — 使用 [network&#95;compression&#95;method](/zh/reference/settings/session-settings/network#network_compression_method) 所指定的编解码器。
+* `NONE` — 不压缩。
+* `LZ4` — 使用 LZ4 编解码器。
+* `LZ4HC` — 使用 LZ4HC 编解码器，采用其默认级别 9。压缩速度比 `LZ4` 慢数倍。
+* `ZSTD` — 使用 ZSTD 编解码器，压缩级别由 [distributed&#95;plan&#95;exchange&#95;zstd&#95;compression&#95;level](/zh/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_zstd_compression_level) 指定。
+
+## distributed_plan_exchange_zstd_compression_level {#distributed_plan_exchange_zstd_compression_level}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Int64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新增设置，用于指定分布式查询计划中流式数据 exchange 的 ZSTD 压缩级别。"}]}]} />
+
+分布式查询计划中流式数据 exchange 所使用的 ZSTD 压缩级别。仅当 [distributed&#95;plan&#95;exchange&#95;compression&#95;method](/zh/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_compression_method) 设置为 `ZSTD` 时生效。
+
+可选值：
+
+* 1 到 22 之间的整数。级别越高，压缩率越高，但压缩速度越慢。
+
 ## distributed_plan_execute_locally {#distributed_plan_execute_locally}
 
 <ExperimentalBadge />
@@ -61,7 +94,7 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 <ExperimentalBadge />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": ""},{"label": "新的 Experimental 设置。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": ""},{"label": "新增实验性设置。"}]}]} />
 
 强制在分布式查询各阶段之间使用指定类型的 Exchange 算子。
 
@@ -81,6 +114,16 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 在分布式查询计划中，采用 Shuffle 聚合策略，而不是 PartialAggregation + Merge。
 在 Shuffle 策略无法产生正确结果的场景下会被忽略，例如 `GROUPING SETS`，或者聚合必须按桶顺序产生结果时。
+
+## distributed_plan_join_runtime_filters {#distributed_plan_join_runtime_filters}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新增实验性设置。"}]}]} />
+
+在启用 `make_distributed_plan` 时，将某个阶段构建的 JOIN 运行时过滤器发送到读取探测侧的各个阶段，使这些阶段在发送行之前先完成过滤。如果过滤器未能送达，行将不经过滤直接传递。需要同时启用 `enable_join_runtime_filters`。
 
 ## distributed_plan_max_buffered_log_rows {#distributed_plan_max_buffered_log_rows}
 
@@ -111,6 +154,18 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 移除分布式查询计划中不必要的 exchange。调试时请禁用此设置。
 
+## distributed_plan_partial_aggregation_before_shuffle {#distributed_plan_partial_aggregation_before_shuffle}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新增实验性设置：分布式聚合在 shuffle 时传输部分聚合状态，而非输入行。"}]}]} />
+
+在分布式聚合按 `GROUP BY` 键对数据进行 shuffle 之前，先在读取数据的节点上执行部分聚合。这样，shuffle 时每个节点对每个分组只发送一个聚合状态，而无需发送全部输入行；之后每个桶再合并各自键对应的状态。
+如果列统计信息表明部分聚合无法将数据量至少减半，基于规则的查询规划器仍会对输入行进行 shuffle。启用 `enable_cascades_optimizer` 时，该设置允许优化器根据代价决定是否在每个桶中采用这种合并方式。
+仅在同时设置 `make_distributed_plan = 1` 时生效；若启用了 `distributed_plan_force_shuffle_aggregation` (该设置会对输入行进行 shuffle) ，则此设置不生效。
+
 ## distributed_plan_prefer_replicas_over_workers {#distributed_plan_prefer_replicas_over_workers}
 
 <PrivatePreviewBadge />
@@ -132,6 +187,14 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 允许在分布式查询计划中为 `ORDER BY` 启用 read-in-order 优化，使按表 sorting key 进行的有序读取可以跳过排序并提前结束，而无需先扫描再排序。
 
 默认关闭：将排序分布式化的 rewrite 假定其所包裹的排序不依赖输入本身已经有序，而这类依赖有序输入的排序有可能通过不保序的 exchange 获取行。目前仅当读取与排序之间不残留 exchange 的形态下才是安全的。
+
+## distributed_plan_worker_cluster {#distributed_plan_worker_cluster}
+
+<PrivatePreviewBadge />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "新增设置，用于选择执行分布式查询计划的无状态工作线程集群。"}]}]} />
+
+指定用于执行此查询分布式查询计划的 stateless-worker 集群名称。默认值为空，表示使用预配置的默认集群；其他集群可在 `stateless_worker_client.clusters` 下配置。
 
 ## distributed_plan_workers_num {#distributed_plan_workers_num}
 
