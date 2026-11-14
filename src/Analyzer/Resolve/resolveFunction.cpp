@@ -2060,6 +2060,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
                     /// Replace the original projection columns with one Tuple column
                     subquery_node->as<QueryNode>()->getProjection().getNodes() = { std::move(wrapper_tuple_node) };
+                    subquery_node->as<QueryNode>()->clearFillProjectionColumnIndexes();
                     DataTypes wrapper_tuple_element_types;
                     for (const auto & c : subquery_projection_columns)
                         wrapper_tuple_element_types.push_back(c.type);

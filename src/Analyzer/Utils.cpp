@@ -65,6 +65,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/SortNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
@@ -332,6 +333,15 @@ bool containsCorrelatedSubquery(const QueryTreeNodePtr & node)
         if (child && containsCorrelatedSubquery(child))
             return true;
     }
+
+    return false;
+}
+
+bool hasWithFill(const QueryNode & query_node)
+{
+    for (const auto & sort_node : query_node.getOrderBy().getNodes())
+        if (sort_node->as<const SortNode &>().withFill())
+            return true;
 
     return false;
 }
