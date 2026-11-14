@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 namespace DB
@@ -350,8 +351,10 @@ struct ReplicatedMergeTreeCleanupThread::NodeWithStat
     Int64 ctime = 0;
     Int64 czxid = 0;
     Int32 version = 0;
+    Int32 num_children = 0;
 
-    NodeWithStat(String node_, Int64 ctime_, Int64 czxid_, Int32 version_) : node(std::move(node_)), ctime(ctime_), czxid(czxid_), version(version_) {}
+    NodeWithStat(String node_, Int64 ctime_, Int64 czxid_, Int32 version_, Int32 num_children_)
+        : node(std::move(node_)), ctime(ctime_), czxid(czxid_), version(version_), num_children(num_children_) {}
 
     /// Sort by (ctime, czxid) rather than (ctime, node_name) to ensure consistent ordering
     /// across different deduplication directories (blocks/, deduplication_hashes/).
@@ -387,7 +390,7 @@ size_t ReplicatedMergeTreeCleanupThread::clearOldBlocks(
         current_time - static_cast<Int64>(1000 * window_seconds));
 
     /// Virtual node, all nodes that are "greater" than this one will be deleted
-    NodeWithStat block_threshold{{}, time_threshold, 0, 0};
+    NodeWithStat block_threshold{{}, time_threshold, 0, 0, 0};
 
     size_t current_deduplication_window = std::min<size_t>(timed_blocks.size(), window_size);
     auto first_outdated_block_fixed_threshold = timed_blocks.begin() + current_deduplication_window;
@@ -403,6 +406,44 @@ size_t ReplicatedMergeTreeCleanupThread::clearOldBlocks(
     LOG_TRACE(log_, "Will clear {} old blocks from {} (ctime {}) to {} (ctime {})", num_nodes_to_delete,
               first_outdated_block->node, first_outdated_block->ctime,
               last_outdated_block->node, last_outdated_block->ctime);
+
+    /// A node without children is removed with `TryRemove` in a `Multi` batch: it ignores a node that is already
+    /// removed by another cleaner or has another version, so concurrent cleaners cannot fail the batch.
+    if (zookeeper.isFeatureEnabled(DB::KeeperFeatureFlag::TRY_REMOVE))
+    {
+        std::vector<zkutil::ZooKeeper::FutureMulti> multi_futures;
+        Coordination::Requests batch;
+        for (auto it = first_outdated_block; it != timed_blocks.end(); ++it)
+        {
+            cached_block_stats.erase(it->node);
+
+            String path = zookeeper_path + "/" + blocks_dir_name + "/" + it->node;
+            if (it->num_children > 0)
+            {
+                /// `TryRemove` skips nodes with children (leftovers of previous server versions).
+                /// Another cleaner can remove the node at the same time, so `ZNONODE` is fine.
+                const auto rc = zookeeper.tryRemoveRecursive(path);
+                if (rc != Coordination::Error::ZOK && rc != Coordination::Error::ZNONODE)
+                    throw zkutil::KeeperException::fromPath(rc, path);
+                continue;
+            }
+
+            batch.push_back(zkutil::makeRemoveRequest(path, it->version, /*try_remove=*/ true));
+            if (batch.size() == zkutil::MULTI_BATCH_SIZE)
+            {
+                multi_futures.push_back(zookeeper.asyncMulti(batch));
+                batch.clear();
+            }
+        }
+        if (!batch.empty())
+            multi_futures.push_back(zookeeper.asyncMulti(batch));
+
+        for (auto & future : multi_futures)
+            static_cast<void>(future.get()); /// Throws if the `Multi` failed.
+
+        LOG_TRACE(log_, "Cleared {} old blocks from ZooKeeper", num_nodes_to_delete);
+        return num_nodes_to_delete;
+    }
 
     zkutil::AsyncResponses<Coordination::RemoveResponse> try_remove_futures;
     for (auto it = first_outdated_block; it != timed_blocks.end(); ++it)
@@ -487,7 +528,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(
         {
             /// Cached block
             const auto & entry = it->second;
-            timed_blocks.emplace_back(block, entry.ctime, entry.czxid, entry.version);
+            timed_blocks.emplace_back(block, entry.ctime, entry.czxid, entry.version, entry.num_children);
         }
     }
 
@@ -501,8 +542,8 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(
         if (status.error != Coordination::Error::ZNONODE)
         {
             auto node_name = fs::path(exists_paths[i]).filename();
-            cached_block_stats.emplace(node_name, NodeCacheEntry{status.stat.ctime, status.stat.czxid, status.stat.version});
-            timed_blocks.emplace_back(node_name, status.stat.ctime, status.stat.czxid, status.stat.version);
+            cached_block_stats.emplace(node_name, NodeCacheEntry{status.stat.ctime, status.stat.czxid, status.stat.version, status.stat.numChildren});
+            timed_blocks.emplace_back(node_name, status.stat.ctime, status.stat.czxid, status.stat.version, status.stat.numChildren);
         }
     }
 
