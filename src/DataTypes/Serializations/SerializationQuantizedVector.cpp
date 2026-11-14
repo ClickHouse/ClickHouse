@@ -1,6 +1,7 @@
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/TypeTree.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
@@ -11,6 +12,7 @@
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
+#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
@@ -428,6 +430,20 @@ ColumnPtr SerializationQuantizedVector::encodeCodes(const IColumn & column, size
     }
 
     return result;
+}
+
+void checkNoQuantizedCodec(const NamesAndTypesList & columns, const String & engine_name)
+{
+    for (const auto & column : columns)
+    {
+        const bool has_quantized_codec = anyInTypeTree(*column.type, [](const IDataType & type)
+        {
+            return typeid_cast<const SerializationQuantizedVector *>(type.getCustomSerialization()) != nullptr;
+        });
+        if (has_quantized_codec)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Engine {} doesn't support the Quantized codec of column {}",
+                engine_name, backQuote(column.name));
+    }
 }
 
 }
