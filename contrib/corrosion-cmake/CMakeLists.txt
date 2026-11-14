@@ -160,8 +160,8 @@ else()
     set(RUSTCWRAPPER "")
 endif()
 
-# Note that RUSTFLAGS_CPU is defined in cpu_features.cmake
-set(RUSTFLAGS ${RUSTFLAGS_CPU})
+# Note that RUSTFLAGS_CPU is defined in cpu_features.cmake and RUSTFLAGS_ADD in the root CMakeLists.txt
+set(RUSTFLAGS ${RUSTFLAGS_CPU} ${RUSTFLAGS_ADD})
 
 # Otherwise /usr/bin/ld will not be able to link our openssl build (built with lld) to openssl rust wrapper (built ld)
 if (LINKER_NAME MATCHES "lld")
@@ -180,19 +180,17 @@ if (TOOLCHAIN_PATH)
     list(APPEND RUSTFLAGS "-C" "link-arg=--gcc-toolchain=${TOOLCHAIN_PATH}")
 endif()
 
-set(RUST_CARGO_BUILD_STD "")
+# Rebuild the standard library with our RUSTFLAGS, so it gets the sanitizer instrumentation and the stack protector too.
+set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
 # For more info: https://doc.rust-lang.org/beta/unstable-book/compiler-flags/sanitizer.html#memorysanitizer
 if (SANITIZE STREQUAL "memory")
-    set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
     list(APPEND RUSTFLAGS "-Zsanitizer=memory" "-Zsanitizer-memory-track-origins")
 elseif (SANITIZE STREQUAL "thread")
-    set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
     list(APPEND RUSTFLAGS "-Zsanitizer=thread")
 elseif (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
     # Rust has no UBSan, so the combined ASan+UBSan build applies only ASan. Besides the
     # instrumentation itself, `-Zsanitizer=address` arms wasmtime's `cfg(asan)` guard, preventing
     # a stray munmap of live memory at thread exit: https://github.com/bytecodealliance/wasmtime/issues/13857
-    set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
     list(APPEND RUSTFLAGS "-Zsanitizer=address")
 endif()
 
@@ -221,6 +219,8 @@ endif()
 # the BOOL value `OFF`, which is not equal to the empty string (see cmake/sanitize.cmake).
 if (SANITIZE)
     list(APPEND RUSTFLAGS "--cfg" "rustix_use_libc")
+    # Check the preconditions of unsafe std functions (alignment, overlap, ...). A violation aborts, so not in production.
+    list(APPEND RUSTFLAGS "-Zub-checks=yes")
 endif()
 
 # Set metadata flag to force different hashes for different sanitizers
@@ -463,9 +463,7 @@ function(clickhouse_config_crate_env target_name)
        corrosion_set_env_vars(${target_name} "CARGO_BUILD_RUSTC_WRAPPER=${RUSTCWRAPPER}")
     endif()
 
-    if (NOT "${RUST_CARGO_BUILD_STD}" STREQUAL "")
-        corrosion_set_cargo_flags(${target_name} "${RUST_CARGO_BUILD_STD}")
-    endif()
+    corrosion_set_cargo_flags(${target_name} "${RUST_CARGO_BUILD_STD}")
 
     # See [1] for more details, but basically:
     # - we need to explicitly set CXXSTDLIB to avoid using of libstdc++
