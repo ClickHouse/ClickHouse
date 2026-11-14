@@ -10,7 +10,9 @@ namespace DB
 enum class HasAnyAllTokensMode : uint8_t
 {
     Any,
-    All
+    All,
+    /// One needle, matched byte by byte as a prefix of a token.
+    StartsWith
 };
 
 struct HasAnyTokensTraits
@@ -23,6 +25,12 @@ struct HasAllTokensTraits
 {
     static constexpr String name = "hasAllTokens";
     static constexpr HasAnyAllTokensMode mode = HasAnyAllTokensMode::All;
+};
+
+struct HasTokenStartingWithTraits
+{
+    static constexpr String name = "hasTokenStartingWith";
+    static constexpr HasAnyAllTokensMode mode = HasAnyAllTokensMode::StartsWith;
 };
 
 /// Map needle into a position (for bitmap operations).
@@ -107,10 +115,15 @@ public:
     /// strings; optional const tokenizer name. Result is `UInt8`; wrapped in
     /// `Nullable` when the haystack is `Nullable`. The runtime additionally
     /// enforces the constancy of `needles` and `tokenizer`.
+    /// `hasTokenStartingWith(haystack, prefix[, tokenizer])` takes one const string needle.
     String getSignatureString() const override
     {
-        return "(N : MaybeNullable(StringOrFixedString | Array(StringOrFixedString)), "
-               "const String | Array(String | IsNothing), [const String]) -> selectIf(anyNullable(N), Nullable(UInt8), UInt8)";
+        if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::StartsWith)
+            return "(N : MaybeNullable(StringOrFixedString | Array(StringOrFixedString)), "
+                   "const String, [const String]) -> selectIf(anyNullable(N), Nullable(UInt8), UInt8)";
+        else
+            return "(N : MaybeNullable(StringOrFixedString | Array(StringOrFixedString)), "
+                   "const String | Array(String | IsNothing), [const String]) -> selectIf(anyNullable(N), Nullable(UInt8), UInt8)";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
