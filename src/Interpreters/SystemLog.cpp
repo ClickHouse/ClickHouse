@@ -1089,10 +1089,19 @@ void SystemLog<LogElement>::prepareTable()
         if (old_create_query != create_query)
         {
             /// Rename the existing table.
+            /// With `async_load_system_database` a rotated table may still be loading at startup: it is not
+            /// attached yet, so `isTableExist` misses it, but its metadata file would fail the rename with
+            /// `TABLE_ALREADY_EXISTS`. Wait for the probed name's load job, as `tryGetTable` does.
+            auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
             int suffix = 0;
-            while (DatabaseCatalog::instance().isTableExist(
-                {table_id.database_name, table_id.table_name + "_" + toString(suffix)}, getContext()))
+            while (true)
+            {
+                const String candidate = table_id.table_name + "_" + toString(suffix);
+                database->waitTableStarted(candidate);
+                if (!DatabaseCatalog::instance().isTableExist({table_id.database_name, candidate}, getContext()))
+                    break;
                 ++suffix;
+            }
 
             const String rotated_table_name = table_id.table_name + "_" + toString(suffix);
             const auto old_metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
@@ -1124,7 +1133,7 @@ void SystemLog<LogElement>::prepareTable()
             auto rename = make_intrusive<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
 
             ActionLock merges_lock;
-            if (DatabaseCatalog::instance().getDatabase(table_id.database_name)->getUUID() == UUIDHelpers::Nil)
+            if (database->getUUID() == UUIDHelpers::Nil)
                 merges_lock = table->getActionLock(ActionLocks::PartsMerge);
 
             auto query_context = Context::createCopy(context);

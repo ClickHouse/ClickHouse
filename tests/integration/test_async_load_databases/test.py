@@ -30,6 +30,7 @@ node2 = cluster.add_instance(
     "node2",
     main_configs=[
         "configs/async_load_system_database.xml",
+        "configs/prepare_system_log_tables_on_startup.xml",
     ],
     dictionaries=DICTIONARY_FILES,
     with_zookeeper=True,
@@ -491,3 +492,27 @@ def test_exists_table_waits_for_load(started_cluster):
         query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
 
     query("DROP TABLE test.exists_t SYNC")
+
+
+def test_system_log_rotation_waits_for_rotated_table_load(started_cluster):
+    # At startup a system log table with an obsolete structure is renamed to the first free
+    # `<name>_<N>`. With `async_load_system_database` the rotated `query_log_0` may still be
+    # loading, so it is not attached yet but its metadata file exists: the free-name search
+    # must wait for it instead of picking `query_log_0` and failing the startup.
+    query = node2.query
+    query("SYSTEM FLUSH LOGS")
+    for table in ["query_log", "query_log_0", "query_log_1"]:
+        query(f"DROP TABLE IF EXISTS system.{table} SYNC")
+    query("CREATE TABLE system.query_log (n UInt64) ENGINE = MergeTree ORDER BY n")
+    # A `Join` table reads all its rows into memory in its load job, which keeps `query_log_0`
+    # loading for seconds, while the log tables are prepared a few milliseconds after start.
+    query("CREATE TABLE system.query_log_0 (n UInt64) ENGINE = Join(ANY, LEFT, n)")
+    query("INSERT INTO system.query_log_0 SELECT number FROM numbers(5000000)")
+    try:
+        node2.restart_clickhouse()
+        assert "`n` UInt64" not in query("SHOW CREATE TABLE system.query_log")
+        assert "`n` UInt64" in query("SHOW CREATE TABLE system.query_log_1")
+        assert query("SELECT total_rows FROM system.tables WHERE database = 'system' AND name = 'query_log_0'") == "5000000\n"
+    finally:
+        for table in ["query_log_0", "query_log_1"]:
+            query(f"DROP TABLE IF EXISTS system.{table} SYNC")
