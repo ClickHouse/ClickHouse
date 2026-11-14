@@ -1,0 +1,88 @@
+Select and verify output format
+1	00:1a:2b:3c:4d:5e
+2	00:1a:2b:3c:4d:5e
+3	00:1a:2b:3c:4d:5e
+4	00:1a:2b:3c:4d:5e
+5	ff:ff:ff:ff:ff:ff
+6	00:00:00:00:00:00
+Test comparison operators
+1
+2
+3
+4
+1
+2
+3
+4
+6
+1
+2
+3
+4
+5
+Test GROUP BY
+00:00:00:00:00:00	1
+00:1a:2b:3c:4d:5e	4
+ff:ff:ff:ff:ff:ff	1
+Test ORDER BY
+6	00:00:00:00:00:00
+1	00:1a:2b:3c:4d:5e
+2	00:1a:2b:3c:4d:5e
+3	00:1a:2b:3c:4d:5e
+4	00:1a:2b:3c:4d:5e
+5	ff:ff:ff:ff:ff:ff
+Test DISTINCT
+00:00:00:00:00:00
+00:1a:2b:3c:4d:5e
+ff:ff:ff:ff:ff:ff
+Test with NULL values
+1	00:1a:2b:3c:4d:5e
+2	\N
+3	ff:ff:ff:ff:ff:ff
+2
+1
+3
+Test JOIN
+1	Device A
+2	Device A
+3	Device A
+4	Device A
+5	Broadcast
+Test with Array
+1	['00:1a:2b:3c:4d:5e','ff:ff:ff:ff:ff:ff']
+2	['00:00:00:00:00:00']
+Test conversion from integer to MacAddress
+00:1a:2b:3c:4d:5e
+00:00:00:00:00:00
+ff:ff:ff:ff:ff:ff
+Test conversion TO UInt64
+112394521950
+281474976710655
+0
+Test conversion TO String
+00:1a:2b:3c:4d:5e
+ff:ff:ff:ff:ff:ff
+Test CAST operations
+00:1a:2b:3c:4d:5e
+00:1a:2b:3c:4d:5e
+112394521950
+00:1a:2b:3c:4d:5e
+Test toMacAddressOrZero
+00:1a:2b:3c:4d:5e
+00:00:00:00:00:00
+00:00:00:00:00:00
+00:00:00:00:00:00
+Test toMacAddressOrNull
+00:1a:2b:3c:4d:5e
+\N
+\N
+\N
+Test error cases for toMacAddress
+Test LowCardinality(MacAddress)
+1	00:1a:2b:3c:4d:5e
+2	00:1a:2b:3c:4d:5e
+3	ff:ff:ff:ff:ff:ff
+4	00:00:00:00:00:00
+00:00:00:00:00:00	1
+00:1a:2b:3c:4d:5e	2
+ff:ff:ff:ff:ff:ff	1

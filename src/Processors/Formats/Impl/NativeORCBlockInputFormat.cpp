@@ -23,6 +23,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMacAddress.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -1961,6 +1962,22 @@ readIPv4ColumnWithInt32Data(const ORC::ColumnVectorBatch * orc_column, const Str
     return {std::move(internal_column), internal_type, column_name};
 }
 
+static ColumnWithTypeAndName
+readMacAddressColumnWithInt64Data(const ORC::ColumnVectorBatch * orc_column, const String & column_name)
+{
+    const auto & data = typeid_cast<const ORC::LongVectorBatch &>(*orc_column).getData();
+
+    auto internal_type = std::make_shared<DataTypeMacAddress>();
+    auto internal_column = internal_type->createColumn();
+    auto & column_data = assert_cast<ColumnVector<MacAddress> &>(*internal_column).getData();
+    column_data.resize(data.size());
+    /// The null values are zeros.
+    for (size_t i = 0; i < data.size(); ++i)
+        column_data[i] = MacAddress(static_cast<UInt64>(data[i]));
+
+    return {std::move(internal_column), internal_type, column_name};
+}
+
 template <typename ColumnType>
 static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(
     const ORC::ColumnVectorBatch * orc_column, const String & column_name, const DataTypePtr & column_type)
@@ -2929,7 +2946,13 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             return readColumnWithNumericData<Int32>(orc_column, column_name);
         }
         case ORC::LONG:
+        {
+            /// ORC format has no dedicated address types and we output MacAddress as Int64.
+            /// We should allow to read it back from Int64.
+            if (type_hint && isMacAddress(type_hint))
+                return readMacAddressColumnWithInt64Data(orc_column, column_name);
             return readColumnWithNumericData<Int64>(orc_column, column_name);
+        }
         case ORC::FLOAT:
             return readColumnWithNumericData<Float32>(orc_column, column_name);
         case ORC::DOUBLE:

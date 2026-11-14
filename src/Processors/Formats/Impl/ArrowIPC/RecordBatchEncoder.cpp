@@ -488,6 +488,7 @@ void RecordBatchEncoder::encodeValues(
             return;
         }
         case TypeIndex::IPv4: appendFixedWidth<ColumnVector<IPv4>>(*this, column, begin, end); return;
+        case TypeIndex::MacAddress: appendFixedWidth<ColumnVector<MacAddress>>(*this, column, begin, end); return;
         case TypeIndex::Int128: appendFixedWidth<ColumnVector<Int128>>(*this, column, begin, end); return;
         case TypeIndex::UInt128: appendFixedWidth<ColumnVector<UInt128>>(*this, column, begin, end); return;
         case TypeIndex::Int256: appendFixedWidth<ColumnVector<Int256>>(*this, column, begin, end); return;
