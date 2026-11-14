@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Common/escapeForFileName.h>
@@ -85,6 +86,31 @@ Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
 const NamesAndTypesList & IMergeTreeIndex::getColumnsWithTypesRequiredForIndexCalc() const
 {
     return index.expression->getRequiredColumnsWithTypes();
+}
+
+IsShadowingJSONSubcolumn IMergeTreeIndex::getJSONSubcolumnShadowingCheck() const
+{
+    /// A column or its regular subcolumn wins over a dynamic path, which belongs to the shortest `JSON` column.
+    return [metadata = metadata_snapshot](std::string_view name, std::string_view json_column)
+    {
+        const auto & columns = metadata->getColumns();
+        auto options = GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns();
+
+        if (auto column = columns.tryGetColumn(options, String(name)))
+        {
+            auto json = columns.tryGetColumn(options, String(json_column));
+            if (!json || column->getNameInStorage() != json->getNameInStorage())
+                return true;
+        }
+
+        for (size_t end = json_column.find('.'); end != std::string_view::npos; end = json_column.find('.', end + 1))
+        {
+            auto prefix = columns.tryGetColumn(options, String(json_column.substr(0, end)));
+            if (prefix && isObject(removeNullable(removeLowCardinality(prefix->type))))
+                return true;
+        }
+        return false;
+    };
 }
 
 namespace
