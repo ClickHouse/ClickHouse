@@ -129,6 +129,11 @@ public:
         /// on submission and charged on flush in the same bucket. Unset unless a quota of the inserting user is keyed by it.
         /// Part of the batching key.
         std::optional<UInt64> quota_normalized_query_hash;
+        /// Host of the originating query's `initial_address`, which a remote shard reached by the flush (a `Distributed`
+        /// over an interserver secret, directly or behind a `Buffer`) re-authenticates the initial user against. Empty
+        /// unless the inserting user is restricted to specific hosts: otherwise the address does not affect
+        /// authentication, and inserts from different clients are coalesced into one flush. Part of the batching key.
+        String auth_initial_address;
         std::unique_ptr<Settings> settings;
 
         AsynchronousInsertQueueDataKind data_kind;
@@ -149,7 +154,8 @@ public:
             AsynchronousInsertQueueDataKind data_kind_,
             const String & quota_client_address_ = {},
             const String & quota_forwarded_address_ = {},
-            std::optional<UInt64> quota_normalized_query_hash_ = {});
+            std::optional<UInt64> quota_normalized_query_hash_ = {},
+            const String & auth_initial_address_ = {});
 
         InsertQuery(const InsertQuery & other);
         InsertQuery & operator=(const InsertQuery & other);
@@ -159,7 +165,7 @@ public:
     private:
         /// `authentication_grants` is compared by content in `operator==` (a shared_ptr would compare
         /// identity, which is inconsistent with the content-based hash), so it is not part of this tuple.
-        auto toTupleCmp() const { return std::tie(data_kind, query_str_with_secrets, user_id, current_roles, authentication_valid_until, current_user, initial_user, authenticated_user, quota_key, quota_client_address, quota_forwarded_address, quota_normalized_query_hash, setting_changes); }
+        auto toTupleCmp() const { return std::tie(data_kind, query_str_with_secrets, user_id, current_roles, authentication_valid_until, current_user, initial_user, authenticated_user, quota_key, quota_client_address, quota_forwarded_address, quota_normalized_query_hash, auth_initial_address, setting_changes); }
 
         std::vector<SettingChange> setting_changes;
     };

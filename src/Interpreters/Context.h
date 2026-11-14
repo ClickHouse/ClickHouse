@@ -1618,6 +1618,8 @@ public:
     {
         return is_background_operation;
     }
+    /// A `Buffer` flush marks its context so functions restricted to user-issued queries stay rejected in it.
+    void setBackgroundOperation() { is_background_operation = true; }
     ContextMutablePtr getBackgroundContext() const;
 
     ContextMutablePtr getBufferContext() const;

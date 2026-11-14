@@ -17,6 +17,8 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+struct BufferWriteIdentity;
+
 
 /** During insertion, buffers the data in the RAM until certain thresholds are exceeded.
   * When thresholds are exceeded, flushes the data to another table.
@@ -158,6 +160,10 @@ private:
         time_t first_write_time = 0;
         Block data;
 
+        /// Access identity of the user whose rows this shard currently holds; the shard is flushed under it.
+        /// Non-null whenever the shard holds data (set together with first_write_time).
+        std::shared_ptr<const BufferWriteIdentity> write_identity;
+
         /// Schema version, checked to avoid mixing blocks with different sets of columns, from
         /// before and after an ALTER. There are some remaining mild problems if an ALTER happens
         /// in the middle of a long-running INSERT:
@@ -207,8 +213,18 @@ private:
     bool checkThresholds(const Buffer & buffer, bool direct, time_t current_time, size_t additional_rows = 0, size_t additional_bytes = 0) const;
     bool checkThresholdsImpl(bool direct, size_t rows, size_t bytes, time_t time_passed) const;
 
+    /// How far writeBlockToDestination got, to classify a failure of the flush.
+    enum class FlushStage : uint8_t
+    {
+        RestoringIdentity,
+        /// Checking the restored identity's access to the destination: a local check, however remote the destination.
+        Authorizing,
+        Writing,
+    };
+
     /// `table` argument is passed, as it is sometimes evaluated beforehand. It must match the `destination`.
-    void writeBlockToDestination(const Block & block, StoragePtr table);
+    /// `write_identity` carries the originating user so the forwarded INSERT is authorized as them.
+    void writeBlockToDestination(const Block & block, StoragePtr table, const std::shared_ptr<const BufferWriteIdentity> & write_identity, FlushStage * stage = nullptr);
 
     void backgroundFlush();
     void reschedule(size_t min_delay);
