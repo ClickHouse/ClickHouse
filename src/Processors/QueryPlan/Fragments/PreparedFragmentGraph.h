@@ -6,6 +6,7 @@
 
 #include <string_view>
 #include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -25,19 +26,23 @@ struct PreparedFragmentGraph
     const FragmentGraph & graph;
     const ExplainPlanOptions & options;
 
-    /// The graph has one `SingleNode` fragment: the plan was not cut, and it is printed as `EXPLAIN` without
-    /// `fragments` prints it.
+    /// The graph has one `SingleNode` fragment: the plan was not cut. `fragments = 1` prints it as `EXPLAIN` without
+    /// options does (`writeSingleNode`), `tree = 1` draws it without a frame.
     const bool single_node;
 
     /// By descending id. The cutter numbers the stages in post-order, so a fragment comes before the fragments it reads,
     /// and the fragment that produces the result (`main`) comes first. Empty for a single node.
-    std::vector<const QueryFragment *> print_order;
+    VectorWithMemoryTracking<const QueryFragment *> print_order;
 
     /// With `pretty`, one registry for all fragments, so that a column, a runtime filter or a set has the same name in
     /// every fragment and in the `Exchanges` section. The names are built over the fragments joined at their exchanges,
-    /// so they are the names plain `EXPLAIN` gives the plan before the cut. Empty for a single node, whose plan
-    /// `QueryPlan::explainPlan` names by itself.
+    /// so they are the names plain `EXPLAIN` gives the plan before the cut. For a single node, the names
+    /// `QueryPlan::explainPlan` gives its plan.
     PrettyNamesPerPlan pretty_names;
+
+    /// The names of the columns and runtime filters in `plan`, the plan of a fragment or a nested plan of a step, for
+    /// `IQueryPlanStep::FormatSettings`. Without `pretty`, empty maps.
+    const PrettyNames & getPrettyNames(const QueryPlan & plan) const;
 
     /// `hash(keys)`, `broadcast`, `gather`, `gather sorted by ...`, `any` or `set values`. With `pretty`, the keys and the
     /// sort columns are named as in the fragments.

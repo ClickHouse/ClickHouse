@@ -1316,6 +1316,10 @@ void LocalServer::setupUsers()
     /// is attached (and thus safe to grant SELECT on implicitly) only when this is enabled.
     access_control.setUserQueryLogEnabled(config.getBool("query_log.enable_user_query_log", true));
 
+    /// Before the users config is loaded: its settings profiles may set custom settings.
+    if (config.has("custom_settings_prefixes"))
+        access_control.setCustomSettingsPrefixes(config.getString("custom_settings_prefixes"));
+
     /// Apply user-level configuration from the config processed in `initialize`: a config file
     /// auto-discovered via `getLocalConfigPath` (e.g. `~/.clickhouse-local/config.xml`), or the
     /// merge directories of the current directory processed on top of the embedded config.
@@ -2052,9 +2056,42 @@ void LocalServer::processConfig()
         {
             LOG_DEBUG(log, "Loading metadata from {}", path);
 
-            if (attach_system_tables && fs::exists(std::filesystem::path(path) / "metadata" / "system.sql"))
+            /// System log tables keep their data in this directory. In a `system` database with the `Memory` engine
+            /// their metadata would be lost at exit, and on the next run the data directories left behind would not let
+            /// them be created again. So, when system logs are enabled, make the `system` database persistent, like in
+            /// the server.
+            const bool has_system_database_metadata = fs::exists(fs::path(path) / "metadata" / "system.sql");
+            bool persistent_system_database = attach_system_tables
+                && !getClientConfiguration().has("only-system-tables")
+                && hasAnySystemLogConfigured(config());
+
+            /// A directory used before with a `system` database of the `Memory` engine may hold the data of system log
+            /// tables as real directories in `data/system`. The `Atomic` engine refuses to load such a directory (it
+            /// expects symbolic links there), so keep the `Memory` engine for it rather than fail to start.
+            if (persistent_system_database && !has_system_database_metadata)
             {
-                LoadTaskPtrs load_system_metadata_tasks = loadMetadataSystem(global_context);
+                const fs::path system_data_path = fs::path(path) / "data" / DatabaseCatalog::SYSTEM_DATABASE;
+                if (fs::is_directory(system_data_path))
+                {
+                    for (const auto & entry : fs::directory_iterator(system_data_path))
+                    {
+                        if (!entry.is_symlink())
+                        {
+                            LOG_WARNING(log,
+                                "The system log tables are not kept between runs, because {} was left by an older version "
+                                "with a non-persistent `system` database. Move it away to keep the system log tables",
+                                entry.path().string());
+                            persistent_system_database = false;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (attach_system_tables && (persistent_system_database || has_system_database_metadata))
+            {
+                LoadTaskPtrs load_system_metadata_tasks
+                    = loadMetadataSystem(global_context, /* async_load_system_database */ false, persistent_system_database);
                 waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
 
                 deferSystemDatabaseTables(global_context, *DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE));

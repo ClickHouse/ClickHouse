@@ -1,5 +1,7 @@
 #include <iomanip>
 
+#include <Poco/String.h>
+
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Parsers/ASTIdentifier.h>
@@ -238,18 +240,28 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     }
     else if (table_id)
     {
-        ostr << (!table_id.database_name.empty() ? backQuoteIfNeed(table_id.database_name) + "." : "") << backQuoteIfNeed(table_id.table_name);
+        /// A leading `function` must stay quoted, otherwise it parses as INSERT INTO FUNCTION.
+        auto quote_first = [](const String & name) { return Poco::toUpper(name) == "FUNCTION" ? backQuote(name) : backQuoteIfNeed(name); };
+        if (!table_id.database_name.empty())
+            ostr << quote_first(table_id.database_name) << "." << backQuoteIfNeed(table_id.table_name);
+        else
+            ostr << quote_first(table_id.table_name);
     }
     else
     {
+        chassert(table);
+        const auto & first = database ? database : table;
+        String first_name;
+        if (tryGetIdentifierNameInto(first, first_name) && Poco::toUpper(first_name) == "FUNCTION")
+            settings.writeIdentifier(ostr, first_name, /*ambiguous=*/true);
+        else
+            first->format(ostr, settings, state, frame);
+
         if (database)
         {
-            database->format(ostr, settings, state, frame);
             ostr << '.';
+            table->format(ostr, settings, state, frame);
         }
-
-        chassert(table);
-        table->format(ostr, settings, state, frame);
     }
 
     if (columns)

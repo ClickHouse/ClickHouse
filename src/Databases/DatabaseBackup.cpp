@@ -14,6 +14,7 @@
 #include <Common/setThreadName.h>
 
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadHelpers.h>
 
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -654,9 +655,12 @@ void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
     /// the visibility rule below depends on the total, mirroring `BackupInfo::fromAST`, which collects
     /// positionals independently of named overrides.
     size_t total_positionals = 0;
+    bool has_headers = false;
     for (size_t i = 0; i < nested_args.size(); ++i)
     {
         const auto f = nested_args.at(i)->getFunction();
+        if (f && boost::iequals(f->name(), "headers"))
+            has_headers = true;
         if (f && (f->name() == "extra_credentials"
                   || (f->name() == "equals" && f->hasArguments() && f->arguments->size() == 2)))
             continue;
@@ -667,7 +671,8 @@ void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
     /// Explicit-url locator: valid signatures have one positional (the url) or three (url,
     /// access_key_id, secret_access_key) with the secret at slot 2; any other count is invalid and
     /// the intended slots are unknowable, so everything after the url is hidden (fail closed).
-    const size_t first_hidden_slot = (is_named_collection || total_positionals == 3) ? 2 : 1;
+    /// A `headers(...)` map makes it invalid as well: the engine accepts only `extra_credentials(...)`.
+    const size_t first_hidden_slot = (is_named_collection || (total_positionals == 3 && !has_headers)) ? 2 : 1;
 
     std::string replacement = "S3(";
     bool has_secret = false;

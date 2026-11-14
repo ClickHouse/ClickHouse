@@ -1,0 +1,184 @@
+---
+slug: /clickstack/observability/migration/elastic/migrating-data
+title: 'Migrating data to ClickHouse Observability from Elastic'
+sidebarTitle: 'Migrating data'
+description: 'Plan parallel ingestion from Elastic to fully managed ClickHouse Observability, with separate guidance for self-managed historical-data migration.'
+show_related_blogs: true
+keywords: ['ClickHouse Observability']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+This guide focuses on migrating from Elastic to **fully managed ClickHouse Observability**, the default experience. ClickHouse manages the underlying schemas and storage. Your ingestion pipeline must send telemetry in **OpenTelemetry Protocol (OTLP)** format; Elasticsearch documents cannot be imported directly into the fully managed service.
+
+For self-managed deployments, review the [equivalent Elasticsearch and ClickHouse concepts](/clickstack/self-configured/migration/elastic/concepts) and [type mappings](/clickstack/self-configured/migration/elastic/types). Self-managed data migration instructions are labeled separately below.
+
+## Parallel operation strategy {#parallel-operation-strategy-self-configured}
+
+When migrating from Elastic to ClickHouse Observability for observability use cases, we recommend a **parallel operation** approach rather than attempting to migrate historical data. This strategy offers several advantages:
+
+1. **Minimal risk**: by running both systems concurrently, you maintain access to existing data and dashboards while validating ClickHouse Observability and familiarizing your users with the new system.
+2. **Natural data expiration**: most observability data has a limited retention period (typically 30 days or less), allowing for a natural transition as data expires from Elastic.
+3. **Simplified migration**: no need for complex data transfer tools or processes to move historical data between systems.
+<br/>
+<Info>
+**Migrating data**
+
+Self-managed deployments can use the `Elasticsearch` table engine to read historical documents and copy them into ClickHouse tables. See [Migrating data](#migrating-data-self-configured). This is separate from the OTLP ingestion path used by fully managed ClickHouse Observability.
+</Info>
+
+### Implementation steps {#implementation-steps-self-configured}
+
+<Steps>
+<Step title="Configure dual ingestion" id="configure-dual-ingestion-self-configured">
+
+Set up your data collection pipeline to send data to both Elastic and ClickHouse Observability simultaneously. For fully managed ClickHouse Observability, the pipeline must export OTLP to the managed endpoint using your ingestion API key. Forwarding Elasticsearch JSON documents to that endpoint is not sufficient.
+
+How this is achieved depends on your current agents for collection - see ["Migrating Agents"](/clickstack/observability/migration/elastic/migrating-agents).
+</Step>
+<Step title="Adjust retention periods" id="adjust-retention-period-self-configured">
+
+Review the retention periods in both systems so historical data remains available during the transition. See [Retention and TTL](#retention-and-ttl-self-configured) for deployment-specific guidance.
+</Step>
+<Step title="Validate and compare" id="validate-and-compare-self-configured">
+
+- Run queries against both systems to ensure data consistency
+- Compare query performance and results
+- Migrate dashboards and alerts to ClickHouse Observability. This is currently a manual process.
+- Verify that all critical dashboards and alerts work as expected in ClickHouse Observability
+</Step>
+<Step title="Gradual transition" id="graudal-transition-self-configured">
+
+- As data naturally expires from Elastic, you will increasingly rely on ClickHouse Observability
+- Once confidence in ClickHouse Observability is established, you can begin redirecting queries and dashboards
+</Step>
+</Steps>
+
+### Long-term retention {#long-term-retention-self-configured}
+
+For organizations requiring longer retention periods:
+
+- Continue running both systems in parallel until all data has expired from Elastic
+- For self-managed deployments, consider using [materialized views](/concepts/features/materialized-views/incremental-materialized-view) to maintain aggregated or filtered historical data while allowing raw data to expire.
+
+### Migration timeline {#migration-timeline-self-configured}
+
+The migration timeline will depend on your data retention requirements:
+
+- **30-day retention**: Migration can be completed within a month.
+- **Longer retention**: Continue parallel operation until data expires from Elastic.
+- **Historical data**: Review the deployment-specific guidance in [Migrating data](#migrating-data-self-configured) before planning an import.
+
+## Retention and TTL {#retention-and-ttl-self-configured}
+
+<Tabs>
+<Tab title="Fully managed">
+
+<BetaBadge label="Beta offering" />
+
+<Note>
+Fully managed ClickHouse Observability retains data for 30 days during beta. Retention will be updated at general availability (GA), with further instructions to follow.
+</Note>
+
+Plan the transition around this 30-day retention period and your retention in Elastic. Keep Elastic available for historical searches until that data is no longer required.
+
+</Tab>
+<Tab title="Self-managed">
+
+ClickHouse uses [TTL clauses](/clickstack/self-configured/managing/production#configure-ttl-managed) on `MergeTree` tables to automatically delete expired data.
+
+Align your table retention with your migration requirements. For examples, see [self-managed production TTL setup](/clickstack/self-configured/managing/production#configure-ttl-managed).
+
+</Tab>
+</Tabs>
+
+## Migrating data {#migrating-data-self-configured}
+
+<Tabs>
+<Tab title="Fully managed">
+
+<BetaBadge label="Beta offering" />
+
+<Note>
+There is currently no direct historical-data migration path from Elasticsearch to fully managed ClickHouse Observability. The managed endpoint accepts OTLP telemetry, not Elasticsearch documents or JSON exports. The `Elasticsearch` table engine workflow in the self-managed tab does not apply to fully managed services.
+</Note>
+
+Use parallel ingestion to send new telemetry in **OTLP format** to your managed service while retaining historical data in Elastic. See [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry) for the managed endpoint and authentication settings, and [Migrating agents](/clickstack/observability/migration/elastic/migrating-agents) for collection options.
+
+If historical data must be imported, you need a custom pipeline that converts Elasticsearch documents into appropriate OpenTelemetry logs, traces, or metrics and exports them over OTLP. This guide does not provide a ready-made converter. Account for the managed service's retention period before planning a backfill.
+
+</Tab>
+<Tab title="Self-managed">
+
+Use the [`Elasticsearch` table engine](/reference/engines/table-engines/integrations/elasticsearch) to read documents directly from Elasticsearch, then copy them into a local ClickHouse table with `INSERT INTO ... SELECT`. No export file or `elasticdump` installation is required.
+
+The engine is read-only: creating an `Elasticsearch` table exposes remote documents for querying but does not copy them into ClickHouse storage.
+
+<Note>
+The Elasticsearch integration is experimental and requires `enable_elasticsearch = 1` on a ClickHouse version that supports it. It requires Elasticsearch 7.12 or later and does not support OpenSearch. Your ClickHouse service must be able to reach the Elasticsearch endpoint, and the index must have `_source` enabled to read document contents.
+</Note>
+
+<Steps>
+<Step title="Connect to the Elasticsearch index" id="connect-elasticsearch-self-managed">
+
+Run the following SQL in your self-managed ClickHouse Cloud service, replacing the endpoint, index, and credentials with your own values:
+
+```sql
+SET enable_elasticsearch = 1;
+
+CREATE TABLE elasticsearch_source
+ENGINE = Elasticsearch(
+    'https://<elasticsearch-host>:9200',
+    '<index-name>',
+    '<username>',
+    '<password>'
+);
+
+SELECT _index, _id, document
+FROM elasticsearch_source
+LIMIT 10;
+```
+
+The table exposes each document's `_source` as the `document` column of type `JSON`. The virtual columns `_id` and `_index` identify the source document and index. Inspect a sample before choosing the destination schema.
+
+The engine also supports API keys and named collections. See the [authentication reference](/reference/functions/table-functions/elasticsearch#authentication).
+
+</Step>
+<Step title="Copy documents into ClickHouse" id="copy-documents-self-managed">
+
+This example stores documents as `JSON` in a staging table so you can inspect and transform them before configuring an observability source. Run the statements in the same database as `elasticsearch_source`:
+
+```sql
+CREATE TABLE migrated_elasticsearch_documents
+(
+    source_index String,
+    document_id String,
+    document JSON
+)
+ENGINE = MergeTree
+ORDER BY (source_index, document_id);
+
+INSERT INTO migrated_elasticsearch_documents
+SELECT _index, _id, document
+FROM elasticsearch_source;
+```
+
+Each read uses an Elasticsearch point in time to provide a consistent snapshot for that query. This is a one-time copy, not continuous replication. Repeating the insert appends rows again; the ordering key does not deduplicate documents.
+
+For larger imports, split the work into non-overlapping batches with the engine's `query` argument. Use absolute timestamp boundaries in the Elasticsearch Query DSL. A ClickHouse `WHERE` clause does not push filters down to Elasticsearch. See the [engine examples](/reference/engines/table-engines/integrations/elasticsearch#usage-example) and [limitations](/reference/functions/table-functions/elasticsearch#limitations).
+
+</Step>
+<Step title="Map and validate the imported data" id="validate-import-self-managed">
+
+Compare document counts and representative records with the source snapshot. Check timestamps, missing fields, and nested values before using the data for searches or dashboards. The `JSON` type can infer types from values, including timestamps, so their text representation may change. Use explicit JSON type hints when you need to control field types.
+
+Design the destination observability schema for your queries and retention requirements, then use `INSERT INTO ... SELECT` to extract and convert fields from the staging table. Review the [Elasticsearch and ClickHouse concepts](/clickstack/self-configured/migration/elastic/concepts), [type mappings](/clickstack/self-configured/migration/elastic/types), and [schema design guidance](/guides/clickhouse/data-formats/json/schema).
+
+Copying documents does not automatically convert them to the OpenTelemetry schema or configure a source in the UI. Configure the table and its timestamp, message, and other field mappings using [Configuration options](/clickstack/self-configured/managing/config).
+
+</Step>
+</Steps>
+
+</Tab>
+</Tabs>
