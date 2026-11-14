@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', 'المصادقة', 'موفّر الهوية', 'RS256']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 import { VersionBadge } from "/snippets/ar/components/VersionBadge/VersionBadge.jsx";
@@ -24,6 +22,12 @@ import { VersionBadge } from "/snippets/ar/components/VersionBadge/VersionBadge.
 يتيح لك ClickHouse Cloud مصادقة الاتصالات بخدمة باستخدام JSON Web Tokens ‏(JWTs) التي يتم التحقق من صحتها بالاستناد إلى نقاط نهاية JSON Web Key Set ‏(JWKS) الخاصة بك. وبدلًا من إدارة بيانات اعتماد قاعدة البيانات، يصدر موفر الهوية رموزًا مميزة قصيرة العمر يتحقق ClickHouse من صحتها باستخدام المفاتيح العامة المنشورة على عنوان URL لـ JWKS الذي تهيّئه.
 
 يمكنك تهيئة موفري JWKS بنفسك لكل خدمة من **Settings → Security** في ClickHouse Cloud console.
+
+<Tip>
+  **هل تستخدم Microsoft Entra ID؟**
+
+  اتبع دليل [مصادقة JWT باستخدام Microsoft Entra ID](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id) للاطلاع على خطوات تهيئة Entra ID، وقيم الموفّر المطلوب إدخالها، وكيفية ربط أدوار تطبيقات Entra ID بأدوار ClickHouse.
+</Tip>
 
 <div id="before-you-begin">
   ## قبل البدء
@@ -58,7 +62,15 @@ import { VersionBadge } from "/snippets/ar/components/VersionBadge/VersionBadge.
   <Step title="افتح إعدادات أمان الخدمة" id="open-security-settings">
     انتقل إلى خدمتك، وافتح **Settings**، ثم مرّر إلى قسم **Security**. ابحث عن بطاقة **مصادقة JWT**.
 
-    <Image img="/images/cloud/security/jwt/jwt-section.png" size="lg" alt="قسم مصادقة JWT في إعدادات أمان الخدمة" force />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![قسم مصادقة JWT في إعدادات أمان الخدمة](/images/cloud/security/jwt/jwt-section.png)
+
+    </Frame>
+
+    </div>
   </Step>
 
   <Step title="افتح اللوحة المنبثقة للموفّرين" id="open-flyout">
@@ -99,3 +111,4 @@ import { VersionBadge } from "/snippets/ar/components/VersionBadge/VersionBadge.
 </div>
 
 * [مصادقة JWT](/ar/concepts/features/security/external-authenticators/jwt) — مطالبات الرمز المميز، والمستخدمون المؤقتون، واستخدام العميل.
+* [مصادقة JWT باستخدام Microsoft Entra ID](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id) — تهيئة Entra ID ليكون موفّر JWT.

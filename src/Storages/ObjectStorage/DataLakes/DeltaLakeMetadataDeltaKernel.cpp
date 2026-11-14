@@ -734,6 +734,8 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             storage_columns,
             delta_schema,
             log);
+        if (result_name_and_type.name != name_and_type.name)
+            info.columns_read_under_other_names.insert(name_and_type.name);
         name_and_type = result_name_and_type;
     }
 
@@ -779,12 +781,19 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             info.format_header.insert(ColumnWithTypeAndName{result_name_and_type.type, result_name_and_type.name});
     }
 
+    /// Build a new description rather than rename in place: the physical name of a column may be the logical name of
+    /// another column that is not renamed yet (`k` renamed to `k_old` under column mapping keeps the physical name `k`),
+    /// and `ColumnsDescription::rename` to an existing name erases the column, under the iteration over the description.
+    ColumnsDescription physical_columns_description;
     for (const auto & column : info.columns_description)
-        info.columns_description.rename(
-            column.name,
-            getPhysicalNameAndType(
-                NameAndTypePair(column.name, column.type), readable_columns_with_subcolumns, physical_names_map, storage_columns, delta_schema, log)
-                .first.name);
+    {
+        ColumnDescription physical_column = column;
+        physical_column.name = getPhysicalNameAndType(
+            NameAndTypePair(column.name, column.type), readable_columns_with_subcolumns, physical_names_map, storage_columns, delta_schema, log)
+            .first.name;
+        physical_columns_description.add(std::move(physical_column));
+    }
+    info.columns_description = std::move(physical_columns_description);
 
     LOG_TEST(log, "Format header: {}", info.format_header.dumpStructure());
     LOG_TEST(log, "Source header: {}", info.source_header.dumpStructure());

@@ -25,6 +25,7 @@ namespace DB::ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_CONVERT_TYPE;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
@@ -319,7 +320,50 @@ GTEST_TEST(SettingFieldTimespan, SecondsParseFromStringChecksTheRange)
 
     /// A value that does not fit Int64 microseconds is rejected, the same as through Field.
     ASSERT_THROW(seconds.parseFromString("1e30"), DB::Exception);
+    ASSERT_THROW(seconds.parseFromString("-1"), DB::Exception);
+    ASSERT_THROW(seconds.parseFromString("9223372036854.775"), DB::Exception);
+    ASSERT_EQ(seconds.totalSeconds(), 300);
+
+    seconds.parseFromString("9223372036854");
+    ASSERT_GT(seconds.totalSeconds(), 0);
 }
+
+GTEST_TEST(Settings, SecondsOnTheWireRejectNegativeAndOverflowingValues)
+{
+    auto wire = [](const String & value)
+    {
+        WriteBufferFromOwnString out;
+        BaseSettingsHelpers::writeString("max_execution_time", out);
+        BaseSettingsHelpers::writeFlags(BaseSettingsHelpers::Flags{}, out);
+        BaseSettingsHelpers::writeString(value, out);
+        BaseSettingsHelpers::writeString("", out); /// end of settings
+        return out.str();
+    };
+
+    for (const String & value : {String("-1"), String("9223372036854.775")})
+    {
+        const String bytes = wire(value);
+        ReadBufferFromString in(bytes);
+        Settings settings;
+        try
+        {
+            settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+            FAIL() << value << " was accepted";
+        }
+        catch (const Exception & e)
+        {
+            ASSERT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+        }
+    }
+
+    const String bytes = wire("60");
+    ReadBufferFromString in(bytes);
+    Settings settings;
+    settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+    ASSERT_TRUE(settings.isChanged("max_execution_time"));
+    ASSERT_EQ(settings.get("max_execution_time"), Field(Float64(60)));
+}
+
 GTEST_TEST(SettingsCompatibility, MarkChangedByCompatibilityAsUnchangedKeepsTheValues)
 {
     /// The client passes such a Settings object to `Connection::sendQuery`: the values that
@@ -676,4 +720,32 @@ GTEST_TEST(Settings, WellFormedSettingsStillReadUnderAClampedMemoryLimit)
     ASSERT_EQ(settings.get("max_block_size"), Field(UInt64(4096)));
     ASSERT_EQ(settings.get("totals_auto_threshold"), Field(0.25));
     ASSERT_TRUE(in.eof());
+}
+
+
+GTEST_TEST(Settings, CustomFlaggedDecimalWithOutOfRangeScaleRejected)
+{
+    /// With `STRINGS_WITH_FLAGS`, a built-in setting marked `CUSTOM` is parsed via
+    /// `SettingFieldCustom::parseFromString` -> `Field::restoreFromDump` -> `readQuoted`. An
+    /// exponent-form decimal dump builds a `Decimal` scale that, before the fix, bypassed the binary
+    /// reader's check and reached the decimal text writer (a fixed-size stack buffer) with an
+    /// oversized scale. The scale must be rejected while reading the settings, not formatted later.
+    WriteBufferFromOwnString out;
+    BaseSettingsHelpers::writeString("max_block_size", out);
+    BaseSettingsHelpers::writeFlags(BaseSettingsHelpers::Flags::CUSTOM, out);
+    BaseSettingsHelpers::writeString("Decimal64_'1e-1000'", out);
+    BaseSettingsHelpers::writeString("", out); /// end of settings
+
+    const String wire = out.str();
+    Settings settings;
+    ReadBufferFromString in(wire);
+    try
+    {
+        settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+        FAIL() << "expected ARGUMENT_OUT_OF_BOUND";
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    }
 }
