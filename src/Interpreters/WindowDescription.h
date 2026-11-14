@@ -2,6 +2,7 @@
 
 #include <Common/VectorWithMemoryTracking.h>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
+#include <WindowFunctions/IGeneralWindowFunction.h>
 #include <Core/Field.h>
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
@@ -14,20 +15,21 @@
 namespace DB
 {
 
-class ASTFunction;
-
 class ActionsDAG;
 class IGeneralWindowFunction;
 
 struct WindowFunctionDescription
 {
     std::string column_name;
-    const ASTFunction * function_node = nullptr;
     AggregateFunctionPtr aggregate_function;
+    GeneralWindowFunctionPtr general_function;
     Array function_parameters;
     DataTypes argument_types;
     Names argument_names;
 
+public:
+    String getFunctionName() const;
+    const DataTypePtr & getResultType() const;
     std::string dump() const;
 };
 

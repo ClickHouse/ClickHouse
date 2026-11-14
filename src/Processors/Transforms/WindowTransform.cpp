@@ -137,7 +137,7 @@ WindowTransform::WindowTransform(
         for (size_t function_index = 0; function_index < functions.size(); ++function_index)
         {
             const WindowFunctionDescription & function = functions[function_index];
-            if (auto general = asGeneralWindowFunction(function.aggregate_function))
+            if (auto general = function.general_function ? function.general_function : asGeneralWindowFunction(function.aggregate_function))
                 general_functions.push_back(createGeneralSlot(std::move(general), function_index));
             else
                 aggregate_functions.push_back(createAggregateSlot(function.aggregate_function, params.window_description, function_index));

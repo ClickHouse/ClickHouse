@@ -51,7 +51,7 @@ static Block addWindowFunctionResultColumns(const Block & block,
     {
         ColumnWithTypeAndName column_with_type;
         column_with_type.name = f.column_name;
-        column_with_type.type = f.aggregate_function->getResultType();
+        column_with_type.type = f.getResultType();
         column_with_type.column = column_with_type.type->createColumn();
 
         result.insert(column_with_type);
@@ -273,7 +273,7 @@ static void serializeWindowFunctions(
         for (const auto & argument_name : func.argument_names)
             ctx.writeColumnName(argument_name);
 
-        writeStringBinary(func.aggregate_function->getName(), out);
+        writeStringBinary(func.getFunctionName(), out);
 
         /// Serialize the parameters the planner preserved, not `aggregate_function->getParameters()`:
         /// some parametric aggregates (e.g. `groupArrayMovingSum`, `groupArrayMovingAvg`,

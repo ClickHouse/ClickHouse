@@ -435,7 +435,7 @@ std::optional<WindowAnalysisResult> analyzeWindow(
             {
                 AggregateFunctionProperties properties;
                 auto new_function = AggregateFunctionFactory::instance().get(
-                    window_function.aggregate_function->getName(),
+                    window_function.getFunctionName(),
                     NullsAction::EMPTY,
                     actual_argument_types,
                     window_function.function_parameters,
@@ -450,7 +450,7 @@ std::optional<WindowAnalysisResult> analyzeWindow(
 
     for (auto & window_description : window_descriptions)
         for (auto & window_function : window_description.window_functions)
-            window_functions_additional_columns.emplace_back(nullptr, window_function.aggregate_function->getResultType(), window_function.column_name);
+            window_functions_additional_columns.emplace_back(nullptr, window_function.getResultType(), window_function.column_name);
 
     auto before_window_step = std::make_unique<ActionsChainStep>(before_window_actions,
         true /*use_actions_nodes_as_output_columns*/,
