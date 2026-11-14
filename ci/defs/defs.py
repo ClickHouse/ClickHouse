@@ -61,6 +61,7 @@ NIGHTLY_PERF_PLACEMENT = {
     "skip_index_minmax_set_hits.xml": "1/4",
     "analyzer_large_queries.xml": "2/4",
     "external_sort_hits.xml": "2/4",
+    "iceberg_suite_local_tpcds_sf100.xml": "2/4",
     "parquet_pushdown_long.xml": "2/4",
     "tpch_sf100.xml": "2/4",
     "tpcds_sf100.xml": "3/4",
