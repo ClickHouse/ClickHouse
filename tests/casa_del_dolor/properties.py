@@ -769,7 +769,7 @@ object_storages_properties = {
         ),
         # Never above the lower bound of s3_max_upload_part_size: validateUploadSettings
         # rejects min > max, and rejects a zero min. Never below the 5 MiB minimum part size
-        # of S3 and MinIO either: `CompleteMultipartUpload` of smaller parts fails with
+        # of S3 and SeaweedFS either: `CompleteMultipartUpload` of smaller parts fails with
         # `EntityTooSmall`, so no file above `s3_max_single_part_upload_size` can be written,
         # and the retried metadata writes outlast the shutdown wait.
         "s3_min_upload_part_size": threshold_generator(

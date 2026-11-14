@@ -2,6 +2,7 @@ import base64
 import errno
 import glob
 import http.client
+import io
 import json
 import logging
 import os
@@ -747,6 +748,7 @@ class ClickHouseCluster:
         azurite_default_port=0,
         server_binaries=[],
         with_dolor=False,
+        s3_server="minio",
     ):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -901,7 +903,10 @@ class ClickHouseCluster:
         self.minio_dir = os.path.join(self.instances_dir, "minio")
         self.minio_certs_dir = None  # source for certificates
         self.minio_data_dir = p.join(self.minio_dir, "data")
-        self.minio_host = "minio1"
+        # The S3 server behind `with_minio`: "minio" or "seaweedfs"
+        assert s3_server in ("minio", "seaweedfs"), f"Unknown s3_server {s3_server}"
+        self.s3_server = s3_server
+        self.minio_host = "seaweedfs1" if s3_server == "seaweedfs" else "minio1"
         self.minio_ip = None
         self.minio_bucket = "root"
         self.minio_bucket_2 = "root2"
@@ -2053,14 +2058,17 @@ class ClickHouseCluster:
         env_variables["RESOLVER_LOGS"] = self.resolver_logs_dir
         env_variables["RESOLVER_LOGS_FS"] = "bind"
 
-        self.base_cmd.extend(
-            ["--file", p.join(docker_compose_yml_dir, "docker_compose_minio.yml")]
+        compose_file = p.join(
+            docker_compose_yml_dir,
+            (
+                "docker_compose_seaweedfs.yml"
+                if self.s3_server == "seaweedfs"
+                else "docker_compose_minio.yml"
+            ),
         )
+        self.base_cmd.extend(["--file", compose_file])
         self.base_minio_cmd = self.compose_cmd(
-            "--env-file",
-            instance.env_file,
-            "--file",
-            p.join(docker_compose_yml_dir, "docker_compose_minio.yml"),
+            "--env-file", instance.env_file, "--file", compose_file
         )
         return self.base_minio_cmd
 
@@ -2723,6 +2731,7 @@ class ClickHouseCluster:
 
         # Iceberg/Glue/HMS catalogs use the standard MinIO (minio1) for S3 storage.
         if with_iceberg_catalog or with_glue_catalog or with_hms_catalog:
+            assert self.s3_server == "minio", "The catalog services need s3_server='minio'"
             with_minio = True
 
         if with_minio and not self.with_minio:
@@ -2757,6 +2766,7 @@ class ClickHouseCluster:
             )
 
         if minio_certs_dir is not None:
+            assert self.s3_server == "minio", "TLS for the S3 server needs s3_server='minio'"
             if self.minio_certs_dir is None:
                 self.minio_certs_dir = minio_certs_dir
             else:
@@ -3651,7 +3661,8 @@ class ClickHouseCluster:
 
     def wait_minio_to_start(self, timeout=180, secure=False):
         self.minio_ip = self.get_instance_ip(self.minio_host)
-        self.minio_redirect_ip = self.get_instance_ip(self.minio_redirect_host)
+        if self.s3_server == "minio":
+            self.minio_redirect_ip = self.get_instance_ip(self.minio_redirect_host)
 
         os.environ["SSL_CERT_FILE"] = p.join(
             self.base_dir, self.minio_dir, "certs", "public.crt"
@@ -3690,6 +3701,13 @@ class ClickHouseCluster:
                         minio_client.remove_bucket(bucket)
                     minio_client.make_bucket(bucket)
                     logging.debug("S3 bucket '%s' created", bucket)
+
+                if self.s3_server == "seaweedfs":
+                    # SeaweedFS fails writes until it has allocated its first volume
+                    minio_client.put_object(
+                        self.minio_bucket, "write_probe", io.BytesIO(b"ready"), 5
+                    )
+                    minio_client.remove_object(self.minio_bucket, "write_probe")
 
                 self.minio_client = minio_client
                 return
@@ -7200,7 +7218,7 @@ class ClickHouseInstance:
             depends_on += list(ZOOKEEPER_CONTAINERS)
 
         if self.with_minio:
-            depends_on.append("minio1")
+            depends_on.append(self.cluster.minio_host)
 
         if self.with_azurite:
             depends_on.append("azurite1")

@@ -1,5 +1,6 @@
 import argparse
 import atexit
+import io
 import logging
 import os
 import pathlib
@@ -10,6 +11,9 @@ import tempfile
 import time
 import signal
 import sys
+
+import urllib3
+from minio import Minio
 
 # The sibling modules below are imported by bare name, which relies on Python putting this
 # script's own directory on `sys.path`. Praktika's runner exports `PYTHONSAFEPATH=1`, which
@@ -211,7 +215,7 @@ parser.add_argument(
     "--without-minio",
     action="store_false",
     dest="with_minio",
-    help="Without MinIO integration",
+    help="Without the S3 server",
 )
 parser.add_argument(
     "--with-azurite", action="store_true", help="With Azure integration"
@@ -499,6 +503,39 @@ def stop_distributed_sends(server) -> None:
     logger.warning(f"Could not stop Distributed sends on {server.name}: {last_error}")
 
 
+S3_RESTART_PROBE = "dolor/restart_probe"
+S3_RESTART_WAIT_SECONDS = 120
+
+
+def wait_s3_server_serving() -> bool:
+    """Wait until the S3 server reads the object written before its restart and accepts a write."""
+    start = time.monotonic()
+    while True:
+        try:
+            response = s3_probe_client.get_object(
+                cluster.minio_bucket, S3_RESTART_PROBE
+            )
+            try:
+                response.read()
+            finally:
+                response.close()
+                response.release_conn()
+            s3_probe_client.put_object(
+                cluster.minio_bucket, S3_RESTART_PROBE, io.BytesIO(b"ready"), 5
+            )
+            logger.info(
+                f"The S3 server serves again {time.monotonic() - start:.1f}s after its start"
+            )
+            return True
+        except Exception as ex:
+            if time.monotonic() - start >= S3_RESTART_WAIT_SECONDS:
+                logger.error(
+                    f"The S3 server does not serve {S3_RESTART_WAIT_SECONDS}s after its start: {ex}"
+                )
+                return False
+            time.sleep(1)
+
+
 # Set seed first
 seed = args.seed
 if seed == 0:
@@ -631,6 +668,12 @@ cluster = ClickHouseCluster(
     client_bin_path=args.client_binary,
     server_binaries=sorted_binaries,
     with_dolor=True,
+    # Spark and the Iceberg REST, Glue and Hive catalog services are set up against MinIO (`minio1`)
+    s3_server=(
+        "minio"
+        if args.with_spark or args.with_rest or args.with_glue or args.with_hms
+        else "seaweedfs"
+    ),
 )
 
 # Set environment variables such as locales and timezones
@@ -742,6 +785,19 @@ for i, nservers in enumerate(node_distributed_cache_servers):
 # Uploaders for object storage
 if args.with_minio:
     prepare_s3_bucket(cluster)
+    # Bounded, so that a server that never answers cannot outlast S3_RESTART_WAIT_SECONDS
+    s3_probe_client = Minio(
+        f"{cluster.minio_ip}:{cluster.minio_port}",
+        access_key=minio_access_key,
+        secret_key=minio_secret_key,
+        secure=False,
+        http_client=urllib3.PoolManager(
+            timeout=urllib3.Timeout(connect=5, read=10), retries=False
+        ),
+    )
+    s3_probe_client.put_object(
+        cluster.minio_bucket, S3_RESTART_PROBE, io.BytesIO(b"ready"), 5
+    )
     cluster.default_s3_uploader = S3Uploader(cluster.minio_client, cluster.minio_bucket)
 if args.with_azurite:
     cluster.blob_service_client = cluster.blob_service_client
@@ -963,7 +1019,7 @@ while all_running and (not reached_limit):
         choosen_instances = []
         available_options = {
             "zookeeper": list(ZOOKEEPER_CONTAINERS),
-            "minio": ["minio1"],
+            "minio": [cluster.minio_host],
             "nginx": ["nginx"],
             "azurite": ["azurite1"],
             "postgres": ["postgres1"],
@@ -987,6 +1043,10 @@ while all_running and (not reached_limit):
         )
         time.sleep(random.randint(integration_lower_bound, integration_upper_bound))
         cluster.process_integration_nodes(next_pick, choosen_instances, "start")
+        if next_pick == "minio" and not wait_s3_server_serving():
+            logger.info("Ending the run after the failed restart of the S3 server")
+            good_exit = False
+            all_running = False
     if all_running:
         tables_oracle.collect_table_hash_after_shutdown(cluster, logger, dump_table)
 
