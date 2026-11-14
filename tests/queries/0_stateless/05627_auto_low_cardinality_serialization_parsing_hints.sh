@@ -24,7 +24,7 @@ ${CLICKHOUSE_CLIENT} --query "
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES t_auto_lc_hints"
 
-INSERT="${CLICKHOUSE_CLIENT} --enable_parsing_to_custom_serialization 1 --input_format_parallel_parsing 0 --query"
+INSERT="${CLICKHOUSE_CLIENT} --enable_parsing_to_custom_serialization 1 --materialize_statistics_on_insert 1 --input_format_parallel_parsing 0 --query"
 
 printf '1\ta\taaaa\n2\tb\tbbbb\n' | ${INSERT} "INSERT INTO t_auto_lc_hints FORMAT TSV"
 ${CLICKHOUSE_CLIENT} --query "SELECT number + 10, toString(number), leftPad(toString(number % 10000), 4, '0') FROM numbers(20000) FORMAT TSV" \
