@@ -1309,6 +1309,14 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ],
     )
+    # PRs run the azure configuration as one targeted job (the changed tests, the tests covering
+    # the changed lines and the tests that failed in the PR before) instead of the full suite:
+    # over 30 days its PR failure rate (1.55% parallel, 0.76% sequential) was the same as on
+    # master (1.79%, 0.61%), so the full run found nothing specific to the PRs, and at 85-100
+    # minutes it was the last job of a sixth of the PR runs. Master keeps the full suite.
+    functional_tests_azure_targeted_pr_jobs = targeted_variants(
+        functional_tests_jobs_azure, allow_failure=True
+    )
     # Per-arch Bugfix Validation Check (integration tests). See the rationale
     # and status-model comment above for `bugfix_validation_ft_pr_jobs`. Each
     # per-arch variant has `allow_failure=True` so a genuine `ERROR` doesn't
@@ -1737,7 +1745,9 @@ class JobConfigs:
                     runs_on=RunnerLabels.ARM_MEDIUM,
                     requires=[ArtifactNames.CH_ARM_BINARY],
                 )
-                for total_batches in (4,)
+                # With 4 batches a batch took about 93 minutes and was the last job of a third
+                # of the PR runs.
+                for total_batches in (5,)
                 for batch in range(1, total_batches + 1)
             ],
         )

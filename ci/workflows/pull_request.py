@@ -176,7 +176,7 @@ workflow = Workflow.Config(
         ],
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.functional_tests_jobs_azure
+            for job in JobConfigs.functional_tests_azure_targeted_pr_jobs
         ],
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
@@ -263,8 +263,6 @@ workflow = Workflow.Config(
         ),
         # TODO: stabilize and remove set_allow_failure
         JobConfigs.build_profile_diff_job.set_allow_failure(),
-        JobConfigs.sqllogic_test_master_job.set_run_after(CORE_BLOCKING_JOB_NAMES),
-        JobConfigs.sqlstorm_test_job.set_run_after(CORE_BLOCKING_JOB_NAMES),
         JobConfigs.docs_examples_job.set_run_after(CORE_BLOCKING_JOB_NAMES),
         # Keeper stress (PR): 3 no-fault scenarios (prod-mix, read-multi, write-multi),
         # default backend only, 15 min each. Runs when src/Coordination or stress test files change.
