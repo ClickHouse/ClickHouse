@@ -92,6 +92,10 @@ protected:
     StoragePtr getTableUnlocked(const String & table_name) const TSA_REQUIRES(mutex);
     StoragePtr tryGetTableNoWait(const String & table_name) const;
 
+    /// Row total for callers already holding `mutex`. Database engines that implement a
+    /// row limit expose this through their own `getCurrentRowCount` override.
+    UInt64 getCurrentRowCountUnlocked() const TSA_REQUIRES(mutex);
+
     /// If `it` holds a lazily loaded table (see the `lazy_load_tables` database setting) that has
     /// already been loaded and is not held by anybody else, put the storage it stands for in its
     /// place and return that storage; otherwise return what is already there.

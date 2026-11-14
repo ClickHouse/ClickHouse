@@ -1063,10 +1063,11 @@ private:
         const MergeTreeData & src_data,
         const String & partition_id,
         const zkutil::ZooKeeperPtr & zookeeper,
-        bool replace,
+        bool requested_replace,
         const bool & zero_copy_enabled,
         const bool & always_use_copy_instead_of_hardlinks,
-        const ContextPtr & query_context);
+        const ContextPtr & query_context,
+        const std::optional<std::exception_ptr> & rows_limit_verdict);
 };
 
 String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info);
