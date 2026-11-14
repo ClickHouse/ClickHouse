@@ -113,14 +113,18 @@ Chunk KafkaSource::generateImpl()
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
     EmptyReadBuffer empty_buf;
-    auto input_format = FormatFactory::instance().getInput(
-        storage.getFormatName(),
-        empty_buf,
-        non_virtual_header,
-        context,
-        max_block_size,
-        std::nullopt,
-        FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
+    auto parser_shared_resources = FormatParserSharedResources::singleThreaded(context->getSettingsRef());
+    auto create_format = [&]
+    {
+        return FormatFactory::instance().getInput(
+            storage.getFormatName(),
+            empty_buf,
+            non_virtual_header,
+            context,
+            max_block_size,
+            std::nullopt,
+            parser_shared_resources);
+    };
 
     std::optional<std::string> exception_message;
     size_t total_rows = 0;
@@ -171,7 +175,7 @@ Chunk KafkaSource::generateImpl()
         }
     };
 
-    StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
+    StreamingFormatExecutor executor(non_virtual_header, std::move(create_format), std::move(on_error));
 
     const auto storage_id = storage.getStorageID();
     const Field table_name = storage_id.getTableName();
