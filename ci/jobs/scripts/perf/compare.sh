@@ -1481,6 +1481,7 @@ create view profile_counters as
     group by test, query_index
     ;
 
+-- Keep the columns in sync with read_slower_queries in ci/jobs/performance_tests.py.
 create table changed_perf_report engine File(TSV, 'report/changed-perf.tsv')
     as with
         -- server_time is sometimes reported as zero (if it's less than 1 ms),
