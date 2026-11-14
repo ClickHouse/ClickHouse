@@ -75,6 +75,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NO_BASE_BACKUP;
     extern const int WRONG_BASE_BACKUP;
+    extern const int BACKUP_ENTRY_ALREADY_EXISTS;
     extern const int BACKUP_ENTRY_NOT_FOUND;
     extern const int BACKUP_IS_EMPTY;
     extern const int CANNOT_RESTORE_TO_NONENCRYPTED_DISK;
@@ -1704,6 +1705,52 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
 }
 
 
+void BackupImpl::checkDataFileNamesDoNotCollideIgnoringCase()
+{
+    /// The checksum generator names data files in lowercase hex.
+    if (params.deduplicate_files && (data_file_name_generator == BackupDataFileNameGeneratorType::Checksum))
+        return;
+
+    if (!writer->isCaseInsensitive())
+        return;
+
+    std::vector<std::string_view> names;
+    coordination->forEachFileInfoForAllHosts([&](const BackupFileInfo & info)
+    {
+        /// Files with an object key are not written to the destination.
+        if (!info.object_key.empty())
+            return;
+        if (!info.data_file_name.empty())
+            names.emplace_back(info.data_file_name);
+        for (const auto & data_file_copy : info.data_file_copies)
+            names.emplace_back(data_file_copy);
+    });
+
+    auto less_ignoring_case = [](std::string_view lhs, std::string_view rhs)
+    {
+        return std::lexicographical_compare(
+            lhs.begin(), lhs.end(), rhs.begin(), rhs.end(), [](char x, char y) { return toLowerASCII(x) < toLowerASCII(y); });
+    };
+    std::sort(names.begin(), names.end(), less_ignoring_case);
+
+    /// Equal names belong to deduplicated files, which share one data file.
+    auto it = std::adjacent_find(
+        names.begin(), names.end(), [](std::string_view lhs, std::string_view rhs) { return (lhs != rhs) && equalsCaseInsensitive(lhs, rhs); });
+    if (it == names.end())
+        return;
+
+    throw Exception(
+        ErrorCodes::BACKUP_ENTRY_ALREADY_EXISTS,
+        "Cannot write backup {} to a case-insensitive destination: its files {} and {} differ only in case, so one would overwrite "
+        "the other. Use {}",
+        backup_name_for_logging,
+        quoteString(*it),
+        quoteString(*std::next(it)),
+        params.deduplicate_files ? "the setting data_file_name_generator = 'checksum', an archive, or a case-sensitive destination"
+                                 : "an archive or a case-sensitive destination");
+}
+
+
 void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
 {
     /// we don't write anything for reference files
@@ -1737,6 +1784,9 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
         LOG_TRACE(log, "Writing backup for file {} from {}: skipped, {}", info.data_file_name, src_file_desc, !info.size ? "empty" : "base backup has it");
         return;
     }
+
+    if (!use_archive)
+        callOnce(data_file_names_check_once, [this] { checkDataFileNamesDoNotCollideIgnoringCase(); });
 
     if (!coordination->startWritingFile(info.data_file_index))
     {
