@@ -1,0 +1,20 @@
+<clickhouse>
+    <total_memory_tracker_sample_probability>0.015625</total_memory_tracker_sample_probability>
+    <logger>
+        <level>trace</level>
+    </logger>
+    <trace_log replace="replace">
+        <database>system</database>
+        <table>trace_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>2000</flush_interval_milliseconds>
+        <symbolize>0</symbolize>
+    </trace_log>
+    <text_log replace="replace">
+        <database>system</database>
+        <table>text_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>2000</flush_interval_milliseconds>
+        <level>trace</level>
+    </text_log>
+</clickhouse>

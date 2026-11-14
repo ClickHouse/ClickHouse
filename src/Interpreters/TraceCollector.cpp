@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/TraceLog.h>
+#include <Common/AllocationTrace.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/Exception.h>
@@ -160,6 +161,8 @@ TraceCollector::~TraceCollector()
 
 void TraceCollector::run()
 {
+    MemorySamplingBlockerInThread block_memory_samples;
+
     [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
 
     DB::setThreadName(ThreadName::TRACE_COLLECTOR);

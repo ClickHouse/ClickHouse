@@ -1,5 +1,6 @@
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/SystemLogSettingsFromConfig.h>
+#include <Common/AllocationTrace.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Daemon/BaseDaemon.h>
@@ -872,6 +873,8 @@ void SystemLog<LogElement>::shutdown()
 template <typename LogElement>
 void SystemLog<LogElement>::savingThreadFunction()
 {
+    MemorySamplingBlockerInThread block_memory_samples(std::is_same_v<LogElement, TraceLogElement>);
+
     DB::setThreadName(ThreadName::SYSTEM_LOG_FLUSH);
 
     while (true)
