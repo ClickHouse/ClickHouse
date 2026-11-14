@@ -1489,6 +1489,15 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     }
                 }
 
+                if (use_standard_null_semantics && right_argument_is_array && left_argument_type && right_argument_type)
+                {
+                    const auto * left_array_type = typeid_cast<const DataTypeArray *>(removeNullable(left_argument_type).get());
+                    const auto * right_array_type = typeid_cast<const DataTypeArray *>(removeNullable(right_argument_type).get());
+                    if (left_array_type && right_array_type
+                        && left_array_type->getNumberOfDimensions() == right_array_type->getNumberOfDimensions())
+                        right_argument_is_array = false;
+                }
+
                 ASTPtr replacement;
                 const bool right_argument_is_scalar = !right_argument_is_array
                     && !right_argument_tuple_function_is_set && !isTupleType(right_argument_type);
@@ -1639,7 +1648,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     const bool compare_complex_sources = use_standard_null_semantics && left_is_complex
                         && element_types_known && !element_types.empty()
                         && std::any_of(element_types.begin(), element_types.end(), needs_complex_candidate_rewrite);
-                    const bool compare_complex_array_sources = use_standard_null_semantics && left_is_complex
+                    const bool compare_complex_array_sources = use_standard_null_semantics && right_argument_is_array && left_is_complex
                         && right_array_type && needs_complex_candidate_rewrite(right_array_type->getNestedType());
                     if (compare_numeric_array_sources)
                         replacement = makeArrayCandidateInReplacement(

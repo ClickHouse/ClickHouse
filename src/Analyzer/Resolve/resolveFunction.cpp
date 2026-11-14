@@ -1355,6 +1355,15 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
 
         QueryTreeNodePtr match_result;
         if (source_array_type
+            && (isArray(removeNullable(removeLowCardinality(element_arg->getResultType())))
+                || isMap(removeNullable(removeLowCardinality(element_arg->getResultType()))))
+            && isIncompatibleNullableScalarForComplexIn(source_array_type->getNestedType()))
+        {
+            /// An incompatible scalar cannot equal a compound key. Keep the original
+            /// source array for the nullable-member check below.
+            match_result = std::make_shared<ConstantNode>(Field{0u});
+        }
+        else if (source_array_type
             && isMap(removeNullable(removeLowCardinality(element_arg->getResultType())))
             && isStringOrFixedString(removeNullable(removeLowCardinality(source_array_type->getNestedType()))))
         {
@@ -1395,7 +1404,8 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
             has_fn->getArguments().getNodes() = {array_arg->clone(), element_arg};
             match_result = std::move(has_fn);
         }
-        resolveFunction(match_result, scope);
+        if (match_result->as<FunctionNode>())
+            resolveFunction(match_result, scope);
 
         if (extra_match_predicate)
         {
