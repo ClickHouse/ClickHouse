@@ -1,0 +1,78 @@
+issue
+col2	col2_1
+46	2
+reversed order
+col2	col2_1
+2	46
+same type, different constants
+col2	col2_1
+46	2
+alias of another column
+col2	col2_1
+1	a
+alias of an expression of the column itself
+x	x_1
+2	1
+wrapped
+col2	col2_1
+46	2
+92	3
+remote
+col2	col2_1
+46	2
+col2	col2_1
+46	2
+col2	col2_1
+46	2
+col2	col2_1
+46	2
+LEFT JOIN USING, the alias names the other side
+k	k_1
+0	1
+k	k_1
+0	1
+FULL JOIN USING
+k	k_1
+0	2
+1	1
+k	k_1
+0	2
+1	1
+self-join of one table
+k	k_1
+0	2
+1	1
+3	3
+k	k_1
+0	2
+1	1
+3	3
+self-join of one table, Nested prefix
+n	n_1
+[]	[(2)]
+[(1)]	[(1)]
+[(3)]	[(3)]
+n	n_1
+[]	[(2)]
+[(1)]	[(1)]
+[(3)]	[(3)]
+INTERPOLATE of a renamed column
+k	x	x_1
+0	1	0
+1	0	10
+2	2	1
+k	x	x_1	x_2
+0	1	0	0
+1	0	10	10
+2	2	1	1
+k	number	number_1
+0	1	0
+1	0	10
+2	2	1
+the same column twice keeps its name
+col2	col2
+2	2
+prefer_column_name_to_alias = 0 reads the alias
+col2	col2
+46	46
+conflicting aliases are still an error
