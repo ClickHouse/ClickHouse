@@ -1281,6 +1281,17 @@ size_t QueryResultCache::maxSizeInBytes() const
     return cache.maxSizeInBytes();
 }
 
+size_t QueryResultCache::maxCount() const
+{
+    return cache.maxCount();
+}
+
+size_t QueryResultCache::maxEntrySizeInBytes() const
+{
+    std::lock_guard lock(mutex);
+    return max_entry_size_in_bytes;
+}
+
 size_t QueryResultCache::sizeInBytes() const
 {
     return cache.sizeInBytes();

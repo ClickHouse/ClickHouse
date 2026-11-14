@@ -1,0 +1,7 @@
+parquet_metadata_cache_max_entries	Yes
+query_cache.max_entries	Yes
+query_cache.max_entry_size_in_bytes	Yes
+text_index_header_cache_max_entries	Yes
+text_index_postings_cache_max_entries	Yes
+text_index_tokens_cache_max_entries	Yes
+vector_similarity_index_cache_max_entries	Yes

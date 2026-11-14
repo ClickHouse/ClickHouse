@@ -3920,10 +3920,16 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"statistics_cache_size", {std::to_string(context->getStatisticsCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"columns_cache_size", {std::to_string(context->getColumnsCache() ? context->getColumnsCache()->configuredMaxSizeInBytes() : 0), ChangeableWithoutRestart::Yes}},
             {"vector_similarity_index_cache_size", {std::to_string(context->getVectorSimilarityIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"vector_similarity_index_cache_max_entries", {std::to_string(context->getVectorSimilarityIndexCache()->maxCount()), ChangeableWithoutRestart::Yes}},
             {"text_index_tokens_cache_size", {std::to_string(context->getTextIndexTokensCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"text_index_tokens_cache_max_entries", {std::to_string(context->getTextIndexTokensCache()->maxCount()), ChangeableWithoutRestart::Yes}},
             {"text_index_header_cache_size", {std::to_string(context->getTextIndexHeaderCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"text_index_header_cache_max_entries", {std::to_string(context->getTextIndexHeaderCache()->maxCount()), ChangeableWithoutRestart::Yes}},
             {"text_index_postings_cache_size", {std::to_string(context->getTextIndexPostingsCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"text_index_postings_cache_max_entries", {std::to_string(context->getTextIndexPostingsCache()->maxCount()), ChangeableWithoutRestart::Yes}},
             {"query_cache_max_size_in_bytes", {std::to_string(context->getQueryResultCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"query_cache_max_entries", {std::to_string(context->getQueryResultCache()->maxCount()), ChangeableWithoutRestart::Yes}},
+            {"query_cache_max_entry_size_in_bytes", {std::to_string(context->getQueryResultCache()->maxEntrySizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"point_in_polygon_cache_size", {std::to_string(CurrentMetrics::get(CurrentMetrics::PointInPolygonCacheSizeLimit)), ChangeableWithoutRestart::Yes}},
             {"unique_key_bitmap_cache_size_bytes",
                 {std::to_string(context->getDeleteBitmapCache() ? context->getDeleteBitmapCache()->maxSizeInBytes() : 0), ChangeableWithoutRestart::Yes}},
@@ -4083,9 +4089,14 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
 #endif
 #if USE_PARQUET
     if (context->getParquetMetadataCache())
+    {
         changeable_settings.insert(
             {"parquet_metadata_cache_size",
              {std::to_string(context->getParquetMetadataCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert(
+            {"parquet_metadata_cache_max_entries",
+             {std::to_string(context->getParquetMetadataCache()->maxCount()), ChangeableWithoutRestart::Yes}});
+    }
 #endif
 
     /// The seccomp filter is installed once at startup and cannot be changed afterwards, so a reloaded
