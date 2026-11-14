@@ -57,33 +57,38 @@ namespace
     public:
         AccumulatedBlockReader(TemporaryBlockStreamReaderHolder reader_,
                                std::mutex & mutex_,
-                               size_t result_block_size_ = 0,
+                               size_t min_block_rows_,
+                               size_t min_block_bytes_,
                                bool inject_read_failure_ = false)
             : reader(std::move(reader_))
             , mutex(mutex_)
-            , result_block_size(result_block_size_)
+            , min_block_rows(min_block_rows_)
+            , min_block_bytes(min_block_bytes_)
             , inject_read_failure(inject_read_failure_)
         {
             if (!reader)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Reader is nullptr");
         }
 
+        /// A bucket file holds every input block split between all buckets, so a read merges
+        /// the parts back up to the join's input block size. The copy is made outside the lock.
         Block read()
         {
-            std::lock_guard lock(mutex);
+            std::unique_lock lock(mutex);
 
             if (eof)
                 return {};
 
             Blocks blocks;
             size_t rows_read = 0;
+            size_t bytes_read = 0;
             // One AccumulatedBlockReader is shared between concurrent DelayedJoinedBlocksWorkerTransform
             // threads. If reader->read() throws (e.g. a mid-read MEMORY_LIMIT_EXCEEDED cancels the
             // underlying ReadBuffer), mark the reader finished before propagating so a sibling worker
             // does not re-enter read() on the now-canceled buffer (which trips chassert(!isCanceled())).
             try
             {
-                do
+                while (true)
                 {
                     // Only the left (delayed) reader arms this, so the failure can only be injected
                     // into the reader that several workers share. Canceling the buffer before
@@ -96,14 +101,19 @@ namespace
                         });
 
                     Block block = reader->read();
-                    rows_read += block.rows();
                     if (block.empty())
                     {
                         eof = true;
-                        return concatenateBlocks(blocks);
+                        break;
                     }
+                    rows_read += block.rows();
+                    bytes_read += block.bytes();
                     blocks.push_back(std::move(block));
-                } while (rows_read < result_block_size);
+
+                    if ((!min_block_rows && !min_block_bytes) || (min_block_rows && rows_read >= min_block_rows)
+                        || (min_block_bytes && bytes_read >= min_block_bytes))
+                        break;
+                }
             }
             catch (...)
             {
@@ -111,6 +121,7 @@ namespace
                 throw;
             }
 
+            lock.unlock();
             return concatenateBlocks(blocks);
         }
 
@@ -118,7 +129,8 @@ namespace
         TemporaryBlockStreamReaderHolder reader;
         std::mutex & mutex;
 
-        const size_t result_block_size;
+        const size_t min_block_rows;
+        const size_t min_block_bytes;
         const bool inject_read_failure;
         bool eof = false;
     };
@@ -194,7 +206,7 @@ public:
 
     bool empty() const { return is_empty.load(); }
 
-    AccumulatedBlockReader startJoining()
+    AccumulatedBlockReader startJoining(size_t min_block_rows, size_t min_block_bytes)
     {
         LOG_TRACE(log, "Joining file bucket {}", idx);
         {
@@ -203,13 +215,14 @@ public:
 
             state = State::JOINING_BLOCKS;
         }
-        return AccumulatedBlockReader(right_file.getReadStream(), right_file_mutex);
+        return AccumulatedBlockReader(right_file.getReadStream(), right_file_mutex, min_block_rows, min_block_bytes);
     }
 
-    AccumulatedBlockReader getLeftTableReader()
+    AccumulatedBlockReader getLeftTableReader(size_t min_block_rows, size_t min_block_bytes)
     {
         ensureState(State::JOINING_BLOCKS);
-        return AccumulatedBlockReader(left_file.getReadStream(), left_file_mutex, 0, /*inject_read_failure_=*/true);
+        return AccumulatedBlockReader(
+            left_file.getReadStream(), left_file_mutex, min_block_rows, min_block_bytes, /*inject_read_failure_=*/true);
     }
 
     /// Spilled bytes for this bucket. Only called after the join
@@ -350,7 +363,7 @@ void GraceHashJoin::initBuckets()
     LOG_TRACE(log, "Initialize {} bucket{}", buckets.size(), buckets.size() > 1 ? "s" : "");
 
     current_bucket = buckets.front().get();
-    current_bucket->startJoining();
+    current_bucket->startJoining(table_join->minJoinedBlockRows(), table_join->minJoinedBlockBytes());
 }
 
 bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
@@ -661,11 +674,13 @@ public:
         Buckets buckets_,
         InMemoryJoinPtr hash_join_,
         const Names & left_key_names_,
-        const Names & right_key_names_)
+        const Names & right_key_names_,
+        size_t min_block_rows,
+        size_t min_block_bytes)
         : current_bucket(current_bucket_)
         , buckets(std::move(buckets_))
         , hash_join(std::move(hash_join_))
-        , left_reader(buckets[current_bucket]->getLeftTableReader())
+        , left_reader(buckets[current_bucket]->getLeftTableReader(min_block_rows, min_block_bytes))
         , left_key_names(left_key_names_)
         , right_key_names(right_key_names_)
     {
@@ -820,7 +835,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
         }
 
         hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_idx), prev_keys_num);
-        auto right_reader = current_bucket->startJoining();
+        auto right_reader = current_bucket->startJoining(table_join->minJoinedBlockRows(), table_join->minJoinedBlockBytes());
         size_t num_rows = 0; /// count rows that were written and rehashed
         for (Block block = right_reader.read(); !block.empty(); block = right_reader.read())
         {
@@ -838,7 +853,9 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
         LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows, {}",
             bucket_idx, hash_join->getTotalRowCount(), num_rows, ReadableSize(hash_join->getTotalByteCount()));
 
-        return std::make_unique<DelayedBlocks>(current_bucket->idx, buckets, hash_join, left_key_names, right_key_names);
+        return std::make_unique<DelayedBlocks>(
+            current_bucket->idx, buckets, hash_join, left_key_names, right_key_names,
+            table_join->minJoinedBlockRows(), table_join->minJoinedBlockBytes());
     }
 
     LOG_TRACE(log, "Finished loading all {} buckets", buckets.size());
