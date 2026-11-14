@@ -168,7 +168,8 @@ TEST(TextIndexPostingsDeserializationTest, RawPostingsRoundTrip)
 {
     for (const auto & row_ids : std::vector<std::vector<UInt32>>{{7}, {0, 1, 2}, {0, 1048576, std::numeric_limits<UInt32>::max()}})
     {
-        ReadBufferFromString in(serializeEmbeddedTokenInfo(row_ids));
+        const String serialized = serializeEmbeddedTokenInfo(row_ids);
+        ReadBufferFromString in(serialized);
         auto info = TextIndexSerialization::deserializeTokenInfo(in, /*with_postings=*/ true);
         EXPECT_EQ(std::vector<UInt32>(info.embedded_postings.begin(), info.embedded_postings.end()), row_ids);
     }
