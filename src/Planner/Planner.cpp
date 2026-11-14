@@ -108,6 +108,7 @@
 #include <Planner/PlannerWindowFunctions.h>
 #include <Planner/Utils.h>
 #include <base/types.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace ProfileEvents
@@ -807,7 +808,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set]
                 && aggregation_analysis_result.aggregation_keys.empty() && aggregation_analysis_result.group_by_with_constant_keys),
         tmp_data_scope,
-        getEffectiveMaxThreads(settings),
+        getEffectiveMaxThreads(*query_context),
         settings[Setting::min_free_disk_space_for_temporary_data],
         settings[Setting::compile_aggregate_expressions],
         settings[Setting::min_count_to_compile_aggregate_expression],
@@ -1019,7 +1020,7 @@ void addAggregationStep(QueryPlan & query_plan,
         sort_description_for_merging = group_by_sort_description;
     }
 
-    const size_t effective_max_threads = getEffectiveMaxThreads(settings);
+    const size_t effective_max_threads = getEffectiveMaxThreads(*planner_context->getQueryContext());
     auto merge_threads = effective_max_threads;
     auto temporary_data_merge_threads = settings[Setting::aggregation_memory_efficient_merge_threads]
         ? static_cast<size_t>(settings[Setting::aggregation_memory_efficient_merge_threads])
@@ -1175,7 +1176,7 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
 
     /// For count() without parameters try to use just one thread
     /// Typically this will either be a trivial count or a really small number of states
-    size_t max_threads = getEffectiveMaxThreads(settings);
+    size_t max_threads = getEffectiveMaxThreads(*query_context);
     if (keys.empty() && aggregation_analysis_result.aggregate_descriptions.size() == 1
         && aggregation_analysis_result.aggregate_descriptions[0].function->getName() == String{"count"}
         && aggregation_analysis_result.grouping_sets_parameters_list.empty())
@@ -2069,7 +2070,7 @@ void addWindowSteps(QueryPlan & query_plan,
         bool need_sort = !window_description.full_sort_description.empty();
         if (need_sort && i != 0)
         {
-            const size_t effective_max_threads = getEffectiveMaxThreads(settings);
+            const size_t effective_max_threads = getEffectiveMaxThreads(*query_context);
             need_sort = !sortDescriptionIsPrefix(window_description.full_sort_description, window_descriptions[i - 1].full_sort_description)
                 || (effective_max_threads != 1 && window_description.partition_by.size() != window_descriptions[i - 1].partition_by.size());
         }
@@ -2481,15 +2482,10 @@ void addReadFromQueryResultCacheStep(
     std::unique_ptr<SourceFromChunks> source_totals,
     std::unique_ptr<SourceFromChunks> source_extremes)
 {
-    auto pipe = Pipe();
-    if (source)
-        pipe.addSource(std::shared_ptr<SourceFromChunks>(source.release()));
-    if (source_totals)
-        pipe.addTotalsSource(std::shared_ptr<SourceFromChunks>(source_totals.release()));
-    if (source_extremes)
-        pipe.addExtremesSource(std::shared_ptr<SourceFromChunks>(source_extremes.release()));
-
-    auto read_from_query_result_cache_step = std::make_unique<ReadFromQueryResultCacheStep>(std::move(pipe));
+    auto read_from_query_result_cache_step = std::make_unique<ReadFromQueryResultCacheStep>(
+        std::shared_ptr<SourceFromChunks>(std::move(source)),
+        std::shared_ptr<SourceFromChunks>(std::move(source_totals)),
+        std::shared_ptr<SourceFromChunks>(std::move(source_extremes)));
     query_plan.addStep(std::move(read_from_query_result_cache_step));
 }
 
@@ -2888,7 +2884,7 @@ void Planner::buildPlanForUnionNode()
     const auto & union_queries_nodes = union_node.getQueries().getNodes();
     size_t queries_size = union_queries_nodes.size();
 
-    std::vector<std::unique_ptr<QueryPlan>> query_plans;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> query_plans;
     query_plans.reserve(queries_size);
 
     SharedHeaders query_plans_headers;
@@ -2913,7 +2909,7 @@ void Planner::buildPlanForUnionNode()
     Block union_common_header = buildCommonHeaderForUnion(
         query_plans_headers, union_mode, union_node.getContext()->getSettingsRef()[Setting::use_variant_as_common_type]);
     addConvertingToCommonHeaderActionsIfNeeded(query_plans, union_common_header, query_plans_headers, query_context);
-    auto max_threads = getEffectiveMaxThreads(settings);
+    auto max_threads = getEffectiveMaxThreads(*query_context);
 
     bool is_distinct = union_mode == SelectUnionMode::UNION_DISTINCT || union_mode == SelectUnionMode::INTERSECT_DISTINCT
         || union_mode == SelectUnionMode::EXCEPT_DISTINCT;

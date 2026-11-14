@@ -27,6 +27,7 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/FilesystemIsolation.h>
 #include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 
@@ -254,6 +255,16 @@ namespace
         DriverCreateResult result;
         if (!(query.is_attach && config_exists))
         {
+            /// The driver generates the program of the function in its working directory in
+            /// `dynamic_user_defined_executable_functions_path`, which is writable and therefore not executable
+            /// (`noexec`) in the isolated filesystem, so the function could be created but never run. This covers
+            /// `CREATE` and an `ATTACH` without the generated configuration; an `ATTACH` of the existing one is allowed.
+            if (const auto isolation = getFilesystemIsolationStatus(); isolation && isolation->isolated)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Drivers for executable user-defined functions are not supported with the server setting `filesystem_isolation`: "
+                    "the programs they generate in `dynamic_user_defined_executable_functions_path` cannot be executed in the "
+                    "isolated filesystem, where every writable path is mounted `noexec`");
+
             /// The previous working directory is only read so it can be cleaned up after a successful
             /// replace below. Reading it must be best-effort: a missing or invalid (corrupted) `.workdir`
             /// sidecar must not abort the create. This is exactly the corrupted-state case that startup

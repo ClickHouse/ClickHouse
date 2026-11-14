@@ -1,0 +1,16 @@
+<clickhouse>
+    <!-- The tests run as root in a privileged container, where the server can always isolate its filesystem,
+         so a failure to do it is a failure of the tests. -->
+    <filesystem_isolation>enforce</filesystem_isolation>
+    <!-- Executable dictionaries and user defined functions in the tests run shell commands, `awk` and scripts. -->
+    <filesystem_isolation_paths>
+        <read_only>/bin</read_only>
+        <read_only>/sbin</read_only>
+        <read_only>/lib</read_only>
+        <read_only>/lib32</read_only>
+        <read_only>/lib64</read_only>
+        <read_only>/libx32</read_only>
+        <read_only>/usr</read_only>
+        <read_only>/etc</read_only>
+    </filesystem_isolation_paths>
+</clickhouse>

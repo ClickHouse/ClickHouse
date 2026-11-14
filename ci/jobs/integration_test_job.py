@@ -140,7 +140,9 @@ MEMCG_OOM_OWNER = re.compile(rb"oom_memcg=([^,\s]+)")
 # leaves from a breach OF one. The kernel always prints them adjacent and in this order.
 MEMCG_OOM_KILL = re.compile(rb"oom_memcg=([^,\s]+),task_memcg=([^,\s]+)")
 
-MAX_CPUS_PER_WORKER = 5
+# 16-vCPU runners with a 48 GiB nested budget run 4 workers (12 GiB each): with 5 CPUs per
+# worker they ran 3 and left a fourth worker's memory unused.
+MAX_CPUS_PER_WORKER = 4
 MAX_MEM_PER_WORKER = 11
 # Flaky checks run with --dist=each, so every worker runs the full set
 # of changed modules concurrently (each with its own Docker cluster) instead of
@@ -2087,7 +2089,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
         )
         # Auto-detect available LLVM profdata tool
-        for ver in ["22", "21", "20", "18", "19", "17", "16", ""]:
+        for ver in ["23", "22", "21", "20", "18", "19", "17", "16", ""]:
             cmd = f"llvm-profdata{'-' + ver if ver else ''}"
             if Shell.check(f"command -v {cmd}", verbose=False):
                 llvm_profdata_cmd = cmd

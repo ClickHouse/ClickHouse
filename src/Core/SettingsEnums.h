@@ -2,6 +2,7 @@
 
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Common/AsynchronousMetricsKeyValuesMode.h>
+#include <Common/FilesystemIsolation.h>
 #include <Common/SeccompFilter.h>
 #include <Core/FileCachePolicy.h>
 #include <Core/Joins.h>
@@ -487,6 +488,8 @@ DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
 DECLARE_SETTING_ENUM(AsynchronousMetricsKeyValuesMode)
 
 DECLARE_SETTING_ENUM(SeccompMode)
+
+DECLARE_SETTING_ENUM(FilesystemIsolationMode)
 
 DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 

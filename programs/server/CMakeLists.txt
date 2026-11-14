@@ -1,4 +1,5 @@
 set(CLICKHOUSE_SERVER_SOURCES
+    FilesystemIsolationPaths.cpp
     MetricsTransmitter.cpp
     Server.cpp
 )
