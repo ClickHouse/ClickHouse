@@ -206,4 +206,31 @@ bool isGroupByKeyAfterAggregation(const QueryTreeNodePtr & node, const QueryTree
     return std::ranges::any_of(group_by_keys, [&](const auto & key) { return compareGroupByKeys(node, key); });
 }
 
+std::unordered_set<QueryTreeNodePtr> collectGroupByKeyNodesAfterAggregation(
+    const QueryNode & query_node, const std::function<bool(const QueryTreeNodePtr &)> & is_candidate)
+{
+    auto candidate_keys = getGroupByKeys(query_node);
+    std::erase_if(candidate_keys, [&](const auto & key) { return !is_candidate(key); });
+
+    std::unordered_set<QueryTreeNodePtr> result;
+    if (candidate_keys.empty())
+        return result;
+
+    std::vector<const IQueryTreeNode *> nodes{&query_node};
+    while (!nodes.empty())
+    {
+        const auto * node = nodes.back();
+        nodes.pop_back();
+        for (const auto & child : node->getChildren())
+        {
+            if (!child || child->getNodeType() == QueryTreeNodeType::QUERY || child->getNodeType() == QueryTreeNodeType::UNION)
+                continue;
+            if (is_candidate(child) && isGroupByKeyAfterAggregation(child, candidate_keys))
+                result.insert(child);
+            nodes.push_back(child.get());
+        }
+    }
+    return result;
+}
+
 }
