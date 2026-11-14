@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
@@ -66,7 +67,7 @@ TEST(BuildDistributedFinalPipe, SkipsEmptyMergeLanes)
 
     /// A single empty merge lane: the whole task produces nothing.
     {
-        std::vector<DistributedReadBucket> lanes;
+        VectorWithMemoryTracking<DistributedReadBucket> lanes;
         lanes.push_back({/*marks=*/ {}, /*needs_merge=*/ true, /*borders=*/ {}, /*index=*/ 0});
 
         std::optional<ActionsDAG> out_projection;
@@ -87,7 +88,7 @@ TEST(BuildDistributedFinalPipe, SkipsEmptyMergeLanes)
         RangesInDataPartsDescription non_empty_marks;
         non_empty_marks.push_back(std::move(part_marks));
 
-        std::vector<DistributedReadBucket> lanes;
+        VectorWithMemoryTracking<DistributedReadBucket> lanes;
         lanes.push_back({/*marks=*/ {}, /*needs_merge=*/ true, /*borders=*/ {}, /*index=*/ 0});
         lanes.push_back({std::move(non_empty_marks), /*needs_merge=*/ true, /*borders=*/ {}, /*index=*/ 0});
 

@@ -14,6 +14,7 @@ namespace DB
 
 class Block;
 class NamesAndTypesList;
+struct NameAndTypePair;
 class ColumnsDescription;
 
 class IColumn;
@@ -73,5 +74,8 @@ void fillMissingColumns(
     const NameSet & missing_columns = {},
     bool share_nested_offsets = true,
     const NameSet & additional_available_columns = {});
+
+/// Whether `fillMissingColumns` may leave `column` unfilled for `evaluateMissingDefaults`.
+bool mayLeaveColumnToMissingDefaults(const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & column);
 
 }

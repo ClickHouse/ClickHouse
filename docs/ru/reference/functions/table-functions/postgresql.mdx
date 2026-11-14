@@ -57,7 +57,7 @@ SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'p
 
 Простые предложения `WHERE`, такие как `=`, `!=`, `>`, `>=`, `<`, `<=` и `IN`, выполняются на сервере PostgreSQL.
 
-Все JOIN, агрегации, сортировка, условия `IN [ array ]` и ограничение сэмплирования `LIMIT` выполняются в ClickHouse только после завершения запроса к PostgreSQL.
+Все JOIN, агрегации, сортировка и условия `IN [ array ]` выполняются в ClickHouse после завершения запроса к PostgreSQL. Ограничение сэмплирования `LIMIT` передаётся в PostgreSQL, только если это безопасно и включена настройка [external&#95;storage&#95;push&#95;down&#95;limit](/ru/reference/settings/session-settings/external-storage#external_storage_push_down_limit); в противном случае оно применяется в ClickHouse.
 
 ## Передача запроса вместо имени таблицы {#passing-a-query}
 

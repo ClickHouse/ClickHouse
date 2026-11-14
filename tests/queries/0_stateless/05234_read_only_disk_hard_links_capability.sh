@@ -29,6 +29,7 @@ CREATE TABLE writer (key Int32, value String) ENGINE = MergeTree ORDER BY key
 SETTINGS table_disk = 1, disk = disk(
     name = '05234_writer_${CLICKHOUSE_DATABASE}',
     type = object_storage, object_storage_type = local, metadata_type = plain_rewritable,
+    metadata_snapshot_write_delay_ms = 0, -- the reader sees the snapshot of the state right after every commit
     enable_hard_links = 0,
     path = '${disk_path}');
 
@@ -48,11 +49,11 @@ ${CLICKHOUSE_CLIENT} --query "SELECT * FROM reader"
 
 echo '-- with enable_hard_links = 0 the read-only attachment reports the capability of the disk it wraps'
 ${CLICKHOUSE_CLIENT} --query "CREATE HYPOTHETICAL INDEX h ON reader value TYPE minmax GRANULARITY 1" 2>&1 |
-    grep -o -m1 'Hypothetical indexes are not supported on immutable disk'
+    grep -o -m1 'not supported on immutable disk'
 
 echo '-- the writer of the same disk answers the same way'
 ${CLICKHOUSE_CLIENT} --query "CREATE HYPOTHETICAL INDEX h ON writer value TYPE minmax GRANULARITY 1" 2>&1 |
-    grep -o -m1 'Hypothetical indexes are not supported on immutable disk'
+    grep -o -m1 'not supported on immutable disk'
 
 # The wrapper must not answer `false` unconditionally either: with the setting on, the read-only
 # attachment accepts what the disk it wraps accepts.

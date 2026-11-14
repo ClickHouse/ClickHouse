@@ -1,4 +1,6 @@
 #include <Common/ThreadStatus.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerContext.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -15,6 +17,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
@@ -26,6 +29,7 @@
 #include <Common/typeid_cast.h>
 #include <IO/WriteBufferFromString.h>
 #include <fmt/format.h>
+#include <algorithm>
 #include <exception>
 #include <memory>
 #include <optional>
@@ -41,6 +45,36 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace QueryPlanOptimizations
+{
+    bool keyTypeBreaksHashSharding(const IDataType & type);
+}
+
+/// The partition keys of a partitioned sort as stream-disjointness columns, or empty when
+/// the split cannot be reproduced safely: the keys must be a prefix of the sort (so a
+/// rebuilt sort can split by them), be columns of the sort's input, and hash in agreement
+/// with `compareAt` (floats, `JSON`, `Dynamic` hash `-0.` and `0.` differently while they
+/// compare equal, so a hash split would tear one group apart).
+static DistributionColumns streamSplitColumns(const SortingStep & sorting_step)
+{
+    const auto & partition_by = sorting_step.getPartitionByDescription();
+    const auto & sort_description = sorting_step.getSortDescription();
+    if (sort_description.size() < partition_by.size()
+        || !std::equal(partition_by.begin(), partition_by.end(), sort_description.begin()))
+        return {};
+
+    const auto & input_header = sorting_step.getInputHeaders().front();
+    DistributionColumns columns;
+    for (const auto & partition_column : partition_by)
+    {
+        if (!input_header->has(partition_column.column_name)
+            || QueryPlanOptimizations::keyTypeBreaksHashSharding(*input_header->getByName(partition_column.column_name).type))
+            return {};
+        columns.push_back(NameSet{partition_column.column_name});
+    }
+    return columns;
 }
 
 static String dumpQueryPlanShort(const QueryPlan & query_plan)
@@ -131,6 +165,7 @@ CascadesOptimizer::CascadesOptimizer(QueryPlan & query_plan_, const QueryPlanOpt
     if (memo.getContext().cascades_aggregation_pushdown)
         addRule(createAggregationPushdown());
     addRule(createAggregationImplementation());
+    addRule(createDistinctImplementation());
     addRule(createMergingAggregationImplementation());
     addRule(createLocalReadImplementation());
     addRule(createParallelReadImplementation());
@@ -138,6 +173,7 @@ CascadesOptimizer::CascadesOptimizer(QueryPlan & query_plan_, const QueryPlanOpt
     addRule(createReplicatedSubplanImplementation());
     addRule(createTopNImplementation());
     addRule(createTwoStageTopN());
+    addRule(createWindowImplementation());
     addEnforcerRule(createDistributionEnforcer());
     addEnforcerRule(createSortingEnforcer());
 }
@@ -175,6 +211,17 @@ std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addGroup(QueryPlan::
         auto [child_group_id, _] = addGroup(*node.children.front());
         ExpressionProperties stripped_props;
         stripped_props.sorting = sorting_step->getSortDescription();
+        /// The stream layout the sort produced is part of the requirement: a plain sort
+        /// merges each node's streams into one, a partitioned sort (the planner builds them
+        /// for windows) keeps streams disjoint on the partition keys. A partitioned sort
+        /// whose keys cannot split safely demands one stream, which keeps every group whole.
+        DistributionColumns disjoint_columns;
+        if (sorting_step->hasPartitions())
+            disjoint_columns = streamSplitColumns(*sorting_step);
+        if (!disjoint_columns.empty())
+            stripped_props.setDisjointStreams(std::move(disjoint_columns));
+        else
+            stripped_props.stream_layout = StreamLayout::Single;
         return {child_group_id, stripped_props};
     }
 
@@ -398,7 +445,7 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
     /// Single-input expressions on the current DFS path, used to break enforcer self-reference
     /// cycles. Path-local: added when a frame is pushed, removed when popped, so the same expression
     /// can still be reused in an independent sibling branch.
-    std::unordered_set<GroupExpression *> active_path;
+    UnorderedSetWithMemoryTracking<GroupExpression *> active_path;
 
     /// Select the cheapest eligible (acyclic) implementation for a group. `input_is_self_referential`
     /// is true when this selection is for the self-referential input of a same-group enforcer.
@@ -420,11 +467,11 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
         GroupId group_id;
         GroupExpressionPtr expression;
         size_t next_child = 0;
-        std::vector<QueryPlanPtr> child_plans;
+        QueryPlanPtrs child_plans;
         bool on_active_path = false;  /// whether this frame's expression was added to `active_path`
     };
 
-    std::vector<Frame> stack;
+    VectorWithMemoryTracking<Frame> stack;
     QueryPlanPtr result;
 
     /// Push a frame for `expression`, recording it on the active path if it is single-input.

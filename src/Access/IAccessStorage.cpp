@@ -800,12 +800,8 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                 if (combined_valid_until != matched_authentication_method->getValidUntil())
                     auth_result.authentication_data.setValidUntil(combined_valid_until);
 
-                /// The code is marked as used only here, after the whole authentication succeeded:
-                /// the credential checks above (including the probes of other methods) are pure,
-                /// so a failed attempt cannot consume a valid code.
-                if (!Authentication::consumeOneTimePassword(credentials, *matched_authentication_method))
-                    throw Exception(ErrorCodes::WRONG_PASSWORD, "The one-time password has already been used");
-
+                /// The credential checks above (including the probes of other methods) are pure: the one-time
+                /// password is marked as used by `AccessControl::authenticate` once the whole authentication succeeded.
                 return auth_result;
             }
 
@@ -815,6 +811,8 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                               "check allow_no_password and allow_plaintext_password settings in the server configuration");
             }
 
+            /// Reported for a missing code before the password is checked (see `checkBasicAuthentication`),
+            /// so this error does not confirm the password.
             if (need_second_factor)
                 throw Exception(ErrorCodes::REQUIRED_SECOND_FACTOR, "Authentication requires second factor");
             throw Exception(ErrorCodes::WRONG_PASSWORD, "Invalid credentials");

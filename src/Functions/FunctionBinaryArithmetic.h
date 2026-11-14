@@ -38,7 +38,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Native.h>
 #include <DataTypes/NumberTraits.h>
-#include <Formats/FormatSettings.h>
+#include <Formats/FormatSettingsEnums.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/DivisionUtils.h>
 #include <Functions/FunctionFactory.h>
@@ -82,7 +82,7 @@ namespace ErrorCodes
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
-FormatSettings::DateTimeOverflowBehavior getDateTimeOverflowBehavior(ContextPtr context);
+FormatSettingsEnums::DateTimeOverflowBehavior getDateTimeOverflowBehavior(ContextPtr context);
 
 namespace traits_
 {
@@ -921,7 +921,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
     /// Date/Time overflow behavior, captured from the query context at construction time so that
     /// executeImpl does not have to consult the context (which may have been destroyed by the time a
     /// stored expression - e.g. a sorting key - is re-executed during a merge). See #54890.
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior{};
+    FormatSettingsEnums::DateTimeOverflowBehavior date_time_overflow_behavior{};
 
     /// Builders for the interval/tuple special cases, resolved from the argument types at construction
     /// time while the context is alive (see the constructor). At most one is non-null for a given
@@ -1493,7 +1493,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             if (wide_result >= result_min && wide_result <= result_max) [[likely]]
                 return static_cast<Int64>(wide_result);
 
-            if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+            if (overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Throw)
             {
                 if (result_is_datetime64)
                     throw Exception(
@@ -1507,7 +1507,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
                         "Value {} is out of bounds of type DateTime",
                         static_cast<Int64>(wide_result));
             }
-            else if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+            else if (overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Saturate)
             {
                 return static_cast<Int64>(std::clamp<Int128>(wide_result, result_min, result_max));
             }
@@ -1866,7 +1866,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             if (wide_result >= result_min && wide_result <= result_max) [[likely]]
                 return static_cast<Int64>(wide_result);
 
-            if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+            if (overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Throw)
             {
                 if (result_is_datetime64)
                     throw Exception(
@@ -1879,7 +1879,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
                         "Value {} is out of bounds of type DateTime",
                         static_cast<Int64>(wide_result));
             }
-            else if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+            else if (overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Saturate)
             {
                 return static_cast<Int64>(std::clamp<Int128>(wide_result, result_min, result_max));
             }
@@ -2425,7 +2425,7 @@ public:
     }
 
 protected:
-    /// `DataTypesWithConstInfo` does not carry the value of a constant divisor, so `intDiv` and `modulo` are
+    /// The value of a constant divisor is not used here, so `intDiv` and `modulo` are
     /// described as not throwing only if the caller knows that the constant divisor is safe: it is not zero
     /// and, for a signed dividend, it does not become negative after the cast to a signed type.
     bool canThrowImpl(const DataTypesWithConstInfo & arguments, bool divisor_is_known_safe) const
@@ -3861,6 +3861,14 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 #endif
 
     bool canBeExecutedOnDefaultArguments() const override { return valid_on_default_arguments; }
+
+    /// The String operand of a date and interval operation is parsed for every row, and its default value is not a valid date.
+    bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return canBeExecutedOnDefaultArguments()
+            && !(prepared_interval_function
+                 && std::ranges::any_of(arguments, [](const auto & argument) { return isString(removeLowCardinalityAndNullable(argument.type)); }));
+    }
 };
 
 
@@ -4276,6 +4284,10 @@ public:
                 // `intDiv`/`divide` computes in a Decimal operand's own native signed width: a Decimal
                 // divisor wraps the dividend at a boundary set by its width and scale, a Decimal dividend
                 // truncates the divisor into that width, and a Float operand stays in floating point.
+                if (isDecimal(arg_type) && isDecimal(divisor_type)
+                    && decimalDivisionRescaleFits(left_point, right_point, *arg_type, *divisor_type, return_type))
+                    return {true, is_constant_positive, false, false};
+
                 if ((name_view == "intDiv" || name_view == "divide")
                     && (isDecimal(divisor_type) || decimalDivConstDivisorTruncates(arg_type, divisor_type, constant)))
                     return {false, true, false, false};
@@ -4527,6 +4539,45 @@ public:
             case sizeof(Int256): return exceeds(std::type_identity<Int256>{});
             default: return true; /// unreachable for the four `Decimal` widths above; fails close if a new one appears
         }
+    }
+
+    /// `Decimal` division rescales the dividend by the divisor scale in the native type of the wider operand. It throws
+    /// (or wraps with `decimal_check_overflow = 0`) outside a finite range, but is monotonic within a range whose ends
+    /// rescale without overflow. `intDiv` then casts the quotient to an integer result, which must be as wide.
+    static bool decimalDivisionRescaleFits(
+        const Field & left_point, const Field & right_point, const IDataType & arg_type, const IDataType & divisor_type,
+        const DataTypePtr & result_type)
+    {
+        auto result = removeNullable(recursiveRemoveLowCardinality(result_type));
+        const size_t width = std::max(arg_type.getSizeOfValueInMemory(), divisor_type.getSizeOfValueInMemory());
+        if (!(isDecimal(result) || isInteger(result)) || result->getSizeOfValueInMemory() < width)
+            return false;
+
+        Int256 limit;
+        switch (width)
+        {
+            case sizeof(Int32): limit = std::numeric_limits<Int32>::max(); break;
+            case sizeof(Int64): limit = std::numeric_limits<Int64>::max(); break;
+            case sizeof(Int128): limit = std::numeric_limits<Int128>::max(); break;
+            case sizeof(Int256): limit = std::numeric_limits<Int256>::max(); break;
+            default: return false;
+        }
+        const Int256 bound = limit / DecimalUtils::scaleMultiplier<Int256>(getDecimalScale(divisor_type));
+
+        auto fits = [&](const Field & point)
+        {
+            Int256 value;
+            switch (point.getType())
+            {
+                case Field::Types::Decimal32: value = point.safeGet<DecimalField<Decimal32>>().getValue().value; break;
+                case Field::Types::Decimal64: value = point.safeGet<DecimalField<Decimal64>>().getValue().value; break;
+                case Field::Types::Decimal128: value = point.safeGet<DecimalField<Decimal128>>().getValue().value; break;
+                case Field::Types::Decimal256: value = point.safeGet<DecimalField<Decimal256>>().getValue().value; break;
+                default: return false;
+            }
+            return -bound <= value && value <= bound;
+        };
+        return fits(left_point) && fits(right_point);
     }
 
 private:

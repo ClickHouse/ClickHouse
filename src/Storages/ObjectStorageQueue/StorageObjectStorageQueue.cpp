@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <optional>
 
 #include <Core/BackgroundSchedulePool.h>
@@ -29,6 +30,7 @@
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMoveDestinationAccess.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/StreamingStorageRegistry.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
@@ -41,6 +43,7 @@
 #include <Storages/HivePartitioningUtils.h>
 #include <Common/CurrentThread.h>
 #include <Common/DimensionalMetrics.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
@@ -176,9 +179,26 @@ namespace ErrorCodes
 
 namespace
 {
+    /// The move uses only the destination of the storage type of the table, so only that one is checked.
+    void checkMoveDestinationHost(
+        ObjectStorageType type,
+        const String & move_uri,
+        const String & move_connection_string,
+        const String & move_container,
+        const RemoteHostFilter & filter)
+    {
+        if (type == ObjectStorageType::S3)
+            checkObjectStorageQueueS3MoveDestinationHost(move_uri, filter);
+        else if (type == ObjectStorageType::Azure)
+            checkObjectStorageQueueAzureMoveDestinationHost(move_connection_string, move_container, filter);
+    }
+
     void validateSettings(
         ObjectStorageQueueSettings & queue_settings,
-        bool is_attach)
+        ObjectStorageType type,
+        const RemoteHostFilter & remote_host_filter,
+        bool is_attach,
+        bool is_loading_from_existing_metadata)
     {
         if (!is_attach && !queue_settings[ObjectStorageQueueSetting::mode].changed)
         {
@@ -230,6 +250,11 @@ namespace
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Move to Azure container requires all of settings: move_connection_string, move_container");
                 }
+                /// A full user `ATTACH` is fresh input as well, so only a definition stored on this server is exempt.
+                if (!is_loading_from_existing_metadata)
+                    ObjectStorageQueuePostProcessor::checkAzureMoveDestination(
+                        queue_settings[ObjectStorageQueueSetting::after_processing_move_connection_string].toString(),
+                        queue_settings[ObjectStorageQueueSetting::after_processing_move_container].toString());
             }
             else if (!move_prefix)
             {
@@ -237,6 +262,21 @@ namespace
                         "Move of processed objects requires specifying target bucket/container or prefix");
             }
         }
+
+        /// The host filter of `configuration` covers the source only, so the move destination is checked here.
+        /// It is checked whenever it is set, not only for `after_processing = 'move'`: otherwise a table created with
+        /// `after_processing = 'keep'` and a destination that is not allowed could be switched to `move` by an `ALTER`
+        /// that does not change the destination. A table loaded from existing metadata must never fail to load.
+        if (!is_loading_from_existing_metadata)
+        {
+            checkMoveDestinationHost(
+                type,
+                queue_settings[ObjectStorageQueueSetting::after_processing_move_uri].value,
+                queue_settings[ObjectStorageQueueSetting::after_processing_move_connection_string].value,
+                queue_settings[ObjectStorageQueueSetting::after_processing_move_container].value,
+                remote_host_filter);
+        }
+
         if (queue_settings[ObjectStorageQueueSetting::after_processing] == ObjectStorageQueueAction::TAG)
         {
             if (queue_settings[ObjectStorageQueueSetting::after_processing_tag_key].toString().empty())
@@ -302,6 +342,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , type(configuration_->getType())
     , engine_name(engine_args->engine->name)
     , enable_logging_to_queue_log((*queue_settings_)[ObjectStorageQueueSetting::enable_logging_to_queue_log])
+    , parallel_inserts((*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts])
     , polling_min_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
     , polling_max_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_max_timeout_ms])
     , polling_backoff_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_backoff_ms])
@@ -353,7 +394,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     }
 
     const bool is_attach = mode > LoadingStrictnessLevel::CREATE;
-    validateSettings(*queue_settings_, is_attach);
+    validateSettings(*queue_settings_, type, context_->getRemoteHostFilter(), is_attach, isLoadingFromExistingMetadata(mode));
 
     /// The object storage S3 client is built once here and reused by background threads, so the effective
     /// per-session credential restriction must be captured now from the CREATE query (its
@@ -462,6 +503,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
 
     ObjectStorageType storage_type = engine_name == "S3Queue" ? ObjectStorageType::S3 : ObjectStorageType::Azure;
 
+    const size_t task_count = parallel_inserts ? table_metadata.processing_threads_num.load() : 1;
+
     temp_metadata = std::make_unique<ObjectStorageQueueMetadata>(
         storage_type,
         zookeeper_name,
@@ -476,7 +519,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_bytes],
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_elements]);
 
-    size_t task_count = (*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts] ? (*queue_settings_)[ObjectStorageQueueSetting::processing_threads_num] : 1;
     for (size_t i = 0; i < task_count; ++i)
     {
         auto task = getContext()->getSchedulePool()->createTask(getStorageID(), "ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
@@ -632,7 +674,7 @@ void StorageObjectStorageQueue::renameInMemory(const StorageID & new_table_id)
 {
     const auto prev_storage_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
-    StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID());
+    StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID(), /* if_exists */ true);
 }
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
@@ -716,6 +758,10 @@ void StorageObjectStorageQueue::read(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. "
                         "To enable use setting `stream_like_engine_allow_direct_select`. Be aware that usually the read data is removed from the queue.");
     }
+
+    /// The client keeps the creator's allowance for background processing; a direct reader is checked against its own.
+    checkSessionMayUseServerIdentity(*object_storage, local_context);
+
     bool do_commit_on_select = false;
     {
         std::lock_guard lock(mutex);
@@ -1024,10 +1070,9 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
 
     const auto & table_metadata = metadata->getTableMetadata();
     const size_t processing_threads_num = table_metadata.processing_threads_num;
-    const bool parallel_inserts = table_metadata.parallel_inserts;
     const size_t threads = parallel_inserts ? 1 : processing_threads_num;
 
-    LOG_TEST(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {}, async deduplicate: {})",
+    LOG_TRACE(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {}, async deduplicate: {})",
         threads, processing_threads_num, parallel_inserts, is_deduplication_v2);
 
     while (!shutdown_called && !file_iterator->isFinished() && !stream_control.isCancelRequested(cycle_epoch))
@@ -1070,7 +1115,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         auto processing_progress = std::make_shared<ProcessingProgress>();
         for (size_t i = 0; i < threads; ++i)
         {
-            size_t processor_id = i * (streaming_tasks_index + 1);
+            size_t processor_id = streaming_tasks_index * threads + i;
             auto source = createSource(
                 processor_id,
                 read_from_format_info,
@@ -1651,6 +1696,39 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
             }
         }
     }
+
+    /// The host filter of `configuration` covers the source only, so a new move destination is checked here.
+    /// `checkAlterIsPossible` runs on every host and the check depends only on the server config, so it is correct everywhere.
+    static constexpr std::array<std::string_view, 3> move_destination_settings{
+        "after_processing_move_uri", "after_processing_move_connection_string", "after_processing_move_container"};
+
+    auto get_move_destination_value = [](const SettingsChanges * settings, std::string_view name) -> String
+    {
+        const Field * value = settings ? settings->tryGet(name) : nullptr;
+        return value ? convertFieldToString(*value) : String{};
+    };
+
+    const bool move_destination_changed = std::ranges::any_of(
+        move_destination_settings,
+        [&](std::string_view name)
+        { return get_move_destination_value(old_settings, name) != get_move_destination_value(&new_settings, name); });
+
+    if (move_destination_changed)
+    {
+        const String move_connection_string = get_move_destination_value(&new_settings, "after_processing_move_connection_string");
+        const String move_container = get_move_destination_value(&new_settings, "after_processing_move_container");
+
+        /// A move destination set by this query must carry its own credentials, as at `CREATE`.
+        if (type == ObjectStorageType::Azure && !move_connection_string.empty())
+            ObjectStorageQueuePostProcessor::checkAzureMoveDestination(move_connection_string, move_container);
+
+        checkMoveDestinationHost(
+            type,
+            get_move_destination_value(&new_settings, "after_processing_move_uri"),
+            move_connection_string,
+            move_container,
+            local_context->getRemoteHostFilter());
+    }
 }
 
 void StorageObjectStorageQueue::alter(
@@ -1942,7 +2020,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
         settings[ObjectStorageQueueSetting::keeper_path] = fmt::format("{}:{}", zookeeper_name, zk_path.string());
     settings[ObjectStorageQueueSetting::loading_retries] = table_metadata.loading_retries;
     settings[ObjectStorageQueueSetting::processing_threads_num] = table_metadata.processing_threads_num;
-    settings[ObjectStorageQueueSetting::parallel_inserts] = table_metadata.parallel_inserts;
+    settings[ObjectStorageQueueSetting::parallel_inserts] = parallel_inserts;
     settings[ObjectStorageQueueSetting::enable_logging_to_queue_log] = enable_logging_to_queue_log;
     settings[ObjectStorageQueueSetting::last_processed_path] = table_metadata.last_processed_path;
     settings[ObjectStorageQueueSetting::bucketing_mode] = table_metadata.bucketing_mode;

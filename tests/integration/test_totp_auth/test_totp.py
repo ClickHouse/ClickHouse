@@ -30,6 +30,11 @@ MYSQL_USERS = {
     "totuser_mysql_double_sha1": "abacaba",
 }
 
+# With `totp_track_used_codes_in_keeper` the accepted codes are shared through Keeper under
+# this path (`totp_used_codes_keeper_path` in config/totp_used_codes_in_keeper.xml, set there
+# with a trailing slash).
+USED_CODES_KEEPER_PATH = "/clickhouse/test_totp_auth/one_time_passwords"
+
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
@@ -37,6 +42,16 @@ node = cluster.add_instance(
     user_configs=["config/users.xml"],
     stay_alive=True,
 )
+keeper_nodes = [
+    cluster.add_instance(
+        f"keeper_node{i}",
+        main_configs=["config/totp_used_codes_in_keeper.xml"],
+        user_configs=["config/users.xml"],
+        with_zookeeper=True,
+        stay_alive=True,
+    )
+    for i in (1, 2)
+]
 
 
 @pytest.fixture(scope="module")
@@ -56,6 +71,21 @@ def fresh_server(started_cluster):
     node.restart_clickhouse()
 
 
+@pytest.fixture
+def fresh_keeper_servers(started_cluster):
+    # With `totp_track_used_codes_in_keeper` the used codes are kept in Keeper and survive
+    # restarts: drop them there, and restart the servers to drop their local copies too.
+    zk = started_cluster.get_kazoo_client("zoo1")
+    try:
+        if zk.exists(USED_CODES_KEEPER_PATH):
+            zk.delete(USED_CODES_KEEPER_PATH, recursive=True)
+    finally:
+        zk.stop()
+        zk.close()
+    for keeper_node in keeper_nodes:
+        keeper_node.restart_clickhouse()
+
+
 def get_one_time_password(
     secret, interval=30, digits=6, sha_version=hashlib.sha1, timepoint=None
 ):
@@ -69,9 +99,10 @@ def get_one_time_password(
     return f"{otp:0{digits}d}"
 
 
-def get_otp(user, offset_steps=0):
-    """The code of the user for the current time step shifted by `offset_steps`,
-    computed with the TOTP parameters of the user from the users config."""
+def get_otp(user, offset_steps=0, now=None):
+    """The code of the user for the time step of `now` (default: the current time)
+    shifted by `offset_steps`, with the TOTP parameters of the user from the users config.
+    """
     params = ET.parse(USERS_CONFIG).find(f"./users/{user}/time_based_one_time_password")
     period = int(params.findtext("period", default="30"))
     return get_one_time_password(
@@ -81,7 +112,7 @@ def get_otp(user, offset_steps=0):
         sha_version=getattr(
             hashlib, params.findtext("algorithm", default="SHA1").lower()
         ),
-        timepoint=time.time() + offset_steps * period,
+        timepoint=(now or time.time()) + offset_steps * period,
     )
 
 
@@ -99,9 +130,37 @@ def test_one_time_password(started_cluster):
         query_text, user="totuser", password=f"aa+bb+{old_password}"
     )
 
-    assert "REQUIRED_SECOND_FACTOR" in node.query_and_get_error(
+    # Without a code the response does not depend on the password, so the error REQUIRED_SECOND_FACTOR
+    # does not confirm a guessed password: a wrong or an empty password gets exactly the same error
+    error_without_code = node.query_and_get_error(
         query_text, user="totuser", password="aa+bb"
     )
+    assert "REQUIRED_SECOND_FACTOR" in error_without_code
+    for password in ["wrongpwd", ""]:
+        assert error_without_code == node.query_and_get_error(
+            query_text, user="totuser", password=password
+        )
+
+    http_responses = [
+        node.http_request(
+            "",
+            params={"query": query_text},
+            headers={"X-ClickHouse-User": "totuser", "X-ClickHouse-Key": password},
+        )
+        for password in ["aa+bb", "wrongpwd"]
+    ]
+    for response in http_responses:
+        assert response.status_code == 403
+        assert response.headers["X-ClickHouse-Exception-Code"] == "767"
+    assert http_responses[0].text == http_responses[1].text
+
+    response = node.http_request(
+        "",
+        params={"query": query_text},
+        headers={"X-ClickHouse-User": "totuser", "X-ClickHouse-Key": "aa+bb+000000000"},
+    )
+    assert response.status_code == 403
+    assert response.headers["X-ClickHouse-Exception-Code"] == "516"
 
     assert "totuser42\n" == node.query(
         query_text, user="totuser", password=f"aa+bb+{get_otp('totuser')}"
@@ -197,13 +256,17 @@ def test_interactive_totp_authentication(started_cluster):
 
         # Then enter wrong TOTP when prompted
         c.expect("TOTP.*:")
-        c.send("000000", eol="\r")
+        c.send("000000000", eol="\r")
         c.expect(expected_error)
 
-    with client(command=f"{client_command(user0)} --password aa+bb+000000") as c:
+    # A wrong code of the configured length (9 digits); a suffix of another length counts as no code
+    with client(command=f"{client_command(user0)} --password aa+bb+000000000") as c:
         c.expect(expected_error)
 
+    # A wrong password without a code is asked for the code like a right one, and fails only after that
     with client(command=f"{client_command(user0)} --password wrongpwd") as c:
+        c.expect("TOTP.*:")
+        c.send(get_otp(user0), eol="\r")
         c.expect(expected_error)
 
     with client(
@@ -427,7 +490,10 @@ def test_one_time_only_no_password(started_cluster):
 
     assert f"{user0}42\n" == node.query(query_text, user=user0, password=get_otp(user0))
 
+    # The client cannot know that the account has no password: it asks for the password first
     with client(command=f"{client_command(user0)}") as c:
+        c.expect("Password.*:")
+        c.send("", eol="\r")
         c.expect("TOTP.*:")
         c.send(get_otp(user0, offset_steps=1), eol="\r")
         c.expect(prompt)
@@ -506,4 +572,80 @@ def test_code_single_use(started_cluster):
     )
     assert "AUTHENTICATION_FAILED" in node.query_and_get_error(
         query_text, user=user, password=f"pw+{next_code}"
+    )
+
+
+def test_secret_rotation_on_reload(started_cluster):
+    """A changed secret in the users config applies on `SYSTEM RELOAD USERS`."""
+    query_text = "SELECT currentUser() || toString(42)"
+    user = "totuser_rotation"
+    config_path = "/etc/clickhouse-server/users.d/users.xml"
+    old_secret = "MFRGGZDFMZTWQ2LK"
+    new_secret = "QTUD6Q3PJBFU2OMU"
+
+    node.replace_in_config(config_path, old_secret, new_secret)
+    try:
+        node.query("SYSTEM RELOAD USERS")
+
+        assert "AUTHENTICATION_FAILED" in node.query_and_get_error(
+            query_text, user=user, password=f"pw+{get_otp(user)}"
+        )
+        assert f"{user}42\n" == node.query(
+            query_text, user=user, password=f"pw+{get_one_time_password(new_secret)}"
+        )
+    finally:
+        node.replace_in_config(config_path, new_secret, old_secret)
+        node.query("SYSTEM RELOAD USERS")
+
+
+def test_used_codes_in_keeper_single_use_across_servers(
+    started_cluster, fresh_keeper_servers
+):
+    """With `totp_track_used_codes_in_keeper` the accepted codes are shared through Keeper:
+    a code accepted by one server is rejected by the others and after a restart, and codes
+    for earlier time steps are rejected everywhere."""
+    query_text = "SELECT currentUser() || toString(42)"
+    user = "totuser_keeper"
+    node1, node2 = keeper_nodes
+
+    # All codes are derived from one timepoint so that they belong to consecutive time steps
+    now = time.time()
+    prev_code, code, next_code = (
+        get_otp(user, offset_steps=i, now=now) for i in (-1, 0, 1)
+    )
+
+    # A failed attempt (wrong password with a valid code) does not consume the code
+    assert "AUTHENTICATION_FAILED" in node1.query_and_get_error(
+        query_text, user=user, password=f"wrongpwd+{code}"
+    )
+    assert f"{user}42\n" == node1.query(query_text, user=user, password=f"pw+{code}")
+
+    # The code is rejected on every server, and so is any code for an earlier time step
+    for n in (node2, node1):
+        assert "AUTHENTICATION_FAILED" in n.query_and_get_error(
+            query_text, user=user, password=f"pw+{code}"
+        )
+    assert "AUTHENTICATION_FAILED" in node2.query_and_get_error(
+        query_text, user=user, password=f"pw+{prev_code}"
+    )
+
+    # The code for the next time step is accepted once, on another server
+    assert f"{user}42\n" == node2.query(
+        query_text, user=user, password=f"pw+{next_code}"
+    )
+    assert "AUTHENTICATION_FAILED" in node1.query_and_get_error(
+        query_text, user=user, password=f"pw+{next_code}"
+    )
+
+    # The state lives in Keeper, so it survives a restart
+    node1.restart_clickhouse()
+    assert "AUTHENTICATION_FAILED" in node1.query_and_get_error(
+        query_text, user=user, password=f"pw+{next_code}"
+    )
+    assert "AUTHENTICATION_FAILED" in node1.query_and_get_error(
+        query_text, user=user, password=f"pw+{code}"
+    )
+    # One node per user, named by the SHA-256 hash of the user name
+    assert "1\n" == node1.query(
+        f"SELECT name = hex(SHA256('{user}')) FROM system.zookeeper WHERE path = '{USED_CODES_KEEPER_PATH}'"
     )

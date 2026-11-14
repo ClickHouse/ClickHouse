@@ -440,23 +440,6 @@ private:
         return lut[toLUTIndex(v)];
     }
 
-    /// Round `value` down to a multiple of `divisor` (towards negative infinity).
-    /// Integer division truncates towards zero, so for negative values we shift the result one step down.
-    /// The computation goes through the remainder to avoid signed overflow when `value` is close to the
-    /// minimum of the type - the natural expression `value + 1 - divisor` overflows there. Such values are
-    /// far outside any valid date range, so on the boundary we saturate to the nearest representable multiple.
-    template <typename DateOrTime, typename Divisor>
-    static DateOrTime roundDownToMultiple(DateOrTime value, Divisor divisor)
-    {
-        if (value >= 0) [[likely]]
-            return static_cast<DateOrTime>(value / divisor * divisor);
-
-        const Int64 v = static_cast<Int64>(value);
-        const Int64 d = static_cast<Int64>(divisor);
-        const Int64 rounded_towards_zero = v - v % d; /// A multiple of d in [v, 0], never overflows.
-        return static_cast<DateOrTime>(roundDownNegativeToMultiple(v, rounded_towards_zero, d));
-    }
-
     /// Add `offset` to `base`, saturating at the boundaries of `Time` instead of overflowing (which is
     /// undefined behavior). Interval rounding reconstructs the result as `date + offset`; for arguments far
     /// outside any valid date range this sum can step just past the type boundary even though both operands
@@ -513,6 +496,23 @@ public:
     // Methods only for unit-testing, it makes very little sense to use it from user code.
     auto getOffsetAtStartOfEpoch() const { return offset_at_start_of_epoch; }
     auto getTimeOffsetAtStartOfLUT() const { return offset_at_start_of_lut; }
+
+    /// Round `value` down to a multiple of `divisor` (towards negative infinity).
+    /// Integer division truncates towards zero, so for negative values we shift the result one step down.
+    /// The computation goes through the remainder to avoid signed overflow when `value` is close to the
+    /// minimum of the type - the natural expression `value + 1 - divisor` overflows there. Such values are
+    /// far outside any valid date range, so on the boundary we saturate to the nearest representable multiple.
+    template <typename DateOrTime, typename Divisor>
+    static DateOrTime roundDownToMultiple(DateOrTime value, Divisor divisor)
+    {
+        if (value >= 0) [[likely]]
+            return static_cast<DateOrTime>(value / divisor * divisor);
+
+        const Int64 v = static_cast<Int64>(value);
+        const Int64 d = static_cast<Int64>(divisor);
+        const Int64 rounded_towards_zero = v - v % d; /// A multiple of d in [v, 0], never overflows.
+        return static_cast<DateOrTime>(roundDownNegativeToMultiple(v, rounded_towards_zero, d));
+    }
 
     /// Round a negative `value` down to a multiple of `divisor` (towards negative infinity), given the
     /// already computed `rounded_towards_zero` == `value / divisor * divisor` (truncating division).
@@ -903,11 +903,7 @@ public:
         return res <= 23 ? res : 23;
     }
 
-    /** Calculating offset from UTC in seconds.
-      * which means Using the same literal time of "t" to get the corresponding timestamp in UTC,
-      * then subtract the former from the latter to get the offset result.
-      * The boundaries when meets DST(daylight saving time) change should be handled very carefully.
-      */
+    /// The offset from UTC at the instant `t`.
     Time timezoneOffset(Time t) const
     {
         if (unlikely(isOutOfLUTRange(t)))
@@ -923,6 +919,29 @@ public:
         if (lut[index].amount_of_offset_change() != 0 && t >= lut[index].date + lut[index].time_at_offset_change())
             res += lut[index].amount_of_offset_change();
 
+        return res;
+    }
+
+    /// The offset from UTC at the local time `t`, which is a wall clock read as seconds since the epoch, so that
+    /// `t - timezoneOffsetAtLocalTime(t)` is its UTC time. A repeated or skipped local time is resolved as in `makeDateTime`.
+    Time timezoneOffsetAtLocalTime(Time t) const
+    {
+        Int64 day = t / 86400;
+        Time time_of_day = t % 86400;
+        if (time_of_day < 0)
+        {
+            --day;
+            time_of_day += 86400;
+        }
+
+        const Int64 index = day + daynum_offset_epoch;
+        if (unlikely(static_cast<UInt64>(index) >= DATE_LUT_SIZE))
+            return timezoneOffsetAtLocalTimeOutOfRange(t);
+
+        const Values & values = lut[index];
+        Time res = day * 86400 - values.date;
+        if (values.amount_of_offset_change() != 0 && time_of_day >= values.time_at_offset_change())
+            res += values.amount_of_offset_change();
         return res;
     }
 
@@ -2012,6 +2031,7 @@ private:
     DateTimeComponents toDateTimeComponentsOutOfRange(Time t) const;
     Time toTimeOutOfRange(Time t) const;
     Time timezoneOffsetOutOfRange(Time t) const;
+    Time timezoneOffsetAtLocalTimeOutOfRange(Time t) const;
     Time addDaysOutOfRange(Time t, Int64 delta) const;
     Time addMonthsOutOfRange(Time t, Int64 delta) const;
     Time addYearsOutOfRange(Time t, Int64 delta) const;

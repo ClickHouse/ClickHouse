@@ -653,9 +653,13 @@ ExpireSnapshotsResult expireSnapshots(
     int max_retries = MAX_TRANSACTION_RETRIES;
     while (--max_retries > 0)
     {
-        FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
+        FileNamesGenerator filename_generator(
+            persistent_table_components.path_resolver.getTableLocation(),
+            /* use_uuid_in_metadata */ catalog != nullptr,
+            CompressionMethod::None,
+            write_format);
         auto log = getLogger("IcebergExpireSnapshots");
-        auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+        auto [last_version, metadata_path, compression_method, base_catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
             table_name,
@@ -667,17 +671,17 @@ ExpireSnapshotsResult expireSnapshots(
             persistent_table_components.table_uuid,
             persistent_table_components.metadata_compression_method);
 
-        filename_generator.setVersion(last_version + 1);
+        filename_generator.setBaseMetadataFile(last_version, metadata_path);
         filename_generator.setCompressionMethod(compression_method);
 
-        auto metadata = getMetadataJSONObject(
+        auto metadata = deepCopy(getMetadataJSONObject(
             metadata_path,
             object_storage,
             persistent_table_components.metadata_cache,
             context,
             log,
             compression_method,
-            persistent_table_components.table_uuid);
+            persistent_table_components.table_uuid));
 
         if (metadata->getValue<Int32>(f_format_version) < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots is supported only for the second version of iceberg format");
@@ -792,12 +796,13 @@ ExpireSnapshotsResult expireSnapshots(
             {
                 auto catalog_filename = persistent_table_components.path_resolver.resolveForCatalog(metadata_info.path);
                 const auto & [namespace_name, parsed_table_name] = DataLake::parseTableName(table_name);
-                if (!catalog->updateMetadata(namespace_name, parsed_table_name, catalog_filename, nullptr))
+                /// Nothing is deleted yet, so a conflict is retried like the metadata file conflict above.
+                if (!catalog->updateMetadata(namespace_name, parsed_table_name, catalog_filename, base_catalog_metadata_location, nullptr, metadata))
                 {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Failed to update catalog metadata after writing new metadata file. "
-                        "The table metadata may be in an inconsistent state");
+                    if (!catalog->isTransactional())
+                        removeRejectedMetadataFile(persistent_table_components.path_resolver, metadata_info, object_storage);
+                    LOG_WARNING(log, "Catalog commit conflict during expire_snapshots, retrying ({} retries left)", max_retries);
+                    continue;
                 }
             }
         }

@@ -1,3 +1,4 @@
+SET allow_reserved_column_names = 1;
 CREATE TABLE test_table
 (
     `key` UInt32,
@@ -8,8 +9,6 @@ ORDER BY key;
 
 INSERT INTO test_table (key) SELECT number
 FROM numbers(10);
-
-set enable_analyzer=1;
 
 SELECT *
 FROM test_table;

@@ -73,6 +73,9 @@ public:
 
     bool hasExplicitNames() const { return has_explicit_names; }
 
+    /// Whether `names` can be the element names of a named `Tuple`: they must be non-empty, unique and not `null`.
+    static bool hasValidElementNames(const Strings & names);
+
     void updateHashImpl(SipHash & hash) const override;
 
     size_t getNumberOfChildren() const override { return elems.size(); }
