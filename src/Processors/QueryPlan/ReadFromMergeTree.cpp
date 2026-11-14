@@ -57,6 +57,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
 #include <Processors/QueryPlan/MergeTreeFinalMerge.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -3620,17 +3621,26 @@ ReadFromMergeTree::FinalPartitionPruning ReadFromMergeTree::getFinalPartitionPru
         return result;
 
     const auto & partition_key = metadata_snapshot->getPartitionKey();
-    const NameSet sorting_key_set = sortingKeyNamesSafeBeforeFinal(metadata_snapshot->getSortingKey());
+    const auto & sorting_key = metadata_snapshot->getSortingKey();
+    const auto & sorting_key_dag = sorting_key.expression->getActionsDAG();
+    NodeSet sorting_key_nodes;
+    for (const auto & column_name : sortingKeyNamesSafeBeforeFinal(sorting_key))
+        if (const auto * node = sorting_key_dag.tryFindInOutputs(column_name))
+            sorting_key_nodes.insert(node);
 
-    const auto & partition_expr_names = partition_key.column_names;
-    bool exprs_match = std::all_of(
-        partition_expr_names.begin(), partition_expr_names.end(),
-        [&](const auto & expr_name) { return sorting_key_set.contains(expr_name); });
+    /// Matched by structure, not by name: a column named `toYYYYMM(d)` is not the expression `toYYYYMM(d)`.
+    const auto & partition_key_dag = partition_key.expression->getActionsDAG();
+    const auto matches = matchTrees({sorting_key_nodes.begin(), sorting_key_nodes.end()}, partition_key_dag, /*check_monotonicity=*/ false);
+    auto is_sorting_key_node = [&](const ActionsDAG::Node * node)
+    {
+        auto it = matches.find(node);
+        return it != matches.end() && it->second.node && sorting_key_nodes.contains(it->second.node);
+    };
+
+    bool exprs_match = std::ranges::all_of(partition_key_dag.findInOutputs(partition_key.column_names), is_sorting_key_node);
+    bool columns_match = std::ranges::all_of(partition_key_dag.getInputs(), is_sorting_key_node);
 
     const auto & partition_required_columns = partition_key.expression->getRequiredColumnsWithTypes();
-    bool columns_match = std::all_of(
-        partition_required_columns.begin(), partition_required_columns.end(),
-        [&](const auto & col) { return sorting_key_set.contains(col.name); });
 
     /// "Determined by the sorting key" holds for value identity, not for comparator equality, and
     /// the two differ for floating-point columns: `-0.0` compares equal to `0.0`, and every `NaN`

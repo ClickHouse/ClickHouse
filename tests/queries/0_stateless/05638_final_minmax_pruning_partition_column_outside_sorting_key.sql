@@ -5,6 +5,7 @@ DROP TABLE IF EXISTS t_final_minmax_replacing;
 DROP TABLE IF EXISTS t_final_minmax_collapsing;
 DROP TABLE IF EXISTS t_final_minmax_dnm;
 DROP TABLE IF EXISTS t_final_float_partition;
+DROP TABLE IF EXISTS t_final_name_collision;
 
 CREATE TABLE t_final_minmax_replacing (k UInt64, d Date, ver UInt64)
 ENGINE = ReplacingMergeTree(ver) PARTITION BY toYYYYMM(d) ORDER BY (toYYYYMM(d), k);
@@ -49,7 +50,19 @@ SELECT 'float sorting key expression';
 SELECT * FROM t_final_float_partition FINAL WHERE toString([reinterpretAsFloat64(k)]) = '[0]';
 SELECT * FROM t_final_float_partition FINAL WHERE toString([reinterpretAsFloat64(k)]) = '[-0]';
 
+-- Nor when a sorting key column only has the name of the partition expression.
+CREATE TABLE t_final_name_collision (k UInt64, d Date, `toYYYYMM(d)` UInt32, ver UInt64)
+ENGINE = ReplacingMergeTree(ver) PARTITION BY toYYYYMM(d) ORDER BY (`toYYYYMM(d)`, k);
+SYSTEM STOP MERGES t_final_name_collision;
+INSERT INTO t_final_name_collision VALUES (1, '2026-01-01', 1, 1);
+INSERT INTO t_final_name_collision VALUES (1, '2026-02-01', 1, 2);
+
+SELECT 'column named like the partition expression';
+SELECT * FROM t_final_name_collision FINAL WHERE d = '2026-01-01';
+SELECT * FROM t_final_name_collision FINAL WHERE d = '2026-02-01';
+
 DROP TABLE t_final_minmax_replacing;
 DROP TABLE t_final_minmax_collapsing;
 DROP TABLE t_final_minmax_dnm;
 DROP TABLE t_final_float_partition;
+DROP TABLE t_final_name_collision;
