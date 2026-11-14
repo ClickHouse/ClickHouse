@@ -1,0 +1,22 @@
+local, break
+200000
+remote, rows, break
+400000
+remote, rows, throw
+400000
+remote, bytes, break
+400000
+Distributed, rows, break
+400000
+final result, break
+0
+0
+1
+1
+2
+2
+3
+3
+4
+4
+final result, throw

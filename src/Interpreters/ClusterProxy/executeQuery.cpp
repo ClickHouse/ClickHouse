@@ -84,6 +84,8 @@ namespace Setting
     extern const SettingsSeconds max_execution_time;
     extern const SettingsSeconds max_execution_time_leaf;
     extern const SettingsUInt64 max_memory_usage_for_user;
+    extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 max_skip_unavailable_shards_num;
     extern const SettingsFloat max_skip_unavailable_shards_ratio;
     extern const SettingsMaxThreads max_threads;
@@ -447,6 +449,13 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     /// Strip the initiator-only settings (query-shaping and result-serialisation) so the
     /// inter-server `Settings` packet does not carry them; see `stripInitiatorOnlySettings`.
     stripInitiatorOnlySettings(new_settings);
+
+    /// Limits on the result apply only to the final result, which is produced on the initiator.
+    /// A shard may run the query up to `Complete` (e.g. for `INSERT SELECT`), and would apply them to its partial result.
+    new_settings[Setting::max_result_rows] = 0;
+    new_settings[Setting::max_result_bytes] = 0;
+    new_settings[Setting::max_result_rows].changed = false;
+    new_settings[Setting::max_result_bytes].changed = false;
 
     new_settings[Setting::run_query_in_background] = false;
 
