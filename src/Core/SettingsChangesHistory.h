@@ -52,9 +52,11 @@ void addSettingChangesHistory(
     std::string_view setting_name,
     std::initializer_list<SettingsChangesHistory::SettingChangeRecord> records);
 
-/// Both return a reference to a static map that is filled once and never changes afterwards, so a
+/// Return a reference to a static map that is filled once and never changes afterwards, so a
 /// pointer to a change, or to one of its values, stays valid for the lifetime of the process.
 const VersionToSettingsChangesMap & getSettingsChangesHistory();
 const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory();
+/// Server settings are exposed separately and never applied by session `compatibility`.
+const VersionToSettingsChangesMap & getServerSettingsChangesHistory();
 
 }
