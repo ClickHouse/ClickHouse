@@ -510,10 +510,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             /// lock. The reads below (validate/prepare/checkAlterIsPossible and the storage's alter)
             /// then all repopulate from the metadata committed as of holding the lock.
             if (auto metadata_cache = context->getQueryMetadataCache())
-            {
-                auto [cache, cache_lock] = metadata_cache->getStorageMetadataCache();
-                cache->clear();
-            }
+                metadata_cache->clear();
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
             alter_commands->validate(table, context);
 
@@ -525,6 +522,9 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             table->checkAlterIsPossible(*alter_commands, context);
             context->onQueryExecutionStarted();
             table->alter(*alter_commands, context, alter_lock, ddl_guard);
+            /// The following segments must see the metadata this ALTER committed.
+            if (auto metadata_cache = context->getQueryMetadataCache())
+                metadata_cache->clear();
         }
         else if (auto * mutation_commands = std::get_if<MutationCommands>(&segment))
         {
