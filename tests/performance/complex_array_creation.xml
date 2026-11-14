@@ -1,4 +1,18 @@
 <test>
+    <substitutions>
+        <substitution>
+            <name>element</name>
+            <values>
+                <value>toDecimal64(zero, 2)</value>
+                <value>toFixedString(toString(zero), 1)</value>
+                <value>toString(zero)</value>
+                <value>toNullable(zero)</value>
+            </values>
+        </substitution>
+    </substitutions>
+
     <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore([[zero], [zero]])</query>
     <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore([[], [zero]])</query>
+    <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore([[{element}], [{element}]])</query>
+    <query>WITH materialize(range(1000)) AS a SELECT count() FROM zeros(100000) WHERE NOT ignore([a, a])</query>
 </test>
