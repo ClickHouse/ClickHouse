@@ -70,6 +70,10 @@
 #include <Common/quoteString.h>
 #include <Common/FailPoint.h>
 #include <Common/ThreadPool.h>
+#include <Common/Scheduler/CPULeaseAllocation.h>
+#include <Common/Scheduler/CurrentCPULease.h>
+#include <Interpreters/WorkloadCPUScheduling.h>
+#include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -137,6 +141,7 @@ namespace Setting
     extern const SettingsBool use_partition_minmax_for_primary_key_pruning;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
+    extern const SettingsBool use_concurrency_control;
 }
 
 namespace FailPoints
@@ -1239,6 +1244,57 @@ void MergeTreeDataSelectExecutor::checkForcedSkipIndexes(const UsefulSkipIndexes
     }
 }
 
+namespace
+{
+
+/// The lease of the thread in `filterPartsByPrimaryKeyAndSkipIndexes`: the functions with in-part renewal points also run at read time
+thread_local ISlotLease * in_part_lease = nullptr;
+
+/// Starts worker threads for granted slots; set only on the thread that starts the analysis's workers
+thread_local const std::function<void()> * in_part_spawner = nullptr;
+
+struct InPartRenewal
+{
+    static constexpr size_t period = 256;
+    size_t steps = 0;
+
+    void tick()
+    {
+        if (in_part_lease && ++steps % period == 0)
+        {
+            /// A nested pipeline on this thread renews its own lease
+            if (getCurrentCPULease() == in_part_lease)
+                in_part_lease->renew();
+            if (in_part_spawner)
+                (*in_part_spawner)();
+        }
+    }
+};
+
+SlotAllocationPtr allocateIndexAnalysisCPU(
+    const Settings & settings, size_t num_threads, const QueryStatusPtr & query_status, const std::function<void()> & on_master_wait)
+{
+    if (num_threads == 0 || !settings[Setting::use_concurrency_control])
+        return nullptr;
+    auto query_context = CurrentThread::tryGetQueryContext();
+    if (!query_context || !query_context->getCPUSlotPreemption())
+        return nullptr;
+    /// Only on a thread of the analysed query: a dictionary loaded for another query's `dictGet` runs in that query's
+    /// thread group while it waits holding its CPU slots
+    if (!query_status || query_context->getProcessListElementSafe() != query_status)
+        return nullptr;
+    auto links = getWorkloadCPULinks(query_context);
+    if (!links.master_thread && !links.worker_thread)
+        return nullptr;
+    auto lease_settings = getCPULeaseSettings(query_context);
+    /// A preempted thread may hold a part it cannot give away, so it waits for a grant instead of stopping
+    lease_settings.preemption_timeout = std::chrono::milliseconds::max();
+    lease_settings.on_master_wait = on_master_wait;
+    return std::make_shared<CPULeaseAllocation>(num_threads, links.master_thread, links.worker_thread, std::move(lease_settings));
+}
+
+}
+
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats)
 {
     auto & metadata_snapshot = filter_context.metadata_snapshot;
@@ -1645,7 +1701,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 if (min_max_granules) /// minmax index may have not been materialized for this part, not a fatal error
                 {
-                    min_max_granules->getTopKMarks(top_k_filter_info->limit_n, top_k_handle_ties, parts_top_k_granules[part_index]);
+                    InPartRenewal renewal;
+                    min_max_granules->getTopKMarks(
+                        top_k_filter_info->limit_n, top_k_handle_ties, parts_top_k_granules[part_index], [&renewal] { renewal.tick(); });
                 }
                 top_k_elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
             }
@@ -1682,7 +1740,127 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
         LOG_TRACE(log, "Filtering marks by primary and secondary keys");
 
-        if (num_threads <= 1)
+        const size_t analysis_threads = std::max<size_t>(1, std::min(num_threads, parts_with_ranges.size()));
+        SlotAllocationPtr cpu;
+        std::function<bool()> cancel_callback;
+        /// While this thread waits for a CPU slot or for the workers, it reads the client's `Cancel` packet and checks
+        /// the query's kill flag and time limit; past a soft limit (`timeout_overflow_mode = 'break'`) the analysis
+        /// finishes without the allocation
+        auto poll_while_waiting = [&]
+        {
+            if (cancel_callback)
+                cancel_callback();
+            if (query_status && !query_status->checkTimeLimit())
+                cpu->free();
+        };
+        /// On a thread that already runs on a CPU lease (an executor thread) a second allocation can hang a one-slot workload
+        if (!getCurrentCPULease() && !parts_with_ranges.empty())
+        {
+            if (context->hasQueryContext())
+                cancel_callback = context->getQueryContext()->getInteractiveCancelCallback();
+            cpu = allocateIndexAnalysisCPU(settings, analysis_threads, query_status, poll_while_waiting);
+        }
+
+        if (cpu)
+        {
+            std::atomic<size_t> next_part_index = 0;
+            std::optional<ThreadPool> pool;
+            std::function<void()> spawn_granted_workers;
+
+            /// `lease` is a slot of `cpu`; nullptr once the allocation is freed (a soft time limit or a failed worker)
+            auto process_parts = [&](ISlotLease * lease, bool is_worker, bool spawns_workers)
+            {
+                lease->startConsumption();
+                ISlotLease * prev_lease = getCurrentCPULease();
+                setCurrentCPULease(lease);
+                SCOPE_EXIT({ setCurrentCPULease(prev_lease); });
+                ISlotLease * prev_in_part_lease = std::exchange(in_part_lease, lease);
+                SCOPE_EXIT({ in_part_lease = prev_in_part_lease; });
+                const auto * prev_spawner = std::exchange(in_part_spawner, spawns_workers && pool ? &spawn_granted_workers : nullptr);
+                SCOPE_EXIT({ in_part_spawner = prev_spawner; });
+
+                if (spawns_workers)
+                    spawn_granted_workers();
+
+                while (!(pool && pool->isFinished()))
+                {
+                    const size_t part_index = next_part_index.fetch_add(1, std::memory_order_relaxed);
+                    if (part_index >= parts_with_ranges.size())
+                        break;
+
+                    process_part(part_index);
+
+                    /// Reports the part; false once the allocation is freed
+                    if (lease && !lease->renew())
+                    {
+                        if (is_worker)
+                            break;
+                        lease = nullptr;
+                    }
+
+                    if (spawns_workers)
+                        spawn_granted_workers();
+                }
+            };
+
+            spawn_granted_workers = [&]
+            {
+                while (pool && !pool->isFinished() && next_part_index.load(std::memory_order_relaxed) < parts_with_ranges.size())
+                {
+                    auto slot = cpu->tryAcquire();
+                    if (!slot)
+                        break;
+
+                    pool->scheduleOrThrowOnError(
+                        [&, my_slot = std::move(slot), thread_group = CurrentThread::getGroup(), component_name = Coordination::getCurrentComponent()]() mutable
+                        {
+                            ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_INDEX);
+                            /// ThreadGroupSwitcher does not carry the Keeper component, so propagate it
+                            /// explicitly: skip-index analysis below may read from a Keeper-backed disk.
+                            auto local_component_guard = Coordination::setCurrentComponent(component_name);
+
+                            try
+                            {
+                                process_parts(&dynamic_cast<ISlotLease &>(*my_slot), /* is_worker = */ true, /* spawns_workers = */ false);
+                            }
+                            catch (...)
+                            {
+                                cpu->free();
+                                my_slot.reset();
+                                throw;
+                            }
+                            my_slot.reset();
+                        });
+                }
+            };
+
+            if (analysis_threads > 1)
+                pool.emplace(
+                    CurrentMetrics::MergeTreeDataSelectExecutorThreads,
+                    CurrentMetrics::MergeTreeDataSelectExecutorThreadsActive,
+                    CurrentMetrics::MergeTreeDataSelectExecutorThreadsScheduled,
+                    analysis_threads - 1,
+                    analysis_threads - 1,
+                    /* queue_size = */ 0);
+            /// Wakes preempted threads, then joins them, while the lambdas they use are alive
+            SCOPE_EXIT({
+                cpu->free();
+                pool.reset();
+            });
+
+            {
+                AcquiredSlotPtr master = cpu->acquire();
+                process_parts(&dynamic_cast<ISlotLease &>(*master), /* is_worker = */ false, /* spawns_workers = */ true);
+            }
+
+            if (pool)
+            {
+                while (!pool->waitUntil(std::chrono::steady_clock::now() + CPULeaseSettings::default_master_wait_period))
+                    poll_while_waiting();
+                pool->wait();
+            }
+        }
+        else if (num_threads <= 1)
         {
             for (size_t part_index = 0; part_index < parts_with_ranges.size(); ++part_index)
                 process_part(part_index);
@@ -3048,12 +3226,13 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
         GenericExclusionSearchResult search_result;
         std::list<KeyCondition> substituted_conditions;
+        InPartRenewal renewal;
 
         if (exact_ranges)
         {
             search_result = genericExclusionSearch(
                 part_ranges,
-                [&](const MarkRange & mark_range) { return check_in_range(mark_range, BoolMask()); },
+                [&](const MarkRange & mark_range) { renewal.tick(); return check_in_range(mark_range, BoolMask()); },
                 search_settings,
                 /*collect_exact_ranges=*/ true);
 
@@ -3083,7 +3262,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
             search_result = genericExclusionSearch(
                 part_ranges,
-                [&](const MarkRange & mark_range) { return check_in_range(mark_range, BoolMask()); },
+                [&](const MarkRange & mark_range) { renewal.tick(); return check_in_range(mark_range, BoolMask()); },
                 search_settings,
                 /*collect_exact_ranges=*/ false);
         }
@@ -3327,6 +3506,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     RangesInDataPartReadHints read_hints = in_read_hints;
     if (index_helper->isVectorSimilarityIndex())
         read_hints.vector_search_results.reset();
+    InPartRenewal renewal;
 
     auto create_update_partial_disjunction_result_fn = [&](size_t range_begin) -> KeyCondition::UpdatePartialDisjunctionResultFn
     {
@@ -3382,6 +3562,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
             {
                 for (size_t mark = range.begin; mark < range.end; ++mark)
                 {
+                    renewal.tick();
                     if (may_be_true_on_range(mark, mark + 1, create_update_partial_disjunction_result_fn(mark)))
                     {
                         if (res.empty() || mark - res.back().end > min_marks_for_seek)
@@ -3409,8 +3590,9 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 .min_marks_for_seek = min_marks_for_seek,
             };
 
-            auto check_in_range = [&may_be_true_on_range](const MarkRange & mark_range)
+            auto check_in_range = [&may_be_true_on_range, &renewal](const MarkRange & mark_range)
             {
+                renewal.tick();
                 return BoolMask(may_be_true_on_range(mark_range.begin, mark_range.end, nullptr), true);
             };
 
@@ -3442,6 +3624,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
             for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
             {
+                renewal.tick();
                 reader.read(index_mark, current_granule_num, granules);
                 ++current_granule_num;
             }
@@ -3459,6 +3642,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
             for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
             {
+                renewal.tick();
                 if (current_granule_num == *it)
                 {
                     MarkRange data_range(
@@ -3495,6 +3679,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
             for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
             {
+                renewal.tick();
                 if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 {
                     reader.read(index_mark, condition.get(), granule, /*readable_ranges=*/ nullptr);
@@ -3689,10 +3874,12 @@ MergeTreeIndexBulkGranulesMinMaxPtr MergeTreeDataSelectExecutor::getMinMaxIndexG
                                     index_ranges.getNumberOfMarks(), part_marks_count, access_by_mark);
     auto bulk_granules = std::dynamic_pointer_cast<IMergeTreeIndexBulkGranules>(min_max_granules);
 
+    InPartRenewal renewal;
     for (auto index_range : index_ranges)
     {
         for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
         {
+            renewal.tick();
             reader.read(index_mark, index_mark, bulk_granules);
         }
     }
@@ -3745,10 +3932,12 @@ MarkRanges MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
             partial_eval_results.size(), marks_count, rpn.size(), rpn_template_for_eval_result_string);
 
     std::vector<bool> rpn_stack;
+    InPartRenewal renewal;
     for (auto range : ranges)
     {
         for (auto range_begin = range.begin; range_begin < range.end; range_begin++)
         {
+            renewal.tick();
             rpn_stack.clear();
             size_t position = 0;
             for (const auto & element : rpn)

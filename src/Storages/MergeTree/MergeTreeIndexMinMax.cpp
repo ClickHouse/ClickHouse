@@ -326,7 +326,7 @@ void MergeTreeIndexBulkGranulesMinMax::deserializeBinary(size_t granule_num, Rea
 
 /// Get top K granules of a single part
 template<bool handle_ties>
-void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(size_t n, std::vector<MinMaxGranule> & result)
+void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(size_t n, std::vector<MinMaxGranule> & result, const std::function<void()> & on_granule)
 {
     if (n == 0)
         return;
@@ -341,6 +341,9 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(size_t n, std::vector<MinMax
 
     for (const auto & granule : granules)
     {
+        if (on_granule)
+            on_granule();
+
         if constexpr (!handle_ties) /// more common case
         {
             if (queue.size() < n)
@@ -373,6 +376,8 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(size_t n, std::vector<MinMax
         auto threshold = queue.top();
         for (size_t i = 0; i < min_granules_to_select && !queue.empty(); ++i)
         {
+            if (on_granule)
+                on_granule();
             threshold = queue.top();
             result.push_back({queue.top().granule_num, queue.top().min_or_max_value});
             queue.pop();
@@ -380,18 +385,20 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(size_t n, std::vector<MinMax
 
         while (!queue.empty() && queue.top().min_or_max_value == threshold.min_or_max_value)
         {
+            if (on_granule)
+                on_granule();
             result.push_back({queue.top().granule_num, queue.top().min_or_max_value});
             queue.pop();
         }
     }
 }
 
-void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(size_t n, bool handle_ties, std::vector<MinMaxGranule> & result)
+void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(size_t n, bool handle_ties, std::vector<MinMaxGranule> & result, const std::function<void()> & on_granule)
 {
     if (handle_ties)
-        getTopKMarks<true>(n, result);
+        getTopKMarks<true>(n, result, on_granule);
     else
-        getTopKMarks<false>(n, result);
+        getTopKMarks<false>(n, result, on_granule);
 }
 
 /// This routine is for top-N of top-N granules from all parts

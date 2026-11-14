@@ -1,0 +1,30 @@
+--- the CPU of the analysis is reported to the workload
+64
+1
+--- the analysis of one part is preempted inside the part
+16
+1	1
+16
+1	1
+10
+1	1
+--- no hang in a workload with one CPU slot
+64
+2000
+200
+4
+0
+--- KILL QUERY wakes up an analysis starved by a higher priority query
+starved: 1
+1
+replaced: 1
+1
+1
+--- the client's cancellation (Ctrl-C) stops an analysis starved by a higher priority query
+cancelled: 1
+QUERY_WAS_CANCELLED_BY_CLIENT
+--- a soft time limit stops the wait of an analysis starved by a higher priority query
+break: 0
+1
+--- no hang in a workload with one CPU slot when the lease of the executor cannot be parked
+4

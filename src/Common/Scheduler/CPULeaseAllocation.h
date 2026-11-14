@@ -28,6 +28,7 @@ struct CPULeaseSettings
     static constexpr ResourceCost default_quantum_ns = 10'000'000;
     static constexpr ResourceCost default_report_ns = default_quantum_ns / 10;
     static constexpr std::chrono::milliseconds default_preemption_timeout = std::chrono::milliseconds(1000);
+    static constexpr std::chrono::milliseconds default_master_wait_period = std::chrono::milliseconds(100);
 
     /// Estimated cost for requests, consumption limit without renewal
     ResourceCost quantum_ns = default_quantum_ns;
@@ -43,6 +44,10 @@ struct CPULeaseSettings
 
     /// Callback to be invoked when a thread is resumed
     std::function<void(size_t slot_id)> on_resume;
+
+    /// Callback to be invoked every `master_wait_period` while the master thread waits for a slot, it may throw to stop waiting
+    std::function<void()> on_master_wait;
+    std::chrono::milliseconds master_wait_period = default_master_wait_period;
 
     /// For debugging purposes, not used in production
     String workload;

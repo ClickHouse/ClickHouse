@@ -10,8 +10,6 @@
 #include <Common/Scheduler/CPULeaseAllocation.h>
 #include <Common/Scheduler/CPUSlotsAllocation.h>
 #include <Common/Scheduler/CurrentCPULease.h>
-#include <Common/Scheduler/IResourceManager.h>
-#include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -26,6 +24,7 @@
 #include <Processors/ISource.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/WorkloadCPUScheduling.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -47,7 +46,6 @@ namespace Setting
     extern const SettingsBool opentelemetry_trace_processors;
     extern const SettingsBool opentelemetry_trace_cpu_scheduling;
     extern const SettingsSeconds max_execution_time;
-    extern const SettingsString workload;
 }
 
 namespace ErrorCodes
@@ -84,10 +82,9 @@ struct WorkloadResources
             last_renew_ns = clock_gettime_ns();
         }
 
-        // Publish own lease, or hide the outer executor's lease from a nested executor
-        // that does not park (it may have no lease at all)
+        // Publish own lease, or hide the outer executor's lease from a nested executor without a lease
         prev_cpu_lease = getCurrentCPULease();
-        if (lease && lease->isParkingEnabled())
+        if (lease)
         {
             setCurrentCPULease(lease);
             publishes_lease = true;
@@ -618,58 +615,31 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
     if (concurrency_control)
     {
         auto query_context = CurrentThread::tryGetQueryContext();
-        ResourceLink master_thread_link;
-        ResourceLink worker_thread_link;
-        bool workload_cpu_scheduling_is_enabled = false;
-
+        WorkloadCPULinks links;
         if (query_context)
-        {
-            /// Hold a shared_ptr to keep the storage alive for the duration of this call.
-            /// The storage can be destroyed during server shutdown while a query is still
-            /// in pipeline initialization, causing a use-after-free of the internal mutex.
-            auto workload_storage = query_context->getWorkloadEntityStoragePtr();
-            if (workload_storage)
-            {
-                String master_thread_resource_name = workload_storage->getMasterThreadResourceName();
-                if (!master_thread_resource_name.empty())
-                    master_thread_link = query_context->getWorkloadClassifier()->get(master_thread_resource_name);
-                String worker_thread_resource_name = workload_storage->getWorkerThreadResourceName();
-                if (!worker_thread_resource_name.empty())
-                    worker_thread_link = query_context->getWorkloadClassifier()->get(worker_thread_resource_name);
-                workload_cpu_scheduling_is_enabled = !master_thread_resource_name.empty() || !worker_thread_resource_name.empty();
-            }
-        }
+            links = getWorkloadCPULinks(query_context);
 
-        if (workload_cpu_scheduling_is_enabled)
+        if (links.enabled)
         {
-            if (master_thread_link || worker_thread_link) // Only use resource scheduler if at least one resource link is specified, otherwise unlimited
+            if (links.master_thread || links.worker_thread) // Only use resource scheduler if at least one resource link is specified, otherwise unlimited
             {
                 /// Allocate CPU slots through resource scheduler
                 if (query_context->getCPUSlotPreemption())
                 {
-                    auto quantum_ns = std::max<UInt64>(10, query_context->getCPUSlotQuantum());
                     // Mirror the ConcurrencyControl branch: under lazy allocation, request only
                     // `master_threads` from the workload scheduler at startup and let the
                     // PipelineExecutor upscaling block grow the ceiling via `setMax` as the
                     // pipeline actually pushes parallelizable work.
                     SlotCount initial_max = lazy_allocation ? master_threads : num_threads;
-                    return std::make_shared<CPULeaseAllocation>(num_threads, master_thread_link, worker_thread_link,
-                        CPULeaseSettings
-                        {
-                            .quantum_ns = static_cast<ResourceCost>(quantum_ns),
-                            .report_ns = static_cast<ResourceCost>(quantum_ns / 10),
-                            .preemption_timeout = std::chrono::milliseconds(query_context->getCPUSlotPreemptionTimeout()),
-                            .on_preempt = [this](size_t slot_id) { tasks.preempt(slot_id); },
-                            .on_resume = [this](size_t slot_id) { tasks.resume(slot_id); },
-                            .workload = query_context->getSettingsRef()[Setting::workload],
-                            .parking_enabled = query_context->getCPUSlotParking(),
-                            .trace_cpu_scheduling = trace_cpu_scheduling,
-                        },
-                        initial_max);
+                    CPULeaseSettings settings = getCPULeaseSettings(query_context);
+                    settings.on_preempt = [this](size_t slot_id) { tasks.preempt(slot_id); };
+                    settings.on_resume = [this](size_t slot_id) { tasks.resume(slot_id); };
+                    settings.trace_cpu_scheduling = trace_cpu_scheduling;
+                    return std::make_shared<CPULeaseAllocation>(num_threads, links.master_thread, links.worker_thread, std::move(settings), initial_max);
                 }
                 else
                 {
-                    return std::make_shared<CPUSlotsAllocation>(master_threads, worker_threads, master_thread_link, worker_thread_link);
+                    return std::make_shared<CPUSlotsAllocation>(master_threads, worker_threads, links.master_thread, links.worker_thread);
                 }
             }
         }
