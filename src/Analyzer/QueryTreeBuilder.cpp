@@ -49,8 +49,6 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/UnionNode.h>
 
-#include <AggregateFunctions/AggregateFunctionGroupConcat.h>
-
 #include <Core/Settings.h>
 
 #include <Databases/IDatabase.h>
@@ -83,7 +81,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_QUERY_PARAMETER;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -180,8 +177,6 @@ private:
     QueryTreeNodePtr buildJoinTree(bool is_subquery, const ASTSelectQuery & select_query, const ContextPtr & context) const;
 
     ColumnTransformersNodes buildColumnTransformers(const ASTPtr & matcher_expression, const ContextPtr & context) const;
-
-    QueryTreeNodePtr setSecondArgumentAsParameter(const ASTFunction * function, const ContextPtr & context) const;
 };
 
 QueryTreeNodePtr QueryTreeBuilder::buildQueryTreeNode(ASTPtr query_, ContextPtr context_)
@@ -820,44 +815,33 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
         }
         else
         {
-            const auto & group_concat_aliases = GroupConcatImpl<false>::getNameAndAliases();
-            if (!function->name.empty() && std::any_of(
-                    group_concat_aliases.begin(), group_concat_aliases.end(),
-                    [&](const std::string &s) { return Poco::toLower(s) == Poco::toLower(function->name); })
-                && function->arguments && function->arguments->children.size() == 2)
+            auto function_node = std::make_shared<FunctionNode>(function->name);
+            function_node->setNullsAction(function->getNullsAction());
+            function_node->markAsOperator(function->isOperator());
+
+            if (function->parameters)
             {
-                result = setSecondArgumentAsParameter(function, context);
+                const auto & function_parameters_list = function->parameters->as<ASTExpressionList>()->children;
+                for (const auto & argument : function_parameters_list)
+                    function_node->getParameters().getNodes().push_back(buildExpression(argument, context));
             }
-            else
+
+            if (function->arguments)
             {
-                auto function_node = std::make_shared<FunctionNode>(function->name);
-                function_node->setNullsAction(function->getNullsAction());
-                function_node->markAsOperator(function->isOperator());
-
-                if (function->parameters)
-                {
-                    const auto & function_parameters_list = function->parameters->as<ASTExpressionList>()->children;
-                    for (const auto & argument : function_parameters_list)
-                        function_node->getParameters().getNodes().push_back(buildExpression(argument, context));
-                }
-
-                if (function->arguments)
-                {
-                    const auto & function_arguments_list = function->arguments->as<ASTExpressionList>()->children;
-                    for (const auto & argument : function_arguments_list)
-                        function_node->getArguments().getNodes().push_back(buildExpression(argument, context));
-                }
-
-                if (function->isWindowFunction())
-                {
-                    if (function->window_definition)
-                        function_node->getWindowNode() = buildWindow(function->window_definition, context);
-                    else
-                        function_node->getWindowNode() = std::make_shared<IdentifierNode>(Identifier(function->window_name));
-                }
-
-                result = std::move(function_node);
+                const auto & function_arguments_list = function->arguments->as<ASTExpressionList>()->children;
+                for (const auto & argument : function_arguments_list)
+                    function_node->getArguments().getNodes().push_back(buildExpression(argument, context));
             }
+
+            if (function->isWindowFunction())
+            {
+                if (function->window_definition)
+                    function_node->getWindowNode() = buildWindow(function->window_definition, context);
+                else
+                    function_node->getWindowNode() = std::make_shared<IdentifierNode>(Identifier(function->window_name));
+            }
+
+            result = std::move(function_node);
         }
     }
     else if (const auto * subquery = expression->as<ASTSubquery>())
@@ -1400,57 +1384,6 @@ std::shared_ptr<TableFunctionNode> buildTableFunctionQueryTree(ASTPtr query, Con
 {
     QueryTreeBuilder builder;
     return builder.buildTableFunction(query, context);
-}
-
-QueryTreeNodePtr QueryTreeBuilder::setSecondArgumentAsParameter(const ASTFunction * function, const ContextPtr & context) const
-{
-    const auto * second_arg_ast = function->arguments->children[1].get();
-    const auto * second_arg_literal = second_arg_ast->as<ASTLiteral>();
-
-    if (!second_arg_literal)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "If groupConcat is used with two arguments, the second argument must be a constant String");
-    }
-
-    if (second_arg_literal->value.getType() != Field::Types::String)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "If groupConcat is used with two arguments, the second argument must be a constant String");
-    }
-
-    ASTPtr first_arg = function->arguments->children[0]->clone();
-
-    auto function_node = std::make_shared<FunctionNode>(function->name);
-    function_node->setNullsAction(function->getNullsAction());
-
-    /// Keep existing parameters (the optional limit)
-    ///  the second argument overrides the delimiter at slot 0
-    auto & parameters = function_node->getParameters().getNodes();
-    if (function->parameters)
-    {
-        const auto & function_parameters_list = function->parameters->as<ASTExpressionList>()->children;
-        for (const auto & parameter : function_parameters_list)
-            parameters.push_back(buildExpression(parameter, context));
-    }
-
-    auto delimiter_node = buildExpression(function->arguments->children[1], context); // Separator
-    if (parameters.empty())
-        parameters.push_back(std::move(delimiter_node));
-    else
-        parameters[0] = std::move(delimiter_node);
-
-    function_node->getArguments().getNodes().push_back(buildExpression(first_arg, context)); // Column to concatenate
-
-    if (function->isWindowFunction())
-    {
-        if (function->window_definition)
-            function_node->getWindowNode() = buildWindow(function->window_definition, context);
-        else
-            function_node->getWindowNode() = std::make_shared<IdentifierNode>(Identifier(function->window_name));
-    }
-
-    return std::move(function_node);
 }
 
 }
