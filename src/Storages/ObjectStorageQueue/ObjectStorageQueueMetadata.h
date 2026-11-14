@@ -103,6 +103,8 @@ public:
     /// - adjust, if needed and allowed, passed queue settings according to
     /// what is in keeper (for example, processing_threads_num is adjustable,
     /// because its default depends on the CPU cores on the server);
+    /// - if not `strict`, use `after_processing` and `source` from keeper instead of failing on a mismatch;
+    /// - if keeper has no `source` (metadata written by an older version), save the table's `source` there;
     static ObjectStorageQueueTableMetadata syncWithKeeper(
         const String & zookeeper_name,
         const fs::path & zookeeper_path,
@@ -111,6 +113,8 @@ public:
         const std::string & format,
         const ContextPtr & context,
         bool is_attach,
+        ObjectStorageQueueTableMetadata::Source source,
+        bool strict,
         LoggerPtr log);
     /// Alter settings in keeper metadata
     /// (rewrites what we write in syncWithKeeper()).

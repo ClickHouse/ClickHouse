@@ -21,8 +21,10 @@ class RemoteHostFilter;
 /// `after_processing_move_connection_string` and `after_processing_move_container` for Azure, with or without the legacy
 /// `s3queue_` prefix. Changing only the move keys or prefix stays inside a destination an authorized user set.
 /// An empty value disables the move destination, so it is not a destination and needs no grant.
-AccessRightsElements getS3QueueMoveDestinationAccess(const SettingsChanges & changes);
-AccessRightsElements getAzureQueueMoveDestinationAccess(const SettingsChanges & changes);
+/// `after_processing` other than `keep` needs the same unfiltered `WRITE`, because it modifies the source files.
+/// It is skipped when `check_source_access` is false, that is, when the table is known to have a different engine.
+AccessRightsElements getS3QueueMoveDestinationAccess(const SettingsChanges & changes, bool check_source_access);
+AccessRightsElements getAzureQueueMoveDestinationAccess(const SettingsChanges & changes, bool check_source_access);
 
 /// Throws `UNACCEPTABLE_URL` if `remote_url_allow_hosts` does not allow the destination of a move to another S3 bucket.
 /// The move builds its client directly, so the destination never passes `StorageS3Configuration::check`.

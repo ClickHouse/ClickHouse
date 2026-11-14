@@ -43,7 +43,9 @@ public:
 
     /// The grants needed by settings that make a table send its data to another place, e.g. the move destination of a queue.
     /// Returns nothing if `changes` set no such place. It reads only the changes, so the table need not exist on this host.
-    using GetExportAccessFn = AccessRightsElements(const SettingsChanges & changes);
+    /// It also returns the grants for settings that modify the source files, e.g. `after_processing` of a queue, if
+    /// `check_source_access` is true. It is false when the table is known to have a different engine.
+    using GetExportAccessFn = AccessRightsElements(const SettingsChanges & changes, bool check_source_access);
 
     struct Arguments
     {
@@ -193,7 +195,8 @@ public:
     AccessRightsElements getExportAccess(const ASTCreateQuery & create) const;
     /// The grants of every engine for which `changes` send the data elsewhere. It does not depend on the engine of the table,
     /// so `ALTER ... ON CLUSTER` can be authorized on an initiator that does not have the table or has another engine.
-    AccessRightsElements getExportAccessOfAnyEngine(const SettingsChanges & changes) const;
+    /// If `engine` is set, `after_processing` (a setting of several engines) needs only the grants of that engine.
+    AccessRightsElements getExportAccessOfAnyEngine(const SettingsChanges & changes, const String & engine = {}) const;
 
 private:
     Storages storages;

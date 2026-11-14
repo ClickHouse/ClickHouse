@@ -12,6 +12,7 @@
 # `after_processing_move_connection_string` or `after_processing_move_container` needs `WRITE` on the `S3` (`AZURE`)
 # source without a URL filter, because the move writes keys built from the prefix and the source keys, not from the URI.
 # `ALTER` needs `SELECT` on the table too. Settings that do not choose a destination need no extra grant.
+# `after_processing` = `delete`, `move` or `tag` modifies the source files, so it also needs `WRITE` on the source.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -24,6 +25,7 @@ keeper_path="/s3queue_move_destination_access_${db}"
 src="http://localhost:11111/test/${db}_move_src/"
 dst="http://localhost:11111/test/${db}_move_dst/"
 backup="Disk('backups', '05441_${CLICKHOUSE_TEST_UNIQUE_NAME}')"
+backup_src="Disk('backups', '05441_${CLICKHOUSE_TEST_UNIQUE_NAME}_src')"
 keys="after_processing_move_access_key_id = 'clickhouse', after_processing_move_secret_access_key = 'clickhouse'"
 attach_uuid=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
 azure_connection_string="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1;"
@@ -32,6 +34,9 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS ${db}.t_alias SYNC;
     DROP TABLE IF EXISTS ${db}.t SYNC;
     DROP TABLE IF EXISTS ${db}.t_create SYNC;
+    DROP TABLE IF EXISTS ${db}.t_delete SYNC;
+    DROP TABLE IF EXISTS ${db}.t_src SYNC;
+    DROP TABLE IF EXISTS ${db}.t_src_other SYNC;
     DROP TABLE IF EXISTS ${db}.t_as SYNC;
     DROP TABLE IF EXISTS ${db}.t_as_cluster SYNC;
     DROP TABLE IF EXISTS ${db}.t_as_cluster_new SYNC;
@@ -100,11 +105,23 @@ $CLICKHOUSE_CLIENT --user "${user_alter}" -q "
     -- { serverError ACCESS_DENIED }
 "
 
+# `delete`, `move` and `tag` modify the source files, so they need `WRITE` on `S3` too.
+for action in delete move tag; do
+    $CLICKHOUSE_CLIENT --user "${user_alter}" -q "
+        ALTER TABLE ${db}.t MODIFY SETTING after_processing = '${action}'
+        -- { serverError ACCESS_DENIED }
+    "
+done
+
 echo "-- ALTER ON CLUSTER is rejected by the initiator"
 
 $CLICKHOUSE_CLIENT -q "GRANT CLUSTER ON *.* TO ${user_alter}"
 $CLICKHOUSE_CLIENT --user "${user_alter}" -q "
     ALTER TABLE ${db}.t ON CLUSTER test_shard_localhost MODIFY SETTING after_processing_move_uri = '${dst}', ${keys}
+    -- { serverError ACCESS_DENIED }
+"
+$CLICKHOUSE_CLIENT --user "${user_alter}" -q "
+    ALTER TABLE ${db}.t ON CLUSTER test_shard_localhost MODIFY SETTING after_processing = 'delete'
     -- { serverError ACCESS_DENIED }
 "
 
@@ -140,6 +157,17 @@ $CLICKHOUSE_CLIENT -q "GRANT WRITE ON S3 TO ${user_alter}"
 $CLICKHOUSE_CLIENT --user "${user_alter}" -q "
     ALTER TABLE ${db}.t MODIFY SETTING after_processing_move_uri = '${dst}', ${keys}
 " && echo "destination with WRITE on S3: allowed"
+
+# `AzureQueue` also has `after_processing`, but an `S3Queue` table needs no grant on `AZURE`.
+$CLICKHOUSE_CLIENT --user "${user_alter}" -q "
+    ALTER TABLE ${db}.t MODIFY SETTING after_processing = 'delete'
+" && echo "after_processing = 'delete' with WRITE on S3: allowed"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE ${db}.t MODIFY SETTING after_processing = 'keep'"
+# With `ON CLUSTER` the table on another host may be an `AzureQueue`, so both grants are needed.
+$CLICKHOUSE_CLIENT --user "${user_alter}" -q "
+    ALTER TABLE ${db}.t ON CLUSTER test_shard_localhost MODIFY SETTING after_processing = 'delete'
+    -- { serverError ACCESS_DENIED }
+"
 
 # Resetting the destination disables the move, so it needs no grant for a destination.
 $CLICKHOUSE_CLIENT -q "REVOKE WRITE ON S3 FROM ${user_alter}"
@@ -204,6 +232,15 @@ $CLICKHOUSE_CLIENT --user "${user_create}" -q "
         after_processing_move_connection_string = '${azure_connection_string}', after_processing_move_container = 'dst'
     -- { serverError ACCESS_DENIED }
 "
+# `CREATE` with `delete`, `move` or `tag` needs `WRITE` on the source too.
+for action in delete move tag; do
+    $CLICKHOUSE_CLIENT --user "${user_create}" -q "
+        CREATE TABLE ${db}.t_create (x UInt8) ENGINE = S3Queue('${src}', 'clickhouse', 'clickhouse', 'CSV')
+        SETTINGS mode = 'unordered', keeper_path = '${keeper_path}_create', after_processing = '${action}',
+            after_processing_move_prefix = 'p', after_processing_tag_key = 'k', after_processing_tag_value = 'v'
+        -- { serverError ACCESS_DENIED }
+    "
+done
 
 # The same CREATE without a destination, or with an empty one, needs no grant for it.
 $CLICKHOUSE_CLIENT --user "${user_create}" -q "
@@ -300,6 +337,20 @@ $CLICKHOUSE_CLIENT --user "${user_create}" -q "
 "
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.tables WHERE database = '${db}' AND name = 't_backup_cluster'"
 
+# `RESTORE` is checked like `CREATE`: a queue with a different source cannot use an existing `keeper_path`.
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE ${db}.t_src (x UInt8) ENGINE = S3Queue('${dst}', 'clickhouse', 'clickhouse', 'CSV')
+    SETTINGS mode = 'unordered', keeper_path = '${keeper_path}_src';
+    BACKUP TABLE ${db}.t_src TO ${backup_src} FORMAT Null;
+    DROP TABLE ${db}.t_src SYNC;
+    CREATE TABLE ${db}.t_src_other (x UInt8) ENGINE = S3Queue('${src}', 'clickhouse', 'clickhouse', 'CSV')
+    SETTINGS mode = 'unordered', keeper_path = '${keeper_path}_src';
+"
+$CLICKHOUSE_CLIENT -q "
+    RESTORE TABLE ${db}.t_src FROM ${backup_src} SETTINGS structure_only = 1 FORMAT Null
+    -- { serverError METADATA_MISMATCH }
+"
+
 echo "-- CREATE AS and CREATE MATERIALIZED VIEW with WRITE on S3"
 
 # The same queries succeed with the grant, so `WRITE` on `S3` was the only missing one.
@@ -308,6 +359,10 @@ $CLICKHOUSE_CLIENT --user "${user_create}" -q "
     CREATE TABLE ${db}.t_as AS ${db}.t
     SETTINGS keeper_path = '${keeper_path}_as', after_processing = 'move', after_processing_move_uri = '${dst}', ${keys}
 " && echo "CREATE AS with WRITE on S3: created"
+$CLICKHOUSE_CLIENT --user "${user_create}" -q "
+    CREATE TABLE ${db}.t_delete (x UInt8) ENGINE = S3Queue('${src}', 'clickhouse', 'clickhouse', 'CSV')
+    SETTINGS mode = 'unordered', keeper_path = '${keeper_path}_delete', after_processing = 'delete'
+" && echo "after_processing = 'delete' with WRITE on S3: created"
 $CLICKHOUSE_CLIENT --user "${user_create}" -q "
     CREATE MATERIALIZED VIEW ${db}.mv ENGINE = S3Queue('${src}', 'clickhouse', 'clickhouse', 'CSV')
     SETTINGS mode = 'unordered', keeper_path = '${keeper_path}_mv', after_processing = 'move',
@@ -340,6 +395,9 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS ${db}.t_alias SYNC;
     DROP TABLE IF EXISTS ${db}.t SYNC;
     DROP TABLE IF EXISTS ${db}.t_create SYNC;
+    DROP TABLE IF EXISTS ${db}.t_delete SYNC;
+    DROP TABLE IF EXISTS ${db}.t_src SYNC;
+    DROP TABLE IF EXISTS ${db}.t_src_other SYNC;
     DROP TABLE IF EXISTS ${db}.t_as SYNC;
     DROP TABLE IF EXISTS ${db}.t_as_cluster SYNC;
     DROP TABLE IF EXISTS ${db}.t_as_cluster_new SYNC;

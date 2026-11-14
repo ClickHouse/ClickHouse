@@ -56,13 +56,21 @@ namespace
         if (mode != "ordered" && mode != "unordered" && mode != "exclusive")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue mode: {}", mode);
     }
+
+    String sourceToString(const ObjectStorageQueueTableMetadata::Source & source)
+    {
+        if (source.empty())
+            return "none";
+        return fmt::format("{} {} {}", source.endpoint, source.bucket, source.path_pattern);
+    }
 }
 
 
 ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     const ObjectStorageQueueSettings & engine_settings,
     const ColumnsDescription & columns_,
-    const std::string & format_)
+    const std::string & format_,
+    Source source_)
     : format_name(format_)
     , columns(columns_.toString(true))
     , mode(engine_settings[ObjectStorageQueueSetting::mode].toString())
@@ -79,6 +87,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     , tracked_files_limit(engine_settings[ObjectStorageQueueSetting::tracked_files_limit])
     , tracked_files_ttl_sec(engine_settings[ObjectStorageQueueSetting::tracked_file_ttl_sec])
     , buckets(engine_settings[ObjectStorageQueueSetting::buckets])
+    , source(std::move(source_))
 {
     processing_threads_num_changed = engine_settings[ObjectStorageQueueSetting::processing_threads_num].changed;
     if (!processing_threads_num_changed && engine_settings[ObjectStorageQueueSetting::processing_threads_num] <= 1)
@@ -121,6 +130,9 @@ String ObjectStorageQueueTableMetadata::toString() const
     json.set("partitioning_mode", partitioning_mode);
     json.set("partition_regex", partition_regex);
     json.set("partition_component", partition_component);
+    json.set("source_endpoint", source.endpoint);
+    json.set("source_bucket", source.bucket);
+    json.set("source_path_pattern", source.path_pattern);
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
@@ -212,6 +224,10 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , tracked_files_limit(getOrDefault(json, "tracked_files_limit", "s3queue_", 0ULL))
     , tracked_files_ttl_sec(getOrDefault(json, "tracked_files_ttl_sec", "", getOrDefault(json, "tracked_file_ttl_sec", "s3queue_", 0ULL)))
     , buckets(getOrDefault(json, "buckets", "", 0ULL))
+    , source{
+          getOrDefault<String>(json, "source_endpoint", "", ""),
+          getOrDefault<String>(json, "source_bucket", "", ""),
+          getOrDefault<String>(json, "source_path_pattern", "", "")}
 {
     validateMode(mode);
 }
@@ -223,11 +239,11 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueTableMetadata::parse(const Str
     return ObjectStorageQueueTableMetadata(json);
 }
 
-void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk)
+void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk, bool strict)
 {
+    auto log = getLogger("ObjectStorageQueueTableMetadata");
     if (processing_threads_num != from_zk.processing_threads_num)
     {
-        auto log = getLogger("ObjectStorageQueueTableMetadata");
         const auto message = PreformattedMessage::create(
             "Using `processing_threads_num` from keeper: {} (local: {})",
             from_zk.processing_threads_num.load(), processing_threads_num.load());
@@ -238,6 +254,23 @@ void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueT
             LOG_TRACE(log, message);
 
         processing_threads_num = from_zk.processing_threads_num.load();
+    }
+
+    if (strict)
+        return;
+
+    if (after_processing != from_zk.after_processing)
+    {
+        LOG_WARNING(log, "Using the stored `after_processing` of the queue: {} (local: {})",
+            actionToString(from_zk.after_processing.load()), actionToString(after_processing.load()));
+        after_processing = from_zk.after_processing.load();
+    }
+
+    if (!from_zk.source.empty() && source != from_zk.source)
+    {
+        LOG_WARNING(log, "The stored source of the queue differs: {} (local: {}), the table still reads its own",
+            sourceToString(from_zk.source), sourceToString(source));
+        source = from_zk.source;
     }
 }
 
@@ -263,6 +296,14 @@ void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectSto
             "Stored in ZooKeeper: {}, local: {}",
             from_zk.mode,
             mode);
+
+    if (!from_zk.source.empty() && source != from_zk.source)
+        throw Exception(
+            ErrorCodes::METADATA_MISMATCH,
+            "Existing table metadata in ZooKeeper differs in source. "
+            "Stored in ZooKeeper: {}, local: {}",
+            sourceToString(from_zk.source),
+            sourceToString(source));
 
     if (bucketing_mode != from_zk.bucketing_mode)
         throw Exception(
