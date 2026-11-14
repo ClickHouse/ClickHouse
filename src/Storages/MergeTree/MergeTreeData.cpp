@@ -280,6 +280,7 @@ namespace Setting
 {
     extern const SettingsBool allow_drop_detached;
     extern const SettingsBool enable_full_text_index;
+    extern const SettingsBool allow_combining_rename_column_with_other_alter_commands;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_suspicious_indexes;
     extern const SettingsBool allow_minmax_index_for_json;
@@ -6092,6 +6093,17 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     const auto & settings = local_context->getSettingsRef();
     const auto & settings_from_storage = getSettings();
+
+    /// A rename is a barrier mutation, which must not share its mutation entry with any other command.
+    if (!settings[Setting::allow_combining_rename_column_with_other_alter_commands])
+    {
+        auto is_effective = [](const AlterCommand & command) { return !command.ignore; };
+        auto is_rename = [](const AlterCommand & command) { return !command.ignore && command.type == AlterCommand::RENAME_COLUMN; };
+        if (std::ranges::any_of(commands, is_rename) && std::ranges::count_if(commands, is_effective) > 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "RENAME COLUMN must be the only command of an ALTER query. "
+                "Enable the setting `allow_combining_rename_column_with_other_alter_commands` to combine it with other commands");
+    }
 
     if (!settings[Setting::allow_non_metadata_alters])
     {
