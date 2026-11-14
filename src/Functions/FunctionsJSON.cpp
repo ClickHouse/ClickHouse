@@ -224,6 +224,7 @@ public:
             /// During constant folding (scalar queries without tables), arguments may not be
             /// wrapped in ColumnConst even if they're effectively constant (single-row columns).
             String path;
+            bool has_key = false;
             for (size_t i = 1; i <= num_index_arguments; ++i)
             {
                 const auto & arg = arguments[i];
@@ -254,16 +255,17 @@ public:
                 if (format_settings.json.json_type_escape_dots_in_keys)
                     key = escapeDotInJSONKey(key);
 
-                if (!path.empty())
+                if (has_key)
                     path += '.';
                 path += key;
+                has_key = true;
             }
 
             /// Expand ColumnConst to full column if needed.
             ColumnPtr object_column = col_const ? col_const->convertToFullColumn() : first_column.column;
 
             /// Root case (no path specified) return defaults for most functions.
-            if (path.empty())
+            if (!has_key)
                 return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
 
             /// Use combined `@` subcolumn that merges literal value and sub-object.
