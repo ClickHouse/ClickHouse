@@ -12,6 +12,7 @@
 #include <Common/randomSeed.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 
@@ -110,34 +111,10 @@ void setSnapshotTotals(
 
 bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var new_type)
 {
-    if (old_type.isString() && new_type.isString() && old_type.extract<String>() == new_type.extract<String>())
-        return true;
-
-    if (new_type.isString() && new_type.extract<String>() == "long" &&
-        old_type.isString() && (old_type.extract<String>() == "long" ||  old_type.extract<String>() == "int"))
-    {
-        return true;
-    }
-
-    if (new_type.isString() && new_type.extract<String>() == "double" &&
-        old_type.isString() && (old_type.extract<String>() == "float" ||  old_type.extract<String>() == "double"))
-    {
-        return true;
-    }
-
-    {
-        auto old_complex_type = old_type.extract<Poco::JSON::Object::Ptr>();
-        auto new_complex_type = new_type.extract<Poco::JSON::Object::Ptr>();
-
-        if (old_complex_type && new_complex_type && old_complex_type->has("precision") && new_complex_type->has("precision") &&
-            (old_complex_type->getValue<Int32>("precision") <= new_complex_type->getValue<Int32>("precision") &&
-             old_complex_type->getValue<Int32>("scale") <= new_complex_type->getValue<Int32>("scale")))
-        {
-            return true;
-        }
-    }
-
-    return false;
+    /// A primitive type is a string, such as "long" or "decimal(9, 2)". A nested type is an object; changing it is not supported.
+    if (!old_type.isString() || !new_type.isString())
+        return false;
+    return Iceberg::IcebergSchemaProcessor::allowPrimitiveTypeConversion(old_type.extract<String>(), new_type.extract<String>());
 }
 
 }
