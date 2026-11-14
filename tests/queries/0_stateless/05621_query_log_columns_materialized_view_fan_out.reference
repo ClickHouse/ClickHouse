@@ -1,0 +1,15 @@
+tgt_a	1
+tgt_a	2
+tgt_b	x
+tgt_b	yy
+tgt_all	1	x
+tgt_all	2	yy
+tgt_renamed	1	x
+tgt_renamed	2	yy
+mv_inner	1	1
+mv_inner	2	2
+Row 1:
+──────
+tables:  ['default.INNER','default.mv_a','default.mv_all','default.mv_b','default.mv_inner','default.mv_renamed','default.src','default.tgt_a','default.tgt_all','default.tgt_b','default.tgt_renamed']
+views:   ['default.mv_a','default.mv_all','default.mv_b','default.mv_inner','default.mv_renamed']
+columns: ['default.INNER.a','default.INNER.len','default.mv_a.a','default.mv_all.a','default.mv_all.b','default.mv_b.b','default.mv_inner.a','default.mv_inner.len','default.mv_renamed.tgtKey','default.mv_renamed.tgtVal','default.src.a','default.src.b','default.tgt_a.a','default.tgt_all.a','default.tgt_all.b','default.tgt_b.b','default.tgt_renamed.tgtKey','default.tgt_renamed.tgtVal']

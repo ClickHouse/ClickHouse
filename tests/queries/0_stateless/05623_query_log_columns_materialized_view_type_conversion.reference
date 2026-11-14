@@ -1,0 +1,6 @@
+1	x	UInt64
+Row 1:
+──────
+tables:  ['default.mv','default.src','default.tgt']
+views:   ['default.mv']
+columns: ['default.mv.tgtKey','default.mv.tgtVal','default.src.a','default.src.b','default.tgt.tgtKey','default.tgt.tgtVal']

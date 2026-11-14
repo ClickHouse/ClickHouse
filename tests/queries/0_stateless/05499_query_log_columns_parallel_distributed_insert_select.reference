@@ -1,0 +1,14 @@
+1	a
+2	b
+3	c
+Row 1:
+──────
+is_initial_query: 1
+tables:           ['default.dst_dist']
+columns:          ['default.dst_dist.dstKey','default.dst_dist.dstVal']
+
+Row 2:
+──────
+is_initial_query: 0
+tables:           ['default.dst_local','default.src_local']
+columns:          ['default.dst_local.dstKey','default.dst_local.dstVal','default.src_local.srcKey','default.src_local.srcVal']

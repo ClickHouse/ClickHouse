@@ -1,0 +1,23 @@
+1
+2
+3
+Row 1:
+──────
+log_comment: 05498_explicit_column_list
+tables:      ['default.wide']
+views:       []
+columns:     ['default.wide.a']
+
+Row 2:
+──────
+log_comment: 05498_no_column_list
+tables:      ['default.wide']
+views:       []
+columns:     ['default.wide.a','default.wide.b']
+
+Row 3:
+──────
+log_comment: 05498_renamed_through_views
+tables:      ['default.dst_first','default.dst_second','default.mv_first','default.mv_second','default.src']
+views:       ['default.mv_first','default.mv_second']
+columns:     ['default.dst_first.b','default.dst_second.c','default.mv_first.b','default.mv_second.c','default.src.a']
