@@ -97,16 +97,32 @@ def assign_tests(paths, total, timings):
                     "seconds": max(new_test_seconds, previous["seconds"]),
                     "kind": "changed_test_estimate",
                 }
+                if previous.get("isolate_until_measured"):
+                    row["isolate_until_measured"] = True
             else:
                 row = dict(previous)
             durations[path.name] = {**row, "input_sha256": identity}
     buckets = [[] for _ in range(total)]
     loads = [timings["job_overhead_seconds"] for _ in range(total)]
+    isolated = sorted(
+        path
+        for path in paths
+        if path.name in durations and durations[path.name].get("isolate_until_measured")
+    )
+    if len(isolated) > total or (
+        len(isolated) == total and len(isolated) < len(durations)
+    ):
+        raise ValueError("Not enough shards to isolate tests without measured runtimes")
+    for shard, path in enumerate(isolated):
+        buckets[shard].append(path)
+        loads[shard] += durations[path.name]["seconds"]
     for path in sorted(
-        (path for path in paths if path.name in durations),
+        (path for path in paths if path.name in durations and path not in isolated),
         key=lambda path: (-durations[path.name]["seconds"], path.name),
     ):
-        shard = min(range(total), key=lambda index: (loads[index], index))
+        shard = min(
+            range(len(isolated), total), key=lambda index: (loads[index], index)
+        )
         buckets[shard].append(path)
         loads[shard] += durations[path.name]["seconds"]
     # Keep explicit exclusions in the manifests, without giving skipped XMLs
@@ -121,6 +137,7 @@ def assign_tests(paths, total, timings):
     digest = hashlib.sha256(json.dumps(assignment, sort_keys=True).encode()).hexdigest()
     return buckets, {
         "strategy": "longest_runtime_first_v1",
+        "isolated_until_measured": [path.name for path in isolated],
         "shards": total,
         "assignment_sha256": digest,
         "predicted_job_seconds": loads,

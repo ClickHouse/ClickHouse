@@ -242,10 +242,11 @@ struct PageDecoderInfo
 
     /// [data, end) must be padded, i.e. have at least PADDING_FOR_SIMD bytes of readable memory
     /// before `data` and after `end`.
+    /// `num_values` is the number of values in the page (including nulls), an upper bound of the number of encoded values.
     /// If `string_value_filter` is not nullptr, string values that do not match it may be decoded
     /// as empty strings (used for substring search conditions pushed down from PREWHERE).
     std::unique_ptr<PageDecoder> makeDecoder(
-        parq::Encoding::type, std::span<const char> data, const StringValueFilter * string_value_filter = nullptr) const;
+        parq::Encoding::type, std::span<const char> data, size_t num_values, const StringValueFilter * string_value_filter = nullptr) const;
 
     /// Decode a min/max value from Statistics.
     /// If not supported, allow_stats is false, or the value doesn't survive the conversion to

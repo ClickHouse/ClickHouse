@@ -1,3 +1,4 @@
+SET allow_reserved_column_names = 1;
 DROP TABLE IF EXISTS t_ofsf;
 CREATE TABLE t_ofsf (c0 UInt32, u Float64 DEFAULT 0) ENGINE = MergeTree ORDER BY c0 SAMPLE BY c0;
 INSERT INTO t_ofsf SELECT number, 0 FROM numbers(100);

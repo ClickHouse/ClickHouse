@@ -8,7 +8,6 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/fr/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.rbac-beta" />
 
@@ -37,16 +36,40 @@ La création d’un nouveau service Postgres nécessite la permission existante 
 
 1. Cliquez sur le nom de votre organisation dans la barre latérale de gauche, puis sélectionnez **Utilisateurs et rôles**.
 
-<Image img="/images/managed-postgres/rbac/usersandroles.webp" alt="Menu Utilisateurs et rôles" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Menu Utilisateurs et rôles](/images/managed-postgres/rbac/usersandroles.webp)
+
+</Frame>
+
+</div>
 
 2. Ouvrez l’onglet **Rôles**, puis cliquez sur **Créer un rôle**.
 3. Saisissez un nom pour le rôle, puis cliquez sur **+ Autoriser** et sélectionnez **Service Postgres** dans la liste des entités.
 
-<Image img="/images/managed-postgres/rbac/postgresentity.webp" alt="Sélection de l’entité Service Postgres" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Sélection de l’entité Service Postgres](/images/managed-postgres/rbac/postgresentity.webp)
+
+</Frame>
+
+</div>
 
 4. Choisissez le service Postgres auquel limiter le rôle, puis sélectionnez les permissions à accorder.
 
-<Image img="/images/managed-postgres/rbac/newpostgresperms.webp" alt="Configuration des permissions Postgres pour un rôle" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Configuration des permissions Postgres pour un rôle](/images/managed-postgres/rbac/newpostgresperms.webp)
+
+</Frame>
+
+</div>
 
 5. Cliquez sur **Créer un rôle** pour enregistrer les modifications.
 
