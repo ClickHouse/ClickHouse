@@ -111,15 +111,12 @@ $CLICKHOUSE_CLIENT --max_rows_to_read 0 --query "
     ORDER BY event_time_microseconds
 "
 
-# The `planned:` lines above only prove the choreography - the same five rows and the same two
-# lines come out of a plain `Sorting` fallback, so they would not notice a planner change that
-# stops calling `requestReadingInOrder` for this shape at all. Each `ReadFromMergeTree` logs which
-# way it spread its mark ranges, and that pair of counts is the real witness of the guard: the
-# widened prefix did reach the children, `z_plain` honored it (its sorting key is as wide as the
-# prefix), and the alias child - whose snapshot key is one column short of the prefix - is the one
-# the guard sends back to the default path instead of resizing the expression list into null
-# `ASTPtr`s. If this shape ever stops reading in order, the counts become `0` and `2` and the test
-# fails instead of passing vacuously.
+# Each `ReadFromMergeTree` logs which way it spread its mark ranges. The widened prefix is refused
+# for the whole `Merge`: `ReadFromMerge::requestReadingInOrder` asks every child read whether it can
+# honor the prefix before switching any of them, and the alias child - whose snapshot key is one
+# column short of the prefix - cannot. So neither child reads in order: `z_plain` is not left reading
+# in order for a `Merge` that falls back to `Sorting` anyway, and the alias child does not resize its
+# sorting-key expression list into null `ASTPtr`s.
 $CLICKHOUSE_CLIENT --max_rows_to_read 0 --query "
     SELECT 'spread with order: ' || toString(countIf(message = 'Spreading ranges among streams with order'))
     FROM system.text_log

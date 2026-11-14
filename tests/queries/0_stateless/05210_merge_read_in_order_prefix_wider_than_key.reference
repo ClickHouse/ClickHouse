@@ -6,5 +6,5 @@ select status: 0
 0	0
 planned: a_alias
 planned: z_plain
-spread default: 1
-spread with order: 1
+spread default: 2
+spread with order: 0

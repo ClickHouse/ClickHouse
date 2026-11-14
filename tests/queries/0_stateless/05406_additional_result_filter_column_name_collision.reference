@@ -1,0 +1,7 @@
+a	b	greater(a, b)
+a	b	greater(b, a)
+0	1	0
+1	2	0
+2	3	0
+a	c
+1	1

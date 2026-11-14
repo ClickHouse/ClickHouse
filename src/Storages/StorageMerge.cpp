@@ -3,6 +3,7 @@
 #include <functional>
 #include <iterator>
 #include <span>
+#include <base/sort.h>
 #include <Access/ContextAccess.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Analyzer/ConstantNode.h>
@@ -43,6 +44,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
@@ -2174,6 +2176,41 @@ void replaceSubcolumnsOfAliasColumnsWithGetSubcolumn(ASTPtr & ast, const Columns
         replaceSubcolumnsOfAliasColumnsWithGetSubcolumn(child, columns, lambda_arguments);
 }
 
+/// Whether `name` occurs in `ast` as an identifier that is not rooted at an argument of an enclosing lambda.
+/// `RequiredSourceColumnsVisitor` masks only identifiers that are exactly a lambda argument, so it reports
+/// a field of a lambda argument (`z.v` in `arrayExists(z -> z.v = 'a', arr)`) as a required column.
+bool occursOutsideLambdaArguments(const ASTPtr & ast, const String & name, const NameSet & lambda_arguments)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        if (identifier->name() != name || lambda_arguments.contains(name))
+            return false;
+
+        for (auto [prefix, _] : Nested::getAllColumnAndSubcolumnPairs(name))
+            if (lambda_arguments.contains(String(prefix)))
+                return false;
+
+        return true;
+    }
+
+    if (ast->as<ASTSubquery>())
+        return false;
+
+    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
+    {
+        NameSet body_lambda_arguments = lambda_arguments;
+        for (auto & argument_name : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
+            body_lambda_arguments.insert(std::move(argument_name));
+        return occursOutsideLambdaArguments(function->arguments->children[1], name, body_lambda_arguments);
+    }
+
+    for (const auto & child : ast->children)
+        if (occursOutsideLambdaArguments(child, name, lambda_arguments))
+            return true;
+
+    return false;
+}
+
 }
 
 ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter_ptr,
@@ -2195,8 +2232,8 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     /// `generateFilterActions` in `InterpreterSelectQuery` clones for the same reason.
     ASTPtr expr = row_policy_filter_ptr->expression->clone();
 
-    /// A read cannot produce `ALIAS` columns or their subcolumns: expand them, unless the expansion reads a virtual column.
-    TreeRewriterResultPtr syntax_result;
+    /// A read cannot produce `ALIAS` columns or their subcolumns: expand them, unless the expansion reads a virtual column
+    /// (an `ALIAS` such as `concat(_table, ':', tenant)`). Then the policy reads the `ALIAS` column and is applied above the read.
     if (!storage_columns.getAliases().empty())
     {
         ColumnsDescription columns_with_virtuals = storage_columns;
@@ -2208,20 +2245,24 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
         replaceSubcolumnsOfAliasColumnsWithGetSubcolumn(expanded_expr, storage_columns, {});
         replaceAliasColumnsInQuery(expanded_expr, columns_with_virtuals, {}, local_context);
 
-        syntax_result = TreeRewriter(local_context, /* no_throw = */ true).analyze(expanded_expr, needed_columns);
-        if (syntax_result)
+        RequiredSourceColumnsVisitor::Data required_columns_data;
+        RequiredSourceColumnsVisitor(required_columns_data).visit(expanded_expr);
+        const auto required_columns = required_columns_data.requiredColumns();
+        bool reads_only_storage_columns = std::ranges::all_of(required_columns, [&](const auto & column_name)
+        {
+            return storage_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name)
+                || !occursOutsideLambdaArguments(expanded_expr, column_name, {});
+        });
+
+        if (reads_only_storage_columns)
             expr = std::move(expanded_expr);
     }
 
-    if (!syntax_result)
-        syntax_result = TreeRewriter(local_context).analyze(expr, needed_columns);
-    auto expression_analyzer = ExpressionAnalyzer{expr, syntax_result, local_context};
-
-    actions_dag = expression_analyzer.getActionsDAG(false /* add_aliases */, false /* project_result */);
-
-    /// Keep the analyzer's set registry: it is the only list of the predicate's IN-subqueries,
-    /// and addFilterTransform needs it to plant the step that builds them.
-    prepared_sets = expression_analyzer.getPreparedSets();
+    /// Leave the predicate's `IN (subquery)` sets unbuilt and keep them: `addFilterTransform` plants
+    /// the step that builds them, and until then an unbuilt set is what lets the index analysis of
+    /// `addStorageFilter` build it as an ordered set and prune granules.
+    actions_dag = analyzeExpressionToActionsDAG(
+        expr, needed_columns, local_context, /* add_aliases */ false, /* project_result */ true, /* build_subquery_sets */ false, &subquery_sets);
 
     /// The filter column is dropped from the stream after filtering, so it must be a dedicated
     /// column that does not coincide with a data column. Wrap the policy predicate in a
@@ -2236,10 +2277,32 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     /// Keep only the source (input) columns and the alias as outputs. This drops the raw predicate
     /// output regardless of query_plan_enable_optimizations, so a single table does not leak it and
     /// a Merge over children with different policies keeps matching headers in Pipe::unitePipes.
-    ActionsDAG::NodeRawConstPtrs new_outputs;
+    ///
+    /// The source columns are listed in `needed_columns` (table) order: `PlannerActionsVisitor`
+    /// registers DAG inputs in first-use order, so for a bare-column policy such as `USING b` over
+    /// `[a, b, c]` the predicate input `b` comes first in the outputs. `ActionsDAG::updateHeader`
+    /// materializes the result block in output order, so keeping that order would reorder the
+    /// stream header behind the filter.
+    ActionsDAG::NodeRawConstPtrs source_outputs;
     for (const auto * output : actions_dag.getOutputs())
         if (output->type == ActionsDAG::ActionType::INPUT)
-            new_outputs.push_back(output);
+            source_outputs.push_back(output);
+
+    std::unordered_map<std::string_view, size_t> column_positions;
+    for (const auto & column : needed_columns)
+        column_positions.emplace(column.name, column_positions.size());
+
+    ::sort(source_outputs.begin(), source_outputs.end(), [&](const auto * lhs, const auto * rhs)
+    {
+        auto position = [&](const auto * node)
+        {
+            auto it = column_positions.find(node->result_name);
+            return it == column_positions.end() ? column_positions.size() : it->second;
+        };
+        return position(lhs) < position(rhs);
+    });
+
+    ActionsDAG::NodeRawConstPtrs new_outputs = std::move(source_outputs);
     new_outputs.push_back(&alias_node);
     actions_dag.getOutputs() = std::move(new_outputs);
 
@@ -2282,7 +2345,7 @@ void ReadFromMerge::RowPolicyData::addCreatingSetsStep(QueryPlan & plan, Context
 {
     /// No other path builds these sets for every engine and for FINAL: addStorageFilter is only an
     /// additional pushdown. No subquery adds no step.
-    addDelayedCreatingSetsStep(plan, prepared_sets, local_context);
+    addDelayedCreatingSetsStep(plan, subquery_sets, local_context);
 }
 
 StorageMetadataPtr ReadFromMerge::getChildMetadataSnapshot(const StoragePtr & storage, const ContextPtr & query_context) const
@@ -2946,6 +3009,19 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
     /// Ask every reading step first: the loop below switches the children one by one.
     if (!canReadInOrder(*order_info_, /*allow_shorter_read_key=*/ true))
         return false;
+
+    /// The same for the prefix: it is computed from the tables the `Merge` selected, but it is handed to every
+    /// reading step of the child plans, and a step whose sorting key is shorter refuses it.
+    const size_t prefix_size = order_info_->used_prefix_of_sorting_key_size;
+    auto can_read_in_order_with_prefix = [prefix_size](ReadFromMergeTree & read_from_merge_tree)
+    {
+        return read_from_merge_tree.canReadInOrderWithPrefix(prefix_size);
+    };
+
+    for (const auto & child_plan : *child_plans)
+        if (child_plan.plan.isInitialized()
+            && !recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), can_read_in_order_with_prefix))
+            return false;
 
     auto request_read_in_order = [order_info_, query_limit](ReadFromMergeTree & read_from_merge_tree)
     {
