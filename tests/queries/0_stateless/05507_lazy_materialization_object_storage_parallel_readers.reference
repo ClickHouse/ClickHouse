@@ -1,0 +1,31 @@
+-- rows and data files of the LIMITs
+3000	8
+100	8
+-- the lazy read step is in the plan
+1
+-- the same result with the optimization enabled and disabled
+narrow, max_threads = 1: same
+narrow, max_threads = 4: same
+narrow, max_threads = 16: same
+wide, max_threads = 16: same
+nested, max_threads = 16: same
+-- the lazy read step is in the plan of a JSON column of Parquet files
+1
+-- the number of readers
+04_narrow	4
+04_nested	1
+04_wide	1
+16_aggregate_value	3
+16_archive	2
+16_array	1
+16_dynamic	1
+16_json	1
+16_map	1
+16_narrow	8
+16_narrow_streams	4
+16_nested	1
+16_nested_dynamic	1
+16_nullable	3
+16_wide	1
+-- the rows of the readers are balanced
+1
