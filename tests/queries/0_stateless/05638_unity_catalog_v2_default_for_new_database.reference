@@ -1,0 +1,1 @@
+CREATE DATABASE default_1\nENGINE = DataLakeCatalog(\'http://localhost:18181\')\nSETTINGS catalog_type = \'unity\', warehouse = \'wh\', use_unity_catalog_v2 = 1

@@ -1095,7 +1095,7 @@ String DatabaseDataLake::getDefaultTableEngineName(const String & name) const
             throw cannotTellNewTableLocation(name);
     }
 
-    const auto table_format = table_metadata ? catalog->getTableFormat(*table_metadata) : catalog->getTableFormat(DataLake::TableMetadata());
+    const auto table_format = catalog->getDefaultTableFormat();
     const auto storage_type = table_metadata ? table_metadata->getStorageType() : *catalog_storage_type;
 
     if (auto engine_name = chooseTableEngineName(table_format, storage_type))
@@ -2063,6 +2063,22 @@ void DatabaseDataLake::shutdown()
     }
 }
 
+/// By default, for new databases, use V2 Unity Catalog reader.
+/// Writes the setting into the `CREATE` query, so the stored definition keeps it.
+static void setUnityV2ForNewDatabase(const DatabaseFactory::Arguments & args, DatabaseDataLakeSettings & database_settings)
+{
+    if (args.create_query.attach || args.is_restore_from_backup)
+        return;
+
+    if (database_settings[DatabaseDataLakeSetting::catalog_type].value != DatabaseDataLakeCatalogType::UNITY
+        || database_settings[DatabaseDataLakeSetting::use_unity_catalog_v2].changed)
+        return;
+
+    const SettingChange use_v2{DatabaseDataLakeSettings::getSettingName(DatabaseDataLakeSetting::use_unity_catalog_v2), 1};
+    args.create_query.storage->settings->changes.push_back(use_v2);
+    database_settings.applyChanges({use_v2});
+}
+
 void registerDatabaseDataLake(DatabaseFactory & factory);
 void registerDatabaseDataLake(DatabaseFactory & factory)
 {
@@ -2097,6 +2113,8 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         }
 
         auto catalog_type = database_settings[DB::DatabaseDataLakeSetting::catalog_type].value;
+        setUnityV2ForNewDatabase(args, database_settings);
+
         /// Glue catalog is one per region, so it's fully identified by aws keys and region
         /// There is no URL you need to provide in constructor, even if we would want it
         ///  will be something like https://aws.amazon.com.
@@ -2395,7 +2413,7 @@ The following settings are supported:
 | `catalog_type`          | Type of catalog: `glue`, `unity` (Delta, or Delta and Iceberg with `use_unity_catalog_v2`), `rest` (Iceberg), `hive`, `onelake` (Iceberg), `delta_sharing` (Iceberg, flat namespaces), `horizon` (Snowflake Horizon Iceberg REST) |
 | `warehouse`             | The warehouse/database name to use in the catalog.                                      |
 | `catalog_credential`    | Authentication credential for the catalog (e.g., API key or token)                      |
-| `use_unity_catalog_v2`  | For `catalog_type = 'unity'`: use the new implementation, which serves both Delta Lake and Iceberg tables. Default: `false`. Set it on `CREATE`, or change it for an existing database with `ALTER DATABASE ... MODIFY SETTING`. |
+| `use_unity_catalog_v2`  | For `catalog_type = 'unity'`: use the new implementation, which serves both Delta Lake and Iceberg tables. A new database uses it, unless `CREATE` sets `use_unity_catalog_v2 = 0`. A database from an earlier version keeps the old implementation. Change it for an existing database with `ALTER DATABASE ... MODIFY SETTING`. |
 | `auth_header`           | Custom HTTP header for authentication with the catalog service                          |
 | `auth_scope`            | OAuth2 scope for authentication (if using OAuth)                                        |
 | `storage_endpoint`      | Endpoint URL for the underlying storage                                                 |
