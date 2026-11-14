@@ -22,6 +22,8 @@ SELECT CAST(NULL::Dynamic AS JSON(a Enum8('x' = 1, 'y' = 2)));
 {"a":"x"}
 SELECT CAST([NULL, 'y']::Array(Dynamic) AS Array(Enum8('x' = 1, 'y' = 2)));
 ['x','y']
+SELECT CAST(map('k', NULL::Dynamic, 'j', 'y'::Dynamic) AS Map(String, Enum8('x' = 1, 'y' = 2)));
+{'k':'x','j':'y'}
 SELECT CAST(v AS Enum8('x' = 1, 'y' = 2)) FROM (SELECT arrayJoin(['y'::Variant(String, UInt8), NULL]) AS v);
 y
 x
@@ -31,6 +33,8 @@ SELECT CAST(v AS Tuple(a UInt8, status Enum8('x' = 1, 'y' = 2))) FROM (SELECT ar
 SELECT CAST(v AS JSON(a Enum8('x' = 1, 'y' = 2))) FROM (SELECT arrayJoin(['{"a" : "y"}'::Variant(String, UInt8), NULL]) AS v);
 {"a":"y"}
 {"a":"x"}
+SELECT CAST(map('k', NULL::Variant(String, UInt8), 'j', 'y'::Variant(String, UInt8)) AS Map(String, Enum8('x' = 1, 'y' = 2)));
+{'k':'x','j':'y'}
 -- A Nullable result keeps NULL.
 SELECT CAST(NULL::Dynamic AS Enum8('x' = 1, 'y' = 2)) SETTINGS cast_keep_nullable = 1;
 \N
