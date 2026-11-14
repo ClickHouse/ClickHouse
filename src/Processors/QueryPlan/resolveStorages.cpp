@@ -35,6 +35,7 @@
 
 #include <stack>
 #include <Common/StackWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace DB
 {
@@ -162,7 +163,7 @@ static std::unique_ptr<ExpressionStep> makeStepWithoutAdditionalFilter(
         return {};
     outputs.erase(filter_output);
     /// The read applies the filter with its `arrayJoin`, which `removeUnusedActions` would keep here as well.
-    std::unordered_set<const ActionsDAG::Node *> array_joins;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> array_joins;
     for (const auto & action : actions.getNodes())
         if (action.type == ActionsDAG::ActionType::ARRAY_JOIN)
             array_joins.insert(&action);
