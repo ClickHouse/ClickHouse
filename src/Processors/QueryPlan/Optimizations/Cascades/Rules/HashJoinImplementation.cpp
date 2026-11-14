@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
 #include <Core/Joins.h>
 #include <Core/Names.h>
@@ -163,6 +164,12 @@ void HashJoinImplementation::StrategyEnumerator::extractEquiJoinKeys()
         String hash_type_name;
         DataTypePtr left_type = left_node.getType();
         DataTypePtr right_type = right_node.getType();
+
+        /// The shuffle hashes the keys after a cast. For a pair the JOIN does not compare exactly, such as `FixedString`
+        /// vs `String`, matching rows would hash differently (`'a'` vs `'a\0\0'`) and land on different nodes.
+        if (!JoinCommon::isExactJoinKeyEquality(left_type, right_type))
+            continue;
+
         if (!left_type->equals(*right_type))
         {
             DataTypePtr common_type = tryGetLeastSupertype(DataTypes{left_type, right_type});

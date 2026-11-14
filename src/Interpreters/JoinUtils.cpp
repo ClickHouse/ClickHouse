@@ -742,6 +742,19 @@ bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
     return left_type_strict->equals(*right_type_strict);
 }
 
+bool isExactJoinKeyEquality(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    auto left = removeLowCardinalityAndNullable(left_type);
+    auto right = removeLowCardinalityAndNullable(right_type);
+    if (left->equals(*right))
+        return true;
+    if (isNumber(left) && isNumber(right))
+        return true;
+    if (isDateOrDate32OrDateTimeOrDateTime64(left) && isDateOrDate32OrDateTimeOrDateTime64(right))
+        return true;
+    return isFixedString(left) && isFixedString(right);
+}
+
 static ColumnPtr castToBoolColumn(ColumnPtr column)
 {
     if (!typeid_cast<const ColumnUInt8 *>(column.get()))

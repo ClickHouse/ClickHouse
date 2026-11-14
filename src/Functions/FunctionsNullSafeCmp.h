@@ -305,6 +305,14 @@ public:
         if (common_type)
         {
             // To address: Nullable vs Nullable
+            // A `FixedString` vs `String` pair is compared zero-padded by `=`, while the cast to the common type `String`
+            // drops the trailing zero bytes of the `FixedString` operand only, so compare the nested values as `=` does.
+            // The same holds for such a pair of tuple elements.
+            const bool has_zero_padded_strings = (isStringOrFixedString(left_nested_type) && isStringOrFixedString(right_nested_type))
+                || hasAlignedStringVsFixedStringElement(left_nested_type, right_nested_type)
+                || hasAlignedStringVsFixedStringElement(right_nested_type, left_nested_type);
+            if (common_type->isNullable() && has_zero_padded_strings)
+                return executeNullableWithoutSupertype(arguments, input_rows_count);
             if (common_type->isNullable())
             {
                 ColumnPtr c0_converted = castColumn(arguments[0], common_type);

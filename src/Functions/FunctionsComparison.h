@@ -108,6 +108,29 @@ static bool hasAlignedStringVsNonStringElement(const DataTypePtr & left_type, co
     return left_is_string != right_is_string;
 }
 
+/// Whether `type` has a `String` compared with a `FixedString` of `other_type`: such values are compared zero-padded,
+/// unlike after a cast to the common type `String`. Tuples are compared element-wise, so their elements count at any
+/// depth; arrays and maps are compared after a cast to the common type, so theirs do not.
+static bool hasAlignedStringVsFixedStringElement(const DataTypePtr & type, const DataTypePtr & other_type)
+{
+    const auto own = removeLowCardinalityAndNullable(type);
+    const auto other = removeLowCardinalityAndNullable(other_type);
+    if (isString(own) && isFixedString(other))
+        return true;
+
+    const auto * own_tuple = checkAndGetDataType<DataTypeTuple>(own.get());
+    const auto * other_tuple = checkAndGetDataType<DataTypeTuple>(other.get());
+    if (!own_tuple || !other_tuple || own_tuple->getElements().size() != other_tuple->getElements().size())
+        return false;
+
+    for (size_t i = 0; i < own_tuple->getElements().size(); ++i)
+    {
+        if (hasAlignedStringVsFixedStringElement(own_tuple->getElement(i), other_tuple->getElement(i)))
+            return true;
+    }
+    return false;
+}
+
 /// For the array element-comparison path: a bare `Nothing` position carries no value, so the element
 /// comparator declares `Nothing` and the comparison cannot be executed.
 static bool containsUndecidableNothing(const DataTypePtr & type)

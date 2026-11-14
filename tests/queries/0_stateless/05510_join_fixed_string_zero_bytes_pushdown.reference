@@ -1,0 +1,19 @@
+-- filter pushdown through the join: the result must not depend on the setting
+1
+1
+1
+1
+2
+2
+2
+2
+-- the join is not converted to IN (result, plan has a set)
+2
+2
+0
+-- control: a join on String keys is converted (result, plan has a set)
+3
+1
+-- LEFT ANY JOIN with a GROUP BY on the key is not converted to INNER ALL: `x` matches two groups
+2
+2
