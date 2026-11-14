@@ -1,0 +1,20 @@
+ARRAY JOIN alias
+1
+1
+0
+Tuple column
+1
+1
+0
+a column without such a subcolumn does not hide the name
+0
+compound ARRAY JOIN alias
+1
+1
+an ARRAY JOIN output without such a subcolumn does not hide the name
+1
+1
+database.table here is table.column in the enclosing query
+1
+1
+0
