@@ -568,7 +568,6 @@ public:
         MutableColumnPtr shape_prototype;
         bool in_row_store = false;
         /// Logical bytes of this column over the live rows of the stored blocks, and those rows.
-        /// A `ColumnReplicated` is counted at its allocated bytes.
         size_t emit_bytes = 0;
         size_t emit_rows = 0;
     };

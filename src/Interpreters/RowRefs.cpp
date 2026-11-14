@@ -368,6 +368,15 @@ static void addLiveRowsBytes(StoredColumnsIndex::EmitColumn & emit_column, const
     emit_column.emit_rows += block.selector.size();
 }
 
+/// The join emits a `ColumnReplicated` materialized, so each row the block's selector keeps counts in full.
+static void addLiveReplicatedRowsBytes(
+    StoredColumnsIndex::EmitColumn & emit_column, const StoredBlock & block, const ColumnReplicated & column)
+{
+    for (size_t row : block.selector)
+        emit_column.emit_bytes += column.byteSizeAt(row);
+    emit_column.emit_rows += block.selector.size();
+}
+
 void StoredColumnsIndex::resolveEmitColumns(
     size_t saved_columns_count, const std::vector<EmitColumnRequest> & requests, std::vector<GatherColumn> & out_gather)
 {
@@ -428,7 +437,6 @@ void StoredColumnsIndex::resolveEmitColumns(
                 }
 
                 const IColumn * column = block->columns[request.access.index].get();
-                size_t column_bytes = 0;
                 /// `row' = indexes[row]` addresses the nested column, so the planes come from there
                 /// and the remap entry carries the indexes plane.
                 if (const ColumnReplicated * replicated = block->replicated_columns[request.access.index])
@@ -446,7 +454,7 @@ void StoredColumnsIndex::resolveEmitColumns(
                     if (remap.empty())
                         remap.resize(num_blocks);
                     remap[b] = {.indexes_data = indexes_raw.data(), .index_width = static_cast<UInt8>(index_width)};
-                    column_bytes = replicated->allocatedBytes();
+                    addLiveReplicatedRowsBytes(*emit_column, *block, *replicated);
                     column = replicated->getNestedColumn().get();
                     /// `remapFlatWord` puts `indexes[row]` back in a 32-bit row field, so the nested
                     /// column has to fit a block's row limit as well. It can be larger than the block
@@ -458,10 +466,9 @@ void StoredColumnsIndex::resolveEmitColumns(
                             column->size());
                 }
                 else
-                    column_bytes = column->byteSize();
+                    addLiveRowsBytes(*emit_column, *block, column->byteSize());
 
                 resolveGatherNode(emit_column->gather_root, request.type, *column, b, num_blocks);
-                addLiveRowsBytes(*emit_column, *block, column_bytes);
             }
             /// With no live block to decide the shape - an empty right side, or one whose blocks
             /// were all cleared - the join still emits, every row a default, so a column of the

@@ -78,3 +78,19 @@ FROM
     ) AS r ON l.k = r.k1 AND l.k = r.k2
 )
 SETTINGS max_block_size = 4096, max_joined_block_size_rows = 0, max_joined_block_size_bytes = 65536, join_algorithm = 'hash';
+
+-- A right column stored as `ColumnReplicated` (from `ARRAY JOIN`) is emitted materialized, so the byte
+-- budget must count the full value of every emitted row, not the replicated column's compact size.
+SELECT max(bs * b) <= 65536, count()
+FROM
+(
+    SELECT blockSize() AS bs, byteSize(r.v) AS b
+    FROM (SELECT number % 128 AS k FROM numbers(4096)) AS l
+    INNER JOIN
+    (
+        SELECT number * 64 + n % 64 AS k, rightPad(toString(number), 1024, 'x') AS v
+        FROM numbers(2) ARRAY JOIN range(128) AS n
+    ) AS r ON l.k = r.k
+)
+SETTINGS max_block_size = 4096, max_joined_block_size_rows = 0, max_joined_block_size_bytes = 65536,
+         enable_lazy_columns_replication = 1, join_algorithm = 'hash';
