@@ -1,0 +1,10 @@
+--- an explicit time zone
+3
+--- a String
+3
+--- a parameter named like a DateTime column, and the parameter of a lambda inside the shared body
+3
+5
+--- an alias that is not invoked
+x = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')
+2

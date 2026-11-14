@@ -1,0 +1,4 @@
+--- an alias of a column that the statement adds
+1	1
+--- a comparison with a DateTime column that the statement adds
+event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')

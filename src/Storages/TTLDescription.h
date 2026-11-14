@@ -196,4 +196,8 @@ struct TTLTableDescription
         TTLValidationMode validation_mode);
 };
 
+/// Every analysis of a stored TTL expression uses the server settings, as `CREATE` and table loading do, on a copy of the
+/// caller's context, so the caller's user and current database still apply.
+ContextPtr getTTLExpressionContext(const ContextPtr & context);
+
 }
