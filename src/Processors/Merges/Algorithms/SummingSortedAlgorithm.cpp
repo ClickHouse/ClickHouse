@@ -68,7 +68,7 @@ struct SummingSortedAlgorithm::AggregateDescription
 
     String sum_function_map_name;
 
-    /// For a number summed by `sumWithOverflow` (see `can_copy_rows_of_own_groups`): its size and whether it is a float.
+    /// Set for a number summed by `sumWithOverflow` (see `can_copy_rows_of_own_groups`).
     size_t value_size = 0;
     bool is_float = false;
 
@@ -592,8 +592,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
             def.columns_need_exact_copy[i] = true;
     }
 
-    /// A group of one row results in that row when every aggregated column is a number summed by
-    /// `sumWithOverflow`: the sum of one value `x` is `0 + x` (see `SummingMergedData::insertRowsOfOwnGroups`).
+    /// A group of one row results in that row (up to `0 + x`) when every aggregated column is a number summed by `sumWithOverflow`.
     def.can_copy_rows_of_own_groups = true;
     for (auto & desc : def.columns_to_aggregate)
     {
@@ -621,8 +620,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         if (column.type->hasDynamicStructure())
             def.can_copy_rows_of_own_groups = false;
 
-    /// See `finishGroup`: a row is removed only if each aggregated column is a single summed column with
-    /// `remove_default_values` and all of them are zero.
+    /// `finishGroup` removes a row only if every aggregated column has `remove_default_values` and all of them are zero.
     def.removes_zero_rows = def.can_copy_rows_of_own_groups && def.maps_to_sum.empty() && !def.columns_to_aggregate.empty()
         && std::all_of(def.columns_to_aggregate.begin(), def.columns_to_aggregate.end(), [](const auto & desc) { return desc.remove_default_values; });
 
@@ -1001,7 +999,6 @@ static bool isZeroSum(const char * data, size_t value_size, bool is_float, size_
     return true;
 }
 
-/// Appends the rows at the positions [begin, end) of `src`, through `permutation` if it is set.
 static void insertRowsAtPositions(IColumn & dst, const IColumn & src, size_t begin, size_t end, const IColumn::Permutation * permutation)
 {
     if (!permutation)
@@ -1014,7 +1011,6 @@ static void insertRowsAtPositions(IColumn & dst, const IColumn & src, size_t beg
         dst.insertFrom(src, (*permutation)[pos]);
 }
 
-/// Appends the given rows of `src`.
 static void insertRowsByNumbers(IColumn & dst, const IColumn & src, const VectorWithMemoryTracking<size_t> & rows)
 {
     for (size_t row : rows)
@@ -1026,7 +1022,6 @@ void SummingSortedAlgorithm::SummingMergedData::insertRowsOfOwnGroups(
 {
     chassert(!is_group_started && def.can_copy_rows_of_own_groups);
 
-    /// Appends rows to every column with `insert_column(dst, src)`, adding 0 to the float sums as `sumWithOverflow` does.
     const auto insert_rows = [&](size_t num_rows, const auto & insert_column)
     {
         const size_t old_rows = columns.front()->size();
@@ -1052,7 +1047,6 @@ void SummingSortedAlgorithm::SummingMergedData::insertRowsOfOwnGroups(
 
     const auto row_at = [permutation](size_t pos) { return permutation ? (*permutation)[pos] : pos; };
 
-    /// A row whose sums are all zero is removed (see `finishGroup`): find the first one.
     size_t first_zero_row_pos = end;
     const size_t num_sums = def.columns_to_aggregate.size();
     const auto is_zero_row = [&](size_t row)
@@ -1090,7 +1084,6 @@ void SummingSortedAlgorithm::SummingMergedData::insertRowsOfOwnGroups(
     if (first_zero_row_pos == end)
         return;
 
-    /// Skip the zero rows: insert the other rows in portions of a bounded size.
     static constexpr size_t max_rows_in_portion = 65536;
     const auto insert_portion = [&]
     {
@@ -1153,7 +1146,6 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
 {
     columns_definition.origin_header = header_;
 
-    /// The rows of a source without duplicate keys can be taken by whole batches (see `mergeImpl`).
     uses_batches_of_unique_keys = columns_definition.can_copy_rows_of_own_groups;
 }
 
@@ -1174,7 +1166,6 @@ void SummingSortedAlgorithm::initialize(Inputs inputs)
 
     merged_data.initialize(*header, inputs);
     merged_data.setMayHaveReplicatedColumns(anyInputColumnReplicated(inputs));
-    /// Replicated columns are not copied in bulk (see `merge`), so the merge does not need to look for batches.
     if (merged_data.mayHaveReplicatedColumns())
         uses_batches_of_unique_keys = false;
 
@@ -1197,10 +1188,9 @@ void SummingSortedAlgorithm::consume(Input & input, size_t source_num)
     updateCursor(input, source_num);
 }
 
-/// Out of line: it runs once per batch, and inlining it would make the loop over the other rows in `merge` slower.
+/// Out of line to keep the per-row loop of `mergeImpl` fast.
 NO_INLINE bool SummingSortedAlgorithm::takeRowsOfOwnGroups(SortCursor current, size_t batch_size, bool compare_keys)
 {
-    /// Positions in the cursor; the rows are read through its permutation, if any (an unsorted INSERT block).
     const IColumn::Permutation * permutation = current->permutation;
     const auto row_at = [permutation](size_t pos) { return permutation ? (*permutation)[pos] : pos; };
     ColumnRawPtrs & sort_columns = current->sort_columns;
@@ -1210,7 +1200,6 @@ NO_INLINE bool SummingSortedAlgorithm::takeRowsOfOwnGroups(SortCursor current, s
     };
 
     const size_t pos = current->getPosRef();
-    /// The group of the current row continues with the next row.
     if (compare_keys && next_row_has_same_key(pos))
         return false;
 
@@ -1219,14 +1208,12 @@ NO_INLINE bool SummingSortedAlgorithm::takeRowsOfOwnGroups(SortCursor current, s
 
     const ColumnRawPtrs & columns = current->all_columns;
 
-    /// The group of the current row ends with it (see `mergeImpl`).
     merged_data.finishGroup();
 
     const size_t begin = pos + 1;
     size_t end = pos + batch_size - 1;
 
-    /// Keep the limits of the block size: write only the rows that fit before a flush. The row `end` then
-    /// starts its group as usual, and like for each row in `mergeImpl` a full block is emitted before that.
+    /// Write only the rows that fit before a flush: the row `end` then starts its group as usual.
     if (merged_data.hasEnoughRows())
         end = begin;
     else
@@ -1235,7 +1222,6 @@ NO_INLINE bool SummingSortedAlgorithm::takeRowsOfOwnGroups(SortCursor current, s
         end = permutation ? begin + max_rows : begin + merged_data.rowsToInsertBeforeFlush(columns, begin, max_rows, current->getSize());
     }
 
-    /// Without the guarantee of unique keys, a row is a group of its own only if it also differs from the next row.
     if (compare_keys)
     {
         size_t run_end = begin;
@@ -1323,14 +1309,10 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::mergeImpl()
         else
             merged_data.addRow(current->all_columns, current->getRow());
 
-        /// A part with a non-zero level is taken to have no duplicate keys (see `sourceHasUniqueKeys`). All rows of one
-        /// batch come consecutively from the same cursor and are less than the current rows of the other cursors,
-        /// except that the last row of the batch may have the same key as the current row of a cursor of a later
-        /// source. So in a batch from such a part the group of the current row (which may have started in another
-        /// source) ends with it, and every row between it and the last row is a group of its own: take them in one
-        /// go instead of starting and finishing a group for each of them.
-        /// A single source may have duplicate keys (the block of an INSERT): its rows that differ from both neighbours
-        /// are groups of their own too, and finding them takes the comparisons that the per-row path makes anyway.
+        /// A batch is consecutive rows of one cursor, less than the current rows of the other cursors except that the last
+        /// one may equal the current row of a later source. So with unique keys the group of the first row ends with it, and
+        /// each row between it and the last one is a group of its own. In a single source with duplicate keys (the block of
+        /// an INSERT), so is each row that differs from both neighbours.
         if constexpr (take_batches)
         {
             if (unlikely(current_and_batch_size.second >= min_batch_size_to_take))
@@ -1340,7 +1322,6 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::mergeImpl()
                     if (!current->permutation && takeRowsOfOwnGroups(current, current_and_batch_size.second, /*compare_keys=*/ false))
                         continue;
                 }
-                /// Only after a group of one row: where keys repeat, looking for a run would cost a comparison per group.
                 else if (take_runs_of_distinct_keys && key_differs && previous_group_has_one_row
                     && takeRowsOfOwnGroups(current, current_and_batch_size.second, /*compare_keys=*/ true))
                     continue;

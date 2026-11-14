@@ -37,8 +37,7 @@ void IMergingAlgorithmWithDelayedChunk::initializeQueue(Inputs inputs)
     /// A single-column key without a collation compares cheaply even through the generic
     /// `SortCursor`, so it keeps the heap container (see `sortDescriptionCompareIsExpensive`).
     /// The algorithms consume rows one by one, so the batches only pay off by saving
-    /// comparisons: with a cheap comparator the detection is skipped, unless the algorithm
-    /// takes long batches of rows without duplicate keys in one go.
+    /// comparisons: with a cheap comparator the detection is skipped, unless the algorithm takes long batches whole.
     bool compare_is_expensive = sortDescriptionCompareIsExpensive(description);
     has_long_batches_of_unique_keys = uses_batches_of_unique_keys && sourcesHaveLongBatchesOfUniqueKeys();
     queue = SortingQueueForCursor<SortCursor, SortingQueueStrategy::Batch>(
@@ -47,8 +46,6 @@ void IMergingAlgorithmWithDelayedChunk::initializeQueue(Inputs inputs)
 
 bool IMergingAlgorithmWithDelayedChunk::singleSourceHasMostlyDistinctKeys() const
 {
-    /// A small sample, like in `sourcesHaveLongBatchesOfUniqueKeys`: with keys that repeat (a block of an INSERT that
-    /// sums many rows per key) looking for rows with distinct keys would only cost.
     static constexpr size_t max_rows_to_check = 1024;
 
     const SortCursorImpl * source = nullptr;
@@ -80,11 +77,6 @@ bool IMergingAlgorithmWithDelayedChunk::singleSourceHasMostlyDistinctKeys() cons
 
 bool IMergingAlgorithmWithDelayedChunk::sourcesHaveLongBatchesOfUniqueKeys() const
 {
-    /// Merge the beginning of the current chunks with the batch detection on, without taking any rows.
-    /// Interleaved keys (e.g. parts that each hold every key once, or two parts of a similar size) come
-    /// in batches of one or two rows, where the detection only costs. A large part merged with a few
-    /// small ones (e.g. a table with recent updates) comes in long batches, which save the work per row.
-    /// A small sample: it runs at the start of every merge, including those of a few granules for a point query.
     static constexpr size_t max_rows_to_check = 1024;
 
     bool has_source_with_unique_keys = false;

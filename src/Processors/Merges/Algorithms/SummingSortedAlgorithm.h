@@ -80,8 +80,7 @@ public:
 
         bool allow_tuple_element_aggregation = false;
 
-        /// Whether the result of a group of one row is that row: all aggregated columns are summed numbers
-        /// (`0 + x` is `x`, except for -0.0), so such rows can be copied (see `insertRowsOfOwnGroups`).
+        /// Whether a group of one row results in that row, so that such rows can be copied.
         bool can_copy_rows_of_own_groups = false;
         /// Whether a row whose sums are all zero is removed (see `finishGroup`).
         bool removes_zero_rows = false;
@@ -105,12 +104,10 @@ public:
         bool isGroupStarted() const { return is_group_started; }
         void addRow(ColumnRawPtrs & raw_columns, size_t row); /// Possible only when group was started.
 
-        /// Writes the rows at the positions [begin, end) (through `permutation` if it is set), each a group of its own,
-        /// like `startGroup` and `finishGroup` for each of them would (possible only when no group is started and
-        /// `can_copy_rows_of_own_groups`): skips the rows with only zero sums if such rows are removed.
+        /// Writes the rows at the positions [begin, end), each a group of its own, as `startGroup` and `finishGroup` would
+        /// for each of them (including the removal of rows with only zero sums). Possible only when no group is started.
         void insertRowsOfOwnGroups(const ColumnRawPtrs & raw_columns, size_t begin, size_t end, const IColumn::Permutation * permutation);
 
-        /// Whether the block size is limited by bytes too (then the rows are counted by `rowsToInsertBeforeFlush`).
         bool limitsBlockBytes() const { return max_block_size_bytes != 0 || use_average_block_size; }
 
         Chunk pull();
@@ -127,7 +124,6 @@ public:
 
         void addRowImpl(ColumnRawPtrs & raw_columns, size_t row);
 
-        /// The data of the summed columns of the current batch and the rows to insert (see `insertRowsOfOwnGroups`).
         VectorWithMemoryTracking<const char *> sum_data;
         VectorWithMemoryTracking<size_t> rows_to_insert;
 
@@ -140,20 +136,16 @@ private:
     ColumnsDefinition columns_definition;
     SummingMergedData merged_data;
 
-    /// The merge loop without `take_batches` has no check for batches, to keep the per-row path as it is.
     template <bool take_batches>
     Status mergeImpl();
 
-    /// Whether `merge` takes the rows of a single source (the block of an INSERT) that differ from both neighbours in
-    /// one go (decided in `initialize`, see `mergeImpl`).
+    /// Whether `merge` takes the rows of a single source that differ from both neighbours in one go.
     bool take_runs_of_distinct_keys = false;
-    /// The position of the first row of the current group and whether the previous group had one row (for the runs above).
     size_t group_start_pos = std::numeric_limits<size_t>::max();
     bool previous_group_has_one_row = true;
 
-    /// Finishes the group of the current row and writes the following rows of the batch, each a group
-    /// of its own, in one go (see `mergeImpl`). With `compare_keys` the source may have duplicate keys:
-    /// only the rows that differ from the next row are taken. Returns false if it did nothing.
+    /// Finishes the group of the current row and writes the following rows of the batch, each a group of its own; with
+    /// `compare_keys` (duplicate keys possible) only those that differ from the next row. Returns false if it did nothing.
     bool takeRowsOfOwnGroups(SortCursor current, size_t batch_size, bool compare_keys);
 };
 

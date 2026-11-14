@@ -53,32 +53,23 @@ protected:
 
     SharedHeader header;
 
-    /// Set by a derived algorithm before `initializeQueue` when it takes the rows inside a batch from a
-    /// source without duplicate keys (a part with a non-zero level, see `sourceHasUniqueKeys`)
-    /// in one go (see `SummingSortedAlgorithm`). The batch detection is then enabled also for cheap
-    /// comparators if such batches cover enough rows (see `sourcesHaveLongBatchesOfUniqueKeys`).
+    /// Set by a derived algorithm before `initializeQueue` if it takes the batches from sources with unique keys whole.
     bool uses_batches_of_unique_keys = false;
 
-    /// Whether most rows at the beginning of the merge come in long batches from sources without duplicate keys
-    /// (decided in `initializeQueue` if `uses_batches_of_unique_keys`, see `sourcesHaveLongBatchesOfUniqueKeys`).
     bool has_long_batches_of_unique_keys = false;
 
-    /// The smallest batch from such a source that is taken in one go: shorter ones save too little.
     static constexpr size_t min_batch_size_to_take = 8;
-    /// At most this share of the rows is sampled, as in `sourcesHaveRunsWorthSkipping`.
+    /// At most 1 / `max_share_of_rows_to_check` of the rows is sampled.
     static constexpr size_t max_share_of_rows_to_check = 8;
 
-    /// Whether in the beginning of the only source with a chunk most rows have a key different from the next row
-    /// (see `SummingSortedAlgorithm`, which takes such rows in one go when there is a single source).
+    /// Whether at the beginning of the only non-empty source most rows have a key different from the next row.
     bool singleSourceHasMostlyDistinctKeys() const;
 
     /// Whether the current chunk of the source comes from a part without duplicate keys: a part with a non-zero level.
-    /// Both `rowsHaveDifferentSortColumns` and the batches of unique keys rely on this one condition.
     bool sourceHasUniqueKeys(size_t source_num) const { return inputs_origin_merge_tree_part_level[source_num] > 0; }
 
 private:
-    /// Whether most rows at the beginning of the merge come in batches of at least `min_batch_size_to_take`
-    /// rows from sources without duplicate keys.
+    /// Whether most rows at the beginning of the merge come in batches of at least `min_batch_size_to_take` rows.
     bool sourcesHaveLongBatchesOfUniqueKeys() const;
 
     /// Inputs currently being merged.
