@@ -216,13 +216,17 @@ protected:
 
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(filter_column.get()))
         {
-            auto materialized = ColumnUInt8::create(rows_in_chunk);
-            auto & out = materialized->getData();
-            const auto & data = assert_cast<const ColumnUInt8 &>(nullable->getNestedColumn()).getData();
-            const auto & nullmap = nullable->getNullMapData();
-            for (size_t i = 0; i < rows_in_chunk; ++i)
-                out[i] = data[i] & ~nullmap[i];
-            filter_column = std::move(materialized);
+            if (const auto * nullmap = nullable->tryGetNullMapData())
+            {
+                auto materialized = ColumnUInt8::create(rows_in_chunk);
+                auto & out = materialized->getData();
+                const auto & data = assert_cast<const ColumnUInt8 &>(nullable->getNestedColumn()).getData();
+                for (size_t i = 0; i < rows_in_chunk; ++i)
+                    out[i] = data[i] & ~(*nullmap)[i];
+                filter_column = std::move(materialized);
+            }
+            else
+                filter_column = nullable->getNestedColumnPtr();
         }
 
         const auto & filter = assert_cast<const ColumnUInt8 &>(*filter_column).getData();
@@ -814,13 +818,17 @@ private:
 
             if (const auto * nullable = checkAndGetColumn<ColumnNullable>(filter_column.get()))
             {
-                auto materialized = ColumnUInt8::create(rows_in_chunk);
-                auto & filter_data = materialized->getData();
-                const auto & data = assert_cast<const ColumnUInt8 &>(nullable->getNestedColumn()).getData();
-                const auto & nullmap = nullable->getNullMapData();
-                for (size_t i = 0; i < rows_in_chunk; ++i)
-                    filter_data[i] = data[i] & ~nullmap[i];
-                filter_column = std::move(materialized);
+                if (const auto * nullmap = nullable->tryGetNullMapData())
+                {
+                    auto materialized = ColumnUInt8::create(rows_in_chunk);
+                    auto & filter_data = materialized->getData();
+                    const auto & data = assert_cast<const ColumnUInt8 &>(nullable->getNestedColumn()).getData();
+                    for (size_t i = 0; i < rows_in_chunk; ++i)
+                        filter_data[i] = data[i] & ~(*nullmap)[i];
+                    filter_column = std::move(materialized);
+                }
+                else
+                    filter_column = nullable->getNestedColumnPtr();
             }
 
             const auto & filter = assert_cast<const ColumnUInt8 &>(*filter_column).getData();

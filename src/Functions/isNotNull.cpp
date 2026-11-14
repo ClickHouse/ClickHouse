@@ -103,9 +103,13 @@ public:
 
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*elem.column))
         {
+            /// A column without a null map has no NULLs.
+            if (!nullable->hasNullMap())
+                return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(1));
+
             /// Return the negated null map.
             auto res_column = ColumnUInt8::create(input_rows_count);
-            const auto & src_data = nullable->getNullMapData();
+            const auto & src_data = *nullable->tryGetNullMapData();
             auto & res_data = assert_cast<ColumnUInt8 &>(*res_column).getData();
             vector(src_data, res_data);
             return res_column;

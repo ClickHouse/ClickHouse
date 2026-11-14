@@ -711,7 +711,7 @@ void Set::processDateTime64Column(
         : result.get();
 
     ColumnPtr existing_null_map_column = result_nullable_column
-        ? result_nullable_column->getNullMapColumnPtr()
+        ? result_nullable_column->tryGetNullMapColumnPtr()
         : nullptr;
 
     if (transform_null_in)
@@ -857,13 +857,13 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 
                     auto did_not_fit = ColumnUInt8::create(num_rows, UInt8(0));
                     auto & did_not_fit_data = did_not_fit->getData();
-                    const auto & null_after_cast = casted_nullable.getNullMapData();
+                    const UInt8 * null_after_cast = casted_nullable.getNullMapRawDataOrZeros();
                     for (size_t row = 0; row < num_rows; ++row)
                         did_not_fit_data[row] = null_after_cast[row] && !(source_nullable && source_nullable->isNullAt(row));
 
                     ColumnPtr original_null_map = source_nullable
-                        ? source_nullable->getNullMapColumnPtr()
-                        : ColumnUInt8::create(num_rows, UInt8(0));
+                        ? source_nullable->tryGetNullMapColumnPtr()
+                        : nullptr;
                     result = ColumnNullable::create(casted_nullable.getNestedColumnPtr(), original_null_map);
                     add_non_member_rows(std::move(did_not_fit));
                 }
@@ -873,7 +873,8 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
                     /// a source NULL and a value that does not fit are both non-members, and together
                     /// they are exactly the NULLs of the lenient cast.
                     result = casted_nullable.getNestedColumnPtr();
-                    add_non_member_rows(casted_nullable.getNullMapColumnPtr());
+                    if (casted_nullable.hasNullMap())
+                        add_non_member_rows(casted_nullable.tryGetNullMapColumnPtr());
                 }
             }
             else if (transform_null_in && column_to_cast.type->isNullable() && !data_types[i]->isNullable())
@@ -883,7 +884,8 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
                 auto nested_type = assert_cast<const DataTypeNullable &>(*column_to_cast.type).getNestedType();
                 const auto & column_nullable = assert_cast<const ColumnNullable &>(*column_to_cast.column);
                 result = castColumnAccurate(ColumnWithTypeAndName(column_nullable.getNestedColumnPtr(), nested_type, column_to_cast.name), data_types[i], cast_cache.get());
-                add_non_member_rows(column_nullable.getNullMapColumnPtr());
+                if (column_nullable.hasNullMap())
+                    add_non_member_rows(column_nullable.tryGetNullMapColumnPtr());
             }
             else
             {

@@ -62,7 +62,7 @@ template <typename Key>
 ColumnPtr encodeFixedSizeKeys(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, size_t rows, ConstNullMapPtr null_map)
 {
     ColumnRawPtrs value_columns(key_columns.size());
-    std::vector<const NullMap *> null_maps(key_columns.size());
+    std::vector<const UInt8 *> null_maps(key_columns.size());
     size_t key_bits = 0;
     for (size_t i = 0; i < key_columns.size(); ++i)
     {
@@ -70,7 +70,7 @@ ColumnPtr encodeFixedSizeKeys(const ColumnRawPtrs & key_columns, const Sizes & k
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(key_columns[i]))
         {
             value_columns[i] = &nullable->getNestedColumn();
-            null_maps[i] = &nullable->getNullMapData();
+            null_maps[i] = nullable->getNullMapRawDataOrZeros();
             ++key_bits;
         }
         key_bits += 8 * key_sizes[i];
@@ -102,18 +102,18 @@ ColumnPtr encodeFixedSizeKeys(const ColumnRawPtrs & key_columns, const Sizes & k
     {
         const char * column_data = value_columns[i]->getRawData().data();
         const size_t size = key_sizes[i];
-        const NullMap * column_null_map = null_maps[i];
+        const UInt8 * column_null_map = null_maps[i];
 
         /// With `transform_null_in`, `NULL` is a value that sorts after the other values of its column, as in
         /// `ORDER BY`: a nullable column starts with a bit that is set for `NULL`, whose value bits are zero.
         if (column_null_map)
-            add_part(1, [&](size_t row) { return Key((*column_null_map)[row]); });
+            add_part(1, [&](size_t row) { return Key(column_null_map[row]); });
 
         callWithOrderedBits<Key>(*value_columns[i], size, [&](auto get_bits)
         {
             add_part(8 * size, [&](size_t row)
             {
-                if (column_null_map && (*column_null_map)[row])
+                if (column_null_map && column_null_map[row])
                     return Key(0);
                 return static_cast<Key>(get_bits(column_data + row * size));
             });

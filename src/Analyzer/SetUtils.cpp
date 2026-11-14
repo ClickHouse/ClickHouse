@@ -173,8 +173,12 @@ std::optional<ColumnPtr> tryConvertNativeNumberMembersBatch(const SetMembers & m
     casted = casted->convertToFullColumnIfConst();
     const auto & nullable = assert_cast<const ColumnNullable &>(*casted);
 
+    const auto * null_map = nullable.tryGetNullMapData();
+    if (!null_map)
+        return nullable.getNestedColumnPtr();
+
     size_t kept = 0;
-    IColumn::Filter filter = keepNotNullFilter(nullable.getNullMapData(), kept);
+    IColumn::Filter filter = keepNotNullFilter(*null_map, kept);
     return nullable.getNestedColumn().filter(filter, kept);
 }
 
@@ -415,7 +419,7 @@ ColumnPtr buildSingleNativeKey(
     ColumnPtr casted = castColumnAccurateOrNull({source, removeNullable(source_type), ""}, removeNullable(lhs_type));
     casted = casted->convertToFullColumnIfConst();
     const auto & casted_nullable = assert_cast<const ColumnNullable &>(*casted);
-    const NullMap & casted_null = casted_nullable.getNullMapData();
+    const UInt8 * casted_null = casted_nullable.getNullMapRawDataOrZeros();
 
     const size_t n = source->size();
     const bool lhs_nullable = lhs_type->isNullable();
@@ -525,7 +529,7 @@ std::optional<ColumnsWithTypeAndName> tryBuildFromNativeArray(
         const NullMap * element_null = nullptr;
         if (const auto * nullable = typeid_cast<const ColumnNullable *>(data.get()))
         {
-            element_null = &nullable->getNullMapData();
+            element_null = nullable->tryGetNullMapData();
             source = nullable->getNestedColumnPtr();
         }
 
@@ -554,7 +558,7 @@ std::optional<ColumnsWithTypeAndName> tryBuildFromNativeArray(
         const IColumn * data_col = data.get();
         if (const auto * nullable = typeid_cast<const ColumnNullable *>(data_col))
         {
-            element_null = &nullable->getNullMapData();
+            element_null = nullable->tryGetNullMapData();
             data_col = &nullable->getNestedColumn();
         }
         const auto & tuple_column = assert_cast<const ColumnTuple &>(*data_col);

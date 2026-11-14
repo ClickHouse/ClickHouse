@@ -663,7 +663,7 @@ void RecordBatchEncoder::encodeField(const IColumn & column, const DataTypePtr &
     if (type->isNullable())
     {
         const auto & nullable = assert_cast<const ColumnNullable &>(column);
-        null_map_column = &nullable.getNullMapColumn();
+        null_map_column = nullable.tryGetNullMapColumn();
         nested = &nullable.getNestedColumn();
         nested_type = removeNullable(type);
     }

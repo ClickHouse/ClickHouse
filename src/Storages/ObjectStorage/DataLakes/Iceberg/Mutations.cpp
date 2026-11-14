@@ -272,8 +272,8 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
 
                 if (const ColumnNullable * nullable = typeid_cast<const ColumnNullable *>(col_position.column.get()))
                 {
-                    const auto & null_map = nullable->getNullMapData();
-                    if (std::any_of(null_map.begin(), null_map.end(), [](UInt8 x) { return x != 0; }))
+                    const auto * null_map = nullable->tryGetNullMapData();
+                    if (null_map && std::any_of(null_map->begin(), null_map->end(), [](UInt8 x) { return x != 0; }))
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected null _row_number");
                     col_position.column = nullable->getNestedColumnPtr();
                     col_position.type = removeNullable(col_position.type);

@@ -284,7 +284,7 @@ public:
         {
             if (const auto * nullable = checkAndGetColumn<ColumnNullable>(data_keys.get()))
             {
-                const auto * null_map = &nullable->getNullMapData();
+                const auto * null_map = nullable->tryGetNullMapData();
                 if (null_map && !memoryIsZero(null_map->data(), 0, null_map->size()))
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS, "The nested column of first argument in function {} must not contain NULLs", getName());
@@ -602,7 +602,7 @@ private:
     static const NullMap * getNullMap(const IColumn & column)
     {
         const auto * nullable = checkAndGetColumn<ColumnNullable>(&column);
-        return nullable ? &nullable->getNullMapData() : nullptr;
+        return nullable ? nullable->tryGetNullMapData() : nullptr;
     }
 
     FunctionOverloadResolverPtr function_equals;

@@ -899,7 +899,7 @@ private:
 
             auto & null_map = source_columns[2];
 
-            null_map.column = nullable->getNullMapColumnPtr();
+            null_map.column = nullable->tryGetNullMapColumnPtr();
             null_map.type = std::make_shared<DataTypeUInt8>();
         }
         else
@@ -915,7 +915,7 @@ private:
             arg.type = static_cast<const DataTypeNullable &>(*arguments[1].type).getNestedType();
 
             auto & null_map = source_columns[3];
-            null_map.column = arg_nullable->getNullMapColumnPtr();
+            null_map.column = arg_nullable->tryGetNullMapColumnPtr();
             null_map.type = std::make_shared<DataTypeUInt8>();
         }
         else

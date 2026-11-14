@@ -395,7 +395,7 @@ public:
             if (const ColumnNullable * nullable_column = typeid_cast<const ColumnNullable *>(default_values_column_.get()))
             {
                 default_values_column_ptr = nullable_column->getNestedColumnPtr().get();
-                is_null_map = &nullable_column->getNullMapColumn();
+                is_null_map = nullable_column->tryGetNullMapColumn();
             }
 
             if (const auto * const default_col = checkAndGetColumn<DefaultColumnType>(default_values_column_ptr))

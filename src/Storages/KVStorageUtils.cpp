@@ -244,11 +244,13 @@ bool traverseDAGFilterSingleColumn(
 
             const auto casted_set_ptr = castColumnAccurateOrNull(set_column, cast_target_type);
             const auto & casted_set_nullable = assert_cast<const ColumnNullable &>(*casted_set_ptr);
-            const auto & casted_set_null_map = casted_set_nullable.getNullMapData();
-            for (char8_t i : casted_set_null_map)
+            if (const auto * casted_set_null_map = casted_set_nullable.tryGetNullMapData())
             {
-                if (i != 0)
-                    return false;
+                for (char8_t i : *casted_set_null_map)
+                {
+                    if (i != 0)
+                        return false;
+                }
             }
 
             const auto & casted_set_inner = casted_set_nullable.getNestedColumn();

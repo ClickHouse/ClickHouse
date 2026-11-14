@@ -173,7 +173,7 @@ struct ConstSource : public Base
     }
 
     template <typename ColumnType>
-    ConstSource(const ColumnType & col_, const NullMap & null_map_, size_t total_rows_)
+    ConstSource(const ColumnType & col_, const UInt8 * null_map_, size_t total_rows_)
         : Base(col_, null_map_)
         , total_rows(total_rows_)
     {
@@ -273,7 +273,7 @@ struct ReplicatedSource : public Base
     }
 
     template <typename ColumnType>
-    ReplicatedSource(const ColumnType & col_, const NullMap & null_map_, const ColumnIndex & replication_indexes_)
+    ReplicatedSource(const ColumnType & col_, const UInt8 * null_map_, const ColumnIndex & replication_indexes_)
         : Base(col_, null_map_)
         , replication_indexes(replication_indexes_)
         , total_rows(replication_indexes_.size())
@@ -849,9 +849,9 @@ struct NullableArraySource : public ArraySource
 
     using SinkType = NullableArraySink<typename ArraySource::SinkType>;
 
-    const NullMap & null_map;
+    const UInt8 * null_map;
 
-    NullableArraySource(const ColumnArray & arr, const NullMap & null_map_)
+    NullableArraySource(const ColumnArray & arr, const UInt8 * null_map_)
             : ArraySource(arr), null_map(null_map_)
     {
     }
@@ -1017,10 +1017,10 @@ struct NullableValueSource : public ValueSource
     using Slice = NullableSlice<typename ValueSource::Slice>;
     using ValueSource::row_num;
 
-    const NullMap & null_map;
+    const UInt8 * null_map;
 
     template <typename Column>
-    NullableValueSource(const Column & col, const NullMap & null_map_)
+    NullableValueSource(const Column & col, const UInt8 * null_map_)
         : ValueSource(col)
         , null_map(null_map_)
     {}
@@ -1030,7 +1030,7 @@ struct NullableValueSource : public ValueSource
     Slice getWhole() const
     {
         Slice slice = ValueSource::getWhole();
-        slice.null_map = null_map.data() + row_num;
+        slice.null_map = null_map + row_num;
         return slice;
     }
 };

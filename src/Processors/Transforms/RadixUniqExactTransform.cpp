@@ -1788,7 +1788,10 @@ void RadixUniqExactRouteTransform::work()
     {
         RADIX_UNIQ_EXACT_TRACK_MEMORY(state);
         if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
-            state->route(stream, column_nullable->getNestedColumn(), column_nullable->getNullMapData().data());
+        {
+            const auto * null_map = column_nullable->tryGetNullMapData();
+            state->route(stream, column_nullable->getNestedColumn(), null_map ? null_map->data() : nullptr);
+        }
         else
             state->route(stream, *column, nullptr);
     }

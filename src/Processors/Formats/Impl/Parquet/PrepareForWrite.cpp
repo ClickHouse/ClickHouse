@@ -546,7 +546,7 @@ void prepareColumnNullable(
     const ColumnNullable * column_nullable = assert_cast<const ColumnNullable *>(column.get());
     ColumnPtr nested_column = column_nullable->getNestedColumnPtr();
     DataTypePtr nested_type = assert_cast<const DataTypeNullable *>(type.get())->getNestedType();
-    const NullMap & null_map = column_nullable->getNullMapData();
+    const NullMap * null_map = column_nullable->tryGetNullMapData();
 
     size_t child_states_begin = states.size();
     size_t child_schema_idx = schemas.size();
@@ -585,7 +585,10 @@ void prepareColumnNullable(
     for (size_t i = child_states_begin; i < states.size(); ++i)
     {
         auto & s = states[i];
-        updateRepDefLevelsAndFilterColumnForNullable(s, null_map);
+        if (null_map)
+            updateRepDefLevelsAndFilterColumnForNullable(s, *null_map);
+        else
+            updateDefLevelsForAlwaysPresentOptionalGroup(s);
     }
 }
 

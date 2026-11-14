@@ -296,12 +296,16 @@ void LazyMaterializingTransform::prepareMainChunk()
     /// defaults go in at these positions once the lazy columns are read.
     if (const auto * nullable_index = typeid_cast<const ColumnNullable *>(index_col.get()))
     {
-        const auto & null_map = nullable_index->getNullMapData();
-        matched_rows.emplace(null_map.size());
-        for (size_t row = 0; row < null_map.size(); ++row)
-            (*matched_rows)[row] = !null_map[row];
+        if (const auto * null_map = nullable_index->tryGetNullMapData())
+        {
+            matched_rows.emplace(null_map->size());
+            for (size_t row = 0; row < null_map->size(); ++row)
+                (*matched_rows)[row] = !(*null_map)[row];
 
-        index_col = nullable_index->getNestedColumnPtr()->filter(*matched_rows, -1);
+            index_col = nullable_index->getNestedColumnPtr()->filter(*matched_rows, -1);
+        }
+        else
+            index_col = nullable_index->getNestedColumnPtr();
     }
 
     auto rows = index_col->size();

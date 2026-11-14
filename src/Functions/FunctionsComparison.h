@@ -1681,12 +1681,12 @@ private:
         ColumnPtr elements1 = gathered.full_elements1;
         if (const auto * nullable0 = checkAndGetColumn<ColumnNullable>(gathered.full_elements0.get()))
         {
-            gathered.null_map0 = &nullable0->getNullMapData();
+            gathered.null_map0 = nullable0->tryGetNullMapData();
             elements0 = nullable0->getNestedColumnPtr();
         }
         if (const auto * nullable1 = checkAndGetColumn<ColumnNullable>(gathered.full_elements1.get()))
         {
-            gathered.null_map1 = &nullable1->getNullMapData();
+            gathered.null_map1 = nullable1->tryGetNullMapData();
             elements1 = nullable1->getNestedColumnPtr();
         }
 
@@ -1708,9 +1708,15 @@ private:
         /// the callers cannot consume.
         if (isNothing(impl->getResultType()))
         {
+            /// A `Nothing` side is masked when all its gathered elements are NULL. With no elements, this holds
+            /// even if the `Nullable` column has no null map.
             auto masked = [&](size_t arg, const NullMap * null_map)
             {
-                return isNothing(removeLowCardinality(gathered.element_args[arg].type)) && null_map
+                if (!isNothing(removeLowCardinality(gathered.element_args[arg].type)))
+                    return false;
+                if (gathered.num_elements == 0)
+                    return true;
+                return null_map
                     && std::all_of(null_map->begin(), null_map->begin() + gathered.num_elements,
                                    [](UInt8 byte) { return byte != 0; });
             };

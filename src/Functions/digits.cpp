@@ -162,9 +162,11 @@ public:
             if (const auto * n = checkAndGetColumn<ColumnNullable>(col.get()))
             {
                 any_nullable = true;
-                const auto & src = n->getNullMapData();
-                for (size_t i = 0; i < input_rows_count; ++i)
-                    null_map_data[i] |= src[i];
+                if (const auto * src = n->tryGetNullMapData())
+                {
+                    for (size_t i = 0; i < input_rows_count; ++i)
+                        null_map_data[i] |= (*src)[i];
+                }
                 col = n->getNestedColumnPtr();
             }
         };

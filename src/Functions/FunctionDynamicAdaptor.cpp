@@ -304,9 +304,15 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         const NullMap * null_map_ptr = nullptr;
         /// If the result of nested function is Nullable, we create a null-mask and use it during Dynamic column creation,
         /// also the nested column inside Nullable will be filtered by this mask (inside Dynamic we don't store default values in rows with NULLs).
-        if (const auto & column_nullable = typeid_cast<const ColumnNullable *>(variant.get()))
+        const auto * column_nullable = typeid_cast<const ColumnNullable *>(variant.get());
+        if (column_nullable && !column_nullable->hasNullMap())
         {
-            const auto & null_map = column_nullable->getNullMapData();
+            variant = column_nullable->getNestedColumnPtr();
+            variant_type = removeNullable(nested_result_type);
+        }
+        else if (column_nullable)
+        {
+            const auto & null_map = *column_nullable->tryGetNullMapData();
             /// Create filter for nested column from null-map and calculate result size hint.
             PaddedPODArray<UInt8> nested_filter;
             nested_filter.reserve(null_map.size());

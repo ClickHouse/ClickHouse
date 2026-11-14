@@ -708,11 +708,13 @@ private:
         /// A NULL key takes NULL from the key's null map after the lookup, so it never takes the default.
         if (const auto * nullable_key = checkAndGetColumn<ColumnNullable>(nullable_key_column.get()))
         {
-            const auto & null_map = nullable_key->getNullMapData();
-            chassert(null_map.size() == default_mask.size());
-            for (size_t i = 0; i < default_mask.size(); ++i)
-                if (null_map[i])
-                    default_mask[i] = 0;
+            if (const auto * null_map = nullable_key->tryGetNullMapData())
+            {
+                chassert(null_map->size() == default_mask.size());
+                for (size_t i = 0; i < default_mask.size(); ++i)
+                    if ((*null_map)[i])
+                        default_mask[i] = 0;
+            }
         }
         else if (nullable_key_column && nullable_key_column->isNullAt(0))
         {

@@ -10,6 +10,7 @@
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
 #include <Core/Settings.h>
 #include <Core/callOnTypeIndex.h>
@@ -1001,7 +1002,7 @@ private:
         ColumnPtr result = std::move(str_column);
 
         if (nullable_wrapper)
-            result = ColumnNullable::create(result, nullable_wrapper->getNullMapColumnPtr());
+            result = ColumnNullable::create(result, nullable_wrapper->tryGetNullMapColumnPtr());
         else if (result_type->isNullable())
             result = ColumnNullable::create(result, ColumnUInt8::create(rows, UInt8{0}));
 
@@ -1030,7 +1031,7 @@ private:
             {
                 data_column = const_nullable_arg->getNestedColumnPtr();
                 if (!data_column->empty())
-                    cond_is_null = cond_is_null || const_nullable_arg->getNullMapData()[0];
+                    cond_is_null = cond_is_null || const_nullable_arg->isNullAt(0);
             }
 
             if (!cond_is_null && !data_column->empty())
@@ -1055,9 +1056,13 @@ private:
 
             if (checkAndGetColumn<ColumnUInt8>(&*new_cond_column))
             {
-                auto nested_column_copy = new_cond_column->cloneResized(new_cond_column->size());
-                typeid_cast<ColumnUInt8 *>(nested_column_copy.get())->applyZeroMap(nullable->getNullMapData());
-                new_cond_column = std::move(nested_column_copy);
+                /// Without a null map the condition has no NULLs, and the nested column is used as is.
+                if (const auto * cond_null_map = nullable->tryGetNullMapData())
+                {
+                    auto nested_column_copy = new_cond_column->cloneResized(new_cond_column->size());
+                    typeid_cast<ColumnUInt8 *>(nested_column_copy.get())->applyZeroMap(*cond_null_map);
+                    new_cond_column = std::move(nested_column_copy);
+                }
 
                 if (cond_is_const)
                     new_cond_column = ColumnConst::create(new_cond_column, column_size);
@@ -1114,18 +1119,21 @@ private:
         return column;
     }
 
-    /// Return the null map column from a Nullable column, looking through ColumnConst, examples:
+    /// Return the null map column from a Nullable column, looking through ColumnConst, or nullptr if there are no NULLs, examples:
     /// Nullable(size = N, Int32(size = N), UInt8(size = N)) -> UInt8(size = N)
     /// Const(size = N, Nullable(size = 1, Int32(size = 1), UInt8(size = 1))) ->
     /// Const(size = N, UInt8(size = 1))
     static ColumnPtr recursiveGetNullMapFromNullable(const ColumnPtr & column)
     {
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*column))
-            return nullable->getNullMapColumnPtr();
+            return nullable->tryGetNullMapColumnPtr();
         if (const auto * column_const = checkAndGetColumn<ColumnConst>(&*column))
         {
             if (const auto * nullable_inner = checkAndGetColumn<ColumnNullable>(&column_const->getDataColumn()))
-                return ColumnConst::create(nullable_inner->getNullMapColumnPtr(), column_const->size());
+            {
+                if (ColumnPtr inner_null_map = nullable_inner->tryGetNullMapColumnPtr())
+                    return ColumnConst::create(inner_null_map, column_const->size());
+            }
         }
         return nullptr;
     }
@@ -1150,27 +1158,43 @@ private:
           */
         ColumnPtr result_null_mask;
 
+        /// A `Nullable` column without a null map has no NULLs.
+        auto has_no_null_map = [](const ColumnPtr & column)
+        {
+            const auto * nullable = checkAndGetColumn<ColumnNullable>(&*column);
+            return nullable && !nullable->hasNullMap();
+        };
+
+        ColumnPtr then_null_mask = then_is_nullable && !has_no_null_map(arg_then.column) ? recursiveGetNullMapFromNullable(arg_then.column) : nullptr;
+        ColumnPtr else_null_mask = else_is_nullable && !has_no_null_map(arg_else.column) ? recursiveGetNullMapFromNullable(arg_else.column) : nullptr;
+
+        /// If neither branch has NULLs, the result has no NULLs and does not need a null map.
+        if (then_null_mask || else_null_mask)
         {
             ColumnsWithTypeAndName temporary_columns(
             {
                 arg_cond,
                 {
-                    then_is_nullable
-                        ? recursiveGetNullMapFromNullable(arg_then.column)
-                        : DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count),
+                    then_null_mask ? then_null_mask : DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count),
                     std::make_shared<DataTypeUInt8>(),
                     ""
                 },
                 {
-                    else_is_nullable
-                        ? recursiveGetNullMapFromNullable(arg_else.column)
-                        : DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count),
+                    else_null_mask ? else_null_mask : DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count),
                     std::make_shared<DataTypeUInt8>(),
                     ""
                 }
             });
 
-            result_null_mask = executeImpl(temporary_columns, std::make_shared<DataTypeUInt8>(), input_rows_count);
+            result_null_mask = materializeColumnIfConst(executeImpl(temporary_columns, std::make_shared<DataTypeUInt8>(), input_rows_count));
+
+            /// The NULLs of the branches may be not selected, then the result has no NULLs as well.
+            if (const auto * result_null_mask_vector = typeid_cast<const ColumnUInt8 *>(result_null_mask.get()))
+            {
+                const auto & result_null_mask_data = result_null_mask_vector->getData();
+                if (memoryIsZero(result_null_mask_data.data(), 0, result_null_mask_data.size()))
+                    result_null_mask = nullptr;
+            }
         }
 
         ColumnPtr result_nested_column;
@@ -1194,8 +1218,10 @@ private:
             result_nested_column = executeImpl(temporary_columns, removeNullable(result_type), temporary_columns.front().column->size());
         }
 
-        return ColumnNullable::create(
-            materializeColumnIfConst(result_nested_column), materializeColumnIfConst(result_null_mask));
+        if (!result_null_mask)
+            return ColumnNullable::create(materializeColumnIfConst(result_nested_column));
+
+        return ColumnNullable::create(materializeColumnIfConst(result_nested_column), result_null_mask);
     }
 
     ColumnPtr executeForNullThenElse(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const

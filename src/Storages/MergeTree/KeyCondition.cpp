@@ -2118,11 +2118,13 @@ static bool applyFunctionChainToColumn(
         /// plain `ColumnNullable`.
         result_column = result_column->convertToFullColumnIfConst();
         const auto & result_column_nullable = assert_cast<const ColumnNullable &>(*result_column);
-        const auto & null_map_data = result_column_nullable.getNullMapData();
-        for (char8_t i : null_map_data)
+        if (const auto * null_map_data = result_column_nullable.tryGetNullMapData())
         {
-            if (i != 0)
-                return false;
+            for (char8_t i : *null_map_data)
+            {
+                if (i != 0)
+                    return false;
+            }
         }
         result_column = result_column_nullable.getNestedColumnPtr();
         result_type = removeNullable(in_argument_type);
@@ -2252,11 +2254,13 @@ static bool applyFunctionChainToColumn(
         if (result_column->isNullable())
         {
             const auto & result_column_nullable = assert_cast<const ColumnNullable &>(*result_column);
-            const auto & null_map_data = result_column_nullable.getNullMapData();
-            for (char8_t i : null_map_data)
+            if (const auto * null_map_data = result_column_nullable.tryGetNullMapData())
             {
-                if (i != 0)
-                    return false;
+                for (char8_t i : *null_map_data)
+                {
+                    if (i != 0)
+                        return false;
+                }
             }
             result_column = result_column_nullable.getNestedColumnPtr();
             result_type = removeNullable(result_type);
@@ -2798,9 +2802,10 @@ static bool finalizeTransformedColumn(ColumnPtr & column, DataTypePtr & type)
     if (column->isNullable())
     {
         const auto & n = assert_cast<const ColumnNullable &>(*column);
-        for (char8_t b : n.getNullMapData())
-            if (b)
-                return false;
+        if (const auto * null_map = n.tryGetNullMapData())
+            for (char8_t b : *null_map)
+                if (b)
+                    return false;
         column = n.getNestedColumnPtr();
         type = removeNullable(type);
     }
@@ -2982,9 +2987,10 @@ static bool castColumnWithoutNulls(
     const auto & n = assert_cast<const ColumnNullable &>(*probe_column);
 
     /// If we have any NULLs after cast, that means cast could not be applied accurately for all values
-    for (char8_t b : n.getNullMapData())
-        if (b)
-            return false;
+    if (const auto * null_map = n.tryGetNullMapData())
+        for (char8_t b : *null_map)
+            if (b)
+                return false;
 
     /// Every value fits, so ask the reverse cast whether anything was lost on the way. The probe above
     /// is the forward cast, so it is read back instead of being computed again - as its nested column,
@@ -3719,6 +3725,7 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
         /// or a NULL row of a subquery set. Stays nullptr when the set element type is not Nullable.
         /// `Nothing` is another representation of an all-NULL literal array and is handled below.
         const NullMap * source_null_map = nullptr;
+        bool source_is_nullable = false;
         const bool source_is_nothing = WhichDataType(*set_element_type).isNothing();
 
         if (isNullableOrLowCardinalityNullable(set_element_type))
@@ -3735,7 +3742,8 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
             if (!source_nullable_column)
                 return false;
 
-            source_null_map = &source_nullable_column->getNullMapData();
+            source_null_map = source_nullable_column->tryGetNullMapData();
+            source_is_nullable = true;
             set_column = source_nullable_column->getNestedColumnPtr();
         }
 
@@ -3746,8 +3754,8 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
         if (!cast_nullable_column)
             return false;
 
-        const NullMap & cast_failure_null_map = cast_nullable_column->getNullMapData();
-        size_t set_size = cast_failure_null_map.size();
+        const NullMap * cast_failure_null_map = cast_nullable_column->tryGetNullMapData();
+        size_t set_size = cast_nullable_column->size();
 
         const bool key_is_nullable = key_column_type->isNullable();
 
@@ -3756,7 +3764,7 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
         for (size_t i = 0; i < set_size; ++i)
         {
             const bool null_in_source = source_null_map && (*source_null_map)[i];
-            if ((!key_is_nullable && null_in_source) || (cast_failure_null_map[i] && !source_is_nothing))
+            if ((!key_is_nullable && null_in_source) || (cast_failure_null_map && (*cast_failure_null_map)[i] && !source_is_nothing))
                 filter[i] = 0;
         }
 
@@ -3773,10 +3781,15 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
                 removeNullable(key_column_type), &filter))
             out_is_exact = false;
 
-        if (key_is_nullable && (source_null_map || source_is_nothing))
+        if (key_is_nullable && (source_is_nullable || source_is_nothing))
         {
-            auto null_map = ColumnUInt8::create();
-            null_map->getData().assign(cast_failure_null_map);
+            MutableColumnPtr null_map;
+            if (cast_failure_null_map)
+            {
+                auto cast_failure_null_map_copy = ColumnUInt8::create();
+                cast_failure_null_map_copy->getData().assign(*cast_failure_null_map);
+                null_map = std::move(cast_failure_null_map_copy);
+            }
             auto nullable_set_column = ColumnNullable::create(cast_nullable_column->getNestedColumn().cloneResized(set_size), std::move(null_map));
             if (source_null_map)
                 nullable_set_column->applyNullMap(*source_null_map);

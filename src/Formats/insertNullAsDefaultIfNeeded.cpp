@@ -110,7 +110,7 @@ bool insertNullAsDefaultIfNeeded(ColumnWithTypeAndName & input_column, const Col
             return false;
 
         input_column.column = ColumnNullable::create(
-            nested_input.column, assert_cast<const ColumnNullable *>(input_column.column.get())->getNullMapColumnPtr());
+            nested_input.column, assert_cast<const ColumnNullable *>(input_column.column.get())->tryGetNullMapColumnPtr());
         input_column.type = std::make_shared<DataTypeNullable>(std::move(nested_input.type));
         return true;
     }

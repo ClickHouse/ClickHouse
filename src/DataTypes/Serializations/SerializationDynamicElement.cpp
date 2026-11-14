@@ -223,7 +223,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
         auto variant_serialization = variant_type->getDefaultSerialization();
 
         const auto & nullable_shared_variant = assert_cast<const ColumnNullable &>(*shared_variant_column);
-        const auto & shared_null_map = nullable_shared_variant.getNullMapData();
+        const UInt8 * shared_null_map = nullable_shared_variant.getNullMapRawDataOrZeros();
         const auto & shared_variant = assert_cast<const ColumnString &>(nullable_shared_variant.getNestedColumn());
         const FormatSettings format_settings;
         for (size_t i = 0; i != shared_variant.size(); ++i)
@@ -303,9 +303,10 @@ MutableColumnPtr SerializationDynamicElement::wrapColumnForDeserialization(Mutab
     if (isColumnNullable(*column))
     {
         const auto & nullable = assert_cast<const ColumnNullable &>(*column);
+        const auto * null_map = nullable.tryGetNullMapColumn();
         return ColumnNullable::create(
             nested_serialization->wrapColumnForDeserialization(nullable.getNestedColumnPtr()->cloneEmpty()),
-            nullable.getNullMapColumnPtr()->cloneEmpty());
+            null_map ? null_map->cloneEmpty() : nullptr);
     }
 
     return nested_serialization->wrapColumnForDeserialization(std::move(column));

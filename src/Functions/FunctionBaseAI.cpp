@@ -576,7 +576,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
         {
             /// A NULL prompt produces NULL, and once the quota is exhausted a row keeps its default
             /// value. Neither issues a request, so the row's slot stays an empty future.
-            if ((prompt_nullable && prompt_nullable->getNullMapData()[row]) || quota_tracker->checkQuotas())
+            if ((prompt_nullable && prompt_nullable->isNullAt(row)) || quota_tracker->checkQuotas())
             {
                 wave.emplace_back();
                 continue;
@@ -601,7 +601,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             const size_t row = wave_begin + k;
 
             /// A NULL prompt produces NULL without a request.
-            if (prompt_nullable && prompt_nullable->getNullMapData()[row])
+            if (prompt_nullable && prompt_nullable->isNullAt(row))
             {
                 result_col->insertDefault();
                 null_map_col->getData()[row] = 1;

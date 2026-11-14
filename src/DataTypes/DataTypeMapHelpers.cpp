@@ -344,7 +344,7 @@ void extractValuesVector(
         {
             dst_data[old_size + i] = src_data[pos];
             if (dst_null_map)
-                (*dst_null_map)[old_size + i] = (*src_null_map)[pos];
+                (*dst_null_map)[old_size + i] = src_null_map ? (*src_null_map)[pos] : static_cast<UInt8>(0);
         }
         else
         {
@@ -389,7 +389,7 @@ void extractValuesString(
         {
             total_chars_size += src_offsets[pos] - src_offsets[ssize_t(pos) - 1];
             if (dst_null_map)
-                (*dst_null_map)[old_offsets_size + i] = (*src_null_map)[pos];
+                (*dst_null_map)[old_offsets_size + i] = src_null_map ? (*src_null_map)[pos] : static_cast<UInt8>(0);
         }
         else
         {
@@ -441,7 +441,7 @@ void extractValuesFixedString(
         {
             memcpy(&dst_chars[old_chars_size + i * n], &src_chars[pos * n], n);
             if (dst_null_map)
-                (*dst_null_map)[old_num_rows + i] = (*src_null_map)[pos];
+                (*dst_null_map)[old_num_rows + i] = src_null_map ? (*src_null_map)[pos] : static_cast<UInt8>(0);
         }
         else
         {
@@ -471,7 +471,7 @@ void extractValuesDispatch(
         auto & nullable_result = assert_cast<ColumnNullable &>(result);
         data_column = &nullable_values->getNestedColumn();
         result_data_column = &nullable_result.getNestedColumn();
-        src_null_map = &nullable_values->getNullMapData();
+        src_null_map = nullable_values->tryGetNullMapData();
         dst_null_map = &nullable_result.getNullMapData();
     }
 

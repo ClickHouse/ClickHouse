@@ -1494,9 +1494,7 @@ namespace DB
                 const ColumnNullable * column_nullable = assert_cast<const ColumnNullable *>(column.get());
                 ColumnPtr nested_column = column_nullable->getNestedColumnPtr();
                 DataTypePtr nested_type = assert_cast<const DataTypeNullable *>(column_type.get())->getNestedType();
-                const ColumnPtr & null_column = column_nullable->getNullMapColumnPtr();
-                const PaddedPODArray<UInt8> & bytemap = assert_cast<const ColumnVector<UInt8> &>(*null_column).getData();
-                arrow_array = fillArrowArray(column_name, nested_column, nested_type, &bytemap, array_builder, format_name, start, end, settings, dictionary_values);
+                arrow_array = fillArrowArray(column_name, nested_column, nested_type, column_nullable->tryGetNullMapData(), array_builder, format_name, start, end, settings, dictionary_values);
                 break;
             }
             case TypeIndex::String:

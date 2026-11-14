@@ -534,9 +534,10 @@ MutableColumnPtr SerializationVariantElement::wrapColumnForDeserialization(Mutab
     if (isColumnNullable(*column))
     {
         const auto & nullable = assert_cast<const ColumnNullable &>(*column);
+        const auto * null_map = nullable.tryGetNullMapColumn();
         return ColumnNullable::create(
             nested_serialization->wrapColumnForDeserialization(nullable.getNestedColumnPtr()->cloneEmpty()),
-            nullable.getNullMapColumnPtr()->cloneEmpty());
+            null_map ? null_map->cloneEmpty() : nullptr);
     }
 
     return nested_serialization->wrapColumnForDeserialization(std::move(column));

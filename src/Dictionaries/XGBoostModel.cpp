@@ -247,7 +247,7 @@ ColumnPtr XGBoostModel::predict(const Block & batch, const PredictParameters & p
         if (const auto * nullable = typeid_cast<const ColumnNullable *>(column))
         {
             feature_cols.push_back(&nullable->getNestedColumn());
-            null_maps.push_back(&nullable->getNullMapData());
+            null_maps.push_back(nullable->tryGetNullMapData());
         }
         else
         {

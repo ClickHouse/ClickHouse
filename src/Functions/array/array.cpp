@@ -270,22 +270,35 @@ private:
 
     bool executeNullable(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
-        ColumnRawPtrs null_maps(columns.size(), nullptr);
+        VectorWithMemoryTracking<ConstNullMapPtr> null_maps(columns.size(), nullptr);
         ColumnRawPtrs nested_columns(columns.size(), nullptr);
+        bool has_null_map = false;
         for (size_t i = 0; i < columns.size(); ++i)
         {
             const ColumnNullable * concrete_column = checkAndGetColumn<ColumnNullable>(columns[i]);
             if (!concrete_column)
                 return false;
 
-            null_maps[i] = &concrete_column->getNullMapColumn();
+            null_maps[i] = concrete_column->tryGetNullMapData();
+            has_null_map |= null_maps[i] != nullptr;
             nested_columns[i] = &concrete_column->getNestedColumn();
         }
 
         ColumnNullable & concrete_out_data = assert_cast<ColumnNullable &>(out_data);
-        auto & out_null_map = concrete_out_data.getNullMapColumn();
+        if (!has_null_map && !concrete_out_data.hasNullMap())
+        {
+            execute(nested_columns, concrete_out_data.getNestedColumnNoMaterialize(), input_rows_count);
+            return true;
+        }
+
+        auto & out_null_map = concrete_out_data.getNullMapData();
         auto & out_nested_column = concrete_out_data.getNestedColumn();
-        execute(null_maps, out_null_map, input_rows_count);
+        const size_t prev_size = out_null_map.size();
+        out_null_map.resize_exact(prev_size + columns.size() * input_rows_count);
+        UInt8 * out_null_map_pos = out_null_map.data() + prev_size;
+        for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
+            for (size_t col_i = 0; col_i < columns.size(); ++col_i)
+                *out_null_map_pos++ = null_maps[col_i] ? (*null_maps[col_i])[row_i] : 0;
         execute(nested_columns, out_nested_column, input_rows_count);
         return true;
     }

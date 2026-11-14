@@ -385,11 +385,13 @@ public:
 
             if (const auto * nullable = checkAndGetColumn<ColumnNullable>(full_column.get()))
             {
-                const auto & row_null_map = nullable->getNullMapData();
-                if (key_row_is_null.empty())
-                    key_row_is_null.resize_fill(row_null_map.size(), 0);
-                for (size_t row = 0; row < row_null_map.size(); ++row)
-                    key_row_is_null[row] |= row_null_map[row];
+                if (const auto * row_null_map = nullable->tryGetNullMapData())
+                {
+                    if (key_row_is_null.empty())
+                        key_row_is_null.resize_fill(row_null_map->size(), 0);
+                    for (size_t row = 0; row < row_null_map->size(); ++row)
+                        key_row_is_null[row] |= (*row_null_map)[row];
+                }
 
                 key_columns[i] = nullable->getNestedColumnPtr();
                 key_types[i] = removeNullable(full_type);

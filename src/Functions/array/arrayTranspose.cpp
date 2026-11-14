@@ -192,8 +192,18 @@ private:
 
         auto * res_nullable = typeid_cast<ColumnNullable *>(&res_data);
 
+        const ColumnUInt8 * src_null_map = src_nullable->tryGetNullMapColumn();
+        if (!src_null_map && !res_nullable->hasNullMap())
+        {
+            execute(src_nullable->getNestedColumn(), outer_offsets, inner_offsets, res_nullable->getNestedColumnNoMaterialize(), input_rows_count);
+            return true;
+        }
+
         execute(src_nullable->getNestedColumn(), outer_offsets, inner_offsets, res_nullable->getNestedColumn(), input_rows_count);
-        executeNumber<UInt8>(src_nullable->getNullMapColumn(), outer_offsets, inner_offsets, res_nullable->getNullMapColumn(), input_rows_count);
+        if (src_null_map)
+            executeNumber<UInt8>(*src_null_map, outer_offsets, inner_offsets, res_nullable->getNullMapColumn(), input_rows_count);
+        else
+            res_nullable->getNullMapData().resize_fill(res_nullable->getNestedColumn().size(), 0);
 
         return true;
     }

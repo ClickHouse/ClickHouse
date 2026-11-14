@@ -968,8 +968,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
         /// A NULL of a set built for `toNullable(key)` does not cast to the key type and matches no stored value.
         const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get());
-        if (nullable_column && !index_type->isNullable() && std::ranges::any_of(nullable_column->getNullMapData(), [](UInt8 is_null) { return is_null != 0; }))
-            return false;
+        if (nullable_column && !index_type->isNullable())
+        {
+            const auto * null_map = nullable_column->tryGetNullMapData();
+            if (null_map && std::ranges::any_of(*null_map, [](UInt8 is_null) { return is_null != 0; }))
+                return false;
+        }
 
         const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type);
 

@@ -84,14 +84,17 @@ public:
         const IColumn * scale_column = scale_full.get();
         const NullMap * interval_nulls = nullptr;
         const NullMap * scale_nulls = nullptr;
+        bool has_nullable_argument = false;
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(interval_column))
         {
-            interval_nulls = &nullable->getNullMapData();
+            has_nullable_argument = true;
+            interval_nulls = nullable->tryGetNullMapData();
             interval_column = &nullable->getNestedColumn();
         }
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(scale_column))
         {
-            scale_nulls = &nullable->getNullMapData();
+            has_nullable_argument = true;
+            scale_nulls = nullable->tryGetNullMapData();
             scale_column = &nullable->getNestedColumn();
         }
 
@@ -128,7 +131,7 @@ public:
             null_map->getData()[i] = 0;
         }
 
-        if (interval_nulls || scale_nulls)
+        if (has_nullable_argument)
             return ColumnNullable::create(std::move(result), std::move(null_map));
         return result;
     }

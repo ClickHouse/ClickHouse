@@ -130,7 +130,7 @@ bool HashedJoinKey::addParts(const IColumn & column, std::vector<Part> & parts)
         const size_t nested_part = parts.size();
         if (!addParts(nullable->getNestedColumn(), parts) || parts.size() != nested_part + 1 || parts.back().null_map)
             return false;
-        parts.back().null_map = nullable->getNullMapData().data();
+        parts.back().null_map = nullable->getNullMapRawDataOrZeros();
         return true;
     }
     if (const auto * string = typeid_cast<const ColumnString *>(&column))

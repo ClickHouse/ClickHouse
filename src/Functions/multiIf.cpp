@@ -558,7 +558,7 @@ private:
                 {
                     const ColumnNullable & condition_nullable = assert_cast<const ColumnNullable &>(*instruction.condition);
                     const ColumnUInt8 & condition_nested = assert_cast<const ColumnUInt8 &>(condition_nullable.getNestedColumn());
-                    const NullMap & condition_null_map = condition_nullable.getNullMapData();
+                    const UInt8 * condition_null_map = condition_nullable.getNullMapRawDataOrZeros();
 
                     insert = !condition_null_map[i] && condition_nested.getData()[i];
                 }
@@ -605,7 +605,7 @@ private:
                 const ColumnNullable & condition_nullable = assert_cast<const ColumnNullable &>(*instruction.condition);
                 const ColumnUInt8 & condition_nested = assert_cast<const ColumnUInt8 &>(condition_nullable.getNestedColumn());
                 const auto & condition_nested_data = condition_nested.getData();
-                const NullMap & condition_null_map = condition_nullable.getNullMapData();
+                const UInt8 * condition_null_map = condition_nullable.getNullMapRawDataOrZeros();
 
                 for (size_t row_i = 0; row_i < rows; ++row_i)
                 {
@@ -648,7 +648,9 @@ private:
             const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(non_const_col);
             data_cols[i] = nullable_col ? assert_cast<const ColumnVectorOrDecimal<T> &>(nullable_col->getNestedColumn()).getData().data()
                                         : assert_cast<const ColumnVectorOrDecimal<T> &>(*non_const_col).getData().data();
-            null_map_cols[i] = nullable_col ? assert_cast<const ColumnUInt8 &>(nullable_col->getNullMapColumn()).getData().data() : nullptr;
+            /// nullptr if the source has no NULLs.
+            const auto * source_null_map = nullable_col ? nullable_col->tryGetNullMapData() : nullptr;
+            null_map_cols[i] = source_null_map ? source_null_map->data() : nullptr;
         }
 
         std::unique_ptr<PaddedPODArray<UInt8>> shared_null_map;

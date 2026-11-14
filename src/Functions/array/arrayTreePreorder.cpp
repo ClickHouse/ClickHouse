@@ -101,12 +101,12 @@ public:
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(ids_data))
         {
             ids_data = &nullable->getNestedColumn();
-            ids_null_map = &nullable->getNullMapData();
+            ids_null_map = nullable->tryGetNullMapData();
         }
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(parents_data))
         {
             parents_data = &nullable->getNestedColumn();
-            parents_null_map = &nullable->getNullMapData();
+            parents_null_map = nullable->tryGetNullMapData();
         }
 
         Result result(ids_data->size());

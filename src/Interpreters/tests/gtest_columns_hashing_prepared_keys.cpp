@@ -129,7 +129,7 @@ struct NullableKeyColumns
 
         auto nullable = ColumnNullable::create(std::move(values), std::move(nulls));
         const ColumnNullable * nullable_column = nullable.get();
-        null_map = nullable_column->getNullMapData().data();
+        null_map = nullable->getNullMapData().data();
         nested.push_back(&nullable_column->getNestedColumn());
         holders.emplace_back(std::move(nullable));
         columns.push_back(holders.back().get());

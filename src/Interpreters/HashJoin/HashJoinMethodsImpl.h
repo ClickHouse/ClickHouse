@@ -1196,7 +1196,11 @@ static ColumnPtr buildAdditionalFilter(
     {
         /// Convert Nullable(UInt8) to UInt8 ensuring that nulls are zeros
         /// Trying to avoid copying data, since we are the only owner of the column.
-        ColumnPtr mask_column = assert_cast<const ColumnNullable &>(*result_column).getNullMapColumnPtr();
+        ColumnPtr mask_column = assert_cast<const ColumnNullable &>(*result_column).tryGetNullMapColumnPtr();
+
+        /// Without a null map there are no NULLs, the nested column is the filter.
+        if (!mask_column)
+            return assert_cast<const ColumnNullable &>(*result_column).getNestedColumnPtr();
 
         MutableColumnPtr mutable_column;
         {

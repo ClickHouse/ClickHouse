@@ -70,15 +70,19 @@ public:
         ssize_t if_argument_pos) const override
     {
         const auto & nc = assert_cast<const ColumnNullable &>(*columns[0]);
+        const auto * null_map = nc.tryGetNullMapData();
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            data(place).count += countBytesInFilterWithNull(flags, nc.getNullMapData().data(), row_begin, row_end);
+            if (null_map)
+                data(place).count += countBytesInFilterWithNull(flags, null_map->data(), row_begin, row_end);
+            else
+                data(place).count += countBytesInFilter(flags.data(), row_begin, row_end);
         }
         else
         {
             size_t rows = row_end - row_begin;
-            data(place).count += rows - countBytesInFilter(nc.getNullMapData().data(), row_begin, row_end);
+            data(place).count += rows - (null_map ? countBytesInFilter(null_map->data(), row_begin, row_end) : 0);
         }
     }
 

@@ -75,7 +75,7 @@ public:
             operands[i].type = removeNullable(arguments[i].type);
             if (const auto * nullable = checkAndGetColumn<ColumnNullable>(operands[i].values))
             {
-                operands[i].nulls = &nullable->getNullMapData();
+                operands[i].nulls = nullable->tryGetNullMapData();
                 operands[i].values = &nullable->getNestedColumn();
             }
         }

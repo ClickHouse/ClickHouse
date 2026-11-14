@@ -49,7 +49,7 @@ enum BasicFeatureMask : UInt8
 const NullMap * tryGetNullMap(const IColumn & column)
 {
     if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
-        return &nullable->getNullMapData();
+        return nullable->tryGetNullMapData();
     return nullptr;
 }
 

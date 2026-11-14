@@ -587,8 +587,14 @@ static ColumnPtr replaceNullRowsWithDefaults(const ColumnPtr & result, const Col
             }
         }
         else if (const auto * nullable = typeid_cast<const ColumnNullable *>(arg.column.get()))
-            null_maps.push_back(&nullable->getNullMapData());
+        {
+            if (const auto * null_map = nullable->tryGetNullMapData())
+                null_maps.push_back(null_map);
+        }
     }
+
+    if (null_maps.empty())
+        return result;
 
     auto is_null_row = [&](size_t row)
     {

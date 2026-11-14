@@ -3614,8 +3614,8 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             const ColumnNullable * nullable_column = is_const ? checkAndGetColumnConstData<ColumnNullable>(right_argument.column.get())
                                                               : checkAndGetColumn<ColumnNullable>(right_argument.column.get());
 
-            const auto & null_bytemap = nullable_column->getNullMapData();
-            auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &null_bytemap);
+            /// Without a null map the denominator has no NULLs, so there are no rows to skip.
+            auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, nullable_column->tryGetNullMapData());
             /// When the framework declared a non-Nullable result type (e.g. `Array` via `makeNullableSafe`),
             /// `wrapInNullable` would produce a `ColumnNullable` that disagrees with `result_type`.
             if (!result_type->isNullable())
