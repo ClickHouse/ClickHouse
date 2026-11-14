@@ -2,7 +2,6 @@
 #include <Interpreters/ExpressionContainsArrayJoin.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <WindowFunctions/IGeneralWindowFunction.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
@@ -46,6 +45,7 @@
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/PasteJoin.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/RowDataStore.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/SpillingHashJoin.h>
 #include <Interpreters/TableJoin.h>
@@ -96,6 +96,7 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsUInt64 min_count_to_compile_sort_description;
     extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
+    extern const SettingsUInt64 min_string_column_bytes_for_hash_join_row_store;
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsUInt64 parallel_hash_join_threshold;
     extern const SettingsHashJoinLayout hash_join_layout;
@@ -601,7 +602,6 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAG & actions, Aggrega
 
 void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
     const WindowDescriptions & existing_descriptions,
-    AggregateFunctionPtr aggregate_function,
     WindowDescription & desc, const IAST * ast)
 {
     const auto & definition = ast->as<const ASTWindowDefinition &>();
@@ -719,21 +719,7 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
     desc.full_sort_description.insert(desc.full_sort_description.end(),
         desc.order_by.begin(), desc.order_by.end());
 
-    const auto window_function = aggregate_function ? asGeneralWindowFunction(aggregate_function) : nullptr;
     desc.frame.is_default = definition.frame_is_default;
-    if (desc.frame.is_default && window_function)
-    {
-        auto default_window_frame_opt = window_function->getDefaultFrame();
-        if (default_window_frame_opt)
-        {
-            desc.frame = *default_window_frame_opt;
-            /// Append the default frame description to window_name, make sure it will be put into
-            /// a proper window description.
-            desc.window_name += " " + desc.frame.toString();
-            return;
-        }
-    }
-
     desc.frame.type = definition.frame_type;
     desc.frame.begin_type = definition.frame_begin_type;
     desc.frame.begin_preceding = definition.frame_begin_preceding;
@@ -770,8 +756,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
             const auto & elem = ptr->as<const ASTWindowListElement &>();
             WindowDescription desc;
             desc.window_name = elem.name;
-            makeWindowDescriptionFromAST(*current_context, window_descriptions,
-                nullptr, desc, elem.definition.get());
+            makeWindowDescriptionFromAST(*current_context, window_descriptions, desc, elem.definition.get());
 
             auto [it, inserted] = window_descriptions.insert(
                 {elem.name, std::move(desc)});
@@ -858,8 +843,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
             auto default_window_name = definition.getDefaultWindowName();
             WindowDescription desc;
             desc.window_name = default_window_name;
-            makeWindowDescriptionFromAST(*current_context, window_descriptions,
-                window_function.aggregate_function, desc, &definition);
+            makeWindowDescriptionFromAST(*current_context, window_descriptions, desc, &definition);
 
             auto full_sort_description = desc.full_sort_description;
 
@@ -1000,7 +984,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 {
     if (context->getSettingsRef()[Setting::enable_hash_join_row_store]
         && context->getSettingsRef()[Setting::min_rows_ratio_for_hash_join_row_store] == 0.0)
-        analyzed_join->setRowStoreEnabled(true);
+        analyzed_join->setRowStoreCandidateColumns(computeRowStoreCandidateColumns(
+            *analyzed_join, *right_sample_block, 0, context->getSettingsRef()[Setting::min_string_column_bytes_for_hash_join_row_store]));
 
     if (analyzed_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(analyzed_join, right_sample_block);

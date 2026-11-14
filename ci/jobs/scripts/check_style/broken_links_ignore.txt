@@ -2,3 +2,6 @@
 # by a pull request to be reachable (see ci/jobs/scripts/check_style/check_broken_links.py).
 #
 # One URL prefix per line: a link that starts with any of them is not checked.
+# The page is reachable, but CI runners get exactly this error for it: HTTP 520 from Cloudflare.
+https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
+https://oauth2.googleapis.com/token

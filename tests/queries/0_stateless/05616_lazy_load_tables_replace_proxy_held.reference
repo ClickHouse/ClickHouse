@@ -1,0 +1,3 @@
+cold: TableProxy	0
+held: MergeTree	0
+released: MergeTree	1

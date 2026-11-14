@@ -524,8 +524,8 @@ class JobNames:
 
 
 class ToolSet:
-    COMPILER_C = "clang-22"
-    COMPILER_CPP = "clang++-22"
+    COMPILER_C = "clang-23"
+    COMPILER_CPP = "clang++-23"
 
     COMPILER_CACHE = "sccache"
     COMPILER_CACHE_LEGACY = "sccache"
@@ -577,6 +577,7 @@ class ArtifactNames:
 
     FAST_TEST = "FAST_TEST"
 
+    UNITTEST_AMD_DEBUG = "UNITTEST_AMD_DEBUG"
     UNITTEST_AMD_ASAN_UBSAN = "UNITTEST_AMD_ASAN_UBSAN"
     UNITTEST_AMD_TSAN = "UNITTEST_AMD_TSAN"
     UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
@@ -856,6 +857,7 @@ class ArtifactConfigs:
         compress_zst=True,
     ).parametrize(
         names=[
+            ArtifactNames.UNITTEST_AMD_DEBUG,
             ArtifactNames.UNITTEST_AMD_ASAN_UBSAN,
             ArtifactNames.UNITTEST_AMD_TSAN,
             ArtifactNames.UNITTEST_AMD_MSAN,

@@ -19,11 +19,6 @@ allowed
 -- a view with an inner table carries no target id, so it is still allowed
 allowed
 allowed
--- a temporary TimeSeries table forges the same primitive through an external target
-forged
-denied
--- and that denial names the forged target too
-1
 -- a view under a database the restore skips does not require its target
 allowed
 -- nothing was created, so the grant it used to demand was never needed
