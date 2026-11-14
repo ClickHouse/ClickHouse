@@ -1,0 +1,47 @@
+subquery without step, default step 1m:
+5
+5
+[('l','a')]	[5,5,5,5,5,5]
+subquery without step, promql_default_subquery_step = 15:
+20
+20
+[('l','a')]	[20,20,20,20,20,20]
+compatibility = 26.10 keeps the old step of 15 seconds:
+20
+an explicit subquery step wins:
+10
+instant selector two minutes after the last sample, default lookback 5m:
+[('__name__','m'),('l','a')]	1
+[('__name__','m'),('l','a')]	[('1970-01-12 13:57:00.000',1),('1970-01-12 13:58:00.000',1),('1970-01-12 13:59:00.000',1),('1970-01-12 14:00:00.000',1),('1970-01-12 14:01:00.000',1)]
+promql_lookback_delta = 60:
+0
+[('__name__','m'),('l','a')]	1
+[('__name__','m'),('l','a')]	[('1970-01-12 13:57:00.000',1)]
+fractional values are rounded up to milliseconds:
+1
+0
+1
+0
+299
+300
+exact microseconds on a DateTime64(6) table:
+1
+0
+[('1970-01-12 13:57:00.621000',1),('1970-01-12 13:57:01.622000',1),('1970-01-12 13:57:02.623000',1)]
+zero means the default:
+1
+0
+5
+below 1 microsecond means the default:
+1
+5
+negative values are rejected:
+a table created from prometheusQuery uses the settings of the query reading it:
+1
+0
+1
+5
+20
+the promql dialect:
+[('__name__','m'),('l','a')]	1970-01-12 13:59:00.000	1
+[('l','a')]	1970-01-12 13:57:00.000	20
