@@ -1,15 +1,19 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <bit>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/assert_cast.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Transforms/SortingTransform.h>
 
@@ -284,4 +288,87 @@ TEST(MergeSorter, PreferredBytesRespectTheRowLimit)
 
     MergeSorter empty(header, {}, ascending(), 1024, 0, MergeSorter::Mode::PreserveRows, 4096);
     EXPECT_FALSE(empty.read());
+}
+
+TEST(MergeSorter, FixedSizeColumnsGrowTogether)
+{
+    /// Values of 1, 3, 16 and 32 bytes reach different row capacities, and a String column takes the generic path.
+    const auto header = std::make_shared<const Block>(Block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "key"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt8>(), "u8"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeFixedString>(3), "fs"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeUUID>(), "uuid"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt256>(), "u256"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "str"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "payload")});
+    const auto fixed_string = [](UInt64 payload) { return std::to_string(1000000 + payload).substr(4); };
+
+    /// The first chunk is empty, so cursor positions differ from chunk numbers, and the second one has 2 rows,
+    /// so the output outgrows its initial reservation.
+    std::vector<std::vector<UInt64>> chunk_keys{{}, {5, 50}, {}, {}};
+    for (UInt64 key = 0; key < 100; ++key)
+        chunk_keys[2].push_back(key);
+    for (UInt64 key = 1; key < 200; key += 2)
+        chunk_keys[3].push_back(key);
+
+    struct Row { UInt64 key; UInt64 payload; };
+    std::vector<Row> sorted_rows;
+    for (size_t c = 0; c < chunk_keys.size(); ++c)
+        for (size_t r = 0; r < chunk_keys[c].size(); ++r)
+            sorted_rows.push_back({chunk_keys[c][r], c * 1000 + r});
+    std::ranges::stable_sort(sorted_rows, {}, &Row::key);
+
+    for (const auto mode : {MergeSorter::Mode::PreserveRows, MergeSorter::Mode::MergeUniqueChunks})
+    for (const size_t block_size : {1, 3, 7, 64, 1000})
+    for (const UInt64 limit : {0, 10})
+    {
+        SCOPED_TRACE(::testing::Message() << "mode=" << static_cast<int>(mode) << ", block_size=" << block_size << ", limit=" << limit);
+        std::vector<Row> expected;
+        for (const auto & row : sorted_rows)
+            if (mode == MergeSorter::Mode::PreserveRows || expected.empty() || expected.back().key != row.key)
+                expected.push_back(row);
+        if (limit && limit < expected.size())
+            expected.resize(limit);
+
+        Chunks chunks;
+        for (size_t c = 0; c < chunk_keys.size(); ++c)
+        {
+            auto columns = header->cloneEmptyColumns();
+            for (size_t r = 0; r < chunk_keys[c].size(); ++r)
+            {
+                const UInt64 payload = c * 1000 + r;
+                const String fs = fixed_string(payload);
+                const String str = std::to_string(payload);
+                columns[0]->insert(chunk_keys[c][r]);
+                assert_cast<ColumnUInt8 &>(*columns[1]).getData().push_back(static_cast<UInt8>(payload % 251));
+                columns[2]->insertData(fs.data(), fs.size());
+                assert_cast<ColumnUUID &>(*columns[3]).getData().push_back(UUID(UInt128(payload * 7)));
+                assert_cast<ColumnUInt256 &>(*columns[4]).getData().push_back(UInt256(payload) << 200);
+                columns[5]->insertData(str.data(), str.size());
+                columns[6]->insert(payload);
+            }
+            chunks.emplace_back(std::move(columns), chunk_keys[c].size());
+        }
+
+        MergeSorter sorter(header, std::move(chunks), ascending(), block_size, limit, mode);
+        size_t index = 0;
+        while (auto chunk = sorter.read())
+        {
+            ASSERT_LE(chunk.getNumRows(), block_size);
+            const auto & columns = chunk.getColumns();
+            for (size_t row = 0; row < chunk.getNumRows(); ++row, ++index)
+            {
+                ASSERT_LT(index, expected.size());
+                const UInt64 payload = columns[6]->getUInt(row);
+                ASSERT_EQ(payload, expected[index].payload);
+                EXPECT_EQ(columns[0]->getUInt(row), expected[index].key);
+                EXPECT_EQ(columns[1]->getUInt(row), payload % 251);
+                EXPECT_EQ(columns[2]->getDataAt(row), fixed_string(payload));
+                EXPECT_EQ(assert_cast<const ColumnUUID &>(*columns[3]).getData()[row], UUID(UInt128(payload * 7)));
+                EXPECT_EQ(assert_cast<const ColumnUInt256 &>(*columns[4]).getData()[row], UInt256(payload) << 200);
+                EXPECT_EQ(columns[5]->getDataAt(row), std::to_string(payload));
+            }
+        }
+        EXPECT_EQ(index, expected.size());
+    }
 }
