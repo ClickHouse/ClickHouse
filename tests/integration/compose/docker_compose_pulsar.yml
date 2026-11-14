@@ -1,0 +1,15 @@
+services:
+  pulsar1:
+    image: apachepulsar/pulsar:4.0.4
+    hostname: pulsar1
+    command: bin/pulsar standalone --no-functions-worker --no-stream-storage
+    environment:
+      PULSAR_MEM: "-Xms512m -Xmx512m"
+    ports:
+      - "${PULSAR_EXTERNAL_PORT:-6650}:6650"
+    healthcheck:
+      test: ["CMD-SHELL", "bin/pulsar-admin brokers healthcheck"]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+    stop_grace_period: 5s
