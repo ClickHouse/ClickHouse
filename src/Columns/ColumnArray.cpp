@@ -3,6 +3,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
@@ -831,6 +832,8 @@ ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) con
         return filterTuple(filt, result_size_hint);
     if (typeid_cast<const ColumnNullable *>(data.get()))
         return filterNullable(filt, result_size_hint);
+    if (typeid_cast<const ColumnLowCardinality *>(data.get()))
+        return filterLowCardinality(filt, result_size_hint);
     return filterGeneric(filt, result_size_hint);
 }
 
@@ -944,6 +947,11 @@ void ColumnArray::filter(const Filter & filt)
     if (typeid_cast<const ColumnNullable *>(data.get()))
     {
         filterNullable(filt);
+        return;
+    }
+    if (typeid_cast<const ColumnLowCardinality *>(data.get()))
+    {
+        filterLowCardinality(filt);
         return;
     }
     filterGeneric(filt);
@@ -1131,6 +1139,21 @@ ColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result_size_h
         filtered_offsets);
 }
 
+ColumnPtr ColumnArray::filterLowCardinality(const Filter & filt, ssize_t result_size_hint) const
+{
+    if (getOffsets().empty())
+        return ColumnArray::create(data);
+
+    /// Filter the array of indexes as an array of numbers and keep the dictionary.
+    const auto & low_cardinality = assert_cast<const ColumnLowCardinality &>(*data);
+    auto filtered_indexes_owner = ColumnArray::create(low_cardinality.getIndexesPtr(), offsets)->filter(filt, result_size_hint);
+    const auto & filtered_indexes = assert_cast<const ColumnArray &>(*filtered_indexes_owner);
+
+    return ColumnArray::create(
+        ColumnLowCardinality::create(low_cardinality.getDictionaryPtr(), filtered_indexes.getDataPtr(), low_cardinality.isSharedDictionary()),
+        filtered_indexes.getOffsetsPtr());
+}
+
 ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint) const
 {
     if (getOffsets().empty())
@@ -1277,6 +1300,18 @@ void ColumnArray::filterNullable(const Filter & filt)
 
     Offsets & res_offsets = getOffsets();
     filterArraysImplInPlace<UInt8>(nullable_elems.getNullMapData(), res_offsets, filt);
+}
+
+void ColumnArray::filterLowCardinality(const Filter & filt)
+{
+    if (getOffsets().empty())
+        return;
+
+    /// The temporary array shares the offsets with this column, so filtering it in-place filters both
+    /// the indexes and the offsets. The dictionary does not change.
+    auto & low_cardinality = assert_cast<ColumnLowCardinality &>(*data);
+    ColumnArray array_of_indexes(low_cardinality.getIndexesPtr()->assumeMutable(), getOffsetsPtr()->assumeMutable());
+    array_of_indexes.filter(filt);
 }
 
 void ColumnArray::filterGeneric(const Filter & filt)
