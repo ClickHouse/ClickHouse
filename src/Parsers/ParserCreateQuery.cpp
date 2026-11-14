@@ -3019,6 +3019,30 @@ CREATE TABLE codec_example
 ENGINE = MergeTree()
 ```
 
+### FSST {#fsst}
+
+<ExperimentalBadge/>
+
+`FSST` — [Fast Static Symbol Table](https://www.vldb.org/pvldb/vol13/p2649-boncz.pdf) compression for strings. Every block is compressed with its own table of up to 255 frequent byte sequences (symbols) of 1 to 8 bytes, each replaced with a one-byte code. It compresses short strings such as URLs, e-mails or identifiers well, and decompresses very fast, because every code is decoded independently of the rest of the data.
+
+Since the codes are decoded independently, the data can also be filtered without decompressing it. When a `PREWHERE` condition of a query searches a `String` column for a constant substring, prefix, suffix or value (`LIKE`, `startsWith`, `endsWith`, `=`, see [`apply_string_filters_during_scan`](/reference/settings/session-settings/apply#apply_string_filters_during_scan)), the values of the column compressed by `FSST` are checked on the compressed data. The values of a `String` column are compressed one by one, without symbols that span two values, so an equality or a prefix is checked by comparing the compressed value with the compressed constant. For a substring or a suffix, a value is skipped without decompressing it if it does not contain all pairs of adjacent bytes of the searched string, and only the remaining values are decompressed and checked. This requires the default serialization of `String` columns with a separate stream of value sizes (`string_serialization_version = 'with_size_stream'`), and works also when `FSST` is followed by other codecs, such as `CODEC(FSST, ZSTD)`: only the other codecs are decompressed then.
+
+The codec applies only to the values of a `String` column, and the stream of value sizes is compressed with the other codecs of the chain, so it is recommended to combine `FSST` with a general-purpose codec.
+
+<Note>
+This codec is experimental and requires `SET enable_fsst_codec = 1` to use.
+</Note>
+
+```sql
+SET enable_fsst_codec = 1;
+
+CREATE TABLE hits
+(
+    URL String CODEC(FSST, LZ4)
+)
+ENGINE = MergeTree ORDER BY tuple();
+```
+
 ### Quantized {#quantized}
 
 <ExperimentalBadge/>

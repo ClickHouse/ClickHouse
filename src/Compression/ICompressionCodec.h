@@ -8,6 +8,7 @@
 
 #include <memory>
 #include <optional>
+#include <span>
 
 class SipHash;
 
@@ -60,6 +61,14 @@ public:
     {
         return compress(source, source_size, dest, createCompressionState().get());
     }
+
+    /// Whether the codec uses the boundaries between the values in the data (see `IWriteBufferWithValueBoundaries`),
+    /// e.g. to compress every value on its own (`FSST`).
+    virtual bool needsValueBoundaries() const { return false; }
+
+    /// The same as `compress`, given the boundaries between the values in the source: the increasing offsets in it,
+    /// except 0 and `source_size`. A codec that does not use them compresses the data as `compress` does.
+    UInt32 compressWithValueBoundaries(const char * source, UInt32 source_size, char * dest, std::span<const UInt32> value_boundaries) const;
 
     /// Fresh state for one stream, nullptr when this codec is stateless.
     virtual CompressionStatePtr createCompressionState() const { return nullptr; }
@@ -146,6 +155,13 @@ protected:
 
     /// Actually compress data without header
     virtual UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const = 0;
+
+    /// The same, given the boundaries of the values (see `compressWithValueBoundaries`).
+    virtual UInt32 doCompressDataWithValueBoundaries(
+        const char * source, UInt32 source_size, char * dest, std::span<const UInt32> /*value_boundaries*/) const
+    {
+        return doCompressData(source, source_size, dest);
+    }
 
     /// Actually decompress data without header
     virtual UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const = 0;

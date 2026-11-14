@@ -11,6 +11,7 @@
 #include <base/unaligned.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/CompressionCodecMultiple.h>
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/CompressionInfo.h>
@@ -318,6 +319,54 @@ void CompressedReadBufferBase::decompress(BufferBase::WorkingBuffer & to, size_t
         LZ4::StatisticsHintScope hint_scope(statistics_hint);
         codec->decompress(compressed_buffer, static_cast<UInt32>(size_compressed_without_checksum), to.begin());
     }
+}
+
+bool CompressedReadBufferBase::tryGetFSSTEncodedBlock(
+    size_t size_decompressed, size_t size_compressed_without_checksum, CompressionCodecFSST::EncodedBlock & block, PODArray<char> & buffer)
+{
+    static constexpr auto fsst_method = static_cast<uint8_t>(CompressionMethodByte::FSST);
+    const int error_code = external_data ? ErrorCodes::CANNOT_DECOMPRESS : ErrorCodes::CORRUPTED_DATA;
+    const UInt8 header_size = ICompressionCodec::getHeaderSize();
+
+    const char * data = compressed_buffer + header_size;
+    size_t data_size = size_compressed_without_checksum - header_size;
+
+    /// The method byte is checked before `readHeaderAndGetCodec`, which accounts the block in the profile events:
+    /// a block that is not taken here is decompressed as usual and accounted there.
+    const uint8_t method = ICompressionCodec::readMethod(compressed_buffer);
+    if (method == static_cast<uint8_t>(CompressionMethodByte::Multiple))
+    {
+        /// The method bytes of the chain follow the number of codecs, in the order of compression.
+        if (data_size < 2 || static_cast<uint8_t>(data[1]) != fsst_method)
+            return false;
+
+        readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs, external_data);
+        CompressionCodecMultiple::decompressAllStagesButFirst(data, static_cast<UInt32>(data_size), buffer, error_code);
+
+        /// `decompressAllStagesButFirst` checked that the block is long enough for the header.
+        const UInt32 inner_size_compressed = unalignedLoadLittleEndian<UInt32>(&buffer[1]);
+        const UInt32 inner_size_decompressed = unalignedLoadLittleEndian<UInt32>(&buffer[5]);
+        if (ICompressionCodec::readMethod(buffer.data()) != fsst_method || inner_size_compressed != buffer.size()
+            || inner_size_decompressed != size_decompressed)
+            throw Exception(error_code, "Malformed FSST-encoded block of a codec chain");
+
+        data = buffer.data() + header_size;
+        data_size = buffer.size() - header_size;
+    }
+    else if (method == fsst_method)
+    {
+        readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs, external_data);
+    }
+    else
+    {
+        return false;
+    }
+
+    if (CompressionCodecFSST::parseBlock(data, data_size, size_decompressed, block, error_code, /*read_index=*/ true))
+        return true;
+
+    /// The block is stored without encoding: decompress it as usual, which accounts it in the profile events once more.
+    return false;
 }
 
 void CompressedReadBufferBase::addDiagnostics(Exception & e) const

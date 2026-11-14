@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/WriteBuffer.h>
+#include <IO/WriteBufferWithValueBoundaries.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadHelpers.h>
 #include <city.h>
@@ -47,10 +48,12 @@ protected:
 /** Computes the hash from the data to write and passes it to the specified WriteBuffer.
   * The buffer of the nested WriteBuffer is used as the main buffer.
   */
-class HashingWriteBuffer : public IHashingBuffer<WriteBuffer>
+class HashingWriteBuffer : public IHashingBuffer<WriteBuffer>, public IWriteBufferWithValueBoundaries
 {
 private:
     WriteBuffer & out;
+    /// The nested buffer, if it uses the boundaries of the values (see `IWriteBufferWithValueBoundaries`).
+    IWriteBufferWithValueBoundaries * out_with_value_boundaries = nullptr;
 
     void nextImpl() override
     {
@@ -74,7 +77,12 @@ public:
         working_buffer = out.buffer();
         pos = working_buffer.begin();
         state = uint128(0, 0);
+        out_with_value_boundaries = dynamic_cast<IWriteBufferWithValueBoundaries *>(&out);
     }
+
+    /// The working buffer is the one of `out`, so the offsets in it are the same.
+    bool needsValueBoundaries() const override { return out_with_value_boundaries && out_with_value_boundaries->needsValueBoundaries(); }
+    void addValueBoundary(size_t offset) override { out_with_value_boundaries->addValueBoundary(offset); }
 
     void sync() override
     {
