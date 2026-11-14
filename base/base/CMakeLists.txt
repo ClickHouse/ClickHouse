@@ -6,6 +6,8 @@ endif ()
 
 configure_file(GitHash.cpp.in GitHash.generated.cpp)
 
+option (ENABLE_EXPERIMENTAL_LONG_CRC32_HASH "Enable exact long-string `CRC32Hash` acceleration" ON)
+
 set (SRCS
     argsToConfig.cpp
     cgroupsv2.cpp
@@ -32,11 +34,14 @@ set (SRCS
     safeExit.cpp
     throwError.cpp
     Numa.cpp
+    StringViewHash.cpp
     GitHash.generated.cpp
     wide_integer_to_string.cpp
 )
 
 add_library (common ${SRCS})
+
+target_compile_definitions(common PUBLIC ENABLE_EXPERIMENTAL_LONG_CRC32_HASH=$<BOOL:${ENABLE_EXPERIMENTAL_LONG_CRC32_HASH}>)
 
 if (WITH_COVERAGE)
     target_compile_definitions(common PUBLIC WITH_COVERAGE=1)
