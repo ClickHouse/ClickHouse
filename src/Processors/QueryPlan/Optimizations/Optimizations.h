@@ -387,10 +387,13 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
 ///   cache_keys[N]  = raw_hashes[N] XOR (the per-side contribution of N's parent join step).
 /// `raw_hashes` is what the join reorder pass needs to derive cache keys for sub-join nodes
 /// it builds itself; `cache_keys` matches the value `HashTablesStatistics` is keyed by.
+/// `unidentified_sources` receives each node whose subtree has a source the key does not identify: one that is
+/// neither a `SourceStepWithFilter` nor a `ReadNothingStep`.
 void calculateHashTableCacheKeys(
     const QueryPlan::Node & root,
     std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys,
-    std::unordered_map<const QueryPlan::Node *, UInt64> & raw_hashes);
+    std::unordered_map<const QueryPlan::Node *, UInt64> & raw_hashes,
+    std::unordered_set<const QueryPlan::Node *> * unidentified_sources = nullptr);
 
 /// Per-side join-step hash used to derive HashTablesStatistics cache keys after join reorder.
 UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side);

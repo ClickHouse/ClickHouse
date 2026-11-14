@@ -41,6 +41,8 @@ struct HashJoinStatsCollectingParams
 {
     StatsCollectingParams build;
     StatsCollectingParams match;
+    /// The `build` key identifies every source the build side reads, so no other data shares it.
+    bool build_sources_identified = false;
 };
 
 struct AggregationEntry

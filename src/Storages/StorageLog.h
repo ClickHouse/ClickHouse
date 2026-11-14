@@ -207,8 +207,6 @@ public:
 
     String getName() const override { return "ReadFromStorageLog"; }
 
-    const std::shared_ptr<StorageLog> & getStorage() const { return storage; }
-
     QueryPlanStepPtr clone() const override
     {
         return std::make_unique<ReadFromStorageLogStep>(*this);

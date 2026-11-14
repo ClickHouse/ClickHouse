@@ -235,7 +235,12 @@ public:
     static constexpr size_t getInputIndex(JoinTableSide side) { return side == JoinTableSide::Left ? 0 : 1; }
 
     UInt64 getRightHashTableCacheKey() const { return right_hash_table_cache_key; }
-    void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }
+    /// `sources_identified`: the key identifies every source the right side reads.
+    void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_, bool sources_identified)
+    {
+        right_hash_table_cache_key = right_hash_table_cache_key_;
+        right_sources_identified = sources_identified;
+    }
 
     UInt64 getJoinOutputCacheKey() const { return join_output_cache_key; }
     void setJoinOutputCacheKey(UInt64 join_output_cache_key_) { join_output_cache_key = join_output_cache_key_; }
@@ -305,6 +310,7 @@ protected:
     /// rather than column statistics (because `use_statistics` is enabled but statistics are missing).
     bool imprecise_estimate = false;
     UInt64 right_hash_table_cache_key = 0;
+    bool right_sources_identified = false;
     UInt64 join_output_cache_key = 0;
 
     RelationEstimateInfo left_relation;

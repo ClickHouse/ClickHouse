@@ -246,6 +246,7 @@ struct JoinAlgorithmParams
     bool join_any_take_last_row;
 
     UInt64 hash_table_key_hash;
+    bool build_sources_identified = false;
     UInt64 join_output_key_hash;
     bool collect_hash_table_stats_during_joins;
     UInt64 max_entries_for_hash_table_stats;

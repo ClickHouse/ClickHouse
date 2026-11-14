@@ -2632,6 +2632,7 @@ void JoinStepLogical::buildPhysicalJoin(
             optimization_settings.max_entries_for_hash_table_stats,
             optimization_settings.initial_query_id,
             optimization_settings.lock_acquire_timeout);
+        join_step->join_algorithm_params->build_sources_identified = join_step->right_sources_identified;
 
         if (join_step->right_relation.estimated_rows)
             join_step->join_algorithm_params->rhs_size_estimation = join_step->right_relation.estimated_rows;
@@ -3127,6 +3128,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->imprecise_estimate = imprecise_estimate;
     result_step->result_column_stats = result_column_stats;
     result_step->right_hash_table_cache_key = right_hash_table_cache_key;
+    result_step->right_sources_identified = right_sources_identified;
     result_step->join_output_cache_key = join_output_cache_key;
     result_step->left_relation = left_relation;
     result_step->right_relation = right_relation;

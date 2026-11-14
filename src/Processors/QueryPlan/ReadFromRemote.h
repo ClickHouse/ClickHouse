@@ -45,8 +45,6 @@ public:
 
     String getName() const override { return "ReadFromRemote"; }
 
-    const ClusterProxy::SelectStreamFactory::Shards & getShards() const { return shards; }
-
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
