@@ -1,0 +1,18 @@
+count	same result	froze	did not spill	did not bypass
+count, probe bypassed	same result	froze	did not spill	bypassed
+arguments	same result	froze	did not spill	did not bypass
+arguments, probe bypassed	same result	froze	did not spill	bypassed
+arguments, probe bypassed, no NULL key	same result	froze	did not spill	bypassed
+large states	same result	froze	did not spill	did not bypass
+key only	same result	froze	did not spill	did not bypass
+key only, probe bypassed	same result	froze	did not spill	bypassed
+UInt32 key	same result	froze	did not spill	did not bypass
+String key	same result	froze	did not spill	did not bypass
+String key, arguments	same result	froze	did not spill	did not bypass
+String key only	same result	froze	did not spill	did not bypass
+FixedString key	same result	froze	did not spill	did not bypass
+constant NULL keys	same result	froze	did not spill	bypassed
+a producer of the NULL key alone	same result	froze	did not spill	bypassed
+below the freeze threshold	same result	did not freeze	did not spill	did not bypass
+spilling	same result	froze	spilled	bypassed
+WITH TOTALS	same result	froze	did not spill	did not bypass
