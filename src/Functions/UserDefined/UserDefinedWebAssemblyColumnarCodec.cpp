@@ -1728,6 +1728,16 @@ MutableColumnPtr readColumnFromDesc(
                 "COLUMNAR_V1: COL_LOWCARD dictionary of type {} has {} rows, but its reserved leading "
                 "slots require at least {}", dictionary_type.getName(), dict_row_count, num_special_values);
 
+        /// The reserved slots must hold the default value byte for byte: concatenation and
+        /// `ColumnUnique` keep only one copy of them, so any other value would change results.
+        MutableColumnPtr default_value = dict_col->cloneEmpty();
+        default_value->insertDefault();
+        for (uint32_t i = 0; i < num_special_values; ++i)
+            if (dict_col->getDataAt(i) != default_value->getDataAt(0))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "COLUMNAR_V1: COL_LOWCARD dictionary of type {} has a non-default value in reserved slot {}",
+                    dictionary_type.getName(), i);
+
         /// A guest dictionary may repeat entries, which `ColumnUnique` does not allow: merge entries
         /// with the same bytes and point the indexes at the remaining ones.
         MutableColumnPtr special = dict_col->cloneEmpty();

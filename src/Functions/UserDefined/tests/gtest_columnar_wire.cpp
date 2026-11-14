@@ -948,6 +948,28 @@ TEST(ColumnarWire, LowCardinalityStringEncodeDecodeRoundTrip)
     EXPECT_EQ(decoded_lc->getDataAt(3), "c");
 }
 
+// A guest must not put a value into a dictionary's reserved default slot: concatenation keeps
+// only the first part's slot, so two batches with `[7]` and `[8]` there would both read `7`.
+
+TEST(ColumnarWire, LowCardinalityNonDefaultReservedSlotRejected)
+{
+    auto lowcard_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt64>());
+    auto lc_col = lowcard_type->createColumn();
+    auto full = ColumnUInt64::create();
+    full->insertValue(7);
+    typeid_cast<ColumnLowCardinality &>(*lc_col).insertRangeFromFullColumn(*full, 0, full->size());
+
+    auto buf = encodeCHColumn(lc_col.get(), 1);
+    ASSERT_NO_THROW(readColumnarOutput({buf.data(), buf.size()}, lowcard_type, 1));
+
+    ColDescriptor desc = readDesc(buf);
+    ColDescriptor dict_desc{};
+    std::memcpy(&dict_desc, buf.data() + desc.data_offset + 8u, COL_DESC_BYTES);
+    const UInt64 seven = 7;
+    std::memcpy(buf.data() + dict_desc.data_offset, &seven, sizeof(seven));
+    EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, lowcard_type, 1), DB::Exception);
+}
+
 // ── LowCardinality dictionaries are compacted before they reach the guest ────
 //
 // `filter` keeps the whole dictionary, so the filtered column below still holds
