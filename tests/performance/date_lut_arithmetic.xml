@@ -1,0 +1,30 @@
+<!--
+The day of week and the split of a time of day into hours, minutes and seconds, both derived arithmetically
+rather than read from the calendar lookup table. A `Date32` scattered over the whole 400-year table is the
+case where the table would miss in cache, a `Date` confined to three years the case where it stays resident.
+-->
+<test>
+    <substitutions>
+        <substitution>
+            <name>time_zone</name>
+            <values>
+                <value>UTC</value>
+                <value>Asia/Kolkata</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toDate32('1900-01-01') + (number * 2654435761) % 146097 AS d, toDayOfWeek(d))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toDate('2017-01-01') + number % 1000 AS d, toDayOfWeek(d))</query>
+
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDate32('1900-01-01') + (number * 2654435761) % 146097 AS d, toISOWeek(d))</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDate32('1900-01-01') + (number * 2654435761) % 146097 AS d, toWeek(d))</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDate32('1900-01-01') + (number * 2654435761) % 146097 AS d, toMonday(d))</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDate32('1900-01-01') + (number * 2654435761) % 146097 AS d, toLastDayOfWeek(d))</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDate32('1900-01-01') + (number * 2654435761) % 146097 AS d, toRelativeWeekNum(d))</query>
+
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 AS t, toString(t, '{time_zone}'))</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 AS t, formatDateTime(t, '%H:%i:%S', '{time_zone}'))</query>
+
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(CAST(number % 3600000 AS Time) AS t, toString(t))</query>
+</test>
