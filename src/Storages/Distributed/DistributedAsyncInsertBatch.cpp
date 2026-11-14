@@ -299,8 +299,9 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
                 insert_settings.applyChanges(settings_changes);
 
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
-                auto results = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
-                auto result = parent.pool->getValidTryResult(results, insert_settings[Setting::distributed_insert_skip_read_only_replicas]);
+                const auto pool = parent.getPool();
+                auto results = pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
+                auto result = pool->getValidTryResult(results, insert_settings[Setting::distributed_insert_skip_read_only_replicas]);
                 connection = std::move(result.entry);
                 compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 
@@ -372,8 +373,9 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
                     parent.storage.getContext()->getOpenTelemetrySpanLog());
 
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
-                auto results = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
-                auto result = parent.pool->getValidTryResult(results, insert_settings[Setting::distributed_insert_skip_read_only_replicas]);
+                const auto pool = parent.getPool();
+                auto results = pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
+                auto result = pool->getValidTryResult(results, insert_settings[Setting::distributed_insert_skip_read_only_replicas]);
                 auto connection = std::move(result.entry);
                 bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 

@@ -2088,9 +2088,7 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
 
     std::lock_guard lock(cluster_nodes_mutex);
     auto & node_data = cluster_nodes_data[key];
-    /// If the node changes, you need to recreate the DistributedAsyncInsertDirectoryQueue
-    if (!node_data.directory_queue
-        || (node_data.clusters_version < getContext()->getClustersVersion() && addresses_changed(node_data.addresses, parseAddresses(name))))
+    if (!node_data.directory_queue)
     {
         node_data.addresses = parseAddresses(name);
         node_data.clusters_version = getContext()->getClustersVersion();
@@ -2100,6 +2098,19 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
             node_data.connection_pool,
             async_insert_blocker,
             getContext()->getDistributedSchedulePool());
+    }
+    else if (const auto clusters_version = getContext()->getClustersVersion(); node_data.clusters_version < clusters_version)
+    {
+        /// If the node changes, only replace the connection pool of the existing queue. A new queue over the same
+        /// directory would start a second sender, which could send a file that the old one is still sending.
+        auto addresses = parseAddresses(name);
+        if (addresses_changed(node_data.addresses, addresses))
+        {
+            node_data.addresses = std::move(addresses);
+            node_data.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(node_data.addresses, *this);
+            node_data.directory_queue->updatePool(node_data.connection_pool);
+        }
+        node_data.clusters_version = clusters_version;
     }
     return node_data.directory_queue;
 }

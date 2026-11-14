@@ -64,6 +64,12 @@ public:
 
     void updatePath(const std::string & new_relative_path);
 
+    /// Replaces the connection pool used for the files sent from now on, e.g. after the addresses or the
+    /// inter-server secret of the cluster changed. A send in progress finishes with the pool it started with.
+    /// The queue keeps its single sender, so no file is sent twice, as it could be by a second queue over
+    /// the same directory.
+    void updatePool(ConnectionPoolWithFailoverPtr new_pool);
+
     void flushAllData(const SettingsChanges & settings_changes);
 
     void shutdownAndDropAllData();
@@ -125,7 +131,10 @@ public:
 
 private:
     StorageDistributed & storage;
-    const ConnectionPoolWithFailoverPtr pool;
+    ConnectionPoolWithFailoverPtr getPool() const;
+
+    mutable std::mutex pool_mutex;
+    ConnectionPoolWithFailoverPtr pool TSA_GUARDED_BY(pool_mutex);
 
     DiskPtr disk;
     std::string relative_path;
