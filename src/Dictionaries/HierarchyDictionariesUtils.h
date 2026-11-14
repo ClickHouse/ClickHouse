@@ -9,6 +9,8 @@
 
 #include <Dictionaries/IDictionary.h>
 
+#include <limits>
+
 namespace DB
 {
 
@@ -284,6 +286,9 @@ namespace detail
         };
 
         static constexpr Int64 key_range_requires_update = -1;
+        /// `end_index` of a range whose `key_range_requires_update` marker was not popped yet,
+        /// e.g. because loop detection cleared the stack. A zero default would look like a valid empty range.
+        static constexpr size_t unfinished_range_end_index = std::numeric_limits<size_t>::max();
         HashMap<UInt64, Range> already_processed_keys_to_range [[maybe_unused]];
 
         if constexpr (std::is_same_v<Strategy, GetAllDescendantsStrategy>)
@@ -357,7 +362,7 @@ namespace detail
                     {
                         Range range = already_processed_it->getMapped();
 
-                        if (unlikely(range.start_index > range.end_index))
+                        if (unlikely(range.end_index == unfinished_range_end_index))
                         {
                             /// Broken range because there was loop
                             already_processed_keys_to_range.erase(key);
@@ -387,7 +392,7 @@ namespace detail
                 {
                     /// Put special signaling value on stack and update cache with range start
                     size_t range_start_index = descendants.size();
-                    already_processed_keys_to_range[key].start_index = range_start_index;
+                    already_processed_keys_to_range[key] = Range{range_start_index, unfinished_range_end_index};
                     next_keys_to_process_stack.emplace_back(KeyAndDepth{key, key_range_requires_update});
                 }
 
