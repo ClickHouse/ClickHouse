@@ -796,9 +796,26 @@ public:
         }
 
         auto data = element.getString();
-        ReadBufferFromMemory buf(data);
         DateType date;
-        const bool saturate = insert_settings.saturate_on_overflow && !format_settings.throwOnDateTimeOverflow();
+        /// With schema-inference parsing accept a string only if it would be inferred as a Date on its own.
+        /// tryInferDateFromString covers DayNum; Date32 has no such inference, so it keeps the lenient parse.
+        if constexpr (std::is_same_v<DateType, DayNum>)
+        {
+            if (insert_settings.parse_date_time_strings_as_schema_inference)
+            {
+                if (!tryInferDateFromString(data, date))
+                {
+                    error = fmt::format("cannot parse Date value here: {}", data);
+                    return false;
+                }
+
+                assert_cast<ColumnVector<ColumnNumericType> &>(column).insertValue(date);
+                return true;
+            }
+        }
+
+        ReadBufferFromMemory buf(data);
+        const bool saturate = !format_settings.throwOnDateTimeOverflow();
         if (!tryReadDateText(date, buf, DateLUT::instance(), nullptr, saturate) || !buf.eof())
         {
             error = fmt::format("cannot parse Date value here: {}", data);
@@ -832,13 +849,17 @@ public:
             return true;
         }
 
-        const bool saturate = insert_settings.saturate_on_overflow && !format_settings.throwOnDateTimeOverflow();
+        const bool saturate = !format_settings.throwOnDateTimeOverflow();
         time_t value = 0;
         if (element.isString())
         {
             auto data = element.getString();
-            if (!tryParse(value, data, format_settings.date_time_input_format, saturate)
-                || (!insert_settings.truncate_fractional_seconds && !isWholeSeconds(data, format_settings.date_time_input_format)))
+            /// With schema-inference parsing accept a string only if it would be inferred as a date time on
+            /// its own; the strict parser rejects numeric and fractional strings and out-of-range values.
+            const bool parsed = insert_settings.parse_date_time_strings_as_schema_inference
+                ? tryInferDateTimeFromString(data, value, format_settings, time_zone, utc_time_zone)
+                : tryParse(value, data, format_settings.date_time_input_format, saturate);
+            if (!parsed)
             {
                 error = fmt::format("cannot parse DateTime value here: {}", data);
                 return false;
@@ -922,30 +943,6 @@ public:
         }
 
         return false;
-    }
-
-    /// The DateTime parsers drop fractional seconds, so the text is read again with the maximum precision.
-    bool isWholeSeconds(std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
-    {
-        constexpr UInt32 max_scale = 9;
-        constexpr Int64 max_scale_multiplier = 1'000'000'000;
-        DateTime64 value;
-        ReadBufferFromMemory buf(data);
-        bool parsed = false;
-        switch (date_time_input_format)
-        {
-            case FormatSettings::DateTimeInputFormat::Basic:
-                parsed = tryReadDateTime64Text(value, max_scale, buf, time_zone);
-                break;
-            case FormatSettings::DateTimeInputFormat::BestEffort:
-                parsed = tryParseDateTime64BestEffort(value, max_scale, buf, time_zone, utc_time_zone);
-                break;
-            case FormatSettings::DateTimeInputFormat::BestEffortUS:
-                parsed = tryParseDateTime64BestEffortUS(value, max_scale, buf, time_zone, utc_time_zone);
-                break;
-        }
-
-        return parsed && buf.eof() && value.value % max_scale_multiplier == 0;
     }
 
     /// Needed for the `best_effort` date/time input formats. Not in `TimezoneMixin`, so that merely naming a
@@ -1107,9 +1104,15 @@ public:
         DateTime64 value;
         if (element.isString())
         {
-            if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
+            auto data = element.getString();
+            /// Accept a string only if it would be inferred as a date time on its own; the strict parser
+            /// rejects numeric and fractional strings and out-of-range values.
+            const bool parsed = insert_settings.parse_date_time_strings_as_schema_inference
+                ? tryInferDateTime64FromString(data, value, format_settings, time_zone, utc_time_zone, scale)
+                : tryParse(value, data, format_settings.date_time_input_format);
+            if (!parsed)
             {
-                error = fmt::format("cannot parse DateTime64 value here: {}", element.getString());
+                error = fmt::format("cannot parse DateTime64 value here: {}", data);
                 return false;
             }
         }
@@ -1960,9 +1963,10 @@ public:
             insert_settings_with_no_type_conversion.allow_type_conversion = false;
             /// A value that does not fit a variant as is gets its own type instead of being changed to fit.
             insert_settings_with_no_type_conversion.insert_default_on_invalid_elements_in_complex_types = false;
-            insert_settings_with_no_type_conversion.saturate_on_overflow = false;
-            insert_settings_with_no_type_conversion.truncate_fractional_seconds = false;
             insert_settings_with_no_type_conversion.null_as_default_in_complex_types = false;
+            /// A string like `1` is inferred as `String`, so it must not enter an existing Date/DateTime/DateTime64
+            /// variant either: accept a string only if inference would infer that type for it on its own.
+            insert_settings_with_no_type_conversion.parse_date_time_strings_as_schema_inference = true;
 
             /// Check if we already have variants order for this Variant type in cache.
             auto variants_order_it = variants_order_cache.find(variant_info.variant_name);

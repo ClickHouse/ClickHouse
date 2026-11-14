@@ -17,10 +17,11 @@ struct JSONExtractInsertSettings
     /// If false, JSON value will be inserted into column only if type of the value is
     /// the same as column type (no conversions like Integer -> String, Integer -> Float, etc).
     bool allow_type_conversion = true;
-    /// If false, a Date or DateTime value out of the range of its type is rejected instead of saturated.
-    bool saturate_on_overflow = true;
-    /// If false, a DateTime value with fractional seconds is rejected instead of truncated.
-    bool truncate_fractional_seconds = true;
+    /// If true, a string is parsed into a Date/DateTime/DateTime64 value only when schema inference would
+    /// infer that type for the string on its own, with the same strictness (no saturation on overflow, no
+    /// truncation of fractional seconds). Used in the existing-variants loop of Dynamic so that a string
+    /// like `1` stays a String instead of entering an existing DateTime variant as a date in the current year.
+    bool parse_date_time_strings_as_schema_inference = false;
     /// If false, a JSON null is rejected by Array, Tuple, Map and JSON types
     /// instead of being inserted as the default value with `null_as_default`.
     bool null_as_default_in_complex_types = true;

@@ -61,7 +61,7 @@ DataTypePtr tryInferDateOrDateTimeFromString(std::string_view field, const Forma
 
 bool tryInferDateFromString(std::string_view field, DayNum & date);
 bool tryInferDateTimeFromString(std::string_view field, time_t & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone);
-bool tryInferDateTime64FromString(std::string_view field, DateTime64 & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone);
+bool tryInferDateTime64FromString(std::string_view field, DateTime64 & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt32 scale = 9);
 
 /// Infer DateTime or DateTime64 from a string, running the invalid-datetime fast check only once (unlike calling
 /// tryInferDateTimeFromString and tryInferDateTime64FromString in turn). On success writes the parsed value into
