@@ -467,6 +467,11 @@ bool traverseDAGFilter(
                     Field field;
                     set_elements[col]->get(row, field);
 
+                    /// A floating-point zero matches the key value that converts to the zero of either sign
+                    /// (`'-0'` for a `String` key), but the conversion below yields only one key (`'0'`).
+                    if (anyFieldSatisfies(field, isFloatZeroField))
+                        return false;
+
                     /// Converted with the type of the element it comes from, and with the wrappers
                     /// stripped: without it a date-family element is reinterpreted in the key's unit space.
                     DataTypePtr element_type;
