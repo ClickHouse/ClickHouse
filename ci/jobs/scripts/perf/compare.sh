@@ -2206,6 +2206,10 @@ case "$stage" in
     # Standalone stage: never rebuild or upload the original measurements.
     time confirm_changes analyze-dashboard-confirm "${CHPC_CONFIRM_QUERIES:?}" || exit 1
     ;;
+"confirm_trends")
+    # The run-trend check of performance_tests.py reads only the run times of this rerun.
+    time confirm_changes analyze-trend-confirm "${CHPC_CONFIRM_QUERIES:?}" || exit 1
+    ;;
 "")
     ;&
 "configure")

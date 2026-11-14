@@ -2291,6 +2291,35 @@ def judge_without_dashboard(summary, error, slower=None, shared=None):
     return (Result.Status.FAIL if any(key not in shared for key in slower) else Result.Status.OK), suffix
 
 
+def run_confirmation_stage(stage, name, lines, pr_number, workdir, timeout):
+    """Rerun the queries in `lines` (rows of compare.sh's flagged-queries.tsv) on restarted servers with
+    compare.sh `stage`, results in `workdir`/analyze-`name`; returns the exit code."""
+    workdir = Path(workdir).resolve()
+    output_dir = workdir / f"analyze-{name}"
+    # Remove stale results before starting: an interrupted/resumed job must not
+    # accept the previous attempt's successful measurements.
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    query_file = workdir / f"{name}-queries.tsv"
+    with query_file.open("w", encoding="utf-8") as out:
+        out.writelines(lines)
+
+    script = Path(__file__).resolve().parent / "scripts/perf/compare.sh"
+    env = dict(
+        os.environ,
+        stage=stage,
+        PR_TO_TEST=str(pr_number),
+        CHPC_CONFIRM_QUERIES=str(query_file),
+    )
+    return Shell.run(
+        quote(str(script)),
+        cwd=str(workdir),
+        env=env,
+        log_file=str(workdir / f"{name}.log"),
+        timeout=timeout,
+    )
+
+
 def confirm_dashboard_regressions(regressions, pr_number, workdir, end=None):
     """Rerun dashboard blockers once on fresh servers; missing evidence stays blocking.
 
@@ -2344,32 +2373,17 @@ def confirm_dashboard_regressions(regressions, pr_number, workdir, end=None):
             row["confirmation"] = "Not rerun: no time left before the job timeout; remains blocking"
         return rows
 
-    workdir = Path(workdir).resolve()
-    output_dir = workdir / "analyze-dashboard-confirm"
-    # Remove stale results before starting: an interrupted/resumed job must not
-    # accept the previous attempt's successful measurements.
-    if output_dir.exists():
-        shutil.rmtree(output_dir)
-    query_file = workdir / "dashboard-confirm-queries.tsv"
-    with query_file.open("w", encoding="utf-8") as out:
-        for (test, index), row in selected.items():
-            out.write(
-                f"{test}\t{index}\t{row['diff_percent']}\t0\t{row['confirmation_threshold']}\n"
-            )
-
-    script = Path(__file__).resolve().parent / "scripts/perf/compare.sh"
-    env = dict(
-        os.environ,
-        stage="confirm_dashboard",
-        PR_TO_TEST=str(pr_number),
-        CHPC_CONFIRM_QUERIES=str(query_file),
-    )
-    exit_code = Shell.run(
-        quote(str(script)),
-        cwd=str(workdir),
-        env=env,
-        log_file=str(workdir / "dashboard-confirm.log"),
-        timeout=timeout,
+    output_dir = Path(workdir).resolve() / "analyze-dashboard-confirm"
+    exit_code = run_confirmation_stage(
+        "confirm_dashboard",
+        "dashboard-confirm",
+        [
+            f"{test}\t{index}\t{row['diff_percent']}\t0\t{row['confirmation_threshold']}\n"
+            for (test, index), row in selected.items()
+        ],
+        pr_number,
+        workdir,
+        timeout,
     )
     if exit_code:
         for row in selected.values():
@@ -2487,28 +2501,106 @@ def find_run_trends(query_runs_path, test_names):
 
     trends = []
     for (test, query_index), (reference, tested) in sorted(series.items()):
-        if len(tested) < RUN_TREND_MIN_RUNS:
-            continue
-        runs, times = zip(*sorted(tested))
-        if times[0] <= 0 or len(set(times)) == 1 or len(set(runs)) == 1:
-            continue
-        corr = statistics.correlation(runs, times)
-        growth = times[-1] / times[0]
-        if corr > RUN_TREND_MIN_CORR and growth > RUN_TREND_MIN_GROWTH:
+        trend = _run_trend(tested)
+        if trend:
             trends.append(
                 {
                     "test": test,
                     "query_index": query_index,
-                    "corr": corr,
-                    "growth": growth,
-                    "tested": times,
+                    "corr": trend[0],
+                    "growth": trend[1],
+                    "tested": tuple(t for _, t in sorted(tested)),
                     "reference": [t for _, t in sorted(reference)],
                 }
             )
     return trends
 
 
-def run_trend_gate(info, test_files, workdir):
+def _run_trend(points):
+    """`(corr, growth)` if the times of the `(run, time)` points keep growing with each run, else None."""
+    if len(points) < RUN_TREND_MIN_RUNS:
+        return None
+    runs, times = zip(*sorted(points))
+    if times[0] <= 0 or len(set(times)) == 1 or len(set(runs)) == 1:
+        return None
+    corr = statistics.correlation(runs, times)
+    growth = times[-1] / times[0]
+    return (corr, growth) if corr > RUN_TREND_MIN_CORR and growth > RUN_TREND_MIN_GROWTH else None
+
+
+def _run_times(times):
+    return ", ".join(f"{t:.4g}" for t in times)
+
+
+def confirm_run_trends(trends, pr_number, workdir, end):
+    """Rerun the queries of `trends` on restarted servers and set on each trend whether its time keeps
+    growing again (`reproduced`) and what the rerun showed (`confirmation`). Missing evidence stays blocking."""
+    timeout = 1500 if end is None else min(1500, end - time.monotonic())
+    if timeout <= 0:
+        for t in trends:
+            t["reproduced"] = True
+            t["confirmation"] = "Not rerun: no time left before the job timeout; remains blocking."
+        return
+    # The rerun statistics of compare.sh are not read, only the run times: the diff and thresholds are dummies.
+    exit_code = run_confirmation_stage(
+        "confirm_trends",
+        "trend-confirm",
+        [f"{t['test']}\t{t['query_index']}\t1\t0\t0\n" for t in trends],
+        pr_number,
+        workdir,
+        timeout,
+    )
+    if exit_code:
+        for t in trends:
+            t["reproduced"] = True
+            t["confirmation"] = f"Not rerun: the rerun failed (exit {exit_code}); remains blocking."
+        return
+
+    flagged = {(t["test"], t["query_index"]) for t in trends}
+    placements = {}
+    path = Path(workdir).resolve() / "analyze-trend-confirm" / "query-runs.tsv"
+    if path.exists():
+        # `placement, test, query_index, query_id, version, time` rows.
+        with path.open(encoding="utf-8", newline="") as f:
+            for fields in csv.reader(f, delimiter="\t", quoting=csv.QUOTE_NONE):
+                row = (
+                    _parse_query_run(fields[1:])
+                    if len(fields) == 6 and _TSV_UINT_RE.fullmatch(fields[0])
+                    else None
+                )
+                if row is None:
+                    raise ValueError(f"unexpected row in [{path}]: {fields!r}")
+                query_index, version, run, time_s = row
+                if version == 1 and (fields[1], query_index) in flagged:
+                    placements.setdefault((fields[1], query_index), {}).setdefault(int(fields[0]), []).append(
+                        (run, time_s)
+                    )
+
+    for t in trends:
+        measured = [
+            sorted(points)
+            for _, points in sorted(placements.get((t["test"], t["query_index"]), {}).items())
+            if len(points) >= RUN_TREND_MIN_RUNS
+        ]
+        growing = [points for points in measured if _run_trend(points)]
+        if growing:
+            t["reproduced"] = True
+            t["confirmation"] = (
+                "It kept growing when rerun on restarted servers "
+                f"(tested server, s: {_run_times(time_s for _, time_s in growing[0])})."
+            )
+        elif measured:
+            t["reproduced"] = False
+            t["confirmation"] = (
+                f"It did not keep growing in {len(measured)} rerun(s) on restarted servers "
+                f"(tested server, s: {_run_times(time_s for _, time_s in measured[0])}); not blocking."
+            )
+        else:
+            t["reproduced"] = True
+            t["confirmation"] = "Not rerun: no rerun measured it; remains blocking."
+
+
+def run_trend_gate(info, test_files, workdir, end):
     """The run-trend check of the tests this PR adds or changes in this shard:
     `(fail, message suffix, Check Results children)`."""
     changed_files = info.get_changed_files()
@@ -2531,21 +2623,26 @@ def run_trend_gate(info, test_files, workdir):
         return True, f"; could not check whether query times of the tests this PR adds or changes keep growing: {e}", []
     if not trends:
         return False, "", []
-
-    def series(times):
-        return ", ".join(f"{t:.4g}" for t in times)
+    try:
+        confirm_run_trends(trends, info.pr_number, workdir, end)
+    except Exception as e:
+        traceback.print_exc()
+        for t in trends:
+            t["reproduced"] = True
+            t["confirmation"] = f"Rerun result unreadable: {e}; remains blocking."
 
     children = [
         Result(
             name=f"Query {t['test']} #{t['query_index']} time keeps growing with each run",
-            status=Result.Status.FAIL,
+            status=Result.Status.FAIL if t["reproduced"] else Result.Status.OK,
             info=(
-                f"Run times on the tested server, s: {series(t['tested'])}"
-                + (f"; on the reference server: {series(t['reference'])}" if t["reference"] else "")
+                f"Run times on the tested server, s: {_run_times(t['tested'])}"
+                + (f"; on the reference server: {_run_times(t['reference'])}" if t["reference"] else "")
                 + f". Correlation of run number and time {t['corr']:.2f}, last run / first run {t['growth']:.2f} "
                 f"(the check fails above {RUN_TREND_MIN_CORR} and {RUN_TREND_MIN_GROWTH}). Usually each run reads "
                 "what the previous runs changed, for example a table or file that grows; make every run do the same "
-                'work. See "Queries whose time keeps growing with each run" in tests/performance/README.md.'
+                'work. See "Queries whose time keeps growing with each run" in tests/performance/README.md. '
+                + t["confirmation"]
             ),
             links=[RUN_TREND_README],
         )
@@ -2553,7 +2650,10 @@ def run_trend_gate(info, test_files, workdir):
     ]
     for child in children:
         print(f"{child.name}: {child.info}")
-    subject = "1 query" if len(trends) == 1 else f"{len(trends)} queries"
+    reproduced = sum(t["reproduced"] for t in trends)
+    if not reproduced:
+        return False, "", children
+    subject = "1 query" if reproduced == 1 else f"{reproduced} queries"
     return True, f"; the time of {subject} of the tests this PR adds or changes keeps growing with each run", children
 
 
@@ -4110,7 +4210,7 @@ def main():
             message = "No message in report."
         trend_children = []
         if compare_against_master and not nightly and not TABLE_ENGINE and info.pr_number > 0 and not info.is_local_run:
-            trend_fail, trend_suffix, trend_children = run_trend_gate(info, test_files, perf_wd)
+            trend_fail, trend_suffix, trend_children = run_trend_gate(info, test_files, perf_wd, end)
             if trend_fail:
                 status = Result.Status.FAIL
             message += trend_suffix
