@@ -1217,6 +1217,15 @@ inline void writeText(const IPv6 & x, WriteBuffer & buf) { writeIPv6Text(x, buf)
 
 [[noreturn]] void throwDecimalFractionalLengthOutOfBound(UInt32 scale, UInt32 fractional_length, size_t max_digits);
 
+/// The scale may come from deserialized data (for example, a `DecimalField` decoded from binary),
+/// so check it in release builds as well.
+inline void checkDecimalFractionalLength(UInt32 scale, UInt32 fractional_length)
+{
+    constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
+    if (unlikely(scale > max_digits || fractional_length > max_digits))
+        throwDecimalFractionalLengthOutOfBound(scale, fractional_length, max_digits);
+}
+
 template <typename T>
 void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros,
                             bool fixed_fractional_length, UInt32 fractional_length)
@@ -1256,10 +1265,8 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
     }
 
     constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
-    /// The digits are written into a buffer on the stack. The scale may come from deserialized data
-    /// (for example, a `DecimalField` decoded from binary), so check it in release builds as well.
-    if (unlikely(scale > max_digits || fractional_length > max_digits))
-        throwDecimalFractionalLengthOutOfBound(scale, fractional_length, max_digits);
+    /// The digits are written into a buffer on the stack.
+    checkDecimalFractionalLength(scale, fractional_length);
     /// Rounding to a narrower field is the caller's job, because a carry out of the fractional part
     /// belongs to the whole part, which has already been written by then.
     chassert(!fixed_fractional_length || fractional_length >= scale);
@@ -1301,6 +1308,10 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
                bool fixed_fractional_length = false, UInt32 fractional_length = 0,
                bool force_decimal_point = false)
 {
+    /// Check before any arithmetic that depends on the scale: a scale of 2^31 or more becomes a negative
+    /// exponent in `scaleMultiplier`, which gives a zero multiplier and a division by zero.
+    checkDecimalFractionalLength(scale, fractional_length);
+
     /// A fixed fractional length narrower than the scale rounds the value away from zero. Round the whole value
     /// before it is split, so that a carry out of the fractional part reaches the whole part: rounding the
     /// fractional part alone turns 9.995 into 9.00 instead of 10.00.
