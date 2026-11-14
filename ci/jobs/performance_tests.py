@@ -2890,6 +2890,20 @@ def _perf_client(port):
     )
 
 
+def remove_outdated_parts(client, table, timeout=120):
+    # A cleanup thread that finds little to remove sleeps up to max_cleanup_delay_period (300 s); START CLEANUP wakes it.
+    database, name = table.split(".")
+    # `_state` also lists the parts being deleted, which `active = 0` does not.
+    query = f"SELECT count() FROM system.parts WHERE database = '{database}' AND table = '{name}' AND _state != 'Active'"
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        Shell.check(f'{client} --query "SYSTEM START CLEANUP {table}"', strict=True)
+        time.sleep(1)
+        if Shell.get_output_or_raise(f'{client} --query "{query}"') == "0":
+            return
+    raise RuntimeError(f"remove_outdated_parts: the replaced parts of {table} are still on disk after {timeout}s")
+
+
 def rebuild_table(port, source, destination):
     # Re-insert an attached dataset through the running server so its parts are
     # written by that server's own binary and settings (sparse columns,
@@ -2921,12 +2935,15 @@ def rebuild_table(port, source, destination):
     # Variable granularity would make the merged part's granules follow how the parallel INSERT split the
     # rows, which differs between the two servers; a constant one gives both the same layout.
     Shell.check(f'{client} --query "ALTER TABLE {target} MODIFY SETTING use_const_adaptive_granularity = 1"', strict=True, verbose=True)
+    # Parts replaced by merges would otherwise stay on disk for 8 minutes, taking the space of the tests that start meanwhile.
+    Shell.check(f'{client} --query "ALTER TABLE {target} MODIFY SETTING old_parts_lifetime = 0"', strict=True, verbose=True)
     Shell.check(f'{client} --query "INSERT INTO {target} SELECT * FROM {source} SETTINGS {insert_settings}"', strict=True, verbose=True)
     # A timed-out OPTIMIZE FINAL is a no-op that still exits 0, so without optimize_throw_if_noop
     # the swap below can run on a table whose parts are still being merged.
     Shell.check(f'{client} --query "OPTIMIZE TABLE {target} FINAL SETTINGS optimize_throw_if_noop = 1, optimize_skip_merged_partitions = 1"', strict=True, verbose=True)
+    remove_outdated_parts(client, target)
     # The merged part keeps its granules; the reset keeps `CREATE TABLE ... AS` clones on the default.
-    Shell.check(f'{client} --query "ALTER TABLE {target} RESET SETTING use_const_adaptive_granularity"', strict=True, verbose=True)
+    Shell.check(f'{client} --query "ALTER TABLE {target} RESET SETTING use_const_adaptive_granularity, old_parts_lifetime"', strict=True, verbose=True)
     if target != destination:
         old = f"{destination}_old"
         Shell.check(f'{client} --query "DROP TABLE IF EXISTS {old} SYNC"', strict=True, verbose=True)
