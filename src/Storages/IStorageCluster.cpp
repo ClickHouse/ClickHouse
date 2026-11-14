@@ -30,7 +30,9 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Interpreters/SetSerialization.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Base64.h>
 
@@ -128,6 +130,47 @@ String serializeFilterForReplicas(const ActionsDAG::Node & predicate, const Unor
 
 }
 
+void addFilterPushedDownByInitiator(QueryPlan & query_plan, const ContextPtr & context)
+{
+    const String & serialized = context->getSettingsRef()[Setting::cluster_table_function_pushed_down_filter].value;
+    if (serialized.empty())
+        return;
+
+    const String decoded = base64Decode(serialized);
+    ReadBufferFromString in(decoded);
+    DeserializedSetsRegistry registry;
+    auto filter = ActionsDAG::deserialize(in, registry, context);
+    QueryPlan::deserializeAndMakeSets(registry, in, context);
+
+    const auto header = query_plan.getCurrentHeader();
+    std::unordered_map<String, const ActionsDAG::Node *> inputs;
+    for (const auto * input : filter.getInputs())
+    {
+        const auto * column = header->findByName(input->result_name);
+        if (!column || !column->type->equals(*input->result_type))
+            return;
+        inputs.emplace(input->result_name, input);
+    }
+
+    const auto * filter_node = filter.getOutputs().at(0);
+    const String filter_column_name = filter_node->result_name;
+    const bool filter_is_read_column = filter_node->type == ActionsDAG::ActionType::INPUT;
+
+    ActionsDAG::NodeRawConstPtrs outputs{filter_node};
+    for (const auto & column : header->getColumnsWithTypeAndName())
+    {
+        auto it = inputs.find(column.name);
+        const auto * node = it != inputs.end() ? it->second : &filter.addInput(column.name, column.type);
+        if (node != filter_node)
+            outputs.push_back(node);
+    }
+    filter.getOutputs() = std::move(outputs);
+
+    auto filter_step = std::make_unique<FilterStep>(header, std::move(filter), filter_column_name, !filter_is_read_column);
+    filter_step->setStepDescription("Filter pushed down by the initiator");
+    query_plan.addStep(std::move(filter_step));
+}
+
 void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
@@ -143,7 +186,7 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
     /// the arguments of the window functions, or the columns read.
     const bool header_is_select_list = processed_stage == QueryProcessingStage::WithMergeableState
         && !query_info.need_aggregate && !query_info.has_window;
-    if (storage->isObjectStorage() && header_is_select_list && filter_actions_dag && !filter_actions_dag->getOutputs().empty()
+    if (storage->supportsFilterPushdownToReplicas() && header_is_select_list && filter_actions_dag && !filter_actions_dag->getOutputs().empty()
         && select && select->select())
     {
         const auto & header_columns = getOutputHeader()->getColumnsWithTypeAndName();

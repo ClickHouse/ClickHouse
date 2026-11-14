@@ -56,6 +56,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <Storages/IStorageCluster.h>
 #include <Common/Exception.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/TopKThresholdTracker.h>
@@ -2998,6 +2999,9 @@ void StorageFile::read(
         num_streams);
 
     query_plan.addStep(std::move(reading));
+
+    if (distributed_processing)
+        addFilterPushedDownByInitiator(query_plan, context);
 }
 
 void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
