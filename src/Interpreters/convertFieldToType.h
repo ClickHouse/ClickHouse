@@ -90,6 +90,11 @@ Field convertFieldToType(
     bool strict = false,
     bool convert_inexact_floats = false);
 
+/// Under `strict`, whether `src`, a `DateTime` / `DateTime64` value of type `from_type_hint`, has a time of day
+/// (or a fractional second) and so cannot be represented as `to_type` when that is a `Date` / `Date32` member
+/// of an `Array`, `Tuple` or `Map`. Scalars keep truncation, so the callers apply it to members only.
+bool isDateTimeElementWithTimeOfDay(const Field & src, const IDataType & to_type, const IDataType * from_type_hint);
+
 /// Same as convertFieldToType but returns empty Field in case of an exception.
 Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint = nullptr, const FormatSettings & format_settings = {}, bool strict = false, bool convert_inexact_floats = false);
 
@@ -102,9 +107,8 @@ Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type,
 Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint = nullptr, const FormatSettings & format_settings = {}, bool convert_inexact_floats = false);
 
 /// For a constant that becomes an exact bound or key: strict, and the result has to convert back to the
-/// original value, because `strict` still truncates a `DateTime` to a `Date` and a `DateTime64` to a lower
-/// scale. A string constant is parsed at the target's resolution and native numbers convert exactly, so
-/// those skip the round trip. Returns Null when the value is not representable.
+/// original value, because `strict` does not reject every lossy conversion. A string constant is parsed at
+/// the target's resolution and native numbers convert exactly, so those skip the round trip. Returns Null when the value is not representable.
 Field tryConvertFieldToTypeExact(const Field & from_value, const IDataType & to_type, const IDataType * from_type);
 
 /// For a string `src` that `convertFieldToType` rejects because an integer element does not fit an `Array`, `Tuple`

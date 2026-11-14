@@ -89,11 +89,11 @@ Query: SELECT `s`, `n` FROM `tbl` WHERE (`s`, `n`) < ('7', 4)
 7
 Query: SELECT `s`, `n` FROM `tbl` WHERE (`s`, `n`) IN (('7', 3))
 tuple(s) IN (tuple(E))
-3
-Query: SELECT `s` FROM `tbl` WHERE (`s`) IN ('3')
+7
+Query: SELECT `s` FROM `tbl` WHERE (`s`) IN ('7')
 tuple(s) IN (tuple(E), tuple(E2))
-3
-Query: SELECT `s` FROM `tbl` WHERE (`s`) IN ('3', '4')
+3,7
+Query: SELECT `s` FROM `tbl` WHERE (`s`) IN ('7', '3')
 (s, n) < (E, x)
 TYPE_MISMATCH
 (s, n) < (E, n)
