@@ -3836,17 +3836,18 @@ def test_rabbitmq_default_mode_nack_on_parse_error(rabbitmq_cluster, db, unique)
             ch.stop_consuming()
 
     channel.basic_consume(deadletter_queue, on_dead_letter, auto_ack=True)
+    min_expected = 2
     deadline = time.monotonic() + 30
-    while len(dead_letters) < 1 and time.monotonic() < deadline:
+    while len(dead_letters) < min_expected and time.monotonic() < deadline:
         connection.process_data_events(time_limit=1)
 
-    # In DEFAULT mode each streaming iteration processes one bad message before
-    # the exception aborts the pipeline, so collecting all 10 takes many cycles.
-    # Asserting >= 1 is sufficient: before the fix we would get 0 (messages
-    # stayed permanently unacked instead of being nack'd to the DLX).
-    assert len(dead_letters) >= 1, (
-        "No dead-lettered messages received within 30 seconds. "
-        "Messages were likely left permanently unacked instead of being nack'd."
+    # Requiring more than one dead letter is what makes this test catch a wedged
+    # channel: a single nack can go out even when no further frame ever will, so
+    # the second dead letter is the one that proves the channel still transmits.
+    assert len(dead_letters) >= min_expected, (
+        f"Only {len(dead_letters)} dead-lettered messages received within 30 seconds, "
+        f"expected at least {min_expected}. Messages were likely left permanently "
+        "unacked instead of being nack'd, or the consumer channel stopped transmitting."
     )
 
     # Now publish good messages and verify they are consumed
