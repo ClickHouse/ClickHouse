@@ -2095,7 +2095,7 @@ TEST_F(ReaderExecutorTest, RequestMapIsLogicalUnderEncryption)
 {
     /// The map is in plaintext offsets: the fetch stops at the logical hole.
     constexpr size_t kib = 1024;
-    String key(16, 'm');
+    SecretString key(16, 'm');
     const FileEncryption::InitVector iv(UInt128{7});
     String plaintext(4 * kib, '\0');
     for (size_t i = 0; i < plaintext.size(); ++i)
