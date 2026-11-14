@@ -372,8 +372,17 @@ static void addLiveRowsBytes(StoredColumnsIndex::EmitColumn & emit_column, const
 static void addLiveReplicatedRowsBytes(
     StoredColumnsIndex::EmitColumn & emit_column, const StoredBlock & block, const ColumnReplicated & column)
 {
-    for (size_t row : block.selector)
-        emit_column.emit_bytes += column.byteSizeAt(row);
+    const IColumn & nested = *column.getNestedColumn();
+    const ColumnIndex & indexes = column.getIndexes();
+    PaddedPODArray<UInt64> references(nested.size(), 0);
+    if (block.selector.size() == indexes.size())
+        indexes.countRowsInIndexedData(references);
+    else
+        for (size_t row : block.selector)
+            ++references[indexes.getIndexAt(row)];
+    for (size_t i = 0; i < references.size(); ++i)
+        if (references[i])
+            emit_column.emit_bytes += references[i] * nested.byteSizeAt(i);
     emit_column.emit_rows += block.selector.size();
 }
 
@@ -454,7 +463,6 @@ void StoredColumnsIndex::resolveEmitColumns(
                     if (remap.empty())
                         remap.resize(num_blocks);
                     remap[b] = {.indexes_data = indexes_raw.data(), .index_width = static_cast<UInt8>(index_width)};
-                    addLiveReplicatedRowsBytes(*emit_column, *block, *replicated);
                     column = replicated->getNestedColumn().get();
                     /// `remapFlatWord` puts `indexes[row]` back in a 32-bit row field, so the nested
                     /// column has to fit a block's row limit as well. It can be larger than the block
@@ -464,6 +472,7 @@ void StoredColumnsIndex::resolveEmitColumns(
                             ErrorCodes::NOT_IMPLEMENTED,
                             "Too many deduplicated rows in right table block for HashJoin: {}",
                             column->size());
+                    addLiveReplicatedRowsBytes(*emit_column, *block, *replicated);
                 }
                 else
                     addLiveRowsBytes(*emit_column, *block, column->byteSize());
