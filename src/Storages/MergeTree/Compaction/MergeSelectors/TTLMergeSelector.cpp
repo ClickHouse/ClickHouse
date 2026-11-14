@@ -233,6 +233,14 @@ bool TTLPartDropMergeSelector::canConsiderPart(const PartProperties & part) cons
     if (!part.general_ttl_info.has_value())
         return false;
 
+    /// `part_max_ttl` does not summarize rows whose TTL computed to exactly 0 (the epoch): such a
+    /// timestamp means "no TTL" to the rest of the machinery and is excluded from the stored bounds
+    /// (see `MergeTreeDataPartTTLInfo::has_epoch_timestamps`). A part carrying that marker is still a
+    /// candidate: `MergeTask::isRowsTTLExpired` does not let the `TTLDrop` merge drop it without reading,
+    /// so the merge scans it, removes the expired rows the bounds describe and keeps the epoch rows.
+    /// Excluding it instead would keep it forever with `ttl_only_drop_parts`, which disables the
+    /// row-delete selector, even when the marker is stale - an ordinary `DELETE` mutation copies the TTL
+    /// infos without recalculating them, so the marker can outlive the epoch rows that set it.
     return part.general_ttl_info->has_any_non_finished_ttls;
 }
 

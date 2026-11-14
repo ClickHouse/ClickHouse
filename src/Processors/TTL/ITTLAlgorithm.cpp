@@ -5,6 +5,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/castColumn.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <Columns/ColumnsDateTime.h>
 
@@ -25,6 +26,11 @@ ITTLAlgorithm::ITTLAlgorithm(
     , force(force_)
     , date_lut(DateLUT::instance())
 {
+}
+
+bool ITTLAlgorithm::isResultColumnShadowed(const TTLDescription & ttl, const Block & block)
+{
+    return ttl.expression_ast && !ttl.expression_ast->as<ASTIdentifier>() && block.has(ttl.result_column);
 }
 
 bool ITTLAlgorithm::isTTLExpired(time_t ttl) const
