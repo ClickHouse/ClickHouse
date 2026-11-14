@@ -90,7 +90,10 @@ private:
     MergeTreeTransactionHolder txn_holder;
     MergeTreeTransactionPtr txn;
 
-    ProfileEvents::Counters profile_counters;
+    /// Collects the counters and the memory of all threads of the task, from its first step.
+    ThreadGroupPtr thread_group;
+    /// The group of the thread that runs the first step: the `OPTIMIZE` query gets the counters of the task.
+    ThreadGroupPtr query_thread_group;
 
     ContextMutablePtr task_context;
 
