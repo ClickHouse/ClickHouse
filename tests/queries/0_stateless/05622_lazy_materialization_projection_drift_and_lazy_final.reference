@@ -1,0 +1,18 @@
+-- a projection part without a column read lazily
+1	after	1
+10001	after	1
+1	after	1
+10001	after	1
+1
+-- lazy FINAL reads ranges of one part in both of its branches
+686	old686	86
+9975	old9975	75
+595	old595	95
+9702	old9702	2
+5873	new5873	73
+686	old686	86
+9975	old9975	75
+595	old595	95
+9702	old9702	2
+5873	new5873	73
+1

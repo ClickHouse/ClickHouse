@@ -26,6 +26,7 @@ public:
         const std::string & log_name_);
 
     void setLazyMaterializingRows(LazyMaterializingRowsPtr lazy_materializing_rows_);
+    const LazyMaterializingRowsPtr & getLazyMaterializingRows() const { return lazy_materializing_rows; }
 
     String getName() const override { return "LazilyReadFromMergeTree"; }
 

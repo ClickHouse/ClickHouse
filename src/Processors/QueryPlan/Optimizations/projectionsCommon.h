@@ -115,6 +115,8 @@ size_t filterPartsByProjection(
 /// `top_k_filter_info` is the TopK stamp of the read the projection would replace (if any), so
 /// that the query condition cache consult inside the candidate analysis observes the same TopK
 /// gating and key salting as the read itself.
+/// `lazily_read_column_names` are the columns a lazy read reads from the projection parts the candidate serves, which
+/// each of those parts must have as well as `required_column_names`; a part without them is read from its parent part.
 bool analyzeProjectionCandidate(
     ProjectionCandidate & candidate,
     const MergeTreeDataSelectExecutor & reader,
@@ -128,7 +130,8 @@ bool analyzeProjectionCandidate(
     bool allow_query_condition_cache,
     bool allow_top_k_prewhere_query_condition_cache,
     const ContextPtr & context,
-    const HypotheticalProjection * hypothetical_projection = nullptr);
+    const HypotheticalProjection * hypothetical_projection = nullptr,
+    const Names & lazily_read_column_names = {});
 
 /// Performs part-level filtering using projection to skip irrelevant data parts.
 /// Also collects projections to build filters that will be applied during MergeTree reading for fine-grained row-level filtering.

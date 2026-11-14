@@ -2,12 +2,16 @@
 
 #include <Processors/IProcessor.h>
 #include <Common/MapWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/Port.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 
 
 namespace DB
 {
+
+struct StorageSnapshot;
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 class RuntimeDataflowStatisticsCacheUpdater;
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
@@ -34,9 +38,29 @@ struct LazyMaterializingRows : public ILazyMaterializingRows
     using RowsInParts = MapWithMemoryTracking<size_t, PartOffsetInDataPart>;
 
     RowsInParts rows_in_parts;
+
+    /// The parts the rows are read from. A projection part has the index and the starting offset of its parent part, so the
+    /// parts of the parent and of the projections a read was served from share one numbering of the rows.
     RangesInDataParts ranges_in_data_parts;
 
+    /// Whether the row index has the offsets of the parent parts for the rows of a projection part: a projection that stores
+    /// them, `_parent_part_offset`, gives them under the name `_part_offset` when it replaces a read with this lazy read.
+    /// Otherwise a projection part is read by its own offsets.
+    bool projection_parts_by_parent_part_offsets = false;
+
+    /// part_index_in_query -> the snapshot the main read read the projection part with, for each projection part read itself.
+    /// The other parts are read with the snapshot of the lazy read.
+    UnorderedMapWithMemoryTracking<size_t, StorageSnapshotPtr> snapshots_of_projection_parts;
+
+    LazyMaterializingRows() = default;
     explicit LazyMaterializingRows(RangesInDataParts ranges_in_data_parts_);
+
+    /// Adds the parts a read of the main branch reads, when it builds its pipeline: the parts the rows are read from are
+    /// the ones it finally reads, whatever the optimizations after the plan was split did to it, such as serving some of
+    /// its parts from a projection. A projection part is read itself, by its own offsets, with `storage_snapshot`, the
+    /// snapshot of the main read, which has the metadata of the projection; or, see `projection_parts_by_parent_part_offsets`,
+    /// the whole parent part is.
+    void addPartsOfMainRead(const RangesInDataParts & parts, const StorageSnapshotPtr & storage_snapshot);
 
     void filterRangesAndFillRows(const PaddedPODArray<UInt64> & sorted_indexes) override;
 };
