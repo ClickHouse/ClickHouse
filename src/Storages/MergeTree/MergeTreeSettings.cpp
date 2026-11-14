@@ -64,6 +64,8 @@ setting). The value specified when the table is created overrides the global
 value for this setting.
 
 For a column of fixed-size values the block size is rounded down to a multiple of the value size in bytes, but not below one value.
+
+A compressed block holds at most 256 MiB of uncompressed data, so values above 256 MiB act as 256 MiB.
 )", 0) \
     DECLARE(UInt64, index_granularity, 8192, R"(
 Maximum number of data rows between the marks of an index. I.e how many rows

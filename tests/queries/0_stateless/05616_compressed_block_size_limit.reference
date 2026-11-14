@@ -1,0 +1,11 @@
+block declaring a 1 GiB compressed size: Too large size_compressed_without_checksum
+block declaring a 1 GiB decompressed size: Too large size_decompressed
+round trip with a 300 MB block size: 300000000
+decompressed block sizes with 2 threads:
+268435456
+31564544
+round trip with a chain of seven FPC codecs: 300000000
+decompressed block sizes with a chain of seven FPC codecs:
+134217728
+134217728
+31564544
