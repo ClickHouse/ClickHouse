@@ -80,15 +80,14 @@ std::optional<String> IcebergRESTCatalogHandler::readRequestBody(HTTPServerReque
 void IcebergRESTCatalogHandler::sendResponse(HTTPServerResponse & response, const IcebergRESTResponse & result)
 {
     setResponseDefaultHeaders(response);
+    response.setStatusAndReason(result.status);
 
     if (result.body.empty())
     {
-        response.setStatusAndReason(result.status);
         response.send();
         return;
     }
 
-    response.setStatus(result.status);
     response.setContentType("application/json");
     /// The declared length marks the end of the body, so the connection can stay open for the next request.
     response.setContentLength(result.body.size());
