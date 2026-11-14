@@ -2,6 +2,10 @@
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
+#include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -25,6 +29,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 
 #include <ctime>
+#include <numeric>
 
 namespace DB
 {
@@ -40,6 +45,76 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+String getSummingMapName(const NameAndTypePair & column, bool allow_tuple_element_aggregation)
+{
+    if (!typeid_cast<const DataTypeArray *>(column.type.get())
+        || dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName()))
+        return {};
+
+    String map_name = allow_tuple_element_aggregation ? Nested::splitName(column.name, /*reverse=*/true).first
+                                                      : Nested::extractTableName(column.name);
+    if (map_name == column.name || !endsWith(map_name, "Map"))
+        return {};
+    return map_name;
+}
+
+namespace
+{
+
+/// The positions of the columns of `header` with the columns of each `...Map` structure that the merge of `SummingMergeTree`
+/// sums put in the order of the table, in the places that the structure takes: the merge takes the first column of a
+/// structure as its key. Empty if they are in that order already.
+std::vector<size_t> getSummingMapColumnsPermutation(const Block & header, const StorageMetadataPtr & metadata_snapshot, bool allow_tuple_element_aggregation)
+{
+    std::unordered_map<String, size_t> table_positions;
+    for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
+        table_positions.emplace(column.name, table_positions.size());
+
+    std::unordered_map<String, std::vector<size_t>> map_positions;
+    for (size_t i = 0; i < header.columns(); ++i)
+    {
+        const auto & column = header.getByPosition(i);
+        if (auto map_name = getSummingMapName({column.name, column.type}, allow_tuple_element_aggregation); !map_name.empty())
+            map_positions[map_name].push_back(i);
+    }
+
+    std::vector<size_t> permutation(header.columns());
+    std::iota(permutation.begin(), permutation.end(), 0);
+    for (const auto & [_, positions] : map_positions)
+    {
+        auto in_table_order = positions;
+        std::ranges::sort(in_table_order, {}, [&](size_t position)
+        {
+            auto it = table_positions.find(header.getByPosition(position).name);
+            return it == table_positions.end() ? table_positions.size() : it->second;
+        });
+        for (size_t i = 0; i < positions.size(); ++i)
+            permutation[positions[i]] = in_table_order[i];
+    }
+
+    if (std::ranges::is_sorted(permutation))
+        return {};
+    return permutation;
+}
+
+/// Puts the columns of `header` at `permutation`, or back where they were with `inverse`.
+ExpressionActionsPtr makePermutationActions(const Block & header, const std::vector<size_t> & permutation, bool inverse)
+{
+    ActionsDAG dag(header.getColumnsWithTypeAndName());
+    ActionsDAG::NodeRawConstPtrs outputs(permutation.size());
+    for (size_t i = 0; i < permutation.size(); ++i)
+    {
+        if (inverse)
+            outputs[permutation[i]] = dag.getOutputs()[i];
+        else
+            outputs[i] = dag.getOutputs()[permutation[i]];
+    }
+    dag.getOutputs().swap(outputs);
+    return std::make_shared<ExpressionActions>(std::move(dag));
+}
+
+}
+
 void addMergingFinal(
     Pipe & pipe,
     const SortDescription & sort_description,
@@ -49,6 +124,19 @@ void addMergingFinal(
     bool enable_vertical_final,
     bool read_in_reverse)
 {
+    /// A `PREWHERE` before the merge may have put the columns of a `...Map` structure in another order than a merge in the
+    /// background reads them in, so the merge would take another column as the key. Restore the order for the merge only.
+    std::vector<size_t> summing_map_permutation;
+    if (merging_params.mode == MergeTreeData::MergingParams::Summing)
+        summing_map_permutation = getSummingMapColumnsPermutation(
+            pipe.getHeader(), metadata_snapshot, merging_params.allow_tuple_element_aggregation);
+
+    if (!summing_map_permutation.empty())
+    {
+        auto actions = makePermutationActions(pipe.getHeader(), summing_map_permutation, /*inverse=*/false);
+        pipe.addSimpleTransform([&](const SharedHeader & header_) { return std::make_shared<ExpressionTransform>(header_, actions); });
+    }
+
     auto header = pipe.getSharedHeader();
     size_t num_outputs = pipe.numOutputPorts();
 
@@ -108,6 +196,12 @@ void addMergingFinal(
     if (enable_vertical_final)
         pipe.addSimpleTransform([](const SharedHeader & header_)
                                 { return std::make_shared<SelectByIndicesTransform>(header_); });
+
+    if (!summing_map_permutation.empty())
+    {
+        auto actions = makePermutationActions(pipe.getHeader(), summing_map_permutation, /*inverse=*/true);
+        pipe.addSimpleTransform([&](const SharedHeader & header_) { return std::make_shared<ExpressionTransform>(header_, actions); });
+    }
 }
 
 namespace
