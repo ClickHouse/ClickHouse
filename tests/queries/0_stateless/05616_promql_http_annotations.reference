@@ -1,0 +1,108 @@
+--- quantile: a constant phi outside [0, 1], even without data
+query: quantile(2, foo)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:10)"]
+query: quantile((2), foo)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:11)"]
+query: quantile(-(2), foo)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got -2 (1:10)"]
+query: quantile(NaN, foo)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got NaN (1:10)"]
+query: quantile(Inf, foo)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got +Inf (1:10)"]
+query: quantile(1e6, foo)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 1e+06 (1:10)"]
+query: quantile(1234567, foo)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 1.234567e+06 (1:10)"]
+query: quantile(-0.00001, foo)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got -1e-05 (1:10)"]
+query: quantile(1.5e-7 - 1, foo)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got -0.99999985 (1:10)"]
+query: quantile(2, nonexistent)
+success 0 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:10)"]
+query: quantile(0.5, foo)
+success 1 
+query: quantile(2, foo) + quantile(2, foo)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:29)"]
+--- histogram_quantile: even without data
+query: histogram_quantile(2, req_seconds_bucket)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:20)"]
+query: histogram_quantile(2, nonexistent)
+success 0 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:20)"]
+--- quantile_over_time: only if a window has a sample
+query: quantile_over_time(2, foo[5m])
+success 2 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:20)"]
+query: quantile_over_time(2, baz[5m])
+success 0 
+query: quantile_over_time(2, baz[5m])
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:20)"]
+query: quantile_over_time(2, foo[5m:1m])
+success 2 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:20)"]
+query: sum(quantile_over_time(2, foo[5m])) - avg(quantile_over_time(2, foo[5m]))
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:62)"]
+--- rate and increase: each metric name without a counter suffix, only if there is a result
+query: rate(foo[5m])
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+query: increase(foo[5m])
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:10)"]
+query: irate(foo[5m])
+success 2 
+query: rate(bar_total[5m])
+success 1 
+query: rate(total_requests[5m])
+success 1 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"total_requests\" (1:6)"]
+query: rate(req_seconds_bucket[5m])
+success 3 
+query: rate(baz[5m])
+success 0 
+query: rate(nonexistent[5m])
+success 0 
+query: rate({job="a"}[5m])
+success 7 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"total_requests\" (1:6)"]
+query: rate({job="a"}[5m])
+success 7 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"total_requests\" (1:6)"]
+query: rate({__name__=~".+_total"}[5m])
+success 1 
+query: rate({"http.requests"}[5m])
+success 1 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"http.requests\" (1:6)"]
+query: rate(foo[5m] offset 1m)
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+query: rate(foo[5m] @ 1700000600)
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+query: rate(foo[5m]) > 1e9
+success 0 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+query: rate(foo[5m]) + rate(foo[10m])
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:22)"]
+query: sum(rate(foo[5m])) / count(rate(foo[5m]))
+success 1 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:33)"]
+query: label_replace(rate(foo[5m]), "x", "y", "", "")
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:20)"]
+query: sum(
+  rate(
+    foo[5m]))
+success 1 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (3:5)"]
+--- a subquery argument is reported at 1:1, as Prometheus does
+query: rate(foo[5m:1m])
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:1)"]
+query: rate((foo + 1)[5m:1m])
+success 2 
+query: rate(bar_total[5m:1m])
+success 1 
+query: rate({__name__=~"foo|bar_total"}[5m:1m])
+success 3 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:1)"]
+query: rate((foo offset 1m)[5m:1m])
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:1)"]
+--- at most 10 of each kind
+query: rate({__name__=~"m.+"}[5m])
+success 12 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m01\" (1:6)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m02\" (1:6)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m03\" (1:6)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m04\" (1:6)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m05\" (1:6)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m06\" (1:6)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m07\" (1:6)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m08\" (1:6)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m09\" (1:6)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m10\" (1:6)","2 more info annotations omitted"]
+query: quantile(2, rate({__name__=~"m.+"}[5m])) + quantile(3, foo)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:10)","PromQL warning: quantile value should be between 0 and 1, got 3 (1:53)"],"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m01\" (1:18)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m02\" (1:18)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m03\" (1:18)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m04\" (1:18)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m05\" (1:18)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m06\" (1:18)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m07\" (1:18)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m08\" (1:18)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m09\" (1:18)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m10\" (1:18)","2 more info annotations omitted"]
+--- range queries
+query_range: quantile(2, foo)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:10)"]
+query_range: quantile_over_time(2, baz[5m])
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:20)"]
+query_range: rate(foo[5m])
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+--- no annotations in an error
+query: quantile(2, foo) + rate(foo)
+error - 

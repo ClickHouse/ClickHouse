@@ -165,7 +165,12 @@ namespace
         {
             std::any any = visit(expression);
             if (Node * node = anyToNodePtr(any))
+            {
+                /// The innermost expression sets it first, so parentheses around a node are not included, as in Prometheus.
+                if (!node->start_pos)
+                    node->start_pos = getStartPos(expression);
                 return node;
+            }
 
             chassert(error_listener.hasError());
             return nullptr;
@@ -1072,6 +1077,21 @@ namespace
                 arguments.push_back(argument);
             }
             return makeAggregationOperator(ctx, arguments);
+        }
+
+        std::any visitParens(antlr4_grammars::PromQLParser::ParensContext * ctx) override
+        {
+            auto * expression_ctx = ctx->vectorOperation();
+            if (!expression_ctx)
+                throwInconsistentSchema("Parens", ctx->getText());
+
+            Node * node = makeNode(expression_ctx);
+            if (!node)
+            {
+                chassert(error_listener.hasError());
+                return {};
+            }
+            return node;
         }
 
         /// Converts std::any to a pointer to a Node.

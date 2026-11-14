@@ -16,6 +16,12 @@ class PrometheusQueryTree;
 class PullingAsyncPipelineExecutor;
 enum class PrometheusQueryResultType;
 
+namespace PrometheusQueryToSQL
+{
+    struct Annotation;
+    using Annotations = std::vector<Annotation>;
+}
+
 /// Helper class to support the query and metadata endpoints of the Prometheus HTTP API.
 /// Implements /api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata, /federate
 class PrometheusHTTPProtocolAPI : public WithMutableContext
@@ -115,12 +121,24 @@ private:
         UInt64 limit,
         QueryFinishCallback query_finish_callback);
 
-    /// Writes the result of a prometheus query as a JSON.
-    void writeQueryResponse(WriteBuffer & response, PullingAsyncPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type);
+    /// Writes the result of a prometheus query as a JSON, followed by the `warnings` and `infos` arrays if they aren't empty.
+    void writeQueryResponse(
+        WriteBuffer & response,
+        PullingAsyncPipelineExecutor & pulling_executor,
+        PrometheusQueryResultType result_type,
+        const Strings & warnings,
+        const Strings & infos);
+
+    /// Runs the probes of the annotations and formats them like Annotations.AsStrings() in Prometheus.
+    void evaluateAnnotations(
+        const PrometheusQueryToSQL::Annotations & annotations, const String & promql_query, Strings & warnings, Strings & infos);
+
+    /// Returns the column `name` of an annotation probe.
+    Strings executeAnnotationProbe(const ASTPtr & probe);
 
     /// Helper methods.
     void writeQueryResponseHeader(WriteBuffer & response, PrometheusQueryResultType result_type);
-    void writeQueryResponseFooter(WriteBuffer & response);
+    void writeQueryResponseFooter(WriteBuffer & response, const Strings & warnings, const Strings & infos);
     void writeQueryResponseBlock(WriteBuffer & response, PrometheusQueryResultType result_type, const Block & result_block, bool first);
     void writeQueryResponseScalarBlock(WriteBuffer & response, const Block & result_block, bool first);
     void writeQueryResponseStringBlock(WriteBuffer & response, const Block & result_block, bool first);

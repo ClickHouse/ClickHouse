@@ -3,6 +3,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/TimeSeries/PrometheusQueryEvaluationSettings.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/Annotation.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterDefs.h>
 
 
@@ -22,7 +23,8 @@ public:
     ColumnsDescription getResultColumns() const;
 
     /// Builds an AST to execute this prometheus query.
-    ASTPtr getSQL() const;
+    /// If `annotations` is set, the warnings and infos of the query are added to it.
+    ASTPtr getSQL(Annotations * annotations = nullptr) const;
 
 private:
     const std::shared_ptr<const PrometheusQueryTree> promql_tree;

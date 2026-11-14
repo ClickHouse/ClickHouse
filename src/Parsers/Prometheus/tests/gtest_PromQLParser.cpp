@@ -2156,3 +2156,34 @@ TEST(PromQLParser, InvalidStandaloneStepRangeFunctions)
         EXPECT_FALSE(error_message.empty()) << query;
     }
 }
+
+
+TEST(PromQLParser, NodeStartPositions)
+{
+    /// Returns the byte offset of the node reached from the root by `path` (indices of children).
+    auto start_pos = [](std::string_view query, std::initializer_list<size_t> path) -> std::optional<size_t>
+    {
+        PrometheusQueryTree tree{query};
+        const auto * node = tree.getRoot();
+        for (size_t index : path)
+            node = node->children.at(index);
+        return node->start_pos;
+    };
+
+    /// The positions follow Prometheus, which reports a parenthesized expression at its inner start.
+    EXPECT_EQ(start_pos("quantile(2, foo)", {0}), 9);
+    EXPECT_EQ(start_pos("quantile((2), foo)", {0}), 10);
+    EXPECT_EQ(start_pos("quantile(((2)), foo)", {0}), 11);
+    EXPECT_EQ(start_pos("quantile(-(2), foo)", {0}), 9);
+    EXPECT_EQ(start_pos("quantile((1) + 1, foo)", {0}), 9);
+    EXPECT_EQ(start_pos("quantile((1) + 1, foo)", {0, 0}), 10);
+    EXPECT_EQ(start_pos("rate(foo[5m] offset 1m)", {0}), 5);
+    EXPECT_EQ(start_pos("rate(foo[5m:1m])", {0}), 5);
+    EXPECT_EQ(start_pos("sum(\n  rate(\n    foo[5m]))", {0}), 7);
+    EXPECT_EQ(start_pos("sum(\n  rate(\n    foo[5m]))", {0, 0}), 17);
+
+    /// Byte offsets, not code points.
+    std::string_view query = "rate({job=\"\xC3\xA9\"}[5m]) + rate(foo[5m])";
+    EXPECT_EQ(start_pos(query, {1}), query.find("rate(foo"));
+    EXPECT_EQ(start_pos(query, {1, 0}), query.find("foo["));
+}

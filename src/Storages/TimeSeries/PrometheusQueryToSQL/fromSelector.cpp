@@ -102,6 +102,17 @@ namespace
         return res;
     }
 
+    /// Returns the text of a selector, restricted to metric names without a counter suffix if it's `context.non_counter_selector`.
+    String getSelectorText(const PrometheusQueryTree::InstantSelector * selector, const Node * node, const ConverterContext & context)
+    {
+        if (node != context.non_counter_selector)
+            return selector->toString(*context.promql_tree);
+
+        PrometheusQueryTree::InstantSelector restricted = *selector;
+        restricted.matchers.push_back({kMetricName, ".*(_total|_sum|_count|_bucket)", PrometheusQueryTree::MatcherType::NRE});
+        return restricted.toString(*context.promql_tree);
+    }
+
     SQLQueryPiece replaceStaleMarkersWithNulls(SQLQueryPiece && vector_grid, ConverterContext & context)
     {
         if (vector_grid.store_method != StoreMethod::VECTOR_GRID)
@@ -174,7 +185,7 @@ namespace
 
 SQLQueryPiece fromSelector(const PrometheusQueryTree::InstantSelector * instant_selector_node, ConverterContext & context)
 {
-    auto instant_selector_text = instant_selector_node->toString(*context.promql_tree);
+    auto instant_selector_text = getSelectorText(instant_selector_node, instant_selector_node, context);
     auto range_selector = fromRangeSelector(
         instant_selector_text, instant_selector_node, /* filter_stale_markers = */ false, context);
     auto vector_grid = applyFunctionOverRange(
@@ -278,7 +289,7 @@ SQLQueryPiece fromSelectorSampleTimestamps(const PrometheusQueryTree::InstantSel
 
 SQLQueryPiece fromSelector(const PrometheusQueryTree::RangeSelector * range_selector_node, ConverterContext & context)
 {
-    auto instant_selector_text = range_selector_node->getInstantSelector()->toString(*context.promql_tree);
+    auto instant_selector_text = getSelectorText(range_selector_node->getInstantSelector(), range_selector_node, context);
     return fromRangeSelector(
         instant_selector_text, range_selector_node, /* filter_stale_markers = */ true, context);
 }
