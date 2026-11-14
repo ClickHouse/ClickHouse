@@ -1,5 +1,5 @@
--- A read that needs no column does not use a column that some parts do not store: reading it there
--- computes its default, which reads other columns and can throw.
+-- A read that needs no column does not use a column that some parts do not store, or that a pending mutation drops or
+-- renames away there: reading it computes its default, which reads other columns and can throw.
 
 DROP TABLE IF EXISTS t_materialized;
 CREATE TABLE t_materialized (k UInt64, flag UInt8, url String) ENGINE = MergeTree ORDER BY k
@@ -23,6 +23,17 @@ SELECT count() FROM t_default SETTINGS query_plan_remove_unused_columns = 1, opt
 SELECT count() FROM t_default SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
 DROP TABLE t_default;
 
+DROP TABLE IF EXISTS t_narrow;
+CREATE TABLE t_narrow (k UInt64, s String) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP MERGES t_narrow;
+INSERT INTO t_narrow SELECT number, if(number = 500, 'n/a', toString(number % 100)) FROM numbers(1000);
+ALTER TABLE t_narrow ADD COLUMN n UInt8 DEFAULT toUInt8(s);
+INSERT INTO t_narrow (k, s) VALUES (1000, '1');
+SELECT count() FROM t_narrow SETTINGS query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+SELECT count() FROM t_narrow SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+DROP TABLE t_narrow;
+
 DROP TABLE IF EXISTS t_readd;
 CREATE TABLE t_readd (k UInt64, s String, c UInt8) ENGINE = MergeTree ORDER BY k
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
@@ -31,6 +42,7 @@ INSERT INTO t_readd SELECT number, if(number = 500, 'n/a', toString(number)), 0 
 ALTER TABLE t_readd DROP COLUMN c, ADD COLUMN c UInt64 DEFAULT toUInt64(s) SETTINGS alter_sync = 0;
 SELECT count() FROM t_readd SETTINGS query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
 SELECT count() FROM t_readd SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+SELECT count() FROM t_readd GROUP BY _part SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
 DROP TABLE t_readd;
 
 DROP TABLE IF EXISTS t_rename;
@@ -41,4 +53,5 @@ INSERT INTO t_rename SELECT number, if(number = 500, 'n/a', toString(number)), 0
 ALTER TABLE t_rename RENAME COLUMN a TO b, DROP COLUMN b, ADD COLUMN a UInt64 DEFAULT toUInt64(s) SETTINGS alter_sync = 0;
 SELECT count() FROM t_rename SETTINGS query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
 SELECT count() FROM t_rename SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+SELECT count() FROM t_rename GROUP BY _part SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
 DROP TABLE t_rename;

@@ -233,14 +233,27 @@ NameSet injectRequiredColumns(
         /// (to be resolvable by the StorageSnapshot). This handles cases where the table schema has changed
         /// since the part was created: columns may have been added (not in the part) or dropped (not in metadata).
         const auto & part_columns = data_part_info_for_reader.getColumns();
+
+        bool share_nested = true;
+        if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage))
+            share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
         NamesAndTypesList available_columns;
+        NamesAndTypesList readable_columns;
         for (const auto & column : part_columns)
         {
-            if (storage_snapshot->tryGetColumn(options, column.name))
-                available_columns.push_back(column);
+            if (!storage_snapshot->tryGetColumn(options, column.name))
+                continue;
+            available_columns.push_back(column);
+            /// A column that a pending mutation drops or renames away is read as its default or as another column.
+            if (!alter_conversions
+                || (!alter_conversions->isColumnDropped(column.name, share_nested) && !alter_conversions->columnHasNewName(column.name)))
+                readable_columns.push_back(column);
         }
 
-        if (available_columns.empty())
+        if (!readable_columns.empty())
+            available_columns = std::move(readable_columns);
+        else if (available_columns.empty())
             available_columns = part_columns;
 
         const auto minimum_size_column_name = data_part_info_for_reader.getColumnNameWithMinimumCompressedSize(available_columns);
