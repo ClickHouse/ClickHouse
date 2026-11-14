@@ -3216,7 +3216,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 properties,
                 AggregateFunctionStateVariant::Window);
 
-        function_node.resolveAsWindowFunction(std::move(aggregate_function));
+        function_node.resolveAsAggregateFunction(std::move(aggregate_function));
 
         bool window_node_is_identifier = function_node.getWindowNode()->getNodeType() == QueryTreeNodeType::IDENTIFIER;
         ProjectionName window_projection_name = resolveWindow(function_node.getWindowNode(), scope);

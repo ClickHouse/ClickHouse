@@ -1088,7 +1088,7 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
             if (!arguments[i]->getResultType()->equals(*argument_types[i]))
                 arguments[i] = createCastFunction(arguments[i], argument_types[i], context);
 
-        function_node->resolveAsWindowFunction(resolveWindowFunction(*function_node, name));
+        function_node->resolveAsAggregateFunction(resolveWindowFunction(*function_node, name));
     }
 }
 
@@ -1225,10 +1225,9 @@ void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const Strin
 
 void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name)
 {
-    /// A node that keeps its window definition must stay a window function: one that reports both
-    /// aggregate and window is collected by both the aggregation and the window analysis.
+    /// A node with a window definition takes the window variant of the aggregate function.
     if (function_node.hasWindow())
-        function_node.resolveAsWindowFunction(resolveWindowFunction(function_node, function_name));
+        function_node.resolveAsAggregateFunction(resolveWindowFunction(function_node, function_name));
     else
         function_node.resolveAsAggregateFunction(resolveAggregateFunction(function_node, function_name));
 }
