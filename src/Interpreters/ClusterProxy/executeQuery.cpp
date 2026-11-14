@@ -27,9 +27,12 @@
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/stripQuerySettings.h>
 #include <Planner/Utils.h>
+#include <Planner/findQueryForParallelReplicas.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -53,6 +56,7 @@
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 #include <string_view>
 #include <unordered_set>
@@ -1367,6 +1371,7 @@ void executeQueryWithParallelReplicas(
     inlineAliasColumns(modified_query_tree);
     rewriteJoinToGlobalJoin(modified_query_tree, context);
     modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
+    qualifyTableFunctionArguments(modified_query_tree);
 
     auto [header, new_planner_context]
         = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
@@ -1444,6 +1449,7 @@ void executeQueryWithParallelReplicasCustomKey(
     /// task-based parallel-replicas path runs for the same reason).
     auto modified_query_tree = query_tree->clone();
     createUniqueAliasesIfNecessary(modified_query_tree, context);
+    qualifyTableFunctionArguments(modified_query_tree);
 
     auto header
         = InterpreterSelectQueryAnalyzer::getSampleBlock(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
@@ -1674,6 +1680,28 @@ static void removeLeafOverriddenTimeoutSettings(const ASTPtr & ast)
     removeSettingsFromQueryTopLevel(ast, leaf_timeout_settings);
 }
 
+/// The AST counterpart of `qualifyTableFunctionArguments` for the destination of `INSERT INTO FUNCTION`, which
+/// is not part of the query tree: a replica would otherwise resolve an unqualified table there against its own
+/// default database and write into another table, or fail with `UNKNOWN_TABLE`.
+static void qualifyTableFunctionArguments(ASTPtr & table_function_ast, const ContextPtr & context)
+{
+    /// Parsed from a copy: `parseArguments` of some table functions rewrites the arguments it is given.
+    auto table_function = TableFunctionFactory::instance().get(table_function_ast->clone(), context);
+    auto table_argument = table_function->getTableArgument();
+    if (!table_argument || table_argument->num_arguments == 0 || !table_argument->table_id.hasDatabase())
+        return;
+
+    auto & function = table_function_ast->as<ASTFunction &>();
+    auto & arguments = function.arguments->children;
+    if (arguments.size() < table_argument->num_arguments)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function {} has {} arguments, but its table is named by {}",
+            function.name, arguments.size(), table_argument->num_arguments);
+
+    arguments.erase(arguments.begin(), arguments.begin() + table_argument->num_arguments);
+    arguments.insert(arguments.begin(), make_intrusive<ASTLiteral>(table_argument->table_id.getTableName()));
+    arguments.insert(arguments.begin(), make_intrusive<ASTLiteral>(table_argument->table_id.getDatabaseName()));
+}
+
 std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     const ASTInsertQuery & query_ast,
     const ContextPtr & context,
@@ -1727,7 +1755,8 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     String formatted_query;
     {
         InterpreterSelectQueryAnalyzer analyzer(query_ast.select, new_context, {});
-        const auto & query_tree = analyzer.getQueryTree();
+        auto query_tree = analyzer.getQueryTree()->clone();
+        qualifyTableFunctionArguments(query_tree);
         auto select_ast = query_tree->toAST();
 
         auto new_query_ast = query_ast.clone();
@@ -1742,6 +1771,9 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
                 break;
             }
         }
+        if (insert_ast->table_function)
+            qualifyTableFunctionArguments(insert_ast->table_function, context);
+
         /// The per-shard context packet is stripped in `updateContextForParallelReplicas`, but the
         /// forwarded query text still carries the INSERT's own `SETTINGS` — strip the initiator-only names
         /// (both `changes` and `default_settings`) from it too.

@@ -18,6 +18,9 @@ public:
     struct Configuration
     {
         StorageID time_series_storage_id = StorageID::createEmpty();
+        /// How many leading arguments of the table function name the TimeSeries table: one, or two
+        /// when the database is passed separately.
+        size_t num_table_arguments = 0;
 
         /// Data types of the `id` column, the timestamps and the values in the TimeSeries table.
         DataTypePtr table_id_type;
