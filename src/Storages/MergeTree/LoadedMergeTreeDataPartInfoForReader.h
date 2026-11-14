@@ -48,6 +48,8 @@ public:
 
     IndexPtr getIndexPtr() const override { return data_part->getIndex(); }
 
+    MergeTreePartMinMaxIndexPtr getMinMaxIndex() const override { return data_part->getMinMaxIndex(); }
+
     DataPartStoragePtr getDataPartStorage() const override { return data_part->getDataPartStoragePtr(); }
 
     const NamesAndTypesList & getColumns() const override { return data_part->getColumns(); }
@@ -85,6 +87,8 @@ public:
     ColumnSize getSubcolumnSize(const String & subcolumn_name) const override { return data_part->getSubcolumnSize(subcolumn_name); }
 
     const MergeTreeDataPartChecksums & getChecksums() const override { return data_part->checksums; }
+
+    const SecondaryIndexColumnTypes & getSecondaryIndexColumnTypes() const override { return data_part->getSecondaryIndexColumnTypes(); }
 
     void reportBroken() override { data_part->storage.reportBrokenPart(data_part); }
 

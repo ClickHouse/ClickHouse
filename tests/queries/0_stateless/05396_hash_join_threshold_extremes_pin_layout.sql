@@ -1,6 +1,6 @@
--- `parallel_hash_join_threshold = 0` always builds a hash join with the parallel layout, and the largest value
--- always builds it with the serial layout, also when the right side has no row estimate. Every other value
--- builds a join without an estimate with the parallel layout.
+-- `parallel_hash_join_threshold = 0` always builds a hash join with the parallel layout. The largest value builds it with
+-- the serial layout only when the right side has a row estimate: without an estimate the threshold is not used, and the
+-- join is built with the parallel layout whatever the value.
 
 SET max_threads = 4, max_threads_min_free_memory_per_thread = 0;
 SET join_algorithm = 'hash';

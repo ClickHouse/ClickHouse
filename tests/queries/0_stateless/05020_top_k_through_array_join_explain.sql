@@ -1,5 +1,6 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: the rewrite is skipped with parallel replicas
+-- Random settings limits: index_granularity=(100, None); index_granularity_bytes=(100000, None)
 
 DROP TABLE IF EXISTS t_aj_explain;
 
@@ -17,6 +18,7 @@ SET optimize_move_to_prewhere = 0;
 SET query_plan_max_limit_for_top_k_optimization = 0;
 SET use_skip_indexes_for_top_k = 0;
 SET use_top_k_dynamic_filtering = 0;
+SET query_plan_merge_filters = 1;
 
 SELECT '-- disabled: Sorting remains above ArrayJoin';
 EXPLAIN PLAN description = 0
@@ -43,7 +45,7 @@ FROM
 )
 WHERE explain LIKE '%Filter column:%';
 
-SELECT '-- chained ARRAY JOIN: only the outermost step is rewritten';
+SELECT '-- chained ARRAY JOIN: the sort moves below both';
 EXPLAIN PLAN description = 0
 SELECT x FROM t_aj_explain ARRAY JOIN arr ARRAY JOIN arr2 ORDER BY x LIMIT 10
 SETTINGS query_plan_top_k_through_array_join = 1;

@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'reproducción de sesiones', 'sdk para navegador', 'observabilidad del frontend', 'sesiones de usuario', 'depuración']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 La reproducción de sesiones en ClickStack captura y reconstruye las interacciones de los usuarios en tu aplicación web, lo que te permite reproducir visualmente con exactitud lo que un usuario vio e hizo durante su sesión. En lugar de una grabación de video, el SDK registra cambios en el DOM, movimientos del mouse, clics, desplazamientos, pulsaciones de teclado, logs de la consola, solicitudes de red (XHR, Fetch, WebSocket) y excepciones de JavaScript, y luego reconstruye la experiencia en el navegador.
 
 Como las reproducciones de sesiones se almacenan en ClickHouse junto con tus logs, trazas y métricas, puedes pasar de ver la experiencia de un usuario a inspeccionar las trazas del backend y las consultas a la base de datos que la sustentan, todo en unos pocos clics. Esto hace que la reproducción de sesiones sea útil para depurar problemas en producción, comprender el comportamiento de los usuarios, identificar puntos de fricción en la UX y confirmar visualmente los problemas reportados al equipo de soporte.
@@ -95,11 +93,27 @@ El SDK para navegador también admite [enmascarar entradas y texto](/es/clicksta
 
 Ve a **Client Sessions** en la barra lateral izquierda de la UI de ClickStack (HyperDX). Esta vista muestra todas las sesiones de navegador capturadas, junto con su duración y número de eventos.
 
-<Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="Vista de búsqueda de reproducciones de sesión" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Vista de búsqueda de reproducciones de sesión](/images/clickstack/session-replay/replay-search-view.webp)
+
+</Frame>
+
+</div>
 
 Haz clic en el botón de reproducción de cualquier sesión para reproducirla. La vista de reproducción muestra, a la derecha, la experiencia de usuario reconstruida y, a la izquierda, una línea de tiempo con eventos del navegador — solicitudes de red, logs de la consola y errores —.
 
-<Image img="/images/clickstack/session-replay/session-replay.webp" alt="Reproducción de sesión" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Reproducción de sesión](/images/clickstack/session-replay/session-replay.webp)
+
+</Frame>
+
+</div>
 
 Cambia entre los modos **Highlighted** y **All Events** para ajustar el nivel de detalle que se muestra en la línea de tiempo. Los errores aparecen marcados en rojo, y al hacer clic en cualquier evento, la reproducción salta a ese punto de la sesión.
 
@@ -121,7 +135,15 @@ Esto funciona porque la configuración `tracePropagationTargets` vincula los spa
 
 La correlación también funciona en sentido inverso. Al ver una traza en la vista de **Búsqueda**, haz clic en ella para abrir los detalles de la traza y luego selecciona la pestaña **Reproducción de sesiones** para ver exactamente lo que estaba experimentando el usuario en el momento de esa traza. Esto resulta especialmente útil al investigar errores o solicitudes lentas: puedes partir del problema en el backend y ver de inmediato la perspectiva del usuario.
 
-<Image img="/images/clickstack/session-replay/trace-to-replay.webp" alt="Vista de traza de reproducción de sesiones" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Vista de traza de reproducción de sesiones](/images/clickstack/session-replay/trace-to-replay.webp)
+
+</Frame>
+
+</div>
 
 <div id="data-storage">
   ## Cómo se almacenan los datos de sesión

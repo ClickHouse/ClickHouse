@@ -9,7 +9,7 @@
 -- Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 -- Source: test/BabyKusto.Core.Tests/EndToEndTests.cs
 
-set allow_experimental_kusto_dialect=1;
+set enable_kusto_dialect=1;
 set joined_subquery_requires_alias=0;
 set prefer_column_name_to_alias=1;
 set allow_experimental_dynamic_type=1;
