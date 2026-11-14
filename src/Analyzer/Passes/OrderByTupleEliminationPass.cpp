@@ -5,6 +5,7 @@
 #include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
+#include <Analyzer/Utils.h>
 #include <Functions/FunctionFactory.h>
 
 namespace DB
@@ -32,7 +33,8 @@ public:
             auto * function_expression = sort_node_typed.getExpression()->as<FunctionNode>();
             /// Splitting a key would read its arguments, which do not exist after aggregation.
             if (sort_node_typed.withFill() || !function_expression || function_expression->getFunctionName() != "tuple"
-                || isGroupByKeyAfterAggregation(sort_node_typed.getExpression(), group_by_keys))
+                || isGroupByKeyAfterAggregation(sort_node_typed.getExpression(), group_by_keys)
+                || (sort_node_typed.getProjectionIndex() && containsCorrelatedSubquery(sort_node_typed.getExpression())))
             {
                 result_nodes.push_back(sort_node);
                 continue;

@@ -148,6 +148,10 @@ public:
 
     const std::string & getColumnName() const { return column_name; }
 
+    void setProjectionIndex(size_t projection_index_) { projection_index = projection_index_; }
+
+    std::optional<size_t> getProjectionIndex() const { return projection_index; }
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
@@ -168,6 +172,8 @@ private:
     static constexpr size_t children_size = fill_staleness_child_index + 1;
 
     std::string column_name;
+    /// Zero-based index of a projection expression referenced by ORDER BY.
+    std::optional<size_t> projection_index;
     SortDirection sort_direction = SortDirection::ASCENDING;
     std::optional<SortDirection> nulls_sort_direction;
     std::shared_ptr<Collator> collator;
