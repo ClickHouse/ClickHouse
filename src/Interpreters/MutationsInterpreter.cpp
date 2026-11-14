@@ -1675,10 +1675,23 @@ void MutationsInterpreter::prepare(bool dry_run)
             /// We add the projection's required columns as dependencies so that they are available
             /// in the mutation pipeline for projection rebuild. The cleared column itself is tracked
             /// separately so the readonly stage can replace it with the type default value.
+            const auto & clear_columns = metadata_snapshot->getColumns();
+            /// A projection can require a subcolumn (`j.a`); clearing its storage column (`j`) must still
+            /// rebuild it, so compare against each required column's name in storage, not only the exact name.
+            auto clear_name_in_storage = [&](const String & name) -> String
+            {
+                auto name_and_type = clear_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+                return name_and_type ? name_and_type->getNameInStorage() : name;
+            };
             for (const auto & projection : metadata_snapshot->getProjections())
             {
                 const auto & projection_cols = projection.required_columns;
-                if (std::find(projection_cols.begin(), projection_cols.end(), command.column_name) != projection_cols.end())
+                bool depends_on_cleared = std::any_of(
+                    projection_cols.begin(),
+                    projection_cols.end(),
+                    [&](const String & col)
+                    { return col == command.column_name || clear_name_in_storage(col) == command.column_name; });
+                if (depends_on_cleared)
                 {
                     for (const auto & col : projection_cols)
                         dependencies.emplace(col, ColumnDependency::PROJECTION);
@@ -1858,14 +1871,20 @@ void MutationsInterpreter::prepare(bool dry_run)
             continue;
         }
 
+        /// A required column can be a subcolumn (`j.a`); updating/clearing its storage column (`j`) must
+        /// rebuild the projection, so match on the column's name in storage as well as its exact name.
         const auto & projection_cols = projection.required_columns;
         bool changed = std::any_of(
             projection_cols.begin(),
             projection_cols.end(),
             [&](const auto & col)
             {
-                return updated_columns.contains(col) || changed_columns.contains(col)
-                    || patch_updated_columns.contains(col) || all_affected_materialized.contains(col);
+                auto name_and_type = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, col);
+                const String storage_col = name_and_type ? name_and_type->getNameInStorage() : col;
+                return updated_columns.contains(col) || updated_columns.contains(storage_col)
+                    || changed_columns.contains(col) || changed_columns.contains(storage_col)
+                    || patch_updated_columns.contains(col) || patch_updated_columns.contains(storage_col)
+                    || all_affected_materialized.contains(col) || all_affected_materialized.contains(storage_col);
             });
 
         if (changed)

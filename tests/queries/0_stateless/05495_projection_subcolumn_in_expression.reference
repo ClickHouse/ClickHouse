@@ -1,0 +1,67 @@
+JSON typed path
+0	6
+1	5
+2	4
+0	6
+1	5
+2	4
+0	8
+1	5
+0	8
+1	5
+JSON dynamic path
+0	4
+1	3
+2	3
+0	4
+1	3
+2	3
+Tuple element
+1	3
+2	3
+3	2
+4	2
+1	3
+2	3
+3	2
+4	2
+Nullable null
+0	6
+1	4
+0	6
+1	4
+Dynamic
+0	3
+1	2
+WHERE with the parent column
+7	{"a":7}
+8	{"a":8}
+9	{"a":9}
+UPDATE of the parent column
+0	2
+1	1
+2	2
+7	5
+0	2
+1	1
+2	2
+7	5
+UPDATE of the parent column (Tuple)
+1	1
+2	2
+3	1
+4	1
+8	5
+1	1
+2	2
+3	1
+4	1
+8	5
+Projection parts
+t_dynamic	p	2
+t_json	p	3
+t_json	p_sum	2
+t_json_dynamic_path	p	3
+t_nullable	p	2
+t_tuple	p	4
+t_where	p	3

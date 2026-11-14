@@ -953,10 +953,11 @@ Block ProjectionDescription::calculateByQuery(
     /// comes from a remote `INSERT`, which is executed as a `SECONDARY_QUERY`.
     mut_context->setQueryKindInitial();
 
-    /// Only keep required columns
+    /// Only keep required columns. A subcolumn used inside an expression (`j.a + 1`) is not a column of the
+    /// inserted block, so it is taken from its parent column, as it is read from the part by a mutation.
     Block source_block;
     for (const auto & column : required_columns)
-        source_block.insert(block.getByName(column));
+        source_block.insert(block.getColumnOrSubcolumnByName(column));
 
     /// Create "_part_offset" column when needed for projection with parent part offsets
     if (with_parent_part_offset)
