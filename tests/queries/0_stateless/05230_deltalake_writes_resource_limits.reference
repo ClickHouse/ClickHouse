@@ -1,0 +1,15 @@
+-- memory limit exceeded while streaming rows (unpartitioned)
+(MEMORY_LIMIT_EXCEEDED)
+versions: 0, data files: 0, rows: 0
+-- memory limit exceeded while streaming rows (partitioned)
+(MEMORY_LIMIT_EXCEEDED)
+versions: 0, data files: 0, rows: 0
+-- execution time exceeded while streaming rows
+(TIMEOUT_EXCEEDED)
+versions: 0, data files: 0, rows: 0
+-- 1000 partitions in one INSERT: succeeds, one file per partition, bounded memory
+versions: 1, data files: 1000, rows: 2000
+partition directories: 1000
+-- the table with the failed writes is still intact and writable
+1	ok
+versions: 1, data files: 1, rows: 1
