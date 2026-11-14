@@ -1,0 +1,7 @@
+-- the grid does not follow the compatibility profile
+-- sub-millisecond timestamps on either side of an interval boundary both survive
+2	[1,2]
+-- a bucket before 1970 keeps the last sample of each interval
+[-41,-21,-1]
+-- a dense expired bucket stays under 1 GiB of resident memory with lazy column replication off
+4
