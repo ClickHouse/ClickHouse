@@ -747,10 +747,9 @@ void MergeTreeReaderParquet::updateAllMarkRanges(const MarkRanges & ranges)
 {
     IMergeTreeReader::updateAllMarkRanges(ranges);
 
-    /// The row groups that are looked up in the columns cache and written to it are the ones of the mark ranges
-    /// at the time the state is created, so it is created anew for the ranges of the next task.
-    if (state && state->reader.options.columns_cache)
-        state.reset();
+    /// The state initializes only the row groups of the mark ranges at the time it is created (and only those are
+    /// looked up in the columns cache and written to it), so it is created anew for the ranges of the next task.
+    state.reset();
 }
 
 size_t MergeTreeReaderParquet::readRows(
