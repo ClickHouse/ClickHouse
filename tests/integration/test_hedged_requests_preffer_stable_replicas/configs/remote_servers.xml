@@ -1,0 +1,29 @@
+<clickhouse>
+    <remote_servers>
+        <test_cluster>
+            <shard1>
+                <replica>
+                    <host>node_1_0</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node_1_1</host>
+                    <port>9000</port>
+                </replica>
+
+            </shard1>
+            <shard2>
+                <replica>
+                    <host>node_2_0</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node_2_1</host>
+                    <port>9000</port>
+                </replica>
+            </shard2>
+        </test_cluster>
+    </remote_servers>
+    <distributed_min_unstable_period_for_replica>300</distributed_min_unstable_period_for_replica>
+    <distributed_max_unstable_period_for_replica>300</distributed_max_unstable_period_for_replica>
+</clickhouse>
