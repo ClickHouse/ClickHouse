@@ -37,11 +37,17 @@ CORE_BLOCKING_JOB_NAMES = [
     )
 ] + [
     job.name
+    for job in JobConfigs.unittest_jobs
+]
+
+# Starts right after its build, like the gate, but is not part of it: its coverage-based
+# selection grows with the PR, and on the largest PRs it ran 100-160 minutes, which delayed
+# stage 2 by up to an hour. It was the only failing gate job on 2.1% of PR commits, and stage 2
+# has integration jobs of its own (the full `arm_binary` run and the other targeted ones).
+UNGATED_INTEGRATION_JOB_NAMES = [
+    job.name
     for job in JobConfigs.integration_test_targeted_pr_jobs
     if "_asan_ubsan, db disk, targeted" in job.name
-] + [
-    job.name
-    for job in JobConfigs.unittest_jobs
 ]
 
 STYLE_AND_FAST_TESTS = [
@@ -123,7 +129,9 @@ workflow = Workflow.Config(
         *[j.set_allow_failure() for j in JobConfigs.stateless_tests_targeted_pr_jobs],
         *[
             job.set_run_after(
-                CORE_BLOCKING_JOB_NAMES if job.name not in CORE_BLOCKING_JOB_NAMES else []
+                CORE_BLOCKING_JOB_NAMES
+                if job.name not in UNGATED_INTEGRATION_JOB_NAMES
+                else []
             )
             for job in INTEGRATION_TARGETED_JOBS
         ],
@@ -337,6 +345,9 @@ _SINGLE_ARCH_SKIPPED_ARTIFACTS = {
     if job.name in PR_SINGLE_ARCH_SKIPPED_BUILDS
     for artifact in job.provides
 }
+assert len(UNGATED_INTEGRATION_JOB_NAMES) == 1, (
+    "the ASan targeted integration job is not found by its name"
+)
 assert len(_SINGLE_ARCH_SKIPPED_ARTIFACTS) == len(PR_SINGLE_ARCH_SKIPPED_BUILDS), (
     "every build in PR_SINGLE_ARCH_SKIPPED_BUILDS must be in the PR workflow"
 )
