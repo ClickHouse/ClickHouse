@@ -504,7 +504,6 @@ void optimizeTreeSecondPass(
     /// Not for a plan whose parts run elsewhere, since the lazy read has to run where the main one does. That is asked of
     /// the setting rather than of this pass, as the other lazy materialization does: a plan that has its exchanges
     /// already, optimized again, is still distributed, and its lazy steps could not be sent to the workers.
-    bool lazy_materialization_applied = false;
     if (optimization_settings.optimize_lazy_materialization && optimization_settings.lazy_materialization_for_join
         && !optimization_settings.enable_parallel_replicas && !optimization_settings.make_distributed_plan)
     {
@@ -517,7 +516,6 @@ void optimizeTreeSecondPass(
             if (frame.next_child == 0
                 && optimizeLazyMaterialization3(*frame.node, query_plan, nodes, optimization_settings))
             {
-                lazy_materialization_applied = true;
                 stack.pop_back();
                 continue;
             }
@@ -921,8 +919,6 @@ void optimizeTreeSecondPass(
                 if (optimizeLazyMaterialization2(
                         *frame.node, query_plan, nodes, optimization_settings, optimization_settings.max_limit_for_lazy_materialization))
                 {
-                    lazy_materialization_applied = true;
-
                     /// Merge Expression/Filter steps (on enter) and apply lazy FINAL
                     /// (on leave) in the transformed subtree.
                     Stack sub_stack;
@@ -959,9 +955,9 @@ void optimizeTreeSecondPass(
         }
     }
 
-    /// The merges above rebuild `FilterStep`s and drop the QCC key, so re-walk to set it again
-    if (optimization_settings.use_query_condition_cache
-        && (join_runtime_filters_were_added || predicates_were_propagated || lazy_materialization_applied))
+    /// The PREWHERE optimization (when the condition is moved only partially) and the merges above rebuild
+    /// `FilterStep`s and drop the QCC key, so re-walk to set it again
+    if (optimization_settings.use_query_condition_cache)
     {
         Stack qcc_stack;
         qcc_stack.push_back({.node = &root});
