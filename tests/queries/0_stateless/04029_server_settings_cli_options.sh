@@ -80,6 +80,8 @@ function stop_server()
 #   `--distributed_ddl_task_max_lifetime` (bound to `distributed_ddl.task_max_lifetime`).
 # - A space-separated value that starts with `-` is the value of the direct option, not another option, for a
 #   number (`--os_threads_nice_value_merge_mutate -5`) as well as for a string (`--default_replica_name -replica`).
+# - A space-separated value that is an abbreviation of a built-in option (`--co` of `--config-file`) is kept
+#   verbatim: it is not expanded into the full name of that option (`--default_replica_path --co`).
 srv_dir1="${CLICKHOUSE_TMP}/srv1"
 SRV1_HTTP_PORT=50223
 mkdir -p "$srv_dir1"
@@ -100,6 +102,7 @@ $CLICKHOUSE_BINARY server \
     --distributed_ddl_task_max_lifetime 1234 \
     --os_threads_nice_value_merge_mutate -5 \
     --default_replica_name -replica \
+    --default_replica_path --co \
     --logger_log "$srv_dir1/loser.log" --log-file "$srv_dir1/winner.log" \
     -E "$srv_dir1/loser.err" --LOGGER_ERRORLOG:"$srv_dir1/winner.err" \
     -- --tcp_port "$CLICKHOUSE_PORT_TCP" --http_port "$SRV1_HTTP_PORT" --path "$srv_dir1/" \
@@ -121,7 +124,7 @@ $CLICKHOUSE_CLIENT --query "
                    'concurrent_threads_soft_limit_num', 'load_marks_threadpool_pool_size',
                    'query_cache.max_entries', 'query_cache.max_size_in_bytes', 'logger.level',
                    'prometheus.keeper_metrics_only', 'distributed_ddl.task_max_lifetime',
-                   'os_threads_nice_value_merge_mutate', 'default_replica_name')
+                   'os_threads_nice_value_merge_mutate', 'default_replica_name', 'default_replica_path')
     ORDER BY name"
 
 # The `prometheus` section given on the command line is applied, so `/metrics` is served on the HTTP port.

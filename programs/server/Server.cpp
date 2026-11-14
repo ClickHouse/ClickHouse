@@ -603,54 +603,107 @@ namespace
 /// previous meaning, and every setting can be registered under its own name. An argument that does not
 /// resolve to exactly one built-in option is left alone: it either names a server setting, or it was
 /// already unknown or ambiguous before.
+
+/// Resolve a long option (without the leading `--`) the same way as `Poco::Util::OptionSet::getOption`:
+/// case-insensitively, by the name up to the first `:` or `=`, preferring a full match over a unique
+/// partial one. Returns null for an unknown or an ambiguous option.
+const Poco::Util::Option * tryResolveLongOption(const Poco::Util::OptionSet & options, const std::string & name_and_value)
+{
+    const Poco::Util::Option * resolved = nullptr;
+    bool ambiguous = false;
+    for (const auto & option : options)
+    {
+        if (option.matchesFull(name_and_value))
+            return &option;
+        if (option.matchesPartial(name_and_value))
+        {
+            ambiguous = resolved != nullptr;
+            resolved = &option;
+        }
+    }
+    return ambiguous ? nullptr : resolved;
+}
+
+/// Resolve a short option (without the leading `-`) the same way as `Poco::Util::OptionSet::getOption`.
+/// Returns null for an unknown or an ambiguous option.
+const Poco::Util::Option * tryResolveShortOption(const Poco::Util::OptionSet & options, const std::string & name_and_value)
+{
+    const Poco::Util::Option * resolved = nullptr;
+    for (const auto & option : options)
+    {
+        if (option.matchesShort(name_and_value))
+        {
+            if (resolved)
+                return nullptr;
+            resolved = &option;
+        }
+    }
+    return resolved;
+}
+
+/// `all_options` is the complete option set `Poco` processes the command line with (the built-in options
+/// and the server settings). It is needed to tell which arguments are values: `Poco` takes the value of
+/// an option that requires one from the next argument when it is not given inline, verbatim - also when
+/// that argument starts with `-` or is `--` (`--default_replica_name --co`, `--display_name --d`). Such a
+/// value must not be expanded, and it does not end the options either.
 std::vector<std::string> expandBuiltinOptionAbbreviations(
-    const std::vector<std::string> & arguments, const Poco::Util::OptionSet & builtin_options)
+    const std::vector<std::string> & arguments,
+    const Poco::Util::OptionSet & builtin_options,
+    const Poco::Util::OptionSet & all_options)
 {
     std::vector<std::string> result;
     result.reserve(arguments.size());
 
     bool options_ended = false;
-    for (const auto & argument : arguments)
+    bool value_expected = false;
+    for (size_t i = 0; i < arguments.size(); ++i)
     {
-        if (options_ended || !argument.starts_with("--") || argument == "--")
+        const auto & argument = arguments[i];
+
+        /// The first argument is the name of the program.
+        if (i == 0 || options_ended || value_expected)
         {
-            options_ended = options_ended || argument == "--";
+            value_expected = false;
             result.push_back(argument);
             continue;
         }
 
-        /// `Poco::Util::Option` matches the option name up to the first `:` or `=`, case-insensitively,
-        /// and prefers a full match over a partial one - the resolution below mirrors `OptionSet::getOption`.
-        std::string option = argument.substr(std::string_view("--").size());
-
-        const Poco::Util::Option * resolved = nullptr;
-        bool ambiguous = false;
-        for (const auto & builtin : builtin_options)
+        if (argument == "--")
         {
-            if (builtin.matchesFull(option))
-            {
-                resolved = &builtin;
-                ambiguous = false;
-                break;
-            }
-            if (builtin.matchesPartial(option))
-            {
-                if (resolved)
-                    ambiguous = true;
-                else
-                    resolved = &builtin;
-            }
-        }
-
-        if (!resolved || ambiguous)
-        {
+            options_ended = true;
             result.push_back(argument);
             continue;
         }
 
-        size_t value_position = option.find_first_of(":=");
-        std::string value = value_position == std::string::npos ? "" : option.substr(value_position);
-        result.push_back("--" + resolved->fullName() + value);
+        if (argument.starts_with("--"))
+        {
+            std::string option = argument.substr(std::string_view("--").size());
+            bool has_inline_value = option.find_first_of(":=") != std::string::npos;
+
+            if (const auto * builtin = tryResolveLongOption(builtin_options, option))
+            {
+                size_t value_position = option.find_first_of(":=");
+                std::string value = value_position == std::string::npos ? "" : option.substr(value_position);
+                result.push_back("--" + builtin->fullName() + value);
+                value_expected = builtin->argumentRequired() && !has_inline_value;
+                continue;
+            }
+
+            /// Not a built-in option: `Poco` will resolve it against all options as is.
+            const auto * resolved = tryResolveLongOption(all_options, option);
+            value_expected = resolved && resolved->argumentRequired() && !has_inline_value;
+            result.push_back(argument);
+            continue;
+        }
+
+        if (argument.starts_with("-") && argument.size() > 1)
+        {
+            std::string option = argument.substr(1);
+            const auto * resolved = tryResolveShortOption(all_options, option);
+            value_expected = resolved && resolved->argumentRequired() && option.size() == resolved->shortName().size();
+        }
+
+        result.push_back(argument);
     }
 
     return result;
@@ -684,8 +737,10 @@ int mainEntryClickHouseServer(int argc, char ** argv)
     /// processes the command line, because by then the option set also contains the server settings.
     Poco::Util::OptionSet builtin_options;
     app.defineBuiltinOptions(builtin_options);
+    Poco::Util::OptionSet all_options(builtin_options);
+    DB::ServerSettings::addToProgramOptions(all_options);
     std::vector<std::string> arguments
-        = expandBuiltinOptionAbbreviations(std::vector<std::string>(argv, argv + argc), builtin_options);
+        = expandBuiltinOptionAbbreviations(std::vector<std::string>(argv, argv + argc), builtin_options, all_options);
 
     std::vector<char *> expanded_argv;
     expanded_argv.reserve(arguments.size());

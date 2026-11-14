@@ -1,5 +1,6 @@
 concurrent_threads_soft_limit_num	7
 default_replica_name	-replica
+default_replica_path	--co
 distributed_ddl.task_max_lifetime	1234
 dns_max_consecutive_failures	42
 http_connections_soft_limit	111
