@@ -624,7 +624,7 @@ void DatabaseOrdinary::loadTableFromMetadata(
 static bool isPushSourceEngine(const String & engine_name)
 {
     static const std::unordered_set<std::string_view> push_source_engines
-        = {"Kafka", "RabbitMQ", "NATS", "FileLog", "S3Queue", "AzureQueue"};
+        = {"Kafka", "RabbitMQ", "NATS", "Pulsar", "FileLog", "S3Queue", "AzureQueue"};
 
     return push_source_engines.contains(engine_name);
 }

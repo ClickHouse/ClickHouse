@@ -1815,3 +1815,68 @@ def test_remote_host_filter_applies_to_lookup_results(pulsar_cluster):
     instance.query("DETACH TABLE test.pulsar_reader")
     instance.query("ATTACH TABLE test.pulsar_reader")
     wait_row_seen("2\t2", 240)
+
+
+def test_lazy_load_database_reload_keeps_streaming(pulsar_cluster):
+    # With `lazy_load_tables`, a table is attached as a stand-in whose `startup`
+    # does nothing. A Pulsar source feeding a materialized view must be loaded
+    # eagerly, or its streaming task is never activated after the database is
+    # reloaded, and nothing reads the source directly to materialize it.
+    db = "test_lazy_pulsar"
+    instance.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+    instance.query(
+        f"CREATE DATABASE {db} ENGINE = Atomic SETTINGS lazy_load_tables = 1"
+    )
+    try:
+        instance.query(pulsar_table(f"{db}.pulsar_reader", "lazy_topic", "lazy_group"))
+        instance.query(
+            f"""
+            CREATE TABLE {db}.view (key UInt64, value UInt64)
+            ENGINE = MergeTree ORDER BY key
+            """
+        )
+        instance.query(
+            f"""
+            CREATE MATERIALIZED VIEW {db}.consumer TO {db}.view AS
+            SELECT key, value FROM {db}.pulsar_reader
+            """
+        )
+
+        def produce(message):
+            # Publish from outside the server, so that nothing on the
+            # ClickHouse side touches the source table.
+            subprocess.check_call(
+                [
+                    "docker",
+                    "exec",
+                    pulsar_cluster.pulsar_docker_id,
+                    "bin/pulsar-client",
+                    "produce",
+                    "lazy_topic",
+                    "-s",
+                    ";",
+                    "-m",
+                    message,
+                ]
+            )
+
+        produce('{"key":1,"value":1}')
+        # Delivery is at-least-once, so tolerate duplicate rows.
+        wait_query_result("1\t1", f"SELECT DISTINCT key, value FROM {db}.view ORDER BY key")
+
+        # Reloading the database is what a server restart does to its tables.
+        instance.query(f"DETACH DATABASE {db}")
+        instance.query(f"ATTACH DATABASE {db}")
+
+        produce('{"key":2,"value":2}')
+        wait_query_result(
+            "1\t1\n2\t2", f"SELECT DISTINCT key, value FROM {db}.view ORDER BY key"
+        )
+        assert (
+            instance.query(
+                f"SELECT engine FROM system.tables WHERE database = '{db}' AND name = 'pulsar_reader'"
+            ).strip()
+            == "Pulsar"
+        )
+    finally:
+        instance.query(f"DROP DATABASE IF EXISTS {db} SYNC")
