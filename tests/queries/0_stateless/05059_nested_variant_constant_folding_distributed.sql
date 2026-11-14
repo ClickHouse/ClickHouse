@@ -72,9 +72,10 @@ DROP TABLE t_variant_const_pushdown;
 -- The `OR`-to-`IN` rewrite builds the constant with its enclosing cast suppressed, so the member type has
 -- to be named there too, and the `DateTime` sibling has to keep crossing as a raw timestamp: as local
 -- date-time text it would be re-parsed an hour early in the DST overlap and the row below would be missed
--- through a secondary server while still matching on a single node.
+-- through a secondary server while still matching on a single node. Only the constants carry the `Variant`:
+-- the rewrite declines a `Variant` expression.
 DROP TABLE IF EXISTS t_variant_const_or_in;
-CREATE TABLE t_variant_const_or_in (x Tuple(DateTime('Europe/Berlin'), Variant(UInt64))) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_variant_const_or_in (x Tuple(DateTime('Europe/Berlin'), UInt64)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_variant_const_or_in VALUES ((1698541800, 42)), ((1698538200, 41));
 
 SELECT count()
