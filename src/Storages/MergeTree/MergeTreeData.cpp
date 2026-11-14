@@ -1,3 +1,4 @@
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeString.h>
 #include <Disks/DiskFromAST.h>
 #include <Disks/DiskType.h>
@@ -25,6 +26,8 @@
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
@@ -5959,6 +5962,16 @@ void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataTy
     }
 }
 
+/// Whether the AST passes the column to a function or gives it an alias, so its values are not stored as is.
+bool usesColumnInExpression(const IAST & ast, const String & column, bool in_function = false)
+{
+    if (const auto * identifier = ast.as<ASTIdentifier>())
+        return identifier->name() == column && (in_function || !identifier->tryGetAlias().empty());
+
+    in_function = in_function || ast.as<ASTFunction>();
+    return std::ranges::any_of(ast.children, [&](const auto & child) { return usesColumnInExpression(*child, column, in_function); });
+}
+
 /// Source columns an expression reads, resolved against `columns` via the query analyzer over a fake
 /// table. keep_alias_columns=false expands ALIAS chains to their base columns.
 Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & columns, const ContextPtr & context)
@@ -5984,6 +5997,32 @@ Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & col
     if (const auto * table_expression_data = planner_context->getTableExpressionDataOrNull(table_node))
         return table_expression_data->getColumnNames();
     return {};
+}
+
+bool queryTreeReadsColumn(const IQueryTreeNode & node, const String & column)
+{
+    if (const auto * column_node = node.as<ColumnNode>(); column_node && column_node->getColumnName() == column)
+        return true;
+    /// A function folded into a constant, such as `toTypeName(j)`, keeps the expression it was computed from.
+    if (const auto * constant_node = node.as<ConstantNode>(); constant_node && constant_node->hasSourceExpression()
+        && queryTreeReadsColumn(*constant_node->getSourceExpression(), column))
+        return true;
+    return std::ranges::any_of(node.getChildren(), [&](const auto & child) { return child && queryTreeReadsColumn(*child, column); });
+}
+
+/// Whether an expression reads the whole `column`, directly, through an ALIAS column or inside a folded constant.
+bool expressionReadsColumn(const ASTPtr & ast, const ColumnsDescription & columns, const ContextPtr & context, const String & column)
+{
+    if (!ast)
+        return false;
+
+    auto analysis_context = Context::createCopy(context);
+    auto expression = buildQueryTree(ast, analysis_context);
+    auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, columns);
+    auto table_node = std::make_shared<TableNode>(storage, analysis_context);
+    QueryAnalyzer analyzer(/*only_analyze=*/ true);
+    analyzer.resolve(expression, table_node, analysis_context);
+    return queryTreeReadsColumn(*expression, column);
 }
 
 }
@@ -7182,6 +7221,44 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                             "assignment to column '{}'; a metadata-only ALTER cannot recompute the TTL. Drop the TTL to run this change",
                             backQuoteIfNeed(command.column_name), set_part.column_name);
             }
+        }
+        else if (command.type == AlterCommand::MODIFY_COLUMN && command.data_type && old_types.contains(command.column_name)
+            && isJSONSharedDataPathRegexpsOnlyChange(*old_types.at(command.column_name), *command.data_type))
+        {
+            /// A SHARED REGEXP change rewrites no data, so a key or a projection computed from the whole column would go stale.
+            if (columns_in_keys.contains(command.column_name))
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "ALTER of key column {} is forbidden",
+                    backQuoteIfNeed(command.column_name));
+
+            for (const auto & projection : old_metadata.getProjections())
+                if (new_metadata.getProjections().has(projection.name) && usesColumnInExpression(*projection.query_ast, command.column_name))
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "ALTER of column {} is forbidden because projection {} computes an expression from it. Drop the projection first",
+                        backQuoteIfNeed(command.column_name),
+                        backQuoteIfNeed(projection.name));
+
+            /// Old parts keep their TTL infos, so a TTL that reads the whole column would act on stale values.
+            TTLDescriptions ttls = old_metadata.getRowsWhereTTLs();
+            for (const auto & ttl : old_metadata.getGroupByTTLs())
+                ttls.push_back(ttl);
+            for (const auto & ttl : old_metadata.getMoveTTLs())
+                ttls.push_back(ttl);
+            for (const auto & ttl : old_metadata.getRecompressionTTLs())
+                ttls.push_back(ttl);
+            if (old_metadata.hasRowsTTL())
+                ttls.push_back(old_metadata.getRowsTTL());
+            for (const auto & [column_name, ttl] : old_metadata.getColumnTTLs())
+                ttls.push_back(ttl);
+
+            for (const auto & ttl : ttls)
+                for (const auto & ast : {ttl.expression_ast, ttl.where_expression_ast})
+                    if (expressionReadsColumn(ast, old_metadata.getColumns(), local_context, command.column_name))
+                        throw Exception(
+                            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "ALTER of column {} is forbidden because the TTL expression ({}) reads it. Drop the TTL first",
+                            backQuoteIfNeed(command.column_name),
+                            ast->formatForErrorMessage());
         }
     }
 

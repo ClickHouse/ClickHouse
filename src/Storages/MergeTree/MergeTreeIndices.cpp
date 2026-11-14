@@ -9,8 +9,10 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
@@ -237,6 +239,46 @@ bool hasSameMeaning(const IDataType & from, const IDataType & to)
     return from.getName() == to.getName();
 }
 
+/// True if only SHARED REGEXP differs and typed paths match by name, since equals() ignores a timezone.
+/// Looks through Array and Nullable, like isJSONSharedDataPathRegexpsOnlyChange.
+bool isMeaningPreservingSharedRegexpChange(const IDataType & part_type, const IDataType & metadata_type)
+{
+    if (const auto * part_array = typeid_cast<const DataTypeArray *>(&part_type))
+    {
+        const auto * metadata_array = typeid_cast<const DataTypeArray *>(&metadata_type);
+        return metadata_array && isMeaningPreservingSharedRegexpChange(*part_array->getNestedType(), *metadata_array->getNestedType());
+    }
+
+    if (const auto * part_nullable = typeid_cast<const DataTypeNullable *>(&part_type))
+    {
+        const auto * metadata_nullable = typeid_cast<const DataTypeNullable *>(&metadata_type);
+        return metadata_nullable && isMeaningPreservingSharedRegexpChange(*part_nullable->getNestedType(), *metadata_nullable->getNestedType());
+    }
+
+    const auto * part_object = typeid_cast<const DataTypeObject *>(&part_type);
+    if (!part_object || !isJSONSharedDataPathRegexpsOnlyChange(part_type, metadata_type))
+        return false;
+    const auto & metadata_typed_paths = assert_cast<const DataTypeObject &>(metadata_type).getTypedPaths();
+    return std::ranges::all_of(part_object->getTypedPaths(), [&](const auto & path_and_type)
+        { return hasSameMeaning(*path_and_type.second, *metadata_typed_paths.at(path_and_type.first)); });
+}
+
+/// True if the index expression passes the column only to functions that cannot see its type name.
+bool readsOnlyColumnValues(const IMergeTreeIndex & skip_index, const String & column)
+{
+    static const NameSet value_only_functions = {"toString", "length", "empty", "notEmpty", "JSONAllPaths"};
+
+    for (const auto & node : skip_index.index.expression->getActionsDAG().getNodes())
+    {
+        bool is_value_only = node.type == ActionsDAG::ActionType::FUNCTION && value_only_functions.contains(node.function_base->getName());
+        for (const auto * child : node.children)
+            if (child->type == ActionsDAG::ActionType::INPUT && child->result_name == column && !is_value_only)
+                return false;
+    }
+
+    return true;
+}
+
 /// The part-side type of a required column, read from the part's OWN column list.
 ///
 /// IMergeTreeDataPart::tryGetColumn() answers from `columns_description`, a storage-wide interning
@@ -403,6 +445,8 @@ bool isPartTypeCompatibleImpl(const IMergeTreeIndex & skip_index, const Part & p
         /// as "equal", while an index expression that reads the dropped attribute (toHour(dt),
         /// toString(v)) now yields different values than the granule holds.
         if (part_type->equals(*metadata_type) && hasSameMeaning(*part_type, *metadata_type))
+            continue;
+        if (isMeaningPreservingSharedRegexpChange(*part_type, *metadata_type) && readsOnlyColumnValues(skip_index, column))
             continue;
 
         /// A granule of an expression index stores the EXPRESSION's result type, which can change
