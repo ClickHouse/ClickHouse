@@ -106,7 +106,9 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
     PostgreSQLSettings postgresql_settings;
     postgresql_settings.loadFromQueryContext(*context);
 
-    auto & args = func_args.arguments->children;
+    /// A copy, since `CREATE TABLE ... AS postgresql(...)` stores this call as the definition of the table, which must keep the
+    /// SETTINGS argument removed below.
+    ASTs args = func_args.arguments->children;
     ASTPtr settings_ast;
     for (auto it = args.begin(); it != args.end(); ++it)
     {
