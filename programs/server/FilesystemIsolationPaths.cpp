@@ -109,7 +109,7 @@ std::string getPathSetting(const Poco::Util::AbstractConfiguration & config, con
 /// relative to it, as `backups.allowed_path` in the `File` backup engine, are resolved against this one.
 fs::path getDataPath(const Poco::Util::AbstractConfiguration & config, const fs::path & working_directory)
 {
-    const fs::path path = getPathSetting(config, "path", DBMS_DEFAULT_PATH);
+    fs::path path = getPathSetting(config, "path", DBMS_DEFAULT_PATH);
     if (path.is_absolute())
         return path;
     return fs::weakly_canonical(working_directory / path);
