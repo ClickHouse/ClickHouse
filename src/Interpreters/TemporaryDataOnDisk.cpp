@@ -580,8 +580,8 @@ void TemporaryDataBuffer::freeAlloc()
 
 void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta)
 {
-    if (parent)
-        parent->deltaAllocAndCheck(compressed_delta, uncompressed_delta);
+    /// The checks of this scope are done before the parent is charged: the caller does not record the delta
+    /// when an exception is thrown, so a charge of the parent would never be released.
 
     /// check that we don't go negative
     if ((compressed_delta < 0 && stat.compressed_size < -static_cast<size_t>(compressed_delta)) ||
@@ -594,6 +594,9 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
     if (compressed_delta > 0 && settings.max_size_on_disk && new_consumption > settings.max_size_on_disk)
         throw Exception(ErrorCodes::TOO_MANY_ROWS_OR_BYTES,
             "Limit for temporary files size exceeded (would consume {} / {} bytes)", new_consumption, settings.max_size_on_disk);
+
+    if (parent)
+        parent->deltaAllocAndCheck(compressed_delta, uncompressed_delta);
 
     stat.compressed_size += compressed_delta;
     stat.uncompressed_size += uncompressed_delta;

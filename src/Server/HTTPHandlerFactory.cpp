@@ -627,7 +627,9 @@ void addDefaultHandlersFactory(
     {
         HTTPHandlerConnectionConfig connection_config;
         connection_config.default_session_user = default_session_user;
-        return std::make_unique<DynamicQueryHandler>(server, connection_config, "query", std::nullopt, "", path_hints);
+        return std::make_unique<DynamicQueryHandler>(
+            server, connection_config, "query", std::nullopt, "", path_hints,
+            /* parse_http_path_= */ true, /* allow_path_table_uploads_= */ false, /* allow_aws_signature_v4_= */ true);
     };
     auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
     query_handler->addFilter([](const auto & request)
@@ -672,7 +674,8 @@ void addCatchAllQueryHandlerFactory(
         HTTPHandlerConnectionConfig connection_config;
         connection_config.default_session_user = default_session_user;
         return std::make_unique<DynamicQueryHandler>(
-            server, connection_config, "query", std::nullopt, "", path_hints, /* parse_http_path_ */ true, /* allow_path_table_uploads_ */ true);
+            server, connection_config, "query", std::nullopt, "", path_hints,
+            /* parse_http_path_= */ true, /* allow_path_table_uploads_= */ true, /* allow_aws_signature_v4_= */ true);
     };
     /// Path-as-file routing is gated by a single server-level flag (`http_allow_path_requests`,
     /// default on), evaluated here at routing time — before authentication, where the connecting
@@ -726,13 +729,11 @@ void addCatchAllQueryHandlerFactory(
             }
 
             /// Skip the path-as-file routing for clients sending an `Authorization` header with a
-            /// scheme ClickHouse does not implement (e.g. `AWS4-HMAC-SHA256`, used by
-            /// `clickhouse-local`'s S3 client when probing paths like `/nonexistent`). The dynamic
-            /// handler would otherwise reject the request with `AUTHENTICATION_FAILED` (HTTP 403)
-            /// before it has a chance to look up the path against the catalog; the
-            /// `NotFoundHandler` fallback returns a plain 404 the S3 client is already prepared to
-            /// handle as non-retriable. Supported schemes (Basic, Negotiate) still get the
-            /// dynamic-handler treatment.
+            /// scheme ClickHouse does not implement. The dynamic handler would otherwise reject the
+            /// request with `AUTHENTICATION_FAILED` (HTTP 403) before it has a chance to look up the
+            /// path against the catalog; the `NotFoundHandler` fallback returns a plain 404.
+            /// Supported schemes (Basic, Negotiate, and `AWS4-HMAC-SHA256` used by S3 clients)
+            /// get the dynamic-handler treatment.
             if (request.has("Authorization"))
             {
                 const auto & auth_header = request.get("Authorization");
@@ -744,7 +745,8 @@ void addCatchAllQueryHandlerFactory(
                 /// ignore credentials (see `03362_basic_auth_interactive_not_with_authorization_never`);
                 /// let it through so a path-style request is handled the same way the query-string
                 /// route is, instead of falling through to `NotFoundHandler`.
-                if (!boost::iequals(scheme, "Basic") && !boost::iequals(scheme, "Negotiate") && !boost::iequals(auth_header, "never"))
+                if (!boost::iequals(scheme, "Basic") && !boost::iequals(scheme, "Negotiate") && scheme != "AWS4-HMAC-SHA256"
+                    && !boost::iequals(auth_header, "never"))
                     return false;
             }
 

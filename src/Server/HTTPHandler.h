@@ -76,6 +76,11 @@ public:
     /// and SQL-defined handlers own their matched path and must execute their stored query unchanged.
     virtual bool parsesHTTPPath() const { return false; }
 
+    /// Whether requests signed with AWS Signature Version 4 are accepted. Only the built-in query handlers, which
+    /// are selected by the method and the path, accept them: the configured and SQL-defined handlers can be
+    /// selected by arbitrary headers and bind their values to the query, and these headers are not necessarily signed.
+    virtual bool allowsAWSSignatureV4() const { return false; }
+
     /// Idempotent HTTP methods are read-only by default. A handler may opt into mutating behavior for
     /// a narrowly defined request shape, such as a PUT upload whose target table comes from the URL path.
     virtual bool allowMutatingIdempotentMethods(
@@ -264,6 +269,7 @@ private:
     bool parse_http_path;
     /// Only the built-in catch-all handler enables the path-table upload mutation exception.
     bool allow_path_table_uploads = false;
+    bool allow_aws_signature_v4 = false;
 
 public:
     explicit DynamicQueryHandler(
@@ -274,7 +280,8 @@ public:
         const std::string & url_prefix_ = "",
         HTTPPathHintsPtr path_hints_ = nullptr,
         bool parse_http_path_ = true,
-        bool allow_path_table_uploads_ = false);
+        bool allow_path_table_uploads_ = false,
+        bool allow_aws_signature_v4_ = false);
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) override;
 
@@ -286,6 +293,8 @@ public:
     /// rule owns the path it is matched by, so it interprets only the part below its `url_prefix`,
     /// and nothing at all when it has none.
     bool parsesHTTPPath() const override { return parse_http_path; }
+
+    bool allowsAWSSignatureV4() const override { return allow_aws_signature_v4; }
 
     bool allowMutatingIdempotentMethods(const HTTPServerRequest & request, const HTMLForm & params) const override;
 };
