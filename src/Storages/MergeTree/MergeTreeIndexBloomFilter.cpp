@@ -648,14 +648,12 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     size_t hash_functions_,
     StorageMetadataPtr metadata_snapshot_,
     JSONIndexArgumentTypes json_argument_types_,
-    IsShadowingJSONSubcolumn is_shadowing_json_subcolumn_,
     ActionsDAG::NodeRawConstPtrs index_nodes_)
     : WithContext(context_)
     , header(header_)
     , hash_functions(hash_functions_)
     , metadata_snapshot(std::move(metadata_snapshot_))
     , json_argument_types(std::move(json_argument_types_))
-    , is_shadowing_json_subcolumn(std::move(is_shadowing_json_subcolumn_))
     , index_nodes(std::move(index_nodes_))
     , json_index_columns(collectJSONIndexColumns(header, index_nodes))
     , validate_enum_literals_in_operators(context_->getSettingsRef()[Setting::validate_enum_literals_in_operators])
@@ -838,7 +836,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
     if (function_name == "isNotNull" && arguments_size == 1)
     {
         auto arg = function.getArgumentAt(0);
-        if (auto json_info = tryMatchNodeToJSONIndex(arg, json_index_columns, "JSONAllPaths", json_argument_types, is_shadowing_json_subcolumn))
+        if (auto json_info = tryMatchNodeToJSONIndex(arg, json_index_columns, "JSONAllPaths", json_argument_types, &metadata_snapshot->getColumns()))
         {
             auto arg_type = arg.getDAGNode()->result_type;
             /// It doesn't make sense to use bloom filter for isNotNull on non-Nullable type, as isNotNull will be always true.
@@ -1000,7 +998,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     /// tryMatchNodeToJSONIndex handles both plain subcolumns and CAST-wrapped expressions.
     /// NOT IN is not supported because after BoolMask inversion it never skips any granules.
     /// nullIn/globalNullIn are deliberately not wired here: JSON paths need per-path NULL checks.
-    if (auto json_info = tryMatchNodeToJSONIndex(key_node, json_index_columns, "JSONAllPaths", json_argument_types, is_shadowing_json_subcolumn))
+    if (auto json_info = tryMatchNodeToJSONIndex(key_node, json_index_columns, "JSONAllPaths", json_argument_types, &metadata_snapshot->getColumns()))
     {
         if (function_name != "in" && function_name != "globalIn")
             return false;
@@ -1539,7 +1537,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     /// Try to match the column name to a JSONAllPaths index for JSON subcolumn filtering.
     /// tryMatchNodeToJSONIndex handles both plain subcolumns and CAST-wrapped expressions
     /// like `json.some.path = value`, `json.some.path.:Type = value`, or `json.path::Type = value`.
-    if (auto json_info = tryMatchNodeToJSONIndex(key_node, json_index_columns, "JSONAllPaths", json_argument_types, is_shadowing_json_subcolumn))
+    if (auto json_info = tryMatchNodeToJSONIndex(key_node, json_index_columns, "JSONAllPaths", json_argument_types, &metadata_snapshot->getColumns()))
     {
         if (function_name != "equals")
             return false;
@@ -1773,7 +1771,6 @@ MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const
 {
     return std::make_shared<MergeTreeIndexConditionBloomFilter>(
         predicate, context, index.sample_block, hash_functions, metadata_snapshot, collectJSONIndexArgumentTypes(*index.expression),
-        getJSONSubcolumnShadowingCheck(),
         index.expression->getActionsDAG().getOutputs());
 }
 

@@ -9,6 +9,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -84,6 +85,28 @@ static String extractPathFromSubcolumn(std::string_view subcolumn_name)
     return String(subcolumn_name.substr(0, pos));
 }
 
+/// Whether a column of the table claims `name`, a dynamic path of `json_column` otherwise: a column or its regular
+/// subcolumn wins over a dynamic path, which belongs to the shortest `JSON` column.
+static bool isClaimedByAnotherColumn(std::string_view name, std::string_view json_column, const ColumnsDescription & columns)
+{
+    auto options = GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns();
+
+    if (auto column = columns.tryGetColumn(options, String(name)))
+    {
+        auto json = columns.tryGetColumn(options, String(json_column));
+        if (!json || column->getNameInStorage() != json->getNameInStorage())
+            return true;
+    }
+
+    for (size_t end = json_column.find('.'); end != std::string_view::npos; end = json_column.find('.', end + 1))
+    {
+        auto prefix = columns.tryGetColumn(options, String(json_column.substr(0, end)));
+        if (prefix && isObject(removeNullable(removeLowCardinality(prefix->type))))
+            return true;
+    }
+    return false;
+}
+
 /// Prefixed subcolumns look like "<prefix>`first_path_element`.rest": the back-quote distinguishes
 /// them from an ordinary path starting with the prefix character, e.g. "@`a`" versus "@a".
 static bool isPrefixedSubcolumn(std::string_view subcolumn_name, char prefix)
@@ -96,9 +119,9 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const Block & header,
     const String & json_function_name,
     const JSONIndexArgumentTypes & json_argument_types,
-    const IsShadowingJSONSubcolumn & is_shadowing_subcolumn)
+    const ColumnsDescription * columns)
 {
-    return tryMatchJSONSubcolumnToIndex(column_name, header.getNames(), json_function_name, json_argument_types, is_shadowing_subcolumn);
+    return tryMatchJSONSubcolumnToIndex(column_name, header.getNames(), json_function_name, json_argument_types, columns);
 }
 
 std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
@@ -106,7 +129,7 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const Names & index_columns,
     const String & json_function_name,
     const JSONIndexArgumentTypes & json_argument_types,
-    const IsShadowingJSONSubcolumn & is_shadowing_subcolumn)
+    const ColumnsDescription * columns)
 {
     /// Scan the index columns, not the dot positions of the name: the name can embed a folded
     /// constant, so its length is unbounded while `index_columns` is not.
@@ -143,7 +166,7 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
         matched = true;
     }
 
-    if (!matched || (is_shadowing_subcolumn && is_shadowing_subcolumn(name, matched_json_column)))
+    if (!matched || (columns && isClaimedByAnotherColumn(name, matched_json_column, *columns)))
         return std::nullopt;
 
     /// Sub-object (^) and combined literal+sub-object (@) access cannot use the index: such
@@ -173,9 +196,9 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const Block & header,
     const String & json_function_name,
     const JSONIndexArgumentTypes & json_argument_types,
-    const IsShadowingJSONSubcolumn & is_shadowing_subcolumn)
+    const ColumnsDescription * columns)
 {
-    return tryMatchNodeToJSONIndex(node, header.getNames(), json_function_name, json_argument_types, is_shadowing_subcolumn);
+    return tryMatchNodeToJSONIndex(node, header.getNames(), json_function_name, json_argument_types, columns);
 }
 
 std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
@@ -183,9 +206,9 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const Names & index_columns,
     const String & json_function_name,
     const JSONIndexArgumentTypes & json_argument_types,
-    const IsShadowingJSONSubcolumn & is_shadowing_subcolumn)
+    const ColumnsDescription * columns)
 {
-    auto json_info = tryMatchJSONSubcolumnToIndex(node.getColumnName(), index_columns, json_function_name, json_argument_types, is_shadowing_subcolumn);
+    auto json_info = tryMatchJSONSubcolumnToIndex(node.getColumnName(), index_columns, json_function_name, json_argument_types, columns);
 
     /// Try CAST unwrapping: CAST(json.path, 'Type') or _CAST(json.path, 'Type')
     if (!json_info && node.isFunction())
@@ -194,7 +217,7 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
         auto fname = func.getFunctionName();
         if ((fname == "CAST" || fname == "_CAST") && func.getArgumentsSize() == 2)
             json_info = tryMatchJSONSubcolumnToIndex(
-                func.getArgumentAt(0).getColumnName(), index_columns, json_function_name, json_argument_types, is_shadowing_subcolumn);
+                func.getArgumentAt(0).getColumnName(), index_columns, json_function_name, json_argument_types, columns);
     }
 
     return json_info;
