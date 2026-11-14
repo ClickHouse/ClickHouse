@@ -797,10 +797,14 @@ ExpireSnapshotsResult expireSnapshots(
                 auto catalog_filename = persistent_table_components.path_resolver.resolveForCatalog(metadata_info.path);
                 const auto & [namespace_name, parsed_table_name] = DataLake::parseTableName(table_name);
                 /// Nothing is deleted yet, so a conflict is retried like the metadata file conflict above.
-                if (!catalog->updateMetadata(namespace_name, parsed_table_name, catalog_filename, base_catalog_metadata_location, nullptr, metadata))
+                const auto commit = [&]
                 {
-                    if (!catalog->isTransactional())
-                        removeRejectedMetadataFile(persistent_table_components.path_resolver, metadata_info, object_storage);
+                    return catalog->updateMetadata(
+                        namespace_name, parsed_table_name, catalog_filename, base_catalog_metadata_location, nullptr, metadata);
+                };
+                if (!commitMetadataFileToCatalog(
+                        commit, !catalog->isTransactional(), persistent_table_components.path_resolver, metadata_info, object_storage))
+                {
                     LOG_WARNING(log, "Catalog commit conflict during expire_snapshots, retrying ({} retries left)", max_retries);
                     continue;
                 }

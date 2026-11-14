@@ -53,6 +53,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/FailPoint.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
@@ -61,11 +62,14 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 
+#include <algorithm>
+
 namespace DB::ErrorCodes
 {
     extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int FAULT_INJECTED;
+    extern const int UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
 namespace DB::FailPoints
@@ -417,7 +421,8 @@ bool GlueCatalog::tryGetTableMetadata(
                 }
                 else
                 {
-                    result.setDataLakeSpecificProperties(DataLakeSpecificProperties{.iceberg_metadata_file_location = resolved_metadata_path});
+                    result.setDataLakeSpecificProperties(DataLakeSpecificProperties{
+                        .iceberg_metadata_file_location = resolved_metadata_path, .resolved_from_table_location = true});
                 }
             }
             else
@@ -737,6 +742,51 @@ String glueColumnComment(const String & doc)
     return result;
 }
 
+/// Glue refuses a column name or type longer than `max_length` UTF-16 code units or with a control character other than tab.
+/// An Iceberg field name can have both, and a nested field name is a part of the Glue type of its column.
+bool isValidGlueColumnText(const String & text, size_t max_length)
+{
+    size_t length = 0;
+    for (size_t pos = 0; pos < text.size();)
+    {
+        const size_t sequence_size = DB::UTF8::seqLength(static_cast<UInt8>(text[pos]));
+        const auto code_point = pos + sequence_size <= text.size()
+            ? DB::UTF8::convertUTF8ToCodePoint(text.data() + pos, sequence_size)
+            : std::nullopt;
+        if (!code_point
+            || !(*code_point == '\t' || (*code_point >= 0x20 && *code_point <= 0xD7FF)
+                 || (*code_point >= 0xE000 && *code_point <= 0xFFFD) || *code_point >= 0x10000))
+            return false;
+        length += *code_point >= 0x10000 ? 2 : 1;
+        pos += sequence_size;
+    }
+    return length <= max_length;
+}
+
+/// Whether Glue accepts these columns: a name of 1 to 255 characters and a type of up to 131072 characters.
+/// Comments are already made acceptable by `glueColumnComment`.
+bool canRegisterGlueColumns(const Aws::Vector<Aws::Glue::Model::Column> & columns)
+{
+    static constexpr size_t max_name_length = 255;
+    static constexpr size_t max_type_length = 131072;
+    return std::ranges::all_of(columns, [](const auto & column)
+    {
+        return !column.GetName().empty()
+            && isValidGlueColumnText(column.GetName(), max_name_length)
+            && isValidGlueColumnText(column.GetType(), max_type_length);
+    });
+}
+
+/// Glue answered the only attempt of a request with a client error, so the request was not applied.
+/// `OperationTimeoutException` is an HTTP 400 that does not say whether the request was applied.
+bool isDefiniteRejection(const Aws::Client::AWSError<Aws::Glue::GlueErrors> & error)
+{
+    if (error.GetErrorType() == Aws::Glue::GlueErrors::OPERATION_TIMEOUT)
+        return false;
+    const auto code = static_cast<int>(error.GetResponseCode());
+    return code >= 400 && code < 500 && !Aws::Http::IsRetryableHttpResponseCode(error.GetResponseCode());
+}
+
 /// `s3a://bucket/table/` -> `bucket/table`, because the scheme of a table location is not normalized.
 std::string_view locationWithoutSchemeAndTrailingSlash(std::string_view location)
 {
@@ -747,13 +797,14 @@ std::string_view locationWithoutSchemeAndTrailingSlash(std::string_view location
     return location;
 }
 
-/// Whether a table without `metadata_location` is still the table the commit was built on. `getTableMetadata` resolves
-/// the base of such a table from the latest metadata file under its location, so it must be an Iceberg table at the same location.
-bool isSamePointerlessTable(const Aws::Glue::Model::Table & table, const String & base_catalog_metadata_location)
+/// Whether a table without `metadata_location` is still the pointerless table the commit of `new_metadata_path` was built on.
+/// `getTableMetadata` resolves the base of such a table from the latest metadata file under its location, so it must be an Iceberg
+/// table at the same location.
+bool isSamePointerlessTable(const Aws::Glue::Model::Table & table, const String & new_metadata_path)
 {
     return isReadableGlueTable(table)
         && locationWithoutSchemeAndTrailingSlash(table.GetStorageDescriptor().GetLocation())
-            == locationWithoutSchemeAndTrailingSlash(tableLocationFromMetadataPath(base_catalog_metadata_location));
+            == locationWithoutSchemeAndTrailingSlash(tableLocationFromMetadataPath(new_metadata_path));
 }
 
 }
@@ -816,7 +867,13 @@ void GlueCatalog::createTable(const String & namespace_name, const String & tabl
     Aws::Glue::Model::StorageDescriptor sd;
     sd.SetLocation(tableLocationFromMetadataPath(new_metadata_path));
     /// Athena cannot read a Glue table without columns in its storage descriptor.
-    sd.SetColumns(glueColumnsFromIcebergSchema(getCurrentSchema(metadata_content)));
+    auto columns = glueColumnsFromIcebergSchema(getCurrentSchema(metadata_content));
+    /// But Glue refuses some Iceberg field names, and ClickHouse reads the schema from the metadata file anyway.
+    if (canRegisterGlueColumns(columns))
+        sd.SetColumns(std::move(columns));
+    else
+        LOG_INFO(log, "Glue table {}.{} is created without columns, because Glue refuses a column name or type of its schema",
+            namespace_name, table_name);
 
     table_input.SetStorageDescriptor(sd);
     table_input.SetTableType("ICEBERG");
@@ -864,7 +921,9 @@ Aws::Glue::Model::TableInput GlueCatalog::buildUpdatedTableInput(
     auto schema = new_schema ? new_schema : getCurrentSchema(new_metadata);
     if (!schema || !schema->has(DB::Iceberg::f_fields))
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No current Iceberg schema in {}", new_metadata_path);
-    sd.SetColumns(glueColumnsFromIcebergSchema(schema));
+    /// If Glue refuses a column name or type, the existing columns are kept, otherwise every commit would fail.
+    if (auto columns = glueColumnsFromIcebergSchema(schema); canRegisterGlueColumns(columns))
+        sd.SetColumns(std::move(columns));
     table_input.SetStorageDescriptor(sd);
 
     parameters["metadata_location"] = new_metadata_path;
@@ -882,7 +941,14 @@ bool GlueCatalog::commitTableUpdate(
     const Poco::JSON::Object::Ptr & new_schema,
     const Poco::JSON::Object::Ptr & new_metadata) const
 {
+    /// Once an `UpdateTable` was sent whose attempt may have been applied (or may still be applied), a failure is reported as
+    /// `UNKNOWN_STATUS_OF_TRANSACTION`, so the caller keeps the files the commit references instead of cleaning them up.
     bool update_may_have_landed = false;
+    const auto error_code = [&]
+    {
+        return update_may_have_landed ? DB::ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION : DB::ErrorCodes::DATALAKE_DATABASE_ERROR;
+    };
+
     for (size_t attempt = 0; attempt < MAX_UPDATE_TABLE_ATTEMPTS; ++attempt)
     {
         Aws::Glue::Model::GetTableRequest get_request;
@@ -891,9 +957,9 @@ bool GlueCatalog::commitTableUpdate(
         auto get_outcome = glue_client->GetTable(get_request);
         if (!get_outcome.IsSuccess())
             throw DB::Exception(
-                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-                "Exception calling GetTable for table {}.{}: {}",
-                namespace_name, table_name, get_outcome.GetError().GetMessage());
+                error_code(),
+                "Exception calling GetTable for table {}.{} during the commit of {}: {}",
+                namespace_name, table_name, new_metadata_path, get_outcome.GetError().GetMessage());
 
         const auto & existing = get_outcome.GetResult().GetTable();
         const auto & parameters = existing.GetParameters();
@@ -907,9 +973,10 @@ bool GlueCatalog::commitTableUpdate(
         /// `new_metadata_path` is already published, so the pointer must still be at the base it was built on.
         /// Another pointer means a different commit has won or the table was recreated, even if its file has the
         /// same version. Then nothing references our file and `false` lets the caller rebuild on top of the winner.
-        /// A missing pointer is a conflict too, unless the base was resolved from the location of the same pointerless table.
+        /// A missing pointer is a conflict too, unless the base was also resolved from the location of the same pointerless table:
+        /// if another writer removed the pointer, the latest metadata file under the location may be a commit our base lacks.
         const bool same_base = current_metadata_path.empty()
-            ? isSamePointerlessTable(existing, base_catalog_metadata_location)
+            ? base_catalog_metadata_location.empty() && isSamePointerlessTable(existing, new_metadata_path)
             : current_metadata_path == base_catalog_metadata_location;
         if (!same_base)
         {
@@ -926,7 +993,7 @@ bool GlueCatalog::commitTableUpdate(
                 return true;
 
             throw DB::Exception(
-                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                DB::ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
                 "Unknown outcome of commit of {} to Glue table {}.{}: it now points to {}",
                 new_metadata_path, namespace_name, table_name, current_metadata_path);
         }
@@ -946,19 +1013,31 @@ bool GlueCatalog::commitTableUpdate(
         if (response.IsSuccess())
             return true;
 
-        if (response.GetError().GetErrorType() != Aws::Glue::GlueErrors::CONCURRENT_MODIFICATION)
-            throw DB::Exception(
-                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-                "Can not update metadata of table {}.{} in Glue catalog: {}",
-                namespace_name, table_name, response.GetError().GetMessage());
+        const auto & error = response.GetError();
+        if (error.GetErrorType() == Aws::Glue::GlueErrors::CONCURRENT_MODIFICATION)
+        {
+            /// A rejected single attempt did not land; after an SDK retry the rejection may come from our own landed attempt.
+            update_may_have_landed = update_may_have_landed || request_retried;
+            LOG_DEBUG(log, "Glue table {}.{} was modified concurrently, retrying commit of {}", namespace_name, table_name, new_metadata_path);
+            continue;
+        }
 
-        /// A rejected single attempt did not land; after an SDK retry the rejection may come from our own landed attempt.
-        update_may_have_landed = update_may_have_landed || request_retried;
-        LOG_DEBUG(log, "Glue table {}.{} was modified concurrently, retrying commit of {}", namespace_name, table_name, new_metadata_path);
+        if (!request_retried && isDefiniteRejection(error))
+            throw DB::Exception(
+                error_code(),
+                "Can not update metadata of table {}.{} in Glue catalog: {}",
+                namespace_name, table_name, error.GetMessage());
+
+        /// A server error, a timeout, or a failed SDK retry: an attempt may have been applied with its response lost, or may still
+        /// be applied. The next iteration reads the table back. If it still points to the base, the update is sent again with
+        /// the current `VersionId`: whichever attempt is applied first changes it, so the others are refused.
+        update_may_have_landed = true;
+        LOG_INFO(log, "Outcome of the commit of {} to Glue table {}.{} is unknown, reading the table back: {}",
+            new_metadata_path, namespace_name, table_name, error.GetMessage());
     }
 
     throw DB::Exception(
-        DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+        error_code(),
         "Can not update metadata of table {}.{} in Glue catalog: it was modified concurrently {} times",
         namespace_name, table_name, MAX_UPDATE_TABLE_ATTEMPTS);
 }

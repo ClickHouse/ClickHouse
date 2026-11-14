@@ -1370,7 +1370,7 @@ IcebergStorageSink::~IcebergStorageSink()
 {
     cancelBuffers();
     /// Covers every way an insert can stop without committing, including cancellation, which skips `onException`.
-    if (!committed)
+    if (!committed && !commit_outcome_unknown)
         removeDataFilesAndManifests();
 }
 
@@ -1850,10 +1850,14 @@ bool IcebergStorageSink::initializeMetadata()
                 auto catalog_filename = resolver.resolveForCatalog(metadata_info.path);
 
                 const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_snapshot, metadata))
+                const auto commit = [&]
                 {
-                    if (!catalog_writes_metadata_file)
-                        removeRejectedMetadataFile(persistent_table_components.path_resolver, metadata_info, object_storage);
+                    return catalog->updateMetadata(
+                        namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_snapshot, metadata);
+                };
+                if (!commitMetadataFileToCatalog(
+                        commit, !catalog_writes_metadata_file, persistent_table_components.path_resolver, metadata_info, object_storage))
+                {
                     cleanup(true);
                     return false;
                 }
@@ -1865,8 +1869,11 @@ bool IcebergStorageSink::initializeMetadata()
     }
     catch (...)
     {
-        /// TODO: keep the files when the catalog reports an unknown commit outcome (`CommitStateUnknownException` or a 5xx), because the snapshot may already reference them.
-        cleanup(false);
+        /// The catalog may already reference the files of a commit with an unknown outcome.
+        if (isCatalogCommitOutcomeUnknown())
+            commit_outcome_unknown = true;
+        else
+            cleanup(false);
         throw;
     }
     return true;
