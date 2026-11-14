@@ -1,4 +1,6 @@
 #include <Planner/PlannerJoinsLogical.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
 #include <Planner/PlannerJoins.h>
 
@@ -192,7 +194,7 @@ struct JoinCondition
     }
 };
 
-static std::unordered_map<String, const ActionsDAG::Node *>
+static UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *>
 buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext & builder_context)
 {
     JoinActionRef::AddFunction operator_function(JoinConditionOperator::Equals);
@@ -204,7 +206,7 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
 
     auto & join_operator = builder_context.join_operator;
 
-    std::unordered_map<String, const ActionsDAG::Node *> changed_types;
+    UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *> changed_types;
 
     /** When a disabled `semi_join_include_columns_from_both_sides` / `anti_join_include_columns_from_both_sides` hides one side of the JOIN, only the
       * preserved side is part of the result, so its key column must keep its own type there instead of
@@ -227,7 +229,7 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
         auto & using_column_node = using_nodes[i]->as<ColumnNode &>();
         auto & inner_columns_list = using_column_node.getExpressionOrThrow()->as<ListNode &>();
 
-        std::vector<JoinActionRef> args;
+        VectorWithMemoryTracking<JoinActionRef> args;
         const auto & inner_columns = inner_columns_list.getNodes();
         if (inner_columns.size() < 2)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -597,7 +599,7 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
     const auto & query_settings = build_context.planner_context->getQueryContext()->getSettingsRef();
     const auto & join_algorithms = query_settings[Setting::join_algorithm];
 
-    std::unordered_map<String, const ActionsDAG::Node *> changed_types;
+    UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *> changed_types;
     /// CROSS/PASTE JOIN: doesn't have expression
     if (join_expression_node == nullptr)
     {
@@ -682,7 +684,10 @@ PreparedJoinStorage tryGetStorageInTableJoin(const QueryTreeNodePtr & table_expr
 
     PreparedJoinStorage result;
     const auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
-    result.column_mapping = table_expression_data.getColumnIdentifierToColumnName();
+    /// `TableExpressionData` owns this mapping as a plain `std::unordered_map`, so copy the entries
+    /// across allocators. The assignment copied them anyway.
+    const auto & column_identifier_to_column_name = table_expression_data.getColumnIdentifierToColumnName();
+    result.column_mapping.insert(column_identifier_to_column_name.begin(), column_identifier_to_column_name.end());
 
     result.storage_join = castStorage<StorageJoin>(storage, DeferredTable::Load);
     if (result.storage_join)

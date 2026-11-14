@@ -519,9 +519,14 @@ public:
         std::shared_ptr<JoinTwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>>   two_level_key_packed_string;
         std::shared_ptr<JoinHashMap<UInt128, Mapped, UInt128HashCRC32>>           key_packed_string;
 
-        void create(Type which)
+        void create(Type which, bool robin_hood_allowed)
         {
-            visit(which, []<typename Table>(std::shared_ptr<Table> & map) { map = std::make_shared<Table>(); });
+            visit(which, [robin_hood_allowed]<typename Table>(std::shared_ptr<Table> & map)
+            {
+                map = std::make_shared<Table>();
+                if constexpr (requires { map->setRobinHoodAllowed(robin_hood_allowed); })
+                    map->setRobinHoodAllowed(robin_hood_allowed);
+            });
         }
 
         /// Calls `f` with the map of type `which`, a `std::shared_ptr` that is null until `create`.

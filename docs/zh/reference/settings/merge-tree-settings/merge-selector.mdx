@@ -73,6 +73,57 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 如果某个范围内所有 part 的存在时间均不少于该秒数，则对该范围禁用上述启发式规则。设置为 `0` 时禁用此检查。
 适用于 Simple 和 StochasticSimple 合并选择器。
 
+## merge_selector_small_parts_max_age {#merge_selector_small_parts_max_age}
+
+<SettingsInfoBlock type="UInt64" default_value="600" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "600"},{"label": "小 parts 合并限制的时长上限"}]}]} />
+
+小 parts 限制的时长上限 (单位为秒) ：一旦某个范围内有任意 part 的存在时间超过该值，
+`merge_selector_small_parts_min_count` 施加的限制即会解除，
+因此即使范围长度小于 `merge_selector_small_parts_min_count`，积压的过时小 parts 仍然可以合并。
+该设置适用于 Simple 和 StochasticSimple 合并选择器，
+且仅对后台合并选择生效：激进选择 (不带 `FINAL` 的 `OPTIMIZE`)
+会忽略 `small_parts_*` 设置。
+
+## merge_selector_small_parts_min_count {#merge_selector_small_parts_min_count}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "允许合并小型新 parts 所需的最小数据分片数量（0 = 已禁用）"}]}]} />
+
+当某个合并范围内的所有 parts 都较小 (低于 `merge_selector_small_parts_threshold`)
+且较新 (低于 `merge_selector_small_parts_max_age`) 时，parts 数量至少达到此值
+才允许合并。在频繁插入小型 parts 的场景下，可借此减少合并操作的次数。
+0 表示禁用。适用于 Simple 和 StochasticSimple 合并选择器。
+
+该启用条件仅作用于后台合并选择。激进选择 (即不带 `FINAL` 的 `OPTIMIZE`)
+属于用户的显式请求，不考虑 parts 的新旧，因此会忽略此
+设置，无论小型新 parts 有多少都会将其合并。
+
+选择器从不考虑宽度超过 `max_parts_to_merge_at_once` 的合并候选结果，也不考虑
+回溯超过 `merge_selector_window_size` 个 parts 的候选结果，因此若将
+其中任一项设为低于此最小值，配置就会自相矛盾：此时小型新 parts
+只有在达到 `merge_selector_small_parts_max_age` 后才会合并 (或者在
+`min_age_to_force_merge_seconds` 或 `min_partition_age_to_force_merge_seconds` 触发强制合并时提前合并) 。请确保这两项均不低于
+此最小值。
+(如果内置的填充度启发式策略临时将有效上限降到此最小值以下，
+选择器仍会考虑第一个宽度等于该值、且全部由小型新 parts 组成的候选结果。而过时或
+较大的候选结果，以及已满足 `min_age_to_force_merge_seconds` 或 `min_partition_age_to_force_merge_seconds`
+强制合并条件的候选结果，仍沿用降低后的上限。)
+
+## merge_selector_small_parts_threshold {#merge_selector_small_parts_threshold}
+
+<SettingsInfoBlock type="UInt64" default_value="10485760" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "10485760"},{"label": "合并选择器中小 parts 批处理启发式策略的大小阈值"}]}]} />
+
+大小阈值 (单位：字节) ：当某个合并范围内的每个 part
+都小于该值时，该合并范围即被视为“全部由小 parts 组成”。需与 `merge_selector_small_parts_min_count` 配合使用。
+适用于 Simple 和 StochasticSimple 合并选择器，且仅作用于后台合并
+选择：激进选择 (不带 `FINAL` 的 `OPTIMIZE`) 会忽略 `small_parts_*`
+相关设置。
+
 ## merge_selector_window_size {#merge_selector_window_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />

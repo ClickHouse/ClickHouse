@@ -14,6 +14,8 @@
 
 #include <span>
 #include <unordered_set>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -177,9 +179,9 @@ ActionsDAG::NodeRawConstPtrs ExpressionStep::UnneededColumnsPlan::neededDAGOutpu
     return needed;
 }
 
-std::vector<size_t> ExpressionStep::UnneededColumnsPlan::unneededInputPositions() const
+VectorWithMemoryTracking<size_t> ExpressionStep::UnneededColumnsPlan::unneededInputPositions() const
 {
-    std::vector<size_t> positions;
+    VectorWithMemoryTracking<size_t> positions;
     for (size_t position = 0; position < input_columns.size(); ++position)
     {
         const auto column = input_columns[position];
@@ -191,7 +193,7 @@ std::vector<size_t> ExpressionStep::UnneededColumnsPlan::unneededInputPositions(
 }
 
 ExpressionStep::UnneededColumnsPlan
-ExpressionStep::analyzeUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
+ExpressionStep::analyzeUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const
 {
     if (output_header == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in ExpressionStep");
@@ -243,8 +245,8 @@ ExpressionStep::analyzeUnneededColumns(const std::vector<size_t> & unneeded_outp
 
     /// A dropped column the child keeps is consumed by a new input, and inputs are paired with header columns by name,
     /// in order. So a pass-through column after a needed one of the same name cannot be consumed, and is kept.
-    std::unordered_set<std::string_view> needed_passthrough_names;
-    std::vector<size_t> kept_unneeded_positions;
+    UnorderedSetWithMemoryTracking<std::string_view> needed_passthrough_names;
+    VectorWithMemoryTracking<size_t> kept_unneeded_positions;
 
     for (size_t position = 0; position < header_columns.size(); ++position)
     {
@@ -288,13 +290,13 @@ ExpressionStep::analyzeUnneededColumns(const std::vector<size_t> & unneeded_outp
     return plan;
 }
 
-ExpressionStep::UnneededInputPositions ExpressionStep::getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
+ExpressionStep::UnneededInputPositions ExpressionStep::getUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const
 {
     return {analyzeUnneededColumns(unneeded_output_positions).unneededInputPositions()};
 }
 
 ExpressionStep::RemoveUnusedColumnsResult
-ExpressionStep::removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs)
+ExpressionStep::removeUnusedColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions, const VectorWithMemoryTracking<PrunedInput> & inputs)
 {
     const auto plan = analyzeUnneededColumns(unneeded_output_positions);
     const auto & pruned = inputs.at(0);
