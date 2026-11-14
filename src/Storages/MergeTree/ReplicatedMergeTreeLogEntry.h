@@ -161,6 +161,14 @@ struct ReplicatedMergeTreeLogEntryData
         return type == MUTATE_PART && alter_version != -1;
     }
 
+    /// The number of times this entry was deferred to wait for a part in this region (see `geo_replication_control_leader_wait`),
+    /// or -1 if the wait timed out and the part can be fetched from any region. Modified only under the queue `state_mutex`.
+    int wait_for_fetching_from_same_region = 0;
+    /// When this replica first deferred this entry to wait for a part in this region. The wait timeout
+    /// (`geo_replication_control_leader_wait_timeout`) is measured from it rather than derived from the number of
+    /// defers, so it stays effective when the retry interval is zero. Modified only under the queue `state_mutex`.
+    time_t same_region_wait_start_time = 0;
+
     void updateLastExeption(std::exception_ptr _exception)
     {
         last_exception_time_ms = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds()) / 1000ull;
