@@ -226,7 +226,15 @@ void StorageSnapshot::check(const Names & column_names) const
 
     for (const auto & name : column_names)
     {
-        bool has_column = columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name) || metadata->virtuals.has(name);
+        /// A name of an `EPHEMERAL` column means that column, not a subcolumn of the same name, and it is not stored.
+        const auto * column = columns.tryGet(name);
+        bool is_ephemeral = column && column->default_desc.kind == ColumnDefaultKind::Ephemeral;
+        bool has_column = (!is_ephemeral && columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name)) || metadata->virtuals.has(name);
+
+        if (!has_column && is_ephemeral)
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                "Column {} of table {} is EPHEMERAL, it is not stored and cannot be read",
+                backQuote(name), storage.getStorageID().getNameForLogs());
 
         if (!has_column)
         {
