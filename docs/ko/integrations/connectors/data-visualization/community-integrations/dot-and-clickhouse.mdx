@@ -10,8 +10,6 @@ integration:
    - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -30,7 +28,15 @@ ClickHouse에 직접 연결되므로 자연어로 데이터 관련 질문을 하
   ## Dot을 ClickHouse에 연결하기
 </div>
 
-<Image size="md" img="/images/integrations/data-visualization/dot_01.webp" alt="Dot에서 ClickHouse 연결 구성(라이트 모드)" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Dot에서 ClickHouse 연결 구성(라이트 모드)](/images/integrations/data-visualization/dot_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -43,7 +49,15 @@ ClickHouse에 직접 연결되므로 자연어로 데이터 관련 질문을 하
    * **Database**: 필요에 따라 기본 스키마를 설정할 수 있습니다
 4. **Connect**를 클릭합니다.
 
-<Image img="/images/integrations/data-visualization/dot_02.webp" alt="ClickHouse 연결" size="sm" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![ClickHouse 연결](/images/integrations/data-visualization/dot_02.webp)
+
+</Frame>
+
+</div>
 
 Dot은 **query-pushdown**을 사용합니다. 대규모 연산은 ClickHouse가 처리하고, Dot은 정확하고 신뢰할 수 있는 답변을 제공합니다.
 
