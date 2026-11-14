@@ -348,7 +348,7 @@ void TableFunctionURL::setPartitionBy(const ASTPtr & partition_by_)
 
 StoragePtr TableFunctionURL::getStorage(
     const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr context,
-    const std::string & table_name, const String & compression_method_, bool is_insert_query) const
+    const std::string & table_name, const String & compression_method_, bool is_insert_query, bool is_table_definition) const
 {
     const auto & settings = context->getSettingsRef();
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
@@ -425,7 +425,17 @@ StoragePtr TableFunctionURL::getStorage(
         configuration.headers,
         configuration.http_method,
         nullptr,
-        /*distributed_processing=*/false);
+        /*distributed_processing=*/ false,
+        /*is_replayed_definition=*/ false,
+        /*check_redirect_access=*/ !is_table_definition);
+}
+
+void TableFunctionURL::checkAccessToCreateTable(ContextPtr context) const
+{
+    /// The table is read under the grants on the table, so its creator needs what `ENGINE = URL` needs: `TABLE ENGINE`,
+    /// which no URL filter bounds, and `READ` on the URL itself even when a column list skips the schema inference.
+    checkEngineAccess(context);
+    checkSourceAccess(context, /*is_insert_query=*/ false);
 }
 
 ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context, bool is_insert_query) const
@@ -467,7 +477,8 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
                 std::nullopt,
-                context).first;
+                context,
+                /*check_redirect_access=*/ true).first;
         }
         else
         {
@@ -476,7 +487,8 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
                 std::nullopt,
-                context);
+                context,
+                /*check_redirect_access=*/ true);
         }
 
         HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(

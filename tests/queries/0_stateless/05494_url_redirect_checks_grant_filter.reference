@@ -1,0 +1,24 @@
+--- the redirect target outside of the grant
+1
+1
+1
+--- the grant without a filter
+Pepyaka
+--- a URL table reads with the grant on the table
+Pepyaka
+--- a table created AS url reads with the grant on the table only
+Pepyaka
+Pepyaka
+Pepyaka
+--- a URL table infers its structure with the grant on the engine
+Pepyaka
+--- a table created AS url needs the grants of a URL table
+grant TABLE ENGINE ON URL
+grant TABLE ENGINE ON URL
+grant TABLE ENGINE ON URL
+grant TABLE ENGINE ON URL
+grant TABLE ENGINE ON URL
+grant TABLE ENGINE ON URL
+grant TABLE ENGINE ON URL
+grant READ ON URL
+Pepyaka

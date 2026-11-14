@@ -67,14 +67,16 @@ public:
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
         const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        bool check_redirect_access = false);
 
     static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromData(
         const String & uri,
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
         const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        bool check_redirect_access = false);
 
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
@@ -83,7 +85,8 @@ public:
         const String & url,
         const HTTPHeaderEntries & headers,
         const Poco::Net::HTTPBasicCredentials & credentials,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        bool check_redirect_access);
 
 protected:
     friend class ReadFromURL;
@@ -101,7 +104,8 @@ protected:
         const HTTPHeaderEntries & headers_ = {},
         const String & method_ = "",
         ASTPtr partition_by = nullptr,
-        bool distributed_processing_ = false);
+        bool distributed_processing_ = false,
+        bool check_redirect_access_ = false);
 
     String uri;
     CompressionMethod compression_method;
@@ -115,6 +119,8 @@ protected:
     String http_method; /// For insert can choose Put instead of default Post.
     ASTPtr partition_by;
     bool distributed_processing;
+    /// The `url` table function checks `READ ON URL` for the requested URL only, so its reads check every redirect target too.
+    bool check_redirect_access = false;
     bool supports_prewhere = false;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     NamesAndTypesList file_columns;
@@ -158,7 +164,8 @@ private:
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
         const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        bool check_redirect_access = false);
 
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
 };
@@ -241,7 +248,8 @@ public:
         const URIParams & params = {},
         bool glob_url = false,
         bool need_only_count_ = false,
-        StorageID storage_id_ = StorageID::createEmpty());
+        StorageID storage_id_ = StorageID::createEmpty(),
+        ReadWriteBufferFromHTTP::RedirectCallback redirect_callback_ = nullptr);
 
     ~StorageURLSource() override;
 
@@ -269,6 +277,7 @@ public:
         const HTTPHeaderEntries & headers,
         bool glob_url,
         bool delay_initialization,
+        ReadWriteBufferFromHTTP::RedirectCallback redirect_callback,
         ReadWriteBufferFromHTTP::CancellationPtr cancellation = nullptr);
 
 private:
@@ -392,7 +401,8 @@ public:
         const String & method_ = "",
         ASTPtr partition_by_ = nullptr,
         bool distributed_processing_ = false,
-        bool is_replayed_definition_ = false);
+        bool is_replayed_definition_ = false,
+        bool check_redirect_access_ = false);
 
     String getName() const override
     {

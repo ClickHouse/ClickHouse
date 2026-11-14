@@ -34,6 +34,7 @@ namespace DB
             StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
             const char * getStorageEngineName() const override { return "Loop"; }
             ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+            void checkAccessToCreateTable(ContextPtr context) const override;
             void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
             // save the inner table function AST
@@ -106,6 +107,11 @@ namespace DB
         {
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function 'loop' must have 1 or 2 arguments.");
         }
+    }
+
+    void TableFunctionLoop::checkAccessToCreateTable(ContextPtr context) const
+    {
+        checkAccessToCreateTableTarget(inner_table_function_ast, context);
     }
 
     ColumnsDescription TableFunctionLoop::getActualTableStructure(ContextPtr context, bool is_insert_query) const

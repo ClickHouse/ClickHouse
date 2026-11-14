@@ -36,7 +36,7 @@ protected:
 private:
     StoragePtr getStorage(
         const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
-        const std::string & table_name, const std::string & compression_method_, bool) const override;
+        const std::string & table_name, const std::string & compression_method_, bool is_insert_query, bool is_table_definition) const override;
     const char * getStorageEngineName() const override { return "File"; }
 };
 

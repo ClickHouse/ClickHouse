@@ -106,6 +106,14 @@ public:
 
     virtual bool canBeUsedToCreateTable() const { return true; }
 
+    /// The grants to persist a definition `CREATE TABLE ... AS f(...)`, on top of the ones `execute` checks for a
+    /// call in a query. Not called when a stored definition is replayed, see `isReplayedTableDefinition`.
+    virtual void checkAccessToCreateTable(ContextPtr /*context*/) const {}
+
+    /// Runs `checkAccessToCreateTable` of the table function in `table_function_ast`, which a carrier (`remote`,
+    /// `loop`, the `Remote` engine) persists as its target. Does nothing for a null AST.
+    static void checkAccessToCreateTableTarget(const ASTPtr & table_function_ast, ContextPtr context);
+
     /// Whether the storage this table function returns is chosen by the current user's grants
     /// (e.g. `viewIfPermitted`). Such a function cannot appear anywhere in a persisted table
     /// definition, not even nested in an argument of another table function such as `remote`:
@@ -170,7 +178,7 @@ public:
     }
 
     /// Check the `TABLE ENGINE` grant, for engines that opt in via `requiresTableEngineGrant`.
-    void checkEngineAccess(ContextPtr context) const;
+    void checkEngineAccessIfRequired(ContextPtr context) const;
 
     /// `uri` normalized by Poco; an unparsable URI becomes empty.
     static String normalizeURIForAccessCheck(const String & uri);
@@ -183,6 +191,13 @@ public:
 
 protected:
     virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
+
+    /// `cached_columns` come from the metadata of a table created `AS` this function, so `executeImpl` receives
+    /// them only for such a table definition, including its replay, and never for a call in a query.
+    static bool isTableDefinition(const ColumnsDescription & cached_columns) { return !cached_columns.empty(); }
+
+    /// Check `TABLE ENGINE` for the engine the function stands for.
+    void checkEngineAccess(ContextPtr context) const;
 
     /// Check `access_type` on the name the function was given, before that name is resolved.
     void checkSourceTableAccess(const ContextPtr & context, const StorageID & table_id, AccessType access_type) const;

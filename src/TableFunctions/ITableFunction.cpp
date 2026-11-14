@@ -51,6 +51,12 @@ void ITableFunction::checkSourceAccess(ContextPtr context, bool is_insert_query)
     }
 }
 
+void ITableFunction::checkEngineAccessIfRequired(ContextPtr context) const
+{
+    if (requiresTableEngineGrant())
+        checkEngineAccess(context);
+}
+
 void ITableFunction::checkSourceTableAccess(const ContextPtr & context, const StorageID & table_id, AccessType access_type) const
 {
     context->checkAccess(access_type, table_id);
@@ -74,19 +80,22 @@ void ITableFunction::checkSourceStorageAccess(
 
 void ITableFunction::checkEngineAccess(ContextPtr context) const
 {
-    if (!requiresTableEngineGrant())
-        return;
-
     const char * engine = isClusterFunction() ? getNonClusteredStorageEngineName() : getStorageEngineName();
     if (engine && *engine)
         context->checkAccess(AccessType::TABLE_ENGINE, engine);
+}
+
+void ITableFunction::checkAccessToCreateTableTarget(const ASTPtr & table_function_ast, ContextPtr context)
+{
+    if (table_function_ast)
+        TableFunctionFactory::instance().get(table_function_ast, context)->checkAccessToCreateTable(context);
 }
 
 ColumnsDescription ITableFunction::getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const
 {
     /// Resolving table structure is always a read operation.
     checkSourceAccess(context, /*is_insert_query*/ false);
-    checkEngineAccess(context);
+    checkEngineAccessIfRequired(context);
     checkSourceObjectAccess(context, /*for_structure=*/ true);
     /// Resolving the structure may access the source (e.g. schema inference fetches a URL), so it must be
     /// gated in the same way as `execute`: otherwise `DESCRIBE TABLE url(...)` would let a user who cannot
@@ -104,7 +113,7 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
         checkSourceAccess(context, is_insert_query);
 
     /// Deliberately not under `check_source_access`: no caller takes over these checks.
-    checkEngineAccess(context);
+    checkEngineAccessIfRequired(context);
     checkSourceObjectAccess(context, /*for_structure=*/ false);
 
     if (check_create_temporary_table)
@@ -112,7 +121,7 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
 
     auto context_to_use = use_global_context ? context->getGlobalContext() : context;
 
-    if (cached_columns.empty())
+    if (!isTableDefinition(cached_columns))
         return executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
 
     if (hasStaticStructure() && cached_columns == getActualTableStructure(context, is_insert_query))
