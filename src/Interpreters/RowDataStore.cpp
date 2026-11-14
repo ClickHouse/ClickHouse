@@ -155,6 +155,9 @@ std::shared_ptr<RowDataStore> RowDataStore::create(const RowLayoutPtr & layout, 
         materialized_columns.push_back(col->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality());
 
     auto row_store = std::make_shared<RowDataStore>(layout);
+    row_store->field_byte_sizes.reserve(materialized_columns.size());
+    for (const auto & col : materialized_columns)
+        row_store->field_byte_sizes.push_back(col->byteSize());
     if (!materialized_columns.empty() && !materialized_columns[0]->empty())
         row_store->gatherRows(materialized_columns, 0, materialized_columns[0]->size());
     return row_store;
