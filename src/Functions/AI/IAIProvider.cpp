@@ -76,11 +76,16 @@ AIProviderPtr createAIProvider(
     AIProviderPtr provider;
     if (provider_name == "openai" || provider_name == "huggingface" || provider_name == "tei")
         provider = std::make_unique<OpenAIProvider>(endpoint, api_key);
+    else if (provider_name == "openrouter")
+        /// OpenRouter is OpenAI-compatible; these headers attribute the traffic to ClickHouse.
+        /// See https://openrouter.ai/docs/app-attribution
+        provider = std::make_unique<OpenAIProvider>(
+            endpoint, api_key, HTTPHeaderEntries{{"HTTP-Referer", "https://clickhouse.com/"}, {"X-OpenRouter-Title", "ClickHouse"}});
     else if (provider_name == "anthropic")
         provider = std::make_unique<AnthropicProvider>(endpoint, api_key, api_version);
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Unknown AI provider '{}'. Supported: 'openai', 'anthropic', 'huggingface', 'tei'", provider_name);
+            "Unknown AI provider '{}'. Supported: 'openai', 'anthropic', 'openrouter', 'huggingface', 'tei'", provider_name);
 
     /// Rejects forbidden headers and CR/LF in values (the key comes from a named collection).
     auto headers = provider->getHeaders();

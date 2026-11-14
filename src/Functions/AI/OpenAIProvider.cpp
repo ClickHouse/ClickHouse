@@ -36,18 +36,20 @@ void setCommonHeaders(Poco::Net::HTTPRequest & http_request, const AIRequest & a
 
 }
 
-OpenAIProvider::OpenAIProvider(const String & endpoint_, const String & api_key_)
+OpenAIProvider::OpenAIProvider(const String & endpoint_, const String & api_key_, HTTPHeaderEntries extra_headers_)
     : endpoint(endpoint_)
     , api_key(api_key_)
+    , extra_headers(std::move(extra_headers_))
     , uri(endpoint_)
 {
 }
 
 HTTPHeaderEntries OpenAIProvider::getHeaders() const
 {
-    if (api_key.empty()) /// not all providers need API key
-        return {};
-    return {{"Authorization", "Bearer " + api_key}};
+    HTTPHeaderEntries headers = extra_headers;
+    if (!api_key.empty()) /// not all providers need API key
+        headers.emplace_back("Authorization", "Bearer " + api_key);
+    return headers;
 }
 
 void OpenAIProvider::call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response)

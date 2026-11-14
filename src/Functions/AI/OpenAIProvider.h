@@ -9,7 +9,7 @@ namespace DB
   * https://developers.openai.com/api/reference/resources/chat
   * https://developers.openai.com/api/reference/resources/embeddings
   *
-  * Also used for OpenAI-compatible APIs (vLLM, Ollama, LiteLLM, HuggingFace TEI)
+  * Also used for OpenAI-compatible APIs (vLLM, Ollama, LiteLLM, HuggingFace TEI, OpenRouter)
   * which implement the same request/response format.
   *
   * Chat request:
@@ -31,7 +31,7 @@ namespace DB
 class OpenAIProvider : public IAIProvider
 {
 public:
-    OpenAIProvider(const String & endpoint_, const String & api_key_);
+    OpenAIProvider(const String & endpoint_, const String & api_key_, HTTPHeaderEntries extra_headers_ = {});
 
     void call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response) override;
     HTTPHeaderEntries getHeaders() const override;
@@ -43,6 +43,7 @@ public:
 private:
     const String endpoint;
     const String api_key;
+    const HTTPHeaderEntries extra_headers;
     const Poco::URI uri;
 };
 

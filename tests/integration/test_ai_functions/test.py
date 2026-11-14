@@ -268,6 +268,19 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-model'"
         )
         instance.query(
+            f"CREATE NAMED COLLECTION ai_openrouter AS "
+            f"provider = 'openrouter', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/completions', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_openrouter_embed AS "
+            f"provider = 'openrouter', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
             f"CREATE NAMED COLLECTION ai_embed AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings', "
@@ -2094,6 +2107,27 @@ def test_generate_retry_respects_api_call_quota(started_cluster):
     assert int(events["api_calls"]) == 1
     assert int(events["rows_processed"]) == 0
     assert int(events["rows_skipped"]) == 1
+
+
+def test_openrouter_provider(started_cluster):
+    """`provider = 'openrouter'` uses the OpenAI-compatible request format and adds the OpenRouter
+    app attribution headers to chat and embedding requests."""
+    result = instance.query(
+        "SELECT aiGenerate('via openrouter', map('credentials', 'ai_openrouter'))",
+    )
+    assert result.strip() == "via openrouter"
+    headers = last_request()["headers"]
+    assert headers.get("authorization") == "Bearer test-key"
+    assert headers.get("http-referer") == "https://clickhouse.com/"
+    assert headers.get("x-openrouter-title") == "ClickHouse"
+
+    instance.query(
+        "SELECT aiEmbed('hi', 'test-embed-model', map('credentials', 'ai_openrouter_embed'))",
+    )
+    headers = last_request()["headers"]
+    assert last_request()["path"] == "/v1/embeddings"
+    assert headers.get("http-referer") == "https://clickhouse.com/"
+    assert headers.get("x-openrouter-title") == "ClickHouse"
 
 
 def test_function_name_header(started_cluster):
