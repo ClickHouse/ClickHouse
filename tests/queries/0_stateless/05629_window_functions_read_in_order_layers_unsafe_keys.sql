@@ -82,10 +82,10 @@ FROM (SELECT dt, f, b, row_number() OVER (ORDER BY formatDateTime(dt, '%M'), f, 
 SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1, max_block_size = 1000;
 -- The same windows in a distributed plan, whose fragments are serialized and optimized again.
 SELECT count(), min(w), max(w) FROM (SELECT count() OVER (PARTITION BY formatDateTime(dt, '%M'), f) AS w FROM t_window_function_settings_no_scatter)
-SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0, distributed_plan_fallback_to_local_execution = 0, max_block_size = 1000;
+SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0, distributed_plan_fallback_to_local_execution = 0, max_rows_to_group_by = 0, max_block_size = 1000;
 SELECT count(), (SELECT sum(cityHash64(dt, f, b, w)) FROM (SELECT dt, f, b, row_number() OVER (ORDER BY formatDateTime(dt, '%M'), f, b) AS w FROM t_window_function_settings_no_scatter) SETTINGS optimize_read_in_order = 0) = (SELECT sum(cityHash64(dt, f, b, w)) FROM (SELECT dt, f, b, row_number() OVER (ORDER BY formatDateTime(dt, '%M'), f, b) AS w FROM t_window_function_settings_no_scatter))
 FROM (SELECT dt, f, b, row_number() OVER (ORDER BY formatDateTime(dt, '%M'), f, b) AS w FROM t_window_function_settings_no_scatter)
-SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0, distributed_plan_fallback_to_local_execution = 0, max_block_size = 1000;
+SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0, distributed_plan_fallback_to_local_execution = 0, max_rows_to_group_by = 0, max_block_size = 1000;
 DROP TABLE t_window_function_settings_no_scatter;
 
 -- The sorting key column `payload` is not used by the query and must not be read.
