@@ -96,6 +96,25 @@ DataTypePtr matchColumnNullability(const DataTypePtr & type, const ColumnPtr & c
     return t;
 }
 
+/// Marks as nullable the fields of `copy` (a copy of `original`) whose originals are in `fields`.
+void declareNullable(ArrowField & copy, const ArrowField & original, const UnorderedSetWithMemoryTracking<const ArrowField *> & fields)
+{
+    if (fields.contains(&original))
+        copy.nullable = true;
+    /// Promotion depends on each batch's nulls, and a `Variant` type can't be converted to another one.
+    if (original.type.kind == TypeKind::Union)
+        return;
+    for (size_t i = 0; i < original.type.children.size(); ++i)
+        declareNullable(copy.type.children[i], original.type.children[i], fields);
+    /// The map entries and keys stay non-nullable, as `parseSchema` requires, so their nulls are rejected.
+    if (original.type.kind == TypeKind::Map)
+    {
+        ArrowField & entries = copy.type.children.at(0);
+        entries.nullable = false;
+        entries.type.children.at(0).nullable = false;
+    }
+}
+
 /// Expand an Arrow LSB-first bitmap into one byte per row (0 or 1). With `invert` each output byte is
 /// flipped, turning the validity bitmap (1 = valid) into a ClickHouse null map (1 = null). Unpacks 8 bits
 /// at a time via SWAR (the same trick as the Parquet decoder), scalar for the trailing < 8 bits.
@@ -883,6 +902,10 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(
 {
     const Slice indices_slice = nextBuffer();
     ColumnPtr values = registry.get(field.dictionary->id);
+    /// The values of a field declared non-nullable are decoded non-nullable. When its indices contain nulls,
+    /// `decodeColumns` decodes a nullable copy of the field, so the values need a NULL key as well.
+    if (field.nullable && !values->isNullable() && values->canBeInsideNullable())
+        values = makeNullable(values);
     const size_t dict_size = values->size();
 
     const int bits = field.dictionary->index_bit_width;
@@ -1221,6 +1244,38 @@ ColumnPtr RecordBatchDecoder::decodeField(
     return inner;
 }
 
+bool RecordBatchDecoder::collectUndeclaredNullFields(
+    const ArrowField & field, size_t & node_offset, UnorderedSetWithMemoryTracking<const ArrowField *> & fields) const
+{
+    const auto * nodes = current_batch->nodes();
+    if (!nodes || node_index + node_offset >= nodes->size())
+        return false;
+    const flatbuf::FieldNode & node = *nodes->Get(static_cast<flatbuffers::uoffset_t>(node_index + node_offset));
+    ++node_offset;
+
+    /// Unions, `null`-typed and unsupported fields have no validity bitmap: `decodeField` rejects their nulls.
+    if (!field.nullable && node.null_count() != 0
+        && (field.dictionary
+            || (field.type.kind != TypeKind::Union && field.type.kind != TypeKind::Null && field.type.kind != TypeKind::Unsupported)))
+        fields.insert(&field);
+
+    /// The values of a dictionary-encoded field are in a separate DictionaryBatch.
+    if (field.dictionary)
+        return true;
+
+    /// Mirrors the layouts `skipField` walks. The buffer layout of other unsupported types is unknown.
+    if (field.type.kind == TypeKind::Unsupported && field.type.skip_layout != ArrowType::SkipLayout::RunEndEncoded
+        && field.type.skip_layout != ArrowType::SkipLayout::ListView)
+        return false;
+
+    for (const ArrowField & child : field.type.children)
+    {
+        if (!collectUndeclaredNullFields(child, node_offset, fields))
+            return false;
+    }
+    return true;
+}
+
 void RecordBatchDecoder::skipField(const ArrowField & field)
 {
     /// Consume this field's FieldNode, mirroring decodeField.
@@ -1353,7 +1408,8 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeColumns(
     const flatbuf::RecordBatch & batch, const PODArray<char> & body, const ArrowFields & fields,
     const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields,
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_,
-    const VectorWithMemoryTracking<char> * reachable_buffers)
+    const VectorWithMemoryTracking<char> * reachable_buffers,
+    bool read_undeclared_nulls)
 {
     target_types = target_types_;
     current_batch = &batch;
@@ -1401,15 +1457,33 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeColumns(
             continue;
         }
 
+        /// Nulls in fields declared non-nullable are read as NULL, as the Apache Arrow library did. Decoding a
+        /// nullable copy of the field keeps the types derived from the schema consistent with the decoded columns.
+        /// Values of delta dictionary batches are merged into one column, so their types must not depend on each
+        /// batch's nulls: the dictionary path does not set `read_undeclared_nulls` and keeps rejecting them.
+        std::optional<ArrowField> nullable_copy;
+        if (read_undeclared_nulls)
+        {
+            UnorderedSetWithMemoryTracking<const ArrowField *> undeclared_null_fields;
+            size_t node_offset = 0;
+            collectUndeclaredNullFields(field, node_offset, undeclared_null_fields);
+            if (!undeclared_null_fields.empty())
+            {
+                nullable_copy = field;
+                declareNullable(*nullable_copy, field, undeclared_null_fields);
+            }
+        }
+        const ArrowField & effective_field = nullable_copy ? *nullable_copy : field;
+
         DecodedColumn decoded;
         decoded.name = field.name;
-        decoded.type = fieldToCHType(field, settings, field.nullable, /*allow_null_type=*/true);
+        decoded.type = fieldToCHType(effective_field, settings, effective_field.nullable, /*allow_null_type=*/true);
         /// A top-level dictionary-encoded field decodes into a LowCardinality column of its value type.
-        if (field.dictionary && decoded.type->canBeInsideLowCardinality())
+        if (effective_field.dictionary && decoded.type->canBeInsideLowCardinality())
             decoded.type = std::make_shared<DataTypeLowCardinality>(decoded.type);
         /// `normalized_name` seeds the recursive `date32` numeric type hint (looked up in `target_types`);
         /// nested fields derive their hints from it as the decoder recurses. See decodeField/decodeInner.
-        decoded.column = decodeField(field, /*allow_low_cardinality=*/true, /*target_hint=*/nullptr, normalized_name);
+        decoded.column = decodeField(effective_field, /*allow_low_cardinality=*/true, /*target_hint=*/nullptr, normalized_name);
         /// `decodeField` may wrap a struct in Nullable based on the requested type hint even when
         /// `fieldToCHType` did not (setting off); reconcile the reported type with the decoded column so the
         /// column/type pair stays consistent for the subsequent cast.
@@ -1607,7 +1681,8 @@ RecordBatchDecoder::decodeBatch(
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_,
     const VectorWithMemoryTracking<char> * reachable_buffers)
 {
-    return decodeColumns(batch, body, schema.fields, keep_top_level_fields, target_types_, reachable_buffers);
+    return decodeColumns(
+        batch, body, schema.fields, keep_top_level_fields, target_types_, reachable_buffers, /*read_undeclared_nulls=*/true);
 }
 
 VectorWithMemoryTracking<char> RecordBatchDecoder::reachableTopLevelBuffers(

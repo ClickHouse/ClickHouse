@@ -22,7 +22,7 @@ class AnthropicProvider : public IAIProvider
 public:
     AnthropicProvider(const String & endpoint_, const String & api_key_, const String & api_version_);
 
-    AIResponse call(const AIRequest & request, const ConnectionTimeouts & timeouts) override;
+    AIResponse call(const AIChatRequest & request, const ConnectionTimeouts & timeouts) override;
     HTTPHeaderEntries getHeaders() const override;
 
 private:

@@ -17,7 +17,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_CURSOR_LOOKUP;
+    extern const int BAD_ARGUMENTS;
 }
+
+/// The tree is traversed and destroyed recursively, so its depth must be bounded.
+/// Real cursors are shallow (e.g. `partition_id.block_number`), but the dotted paths may come
+/// from a query (`STREAM CURSOR`) or from external storage (the refresh cursor in data lake metadata).
+static constexpr size_t MAX_CURSOR_TREE_DEPTH = 256;
 
 namespace
 {
@@ -181,6 +187,9 @@ CursorTreeNodePtr buildCursorTree(const Map & collapsed_tree)
 
         VectorWithMemoryTracking<String> path;
         boost::split(path, dotted_path, boost::is_any_of("."));
+
+        if (path.size() > MAX_CURSOR_TREE_DEPTH)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cursor path is too deep: {} components, the maximum is {}", path.size(), MAX_CURSOR_TREE_DEPTH);
 
         CursorTreeNode * node = root.get();
         for (size_t i = 0; i + 1 < path.size(); ++i)

@@ -127,6 +127,9 @@ public:
                 requests_to_fail.push_back(request);
             }
             cancelActivation();
+
+            // Older hierarchy versions can retain this retired queue after its workload is destroyed.
+            workload = nullptr;
         }
         // Now notify all collected requests about the failure without holding the mutex
         auto exception = std::make_exception_ptr(

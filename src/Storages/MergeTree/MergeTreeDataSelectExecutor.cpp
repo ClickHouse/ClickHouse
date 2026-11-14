@@ -691,6 +691,24 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     return result;
 }
 
+RangesInDataParts MergeTreeDataSelectExecutor::filterParts(
+    const RangesInDataParts & parts,
+    const ReadFromMergeTree::Indexes & indexes,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeData & data,
+    const SelectQueryInfo & query_info,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ContextPtr & context,
+    const PartitionIdToMaxBlock * max_block_numbers_to_read,
+    LoggerPtr log,
+    ReadFromMergeTree::IndexStats & index_stats)
+{
+    auto res = filterPartsByPartition(
+        parts, indexes.partition_pruner, indexes.minmax_idx_condition, indexes.part_values,
+        metadata_snapshot, data, context, max_block_numbers_to_read, log, index_stats);
+    return filterPartsByStatistics(res, metadata_snapshot, query_info, mutations_snapshot, context, log, index_stats);
+}
+
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     const RangesInDataParts & parts,
     const std::optional<PartitionPruner> & partition_pruner,

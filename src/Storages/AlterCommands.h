@@ -239,6 +239,9 @@ public:
     /// stay consistent with prepare()/validate() for nested columns (see AlterCommand::apply).
     void apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true) const;
 
+    /// Indices the commands actually add: `ADD INDEX IF NOT EXISTS` of an existing name adds nothing.
+    NameSet getAddedIndexNames(const IndicesDescription & existing) const;
+
     /// At least one command modify settings or comments.
     bool hasNonReplicatedAlterCommand() const;
 

@@ -75,8 +75,7 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
     LoggerPtr log,
-    const IcebergPathFromMetadata & filename,
-    size_t bytes_size)
+    const IcebergPathFromMetadata & filename)
 {
     auto log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
 
@@ -102,7 +101,8 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
         auto manifest_file_deserializer = std::make_unique<Iceberg::AvroForIcebergDeserializer>(
             std::move(buffer), filename, getFormatSettings(local_context));
 
-        return Iceberg::ManifestFileCacheableInfo{std::move(manifest_file_deserializer), bytes_size};
+        const size_t manifest_file_bytes = manifest_file_deserializer->bytesRead();
+        return Iceberg::ManifestFileCacheableInfo{std::move(manifest_file_deserializer), manifest_file_bytes};
     };
 
     if (use_iceberg_metadata_cache && persistent_table_components.table_uuid.has_value())
@@ -127,8 +127,7 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
         persistent_table_components,
         local_context,
         log,
-        cache_key.manifest_file_path,
-        static_cast<size_t>(cache_key.manifest_file_byte_size));
+        cache_key.manifest_file_path);
 
     auto iterator = Iceberg::ManifestFileIterator::create(
         cacheable_info.deserializer,

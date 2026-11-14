@@ -250,7 +250,7 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
         || select->limitLength() || select->limitOffset()
         || select->limitBy() || select->limit_by_all
         || select->limitByLength() || select->limitByOffset()
-        || select->distinct || select->arrayJoinExpressionList().first
+        || select->distinct
         || select->settings())
     {
         return nullptr;
@@ -284,6 +284,7 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
     }
 
     const auto * tables = select->tables().get();
+    /// Every JOIN and ARRAY JOIN clause is a separate element of this list.
     if (!tables || tables->children.size() != 1)
     {
         return nullptr;

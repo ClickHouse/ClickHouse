@@ -296,8 +296,6 @@ static __attribute__((constructor(0))) void init_je_malloc_message()
         std::string_view message_view{str};
         if (message_view == "<jemalloc>: background thread creation failed (11)\n")
             return;
-        if (message_view == "<jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.\n")
-            return;
 
 #    if defined(SYS_write)
         syscall(SYS_write, STDERR_FILENO, message_view.data(), message_view.size());
