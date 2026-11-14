@@ -171,7 +171,7 @@ function _clickhouse_get_options()
         esac
     fi
 
-    "$@" --help "${extra_args[@]}" 2>&1 | LANG=c awk -F '[ ,=<>.]' '{ for (i=1; i <= NF; ++i) { if (substr($i, 1, 1) == "-" && length($i) > 1) print $i; } }' | sort -u
+    "$@" --help "${extra_args[@]}" 2>&1 | LANG=C LC_ALL=C awk -F '[ ,=<>.]' '{ for (i=1; i <= NF; ++i) { if ($i ~ /^--[[:alnum:]][[:alnum:]_-]*$/ || $i ~ /^-[[:alnum:]]$/) print $i; } }' | sort -u
 }
 
 function _complete_for_clickhouse_generic_bin_impl()
