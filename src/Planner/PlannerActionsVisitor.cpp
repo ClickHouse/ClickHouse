@@ -368,7 +368,7 @@ public:
 
                 buffer << ')';
 
-                if (function_node.isWindowFunction())
+                if (function_node.hasWindow())
                 {
                     buffer << " OVER (";
                     buffer << calculateWindowNodeActionName(function_node.getWindowNode());
@@ -1348,7 +1348,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
      * are wrapped into Nullable but keep their names, and a lambda capture built over such a constant
      * fails with a type mismatch.
      */
-    bool is_input_node = function_node.isAggregateFunction() || function_node.isWindowFunction()
+    bool is_input_node = function_node.isAggregateFunction() || function_node.hasWindow()
         || actions_stack.front().containsInputOrConstantNode(function_node_name);
     if (is_input_node)
     {
