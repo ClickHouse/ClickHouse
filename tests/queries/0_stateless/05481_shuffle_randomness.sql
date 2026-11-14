@@ -40,12 +40,12 @@ FROM
 WHERE pos < 1000;
 
 -- A small sample of a large stream: every stream skips most rows (sampling the number of rows to skip).
--- Every value has the same probability to be selected: the expected count in every bucket is 100 (the standard deviation is about 9.5),
--- and the expected average is 5000000 (the standard deviation is about 91000).
-SELECT count() = 10, min(c) > 50, max(c) < 150, abs(sum(s) / 1000 - 5000000) < 500000
+-- Every value has the same probability to be selected: the expected count in every bucket is 1000 (the standard deviation is about 30),
+-- and the expected average is 5000000 (the standard deviation is about 29000).
+SELECT count() = 10, min(c) > 650, max(c) < 1350, abs(sum(s) / 10000 - 5000000) < 300000
 FROM
 (
     SELECT intDiv(number, 1000000) AS bucket, count() AS c, sum(number) AS s
-    FROM (SELECT number FROM numbers_mt(10000000) SHUFFLE LIMIT 1000)
+    FROM (SELECT number FROM numbers_mt(10000000) SHUFFLE LIMIT 10000)
     GROUP BY bucket
 );
