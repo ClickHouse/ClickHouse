@@ -101,9 +101,10 @@ run time_1 "SELECT k FROM t_05340 WHERE _time > toDateTime('2000-01-01 00:00:00'
 run time_2 "SELECT k FROM t_05340 WHERE _time > toDateTime('2000-01-01 00:00:00', 'UTC') ORDER BY k DESC LIMIT 8"
 
 echo "--- a predicate on a column with a read-time default"
-# The objects lack `d`, so its value comes from the default expression, which the hash of the predicate
-# does not cover: the first query lets all rows through, the second one only those with `k < 1000`.
-# So the key is not made: the rerun finds no entries (it only looks up those of the predicate alone).
+# The objects lack `d`, so its value comes from the default expression, which the format does not see:
+# a predicate pushed into the format would prune rows that match once the default is applied. So the
+# predicate is not pushed, and the query neither records nor looks up entries for it, as with the tags
+# and the modification time above.
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05340_default"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05340_default (k Int64, s String, d String DEFAULT queryID()) ENGINE = S3(s3_conn, filename = '${S3_DIR}/*.parquet', format = Parquet)"
 DEFAULT_QUERY="SELECT k FROM t_05340_default WHERE d = '${CLICKHOUSE_TEST_UNIQUE_NAME}_default_1' OR k < 1000 ORDER BY k DESC LIMIT 3"
