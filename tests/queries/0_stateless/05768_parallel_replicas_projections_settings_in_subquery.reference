@@ -5,8 +5,8 @@ projection beside parts without it	0	449850000
 projection beside parts without it	1	449853000
 projection beside parts without it	2	449856000
 normal projection beside parts without it	3000	449871000
-parallel replicas used	05768_agg_proj	1
-parallel replicas used	05768_exact_count	1
-parallel replicas used	05768_minmax	1
-parallel replicas used	05768_normal_proj	1
-parallel replicas used	05768_statistics	1
+served by	05768_agg_proj	1	['t_pr_subquery.agg']
+served by	05768_exact_count	1	['t_pr_subquery._exact_count_projection']
+served by	05768_minmax	1	['t_pr_subquery._minmax_count_projection']
+served by	05768_normal_proj	1	['t_pr_subquery.p']
+served by	05768_statistics	1	['t_pr_subquery._statistics_projection']
