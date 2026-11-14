@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
@@ -36,7 +39,7 @@ class MergeTreeWhereOptimizer : private boost::noncopyable
 {
 public:
     MergeTreeWhereOptimizer(
-        std::unordered_map<std::string, UInt64> column_sizes_,
+        UnorderedMapWithMemoryTracking<std::string, UInt64> column_sizes_,
         const StorageSnapshotPtr & storage_snapshot,
         ConditionSelectivityEstimatorPtr estimator_,
         const Names & queried_columns_,
@@ -46,8 +49,8 @@ public:
 
     struct FilterActionsOptimizeResult
     {
-        std::unordered_set<const ActionsDAG::Node *> prewhere_nodes;
-        std::list<const ActionsDAG::Node *> prewhere_nodes_list; /// Keep insertion order of moved prewhere_nodes
+        UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> prewhere_nodes;
+        ListWithMemoryTracking<const ActionsDAG::Node *> prewhere_nodes_list; /// Keep insertion order of moved prewhere_nodes
         bool fully_moved_to_prewhere = false;
     };
 
@@ -209,10 +212,13 @@ private:
     const NameToIndexMap primary_key_names_positions;
     StorageMetadataPtr storage_metadata;
     LoggerPtr log;
-    std::unordered_map<std::string, UInt64> column_sizes;
+    UnorderedMapWithMemoryTracking<std::string, UInt64> column_sizes;
     UInt64 total_size_of_queried_columns = 0;
     UInt64 total_rows = 0;
 };
+
+/// The sorting key columns a condition may filter by before `FINAL` without changing its result
+NameSet getSortingKeyNamesSafeBeforeFinal(const StorageSnapshotPtr & storage_snapshot);
 
 
 }
