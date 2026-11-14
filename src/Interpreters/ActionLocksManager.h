@@ -32,9 +32,11 @@ public:
     /// Also removes the locks of the same type held on the storage the lock resolved to, when it was taken
     /// through a forwarding storage (`Alias`, a materialized view with an inner table), and the locks taken
     /// through forwarding storages that resolved to the specified table.
-    /// With `resolve_forwarding_target`, a forwarding storage that holds no lock of this type is resolved
+    /// With `resolve_forwarding_target_context`, a forwarding storage that holds no lock of this type is resolved
     /// to its current target, whose locks are removed as well. This reaches the target's database, so it is
-    /// meant for a `SYSTEM START` of one explicitly named table, not for the loop over all tables.
+    /// meant for a `SYSTEM START` of one explicitly named table, not for the loop over all tables. The target
+    /// is looked up with that context (the caller's query context), so the source access checks of the
+    /// target's database apply to the caller, as when the target is named directly.
     /// The locks of a storage other than the specified one are removed only if `may_release_owner` (when set)
     /// allows it for that storage: the caller checks its access there. When a forwarding storage is resolved,
     /// each target it names is checked before it is looked up, and the resolution stops at the first target
@@ -44,7 +46,7 @@ public:
     void remove(
         const StoragePtr & requested_table,
         StorageActionBlockType action_type,
-        bool resolve_forwarding_target = false,
+        const ContextPtr & resolve_forwarding_target_context = nullptr,
         const OwnerReleaseCheck & may_release_owner = {});
 
     /// Checks whether there is a lock for specified table and action_type.

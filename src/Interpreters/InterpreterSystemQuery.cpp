@@ -363,7 +363,7 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
                 /// The table is named explicitly, so a forwarding storage (`Alias`, ...) also releases a lock
                 /// taken directly on its target, if the user may do that on the target as well. The loop over
                 /// all tables below reaches the target by itself.
-                manager->remove(table, action_type, /* resolve_forwarding_target */ true, mayReleaseActionLockOwner(access, required_access_type));
+                manager->remove(table, action_type, /* resolve_forwarding_target_context */ getContext(), mayReleaseActionLockOwner(access, required_access_type));
                 table->onActionLockRemove(action_type);
             }
             else
@@ -401,7 +401,7 @@ void InterpreterSystemQuery::startStopActionInDatabase(StorageActionBlockType ac
 
         if (start)
         {
-            manager->remove(table, action_type, /* resolve_forwarding_target */ false, mayReleaseActionLockOwner(access, required_access_type));
+            manager->remove(table, action_type, /* resolve_forwarding_target_context */ nullptr, mayReleaseActionLockOwner(access, required_access_type));
             table->onActionLockRemove(action_type);
         }
         else

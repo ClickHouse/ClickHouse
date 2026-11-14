@@ -51,9 +51,12 @@ StoragePtr lockKey(const StoragePtr & table)
 /// Forwarding storages return the action locks of the storage they resolve to, so the lock
 /// belongs to that storage rather than to the one it was requested from.
 /// Each target is checked with `may_resolve` (when set) before it is looked up, and the walk stops at the
-/// first one that is not allowed: the lookup runs with the forwarding storage's own context, and may load
-/// the target or reach an external database, which the caller is not allowed to make it do.
-StoragePtr resolveActionLockOwner(StoragePtr table, const ActionLocksManager::OwnerReleaseCheck & may_resolve)
+/// first one that is not allowed: the lookup may load the target or reach an external database, which the
+/// caller is not allowed to make it do. The lookup runs with `lookup_context`, the caller's context, rather
+/// than with the forwarding storage's own global one, so that the source access checks of the target's
+/// database (for example, `READ ON URL` for a `URL` database) apply to the caller.
+StoragePtr resolveActionLockOwner(
+    StoragePtr table, const ActionLocksManager::OwnerReleaseCheck & may_resolve, const ContextPtr & lookup_context)
 {
     /// Bound the walk in case of a cycle of aliases.
     for (size_t depth = 0; depth < 16 && table; ++depth)
@@ -67,7 +70,7 @@ StoragePtr resolveActionLockOwner(StoragePtr table, const ActionLocksManager::Ow
         if (may_resolve && !may_resolve(target_id))
             break;
 
-        StoragePtr next = alias ? alias->tryGetTargetTable() : view->tryGetTargetTable();
+        StoragePtr next = DatabaseCatalog::instance().tryGetTable(target_id, lookup_context);
         if (!next)
             break;
 
@@ -167,7 +170,10 @@ void ActionLocksManager::remove(const StorageID & table_id, StorageActionBlockTy
 }
 
 void ActionLocksManager::remove(
-    const StoragePtr & requested_table, StorageActionBlockType action_type, bool resolve_forwarding_target, const OwnerReleaseCheck & may_release_owner)
+    const StoragePtr & requested_table,
+    StorageActionBlockType action_type,
+    const ContextPtr & resolve_forwarding_target_context,
+    const OwnerReleaseCheck & may_release_owner)
 {
     const auto table = lockKey(requested_table);
 
@@ -179,8 +185,8 @@ void ActionLocksManager::remove(
     StoragePtr owner;
     if (auto recorded_owner = tryGetRecordedOwner(table.get(), action_type))
         owner = std::move(*recorded_owner);
-    else if (resolve_forwarding_target)
-        owner = lockKey(resolveActionLockOwner(table, may_release_owner));
+    else if (resolve_forwarding_target_context)
+        owner = lockKey(resolveActionLockOwner(table, may_release_owner, resolve_forwarding_target_context));
 
     if (owner == table)
         owner.reset();
