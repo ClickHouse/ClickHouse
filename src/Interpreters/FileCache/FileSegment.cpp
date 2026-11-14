@@ -68,8 +68,6 @@ String toString(FileSegmentKind kind)
     return String(magic_enum::enum_name(kind));
 }
 
-String toString(FileSegmentState state) { return String(magic_enum::enum_name(state)); }
-
 namespace
 {
 
@@ -1568,7 +1566,7 @@ FileSegmentSummaryInfo FileSegment::getSummaryInfo(const FileSegmentPtr & file_s
         .key = file_segment->key().toString(),
         .offset = file_segment->offset(),
         .size = file_segment->getDiskAccountedSize(),
-        .state = toString(file_segment->download_state.load()),
+        .state = stateToString(file_segment->download_state.load()),
         .queue_entry_type = toString(queue_entry_type),
         .user_id = file_segment->getKeyMetadata()->origin->user_id,
     };

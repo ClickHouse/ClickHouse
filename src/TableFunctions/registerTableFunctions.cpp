@@ -25,6 +25,7 @@ void registerTableFunctions()
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
     registerTableFunctionFilesystem(factory);
+    registerTableFunctionFilesystemCache(factory);
 #if USE_MONGODB
     registerTableFunctionMongoDB(factory);
 #endif

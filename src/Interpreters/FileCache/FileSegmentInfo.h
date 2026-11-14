@@ -62,8 +62,6 @@ namespace DB
 
     std::string toString(FileSegmentKind kind);
 
-    std::string toString(FileSegmentState state);
-
     struct FileSegmentInfo
     {
         FileCacheKey key;

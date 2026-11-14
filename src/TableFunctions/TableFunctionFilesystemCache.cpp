@@ -1,0 +1,144 @@
+#include <Interpreters/Context.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Storages/StorageFilesystemCache.h>
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <TableFunctions/ITableFunction.h>
+#include <TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/registerTableFunctions.h>
+
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNEXPECTED_AST_STRUCTURE;
+}
+
+namespace
+{
+
+/** filesystemCache(cache_name, max_elements, max_total_size[, order]) - the file segments of a filesystem cache,
+  * selected by their priority. See `IFileCachePriority::observeFilesystemCache`.
+  * order is optional
+  */
+class TableFunctionFilesystemCache : public ITableFunction
+{
+public:
+    static constexpr auto name = "filesystemCache";
+    std::string getName() const override { return name; }
+
+    bool hasStaticStructure() const override { return true; }
+
+private:
+    /// No underlying storage engine
+    const char * getStorageEngineName() const override { return ""; }
+
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+
+    ColumnsDescription getActualTableStructure(ContextPtr /* context */, bool /* is_insert_query */) const override
+    {
+        return StorageFilesystemCache::getColumnsDescription();
+    }
+
+    StoragePtr executeImpl(
+        const ASTPtr & /* ast_function */,
+        ContextPtr context,
+        const std::string & table_name,
+        ColumnsDescription /* cached_columns */,
+        bool is_insert_query) const override;
+
+    String cache_name;
+    UInt64 query_max_elements = 0;
+    UInt64 query_max_total_size = 0;
+    IFileCachePriority::IterationOrder query_order = IFileCachePriority::IterationOrder::HOTTEST;
+};
+
+IFileCachePriority::IterationOrder parseOrder(const String & order)
+{
+    if (order == "hottest")
+        return IFileCachePriority::IterationOrder::HOTTEST;
+    if (order == "coldest")
+        return IFileCachePriority::IterationOrder::COLDEST;
+    if (order == "random")
+        return IFileCachePriority::IterationOrder::RANDOM;
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Unknown order '{}' in table function `filesystemCache`, expected 'hottest', 'coldest' or 'random'",
+        order);
+}
+
+void TableFunctionFilesystemCache::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+{
+    ASTs & args_func = ast_function->children;
+    if (args_func.size() != 1)
+        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Wrong AST structure in table function '{}'.", getName());
+
+    ASTs & args = args_func.at(0)->children;
+    if (args.size() < 3 || args.size() > 4)
+        throw Exception(
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Table function '{}' requires 3 or 4 arguments: cache_name, max_elements, max_total_size[, order]",
+            getName());
+
+    for (auto & arg : args)
+        arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
+
+    cache_name = checkAndGetLiteralArgument<String>(args[0], "cache_name");
+    query_max_elements = checkAndGetLiteralArgument<UInt64>(args[1], "max_elements");
+    query_max_total_size = checkAndGetLiteralArgument<UInt64>(args[2], "max_total_size");
+    if (args.size() == 4)
+        query_order = parseOrder(checkAndGetLiteralArgument<String>(args[3], "order"));
+}
+
+StoragePtr TableFunctionFilesystemCache::executeImpl(
+    const ASTPtr & /* ast_function */,
+    ContextPtr context,
+    const std::string & table_name,
+    ColumnsDescription /* cached_columns */,
+    bool is_insert_query) const
+{
+    auto storage = std::make_shared<StorageFilesystemCache>(
+        StorageID(getDatabaseName(), table_name),
+        getActualTableStructure(context, is_insert_query),
+        cache_name,
+        query_max_elements,
+        query_max_total_size,
+        query_order);
+    storage->startup();
+    return storage;
+}
+
+}
+
+void registerTableFunctionFilesystemCache(TableFunctionFactory & factory)
+{
+    factory.registerFunction<TableFunctionFilesystemCache>(
+        {
+            .description = R"(Returns the file segments of a filesystem cache, selected by their priority in the cache, stopping when either `max_elements` segments or `max_total_size` bytes have been collected. The segment which would make the total size exceed `max_total_size` is not returned, and neither are the ones after it.
+
+Unlike `system.filesystem_cache`, which walks all keys of all caches, it walks the priority queue of one cache and only as far as needed, so it can return the hottest segments (e.g. to prewarm another replica), the next eviction candidates, or a uniform sample of the cache.)",
+            .syntax = "filesystemCache(cache_name, max_elements, max_total_size[, order])",
+            .arguments = {
+                {"cache_name", "The name of the cache, the same as in `SYSTEM DROP FILESYSTEM CACHE` and `system.filesystem_cache.cache_name`.", {"String"}},
+                {"max_elements", "The maximum number of returned segments.", {"UInt64"}},
+                {"max_total_size", "The maximum sum of `size` of the returned segments.", {"UInt64"}},
+                {"order", "'hottest' (the default): the highest-priority segments first. 'coldest': the next eviction candidates first. 'random': a uniform sample of segments, sorted by their position in the queue, coldest first.", {"String"}},
+            },
+            .returned_value = {"A table with the columns `priority_rank`, `path`, `key`, `offset`, `size`, `state`, `queue` and `user_id`, one row per segment.", {}},
+            .examples = {
+                {"The paths of the hottest segments, up to 10000 of them and 10 GiB in total", "SELECT path FROM filesystemCache('s3_cache', 10000, 10737418240);", ""},
+                {"The next eviction candidates", "SELECT priority_rank, path, size, queue FROM filesystemCache('s3_cache', 100, 1073741824, 'coldest');", ""},
+                {"A uniform sample of the cache", "SELECT path FROM filesystemCache('s3_cache', 1000, 10737418240, 'random');", ""},
+            },
+            /// TODO:(andi) Should I change this?
+            .introduced_in = {26, 11},
+            .category = FunctionDocumentation::Category::TableFunction,
+        },
+        SecretArgumentsSpec{},
+        {.allow_readonly = true});
+}
+
+}
