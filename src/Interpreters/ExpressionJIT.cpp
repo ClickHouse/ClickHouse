@@ -17,6 +17,12 @@
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Common/ProfileEvents.h>
+
+namespace ProfileEvents
+{
+    extern const Event CompiledFunctionRows;
+}
 
 namespace DB
 {
@@ -85,9 +91,11 @@ class LLVMExecutableFunction : public IExecutableFunction
 {
 public:
 
-    explicit LLVMExecutableFunction(const std::string & name_, std::shared_ptr<CompiledFunctionHolder> compiled_function_holder_)
+    explicit LLVMExecutableFunction(
+        const std::string & name_, std::shared_ptr<CompiledFunctionHolder> compiled_function_holder_, size_t fused_functions_count_)
         : name(name_)
         , compiled_function_holder(compiled_function_holder_)
+        , fused_functions_count(fused_functions_count_)
     {
     }
 
@@ -120,6 +128,7 @@ public:
 
             auto jit_compiled_function = compiled_function_holder->compiled_function.compiled_function;
             callJITFunction(jit_compiled_function, input_rows_count, columns.data());
+            ProfileEvents::increment(ProfileEvents::CompiledFunctionRows, input_rows_count * fused_functions_count);
 
             #if defined(MEMORY_SANITIZER)
             /// Memory sanitizer doesn't know about stores from JIT-ed code.
@@ -150,6 +159,8 @@ public:
 private:
     std::string name;
     std::shared_ptr<CompiledFunctionHolder> compiled_function_holder;
+    /// The number of functions of the original expression fused into this one, for `CompiledFunctionRows`.
+    size_t fused_functions_count;
 };
 
 class LLVMFunction : public IFunctionBase
@@ -205,7 +216,7 @@ public:
         if (!compiled_function_holder)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Compiled function was not initialized {}", name);
 
-        return std::make_unique<LLVMExecutableFunction>(name, compiled_function_holder);
+        return std::make_unique<LLVMExecutableFunction>(name, compiled_function_holder, nested_functions.size());
     }
 
     bool isDeterministic() const override

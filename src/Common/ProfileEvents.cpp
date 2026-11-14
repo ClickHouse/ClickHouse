@@ -502,6 +502,8 @@
     \
     M(CompileFunction, "Number of times a compilation of generated LLVM code (to create fused function for complex expressions) was initiated.", ValueType::Number) \
     M(CompiledFunctionExecute, "Number of times a compiled function was executed.", ValueType::Number) \
+    M(CompiledFunctionRows, "Number of rows processed by JIT-compiled expressions, counted once per function fused into the compiled expression: a block of N rows through a compiled expression of three functions adds 3N. Together with InterpretedFunctionRows, it shows the share of function evaluations that ran compiled.", ValueType::Number) \
+    M(InterpretedFunctionRows, "Number of rows processed by ordinary functions of expressions that ran without JIT compilation, counted once per function: a block of N rows through three interpreted functions adds 3N. Together with CompiledFunctionRows, it shows the share of function evaluations that ran compiled.", ValueType::Number) \
     M(ShortCircuitArgumentsReordered, "Number of blocks on which the `and` or `or` function evaluated its arguments in an order different from the order in the query: a cheap argument before a heavy one, or according to the statistics collected on the previous blocks (setting `short_circuit_function_evaluation_reorder_arguments`). The reordering of the AND chain atoms in `WHERE` / `HAVING`, which is decided once when `FilterStep` builds its pipeline, is not counted.", ValueType::Number) \
     M(CompileExpressionsMicroseconds, "Total time spent for compilation of expressions to LLVM code.", ValueType::Microseconds) \
     M(CompileExpressionsBytes, "Number of bytes used for expressions compilation.", ValueType::Bytes) \
