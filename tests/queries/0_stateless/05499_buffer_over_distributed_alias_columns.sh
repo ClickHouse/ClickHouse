@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Tags: distributed
 
-# ALIAS columns of a Buffer table whose destination is a Distributed table, read in every query position.
+# ALIAS columns of a Buffer table whose destination is a Distributed table, read in every query position,
+# and constants longer than optimize_const_name_size in a query over such a table.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -58,6 +59,16 @@ SELECT '-- prefer_localhost_replica = 0';
 SELECT a, s FROM t_05499_buf1 ORDER BY ALL SETTINGS prefer_localhost_replica = 0;
 SELECT '-- merge() over the Buffer';
 SELECT a, b, s FROM merge(currentDatabase(), '^t_05499_buf1$') ORDER BY ALL;
+
+SELECT '-- constant longer than optimize_const_name_size';
+SELECT countIf(s = repeat('x', 1000)), count() FROM t_05499_buf1;
+SELECT if(s = repeat('x', 1000), 1, 2) AS k, count() FROM t_05499_buf2 GROUP BY k ORDER BY ALL;
+SELECT a, a = repeat('X', 1000) FROM t_05499_buf_empty ORDER BY ALL;
+SELECT n + 1 AS k, count() FROM t_05499_buf1 GROUP BY k ORDER BY ALL SETTINGS optimize_const_name_size = 0;
+SELECT count(), countIf(c = 2) FROM (SELECT concat(s, repeat('x', 1000)) AS k, count() AS c FROM t_05499_buf_big GROUP BY k)
+SETTINGS group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1, distributed_aggregation_memory_efficient = 1;
+SELECT countIf(s = repeat('x', 1000)), count() FROM t_05499_buf1 SETTINGS prefer_localhost_replica = 0;
+SELECT countIf(s = repeat('x', 1000)), count() FROM merge(currentDatabase(), '^t_05499_buf1$');
 
 SELECT '-- Buffer over Merge over Distributed';
 CREATE TABLE t_05499_merge_d AS t_05499_dst ENGINE = Merge(currentDatabase(), '^t_05499_dist2$');

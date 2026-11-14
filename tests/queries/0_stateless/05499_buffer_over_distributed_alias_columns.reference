@@ -51,6 +51,17 @@ Z	z
 X	1	x
 Y	2	y
 Z	3	z
+-- constant longer than optimize_const_name_size
+0	3
+2	5
+X	0
+Z	0
+2	1
+3	1
+4	1
+1000	1000
+0	3
+0	3
 -- Buffer over Merge over Distributed
 M	m
 X	x

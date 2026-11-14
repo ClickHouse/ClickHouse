@@ -635,7 +635,7 @@ void StorageBuffer::read(
     /// TODO: Find a way to support projections for StorageBuffer
     if (processed_stage > QueryProcessingStage::FetchColumns)
     {
-        auto plan_buffers = [&](const ASTPtr & query, Pipe pipe, bool access_checked)
+        auto plan_buffers = [&](const ASTPtr & query, Pipe pipe, bool is_shipped_query)
         {
             /// The buffers plan is united with the table plan in the same process, where nothing
             /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
@@ -643,6 +643,8 @@ void StorageBuffer::read(
             buffers_select_query_options.is_local_plan_for_distributed_query = true;
             buffers_select_query_options.view_source_in_subqueries
                 = query_info.planner_context && query_info.planner_context->isViewSourceInSubqueries();
+            /// A shipped query is analyzed as the local shard of `Distributed` analyzes it, so both name its columns alike.
+            buffers_select_query_options.ignoreASTOptimizations(is_shipped_query);
 
             /// Column kinds must match this table, so the query below requests only the columns the buffers provide.
             auto storage = std::make_shared<StorageValues>(
@@ -650,7 +652,8 @@ void StorageBuffer::read(
                     storage_snapshot->metadata->getColumns(),
                     std::move(pipe),
                     storage_snapshot->metadata->virtuals);
-            if (access_checked)
+            /// The shipped query names the ALIAS's base columns; the caller checked access on the ALIAS names.
+            if (is_shipped_query)
                 storage->setAccessChecked();
 
             auto interpreter = InterpreterSelectQueryAnalyzer(query, local_context, buffers_select_query_options, storage);
@@ -658,9 +661,10 @@ void StorageBuffer::read(
             return std::move(interpreter).extractQueryPlan();
         };
 
-        buffers_plan = plan_buffers(query_info.query, std::move(pipe_from_buffers), /*access_checked=*/ false);
+        buffers_plan = plan_buffers(query_info.query, std::move(pipe_from_buffers), /*is_shipped_query=*/ false);
 
-        /// `Distributed` plans the query with `ALIAS` columns inlined, so its header may lack the buffers' columns.
+        /// `Distributed` plans the query it ships, with `ALIAS` columns inlined and long constants replaced by scalars,
+        /// so its header may lack the buffers' columns.
         if (query_plan.isInitialized())
         {
             auto has_columns_of = [&](const QueryPlan & plan)
@@ -672,13 +676,13 @@ void StorageBuffer::read(
 
             if (!has_columns_of(buffers_plan))
             {
-                auto inlined_query_tree = query_info.query_tree->clone();
-                inlineAliasColumns(inlined_query_tree);
-                /// The inlined query names the ALIAS's base columns; the caller checked access on the ALIAS names.
-                auto inlined_buffers_plan = plan_buffers(
-                    queryNodeToSelectQuery(inlined_query_tree), make_pipe_from_buffers(), /*access_checked=*/ true);
-                if (has_columns_of(inlined_buffers_plan))
-                    buffers_plan = std::move(inlined_buffers_plan);
+                auto shipped_query_tree = query_info.query_tree->clone();
+                inlineAliasColumns(shipped_query_tree);
+                replaceLongConstantsWithScalars(shipped_query_tree, local_context);
+                auto shipped_buffers_plan = plan_buffers(
+                    queryNodeToSelectQuery(shipped_query_tree), make_pipe_from_buffers(), /*is_shipped_query=*/ true);
+                if (has_columns_of(shipped_buffers_plan))
+                    buffers_plan = std::move(shipped_buffers_plan);
             }
         }
     }
