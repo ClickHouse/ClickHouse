@@ -71,6 +71,8 @@ private:
     std::unique_ptr<AMQP::TcpChannel> producer_channel;
     bool producer_ready = false;
     String channel_error;
+    /// `producer_channel` belongs to a connection that `reconnect` replaced but did not finish connecting.
+    bool reconnect_failed = false;
 
     QueryStatusPtr query_status;
 

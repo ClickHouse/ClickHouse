@@ -283,10 +283,11 @@ void RabbitMQProducer::startProducingTaskLoop()
             {
                 /// The broker closes only the channel when it rejects a publish, e.g. NOT_FOUND for a missing exchange.
                 /// A new channel is rejected the same way.
-                if (connection.isConnected())
+                if (!reconnect_failed && connection.isConnected())
                     throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "Cannot publish to RabbitMQ exchange '{}': {}", exchange_name, channel_error);
 
-                if (connection.reconnect())
+                reconnect_failed = !connection.reconnect();
+                if (!reconnect_failed)
                     setupChannel();
             }
         }
