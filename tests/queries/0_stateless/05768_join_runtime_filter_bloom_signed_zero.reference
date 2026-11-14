@@ -1,0 +1,16 @@
+-- Bloom filter
+k	1
+k	1
+a	1
+t	1
+lc	1
+k anti	0
+-- Exact set
+k	1
+a	1
+t	1
+lc	1
+k anti	0
+-- Negative zero on the build side
+k	1
+a	1

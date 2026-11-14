@@ -1615,9 +1615,10 @@ void HashJoin::checkTypesOfKeys(const Block & block) const
 class HashJoin::ContinuationResult final : public IJoinResult
 {
 public:
-    ContinuationResult(HashJoin & join_, JoinResultPtr current_result_)
+    ContinuationResult(HashJoin & join_, JoinResultPtr current_result_, CanonicalJoinKeys canonical_join_keys_)
         : join(join_)
         , current_result(std::move(current_result_))
+        , canonical_join_keys(std::move(canonical_join_keys_))
     {
     }
 
@@ -1630,7 +1631,7 @@ public:
             addMatchedRightRows(matched_right_rows, current_result->getMatchedRightRows());
 
             if (result.next_block)
-                current_result = join.runJoinDispatch(std::move(*result.next_block));
+                current_result = join.runJoinDispatch(std::move(*result.next_block), canonical_join_keys);
             else
                 current_result.reset();
         }
@@ -1646,6 +1647,8 @@ public:
 private:
     HashJoin & join;
     JoinResultPtr current_result;
+    /// Every continuation is over a suffix of the same source block, so its key columns are canonicalized once.
+    CanonicalJoinKeys canonical_join_keys;
     std::optional<size_t> matched_right_rows = 0;
 };
 
@@ -1663,11 +1666,12 @@ JoinResultPtr HashJoin::joinBlock(Block block)
 
     materializeColumnsFromLeftBlock(block);
 
-    auto result = runJoinDispatch(ScatteredBlock(std::move(block)));
-    return std::make_unique<ContinuationResult>(*this, std::move(result));
+    CanonicalJoinKeys canonical_join_keys;
+    auto result = runJoinDispatch(ScatteredBlock(std::move(block)), canonical_join_keys);
+    return std::make_unique<ContinuationResult>(*this, std::move(result), std::move(canonical_join_keys));
 }
 
-JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block)
+JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block, CanonicalJoinKeys & canonical_join_keys)
 {
     std::vector<const std::decay_t<decltype(data->maps[0])> *> maps_vector;
     maps_vector.reserve(table_join->getClauses().size());
@@ -1686,22 +1690,22 @@ JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block)
             if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsAll *>>)
             {
                 res = HashJoinMethods<kind_, strictness_, MapsAll>::joinBlockImpl(
-                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_);
+                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_, /* is_join_get= */ false, &canonical_join_keys);
             }
             else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsOne *>>)
             {
                 res = HashJoinMethods<kind_, strictness_, MapsOne>::joinBlockImpl(
-                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_);
+                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_, /* is_join_get= */ false, &canonical_join_keys);
             }
             else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsAsof *>>)
             {
                 res = HashJoinMethods<kind_, strictness_, MapsAsof>::joinBlockImpl(
-                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_);
+                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_, /* is_join_get= */ false, &canonical_join_keys);
             }
             else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsSet *>>)
             {
                 res = HashJoinMethods<kind_, strictness_, MapsSet>::joinBlockImpl(
-                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_);
+                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_, /* is_join_get= */ false, &canonical_join_keys);
             }
             else
             {

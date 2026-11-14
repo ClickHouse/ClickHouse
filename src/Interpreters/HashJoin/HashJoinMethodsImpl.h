@@ -137,9 +137,24 @@ private:
     size_t samples = 0;
 };
 
+/// `negative_zeros_canonicalized` - the caller has already replaced negative zeros with positive zeros in `key_columns`,
+/// see `CanonicalJoinKeys`, so the key getter does not scan them again.
 template <typename KeyGetter, bool is_asof_join>
-KeyGetter createJoinKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, HashJoin::RightTableData::KeyRange key_range = {})
+KeyGetter createJoinKeyGetter(
+    const ColumnRawPtrs & key_columns,
+    const Sizes & key_sizes,
+    HashJoin::RightTableData::KeyRange key_range = {},
+    bool negative_zeros_canonicalized = false)
 {
+    auto make_getter = [&](const ColumnRawPtrs & columns, const Sizes & sizes)
+    {
+        /// `LowCardinalityKeyGetterForJoin` takes no `RowRange`: its keys are strings, which have no negative zeros.
+        if constexpr (std::is_constructible_v<KeyGetter, const ColumnRawPtrs &, const Sizes &, std::nullptr_t, ColumnsHashing::RowRange>)
+            return KeyGetter(columns, sizes, nullptr, ColumnsHashing::RowRange{.negative_zeros_canonicalized = negative_zeros_canonicalized});
+        else
+            return KeyGetter(columns, sizes, nullptr);
+    };
+
     KeyGetter getter = [&]()
     {
         if constexpr (is_asof_join)
@@ -148,10 +163,10 @@ KeyGetter createJoinKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & k
             auto key_size_copy = key_sizes;
             key_column_copy.pop_back();
             key_size_copy.pop_back();
-            return KeyGetter(key_column_copy, key_size_copy, nullptr);
+            return make_getter(key_column_copy, key_size_copy);
         }
         else
-            return KeyGetter(key_columns, key_sizes, nullptr);
+            return make_getter(key_columns, key_sizes);
     }();
 
     if constexpr (ColumnsHashing::IsHashMethodInRange<KeyGetter>::value)
@@ -432,19 +447,32 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     ScatteredBlock block,
     const Block & block_with_columns_to_add,
     const MapsTemplateVector & maps_,
-    bool is_join_get)
+    bool is_join_get,
+    CanonicalJoinKeys * canonical_join_keys)
 {
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
 
+    CanonicalJoinKeys local_canonical_join_keys;
+    if (!canonical_join_keys)
+        canonical_join_keys = &local_canonical_join_keys;
+
     std::vector<JoinOnKeyColumns> join_on_keys;
     const auto & onexprs = join.table_join->getClauses();
+    const bool prepare_canonical_keys = !canonical_join_keys->prepared;
+    if (prepare_canonical_keys)
+        canonical_join_keys->clauses.assign(onexprs.size(), {});
+    else if (canonical_join_keys->clauses.size() != onexprs.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected canonicalized JOIN keys for {} clauses, got {}",
+            onexprs.size(), canonical_join_keys->clauses.size());
+
     for (size_t i = 0; i < onexprs.size(); ++i)
     {
         const auto & key_names = !is_join_get ? onexprs[i].key_names_left : onexprs[i].key_names_right;
         join_on_keys.emplace_back(
             block, key_names, onexprs[i].condColumnNames().first, join.key_sizes[i],
-            HashJoin::isLowCardinalityType(join.data->type));
+            HashJoin::isLowCardinalityType(join.data->type), canonical_join_keys->clauses[i], prepare_canonical_keys);
     }
+    canonical_join_keys->prepared = true;
 
     /// Only MapsAll keeps every right row of a key, so only there do the recorded words resolve to
     /// exact rows. The residual path is excluded: its words count output rows rather than left rows,
@@ -559,7 +587,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::switchJoinRightColumns(
             const auto & join_on_key = added_columns.join_on_keys[d]; \
             a_map_type_vector[d] = mapv[d]->TYPE.get(); \
             key_getter_vector.push_back( \
-                std::move(createJoinKeyGetter<KeyGetter, is_asof_join>(join_on_key.key_columns, join_on_key.key_sizes, key_range))); \
+                std::move(createJoinKeyGetter<KeyGetter, is_asof_join>( \
+                    join_on_key.key_columns, join_on_key.key_sizes, key_range, /* negative_zeros_canonicalized= */ true))); \
         } \
         return joinRightColumnsSwitchNullability<KeyGetter>(std::move(key_getter_vector), a_map_type_vector, added_columns, selector, used_flags); \
     }

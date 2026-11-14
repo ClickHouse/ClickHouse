@@ -1,6 +1,8 @@
 #include <Processors/Formats/Impl/HashOutputFormat.h>
 
 #include <Columns/IColumn.h>
+#include <Columns/canonicalizeNegativeZero.h>
+#include <Common/Arena.h>
 #include <Core/Block.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
@@ -23,9 +25,54 @@ String HashOutputFormat::getName() const
 
 void HashOutputFormat::consume(Chunk chunk)
 {
+    /// The hash of a value is the hash of a hash table key, which agrees with `equals`, so it is the same
+    /// for `-0.` and `0.`. The fingerprint of a result has to tell the two apart, because they are
+    /// different values, so a value that contains a negative zero also contributes its serialized
+    /// representation. Every other value hashes exactly as before this distinction was needed.
+    const Columns & columns = chunk.getColumns();
+    const size_t num_columns = columns.size();
+
+    /// `nullptr` for a column without a negative zero, which is by far the most common case.
+    Columns canonical_columns(num_columns);
+    Columns full_columns(num_columns);
+    const Block & header = getPort(PortKind::Main).getHeader();
+    for (size_t j = 0; j < num_columns; ++j)
+    {
+        full_columns[j] = columns[j]->convertToFullIfWrapped();
+
+        /// `convertToFullIfWrapped` keeps `LowCardinality`, whose dictionary can hold a negative zero as well, so the
+        /// check looks into the dictionaries, also nested ones, such as in `Tuple(LowCardinality(String), Float64)`.
+        /// A dictionary is expanded only if it has a negative zero, so that a wide `LowCardinality(String)` is not.
+        /// A `LowCardinality` value is serialized as its dictionary value, so the serialized values are the same
+        /// as those of the column without `LowCardinality`.
+        if (!mayContainNegativeZero(*header.getByPosition(j).type))
+            continue;
+        canonical_columns[j] = canonicalizeNegativeZeroThroughLowCardinality(*full_columns[j]);
+    }
+
+    Arena arena;
     for (size_t i = 0, rows = chunk.getNumRows(); i < rows; ++i)
-        for (const auto & column : chunk.getColumns())
-            column->updateHashWithValue(i, hash);
+    {
+        for (size_t j = 0; j < num_columns; ++j)
+        {
+            full_columns[j]->updateHashWithValue(i, hash);
+
+            if (!canonical_columns[j])
+                continue;
+
+            const char * begin = nullptr;
+            const std::string_view value = full_columns[j]->serializeValueIntoArena(i, arena, begin, nullptr);
+            begin = nullptr;
+            const std::string_view canonical_value = canonical_columns[j]->serializeValueIntoArena(i, arena, begin, nullptr);
+            if (value != canonical_value)
+                hash.update(value.data(), value.size());
+
+            /// Both values are only needed for the comparison; release them in the reverse order of
+            /// allocation, so that the arena does not grow with the number of rows.
+            arena.rollback(canonical_value.size());
+            arena.rollback(value.size());
+        }
+    }
 }
 
 void HashOutputFormat::finalizeImpl()

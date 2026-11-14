@@ -116,12 +116,15 @@ public:
         const MapsTemplateVector & maps_,
         bool is_join_get = false);
 
+    /// `canonical_join_keys` are reused by the continuations over the same source block, see `CanonicalJoinKeys`.
+    /// If `nullptr`, they are prepared for this call only.
     static JoinResultPtr joinBlockImpl(
         const HashJoin & join,
         ScatteredBlock block,
         const Block & block_with_columns_to_add,
         const MapsTemplateVector & maps_,
-        bool is_join_get = false);
+        bool is_join_get = false,
+        CanonicalJoinKeys * canonical_join_keys = nullptr);
 
 private:
     template <typename AddedColumns>

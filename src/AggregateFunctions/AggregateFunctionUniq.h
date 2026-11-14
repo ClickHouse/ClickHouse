@@ -8,6 +8,7 @@
 #include <city.h>
 
 #include <base/bit_cast.h>
+#include <base/normalizeNegativeZero.h>
 
 
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -287,7 +288,8 @@ struct AggregateFunctionUniqTraits
         }
         else if constexpr (is_floating_point<T>)
         {
-            return bit_cast<UInt64>(x);
+            /// Negative zero is equal to positive zero, but has a different binary representation.
+            return bit_cast<UInt64>(normalizeNegativeZero(x));
         }
         else if constexpr (sizeof(T) <= sizeof(UInt64))
         {
@@ -415,20 +417,38 @@ struct Adder
     /// We have to introduce this template parameter (and a bunch of ugly code dealing with it), because we cannot
     /// add runtime branches in whatever_hash_set::insert - it will immediately pop up in the perf top.
     template <SetLevelHint hint = Data::is_able_to_parallelize_merge ? SetLevelHint::unknown : SetLevelHint::singleLevel>
+    static void ALWAYS_INLINE add(Data & data, const IColumn ** columns, size_t num_args, size_t row_num, bool normalize_floats = true)
+    {
+        if (Data::is_variadic && !normalize_floats)
+            add<hint, !Data::is_variadic>(data, columns, num_args, row_num);
+        else
+            add<hint, true>(data, columns, num_args, row_num);
+    }
+
+    /// `normalize_floats` is only used by the variadic version, see `UniqVariadicHash`.
+    template <SetLevelHint hint, bool normalize_floats>
     static void ALWAYS_INLINE add(Data & data, const IColumn ** columns, size_t num_args, size_t row_num)
     {
         if constexpr (Data::is_variadic)
         {
+            using Hash = UniqVariadicHash<Data::is_exact, Data::argument_is_tuple>;
             if constexpr (IsUniqExactSet<typename Data::Set>::value)
-                data.set.template insert<T, hint>(UniqVariadicHash<Data::is_exact, Data::argument_is_tuple>::apply(num_args, columns, row_num));
+                data.set.template insert<T, hint>(Hash::template apply<normalize_floats>(num_args, columns, row_num));
             else
-                data.set.insert(T{UniqVariadicHash<Data::is_exact, Data::argument_is_tuple>::apply(num_args, columns, row_num)});
+                data.set.insert(T{Hash::template apply<normalize_floats>(num_args, columns, row_num)});
         }
 #if USE_DATASKETCHES
         else if constexpr (std::is_same_v<Data, AggregateFunctionUniqThetaData>)
         {
             const auto & column = *columns[0];
-            data.set.insertOriginal(column.getDataAt(row_num));
+            if constexpr (is_floating_point<T>)
+            {
+                /// Negative zero is equal to positive zero, but has a different binary representation.
+                const T value = normalizeNegativeZero(assert_cast<const ColumnType &>(column).getData()[row_num]);
+                data.set.insertOriginal(std::string_view(reinterpret_cast<const char *>(&value), sizeof(value)));
+            }
+            else
+                data.set.insertOriginal(column.getDataAt(row_num));
         }
 #endif
         else
@@ -439,16 +459,29 @@ struct Adder
         }
     }
 
-    static void addMany(Data & data, const IColumn ** columns, size_t num_args, size_t row_begin, size_t row_end, const char8_t * flags, const UInt8 * null_map)
+    static void addMany(
+        Data & data, const IColumn ** columns, size_t num_args, size_t row_begin, size_t row_end, const char8_t * flags, const UInt8 * null_map,
+        bool normalize_floats = true)
     {
         bool use_single_level_hash_table = true;
         if constexpr (Data::is_able_to_parallelize_merge)
             use_single_level_hash_table = data.set.isSingleLevel();
 
-        if (use_single_level_hash_table)
-            addManyImpl<SetLevelHint::singleLevel>(data, columns, num_args, row_begin, row_end, flags, null_map);
+        /// `normalize_floats` is decided outside of the loops over the rows. It is only used by the variadic version.
+        if (Data::is_variadic && !normalize_floats)
+        {
+            if (use_single_level_hash_table)
+                addManyImpl<SetLevelHint::singleLevel, !Data::is_variadic>(data, columns, num_args, row_begin, row_end, flags, null_map);
+            else
+                addManyImpl<SetLevelHint::twoLevel, !Data::is_variadic>(data, columns, num_args, row_begin, row_end, flags, null_map);
+        }
         else
-            addManyImpl<SetLevelHint::twoLevel>(data, columns, num_args, row_begin, row_end, flags, null_map);
+        {
+            if (use_single_level_hash_table)
+                addManyImpl<SetLevelHint::singleLevel, true>(data, columns, num_args, row_begin, row_end, flags, null_map);
+            else
+                addManyImpl<SetLevelHint::twoLevel, true>(data, columns, num_args, row_begin, row_end, flags, null_map);
+        }
 
         if constexpr (Data::is_able_to_parallelize_merge)
         {
@@ -620,7 +653,7 @@ private:
         }
     }
 
-    template <SetLevelHint hint>
+    template <SetLevelHint hint, bool normalize_floats>
     static void addManyImpl(
         Data & data,
         const IColumn ** columns,
@@ -643,24 +676,24 @@ private:
         {
             for (size_t row = row_begin; row < row_end; ++row)
                 if (!null_map[row] && flags[row])
-                    add<hint>(data, columns, num_args, row);
+                    add<hint, normalize_floats>(data, columns, num_args, row);
         }
         else if (flags)
         {
             for (size_t row = row_begin; row < row_end; ++row)
                 if (flags[row])
-                    add<hint>(data, columns, num_args, row);
+                    add<hint, normalize_floats>(data, columns, num_args, row);
         }
         else if (null_map)
         {
             for (size_t row = row_begin; row < row_end; ++row)
                 if (!null_map[row])
-                    add<hint>(data, columns, num_args, row);
+                    add<hint, normalize_floats>(data, columns, num_args, row);
         }
         else if constexpr (!is_batchable)
         {
             for (size_t row = row_begin; row < row_end; ++row)
-                add<hint>(data, columns, num_args, row);
+                add<hint, normalize_floats>(data, columns, num_args, row);
         }
         else
         {
@@ -1019,9 +1052,10 @@ private:
     static constexpr size_t key_chunk_size = 256;
 
     size_t num_args = 0;
+    bool normalize_floats = true;
 
     /// Inserts the same keys in the same order as `add`.
-    template <SetLevelHint hint>
+    template <SetLevelHint hint, bool normalize>
     void addManyExactImpl(
         Data & data, const IColumn ** columns, size_t row_begin, size_t row_end, const char8_t * flags, const UInt8 * null_map) const
     {
@@ -1032,7 +1066,7 @@ private:
             size_t num_keys = 0;
             for (size_t row = chunk_begin; row < chunk_end; ++row)
                 if ((!flags || flags[row]) && (!null_map || !null_map[row]))
-                    keys[num_keys++] = UniqVariadicHash<true, argument_is_tuple>::apply(num_args, columns, row);
+                    keys[num_keys++] = UniqVariadicHash<true, argument_is_tuple>::template apply<normalize>(num_args, columns, row);
             data.set.template insertMany<hint>(keys.data(), num_keys);
         }
     }
@@ -1045,10 +1079,21 @@ private:
         if constexpr (Data::is_able_to_parallelize_merge)
             use_single_level_hash_table = data.set.isSingleLevel();
 
+        /// `normalize_floats` is decided outside of the loops over the rows, see `UniqVariadicHash`.
         if (use_single_level_hash_table)
-            addManyExactImpl<SetLevelHint::singleLevel>(data, columns, row_begin, row_end, flags, null_map);
+        {
+            if (normalize_floats)
+                addManyExactImpl<SetLevelHint::singleLevel, true>(data, columns, row_begin, row_end, flags, null_map);
+            else
+                addManyExactImpl<SetLevelHint::singleLevel, false>(data, columns, row_begin, row_end, flags, null_map);
+        }
         else
-            addManyExactImpl<SetLevelHint::twoLevel>(data, columns, row_begin, row_end, flags, null_map);
+        {
+            if (normalize_floats)
+                addManyExactImpl<SetLevelHint::twoLevel, true>(data, columns, row_begin, row_end, flags, null_map);
+            else
+                addManyExactImpl<SetLevelHint::twoLevel, false>(data, columns, row_begin, row_end, flags, null_map);
+        }
 
         if constexpr (Data::is_able_to_parallelize_merge)
         {
@@ -1060,6 +1105,17 @@ private:
     /// GROUP BY: inserts the same keys in the same order per set as `add`.
     template <bool check_places>
     void addBatchExact(
+        size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, ssize_t if_argument_pos) const
+    {
+        /// `normalize_floats` is decided outside of the loops over the rows, see `UniqVariadicHash`.
+        if (normalize_floats)
+            addBatchExactImpl<check_places, true>(row_begin, row_end, places, place_offset, columns, if_argument_pos);
+        else
+            addBatchExactImpl<check_places, false>(row_begin, row_end, places, place_offset, columns, if_argument_pos);
+    }
+
+    template <bool check_places, bool normalize>
+    void addBatchExactImpl(
         size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, ssize_t if_argument_pos) const
     {
         static constexpr auto hint = Data::is_able_to_parallelize_merge ? SetLevelHint::unknown : SetLevelHint::singleLevel;
@@ -1084,7 +1140,7 @@ private:
                 if (flags && !flags[row])
                     continue;
 
-                keys[count] = UniqVariadicHash<true, argument_is_tuple>::apply(num_args, columns, row);
+                keys[count] = UniqVariadicHash<true, argument_is_tuple>::template apply<normalize>(num_args, columns, row);
                 sets[count++] = &this->data(places[row] + place_offset).set;
             }
 
@@ -1096,6 +1152,7 @@ private:
 public:
     explicit AggregateFunctionUniqVariadic(const DataTypes & arguments)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data>>(arguments, {}, std::make_shared<DataTypeUInt64>())
+        , normalize_floats(isNegativeZeroNormalizationNeeded(arguments))
     {
         if (argument_is_tuple)
             num_args = typeid_cast<const DataTypeTuple &>(*arguments[0]).getElements().size();
@@ -1138,7 +1195,7 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        detail::Adder<T, ColumnTuple, Data>::add(this->data(place), columns, num_args, row_num);
+        detail::Adder<T, ColumnTuple, Data>::add(this->data(place), columns, num_args, row_num, normalize_floats);
     }
 
     ALWAYS_INLINE void addBatchSinglePlace(
@@ -1152,7 +1209,8 @@ public:
         if constexpr (is_exact_set)
             addManyExact(this->data(place), columns, row_begin, row_end, flags, nullptr /* null_map */);
         else
-            detail::Adder<T, ColumnTuple, Data>::addMany(this->data(place), columns, num_args, row_begin, row_end, flags, nullptr /* null_map */);
+            detail::Adder<T, ColumnTuple, Data>::addMany(
+                this->data(place), columns, num_args, row_begin, row_end, flags, nullptr /* null_map */, normalize_floats);
     }
 
     void addBatchSinglePlaceNotNull(
@@ -1171,7 +1229,7 @@ public:
         if constexpr (is_exact_set)
             addManyExact(this->data(place), columns, row_begin, row_end, flags, null_map);
         else
-            detail::Adder<T, ColumnTuple, Data>::addMany(this->data(place), columns, num_args, row_begin, row_end, flags, null_map);
+            detail::Adder<T, ColumnTuple, Data>::addMany(this->data(place), columns, num_args, row_begin, row_end, flags, null_map, normalize_floats);
     }
 
     void addBatch( /// NOLINT

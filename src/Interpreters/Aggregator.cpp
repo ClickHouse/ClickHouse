@@ -1178,7 +1178,8 @@ void Aggregator::mergeOnBlockSmall(
                          result.consecutive_keys_cache_stats, \
                          /* no_more_keys= */ false, \
                          row_begin, row_end, \
-                         aggregate_columns_data, key_columns, is_cancelled, result.aggregates_pool);
+                         aggregate_columns_data, key_columns, is_cancelled, result.aggregates_pool, \
+                         /* negative_zeros_canonicalized= */ true);
 
     APPLY_FOR_AGGREGATED_VARIANTS(M)
 #undef M
@@ -1204,7 +1205,8 @@ void Aggregator::executeImpl(
     #define M(NAME, IS_TWO_LEVEL) \
         else if (result.type == AggregatedDataVariants::Type::NAME) \
             executeImpl<for_sub_range && !(IS_TWO_LEVEL)>(*result.NAME, result.aggregates_pool, row_begin, row_end, key_columns, aggregate_instructions, \
-                        result.consecutive_keys_cache_stats, no_more_keys, all_keys_are_const, overflow_row);
+                        result.consecutive_keys_cache_stats, no_more_keys, all_keys_are_const, overflow_row, \
+                        /* negative_zeros_canonicalized= */ for_sub_range);
 
     if (false) {} // NOLINT
     APPLY_FOR_AGGREGATED_VARIANTS(M)
@@ -1222,7 +1224,8 @@ void NO_INLINE Aggregator::executeImpl(
     LastElementCacheStats & consecutive_keys_cache_stats,
     bool no_more_keys,
     bool all_keys_are_const,
-    AggregateDataPtr overflow_row) const
+    AggregateDataPtr overflow_row,
+    bool negative_zeros_canonicalized) const
 {
     UInt64 total_records = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
     double cache_hit_rate = total_records ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_records) : 1.0;
@@ -1233,8 +1236,9 @@ void NO_INLINE Aggregator::executeImpl(
         = std::conditional_t<for_sub_range, ColumnsHashing::SubRangeState<typename Method::StateNoCache>, typename Method::StateNoCache>;
 
     /// Const key columns hold one row, addressed as row 0 rather than through the block's range.
-    const ColumnsHashing::RowRange rows
+    ColumnsHashing::RowRange rows
         = all_keys_are_const ? ColumnsHashing::RowRange{} : ColumnsHashing::RowRange{row_begin, row_end};
+    rows.negative_zeros_canonicalized = negative_zeros_canonicalized;
 
     if (use_cache)
     {
@@ -6131,6 +6135,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
         key_columns,
         is_cancelled,
         arena_for_keys,
+        /*negative_zeros_canonicalized=*/false,
         deferred);
 }
 
@@ -6148,6 +6153,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     const ColumnRawPtrs & key_columns,
     std::atomic<bool> & is_cancelled,
     Arena * arena_for_keys,
+    bool negative_zeros_canonicalized,
     DeferredMerges * deferred) const
 {
     UInt64 total_records = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
@@ -6195,7 +6201,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 
     if (use_cache)
     {
-        State state(key_columns, key_sizes, aggregation_state_cache, {row_begin, row_end});
+        State state(key_columns, key_sizes, aggregation_state_cache, {row_begin, row_end, negative_zeros_canonicalized});
         if (is_simple_count)
         {
             /// A set method has no aggregates, so it never sets `is_simple_count` and never reaches this.
@@ -6224,7 +6230,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     }
     else
     {
-        StateNoCache state(key_columns, key_sizes, aggregation_state_cache, {row_begin, row_end});
+        StateNoCache state(key_columns, key_sizes, aggregation_state_cache, {row_begin, row_end, negative_zeros_canonicalized});
         if (is_simple_count)
         {
             /// A set method has no aggregates, so it never sets `is_simple_count` and never reaches this.

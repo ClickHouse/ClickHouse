@@ -2,6 +2,7 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/canonicalizeNegativeZero.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
@@ -70,6 +71,11 @@ struct RowRange
 {
     size_t begin = 0;
     size_t end = std::numeric_limits<size_t>::max();
+    /// The caller has already replaced negative zeros with positive zeros in the whole key columns,
+    /// including the dictionaries of `LowCardinality` columns (see `canonicalizeNegativeZeroThroughLowCardinality`),
+    /// so the state does not scan them again. A caller building one state per sub-range of a block does it once
+    /// per block, because the scan is whole-block work.
+    bool negative_zeros_canonicalized = false;
     /// Some rows of the range are never asked about (e.g. the rows with a NULL key), so no state hashes rows ahead of the asked ones.
     bool skips_rows = false;
 };
@@ -592,7 +598,7 @@ template <typename Key>
 class BaseStateKeysFixed<Key, true>
 {
 protected:
-    explicit BaseStateKeysFixed(const ColumnRawPtrs & key_columns)
+    BaseStateKeysFixed(const ColumnRawPtrs & key_columns, bool negative_zeros_canonicalized)
     {
         null_maps.reserve(key_columns.size());
         actual_columns.reserve(key_columns.size());
@@ -610,6 +616,9 @@ protected:
                 null_maps.push_back(nullptr);
             }
         }
+
+        if (!negative_zeros_canonicalized)
+            canonicalizeNegativeZeroInKeyColumns(actual_columns, canonicalized_columns);
     }
 
     /// Return the columns which actually contain the values of the keys.
@@ -651,6 +660,8 @@ protected:
 private:
     ColumnRawPtrs actual_columns;
     ColumnRawPtrs null_maps;
+    /// Owns the key columns with negative zeros replaced by positive zeros, if there were any.
+    Columns canonicalized_columns;
 };
 
 /// Case where nullable keys are not supported.
@@ -658,7 +669,11 @@ template <typename Key>
 class BaseStateKeysFixed<Key, false>
 {
 protected:
-    explicit BaseStateKeysFixed(const ColumnRawPtrs & columns) : actual_columns(columns) {}
+    BaseStateKeysFixed(const ColumnRawPtrs & columns, bool negative_zeros_canonicalized) : actual_columns(columns)
+    {
+        if (!negative_zeros_canonicalized)
+            canonicalizeNegativeZeroInKeyColumns(actual_columns, canonicalized_columns);
+    }
 
     const ColumnRawPtrs & getActualColumns() const { return actual_columns; }
 
@@ -669,6 +684,8 @@ protected:
 
 private:
     ColumnRawPtrs actual_columns;
+    /// Owns the key columns with negative zeros replaced by positive zeros, if there were any.
+    Columns canonicalized_columns;
 };
 
 }

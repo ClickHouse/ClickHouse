@@ -111,10 +111,23 @@ struct BloomFilterHash
             return build_hash_column(getNumberTypeHash<UInt64, UInt32>(field));
         if (which.isDateTime64())
             return build_hash_column(getNumberTypeHash<DateTime64, DateTime64>(field));
-        if (which.isFloat32())
+        if (which.isFloat32() || which.isFloat64())
+        {
+            /// A floating point zero also has to probe the raw-bit hashes of -0., which are stored
+            /// in parts written by versions that did not canonicalize negative zero before hashing
+            /// (see `base/normalizeNegativeZero.h`). Extra probes can only make the filter more
+            /// permissive, so this is always safe. `maybeTrueOnBloomFilter` treats a multi-row hash
+            /// column as "any of the hashes may be present", which is what equality with zero means:
+            /// the granule may contain 0. or -0. hashed by the old or the new code.
+            if (!field.isNull() && field.safeGet<Float64>() == 0.0)
+            {
+                auto hashes = ColumnUInt64::create();
+                hashes->getData().push_back(getNumberTypeHash<Float64, Float64>(field));
+                hashes->getData().push_back(legacyNegativeZeroHash());
+                return hashes;
+            }
             return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
-        if (which.isFloat64())
-            return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
+        }
         if (which.isUUID())
             return build_hash_column(getNumberTypeHash<UUID, UUID>(field));
         if (which.isIPv4())
@@ -171,6 +184,68 @@ struct BloomFilterHash
         ColumnUInt64::Container & index_column_vec = index_column->getData();
         getAnyTypeHash<true>(actual_type.get(), actual_col.get(), index_column_vec, pos);
         return index_column;
+    }
+
+    /// The hash of a canonicalized floating point zero: all of its bits are zero
+    /// (Float32 values are hashed after a conversion to Float64).
+    static UInt64 canonicalZeroHash() { return DefaultHash64<UInt64>(0); }
+
+    /// The hash of the raw bits of Float64 -0. Parts written by versions that did not canonicalize
+    /// negative zero before hashing (see `base/normalizeNegativeZero.h`) contain it for -0. values,
+    /// and servers of those versions probe -0. with it.
+    static UInt64 legacyNegativeZeroHash() { return DefaultHash64<UInt64>(UInt64(1) << 63); }
+
+    /// Whether the values of this index type are hashed as floating point values.
+    static bool isFloatingPointIndexType(const DataTypePtr & data_type)
+    {
+        WhichDataType which(BloomFilter::getPrimitiveType(data_type));
+        return which.isFloat32() || which.isFloat64();
+    }
+
+    /// Predicate-side adjustment of a hash column built by [hashWithColumn] for floating point types.
+    /// Parts written by versions that did not canonicalize negative zero before hashing
+    /// (see `base/normalizeNegativeZero.h`) store the raw-bit hashes of -0., so a probe for
+    /// a floating point zero also has to try the legacy hashes, otherwise a granule of an old
+    /// part containing only -0. is skipped incorrectly. Extra probes can only make the filter
+    /// more permissive, so this is always safe. Under all-of semantics (`hasAll`) extra probes
+    /// cannot be added; the zero probes are dropped instead, which is also only permissive.
+    /// Never apply this to the hashes that are written to the filter, only to the probes.
+    static ColumnPtr addLegacyNegativeZeroProbes(const DataTypePtr & data_type, ColumnPtr hash_column, bool match_all)
+    {
+        if (!isFloatingPointIndexType(data_type))
+            return hash_column;
+
+        const auto * hashes = typeid_cast<const ColumnUInt64 *>(hash_column.get());
+        if (!hashes)
+            return hash_column;
+
+        const UInt64 zero_hash = canonicalZeroHash();
+
+        const auto & data = hashes->getData();
+        size_t num_zeros = 0;
+        for (UInt64 hash : data)
+            num_zeros += (hash == zero_hash);
+
+        if (!num_zeros)
+            return hash_column;
+
+        auto res = ColumnUInt64::create();
+        auto & res_data = res->getData();
+
+        if (match_all)
+        {
+            res_data.reserve(data.size() - num_zeros);
+            for (UInt64 hash : data)
+                if (hash != zero_hash)
+                    res_data.push_back(hash);
+        }
+        else
+        {
+            res_data.assign(data.begin(), data.end());
+            res_data.push_back(legacyNegativeZeroHash());
+        }
+
+        return res;
     }
 
     /// Like [hashWithColumn], but for a LowCardinality column returns only the distinct

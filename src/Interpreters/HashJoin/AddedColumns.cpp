@@ -1,12 +1,18 @@
 #include <Interpreters/HashJoin/AddedColumns.h>
+#include <Columns/canonicalizeNegativeZero.h>
 #include <DataTypes/NullableUtils.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 JoinOnKeyColumns::JoinOnKeyColumns(
     const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_,
-    bool keep_lowcardinality)
+    bool keep_lowcardinality, Columns & canonical_keys, bool prepare_canonical_keys)
     : key_names(key_names_)
     /// Rare case, when keys are constant or low cardinality. To avoid code bloat, simply materialize them.
     /// Exception: single-LowCardinality-column joins keep the dictionary so the key getter can use it.
@@ -19,6 +25,22 @@ JoinOnKeyColumns::JoinOnKeyColumns(
     , join_mask_column(JoinCommon::getColumnAsMask(block.getSourceBlock(), cond_column_name))
     , key_sizes(key_sizes_)
 {
+    /// The key getters compare the keys bitwise, so negative zeros are replaced by positive zeros in advance.
+    /// It scans the whole source block, while a continuation probes only a suffix of it, so it is done once per block.
+    if (prepare_canonical_keys)
+    {
+        canonical_keys.clear();
+        canonical_keys.reserve(key_columns.size());
+        for (const auto * key_column : key_columns)
+            canonical_keys.push_back(canonicalizeNegativeZero(*key_column));
+    }
+
+    if (canonical_keys.size() != key_columns.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} canonicalized JOIN key columns, got {}", key_columns.size(), canonical_keys.size());
+
+    for (size_t i = 0; i < key_columns.size(); ++i)
+        if (canonical_keys[i])
+            key_columns[i] = canonical_keys[i].get();
 }
 
 namespace
