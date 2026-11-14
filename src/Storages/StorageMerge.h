@@ -247,6 +247,9 @@ public:
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
+    /// A nested `Merge` read hands the sets of an outer one on to its own children.
+    void setDefaultExpressionsSets(DefaultExpressionsSetsPtr sets) override { default_expressions_sets = std::move(sets); }
+
     QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) override;
 
     /// Returns child plans aligned 1:1 with `getSelectedTables()`. Entries for uninitialized
@@ -381,8 +384,9 @@ private:
     std::vector<std::unique_ptr<QueryPlan>> alias_set_plans;
     /// Sets for `IN` in the `DEFAULT` expressions of the columns missing in the parts of the children, such as
     /// `f UInt8 DEFAULT p IN keys` added by `ALTER TABLE ... ADD COLUMN`. These defaults are evaluated by the readers
-    /// of the children, so this is handed to every `ReadFromMergeTree` of the child plans: a set is built once for the
-    /// whole read, by the first reader that needs it, instead of once per child table.
+    /// of the children, so this is handed to every reading step of the child plans, including the nested `Merge` reads
+    /// and the readers of formats: a set is built once for the whole read, by the first reader that needs it, instead
+    /// of once per child table.
     DefaultExpressionsSetsPtr default_expressions_sets;
 
     std::vector<ChildPlan> createChildrenPlans(SelectQueryInfo & query_info_, PreparedSets & alias_sets_) const;

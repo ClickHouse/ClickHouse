@@ -34,8 +34,9 @@ struct FormatParserSharedResources
 
     /// The sets of the column defaults that read a table (`x IN table`), shared by the `AddingDefaultsTransform`
     /// of every reader of the query, so that each set is built once per query, from one snapshot of its table,
-    /// rather than once per file or stream.
-    const DefaultExpressionsSetsPtr default_expressions_sets;
+    /// rather than once per file or stream. Replaced by the sets shared with the other reading steps of a logical read,
+    /// see `SourceStepWithFilterBase::setDefaultExpressionsSets`, before the readers are created.
+    DefaultExpressionsSetsPtr default_expressions_sets;
 
     FormatParserSharedResources(const Settings & settings, size_t num_streams_);
 

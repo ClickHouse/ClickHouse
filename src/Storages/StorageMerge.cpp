@@ -1984,14 +1984,15 @@ static bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::fu
     return ok;
 }
 
-/// The defaults of the columns missing in the parts of the children of a `Merge` read are evaluated by their readers.
-/// Make all of them share the sets of these defaults (`x IN table`), so that each set is built once for the read.
-/// Every reading step is visited, including the ones that build sets, since a set keyed by its subquery is the same
-/// wherever it is used.
+/// The defaults of the columns missing in the parts or the files of the children of a `Merge` read are evaluated by
+/// their readers. Make all of them share the sets of these defaults (`x IN table`), so that each set is built once for
+/// the read. Every reading step is visited, including the ones that build sets, since a set keyed by its subquery is
+/// the same wherever it is used. A nested `Merge` read passes the sets on to its own children when it builds them.
+/// The readers of the children may read on behalf of different users, which `DefaultExpressionsSets` keeps apart.
 static void shareDefaultExpressionsSets(QueryPlan::Node * node, const DefaultExpressionsSetsPtr & sets)
 {
-    if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get()))
-        read_from_merge_tree->setDefaultExpressionsSets(sets);
+    if (auto * source = dynamic_cast<SourceStepWithFilterBase *>(node->step.get()))
+        source->setDefaultExpressionsSets(sets);
     for (auto * child : node->children)
         shareDefaultExpressionsSets(child, sets);
 }
