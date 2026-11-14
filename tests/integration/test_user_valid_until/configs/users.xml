@@ -1,0 +1,71 @@
+<clickhouse>
+    <profiles>
+        <default></default>
+    </profiles>
+
+    <users>
+        <!-- Flat form, future expiration; login allowed. -->
+        <xml_flat_valid>
+            <password>x</password>
+            <valid_until>2099-01-01 00:00:00</valid_until>
+            <networks><ip>::/0</ip></networks>
+            <profile>default</profile>
+        </xml_flat_valid>
+
+        <!-- Flat form, already expired. -->
+        <xml_flat_expired>
+            <password>x</password>
+            <valid_until>2010-01-01 00:00:00</valid_until>
+            <networks><ip>::/0</ip></networks>
+            <profile>default</profile>
+        </xml_flat_expired>
+
+        <!-- The 'infinity' literal maps to time_t = 0 (no expiration). -->
+        <xml_infinity>
+            <password>x</password>
+            <valid_until>infinity</valid_until>
+            <networks><ip>::/0</ip></networks>
+            <profile>default</profile>
+        </xml_infinity>
+
+        <!-- Non-password auth (sha256_hex of 'secret') combined with <valid_until>. -->
+        <xml_sha256_valid>
+            <password_sha256_hex>2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b</password_sha256_hex>
+            <valid_until>2099-01-01 00:00:00</valid_until>
+            <networks><ip>::/0</ip></networks>
+            <profile>default</profile>
+        </xml_sha256_valid>
+
+        <!-- <auth_methods> with one valid and one expired method. -->
+        <xml_per_method>
+            <auth_methods>
+                <valid_method>
+                    <password>good</password>
+                    <valid_until>2099-01-01 00:00:00</valid_until>
+                </valid_method>
+                <expired_method>
+                    <password>bad</password>
+                    <valid_until>2010-01-01 00:00:00</valid_until>
+                </expired_method>
+            </auth_methods>
+            <networks><ip>::/0</ip></networks>
+            <profile>default</profile>
+        </xml_per_method>
+
+        <!-- User-level <valid_until> replaces per-method values for every method. -->
+        <xml_user_level_replaces>
+            <auth_methods>
+                <method_a>
+                    <password>a</password>
+                    <valid_until>2099-01-01 00:00:00</valid_until>
+                </method_a>
+                <method_b>
+                    <password>b</password>
+                </method_b>
+            </auth_methods>
+            <valid_until>2010-01-01 00:00:00</valid_until>
+            <networks><ip>::/0</ip></networks>
+            <profile>default</profile>
+        </xml_user_level_replaces>
+    </users>
+</clickhouse>
