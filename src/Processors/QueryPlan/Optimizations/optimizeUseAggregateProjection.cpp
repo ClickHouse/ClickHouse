@@ -817,9 +817,16 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     ContextPtr context = reading.getContext();
 
+    const bool has_lightweight_delete_parts = reading.getMutationsSnapshot()->hasLightweightDeletedMask();
+    const bool is_simple_count
+        = keys.empty() && aggregates.size() == 1 && typeid_cast<const AggregateFunctionCount *>(aggregates[0].function.get());
+    const bool is_bare_count = is_simple_count && aggregates[0].argument_names.empty();
+
+    /// Lightweight deletes do not update extrema in part metadata. Only allow ungrouped, argument-free `count`,
+    /// with exact row counts checked per part before using the projection. Arguments must still be evaluated and may throw.
     bool can_use_minmax_projection = allow_implicit_projections
         && metadata->minmax_count_projection
-        && !reading.getMutationsSnapshot()->hasLightweightDeletedMask()
+        && (!has_lightweight_delete_parts || is_bare_count)
         && canMinMaxCountProjectionMatchAggregates(aggregates);
     bool can_use_statistics = allow_implicit_projections && keys.empty();
 
@@ -876,8 +883,8 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
         {
             candidates.reject_reasons.try_emplace(projection->name, "the implicit projection cannot compute the aggregation keys and functions of the query");
 
-            /// Trivial count optimization only applies after @can_use_minmax_projection.
-            if (keys.empty() && aggregates.size() == 1 && typeid_cast<const AggregateFunctionCount *>(aggregates[0].function.get()))
+            /// Granule row counts do not account for lightweight deletes.
+            if (!has_lightweight_delete_parts && is_simple_count)
                 candidates.only_count_column = aggregates[0].column_name;
         }
     }

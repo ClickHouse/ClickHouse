@@ -544,14 +544,11 @@ static bool rewritesAllPartColumns(
 
 static UInt64 getExistingRowsCount(const Block & block)
 {
-    auto column = block.getByName(RowExistsColumn::name).column;
+    auto column = block.getByName(RowExistsColumn::name).column->convertToFullColumnIfConst()->convertToFullColumnIfSparse();
     const ColumnUInt8 * row_exists_col = typeid_cast<const ColumnUInt8 *>(column.get());
 
     if (!row_exists_col)
-    {
-        LOG_WARNING(&Poco::Logger::get("MutationHelpers::getExistingRowsCount"), "_row_exists column type is not UInt8");
-        return block.rows();
-    }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "_row_exists column type is not UInt8");
 
     UInt64 existing_count = 0;
 
@@ -5477,9 +5474,9 @@ bool MutateTask::prepare()
     {
         ctx->count_lightweight_deleted_rows = false;
 
-        /// Only if storage type does not change we can be sure that number of rows will not be changed.
-        if (!ctx->changes_storage_type)
-            ctx->new_data_part->existing_rows_count = ctx->source_part->existing_rows_count.value_or(ctx->source_part->rows_count);
+        /// Reuse the source count only if neither the deletion mask nor the storage type changes.
+        if (!lightweight_delete_mode && !ctx->changes_storage_type)
+            ctx->new_data_part->existing_rows_count = ctx->source_part->existing_rows_count;
     }
 
     /// All columns from part are changed and may be some more that were missing before in part
@@ -5488,6 +5485,10 @@ bool MutateTask::prepare()
     /// rewriting the whole part.
     if (rewrites_all_columns)
     {
+        /// A full rewrite can remove rows through a mutation or TTL. Do not reuse the source count.
+        if (!ctx->count_lightweight_deleted_rows)
+            ctx->new_data_part->existing_rows_count.reset();
+
         /// In case of replicated merge tree with zero copy replication
         /// Here ClickHouse claims that this new part can be deleted in temporary state without unlocking the blobs
         /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
