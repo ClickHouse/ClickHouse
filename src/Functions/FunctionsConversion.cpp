@@ -3612,6 +3612,18 @@ FunctionBasePtr createFunctionBaseCast(
         }))
     {
     }
+    else if (isBool(monotonicity_result_type))
+    {
+        /// Every nonzero value becomes 1, so the cast is not injective, and unlike the cast into `UInt8`
+        /// it does not throw for a `DateTime64` outside of the `UInt8` range.
+        monotonicity = [](const IDataType & type, const Field & left, const Field & right)
+        {
+            auto result = detail::ToNumberMonotonicity<UInt8>::get(type, left, right);
+            result.is_strict = false;
+            result.is_always_monotonic_where_defined = false;
+            return result;
+        };
+    }
     else if (castTypeToEither<
         DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
         DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
