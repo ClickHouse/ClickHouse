@@ -282,9 +282,9 @@ void CSVFormatReader::skipHeaderRow()
 }
 
 template <bool is_header>
-std::vector<String> CSVFormatReader::readRowImpl()
+VectorWithMemoryTracking<String> CSVFormatReader::readRowImpl()
 {
-    std::vector<String> fields;
+    VectorWithMemoryTracking<String> fields;
     do
     {
         fields.push_back(readCSVFieldIntoString<is_header>());
@@ -409,7 +409,7 @@ bool CSVFormatReader::readField(
 
         if (!keep_empty_value)
         {
-            column.insertDefault();
+            type->insertDefaultInto(column);
             return false;
         }
     }
@@ -425,7 +425,7 @@ bool CSVFormatReader::readFieldImpl(ReadBuffer & istr, DB::IColumn & column, con
         && !isCSVSeparateColumnsTuple(type, format_settings))
     {
         /// If value is null but type is not nullable then use default value instead.
-        return SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(column, istr, format_settings, serialization);
+        return SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(column, istr, format_settings, serialization, type.get());
     }
 
     /// Read the column normally.
@@ -459,7 +459,7 @@ bool CSVFormatReader::readFieldOrDefault(DB::IColumn & column, const DB::DataTyp
 
     if (column.size() == col_size + 1)
         column.popBack(1);
-    column.insertDefault();
+    type->insertDefaultInto(column);
     return false;
 }
 
@@ -513,7 +513,7 @@ CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_t
 {
 }
 
-std::optional<std::pair<std::vector<String>, DataTypes>> CSVSchemaReader::readRowAndGetFieldsAndDataTypes()
+std::optional<std::pair<VectorWithMemoryTracking<String>, DataTypes>> CSVSchemaReader::readRowAndGetFieldsAndDataTypes()
 {
     if (buf.eof())
         return {};
@@ -544,7 +544,7 @@ void registerInputFormatCSV(FormatFactory & factory)
             const FormatSettings & settings)
         {
             return std::make_shared<CSVRowInputFormat>(std::make_shared<const Block>(sample), buf, std::move(params), with_names, with_types, settings);
-        });
+        }, /*supports_reset_parser=*/ true);
     };
 
     registerWithNamesAndTypes("CSV", register_func);

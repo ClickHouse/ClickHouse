@@ -1,0 +1,24 @@
+<test>
+    <!-- The merge of the adaptive aggregator's local tables that never freeze, measured where finding the cells of a
+         partition dominates it: every thread's table holds all of 15-16 thousand keys, below the freeze threshold,
+         with small states. ClickBench barely measures this: its high-cardinality queries freeze their tables, and the
+         work of merging large states dominates its merges of fewer keys.
+
+         The states are wide or own memory, so the merge runs on all the threads, partition by partition. Each
+         partition reads only its own cells, through the index that every producer builds of its table when it
+         finishes. A merge that walked every table for every partition would cost the tables times the partitions, and
+         both follow the thread count. The queries run 64 threads, which the cores of the runner share: the number of
+         tables, not the cores, makes this cost. The free-memory cap of the thread count is off, as it would lower the
+         64 threads to the free memory of the runner. -->
+    <settings>
+        <max_threads>64</max_threads>
+        <max_threads_min_free_memory_per_thread>0</max_threads_min_free_memory_per_thread>
+    </settings>
+
+    <query>SELECT k, groupArray(2)(number) FROM (SELECT toUInt64(number % 15000) AS k, number FROM numbers_mt(200000000)) GROUP BY k FORMAT Null</query>
+    <query>SELECT k, groupArray(4)(number) FROM (SELECT toUInt64(number % 16000) AS k, number FROM numbers_mt(200000000)) GROUP BY k FORMAT Null</query>
+    <query>SELECT k, uniqExact(x) FROM (SELECT toUInt64(number % 15000) AS k, number % 3 AS x FROM numbers_mt(150000000)) GROUP BY k FORMAT Null</query>
+    <query>SELECT k, any(s) FROM (SELECT toUInt64(number % 16000) AS k, toString(number) AS s FROM numbers_mt(100000000)) GROUP BY k FORMAT Null</query>
+    <query>SELECT k, argMax(toString(number), number) FROM (SELECT toUInt64(number % 16000) AS k, number FROM numbers_mt(50000000)) GROUP BY k FORMAT Null</query>
+    <query>SELECT k, groupBitmap(number % 1000) FROM (SELECT toUInt64(number % 16000) AS k, number FROM numbers_mt(100000000)) GROUP BY k FORMAT Null</query>
+</test>

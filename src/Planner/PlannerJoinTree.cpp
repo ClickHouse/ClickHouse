@@ -122,6 +122,8 @@
 #include <Interpreters/getEffectiveMaxThreads.h>
 
 #include <ranges>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -449,7 +451,7 @@ void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const 
     }
 }
 
-bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
+bool shouldIgnoreQuota(const TableNode & table_node)
 {
     const auto & storage_id = table_node.getStorageID();
     if (!storage_id.hasDatabase())
@@ -469,34 +471,9 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
       * We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
       * Because it is the column that is cheapest to read.
       */
-    class ColumnWithSize
-    {
-    public:
-        ColumnWithSize(NameAndTypePair column_, ColumnSize column_size_)
-            : column(std::move(column_))
-            , compressed_size(column_size_.data_compressed)
-            , uncompressed_size(column_size_.data_uncompressed)
-            , type_size(column.type->haveMaximumSizeOfValue() ? column.type->getMaximumSizeOfValueInMemory() : 100)
-        {
-        }
-
-        bool operator<(const ColumnWithSize & rhs) const
-        {
-            return std::tie(compressed_size, type_size, uncompressed_size)
-                < std::tie(rhs.compressed_size, rhs.type_size, rhs.uncompressed_size);
-        }
-
-        NameAndTypePair column;
-        size_t compressed_size = 0;
-        size_t uncompressed_size = 0;
-        size_t type_size = 0;
-    };
-
-    std::vector<ColumnWithSize> columns_with_sizes;
-
-    auto column_sizes = storage->getColumnSizes();
     auto column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns());
 
+    bool filtered_by_allowed_columns = false;
     if (!column_names_allowed_to_select.empty())
     {
         /// Keep only the columns the user is allowed to read, so that a trivial query reads a column
@@ -506,53 +483,56 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
         /// physical columns: reading any of them just to determine the number of rows for a trivial query
         /// (such as `SELECT count()`) is allowed, because computing an accessible ALIAS column requires
         /// reading its physical source columns anyway and no column values are exposed to the user.
-        bool has_allowed_physical_column = std::any_of(
-            column_names_and_types.begin(),
-            column_names_and_types.end(),
-            [&](const auto & column) { return column_names_allowed_to_select.contains(column.name); });
-
-        if (has_allowed_physical_column)
+        ///
+        /// The allowed names also include the subcolumns the user has a grant on by their exact name (e.g. `t.a` of a
+        /// `Tuple` or a dynamic path `json.a` of a `JSON` column, see `checkAccessRights`). Dynamic subcolumns are not
+        /// listed in `column_names_and_types`, so they are resolved by name, and subcolumns must not be skipped when
+        /// choosing among the allowed columns: reading another column may be denied, e.g. by an `Alias` table.
+        ///
+        /// A storage that does not support subcolumns (e.g. `StripeLog` or `Join`) can only read whole columns, so a
+        /// subcolumn is never chosen for it: the allowed subcolumns are ignored and a physical column is read instead.
+        const bool storage_supports_subcolumns = storage->supportsSubcolumns();
+        NamesAndTypesList allowed_columns;
+        NameSet listed_names;
+        for (const auto & column : column_names_and_types)
         {
-            auto it = column_names_and_types.begin();
-            while (it != column_names_and_types.end())
+            listed_names.insert(column.name);
+            if (column.isSubcolumn() && !storage_supports_subcolumns)
+                continue;
+            if (column_names_allowed_to_select.contains(column.name))
+                allowed_columns.push_back(column);
+        }
+
+        if (storage_supports_subcolumns)
+        {
+            Names not_listed_names;
+            for (const auto & name : column_names_allowed_to_select)
+                if (!listed_names.contains(name))
+                    not_listed_names.push_back(name);
+            std::sort(not_listed_names.begin(), not_listed_names.end());
+            for (const auto & name : not_listed_names)
             {
-                if (!column_names_allowed_to_select.contains(it->name))
-                    it = column_names_and_types.erase(it);
-                else
-                    ++it;
+                auto column = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), name);
+                if (column && column->isSubcolumn())
+                    allowed_columns.push_back(std::move(*column));
             }
         }
-    }
 
-    if (!column_sizes.empty())
-    {
-        for (auto & column_name_and_type : column_names_and_types)
+        if (!allowed_columns.empty())
         {
-            auto it = column_sizes.find(column_name_and_type.name);
-            if (it == column_sizes.end())
-                continue;
-
-            columns_with_sizes.emplace_back(column_name_and_type, it->second);
+            filtered_by_allowed_columns = true;
+            column_names_and_types = std::move(allowed_columns);
         }
     }
 
-    NameAndTypePair result;
+    /// A table expression can resolve to no columns at all, for example a table function over a
+    /// table whose schema is unavailable. `getSmallestColumn` treats an empty list as a logical error.
+    if (column_names_and_types.empty())
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Cannot read from table expression with no columns");
 
-    if (!columns_with_sizes.empty())
-        result = std::min_element(columns_with_sizes.begin(), columns_with_sizes.end())->column;
-    else
-    {
-        /// A table expression can resolve to no columns at all, for example a table function over a
-        /// table whose schema is unavailable. `getSmallestColumn` treats an empty list as a logical error.
-        if (column_names_and_types.empty())
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Cannot read from table expression with no columns");
-
-        /// If we have no information about columns sizes, choose a column of minimum size of its data type
-        result = ExpressionActions::getSmallestColumn(column_names_and_types);
-    }
-
-    return result;
+    return ExpressionActions::getCheapestColumnToRead(
+        column_names_and_types, storage->getColumnSizes(), /*skip_subcolumns=*/ !filtered_by_allowed_columns);
 }
 
 /// True if the table expression carries modifiers that prevent answering a
@@ -894,7 +874,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
 
             NamesAndTypesList projection_columns_list(projection_columns.begin(), projection_columns.end());
             /// Pass skip_subcolumns=false: subquery projection columns are full
-            /// query-level outputs (e.g. tup.a from CountDistinctPass rewrite),
+            /// query-level outputs (e.g. tup.a in SELECT count() FROM (SELECT tup.a FROM t GROUP BY tup.a)),
             /// not storage meta-subcolumns (.size0, .keys) that should be skipped.
             additional_column_to_read = ExpressionActions::getSmallestColumn(projection_columns_list, /*skip_subcolumns=*/ false);
         }
@@ -1261,6 +1241,7 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
         && !main_query_node.hasGroupBy()
         && !main_query_node.hasHaving()
         && !main_query_node.hasOrderBy()
+        && !main_query_node.isShuffle()
         && !main_query_node.hasLimitBy()
         && !select_query_info.need_aggregate
         && !select_query_info.has_window
@@ -1367,10 +1348,11 @@ void pushOrderByIntoView(
     if (storage->getStorageID().database_name == "_table_function")
         return;
 
-    /// A sealed view hides rows from the outer query. The pushed-down `ORDER BY ... LIMIT` would run
+    /// A sealed view not read by its definer hides rows from the outer query. The pushed-down `ORDER BY ... LIMIT` would run
     /// below that boundary, so the amount of data read would depend on the rows the view hides.
     if (const auto * view = typeid_cast<const StorageView *>(storage.get());
-        view && view->isSealed(*storage_snapshot->metadata, query_context))
+        view && view->isSealed(*storage_snapshot->metadata, query_context)
+        && !view->isReadByDefiner(*storage_snapshot->metadata, query_context))
         return;
 
     /// `SAMPLE` / `FINAL` applied to the view in the outer query (e.g.
@@ -1546,8 +1528,9 @@ void pushOrderByIntoView(
     if (!sel)
         return;
 
-    /// View must not have transformations that change ORDER BY semantics
-    if (sel->hasJoin() || sel->groupBy() || sel->distinct)
+    /// View must not have transformations that change `ORDER BY` semantics.
+    /// Injecting `ORDER BY` into a `SHUFFLE` query would also create incompatible clauses.
+    if (sel->hasJoin() || sel->groupBy() || sel->distinct || sel->shuffle)
         return;
 
     /// Window functions partition/order globally; with ORDER BY/LIMIT pushed
@@ -1792,6 +1775,9 @@ bool allowParallelReplicasForJoinTree(
         const auto * right_table = right_table_expr->as<TableNode>();
         const auto * right_table_function = right_table_expr->as<TableFunctionNode>();
         if (!right_table && !right_table_function)
+            return false;
+
+        if (right_table_function && !tableFunctionCanDriveParallelReplicasRead(*right_table_function, query_sets_additional_table_filters))
             return false;
 
         const auto right_storage = right_table ? right_table->getStorage() : right_table_function->getStorage();
@@ -2307,6 +2293,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             custom_key_ast,
                             table_expression_query_info.table_expression,
                             query_context,
+                            planner_context->isViewSourceInSubqueries(),
                             /*check_access_rights=*/ true);
 
                         planner_context->getMutableQueryContext()->setSetting("distributed_group_by_no_merge", 2);
@@ -2619,6 +2606,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                     additional_filter_ast,
                                     table_expression_query_info.table_expression,
                                     query_context,
+                                    planner_context->isViewSourceInSubqueries(),
                                     /*check_access_rights=*/ true);
 
                                 auto & outer_query_node = table_expression_query_info.query_tree->as<QueryNode &>();
@@ -2651,6 +2639,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                     table_expression_query_info.additional_filter_ast,
                                     std::static_pointer_cast<ITableExpressionNode>(dist_table_node),
                                     inner_context,
+                                    planner_context->isViewSourceInSubqueries(),
                                     /*check_access_rights=*/ true);
                             }
 
@@ -2669,6 +2658,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                     custom_key_ast,
                                     std::static_pointer_cast<ITableExpressionNode>(dist_table_node),
                                     inner_context,
+                                    planner_context->isViewSourceInSubqueries(),
                                     /*check_access_rights=*/ true);
                             }
 
@@ -2913,6 +2903,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 custom_key_ast,
                                 table_expression_query_info.table_expression,
                                 query_context,
+                                planner_context->isViewSourceInSubqueries(),
                                 /*check_access_rights=*/ true);
 
                             planner_context->getMutableQueryContext()->setSetting("prefer_localhost_replica", Field{0});
@@ -3349,7 +3340,7 @@ JoinTreeQueryPlan joinPlansWithStep(
     JoinTreeQueryPlan left_join_tree_query_plan,
     JoinTreeQueryPlan right_join_tree_query_plan)
 {
-    std::vector<QueryPlanPtr> plans;
+    QueryPlanPtrs plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(left_join_tree_query_plan.query_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(right_join_tree_query_plan.query_plan)));
 
@@ -3422,7 +3413,7 @@ JoinTreeQueryPlan buildQueryPlanForCrossJoinNode(
             JoinOperator{JoinKind::Cross},
             std::move(join_expression_actions),
             outer_scope_columns,
-            std::unordered_map<String, const ActionsDAG::Node *>{},
+            UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *>{},
             settings[Setting::join_use_nulls],
             JoinSettings(settings, query_context->getJoinAnalyzeMode()),
             SortingStep::Settings(settings));
@@ -3809,11 +3800,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     if (is_single_table_expression)
     {
         auto * table_node = table_expressions_stack[0]->as<TableNode>();
-        if (table_node && shouldIgnoreQuotaAndLimits(*table_node))
-        {
+        if (table_node && shouldIgnoreQuota(*table_node))
             select_query_options.ignore_quota = true;
-            select_query_options.ignore_limits = true;
-        }
     }
 
     size_t joins_count = 0;
