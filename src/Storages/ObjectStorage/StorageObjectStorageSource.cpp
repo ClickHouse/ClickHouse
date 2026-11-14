@@ -1350,6 +1350,8 @@ Chunk StorageObjectStorageSource::generate()
             && !reader.getObjectInfo()->file_bucket_info)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
+        LOG_TRACE(log, "Finished reading object: {} ({} rows)", reader.getObjectInfo()->getPath(), total_rows_in_file);
+
         total_rows_in_file = 0;
 
         chassert(reader_future.valid());
@@ -3048,6 +3050,8 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
     {
         object_info =  buffer[current_index];
     }
+
+    LOG_TRACE(log, "Received task: {}", object_info->getPath());
 
     if (!is_archive)
         return object_info;
