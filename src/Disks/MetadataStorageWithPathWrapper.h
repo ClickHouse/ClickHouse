@@ -314,11 +314,6 @@ public:
         return delegate->recordAsRemoved(blobs);
     }
 
-    bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override
-    {
-        return delegate->hasPendingRemovalBlobs(blobs);
-    }
-
     bool hasDeadBlobsQueue() const override
     {
         return delegate->hasDeadBlobsQueue();

@@ -33,7 +33,6 @@ private:
     mutable std::mutex removed_objects_mutex;
     InMemoryRemovalQueue objects_to_remove TSA_GUARDED_BY(removed_objects_mutex);
 
-    static constexpr std::string_view SYSTEM_METADATA_DIR = ".metadata";
     static constexpr std::string_view REMOVAL_LOG_FILE = ".metadata/blobs_to_remove.log";
 
     enum RemovalLogVersion : UInt32
@@ -62,6 +61,10 @@ private:
     LoggerPtr log;
 
 public:
+    /// Directory in the root of the metadata disk for the internal files of the storage, such as the removal log.
+    /// It is not a part of the disk contents: it holds no file metadata and must be skipped by whoever walks the root.
+    static constexpr std::string_view SYSTEM_METADATA_DIR = ".metadata";
+
     MetadataStorageFromDisk(DiskPtr disk_, String compatible_key_prefix_, ObjectStorageKeyGeneratorPtr key_generator_, bool persist_removal_queue_, size_t removal_log_compaction_threshold_);
 
     MetadataTransactionPtr createTransaction() override;
@@ -122,7 +125,6 @@ public:
 
     BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count) override;
     int64_t recordAsRemoved(const StoredObjects & blobs) override;
-    bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override;
     int64_t getDeadBlobsQueueEstimate() override;
 
     /// The storage has a single location, so there is never anything to replicate.

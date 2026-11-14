@@ -46,13 +46,4 @@ int64_t InMemoryRemovalQueue::markAsRemoved(const StoredObjects & blobs)
     return count;
 }
 
-bool InMemoryRemovalQueue::containsAny(const StoredObjects & blobs) const
-{
-    for (const auto & blob : blobs)
-        if (index.contains(blob))
-            return true;
-
-    return false;
-}
-
 }

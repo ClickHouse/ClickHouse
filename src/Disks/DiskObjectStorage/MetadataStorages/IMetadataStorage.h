@@ -341,7 +341,6 @@ public:
     using BlobsToRemove = std::unordered_map<StoredObject, LocationSet>;
     virtual BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & /*cluster*/, int64_t /*max_count*/) { return {}; }
     virtual int64_t recordAsRemoved(const StoredObjects & /*blobs*/) { return 0; }
-    virtual bool hasPendingRemovalBlobs(const StoredObjects & /*blobs*/) const { return false; }
     virtual int64_t getDeadBlobsQueueEstimate() { return 0; }
 
     /// Whether this storage ever puts anything into the queue of dead blobs above. The queue is drained in

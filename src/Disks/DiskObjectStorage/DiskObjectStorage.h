@@ -304,7 +304,6 @@ private:
     scope_guard resource_changes_subscription;
     std::atomic_bool enable_distributed_cache;
 
-    std::atomic<bool> wait_blob_removal;
     UInt64 remove_shared_recursive_file_limit;
 };
 

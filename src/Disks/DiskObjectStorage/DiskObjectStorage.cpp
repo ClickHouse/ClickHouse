@@ -35,7 +35,6 @@
 #endif
 #endif
 #include <Core/Settings.h>
-#include <Core/ServerSettings.h>
 #include <base/sleep.h>
 #include <base/defines.h>
 
@@ -48,11 +47,6 @@ namespace CurrentMetrics
 
 namespace DB
 {
-
-namespace ServerSetting
-{
-    extern const ServerSettingsBool disk_transaction_wait_for_blob_removal;
-}
 
 namespace ErrorCodes
 {
@@ -84,7 +78,7 @@ ObjectStoragePtr DiskObjectStorage::getObjectStorage()
 
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
 {
-    return std::make_shared<DiskObjectStorageTransaction>(cluster, metadata_storage, object_storages, blob_killer, copy_object_pool, wait_blob_removal);
+    return std::make_shared<DiskObjectStorageTransaction>(cluster, metadata_storage, object_storages, copy_object_pool);
 }
 
 DiskObjectStorage::DiskObjectStorage(const DiskObjectStorage & base, MetadataStoragePtr metadata_storage_)
@@ -99,7 +93,6 @@ DiskObjectStorage::DiskObjectStorage(const DiskObjectStorage & base, MetadataSto
     , blob_copier(base.blob_copier)
     , copy_object_pool(base.copy_object_pool)
     , enable_distributed_cache(base.enable_distributed_cache.load())
-    , wait_blob_removal(base.wait_blob_removal.load())
     , remove_shared_recursive_file_limit(base.remove_shared_recursive_file_limit)
 {
     data_source_description.metadata_type = metadata_storage->getType();
@@ -145,7 +138,6 @@ DiskObjectStorage::DiskObjectStorage(
         CurrentMetrics::DiskObjectStorageCopyObjectThreadsScheduled,
         getCopyObjectThreadPoolSize(config, config_prefix)))
     , enable_distributed_cache(config.getBool(config_prefix + ".enable_distributed_cache", true))
-    , wait_blob_removal(config.getBool(config_prefix + ".wait_for_blob_removal", Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::disk_transaction_wait_for_blob_removal]))
     , remove_shared_recursive_file_limit(config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT))
 {
     /// TODO: change description to cover multiple object storages
@@ -1053,7 +1045,6 @@ void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration
     }
 
     remove_shared_recursive_file_limit = config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT);
-    wait_blob_removal = config.getBool(config_prefix + ".wait_for_blob_removal", context->getServerSettings()[ServerSetting::disk_transaction_wait_for_blob_removal]);
     blob_killer->applyNewSettings(config, config_prefix + ".data_background_cleanup");
     blob_copier->applyNewSettings(config, config_prefix + ".data_background_replication");
     copy_object_pool->setMaxThreads(getCopyObjectThreadPoolSize(config, config_prefix));
