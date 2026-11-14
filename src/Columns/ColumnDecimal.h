@@ -131,6 +131,7 @@ public:
     bool isDefaultAt(size_t n) const final { return data[n].value == 0; }
 
     bool hasOnlyTypeDefaults() const override;
+    ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const final;
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const final;
     void filter(const IColumn::Filter & filt) final;

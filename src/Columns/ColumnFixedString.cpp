@@ -1,6 +1,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
 
 #include <IO/WriteHelpers.h>
@@ -599,6 +600,43 @@ std::span<char> ColumnFixedString::insertRawUninitialized(size_t count)
 bool ColumnFixedString::hasOnlyTypeDefaults() const
 {
     return memoryIsZero(chars.data(), 0, chars.size());
+}
+
+ColumnPtr ColumnFixedString::createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
+{
+    if (offsets.size() + shift != size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Incompatible sizes of offsets ({}), shift ({}) and size of column {}", offsets.size(), shift, size());
+
+    const auto & default_column = assert_cast<const ColumnFixedString &>(column_with_default_value.getDataColumn());
+    if (default_column.getN() != n)
+        throw Exception(ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH, "Size of FixedString doesn't match");
+
+    auto res = ColumnFixedString::create(n);
+    auto & res_chars = res->getChars();
+    res_chars.reserve_exact(total_rows * n);
+
+    if (default_column.isDefaultAt(0))
+    {
+        res_chars.resize_fill(total_rows * n);
+    }
+    else
+    {
+        res_chars.resize(total_rows * n);
+        for (size_t pos = 0; pos < res_chars.size(); pos += n)
+            memcpySmallAllowReadWriteOverflow15(&res_chars[pos], default_column.chars.data(), n);
+    }
+
+    /// Plain memcpy: an overflowing copy would overwrite the following rows.
+    for (size_t i = 0; i < offsets.size(); ++i)
+    {
+        const size_t position = offsets[i];
+        if (position >= total_rows) [[unlikely]]
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Offset of a non-default value {} is out of range [0, {})", position, total_rows);
+        memcpy(&res_chars[position * n], &chars[(i + shift) * n], n);
+    }
+
+    return res;
 }
 
 void ColumnFixedString::serializeAsComparable(size_t row, String & out) const
