@@ -135,6 +135,8 @@ Field getFieldFromIndexArgumentAST(const ASTPtr & ast);
 /// Convert all children of an index arguments AST (ASTExpressionList) to a FieldVector.
 FieldVector getFieldsFromIndexArgumentsAST(const ASTPtr & arguments);
 
+bool isIvfVectorSimilarityIndex(const IndexDescription & index);
+
 ASTPtr createImplicitMinMaxIndexAST(const String & column_name);
 IndexDescription createImplicitMinMaxIndexDescription(
     const String & column_name, const ColumnsDescription & columns, bool escape_index_filenames, ContextPtr context);

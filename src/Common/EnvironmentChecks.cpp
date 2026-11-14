@@ -273,8 +273,18 @@ std::vector<uintptr_t> checkLoadedObjects()
 #endif
     };
 
+    /// With GPU support the CUDA driver is loaded with `dlopen` by the CUDA runtime and cuBLASLt, it is not linked.
+    auto is_cuda_driver = []([[maybe_unused]] const LoadedObject & object)
+    {
+#if USE_GPU
+        return object.name == "libcuda.so.1";
+#else
+        return false;
+#endif
+    };
+
     for (size_t i = 0; i < objects.size(); ++i)
-        if (objects[i].is_main_executable || objects[i].is_vdso || is_openssl_fips_provider(objects[i]))
+        if (objects[i].is_main_executable || objects[i].is_vdso || is_openssl_fips_provider(objects[i]) || is_cuda_driver(objects[i]))
             mark_expected(i);
 
     /// Compute the transitive closure of dependencies. The number of objects is tiny.

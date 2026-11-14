@@ -132,6 +132,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_ivf_index;
     extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsBool enable_xgboost;
     extern const SettingsBool enable_database_materialized_postgresql;
@@ -1116,6 +1117,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 const auto & settings = getContext()->getSettingsRef();
                 if (index_desc.type == TEXT_INDEX_NAME && !settings[Setting::enable_full_text_index])
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The text index feature is disabled. Enable the setting 'enable_full_text_index' to use it");
+                if (is_fresh_create && isIvfVectorSimilarityIndex(index_desc) && !settings[Setting::allow_experimental_ivf_index])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "The `ivf` method of the vector similarity index is experimental. Enable the setting 'allow_experimental_ivf_index' to use it");
 
                 properties.indices.push_back(index_desc);
             }
