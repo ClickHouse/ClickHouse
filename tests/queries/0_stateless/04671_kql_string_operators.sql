@@ -7,7 +7,7 @@
 -- Each case prints the predicate itself, so the reference records the answer rather than
 -- the presence of a row.
 
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 print '-- contains is a substring test, not a LIKE pattern --';

@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <IO/writeJSONNumber.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 
 #include <Columns/ColumnConst.h>
@@ -18,6 +19,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
     extern const int NOT_IMPLEMENTED;
 }
@@ -139,7 +141,12 @@ void SerializationNumber<T>::deserializeText(IColumn & column, ReadBuffer & istr
     T x{};
 
     if constexpr (is_integer<T> && is_arithmetic_v<T>)
-        readIntTextUnsafe(x, istr);
+    {
+        if (settings.check_integer_text_overflow)
+            readIntTextUnsafe<T, void, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(x, istr);
+        else
+            readIntTextUnsafe(x, istr);
+    }
     else
         deserializeNumberText(x, istr, settings);
 
@@ -154,7 +161,16 @@ bool SerializationNumber<T>::tryDeserializeText(IColumn & column, ReadBuffer & i
 {
     T x{};
 
-    if (!tryDeserializeNumberText(x, istr, settings) || (whole && !istr.eof()))
+    /// `tryReadIntText`'s own overflow check is skipped for the big-int widths.
+    bool parsed = false;
+    if constexpr (is_integer<T> && is_arithmetic_v<T> && is_big_int_v<T>)
+        parsed = settings.check_integer_text_overflow
+            ? readIntTextUnsafe<T, bool, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(x, istr)
+            : tryDeserializeNumberText(x, istr, settings);
+    else
+        parsed = tryDeserializeNumberText(x, istr, settings);
+
+    if (!parsed || (whole && !istr.eof()))
         return false;
 
     assert_cast<ColumnVector<T> &>(column).getData().push_back(x);
@@ -316,6 +332,17 @@ template <typename T>
 void SerializationNumber<T>::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeBinaryLittleEndian(assert_cast<const ColumnVector<T> &>(column).getData()[row_num], ostr);
+}
+
+template <typename T>
+void SerializationNumber<T>::deserializeBinary(T & value, std::string_view & input, const FormatSettings &) const
+{
+    if (input.size() < sizeof(T))
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read a value of {} bytes, only {} bytes are left", sizeof(T), input.size());
+
+    memcpy(&value, input.data(), sizeof(T));
+    transformEndianness<std::endian::little>(value);
+    input.remove_prefix(sizeof(T));
 }
 
 template <typename T>

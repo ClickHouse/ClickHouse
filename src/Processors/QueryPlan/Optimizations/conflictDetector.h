@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Joins.h>
 #include <Common/logger_useful.h>
 #include <base/types.h>
@@ -70,12 +71,39 @@ struct ConflictOperator
     /// kind. False for outer/semi/anti/full joins, which pin orientation and fix the kind.
     bool freely_reorderable = true;
     /// CD-C conflict rules attached to this operator (always empty for CD-A).
-    std::vector<ConflictRule> rules;
+    VectorWithMemoryTracking<ConflictRule> rules;
+
+    /// Whether the operator is applied where `left` and `right` are joined: its ON clause is complete
+    /// there and spans the two sides, which happens at exactly one join of a plan. An operator whose
+    /// ON clause does not span its inputs (degenerate) is applied where all of its relations first
+    /// come together; its ON clause may be complete, and even span a split, well inside one input.
+    bool isAppliedAt(UInt32 left, UInt32 right) const
+    {
+        const UInt32 joined = left | right;
+        const UInt32 located_by = locatedBy();
+        return (located_by & ~joined) == 0 && (located_by & left) && (located_by & right);
+    }
+
+    /// The relations that locate the operator, see `isAppliedAt`: once all of them are present, the
+    /// operator has been applied, at that join or below it.
+    UInt32 locatedBy() const { return degenerate ? relations : nel; }
+
+    /// The relations whose rows the operator pads with defaults or `NULL`, or drops: the right side
+    /// of an outer, semi or anti join (normalized to `Left`), both sides of a `FULL` join, nothing
+    /// for an inner join.
+    UInt32 nullSupplying() const
+    {
+        if (isFull(kind))
+            return relations;
+        if (isLeft(kind))
+            return relations & ~left_relations;
+        return 0;
+    }
 };
 
 /// Compute the per-operator conflict descriptors from the operators of the original join tree,
 /// using the requested detector (CD-A or CD-C).
-std::vector<ConflictOperator>
-computeConflictOperators(const std::vector<ConflictOpMask> & ops, ConflictDetector detector, LoggerPtr log);
+VectorWithMemoryTracking<ConflictOperator>
+computeConflictOperators(const VectorWithMemoryTracking<ConflictOpMask> & ops, ConflictDetector detector, LoggerPtr log);
 
 }

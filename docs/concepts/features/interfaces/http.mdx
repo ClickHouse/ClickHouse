@@ -7,8 +7,6 @@ title: 'HTTP interface'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## Prerequisites {#prerequisites}
 
 For the examples in this article you will need:
@@ -49,7 +47,15 @@ After executing a query successfully, a download button appears that allows you 
 
 The web UI is designed for professionals like you.
 
-<Image img="/images/play.webp" size="md" alt="ClickHouse Web UI screenshot" />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Web UI screenshot](/images/play.webp)
+
+</Frame>
+
+</div>
 
 In health-check scripts use the `GET /ping` request. This handler always returns "Ok." (with a line feed at the end). Available from version 18.12.13. See also `/replicas_status` to check replica's delay.
 
@@ -343,9 +349,41 @@ curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
 
 If the query already contains a `FROM` clause, the path component only supplies the download filename.
 
+### Upload data to a path table {#path-table-inserts}
+
+An HTTP `PUT` request to `/database/table.format` inserts the request body into an existing table. The path extension supplies the input format by default. As with a regular `INSERT`, the `input_format` setting takes precedence over the path format, followed by the bidirectional `format` setting. The request must contain at least one decoded byte and must not include a `query` parameter. This is useful when a file name already contains both the target table and the input format:
+
+```bash
+printf '1,"one"\n2,"two"\n' \
+  | curl -X PUT -H 'Content-Type: text/csv' --data-binary @- \
+      'http://localhost:8123/my_db/hits.CSV'
+
+printf '{"a":3,"b":"three"}\n' \
+  | curl -X PUT -H 'Content-Type: application/json' --data-binary @- \
+      'http://localhost:8123/my_db/hits.JSONEachRow'
+```
+
+The table must already exist. For a database-prefixed upload, `http_allow_database_as_path` enables the
+`/database/table.format` path. An unqualified `/table.format` upload still requires
+`http_allow_table_as_file`. The request body may use a compression suffix such as `.CSV.gz`; the server
+decompresses it before inserting the rows. Path-table `PUT` uploads use normal `INSERT` semantics, so repeating
+the same request can insert the rows again. Auto-creation, schema inference, and multipart uploads are not
+supported. Use the regular [`INSERT` over HTTP](#insert-queries) form when the query or upload behavior needs
+to be customized.
+
+The final path component is percent-decoded after path splitting, so an encoded format dot such as
+`hits%2ECSV` is also accepted.
+
+```bash
+# The path suffix describes the compressed request body.
+gzip -c rows.csv \
+  | curl -X PUT --data-binary @- \
+      'http://localhost:8123/my_db/hits.CSV.gz'
+```
+
 ## Insert queries over HTTP/HTTPS {#insert-queries}
 
-The `POST` method of transmitting data is necessary for `INSERT` queries. In this case, you can write the beginning of the query in the URL parameter, and use POST to pass the data to insert. The data to insert could be, for example, a tab-separated dump from MySQL. In this way, the `INSERT` query replaces `LOAD DATA LOCAL INFILE` from MySQL.
+The traditional `POST` method of transmitting data is useful when the query needs to be supplied explicitly. You can write the beginning of the query in the URL parameter, and use POST to pass the data to insert. The data to insert could be, for example, a tab-separated dump from MySQL. In this way, the `INSERT` query replaces `LOAD DATA LOCAL INFILE` from MySQL.
 
 ### Examples {#examples}
 
@@ -871,6 +909,8 @@ $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VA
 
 ClickHouse also supports a Predefined HTTP Interface which can help you more easily integrate with third-party tools like [Prometheus exporter](https://github.com/ClickHouse/clickhouse_exporter). Let's look at an example.
 
+The same handlers can also be defined from SQL, without editing the server configuration file - see [`CREATE HANDLER`](/reference/statements/create/handler).
+
 First of all, add this section to your server configuration file.
 
 `http_handlers` is configured to contain multiple `rule`. ClickHouse will match the HTTP requests received to the predefined type in `rule` and the first rule matched runs the handler. Then ClickHouse will execute the corresponding predefined query if the match is successful.
@@ -1032,6 +1072,7 @@ max_threads    1
 
 In addition to URL parameters, headers, and query parameters, `predefined_query_handler` supports a special virtual parameter `_request_body`.
 It contains the raw HTTP request body as a string.
+It is always bound from the request body: passing `_request_body` (or `param__request_body`) in the URL, or capturing it with a named group of `url` or `headers` regular expressions, is rejected with an exception. A `_request_body` set in a named session (`SET param__request_body = ...`) is ignored.
 This allows you to create flexible REST APIs that can accept arbitrary data formats and process them within your queries.
 
 For example, you can use `_request_body` to implement a REST endpoint that accepts JSON data in a POST request and inserts it into a table:
@@ -1172,7 +1213,7 @@ Say Hi!%
 Find the content from the configuration send to client.
 
 ```yaml
-<get_config_static_handler><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></get_config_static_handler>
+<get_config_static_handler><![CDATA[<html><head><meta http-equiv="refresh" content="0; url=/play"></head><body><a href="/play">ClickHouse Web UI</a></body></html>]]></get_config_static_handler>
 
 <http_handlers>
         <rule>
@@ -1206,7 +1247,7 @@ $ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334","memory_usage":"8451671"}
 <
 * Connection #0 to host localhost left intact
-<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>%
+<html><head><meta http-equiv="refresh" content="0; url=/play"></head><body><a href="/play">ClickHouse Web UI</a></body></html>%
 ```
 
 To find the content from the file send to client:

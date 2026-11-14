@@ -111,6 +111,7 @@ public:
     void finalizeWriting() override;
     bool setIsCorrupted() noexcept override;
     bool tryRemoveAllFiles() noexcept override;
+    bool tryRemoveLockFileIfNothingWritten() noexcept override;
     void setOriginalEndpointAndNamespaceIfEmpty(const String & endpoint_, const String & namespace_) noexcept override;
 
 private:
@@ -185,6 +186,9 @@ private:
     using SizeAndChecksum = std::pair<UInt64, UInt128>;
     std::map<String /* file_name */, SizeAndChecksum> file_names TSA_GUARDED_BY(mutex); /// Should be ordered alphabetically, see listFiles(). For empty files we assume checksum = 0.
     std::map<SizeAndChecksum, BackupFileInfo> file_infos TSA_GUARDED_BY(mutex); /// Information about files. Without empty files.
+    /// Instead of `file_infos` when the backup is opened only for lookups (`CreateParams::for_file_lookups_only`): the sizes
+    /// and checksums of its files, sorted and without duplicates. Without empty files.
+    std::vector<SizeAndChecksum> sizes_and_checksums TSA_GUARDED_BY(mutex);
     /// object_key -> file name, only used by lightweight snapshot
     std::unordered_map<String, String> file_object_keys TSA_GUARDED_BY(mutex);
     std::unordered_map<String, BackupFileInfo> lightweight_snapshot_file_infos TSA_GUARDED_BY(mutex);
@@ -218,6 +222,7 @@ private:
     std::atomic<bool> lock_file_before_first_file_checked = false;
 
     bool writing_finalized = false;
+    bool started_writing_metadata = false;
     bool corrupted = false;
     /// Outcome of the one own-lock cleanup a failed `open` performs; see `tryRemoveOwnLockFile`.
     std::optional<bool> own_lock_cleanup_result;

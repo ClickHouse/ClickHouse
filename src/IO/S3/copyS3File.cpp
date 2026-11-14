@@ -6,10 +6,12 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadPoolTaskTracker.h>
+#include <Common/ThreadStatus.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/typeid_cast.h>
 #include <IO/S3RequestSettings.h>
 #include <Common/BlobStorageLogWriter.h>
+#include <Common/HTTPConnectionInfo.h>
 #include <Interpreters/Context.h>
 #include <IO/LimitSeekableReadBuffer.h>
 #include <IO/S3/getObjectInfo.h>
@@ -65,6 +67,7 @@ namespace S3RequestSetting
     extern const S3RequestSettingsUInt64 max_single_operation_copy_size;
     extern const S3RequestSettingsUInt64 max_single_part_upload_size;
     extern const S3RequestSettingsUInt64 max_unexpected_write_error_retries;
+    extern const S3RequestSettingsBool use_idempotency_id;
     extern const S3RequestSettingsUInt64 max_upload_part_size;
     extern const S3RequestSettingsUInt64 min_upload_part_size;
     extern const S3RequestSettingsString storage_class_name;
@@ -123,7 +126,9 @@ namespace
         const LoggerPtr log;
         const std::optional<S3::RequestChecksum::Algorithm> upload_checksum_algorithm;
         /// Identifies this upload among all writers to `dest_key`, stamped by `CreateMultipartUpload`.
-        const String idempotency_id = getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH);
+        /// Empty if disabled by the `use_idempotency_id` request setting.
+        const String idempotency_id
+            = request_settings[S3RequestSetting::use_idempotency_id] ? getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH) : "";
 
         /// Represents a task uploading a single part.
         /// Keep this struct small because there can be thousands of parts.
@@ -153,12 +158,13 @@ namespace
             request.SetContentType("binary/octet-stream");
 
             auto metadata = object_metadata.value_or(ObjectAttributes{});
-            metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
+            if (!idempotency_id.empty())
+                metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
             request.SetMetadata(metadata);
 
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())
-                request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
+                request.SetStorageClass(S3::getStorageClassForName(storage_class_name));
 
             if (usesFlexibleUploadChecksumHeader())
                 request.setUploadChecksumAlgorithm(*upload_checksum_algorithm);
@@ -175,6 +181,7 @@ namespace
             if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3CreateMultipartUpload);
 
+            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
             auto outcome = client_ptr->CreateMultipartUpload(request);
             auto elapsed = watch.elapsedMicroseconds();
@@ -231,6 +238,7 @@ namespace
                 if (client_ptr->isClientForDisk())
                     ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
 
+                HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
                 Stopwatch watch;
                 auto outcome = client_ptr->CompleteMultipartUpload(request);
                 auto elapsed = watch.elapsedMicroseconds();
@@ -265,12 +273,16 @@ namespace
 
         void abortMultipartUpload()
         {
+            /// Keep the retries of this cleanup when the query or merge is cancelled. The in-flight parts are already waited for.
+            ThreadStatus::QueryCancellationBlocker cancellation_blocker;
+
             LOG_TRACE(log, "Aborting multipart upload. Bucket: {}, Key: {}, Upload_id: {}", dest_bucket, dest_key, multipart_upload_id);
             S3::AbortMultipartUploadRequest abort_request;
             abort_request.SetBucket(dest_bucket);
             abort_request.SetKey(dest_key);
             abort_request.SetUploadId(multipart_upload_id);
 
+            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
             auto outcome = client_ptr->AbortMultipartUpload(abort_request);
             auto elapsed = watch.elapsedMicroseconds();
@@ -537,7 +549,7 @@ namespace
 
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())
-                request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
+                request.SetStorageClass(S3::getStorageClassForName(storage_class_name));
 
             if (usesFlexibleUploadChecksumHeader())
                 request.setUploadChecksumAlgorithm(*upload_checksum_algorithm);
@@ -548,7 +560,7 @@ namespace
             client_ptr->setKMSHeaders(request);
         }
 
-        /// Returns true if the single-part upload failed with EntityTooLarge / InvalidRequest and the
+        /// Returns true if the single-part upload of a non-empty object failed with EntityTooLarge / InvalidRequest and the
         /// caller should fall back to a multipart upload. The fallback is done by the caller (not here)
         /// so the PutObject request and its in-memory body can be released first.
         bool processPutRequest(S3::PutObjectRequest & request)
@@ -560,6 +572,7 @@ namespace
                 if (client_ptr->isClientForDisk())
                     ProfileEvents::increment(ProfileEvents::DiskS3PutObject);
 
+                HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
                 Stopwatch watch;
                 auto outcome = client_ptr->PutObject(request);
                 auto elapsed = watch.elapsedMicroseconds();
@@ -584,7 +597,8 @@ namespace
                     return false;
                 }
 
-                if (outcome.GetError().GetExceptionName() == "EntityTooLarge" || outcome.GetError().GetExceptionName() == "InvalidRequest")
+                if (size && (outcome.GetError().GetExceptionName() == "EntityTooLarge" ||
+                             outcome.GetError().GetExceptionName() == "InvalidRequest"))
                 {
                     // Can't come here with MinIO, MinIO allows single part upload for large objects.
                     LOG_INFO(
@@ -646,6 +660,7 @@ namespace
             if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3UploadPart);
 
+            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
             auto outcome = client_ptr->UploadPart(req);
             auto elapsed = watch.elapsedMicroseconds();
@@ -684,7 +699,7 @@ namespace
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
-            std::function<void()> fallback_method_,
+            std::function<bool()> fallback_method_,
             bool is_ranged_copy_)
             : UploadHelper(
                 client_ptr_,
@@ -712,7 +727,7 @@ namespace
         {
         }
 
-        void performCopy()
+        bool performCopy()
         {
             LOG_TEST(log, "Copy object {} to {} using native copy", src_key, dest_key);
 
@@ -725,8 +740,17 @@ namespace
             bool source_allows_range_copy = src_object_size > MIN_SOURCE_SIZE_FOR_RANGE_COPY;
             if (is_ranged_copy && (!multipart_copy_available || !source_allows_range_copy))
             {
-                fallback_method();
-                return;
+                LOG_TRACE(
+                    log,
+                    "Not copying the range of {} natively, falling back to a buffered ranged read: {}",
+                    src_key,
+                    !multipart_copy_available
+                        ? String("multipart copy is unavailable")
+                        : fmt::format(
+                              "the source is {} bytes, not above the {} bytes S3 requires of a ranged copy source",
+                              src_object_size,
+                              MIN_SOURCE_SIZE_FOR_RANGE_COPY));
+                return fallback_method();
             }
 
             bool use_single_operation_copy = !is_ranged_copy
@@ -735,13 +759,11 @@ namespace
             /// A ranged copy must never reach whole-object CopyObject (it would copy the entire source).
             chassert(!(is_ranged_copy && use_single_operation_copy));
 
-            if (use_single_operation_copy)
-                performSingleOperationCopy();
-            else
-                performMultipartUploadCopy();
+            bool copied = use_single_operation_copy ? performSingleOperationCopy() : performMultipartUploadCopy();
 
-            if (request_settings[S3RequestSetting::check_objects_after_upload])
+            if (copied && request_settings[S3RequestSetting::check_objects_after_upload])
                 checkObjectAfterUpload();
+            return copied;
         }
 
     private:
@@ -753,13 +775,13 @@ namespace
         bool supports_multipart_copy;
         bool is_ranged_copy;
         const ReadSettings read_settings;
-        std::function<void()> fallback_method;
+        std::function<bool()> fallback_method;
 
-        void performSingleOperationCopy()
+        bool performSingleOperationCopy()
         {
             S3::CopyObjectRequest request;
             fillCopyRequest(request);
-            processCopyRequest(request);
+            return processCopyRequest(request);
         }
 
         void fillCopyRequest(S3::CopyObjectRequest & request)
@@ -776,7 +798,7 @@ namespace
 
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())
-                request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
+                request.SetStorageClass(S3::getStorageClassForName(storage_class_name));
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
@@ -784,7 +806,7 @@ namespace
             client_ptr->setKMSHeaders(request);
         }
 
-        void processCopyRequest(S3::CopyObjectRequest & request)
+        bool processCopyRequest(S3::CopyObjectRequest & request)
         {
             size_t max_retries = std::max<UInt64>(request_settings[S3RequestSetting::max_unexpected_write_error_retries].value, 1UL);
             for (size_t retries = 1;; ++retries)
@@ -793,6 +815,7 @@ namespace
                 if (client_ptr->isClientForDisk())
                     ProfileEvents::increment(ProfileEvents::DiskS3CopyObject);
 
+                HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
                 Stopwatch watch;
                 auto outcome = client_ptr->CopyObject(request);
                 auto elapsed = watch.elapsedMicroseconds();
@@ -810,7 +833,7 @@ namespace
                         dest_bucket,
                         dest_key,
                         size);
-                    break;
+                    return true;
                 }
 
                 if (outcome.GetError().GetExceptionName() == "EntityTooLarge" ||
@@ -819,17 +842,17 @@ namespace
                     outcome.GetError().GetExceptionName() == "AccessDenied" ||
                     S3::Client::RetryStrategy::useGCSRewrite(outcome.GetError()))
                 {
-                    if (!supports_multipart_copy || outcome.GetError().GetExceptionName() == "AccessDenied")
+                    /// The multipart retry sends byte-range `UploadPartCopy` requests (see MIN_SOURCE_SIZE_FOR_RANGE_COPY).
+                    if (!supports_multipart_copy || !request_settings[S3RequestSetting::allow_multipart_copy]
+                        || src_object_size <= MIN_SOURCE_SIZE_FOR_RANGE_COPY || outcome.GetError().GetExceptionName() == "AccessDenied")
                     {
                         LOG_INFO(
                             log,
-                            "Multipart upload using copy is not supported, will try regular upload for Bucket: {}, Key: {}, Object size: "
-                            "{}",
+                            "Multipart upload using copy is not supported for Bucket: {}, Key: {}, Object size: {}; using fallback path",
                             dest_bucket,
                             dest_key,
                             size);
-                        fallback_method();
-                        break;
+                        return fallback_method();
                     }
 
                     // Can't come here with MinIO, MinIO allows single part upload for large objects.
@@ -842,8 +865,7 @@ namespace
                         dest_key,
                         size);
 
-                    performMultipartUploadCopy();
-                    break;
+                    return performMultipartUploadCopy();
                 }
 
                 if ((outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY) && (retries < max_retries))
@@ -869,19 +891,20 @@ namespace
             }
         }
 
-        void performMultipartUploadCopy()
+        bool performMultipartUploadCopy()
         {
             try
             {
                 UploadHelper::performMultipartUpload(offset, size);
+                return true;
             }
             catch (const S3Exception & e)
             {
                 if (e.getS3ErrorCode() != Aws::S3::S3Errors::ACCESS_DENIED)
                     throw;
 
-                tryLogCurrentException(log, "Multi part copy failed, trying with regular upload");
-                fallback_method();
+                tryLogCurrentException(log, "Multi part copy failed, using fallback path");
+                return fallback_method();
             }
         }
 
@@ -908,6 +931,7 @@ namespace
             if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3UploadPartCopy);
 
+            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
             auto outcome = client_ptr->UploadPartCopy(req);
             auto elapsed = watch.elapsedMicroseconds();
@@ -977,7 +1001,7 @@ namespace
 {
     /// Shared by both public entry points. `is_ranged_copy` says whether only [src_offset, src_offset +
     /// src_size) of a larger source is wanted; it is internal, so no caller can leave it at a wrong default.
-    void copyS3FileImpl(
+    bool copyS3FileImpl(
         std::shared_ptr<const S3::Client> src_s3_client,
         const String & src_bucket,
         const String & src_key,
@@ -998,8 +1022,10 @@ namespace
         if (!dest_s3_client)
             dest_s3_client = src_s3_client;
 
-        std::function<void()> fallback_method = [&] mutable
+        std::function<bool()> fallback_method = [&] mutable
         {
+            if (!fallback_file_reader)
+                return false;
             copyDataToS3File(
                 fallback_file_reader,
                 src_offset,
@@ -1011,13 +1037,13 @@ namespace
                 blob_storage_log,
                 schedule,
                 object_metadata);
+            return true;
         };
 
         if (!settings[S3RequestSetting::allow_native_copy])
         {
             LOG_TRACE(getLogger("copyS3File"), "Native copy is disable for {}", src_key);
-            fallback_method();
-            return;
+            return fallback_method();
         }
 
         CopyFileHelper helper{
@@ -1036,11 +1062,11 @@ namespace
             blob_storage_log,
             std::move(fallback_method),
             is_ranged_copy};
-        helper.performCopy();
+        return helper.performCopy();
     }
 }
 
-void copyS3File(
+bool copyS3File(
     std::shared_ptr<const S3::Client> src_s3_client,
     const String & src_bucket,
     const String & src_key,
@@ -1055,7 +1081,7 @@ void copyS3File(
     const CreateReadBuffer & fallback_file_reader,
     const std::optional<ObjectAttributes> & object_metadata)
 {
-    copyS3FileImpl(
+    return copyS3FileImpl(
         std::move(src_s3_client),
         src_bucket,
         src_key,
@@ -1074,7 +1100,7 @@ void copyS3File(
         /* is_ranged_copy= */ false);
 }
 
-void copyS3FileRange(
+bool copyS3FileRange(
     std::shared_ptr<const S3::Client> src_s3_client,
     const String & src_bucket,
     const String & src_key,
@@ -1091,7 +1117,7 @@ void copyS3FileRange(
     const CreateReadBuffer & fallback_file_reader,
     const std::optional<ObjectAttributes> & object_metadata)
 {
-    copyS3FileImpl(
+    return copyS3FileImpl(
         std::move(src_s3_client),
         src_bucket,
         src_key,

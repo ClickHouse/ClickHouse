@@ -23,6 +23,7 @@
 
 #include <Storages/getEffectiveRowPolicyFilter.h>
 
+#include <Common/StringUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/HiddenSecret.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
@@ -45,6 +46,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/misc.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
@@ -379,7 +381,16 @@ bool hasFunctionNotSuitableForEarlyShortCircuit(const QueryTreeNodePtr & node, b
                 arguments.reserve(argument_nodes.size());
 
                 for (const auto & argument : argument_nodes)
+                {
+                    /// IN-family functions keep their set subquery as a QueryNode/UnionNode
+                    /// argument. Such nodes have no expression result type, and the speculative
+                    /// early-fold check must fall back instead of trying to inspect one.
+                    if (argument->getNodeType() == QueryTreeNodeType::QUERY
+                        || argument->getNodeType() == QueryTreeNodeType::UNION)
+                        return true;
+
                     arguments.push_back({argument->getResultType(), argument->as<ConstantNode>() != nullptr});
+                }
 
                 if (!function_base->isSuitableForShortCircuitArgumentsExecution(arguments)
                     && !isComparisonOfEarlyShortCircuitScalar(*function))
@@ -1386,6 +1397,31 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node_ptr->getFunctionName();
 
+    /// The parser cannot distinguish the single element array constructor `ARRAY[x]` from subscripting
+    /// a column named `ARRAY`, and parses it as a subscript. If there is no such column, it is the constructor.
+    /// Only the bracket syntax is rewritten, not an explicit `arrayElement(array, x)` call.
+    if (function_name == "arrayElement"
+        && function_node_ptr->isOperator()
+        && !function_node_ptr->isWindowFunction()
+        && function_node_ptr->getParameters().getNodes().empty()
+        && function_node_ptr->getArguments().getNodes().size() == 2)
+    {
+        const auto & arguments = function_node_ptr->getArguments().getNodes();
+        const auto * array_identifier = arguments[0]->as<IdentifierNode>();
+        if (array_identifier
+            && array_identifier->getIdentifier().isShort()
+            && equalsCaseInsensitive(array_identifier->getIdentifier().getFullName(), "array")
+            && !tryResolveIdentifier({array_identifier->getIdentifier(), IdentifierLookupContext::EXPRESSION}, scope).resolved_identifier)
+        {
+            auto array_function_node = std::make_shared<FunctionNode>("array");
+            array_function_node->getArguments().getNodes().push_back(arguments[1]);
+            array_function_node->setAlias(node->getAlias());
+            array_function_node->setOriginalAST(node->getOriginalAST());
+            node = std::move(array_function_node);
+            return resolveFunction(node, scope, allow_niladic_functions);
+        }
+    }
+
     /// Resolve function parameters
 
     auto parameters_projection_names = resolveExpressionNodeList(
@@ -1490,11 +1526,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             type_inference_scope.projection_mask_map
                 = std::make_shared<std::map<IQueryTreeNode::Hash, size_t>>(*scope.projection_mask_map);
 
-            QueryAnalyzer type_inference_analyzer(/*only_analyze_=*/ false);
+            QueryAnalyzer type_inference_analyzer(
+                /*only_analyze_=*/ false,
+                /*positional_arguments_already_resolved_=*/ false,
+                replaced_storage,
+                view_source_in_subqueries);
             type_inference_analyzer.early_short_circuit_type_inference_in_process = true;
             type_inference_analyzer.subquery_counter = subquery_counter;
 
             bool type_inference_succeeded = false;
+            bool post_resolution_is_safe = false;
             ProjectionNames type_inference_projection_names;
             try
             {
@@ -1506,6 +1547,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     false /*ignore_alias*/,
                     allow_niladic_functions);
                 type_inference_succeeded = !type_inference_analyzer.early_short_circuit_type_inference_failed;
+
+                /// Post-resolution safety is also speculative: an unfamiliar non-expression
+                /// argument must decline the optimization, never make the original query fail.
+                if (type_inference_succeeded)
+                    post_resolution_is_safe = !hasFunctionNode(node_for_type_inference, "arrayJoin")
+                        && !hasUnsafeEarlyShortCircuitScalarUsage(node_for_type_inference)
+                        && !hasFunctionNotSuitableForEarlyShortCircuit(node_for_type_inference);
             }
             catch (...)
             {
@@ -1514,10 +1562,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// cannot provide it, so fall back to the regular path which evaluates the scalar.
                 type_inference_succeeded = false;
             }
-
-            const bool post_resolution_is_safe = !hasFunctionNode(node_for_type_inference, "arrayJoin")
-                && !hasUnsafeEarlyShortCircuitScalarUsage(node_for_type_inference)
-                && !hasFunctionNotSuitableForEarlyShortCircuit(node_for_type_inference);
             if (type_inference_succeeded && (is_strict_safe_logical_tree || post_resolution_is_safe))
             {
                 auto result_type = node_for_type_inference->getResultType();
@@ -1635,7 +1679,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
             else
             {
-                auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, scope.context).resolved_identifier;
+                auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, scope.context, replaced_storage).resolved_identifier;
                 if (!table_node)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Function {} first argument expected table identifier '{}'. In scope {}",
@@ -2129,7 +2173,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto function_exists = std::make_shared<FunctionExists>();
             function_node_ptr->resolveAsFunction(
                 std::make_shared<FunctionToFunctionBaseAdaptor>(
-                    function_exists, DataTypes{}, function_exists->getReturnTypeImpl({})
+                    function_exists, DataTypes{}, function_exists->getReturnTypeImpl(DataTypes{})
                 )
             );
 
@@ -2154,7 +2198,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
             else
             {
-                evaluateScalarSubqueryIfNeeded(new_exists_argument, scope, true);
+                IdentifierResolveScope & exists_subquery_scope = createIdentifierResolveScope(new_exists_argument, &scope /*parent_scope*/);
+                exists_subquery_scope.subquery_depth = scope.subquery_depth + 1;
+
+                evaluateScalarSubqueryIfNeeded(new_exists_argument, exists_subquery_scope, true);
                 auto res_col = ColumnUInt8::create();
                 const auto * const_node = new_exists_argument->as<ConstantNode>();
                 res_col->getData().push_back(static_cast<UInt8>(const_node->getColumn()->isNullAt(0) ? 0 : 1));
@@ -2539,6 +2586,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             evaluateScalarSubqueryIfNeeded(in_first_argument, subquery_scope);
         }
 
+        /// Replace storage with values storage of insertion block.
+        /// The inner query of an ordinary view referenced by the view query reads the table itself.
+        if (StoragePtr storage = getViewSourceIfRead(scope.context, view_source_in_subqueries);
+            storage && !in_second_argument->as<TableFunctionNode>())
+            replaceStorageInQueryTree(in_second_argument, scope.context, storage);
+
         auto * table_node = in_second_argument->as<TableNode>();
         auto * table_function_node = in_second_argument->as<TableFunctionNode>();
 
@@ -2602,36 +2655,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
         else
         {
-            /// Replace storage with values storage of insertion block.
-            /// The inner query of an ordinary view referenced by the view query reads the table itself.
-            if (StoragePtr storage = scope.context->getViewSource(); storage && !scope.context->isViewInnerQuery())
-            {
-                QueryTreeNodePtr table_expression = in_second_argument;
-
-                /// Process possibly nested sub-selects
-                while (table_expression)
-                {
-                    if (auto * query_node = table_expression->as<QueryNode>())
-                        table_expression = extractLeftTableExpression(query_node->getJoinTreeNodeTyped());
-                    else if (auto * union_node = table_expression->as<UnionNode>())
-                        table_expression = union_node->getQueries().getNodes().at(0);
-                    else
-                        break;
-                }
-
-                TableNode * table_expression_table_node = table_expression ? table_expression->as<TableNode>() : nullptr;
-
-                if (table_expression_table_node &&
-                    table_expression_table_node->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
-                {
-                    auto replacement_table_expression_table_node = table_expression_table_node->clone();
-                    replacement_table_expression_table_node->as<TableNode &>().updateStorage(storage, scope.context);
-                    in_second_argument = in_second_argument->cloneAndReplace(
-                        static_pointer_cast<ITableExpressionNode>(table_expression),
-                        static_pointer_cast<ITableExpressionNode>(std::move(replacement_table_expression_table_node)));
-                }
-            }
-
             /// If the subquery's single column is an Array one dimension deeper than the left
             /// argument, flatten it with arrayJoin so its elements become the set elements.
             flattenArraySubqueryOnRightOfIn(in_second_argument, in_first_argument, scope.context);
@@ -2979,30 +3002,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             argument_is_deterministic = constant_node->isDeterministic();
             argument_is_constant = true;
         }
-        else if (const auto * get_scalar_function_node = function_argument->as<FunctionNode>();
-                get_scalar_function_node && get_scalar_function_node->getFunctionName() == "__getScalar")
+        else if (auto scalar_column = tryGetScalarConstantColumn(function_argument, scope.context))
         {
             /// Allow constant folding through getScalar
-            const auto * get_scalar_const_arg = get_scalar_function_node->getArguments().getNodes().at(0)->as<ConstantNode>();
-            if (get_scalar_const_arg && scope.context->hasQueryContext())
-            {
-                auto query_context = scope.context->getQueryContext();
-                auto scalar_string = fieldToString(get_scalar_const_arg->getValue());
-                if (query_context->hasScalar(scalar_string))
-                {
-                    auto scalar = query_context->getScalar(scalar_string);
-                    const auto & scalar_column = scalar.getByPosition(0).column;
-                    const auto & get_scalar_result_type = get_scalar_function_node->getResultType();
-                    /// The column comes from the scalars map while the type comes from the resolved node, and the
-                    /// two disagree when the overload resolver wrapped the node's result type (a Nullable name).
-                    if (scalar_column->size() == 1 && columnMatchesType(*scalar_column, *get_scalar_result_type))
-                    {
-                        argument_column.column = ColumnConst::create(scalar_column, 1);
-                        argument_column.type = get_scalar_result_type;
-                        argument_is_constant = true;
-                    }
-                }
-            }
+            argument_column.column = std::move(scalar_column);
+            argument_column.type = function_argument->getResultType();
+            argument_is_constant = true;
         }
 
         all_arguments_constants &= argument_is_constant;
@@ -3120,10 +3125,37 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             const auto & untuple_argument_projection_name = arguments_projection_names.at(0);
             result_projection_names.clear();
 
+            /// When `untuple` is the body of an inlined lambda (SQL UDF), the alias of the call it replaces applies to it
+            /// and takes priority over an alias inside the body, as in the old analyzer. The call is the top of the parent
+            /// scope's expression stack; nested calls are walked the same way, so the outermost alias wins.
+            String untuple_alias = node->getAlias();
+            const auto * current_scope = &scope;
+            const auto * current_node = node.get();
+            while (current_scope->parent_scope)
+            {
+                const auto * lambda_scope_node = current_scope->scope_node->as<LambdaNode>();
+                if (!lambda_scope_node || lambda_scope_node->getExpression().get() != current_node)
+                    break;
+
+                const auto & parent_expressions_stack = current_scope->parent_scope->expressions_in_resolve_process_stack;
+                if (parent_expressions_stack.empty())
+                    break;
+
+                /// Only a call is inlined; the lambda of an `APPLY` transformer sits under the matcher it expands.
+                const auto & call_node = parent_expressions_stack.getTop();
+                if (call_node->getNodeType() != QueryTreeNodeType::FUNCTION)
+                    break;
+
+                if (call_node->hasAlias())
+                    untuple_alias = call_node->getAlias();
+                current_node = call_node.get();
+                current_scope = current_scope->parent_scope;
+            }
+
             for (const auto & element_name : element_names)
             {
-                if (node->hasAlias())
-                    result_projection_names.push_back(node->getAlias() + '.' + element_name);
+                if (!untuple_alias.empty())
+                    result_projection_names.push_back(untuple_alias + '.' + element_name);
                 else
                     result_projection_names.push_back(fmt::format("tupleElement({}, '{}')", untuple_argument_projection_name, element_name));
             }
@@ -3188,18 +3220,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         bool window_node_is_identifier = function_node.getWindowNode()->getNodeType() == QueryTreeNodeType::IDENTIFIER;
         ProjectionName window_projection_name = resolveWindow(function_node.getWindowNode(), scope);
-
-        if (function_name == "lag" || function_name == "lead")
-        {
-            auto & frame = function_node.getWindowNode()->as<WindowNode>()->getWindowFrame();
-            if (!frame.is_default)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Window function '{}' does not expect window frame to be explicitly specified. In expression {}",
-                    function_name,
-                    function_node.formatASTForErrorMessage());
-            }
-        }
 
         if (window_node_is_identifier)
             result_projection_names[0] += " OVER " + window_projection_name;

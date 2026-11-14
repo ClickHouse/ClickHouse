@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-debug, no-flaky-check
+# Tags: no-fasttest, no-debug, no-flaky-check, no-msan
 # no-flaky-check: some queries are too long with Thread Fuzzer
 
 set -e
@@ -48,7 +48,7 @@ alter_thread &
 
 for _ in {1..100}; do
     # Retry (hopefully retriable (deadlock avoided)) errors.
-    while true; do
+    while clickhouse_test_time_left; do
         $CLICKHOUSE_CLIENT -q "INSERT INTO src VALUES (1);" 2>/dev/null && break
     done
 done

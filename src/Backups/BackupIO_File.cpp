@@ -1,5 +1,6 @@
 #include <Backups/BackupIO_File.h>
 #include <fcntl.h>
+#include <Common/Exception.h>
 #include <Common/checkStackSize.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
@@ -76,11 +77,46 @@ void BackupReaderFile::copyFileToDisk(const String & path_in_backup, size_t file
 }
 
 
-BackupWriterFile::BackupWriterFile(const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
+BackupWriterFile::BackupWriterFile(
+    const String & root_path_, const String & allowed_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterFile"))
     , root_path(root_path_)
     , data_source_description(DiskLocal::getLocalDataSourceDescription(root_path))
 {
+    /// The chain the backup may have to create, sampled before anything is written. `boundary` is the
+    /// deepest ancestor that already exists, and also bounds the parent walk in `syncFileToDisk` to the
+    /// configured area: fsyncing needs `O_DIRECTORY`, which writing a backup does not.
+    auto allowed_path = fs::path{allowed_path_}.lexically_normal();
+
+    /// `lexically_normal` keeps a trailing slash, which never compares equal to a file path's ancestors.
+    if (!allowed_path.has_filename())
+        allowed_path = allowed_path.parent_path();
+
+    std::error_code ec;
+    auto boundary = allowed_path;
+    while (boundary.has_relative_path() && !fs::is_directory(boundary, ec))
+        boundary = boundary.parent_path();
+
+    std::lock_guard lock{dirs_to_sync_mutex};
+    for (auto dir = allowed_path;; dir = dir.parent_path())
+    {
+        dirs_to_sync.emplace(dir);
+        if (dir == boundary || !dir.has_relative_path())
+            break;
+    }
+
+    /// Existence is not durability: a concurrent backup may have created any level above the boundary
+    /// without fsyncing its parent, so every level up to the root is recorded, best-effort. The
+    /// fixed-point test, not `has_relative_path`, because this walk does reach the root.
+    if (boundary.has_relative_path())
+    {
+        for (auto dir = boundary.parent_path();; dir = dir.parent_path())
+        {
+            best_effort_dirs_to_sync.push_back(dir);
+            if (dir.parent_path() == dir)
+                break; /// reached the filesystem root
+        }
+    }
 }
 
 bool BackupWriterFile::fileExists(const String & file_name)
@@ -128,6 +164,16 @@ void BackupWriterFile::removeEmptyDirectories()
     removeEmptyDirectoriesImpl(root_path);
 }
 
+void BackupWriterFile::removeEmptyRootDirectory()
+{
+    if (root_path.empty())
+        return;
+    const fs::path path = root_path.has_filename() ? root_path : root_path.parent_path();
+    const auto status = fs::symlink_status(path);
+    if (fs::is_directory(status) && fs::is_empty(path))
+        (void)fs::remove(path);
+}
+
 void BackupWriterFile::removeEmptyDirectoriesImpl(const fs::path & current_dir)
 {
     checkStackSize();
@@ -148,7 +194,7 @@ void BackupWriterFile::removeEmptyDirectoriesImpl(const fs::path & current_dir)
         (void)fs::remove(current_dir);
 }
 
-void BackupWriterFile::copyFileFromDisk(
+bool BackupWriterFile::copyFileFromDiskNatively(
     const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
     /// std::filesystem::copy() can copy from the filesystem only, and can't do throttling or copy a part of the file.
@@ -172,14 +218,13 @@ void BackupWriterFile::copyFileFromDisk(
                     auto abs_dest_path = root_path / path_in_backup;
                     fs::create_directories(abs_dest_path.parent_path());
                     fs::copy(abs_source_path, abs_dest_path, fs::copy_options::overwrite_existing);
-                    return; /// copied!
+                    return true;
                 }
             }
         }
     }
 
-    /// Fallback to copy through buffers.
-    BackupWriterDefault::copyFileFromDisk(path_in_backup, src_disk, src_path, copy_encrypted, start_pos, length);
+    return false;
 }
 
 void BackupWriterFile::copyFile(const String & destination, const String & source, size_t /*size*/)
@@ -190,6 +235,58 @@ void BackupWriterFile::copyFile(const String & destination, const String & sourc
     auto abs_dest_path = root_path / destination;
     fs::create_directories(abs_dest_path.parent_path());
     fs::copy(abs_source_path, abs_dest_path, fs::copy_options::overwrite_existing);
+}
+
+void BackupWriterFile::syncFileToDisk(const String & file_name)
+{
+    auto file_path = (root_path / file_name).lexically_normal();
+    fsyncBackupFileContents(file_path);
+
+    /// A file entry is durable only once its parent directory is fsynced, and the same holds for
+    /// that directory's own entry, so record every ancestor of the file. The constructor recorded
+    /// the backup area itself, which is what stops this walk (see there).
+    std::lock_guard lock{dirs_to_sync_mutex};
+    for (auto dir = file_path.parent_path(); dir.has_relative_path(); dir = dir.parent_path())
+    {
+        if (!dirs_to_sync.emplace(dir).second)
+            break; /// this dir and all its ancestors are already recorded
+    }
+}
+
+void BackupWriterFile::syncDirectoriesToDisk()
+{
+    std::set<fs::path> dirs;
+    {
+        std::lock_guard lock{dirs_to_sync_mutex};
+        dirs = dirs_to_sync;
+    }
+    if (dirs.empty())
+        return;
+
+    /// Sync deepest-first: a child directory entry is durable only once its parent is fsynced.
+    for (auto it = dirs.rbegin(); it != dirs.rend(); ++it)
+        fsyncBackupDirectory(*it);
+
+    /// The ancestors of the backup area, so that its own entry and every entry above it is persisted
+    /// too. They are outside what the configuration asked ClickHouse to write in, so each is attempted
+    /// independently: a failure at one level (typically a search-only directory that cannot be opened
+    /// for fsync) is logged rather than failing an otherwise complete backup, and must not skip the
+    /// levels above it, whose entries still matter.
+    for (const auto & dir : best_effort_dirs_to_sync)
+    {
+        try
+        {
+            fsyncBackupDirectory(dir);
+        }
+        catch (...)
+        {
+            LOG_WARNING(
+                log,
+                "Could not fsync {}, which contains the backup area: {}",
+                dir.string(),
+                getCurrentExceptionMessage(/* with_stacktrace = */ false));
+        }
+    }
 }
 
 }

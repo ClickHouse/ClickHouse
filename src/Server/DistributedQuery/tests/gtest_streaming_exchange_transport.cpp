@@ -1,23 +1,38 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <atomic>
+#include <charconv>
 #include <chrono>
 #include <condition_variable>
+#include <csignal>
+#include <filesystem>
+#include <future>
 #include <mutex>
 #include <optional>
 #include <thread>
 
+#include <netinet/in.h>
+#include <sys/socket.h>
+
 #include <gtest/gtest.h>
 #include <fmt/format.h>
 
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/ThreadStatus.h>
+#include <Common/tests/gtest_global_context.h>
+#include <Common/tests/gtest_global_register.h>
 #include <Core/Block.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
@@ -26,19 +41,32 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/ISink.h>
 #include <Processors/LimitTransform.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/IParameterLookup.h>
+#include <Processors/QueryPlan/MergeRuntimeFiltersStep.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Processors/Sources/SourceFromChunks.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/MergeRuntimeFiltersTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/receiveExchangeStreams.h>
 #include <Server/DistributedQuery/ExchangeConnections.h>
 #include <Server/DistributedQuery/ExchangeServer.h>
+#include <Server/DistributedQuery/FutureConnection.h>
 #include <Server/DistributedQuery/StreamingExchangeDeserializingTransform.h>
+#include <Server/DistributedQuery/StreamingExchangeLookup.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Server/DistributedQuery/StreamingExchangeSerializingTransform.h>
 #include <Server/DistributedQuery/StreamingExchangeSink.h>
 #include <Server/DistributedQuery/StreamingExchangeSource.h>
 #include <Server/DistributedQuery/tests/FakeExchangePeer.h>
+#include <Poco/Net/ServerSocket.h>
+#include <Poco/Net/SocketAddress.h>
+#include <Poco/Net/StreamSocket.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace ProfileEvents
 {
@@ -48,6 +76,7 @@ namespace ProfileEvents
     extern const Event StreamingExchangePacketsReceived;
     extern const Event StreamingExchangeSendQueueFullMicroseconds;
     extern const Event StreamingExchangeEarlyCloses;
+    extern const Event RuntimeFilterReceivesAbandoned;
 }
 
 namespace CurrentMetrics
@@ -81,6 +110,18 @@ Chunk makeChunk(size_t first_value, size_t rows)
     return Chunk(Columns{std::move(column)}, rows);
 }
 
+/// Pseudo-random values that do not compress; `state` carries the generator from chunk to chunk.
+Chunk makeIncompressibleChunk(size_t rows, UInt64 & state)
+{
+    auto column = ColumnUInt64::create();
+    for (size_t row = 0; row < rows; ++row)
+    {
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        column->insertValue(state);
+    }
+    return Chunk(Columns{std::move(column)}, rows);
+}
+
 std::shared_ptr<AggregatedChunkInfo> makeAggregatedInfo(Int32 bucket_num, UInt64 chunk_num)
 {
     auto info = std::make_shared<AggregatedChunkInfo>();
@@ -106,7 +147,7 @@ public:
         gate.notify_all();
     }
 
-    std::vector<Chunk> chunks;
+    Chunks chunks;
 
 protected:
     void consume(Chunk chunk) override
@@ -126,7 +167,7 @@ private:
 struct LoopbackExchange
 {
     ExchangeConnectionsPtr connections = std::make_shared<ExchangeConnections>();
-    ExchangeServer server{"127.0.0.1", 0, connections};
+    ExchangeServer server{"127.0.0.1", 0, /*listen_backlog=*/ 64, connections};
 
     LoopbackExchange() { server.start(); }
 };
@@ -147,9 +188,10 @@ std::optional<int> run(QueryPipeline & pipeline, size_t threads)
     return std::nullopt;
 }
 
-/// The sending task: `chunks_per_stream` streams, each serializing its chunks, into one real sink,
-/// as the send steps arrange it.
-QueryPipeline makeSendingPipeline(const SharedHeader & header, std::vector<Chunks> chunks_per_stream, LoopbackExchange & exchange)
+/// The sending task: `chunks_per_stream` streams, each serializing its chunks, into one real sink on
+/// `connection`, as the send steps arrange it.
+QueryPipeline makeSendingPipeline(
+    const SharedHeader & header, std::vector<Chunks> chunks_per_stream, FutureConnectionPtr connection, bool advisory = false)
 {
     Pipes pipes;
     for (auto & chunks : chunks_per_stream)
@@ -162,13 +204,16 @@ QueryPipeline makeSendingPipeline(const SharedHeader & header, std::vector<Chunk
         return std::make_shared<StreamingExchangeSerializingTransform>(stream_header, CompressionCodecFactory::instance().getDefaultCodec());
     });
     builder.resize(1);
-
-    auto future_connection = exchange.connections->getConnection("query", "stream");
     builder.setSinks([&](const SharedHeader & stream_header, Pipe::StreamType)
     {
-        return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream");
+        return std::make_shared<StreamingExchangeSink>(stream_header, connection, "stream", advisory);
     });
     return QueryPipelineBuilder::getPipeline(std::move(builder));
+}
+
+QueryPipeline makeSendingPipeline(const SharedHeader & header, std::vector<Chunks> chunks_per_stream, LoopbackExchange & exchange)
+{
+    return makeSendingPipeline(header, std::move(chunks_per_stream), exchange.connections->getConnection("query", "stream"));
 }
 
 /// The receiving task: one real source connected to `port`. With `source_hands_packets` a
@@ -179,10 +224,19 @@ QueryPipeline makeReceivingPipeline(
     UInt16 port,
     bool source_hands_packets,
     std::shared_ptr<CollectingSink> sink,
-    std::optional<UInt64> limit_rows = {})
+    std::optional<UInt64> limit_rows = {},
+    bool advisory = false)
 {
     auto source = std::make_shared<StreamingExchangeSource>(
-        header, "query", "stream", "127.0.0.1", port, /*cancellation_=*/ nullptr, /*auth_token_=*/ String{}, source_hands_packets);
+        header,
+        "query",
+        "stream",
+        "127.0.0.1",
+        port,
+        /*cancellation_=*/ nullptr,
+        /*auth_token_=*/ String{},
+        source_hands_packets,
+        advisory);
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(source));
@@ -203,7 +257,15 @@ UInt64 eventCount(ProfileEvents::Event event)
     return ProfileEvents::global_counters[event];
 }
 
-UInt64 sumOfValues(const std::vector<Chunk> & chunks)
+size_t countRows(const Chunks & chunks)
+{
+    size_t rows = 0;
+    for (const auto & chunk : chunks)
+        rows += chunk.getNumRows();
+    return rows;
+}
+
+UInt64 sumOfValues(const Chunks & chunks)
 {
     UInt64 sum = 0;
     for (const auto & chunk : chunks)
@@ -295,6 +357,90 @@ TEST(StreamingExchangeTransport, EveryPacketShapeCrossesTheSocket)
         EXPECT_EQ(sumOfValues(sink->chunks), expected_sum);
         EXPECT_EQ(rowless_with_info, 1u);
         EXPECT_EQ(data_chunks_with_info, 1u);
+    }
+}
+
+/// The sender and the receiver keep the types of the columns for the later packets. The stream has two
+/// `UInt64` columns with one type object, and a column of `uniq` states. Both source modes must give the
+/// values that were sent.
+TEST(StreamingExchangeTransport, ColumnsWithASharedTypeAndStatesCrossTheSocket)
+{
+    MainThreadStatus::getInstance();
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t packets = 4;
+    constexpr size_t rows_per_chunk = 100;
+
+    const DataTypePtr number_type = std::make_shared<DataTypeUInt64>();
+    const DataTypePtr state_type = DataTypeFactory::instance().get("AggregateFunction(uniq, UInt64)");
+    const auto & state_function = assert_cast<const DataTypeAggregateFunction &>(*state_type).getFunction();
+    auto header = std::make_shared<const Block>(Block{
+        ColumnWithTypeAndName(number_type->createColumn(), number_type, "a"),
+        ColumnWithTypeAndName(number_type->createColumn(), number_type, "b"),
+        ColumnWithTypeAndName(state_type->createColumn(), state_type, "s")});
+
+    /// Each row of `s` holds the state of `uniq` over the one value of `a` in that row.
+    auto make_chunk = [&](size_t first_value)
+    {
+        auto numbers = makeChunk(first_value, rows_per_chunk).detachColumns().front();
+        auto states = state_type->createColumn();
+        auto & state_column = assert_cast<ColumnAggregateFunction &>(*states);
+        const IColumn * arguments[] = {numbers.get()};
+        for (size_t row = 0; row < rows_per_chunk; ++row)
+        {
+            state_column.insertDefault();
+            state_function->add(state_column.getData().back(), arguments, row, &state_column.createOrGetArena());
+        }
+        return Chunk(Columns{numbers, numbers, std::move(states)}, rows_per_chunk);
+    };
+
+    for (bool source_hands_packets : {false, true})
+    {
+        SCOPED_TRACE(fmt::format("source_hands_packets={}", source_hands_packets));
+
+        Chunks chunks;
+        for (size_t index = 0; index < packets; ++index)
+            chunks.push_back(make_chunk(index * rows_per_chunk));
+
+        LoopbackExchange exchange;
+        std::vector<Chunks> chunks_per_stream;
+        chunks_per_stream.push_back(std::move(chunks));
+        auto sending = makeSendingPipeline(header, std::move(chunks_per_stream), exchange);
+        auto sink = std::make_shared<CollectingSink>(header);
+        auto receiving = makeReceivingPipeline(header, exchange.server.port(), source_hands_packets, sink);
+
+        std::optional<int> sending_code;
+        std::thread sender([&] { sending_code = run(sending, 1); });
+        const auto receiving_code = run(receiving, 1);
+        sender.join();
+
+        EXPECT_EQ(sending_code, std::nullopt);
+        EXPECT_EQ(receiving_code, std::nullopt);
+
+        size_t rows = 0;
+        UInt64 sum_a = 0;
+        UInt64 sum_b = 0;
+        UInt64 sum_uniq = 0;
+        for (const auto & chunk : sink->chunks)
+        {
+            if (chunk.getNumRows() == 0)
+                continue;
+            rows += chunk.getNumRows();
+            const auto & columns = chunk.getColumns();
+            for (UInt64 value : assert_cast<const ColumnUInt64 &>(*columns[0]).getData())
+                sum_a += value;
+            for (UInt64 value : assert_cast<const ColumnUInt64 &>(*columns[1]).getData())
+                sum_b += value;
+            auto values = ColumnAggregateFunction::convertToValues(IColumn::mutate(columns[2]));
+            for (UInt64 value : assert_cast<const ColumnUInt64 &>(*values).getData())
+                sum_uniq += value;
+        }
+        const size_t total_rows = packets * rows_per_chunk;
+        EXPECT_EQ(rows, total_rows);
+        EXPECT_EQ(sum_a, UInt64(total_rows) * (total_rows - 1) / 2);
+        EXPECT_EQ(sum_b, sum_a);
+        /// Each state saw one value.
+        EXPECT_EQ(sum_uniq, total_rows);
     }
 }
 
@@ -391,7 +537,7 @@ TEST(StreamingExchangeTransport, EmptyChunkIsDataOnAColumnlessStream)
         auto future_connection = exchange.connections->getConnection("query", "stream");
         builder.setSinks([&](const SharedHeader & stream_header, Pipe::StreamType)
         {
-            return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream");
+            return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream", /*advisory*/ false);
         });
         auto sending = QueryPipelineBuilder::getPipeline(std::move(builder));
 
@@ -407,10 +553,7 @@ TEST(StreamingExchangeTransport, EmptyChunkIsDataOnAColumnlessStream)
         EXPECT_EQ(receiving_code, std::nullopt);
         /// The empty chunk crosses the socket as a data packet: three data packets and the marker.
         EXPECT_EQ(eventCount(ProfileEvents::StreamingExchangePacketsReceived) - packets_received_before, 4u);
-        size_t rows = 0;
-        for (const auto & chunk : sink->chunks)
-            rows += chunk.getNumRows();
-        EXPECT_EQ(rows, 2 * rows_per_chunk);
+        EXPECT_EQ(countRows(sink->chunks), 2 * rows_per_chunk);
     }
 }
 
@@ -426,19 +569,10 @@ TEST(StreamingExchangeTransport, SenderStallsAtThePendingCapAndResumes)
     constexpr size_t chunks = 96;
     constexpr size_t rows_per_chunk = 64 * 1024;
     Chunks input;
-    UInt64 value = 1;
-    UInt64 expected_sum = 0;
+    UInt64 state = 1;
     for (size_t index = 0; index < chunks; ++index)
-    {
-        auto column = ColumnUInt64::create();
-        for (size_t row = 0; row < rows_per_chunk; ++row)
-        {
-            value = value * 6364136223846793005ULL + 1442695040888963407ULL;
-            column->insertValue(value);
-            expected_sum += value;
-        }
-        input.emplace_back(Columns{std::move(column)}, rows_per_chunk);
-    }
+        input.push_back(makeIncompressibleChunk(rows_per_chunk, state));
+    const UInt64 expected_sum = sumOfValues(input);
 
     auto header = makeHeader();
     LoopbackExchange exchange;
@@ -449,7 +583,7 @@ TEST(StreamingExchangeTransport, SenderStallsAtThePendingCapAndResumes)
     auto future_connection = exchange.connections->getConnection("query", "stream");
     builder.setSinks([&](const SharedHeader & stream_header, Pipe::StreamType)
     {
-        return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream");
+        return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream", /*advisory*/ false);
     });
     auto sending = QueryPipelineBuilder::getPipeline(std::move(builder));
 
@@ -479,10 +613,7 @@ TEST(StreamingExchangeTransport, SenderStallsAtThePendingCapAndResumes)
     EXPECT_TRUE(stalled_before_release);
     EXPECT_GT(eventCount(ProfileEvents::StreamingExchangeSendQueueFullMicroseconds) - stall_time_before, 0u);
     EXPECT_EQ(CurrentMetrics::get(CurrentMetrics::StreamingExchangeSinksWithFullSendQueue), 0);
-    size_t rows = 0;
-    for (const auto & chunk : sink->chunks)
-        rows += chunk.getNumRows();
-    EXPECT_EQ(rows, chunks * rows_per_chunk);
+    EXPECT_EQ(countRows(sink->chunks), chunks * rows_per_chunk);
     EXPECT_EQ(sumOfValues(sink->chunks), expected_sum);
 }
 
@@ -522,10 +653,92 @@ TEST(StreamingExchangeTransport, ReceiverThatStopsEarlyClosesTheStream)
         EXPECT_EQ(sending_code, std::nullopt);
         EXPECT_EQ(receiving_code, std::nullopt);
         EXPECT_EQ(eventCount(ProfileEvents::StreamingExchangeEarlyCloses) - early_closes_before, 1u);
-        size_t rows = 0;
-        for (const auto & chunk : sink->chunks)
-            rows += chunk.getNumRows();
-        EXPECT_EQ(rows, 1u);
+        EXPECT_EQ(countRows(sink->chunks), 1u);
+    }
+}
+
+/// A runtime filter receiver may disconnect at any moment, for example when its task ended before
+/// the filter was built. For the advisory sink of the filter that only means this destination gets
+/// nothing. For a data stream the same disconnect fails the task: a lost data destination would
+/// give a wrong result.
+TEST(StreamingExchangeTransport, SinkSurvivesALostPeerOnlyWhenAdvisory)
+{
+    MainThreadStatus::getInstance();
+    /// Otherwise a send to a peer that already reset the connection raises SIGPIPE.
+    (void)std::signal(SIGPIPE, SIG_IGN);
+
+    for (bool advisory : {true, false})
+    {
+        SCOPED_TRACE(fmt::format("advisory={}", advisory));
+
+        Poco::Net::ServerSocket listener(Poco::Net::SocketAddress("127.0.0.1", 0));
+        Poco::Net::StreamSocket peer_socket;
+        peer_socket.connect(listener.address());
+        auto connection = std::make_shared<FutureConnection>();
+        connection->setSocket(listener.acceptConnection());
+
+        /// The peer reads a little and disconnects without `NoMoreDataNeeded`, as a task torn down
+        /// in the middle of the delivery does.
+        std::thread peer([&peer_socket]
+        {
+            char buffer[1024];
+            peer_socket.receiveBytes(buffer, sizeof(buffer));
+            peer_socket.shutdown();
+            peer_socket.close();
+        });
+
+        /// Far more than the socket buffers hold, so the sink still has unsent bytes when the peer leaves.
+        std::vector<Chunks> chunks_per_stream_list(1);
+        UInt64 state = 1;
+        for (size_t index = 0; index < 4; ++index)
+            chunks_per_stream_list[0].push_back(makeIncompressibleChunk(1024 * 1024, state));
+        auto sending = makeSendingPipeline(makeHeader(), std::move(chunks_per_stream_list), connection, advisory);
+        const auto code = run(sending, 1);
+        peer.join();
+
+        if (advisory)
+            EXPECT_EQ(code, std::nullopt);
+        else
+            EXPECT_NE(code, std::nullopt);
+    }
+}
+
+/// A receiver closes its stream before anything arrives, as a probe task does when its scan ends
+/// before the runtime filter is sent. For an advisory stream this is not an error.
+TEST(StreamingExchangeTransport, AdvisorySinkCountsNoErrorWhenThePeerClosesFirst)
+{
+    MainThreadStatus::getInstance();
+    (void)std::signal(SIGPIPE, SIG_IGN);
+
+    for (bool advisory : {true, false})
+    {
+        SCOPED_TRACE(fmt::format("advisory={}", advisory));
+
+        Poco::Net::ServerSocket listener(Poco::Net::SocketAddress("127.0.0.1", 0));
+        Poco::Net::StreamSocket peer_socket;
+        peer_socket.connect(listener.address());
+        auto connection = std::make_shared<FutureConnection>();
+        connection->setSocket(listener.acceptConnection());
+        peer_socket.shutdown();
+        peer_socket.close();
+
+        const auto errors_before = ErrorCodes::values[ErrorCodes::EXCHANGE_PEER_DISCONNECTED].get().local.count;
+        std::vector<Chunks> chunks_per_stream_list(1);
+        UInt64 state = 1;
+        chunks_per_stream_list[0].push_back(makeIncompressibleChunk(1024, state));
+        auto sending = makeSendingPipeline(makeHeader(), std::move(chunks_per_stream_list), connection, advisory);
+        const auto code = run(sending, 1);
+        const auto errors_after = ErrorCodes::values[ErrorCodes::EXCHANGE_PEER_DISCONNECTED].get().local.count;
+
+        if (advisory)
+        {
+            EXPECT_EQ(code, std::nullopt);
+            EXPECT_EQ(errors_after, errors_before);
+        }
+        else
+        {
+            EXPECT_EQ(code, ErrorCodes::EXCHANGE_PEER_DISCONNECTED);
+        }
     }
 }
 
@@ -550,34 +763,69 @@ std::string rawHeader(UInt64 packet_type, UInt64 bytes_size)
     return std::string(reinterpret_cast<const char *>(&header), sizeof(header));
 }
 
-/// A peer that completes the handshake and then sends `bytes`; with `then_reset` it cuts the
-/// connection right after, otherwise it keeps it open until the test ends.
-std::function<void(Poco::Net::StreamSocket &)> sendAfterHandshake(std::string bytes, bool then_reset = false)
+/// What the peer of `sendAfterHandshake` does with the connection after it sent its bytes.
+enum class ThenPeer
 {
-    return [packet_bytes = std::move(bytes), then_reset](Poco::Net::StreamSocket & socket)
+    KeepsOpen, /// Until the test ends.
+    Closes,
+    Resets,
+};
+
+/// A peer that completes the handshake and then sends `bytes`.
+std::function<void(Poco::Net::StreamSocket &)> sendAfterHandshake(std::string bytes, ThenPeer then = ThenPeer::KeepsOpen)
+{
+    return [packet_bytes = std::move(bytes), then](Poco::Net::StreamSocket & socket)
     {
         ExchangeTest::completeSinkHandshake(socket);
         StreamingExchangeProtocol::sendAll(socket, packet_bytes.data(), packet_bytes.size(), "test packet");
-        if (then_reset)
-        {
-            socket.setLinger(true, 0);
+        if (then == ThenPeer::Resets)
+            ExchangeTest::resetAfterDelivery(socket);
+        else if (then == ThenPeer::Closes)
             socket.close();
-        }
     };
 }
 
 /// Runs a real source in the given mode against `peer`; returns the code the pipeline threw with,
 /// and the rows that arrived.
-std::pair<std::optional<int>, size_t> receiveFrom(const ExchangeTest::FakePeer & peer, bool source_hands_packets)
+std::pair<std::optional<int>, size_t> receiveFrom(const ExchangeTest::FakePeer & peer, bool source_hands_packets, bool advisory = false)
 {
     auto header = makeHeader();
     auto sink = std::make_shared<CollectingSink>(header);
-    auto receiving = makeReceivingPipeline(header, peer.port(), source_hands_packets, sink);
+    auto receiving = makeReceivingPipeline(header, peer.port(), source_hands_packets, sink, /*limit_rows=*/ {}, advisory);
     auto code = run(receiving, 2);
-    size_t rows = 0;
-    for (const auto & chunk : sink->chunks)
-        rows += chunk.getNumRows();
-    return {code, rows};
+    return {code, countRows(sink->chunks)};
+}
+
+ExchangeLookupPtr makeLookup(ExchangeConnectionsPtr connections, const ExchangeStreamSources & sources)
+{
+    return createStreamingExchangeLookup(
+        "query",
+        std::move(connections),
+        sources,
+        /*cancellation=*/ nullptr,
+        /*auth_token=*/ String{},
+        CompressionCodecFactory::instance().getDefaultCodec());
+}
+
+/// Like `receiveFrom`, with the source built as a receive step builds it: by `receiveExchangeStreams`
+/// through the streaming lookup, with a source that hands packets to a deserializer.
+std::pair<std::optional<int>, size_t> receiveThroughLookup(const ExchangeTest::FakePeer & peer, bool advisory)
+{
+    const ExchangeStreamId stream_id("exchange", 0, 0);
+    ExchangeStreamSources sources;
+    sources.stream_hosts[stream_id.toString()] = StreamSourceAddress{.host = "127.0.0.1", .port = peer.port()};
+    BuildQueryPipelineSettings settings(getContext().context);
+    settings.exchange_lookup = makeLookup(std::make_shared<ExchangeConnections>(), sources);
+
+    const auto header = makeHeader();
+    const VectorWithMemoryTracking<ExchangeStreamId> stream_ids{stream_id};
+    auto builder = receiveExchangeStreams(
+        header, stream_id.exchange_id, stream_ids, settings, /*spread_over_max_threads=*/ false, advisory);
+    auto sink = std::make_shared<CollectingSink>(header);
+    builder.setSinks([&](const SharedHeader &, Pipe::StreamType) { return sink; });
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+    auto code = run(pipeline, 2);
+    return {code, countRows(sink->chunks)};
 }
 
 }
@@ -617,7 +865,8 @@ TEST(StreamingExchangeTransport, SourceRejectsMalformedPackets)
             EXPECT_EQ(receiveFrom(peer, source_hands_packets).first, ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT) << "an oversized body";
         }
         {
-            ExchangeTest::FakePeer peer(sendAfterHandshake(rawHeader(StreamingExchangeProtocol::PacketType::Data, 100) + std::string(10, 'x'), /*then_reset=*/ true));
+            ExchangeTest::FakePeer peer(
+                sendAfterHandshake(rawHeader(StreamingExchangeProtocol::PacketType::Data, 100) + std::string(10, 'x'), ThenPeer::Resets));
             EXPECT_EQ(receiveFrom(peer, source_hands_packets).first, ErrorCodes::EXCHANGE_PEER_DISCONNECTED) << "a connection cut in the middle of a packet";
         }
         {
@@ -634,6 +883,85 @@ TEST(StreamingExchangeTransport, SourceRejectsMalformedPackets)
             EXPECT_EQ(code, std::nullopt) << "a proper packet and the marker";
             EXPECT_EQ(rows, 3u);
         }
+    }
+}
+
+/// When the peer is lost after the handshake, an advisory source ends the stream without data and
+/// never emits a partial packet. The peer closes or resets the connection, between packets or
+/// inside one. A source that is not advisory fails on the same peer. The receive step builds its
+/// source through `receiveExchangeStreams`, which must hand `advisory` on to it.
+TEST(StreamingExchangeTransport, AdvisorySourceEndsWhenThePeerIsLostAfterTheHandshake)
+{
+    MainThreadStatus::getInstance();
+
+    struct Loss
+    {
+        std::string bytes;
+        ThenPeer then;
+        const char * what;
+    };
+    const std::vector<Loss> losses = {
+        {"", ThenPeer::Closes, "a close between packets"},
+        {"", ThenPeer::Resets, "a reset between packets"},
+        {rawHeader(StreamingExchangeProtocol::PacketType::Data, 100) + std::string(10, 'x'),
+         ThenPeer::Closes,
+         "a close in the middle of a packet"},
+        {rawHeader(StreamingExchangeProtocol::PacketType::Data, 100) + std::string(10, 'x'),
+         ThenPeer::Resets,
+         "a reset in the middle of a packet"},
+    };
+
+    using Receive = std::function<std::pair<std::optional<int>, size_t>(const ExchangeTest::FakePeer &, bool advisory)>;
+    const std::vector<std::pair<const char *, Receive>> receivers = {
+        {"a source that deserializes", [](const ExchangeTest::FakePeer & peer, bool advisory)
+            { return receiveFrom(peer, /*source_hands_packets=*/ false, advisory); }},
+        {"a receive step", receiveThroughLookup},
+    };
+
+    for (const auto & [receiver, receive] : receivers)
+    {
+        SCOPED_TRACE(receiver);
+        for (const auto & loss : losses)
+        {
+            SCOPED_TRACE(loss.what);
+            {
+                const UInt64 abandoned_before = eventCount(ProfileEvents::RuntimeFilterReceivesAbandoned);
+                ExchangeTest::FakePeer peer(sendAfterHandshake(loss.bytes, loss.then));
+                const auto [code, rows] = receive(peer, /*advisory=*/ true);
+                EXPECT_EQ(code, std::nullopt);
+                EXPECT_EQ(rows, 0u);
+                EXPECT_EQ(eventCount(ProfileEvents::RuntimeFilterReceivesAbandoned) - abandoned_before, 1u);
+            }
+            {
+                ExchangeTest::FakePeer peer(sendAfterHandshake(loss.bytes, loss.then));
+                EXPECT_EQ(receive(peer, /*advisory=*/ false).first, ErrorCodes::EXCHANGE_PEER_DISCONNECTED);
+            }
+        }
+    }
+}
+
+/// An advisory source still throws when the peer hangs up during the handshake or sends a packet
+/// of an unknown type; only a peer lost after the handshake ends the stream quietly.
+TEST(StreamingExchangeTransport, AdvisorySourceStillFailsOnHandshakeAndProtocolErrors)
+{
+    MainThreadStatus::getInstance();
+
+    for (bool source_hands_packets : {false, true})
+    {
+        SCOPED_TRACE(fmt::format("source_hands_packets={}", source_hands_packets));
+        const UInt64 abandoned_before = eventCount(ProfileEvents::RuntimeFilterReceivesAbandoned);
+        {
+            /// Only the sending direction is shut down: the peer still takes in the SourceHello.
+            ExchangeTest::FakePeer peer([](Poco::Net::StreamSocket & socket) { socket.shutdownSend(); });
+            EXPECT_EQ(receiveFrom(peer, source_hands_packets, /*advisory=*/ true).first, ErrorCodes::EXCHANGE_PEER_DISCONNECTED)
+                << "a peer that hangs up before the SinkHello";
+        }
+        {
+            ExchangeTest::FakePeer peer(sendAfterHandshake(rawHeader(/*packet_type=*/ 0xbad, /*bytes_size=*/ 0), ThenPeer::Closes));
+            EXPECT_EQ(receiveFrom(peer, source_hands_packets, /*advisory=*/ true).first, ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT)
+                << "an unknown packet type";
+        }
+        EXPECT_EQ(eventCount(ProfileEvents::RuntimeFilterReceivesAbandoned), abandoned_before);
     }
 }
 
@@ -728,6 +1056,229 @@ std::chrono::milliseconds waitAfterCancel(QueryPipeline & pipeline, const std::f
 
 constexpr Int64 well_before_the_handshake_timeout_ms = StreamingExchangeProtocol::HELLO_TIMEOUT_SECONDS * 1000 / 2;
 
+/// `SO_SNDBUF` / `SO_RCVBUF` as the kernel reports them. Linux doubles the size passed to
+/// setsockopt and clamps it to `wmem_max` / `rmem_max` first; other kernels adjust differently.
+struct SocketBufferOptions
+{
+    int sndbuf = 0;
+    int rcvbuf = 0;
+};
+
+SocketBufferOptions optionsOf(const Poco::Net::StreamSocket & socket)
+{
+    return SocketBufferOptions{socket.getSendBufferSize(), socket.getReceiveBufferSize()};
+}
+
+/// The options a connected socket keeps after the same setsockopt calls `applySocketBufferSizes`
+/// makes. A zero size is not set, which is what leaves that direction on kernel TCP autotuning.
+SocketBufferOptions buffersTheKernelKeeps(UInt64 sndbuf, UInt64 rcvbuf)
+{
+    Poco::Net::ServerSocket listener(Poco::Net::SocketAddress("127.0.0.1", 0));
+    Poco::Net::StreamSocket client(listener.address());
+    Poco::Net::StreamSocket server_side = listener.acceptConnection();
+    listener.close();
+
+    auto apply = [&](Poco::Net::StreamSocket & socket)
+    {
+        if (sndbuf > 0)
+            socket.setSendBufferSize(static_cast<int>(sndbuf));
+        if (rcvbuf > 0)
+            socket.setReceiveBufferSize(static_cast<int>(rcvbuf));
+    };
+    apply(client);
+    apply(server_side);
+
+    const auto client_options = optionsOf(client);
+    const auto server_options = optionsOf(server_side);
+    EXPECT_EQ(client_options.sndbuf, server_options.sndbuf);
+    EXPECT_EQ(client_options.rcvbuf, server_options.rcvbuf);
+    return client_options;
+}
+
+/// Connected sockets whose local or peer port is `port`. The listening socket has no peer.
+std::vector<SocketBufferOptions> connectedSocketBuffers(UInt16 port)
+{
+    std::vector<SocketBufferOptions> found;
+
+    const std::string fd_dir = std::filesystem::exists("/proc/self/fd") ? "/proc/self/fd" : "/dev/fd";
+    std::error_code error;
+    for (auto it = std::filesystem::directory_iterator(fd_dir, error); !error && it != std::filesystem::directory_iterator(); it.increment(error))
+    {
+        const std::string name = it->path().filename().string();
+        int fd = -1;
+        const auto [parse_end, parse_error] = std::from_chars(name.data(), name.data() + name.size(), fd);
+        if (parse_error != std::errc() || parse_end != name.data() + name.size())
+            continue;
+
+        sockaddr_storage local{};
+        socklen_t local_len = sizeof(local);
+        if (getsockname(fd, reinterpret_cast<sockaddr *>(&local), &local_len) != 0 || local.ss_family != AF_INET)
+            continue;
+
+        sockaddr_storage peer{};
+        socklen_t peer_len = sizeof(peer);
+        if (getpeername(fd, reinterpret_cast<sockaddr *>(&peer), &peer_len) != 0 || peer.ss_family != AF_INET)
+            continue;
+
+        const auto local_port = ntohs(reinterpret_cast<sockaddr_in *>(&local)->sin_port);
+        const auto peer_port = ntohs(reinterpret_cast<sockaddr_in *>(&peer)->sin_port);
+        if (local_port != port && peer_port != port)
+            continue;
+
+        SocketBufferOptions options;
+        socklen_t opt_len = sizeof(options.sndbuf);
+        if (getsockopt(fd, SOL_SOCKET, SO_SNDBUF, &options.sndbuf, &opt_len) != 0)
+            continue;
+        opt_len = sizeof(options.rcvbuf);
+        if (getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &options.rcvbuf, &opt_len) != 0)
+            continue;
+        found.push_back(options);
+    }
+    return found;
+}
+
+/// Passes the first chunk and holds the second, so both exchange sockets stay open with the
+/// buffer sizes already applied: the sink applies them before it sends, and the source applies
+/// them before the hello that lets the sink send.
+class HoldSecondChunk : public ISimpleTransform
+{
+public:
+    explicit HoldSecondChunk(SharedHeader header_)
+        : ISimpleTransform(header_, header_, /*skip_empty_chunks_=*/ false)
+    {
+    }
+
+    String getName() const override { return "HoldSecondChunk"; }
+
+    void release()
+    {
+        std::lock_guard lock(mutex);
+        released = true;
+        gate.notify_all();
+    }
+
+protected:
+    void transform(Chunk &) override
+    {
+        std::unique_lock lock(mutex);
+        if (chunks_seen++ == 0)
+            return;
+        gate.wait(lock, [&] { return released; });
+    }
+
+private:
+    std::mutex mutex;
+    std::condition_variable gate;
+    bool released = false;
+    size_t chunks_seen = 0;
+};
+
+/// One real sink and one real source on a loopback exchange. Returns the buffer options of the
+/// two connected sockets once the sink has sent, which is after both sides have applied the
+/// current `streaming_exchange_sndbuf` / `streaming_exchange_rcvbuf` values.
+std::vector<SocketBufferOptions> exchangeSocketBuffers()
+{
+    auto header = makeHeader();
+    LoopbackExchange exchange;
+
+    Chunks chunks;
+    chunks.push_back(makeChunk(0, 32));
+    chunks.push_back(makeChunk(32, 32));
+
+    std::shared_ptr<HoldSecondChunk> hold;
+    QueryPipelineBuilder builder;
+    builder.init(Pipe(std::make_shared<SourceFromChunks>(header, std::move(chunks))));
+    builder.addSimpleTransform([&](const SharedHeader & stream_header)
+    {
+        hold = std::make_shared<HoldSecondChunk>(stream_header);
+        return hold;
+    });
+    builder.addSimpleTransform([](const SharedHeader & stream_header)
+    {
+        return std::make_shared<StreamingExchangeSerializingTransform>(
+            stream_header, CompressionCodecFactory::instance().getDefaultCodec());
+    });
+    if (!hold)
+    {
+        ADD_FAILURE() << "HoldSecondChunk was not inserted";
+        return {};
+    }
+
+    auto future_connection = exchange.connections->getConnection("query", "stream");
+    builder.setSinks([&](const SharedHeader & stream_header, Pipe::StreamType)
+    {
+        return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream", /*advisory*/ false);
+    });
+    auto sending = QueryPipelineBuilder::getPipeline(std::move(builder));
+    auto receiving = makeReceivingPipeline(
+        header, exchange.server.port(), /*source_hands_packets=*/ false, std::make_shared<CollectingSink>(header));
+
+    const UInt64 sent_before = eventCount(ProfileEvents::StreamingExchangeSendBytes);
+    const UInt16 port = exchange.server.port();
+
+    std::optional<int> sending_code;
+    std::optional<int> receiving_code;
+    std::atomic<bool> sender_finished{false};
+    std::atomic<bool> receiver_finished{false};
+    std::thread sender([&]
+    {
+        sending_code = run(sending, 2);
+        sender_finished.store(true);
+    });
+    std::thread receiver([&]
+    {
+        receiving_code = run(receiving, 2);
+        receiver_finished.store(true);
+    });
+
+    std::vector<SocketBufferOptions> open_sockets;
+    {
+        /// On any exit path, releases the held chunk so both pipelines finish, then joins them.
+        struct FinishExchange
+        {
+            std::shared_ptr<HoldSecondChunk> hold;
+            std::thread & sender;
+            std::thread & receiver;
+
+            ~FinishExchange()
+            {
+                hold->release();
+                sender.join();
+                receiver.join();
+            }
+        } finish{hold, sender, receiver};
+
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (eventCount(ProfileEvents::StreamingExchangeSendBytes) > sent_before)
+            {
+                open_sockets = connectedSocketBuffers(port);
+                if (open_sockets.size() >= 2)
+                    break;
+            }
+            if (sender_finished.load() && receiver_finished.load())
+                break;
+            std::this_thread::yield();
+        }
+    }
+
+    EXPECT_EQ(sending_code, std::nullopt);
+    EXPECT_EQ(receiving_code, std::nullopt);
+    return open_sockets;
+}
+
+/// Restores the published socket buffer sizes when the test exits.
+struct RestoreBufferSizes
+{
+    const StreamingExchangeProtocol::SocketBufferSizes saved = StreamingExchangeProtocol::getSocketBufferSizes();
+
+    ~RestoreBufferSizes()
+    {
+        StreamingExchangeProtocol::setSocketBufferSizes(saved.sndbuf, saved.rcvbuf);
+    }
+};
+
 }
 
 /// A cancel stops a source that waits for the `SinkHello` of a peer that never answers, instead of the query
@@ -777,5 +1328,257 @@ TEST(StreamingExchangeTransport, CancelStopsTheWaitForTheConnect)
         well_before_the_handshake_timeout_ms);
 }
 #endif
+
+/// Explicit `streaming_exchange_sndbuf` / `streaming_exchange_rcvbuf` values reach both sockets of a
+/// new exchange, and publishing 0 again leaves the next connection on the kernel defaults. The
+/// expected options come from a socket this test configured the same way, so kernel doubling and
+/// clamping are part of the comparison rather than hard-coded.
+TEST(StreamingExchangeTransport, ConfiguredBuffersReachNewConnections)
+{
+    MainThreadStatus::getInstance();
+
+    const RestoreBufferSizes restore;
+
+    const SocketBufferOptions kernel_defaults = buffersTheKernelKeeps(0, 0);
+    UInt64 sndbuf = 65536;
+    UInt64 rcvbuf = 32768;
+    SocketBufferOptions configured = buffersTheKernelKeeps(sndbuf, rcvbuf);
+    if (configured.sndbuf == kernel_defaults.sndbuf || configured.rcvbuf == kernel_defaults.rcvbuf)
+    {
+        sndbuf = 16384;
+        rcvbuf = 8192;
+        configured = buffersTheKernelKeeps(sndbuf, rcvbuf);
+    }
+    ASSERT_NE(configured.sndbuf, kernel_defaults.sndbuf);
+    ASSERT_NE(configured.rcvbuf, kernel_defaults.rcvbuf);
+
+    StreamingExchangeProtocol::setSocketBufferSizes(sndbuf, rcvbuf);
+    const auto explicit_sockets = exchangeSocketBuffers();
+    ASSERT_EQ(explicit_sockets.size(), 2u);
+    for (const auto & socket : explicit_sockets)
+    {
+        EXPECT_EQ(socket.sndbuf, configured.sndbuf);
+        EXPECT_EQ(socket.rcvbuf, configured.rcvbuf);
+    }
+
+    StreamingExchangeProtocol::setSocketBufferSizes(0, 0);
+    const auto default_sockets = exchangeSocketBuffers();
+    ASSERT_EQ(default_sockets.size(), 2u);
+    for (const auto & socket : default_sockets)
+    {
+        EXPECT_EQ(socket.sndbuf, kernel_defaults.sndbuf);
+        EXPECT_EQ(socket.rcvbuf, kernel_defaults.rcvbuf);
+    }
+}
+
+namespace
+{
+
+/// How long a test waits for a task to end, so that a task that never ends fails the test instead
+/// of hanging it.
+constexpr auto task_failsafe = std::chrono::minutes(1);
+
+/// The parameters of one task: `MergeRuntimeFiltersStep` reads only its `bucket_id`.
+class BucketParameter : public IParameterLookup
+{
+public:
+    explicit BucketParameter(String bucket_)
+        : bucket(std::move(bucket_))
+    {
+    }
+    Field getParameter(const String &) const override { return Field(bucket); }
+
+private:
+    const String bucket;
+};
+
+RuntimeFilterGeometry partialGeometry()
+{
+    return RuntimeFilterGeometry{
+        .exact_values_limit = 64,
+        .exact_bytes_limit = 4096,
+        .bloom_filter_bytes = 4096,
+        .bloom_filter_hash_functions = 3,
+        .pass_ratio_threshold_for_disabling = 1.0,
+        .blocks_to_skip_before_reenabling = 0,
+        .max_ratio_of_set_bits_in_bloom_filter = 1.0,
+    };
+}
+
+/// The serialized partial state of the keys `0 .. keys - 1`, as a build task sends it.
+Chunk makePartialChunk(size_t keys)
+{
+    AdaptiveSetRuntimeFilter filter(
+        std::make_shared<DataTypeUInt64>(),
+        partialGeometry(),
+        /*distinct_keys_hint_=*/ std::nullopt,
+        /*distinct_keys_hint_matches_filter_key_=*/ false);
+    filter.boundExactSetByKeyBytes();
+    filter.insert(makeChunk(0, keys).getColumns().front());
+    WriteBufferFromOwnString out;
+    filter.serialize(out);
+    auto column = ColumnString::create();
+    column->insertData(out.str().data(), out.str().size());
+    return Chunk(Columns{std::move(column)}, 1);
+}
+
+/// Runs a pipeline on its own thread, like a worker task, until it ends or `cancel` stops it.
+class TaskThread
+{
+public:
+    explicit TaskThread(QueryPipeline pipeline_)
+        : pipeline(std::move(pipeline_))
+    {
+    }
+
+    ~TaskThread() { cancel(); }
+
+    void start()
+    {
+        thread = std::thread(
+            [this]
+            {
+                std::optional<int> code;
+                try
+                {
+                    CompletedPipelineExecutor executor(pipeline);
+                    executor.setCancelCallback([this] { return cancelled.load(); }, /*interactive_timeout_ms_=*/ 10);
+                    executor.execute();
+                }
+                catch (const Exception & e)
+                {
+                    code = e.code();
+                }
+                done.set_value(code);
+            });
+    }
+
+    /// False if the pipeline still runs after `task_failsafe`.
+    bool endsInTime() { return result.wait_for(task_failsafe) == std::future_status::ready; }
+
+    /// Stops the pipeline if it still runs; returns the code it threw with, if any.
+    std::optional<int> cancel()
+    {
+        cancelled = true;
+        if (!thread.joinable())
+            return std::nullopt;
+        thread.join();
+        return result.get();
+    }
+
+private:
+    QueryPipeline pipeline;
+    std::atomic<bool> cancelled = false;
+    std::promise<std::optional<int>> done;
+    std::future<std::optional<int>> result = done.get_future();
+    std::thread thread;
+};
+
+/// A build task's side of a runtime filter: its partial goes to the advisory sink of `stream`.
+QueryPipeline makeBuildTaskPipeline(LoopbackExchange & exchange, const ExchangeStreamId & stream)
+{
+    auto lookup = makeLookup(exchange.connections, ExchangeStreamSources{});
+    QueryPipelineBuilder builder;
+    builder.init(Pipe(std::make_shared<SourceFromSingleChunk>(runtimeFilterPartialsHeader(), makePartialChunk(10))));
+    builder.addSimpleTransform([&](const SharedHeader & header) { return lookup->createSerializer(header, stream.exchange_id); });
+    builder.setSinks([&](const SharedHeader & header, Pipe::StreamType) { return lookup->createSink(header, stream, /*advisory=*/ true); });
+    return QueryPipelineBuilder::getPipeline(std::move(builder));
+}
+
+/// A runtime filter merge task as a worker builds it: its source reads `child` from the build task
+/// behind `child_exchange`, and its sinks wait for their receivers on `connections`.
+QueryPipeline makeMergeTaskPipeline(
+    ExchangeConnectionsPtr connections,
+    LoopbackExchange & child_exchange,
+    const ExchangeStreamId & child,
+    VectorWithMemoryTracking<MergeRuntimeFiltersStep::Output> outputs)
+{
+    ExchangeStreamSources sources;
+    sources.stream_hosts[child.toString()] = StreamSourceAddress{.host = "127.0.0.1", .port = child_exchange.server.port()};
+    BuildQueryPipelineSettings settings(getContext().context);
+    settings.exchange_lookup = makeLookup(std::move(connections), sources);
+    settings.parameter_lookup = std::make_shared<BucketParameter>("0");
+    MergeRuntimeFiltersStep step(
+        "filter",
+        std::make_shared<DataTypeUInt64>(),
+        partialGeometry(),
+        child.exchange_id,
+        {child.source_bucket},
+        /*fan_in_=*/ 8,
+        std::move(outputs));
+    return QueryPipelineBuilder::getPipeline(std::move(*step.updatePipeline({}, settings)));
+}
+
+}
+
+/// A runtime filter merge task takes the partials of its children whether or not any of its
+/// receivers connects. A build task ends only once its partial is taken, so a merge task that waited
+/// for a receiver would hold up the whole query when every receive branch fails before connecting.
+TEST(RuntimeFilterMergeTask, TakesThePartialWhileNoReceiverConnects)
+{
+    MainThreadStatus::getInstance();
+
+    const std::vector<std::pair<const char *, VectorWithMemoryTracking<MergeRuntimeFiltersStep::Output>>> shapes = {
+        {"a root with one receiver", {{"exchange_2", {"0"}}}},
+        {"a root with two receivers", {{"exchange_2", {"0", "1"}}}},
+    };
+    for (const auto & [what, outputs] : shapes)
+    {
+        SCOPED_TRACE(what);
+        LoopbackExchange build_exchange;
+        const ExchangeStreamId partial_stream("exchange_1", "0", "0");
+        TaskThread merge(makeMergeTaskPipeline(std::make_shared<ExchangeConnections>(), build_exchange, partial_stream, outputs));
+        TaskThread build(makeBuildTaskPipeline(build_exchange, partial_stream));
+        merge.start();
+        build.start();
+
+        EXPECT_TRUE(build.endsInTime()) << "the build task waited for a receiver of the merge task";
+        EXPECT_EQ(build.cancel(), std::nullopt);
+        EXPECT_EQ(merge.cancel(), std::nullopt);
+    }
+}
+
+/// A receiver that never connects does not hold back the others: the one that connects gets the
+/// union and the end of its stream, so its receive branch can register the filter.
+TEST(RuntimeFilterMergeTask, AReceiverThatNeverConnectsDoesNotHoldBackTheOthers)
+{
+    MainThreadStatus::getInstance();
+
+    LoopbackExchange build_exchange;
+    LoopbackExchange root_exchange;
+    const ExchangeStreamId partial_stream("exchange_1", "0", "0");
+    const ExchangeStreamId connected_stream("exchange_2", "0", "0");
+    TaskThread merge(makeMergeTaskPipeline(root_exchange.connections, build_exchange, partial_stream, {{"exchange_2", {"0", "1"}}}));
+    TaskThread build(makeBuildTaskPipeline(build_exchange, partial_stream));
+
+    /// The sources of the receive branch for destination bucket 0. A `CollectingSink` replaces the
+    /// merge, so the test can count the union row. Destination bucket 1 never connects.
+    ExchangeStreamSources sources;
+    sources.stream_hosts[connected_stream.toString()] = StreamSourceAddress{.host = "127.0.0.1", .port = root_exchange.server.port()};
+    BuildQueryPipelineSettings settings(getContext().context);
+    settings.exchange_lookup = makeLookup(std::make_shared<ExchangeConnections>(), sources);
+    const VectorWithMemoryTracking<ExchangeStreamId> streams{connected_stream};
+    auto receive = receiveExchangeStreams(
+        runtimeFilterPartialsHeader(),
+        connected_stream.exchange_id,
+        streams,
+        settings,
+        /*spread_over_max_threads=*/ false,
+        /*advisory=*/ true);
+    auto sink = std::make_shared<CollectingSink>(runtimeFilterPartialsHeader());
+    receive.setSinks([&](const SharedHeader &, Pipe::StreamType) { return sink; });
+    TaskThread receiver(QueryPipelineBuilder::getPipeline(std::move(receive)));
+
+    receiver.start();
+    merge.start();
+    build.start();
+
+    EXPECT_TRUE(receiver.endsInTime()) << "the connected receiver did not get the end of its stream";
+    EXPECT_TRUE(build.endsInTime());
+    EXPECT_EQ(receiver.cancel(), std::nullopt);
+    EXPECT_EQ(build.cancel(), std::nullopt);
+    EXPECT_EQ(countRows(sink->chunks), 1u);
+    EXPECT_EQ(merge.cancel(), std::nullopt);
+}
 
 #endif
