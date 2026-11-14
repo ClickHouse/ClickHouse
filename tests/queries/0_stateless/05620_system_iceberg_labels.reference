@@ -1,0 +1,68 @@
+-- structure
+database	String
+table	String
+scope	Enum8(\'object\' = 0, \'field\' = 1)
+field_id	Nullable(Int32)
+field_name	Nullable(String)
+key	String
+value	String
+-- all the labels of a catalog
+hr.employees	field	2	salary	classification	restricted
+sales.customers	object	\N	\N	owner	team-sales
+sales.customers	field	2	full_name	pii	true
+sales.customers	field	3	\N	deprecated	true
+sales.customers	field	5	address.city	pii.type	location
+sales.orders	object	\N	\N	classification	internal
+sales.orders	object	\N	\N	owner	team-checkout
+sales.orders	field	2	customer_email	pii	true
+sales.orders	field	2	customer_email	pii.type	email
+loaded: hr.employees hr.empty_labels hr.empty_members hr.no_labels sales.customers sales.orders
+-- one table
+sales.orders	object	\N	\N	classification	internal
+sales.orders	object	\N	\N	owner	team-checkout
+sales.orders	field	2	customer_email	pii	true
+sales.orders	field	2	customer_email	pii.type	email
+loaded: sales.orders
+-- several tables
+hr.employees	field	2	salary	classification	restricted
+sales.orders	object	\N	\N	classification	internal
+sales.orders	object	\N	\N	owner	team-checkout
+sales.orders	field	2	customer_email	pii	true
+sales.orders	field	2	customer_email	pii.type	email
+loaded: hr.employees sales.orders
+-- tables of a namespace
+hr.employees	field	2	salary	classification	restricted
+loaded: hr.employees hr.empty_labels hr.empty_members hr.no_labels
+-- database and table named together
+hr.employees	field	2	salary	classification	restricted
+loaded: hr.employees
+-- a filter on the labels cannot limit the requests
+sales.customers	full_name
+sales.orders	customer_email
+loaded: hr.employees hr.empty_labels hr.empty_members hr.no_labels sales.customers sales.orders
+-- a table without labels
+0
+loaded: hr.empty_labels hr.empty_members hr.no_labels
+-- another database
+0
+0
+loaded: nothing
+-- a table which the catalog refuses to load
+the query fails: RECEIVED_ERROR_FROM_REMOTE_IO_SERVER
+loaded: ns.forbidden
+the table is skipped with database_datalake_require_metadata_access = 0:
+ns.ok	object	\N	\N	owner	team-a
+loaded: ns.forbidden ns.ok
+the table is not asked for:
+ns.ok	object	\N	\N	owner	team-a
+loaded: ns.ok
+-- access rights
+no grants: 0
+loaded: nothing
+sales.customers	object	\N	\N	owner	team-sales
+sales.customers	field	2	full_name	pii	true
+sales.customers	field	3	\N	deprecated	true
+sales.customers	field	5	address.city	pii.type	location
+sales.orders	object	\N	\N	classification	internal
+sales.orders	object	\N	\N	owner	team-checkout
+loaded: sales.customers sales.orders

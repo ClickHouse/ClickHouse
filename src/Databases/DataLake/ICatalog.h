@@ -11,6 +11,7 @@
 #include <Poco/JSON/Object.h>
 
 #include <functional>
+#include <map>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -63,6 +64,34 @@ struct DataLakeSpecificProperties
     std::string iceberg_metadata_file_location;
 };
 
+/// Labels which a catalog attaches to a table: catalog-owned metadata enrichment such as ownership,
+/// classification or cost attribution. Labels are not a part of the table metadata: the catalog
+/// produces them on every load of the table, they are never written to the metadata file, and
+/// different catalogs may return different labels for the same table.
+/// In the Iceberg REST catalog it is the `labels` member of `LoadTableResult`.
+struct TableLabels
+{
+    /// Ordered by key, so that the labels are always listed in the same order.
+    using Labels = std::map<std::string, std::string>;
+
+    struct FieldLabels
+    {
+        Int32 field_id = 0;
+        /// Full name of the field in the current schema of the table (e.g. `address.city` for a nested field).
+        /// Empty if the current schema has no field with this id, for example when the column was dropped:
+        /// the catalog identifies fields by id and may keep the labels of a field which only older schemas have.
+        std::optional<std::string> field_name;
+        Labels labels;
+    };
+
+    /// Labels of the table as a whole.
+    Labels object_labels;
+    /// Labels of the fields of the table: one entry per field, ordered by field id.
+    std::vector<FieldLabels> field_labels;
+
+    bool empty() const { return object_labels.empty() && field_labels.empty(); }
+};
+
 /// A class representing table metadata,
 /// which was received from Catalog.
 class TableMetadata
@@ -74,6 +103,8 @@ public:
     TableMetadata & withSchema() { with_schema = true; return *this; }
     TableMetadata & withStorageCredentials() { with_storage_credentials = true; return *this; }
     TableMetadata & withDataLakeSpecificProperties() { with_datalake_specific_metadata = true; return *this; }
+    /// Ask the catalog for the labels of the table. Only makes a difference for catalogs with `ICatalog::supportsLabels`.
+    TableMetadata & withLabels() { with_labels = true; return *this; }
     TableMetadata & withForceAddBucket() { force_add_bucket = true; return *this; }
 
     bool hasLocation() const;
@@ -98,6 +129,10 @@ public:
     void setDataLakeSpecificProperties(std::optional<DataLakeSpecificProperties> && metadata);
     std::optional<DataLakeSpecificProperties> getDataLakeSpecificProperties() const;
 
+    void setLabels(TableLabels labels_) { labels = std::move(labels_); }
+    /// Empty if the labels were not requested with `withLabels`, or if the catalog returned none.
+    const TableLabels & getLabels() const { return labels; }
+
     void setTableUUID(const std::string & uuid_) { table_uuid = uuid_; }
     std::optional<std::string> getTableUUID() const { return table_uuid; }
     void setTableFormat(DataLakeTableFormat format) { table_format = format; }
@@ -107,6 +142,7 @@ public:
     bool requiresSchema() const { return with_schema; }
     bool requiresCredentials() const { return with_storage_credentials; }
     bool requiresDataLakeSpecificProperties() const { return with_datalake_specific_metadata; }
+    bool requiresLabels() const { return with_labels; }
 
     StorageType getStorageType() const;
     bool isS3Location() const;
@@ -155,6 +191,9 @@ private:
     std::string reason_why_table_is_not_readable;
     std::optional<std::string> table_uuid;
 
+    /// Labels which the catalog attaches to the table.
+    TableLabels labels;
+
     bool is_default_readable_table = true;
     DataLakeTableFormat table_format = DataLakeTableFormat::UNKNOWN;
 
@@ -162,6 +201,7 @@ private:
     bool with_schema = false;
     bool with_storage_credentials = false;
     bool with_datalake_specific_metadata = false;
+    bool with_labels = false;
 
     std::string constructLocation(const std::string & endpoint_, DB::S3UriStyle uri_style) const;
 };
@@ -265,6 +305,10 @@ public:
         const std::string & namespace_name,
         const std::string & table_name,
         TableMetadata & result) const = 0;
+
+    /// Whether the catalog can return the labels of a table (see `TableLabels`).
+    /// They are requested with `TableMetadata::withLabels` and cost nothing on top of loading the table.
+    virtual bool supportsLabels() const { return false; }
 
     /// Get storage type, where Iceberg tables' data is stored.
     /// E.g. one of S3, Azure, Local, HDFS.

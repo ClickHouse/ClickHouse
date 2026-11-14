@@ -144,6 +144,7 @@
 #include <DistributedCache/Utils.h>
 #endif
 #include <Storages/System/StorageSystemIcebergHistory.h>
+#include <Storages/System/StorageSystemIcebergLabels.h>
 #include <Storages/System/StorageSystemIcebergMetadataLogEntries.h>
 #if USE_ICU
 #   include <Storages/System/StorageSystemUnicode.h>
@@ -3890,6 +3891,41 @@ This system table contains per-file metadata for Iceberg tables existing in Clic
     attach<StorageSystemIcebergMetadataLogEntries>(context, system_database, "iceberg_metadata_log_entries", R"DOCS_MD(
 .description
 This system table contains the metadata files of Iceberg tables existing in ClickHouse, with one row per metadata file. It will be empty if you don't have any Iceberg tables in ClickHouse.
+)DOCS_MD");
+    attach<StorageSystemIcebergLabels>(context, system_database, "iceberg_labels", R"DOCS_MD(
+.description
+Contains the labels which Iceberg REST catalogs attach to the tables of the [`DataLakeCatalog`](/reference/engines/database-engines/datalake) databases, with one row per label. It will be empty if no catalog attached to ClickHouse returns labels.
+
+Labels are metadata which a catalog adds to the tables it serves, such as ownership, classification or cost attribution. They belong to the catalog, not to the table: they are not stored in the table metadata, and another catalog can return other labels for the same table. A label is attached either to the table as a whole or to one of its fields.
+
+The labels are requested from the catalog on every query to this table and are not cached, which takes one request to the catalog per table. Filter on `database` and `table` to request the labels of only the tables you need.
+
+A field is identified by its id, so its labels follow a renamed column. A catalog can also return the labels of a field which the current schema of the table does not have, such as a dropped column. For such a field `field_name` is `NULL`.
+
+.examples
+```sql title="Query"
+SELECT scope, field_id, field_name, key, value
+FROM system.iceberg_labels
+WHERE database = 'lakehouse' AND table = 'sales.customers'
+```
+
+```text title="Response"
+┌─scope──┬─field_id─┬─field_name───┬─key────────────┬─value────┐
+│ object │     ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │ classification │ internal │
+│ object │     ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │ owner          │ team-a   │
+│ field  │        3 │ email        │ pii            │ true     │
+│ field  │        5 │ ᴺᵁᴸᴸ         │ deprecated     │ true     │
+│ field  │        7 │ address.city │ pii.type       │ location │
+└────────┴──────────┴──────────────┴────────────────┴──────────┘
+```
+
+Find the columns which a catalog marks as personal data, across all the catalogs:
+
+```sql title="Query"
+SELECT database, table, field_name
+FROM system.iceberg_labels
+WHERE scope = 'field' AND key = 'pii' AND value = 'true'
+```
 )DOCS_MD");
 #if USE_ICU
     attach<StorageSystemUnicode>(context, system_database, "unicode", R"DOCS_MD(

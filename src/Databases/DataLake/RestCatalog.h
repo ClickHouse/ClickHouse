@@ -61,6 +61,10 @@ public:
 
     std::optional<StorageType> getStorageType() const override;
 
+    /// The Iceberg REST specification lets a catalog return labels with every table load.
+    /// A catalog which does not implement them simply returns none.
+    bool supportsLabels() const override { return true; }
+
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
         return DB::DatabaseDataLakeCatalogType::ICEBERG_REST;
