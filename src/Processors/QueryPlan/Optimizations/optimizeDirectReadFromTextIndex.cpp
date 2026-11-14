@@ -164,6 +164,53 @@ UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> getUsedInputs(const Act
     return used_inputs;
 }
 
+/// Returns the nodes whose value reaches the step output only as the truth value of the removed filter column:
+/// the filter node and, through `and`, `or`, `not` and aliases, the nodes used nowhere else.
+std::unordered_set<const ActionsDAG::Node *> getTruthOnlyNodes(const ActionsDAG & dag, const ActionsDAG::Node * filter_node, bool removes_filter_column)
+{
+    std::unordered_map<const ActionsDAG::Node *, size_t> uses;
+    for (const auto * output : dag.getOutputs())
+        ++uses[output];
+    for (const auto & node : dag.getNodes())
+        for (const auto * child : node.children)
+            ++uses[child];
+
+    std::unordered_set<const ActionsDAG::Node *> truth_only_nodes;
+    if (!filter_node || !removes_filter_column || uses[filter_node] != 1)
+        return truth_only_nodes;
+
+    std::unordered_map<const ActionsDAG::Node *, size_t> truth_uses;
+    std::vector<const ActionsDAG::Node *> stack{filter_node};
+    truth_only_nodes.insert(filter_node);
+
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        bool is_logical = node->type == ActionsDAG::ActionType::ALIAS;
+        if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base)
+        {
+            const auto & name = node->function_base->getName();
+            is_logical = name == "and" || name == "or" || name == "not";
+        }
+
+        if (!is_logical)
+            continue;
+
+        for (const auto * child : node->children)
+        {
+            if (++truth_uses[child] == uses[child])
+            {
+                truth_only_nodes.insert(child);
+                stack.push_back(child);
+            }
+        }
+    }
+
+    return truth_only_nodes;
+}
+
 String optimizationInfoToString(const IndexReadTasks & index_read_tasks, const Names & removed_columns)
 {
     chassert(!index_read_tasks.empty());
@@ -519,11 +566,12 @@ public:
     /// Example: hasAllTokens(text_col, 'token1 token2') -> hasAllTokens(lower(text_col), ['token1', 'token2'], 'splitByNonAlpha').
     /// Pass an empty `filter_column_name` for DAGs without a single filter output (e.g. a SELECT-list ExpressionStep).
     /// Returns `std::nullopt` if no function node was rewritten.
-    std::optional<ResultReplacement> replace(const ContextPtr & context, const String & filter_column_name)
+    std::optional<ResultReplacement> replace(const ContextPtr & context, const String & filter_column_name, bool removes_filter_column)
     {
         NodesReplacementMap replacements;
         UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> original_inputs(actions_dag.getInputs().begin(), actions_dag.getInputs().end());
         const auto * filter_node = filter_column_name.empty() ? nullptr : &actions_dag.findInOutputs(filter_column_name);
+        truth_only_nodes = getTruthOnlyNodes(actions_dag, filter_node, removes_filter_column);
 
         /// Copy pointers to nodes to avoid the modification of nodes in the dag while iterating over them.
         auto nodes_ptrs = actions_dag.getNodesPointers();
@@ -595,6 +643,7 @@ private:
     UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *> virtual_column_inputs;
     /// Read tasks of the virtual columns added to the DAG, by index name. `replace` keeps only the columns still used after the rewrite.
     IndexReadTasks index_read_tasks;
+    std::unordered_set<const ActionsDAG::Node *> truth_only_nodes;
 
     /// has/hasAll/hasAny operate on array elements directly, bypassing the tokenizer, preprocessor, and postprocessor.
     static bool needApplyTokenizer(const String & function_name)
@@ -709,7 +758,17 @@ private:
             node = processTextIndexFunction(*node, selected_conditions, context);
 
         if (direct_read_from_text_index)
+        {
+            /// `and(hint, predicate)` keeps only whether the predicate is true.
+            if (!truth_only_nodes.contains(&function_node))
+                std::erase_if(selected_conditions, [](const auto & condition)
+                {
+                    return !condition.virtual_column.name.empty()
+                        && condition.virtual_column.search_query->getDirectReadMode() == TextIndexDirectReadMode::Hint;
+                });
+
             node = replaceFunctionsToVirtualColumns(*node, std::move(selected_conditions), context);
+        }
 
         return node;
     }
@@ -1042,10 +1101,11 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
     ActionsDAG & filter_dag,
     const TextIndexReadInfos & text_index_read_infos,
     const String & filter_column_name,
+    bool removes_filter_column,
     bool direct_read_from_text_index)
 {
     TextIndexDAGReplacer replacer(filter_dag, text_index_read_infos, direct_read_from_text_index);
-    auto result = replacer.replace(read_from_merge_tree_step.getContext(), filter_column_name);
+    auto result = replacer.replace(read_from_merge_tree_step.getContext(), filter_column_name, removes_filter_column);
     if (!result)
         return nullptr;
 
@@ -1134,7 +1194,7 @@ static bool applyTextIndexInject(
     }
 
     TextIndexDAGReplacer replacer(dag, text_index_infos, /*direct_read_from_text_index=*/ false);
-    bool is_rewritten = replacer.replace(read_from_merge_tree_step.getContext(), /*filter_column_name=*/ String{}).has_value();
+    bool is_rewritten = replacer.replace(read_from_merge_tree_step.getContext(), /*filter_column_name=*/ String{}, /*removes_filter_column=*/ false).has_value();
 
     for (const auto * input : dag.getInputs())
         if (auto it = renamed_inputs.find(input); it != renamed_inputs.end())
@@ -1151,7 +1211,7 @@ static bool processAndOptimizeTextIndexFunctionsInPrewhere(
 {
     read_from_merge_tree_step.updatePrewhereInfo({});
     auto cloned_prewhere_info = prewhere_info->clone();
-    const auto * result_filter_node = processAndOptimizeTextIndexDAG(read_from_merge_tree_step, cloned_prewhere_info.prewhere_actions, text_index_read_infos, cloned_prewhere_info.prewhere_column_name, direct_read_from_text_index);
+    const auto * result_filter_node = processAndOptimizeTextIndexDAG(read_from_merge_tree_step, cloned_prewhere_info.prewhere_actions, text_index_read_infos, cloned_prewhere_info.prewhere_column_name, cloned_prewhere_info.remove_prewhere_column, direct_read_from_text_index);
 
     if (!result_filter_node)
     {
@@ -1304,7 +1364,7 @@ void processAndOptimizeTextIndexFunctions(
             ActionsDAG & filter_dag = filter_step->getExpression();
             bool direct_read_allowed = direct_read_from_text_index && !prewhere_optimized && !already_has_direct_read;
             const auto * result_filter_node = processAndOptimizeTextIndexDAG(
-                *read_from_merge_tree_step, filter_dag, text_index_infos, filter_step->getFilterColumnName(), direct_read_allowed);
+                *read_from_merge_tree_step, filter_dag, text_index_infos, filter_step->getFilterColumnName(), filter_step->removesFilterColumn(), direct_read_allowed);
 
             update_source_columns(filter_dag);
             if (!result_filter_node)
