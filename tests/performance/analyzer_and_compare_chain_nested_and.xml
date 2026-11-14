@@ -1,0 +1,22 @@
+<test>
+    <!--
+        Query analysis of a WHERE written as a left-deep nested AND tree, ((a AND b) AND c) AND ..., of about
+        100 comparisons (https://github.com/ClickHouse/ClickHouse/issues/131134). EXPLAIN QUERY TREE isolates
+        the analysis cost from execution.
+    -->
+    <substitutions>
+        <substitution>
+            <name>budget</name>
+            <values>
+                <value>0</value>
+                <value>5000000</value>
+            </values>
+        </substitution>
+    </substitutions>
+    <query><![CDATA[
+EXPLAIN QUERY TREE
+SELECT c1 FROM (SELECT toString(number) AS c1, max(number) AS c2 FROM numbers(10) GROUP BY c1) WHERE (((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((lower(c1) = lower('a01')) AND (lower(c1) = lower('a02'))) AND (lower(c1) = lower('a03'))) AND (lower(c1) = lower('a04'))) AND (lower(c1) = lower('a05'))) AND (lower(c1) = lower('a06'))) AND (lower(c1) = lower('a07'))) AND (lower(c1) = lower('a08'))) AND (lower(c1) = lower('a09'))) AND (lower(c1) = lower('a10'))) AND (lower(c1) = lower('a11'))) AND (lower(c1) = lower('a12'))) AND (lower(c1) = lower('a13'))) AND (lower(c1) = lower('a14'))) AND (lower(c1) = lower('a15'))) AND (lower(c1) = lower('a16'))) AND (lower(c1) = lower('a17'))) AND (lower(c1) = lower('a18'))) AND (lower(c1) = lower('a19'))) AND (lower(c1) = lower('a20'))) AND (lower(c1) = lower('a21'))) AND (lower(c1) = lower('a22'))) AND (lower(c1) = lower('a23'))) AND (lower(c1) = lower('a24'))) AND (lower(c1) = lower('a25'))) AND (lower(c1) = lower('a26'))) AND (lower(c1) = lower('a27'))) AND (lower(c1) = lower('a28'))) AND (lower(c1) = lower('a29'))) AND (lower(c1) = lower('a30'))) AND (lower(c1) = lower('a31'))) AND (lower(c1) = lower('a32'))) AND (lower(c1) = lower('a33'))) AND (lower(c1) = lower('a34'))) AND (lower(c1) = lower('a35'))) AND (lower(c1) = lower('a36'))) AND (lower(c1) = lower('a37'))) AND (lower(c1) = lower('a38'))) AND (lower(c1) = lower('a39'))) AND (lower(c1) = lower('a40'))) AND (lower(c1) = lower('a41'))) AND (lower(c1) = lower('a42'))) AND (lower(c1) = lower('a43'))) AND (lower(c1) = lower('a44'))) AND (lower(c1) = lower('a45'))) AND (lower(c1) = lower('a46'))) AND (lower(c1) = lower('a47'))) AND (lower(c1) = lower('a48'))) AND (lower(c1) = lower('a49'))) AND (lower(c1) = lower('a50'))) AND (lower(c1) = lower('a51'))) AND (lower(c1) = lower('a52'))) AND (lower(c1) = lower('a53'))) AND (lower(c1) = lower('a54'))) AND (lower(c1) = lower('a55'))) AND (lower(c1) = lower('a56'))) AND (lower(c1) = lower('a57'))) AND (lower(c1) = lower('a58'))) AND (lower(c1) = lower('a59'))) AND (lower(c1) = lower('a60'))) AND (lower(c1) = lower('a61'))) AND (lower(c1) = lower('a62'))) AND (lower(c1) = lower('a63'))) AND (lower(c1) = lower('a64'))) AND (lower(c1) = lower('a65'))) AND (lower(c1) = lower('a66'))) AND (lower(c1) = lower('a67'))) AND (lower(c1) = lower('a68'))) AND (lower(c1) = lower('a69'))) AND (lower(c1) = lower('a70'))) AND (lower(c1) = lower('a71'))) AND (lower(c1) = lower('a72'))) AND (lower(c1) = lower('a73'))) AND (lower(c1) = lower('a74'))) AND (lower(c1) = lower('a75'))) AND (lower(c1) = lower('a76'))) AND (lower(c1) = lower('a77'))) AND (lower(c1) = lower('a78'))) AND (lower(c1) = lower('a79'))) AND (lower(c1) = lower('a80'))) AND (lower(c1) = lower('a81'))) AND (lower(c1) = lower('a82'))) AND (lower(c1) = lower('a83'))) AND (lower(c1) = lower('a84'))) AND (lower(c1) = lower('a85'))) AND (lower(c1) = lower('a86'))) AND (lower(c1) = lower('a87'))) AND (lower(c1) = lower('a88'))) AND (lower(c1) = lower('a89'))) AND (lower(c1) = lower('a90'))) AND (lower(c1) = lower('a91'))) AND (lower(c1) = lower('a92'))) AND (lower(c1) = lower('a93'))) AND (lower(c1) = lower('a94'))) AND (lower(c1) = lower('a95'))) AND (lower(c1) = lower('a96'))) AND (lower(c1) = lower('a97'))) AND (lower(c1) = lower('a98'))) AND (lower(c1) = lower('a99'))) AND (lower(c1) = lower('b00'))) AND (lower(c1) = lower('b01'))) AND (lower(c1) = lower('b02'))) AND (lower(c1) = lower('b03'))) AND (lower(c1) = lower('b04'))) AND (lower(c1) = lower('b05'))) AND ((c2 >= 1) AND (c2 <= 100)) LIMIT 1000
+SETTINGS optimize_and_compare_chain = 1, optimize_and_compare_chain_max_hash_work = {budget}
+FORMAT Null
+    ]]></query>
+</test>
