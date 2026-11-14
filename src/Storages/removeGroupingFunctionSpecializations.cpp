@@ -57,17 +57,24 @@ size_t getGroupingFunctionSpecializationStateArgumentsCount(const FunctionNode &
 class GeneralizeGroupingFunctionForDistributedVisitor : public InDepthQueryTreeVisitor<GeneralizeGroupingFunctionForDistributedVisitor>
 {
 public:
-    static void visitImpl(QueryTreeNodePtr & node)
+    explicit GeneralizeGroupingFunctionForDistributedVisitor(bool keep_ordinary_)
+        : keep_ordinary(keep_ordinary_)
+    {}
+
+    void visitImpl(QueryTreeNodePtr & node) const
     {
         auto * function = node->as<FunctionNode>();
         if (!function)
+            return;
+
+        bool ordinary_grouping = function->getFunctionName() == "__groupingOrdinary";
+        if (ordinary_grouping && keep_ordinary)
             return;
 
         const size_t num_state_arguments = getGroupingFunctionSpecializationStateArgumentsCount(*function);
         if (!num_state_arguments)
             return;
 
-        bool ordinary_grouping = function->getFunctionName() == "__groupingOrdinary";
         auto & arguments = function->getArguments().getNodes();
         arguments.resize(arguments.size() - num_state_arguments);
         if (!ordinary_grouping)
@@ -80,11 +87,14 @@ public:
         );
         function->resolveAsFunction(function_adaptor);
     }
+
+private:
+    bool keep_ordinary;
 };
 
-void removeGroupingFunctionSpecializations(QueryTreeNodePtr & node)
+void removeGroupingFunctionSpecializations(QueryTreeNodePtr & node, bool keep_ordinary)
 {
-    GeneralizeGroupingFunctionForDistributedVisitor visitor;
+    GeneralizeGroupingFunctionForDistributedVisitor visitor(keep_ordinary);
     visitor.visit(node);
 }
 
