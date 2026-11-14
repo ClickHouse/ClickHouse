@@ -468,6 +468,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"enable_packed_string_keys_in_hash_join", trueOrFalseSetting},
        {"enable_parallel_replicas", trueOrFalseSetting},
        {"enable_parallel_single_level_merge", trueOrFalseSetting},
+       {"enable_parallel_single_level_merge_by_index", trueOrFalseSetting},
        {"enable_producing_buckets_out_of_order_in_aggregation", trueOrFalseSetting},
        {"enable_software_prefetch_in_join", trueOrFalseSetting},
        {"external_storage_push_down_limit", trueOrFalseSetting},

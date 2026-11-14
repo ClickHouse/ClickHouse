@@ -10591,6 +10591,10 @@ All servers participating in a distributed query must agree on this value: with 
 Parallelize the final merge of the per-thread single-level aggregation hash tables. The key space is split into disjoint partitions by key hash, and each partition is merged independently: the merging thread enumerates all per-thread tables and combines the keys that belong to its partition, so no two threads ever touch the same key. If the setting is turned off, the single-level tables are merged serially on one thread. Aggregation by 8- and 16-bit keys keeps its own range-partitioned parallel merge regardless of this setting.
 )", 0, \
         {"26.8", false, true, "New setting to parallelize the final merge of the single-level aggregation hash tables by splitting the key space into disjoint hash partitions that the threads merge independently."}) \
+    DECLARE(Bool, enable_parallel_single_level_merge_by_index, true, R"(
+Lets the parallel merge of single-level aggregation hash tables (see `enable_parallel_single_level_merge`) read the tables of the adaptive aggregator (see `enable_adaptive_aggregator`) through an index of their cells, which every thread builds when it finishes aggregating. For each partition, the merge then reads only the cells of that partition from every table. If the setting is turned off, the merge scans every cell of every table for each partition.
+)", 0, \
+        {"26.11", false, true, "New setting to let the parallel merge read only the cells of each partition from the adaptive aggregator's single-level hash tables through the indexes of their cells, instead of scanning every cell of every table for each partition."}) \
     DECLARE(UInt64, min_outstreams_per_resize_after_split, 24, R"(
 Specifies the minimum number of output streams of a `Resize` or `StrictResize` processor after the split is performed during pipeline generation. If the resulting number of streams is less than this value, the split operation will not occur.
 

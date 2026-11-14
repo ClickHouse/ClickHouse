@@ -71,6 +71,7 @@ namespace ProfileEvents
     extern const Event ExternalAggregationUncompressedBytes;
     extern const Event ExternalAggregationWritePart;
     extern const Event AggregationHashTablesInitializedAsTwoLevel;
+    extern const Event AggregationPartitionsMergedByCellIndex;
     extern const Event AggregationTopKRowsSkipped;
     extern const Event AggregationTopKKeysEvicted;
     extern const Event AggregationTopKKeysPruned;
@@ -430,6 +431,7 @@ Aggregator::Params::Params(
     bool enable_producing_buckets_out_of_order_in_aggregation_,
     bool serialize_string_with_zero_byte_,
     bool enable_parallel_single_level_merge_,
+    bool enable_parallel_single_level_merge_by_index_,
     bool enable_packed_string_keys_,
     bool enable_adaptive_aggregator_,
     UInt64 adaptive_aggregator_freeze_threshold_,
@@ -466,6 +468,7 @@ Aggregator::Params::Params(
     , use_aggregation_memory_tracker(use_aggregation_memory_tracker_)
     , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)
     , enable_parallel_single_level_merge(enable_parallel_single_level_merge_)
+    , enable_parallel_single_level_merge_by_index(enable_parallel_single_level_merge_by_index_)
     , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
     , enable_packed_string_keys(enable_packed_string_keys_)
 {
@@ -3753,9 +3756,10 @@ bool Aggregator::canMergeSingleLevelInPartitions(const AggregatedDataVariants & 
     }
 }
 
-bool Aggregator::mergesByCellIndex(const ManyAggregatedDataVariants & tables)
+bool Aggregator::mergesByCellIndex(const ManyAggregatedDataVariants & tables) const
 {
-    return std::ranges::all_of(tables, [](const auto & variants) { return variants->hasCellIndex(); });
+    return params.enable_parallel_single_level_merge_by_index
+        && std::ranges::all_of(tables, [](const auto & variants) { return variants->hasCellIndex(); });
 }
 
 Aggregator::AggregatedChunk Aggregator::mergeSingleLevelPartitionsAndConvertToChunk(
@@ -3824,7 +3828,7 @@ template <typename Method, typename TwoLevelMethod>
 void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
     Method & dst_method,
     const std::vector<AggregatedDataVariants *> & sources,
-    bool indexed,
+    bool merge_by_cell_index,
     Arena * arena,
     size_t num_partitions,
     size_t first_partition,
@@ -3836,7 +3840,7 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
     /// cell into the destination is just inserting its key - there is nothing to adopt, merge or destroy.
     static constexpr bool is_void_mapped = std::is_void_v<typename Method::Mapped>;
 
-    /// When the merge reads the tables through their cell indexes (`indexed`, see `mergesByCellIndex`), a partition of
+    /// When the merge reads the tables through their cell indexes (`merge_by_cell_index`), a partition of
     /// the merge is a partition of the indexes, the same in every table: the cells of the partition from every table,
     /// then their states, as the bucket merge of two-level tables merges a bucket. Only the destination states of one
     /// partition are touched at a time, and no table is walked for the cells of other partitions. A state with a
@@ -3846,8 +3850,8 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
     /// the pool: holding the pairs of the whole partition for the merge by destination would cost memory and the
     /// locality of the pairs merged source by source. Only a table that iterates its cells is ever indexed.
     using Table = typename Method::Data;
-    chassert(!indexed || IterableCells<Table>);
-    const bool collects_source_slots = indexed && !all_aggregates_has_trivial_destructor;
+    chassert(!merge_by_cell_index || IterableCells<Table>);
+    const bool collects_source_slots = merge_by_cell_index && !all_aggregates_has_trivial_destructor;
 
     /// The destination state of each pair, and either its source state, detached from the source table, or the slot of
     /// the source cell, whose table keeps the state until the merge of the partition.
@@ -3858,7 +3862,7 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
     /// Large states (e.g. `uniqExact` sets past the two-level threshold) of the merge source by source are not merged in
     /// place but collected here and merged with all their sources in one parallel pass after the last source.
     DeferredMerges deferred;
-    if (!indexed && worthDeferringLargeMerges())
+    if (!merge_by_cell_index && worthDeferringLargeMerges())
         deferred.resize(params.aggregates_size);
     DeferredMerges * deferred_ptr = deferred.empty() ? nullptr : &deferred;
 
@@ -3949,7 +3953,7 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
 
     /// A partition of the tables walked source by source takes the keys of the two-level buckets `b` with
     /// `b % num_partitions == partition_index`.
-    chassert(indexed || std::has_single_bit(num_partitions));
+    chassert(merge_by_cell_index || std::has_single_bit(num_partitions));
     const size_t partition_mask = num_partitions - 1;
 
     const auto merge_partition = [&](size_t partition_index)
@@ -3958,8 +3962,9 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
 
         if constexpr (IterableCells<Table>)
         {
-            if (indexed)
+            if (merge_by_cell_index)
             {
+                ProfileEvents::increment(ProfileEvents::AggregationPartitionsMergedByCellIndex);
                 if (owns_null_slot)
                     for (auto * source : sources)
                         merge_null_slot(getDataVariant<Method>(*source).data);
