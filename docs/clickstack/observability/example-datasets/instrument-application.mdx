@@ -10,7 +10,6 @@ keywords: ['ClickStack', 'HackerNews Analyzer', 'OpenTelemetry', 'instrumentatio
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 import { AgentPrompt as ManagedAgentPrompt } from '/snippets/components/AgentPrompt/AgentPrompt.jsx';
-import { Image } from '/snippets/components/Image.jsx';
 import InstrumentApplication from '/snippets/clickstack/_instrument_application.mdx';
 
 <Tabs>
@@ -71,7 +70,15 @@ At this point the application is running but uninstrumented. The app will send t
 <Step title="Configure environment" id="configure-environment">
 Open your ClickHouse Observability service and go to **Team Settings → Managed Telemetry**. Copy the **OTLP HTTP endpoint** and **API key**.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry in Team Settings showing the masked OTLP HTTP endpoint and API key" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry in Team Settings showing the masked OTLP HTTP endpoint and API key](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 
 In the app's `.env` file, set the following values, replacing the endpoint and API key placeholders:
 

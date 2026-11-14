@@ -20,10 +20,8 @@ static std::vector<Int64> fieldIdsOfWrittenColumns(const ColumnMapper & mapper, 
     field_ids.reserve(written_block.columns());
     for (const auto & column : written_block)
     {
-        auto it = field_id_by_name.find(column.name);
-        if (it == field_id_by_name.end())
-            return {};
-        field_ids.push_back(it->second);
+        validateIcebergFieldIds(column.type, column.name, field_id_by_name);
+        field_ids.push_back(field_id_by_name.find(column.name)->second);
     }
     return field_ids;
 }
@@ -41,9 +39,8 @@ MultipleFileWriter::MultipleFileWriter(
     SharedHeader sample_block_)
     : max_data_file_num_rows(max_data_file_num_rows_)
     , max_data_file_num_bytes(max_data_file_num_bytes_)
-    , schema(schema_)
     , column_mapper(Iceberg::createColumnMapperFromFields(schema_))
-    , stats(schema_, fieldIdsOfWrittenColumns(*column_mapper, *sample_block_))
+    , stats(fieldIdsOfWrittenColumns(*column_mapper, *sample_block_))
     , filename_generator(filename_generator_)
     , path_resolver(path_resolver_)
     , object_storage(object_storage_)
@@ -59,7 +56,7 @@ void MultipleFileWriter::startNewFile()
     if (buffer)
         finalize();
 
-    current_file_stats = std::make_shared<DataFileStatistics>(schema, fieldIdsOfWrittenColumns(*column_mapper, *sample_block));
+    current_file_stats = std::make_shared<DataFileStatistics>(fieldIdsOfWrittenColumns(*column_mapper, *sample_block));
     current_file_num_rows = 0;
     auto metadata_path = filename_generator.generateDataFileName();
     auto storage_path = path_resolver.resolve(metadata_path);
