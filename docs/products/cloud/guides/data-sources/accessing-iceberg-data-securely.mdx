@@ -7,8 +7,6 @@ keywords: ['Iceberg', 'RBAC', 'Amazon S3', 'authentication']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ClickHouse Cloud supports secure role-based access to Iceberg data stored in object storage (typically S3) by using an ARN-based AWS IAM trust relationship. This guide follows the same secure-setup pattern as [Accessing S3 data securely](/products/cloud/guides/data-sources/accessing-s3-data-securely), and adds Iceberg-specific configuration in ClickHouse.
 
 ## Overview {#overview}
@@ -32,7 +30,15 @@ ClickHouse Cloud supports secure role-based access to Iceberg data stored in obj
 <Step title={<>5. Copy the <strong>Service role ID (IAM)</strong> value.</>} id="service-role-iam-value">
 This ARN is required for the trust policy on the AWS IAM role that will access your Iceberg data.
 
-<Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="Obtaining ClickHouse service IAM Role ARN" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Obtaining ClickHouse service IAM Role ARN](/images/cloud/security/secures3_arn.webp)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 

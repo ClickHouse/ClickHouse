@@ -824,6 +824,18 @@ Linhas e bytes são informados uma vez para todo o passo (a linha `I/O`). O temp
   2. o número máximo de threads de processamento de consultas definido em `max_threads`.
 </Note>
 
+#### Spill em passos de agregação, ordenação e DISTINCT {#explain-analyze-spilling}
+
+Quando um passo `GROUP BY`, `ORDER BY` ou `DISTINCT` faz spill de dados para o armazenamento temporário, ele reporta:
+
+```txt
+Spill: spilled <compressed_bytes>
+```
+
+Este é o número cumulativo de bytes compactados gravados por todo o passo, incluindo seus processadores paralelos.
+O total inclui arquivos temporários já consumidos ou excluídos e contabiliza cada gravação quando os dados são gravados em disco (spill) mais de uma vez.
+A linha é omitida quando nenhum dado foi gravado em disco.
+
 #### Passos de junção {#explain-analyze-join-steps}
 
 Em um passo de junção, `EXPLAIN ANALYZE` exibe linhas que comparam as estimativas do otimizador de ordem de junção com o que realmente ocorreu (consulte [Métricas de junção estimadas versus reais](#explain-analyze-join-estimation)) e linhas de *participação* para cada lado — `Left` e `Right` — seguidas de linhas específicas da implementação da junção. `Left` e `Right` correspondem aos lados lógicos do SQL. Na maioria dos casos, `Left` também será o lado de sondagem (probe) da junção, e `Right` será o lado de construção (build). No entanto, isso nem sempre ocorre, por causa da troca que pode acontecer durante a execução da junção. Todos os valores de [`join_algorithm`](/pt-BR/reference/settings/session-settings/join#join_algorithm) são contemplados (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), assim como as três implementações que essa configuração não pode selecionar: uma junção `CROSS` ou `COMMA`, a [junção de laço aninhado por blocos](/pt-BR/reference/statements/select/join#join-with-an-arbitrary-on-condition), usada quando a seção `ON` não determina nenhuma chave de junção, e o motor de tabela [`Join`](/pt-BR/reference/engines/table-engines/special/join). A maioria deles informa ambos os lados; alguns informam apenas o lado que materializam (por exemplo, `direct` exibe apenas `Left:`).
@@ -1100,7 +1112,7 @@ O relatório mostra as marcas e linhas que a projeção leria, um `read_ratio` e
 
 Quando o resultado depende de como a parte da projeção seria organizada, `marks_span` apresenta o intervalo, e uma decisão que poderia pender para qualquer lado é informada como `too close to call`. Em tabelas grandes, a estimativa lê uma amostra de grânulos (consulte `projection_scan_budget_rows`).
 
-Projeções agregadas, projeções com uma cláusula `WHERE`, com índices de exclusão próprios, com chave baseada na ordem de commit ou em coluna virtual, ou que armazenam `_block_number`, e projeções que não cobrem todas as colunas lidas pela consulta são informadas como `not_applicable`. `force_optimize_projection_name` e `preferred_optimize_projection_name` são ignorados, e `force_optimize_projection` não faz a instrução falhar.
+O WHATIF informa projeções agregadas e projeções com índices de exclusão próprios como `not_applicable`. Ele também informa como `not_applicable` projeções com chave baseada na ordem de commit, com chave em coluna virtual ou que armazenam `_block_number`. O mesmo se aplica a projeções que não contêm todas as colunas lidas pela consulta. O WHATIF ignora `force_optimize_projection_name` e `preferred_optimize_projection_name`, e `force_optimize_projection` não faz a instrução falhar.
 
 **Sintaxe**
 
@@ -1111,7 +1123,7 @@ EXPLAIN WHATIF [empirical = 0] SELECT ...
 **Configurações**
 
 * `projection_scan_budget_rows` — quantas linhas uma estimativa de projeção pode ler antes de recorrer a uma amostra de grânulos. Padrão: `10000000`. `0` significa sem limite; `max_rows_to_read` pode reduzi-lo. Uma amostra lê pelo menos cerca de 30 grânulos, além de um por parte. Quando `max_rows_to_read` não permite isso, a estimativa fica como `unsupported`.
-* `empirical` — `1` (padrão) aplica o índice em memória aos grânulos restantes após o descarte inicial para medir a taxa de descarte (um limite superior). `0` ignora essa etapa. Em ambos os casos, se `empirical` não produzir um resultado (por estar desabilitado ou porque o índice não pode ser avaliado em memória), o estimador recorre às [estatísticas](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) da coluna e, se elas também não estiverem disponíveis, apresenta apenas um resumo da aplicabilidade.
+* `empirical` — `1` (padrão) aplica o índice em memória aos grânulos remanescentes após a poda de referência para medir a taxa de descarte (um limite superior). `0` ignora essa etapa. Em ambos os casos, se `empirical` não produzir um resultado (por estar desabilitado ou porque o índice não pode ser avaliado em memória), o estimador recorre às [estatísticas](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) da coluna e, se elas também não estiverem disponíveis, apresenta apenas um resumo da aplicabilidade.
 
 **Saída**
 
