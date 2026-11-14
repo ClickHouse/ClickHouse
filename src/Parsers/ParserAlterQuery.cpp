@@ -1310,6 +1310,7 @@ Most `ALTER TABLE` queries modify table settings or data:
 | [SETTING](/reference/statements/alter/setting)                       |
 | [APPLY DELETED MASK](/reference/statements/alter/apply-deleted-mask) |
 | [APPLY PATCHES](/reference/statements/alter/apply-patches)           |
+| [EXECUTE](/reference/statements/alter/execute)                       |
 
 <Note>
 Most `ALTER TABLE` queries are supported only for [\*MergeTree](/reference/engines/table-engines/mergetree-family/index), [Merge](/reference/engines/table-engines/special/merge) and [Distributed](/reference/engines/table-engines/special/distributed) tables.
@@ -1853,6 +1854,8 @@ MATERIALIZE COLUMN name [IN PARTITION partition_id]
     documentation["ALTER TABLE ... PARTITION"] =
     {
         .description = R"DOCS_MD(
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
 The following operations with [partitions](/reference/engines/table-engines/mergetree-family/custom-partitioning-key) are available:
 
 - [DETACH PARTITION\|PART](#detach-partitionpart) — Moves a partition or part to the `detached` directory and forget it.
@@ -1869,6 +1872,7 @@ The following operations with [partitions](/reference/engines/table-engines/merg
 - [UNFREEZE PARTITION](#unfreeze-partition) — Removes a backup of a partition.
 - [FETCH PARTITION\|PART](#fetch-partitionpart) — Downloads a part or partition from another server.
 - [MOVE PARTITION\|PART](#move-partitionpart) — Move partition/data part to another disk or volume.
+- [MOVE PART TO SHARD](#move-part-to-shard) - Moves a data part to the table of another shard.
 - [UPDATE IN PARTITION](#update-in-partition) — Update data inside the partition by condition.
 - [DELETE IN PARTITION](#delete-in-partition) — Delete data inside the partition by condition.
 - [REWRITE PARTS](#rewrite-parts) — Rewrite parts in the table (or specific partition) completely.
@@ -2152,6 +2156,54 @@ ALTER TABLE hits MOVE PART '20190301_14343_16206_438' TO VOLUME 'slow'
 ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 ```
 
+## MOVE PART TO SHARD {#move-part-to-shard}
+
+Introduced in: v21.7.0
+
+<ExperimentalBadge/>
+
+Moves a data part of a [`ReplicatedMergeTree`](/reference/engines/table-engines/mergetree-family/replication) table to the table of another shard, given by the path of that table in ZooKeeper.
+
+```sql
+ALTER TABLE table_name MOVE PART 'part_name' TO SHARD 'zookeeper_path'
+```
+
+<Note>
+This is an experimental feature, and it does not take sharding expressions into account. Enable it with the MergeTree setting [`part_moves_between_shards_enable`](/reference/settings/merge-tree-settings/part-moves#part_moves_between_shards_enable) of the source table.
+</Note>
+
+- The part needs a UUID: the source table must have the MergeTree setting [`assign_part_uuids`](/reference/settings/merge-tree-settings/other#assign_part_uuids) enabled when the part is created.
+- The destination table must have the same structure.
+- The query only schedules the move. Its progress is shown in [`system.part_moves_between_shards`](/reference/system-tables/part_moves_between_shards), and it can be cancelled with `KILL PART_MOVE_TO_SHARD`.
+- Only a part can be moved this way; `MOVE PARTITION` has no `TO SHARD` form.
+- The query requires the `ALTER MOVE PARTITION` privilege on the table and the global `MOVE PARTITION BETWEEN SHARDS` privilege.
+
+Example (both tables are on one server here; usually the destination table is on another shard):
+
+```sql title="Query"
+CREATE DATABASE shard1;
+CREATE DATABASE shard2;
+
+CREATE TABLE shard1.events (id UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/01/events', 'r1') ORDER BY id
+SETTINGS part_moves_between_shards_enable = 1, assign_part_uuids = 1;
+
+CREATE TABLE shard2.events (id UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/02/events', 'r1') ORDER BY id;
+
+INSERT INTO shard1.events VALUES (1), (2), (3);
+
+ALTER TABLE shard1.events MOVE PART 'all_0_0_0' TO SHARD '/clickhouse/tables/02/events';
+
+SELECT part_name, to_shard, state FROM system.part_moves_between_shards WHERE table = 'events';
+```
+
+```text title="Response"
+┌─part_name─┬─to_shard─────────────────────┬─state───────┐
+│ all_0_0_0 │ /clickhouse/tables/02/events │ SYNC_SOURCE │
+└───────────┴──────────────────────────────┴─────────────┘
+```
+
+When the move is done, `state` is `DONE` and the rows are in `shard2.events`.
+
 ## UPDATE IN PARTITION {#update-in-partition}
 
 Manipulates data in the specifies partition matching the specified filtering expression. Implemented as a [mutation](/reference/statements/alter/index#mutations).
@@ -2243,6 +2295,7 @@ ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM tab
 ALTER TABLE table2 [ON CLUSTER cluster] REPLACE PARTITION partition_expr FROM table1
 ALTER TABLE table_source [ON CLUSTER cluster] MOVE PARTITION partition_expr TO TABLE table_dest
 ALTER TABLE table_name [ON CLUSTER cluster] MOVE PARTITION|PART partition_expr TO DISK|VOLUME 'disk_name'
+ALTER TABLE table_name MOVE PART 'part_name' TO SHARD 'zookeeper_path'
 ALTER TABLE table_name [ON CLUSTER cluster] CLEAR COLUMN column_name IN PARTITION partition_expr
 ALTER TABLE table_name [ON CLUSTER cluster] CLEAR INDEX index_name IN PARTITION partition_expr
 ALTER TABLE table_name [ON CLUSTER cluster] FREEZE [PARTITION partition_expr] [WITH NAME 'backup_name']
@@ -3737,6 +3790,77 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] APPLY PATCHES [IN PARTITION partitio
 )",
         .parent = "ALTER",
         .related = {"ALTER", "UPDATE", "ALTER TABLE ... UPDATE"},
+    };
+
+    documentation["ALTER TABLE ... EXECUTE"] =
+    {
+        .description = R"DOCS_MD(
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+Introduced in: v26.3.0
+
+<ExperimentalBadge/>
+
+Runs a command implemented by the table engine, such as a maintenance procedure of a data lake table. Only [Iceberg](/reference/engines/table-engines/integrations/iceberg) tables implement commands; for other tables the statement throws an exception.
+
+## Syntax {#syntax}
+
+```sql
+ALTER TABLE [db.]table EXECUTE command_name([argument [, ...]])
+```
+
+The arguments are values or `name = value` pairs, as the command defines them. The statement returns the result of the command. An `ALTER TABLE` statement can contain only one `EXECUTE` command and cannot combine it with partition commands such as `DROP PARTITION`.
+
+The statement requires the `ALTER EXECUTE` privilege (alias `ALTER TABLE EXECUTE`), which is a part of `ALTER TABLE`.
+
+## Iceberg commands {#iceberg-commands}
+
+| Command | Introduced in | Description |
+|---|---|---|
+| [`expire_snapshots`](/reference/functions/table-functions/iceberg#iceberg-expire-snapshots) | v26.3.0 | Removes the snapshots that the retention policy does not keep, and deletes the files that only they reference. |
+| [`remove_orphan_files`](/reference/functions/table-functions/iceberg#iceberg-remove-orphan-files) | v26.4.0 | Deletes the files under the table location that no snapshot references and that are older than a given time (by default, 3 days). |
+
+<Note>
+Both commands are experimental. Each requires the setting [`allow_insert_into_iceberg`](/reference/settings/session-settings/allow#allow_insert_into_iceberg) and its own setting: [`allow_expire_snapshots`](/reference/settings/session-settings/allow#allow_expire_snapshots) or [`allow_iceberg_remove_orphan_files`](/reference/settings/session-settings/allow#allow_iceberg_remove_orphan_files).
+</Note>
+
+## Example {#example}
+
+```sql title="Query"
+SET allow_insert_into_iceberg = 1, allow_expire_snapshots = 1;
+
+CREATE TABLE iceberg_table (id Int64) ENGINE = IcebergLocal('iceberg_table/');
+INSERT INTO iceberg_table VALUES (1);
+INSERT INTO iceberg_table VALUES (2);
+
+ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1, dry_run = 1);
+```
+
+```text title="Response"
+┌─metric_name─────────────────────────┬─metric_value─┐
+│ deleted_data_files_count            │            0 │
+│ deleted_position_delete_files_count │            0 │
+│ deleted_equality_delete_files_count │            0 │
+│ deleted_manifest_files_count        │            0 │
+│ deleted_manifest_lists_count        │            1 │
+│ deleted_statistics_files_count      │            0 │
+│ dry_run                             │            1 │
+│ failed_deletions_count              │            0 │
+└─────────────────────────────────────┴──────────────┘
+```
+
+With `dry_run = 1`, the command only reports what it would delete.
+
+## Related content {#related-content}
+
+- [Writes into Iceberg tables](/reference/functions/table-functions/iceberg#writes-into-iceberg-table)
+- [Iceberg table engine](/reference/engines/table-engines/integrations/iceberg)
+)DOCS_MD",
+        .syntax = R"(
+ALTER TABLE [db.]table EXECUTE command_name([argument [, ...]])
+)",
+        .parent = "ALTER",
+        .related = {"ALTER"},
     };
 
     return documentation;
