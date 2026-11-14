@@ -34,6 +34,141 @@ node2 = cluster.add_instance(
 nodes = [node, node2]
 
 
+@pytest.fixture
+def retry_database(request, module_setup_tables):
+    database = request.node.name
+    node.query(
+        f"CREATE DATABASE {database} ON CLUSTER default "
+        f"ENGINE = Replicated('/test_refreshable_mat_view/{database}', '{{shard}}', '{{replica}}')"
+    )
+    try:
+        node.query(
+            f"CREATE TABLE {database}.fail (x UInt8) "
+            "ENGINE = ReplicatedMergeTree ORDER BY x"
+        )
+        node.query(f"INSERT INTO {database}.fail VALUES (1)")
+        node2.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
+        node2.query(f"SYSTEM SYNC REPLICA {database}.fail")
+        yield database
+    finally:
+        node.query(f"DROP DATABASE {database} ON CLUSTER default SYNC")
+
+
+def create_retry_view(database, view, refresh, fail=False):
+    query = (
+        f"SELECT count() + throwIf(count() > 0, 'boom') AS x FROM {database}.fail"
+        if fail
+        else "SELECT toUInt64(1) AS x"
+    )
+    node.query(
+        f"CREATE MATERIALIZED VIEW {database}.{view} REFRESH {refresh} "
+        "SETTINGS all_replicas = 0, refresh_retries = 0, refresh_retry_max_backoff_ms = 60000 "
+        f"APPEND (x UInt64) ENGINE = ReplicatedMergeTree ORDER BY x EMPTY AS {query} "
+        "SETTINGS insert_deduplicate = 0"
+    )
+    node2.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
+    for replica in nodes:
+        replica.query(
+            f"SYSTEM STOP VIEW {database}.{view}; "
+            f"SYSTEM TEST VIEW {database}.{view} SET FAKE TIME '2050-01-01 00:00:10'"
+        )
+
+
+def wait_retry_state(replica, database, view, predicate):
+    result = replica.query_with_retry(
+        f"SELECT count() = 1 AND countIf({predicate}) = 1 FROM system.view_refreshes "
+        f"WHERE database = '{database}' AND view = '{view}'",
+        check_callback=lambda result: result == "1\n",
+        retry_count=100,
+        sleep_time=0.1,
+    )
+    assert result == "1\n"
+    return result
+
+
+def test_cycle_retry_shared_inputs_after_restart(retry_database):
+    database = retry_database
+    create_retry_view(database, "a", f"EVERY 1 HOUR DEPENDS ON {database}.b")
+    create_retry_view(database, "ext", "EVERY 1 HOUR")
+    create_retry_view(database, "b", f"DEPENDS ON {database}.a, {database}.ext", fail=True)
+    node.query(f"SYSTEM START VIEW {database}.a; SYSTEM START VIEW {database}.ext")
+    # Two completions at the frozen second produce distinct nanosecond dependency timestamps.
+    # The second one is newer than the shared, second-rounded attempt time, but is not new input.
+    for _ in range(2):
+        node.query(f"SYSTEM REFRESH VIEW {database}.a; SYSTEM WAIT VIEW {database}.a")
+    node.query(f"SYSTEM REFRESH VIEW {database}.ext; SYSTEM WAIT VIEW {database}.ext")
+    node.query(f"SYSTEM START VIEW {database}.b")
+    wait_retry_state(node, database, "b", "exception != ''")
+    scheduled = (
+        "exception != '' AND status = 'Scheduled' "
+        "AND next_refresh_time >= last_refresh_time + INTERVAL 61 SECOND"
+    )
+    wait_retry_state(node, database, "b", scheduled)
+    node.query(f"SYSTEM STOP VIEW {database}.b")
+    node2.query(f"SYSTEM START VIEW {database}.b")
+    wait_retry_state(node2, database, "b", scheduled)
+
+    node2.restart_clickhouse()
+    node2.query(
+        f"SYSTEM TEST VIEW {database}.b SET FAKE TIME '2050-01-01 00:00:10'"
+    )
+    wait_retry_state(node2, database, "b", scheduled)
+    node.query(f"TRUNCATE TABLE {database}.fail")
+    node2.query(f"SYSTEM SYNC REPLICA {database}.fail")
+    node2.query(
+        f"SYSTEM TEST VIEW {database}.ext SET FAKE TIME '2050-01-01 00:00:10'; "
+        f"SYSTEM REFRESH VIEW {database}.ext; SYSTEM WAIT VIEW {database}.ext"
+    )
+    # A genuinely newer EVERY dependency must bypass the shared backoff, on the other replica.
+    # The clock is still at second 10, well before the retry deadline at second 71.
+    wait_retry_state(node2, database, "b", "last_success_time IS NOT NULL")
+    assert node2.query_with_retry(
+        f"SELECT count() FROM {database}.b",
+        check_callback=lambda result: result == "1\n",
+        retry_count=100,
+        sleep_time=0.1,
+    ) == "1\n"
+
+
+def test_cycle_retry_with_detached_transitive_dependency(retry_database):
+    database = retry_database
+    create_retry_view(database, "a", f"EVERY 1 SECOND DEPENDS ON {database}.c")
+    create_retry_view(database, "b", f"DEPENDS ON {database}.a", fail=True)
+    create_retry_view(database, "c", f"DEPENDS ON {database}.b")
+    node.query(f"DETACH TABLE {database}.c PERMANENTLY")
+    node.query(
+        f"SYSTEM START VIEW {database}.a; "
+        f"SYSTEM REFRESH VIEW {database}.a; SYSTEM WAIT VIEW {database}.a; "
+        f"SYSTEM START VIEW {database}.b"
+    )
+    wait_retry_state(node, database, "b", "exception != ''")
+    wait_retry_state(
+        node,
+        database,
+        "b",
+        "exception != '' AND status = 'Scheduled' "
+        "AND next_refresh_time >= last_refresh_time + INTERVAL 61 SECOND",
+    )
+    node.query(
+        f"ATTACH TABLE {database}.c; "
+        f"SYSTEM TEST VIEW {database}.c SET FAKE TIME '2050-01-01 00:01:11'; "
+        f"TRUNCATE TABLE {database}.fail"
+    )
+    node2.query(f"SYSTEM SYNC REPLICA {database}.fail")
+    node.query(
+        f"SYSTEM TEST VIEW {database}.a SET FAKE TIME '2050-01-01 00:01:11'; "
+        f"SYSTEM TEST VIEW {database}.b SET FAKE TIME '2050-01-01 00:01:11'"
+    )
+    # No manual refresh after reattachment: the retained input must restart the whole cycle.
+    wait_retry_state(node, database, "c", "last_success_time IS NOT NULL")
+    assert node.query_with_retry(
+        f"SELECT count() >= 2 FROM {database}.a",
+        check_callback=lambda result: result == "1\n",
+        retry_count=100,
+        sleep_time=0.1,
+    ) == "1\n"
+
+
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
     try:
