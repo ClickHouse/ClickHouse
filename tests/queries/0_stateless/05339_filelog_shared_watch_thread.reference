@@ -1,4 +1,4 @@
-threads grew by less than the number of tables: 1
+watch threads for 200 tables: 1
 table 1: 2
 table 100: 2
 table 200: 2

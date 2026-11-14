@@ -1759,7 +1759,12 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
         if (src_disk && from_immutable_file)
         {
             LOG_TRACE(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
-            writer->copyFileFromDisk(info.data_file_name, src_disk, src_file_path, info.encrypted_by_disk, info.base_size, info.size - info.base_size);
+            if (!writer->copyFileFromDiskNatively(
+                    info.data_file_name, src_disk, src_file_path, info.encrypted_by_disk, info.base_size, info.size - info.base_size))
+            {
+                writer->copyFileFromDiskWithFallback(
+                    info.data_file_name, src_disk, src_file_path, info.encrypted_by_disk, info.base_size, info.size - info.base_size);
+            }
         }
         else
         {
@@ -1809,6 +1814,7 @@ void BackupImpl::finalizeWriting()
         {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint backup_fail_before_writing_metadata is triggered");
         });
+        started_writing_metadata = true;
 #if CLICKHOUSE_CLOUD && USE_SSL
         if (!use_archive)
             uncompressed_size += encryption_sidecar->write();
@@ -1991,6 +1997,28 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
     catch (...)
     {
         DB::tryLogCurrentException(log, "Caught exception while removing files of a corrupted backup");
+        return false;
+    }
+}
+
+
+bool BackupImpl::tryRemoveLockFileIfNothingWritten() noexcept
+{
+    try
+    {
+        std::lock_guard lock{mutex};
+        if (!corrupted || use_archive || lock_file_before_first_file_checked || started_writing_metadata)
+            return false;
+
+        LOG_INFO(log, "Removing the lock file of backup {}, nothing else was written", backup_name_for_logging);
+        if (!tryRemoveOwnLockFile())
+            return false;
+        writer->removeEmptyRootDirectory();
+        return true;
+    }
+    catch (...)
+    {
+        DB::tryLogCurrentException(log, "Caught exception while removing the lock file of a corrupted backup");
         return false;
     }
 }

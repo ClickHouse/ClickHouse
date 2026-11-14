@@ -29,4 +29,17 @@
         <command_argument>{ print $1 + p }</command_argument>
         <execute_direct>1</execute_direct>
     </function>
+    <!-- What the server sees of the filesystem: see `filesystem_isolation` in `config.d/filesystem_isolation.xml`. -->
+    <function>
+        <type>executable</type>
+        <name>test_function_filesystem_isolation</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>while read -r line; do if touch /probe 2>/dev/null; then root=writable; else root=read-only; fi; if [ -e /.old_root ]; then old_root=visible; else old_root=hidden; fi; echo "$(stat -f -c %T /) $root $old_root"; done</command>
+        <command_read_timeout>60000</command_read_timeout>
+        <execute_direct>0</execute_direct>
+    </function>
 </functions>

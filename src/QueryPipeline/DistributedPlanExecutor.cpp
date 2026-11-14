@@ -1861,6 +1861,12 @@ protected:
                     if (task_status.status == "Failing")
                         recordTaskFailureOnce(task, task_status);
                 }
+                catch (const Poco::TimeoutException &)
+                {
+                    /// A cleanup poll has a short receive timeout, so a slow worker is expected to exceed it.
+                    tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("waitForTaskTerminal {} on {}", task.task_id, task.endpoint_uri), LogsLevel::warning);
+                    return std::nullopt;
+                }
                 catch (...)
                 {
                     tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("waitForTaskTerminal {} on {}", task.task_id, task.endpoint_uri));
