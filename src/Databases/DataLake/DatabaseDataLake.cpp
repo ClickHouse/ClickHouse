@@ -2070,12 +2070,17 @@ static void setUnityV2ForNewDatabase(const DatabaseFactory::Arguments & args, Da
     if (args.create_query.attach || args.is_restore_from_backup)
         return;
 
+    /// The setting goes into the `SETTINGS` clause of the query.
+    auto * query_settings = args.create_query.storage->settings;
+    if (!query_settings)
+        return;
+
     if (database_settings[DatabaseDataLakeSetting::catalog_type].value != DatabaseDataLakeCatalogType::UNITY
         || database_settings[DatabaseDataLakeSetting::use_unity_catalog_v2].changed)
         return;
 
     const SettingChange use_v2{DatabaseDataLakeSettings::getSettingName(DatabaseDataLakeSetting::use_unity_catalog_v2), 1};
-    args.create_query.storage->settings->changes.push_back(use_v2);
+    query_settings->changes.push_back(use_v2);
     database_settings.applyChanges({use_v2});
 }
 
