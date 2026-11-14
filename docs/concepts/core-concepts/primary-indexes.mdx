@@ -6,8 +6,6 @@ keywords: ['sparse primary index', 'primary index', 'index']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 <Tip>
 **Looking for advanced indexing details?**
 
@@ -26,7 +24,15 @@ To illustrate how the sparse primary index is built, we use the [uk_price_paid_s
 
 As a [reminder](/concepts/core-concepts/parts), in our ① example table with the primary key (town, street), ② inserted data is ③ stored on disk, sorted by the primary key column values, and compressed, in separate files for each column:
 
-<Image img="/images/managing-data/core-concepts/primary-index-light_01.webp" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![](/images/managing-data/core-concepts/primary-index-light_01.webp)
+
+</Frame>
+
+</div>
 
 <br/><br/>
 
@@ -34,7 +40,15 @@ For processing, each column's data is ④ logically divided into granules—each
 
 This granule structure is also what makes the primary index **sparse**: instead of indexing every row, ClickHouse stores ⑤ the primary key values from just one row per granule—specifically, the first row. This results in one index entry per granule:
 
-<Image img="/images/managing-data/core-concepts/primary-index-light_02.webp" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![](/images/managing-data/core-concepts/primary-index-light_02.webp)
+
+</Frame>
+
+</div>
 
 <br/><br/>
 
@@ -43,7 +57,15 @@ Thanks to its sparseness, the primary index is small enough to fit entirely in m
 ### Primary index usage {#primary-index-usage}
 We sketch how the sparse primary index is used for query acceleration with another animation:
 
-<Image img="/images/managing-data/core-concepts/primary-index-light_03.webp" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![](/images/managing-data/core-concepts/primary-index-light_03.webp)
+
+</Frame>
+
+</div>
 
 <br/><br/>
 
