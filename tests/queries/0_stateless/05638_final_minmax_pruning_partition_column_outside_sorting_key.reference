@@ -1,0 +1,15 @@
+replacing
+1	2026-01-02	2
+0
+1
+collapsing
+do_not_merge_across_partitions_select_final
+1	2026-01-02	2
+1
+float sorting key expression
+9223372036854775808	2
+column named like the partition expression
+1	2026-02-01	1	2
+lambda with another body
+[3]	2	2
+lambda with other parameter bindings

@@ -2111,20 +2111,20 @@ Possible values:
 )", 0, \
         {"25.12", false, false, "New setting. When enabled, PREWHERE conditions are applied after FINAL processing."}) \
     DECLARE(Bool, defer_partition_pruning_after_final, true, R"(
-When enabled (default), partition pruning is skipped for `FINAL` queries on tables whose
-partition-key columns are not part of the sorting key. This is the correctness-safe behavior
-introduced in 26.3: `FINAL` may need to deduplicate rows that share a primary key but live
-in different partitions, and partition pruning would silently exclude such rows from the
-deduplication input.
+When enabled (default), `FINAL` queries on tables whose partition-key columns are not part of the
+sorting key do not prune parts by the min-max index of these columns, and also skip pruning by
+partition value unless the partition expression is part of the sorting key or
+`do_not_merge_across_partitions_select_final` is enabled. This is the correctness-safe behavior
+introduced in 26.3: the versions of a row can differ in these columns, and pruning would silently
+exclude some of them from the deduplication input.
 
 When disabled, partition pruning is applied even with `FINAL`, restoring the pre-26.3
 behavior. This can be substantially faster for queries with `WHERE` predicates on the
-partition column, but is only correct when rows with the same primary key cannot exist
-in different partitions — e.g. event-log tables whose partition column is set at insert
-time and never changes.
+partition column, but is only correct when the partition-key columns of a row never change
+between its versions, e.g. event-log tables whose partition column is set at insert time.
 
 This setting only affects partitioned tables whose partition-key columns are not contained
-in the sorting key; for other tables partition pruning is always applied.
+in the sorting key or have a floating-point type; for other tables partition pruning is always applied.
 
 Possible values:
 
