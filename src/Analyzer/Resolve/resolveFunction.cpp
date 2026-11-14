@@ -1370,6 +1370,39 @@ static bool isCheapInOperand(const QueryTreeNodePtr & argument)
     return arguments.size() == 1 && isCheapInOperand(arguments[0]);
 }
 
+/// Small derived column expressions can be repeated in a scalar comparison
+/// without growing a nested `IN` rewrite beyond a fixed size. This avoids an
+/// `arrayMap` binding for ordinary projected values.
+static bool isSmallNumericInOperand(const QueryTreeNodePtr & argument, size_t & remaining_nodes)
+{
+    if (!remaining_nodes)
+        return false;
+    --remaining_nodes;
+
+    if (const auto * column = argument->as<ColumnNode>())
+        return !column->hasExpression() || isSmallNumericInOperand(column->getExpression(), remaining_nodes);
+    if (argument->as<ConstantNode>())
+        return true;
+
+    const auto * function = argument->as<FunctionNode>();
+    if (!function)
+        return false;
+    for (const auto & child : function->getArguments().getNodes())
+    {
+        if (!isSmallNumericInOperand(child, remaining_nodes))
+            return false;
+    }
+    return true;
+}
+
+static bool areSmallNumericInOperands(const QueryTreeNodePtr & left_argument, const QueryTreeNodePtr & right_argument)
+{
+    size_t left_budget = 12;
+    size_t right_budget = 12;
+    return isSmallNumericInOperand(left_argument, left_budget)
+        && isSmallNumericInOperand(right_argument, right_budget);
+}
+
 static QueryTreeNodePtr buildNumericScalarInComparison(
     const QueryTreeNodePtr & left_argument,
     const QueryTreeNodePtr & right_argument,
@@ -1573,7 +1606,7 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
 
     if (bind_arguments && (left_is_decimal != right_is_decimal
         || (compare_nulls && (left_nullable || right_nullable || (isFloat(left_type) && isFloat(right_type)))))
-        && !(isCheapInOperand(left_argument) && isCheapInOperand(right_argument)))
+        && !areSmallNumericInOperands(left_argument, right_argument))
     {
         /// The exact comparison uses each operand in several branches. Bind both
         /// operands once so nested `IN` expressions grow linearly and the query
