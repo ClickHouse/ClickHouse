@@ -1216,3 +1216,46 @@ def test_randomize_for_is_applied_before_the_first_refresh(module_setup_tables):
         assert attempt == 0, f"both replicas scheduled the first refresh for {time1}, so it carries no per-replica offset"
 
     _drop_randomize_objects()
+
+
+def test_coordinated_refresh_is_spread_across_replicas(module_setup_tables):
+    """Without RANDOMIZE FOR, each replica waits a random refresh_coordination_jitter_ms delay before
+    racing for a due refresh, so the same replica doesn't win every time."""
+    node.query("DROP TABLE IF EXISTS jitter_rmv ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS jitter_tgt ON CLUSTER default SYNC")
+    node.query("CREATE TABLE jitter_tgt ON CLUSTER default (host String) ENGINE = ReplicatedMergeTree ORDER BY tuple()")
+    node.query(
+        "CREATE MATERIALIZED VIEW jitter_rmv ON CLUSTER default REFRESH EVERY 1 SECOND APPEND TO jitter_tgt "
+        "AS SELECT hostName() AS host"
+    )
+
+    # The initial refresh is due right away, so SYSTEM WAIT VIEW must wait for it through the random delay.
+    node.query("SYSTEM WAIT VIEW jitter_rmv")
+    node.query("SYSTEM SYNC REPLICA jitter_tgt")
+    assert int(node.query("SELECT count() FROM jitter_tgt")) > 0
+
+    # The chance that one replica wins every one of ~60 refreshes is negligible.
+    hosts = node.query_with_retry(
+        "SELECT uniqExact(host) FROM jitter_tgt", check_callback=lambda r: r.strip() == "2", retry_count=60, sleep_time=1
+    )
+    assert hosts.strip() == "2", "the same replica performed every refresh"
+
+    node.query("DROP TABLE jitter_rmv ON CLUSTER default SYNC")
+    node.query("DROP TABLE jitter_tgt ON CLUSTER default SYNC")
+
+
+def test_wait_view_does_not_wait_for_next_refresh_delay(module_setup_tables):
+    """A refresh that takes longer than its period leaves the next one due when it completes. SYSTEM WAIT VIEW
+    must return when the refresh it waited for completes, not wait through the next refresh's random delay."""
+    node.query("DROP TABLE IF EXISTS jitter_slow_rmv ON CLUSTER default SYNC")
+    node.query(
+        "CREATE MATERIALIZED VIEW jitter_slow_rmv ON CLUSTER default "
+        "REFRESH EVERY 1 SECOND SETTINGS refresh_coordination_jitter_ms = 3600000 "
+        "ENGINE = ReplicatedMergeTree ORDER BY tuple() EMPTY AS SELECT sleep(3) AS x"
+    )
+
+    # SYSTEM REFRESH VIEW isn't delayed. Without the fix, the wait would hang in the next refresh's delay of up to an hour.
+    node.query("SYSTEM REFRESH VIEW jitter_slow_rmv")
+    node.query("SYSTEM WAIT VIEW jitter_slow_rmv", timeout=60)
+
+    node.query("DROP TABLE jitter_slow_rmv ON CLUSTER default SYNC")
