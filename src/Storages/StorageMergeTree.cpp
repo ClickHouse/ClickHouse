@@ -2609,11 +2609,15 @@ void StorageMergeTree::loadDeduplicationLog()
         /// records under the fresh lease (this runs on the takeover path, after the part
         /// refresh). For a range that was already reconciled the map holds no covered
         /// entries and nothing is written.
+        ///
+        /// The removal must be durable: otherwise the tombstone cleanup (`dropPartNoWaitNoThrow`) could remove the covering
+        /// part while the `DROP` records are lost, and the next leader would load the surviving `ADD` records with nothing
+        /// left to reconcile them against. A failure aborts the takeover, which is retried on the next heartbeat.
         if ((*settings)[MergeTreeSetting::leader_election])
         {
             for (const auto & part : getDataPartsVectorForInternalUsage())
                 if (part->rows_count == 0)
-                    new_deduplication_log->dropPart(part->info);
+                    new_deduplication_log->dropPart(part->info, /*sync_to_disk=*/ true);
         }
 
         std::lock_guard lock(deduplication_log_mutex);
@@ -2654,10 +2658,14 @@ void StorageMergeTree::dropDeduplicationLogParts(const DataPartsVector & parts, 
             "leaving the log of the new epoch unchanged (leader_election)",
             admission_epoch, current_deduplication_log_epoch);
 
+    /// Under `leader_election` the removal must be durable, not only applied in memory: `dropPart` without `sync_to_disk`
+    /// does not report a `DROP` record lost by a failed flush of the shared log (see `records_may_be_lost`), and the
+    /// tombstone cleanup could then remove the covering part, leaving the surviving `ADD` records with nothing to be
+    /// reconciled against on the next takeover. A failure goes to the recovery below.
     try
     {
         for (const auto & part : parts)
-            current_deduplication_log->dropPart(part->info);
+            current_deduplication_log->dropPart(part->info, /*sync_to_disk=*/ leader_election_ptr != nullptr);
     }
     catch (...)
     {
@@ -4517,9 +4525,12 @@ void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
         if (!part)
             return;
 
+        /// Durably: the part is the tombstone that lets the next leader reconcile `ADD` records whose `DROP` records were
+        /// lost, so it is removed only once the removal is known to be on storage. If some records of the log may be lost,
+        /// the tombstone stays until a later leadership epoch reloads and reconciles the log.
         try
         {
-            current_deduplication_log->dropPart(part->info);
+            current_deduplication_log->dropPart(part->info, /*sync_to_disk=*/ true);
         }
         catch (...)
         {

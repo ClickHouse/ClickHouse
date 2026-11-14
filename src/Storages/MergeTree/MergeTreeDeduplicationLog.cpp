@@ -566,6 +566,15 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
             "Cannot durably remove part {} from the deduplication log, because some records of the log may be lost",
             drop_part_info.getPartNameForLogs());
 
+    /// A disk that cannot append makes a record durable only by finalizing its log, which the rotation after every record
+    /// does. If that rotation failed to open the next log, the records stay in an unfinalized log, and syncing it does not
+    /// complete the upload, so they are not durable yet.
+    if (!disk_supports_writing_with_append && current_writer && !current_writer->isFinalized()
+        && existing_logs[current_log_number].entries_count > 0)
+        throw Exception(ErrorCodes::CANNOT_FSYNC,
+            "Cannot durably remove part {} from the deduplication log, because its log on a disk without append support "
+            "is not finalized yet", drop_part_info.getPartNameForLogs());
+
     fiu_do_on(FailPoints::deduplication_log_fail_durable_drop_sync,
     {
         throw Exception(ErrorCodes::CANNOT_FSYNC, "Injected failure to sync the deduplication log");
