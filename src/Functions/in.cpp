@@ -346,6 +346,7 @@ public:
 
         ColumnsWithTypeAndName columns_of_key_columns;
         auto set_types = set->getDataTypes();
+        bool check_numeric_probe_exactness = false;
 
         if (in_null_as_unknown && set_types.size() == 1)
         {
@@ -354,9 +355,9 @@ public:
             const bool mixed_temporal_types = !left_type->equals(*key_type)
                 && (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_type)
                     || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(key_type));
-            const bool incompatible_numeric_types = isNumber(left_type) && isNumber(key_type)
+            check_numeric_probe_exactness = isNumber(left_type) && isNumber(key_type)
                 && !tryGetLeastSupertype(DataTypes{left_type, key_type});
-            if (mixed_temporal_types || incompatible_numeric_types)
+            if (mixed_temporal_types)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",
@@ -431,6 +432,24 @@ public:
                         && (left_arg.column->isNullAt(row) || !std::isnan(left_arg.column->getFloat64(row)));
                 res = std::move(without_nan_matches);
             }
+        }
+
+        if (check_numeric_probe_exactness && columns_of_key_columns.size() == 1)
+        {
+            /// A rounded probe can find a different stored key. Retain only matches
+            /// whose original value is exactly representable in the key type.
+            auto exact_matches = ColumnUInt8::create(res->size());
+            auto & exact_data = exact_matches->getData();
+            const auto key_type = removeNullable(removeLowCardinality(set_types[0]));
+            for (size_t row = 0; row < res->size(); ++row)
+            {
+                if (!res->getBool(row) || left_arg.column->isNullAt(row))
+                    continue;
+                auto probe = left_arg.column->cut(row, 1);
+                exact_data[row] = static_cast<bool>(tryConvertColumnToTypeOrNull(
+                    *probe, left_arg.type, key_type, {}, /*strict=*/true));
+            }
+            res = std::move(exact_matches);
         }
 
         if (in_null_as_unknown)
