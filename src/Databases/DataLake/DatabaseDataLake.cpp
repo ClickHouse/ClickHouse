@@ -85,9 +85,9 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsDatabaseDataLakeCatalogType catalog_type;
     extern const DatabaseDataLakeSettingsString warehouse;
     extern const DatabaseDataLakeSettingsTimezone iceberg_timezone_for_timestamptz;
-    extern const DatabaseDataLakeSettingsString catalog_credential;
+    extern const DatabaseDataLakeSettingsSecretString catalog_credential;
     extern const DatabaseDataLakeSettingsBool use_unity_catalog_v2;
-    extern const DatabaseDataLakeSettingsString auth_header;
+    extern const DatabaseDataLakeSettingsSecretString auth_header;
     extern const DatabaseDataLakeSettingsString auth_scope;
     extern const DatabaseDataLakeSettingsString storage_endpoint;
     extern const DatabaseDataLakeSettingsS3UriStyle storage_uri_style;
@@ -95,28 +95,28 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsBool oauth_server_use_request_body;
     extern const DatabaseDataLakeSettingsBool vended_credentials;
     extern const DatabaseDataLakeSettingsString aws_access_key_id;
-    extern const DatabaseDataLakeSettingsString aws_secret_access_key;
+    extern const DatabaseDataLakeSettingsSecretString aws_secret_access_key;
     extern const DatabaseDataLakeSettingsString region;
     extern const DatabaseDataLakeSettingsString aws_role_arn;
     extern const DatabaseDataLakeSettingsString aws_role_session_name;
     extern const DatabaseDataLakeSettingsString aws_external_id;
     extern const DatabaseDataLakeSettingsString onelake_tenant_id;
     extern const DatabaseDataLakeSettingsString onelake_client_id;
-    extern const DatabaseDataLakeSettingsString onelake_client_secret;
-    extern const DatabaseDataLakeSettingsString onelake_bearer_token;
-    extern const DatabaseDataLakeSettingsString onelake_refresh_token;
+    extern const DatabaseDataLakeSettingsSecretString onelake_client_secret;
+    extern const DatabaseDataLakeSettingsSecretString onelake_bearer_token;
+    extern const DatabaseDataLakeSettingsSecretString onelake_refresh_token;
     extern const DatabaseDataLakeSettingsBool onelake_use_blob_endpoint;
     extern const DatabaseDataLakeSettingsString dlf_access_key_id;
-    extern const DatabaseDataLakeSettingsString dlf_access_key_secret;
+    extern const DatabaseDataLakeSettingsSecretString dlf_access_key_secret;
     extern const DatabaseDataLakeSettingsString google_project_id;
     extern const DatabaseDataLakeSettingsString google_service_account;
     extern const DatabaseDataLakeSettingsString google_metadata_service;
     extern const DatabaseDataLakeSettingsString google_adc_client_id;
-    extern const DatabaseDataLakeSettingsString google_adc_client_secret;
-    extern const DatabaseDataLakeSettingsString google_adc_refresh_token;
+    extern const DatabaseDataLakeSettingsSecretString google_adc_client_secret;
+    extern const DatabaseDataLakeSettingsSecretString google_adc_refresh_token;
     extern const DatabaseDataLakeSettingsString google_adc_quota_project_id;
     extern const DatabaseDataLakeSettingsString google_adc_credentials_file;
-    extern const DatabaseDataLakeSettingsString google_service_account_key;
+    extern const DatabaseDataLakeSettingsSecretString google_service_account_key;
     extern const DatabaseDataLakeSettingsString disk;
     extern const DatabaseDataLakeSettingsBool force_add_bucket;
     extern const DatabaseDataLakeSettingsBool flat_namespaces;
@@ -258,8 +258,8 @@ DatabaseDataLake::DatabaseDataLake(
     : IDatabase(database_name_)
     , url(url_)
     , database_settings(std::make_unique<const DatabaseDataLakeSettings>(settings_))
-    , database_engine_definition(database_engine_definition_)
-    , table_engine_definition(table_engine_definition_)
+    , database_engine_definition(database_engine_definition_->formatWithSecretsOneLine<SecretString>())
+    , table_engine_definition(table_engine_definition_->formatWithSecretsOneLine<SecretString>())
     , log(getLogger("DatabaseDataLake(" + database_name_ + ")"))
     , allow_server_credentials_in_user_queries(allow_server_credentials_in_user_queries_)
     , is_loading_from_existing_metadata(is_loading_from_existing_metadata_)
@@ -368,7 +368,7 @@ void DatabaseDataLake::initialize() const
                 url,
                 settings[DatabaseDataLakeSetting::catalog_credential].value,
                 settings[DatabaseDataLakeSetting::auth_scope].value,
-                settings[DatabaseDataLakeSetting::auth_header],
+                settings[DatabaseDataLakeSetting::auth_header].value,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
@@ -385,7 +385,7 @@ void DatabaseDataLake::initialize() const
                 url,
                 settings[DatabaseDataLakeSetting::catalog_credential].value,
                 settings[DatabaseDataLakeSetting::auth_scope].value,
-                settings[DatabaseDataLakeSetting::auth_header],
+                settings[DatabaseDataLakeSetting::auth_header].value,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
@@ -403,7 +403,7 @@ void DatabaseDataLake::initialize() const
                 url,
                 settings[DatabaseDataLakeSetting::catalog_credential].value,
                 settings[DatabaseDataLakeSetting::auth_scope].value,
-                settings[DatabaseDataLakeSetting::auth_header],
+                settings[DatabaseDataLakeSetting::auth_header].value,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
@@ -440,10 +440,10 @@ void DatabaseDataLake::initialize() const
             std::string google_service_account = settings[DatabaseDataLakeSetting::google_service_account].value;
             std::string google_metadata_service = settings[DatabaseDataLakeSetting::google_metadata_service].value;
             std::string google_adc_client_id = settings[DatabaseDataLakeSetting::google_adc_client_id].value;
-            std::string google_adc_client_secret = settings[DatabaseDataLakeSetting::google_adc_client_secret].value;
-            std::string google_adc_refresh_token = settings[DatabaseDataLakeSetting::google_adc_refresh_token].value;
+            std::string_view google_adc_client_secret = settings[DatabaseDataLakeSetting::google_adc_client_secret].value;
+            std::string_view google_adc_refresh_token = settings[DatabaseDataLakeSetting::google_adc_refresh_token].value;
             std::string google_adc_quota_project_id = settings[DatabaseDataLakeSetting::google_adc_quota_project_id].value;
-            std::string google_service_account_key = settings[DatabaseDataLakeSetting::google_service_account_key].value;
+            std::string_view google_service_account_key = settings[DatabaseDataLakeSetting::google_service_account_key].value;
 
             if (settings[DatabaseDataLakeSetting::google_adc_credentials_file].changed)
             {
@@ -860,8 +860,10 @@ DatabaseDataLake::TableEngineArgs DatabaseDataLake::buildTableEngineArgs(
     TableEngineArgs result;
 
     /// Take database engine definition AST as base.
-    ASTStorage * storage = table_engine_definition->as<ASTStorage>();
-    result.args = storage->engine->arguments->children;
+    auto table_engine_definition_ast = parseDatabaseEngineDefinition(table_engine_definition);
+    ASTStorage * storage = table_engine_definition_ast->as<ASTStorage>();
+    if (storage->engine->arguments)
+        result.args = storage->engine->arguments->children;
 
     if (table_metadata.hasLocation())
     {
@@ -1458,7 +1460,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         context_->getAccess()->checkAccessWithFilter(
             AccessType::READ,
             toStringSource(AccessTypeObjects::Source::HDFS),
-            ITableFunction::normalizeURIForAccessCheck(hdfs_configuration->getRawURI()));
+            ITableFunction::normalizeURIForAccessCheck(String(hdfs_configuration->getRawURI())));
         /// Writes reach HDFS through many entrypoints (`INSERT` and its cluster variant, `ALTER`, `OPTIMIZE`, `DROP`...) and
         /// would use the server's own identity, so rather than authorizing each, catalog tables on HDFS are read-only.
         hdfs_configuration->setReadOnly();
@@ -1853,7 +1855,7 @@ ASTPtr DatabaseDataLake::getCreateDatabaseQueryImpl() const
 {
     const auto & create_query = make_intrusive<ASTCreateQuery>();
     create_query->setDatabase(database_name);
-    create_query->set(create_query->storage, database_engine_definition);
+    create_query->set(create_query->storage, parseDatabaseEngineDefinition(database_engine_definition));
     create_query->uuid = db_uuid;
     if (!comment.empty())
         create_query->set(create_query->comment, make_intrusive<ASTLiteral>(comment));
@@ -1890,7 +1892,7 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     ASTPtr new_engine_definition;
     {
         std::lock_guard lock(mutex);
-        new_engine_definition = database_engine_definition->clone();
+        new_engine_definition = parseDatabaseEngineDefinition(database_engine_definition);
     }
     auto * storage = new_engine_definition->as<ASTStorage>();
     if (!storage)
@@ -1946,6 +1948,7 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     new_create_query->uuid = db_uuid;
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
         new_create_query->set(new_create_query->comment, make_intrusive<ASTLiteral>(database_comment));
+    auto new_engine_definition_text = new_engine_definition->formatWithSecretsOneLine<SecretString>();
     DatabaseCatalog::instance().updateMetadataFile(getDatabaseName(), new_create_query);
 
     /// Publish. Nothing below throws.
@@ -1954,7 +1957,7 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     database_settings.set(std::move(new_settings));
     {
         std::lock_guard lock(mutex);
-        database_engine_definition = new_engine_definition;
+        database_engine_definition = std::move(new_engine_definition_text);
     }
     if (!local_catalog_snapshot)
     {
@@ -1990,9 +1993,13 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     }
 
     auto create_table_query = make_intrusive<ASTCreateQuery>();
-    auto table_storage_define = table_engine_definition->clone();
+    auto table_storage_define = parseDatabaseEngineDefinition(table_engine_definition);
 
     auto * storage = table_storage_define->as<ASTStorage>();
+    if (storage->engine->arguments == nullptr)
+    {
+        storage->engine->arguments = make_intrusive<ASTExpressionList>();
+    }
     storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
     storage->engine->name = String(catalog->getTableEngineName(table_metadata));
 
@@ -2082,7 +2089,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         if (database_engine_define->settings)
             database_settings.loadFromQuery(*database_engine_define, args.create_query.attach);
 
-        const auto & auth_header_str = database_settings[DatabaseDataLakeSetting::auth_header].value;
+        std::string_view auth_header_str = database_settings[DatabaseDataLakeSetting::auth_header].value;
         /// Validate `auth_header` on CREATE only (matches the `allow_experimental_database_*`
         /// gates below, which also self-skip on attach). An already-persisted database whose
         /// `auth_header` was accepted by an older version must still attach at startup, so a
@@ -2145,6 +2152,9 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             url = engine_args[0]->as<ASTLiteral>()->value.safeGet<String>();
 
         auto engine_for_tables = database_engine_define->clone();
+        /// The clone is retained for the lifetime of the database, its SETTINGS may hold credentials, and no reader needs them.
+        auto & engine_for_tables_storage = engine_for_tables->as<ASTStorage &>();
+        engine_for_tables_storage.reset(engine_for_tables_storage.settings);
         ASTFunction * engine_func = engine_for_tables->as<ASTStorage &>().engine;
         if (engine_func->arguments == nullptr)
         {

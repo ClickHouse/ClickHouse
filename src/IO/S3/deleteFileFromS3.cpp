@@ -153,7 +153,7 @@ void deleteFilesFromS3(
 
         while (current_position < keys.size())
         {
-            std::vector<Aws::S3::Model::ObjectIdentifier> current_chunk; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+            Aws::Vector<Aws::S3::Model::ObjectIdentifier> current_chunk;
             String comma_separated_keys;
             size_t first_position = current_position;
             for (; current_position < keys.size() && current_chunk.size() < batch_size; ++current_position)
@@ -196,11 +196,11 @@ void deleteFilesFromS3(
             if (!outcome.IsSuccess() && use_checksum_header && !explicit_checksum_algorithm
                 && checksum_algorithm == S3::RequestChecksum::Algorithm::MD5 && !s3_client->isS3ExpressBucket())
             {
-                const String error_name = outcome.GetError().GetExceptionName();
+                const auto error_name = outcome.GetError().GetExceptionName();
                 if (error_name == "MissingContentMD5" || error_name == "InvalidDigest" || error_name == "InvalidRequest"
                     || error_name == "InvalidArgument")
                 {
-                    const String error_message = outcome.GetError().GetMessage();
+                    const auto error_message = outcome.GetError().GetMessage();
                     checksum_algorithm = S3::RequestChecksum::Algorithm::SHA256;
                     outcome = send_delete_objects();
 

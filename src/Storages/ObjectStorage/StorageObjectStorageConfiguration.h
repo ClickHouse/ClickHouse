@@ -112,7 +112,7 @@ public:
     virtual void setRawPath(const Path & path) = 0;
 
     /// Raw URI, specified by a user. Used in permission check.
-    virtual const String & getRawURI() const = 0;
+    virtual std::string_view getRawURI() const = 0;
 
     const Path & getPathForRead() const;
     // Path used for writing, it should not be globbed and might contain a partition key

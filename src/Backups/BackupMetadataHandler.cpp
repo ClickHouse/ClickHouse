@@ -30,7 +30,7 @@ void BackupMetadataHandler::startElement(
                 ErrorCodes::BACKUP_DAMAGED, "Backup metadata has a child element inside scalar field <{}>", path.back());
 
         current_text.clear();
-        const String & name = qname.empty() ? local_name : qname;
+        const Poco::XML::XMLString & name = qname.empty() ? local_name : qname;
         /// Gate callbacks by exact position so a misplaced <file>/<contents> is ignored. `path` holds the
         /// ancestors; <contents> directly under the root fires on_header (all header leaves collected by then).
         if (name == "contents" && path.size() == 1)
@@ -62,7 +62,7 @@ void BackupMetadataHandler::endElement(
         return;
     try
     {
-        const String & name = qname.empty() ? local_name : qname;
+        const Poco::XML::XMLString & name = qname.empty() ? local_name : qname;
         /// On a closing tag `path.back() == name`. Gate by exact position (see startElement).
         if (name == "file" && path.size() == 3 && path[1] == "contents")
         {

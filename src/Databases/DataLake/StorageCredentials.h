@@ -1,8 +1,10 @@
 #pragma once
 #include <Core/Types.h>
+#include <Common/SecretString.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <fmt/format.h>
 
 namespace DB::ErrorCodes
 {
@@ -24,9 +26,9 @@ class S3Credentials final : public IStorageCredentials
 {
 public:
     S3Credentials(
-        const std::string & access_key_id_,
-        const std::string & secret_access_key_,
-        const std::string & session_token_)
+        std::string_view access_key_id_,
+        std::string_view secret_access_key_,
+        std::string_view session_token_)
         : access_key_id(access_key_id_)
         , secret_access_key(secret_access_key_)
         , session_token(session_token_)
@@ -40,9 +42,9 @@ public:
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Storage credentials specified in AST already");
 
         engine_args.push_back(DB::make_intrusive<DB::ASTLiteral>(access_key_id));
-        engine_args.push_back(DB::make_intrusive<DB::ASTLiteral>(secret_access_key));
+        engine_args.push_back(DB::make_intrusive<DB::ASTLiteral>(String(secret_access_key)));
         if (!session_token.empty())
-            engine_args.push_back(DB::make_intrusive<DB::ASTLiteral>(session_token));
+            engine_args.push_back(DB::make_intrusive<DB::ASTLiteral>(String(session_token)));
     }
 
     const String & getAccessKeyId() const
@@ -50,26 +52,26 @@ public:
         return access_key_id;
     }
 
-    const String & getSecretAccessKey() const
+    std::string_view getSecretAccessKey() const
     {
         return secret_access_key;
     }
 
-    const String & getSessionToken() const
+    std::string_view getSessionToken() const
     {
         return session_token;
     }
 
 private:
     std::string access_key_id;
-    std::string secret_access_key;
-    std::string session_token;
+    DB::SecretString secret_access_key;
+    DB::SecretString session_token;
 };
 
 class GCSCredentials final : public IStorageCredentials
 {
 public:
-    explicit GCSCredentials(const std::string & oauth_token_)
+    explicit GCSCredentials(std::string_view oauth_token_)
         : oauth_token(oauth_token_)
     {}
 
@@ -86,20 +88,20 @@ public:
             DB::makeASTFunction("headers",
                 DB::makeASTFunction("equals",
                     DB::make_intrusive<DB::ASTLiteral>("Authorization"),
-                    DB::make_intrusive<DB::ASTLiteral>("Bearer " + oauth_token))));
+                    DB::make_intrusive<DB::ASTLiteral>(fmt::format("Bearer {}", oauth_token)))));
     }
 
-    const std::string & getToken() const { return oauth_token; }
+    std::string_view getToken() const { return oauth_token; }
 
 private:
-    std::string oauth_token;
+    DB::SecretString oauth_token;
 };
 
 class AzureCredentials final : public IStorageCredentials
 {
 public:
     explicit AzureCredentials(
-        const std::string & sas_token_)
+        std::string_view sas_token_)
         : sas_token(sas_token_)
     {}
 
@@ -108,11 +110,11 @@ public:
         if (engine_args.size() != 1)
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Storage credentials specified in AST already");
 
-        engine_args.push_back(DB::make_intrusive<DB::ASTLiteral>(sas_token));
+        engine_args.push_back(DB::make_intrusive<DB::ASTLiteral>(String(sas_token)));
     }
 
 private:
-    std::string sas_token;
+    DB::SecretString sas_token;
 };
 
 }

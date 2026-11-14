@@ -1,8 +1,10 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <utility>
 #include <Common/Exception.h>
+#include <Common/SecretString.h>
 
 namespace DB
 {
@@ -50,7 +52,7 @@ struct ProxyConfiguration
 
     /// Splits a URI userinfo component ("user" or "user:password") into its two parts.
     /// Splits on the FIRST colon only, because a password may legally contain ':'.
-    static std::pair<std::string, std::string> parseUserInfo(const std::string & user_info)
+    static std::pair<std::string_view, std::string_view> parseUserInfo(std::string_view user_info)
     {
         const auto pos = user_info.find(':');
 
@@ -75,7 +77,7 @@ struct ProxyConfiguration
     Protocol original_request_protocol = Protocol::HTTP;
     std::string no_proxy_hosts = std::string{};
     std::string username = std::string{};
-    std::string password = std::string{};
+    SecretString password = SecretString{};
 
     bool isEmpty() const { return host.empty(); }
 };

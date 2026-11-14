@@ -733,6 +733,12 @@ ASTPtr parseQuery(
 }
 
 
+ASTPtr parseQueryFromText(IParser & parser, std::string_view query)
+{
+    return parseQuery(parser, query.data(), query.data() + query.size(), "", 0, 0, 0);
+}
+
+
 std::pair<const char *, bool> splitMultipartQuery(
     const std::string & queries,
     std::vector<std::string> & queries_list,

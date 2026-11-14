@@ -12,6 +12,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/LRUCache.h>
 
+#include <Common/SecretString.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 
@@ -35,7 +36,7 @@ public:
         const String & endpoint,
         DB::ContextPtr context_,
         const CatalogSettings & settings_,
-        DB::ASTPtr table_engine_definition_,
+        const DB::SecretString & table_engine_definition_,
         bool allow_server_credentials_in_user_queries_);
 
     ~GlueCatalog() override;
@@ -128,7 +129,7 @@ private:
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
     std::string region;
     CatalogSettings settings;
-    DB::ASTPtr table_engine_definition;
+    DB::SecretString table_engine_definition;
 
     DataLake::ICatalog::Namespaces getDatabases(const std::string & prefix, size_t limit = 0) const;
     CatalogTables getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;

@@ -572,15 +572,15 @@ private:
                 getHexUIntLowercase(key_fingerprint));
     }
 
-    std::vector<uint8_t> calculateBackupMAC(const std::string & stored) const
+    std::vector<uint8_t, NoDumpAllocator<uint8_t>> calculateBackupMAC(const std::string & stored) const
     {
         /// Domain separation from the encryption use of the key.
         const auto auth_key = hmacSHA256(
-            std::vector<uint8_t>(key.begin(), key.end()), "ClickHouse named collections backup entry v1");
+            std::vector<uint8_t>(key.data(), key.data() + key.size()), "ClickHouse named collections backup entry v1");
         return hmacSHA256(auth_key, stored);
     }
 
-    std::string key;
+    SecretString key;
     UInt128 key_fingerprint{};
     FileEncryption::Algorithm algorithm;
 };

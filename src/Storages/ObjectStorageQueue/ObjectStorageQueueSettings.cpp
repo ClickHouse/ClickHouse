@@ -70,7 +70,7 @@ namespace ErrorCodes
     DECLARE(String, after_processing_tag_key, "", "Tag key to tag processed files in the storage", 0) \
     DECLARE(String, after_processing_tag_value, "", "Tag value to tag processed files in the storage", 0) \
     DECLARE(String, after_processing_move_access_key_id, "", "S3 Access Key ID accompanying after_processing_move_uri", 0) \
-    DECLARE(String, after_processing_move_secret_access_key, "", "S3 Secret Access Key accompanying after_processing_move_uri", 0) \
+    DECLARE(SecretString, after_processing_move_secret_access_key, "", "S3 Secret Access Key accompanying after_processing_move_uri", 0) \
     DECLARE(String, after_processing_move_connection_string, "", "Azure connection string to move processed files to. Setting it requires the `WRITE` grant on the `AZURE` source (not limited to a URL filter), and `ALTER` also requires `SELECT` on the table. The endpoint must be allowed by `remote_url_allow_hosts`", 0) \
     DECLARE(String, after_processing_move_container, "", "Azure container accompanying after_processing_move_connection_string. Setting it requires the `WRITE` grant on the `AZURE` source (not limited to a URL filter), and `ALTER` also requires `SELECT` on the table", 0) \
     DECLARE(Bool, use_hive_partitioning, false, "DEPRECATED: Use partitioning_mode='hive' instead. Whether path contains hive partitioning and this engine should process such files with a separate processed files tracking per partition.", 0) \
@@ -102,7 +102,7 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
 {
     MutableColumns & res_columns = params.res_columns;
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    auto settings_changes_ast = metadata_snapshot->settings_changes;
+    auto settings_changes_ast = metadata_snapshot->getSettingsChanges();
     if (!settings_changes_ast)
         return;
 

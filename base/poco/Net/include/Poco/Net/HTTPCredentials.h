@@ -21,6 +21,8 @@
 
 #include "Poco/Net/HTTPDigestCredentials.h"
 
+#include <string_view>
+
 
 namespace Poco
 {
@@ -82,7 +84,7 @@ namespace Net
         ~HTTPCredentials();
         /// Destroys the HTTPCredentials.
 
-        void fromUserInfo(const std::string & userInfo);
+        void fromUserInfo(std::string_view userInfo);
         /// Parses username:password string and sets username and password of
         /// the credentials object.
         /// Throws SyntaxException on invalid user information.
@@ -155,7 +157,7 @@ namespace Net
         static bool hasProxyDigestCredentials(const HTTPRequest & request);
         /// Returns true if a Proxy-Authorization header with Digest credentials is present in the request.
 
-        static void extractCredentials(const std::string & userInfo, std::string & username, std::string & password);
+        static void extractCredentials(std::string_view userInfo, std::string & username, std::string & password);
         /// Extracts username and password from user:password information string.
 
         static void extractCredentials(const Poco::URI & uri, std::string & username, std::string & password);

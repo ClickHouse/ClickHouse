@@ -86,8 +86,8 @@ private:
 
         bool is_secure_connection = false;
         String username;
-        String password;
-        String cluster_secret;
+        SecretString password;
+        SecretString cluster_secret;
 
         /// For dynamic clusters, index+1 in multicluster_discovery_paths where cluster was found
         /// 0 for static clusters
@@ -98,8 +98,8 @@ private:
                     const String & zk_root_,
                     const String & host_name,
                     const String & username_,
-                    const String & password_,
-                    const String & cluster_secret_,
+                    std::string_view password_,
+                    std::string_view cluster_secret_,
                     UInt16 port,
                     bool secure,
                     size_t shard_id,
@@ -166,8 +166,8 @@ private:
         const String zk_path;
         bool is_secure_connection;
         String username;
-        String password;
-        String cluster_secret;
+        SecretString password;
+        SecretString cluster_secret;
 
         mutable Stopwatch watch;
         mutable std::shared_ptr<std::atomic_bool> need_update;
@@ -177,7 +177,7 @@ private:
                               const String & zk_path_,
                               bool is_secure_connection_,
                               const String & username_,
-                              const String & password_,
+                              std::string_view password_,
                               const String & cluster_secret_)
             : zk_name(zk_name_)
             , zk_path(zk_path_)

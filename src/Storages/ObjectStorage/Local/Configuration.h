@@ -61,7 +61,7 @@ public:
 
     Path getRawPath() const override { return path; }
     void setRawPath(const Path & p) override { path = p; }
-    const String & getRawURI() const override { return path.path; }
+    std::string_view getRawURI() const override { return path.path; }
 
     String getNamespace() const override { return ""; }
     String getDataSourceDescription() const override { return ""; }

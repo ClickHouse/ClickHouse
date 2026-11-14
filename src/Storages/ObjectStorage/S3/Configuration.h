@@ -11,6 +11,7 @@
 #include <Storages/ObjectStorage/S3/Serde.h>
 #endif
 #include <Parsers/IAST_fwd.h>
+#include <Common/SecretString.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
 namespace DB
@@ -102,7 +103,7 @@ public:
     StorageS3Configuration() = default;
 
     void setInitializationAsBigLake(
-        const String & client_id_, const String & client_secret_, const String & refresh_token_, const String & service_account_key_)
+        const String & client_id_, std::string_view client_secret_, std::string_view refresh_token_, std::string_view service_account_key_)
     {
         biglake_adc_client_id = client_id_;
         biglake_adc_client_secret = client_secret_;
@@ -124,7 +125,7 @@ public:
 
     Path getRawPath() const override { return url.key; }
     void setRawPath(const Path & path) override { url.key = path.path; }
-    const String & getRawURI() const override { return url.uri_str; }
+    std::string_view getRawURI() const override { return url.uri_str; }
 
     String getNamespace() const override { return url.bucket; }
     String getDataSourceDescription() const override;
@@ -164,9 +165,9 @@ public:
     bool static_configuration = true;
 
     String biglake_adc_client_id;
-    String biglake_adc_client_secret;
-    String biglake_adc_refresh_token;
-    String biglake_service_account_key;
+    SecretString biglake_adc_client_secret;
+    SecretString biglake_adc_refresh_token;
+    SecretString biglake_service_account_key;
 
 protected:
     const Paths & getPathsImpl() const override TSA_REQUIRES_SHARED(paths_mutex) { return keys; }

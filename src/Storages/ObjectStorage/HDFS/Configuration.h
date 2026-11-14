@@ -62,7 +62,7 @@ public:
     /// Therefore in the below methods we use supports_partial_prefix=false.
     Path getRawPath() const override { return path; }
     void setRawPath(const Path & p) override { path = p; }
-    const String & getRawURI() const override { return url; }
+    std::string_view getRawURI() const override { return url; }
 
     String getNamespace() const override { return ""; }
     String getDataSourceDescription() const override { return url; }

@@ -61,7 +61,7 @@ extern const SettingsUInt64 output_format_avro_rows_in_file;
 
 namespace NATSSetting
 {
-extern const NATSSettingsString nats_credentials;
+extern const NATSSettingsSecretString nats_credentials;
 extern const NATSSettingsString nats_credential_file;
 extern const NATSSettingsString nats_ca_file;
 extern const NATSSettingsString nats_client_cert_file;
@@ -75,7 +75,7 @@ extern const NATSSettingsUInt64 nats_max_block_size;
 extern const NATSSettingsUInt64 nats_max_rows_per_message;
 extern const NATSSettingsString nats_consumer_name;
 extern const NATSSettingsUInt64 nats_num_consumers;
-extern const NATSSettingsString nats_password;
+extern const NATSSettingsSecretString nats_password;
 extern const NATSSettingsString nats_queue_group;
 extern const NATSSettingsUInt64 nats_reconnect_wait;
 extern const NATSSettingsString nats_schema;
@@ -84,7 +84,7 @@ extern const NATSSettingsString nats_server_list;
 extern const NATSSettingsUInt64 nats_skip_broken_messages;
 extern const NATSSettingsUInt64 nats_startup_connect_tries;
 extern const NATSSettingsString nats_subjects;
-extern const NATSSettingsString nats_token;
+extern const NATSSettingsSecretString nats_token;
 extern const NATSSettingsString nats_url;
 extern const NATSSettingsString nats_stream;
 extern const NATSSettingsString nats_username;
@@ -194,10 +194,10 @@ StorageNATS::StorageNATS(
             "Setting `nats_subjects` must contain at least one subject, and subjects must not be empty");
     }
     auto nats_username = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_username]);
-    auto nats_password = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_password]);
-    auto nats_token = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_token]);
+    auto nats_password = getContext()->getMacros()->expand(String((*nats_settings)[NATSSetting::nats_password].value));
+    auto nats_token = getContext()->getMacros()->expand(String((*nats_settings)[NATSSetting::nats_token].value));
     auto nats_credential_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credential_file]);
-    auto nats_credentials = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credentials]);
+    auto nats_credentials = getContext()->getMacros()->expand(String((*nats_settings)[NATSSetting::nats_credentials].value));
     auto nats_ca_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_ca_file]);
     auto nats_client_cert_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_client_cert_file]);
     auto nats_client_key_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_client_key_file]);
@@ -226,10 +226,10 @@ StorageNATS::StorageNATS(
         = {.url = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_url]),
            .servers = parseList(getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_server_list]), ','),
            .username = nats_username.empty() ? global_username : nats_username,
-           .password = nats_password.empty() ? global_password : nats_password,
-           .token = nats_token.empty() ? global_token : nats_token,
+           .password = SecretString(nats_password.empty() ? global_password : nats_password),
+           .token = SecretString(nats_token.empty() ? global_token : nats_token),
            .credential_file = nats_credential_file.empty() ? global_credential_file : nats_credential_file,
-           .credentials = nats_credentials,
+           .credentials = SecretString(nats_credentials),
            .ca_file = nats_ca_file,
            .client_cert_file = nats_client_cert_file,
            .client_key_file = nats_client_key_file,
@@ -1447,10 +1447,10 @@ void registerStorageNATS(StorageFactory & factory)
         /// the check that prevents dropping credentials from a named collection.
         auto macros = args.getContext()->getMacros();
         (*nats_settings)[NATSSetting::nats_username] = macros->expand((*nats_settings)[NATSSetting::nats_username]);
-        (*nats_settings)[NATSSetting::nats_password] = macros->expand((*nats_settings)[NATSSetting::nats_password]);
-        (*nats_settings)[NATSSetting::nats_token] = macros->expand((*nats_settings)[NATSSetting::nats_token]);
+        (*nats_settings)[NATSSetting::nats_password] = macros->expand(String((*nats_settings)[NATSSetting::nats_password].value));
+        (*nats_settings)[NATSSetting::nats_token] = macros->expand(String((*nats_settings)[NATSSetting::nats_token].value));
         (*nats_settings)[NATSSetting::nats_credential_file] = macros->expand((*nats_settings)[NATSSetting::nats_credential_file]);
-        (*nats_settings)[NATSSetting::nats_credentials] = macros->expand((*nats_settings)[NATSSetting::nats_credentials]);
+        (*nats_settings)[NATSSetting::nats_credentials] = macros->expand(String((*nats_settings)[NATSSetting::nats_credentials].value));
         (*nats_settings)[NATSSetting::nats_ca_file] = macros->expand((*nats_settings)[NATSSetting::nats_ca_file]);
         (*nats_settings)[NATSSetting::nats_client_cert_file] = macros->expand((*nats_settings)[NATSSetting::nats_client_cert_file]);
         (*nats_settings)[NATSSetting::nats_client_key_file] = macros->expand((*nats_settings)[NATSSetting::nats_client_key_file]);

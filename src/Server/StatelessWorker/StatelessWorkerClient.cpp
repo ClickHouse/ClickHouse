@@ -45,7 +45,7 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
     if (!credentials->getUser().empty())
     {
         creds.setUsername(credentials->getUser());
-        creds.setPassword(credentials->getPassword());
+        creds.setPassword(String(credentials->getPassword()));
     }
 
     ConnectionTimeouts timeouts;
@@ -129,7 +129,7 @@ DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const Stri
     if (!credentials->getUser().empty())
     {
         creds.setUsername(credentials->getUser());
-        creds.setPassword(credentials->getPassword());
+        creds.setPassword(String(credentials->getPassword()));
     }
 
     ConnectionTimeouts timeouts;
@@ -184,7 +184,7 @@ void cancelTask(const String & endpoint_uri, const String & task_id, const Conte
     if (!credentials->getUser().empty())
     {
         creds.setUsername(credentials->getUser());
-        creds.setPassword(credentials->getPassword());
+        creds.setPassword(String(credentials->getPassword()));
     }
 
     /// Short timeouts for cancel — it's best-effort. Workers will
@@ -223,7 +223,7 @@ void forgetTask(const String & endpoint_uri, const String & task_id, const Conte
     if (!credentials->getUser().empty())
     {
         creds.setUsername(credentials->getUser());
-        creds.setPassword(credentials->getPassword());
+        creds.setPassword(String(credentials->getPassword()));
     }
 
     ConnectionTimeouts timeouts;

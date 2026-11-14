@@ -163,11 +163,7 @@ public:
 
     /// The URI of the function for permission checking. Can be an empty string if not applicable.
     /// For example, for url('https://foo.bar') the URI would be 'https://foo.bar'.
-    virtual const String & getFunctionURI() const
-    {
-        static const String empty;
-        return empty;
-    }
+    virtual std::string_view getFunctionURI() const { return {}; }
 
     /// Check the `TABLE ENGINE` grant, for engines that opt in via `requiresTableEngineGrant`.
     void checkEngineAccess(ContextPtr context) const;

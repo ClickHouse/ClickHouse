@@ -19,6 +19,7 @@
 
 
 #include "Poco/XML/XML.h"
+#include "Poco/XML/XMLString.h"
 
 
 namespace Poco
@@ -70,6 +71,9 @@ namespace XML
         /// AutoReleasePool, which is usually the
         /// AutoReleasePool managed by the Document
         /// to which this object belongs.
+
+        static void * operator new(std::size_t size) { return allocateNoDump(size); }
+        static void operator delete(void * ptr) noexcept { deallocateNoDump(ptr); }
 
     protected:
         virtual ~DOMObject();

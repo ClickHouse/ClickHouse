@@ -132,7 +132,7 @@ private:
         const std::string & table_name, const String & compression_method_, bool is_insert_query) const override;
 
     const char * getStorageEngineName() const override { return delegate_engine_name; }
-    const String & getFunctionURI() const override { return delegate ? delegate_function_uri : filename; }
+    std::string_view getFunctionURI() const override { return delegate ? delegate_function_uri : filename; }
 
     std::optional<String> tryGetFormatFromFirstArgument() override;
 };

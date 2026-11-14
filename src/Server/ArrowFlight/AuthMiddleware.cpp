@@ -174,9 +174,9 @@ String AuthMiddlewareFactory::TokenStorage::getToken(std::string username, std::
 
     auto token = toString(UUIDHelpers::generateV4());
     auto expiration_time = std::chrono::steady_clock::now() + std::chrono::seconds(config.getInt("default_session_timeout", 60));
-    auto exp_iter = token_expiration_list.insert({expiration_time, token});
-    token_expiration_list_index[token] = exp_iter;
-    token_to_credentials[token] = {username, password};
+    auto exp_iter = token_expiration_list.insert({expiration_time, SecretString(token)});
+    token_expiration_list_index[SecretString(token)] = exp_iter;
+    token_to_credentials[SecretString(token)] = {username, SecretString(password)};
 
     return token;
 }
@@ -191,10 +191,10 @@ std::optional<std::pair<std::string, std::string>> AuthMiddlewareFactory::TokenS
     if (it != token_to_credentials.end())
     {
         auto expiration_time = std::chrono::steady_clock::now() + std::chrono::seconds(config.getInt("default_session_timeout", 60));
-        auto new_iter = token_expiration_list.insert({expiration_time, token});
-        token_expiration_list.erase(token_expiration_list_index[token]);
-        token_expiration_list_index[token] = new_iter;
-        return it->second;
+        auto new_iter = token_expiration_list.insert({expiration_time, it->first});
+        token_expiration_list.erase(token_expiration_list_index[it->first]);
+        token_expiration_list_index[it->first] = new_iter;
+        return std::pair{it->second.first, String(it->second.second)};
     }
     return std::nullopt;
 }

@@ -47,7 +47,7 @@ void ITableFunction::checkSourceAccess(ContextPtr context, bool is_insert_query)
         if (is_insert_query)
             type_to_check = AccessType::WRITE;
 
-        checkSourceAccessForURI(context, type_to_check, *access_object, getFunctionURI());
+        checkSourceAccessForURI(context, type_to_check, *access_object, String(getFunctionURI()));
     }
 }
 
@@ -245,7 +245,8 @@ std::pair<String, String> getSourceAccessSubjects(AccessTypeObjects::Source sour
         if (hasDotSegment(path) || path.contains("//"))
             return {};
         /// `url` expands `{}` and splits `|` failover across the whole URI, but the subject escapes them only in the path.
-        if ((decoded.getScheme() + decoded.getAuthority() + decoded.getRawQuery()).find_first_of("{}|") != String::npos)
+        if ((decoded.getScheme() + decoded.getAuthority()).find_first_of("{}|") != String::npos
+            || decoded.getRawQuery().find_first_of("{}|") != std::string_view::npos)
             return {};
         if (source == AccessTypeObjects::Source::S3)
         {

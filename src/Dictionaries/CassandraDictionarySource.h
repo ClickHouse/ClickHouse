@@ -27,7 +27,7 @@ public:
         String host;
         UInt16 port;
         String user;
-        String password;
+        SecretString password;
         bool secure;
         Cassandra::Compression compression;
         String db;

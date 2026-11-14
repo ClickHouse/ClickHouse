@@ -36,10 +36,10 @@ namespace ErrorCodes
     DECLARE(Bool, nats_wait_for_flush_interval, false, "If true, a streaming cycle stays open for the whole flush interval instead of finishing as soon as the consumer queue drains, batching more messages per block at the cost of latency.", 0) \
     DECLARE(Bool, nats_commit_on_select, false, "Commit messages when query is made. Applies to JetStream only; core NATS has no acknowledgements.", 0) \
     DECLARE(String, nats_username, "", "NATS username", 0) \
-    DECLARE(String, nats_password, "", "NATS password", 0) \
-    DECLARE(String, nats_token, "", "NATS token", 0) \
+    DECLARE(SecretString, nats_password, "", "NATS password", 0) \
+    DECLARE(SecretString, nats_token, "", "NATS token", 0) \
     DECLARE(String, nats_credential_file, "", "Path to a NATS credentials file. Accepted only from a named collection defined in the server configuration file whose destination is not overridden by the query", 0) \
-    DECLARE(String, nats_credentials, "", "NATS credentials content with user JWT and seed", 0) \
+    DECLARE(SecretString, nats_credentials, "", "NATS credentials content with user JWT and seed", 0) \
     DECLARE(String, nats_ca_file, "", "Path to a file with the trusted CA certificates used to verify the NATS server certificate. Requires nats_secure. Accepted only from a named collection defined in the server configuration file whose destination is not overridden by the query", 0) \
     DECLARE(String, nats_client_cert_file, "", "Path to the client certificate presented to the NATS server. Requires nats_secure and nats_client_key_file. Accepted only from a named collection defined in the server configuration file whose destination is not overridden by the query", 0) \
     DECLARE(String, nats_client_key_file, "", "Path to the private key of nats_client_cert_file. Accepted only from a named collection defined in the server configuration file whose destination is not overridden by the query", 0) \

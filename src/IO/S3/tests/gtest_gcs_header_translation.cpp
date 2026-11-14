@@ -26,8 +26,8 @@ namespace
 
 std::string headerOrEmpty(const Aws::Http::HeaderValueCollection & headers, const std::string & name)
 {
-    auto it = headers.find(name);
-    return it == headers.end() ? "" : it->second;
+    auto it = headers.find(Aws::String(name));
+    return it == headers.end() ? "" : std::string(it->second);
 }
 
 }
@@ -151,7 +151,7 @@ TEST(GCSHeaderTranslation, NormalizesHeaderNames)
     for (const auto & header : headers)
     {
         names.push_back(header.name);
-        values.push_back(header.value);
+        values.emplace_back(header.value);
     }
 
     EXPECT_EQ(names, (std::vector<std::string>{"x-amz-meta-owner", "x-amz-storage-class", "custom-auth-token"}));
@@ -342,7 +342,7 @@ DB::S3::PutObjectRequest makeCreateIfAbsentRequest(const std::string & idempoten
     DB::S3::PutObjectRequest request;
     request.SetBucket("test-bucket");
     request.SetKey("table(1)/metadata/v2.metadata.json");
-    request.SetMetadata({{"owner", "analytics"}, {DB::S3::IDEMPOTENCY_ID_METADATA_KEY, idempotency_id}});
+    request.SetMetadata({{"owner", "analytics"}, {DB::S3::IDEMPOTENCY_ID_METADATA_KEY, Aws::String(idempotency_id)}});
     request.setIdempotencyId(idempotency_id);
     request.SetIfNoneMatch("*");
     request.SetContentType("binary/octet-stream");

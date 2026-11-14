@@ -20,6 +20,9 @@
 
 #include <istream>
 #include <ostream>
+#include <string_view>
+#include <vector>
+#include "Poco/NoDumpAllocator.h"
 #include "Poco/Net/HTTPResponseParser.h"
 #include "Poco/Net/HTTPSession.h"
 #include "Poco/Net/HTTPSessionFactory.h"
@@ -82,7 +85,7 @@ namespace Net
             /// If tunnel option is 'false' request will be send directly to proxy without CONNECT request.
             std::string username;
             /// Proxy server username.
-            std::string password;
+            std::vector<char, NoDumpAllocator<char>> password;
             /// Proxy server password.
             std::string nonProxyHosts;
             /// A regular expression defining hosts for which the proxy should be bypassed,
@@ -186,7 +189,7 @@ namespace Net
         /// Sets the password for proxy authentication.
         /// Only Basic authentication is supported.
 
-        const std::string & getProxyPassword() const;
+        std::string_view getProxyPassword() const [[clang::lifetimebound]];
         /// Returns the password for proxy authentication.
 
         void setProxyConfig(const ProxyConfig & config);
@@ -519,9 +522,9 @@ namespace Net
     }
 
 
-    inline const std::string & HTTPClientSession::getProxyPassword() const
+    inline std::string_view HTTPClientSession::getProxyPassword() const
     {
-        return _proxyConfig.password;
+        return {_proxyConfig.password.data(), _proxyConfig.password.size()};
     }
 
 

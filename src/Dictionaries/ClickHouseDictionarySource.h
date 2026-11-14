@@ -4,6 +4,7 @@
 #include <Poco/Logger.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Client/ConnectionPoolWithFailover.h>
+#include <Common/SecretString.h>
 #include <Interpreters/Context_fwd.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ExternalQueryBuilder.h>
@@ -24,7 +25,7 @@ public:
     {
         const std::string host;
         const std::string user;
-        const std::string password;
+        const SecretString password;
         const std::string proto_send_chunked;
         const std::string proto_recv_chunked;
         const std::string quota_key;

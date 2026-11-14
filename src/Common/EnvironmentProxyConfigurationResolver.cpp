@@ -47,11 +47,11 @@ namespace
     /// containing a literal '%' is a common mistake and makes `Poco::URI::decode` throw.
     /// Fall back to the raw value instead of failing: before credentials were supported the
     /// userinfo was ignored entirely, so throwing here would break a previously working setup.
-    std::string decodeOrKeepVerbatim(const std::string & value, const char * what)
+    std::string decodeOrKeepVerbatim(std::string_view value, const char * what)
     {
         if (value.empty())
         {
-            return value;
+            return std::string(value);
         }
 
         try
@@ -66,7 +66,7 @@ namespace
                 getLogger("EnvironmentProxyConfigurationResolver"),
                 "Proxy {} is not valid percent-encoding, using it verbatim",
                 what);
-            return value;
+            return std::string(value);
         }
     }
 
@@ -105,7 +105,7 @@ namespace
             request_protocol,
             no_proxy_hosts_string,
             username,
-            password
+            SecretString(password)
         };
     }
 }

@@ -20,7 +20,7 @@ struct YTsaurusStorageConfiguration
     YTsaurusSettings settings;
     VectorWithMemoryTracking<String> http_proxy_urls{};
     String cypress_path{};
-    String oauth_token{};
+    SecretString oauth_token{};
     std::optional<String> ytsaurus_columns_description{};
 
     /// Throws `BAD_ARGUMENTS` if the configuration cannot be used to read a table, e.g. when `cypress_path` is empty.
