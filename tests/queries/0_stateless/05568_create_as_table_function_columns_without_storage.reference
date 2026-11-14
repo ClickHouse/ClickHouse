@@ -9,3 +9,5 @@ k
 a
 _headers
 --- a data lake that has no metadata yet
+--- a column of a data lake outside the structure
+7	x

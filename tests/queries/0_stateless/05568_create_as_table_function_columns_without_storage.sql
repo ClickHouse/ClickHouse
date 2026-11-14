@@ -36,8 +36,19 @@ CREATE TABLE t_url_star_missing (a UInt8, x UInt8) AS url('http://127.0.0.1:1/*.
 
 SELECT '--- a data lake that has no metadata yet';
 CREATE TABLE t_iceberg (a UInt8, _path String) AS icebergLocal(currentDatabase() || '_05568_ice', 'Parquet', 'a UInt8');
--- A data lake has no hive partition columns.
-CREATE TABLE t_iceberg_missing (a UInt8, k String) AS icebergLocal(currentDatabase() || '_05568_ice', 'Parquet', 'a UInt8'); -- { serverError THERE_IS_NO_COLUMN }
+-- The storage of a data lake takes its columns from the metadata of the lake, which may have columns outside the structure,
+-- so any column is accepted.
+CREATE TABLE t_iceberg_other (a UInt8, k String) AS icebergLocal(currentDatabase() || '_05568_ice', 'Parquet', 'a UInt8');
+
+SELECT '--- a column of a data lake outside the structure';
+SET allow_insert_into_iceberg = 1;
+SET iceberg_delete_data_on_drop = 1;
+CREATE TABLE t_lake_writer (a Int64, b String) ENGINE = IcebergLocal(
+    (SELECT concat(if(startsWith(value, '/'), '', (SELECT path FROM system.disks WHERE name = 'default')), value, '/', currentDatabase(), '_05568_lake')
+    FROM system.server_settings WHERE name = 'user_files_path'), 'Parquet');
+INSERT INTO t_lake_writer SETTINGS async_insert = 0 VALUES (7, 'x');
+CREATE TABLE t_lake (a Int64, b String) AS icebergLocal(currentDatabase() || '_05568_lake', 'Parquet', 'a Int64');
+SELECT a, b FROM t_lake;
 
 DROP TABLE t_s3_glob;
 DROP TABLE t_s3_path;
@@ -46,3 +57,6 @@ DROP TABLE t_url;
 DROP TABLE t_url_pattern;
 DROP TABLE t_url_star;
 DROP TABLE t_iceberg;
+DROP TABLE t_iceberg_other;
+DROP TABLE t_lake;
+DROP TABLE t_lake_writer;

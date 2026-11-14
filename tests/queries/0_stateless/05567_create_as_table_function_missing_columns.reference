@@ -32,5 +32,6 @@ x
 3	v2
 --- a function whose storage takes the columns of the table
 payload	JSON
+document.foo
 --- a function that takes the columns of the table as its structure is not checked
 0

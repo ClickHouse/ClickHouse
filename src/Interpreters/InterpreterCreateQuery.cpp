@@ -1027,9 +1027,9 @@ void throwIfTableColumnsAreMissingFromTableFunction(
     const auto global_context = context->getGlobalContext();
     const auto function_columns = table_function.getActualTableStructure(context, /*is_insert_query=*/ true);
     Names missing;
-    /// Names that only the storage can tell: outside the structure, and subcolumns of the structure.
+    /// Names that only the storage can tell: outside the structure, and subcolumns of the structure, which the storage may read
+    /// as subcolumns, or have as columns with these names, such as `document.foo` of `elasticsearch`.
     Names unknown;
-    Names subcolumns;
     /// A physical column of the structure: the storage of the function does not compute an `ALIAS` or `EPHEMERAL` one, which
     /// the table would read by name.
     const auto physical = GetColumnsOptions(GetColumnsOptions::AllPhysical);
@@ -1042,7 +1042,7 @@ void throwIfTableColumnsAreMissingFromTableFunction(
             /// The table asks the storage for the subcolumn by its name.
             const auto supports_subcolumns = table_function.storageSupportsSubcolumns();
             if (!supports_subcolumns)
-                subcolumns.push_back(column.name);
+                unknown.push_back(column.name);
             else if (!*supports_subcolumns)
                 missing.push_back(column.name);
             continue;
@@ -1054,7 +1054,7 @@ void throwIfTableColumnsAreMissingFromTableFunction(
             missing.push_back(column.name);
     }
 
-    if (!unknown.empty() || !subcolumns.empty())
+    if (!unknown.empty())
     {
         const auto storage = table_function.execute(
             table_function_ast, context, table_name, columns, /*use_global_context=*/ true, /*is_insert_query=*/ true);
@@ -1063,10 +1063,7 @@ void throwIfTableColumnsAreMissingFromTableFunction(
         const auto nested = proxy ? proxy->getNested() : storage;
         const auto nested_metadata = nested->getInMemoryMetadataPtr(context, false);
         const auto nested_snapshot = nested->getStorageSnapshot(nested_metadata, context);
-        const bool nested_supports_subcolumns = nested->supportsSubcolumns();
-        if (!nested_supports_subcolumns)
-            missing.insert(missing.end(), subcolumns.begin(), subcolumns.end());
-        const auto readable = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(nested_supports_subcolumns).withVirtuals(
+        const auto readable = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(nested->supportsSubcolumns()).withVirtuals(
             VirtualsKind::All, VirtualsMaterializationPlace::All);
         for (const auto & name : unknown)
             if (!nested_snapshot->tryGetColumn(readable, name))

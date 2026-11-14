@@ -58,9 +58,10 @@ public:
 
     std::optional<bool> mayHaveColumnOutsideStructure(const String & column_name, const ContextPtr & context) const override
     {
-        /// A data lake has no hive partition columns.
+        /// The storage of a data lake may take its columns from the metadata of the lake rather than from the structure (see
+        /// `shouldReloadSchemaForConsistency`), so it may have any column, which only reading the metadata tells.
         if constexpr (is_data_lake)
-            return VirtualColumnUtils::getVirtualNamesForFileLikeStorage().contains(column_name);
+            return true;
         return VirtualColumnUtils::mayHaveVirtualColumnOfFileLikeStorage(
             column_name,
             StorageObjectStorage::tryGetPathSampleWithoutListing(*configuration, /*distributed_processing=*/ false),

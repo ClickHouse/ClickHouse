@@ -100,6 +100,10 @@ SELECT '--- a function whose storage takes the columns of the table';
 SET enable_elasticsearch = 1;
 CREATE TABLE t_elasticsearch (payload JSON) AS elasticsearch('http://localhost:1', 'idx');
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_elasticsearch';
+-- The storage does not read subcolumns, but `document.foo`, named like a subcolumn of the default structure `document JSON`,
+-- is a column of the table, so an ordinary column of the storage.
+CREATE TABLE t_elasticsearch_dotted (`document.foo` JSON) AS elasticsearch('http://localhost:1', 'idx');
+SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 't_elasticsearch_dotted';
 
 SELECT '--- a function that takes the columns of the table as its structure is not checked';
 CREATE TABLE t_hint (x String) AS null();
@@ -124,3 +128,4 @@ DROP TABLE t_array_any;
 DROP TABLE t_hive_no_files;
 DROP TABLE t_hive_path;
 DROP TABLE t_elasticsearch;
+DROP TABLE t_elasticsearch_dotted;
