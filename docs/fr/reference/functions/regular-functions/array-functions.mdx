@@ -367,6 +367,49 @@ SELECT arrayBottomK((x, y) -> y, 2, ['a', 'b', 'c'], [3, 1, 2])
 ['b','c']
 ```
 
+## arrayCombinations {#arrayCombinations}
+
+Introduit dans : v26.10.0
+
+Renvoie toutes les combinaisons (sélections non ordonnées sans index répétés) de longueur `k` à partir du tableau source. L’énumération s’effectuant par index, des valeurs égales peuvent produire des lignes dupliquées dans le résultat. Pour `k = 0`, la fonction renvoie `[[]]`. La taille totale du résultat par bloc est limitée par `function_range_max_elements_in_block` ; chaque tableau généré compte pour sa taille plus un.
+
+**Syntaxe**
+
+```sql
+arrayCombinations(arr, k)
+```
+
+**Arguments**
+
+* `arr` — Tableau source. [`Array(T)`](/fr/reference/data-types/array)
+* `k` — Longueur de chaque combinaison générée. Ne doit pas dépasser la taille du tableau source. Types pris en charge : `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32` et `UInt64`. [`(U)Int*`](/fr/reference/data-types/int-uint)
+
+**Valeur renvoyée**
+
+Toutes les combinaisons de longueur `k`. [`Array(Array(T))`](/fr/reference/data-types/array)
+
+**Exemples**
+
+**Exemple d’utilisation**
+
+```sql title=Query
+SELECT arrayCombinations([1, 2, 3], 2);
+```
+
+```response title=Response
+[[1,2],[1,3],[2,3]]
+```
+
+**Exemple avec `k = 0`**
+
+```sql title=Query
+SELECT arrayCombinations([1, 2, 3], 0);
+```
+
+```response title=Response
+[[]]
+```
+
 ## arrayCompact {#arrayCompact}
 
 Introduit dans : v20.1.0
@@ -645,7 +688,7 @@ SELECT arrayDistinct([1, 2, 2, 3, 1]);
 
 ## arrayDotProduct {#arrayDotProduct}
 
-Introduit dans : v23.5.0
+Introduit dans : v23.5.0
 
 Renvoie le produit scalaire de deux tableaux.
 
@@ -2513,6 +2556,272 @@ SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);
 (0.18055555555555558,0.2638888888888889,0.6842105263157896)
 ```
 
+## arrayPackBitGroupsToFixedString {#arrayPackBitGroupsToFixedString}
+
+Introduit dans : v26.10.0
+
+Identique à `arrayPackBitsToFixedString`, mais la lambda renvoie un integer dont les `g` bits de poids faible forment un groupe, et les groupes
+sont compactés de manière contiguë (bit de poids fort en premier) dans une `FixedString(n)`. Le résultat correspond aux `n` premiers octets de
+`arrayPackBitGroupsToString` (un groupe qui chevauche la frontière n&#39;y contribue que par ses bits de tête), complétés par des zéros jusqu&#39;à `n`
+octets. La taille `n` et la taille de groupe `g` doivent toutes deux être des constantes positives, et `g` ne doit pas dépasser 64.
+
+**Syntaxe**
+
+```sql
+arrayPackBitGroupsToFixedString(f, n, g, arr1[, arr2, ...])
+```
+
+**Arguments**
+
+* `f` — Fonction lambda qui produit la valeur de groupe de chaque élément. [`Lambda function`](/fr/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `n` — Taille de la `FixedString` résultante, en octets. [`(U)Int8/16/32/64`](/fr/reference/data-types/int-uint)
+* `g` — Nombre de bits par groupe. [`(U)Int8/16/32/64`](/fr/reference/data-types/int-uint)
+* `arr1[, arr2, ...]` — Un ou plusieurs tableaux de même taille à compacter. La fonction lambda prend un argument par tableau. [`Array(T)`](/fr/reference/data-types/array)
+
+**Valeur renvoyée**
+
+Renvoie les bits compactés. [`FixedString(n)`](/fr/reference/data-types/fixedstring)
+
+**Exemples**
+
+**Exemple**
+
+```sql title=Query
+SELECT arrayPackBitGroupsToFixedString(x -> x, 2, 4, [3, 0, 3, 1])
+```
+
+```response title=Response
+01
+```
+
+## arrayPackBitGroupsToString {#arrayPackBitGroupsToString}
+
+Introduit dans : v26.10.0
+
+Identique à `arrayPackBitsToString`, à ceci près que la lambda renvoie un integer dont les `g` bits de poids faible forment un groupe, et que les groupes
+sont compactés de manière contiguë (bit de poids fort en premier). Le résultat a une longueur de `ceil(size_of_array * g / 8)` octets.
+La taille de groupe `g` doit être une constante comprise entre 1 et 64.
+
+**Syntaxe**
+
+```sql
+arrayPackBitGroupsToString(f, g, arr1[, arr2, ...])
+```
+
+**Arguments**
+
+* `f` — Fonction lambda qui produit la valeur de groupe pour chaque élément. [`Lambda function`](/fr/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `g` — Nombre de bits par groupe. [`(U)Int8/16/32/64`](/fr/reference/data-types/int-uint)
+* `arr1[, arr2, ...]` — Un ou plusieurs tableaux de même taille à compacter. La lambda prend un argument par tableau. [`Array(T)`](/fr/reference/data-types/array)
+
+**Valeur renvoyée**
+
+Renvoie les bits compactés. [`String`](/fr/reference/data-types/string)
+
+**Exemples**
+
+**Exemple**
+
+```sql title=Query
+SELECT arrayPackBitGroupsToString(x -> x, 4, [3, 0, 3, 1])
+```
+
+```response title=Response
+01
+```
+
+## arrayPackBitGroupsToUInt64 {#arrayPackBitGroupsToUInt64}
+
+Introduit dans : v26.10.0
+
+Identique à `arrayPackBitsToUInt64`, à ceci près que la lambda renvoie un integer dont les `g` bits de poids faible forment un groupe, et que les groupes
+sont compactés de manière contiguë (bit de poids fort en premier au sein de chaque octet, octets interprétés en ordre little-endian, de sorte que
+`arrayPackBitGroupsToUInt64(f, g, arr) = reinterpretAsUInt64(arrayPackBitGroupsToString(f, g, arr))`). Le résultat
+contient les 64 premiers bits du flux compacté : si `g` ne divise pas 64, le groupe qui chevauche la frontière
+ne fournit que ses bits de tête. La taille de groupe `g` doit être une constante comprise entre 1 et 64.
+
+**Syntaxe**
+
+```sql
+arrayPackBitGroupsToUInt64(f, g, arr1[, arr2, ...])
+```
+
+**Arguments**
+
+* `f` — Fonction lambda qui produit la valeur de groupe pour chaque élément. [`Lambda function`](/fr/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `g` — Nombre de bits par groupe. [`(U)Int8/16/32/64`](/fr/reference/data-types/int-uint)
+* `arr1[, arr2, ...]` — Un ou plusieurs tableaux de même taille à compacter. La fonction lambda prend un argument par tableau. [`Array(T)`](/fr/reference/data-types/array)
+
+**Valeur renvoyée**
+
+Renvoie les bits compactés. [`UInt64`](/fr/reference/data-types/int-uint)
+
+**Exemples**
+
+**Exemple**
+
+```sql title=Query
+SELECT arrayPackBitGroupsToUInt64(x -> x, 4, [1, 2, 3])
+```
+
+```response title=Response
+12306
+```
+
+## arrayPackBitsToFixedString {#arrayPackBitsToFixedString}
+
+Introduit dans : v26.10.0
+
+Applique une fonction lambda à chaque élément du tableau et compacte les bits obtenus dans une `FixedString(n)`.
+Pour chaque élément, la lambda renvoie un integer interprété comme un bit unique (nul ou non nul).
+Les bits sont écrits en commençant par le bit de poids fort ; le résultat correspond donc aux `n` premiers octets de `arrayPackBitsToString`.
+Si le tableau contient plus de `n * 8` éléments, les éléments excédentaires sont ignorés ; s&#39;il en contient moins, le résultat est complété par des zéros jusqu&#39;à `n` octets.
+La taille `n` doit être une constante positive.
+
+**Syntaxe**
+
+```sql
+arrayPackBitsToFixedString(f, n, arr1[, arr2, ...])
+```
+
+**Arguments**
+
+* `f` — Fonction lambda qui produit le bit pour chaque élément. [`Lambda function`](/fr/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `n` — Taille de la `FixedString` résultante, en octets. [`(U)Int8/16/32/64`](/fr/reference/data-types/int-uint)
+* `arr1[, arr2, ...]` — Un ou plusieurs tableaux de même taille à compacter. La lambda prend un argument par tableau. [`Array(T)`](/fr/reference/data-types/array)
+
+**Valeur renvoyée**
+
+Renvoie les bits compactés. [`FixedString(n)`](/fr/reference/data-types/fixedstring)
+
+**Exemples**
+
+**Exemple**
+
+```sql title=Query
+SELECT arrayPackBitsToFixedString(x -> x, 2, [0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1])
+```
+
+```response title=Response
+01
+```
+
+## arrayPackBitsToString {#arrayPackBitsToString}
+
+Introduit dans : v26.10.0
+
+Applique une fonction lambda à chaque élément du tableau et compacte les bits obtenus dans une `String`.
+Pour chaque élément, la lambda renvoie un integer interprété comme un bit unique (zéro ou non nul).
+Les bits sont écrits en commençant par le bit de poids fort ; la longueur du résultat est de `ceil(size_of_array / 8)` octets.
+
+**Syntaxe**
+
+```sql
+arrayPackBitsToString(f, arr1[, arr2, ...])
+```
+
+**Arguments**
+
+* `f` — Fonction lambda qui produit le bit correspondant à chaque élément. [`Lambda function`](/fr/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `arr1[, arr2, ...]` — Un ou plusieurs tableaux de même taille à compacter. La lambda prend un argument par tableau. [`Array(T)`](/fr/reference/data-types/array)
+
+**Valeur renvoyée**
+
+Renvoie les bits compactés. [`String`](/fr/reference/data-types/string)
+
+**Exemples**
+
+**Exemple**
+
+```sql title=Query
+SELECT arrayPackBitsToString(x -> x, [0, 0, 1, 1, 0, 0, 0, 0])
+```
+
+```response title=Response
+0
+```
+
+## arrayPackBitsToUInt64 {#arrayPackBitsToUInt64}
+
+Introduit dans : v26.10.0
+
+Applique une fonction lambda à chaque élément du tableau et compacte les bits obtenus dans un `UInt64`.
+Pour chaque élément, la lambda renvoie un integer interprété comme un bit unique (zéro ou non nul).
+Le flux de bits est réparti sur les octets en commençant par le bit de poids fort (mêmes octets que ceux produits par `arrayPackBitsToString`),
+et les octets sont interprétés dans l&#39;ordre little-endian, de sorte que
+`arrayPackBitsToUInt64(f, arr) = reinterpretAsUInt64(arrayPackBitsToString(f, arr))`.
+Seuls les 64 premiers éléments sont pris en compte ; s&#39;il y en a moins, les bits restants sont à zéro.
+
+**Syntaxe**
+
+```sql
+arrayPackBitsToUInt64(f, arr1[, arr2, ...])
+```
+
+**Arguments**
+
+* `f` — Fonction lambda qui produit le bit pour chaque élément. [`Lambda function`](/fr/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `arr1[, arr2, ...]` — Un ou plusieurs tableaux de même taille à compacter. La fonction lambda prend un argument par tableau. [`Array(T)`](/fr/reference/data-types/array)
+
+**Valeur renvoyée**
+
+Renvoie les bits compactés. [`UInt64`](/fr/reference/data-types/int-uint)
+
+**Exemples**
+
+**Exemple**
+
+```sql title=Query
+SELECT arrayPackBitsToUInt64(x -> x, [1, 0, 0, 0, 0, 0])
+```
+
+```response title=Response
+128
+```
+
+## arrayPartialPermutations {#arrayPartialPermutations}
+
+Introduit dans : v26.10.0
+
+Renvoie toutes les permutations partielles (sélections ordonnées sans index répétés) de longueur `k` du tableau source. L’énumération s’effectue par index : des valeurs égales peuvent donc produire des lignes dupliquées dans le résultat. Pour `k = 0`, renvoie `[[]]`. La taille totale du résultat par bloc est limitée par `function_range_max_elements_in_block` ; chaque tableau généré compte pour sa taille plus un.
+
+**Syntaxe**
+
+```sql
+arrayPartialPermutations(arr, k)
+```
+
+**Arguments**
+
+* `arr` — Tableau source. [`Array(T)`](/fr/reference/data-types/array)
+* `k` — Longueur de chaque permutation partielle générée. Ne doit pas dépasser la taille du tableau source. Types pris en charge : `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32` et `UInt64`. [`(U)Int*`](/fr/reference/data-types/int-uint)
+
+**Valeur renvoyée**
+
+Toutes les permutations partielles de longueur `k`. [`Array(Array(T))`](/fr/reference/data-types/array)
+
+**Exemples**
+
+**Exemple d’utilisation**
+
+```sql title=Query
+SELECT arrayPartialPermutations([1, 2, 3], 2);
+```
+
+```response title=Response
+[[1,2],[1,3],[2,1],[2,3],[3,1],[3,2]]
+```
+
+**Exemple avec `k = 0`**
+
+```sql title=Query
+SELECT arrayPartialPermutations([1, 2, 3], 0);
+```
+
+```response title=Response
+[[]]
+```
+
 ## arrayPartialReverseSort {#arrayPartialReverseSort}
 
 Introduit dans : v23.2.0
@@ -2776,6 +3085,38 @@ SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 
 ```response title=Response
 [2,1,0]
+```
+
+## arrayPermutations {#arrayPermutations}
+
+Introduit dans : v26.10.0
+
+Renvoie toutes les permutations des éléments du tableau source. L’énumération s’effectue par index ; des valeurs égales peuvent donc produire des lignes dupliquées dans le résultat. Pour un tableau source vide, la fonction renvoie `[[]]`. La taille totale du résultat par bloc est limitée par `function_range_max_elements_in_block` ; chaque tableau généré compte pour sa taille plus un.
+
+**Syntaxe**
+
+```sql
+arrayPermutations(arr)
+```
+
+**Arguments**
+
+* `arr` — Tableau source. [`Array(T)`](/fr/reference/data-types/array)
+
+**Valeur renvoyée**
+
+Toutes les permutations du tableau source. [`Array(Array(T))`](/fr/reference/data-types/array)
+
+**Exemples**
+
+**Exemple d’utilisation**
+
+```sql title=Query
+SELECT arrayPermutations([1, 2, 3]);
+```
+
+```response title=Response
+[[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]]
 ```
 
 ## arrayPopBack {#arrayPopBack}
@@ -3222,6 +3563,62 @@ SELECT arrayRemove(['a', NULL, 'b', NULL], NULL)
 
 ```response title=Response
 ['a','b']
+```
+
+## arrayRemoveAt {#arrayRemoveAt}
+
+Introduit dans : v26.10.0
+
+Supprime d&#39;un tableau l&#39;élément situé à l&#39;index spécifié.
+Les index sont indexés à partir de 1. Les index négatifs sont comptés à partir de la fin du tableau.
+Si l&#39;index est en dehors des limites du tableau, le tableau est renvoyé tel quel.
+L&#39;index 0 est invalide.
+
+**Syntaxe**
+
+```sql
+arrayRemoveAt(arr, index)
+```
+
+**Arguments**
+
+* `arr` — Tableau source. [`Array(T)`](/fr/reference/data-types/array)
+* `index` — Index entier non Nullable de l&#39;élément à supprimer. Les index négatifs sont comptés à partir de la fin. [`(U)Int8/16/32/64`](/fr/reference/data-types/int-uint)
+
+**Valeur renvoyée**
+
+Renvoie le tableau source sans l&#39;élément situé à la position `index`, ou le tableau d&#39;origine si `index` est hors limites. [`Array(T)`](/fr/reference/data-types/array)
+
+**Exemples**
+
+**Index positif**
+
+```sql title=Query
+SELECT arrayRemoveAt([1, 2, 3, 4], 2)
+```
+
+```response title=Response
+[1,3,4]
+```
+
+**Index négatif**
+
+```sql title=Query
+SELECT arrayRemoveAt([1, 2, 3, 4], -1)
+```
+
+```response title=Response
+[1,2,3]
+```
+
+**Hors limites**
+
+```sql title=Query
+SELECT arrayRemoveAt([1, 2, 3, 4], 10)
+```
+
+```response title=Response
+[1,2,3,4]
 ```
 
 ## arrayResize {#arrayResize}
@@ -3763,17 +4160,19 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 
 ## arraySlice {#arraySlice}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Renvoie un secteur du tableau, en incluant les éléments `NULL`.
 
-Le premier argument peut également être un [QBit](/fr/reference/data-types/qbit) : le résultat est un QBit sur les dimensions sélectionnées (une projection sur un sous-ensemble de dimensions). Dans ce cas, `offset` et `length` doivent être des constantes, car la dimension d’un QBit fait partie de son type et le secteur doit sélectionner au moins une dimension. Un secteur aligné sur les limites des groupes de pas du QBit conserve le pas et réutilise les flux de plans de bits stockés sans copie.
+Le premier argument peut également être un [QBit](/fr/reference/data-types/qbit) : le résultat est un QBit sur les dimensions sélectionnées (une projection sur un sous-ensemble de dimensions). Dans ce cas, `offset` et `length` doivent être des constantes, car la dimension d’un QBit fait partie de son type et le secteur doit sélectionner au moins une dimension. Un secteur aligné sur les limites des groupes de pas du QBit conserve le pas et réutilise les flux de plans de bits stockés sans copie.
 
 **Syntaxe**
 
 ```sql
 arraySlice(arr, offset [, length])
 ```
+
+**Alias** : `slice`
 
 **Arguments**
 
@@ -4126,7 +4525,7 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 
 ## arrayUnion {#arrayUnion}
 
-Introduit dans : v24.10.0
+Introduit dans : v24.10.0
 
 Prend plusieurs tableaux et renvoie un tableau contenant tous les éléments présents dans au moins l’un des tableaux sources. Le résultat ne contient que des valeurs uniques.
 
@@ -4135,6 +4534,8 @@ Prend plusieurs tableaux et renvoie un tableau contenant tous les éléments pr�
 ```sql
 arrayUnion(arr1, arr2, ..., arrN)
 ```
+
+**Alias** : `array_union`
 
 **Arguments**
 
@@ -4288,7 +4689,7 @@ SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 
 ## arrayZipUnaligned {#arrayZipUnaligned}
 
-Introduit dans : v20.1.0
+Introduit dans : v20.1.0
 
 Combine plusieurs tableaux en un seul, en autorisant des tableaux non alignés (de longueurs différentes). Le tableau obtenu contient les éléments correspondants des tableaux sources, regroupés en tuples dans l’ordre des arguments indiqués.
 
@@ -4297,6 +4698,8 @@ Combine plusieurs tableaux en un seul, en autorisant des tableaux non alignés (
 ```sql
 arrayZipUnaligned(arr1, arr2, ..., arrN)
 ```
+
+**Alias** : `zip`
 
 **Arguments**
 
@@ -4316,6 +4719,39 @@ SELECT arrayZipUnaligned(['a'], [1, 2, 3]);
 
 ```response title=Response
 [('a',1),(NULL,2),(NULL,3)]
+```
+
+## array_position {#array_position}
+
+Introduit dans : v26.8.0
+
+Fonction de compatibilité PostgreSQL. Renvoie la position (indexée à partir de 1) de la première occurrence de l&#39;élément dans le tableau, ou `NULL` si l&#39;élément n&#39;y figure pas. Si l&#39;élément recherché est `NULL`, la fonction renvoie la position du premier `NULL` du tableau, comme dans PostgreSQL. L&#39;équivalent natif dans ClickHouse est `indexOf`, qui renvoie 0 au lieu de `NULL`.
+
+**Syntaxe**
+
+```sql
+array_position(array, element)
+```
+
+**Arguments**
+
+* `array` — Le tableau dans lequel effectuer la recherche. [`Array(T)`](/fr/reference/data-types/array)
+* `element` — L&#39;élément à rechercher. [`Any`](/fr/reference/data-types/index)
+
+**Valeur renvoyée**
+
+La position (indexée à partir de 1) de la première occurrence, ou `NULL` si l&#39;élément est absent. [`Nullable(UInt64)`](/fr/reference/data-types/nullable)
+
+**Exemples**
+
+**Exemple**
+
+```sql title=Query
+SELECT array_position(['a', 'b'], 'b')
+```
+
+```response title=Response
+2
 ```
 
 ## countEqual {#countEqual}
@@ -5299,13 +5735,13 @@ SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
 
 ## length {#length}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Calcule la longueur d’une chaîne ou d’un tableau.
 
-* Pour les arguments String ou FixedString : calcule le nombre d’octets de la chaîne.
-* Pour les arguments tableaux : calcule le nombre d’éléments du tableau.
-* Pour les arguments QBit : calcule la dimension du vecteur.
+* Pour les arguments String ou FixedString : calcule le nombre d’octets de la chaîne.
+* Pour les arguments tableaux : calcule le nombre d’éléments du tableau.
+* Pour les arguments QBit : calcule la dimension du vecteur.
 * Si elle est appliquée à un argument FixedString ou QBit, la fonction est une expression constante.
 
 Veuillez noter que le nombre d’octets d’une chaîne n’est pas le même que le nombre de
@@ -5320,7 +5756,7 @@ Les octets NULL ASCII sont autorisés dans les chaînes et seront également com
 length(x)
 ```
 
-**Alias** : `OCTET_LENGTH`, `CARDINALITY`
+**Alias** : `CARDINALITY`, `OCTET_LENGTH`
 
 **Arguments**
 
@@ -5342,7 +5778,7 @@ SELECT length('Hello, world!')
 13
 ```
 
-**Exemple : tableau**
+**Exemple : tableau**
 
 ```sql title=Query
 SELECT length(['Hello', 'world'])

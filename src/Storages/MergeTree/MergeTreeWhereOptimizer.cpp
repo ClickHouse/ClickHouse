@@ -1,4 +1,7 @@
 #include <algorithm>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -116,6 +119,8 @@ bool typeContainsFloat(const DataTypePtr & type)
     return anyInTypeTree(*type, [](const IDataType & node) { return isFloat(node); });
 }
 
+}
+
 /// -0.0 compares equal to 0.0 and NaN payloads compare equal to each other, so a condition
 /// over a float sorting key column can tell apart rows of one dedup group and drop its winner
 NameSet getSortingKeyNamesSafeBeforeFinal(const StorageSnapshotPtr & storage_snapshot)
@@ -140,6 +145,9 @@ NameSet getSortingKeyNamesSafeBeforeFinal(const StorageSnapshotPtr & storage_sna
     return names;
 }
 
+namespace
+{
+
 bool isReadByTopKFilterOnly(const RPNBuilderTreeNode & conjunct, const NameSet & columns, const String & top_k_filter_column)
 {
     return !top_k_filter_column.empty() && columns.size() == 1 && *columns.begin() == top_k_filter_column
@@ -149,7 +157,7 @@ bool isReadByTopKFilterOnly(const RPNBuilderTreeNode & conjunct, const NameSet &
 }
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
-    std::unordered_map<std::string, UInt64> column_sizes_,
+    UnorderedMapWithMemoryTracking<std::string, UInt64> column_sizes_,
     const StorageSnapshotPtr & storage_snapshot,
     ConditionSelectivityEstimatorPtr estimator_,
     const Names & queried_columns_,
@@ -220,8 +228,8 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     if (!optimize_result)
         return {};
 
-    std::unordered_set<const ActionsDAG::Node *> prewhere_conditions;
-    std::list<const ActionsDAG::Node *> prewhere_conditions_list;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> prewhere_conditions;
+    ListWithMemoryTracking<const ActionsDAG::Node *> prewhere_conditions_list;
     for (const auto & condition : optimize_result->prewhere_conditions)
     {
         for (const auto & n : condition.nodes)
@@ -408,6 +416,24 @@ static void collectConjuncts(const RPNBuilderTreeNode & node, std::vector<RPNBui
         conjuncts.push_back(node);
 }
 
+/// True if evaluating the condition may throw on rows that a preceding condition rejects.
+/// Uses the same predicate as `tryBuildPrewhereSteps` (MergeTreeSplitPrewhereIntoReadSteps.cpp),
+/// which splits such a condition into a step that runs on the rows filtered by the previous step.
+static bool conditionMayThrow(const ActionsDAG::Node * node)
+{
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base)
+    {
+        DataTypesWithConstInfo argument_types;
+        argument_types.reserve(node->children.size());
+        for (const auto * child : node->children)
+            argument_types.push_back({child->result_type, child->column != nullptr});
+        if (node->function_base->isSuitableForShortCircuitArgumentsExecution(argument_types))
+            return true;
+    }
+
+    return std::ranges::any_of(node->children, [](const auto * child) { return conditionMayThrow(child); });
+}
+
 /// Analyze the WHERE expression and populate `res` with one `Condition` per conjunct group.
 /// Algorithm:
 ///   1. Flatten the top-level AND chain into individual conjuncts with `collectConjuncts`.
@@ -416,6 +442,8 @@ static void collectConjuncts(const RPNBuilderTreeNode & node, std::vector<RPNBui
 ///      (i.e., eligible to be moved to PREWHERE).
 ///   3. Group viable conjuncts by their exact `NameSet` of referenced columns so that
 ///      conditions on the same column set are scored together (better selectivity estimate).
+///      Conjuncts over physical columns where a condition that may throw follows another condition
+///      are grouped by these physical columns instead, so that the throwing one is not moved ahead.
 ///   4. Emit non-viable conjuncts individually as single-node `Condition` objects (viable=false).
 ///   5. Emit each viable group as a single multi-node `Condition`, computing `good`,
 ///      `estimated_row_count`, and `min_position_in_primary_key` for the whole group.
@@ -429,6 +457,8 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
     {
         RPNBuilderTreeNode node;
         NameSet columns;
+        /// `columns` resolved to the physical columns they are read from (subcolumn suffix stripped).
+        NameSet storage_columns;
         bool has_invalid_column = false;
         bool may_use_primary_index = true;
         bool viable = false;
@@ -438,10 +468,19 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
     std::vector<ConjunctInfo> infos;
     infos.reserve(conjuncts.size());
 
+    const auto & storage_columns_description = storage_metadata->getColumns();
     for (const auto & conjunct : conjuncts)
     {
-        ConjunctInfo info{conjunct, {}, false, true, false, false};
+        ConjunctInfo info{conjunct, {}, {}, false, true, false, false};
         collectColumns(conjunct, nullptr, table_columns, info.columns, info.has_invalid_column, info.may_use_primary_index);
+
+        for (const auto & column : info.columns)
+        {
+            if (auto resolved = storage_columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column))
+                info.storage_columns.insert(resolved->getNameInStorage());
+            else
+                info.storage_columns.insert(column);
+        }
 
         /// Is it possible to use primary index for this condition? For conditions like `lower(country) = 'xx'`, may_use_primary_index will be false.
         info.viable =
@@ -472,7 +511,37 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
     /// Non-viable conjuncts stay as individual Conditions.
     /// 'expensive' conjuncts each get their own group.
     ///
+    /// A condition that may throw is guarded by the conditions written before it (`and` evaluates it only on
+    /// the rows they pass), but separate groups are reordered by cost. So when such a condition reads the same
+    /// physical columns as an earlier condition, e.g. `t.safe != '' AND toUInt64(t.val) > 50` on subcolumns
+    /// of one `Tuple`, all conditions over these physical columns are grouped by them instead of by the
+    /// exact columns. The group keeps the written order, and `tryBuildPrewhereSteps` splits it into steps
+    /// so that the throwing condition runs only on the rows the guard passes.
+    ///
     /// We use a simple linear search to find groups (WHERE clauses are short).
+    std::vector<NameSet> storage_columns_guarding_throwing_condition;
+    for (size_t i = 0; i < infos.size(); ++i)
+    {
+        if (!infos[i].viable || infos[i].expensive || !conditionMayThrow(infos[i].node.getDAGNode()))
+            continue;
+        for (size_t j = 0; j < i; ++j)
+        {
+            if (infos[j].viable && !infos[j].expensive && infos[j].storage_columns == infos[i].storage_columns)
+            {
+                storage_columns_guarding_throwing_condition.push_back(infos[i].storage_columns);
+                break;
+            }
+        }
+    }
+
+    auto group_key = [&](const ConjunctInfo & info) -> const NameSet &
+    {
+        if (std::ranges::find(storage_columns_guarding_throwing_condition, info.storage_columns)
+            != storage_columns_guarding_throwing_condition.end())
+            return info.storage_columns;
+        return info.columns;
+    };
+
     struct Group
     {
         NameSet columns;
@@ -495,11 +564,12 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
     {
         if (!infos[i].viable)
             continue;
-        auto g = infos[i].expensive ? std::nullopt : find_group_idx(infos[i].columns);
+        const auto & key = group_key(infos[i]);
+        auto g = infos[i].expensive ? std::nullopt : find_group_idx(key);
         if (!g.has_value())
         {
             group_of[i] = groups.size();
-            groups.push_back({infos[i].columns, {i}});
+            groups.push_back({key, {i}});
         }
         else
         {

@@ -7,8 +7,6 @@ title: 'SQL 控制台'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 SQL 控制台是在 ClickHouse Cloud 中浏览和查询数据库最快捷、最简单的方式。您可以使用 SQL 控制台来：
 
 * 连接到您的 ClickHouse Cloud 服务
@@ -26,11 +24,27 @@ SQL 控制台是在 ClickHouse Cloud 中浏览和查询数据库最快捷、最�
 
 左侧边栏区域会显示 ClickHouse 实例中所包含表的概览。使用左侧栏顶部的数据库选择器，可查看特定数据库中的表。
 
-<Image img="/images/cloud/sqlconsole/table-list-and-schema.webp" size="md" alt="表列表和 schema" />
+<div className="ch-image-md">
+
+<Frame>
+
+![表列表和 schema](/images/cloud/sqlconsole/table-list-and-schema.webp)
+
+</Frame>
+
+</div>
 
 还可以展开列表中的表，查看其列和类型。
 
-<Image img="/images/cloud/sqlconsole/view-columns.webp" size="md" alt="查看列" />
+<div className="ch-image-md">
+
+<Frame>
+
+![查看列](/images/cloud/sqlconsole/view-columns.webp)
+
+</Frame>
+
+</div>
 
 <div id="exploring-table-data">
   ### 查看表数据
@@ -38,7 +52,15 @@ SQL 控制台是在 ClickHouse Cloud 中浏览和查询数据库最快捷、最�
 
 在列表中点击某个表，即可在新标签页中将其打开。在表视图中，可以轻松查看、选择和复制数据。请注意，将数据复制粘贴到 Microsoft Excel 和 Google Sheets 等电子表格应用时，会保留其结构和格式。你可以使用页脚中的导航在表数据的各页之间切换 (每页 30 行) 。
 
-<Image img="/images/cloud/sqlconsole/abc.webp" size="md" alt="abc" />
+<div className="ch-image-md">
+
+<Frame>
+
+![abc](/images/cloud/sqlconsole/abc.webp)
+
+</Frame>
+
+</div>
 
 <div id="inspecting-cell-data">
   ### 查看单元格数据
@@ -46,7 +68,15 @@ SQL 控制台是在 ClickHouse Cloud 中浏览和查询数据库最快捷、最�
 
 Cell Inspector 工具可用于查看单个单元格中的大量数据。要打开它，请右键单击某个单元格并选择“Inspect Cell”。点击查看器内容区域右上角的复制图标，即可复制 Cell Inspector 中的内容。
 
-<Image img="/images/cloud/sqlconsole/inspecting-cell-content.webp" size="md" alt="检查单元格内容" />
+<div className="ch-image-md">
+
+<Frame>
+
+![检查单元格内容](/images/cloud/sqlconsole/inspecting-cell-content.webp)
+
+</Frame>
+
+</div>
 
 <div id="filtering-and-sorting-tables">
   ## 对表进行过滤和排序
@@ -58,7 +88,15 @@ Cell Inspector 工具可用于查看单个单元格中的大量数据。要打�
 
 要在 SQL 控制台中对表排序，请打开某张表，然后选择工具栏中的“Sort”按钮。点击此按钮会打开一个菜单，你可以在其中配置排序。你可以选择用于排序的列，并设置排序顺序 (升序或降序) 。选择“Apply”或按 Enter，即可对表进行排序。
 
-<Image img="/images/cloud/sqlconsole/sort-descending-on-column.webp" size="md" alt="按列降序排序" />
+<div className="ch-image-md">
+
+<Frame>
+
+![按列降序排序](/images/cloud/sqlconsole/sort-descending-on-column.webp)
+
+</Frame>
+
+</div>
 
 SQL 控制台还支持为一张表添加多个排序条件。再次点击“Sort”按钮即可添加另一个排序条件。
 
@@ -72,11 +110,27 @@ SQL 控制台还支持为一张表添加多个排序条件。再次点击“Sort
 
 要在 SQL 控制台中过滤表，请打开一个表，然后选择“Filter”按钮。与排序类似，此按钮会打开一个菜单，供你配置过滤器。你可以选择用于过滤的列，并设置所需条件。SQL 控制台会根据列中包含的数据类型，智能显示相应的过滤选项。
 
-<Image img="/images/cloud/sqlconsole/filter-on-radio-column-equal-gsm.webp" size="md" alt="在 radio 列上按等于 GSM 进行过滤" />
+<div className="ch-image-md">
+
+<Frame>
+
+![在 radio 列上按等于 GSM 进行过滤](/images/cloud/sqlconsole/filter-on-radio-column-equal-gsm.webp)
+
+</Frame>
+
+</div>
 
 设置好过滤器后，你可以选择“Apply”来过滤数据。你还可以像下图所示添加更多过滤器。
 
-<Image img="/images/cloud/sqlconsole/add-more-filters.webp" size="md" alt="添加一个大于 2000 的范围过滤器" />
+<div className="ch-image-md">
+
+<Frame>
+
+![添加一个大于 2000 的范围过滤器](/images/cloud/sqlconsole/add-more-filters.webp)
+
+</Frame>
+
+</div>
 
 与排序功能类似，点击过滤器旁边的“x”按钮即可将其移除。
 
@@ -86,7 +140,15 @@ SQL 控制台还支持为一张表添加多个排序条件。再次点击“Sort
 
 SQL 控制台支持同时对表进行过滤和排序。为此，请按上述步骤添加所需的过滤器和排序条件，然后点击“Apply”按钮。
 
-<Image img="/images/cloud/sqlconsole/filtering-and-sorting-together.webp" size="md" alt="为 range 添加一个大于 2000 的过滤器" />
+<div className="ch-image-md">
+
+<Frame>
+
+![为 range 添加一个大于 2000 的过滤器](/images/cloud/sqlconsole/filtering-and-sorting-together.webp)
+
+</Frame>
+
+</div>
 
 <div id="creating-a-query-from-filters-and-sorts">
   ### 根据过滤器和排序创建查询
@@ -94,7 +156,15 @@ SQL 控制台支持同时对表进行过滤和排序。为此，请按上述步�
 
 SQL 控制台可一键将所选的排序和过滤器直接转换为查询。只需在工具栏中选择“Create Query”按钮，并按需设置排序和过滤器参数。点击“Create Query”后，系统会打开一个新的查询标签页，并预先填入与你当前表视图中的数据相对应的 SQL 命令。
 
-<Image img="/images/cloud/sqlconsole/create-a-query-from-sorts-and-filters.webp" size="md" alt="根据排序和过滤器创建查询" />
+<div className="ch-image-md">
+
+<Frame>
+
+![根据排序和过滤器创建查询](/images/cloud/sqlconsole/create-a-query-from-sorts-and-filters.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   使用“Create Query”功能时，并不一定要先设置过滤器和排序。
@@ -115,7 +185,15 @@ SQL 控制台可一键将所选的排序和过滤器直接转换为查询。只�
 * 点击标签栏中的 &#39;+&#39; 按钮
 * 在左侧边栏的查询列表中选择 &#39;New Query&#39; 按钮
 
-<Image img="/images/cloud/sqlconsole/creating-a-query.webp" size="md" alt="创建查询" />
+<div className="ch-image-md">
+
+<Frame>
+
+![创建查询](/images/cloud/sqlconsole/creating-a-query.webp)
+
+</Frame>
+
+</div>
 
 <div id="running-a-query">
   ### 运行查询
@@ -131,17 +209,41 @@ SQL 控制台可一键将所选的排序和过滤器直接转换为查询。只�
 
 要运行选中的命令，请选中所需的单条命令或一组命令，然后点击“运行”按钮 (或使用 `cmd / ctrl + enter` 快捷键) 。存在选中内容时，也可以在 SQL 编辑器的上下文菜单中 (在编辑器内任意位置右键打开) 选择“运行所选内容”。
 
-<Image img="/images/cloud/sqlconsole/run-selected-query.webp" size="md" alt="运行选中的查询" />
+<div className="ch-image-md">
+
+<Frame>
+
+![运行选中的查询](/images/cloud/sqlconsole/run-selected-query.webp)
+
+</Frame>
+
+</div>
 
 运行当前光标位置的命令可以通过以下两种方式实现：
 
 * 在扩展运行选项菜单中选择“在光标处” (或使用对应的 `cmd / ctrl + shift + enter` 键盘快捷键
 
-<Image img="/images/cloud/sqlconsole/run-at-cursor-2.webp" size="md" alt="在光标处运行" />
+<div className="ch-image-md">
+
+<Frame>
+
+![在光标处运行](/images/cloud/sqlconsole/run-at-cursor-2.webp)
+
+</Frame>
+
+</div>
 
 * 在 SQL 编辑器的上下文菜单中选择“在光标处运行”
 
-<Image img="/images/cloud/sqlconsole/run-at-cursor.webp" size="md" alt="在光标处运行" />
+<div className="ch-image-md">
+
+<Frame>
+
+![在光标处运行](/images/cloud/sqlconsole/run-at-cursor.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   执行时，光标所在位置的命令会闪烁为黄色。
@@ -153,7 +255,15 @@ SQL 控制台可一键将所选的排序和过滤器直接转换为查询。只�
 
 查询运行期间，查询编辑器工具栏中的“运行”按钮会替换为“取消”按钮。只需点击该按钮或按 `Esc`，即可取消查询。注意：取消后，已返回的结果仍会保留。
 
-<Image img="/images/cloud/sqlconsole/cancel-a-query.webp" size="md" alt="取消查询" />
+<div className="ch-image-md">
+
+<Frame>
+
+![取消查询](/images/cloud/sqlconsole/cancel-a-query.webp)
+
+</Frame>
+
+</div>
 
 <div id="saving-a-query">
   ### 保存查询
@@ -167,11 +277,27 @@ SQL 控制台可一键将所选的排序和过滤器直接转换为查询。只�
   使用快捷键 `cmd / ctrl` + s 也可以保存当前查询标签页中的所有内容。
 </Note>
 
-<Image img="/images/cloud/sqlconsole/sql-console-save-query.webp" size="md" alt="保存查询" />
+<div className="ch-image-md">
+
+<Frame>
+
+![保存查询](/images/cloud/sqlconsole/sql-console-save-query.webp)
+
+</Frame>
+
+</div>
 
 或者，你也可以点击工具栏中的“Untitled Query”，修改名称后按 Enter，同时完成查询命名和保存：
 
-<Image img="/images/cloud/sqlconsole/sql-console-rename.webp" size="md" alt="重命名查询" />
+<div className="ch-image-md">
+
+<Frame>
+
+![重命名查询](/images/cloud/sqlconsole/sql-console-rename.webp)
+
+</Frame>
+
+</div>
 
 <div id="query-sharing">
   ### 查询共享
@@ -186,21 +312,53 @@ SQL 控制台允许你轻松与团队成员共享查询。SQL 控制台支持四
 
 保存查询后，点击工具栏中的“共享”按钮。此时会弹出一个包含共享选项的模态窗口：
 
-<Image img="/images/cloud/sqlconsole/sql-console-share.webp" size="md" alt="共享查询" />
+<div className="ch-image-md">
+
+<Frame>
+
+![共享查询](/images/cloud/sqlconsole/sql-console-share.webp)
+
+</Frame>
+
+</div>
 
 如需为组织中所有有权访问该服务的成员调整查询访问权限，只需调整顶部一行中的访问级别选择器：
 
-<Image img="/images/cloud/sqlconsole/sql-console-edit-access.webp" size="md" alt="编辑访问权限" />
+<div className="ch-image-md">
+
+<Frame>
+
+![编辑访问权限](/images/cloud/sqlconsole/sql-console-edit-access.webp)
+
+</Frame>
+
+</div>
 
 应用上述设置后，所有有权访问该服务的 SQL 控制台的团队成员都可以查看 (并执行) 该查询。
 
 如需为特定成员调整查询访问权限，请在“添加团队成员”选择器中选择所需的团队成员：
 
-<Image img="/images/cloud/sqlconsole/sql-console-add-team.webp" size="md" alt="添加团队成员" />
+<div className="ch-image-md">
+
+<Frame>
+
+![添加团队成员](/images/cloud/sqlconsole/sql-console-add-team.webp)
+
+</Frame>
+
+</div>
 
 选择团队成员后，应会出现一个新的条目，其中包含访问级别选择器：
 
-<Image img="/images/cloud/sqlconsole/sql-console-edit-member.webp" size="md" alt="编辑团队成员访问权限" />
+<div className="ch-image-md">
+
+<Frame>
+
+![编辑团队成员访问权限](/images/cloud/sqlconsole/sql-console-edit-member.webp)
+
+</Frame>
+
+</div>
 
 <div id="accessing-shared-queries">
   ### 访问共享查询
@@ -208,7 +366,15 @@ SQL 控制台允许你轻松与团队成员共享查询。SQL 控制台支持四
 
 如果有人向你共享了查询，该查询会显示在 SQL 控制台左侧边栏的“Queries”选项卡中：
 
-<Image img="/images/cloud/sqlconsole/sql-console-access-queries.webp" size="md" alt="访问查询" />
+<div className="ch-image-md">
+
+<Frame>
+
+![访问查询](/images/cloud/sqlconsole/sql-console-access-queries.webp)
+
+</Frame>
+
+</div>
 
 <div id="linking-to-a-query-permalinks">
   ### 链接到查询 (永久链接)
@@ -228,11 +394,27 @@ SQL 控制台允许你轻松与团队成员共享查询。SQL 控制台支持四
 
 查询执行后，你可以使用结果面板中的搜索框快速搜索返回的结果集。此功能可用于预览附加 `WHERE` 子句的结果，或者仅用于检查结果集中是否包含特定数据。在搜索框中输入值后，结果面板会更新，并返回包含与输入值匹配条目的记录。在此示例中，我们将查找 `hackernews` 表中所有包含 `ClickHouse` (不区分大小写) 的评论里出现的 `breakfast`：
 
-<Image img="/images/cloud/sqlconsole/search-hn.webp" size="md" alt="Search Hacker News Data" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Search Hacker News Data](/images/cloud/sqlconsole/search-hn.webp)
+
+</Frame>
+
+</div>
 
 注意：只要任意字段与输入值匹配，该记录就会被返回。例如，上方截图中的第三条记录虽然在 `by` 字段中不匹配 `breakfast`，但在 `text` 字段中匹配：
 
-<Image img="/images/cloud/sqlconsole/match-in-body.webp" size="md" alt="Match in body" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Match in body](/images/cloud/sqlconsole/match-in-body.webp)
+
+</Frame>
+
+</div>
 
 <div id="adjusting-pagination-settings">
   ### 调整分页设置
@@ -240,11 +422,27 @@ SQL 控制台允许你轻松与团队成员共享查询。SQL 控制台支持四
 
 默认情况下，查询结果面板会在单页中显示所有结果记录。对于较大的结果集，使用分页会更便于查看。这可以通过结果面板右下角的分页选择器来实现：
 
-<Image img="/images/cloud/sqlconsole/pagination.webp" size="md" alt="分页选项" />
+<div className="ch-image-md">
+
+<Frame>
+
+![分页选项](/images/cloud/sqlconsole/pagination.webp)
+
+</Frame>
+
+</div>
 
 选择页面大小后，结果集会立即启用分页，导航选项会显示在结果面板页脚的中间位置
 
-<Image img="/images/cloud/sqlconsole/pagination-nav.webp" size="md" alt="分页导航" />
+<div className="ch-image-md">
+
+<Frame>
+
+![分页导航](/images/cloud/sqlconsole/pagination-nav.webp)
+
+</Frame>
+
+</div>
 
 <div id="exporting-query-result-data">
   ### 导出查询结果数据
@@ -252,7 +450,15 @@ SQL 控制台允许你轻松与团队成员共享查询。SQL 控制台支持四
 
 可以直接在 SQL 控制台中将查询结果集导出为 CSV 格式。为此，请打开结果面板工具栏右侧的 `•••` 菜单，然后选择“下载为 CSV”。
 
-<Image img="/images/cloud/sqlconsole/download-as-csv.webp" size="md" alt="下载为 CSV" />
+<div className="ch-image-md">
+
+<Frame>
+
+![下载为 CSV](/images/cloud/sqlconsole/download-as-csv.webp)
+
+</Frame>
+
+</div>
 
 <div id="visualizing-query-data">
   ## 可视化查询数据
@@ -274,7 +480,15 @@ ORDER BY
    1 ASC
 ```
 
-<Image img="/images/cloud/sqlconsole/tabular-query-results.webp" size="md" alt="表格查询结果" />
+<div className="ch-image-md">
+
+<Frame>
+
+![表格查询结果](/images/cloud/sqlconsole/tabular-query-results.webp)
+
+</Frame>
+
+</div>
 
 如果不进行可视化，这些结果就很难解读。让我们把它们转换为图表。
 
@@ -284,15 +498,39 @@ ORDER BY
 
 要开始构建可视化，请在查询结果面板的工具栏中选择“Chart”选项。随后会显示图表配置面板：
 
-<Image img="/images/cloud/sqlconsole/switch-from-query-to-chart.webp" size="md" alt="从查询切换到图表" />
+<div className="ch-image-md">
+
+<Frame>
+
+![从查询切换到图表](/images/cloud/sqlconsole/switch-from-query-to-chart.webp)
+
+</Frame>
+
+</div>
 
 我们先创建一个简单的条形图，按 `week` 展示 `trip_total`。为此，将 `week` 字段拖到 x 轴上，再将 `trip_total` 字段拖到 y 轴上：
 
-<Image img="/images/cloud/sqlconsole/trip-total-by-week.webp" size="md" alt="按周统计的总行程数" />
+<div className="ch-image-md">
+
+<Frame>
+
+![按周统计的总行程数](/images/cloud/sqlconsole/trip-total-by-week.webp)
+
+</Frame>
+
+</div>
 
 大多数图表类型都支持在数值轴上放置多个字段。为了演示这一点，我们将 `fare_total` 字段拖到 y 轴上：
 
-<Image img="/images/cloud/sqlconsole/bar-chart.webp" size="md" alt="条形图" />
+<div className="ch-image-md">
+
+<Frame>
+
+![条形图](/images/cloud/sqlconsole/bar-chart.webp)
+
+</Frame>
+
+</div>
 
 <div id="customizing-charts">
   ### 自定义图表
@@ -300,11 +538,27 @@ ORDER BY
 
 SQL 控制台支持十种图表类型，可在图表配置面板中的图表类型选择器中选择。例如，我们可以轻松将前一个图表从柱状图切换为面积图：
 
-<Image img="/images/cloud/sqlconsole/change-from-bar-to-area.webp" size="md" alt="将图表从柱状图切换为面积图" />
+<div className="ch-image-md">
+
+<Frame>
+
+![将图表从柱状图切换为面积图](/images/cloud/sqlconsole/change-from-bar-to-area.webp)
+
+</Frame>
+
+</div>
 
 图表标题与提供数据的查询名称保持一致。更新查询名称后，图表标题也会随之更新：
 
-<Image img="/images/cloud/sqlconsole/update-query-name.webp" size="md" alt="更新查询名称" />
+<div className="ch-image-md">
+
+<Frame>
+
+![更新查询名称](/images/cloud/sqlconsole/update-query-name.webp)
+
+</Frame>
+
+</div>
 
 在图表配置面板的“高级”部分，还可以调整一些更高级的图表属性。首先，我们将调整以下设置：
 
@@ -314,8 +568,24 @@ SQL 控制台支持十种图表类型，可在图表配置面板中的图表类�
 
 图表会相应更新：
 
-<Image img="/images/cloud/sqlconsole/update-subtitle-etc.webp" size="md" alt="更新副标题等" />
+<div className="ch-image-md">
+
+<Frame>
+
+![更新副标题等](/images/cloud/sqlconsole/update-subtitle-etc.webp)
+
+</Frame>
+
+</div>
 
 在某些情况下，可能需要分别调整各个字段的坐标轴刻度。这可以在图表配置面板的“高级”部分中，通过为坐标轴范围指定最小值和最大值来实现。以上图表看起来不错，但为了更清楚地展示 `trip_total` 与 `fare_total` 字段之间的相关性，还需要对坐标轴范围做一些调整：
 
-<Image img="/images/cloud/sqlconsole/adjust-axis-scale.webp" size="md" alt="调整坐标轴刻度" />
+<div className="ch-image-md">
+
+<Frame>
+
+![调整坐标轴刻度](/images/cloud/sqlconsole/adjust-axis-scale.webp)
+
+</Frame>
+
+</div>

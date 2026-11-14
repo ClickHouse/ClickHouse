@@ -535,6 +535,12 @@ bool ParquetV3BlockInputFormat::isTopKFilterApplied() const
         && reader->reader.format_filter_info->top_k_filter->filter_rows && reader->reader.top_k_column_is_read;
 }
 
+bool ParquetV3BlockInputFormat::isJoinRuntimeFilterApplied() const
+{
+    return reader
+        && (reader->reader.row_groups_pruned_by_join_runtime_filter > 0 || reader->reader.pages_pruned_by_join_runtime_filter > 0);
+}
+
 Parquet::RowGroupSelection ParquetV3BlockInputFormat::rowGroupSelection() const
 {
     if (!buckets_to_read)
@@ -970,7 +976,7 @@ void registerInputFormatParquet(FormatFactory & factory)
             std::nullopt,
             is_remote_fs
         );
-    });
+    }, /*supports_reset_parser=*/ true);
     factory.markFormatSupportsSubsetOfColumns("Parquet");
     factory.registerPrewhereSupportChecker("Parquet", [](const FormatSettings &)
     {
