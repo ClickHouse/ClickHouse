@@ -1,0 +1,26 @@
+[true,false,true]	[1,0,1]	2
+1
+1
+[true,NULL]	[1,NULL]
+[1,1,0]
+1
+(true,'x')	1	1
+{1:true}	1	1
+1
+[true]	1
+1
+{"a":true}	Bool	1	1
+1	Float64	Array(Nullable(Float64))
+{"a":[true]}	1
+{"a":[[true]]}	1
+{"a":[true]}	1
+1
+1
+[2]
+[1,0]
+true	1
+[(1.5,2.5)]	Array(Tuple(Float64, Float64))
+[[(1,2)]]
+[2]
+1	Float64
+[[(1.5,2.5)]]
