@@ -9,6 +9,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Parallel replicas would read under the query ids of the replicas, which take slots of their own.
+NO_PARALLEL_REPLICAS="enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0"
+
 # `cityHash64` keeps the aggregation from being answered by statistics or a projection without a read.
 $CLICKHOUSE_CLIENT -m -q "
     DROP TABLE IF EXISTS t_dp_admission;
@@ -21,21 +24,22 @@ $CLICKHOUSE_CLIENT -m -q "
 holder_query_id="${CLICKHOUSE_DATABASE}_slot_holder_$RANDOM"
 $CLICKHOUSE_CLIENT --query_id "$holder_query_id" -q "SELECT sum(cityHash64(k)) FROM t_dp_admission WHERE NOT ignore(sleepEachRow(0.001))
     SETTINGS make_distributed_plan = 0, max_threads = 1, max_block_size = 100, function_sleep_max_microseconds_per_block = 0,
-    use_query_condition_cache = 0" > /dev/null 2>&1 &
+    use_query_condition_cache = 0, $NO_PARALLEL_REPLICAS" > /dev/null 2>&1 &
 holder_pid=$!
 
-# Wait until the holder reads, i.e. holds the slot.
-while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$holder_query_id' AND read_rows > 0") == 0 ]]
+# Wait until the holder reads, i.e. holds the slot. A holder that has already exited fails the checks below.
+while kill -0 "$holder_pid" 2> /dev/null \
+    && [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$holder_query_id' AND read_rows > 0") == 0 ]]
 do
     sleep 0.1
 done
 
 $CLICKHOUSE_CLIENT -q "SELECT sum(cityHash64(k)) FROM t_dp_admission
-    SETTINGS make_distributed_plan = 0, use_query_condition_cache = 0" 2>&1 | grep -o -m1 'TOO_MANY_SIMULTANEOUS_QUERIES'
+    SETTINGS make_distributed_plan = 0, use_query_condition_cache = 0, $NO_PARALLEL_REPLICAS" 2>&1 | grep -o -m1 'TOO_MANY_SIMULTANEOUS_QUERIES'
 $CLICKHOUSE_CLIENT -q "SELECT sum(cityHash64(k)) FROM t_dp_admission
     SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0,
     distributed_plan_default_reader_bucket_count = 3, distributed_plan_fallback_to_local_execution = 0,
-    enable_join_runtime_filters = 0, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0,
+    enable_join_runtime_filters = 0, $NO_PARALLEL_REPLICAS,
     max_rows_to_group_by = 0, use_query_condition_cache = 0" 2>&1 | grep -o -m1 'TOO_MANY_SIMULTANEOUS_QUERIES'
 
 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$holder_query_id' SYNC" > /dev/null
