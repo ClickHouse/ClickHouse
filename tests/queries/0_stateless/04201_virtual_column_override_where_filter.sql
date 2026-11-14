@@ -4,6 +4,7 @@
 --         exercised via filterPartsByVirtualColumns with a non-null predicate
 --         (different code path from PR's own simple SELECT and GROUP BY tests).
 
+SET allow_reserved_column_names = 1;
 DROP TABLE IF EXISTS override_where_filter_test;
 CREATE TABLE override_where_filter_test (_part UInt32, x UInt32) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO override_where_filter_test VALUES (1, 100), (2, 200), (3, 300);

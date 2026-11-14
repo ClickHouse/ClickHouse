@@ -8,7 +8,6 @@ keywords: ['ClickStack architecture', 'observability architecture', 'ClickStack 
 sidebarTitle: 'Architecture'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 
 <Note>
 This page covers **self-managed ClickHouse Observability**. For the recommended fully managed experience, see the documentation [here](/clickstack/observability/architecture).
@@ -18,7 +17,15 @@ ClickHouse Observability — Self-managed runs entirely within **ClickHouse Clou
 
 In this model, **ClickHouse and the ClickStack UI** are hosted, operated, and secured by ClickHouse Cloud. Users are responsible only for running an **OpenTelemetry (OTel) collector** to send telemetry data into the managed service.
 
-<Image img="/images/use-cases/observability/clickstack-self-managed-architecture.svg" alt="Self-managed OpenTelemetry collector sending telemetry to ClickHouse and ClickStack UI hosted in ClickHouse Cloud" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Self-managed OpenTelemetry collector sending telemetry to ClickHouse and ClickStack UI hosted in ClickHouse Cloud](/images/use-cases/observability/clickstack-self-managed-architecture.svg)
+
+</Frame>
+
+</div>
 
 ### ClickHouse Cloud: the engine {#clickhouse-cloud}
 

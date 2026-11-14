@@ -7,8 +7,6 @@ title: '모니터링'
 doc_type: '참고'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <Note>
   이 가이드에서 설명하는 모니터링 데이터는 ClickHouse Cloud에서 확인할 수 있습니다. 아래에서 설명하는 기본 제공 대시보드에 표시될 뿐만 아니라, 기본 및 고급 성능 메트릭도 기본 서비스 콘솔에서 직접 확인할 수 있습니다.
 </Note>
@@ -22,7 +20,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   ## 내장 고급 관측성 대시보드
 </div>
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" alt="네이티브 고급 관측성 대시보드" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![네이티브 고급 관측성 대시보드](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 ClickHouse에는 `$HOST:$PORT/dashboard`에서 접속할 수 있는 내장 고급 관측성 대시보드 기능이 포함되어 있으며(사용자 및 비밀번호 필요), 다음 메트릭을 표시합니다:
 

@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 <Info>
 **In this guide, you will:**
 
@@ -43,7 +41,15 @@ ClickHouse supports [brute-force vector search](/reference/engines/table-engines
 Let's look at a simple example to understand how vector search works.
 Consider embeddings (vector representations) of words:
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_4.jpg" alt="Fruit and animal embeddings visualization"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Fruit and animal embeddings visualization](/images/use-cases/AI_ML/QBit/diagram_4.jpg)
+
+</Frame>
+
+</div>
 
 Create the table below with some sample embeddings:
 
@@ -108,7 +114,15 @@ You have two options:
 
 ### Hierarchical Navigable Small World (HNSW) {#hnsw}
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_1.jpg" alt="HNSW layer structure"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![HNSW layer structure](/images/use-cases/AI_ML/QBit/diagram_1.jpg)
+
+</Frame>
+
+</div>
 
 HNSW is built from multiple layers of nodes (vectors). Each node is randomly assigned to one or more layers, with the chance of appearing in higher layers decreasing exponentially.
 
@@ -138,7 +152,15 @@ As a result, larger datasets require proportionally more RAM.
 QBit is a new data structure that can store `BFloat16`, `Float32`, and `Float64` values by taking advantage of how floating-point numbers are represented – as bits.
 Instead of storing each number as a whole, QBit splits the values into **bit planes**: every first bit, every second bit, every third bit, and so on.
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_2.jpg" alt="QBit bit planes concept"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![QBit bit planes concept](/images/use-cases/AI_ML/QBit/diagram_2.jpg)
+
+</Frame>
+
+</div>
 
 This approach solves the main limitation of traditional quantisation. There's no need to store duplicated data or risk making values meaningless. It also avoids the RAM bottlenecks of HNSW, since QBit works directly with the stored data rather than maintaining an in-memory index.
 
@@ -177,7 +199,15 @@ INSERT INTO fruit_animal VALUES
 ('horse',  [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
 ```
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_5.jpg" alt="QBit data structure transposition"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![QBit data structure transposition](/images/use-cases/AI_ML/QBit/diagram_5.jpg)
+
+</Frame>
+
+</div>
 
 When data is inserted into a QBit column, it is transposed so that all first bits line up together, all second bits line up together, and so on. We call these **groups**.
 
@@ -215,19 +245,43 @@ The third parameter (16) specifies the precision level in bits.
 
 ### I/O Optimisation {#io-optimisation}
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_3.jpg" alt="QBit I/O optimization"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![QBit I/O optimization](/images/use-cases/AI_ML/QBit/diagram_3.jpg)
+
+</Frame>
+
+</div>
 
 Before we can calculate distances, the required data must be read from disk and then untransposed (converted back from the grouped bit representation into full vectors). Because QBit stores values bit-transposed by precision level, ClickHouse can read only the top bit planes needed to reconstruct numbers up to the desired precision.
 
 In the query above, we use a precision level of 16. Since a Float64 has 64 bits, we only read the first 16 bit planes, **skipping 75% of the data**.
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_6.jpg" alt="QBit reconstruction"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![QBit reconstruction](/images/use-cases/AI_ML/QBit/diagram_6.jpg)
+
+</Frame>
+
+</div>
 
 After reading, we reconstruct only the top portion of each number from the loaded bit planes, leaving the unread bits zeroed out.
 
 ### Calculation optimisation {#calculation-optimisation}
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_7.jpg" alt="Downcasting comparison"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Downcasting comparison](/images/use-cases/AI_ML/QBit/diagram_7.jpg)
+
+</Frame>
+
+</div>
 
 One might ask whether casting to a smaller type, such as Float32 or BFloat16, could eliminate this unused portion. It does work, but explicit casts are expensive when applied to every row.
 

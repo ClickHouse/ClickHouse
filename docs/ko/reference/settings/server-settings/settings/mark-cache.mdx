@@ -12,21 +12,15 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 이 설정은 ClickHouse 서버를 구성하는 데 사용되며 ClickHouse 소스에서 자동 생성됩니다.
 
-<div id="mark_cache_policy">
-  ## mark_cache_policy
-</div>
+## mark_cache_policy {#mark_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />마크 캐시 정책의 이름입니다.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />마크 캐시 eviction 정책의 이름입니다. 가능한 값: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="mark_cache_prewarm_ratio">
-  ## mark_cache_prewarm_ratio
-</div>
+## mark_cache_prewarm_ratio {#mark_cache_prewarm_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.95" changeable_without_restart="No" />예열 중 채울 마크 캐시 전체 크기의 비율입니다.
 
-<div id="mark_cache_size">
-  ## mark_cache_size
-</div>
+## mark_cache_size {#mark_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Yes" />
 
@@ -36,9 +30,7 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
   이 설정은 런타임에 변경할 수 있으며 즉시 적용됩니다.
 </Note>
 
-<div id="mark_cache_size_ratio">
-  ## mark_cache_size_ratio
-</div>
+## mark_cache_size_ratio {#mark_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />마크 캐시에서 보호 큐(SLRU 정책 사용 시)가 캐시 전체 크기에서 차지하는 비율입니다.
 

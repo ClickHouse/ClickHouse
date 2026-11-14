@@ -72,6 +72,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageMerge.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageView.h>
 #include <Storages/ColumnsDescription.h>
@@ -422,11 +423,13 @@ void hideLambdaArgumentsShadowingAliasExpression(
 
 }
 
-QueryAnalyzer::QueryAnalyzer(bool only_analyze_, bool positional_arguments_already_resolved_, StoragePtr replaced_storage_)
+QueryAnalyzer::QueryAnalyzer(
+    bool only_analyze_, bool positional_arguments_already_resolved_, StoragePtr replaced_storage_, bool view_source_in_subqueries_)
     : identifier_resolver(node_to_projection_name)
     , only_analyze(only_analyze_)
     , positional_arguments_already_resolved(positional_arguments_already_resolved_)
     , replaced_storage(std::move(replaced_storage_))
+    , view_source_in_subqueries(view_source_in_subqueries_)
 {}
 
 QueryAnalyzer::~QueryAnalyzer() = default;
@@ -5980,6 +5983,17 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         execution_context = overridden_context;
     }
     auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr, execution_context);
+
+    /// The one-argument `merge` reads the current database, which the servers this query is sent to do not share.
+    /// A secondary query is left as sent: its `IN` set names are hashed from the query tree and must match the sender's.
+    if (const auto * merge_storage = typeid_cast<const StorageMerge *>(table_function_storage.get());
+        merge_storage && table_function_node_typed.getArguments().getNodes().size() == 1
+        && scope_context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        auto & argument_nodes = table_function_node_typed.getArguments().getNodes();
+        argument_nodes.insert(argument_nodes.begin(), std::make_shared<ConstantNode>(merge_storage->getSourceDatabaseNameOrRegexp()));
+    }
+
     table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context, std::move(skip_analysis_arguments_indexes));
 }
 
@@ -7002,7 +7016,8 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
 
         /// Resolve the row policy filter expression against result_node's columns.
         auto filter_node = buildQueryTree(row_policy_filter->expression->clone(), scope.context);
-        QueryAnalyzer filter_analyzer(this->only_analyze);
+        QueryAnalyzer filter_analyzer(
+            this->only_analyze, /*positional_arguments_already_resolved_=*/ false, replaced_storage, view_source_in_subqueries);
         filter_analyzer.resolve(filter_node, result_node, scope.context);
 
         /// Build wrapper: SELECT <cols> FROM (result_node) WHERE <resolved_filter>
