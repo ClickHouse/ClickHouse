@@ -341,7 +341,7 @@ static void insertFunctionsAndSubqueries(const QueryTreeNodePtr & node, std::uno
     }
 }
 
-/// Hashes what `compareGroupByKeys` compares, except column sources and subqueries.
+/// Hashes what `compareGroupByKeys` compares, except types, column sources and subqueries.
 /// A constant is hashed by its text, which is the same for every NaN.
 static UInt64 getGroupByKeyHash(const IQueryTreeNode & node)
 {
@@ -369,6 +369,61 @@ static UInt64 getGroupByKeyHash(const IQueryTreeNode & node)
                 nodes_to_process.push_back(child.get());
     }
     return hash.get64();
+}
+
+/// Whether the trees are equal, ignoring the result types of functions and columns.
+static bool isEqualExceptTypes(const IQueryTreeNode & lhs, const IQueryTreeNode & rhs)
+{
+    std::vector<std::pair<const IQueryTreeNode *, const IQueryTreeNode *>> nodes_to_process{{&lhs, &rhs}};
+    while (!nodes_to_process.empty())
+    {
+        const auto [lhs_node, rhs_node] = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        const auto node_type = lhs_node->getNodeType();
+        if (node_type != rhs_node->getNodeType())
+            return false;
+
+        if (const auto * lhs_column = lhs_node->as<ColumnNode>())
+        {
+            const auto & rhs_column = rhs_node->as<const ColumnNode &>();
+            if (lhs_column->getColumnName() != rhs_column.getColumnName()
+                || !lhs_column->getColumnSource()->isEqual(*rhs_column.getColumnSource()))
+                return false;
+            continue;
+        }
+
+        if (const auto * lhs_function = lhs_node->as<FunctionNode>())
+        {
+            const auto & rhs_function = rhs_node->as<const FunctionNode &>();
+            if (lhs_function->getFunctionName() != rhs_function.getFunctionName()
+                || lhs_function->isOrdinaryFunction() != rhs_function.isOrdinaryFunction())
+                return false;
+        }
+        else if (node_type != QueryTreeNodeType::LIST)
+        {
+            if (!lhs_node->isEqual(*rhs_node, {.compare_aliases = false}))
+                return false;
+            continue;
+        }
+
+        const auto & lhs_children = lhs_node->getChildren();
+        const auto & rhs_children = rhs_node->getChildren();
+        if (lhs_children.size() != rhs_children.size())
+            return false;
+
+        for (size_t i = 0; i < lhs_children.size(); ++i)
+        {
+            if (!lhs_children[i] || !rhs_children[i])
+            {
+                if (lhs_children[i] || rhs_children[i])
+                    return false;
+                continue;
+            }
+            nodes_to_process.emplace_back(lhs_children[i].get(), rhs_children[i].get());
+        }
+    }
+    return true;
 }
 
 /// Whether `node` or a node below it, outside of subqueries, is in `nodes`.
@@ -402,14 +457,14 @@ static bool containsAnyOf(const QueryTreeNodePtr & node, const std::unordered_se
 }
 
 /// The comparison and `and` nodes of `query_node`, outside of its subqueries, that are equal to one of its `GROUP BY` keys,
-/// or under `group_by_use_nulls` to the `Nullable` shape of a key that the analyzer puts after `GROUP BY`, with the functions below them.
+/// under `group_by_use_nulls` ignoring the types (any node of a copy after `GROUP BY` can be `Nullable`), with the functions below them.
 /// Then the same for every other key that contains one of these nodes, until there is none.
 /// Collected before the query is rewritten, because the rewrites change `or`/`and` nodes inside a key in place.
 static std::unordered_set<QueryTreeNodePtr> collectGroupByKeyNodes(const QueryNode & query_node, bool group_by_use_nulls)
 {
     std::unordered_set<QueryTreeNodePtr> result;
 
-    const bool add_nullable_shape = group_by_use_nulls
+    const bool ignore_types = group_by_use_nulls
         && (query_node.isGroupByWithGroupingSets() || query_node.isGroupByWithRollup() || query_node.isGroupByWithCube());
 
     std::unordered_map<UInt64, QueryTreeNodes> keys_by_hash;
@@ -418,12 +473,6 @@ static std::unordered_set<QueryTreeNodePtr> collectGroupByKeyNodes(const QueryNo
     {
         key_function_names.insert(key->as<FunctionNode &>().getFunctionName());
         keys_by_hash[getGroupByKeyHash(*key)].push_back(key);
-        if (add_nullable_shape)
-        {
-            auto nullable_key = key->clone();
-            nullable_key->convertToNullable();
-            keys_by_hash[getGroupByKeyHash(*nullable_key)].push_back(std::move(nullable_key));
-        }
     };
 
     QueryTreeNodes other_keys;
@@ -450,7 +499,8 @@ static std::unordered_set<QueryTreeNodePtr> collectGroupByKeyNodes(const QueryNo
 
         auto it = keys_by_hash.find(getGroupByKeyHash(*node));
         return it != keys_by_hash.end()
-            && std::ranges::any_of(it->second, [&](const QueryTreeNodePtr & key) { return compareGroupByKeys(node, key); });
+            && std::ranges::any_of(it->second, [&](const QueryTreeNodePtr & key)
+                { return ignore_types ? isEqualExceptTypes(*node, *key) : compareGroupByKeys(node, key); });
     };
 
     while (true)
