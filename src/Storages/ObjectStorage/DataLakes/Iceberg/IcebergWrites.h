@@ -194,6 +194,7 @@ public:
 private:
     LoggerPtr log = getLogger("IcebergStorageSink");
     SharedHeader sample_block;
+    DataFileUploads data_file_uploads;
     std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter, ChunkPartitioner::PartitionKeyHasher> writer_per_partition_key;
     std::unordered_map<ChunkPartitioner::PartitionKey, std::vector<Field>, ChunkPartitioner::PartitionKeyHasher> last_fields_of_last_chunks;
     std::unordered_map<String, size_t> column_name_to_column_index;

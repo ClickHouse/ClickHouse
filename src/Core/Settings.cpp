@@ -10529,6 +10529,13 @@ independently of its size.
 )", 0, \
         {"26.9", 1024 * 1024 * 1024, 512 * 1024 * 1024, "Aligned with the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB), see https://iceberg.apache.org/docs/1.5.2/configuration/."}, \
         {"25.9", 1_GiB, 1_GiB, "New setting."}) \
+    DECLARE(UInt64, iceberg_insert_max_data_files_in_upload, 8, R"(
+The maximum number of finished data files of one insert stream whose upload is not waited for while the `INSERT` writes the next
+file, for object storages that upload in the background (S3, Azure). Such a file holds its upload buffers until its upload
+completes, so higher values hide more upload latency at the cost of memory. `0` waits for the upload of each data file before
+writing the next one.
+)", 0, \
+        {"26.11", 0, 8, "New setting. An INSERT into Iceberg on S3 or Azure no longer waits for the upload of each finished data file."}) \
     DECLARE(Bool, iceberg_insert_single_manifest_for_all_partitions, false, R"(
 An `INSERT` into a partitioned Iceberg table writes one manifest file for all the partitions it touches, like Spark
 and PyIceberg, instead of one manifest file per partition. This holds per insert stream: every stream commits its own
