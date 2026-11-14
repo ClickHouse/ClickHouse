@@ -3582,7 +3582,9 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const Names & ar
             split_nodes.insert(node);
     });
 
-    auto res = split(split_nodes);
+    /// A node moved before ARRAY JOIN may have the name of a joined input, for example when the query and a view
+    /// it reads each generate `__array_join_exp_1`. Both columns would then reach ARRAY JOIN under one name.
+    auto res = split(split_nodes, /*create_split_nodes_mapping=*/ false, /*avoid_duplicate_inputs=*/ true);
     return res;
 }
 
