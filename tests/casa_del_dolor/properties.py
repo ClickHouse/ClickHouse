@@ -768,9 +768,12 @@ object_storages_properties = {
             0.2, 0.2, 16 * 1024 * 1024, 5 * 1024 * 1024 * 1024, 32
         ),
         # Never above the lower bound of s3_max_upload_part_size: validateUploadSettings
-        # rejects min > max, and rejects a zero min
+        # rejects min > max, and rejects a zero min. Never below the 5 MiB minimum part size
+        # of S3 and MinIO either: `CompleteMultipartUpload` of smaller parts fails with
+        # `EntityTooSmall`, so no file above `s3_max_single_part_upload_size` can be written,
+        # and the retried metadata writes outlast the shutdown wait.
         "s3_min_upload_part_size": threshold_generator(
-            0.2, 0.2, 1024, 16 * 1024 * 1024, 24
+            0.2, 0.2, 5 * 1024 * 1024, 16 * 1024 * 1024, 24
         ),
         "s3_request_timeout_ms": threshold_generator(
             0.2, 0.2, 1000, 60000, allow_unlimited=False
@@ -784,9 +787,12 @@ object_storages_properties = {
         ),
         "s3_slow_all_threads_after_network_error": true_false_lambda,
         # Never above the lower bound of s3_max_upload_part_size: validateUploadSettings
-        # rejects strict > max
-        "s3_strict_upload_part_size": threshold_generator(
-            0.2, 0.2, 0, 16 * 1024 * 1024, 24, allow_unlimited=False
+        # rejects strict > max. Either disabled (0) or at least the 5 MiB minimum part size,
+        # see s3_min_upload_part_size
+        "s3_strict_upload_part_size": lambda: (
+            0
+            if random.random() < 0.5
+            else random.randint(5 * 1024 * 1024, 16 * 1024 * 1024)
         ),
         "s3_upload_part_size_multiply_factor": threshold_generator(0.2, 0.2, 1, 10, 4),
         "s3_upload_part_size_multiply_parts_count_threshold": threshold_generator(

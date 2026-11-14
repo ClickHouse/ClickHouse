@@ -6,8 +6,6 @@ slug: /guides/joining-tables
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 ClickHouse 支持多种 JOIN 算法，它们在执行速度与内存占用之间各有取舍。有关 JOIN 的语法和语义，请参阅 [`JOIN` 子句参考文档](/zh/reference/statements/select/join)。如需具体的优化建议和详细示例，请参阅[尽量减少并优化 JOIN](/zh/concepts/best-practices/minimize-optimize-joins)。
 
 ## 选择 JOIN 算法 {#choosing-a-join-algorithm}
@@ -16,7 +14,15 @@ ClickHouse 支持多种 [JOIN 算法](https://clickhouse.com/blog/clickhouse-ful
 
 <br />
 
-<Image img="/images/guides/joins-2.png" size="lg" alt="JOIN 的内存与速度关系" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![JOIN 的内存与速度关系](/images/guides/joins-2.png)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -26,7 +32,15 @@ ClickHouse 支持多种 [JOIN 算法](https://clickhouse.com/blog/clickhouse-ful
 
 <br />
 
-<Image img="/images/guides/joins-3.webp" size="lg" alt="JOIN 特性" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![JOIN 特性](/images/guides/joins-3.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

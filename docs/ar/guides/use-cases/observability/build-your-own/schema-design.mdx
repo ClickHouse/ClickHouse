@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 نوصي المستخدمين دائمًا بإنشاء مخططهم الخاص للسجلات والتتبعات للأسباب التالية:
 
 * **اختيار مفتاح أساسي** - تستخدم المخططات الافتراضية عبارة `ORDER BY` مُحسّنة لأنماط وصول محددة. ومن غير المرجح أن تتوافق أنماط وصولك مع ذلك.
@@ -256,7 +254,15 @@ Peak memory usage: 3.16 MiB.
 
 تتيح لك العروض المادية نقل تكلفة المعالجة من وقت الاستعلام إلى وقت الإدراج. والعرض المادي في ClickHouse ليس سوى مُشغِّل ينفّذ استعلامًا على كتل البيانات أثناء إدراجها في جدول. وتُدرَج نتائج هذا الاستعلام في جدول &quot;هدف&quot; ثانٍ.
 
-<Image img="/images/use-cases/observability/observability-10.webp" alt="عرض مادي" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![عرض مادي](/images/use-cases/observability/observability-10.webp)
+
+</Frame>
+
+</div>
 
 <Info>
   **تحديثات في الوقت الفعلي**
@@ -411,7 +417,15 @@ FROM otel_logs
 
 يوضح الشكل أدناه ما سبق:
 
-<Image img="/images/use-cases/observability/observability-11.webp" alt="OTel MV" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![OTel MV](/images/use-cases/observability/observability-11.webp)
+
+</Frame>
+
+</div>
 
 إذا أعدنا الآن تشغيل تهيئة المجمّع المستخدمة في [&quot;التصدير إلى ClickHouse&quot;](/ar/guides/use-cases/observability/build-your-own/integrating-opentelemetry#exporting-to-clickhouse)، فستظهر البيانات في `otel_logs_v2` بالتنسيق المطلوب. لاحظ استخدام دوال استخراج JSON ذات الأنواع المحددة.
 
@@ -645,7 +659,15 @@ LIMIT 5
 
 تُعد [القواميس](/ar/reference/statements/create/dictionary) [ميزة رئيسية](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse) في ClickHouse، إذ توفّر تمثيلًا للبيانات داخل الذاكرة بصيغة [مفتاح-قيمة](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) من [مصادر](/ar/reference/statements/create/dictionary/sources/overview#dictionary-sources) داخلية وخارجية متنوعة، ومُحسّنة لعمليات البحث بزمن انتقال منخفض للغاية.
 
-<Image img="/images/use-cases/observability/observability-12.webp" alt="Observability والقواميس" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Observability والقواميس](/images/use-cases/observability/observability-12.webp)
+
+</Frame>
+
+</div>
 
 يفيد ذلك في سيناريوهات متعددة، بدءًا من إثراء البيانات الواردة أثناء تدفقها من دون إبطاء عملية الاستيعاب، ووصولًا إلى تحسين أداء الاستعلامات عمومًا، مع استفادة عمليات JOIN على نحو خاص.
 ومع أن عمليات ربط نادرًا ما تكون مطلوبة في حالات استخدام Observability، فإن القواميس تظل مفيدة لأغراض الإثراء، سواء وقت الإدراج أو وقت تنفيذ الاستعلام. ونورد أدناه أمثلة على الحالتين.
@@ -1473,7 +1495,15 @@ LIMIT 1000
   توفّر الإسقاطات كثيرًا من الإمكانيات نفسها التي توفّرها العروض المادية، لكن ينبغي استخدامها بحذر، وغالبًا ما تكون العروض المادية هي الخيار المفضّل. ويجب أن تفهم عيوبها ومتى يكون استخدامها مناسبًا. فعلى سبيل المثال، رغم إمكانية استخدام الإسقاطات لإجراء عمليات التجميع مسبقًا، فإننا نوصي المستخدمين باستخدام العروض المادية لهذا الغرض.
 </Info>
 
-<Image img="/images/use-cases/observability/observability-13.webp" alt="Observability والإسقاطات" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Observability والإسقاطات](/images/use-cases/observability/observability-13.webp)
+
+</Frame>
+
+</div>
 
 انظر إلى الاستعلام التالي، الذي يرشّح جدول `otel_logs_v2` لدينا بحسب 500 من رموز الخطأ. ومن المرجح أن يكون هذا نمط وصول شائعًا في السجلّات، إذ يرغب المستخدمون في التصفية بحسب رموز الخطأ:
 

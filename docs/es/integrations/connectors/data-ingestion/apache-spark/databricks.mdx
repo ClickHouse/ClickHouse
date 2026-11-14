@@ -7,8 +7,6 @@ title: 'Integrar ClickHouse con Databricks'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/es/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -53,9 +51,25 @@ Sin embargo, si desactiva Unity Catalog creando un clúster con el modo de acces
    * Selecciona **DBFS** o **Espacio de trabajo** → navega hasta el archivo JAR que subiste
    * Haz clic en **Install**
 
-<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp" alt="Pestaña Libraries de Databricks" />
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp" alt="Instalación de la biblioteca desde el volumen del espacio de trabajo" />
+<Frame>
+
+![Pestaña Libraries de Databricks](/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Instalación de la biblioteca desde el volumen del espacio de trabajo](/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp)
+
+</Frame>
+
+</div>
 
 4. Reinicia el clúster para cargar la biblioteca
 
@@ -90,7 +104,15 @@ databricks libraries install \
 com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}
 ```
 
-<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp" alt="Configuración de bibliotecas Maven en Databricks" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Configuración de bibliotecas Maven en Databricks](/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp)
+
+</Frame>
+
+</div>
 
 3. Haz clic en **Install** y reinicia el clúster para cargar la biblioteca
 

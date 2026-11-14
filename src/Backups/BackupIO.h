@@ -105,6 +105,9 @@ public:
     /// Removes the backup folder if it's empty or contains empty subfolders.
     virtual void removeEmptyDirectories() = 0;
 
+    /// Removes the root directory of the backup if it is empty, without looking inside it.
+    virtual void removeEmptyRootDirectory() = 0;
+
     /// fsync one already-written file and remember its parent directories for
     /// `syncDirectoriesToDisk`. No-op where a completed upload is already durable.
     virtual void syncFileToDisk(const String & /* file_name */) {}
