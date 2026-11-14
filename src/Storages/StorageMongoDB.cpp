@@ -599,10 +599,11 @@ static NumberNeighbours floatNeighbours(const Field & bound)
 
     constexpr auto infinity = std::numeric_limits<FloatType>::infinity();
     /// A value beyond the type's range is read as an infinity.
+    const auto max = static_cast<Float64>(std::numeric_limits<FloatType>::max());
     FloatType nearest = infinity;
-    if (value < -std::numeric_limits<FloatType>::max())
+    if (value < -max)
         nearest = -infinity;
-    else if (value <= std::numeric_limits<FloatType>::max())
+    else if (value <= max)
         nearest = static_cast<FloatType>(value);
     auto is_below = [&](FloatType number) { return accurateLess(Field(static_cast<Float64>(number)), bound); };
     auto is_above = [&](FloatType number) { return accurateLess(bound, Field(static_cast<Float64>(number))); };
