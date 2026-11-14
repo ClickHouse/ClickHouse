@@ -375,6 +375,14 @@ public:
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 
+    /// The arguments are passed to the nested function at the same positions, so the nested function decides
+    /// which of them may be a bare `NULL`. This matters when the adapter is wrapped into another combinator
+    /// (`-If`, `-State`, ...) that the `Null` combinator is applied to once more.
+    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNullThroughCombinators() const override
+    {
+        return nested_function->getArgumentsThatCanBeOnlyNullThroughCombinators();
+    }
+
     /// Only the `Subadditive` bound survives the wrapping: a group whose rows are all NULL has an
     /// untouched nested state, whose value is 0 for the subadditive functions (`count`,
     /// `uniqExact`) - consistent with the bound - but is a bogus default for an extremum. A

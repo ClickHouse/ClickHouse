@@ -324,9 +324,18 @@ public:
         return MergedValueBound::Unknown;
     }
 
+    /// The condition may be a bare `NULL` (processed as false). The other arguments are passed to
+    /// the nested function as is, so the nested function decides which of them may be a bare `NULL`.
     UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
     {
-        return {num_arguments - 1};
+        auto result = getArgumentsThatCanBeOnlyNullThroughCombinators();
+        result.insert(num_arguments - 1);
+        return result;
+    }
+
+    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNullThroughCombinators() const override
+    {
+        return nested_func->getArgumentsThatCanBeOnlyNullThroughCombinators();
     }
 
 #if USE_EMBEDDED_COMPILER

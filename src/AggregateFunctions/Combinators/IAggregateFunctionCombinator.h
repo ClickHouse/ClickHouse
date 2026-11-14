@@ -168,6 +168,14 @@ public:
             "Aggregate function combinator '{}' does not wrap a single nested function", getName());
     }
 
+    /** Adjust the properties of the nested aggregate function to the properties of the combined function.
+      * Called by the factory after the combined function is created, so that the outer combinators
+      * (and the internal `Null` combinator) see the properties of the combined function.
+      * For example, -Sparkbar always returns a `String`, so it returns the default (empty) value
+      * when only `NULL`s were aggregated, whatever the nested function does.
+      */
+    virtual void transformProperties(AggregateFunctionProperties & /*properties*/) const {}
+
     /** A combinator that wraps one nested function per argument list returned by
       * `transformArgumentsForMultipleNestedFunctions` (for example, -Tuple: one nested function per tuple element).
       */

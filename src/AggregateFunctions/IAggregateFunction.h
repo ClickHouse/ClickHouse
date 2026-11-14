@@ -613,7 +613,15 @@ public:
     /// For most functions if one of arguments is always NULL, we return NULL (it's implemented in combinator Null),
     /// but in some functions we can want to process this argument somehow (for example condition argument in If combinator).
     /// This method returns the set of argument indexes that can be always NULL, they will be skipped in combinator Null.
-    virtual UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const { return {}; }
+    virtual UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const { return getArgumentsThatCanBeOnlyNullThroughCombinators(); }
+
+    /// The subset of `getArgumentsThatCanBeOnlyNull` that is preserved when the function is wrapped into another
+    /// combinator that passes the arguments to it at the same positions (`-If`, `-Distinct`, `-State`, `-OrNull`,
+    /// the `Null` adapter, ...). For example, every argument of `-Sparkbar` may be a bare `NULL` (the result is the
+    /// empty sparkbar), so `avgSparkbarIf(NULL, x, 1)` is a `String` as well. The condition of `-If` is not included:
+    /// a constant `NULL` condition under an outer combinator (`sumIfState(x, NULL)`, `countIfOrNull(x, NULL)`)
+    /// is folded into `nothing` by the `Null` combinator, see issue #113763.
+    virtual UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNullThroughCombinators() const { return {}; }
 
     /** Return the nested function if this is an Aggregate Function Combinator.
       * Otherwise return nullptr.

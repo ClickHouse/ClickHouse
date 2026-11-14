@@ -359,6 +359,12 @@ public:
             nested_function->rollbackInsertResult(place + i * size_of_data, col.getData());
     }
 
+    /// The nested function receives the arguments at the same positions (the extra argument is the last one).
+    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNullThroughCombinators() const override
+    {
+        return nested_function->getArgumentsThatCanBeOnlyNullThroughCombinators();
+    }
+
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 };
 
