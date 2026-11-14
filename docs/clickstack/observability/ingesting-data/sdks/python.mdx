@@ -1,0 +1,94 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/python
+description: 'Python setup and configuration for ClickHouse Observability and self-managed deployments.'
+title: 'Python'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', 'instrumentation']
+sidebarTitle: 'Python'
+---
+
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+Use the ClickStack Python SDK to send logs and traces to ClickHouse Observability. The SDK is an OpenTelemetry distribution published as `hyperdx-opentelemetry` and automatically instruments supported Python libraries and frameworks.
+
+<ClickStackIntegrates signals={['logs', 'traces']} />
+
+## Install the SDK {#install-the-sdk}
+
+Install the [ClickStack Python SDK](https://github.com/hyperdxio/hyperdx-py) in your application's Python environment:
+
+```shell
+pip install hyperdx-opentelemetry
+opentelemetry-bootstrap -a install
+```
+
+The bootstrap command installs instrumentation for your application's installed dependencies. Run it after installing those dependencies.
+
+## Configure your destination {#configure-destination}
+
+<Tabs>
+<Tab title="Fully managed">
+
+<BetaBadge label="Beta offering" />
+
+Open **Team Settings → Data → Managed Telemetry** in your service and copy the **OTLP HTTP endpoint** and **API key**. Use the complete HTTPS endpoint, including its port:
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+export HYPERDX_API_KEY='Bearer YOUR_INGESTION_API_KEY'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+export OTEL_SERVICE_NAME='my-python-app'
+```
+
+</Tab>
+<Tab title="Self-managed">
+
+Use your collector's OTLP HTTP endpoint and ingestion key. Use `http://` instead of `https://` if your collector does not have TLS configured. For collector setup, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry#sending-otel-data-self-configured).
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+export HYPERDX_API_KEY='YOUR_INGESTION_API_KEY'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+export OTEL_SERVICE_NAME='my-python-app'
+```
+
+</Tab>
+</Tabs>
+
+## Start your application {#start-your-application}
+
+Run your application with automatic instrumentation:
+
+```shell
+export OTEL_LOG_LEVEL='warning'
+export OTEL_PYTHON_LOG_AUTO_INSTRUMENTATION='false'
+opentelemetry-instrument python app.py
+```
+
+Replace `app.py` with your application's entry file.
+
+`OTEL_LOG_LEVEL` sets the SDK's logging level. Set it to `warning` to capture the test message below, or `info` for lower-severity application logs. The SDK defaults to `ERROR` when no level is configured.
+
+The ClickStack SDK already installs a log exporter. Setting `OTEL_PYTHON_LOG_AUTO_INSTRUMENTATION=false` prevents OpenTelemetry's logging instrumentation from adding another exporter and duplicating log records; the SDK still exports logs.
+
+## Verify ingestion {#verify-ingestion}
+
+Make requests to your application and emit a Python log message at `WARNING` level or above. In ClickHouse Observability, select a recent time range and search Logs or Traces for `my-python-app` (or the service name you configured).
+
+## Optional configuration {#optional-configuration}
+
+To capture HTTP request headers and bodies, enable advanced network capture before starting your application:
+
+```shell
+export HYPERDX_ENABLE_ADVANCED_NETWORK_CAPTURE=1
+```
+
+Request headers and bodies can contain sensitive data. Enable capture only for data you intend to collect.
+
+## Troubleshooting {#troubleshooting}
+
+If logs are missing, check `OTEL_LOG_LEVEL` and your application's logger and handler levels. Set them to capture the severity of the messages you expect.
+
+For instrumentation and exporter troubleshooting, see the [OpenTelemetry Python troubleshooting guide](https://opentelemetry.io/docs/zero-code/python/troubleshooting/).

@@ -1,0 +1,9 @@
+499995000000
+0	1249875000
+1	1249900000
+2	1249925000
+9999900000
+6	Nullable(IntervalSecond)
+6	LowCardinality(UInt16)
+\N	Nullable(Nothing)
+2	LowCardinality(Nullable(IntervalHour))
