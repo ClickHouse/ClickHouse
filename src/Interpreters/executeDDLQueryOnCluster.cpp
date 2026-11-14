@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLOnClusterQueryStatusSource.h>
 #include <Interpreters/DDLTask.h>
@@ -209,11 +208,8 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 
     DDLLogEntry entry;
     entry.hosts = std::move(hosts);
-    /// Strip the initiator-only settings from the queued DDL query text too — the `DDLLogEntry` settings
-    /// packet is stripped separately (in `setSettingsIfRequired`), but a worker parses `entry.query` before
-    /// applying that packet, so an initiator-only setting written in the statement itself would otherwise
-    /// reach an older worker as `UNKNOWN_SETTING` or be re-applied on a newer worker.
-    ClusterProxy::stripInitiatorOnlySettingsFromDDLQuery(query_ptr);
+    /// Each host runs this text as its own statement and may store the query in it (a view, a handler),
+    /// so it keeps the settings written in it; only the settings packet below drops the initiator-only ones.
     entry.query = query_ptr->formatWithSecretsOneLine();
     entry.initiator = ddl_worker.getCommonHostID();
     entry.setSettingsIfRequired(context);
