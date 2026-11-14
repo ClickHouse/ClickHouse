@@ -1,6 +1,7 @@
 #pragma once
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
+#include <atomic>
 #include <functional>
 #include <queue>
 #include <optional>
@@ -194,7 +195,8 @@ private:
     std::queue<int> offsets_queue;
 
     /// The current number of valid connections to the replicas of this shard.
-    size_t active_connection_count = 0;
+    /// Atomic: `hasActiveConnections` reads it without `cancel_mutex` while `receivePacket` runs on another thread.
+    std::atomic<size_t> active_connection_count = 0;
 
     /// We count offsets in which we can't change replica anymore,
     /// it's needed to cancel choosing new replicas when we
