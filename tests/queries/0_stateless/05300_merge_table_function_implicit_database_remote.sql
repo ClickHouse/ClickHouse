@@ -23,3 +23,11 @@ INSERT INTO FUNCTION file(currentDatabase() || '_05300.tsv', 'TSV', 'n UInt64') 
 SELECT sum(n), count()
 FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', currentDatabase() || '_05300.tsv', 'TSV', 'n UInt64')
 WHERE n IN (SELECT x FROM merge('^t_implicit_db_'));
+
+-- `merge('', regexp)` reads the current database of the query as well.
+SELECT sum(number), count() FROM remote('127.0.0.2', numbers(4)) WHERE number IN (SELECT x FROM merge('', '^t_implicit_db_'));
+SELECT sum(m.x) FROM remote('127.0.0.2', numbers(4)) AS r INNER JOIN merge('', '^t_implicit_db_') AS m ON r.number = m.x;
+SELECT countIf(number IN (SELECT x FROM merge('', '^t_implicit_db_'))) FROM remote('127.0.0.{2,3}', numbers(4));
+SELECT sum(n), count()
+FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', currentDatabase() || '_05300.tsv', 'TSV', 'n UInt64')
+WHERE n IN (SELECT x FROM merge('', '^t_implicit_db_'));

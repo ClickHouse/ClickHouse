@@ -5984,14 +5984,18 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     }
     auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr, execution_context);
 
-    /// The one-argument `merge` reads the current database, which the servers this query is sent to do not share.
+    /// `merge` with one argument or with the database '' reads the current database, which the servers this query is sent to do not share.
     /// A secondary query is left as sent: its `IN` set names are hashed from the query tree and must match the sender's.
     if (const auto * merge_storage = typeid_cast<const StorageMerge *>(table_function_storage.get());
-        merge_storage && table_function_node_typed.getArguments().getNodes().size() == 1
-        && scope_context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+        merge_storage && scope_context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         auto & argument_nodes = table_function_node_typed.getArguments().getNodes();
-        argument_nodes.insert(argument_nodes.begin(), std::make_shared<ConstantNode>(merge_storage->getSourceDatabaseNameOrRegexp()));
+        const auto * database_node = argument_nodes.size() == 2 ? argument_nodes[0]->as<ConstantNode>() : nullptr;
+        if (argument_nodes.size() == 1)
+            argument_nodes.insert(argument_nodes.begin(), std::make_shared<ConstantNode>(merge_storage->getSourceDatabaseNameOrRegexp()));
+        else if (database_node && database_node->getValue().getType() == Field::Types::String
+                 && database_node->getValue().safeGet<String>().empty())
+            argument_nodes[0] = std::make_shared<ConstantNode>(merge_storage->getSourceDatabaseNameOrRegexp());
     }
 
     table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context, std::move(skip_analysis_arguments_indexes));
