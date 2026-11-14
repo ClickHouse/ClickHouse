@@ -106,11 +106,14 @@ public:
     std::atomic<UInt64> busy_periods{0};
 
 protected:
-    /// Adds `value` to an introspection counter. Only one thread may update the counter at a time.
+    /// Adds `value` to an introspection counter, wrapping around on overflow like `fetch_add`.
+    /// Only one thread may update the counter at a time.
     template <typename T>
     static void incrementCounter(std::atomic<T> & counter, std::type_identity_t<T> value = 1)
     {
-        counter.store(counter.load(std::memory_order_relaxed) + value, std::memory_order_relaxed);
+        using Unsigned = std::make_unsigned_t<T>;
+        Unsigned sum = static_cast<Unsigned>(counter.load(std::memory_order_relaxed)) + static_cast<Unsigned>(value);
+        counter.store(static_cast<T>(sum), std::memory_order_relaxed);
     }
 
 private:
