@@ -2255,13 +2255,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         *storage, storage_snapshot->metadata->getColumns(), row_policy_filter_info->actions.getRequiredColumnsNames());
 
                     /// A logical plan (a serialized query plan or a parallel replicas plan) reads through a
-                    /// placeholder `ReadFromTableStep`, which cannot carry `row_level_filter`: the node that
-                    /// executes the plan rebuilds the read without it and would return the rows the policy
-                    /// excludes. For a storage whose PREWHERE support depends on the columns (e.g. `Memory`)
-                    /// that node cannot tell whether the policy was pushed down, so keep the policy as an
-                    /// explicit filter step of the plan, ahead of the PREWHERE filter step, so that the
-                    /// user's conditions never see the excluded rows.
-                    /// A table function read directly on that node loses a pushed-down policy whatever its contract.
+                    /// placeholder step. `ReadFromTableStep` carries `row_level_filter` to the node that
+                    /// executes the plan. For a storage whose PREWHERE support depends on the columns
+                    /// (e.g. `Memory`), and for a table function, whose step does not carry it, keep the
+                    /// policy as an explicit filter step of the plan, ahead of the PREWHERE filter step,
+                    /// so that the user's conditions never see the excluded rows.
                     if (select_query_options.build_logical_plan
                         && (storage->supportedPrewhereColumns().has_value() || (table_function_node && can_push_down_filter)))
                         where_filters.emplace(where_filters.begin(), std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
@@ -2762,14 +2760,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                             "Row policy filter for {} cannot be pushed into the storage read, and the storage processes "
                             "the query remotely, so the filter cannot be applied. Define the policy on the underlying "
-                            "tables instead; note that such a policy is not applied to reads shipped with "
-                            "`serialize_query_plan = 1`",
+                            "tables instead",
                             storage->getStorageID().getNameForLogs());
                 }
 
                 if (select_query_options.build_logical_plan)
                 {
-                    auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(columns_names));
+                    /// The storage applies `row_level_filter` inside the read, so the read returns the header after it.
+                    auto sample_block = std::make_shared<const Block>(SourceStepWithFilter::applyPrewhereActions(
+                        storage_snapshot->getSampleBlockForColumns(columns_names), table_expression_query_info.row_level_filter, nullptr));
 
                     if (table_node)
                     {
@@ -2782,7 +2781,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         auto reading_from_table = std::make_unique<ReadFromTableStep>(
                             sample_block,
                             table_name,
-                            table_expression_query_info.table_expression_modifiers.value_or(TableExpressionModifiers{}));
+                            table_expression_query_info.table_expression_modifiers.value_or(TableExpressionModifiers{}),
+                            table_expression_query_info.row_level_filter);
 
                         query_plan.addStep(std::move(reading_from_table));
                     }

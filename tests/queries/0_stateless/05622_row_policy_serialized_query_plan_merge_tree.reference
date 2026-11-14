@@ -1,0 +1,13 @@
+the query does not read the policy column
+5
+the query reads the policy column
+0
+1
+2
+3
+4
+Distributed table
+7
+the policy and FINAL
+1	1
+parallel replicas choose the same reading mode

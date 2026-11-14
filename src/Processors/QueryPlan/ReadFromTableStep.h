@@ -5,11 +5,19 @@
 namespace DB
 {
 
+struct FilterDAGInfo;
+using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
+
 class ReadFromTableStep : public ISourceStep
 {
 public:
+    /// `header` is the header after `row_level_filter_`.
     ReadFromTableStep(
-        SharedHeader header, String table_name_, TableExpressionModifiers table_expression_modifiers_, bool use_parallel_replicas_ = false);
+        SharedHeader header,
+        String table_name_,
+        TableExpressionModifiers table_expression_modifiers_,
+        FilterDAGInfoPtr row_level_filter_ = nullptr,
+        bool use_parallel_replicas_ = false);
 
     String getName() const override { return "ReadFromTable"; }
 
@@ -21,6 +29,7 @@ public:
 
     const String & getTable() const { return table_name; }
     TableExpressionModifiers getTableExpressionModifiers() const { return table_expression_modifiers; }
+    const FilterDAGInfoPtr & getRowLevelFilter() const { return row_level_filter; }
     bool useParallelReplicas() const { return use_parallel_replicas; }
     bool & useParallelReplicas() { return use_parallel_replicas; }
 
@@ -28,6 +37,7 @@ public:
 private:
     String table_name;
     TableExpressionModifiers table_expression_modifiers;
+    FilterDAGInfoPtr row_level_filter;
     bool use_parallel_replicas = false;
 };
 
