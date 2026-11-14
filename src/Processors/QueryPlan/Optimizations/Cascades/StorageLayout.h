@@ -1,11 +1,11 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Names.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ActionsDAG.h>
 #include <base/types.h>
 #include <memory>
-#include <vector>
 
 namespace DB
 {
@@ -65,10 +65,10 @@ struct StorageLayout
     StorageLayoutFunctionPtr function;
     /// One set for each argument, in the order of the function. A set holds every output name that
     /// carries the argument column unchanged.
-    std::vector<NameSet> argument_columns;
+    VectorWithMemoryTracking<NameSet> argument_columns;
 };
 
-using StorageLayouts = std::vector<StorageLayout>;
+using StorageLayouts = VectorWithMemoryTracking<StorageLayout>;
 
 /// The layouts of a table read, one for each usable component of the partition key.
 StorageLayouts getStorageLayouts(const KeyDescription & partition_key);

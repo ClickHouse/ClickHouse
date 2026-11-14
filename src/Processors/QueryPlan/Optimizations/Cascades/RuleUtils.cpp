@@ -10,6 +10,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <fmt/format.h>
 #include <algorithm>
 
@@ -86,7 +87,7 @@ static StorageLayouts getJoinStorageLayouts(
     const auto & output_header = *join_step.getOutputHeader();
 
     /// Pairs of equal columns, only for an inner join: an outer join extends one side with defaults.
-    std::vector<std::pair<String, String>> equal_columns;
+    VectorWithMemoryTracking<std::pair<String, String>> equal_columns;
     if (kind == JoinKind::Inner)
     {
         for (const auto & predicate : join_step.getJoinOperator().expression)
