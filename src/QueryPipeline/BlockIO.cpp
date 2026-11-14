@@ -124,15 +124,18 @@ void BlockIO::onException(bool log_as_error)
 
 void BlockIO::onCancelOrConnectionLoss()
 {
+    /// Taken out first, so the callbacks run at most once even if this is called again.
     auto callbacks = std::move(cancel_callbacks);
     cancel_callbacks.clear();
-    for (const auto & callback : callbacks)
-        callback();
 
     /// Stop the pipeline before releasing workload resources: pipeline threads hold raw
     /// pointers to `MemoryReservation` and call `syncWithMemoryTracker` between processors.
     resetPipeline(/*cancel=*/true);
     releaseWorkloadResources();
+
+    /// After the pipeline has been stopped, so that its threads have flushed their counters.
+    for (const auto & callback : callbacks)
+        callback();
 }
 
 void BlockIO::setAllDataSent() const

@@ -176,7 +176,8 @@ void logQueryException(
     bool internal,
     bool log_as_internal,
     bool log_error,
-    bool audit);
+    bool audit,
+    bool charge_quota_profile_events = true);
 
 void logExceptionBeforeStart(
     const String & query_for_logging,
@@ -187,7 +188,8 @@ void logExceptionBeforeStart(
     UInt64 elapsed_milliseconds,
     bool internal,
     bool log_as_internal,
-    bool audit);
+    bool audit,
+    bool charge_quota = true);
 
 /// Whether the query is recorded in the audit log. The decision is taken once, from the audit policy
 /// (writer configured and enabled, audit type of the statement enabled) in effect when the query is

@@ -1,11 +1,11 @@
 #include <Processors/Formats/Impl/ORCBlockOutputFormat.h>
 
-#include <unordered_map>
 
 #include <fmt/ranges.h>
 
 #if USE_ORC
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Formats/FormatFactory.h>
 
@@ -79,7 +79,7 @@ String orcTypeDedupKey(const ORC::Type & type)
     if (kind == ORC::TypeKind::DECIMAL)
         return fmt::format("decimal({},{})", type.getPrecision(), type.getScale());
 
-    std::vector<String> children;
+    VectorWithMemoryTracking<String> children;
     for (size_t i = 0; i < type.getSubtypeCount(); ++i)
     {
         auto child = orcTypeDedupKey(*type.getSubtype(i));
@@ -268,7 +268,7 @@ std::unique_ptr<ORC::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
             /// both ORC `int`) would produce a union with duplicate branches, which the reader
             /// rejects. Branches whose ORC types merely read back as one ClickHouse type collide the
             /// same way, so they are keyed by `orcTypeDedupKey` rather than by the ORC type itself.
-            std::unordered_map<String, std::pair<String, String>> variant_by_orc_type;
+            UnorderedMapWithMemoryTracking<String, std::pair<String, String>> variant_by_orc_type;
             /// A union child is addressed by its type name, the way a `Variant` subcolumn is
             /// (`v.Int32`). Iceberg has no union type, so no field id is expected to be found there.
             for (const auto & nested_type : variant_type.getVariants())

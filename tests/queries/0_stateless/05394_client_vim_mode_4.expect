@@ -1,0 +1,267 @@
+#!/usr/bin/expect -f
+
+# Editing with the `--vim` keymap of the client. Every query is edited so that its result differs
+# from any text displayed while typing it, so that matching the result checks the edit.
+# Escape is followed by a pause much longer than the escape delay of the vim mode (10 ms), so that it
+# is not read as Meta. The pause is short, and the cases are split between `05394_client_vim_mode_{1,2,3,4,5}.expect`,
+# so that each test fits into the time limit of the fast test (60 seconds), also on macOS.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+proc escape {} {
+    send -- "\033"
+    sleep 0.1
+}
+
+# Ctrl-J submits the query: Enter inserts a new line in the vim mode.
+proc submit {} {
+    send -- "\n"
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file --vim"
+expect ":) "
+
+# `dvl` on the last character of a line deletes nothing, also not the line break.
+send -- "SELECT 7500 -- note\r+ 234"
+escape
+send -- "gg\$dvl"
+submit
+expect "7734"
+expect ":) "
+
+send -- "SELECT 7600+123"
+escape
+send -- "dvl"
+submit
+expect "7723"
+expect ":) "
+
+# `dvl` within the line is inclusive, and exclusive when the count reaches past the end of the line.
+send -- "SELECT 7700+1956"
+escape
+send -- "hhhdvl"
+submit
+expect "7756"
+expect ":) "
+
+send -- "SELECT 7800+1234"
+escape
+send -- "h5dvl"
+submit
+expect "7924"
+expect ":) "
+
+# Whitespace at the end of a line ends a counted word object before the line break.
+send -- "SELECT 40000 -- note  \r+ 234"
+escape
+send -- "gg0fnd2iw"
+submit
+expect "40234"
+expect ":) "
+
+send -- "SELECT 40100 -- note  \r+ 234"
+escape
+send -- "gg0fnd2iW"
+submit
+expect "40334"
+expect ":) "
+
+send -- "SELECT 40200 -- note word  \r+ 234"
+escape
+send -- "gg0fnd2aw"
+submit
+expect "40434"
+expect ":) "
+
+# A counted `aw` that does not end with whitespace takes the whitespace before the word instead.
+send -- "SELECT 40300 -- a note\r+ 234"
+escape
+send -- "gg0fad2aw"
+submit
+expect "40534"
+expect ":) "
+
+# A counted `aw` skips the line break at the end of a non-empty line, like `iw`.
+send -- "SELECT 40400 -- a note\r+ 7\r+ 50"
+escape
+send -- "gg0fad3aw"
+submit
+expect "40450"
+expect ":) "
+
+# `w` that stops at the end of the input is inclusive, so `v` makes it exclusive.
+send -- "SELECT 40500+123"
+escape
+send -- "dvw"
+submit
+expect "40623"
+expect ":) "
+
+send -- "SELECT 40900 -- note\r+ 234"
+escape
+send -- "gg0fndvw"
+submit
+expect "41134"
+expect ":) "
+
+# `v` makes the inclusive text objects exclusive.
+send -- "SELECT 40600+123"
+escape
+send -- "dviw"
+submit
+expect "40603"
+expect ":) "
+
+send -- "SELECT 40700+(23)"
+escape
+send -- "dvi("
+submit
+expect "40703"
+expect ":) "
+
+send -- "SELECT 40800+(23)"
+escape
+send -- "cvi(9"
+escape
+submit
+expect "40893"
+expect ":) "
+
+# A forced characterwise `gg` leaves the `g` prefix mode, so the next command runs.
+send -- "SELECT 41000 +\r23 +\r234"
+escape
+send -- "d2vggi9"
+escape
+submit
+expect "41094"
+expect ":) "
+
+# Counted `dd`, `cc` and `S` fail on the last line.
+send -- "SELECT 41200\r+ 34"
+escape
+send -- "2dd"
+submit
+expect "41234"
+expect ":) "
+
+send -- "SELECT 41300\r+ 34"
+escape
+send -- "2cc9"
+escape
+submit
+expect "41334"
+expect ":) "
+
+send -- "SELECT 41400\r+ 34"
+escape
+send -- "2S9"
+escape
+submit
+expect "41434"
+expect ":) "
+
+# A counted `aw` without enough words before the end of the input cancels the operation.
+send -- "SELECT 42000 + 123\r"
+escape
+send -- "k\$c2aw9"
+escape
+submit
+expect "42123"
+expect ":) "
+
+send -- "SELECT 42100 + 123\r"
+escape
+send -- "k\$d2aw"
+submit
+expect "42223"
+expect ":) "
+
+# `aw` on whitespace without a following word cancels the operation.
+send -- "SELECT 42200 + 123  "
+escape
+send -- "caw9"
+escape
+submit
+expect "42323"
+expect ":) "
+
+# The inner object of a multiline block keeps the brackets on their own lines.
+send -- "SELECT plus(\r42300,\r234\r) + 7"
+escape
+send -- "ggci(9100, 1 -- note"
+escape
+submit
+expect "9108"
+expect ":) "
+
+send -- "SELECT (42400\r+ 234\r) + 7"
+escape
+send -- "ggci(42500"
+escape
+submit
+expect "42507"
+expect ":) "
+
+send -- "SELECT plus(\r  42600,\r  234\r  ) + 7"
+escape
+send -- "ggci(42600, 9"
+escape
+submit
+expect "42616"
+expect ":) "
+
+# `cv0` on an empty line keeps its line break.
+send -- "SELECT 42700\r\r+ 234"
+escape
+send -- "ggjcv0-- note"
+escape
+submit
+expect "42934"
+expect ":) "
+
+# An apostrophe in a comment does not hide the brackets after it.
+send -- "SELECT (42800 -- it's a comment\r+ 234) + 7"
+escape
+send -- "ggci(42900"
+escape
+submit
+expect "42907"
+expect ":) "
+
+send -- "SELECT (43000 // it's a comment\r+ 234) + 7"
+escape
+send -- "ggci(43100"
+escape
+submit
+expect "43107"
+expect ":) "
+
+send -- "SELECT (43200 /* outer /* inner */ it's still a comment */\r+ 234) + 7"
+escape
+send -- "ggci(43300"
+escape
+submit
+expect "43307"
+expect ":) "
+
+send -- "\4"
+expect eof

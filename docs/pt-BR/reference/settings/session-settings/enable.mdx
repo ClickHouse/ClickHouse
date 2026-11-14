@@ -34,7 +34,8 @@ As configurações de agregação externa (`max_bytes_before_external_group_by`,
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "Nova configuração. Habilita o spill adaptativo de dados da memória para armazenamento externo."}]}]} />
 
-Faz o processador realizar spill de dados para o armazenamento externo de forma adaptativa. Atualmente, há suporte para hash joins que podem fazer spill de dados, tanto `grace_hash` quanto o caminho adaptativo `hash` / `parallel_hash`.
+Realiza, de forma adaptativa, o spill para o armazenamento externo de processadores elegíveis de agregação, ordenação, `DISTINCT` e hash join quando a consulta está sob pressão de memória.
+Os hash joins compatíveis incluem `grace_hash` e o caminho adaptativo `hash` / `parallel_hash`.
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -87,6 +88,16 @@ Só tem efeito junto com `make_distributed_plan = 1`: isoladamente, a configura�
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Habilita a otimização de consultas em que analisamos os resultados de funções e subconsultas e reescrevemos a consulta se houver constantes nelas.
+
+## enable_elasticsearch {#enable_elasticsearch}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nova configuração que controla a habilitação da integração experimental com o Elasticsearch (o motor de tabela `Elasticsearch` e a função de tabela `elasticsearch`)."}]}]} />
+
+Habilita a integração experimental com o Elasticsearch: o motor de tabela `Elasticsearch` e a função de tabela `elasticsearch`.
 
 ## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
@@ -159,6 +170,23 @@ Habilita funções para análise de funil.
 
 Propagar instruções WITH para consultas UNION e todas as subconsultas
 
+## enable_group_by_top_k_dynamic_filtering {#enable_group_by_top_k_dynamic_filtering}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nova configuração: `GROUP BY key [ORDER BY key] LIMIT n` publica a fronteira do heap top-K no passo de leitura do `MergeTree`, que a usa para filtrar linhas e ignorar grânulos. Um valor de `compatibility` abaixo de 26.10 a desabilita."}]}]} />
+
+Para [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/pt-BR/reference/settings/session-settings/enable#enable_group_by_top_k_optimization): quando a primeira chave ranqueada do `GROUP BY` é uma coluna lida de uma tabela `MergeTree`, a agregação publica a fronteira do seu heap top-K no passo de leitura assim que o heap atinge `LIMIT` chaves. Em seguida, o passo de leitura descarta as linhas cuja chave esteja além da fronteira antes de ler as demais colunas (`PREWHERE`) e ignora grânulos inteiros que estejam além dela, usando a chave primária ou um índice de exclusão `minmax` nessa coluna.
+
+Isso se aplica a `GROUP BY key ORDER BY key LIMIT n` e a `GROUP BY key LIMIT n` sem `ORDER BY`, caso em que quaisquer `n` grupos constituem uma resposta válida.
+
+Não se aplica a leituras com `FINAL` ou com réplicas paralelas: `FINAL` precisa ver todas as versões de uma linha, e a fronteira não é repassada às leituras em réplicas remotas.
+
+Valores possíveis:
+
+* 0 — Desabilitado.
+* 1 — Habilitado.
+
 ## enable_group_by_top_k_optimization {#enable_group_by_top_k_optimization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -216,6 +244,16 @@ Valores possíveis:
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1"},{"label": "Nova configuração para controlar o cache de resolução de identificadores no analisador de consultas"}]}]} />
 
 Ativa o cache de resolução de identificadores no analisador de consultas. O cache compartilha nós de alias já resolvidos para evitar a explosão da AST quando o mesmo alias é referenciado várias vezes. Defina como false para desativar o cache se houver suspeita de resultados incorretos.
+
+## enable_ipcrypt {#enable_ipcrypt}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nova configuração para habilitar funções experimentais de criptografia de endereços IP."}]}]} />
+
+Habilita funções experimentais de criptografia de endereços IP (`ipcryptEncrypt`, `ipcryptDecrypt`, `ipcryptPrefixEncrypt`, `ipcryptPrefixDecrypt`).
 
 ## enable_job_stack_trace {#enable_job_stack_trace}
 
@@ -417,6 +455,16 @@ Todos os servidores que participam de uma consulta distribuída devem usar o mes
 
 Se true, os dados podem ser convertidos diretamente para colunas com serialização personalizada (por exemplo, Sparse), de acordo com as indicações de serialização obtidas da tabela.
 
+## enable_pco_codec {#enable_pco_codec}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nova configuração para habilitar o codec de compressão `PCO`, em Beta."}]}]} />
+
+Habilita o codec de compressão `PCO`.
+
 ## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -543,6 +591,19 @@ Quando desativado, qualquer expressão de tabela que use o modificador `STREAM` 
 na compilação do plano. Esta é a configuração principal para o recurso de
 consultas de streaming; capacidades adicionais podem ser controladas por suas próprias configurações.
 
+## enable_subcolumn_codecs {#enable_subcolumn_codecs}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nova configuração para habilitar declarações de codec em subcolunas."}]}]} />
+
+Permite declarar codecs de compressão para subcolunas de uma coluna, como os elementos de uma `Tuple` ou as chaves e valores de um `Map`,
+por meio de entradas `CODEC name (...)` em `CREATE TABLE` e de `ALTER TABLE ... MODIFY COLUMN name CODEC(...)`.
+Tabelas que já possuem essas declarações funcionam independentemente desta configuração, e as declarações podem ser removidas a qualquer momento.
+Uma tabela com codecs de subcoluna não pode ser anexada por um servidor de versão mais antiga.
+
 ## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge />
@@ -592,11 +653,11 @@ Permite a criação dos tipos de dados [Time](/pt-BR/reference/data-types/time) 
 
 ## enable_trino_dialect {#enable_trino_dialect}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nova configuração para habilitar o valor `trino` da configuração `dialect`, que traduz a sintaxe SQL do Trino e mapeia nomes de funções do Trino para seus equivalentes no ClickHouse."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nova configuração para habilitar o valor `trino` da configuração `dialect`, que traduz a sintaxe SQL do Trino e mapeia nomes de funções do Trino para seus equivalentes no ClickHouse."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "O dialeto `trino` passou para Beta."}]}]} />
 
 Habilita o valor `trino` da configuração `dialect`.
 
@@ -679,6 +740,16 @@ Valores possíveis:
 
 * 0 - Desabilitado
 * 1 - Habilitado
+
+## enable_xgboost {#enable_xgboost}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nova configuração que controla a habilitação da integração experimental com o XGBoost (o layout de dicionário `XGBOOST` e a função `predictXGBoost`)."}]}]} />
+
+Habilita a integração experimental com o XGBoost: o layout de dicionário `XGBOOST` e a função `predictXGBoost`.
 
 ## enable_zxc_codec {#enable_zxc_codec}
 

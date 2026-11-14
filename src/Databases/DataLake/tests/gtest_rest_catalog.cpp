@@ -13,6 +13,8 @@
 #include <Interpreters/Context.h>
 
 #include <Poco/AutoPtr.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/HTTPServer.h>
@@ -28,7 +30,9 @@
 #include <atomic>
 #include <iterator>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <vector>
 
 using namespace DataLake;
 
@@ -47,6 +51,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int DATALAKE_DATABASE_ERROR;
+    extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 }
 
@@ -104,6 +109,11 @@ enum class CatalogShape
     /// so the status has to decide too: reading this one as a race would report a broken catalog as
     /// an empty namespace.
     TableListingServerErrorWithNamespaceBody,
+    /// `/v1/config` advertises `snapshot-loading-mode` (case-insensitive): `REFS` in `defaults` (Databricks Unity Catalog
+    /// advertises `refs` there), `all` in `overrides`, or an unknown value, `bogus`, in `overrides`.
+    SnapshotLoadingModeRefsDefault,
+    SnapshotLoadingModeAllOverride,
+    SnapshotLoadingModeUnknownOverride,
 };
 
 bool advertisesDoomedNamespace(CatalogShape shape)
@@ -124,6 +134,12 @@ struct RequestCounters
     std::atomic<size_t> doomed_child_listing{0};
     std::atomic<size_t> doomed_table_listing{0};
     std::atomic<size_t> root_listing{0};
+    /// Load-table requests for `namespace.snapshots_table`, by their `snapshots` query parameter.
+    std::atomic<size_t> load_table_refs{0};
+    std::atomic<size_t> load_table_without_snapshots_param{0};
+    /// Bodies of the commit requests for `namespace.commit_table`, in arrival order.
+    std::mutex commit_bodies_mutex;
+    std::vector<std::string> commit_bodies;
 };
 
 void writeJSON(Poco::Net::HTTPServerResponse & response, const std::string & body, Poco::Net::HTTPResponse::HTTPStatus status = Poco::Net::HTTPResponse::HTTP_OK)
@@ -204,7 +220,14 @@ public:
 
         if (path == "/v1/config")
         {
-            writeJSON(response, R"({"defaults":{},"overrides":{}})");
+            if (shape == CatalogShape::SnapshotLoadingModeRefsDefault)
+                writeJSON(response, R"({"defaults":{"snapshot-loading-mode":"REFS"},"overrides":{}})");
+            else if (shape == CatalogShape::SnapshotLoadingModeAllOverride)
+                writeJSON(response, R"({"defaults":{},"overrides":{"snapshot-loading-mode":"all"}})");
+            else if (shape == CatalogShape::SnapshotLoadingModeUnknownOverride)
+                writeJSON(response, R"({"defaults":{},"overrides":{"snapshot-loading-mode":"bogus"}})");
+            else
+                writeJSON(response, R"({"defaults":{},"overrides":{}})");
             return;
         }
 
@@ -387,6 +410,58 @@ public:
             return;
         }
 
+        if (path == "/v1/namespaces/namespace/tables/snapshots_table")
+        {
+            if (counters)
+            {
+                const auto snapshots_param
+                    = std::find_if(params.begin(), params.end(), [](const auto & param) { return param.first == "snapshots"; });
+                if (snapshots_param == params.end())
+                    ++counters->load_table_without_snapshots_param;
+                else if (snapshots_param->second == "refs")
+                    ++counters->load_table_refs;
+            }
+            writeJSON(
+                response,
+                R"({"metadata-location":"s3://bucket/snapshots_table/metadata/v1.metadata.json",)"
+                R"("metadata":{"table-uuid":"22222222-3333-4444-5555-666666666666","location":"s3://bucket/snapshots_table"}})");
+            return;
+        }
+
+        if (path == "/v1/namespaces/namespace/tables/commit_table" && request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
+        {
+            std::string request_body(std::istreambuf_iterator<char>(request.stream()), {});
+            if (counters)
+            {
+                std::lock_guard lock(counters->commit_bodies_mutex);
+                counters->commit_bodies.push_back(std::move(request_body));
+            }
+            writeJSON(response, "{}");
+            return;
+        }
+
+        if (path == "/v1/namespaces/namespace/tables/valid_schema_table")
+        {
+            writeJSON(
+                response,
+                R"({"metadata-location":"s3://bucket/valid_schema_table/metadata/v1.metadata.json",)"
+                R"("metadata":{"format-version":2,"table-uuid":"11111111-2222-3333-4444-555555555556","location":"s3://bucket/valid_schema_table",)"
+                R"("current-schema-id":0,"schemas":[{"type":"struct","schema-id":0,"identifier-field-ids":[1],)"
+                R"("fields":[{"id":1,"name":"a","required":true,"type":"long"}]}]}})");
+            return;
+        }
+
+        if (path == "/v1/namespaces/namespace/tables/invalid_schema_table")
+        {
+            writeJSON(
+                response,
+                R"({"metadata-location":"s3://bucket/invalid_schema_table/metadata/v1.metadata.json",)"
+                R"("metadata":{"format-version":2,"table-uuid":"11111111-2222-3333-4444-555555555557","location":"s3://bucket/invalid_schema_table",)"
+                R"("current-schema-id":0,"schemas":[{"type":"struct","schema-id":0,"identifier-field-ids":[9],)"
+                R"("fields":[{"id":1,"name":"a","required":true,"type":"long"}]}]}})");
+            return;
+        }
+
         if (path == "/v1/namespaces/namespace/tables/missing_table")
         {
             writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, R"({"error":{"message":"Table does not exist","type":"NoSuchTableException","code":404}})");
@@ -514,7 +589,10 @@ void expectThrowsCode(std::function<void()> fn, int expected_code)
     }
 }
 
-std::unique_ptr<RestCatalog> makeRestCatalog(const RestCatalogTestServer & server, const DB::ContextMutablePtr & context)
+std::unique_ptr<RestCatalog> makeRestCatalog(
+    const RestCatalogTestServer & server,
+    const DB::ContextMutablePtr & context,
+    DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode = DB::DatabaseDataLakeSnapshotLoadingMode::AUTO)
 {
     /// Collapse the retry backoff: the arms that exercise a retriable status would otherwise sleep
     /// through the default ladder, which is about 33 seconds. The attempt count is left alone so
@@ -531,7 +609,23 @@ std::unique_ptr<RestCatalog> makeRestCatalog(const RestCatalogTestServer & serve
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
         /* flat_namespaces */false,
-        context);
+        context,
+        snapshot_loading_mode);
+}
+
+/// Whether the one load-table request of a catalog with `snapshot_loading_mode` on a server of `shape` asked for `snapshots=refs`.
+bool loadTableRequestsReferencedSnapshots(CatalogShape shape, DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode)
+{
+    RequestCounters counters;
+    RestCatalogTestServer server(shape, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context, snapshot_loading_mode);
+
+    auto metadata = TableMetadata().withLocation();
+    EXPECT_TRUE(catalog->tryGetTableMetadata("namespace", "snapshots_table", metadata));
+    EXPECT_EQ(counters.load_table_refs.load() + counters.load_table_without_snapshots_param.load(), 1u);
+    return counters.load_table_refs.load() == 1;
 }
 
 DB::Names sortedTableNames(const CatalogTables & tables)
@@ -559,7 +653,8 @@ bool restCatalogEmpty(CatalogShape shape, bool flat_namespaces = false)
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
         flat_namespaces,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     return catalog.empty();
 }
@@ -579,7 +674,8 @@ DataLake::ICatalog::Namespaces restCatalogNamespaces(CatalogShape shape, bool fl
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
         flat_namespaces,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     return catalog.getNamespaces();
 }
@@ -599,7 +695,8 @@ bool deltaSharingCatalogEmpty(CatalogShape shape)
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
         /* flat_namespaces */false,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     return catalog.empty();
 }
@@ -647,7 +744,8 @@ TEST(RestCatalog, RejectedClientCredentialsReportTheOAuthError)
             /* oauth_server_uri */"",
             /* oauth_server_use_request_body */true,
             /* flat_namespaces */false,
-            context);
+            context,
+            DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
         FAIL() << "expected the rejected client credentials to fail the catalog construction";
     }
     catch (const DB::Exception & e)
@@ -704,7 +802,8 @@ TEST(RestCatalog, OneLakeFlatNamespacesSettingSkipsSubNamespaceListing)
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
         /* flat_namespaces */true,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     EXPECT_FALSE(catalog.empty());
     EXPECT_EQ(catalog.getNamespaces(), ICatalog::Namespaces{"namespace"});
@@ -725,7 +824,8 @@ TEST(RestCatalog, TryGetTableMetadataDistinguishesMissingTableFromOtherErrors)
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
         /* flat_namespaces */false,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     auto existing = TableMetadata().withLocation();
     EXPECT_TRUE(catalog.tryGetTableMetadata("namespace", "table_a", existing));
@@ -762,7 +862,8 @@ TEST(RestCatalog, TryGetTableMetadataAuthErrorPropagates)
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
         /* flat_namespaces */false,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     TableMetadata metadata;
     try
@@ -777,6 +878,151 @@ TEST(RestCatalog, TryGetTableMetadataAuthErrorPropagates)
     }
 
     EXPECT_THROW(catalog.existsTable("namespace", "expired_token_table"), DB::HTTPException);
+}
+
+TEST(RestCatalog, LoadTableSendsNoSnapshotsParameterByDefault)
+{
+    RequestCounters counters;
+    RestCatalogTestServer server(CatalogShape::TopLevelTable, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context);
+
+    auto metadata = TableMetadata().withLocation();
+    EXPECT_TRUE(catalog->tryGetTableMetadata("namespace", "snapshots_table", metadata));
+    EXPECT_EQ(metadata.getLocation(), "s3://bucket/snapshots_table");
+    EXPECT_EQ(counters.load_table_without_snapshots_param.load(), 1u);
+    EXPECT_EQ(counters.load_table_refs.load(), 0u);
+}
+
+TEST(RestCatalog, LoadTableRequestsReferencedSnapshotsWhenConfigured)
+{
+    RequestCounters counters;
+    RestCatalogTestServer server(CatalogShape::TopLevelTable, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context, DB::DatabaseDataLakeSnapshotLoadingMode::REFS);
+
+    auto metadata = TableMetadata().withLocation().withDataLakeSpecificProperties();
+    EXPECT_TRUE(catalog->tryGetTableMetadata("namespace", "snapshots_table", metadata));
+    EXPECT_EQ(metadata.getLocation(), "s3://bucket/snapshots_table");
+    const auto properties = metadata.getDataLakeSpecificProperties();
+    ASSERT_TRUE(properties.has_value());
+    EXPECT_EQ(properties->iceberg_metadata_file_location, "s3://bucket/snapshots_table/metadata/v1.metadata.json");
+    EXPECT_EQ(counters.load_table_refs.load(), 1u);
+
+    /// The vended-credentials refresh loads the table too. The response has no `config`, so it yields no credentials.
+    auto refresh_credentials = catalog->getCredentialsConfigurationCallback(DB::StorageID("db", "namespace.snapshots_table"), metadata);
+    ASSERT_TRUE(refresh_credentials.has_value());
+    EXPECT_EQ((*refresh_credentials)(), nullptr);
+    EXPECT_EQ(counters.load_table_refs.load(), 2u);
+    EXPECT_EQ(counters.load_table_without_snapshots_param.load(), 0u);
+}
+
+TEST(RestCatalog, LoadTableFollowsSnapshotLoadingModeOfCatalogConfig)
+{
+    /// The catalog's `overrides` win over the setting, which wins over the catalog's `defaults`.
+    EXPECT_TRUE(loadTableRequestsReferencedSnapshots(
+        CatalogShape::SnapshotLoadingModeRefsDefault, DB::DatabaseDataLakeSnapshotLoadingMode::AUTO));
+    EXPECT_FALSE(loadTableRequestsReferencedSnapshots(
+        CatalogShape::SnapshotLoadingModeRefsDefault, DB::DatabaseDataLakeSnapshotLoadingMode::ALL));
+    EXPECT_FALSE(loadTableRequestsReferencedSnapshots(
+        CatalogShape::SnapshotLoadingModeAllOverride, DB::DatabaseDataLakeSnapshotLoadingMode::REFS));
+    /// An unknown value is treated as `all`.
+    EXPECT_FALSE(loadTableRequestsReferencedSnapshots(
+        CatalogShape::SnapshotLoadingModeUnknownOverride, DB::DatabaseDataLakeSnapshotLoadingMode::REFS));
+}
+
+TEST(RestCatalog, CommitAssertsMainSnapshotOrItsAbsence)
+{
+    RequestCounters counters;
+    RestCatalogTestServer server(CatalogShape::TopLevelTable, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context);
+
+    /// Commits `snapshot` and returns the only requirement of the request the catalog received.
+    auto commit_requirement = [&](const std::string & snapshot) -> Poco::JSON::Object::Ptr
+    {
+        EXPECT_TRUE(catalog->updateMetadata(
+            "namespace", "commit_table", /* new_metadata_path */ "", /* base_catalog_metadata_location */ "",
+            Poco::JSON::Parser().parse(snapshot).extract<Poco::JSON::Object::Ptr>(), /* new_metadata */ nullptr));
+
+        std::string body;
+        {
+            std::lock_guard lock(counters.commit_bodies_mutex);
+            if (counters.commit_bodies.empty())
+            {
+                ADD_FAILURE() << "the commit did not reach the catalog";
+                return nullptr;
+            }
+            body = counters.commit_bodies.back();
+        }
+
+        auto requirements = Poco::JSON::Parser().parse(body).extract<Poco::JSON::Object::Ptr>()->getArray("requirements");
+        if (!requirements || requirements->size() != 1)
+        {
+            ADD_FAILURE() << "expected exactly one requirement: " << body;
+            return nullptr;
+        }
+        auto requirement = requirements->getObject(0);
+        EXPECT_EQ(requirement->getValue<std::string>("type"), "assert-ref-snapshot-id") << body;
+        EXPECT_EQ(requirement->getValue<std::string>("ref"), "main") << body;
+        return requirement;
+    };
+
+    /// A root snapshot, written with `parent-snapshot-id: -1` or without the field, asserts that `main` does not exist yet.
+    for (const auto * root_snapshot : {R"({"snapshot-id": 2, "parent-snapshot-id": -1})", R"({"snapshot-id": 3})"})
+    {
+        auto requirement = commit_requirement(root_snapshot);
+        ASSERT_TRUE(requirement) << root_snapshot;
+        EXPECT_TRUE(requirement->has("snapshot-id")) << root_snapshot;
+        EXPECT_TRUE(requirement->isNull("snapshot-id")) << root_snapshot;
+    }
+
+    auto requirement = commit_requirement(R"({"snapshot-id": 5, "parent-snapshot-id": 4})");
+    ASSERT_TRUE(requirement);
+    ASSERT_TRUE(requirement->has("snapshot-id"));
+    EXPECT_EQ(requirement->getValue<Int64>("snapshot-id"), 4);
+
+    std::lock_guard lock(counters.commit_bodies_mutex);
+    EXPECT_EQ(counters.commit_bodies.size(), 3u);
+}
+
+/// The schemas of a table returned by the catalog are checked like those of a metadata file.
+TEST(RestCatalog, TryGetTableMetadataChecksTheSchemas)
+{
+    RestCatalogTestServer server(CatalogShape::TopLevelTable);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    RestCatalog catalog(
+        "warehouse",
+        server.getUrl(),
+        /* catalog_credential */"",
+        /* auth_scope */"",
+        /* auth_header */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */false,
+        /* flat_namespaces */false,
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
+
+    auto valid = TableMetadata().withSchema();
+    EXPECT_TRUE(catalog.tryGetTableMetadata("namespace", "valid_schema_table", valid));
+    EXPECT_EQ(valid.getSchema().toNamesAndTypesDescription(), "`a` Int64");
+
+    auto invalid = TableMetadata().withSchema();
+    try
+    {
+        catalog.tryGetTableMetadata("namespace", "invalid_schema_table", invalid);
+        FAIL() << "expected ICEBERG_SPECIFICATION_VIOLATION";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION) << e.message();
+        EXPECT_NE(e.message().find("identifier field id 9 does not exist"), std::string::npos) << e.message();
+    }
 }
 
 /// The tests below cover a namespace that another client drops after it was listed but before its
@@ -1050,7 +1296,8 @@ TEST(RestCatalog, ApplySettingsChangesWithoutAuthenticationRejected)
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
         /* flat_namespaces */false,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     DB::SettingsChanges changes;
     changes.emplace_back("catalog_credential", "id:secret");
@@ -1072,7 +1319,8 @@ TEST(RestCatalog, ApplySettingsChangesCredentialMode)
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
         /* flat_namespaces */false,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     EXPECT_EQ(catalog.getStateSnapshot()->client_id, "client-1");
 
@@ -1114,7 +1362,8 @@ TEST(RestCatalog, ApplySettingsChangesAuthHeaderMode)
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
         /* flat_namespaces */false,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     DB::SettingsChanges changes;
     changes.emplace_back("auth_header", "Authorization: Bearer token-2");
@@ -1147,7 +1396,8 @@ TEST(RestCatalog, OneLakeApplySettingsChangesBearerMode)
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
         /* flat_namespaces */false,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     const auto snapshot_before = catalog.getStateSnapshot();
     EXPECT_EQ(snapshot_before->tenant_id, "tenant-1");
@@ -1208,7 +1458,8 @@ TEST(RestCatalog, OneLakeRejectsMalformedBearerToken)
                 /* oauth_server_uri */ "",
                 /* oauth_server_use_request_body */ false,
                 /* flat_namespaces */ false,
-                context);
+                context,
+                DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
         },
         DB::ErrorCodes::BAD_ARGUMENTS);
 }
@@ -1249,7 +1500,8 @@ TEST(RestCatalog, OneLakeRefreshTokenTransparentRenewal)
         /* oauth_server_uri */server.getUrl() + "/token",
         /* oauth_server_use_request_body */true,
         /* flat_namespaces */false,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     const auto requests_after_construction = server.tokenRequests();
     EXPECT_GE(requests_after_construction, 1u);
@@ -1291,7 +1543,8 @@ TEST(RestCatalog, OneLakeRefreshTokenExpiredThrowsWithAlterHint)
             /* oauth_server_uri */server.getUrl() + "/token",
             /* oauth_server_use_request_body */true,
             /* flat_namespaces */false,
-            context);
+            context,
+            DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
         /// ADD_FAILURE (rather than FAIL) does not return from the test, so the
         /// profile event check below is reached on every path; FAIL would make
         /// `failures_before` a dead store on the no-throw path for clang-tidy.
@@ -1326,7 +1579,8 @@ TEST(RestCatalog, OneLakeApplySettingsChangesRefreshMode)
         /* oauth_server_uri */server.getUrl() + "/token",
         /* oauth_server_use_request_body */true,
         /* flat_namespaces */false,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     DB::SettingsChanges changes;
     changes.emplace_back("onelake_refresh_token", "another-good-refresh");
@@ -1380,7 +1634,8 @@ TEST(RestCatalog, HorizonCatalogAuthenticatesWithBarePAT)
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */true,
         /* flat_namespaces */false,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     EXPECT_EQ(catalog.getCatalogType(), DB::DatabaseDataLakeCatalogType::ICEBERG_HORIZON);
     EXPECT_TRUE(catalog.getStateSnapshot()->client_id.empty());
@@ -1412,7 +1667,8 @@ TEST(RestCatalog, HorizonCatalogRequiresCredentialOrAuthHeader)
                 /* oauth_server_uri */"",
                 /* oauth_server_use_request_body */true,
                 /* flat_namespaces */false,
-                context);
+                context,
+                DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
         },
         DB::ErrorCodes::BAD_ARGUMENTS);
 }
@@ -1432,7 +1688,8 @@ TEST(RestCatalog, HorizonApplySettingsChangesBarePAT)
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */true,
         /* flat_namespaces */false,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     DB::SettingsChanges changes;
     changes.emplace_back("catalog_credential", "pat-two");

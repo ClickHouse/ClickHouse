@@ -43,6 +43,12 @@ public:
             instance_holder->shutdown();
     }
 
+    /// The instance if one was created, else `nullptr`; never constructs one.
+    static Derived * instanceIfAny()
+    {
+        return instance_raw_ptr.load();
+    }
+
 private:
     static Derived & createInstanceOrThrow();
 

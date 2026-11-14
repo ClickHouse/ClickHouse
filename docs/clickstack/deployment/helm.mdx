@@ -3,10 +3,9 @@ slug: /use-cases/observability/clickstack/deployment/helm
 title: 'Helm'
 description: 'Deploying ClickStack with Helm - The ClickHouse Observability Stack'
 doc_type: 'guide'
-keywords: ['ClickStack Helm chart', 'Helm ClickHouse deployment', 'HyperDX Helm installation', 'Kubernetes observability stack', 'ClickStack Kubernetes deployment']
+keywords: ['ClickStack Helm chart', 'Helm ClickHouse deployment', 'ClickStack UI Helm installation', 'Kubernetes observability stack', 'ClickStack Kubernetes deployment']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 
 import JSONSupport from '/snippets/_json_support.mdx';
 
@@ -18,12 +17,16 @@ This page documents the **v2.x** subchart-based Helm chart. If you are still usi
 
 The Helm chart for ClickStack can be found [here](https://github.com/ClickHouse/ClickStack-helm-charts) and is the **recommended** method for production deployments.
 
+<Tip>
+Monitor your Kubernetes workloads without operating the ClickStack backend with [ClickHouse Observability](/clickstack/observability). [Sign up for ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-clickstack-helm-inline) to get started.
+</Tip>
+
 The v2.x chart uses a **two-phase installation**. Operators and CRDs are installed first via the `clickstack-operators` chart, followed by the main `clickstack` chart which creates operator-managed custom resources for ClickHouse, MongoDB, and the OpenTelemetry Collector.
 
 By default, the Helm chart provisions all core components, including:
 
 * **ClickHouse** — managed by the [ClickHouse Operator](/products/kubernetes-operator/overview) via `ClickHouseCluster` and `KeeperCluster` custom resources
-* **HyperDX** — the observability UI and API
+* **ClickStack UI** — the observability UI and API
 * **OpenTelemetry (OTel) collector** — deployed via the [official OpenTelemetry Collector Helm chart](https://github.com/open-telemetry/opentelemetry-helm-charts) as a subchart
 * **MongoDB** — managed by the [MongoDB Kubernetes Operator (MCK)](https://github.com/mongodb/mongodb-kubernetes) via a `MongoDBCommunity` custom resource
 
@@ -90,7 +93,7 @@ When all pods are ready, proceed.
 </Step>
 <Step title="Forward ports" id="forward-ports">
 
-Port forwarding allows us to access and set up HyperDX. Users deploying to production should instead expose the service via an ingress or load balancer to ensure proper network access, TLS termination, and scalability. Port forwarding is best suited for local development or one-off administrative tasks, not long-term or high-availability environments.
+Port forwarding allows us to access and set up ClickStack UI. Users deploying to production should instead expose the service via an ingress or load balancer to ensure proper network access, TLS termination, and scalability. Port forwarding is best suited for local development or one-off administrative tasks, not long-term or high-availability environments.
 ```shell
 kubectl port-forward \
   pod/$(kubectl get pod -l app.kubernetes.io/name=clickstack -o jsonpath='{.items[0].metadata.name}') \
@@ -105,11 +108,19 @@ For production deployments, configure ingress with TLS instead of port forwardin
 </Step>
 <Step title="Navigate to the UI" id="navigate-to-the-ui">
 
-Visit [http://localhost:8080](http://localhost:8080) to access the HyperDX UI.
+Visit [http://localhost:8080](http://localhost:8080) to access the ClickStack UI.
 
 Create a user, providing a username and password which meets the requirements.
 
-<Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickStack UI](/images/use-cases/observability/hyperdx-login.webp)
+
+</Frame>
+
+</div>
 
 On clicking `Create`, data sources will be created for the ClickHouse instance deployed with the Helm chart.
 
@@ -159,7 +170,7 @@ helm install my-clickstack clickstack/clickstack -f values.yaml
 </Step>
 <Step title="Using secrets (optional)" id="using-secrets">
 
-The v2.x chart uses a unified secret (`clickstack-secret`) populated from `hyperdx.secrets` in your values. All sensitive environment variables — including ClickHouse passwords, MongoDB passwords, and the HyperDX API key — flow through this single secret.
+The v2.x chart uses a unified secret (`clickstack-secret`) populated from `hyperdx.secrets` in your values. All sensitive environment variables — including ClickHouse passwords, MongoDB passwords, and the ClickStack UI API key — flow through this single secret.
 
 To override secret values:
 ```yaml
@@ -264,7 +275,7 @@ By default, there is one task in the chart setup as a cronjob, responsible for c
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `hyperdx.tasks.enabled` | Enable/Disable cron tasks in the cluster. By default, the HyperDX image will run cron tasks in the process. Change to true if you'd rather use a separate cron task in the cluster. | `false` |
+| `hyperdx.tasks.enabled` | Enable/Disable cron tasks in the cluster. By default, the ClickStack UI image will run cron tasks in the process. Change to true if you'd rather use a separate cron task in the cluster. | `false` |
 | `hyperdx.tasks.checkAlerts.schedule` | Cron schedule for the check-alerts task | `*/1 * * * *` |
 | `hyperdx.tasks.checkAlerts.resources` | Resource requests and limits for the check-alerts task | See `values.yaml` |
 
@@ -340,7 +351,7 @@ For ingress-specific issues, TLS problems, or cloud deployment troubleshooting, 
 - [Cloud deployments (v1.x)](/clickstack/deployment/helm-cloud-v1) - v1.x cloud configurations
 
 ### Additional resources {#additional-resources}
-- [ClickStack getting started guide](/clickstack/getting-started/index) - Introduction to ClickStack
+- [ClickStack getting started guide](/clickstack/getting-started/oss) - Introduction to ClickStack
 - [ClickStack Helm charts repository](https://github.com/ClickHouse/ClickStack-helm-charts) - Chart source code and values reference
 - [Kubernetes documentation](https://kubernetes.io/docs/) - Kubernetes reference
 - [Helm documentation](https://helm.sh/docs/) - Helm reference

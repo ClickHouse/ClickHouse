@@ -47,6 +47,7 @@ namespace DB
     M(DATABASE_BACKUP, "DatabaseBackup") \
     M(DATABASE_ON_DISK, "DatabaseOnDisk") \
     M(DATABASE_REPLICAS, "DBReplicas") \
+    M(DATALAKE_GLUE_CATALOG, "GlueCatalog") \
     M(DATALAKE_REST_CATALOG, "RestCatalog") \
     M(DATALAKE_TABLE_SNAPSHOT, "TableSnapshot") \
     M(DDL_WORKER, "DDLWorker") \
@@ -67,6 +68,7 @@ namespace DB
     M(DWARF_DECODER, "DWARFDecoder") \
     M(ERROR_LOG, "ErrorLog") \
     M(EXTERNAL_LOADER, "ExternalLoader") \
+    M(FILE_LOG_WATCH, "FileLogWatch") \
     M(FILESYSTEM_CACHE_DROP, "FSCacheDropKeys") \
     M(GRPC_SERVER_CALL, "gRPCServerCall") \
     M(GRPC_SERVER_QUEUE, "gRPCServerQueue") \
@@ -215,6 +217,9 @@ enum class ThreadName : uint8_t
   */
 void setThreadName(ThreadName name);
 ThreadName getThreadName();
+/// The calling thread's cached name, by reference: valid while the thread lives, and current after a
+/// later setThreadName. The macOS query profiler reads it for a stopped thread (StackTrace::SuspendedThread).
+const ThreadName & getThreadNameRef();
 
 std::string_view toString(ThreadName name);
 

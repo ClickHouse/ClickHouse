@@ -7,7 +7,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/ko/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -19,7 +18,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 세션은 진단만을 관장합니다. 관리형 모드 서비스의 라이프사이클 명령어는 실행기의 별도 채널을 통해 전달되며, 지원 세션은 이 채널을 열지도, 통제하지도 않습니다. [managed services](/ko/products/bring-your-own-cloud/connector/managed-services#service-lifecycle)를 참조하십시오.
 
-<Image img="/images/cloud/reference/byoc-connector-session-trust.svg" size="lg" alt="ClickHouse Connector support session trust flow" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse Connector support session trust flow](/images/cloud/reference/byoc-connector-session-trust.svg)
+
+</Frame>
+
+</div>
 
 세션은 두 가지 인터페이스를 통해 제어합니다.
 

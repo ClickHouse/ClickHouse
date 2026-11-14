@@ -57,7 +57,7 @@
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
-#include <Common/SilkFiberScheduler.h>
+#include <Common/Silk/FiberScheduler.h>
 #include <Common/getMappedArea.h>
 #include <Common/SignalHandlers.h>
 #include <Common/remapExecutable.h>
@@ -166,6 +166,9 @@
 #include <Common/JemallocMergeTreeArena.h>
 
 #include "config.h"
+#if USE_SILK
+#    include <glibc-rseq/rseq.h>
+#endif
 #include <Common/config_version.h>
 
 #if defined(OS_LINUX)
@@ -269,6 +272,12 @@ namespace ServerSetting
     extern const ServerSettingsBool enable_write_through_distributed_cache;
     extern const ServerSettingsDistributedCachePoolBehaviourOnLimit distributed_cache_temporary_data_pool_behaviour_on_limit;
     extern const ServerSettingsUInt64 distributed_cache_temporary_data_max_connections_bypassing_pool;
+    extern const ServerSettingsUInt64 amber_connections_soft_limit;
+    extern const ServerSettingsUInt64 amber_connections_warn_limit;
+    extern const ServerSettingsUInt64 amber_connections_store_limit;
+    extern const ServerSettingsUInt64 amber_connections_hard_limit;
+    extern const ServerSettingsUInt64 amber_connections_rcvbuf;
+    extern const ServerSettingsUInt64 amber_connections_sndbuf;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_hard_limit;
@@ -502,6 +511,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 oom_canary_max_backoff_seconds;
     extern const ServerSettingsBool remap_executable;
     extern const ServerSettingsBool mlock_executable;
+    extern const ServerSettingsBool quick_startup;
     extern const ServerSettingsUInt64 mlock_executable_min_total_memory_amount_bytes;
     extern const ServerSettingsSeccompMode seccomp;
     extern const ServerSettingsUInt32 listen_backlog;
@@ -1160,10 +1170,14 @@ try
     };
     validate_insert_deduplication_version(server_settings);
 
+    const bool quick_startup = server_settings[ServerSetting::quick_startup];
+    if (quick_startup)
+        LOG_INFO(log, "Quick startup (`quick_startup`): skipping mlock and remapping of the executable, its integrity check, and the checks of the environment");
+
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
     /// Remap before creating other threads to prevent crashes
-    if (server_settings[ServerSetting::remap_executable])
+    if (server_settings[ServerSetting::remap_executable] && !quick_startup)
     {
         LOG_DEBUG(log, "Will remap executable in memory.");
         /// remapExecutable rewrites the whole code segment in place; any other thread executing code during
@@ -1250,7 +1264,7 @@ try
         LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(remapped_size));
     }
 
-    if (server_settings[ServerSetting::mlock_executable])
+    if (server_settings[ServerSetting::mlock_executable] && !quick_startup)
     {
         size_t min_physical_server_memory_to_mlock = server_settings[ServerSetting::mlock_executable_min_total_memory_amount_bytes];
         if (physical_server_memory >= min_physical_server_memory_to_mlock)
@@ -1455,6 +1469,18 @@ try
 #if USE_SILK
     if (server_settings[ServerSetting::enable_silk_runtime])
     {
+        /// Silk reads the current CPU from the rseq area that the C library registers for every thread, and its
+        /// per-CPU structures use rseq critical sections. Without a registered area it reads a CPU number that is
+        /// out of range and aborts in its worker threads. `rseq_init` in librseq does not detect this: it only
+        /// checks that the C library exports the rseq symbols, not that the registration succeeded.
+        if (rseq_cpu_id() < 0)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "The server setting `enable_silk_runtime` is set, but the Linux 'restartable sequences' (rseq) feature, "
+                "which the silk fiber runtime requires, is not enabled for this process. The kernel may not support it "
+                "(it was introduced in Linux 4.18), a seccomp profile may block the rseq system call, or the C library "
+                "did not register the rseq area");
+
         Silk::initializeFiberScheduler(config().getUInt("silk.fiber_stack_size", Silk::DEFAULT_FIBER_STACK_SIZE));
     }
 #endif
@@ -1508,6 +1534,8 @@ try
         if (server_settings[ServerSetting::enable_silk_runtime])
         {
             LOG_INFO(log, "Stopping silk fiber scheduler");
+            /// Closing a cooperative connection needs the scheduler, so stored connections go first.
+            HTTPConnectionPools::instance().dropCache();
             Silk::destroyFiberScheduler();
         }
 #endif
@@ -1924,7 +1952,7 @@ try
     {
         LOG_WARNING(log, "Binary checksum checks disabled due to skip_binary_checksum_checks - not recommended for production deployments");
     }
-    else if (!executable_path.empty())
+    else if (!executable_path.empty() && !quick_startup)
     {
         /// Integrity check based on checksum of the executable code.
         /// Note: it is not intended to protect from malicious party,
@@ -2258,7 +2286,8 @@ try
             {
                 try
                 {
-                    exchange_servers.emplace_back(std::make_shared<ExchangeServer>(listen_host, streaming_exchange_port, exchange_connections_ptr));
+                    exchange_servers.emplace_back(std::make_shared<ExchangeServer>(
+                        listen_host, streaming_exchange_port, server_settings[ServerSetting::listen_backlog], exchange_connections_ptr));
                     exchange_servers.back()->start();
                 }
                 catch (Poco::Exception & e)
@@ -3075,6 +3104,9 @@ try
                 global_context->updateQueryResultCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateQueryConditionCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateEncryptionHeaderCacheConfiguration(config(), max_cache_size_in_bytes);
+#if USE_GPU
+                global_context->updateGPUKernelCacheConfiguration(new_server_settings);
+#endif
                 setPointInPolygonCacheMaxSizeInBytes(
                     std::min<size_t>(new_server_settings[ServerSetting::point_in_polygon_cache_size], max_cache_size_in_bytes));
 #if USE_AVRO
@@ -3112,6 +3144,12 @@ try
                     new_server_settings[ServerSetting::http_connections_warn_limit],
                     new_server_settings[ServerSetting::http_connections_store_limit],
                     new_server_settings[ServerSetting::http_connections_hard_limit],
+                },
+                HTTPConnectionPools::Limits{
+                    new_server_settings[ServerSetting::amber_connections_soft_limit],
+                    new_server_settings[ServerSetting::amber_connections_warn_limit],
+                    new_server_settings[ServerSetting::amber_connections_store_limit],
+                    new_server_settings[ServerSetting::amber_connections_hard_limit],
                 });
 
             HTTPConnectionPools::instance().setSocketBufferSizes(
@@ -3126,6 +3164,10 @@ try
                 HTTPConnectionPools::SocketBufferSizes{
                     new_server_settings[ServerSetting::http_connections_rcvbuf],
                     new_server_settings[ServerSetting::http_connections_sndbuf],
+                },
+                HTTPConnectionPools::SocketBufferSizes{
+                    new_server_settings[ServerSetting::amber_connections_rcvbuf],
+                    new_server_settings[ServerSetting::amber_connections_sndbuf],
                 });
 
             StreamingExchangeProtocol::setSocketBufferSizes(
@@ -3517,7 +3559,8 @@ try
     /// NOTE: Do sanity checks after we loaded all possible substitutions (for the configuration) from ZK
     /// Additionally, making the check after the default profile is initialized.
     /// It is important to initialize MergeTreeSettings after Settings, to support compatibility for MergeTreeSettings.
-    addEnvironmentWarnings(global_context, logger(), path_str, server_settings[ServerSetting::logger_log]);
+    if (!quick_startup)
+        addEnvironmentWarnings(global_context, logger(), path_str, server_settings[ServerSetting::logger_log]);
 
     /// Check sanity of MergeTreeSettings on server startup
     {
@@ -4837,7 +4880,7 @@ void Server::createServers(
             {
                 try
                 {
-                    handler_factory = createIcebergRESTCatalogHandlerFactory(*this, config);
+                    handler_factory = createIcebergRESTCatalogHandlerFactory(*this);
                 }
                 catch (...)
                 {

@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/DateTimeTransforms.h>
 #include <base/arithmeticOverflow.h>
 #include <Functions/FunctionFactory.h>
@@ -223,13 +224,16 @@ class FunctionToStartOfInterval final : public IFunction
 private:
     ToStartOfIntervalOverload overload;
     bool preserve_argument_type;
+    std::optional<Date32RoundingNarrowing> date32_narrowing;
 
 public:
     static constexpr auto name = "toStartOfInterval";
 
-    FunctionToStartOfInterval(ToStartOfIntervalOverload overload_, bool preserve_argument_type_)
+    FunctionToStartOfInterval(
+        ToStartOfIntervalOverload overload_, bool preserve_argument_type_, std::optional<Date32RoundingNarrowing> date32_narrowing_)
         : overload(overload_)
         , preserve_argument_type(preserve_argument_type_)
+        , date32_narrowing(date32_narrowing_)
     {
     }
 
@@ -243,7 +247,12 @@ public:
     /// dictionary always contains a default value (epoch/0) which would violate this check.
     bool canBeExecutedOnDefaultArguments() const override { return overload != ToStartOfIntervalOverload::Origin; }
     bool hasInformationAboutMonotonicity() const override { return true; }
-    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override { return { .is_monotonic = true, .is_always_monotonic = true }; }
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field & left, const Field & right) const override
+    {
+        if (date32_narrowing)
+            return getDate32RoundingMonotonicity(*date32_narrowing, left, right);
+        return { .is_monotonic = true, .is_always_monotonic = true };
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
     {
@@ -974,7 +983,16 @@ public:
         if (args.size() >= 3 && isDateOrDate32OrDateTimeOrDateTime64(args[2].type))
             overload = ToStartOfIntervalOverload::Origin;
 
-        auto function = std::make_shared<FunctionToStartOfInterval>(overload, preserve_argument_type);
+        std::optional<Date32RoundingNarrowing> date32_narrowing;
+        const auto * interval_type = args.size() >= 2 ? checkAndGetDataType<DataTypeInterval>(args[1].type.get()) : nullptr;
+        if (interval_type && isDate32(removeLowCardinalityAndNullable(args[0].type)))
+        {
+            const auto * interval_column = checkAndGetColumnConst<ColumnInt64>(args[1].column.get());
+            const Int64 num_units = interval_column ? interval_column->getValue<Int64>() : 0;
+            date32_narrowing = describeDate32RoundingNarrowing(return_type, interval_type->getKind(), num_units);
+        }
+
+        auto function = std::make_shared<FunctionToStartOfInterval>(overload, preserve_argument_type, date32_narrowing);
 
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -993,6 +1011,60 @@ private:
 FunctionOverloadResolverPtr createLegacyToStartOfIntervalOverloadResolver(ContextPtr context)
 {
     return std::make_unique<FunctionToStartOfIntervalOverloadResolver>(context, /* preserve_argument_type_ = */ false);
+}
+
+std::optional<Date32RoundingNarrowing> describeDate32RoundingNarrowing(const DataTypePtr & result_type, IntervalKind::Kind kind, Int64 num_units)
+{
+    const DataTypePtr type = removeNullable(recursiveRemoveLowCardinality(result_type));
+    if (isDate(type))
+        return Date32RoundingNarrowing{.kind = kind, .num_units = num_units, .time_zone = &DateLUT::instance("UTC")};
+    if (isDateTime(type))
+        return Date32RoundingNarrowing{.kind = kind, .num_units = num_units, .time_zone = &assert_cast<const DataTypeDateTime &>(*type).getTimeZone()};
+    return {};
+}
+
+IFunction::Monotonicity getDate32RoundingMonotonicity(const Date32RoundingNarrowing & narrowing, const Field & left, const Field & right)
+{
+    /// The rounding is non-decreasing in the wide type `execute` computes it in, so the range does not wrap iff both rounded bounds fit.
+    auto rounding_fits = [&](const Field & bound)
+    {
+        Int64 day = 0;
+        if (bound.getType() == Field::Types::Int64)
+            day = bound.safeGet<Int64>();
+        else if (bound.getType() == Field::Types::UInt64 && bound.safeGet<UInt64>() <= static_cast<UInt64>(std::numeric_limits<Int32>::max()))
+            day = static_cast<Int64>(bound.safeGet<UInt64>());
+        else
+            return false;
+        if (day < std::numeric_limits<Int32>::min() || day > std::numeric_limits<Int32>::max())
+            return false;
+
+        const Int32 d = static_cast<Int32>(day);
+        const Int64 units = narrowing.num_units;
+        const DateLUTImpl & time_zone = *narrowing.time_zone;
+        auto fits_date = [](Int64 day_num) { return day_num >= 0 && day_num <= std::numeric_limits<UInt16>::max(); };
+        switch (narrowing.kind)
+        {
+            case IntervalKind::Kind::Day:
+            {
+                const Int64 seconds = ToStartOfInterval<IntervalKind::Kind::Day>::execute(d, units, time_zone, 1);
+                return seconds >= 0 && seconds <= std::numeric_limits<UInt32>::max();
+            }
+            case IntervalKind::Kind::Week:
+                return fits_date(ToStartOfInterval<IntervalKind::Kind::Week>::execute(d, units, time_zone, 1));
+            case IntervalKind::Kind::Month:
+                return fits_date(ToStartOfInterval<IntervalKind::Kind::Month>::execute(d, units, time_zone, 1));
+            case IntervalKind::Kind::Quarter:
+                return fits_date(ToStartOfInterval<IntervalKind::Kind::Quarter>::execute(d, units, time_zone, 1));
+            case IntervalKind::Kind::Year:
+                return fits_date(ToStartOfInterval<IntervalKind::Kind::Year>::execute(d, units, time_zone, 1));
+            default:
+                return false;
+        }
+    };
+
+    if (narrowing.num_units > 0 && rounding_fits(left) && rounding_fits(right))
+        return {.is_monotonic = true};
+    return {};
 }
 
 REGISTER_FUNCTION(ToStartOfInterval)
