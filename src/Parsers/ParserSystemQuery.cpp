@@ -393,6 +393,74 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             res->untracked_memory_size = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
             break;
         }
+        case Type::DROP_AMBER_NODE:
+        {
+            ASTPtr ast;
+            res->if_exists = ParserKeyword{Keyword::IF_EXISTS}.ignore(pos, expected);
+            if (!ParserStringLiteral{}.parse(pos, ast, expected))
+                return false;
+
+            ASTSystemQuery::AmberParams amber_params;
+            amber_params.node_name = ast->as<ASTLiteral &>().value.safeGet<String>();
+            res->amber_params = std::make_shared<const ASTSystemQuery::AmberParams>(std::move(amber_params));
+            break;
+        }
+        case Type::ALLOCATE_AMBER_VOLUME:
+        {
+            ASTPtr ast;
+            if (!ParserKeyword{Keyword::IN}.ignore(pos, expected) || !ParserKeyword{Keyword::CLUSTER}.ignore(pos, expected))
+                return false;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            ASTSystemQuery::AmberParams amber_params;
+            amber_params.cluster_id = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+            res->amber_params = std::make_shared<const ASTSystemQuery::AmberParams>(std::move(amber_params));
+            break;
+        }
+        case Type::CREATE_AMBER_VOLUME:
+        {
+            ASTPtr ast;
+            ASTSystemQuery::AmberParams amber_params;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            amber_params.volume_id = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+
+            if (!ParserKeyword{Keyword::IN}.ignore(pos, expected) || !ParserKeyword{Keyword::CLUSTER}.ignore(pos, expected))
+                return false;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            amber_params.cluster_id = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+
+            if (!ParserKeyword{Keyword::SHARDS}.ignore(pos, expected))
+                return false;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            amber_params.shard_count = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+
+            if (!ParserKeyword{Keyword::SEGMENTS}.ignore(pos, expected))
+                return false;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            amber_params.segment_count = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+            res->amber_params = std::make_shared<const ASTSystemQuery::AmberParams>(std::move(amber_params));
+            break;
+        }
+        case Type::DROP_AMBER_VOLUME:
+        {
+            ASTPtr ast;
+            ASTSystemQuery::AmberParams amber_params;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            amber_params.volume_id = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+
+            if (!ParserKeyword{Keyword::FROM}.ignore(pos, expected) || !ParserKeyword{Keyword::CLUSTER}.ignore(pos, expected))
+                return false;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            amber_params.cluster_id = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+            res->amber_params = std::make_shared<const ASTSystemQuery::AmberParams>(std::move(amber_params));
+            break;
+        }
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::NOTIFY_FAILPOINT:

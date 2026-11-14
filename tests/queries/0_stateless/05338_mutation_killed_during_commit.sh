@@ -47,7 +47,7 @@ echo "mutations_left $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.mutatio
 
 # The race was taken: the CSN store found the entry gone.
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS text_log"
-echo "warning_logged $($CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM system.text_log WHERE logger_name LIKE '%t_mutation_killed_during_commit%' AND message LIKE 'Mutation % was killed before its CSN % could be stored'")"
+echo "warning_logged $($CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name LIKE '%t_mutation_killed_during_commit%' AND message LIKE 'Mutation % was killed before its CSN % could be stored'")"
 
 # The table keeps working: a later mutation applies on top of the committed one.
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t_mutation_killed_during_commit UPDATE value = value + 7 WHERE 1 SETTINGS mutations_sync = 1"

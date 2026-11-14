@@ -9,7 +9,6 @@ keywords: ['ClickHouse Observability', 'ingestion', 'OpenTelemetry', 'OTLP', 'lo
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 
 <Tabs>
 <Tab title="Fully managed">
@@ -18,7 +17,15 @@ import { Image } from "/snippets/components/Image.jsx";
 
 ClickHouse Observability includes a **managed OpenTelemetry (OTel) collector** that receives logs, metrics, traces, and session replay data and writes them to ClickHouse Cloud. ClickHouse Cloud operates the ingestion collector, database, and ClickStack UI. You instrument your applications and configure them or your data collection agents to send telemetry to the managed service.
 
-<Image img="/images/use-cases/observability/clickstack-managed-architecture.svg" alt="Fully managed architecture with the OpenTelemetry collector, ClickHouse, and ClickStack UI operated by ClickHouse Cloud" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Fully managed architecture with the OpenTelemetry collector, ClickHouse, and ClickStack UI operated by ClickHouse Cloud](/images/use-cases/observability/clickstack-managed-architecture.svg)
+
+</Frame>
+
+</div>
 
 For more details about these components, see [Architecture](/clickstack/observability/architecture).
 
@@ -28,7 +35,15 @@ In your service, open **Team Settings → Data** and find **Managed Telemetry**.
 
 Select **URL**, **Collector config**, or **Env vars** to view the connection details in the format you need, then use **Copy connection details**. Configure your SDK or collector with the provided endpoint and authentication settings.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry showing the masked OTLP HTTP endpoint and API key" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry showing the masked OTLP HTTP endpoint and API key](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 
 See [Managed Telemetry](/clickstack/observability/managing/config#managed-telemetry) for details. You can use **Send a Test Log** to submit a sample log to the service.
 
@@ -57,7 +72,15 @@ All data is ingested into Self-managed ClickHouse Observability via an **OpenTel
 
 You run an OpenTelemetry Collector to receive telemetry data from your applications. With Self-managed ClickHouse Observability, ClickHouse and the UI are hosted and managed in ClickHouse Cloud, with integrated authentication and operational management handled for you.
 
-<Image img="/images/use-cases/observability/clickstack-self-managed-architecture.svg" alt="OTLP telemetry flowing through a self-managed collector to ClickHouse, with ClickStack UI hosted in ClickHouse Cloud" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![OTLP telemetry flowing through a self-managed collector to ClickHouse, with ClickStack UI hosted in ClickHouse Cloud](/images/use-cases/observability/clickstack-self-managed-architecture.svg)
+
+</Frame>
+
+</div>
 
 The collector exposes two OTLP endpoints:
 
