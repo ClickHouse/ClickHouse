@@ -43,6 +43,11 @@ void addToQueryLog(const ContextPtr & query_context, const String & name)
 
 }
 
+const String & getWindowFunctionCanonicalNameIfAny(const String & name)
+{
+    return WindowFunctionFactory::instance().getCanonicalNameIfAny(name);
+}
+
 WindowFunctionFactory & WindowFunctionFactory::instance()
 {
     static WindowFunctionFactory factory;

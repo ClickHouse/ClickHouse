@@ -52,4 +52,6 @@ private:
     Functions case_insensitive_functions;
 };
 
+const String & getWindowFunctionCanonicalNameIfAny(const String & name);
+
 }

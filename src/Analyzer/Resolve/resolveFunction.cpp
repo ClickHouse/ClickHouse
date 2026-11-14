@@ -3324,6 +3324,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             function_names = AggregateFunctionFactory::instance().getAllRegisteredNames();
             possible_function_names.insert(possible_function_names.end(), function_names.begin(), function_names.end());
 
+            function_names = WindowFunctionFactory::instance().getAllRegisteredNames();
+            possible_function_names.insert(possible_function_names.end(), function_names.begin(), function_names.end());
+
             for (auto & [name, lambda_node] : scope.aliases.alias_name_to_lambda_node)
             {
                 if (lambda_node->getNodeType() == QueryTreeNodeType::LAMBDA)
