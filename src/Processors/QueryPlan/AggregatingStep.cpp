@@ -426,9 +426,6 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     if (!params.enable_adaptive_aggregator)
         return "disabled by the setting";
 
-    if (pipeline.getNumStreams() <= 1 || params.max_threads <= 1)
-        return "the aggregation is single-stream";
-
     if (params.only_merge)
         return "the step only merges";
 
@@ -466,8 +463,8 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     if (skip_merging)
         return "the merge phase is skipped";
 
-    if (params.group_by_two_level_threshold == 0 && params.group_by_two_level_threshold_bytes == 0)
-        return "two-level aggregation is disabled";
+    if (!final && params.group_by_two_level_threshold == 0 && params.group_by_two_level_threshold_bytes == 0)
+        return "two-level aggregation is disabled for a partial aggregation";
 
     /// The verdict of a prior run found the staged streams repeat-dominated (see
     /// `Aggregator::adaptiveStagingVerdict`): freezing cannot pay for this query, so do not engage it again.
@@ -959,8 +956,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     /// step (and to the whole pipeline execution) without any parallelism to gain.
     const size_t streams_after_aggregation = (should_produce_results_in_order_of_bucket_number || params.keys.empty()) ? 1 : max_threads;
 
-    /// If there are several sources, then we perform parallel aggregation
-    if (pipeline.getNumStreams() > 1)
+    /// If there are several sources, then we perform parallel aggregation. A single source takes this branch
+    /// too when the adaptive aggregator engages, because only this branch creates the adaptive session.
+    if (pipeline.getNumStreams() > 1 || use_adaptive_aggregator)
     {
         /// Add resize transform to uniformly distribute data between aggregating streams.
         /// But not if we execute aggregation over partitioned data in which case data streams shouldn't be mixed.

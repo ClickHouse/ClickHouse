@@ -1,0 +1,10 @@
+fixed-width key	same result	froze	did not spill	did not prune
+String key	same result	froze	did not spill	did not prune
+two String keys	same result	froze	did not spill	did not prune
+key only	same result	froze	did not spill	did not prune
+top-K by count	same result	froze	did not spill	pruned
+below the freeze threshold	same result	did not freeze	did not spill	did not prune
+spilling	same result	froze	spilled	did not prune
+WITH TOTALS	same result	did not freeze	did not spill	did not prune
+two streams	same result	froze	did not spill	did not prune
+two streams, two-level off	same result	froze	did not spill	did not prune

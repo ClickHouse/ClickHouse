@@ -31,6 +31,8 @@ run_pair()
 
 settings=(
     --max_threads=1
+    # The adaptive aggregator also takes one thread and records no table sizes in the statistics.
+    --enable_adaptive_aggregator=0
     --collect_hash_table_stats_during_aggregation=1
     --max_size_to_preallocate_for_aggregation=1000000000000
     --serialize_query_plan=1

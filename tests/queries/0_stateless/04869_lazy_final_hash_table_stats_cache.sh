@@ -22,7 +22,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Every setting that decides which of the two paths under test runs is pinned rather than taken
 # from the defaults: the victim must aggregate through a hash table, not in order. The trace log of
 # LazyFinalKeyAnalysisTransform is checked so that the poisoning query cannot silently stop
-# being one.
+# being one. The adaptive aggregator also takes one thread and records no table sizes in the
+# statistics, so it is off.
 
 LOG="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.log"
 
@@ -31,6 +32,7 @@ $CLICKHOUSE_LOCAL \
     --collect_hash_table_stats_during_aggregation=1 \
     --max_size_to_preallocate_for_aggregation=1000000000000 \
     --max_threads=1 \
+    --enable_adaptive_aggregator=0 \
     --max_bytes_before_external_group_by=0 \
     --max_bytes_ratio_before_external_group_by=0 \
     --send_logs_level=trace \
