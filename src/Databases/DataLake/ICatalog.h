@@ -61,6 +61,8 @@ enum class DataLakeTableFormat : uint8_t
 struct DataLakeSpecificProperties
 {
     std::string iceberg_metadata_file_location;
+    /// The catalog stores no metadata pointer, and `iceberg_metadata_file_location` is the latest file under the table location.
+    bool resolved_from_table_location = false;
 };
 
 /// A class representing table metadata,
@@ -294,8 +296,10 @@ public:
     virtual bool writesInitialMetadata() const { return false; }
 
     /// Updates metadata in catalog.
-    /// `base_catalog_metadata_location` is the metadata pointer the commit was built on, exactly as the catalog returned it.
+    /// `base_catalog_metadata_location` is the metadata pointer the commit was built on, exactly as the catalog returned it,
+    /// or empty if the table had no pointer and the base was the latest metadata file under the table location.
     /// Catalogs that only store a pointer (e.g. Glue) reject the commit unless the pointer still names it.
+    /// `UNKNOWN_STATUS_OF_TRANSACTION` means the commit may have been applied, so the caller must keep its files.
     virtual bool updateMetadata(
         const String & namespace_name,
         const String & table_name,

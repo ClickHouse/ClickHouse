@@ -114,7 +114,8 @@ private:
         const Poco::JSON::Object::Ptr & new_metadata);
 
     /// Moves `metadata_location` to `new_metadata_path` with `UpdateTable` guarded by `VersionId`.
-    /// Returns `false` if the pointer no longer names `base_catalog_metadata_location`.
+    /// Returns `false` if the pointer no longer names `base_catalog_metadata_location` (empty for a pointerless base).
+    /// Throws `UNKNOWN_STATUS_OF_TRANSACTION` if an attempt may have been applied, but the outcome cannot be established.
     bool commitTableUpdate(
         const String & namespace_name,
         const String & table_name,

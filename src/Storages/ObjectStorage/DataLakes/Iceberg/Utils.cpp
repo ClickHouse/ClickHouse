@@ -87,6 +87,7 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_METHOD;
 extern const int READONLY;
+extern const int UNKNOWN_STATUS_OF_TRANSACTION;
 extern const int NOT_IMPLEMENTED;
 extern const int FILE_ALREADY_EXISTS;
 extern const int STALE_VERSION;
@@ -584,6 +585,44 @@ void removeRejectedMetadataFile(
     ObjectStoragePtr object_storage)
 {
     object_storage->removeObjectIfExists(StoredObject(resolver.resolve(metadata_file_info.path)));
+}
+
+bool commitMetadataFileToCatalog(
+    const std::function<bool()> & commit,
+    bool writer_wrote_metadata_file,
+    const IcebergPathResolver & resolver,
+    const GeneratedMetadataFileWithInfo & metadata_file_info,
+    ObjectStoragePtr object_storage)
+{
+    bool committed = false;
+    try
+    {
+        committed = commit();
+    }
+    catch (...)
+    {
+        if (writer_wrote_metadata_file && !isCatalogCommitOutcomeUnknown())
+        {
+            /// Best effort: the exception of the commit is more important than the one of the cleanup.
+            try
+            {
+                removeRejectedMetadataFile(resolver, metadata_file_info, object_storage);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(getLogger("IcebergWrites"), "Cannot remove the metadata file of a failed catalog commit");
+            }
+        }
+        throw;
+    }
+    if (!committed && writer_wrote_metadata_file)
+        removeRejectedMetadataFile(resolver, metadata_file_info, object_storage);
+    return committed;
+}
+
+bool isCatalogCommitOutcomeUnknown()
+{
+    return getCurrentExceptionCode() == ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
 
@@ -2235,7 +2274,7 @@ CatalogMetadataFilePath getCatalogMetadataFilePath(const std::shared_ptr<DataLak
             namespace_name, table_name);
 
     return {
-        .location = specific_properties->iceberg_metadata_file_location,
+        .location = specific_properties->resolved_from_table_location ? "" : specific_properties->iceberg_metadata_file_location,
         .path = table_metadata.getMetadataLocation(specific_properties->iceberg_metadata_file_location)};
 }
 
