@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <memory>
+#include <mutex>
 
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/NonblockingBoundedQueue.h>
@@ -178,6 +179,11 @@ private:
     /// final drain.
     std::atomic<size_t> active_async_loggers = 0;
     const size_t async_queue_size;
+
+    /// Serializes channel registration (addChannel, addTextLog) with getAsynchronousMetrics(). Keeper starts the
+    /// AsynchronousMetrics thread before it rebuilds the loggers, so that thread can run while channels are being
+    /// added and must not see `channels` already extended but `queues` not yet.
+    mutable std::mutex registration_mutex;
 
     /// Each channel has a different queue, and each one a single thread handling it
     MapWithMemoryTracking<std::string, ChannelPtr> name_to_channels;
