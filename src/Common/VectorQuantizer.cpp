@@ -174,42 +174,198 @@ void applyRandomProjection(const std::vector<float> & sign_flips, const T * x, s
                 "its magnitude is too large for the 'fastknn' projection-based quantizations");
 }
 
-/// RaBitQ (1-bit, asymmetric estimator), data-oblivious / no codebook (Gao & Long, "RaBitQ", SIGMOD 2024).
-/// After the structured random projection (a random rotation), the data vector is sign-binarized (1 bit/coordinate).
+/// RaBitQ (1–8 bits, asymmetric estimator), data-oblivious / no learned codebook.
+/// Original 1-bit RaBitQ (Gao & Long, SIGMOD 2024); multi-bit extension (Gao et al., SIGMOD 2025).
+/// For 1-bit RaBitQ, after the structured random projection (a random rotation), the data vector is sign-binarized (1 bit/coordinate).
 /// RaBitQ additionally stores a per-vector correction factor that turns the sign code into an
 /// UNBIASED estimator of the cosine similarity. With `o` the unit (rotated) data vector and `s_i = sign(o_i)`, the
 /// stored value is `inv_factor = ||o||_2 / ||o||_1` (note `||o||_2 = 1`, so `factor = sum_i |o_i| >= 1` and
 /// `inv_factor` in (0, 1]). The estimator is asymmetric (the query has more resolution than the 1-bit data):
 ///   cos(o, q) ~= (sum_i s_i * q_i) * (1 / ||q||_2) * inv_factor,    with sum_i s_i * q_i = 2 * sum_{s_i = +1} q_i - sum_i q_i.
-/// Layout per vector: `dimensions / 8` packed sign bits, followed by the 4-byte `inv_factor`. The extra factor and the
+/// Layout per 1-bit vector: `dimensions / 8` packed sign bits, followed by the 4-byte `inv_factor`. The extra factor and the
 /// query resolution are what lift recall above plain SimHash.
 ///
+/// Multi-bit RaBitQ (2–8 bits) additionally quantizes coordinate magnitudes using an optimized per-vector scale,
+/// storing bit-planes and `inv_factor = ||w||_2 / sum_i(w_i * c_i)`.
+/// Layout: `bits * dimensions / 8` packed bit-plane bytes followed by a 4-byte `inv_factor`.
+/// The original 1-bit encoding is preserved for backward compatibility.
+
+/// Omitting bit width parameter defaults to 1-bit encoding.
+constexpr size_t RABITQ_DEFAULT_BITS = 1;
+constexpr size_t RABITQ_MAX_BITS = 8;
+
+size_t effectiveRaBitQBits(size_t bits)
+{
+    return bits == 0 ? RABITQ_DEFAULT_BITS : bits;
+}
+
+struct RaBitQScaleEvent
+{
+    double scale;
+    double magnitude;
+    UInt32 level;
+};
+
+double bestRaBitQScale(const float * work, size_t dimensions, double norm, size_t extra_bits, std::vector<RaBitQScaleEvent> & events)
+{
+    events.clear();
+
+    if (extra_bits == 0 || norm == 0.0)
+        return 0.0;
+
+    /// Scale-search starting ratios from the original multi-bit RaBitQ implementation,
+    /// also adopted by Faiss's extended RaBitQ implementation.
+    static constexpr double tight_start[] = {0.0, 0.15, 0.20, 0.52, 0.59, 0.71, 0.75, 0.77, 0.81};
+
+    const UInt32 max_level = (UInt32{1} << extra_bits) - 1;
+    double max_magnitude = 0.0;
+
+    for (size_t i = 0; i < dimensions; ++i)
+        max_magnitude = std::max(max_magnitude, std::abs(static_cast<double>(work[i])) / norm);
+
+    if (max_magnitude == 0.0)
+        return 0.0;
+
+    const double end_scale = (static_cast<double>(max_level) + 10.0) / max_magnitude;
+    const double start_scale = end_scale * tight_start[extra_bits];
+
+    double numerator = 0.0;
+    double denominator_sq = static_cast<double>(dimensions) * 0.25;
+
+    for (size_t i = 0; i < dimensions; ++i)
+    {
+        const double magnitude = std::abs(static_cast<double>(work[i])) / norm;
+        const UInt32 level = static_cast<UInt32>(std::min(static_cast<double>(max_level), std::floor(start_scale * magnitude)));
+
+        numerator += magnitude * (static_cast<double>(level) + 0.5);
+        denominator_sq += static_cast<double>(level) * (static_cast<double>(level) + 1.0);
+
+        if (magnitude > 0.0 && level < max_level)
+            events.push_back({(static_cast<double>(level) + 1.0) / magnitude, magnitude, level});
+    }
+
+    const auto later_scale = [](const RaBitQScaleEvent & lhs, const RaBitQScaleEvent & rhs) { return lhs.scale > rhs.scale; };
+    std::make_heap(events.begin(), events.end(), later_scale);
+
+    double best_score = numerator * numerator / denominator_sq;
+    double next_scale = events.empty() ? end_scale : std::min(end_scale, events.front().scale);
+    double best_scale = start_scale + (next_scale - start_scale) * 0.5;
+
+    while (!events.empty() && events.front().scale < end_scale)
+    {
+        const double event_scale = events.front().scale;
+
+        do
+        {
+            std::pop_heap(events.begin(), events.end(), later_scale);
+            const RaBitQScaleEvent event = events.back();
+            events.pop_back();
+
+            const UInt32 new_level = event.level + 1;
+            numerator += event.magnitude;
+            denominator_sq += 2.0 * (static_cast<double>(event.level) + 1.0);
+
+            if (new_level < max_level)
+            {
+                events.push_back({(static_cast<double>(new_level) + 1.0) / event.magnitude, event.magnitude, new_level});
+                std::push_heap(events.begin(), events.end(), later_scale);
+            }
+        }
+        while (!events.empty() && events.front().scale == event_scale);
+
+        const double score = numerator * numerator / denominator_sq;
+        next_scale = events.empty() ? end_scale : std::min(end_scale, events.front().scale);
+
+        if (score > best_score)
+        {
+            best_score = score;
+            best_scale = event_scale + (next_scale - event_scale) * 0.5;
+        }
+    }
+
+    return best_scale;
+}
+
+void encodeRaBitQ(const std::vector<float> & projection, const float * x, size_t dimensions, size_t bits, float * work, std::vector<RaBitQScaleEvent> & events, char * dst)
+{
+    applyRandomProjection(projection, x, dimensions, work);
+
+    const size_t code_bytes = dimensions / 8;
+    const size_t planes_bytes = bits * code_bytes;
+    std::memset(dst, 0, planes_bytes);
+
+    /// Preserve the original 1-bit sign encoding and correction factor for stored-code compatibility.
+    if (bits == RABITQ_DEFAULT_BITS)
+    {
+        double l1 = 0.0;
+        double l2sq = 0.0;
+        for (size_t i = 0; i < dimensions; ++i)
+        {
+            const float w = work[i];
+            l1 += std::abs(static_cast<double>(w));
+            l2sq += static_cast<double>(w) * static_cast<double>(w);
+            if (w >= 0.0f)
+                dst[i >> 3] |= static_cast<char>(1u << (i & 7u));
+        }
+        /// inv_factor = ||o||_2 / ||o||_1 = sqrt(l2sq) / l1. A zero vector -> 0 (estimated cosine 0, i.e. distance 1).
+        const float inv_factor = (l1 > 0.0) ? static_cast<float>(std::sqrt(l2sq) / l1) : 0.0f;
+        std::memcpy(dst + code_bytes, &inv_factor, sizeof(float));
+        return;
+    }
+
+    double norm_sq = 0.0;
+
+    for (size_t i = 0; i < dimensions; ++i)
+    {
+        const double value = static_cast<double>(work[i]);
+        norm_sq += value * value;
+    }
+
+    const double norm = std::sqrt(norm_sq);
+
+    if (norm == 0.0)
+    {
+        const float inv_factor = 0.0f;
+        std::memcpy(dst + planes_bytes, &inv_factor, sizeof(inv_factor));
+        return;
+    }
+
+    const size_t extra_bits = bits - 1;
+    const UInt32 sign_weight = UInt32{1} << extra_bits;
+    const UInt32 max_level = sign_weight - 1;
+    const double scale = bestRaBitQScale(work, dimensions, norm, extra_bits, events);
+
+    double full_code_dot = 0.0;
+
+    for (size_t i = 0; i < dimensions; ++i)
+    {
+        const double value = static_cast<double>(work[i]);
+        const double magnitude = std::abs(value) / norm;
+        const UInt32 level = static_cast<UInt32>(std::min(static_cast<double>(max_level), std::floor(scale * magnitude)));
+        const bool positive = value >= 0.0;
+        const UInt32 code_value = positive ? (sign_weight | level) : (max_level - level);
+
+        for (size_t plane = 0; plane < bits; ++plane)
+        {
+            const size_t bit_position = bits - 1 - plane;
+            if (code_value & (UInt32{1} << bit_position))
+                dst[plane * code_bytes + (i >> 3)] |= static_cast<char>(1u << (i & 7u));
+        }
+
+        const double centered_level = static_cast<double>(level) + 0.5;
+        full_code_dot += value * (positive ? centered_level : -centered_level);
+    }
+
+    const float inv_factor = full_code_dot > 0.0 ? static_cast<float>(norm / full_code_dot) : 0.0f;
+    std::memcpy(dst + planes_bytes, &inv_factor, sizeof(inv_factor));
+}
+
 /// The data half `sum_{s_i = +1} q_i` is the inner product of the 1-bit data code with the query. Rather than a
 /// full-precision float dot product (which costs like the multi-bit 'turboquant' scan, not like the 1-bit sign scan),
 /// the query is uniformly quantized to RABITQ_QUERY_BITS bits and stored "bit-sliced" as one bit-plane per bit. The
 /// inner product then reduces to a few AND+popcount passes over the data code (see `RaBitQQuery`), keeping the 1-bit
 /// scan in the popcount regime - the same trick RaBitQ/BBQ use to keep it fast.
-template <typename T>
-void encodeRaBitQ(const std::vector<float> & projection, const T * x, size_t dimensions, float * work, char * dst)
-{
-    applyRandomProjection(projection, x, dimensions, work);
-
-    const size_t code_bytes = dimensions / 8;
-    std::memset(dst, 0, code_bytes);
-    double l1 = 0.0;
-    double l2sq = 0.0;
-    for (size_t i = 0; i < dimensions; ++i)
-    {
-        const float w = work[i];
-        l1 += std::abs(static_cast<double>(w));
-        l2sq += static_cast<double>(w) * static_cast<double>(w);
-        if (w >= 0.0f)
-            dst[i >> 3] |= static_cast<char>(1u << (i & 7u));
-    }
-    /// inv_factor = ||o||_2 / ||o||_1 = sqrt(l2sq) / l1. A zero vector -> 0 (estimated cosine 0, i.e. distance 1).
-    const float inv_factor = (l1 > 0.0) ? static_cast<float>(std::sqrt(l2sq) / l1) : 0.0f;
-    std::memcpy(dst + code_bytes, &inv_factor, sizeof(float));
-}
+/// Multi-bit RaBitQ reuses this scan for each data bit-plane and combines the results with binary weights.
 
 /// Number of bits the query is uniformly quantized to for the bit-sliced scan. 4 bits gives the query 16 levels, which
 /// (with the per-vector correction factor) keeps the asymmetric estimator's accuracy while making the scan popcount-based.
@@ -268,8 +424,8 @@ RaBitQQuery buildRaBitQQuery(const float * q, size_t dimensions)
     return out;
 }
 
-/// Reconstruct `sum_i s_i * q_i` (the inner product of the +-1 sign code with the bit-sliced query) from the popcounts.
-/// `pc = popcount(code)` = number of +1 sign bits; `plane_pc[j] = popcount(code AND query_plane_j)`. This is the shared
+/// Reconstruct `sum_i s_i * q_i` (the inner product of the +-1 binary code with the bit-sliced query) from the popcounts.
+/// `pc = popcount(code)` = number of set bits; `plane_pc[j] = popcount(code AND query_plane_j)`. This is the shared
 /// estimator core used by both 'rabitq' and the exact 'turboquant' (which sums two such dots).
 float raBitQNumeratorFromCounts(const RaBitQQuery & q, UInt64 pc, const UInt64 * plane_pc)
 {
@@ -282,9 +438,9 @@ float raBitQNumeratorFromCounts(const RaBitQQuery & q, UInt64 pc, const UInt64 *
     return 2.0f * sum_set - q.q_total; /// sum_i s_i * q_i
 }
 
-/// Scalar bit-sliced dot: AND+popcount the +-1 sign code against each query bit-plane, 8 bytes at a time, and return
-/// `sum_i s_i * q_i`. `code` points at `q.code_bytes` packed sign bits (no trailing factor is read here).
-float raBitQNumerator(const RaBitQQuery & q, const char * code)
+/// Scalar bit-sliced dot: AND+popcount a binary data bit-plane against each query bit-plane, 8 bytes at a time, and return
+/// `sum_i s_i * q_i`. `code` points at `q.code_bytes` packed binary bits (no trailing factor is read here).
+float raBitQBinaryNumerator(const RaBitQQuery & q, const char * code)
 {
     const size_t code_bytes = q.code_bytes;
     const UInt8 * planes = q.planes.data();
@@ -313,13 +469,30 @@ float raBitQNumerator(const RaBitQQuery & q, const char * code)
     return raBitQNumeratorFromCounts(q, pc, plane_pc);
 }
 
-/// 'rabitq' estimator -> cosineDistance.
-float raBitQDistance(const RaBitQQuery & q, const char * code)
+float raBitQNumerator(const RaBitQQuery & q, const char * code, size_t bits = RABITQ_DEFAULT_BITS)
 {
-    const float numerator = raBitQNumerator(q, code);
+    if (bits == RABITQ_DEFAULT_BITS)
+        return raBitQBinaryNumerator(q, code);
+
+    float numerator = 0.0f;
+
+    for (size_t plane = 0; plane < bits; ++plane)
+    {
+        const float plane_dot = raBitQBinaryNumerator(q, code + plane * q.code_bytes);
+        const UInt32 weight = UInt32{1} << (bits - 1 - plane);
+        numerator += 0.5f * static_cast<float>(weight) * plane_dot;
+    }
+
+    return numerator;
+}
+
+/// 'rabitq' estimator -> cosineDistance.
+float raBitQDistance(const RaBitQQuery & q, const char * code, size_t bits = RABITQ_DEFAULT_BITS)
+{
+    const float numerator = raBitQNumerator(q, code, bits);
     float inv_factor = NAN;
-    std::memcpy(&inv_factor, code + q.code_bytes, sizeof(float));
-    /// Clamp the estimated cosine to a valid range; the unbiased RaBitQ estimator can fall outside [-1, 1] for some
+    std::memcpy(&inv_factor, code + bits * q.code_bytes, sizeof(float));
+    /// Clamp the estimated cosine to a valid range; the RaBitQ estimator can fall outside [-1, 1] for some
     /// vectors, which would otherwise make the public `cosineDistance` estimate negative or exceed 2.
     const float cosine = std::clamp(numerator * q.inv_qnorm * inv_factor, -1.0f, 1.0f);
     return 1.0f - cosine;
@@ -443,8 +616,8 @@ QuantizationMethod methodToCodec(std::string_view method)
 
 bool VectorQuantizer::supportsL2(std::string_view method)
 {
-    /// `rabitq` and `turboquant` are sign/rotation cosine estimators. They do not retain the vector norm, so their
-    /// approximate distance can only rank by ang.
+    /// `rabitq` and `turboquant` are sign/rotation cosine estimators.
+    /// They do not retain the vector norm, so their approximate distance can only rank by ang.
     return method == "int8" || method == "prefix_int8" || method == "prefix_bf16";
 }
 
@@ -461,14 +634,16 @@ std::string VectorQuantizer::validateParams(std::string_view method, size_t dime
         return fmt::format("the number of dimensions ({}) exceeds the maximum {}", dimensions, MAX_DIMENSIONS);
 
     /// 'turboquant' and 'rabitq' pack their codes 8 coordinates to the byte, They require that teh dimension is multiple of 8.
-    if ((codec == QuantizationMethod::TurboQuant || codec == QuantizationMethod::RaBitQ)
-        && dimensions % 8 != 0)
+    if ((codec == QuantizationMethod::TurboQuant || codec == QuantizationMethod::RaBitQ) && dimensions % 8 != 0)
         return fmt::format("method '{}' requires the number of dimensions to be a multiple of 8, got {}", method, dimensions);
 
     /// For the prefix methods `bits` is the number of leading dimensions stored (the prefix); it must be in (0, dimensions].
     if ((codec == QuantizationMethod::PrefixInt8 || codec == QuantizationMethod::PrefixBf16) && (bits < 1 || bits > dimensions))
         return fmt::format("method '{}' requires the number of leading dimensions to be in [1, {}], got {}", method, dimensions, bits);
 
+    /// Zero defaults to 1-bit RaBitQ encoding for compatibility.
+    if (codec == QuantizationMethod::RaBitQ && bits > RABITQ_MAX_BITS)
+        return fmt::format("method '{}' requires bits in [1, {}] (default: 1), got {}", method, RABITQ_MAX_BITS, bits);
     return {};
 }
 
@@ -479,7 +654,7 @@ size_t VectorQuantizer::bytesPerVector(std::string_view method, size_t dimension
         case QuantizationMethod::TurboQuant:
             return dimensions / 4 + sizeof(float);
         case QuantizationMethod::RaBitQ:
-            return dimensions / 8 + sizeof(float);
+            return (dimensions / 8) * effectiveRaBitQBits(bits) + sizeof(float);
         case QuantizationMethod::Int8:
             /// One Int8 Lloyd-Max code per coordinate, followed by the 4-byte original L2 norm.
             return dimensions + sizeof(float);
@@ -502,6 +677,7 @@ struct VectorQuantizer::Encoder
     std::vector<float> projection2;  /// turboquant: P2 (the QJL projection)
     std::vector<float> work;         /// per-vector scratch for the rotated vector
     std::vector<float> work2;        /// turboquant: second per-vector scratch
+    std::vector<RaBitQScaleEvent> scale_events; /// Multi-bit RaBitQ: reusable during scale search.
 };
 
 void VectorQuantizer::EncoderDeleter::operator()(Encoder * ptr) const noexcept { delete ptr; }
@@ -518,6 +694,14 @@ VectorQuantizer::EncoderPtr VectorQuantizer::createEncoder(std::string_view meth
     switch (encoder->codec)
     {
         case QuantizationMethod::RaBitQ:
+        {
+            encoder->bits = effectiveRaBitQBits(bits);
+            encoder->projection = generateRandomProjection(dimensions);
+            encoder->work.resize(encoder->projection.size() / PROJECTION_ROUNDS);
+            if (encoder->bits > RABITQ_DEFAULT_BITS)
+                encoder->scale_events.reserve(dimensions);
+            break;
+        }
         case QuantizationMethod::Int8:
             encoder->projection = generateRandomProjection(dimensions);
             encoder->work.resize(encoder->projection.size() / PROJECTION_ROUNDS);
@@ -545,7 +729,7 @@ void VectorQuantizer::encode(Encoder & encoder, const float * vec, char * dst)
     switch (encoder.codec)
     {
         case QuantizationMethod::RaBitQ:
-            encodeRaBitQ(encoder.projection, vec, dimensions, encoder.work.data(), dst);
+            encodeRaBitQ(encoder.projection, vec, dimensions, bits, encoder.work.data(), encoder.scale_events, dst);
             return;
         case QuantizationMethod::TurboQuant:
             encodeTurboQuant(encoder.projection, encoder.projection2, vec, dimensions, encoder.work.data(), encoder.work2.data(), dst);
@@ -661,7 +845,8 @@ VectorQuantizer::QueryPtr VectorQuantizer::prepareQuery(std::string_view method,
     {
         case QuantizationMethod::RaBitQ:
         {
-            query->code_bytes = dimensions / 8 + sizeof(float);
+            query->bits = effectiveRaBitQBits(bits);
+            query->code_bytes = (dimensions / 8) * query->bits + sizeof(float);
             const std::vector<float> projection = generateRandomProjection(dimensions);
             std::vector<float> work(projection.size() / PROJECTION_ROUNDS);
             applyRandomProjection(projection, ref, dimensions, work.data());
@@ -719,7 +904,7 @@ float VectorQuantizer::distance(const Query & query, const char * code)
     switch (query.codec)
     {
         case QuantizationMethod::RaBitQ:
-            return raBitQDistance(query.rabitq, code);
+            return raBitQDistance(query.rabitq, code, query.bits);
         case QuantizationMethod::TurboQuant:
             return turboQuantDistance(query.turbo, code);
         case QuantizationMethod::PrefixInt8:

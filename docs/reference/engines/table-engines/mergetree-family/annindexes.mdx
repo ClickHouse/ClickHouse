@@ -701,7 +701,8 @@ The codec cannot be added or changed later using `ALTER TABLE`.
 Each quantization method has different size/accuracy trade-offs.
 The `dimensions` argument is the vector length.
 
-- `Quantized('rabitq', dimensions)` — one sign bit per coordinate plus an unbiased cosine-correction factor (`dimensions/8 + 4` bytes). A small, `popcount`-cheap, strong default. `cosineDistance` only.
+- `Quantized('rabitq', dimensions[, bits])` — RaBitQ with 1–8 data bits per coordinate (default: 1-bit). Each code occupies `dimensions * bits / 8 + 4` bytes, including an unbiased cosine-correction factor.
+  1-bit is a small, `popcount`-cheap, strong default; higher bit widths offer low-latency high-recall options. `cosineDistance` only.
 - `Quantized('turboquant', dimensions)` — two bits per coordinate (a 1-bit MSE code and a 1-bit residual code) for higher-fidelity candidates (`dimensions/4 + 4` bytes). `cosineDistance` only.
 - `Quantized('int8', dimensions)` — one `Int8` code per coordinate plus the vector norm (`dimensions + 4` bytes); the largest but most faithful flat code. Supports `L2Distance` and `cosineDistance`.
 - `Quantized('prefix', dimensions, leading_dimensions, 'int8'|'bf16')` — Matryoshka: keeps only the `leading_dimensions` leading coordinates, as `Int8` (with a per-vector scale) or `BFloat16`. Tiny codes for embeddings trained with Matryoshka Representation Learning. Supports `L2Distance` and `cosineDistance`.
