@@ -1,0 +1,6 @@
+not nested: decompressed
+nested once: decompressed
+nested twice: Codec Multiple is nested inside a nested codec Multiple
+nested 50000 times: Codec Multiple is nested inside a nested codec Multiple
+nested 50000 times, native protocol: caught expected exception CANNOT_DECOMPRESS
+server alive

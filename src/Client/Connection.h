@@ -306,6 +306,9 @@ private:
 
     std::vector<std::pair<String, String>> password_complexity_rules;
 
+    /// Whether the server may marshall the result blocks of the current query into `ColumnBLOB` (the `Detached` kind).
+    bool accept_marshalled_blocks = false;
+
     /// From where to read query execution result.
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
     std::unique_ptr<NativeReader> block_in;

@@ -1058,6 +1058,13 @@ void Connection::sendQuery(
 
     compression_codec = chooseNetworkCompressionCodec(settings);
 
+    /// A server marshalls blocks only under these conditions, and only the readers of such a query convert them back
+    /// (a serialized plan has the `QueryPlan` stage). Before 26.8 a nested plan could be marshalled under `Complete`, which no reader handled.
+    accept_marshalled_blocks = client_info && client_info->query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && stage != QueryProcessingStage::Complete
+        && compression == Protocol::Compression::Enable
+        && server_revision >= DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING;
+
     query_id = query_id_;
 
     /// Avoid reusing connections that had been left in the intermediate state
@@ -1739,9 +1746,11 @@ void Connection::initBlockInput()
     if (!block_in)
     {
         initMaybeCompressedInput();
-        /// The server may send marshalled result blocks; their consumers convert them back.
         block_in = std::make_unique<NativeReader>(
-            *maybe_compressed_in, server_revision, optionalFormatSettings(), ISerialization::KindSet::all());
+            *maybe_compressed_in,
+            server_revision,
+            optionalFormatSettings(),
+            accept_marshalled_blocks ? ISerialization::KindSet::all() : NativeReader::default_allowed_kinds);
     }
 }
 
