@@ -31,15 +31,6 @@ using bsoncxx::builder::basic::document;
 using bsoncxx::builder::basic::kvp;
 using bsoncxx::builder::basic::make_document;
 
-/// The driver keeps the empty string of a `bson_value::value` as a null pointer, which a builder writes as `null`.
-/// The view of an empty string is given a non-null pointer, so it is written as a string.
-static bsoncxx::types::bson_value::view writableBSONView(const bsoncxx::types::bson_value::value & value)
-{
-    if (value.view().type() == bsoncxx::type::k_string && value.view().get_string().value.empty())
-        return bsoncxx::types::bson_value::view{bsoncxx::types::b_string{std::string_view("")}};
-    return value.view();
-}
-
 static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, const DataTypePtr & nullable_type, const bool is_oid)
 {
     if (field.isNull())
@@ -118,7 +109,7 @@ static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, c
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Tuple size mismatch, expected {} elements, got {} in field.", elem_types.size(), tuple_value.size());
 
             for (size_t i = 0; i < elem_types.size(); ++i)
-                arr.append(writableBSONView(fieldAsBSONValue(tuple_value[i], elem_types[i], is_oid)));
+                arr.append(fieldAsBSONValue(tuple_value[i], elem_types[i], is_oid));
             return arr.view();
         }
         case TypeIndex::Array:
@@ -131,7 +122,7 @@ static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, c
 
             const auto & elem_type = array_type->getNestedType();
             for (const auto & elem : field.safeGet<Array>())
-                arr.append(writableBSONView(fieldAsBSONValue(elem, elem_type, is_oid)));
+                arr.append(fieldAsBSONValue(elem, elem_type, is_oid));
             return arr.view();
         }
         default:

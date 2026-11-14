@@ -4,6 +4,7 @@ import json
 import uuid
 import urllib
 import bson
+from bson.raw_bson import RawBSONDocument
 import pymongo
 import pytest
 
@@ -1772,11 +1773,18 @@ def test_where_string_reader_values(started_cluster, column_type):
             "s = ''",
             "s = '1.5'",
             "s = '[\"a\"]'",
+            "s IN ('[\"a\"]', 'b')",
             "s = '5f0000000000000000000000'",
             "s IN ('1', 'a')",
             "s != 'a'",
             "s NOT IN ('a', '1')",
             "s < 'b'",
+            "s < '['",
+            "s <= '['",
+            "s < '[z'",
+            "s >= '['",
+            "s > '[z'",
+            "s > 'z'",
             "s > '1'",
             "s >= 'a'",
             "s <= ''",
@@ -1806,6 +1814,68 @@ def test_where_string_reader_values(started_cluster, column_type):
                         ), (query, source)
     finally:
         node.query(f"DROP TABLE IF EXISTS {reference}")
+        node.query(f"DROP TABLE {collection_name}")
+        collection.drop()
+
+
+@pytest.mark.parametrize("with_symbol", [False, True])
+def test_where_string_reader_index(started_cluster, with_symbol):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    collection_name = "string_reader_index"
+    drop_mongo_collection_if_exists(db, collection_name)
+    collection = db[collection_name]
+    collection.insert_many(
+        [{"id": i, "s": f"v{i:06d}"} for i in range(2000)]
+        + [{"id": 2000, "s": ["unrelated"]}]
+    )
+    if with_symbol:
+        # `PyMongo` has no symbol encoder. Append a BSON symbol to a raw document.
+        document = (
+            bson.BSON.encode({"id": 2001})[4:-1]
+            + b"\x0es\x00\x02\x00\x00\x00z\x00\x00"
+        )
+        collection.insert_one(
+            RawBSONDocument((len(document) + 4).to_bytes(4, "little") + document)
+        )
+    collection.create_index("s")
+
+    node = started_cluster.instances["node"]
+    arguments = f"'mongo1:27017', 'test', '{collection_name}', 'root', '{mongo_pass}'"
+    node.query(
+        f"CREATE OR REPLACE TABLE {collection_name} (id Int32, s String) "
+        f"ENGINE = MongoDB({arguments})"
+    )
+    previous_profile = db.command("profile", -1)
+    try:
+        for source in (
+            collection_name,
+            f"mongodb({arguments}, 'id Int32, s String')",
+        ):
+            try:
+                db.command("profile", 2)
+                assert (
+                    node.query(f"SELECT id FROM {source} WHERE s = 'v000123'")
+                    == "123\n"
+                )
+            finally:
+                db.command(
+                    "profile",
+                    previous_profile["was"],
+                    slowms=previous_profile["slowms"],
+                    sampleRate=previous_profile["sampleRate"],
+                    filter=previous_profile.get("filter", "unset"),
+                )
+            profile = db["system.profile"].find_one(
+                {"ns": f"test.{collection_name}", "command.find": collection_name},
+                sort=[("$natural", -1)],
+            )
+            assert profile is not None
+            assert profile["keysExamined"] < 20, profile
+            assert profile["docsExamined"] < 20, profile
+    finally:
         node.query(f"DROP TABLE {collection_name}")
         collection.drop()
 

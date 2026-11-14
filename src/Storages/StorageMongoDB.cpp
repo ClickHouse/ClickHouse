@@ -788,14 +788,34 @@ static bsoncxx::document::value stringColumnFilter(
     const std::string & column_name, const std::string & func_name, const bsoncxx::types::bson_value::value & func_value, const DataTypePtr & column_type)
 {
     auto filters = bsoncxx::builder::basic::array{};
-    filters.append(make_document(kvp(column_name, make_document(kvp(func_name, BSONCXXHelper::writableBSONView(func_value))))));
-    /// An array is written as JSON, and `$ne` and `$nin` drop an array with an excluded element.
-    filters.append(make_document(kvp(column_name, make_document(kvp("$type", "array")))));
+    filters.append(make_document(kvp(column_name, make_document(kvp(func_name, func_value)))));
+    /// Arrays are written as JSON starting with `[`. Avoid an unbounded index scan when that text cannot match.
+    auto array_may_match = [&](const bsoncxx::types::bson_value::view & value)
+    {
+        if (value.type() != bsoncxx::type::k_string)
+            return false;
+        const auto bound = value.get_string().value;
+        if (func_name == "$lt" || func_name == "$lte")
+            return !bound.empty() && static_cast<unsigned char>(bound.front()) >= '[';
+        if (func_name == "$gt" || func_name == "$gte")
+            return bound.empty() || static_cast<unsigned char>(bound.front()) <= '[';
+        return !bound.empty() && bound.front() == '[';
+    };
+    bool include_arrays = func_name == "$ne" || func_name == "$nin";
+    if (func_name == "$in")
+    {
+        for (const auto & element : func_value.view().get_array().value)
+            include_arrays |= array_may_match(element.get_value());
+    }
+    else if (!include_arrays)
+        include_arrays = array_may_match(func_value.view());
+    if (include_arrays)
+        filters.append(make_document(kvp(column_name, make_document(kvp("$type", "array")))));
     if (func_name != "$ne" && func_name != "$nin")
     {
         filters.append(make_document(kvp(column_name, make_document(kvp("$type", make_array(
             "objectId", "binData", "bool", "int", "long", "double", "decimal", "date", "timestamp", "object", "regex", "dbPointer",
-            "symbol", "undefined"))))));
+            "undefined"))))));
         /// `null` also matches a missing field.
         if (!column_type->isNullable())
             filters.append(make_document(kvp(column_name, bsoncxx::types::b_null{})));
@@ -1001,7 +1021,7 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
         return stringColumnFilter(column_node->getColumnName(), func_name, func_value, column_node->getResultType());
     }
 
-    return make_document(kvp(column_node->getColumnName(), make_document(kvp(func_name, BSONCXXHelper::writableBSONView(func_value)))));
+    return make_document(kvp(column_node->getColumnName(), make_document(kvp(func_name, std::move(func_value)))));
 }
 
 std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
