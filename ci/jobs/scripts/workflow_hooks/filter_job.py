@@ -755,6 +755,75 @@ def configure_performance_shards():
     config.dump()
 
 
+def _amd_performance_skipped(info):
+    """True if a pull request does not run the AMD performance comparison: it runs on ARM
+    by default, and on AMD only when asked for, or when the ARM run is a full one."""
+    if (
+        not info.pr_number  # run all performance jobs on master
+        or " Performance Improvement" in info.pr_body
+        or Labels.CI_PERFORMANCE in info.pr_labels
+        or Labels.PR_PERFORMANCE in info.pr_labels
+    ):
+        return False
+    from ci.jobs.scripts.performance_selection import full_suite_reason
+
+    # Automatic full ARM runs enable selected AMD runs, just like pr-performance.
+    return not full_suite_reason(info, "arm_release")
+
+
+# The kv data flag, set by `configure_amd_release_thinlto`, that makes `Build (amd_release)`
+# build without ThinLTO (see `ci/jobs/build_clickhouse.py`).
+AMD_RELEASE_WITHOUT_THINLTO_KV = "amd_release_without_thinlto"
+AMD_RELEASE_BUILD_JOB = f"{JobNames.BUILD} ({BuildTypes.AMD_RELEASE})"
+
+assert AMD_RELEASE_BUILD_JOB in {
+    j.name for j in JobConfigs.release_build_jobs
+}, "AMD_RELEASE_BUILD_JOB names a job that does not exist"
+
+
+def configure_amd_release_thinlto():
+    """Build `amd_release` without ThinLTO in a pull request that skips the AMD performance
+    comparison, its only consumer that depends on how the binary is optimized.
+
+    Over 2026-11-06 to 2026-11-13, 2569 of 2983 PR `amd_release` builds (86%) had no AMD
+    performance comparison, and their median `Build ClickHouse` step took 20 minutes
+    (the non-LTO `amd_binary`: 4 minutes). Without ThinLTO the compile commands of
+    `amd_release` are the same as those of `amd_binary`, which master builds on every commit,
+    so the build is served from the compiler cache and only links (the standalone
+    `clickhouse-keeper` objects are the exception). The other consumers - packages,
+    `Install packages`, `Compatibility check`, integration tests, `ClickBench` (which checks
+    correctness, not timings) - test the same code. `arm_release` keeps ThinLTO: the ARM
+    performance comparison runs in nearly every PR, so ThinLTO stays covered in PRs.
+
+    A pre-hook, not a filter hook: `ci-force-all` bypasses the filter hooks and then runs
+    every performance job, so that case must keep ThinLTO, and the decision must be recorded
+    before the cache lookup. The build is cached under a salted digest, so that a later run
+    with the same digest that does run the AMD comparison (e.g. after adding `pr-performance`)
+    does not reuse the non-LTO binary.
+    """
+    from ci.praktika.cache import Cache
+
+    info = Info()
+    force_all = (
+        Labels.CI_FORCE_ALL in info.pr_labels
+        or info.get_kv_data("unresolved_review_threads_force_all") is True
+    )
+    if (
+        info.pr_number <= 0
+        or info.workflow_name != SMALL_PR_WORKFLOW
+        # Private PR builds are deployed to staging (see `flavor_cmake_options`).
+        or info.repo_name != "ClickHouse/ClickHouse"
+        or force_all
+        or not _amd_performance_skipped(info)
+    ):
+        return
+    print(f"NOTE: no AMD performance comparison - [{AMD_RELEASE_BUILD_JOB}] builds without ThinLTO")
+    info.store_kv_data(AMD_RELEASE_WITHOUT_THINLTO_KV, True)
+    salts = info.get_kv_data(Cache.DIGEST_SALTS_KV_KEY) or {}
+    salts[AMD_RELEASE_BUILD_JOB] = "without_thinlto"
+    info.store_kv_data(Cache.DIGEST_SALTS_KV_KEY, salts)
+
+
 def _llvm_coverage_only_decision(job_name):
     """Skip decision of the `ci-llvm-coverage` label, or `None` when it has
     nothing to say about the job.
@@ -1195,18 +1264,11 @@ def should_skip_job(job_name):
 
     # skip AMD perf tests for non-performance update (ARM runs by default)
     if (
-        " Performance Improvement" not in _info_cache.pr_body
-        and Labels.CI_PERFORMANCE not in _info_cache.pr_labels
-        and Labels.PR_PERFORMANCE not in _info_cache.pr_labels
-        and JobNames.PERFORMANCE in job_name
+        JobNames.PERFORMANCE in job_name
         and "amd" in job_name
-        and _info_cache.pr_number  # run all performance jobs on master
+        and _amd_performance_skipped(_info_cache)
     ):
-        from ci.jobs.scripts.performance_selection import full_suite_reason
-
-        # Automatic full ARM runs enable selected AMD runs, just like pr-performance.
-        if not full_suite_reason(_info_cache, "arm_release"):
-            return True, "Skipped, not labeled with 'pr-performance'"
+        return True, "Skipped, not labeled with 'pr-performance'"
 
     # If only CI scripts changed (no product code), run a minimal set of tests
     # to validate the CI pipeline: stateless batch 1 and amd_asan_ubsan integration batch 1.

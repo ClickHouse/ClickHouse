@@ -1,3 +1,4 @@
+import hashlib
 import os
 from concurrent.futures import ThreadPoolExecutor
 
@@ -31,6 +32,25 @@ class CacheRunnerHooks:
                 artifact_configs=artifact_name_config_map,
             )
             job_digest_map[job.name] = digest
+
+        # A pre-hook can make a job do something that its digest inputs (files,
+        # docker images, job config) do not show - e.g. build a binary with
+        # different compiler options depending on PR labels. It records a salt
+        # for the job in this kv entry ({job name: salt}), so that the result is
+        # cached and reused separately from the regular one. Jobs requiring it
+        # inherit the salted digest.
+        digest_salts = (
+            _Environment.get().JOB_KV_DATA.get(Cache.DIGEST_SALTS_KV_KEY) or {}
+        )
+        for job_name, salt in digest_salts.items():
+            assert (
+                job_name in job_digest_map
+            ), f"Digest salt for unknown job [{job_name}]"
+            salt_token = hashlib.md5(salt.encode()).hexdigest()[
+                : Settings.CACHE_DIGEST_LEN
+            ]
+            print(f"Job [{job_name}] digest salted with [{salt}]")
+            job_digest_map[job_name] = f"{job_digest_map[job_name]}-{salt_token}"
 
         # Build lookup: requires entry (artifact name or job name) -> providing job name
         dep_job_lookup = {}
