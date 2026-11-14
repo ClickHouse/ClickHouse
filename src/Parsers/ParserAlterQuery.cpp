@@ -2158,7 +2158,7 @@ ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 
 ## MOVE PART TO SHARD {#move-part-to-shard}
 
-Introduced in: v21.8.0
+Introduced in: v21.7.0
 
 <ExperimentalBadge/>
 
@@ -2181,6 +2181,9 @@ This is an experimental feature, and it does not take sharding expressions into 
 Example (both tables are on one server here; usually the destination table is on another shard):
 
 ```sql title="Query"
+CREATE DATABASE shard1;
+CREATE DATABASE shard2;
+
 CREATE TABLE shard1.events (id UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/01/events', 'r1') ORDER BY id
 SETTINGS part_moves_between_shards_enable = 1, assign_part_uuids = 1;
 
@@ -3798,7 +3801,7 @@ Introduced in: v26.3.0
 
 <ExperimentalBadge/>
 
-Runs a command implemented by the table engine, such as a maintenance procedure of a data lake table. Only [Iceberg](/reference/engines/table-engines/integrations/iceberg) tables implement commands; for other tables the statement throws `NOT_IMPLEMENTED`.
+Runs a command implemented by the table engine, such as a maintenance procedure of a data lake table. Only [Iceberg](/reference/engines/table-engines/integrations/iceberg) tables implement commands; for other tables the statement throws an exception.
 
 ## Syntax {#syntax}
 

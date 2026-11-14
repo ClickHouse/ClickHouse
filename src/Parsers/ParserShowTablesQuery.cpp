@@ -967,7 +967,7 @@ With a `name`, the statement lists the policies with that name on all tables. Wi
 
 ## SHOW PRIVILEGES {#show-privileges}
 
-Introduced in: v20.6.0
+Introduced in: v20.5.0
 
 The `SHOW PRIVILEGES` statement returns the privileges that can be granted with [`GRANT`](/reference/statements/grant), in the same form as the system table [`system.privileges`](/reference/system-tables/privileges).
 
