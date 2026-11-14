@@ -133,6 +133,16 @@ private:
     }
 
     template <typename T, typename ReturnType>
+    static constexpr bool convertArgumentsFirst()
+    {
+        if constexpr (requires { Impl::convert_arguments_first; })
+            return Impl::convert_arguments_first && std::is_same_v<ReturnType, Float64> && !std::is_same_v<T, Float64>
+                && std::is_arithmetic_v<T>;
+        else
+            return false;
+    }
+
+    template <typename T, typename ReturnType>
     static ColumnPtr execute(const ColumnVector<T> * col, size_t input_rows_count)
     {
         const auto & src_data = col->getData();
@@ -141,7 +151,20 @@ private:
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        executeInIterations(src_data.data(), dst_data.data(), input_rows_count);
+        if constexpr (convertArgumentsFirst<T, ReturnType>())
+        {
+            /// Convert the whole column first and call the function in place. Converting in the loop around the
+            /// call leaves the conversion of every row on the path into the call, because clang 23 does not
+            /// vectorize that loop (clang 22 did): `tan(number)` became 9-20% slower on x86.
+            for (size_t i = 0; i < input_rows_count; ++i)
+                dst_data[i] = static_cast<Float64>(src_data[i]);
+
+            executeInIterations(dst_data.data(), dst_data.data(), input_rows_count);
+        }
+        else
+        {
+            executeInIterations(src_data.data(), dst_data.data(), input_rows_count);
+        }
 
         return dst;
     }
@@ -195,15 +218,19 @@ private:
 };
 
 
-template <typename Name, Float64(Function)(Float64)>
+/// `inline_function` is for functions whose body the compiler sees (`preciseExp10`, `sqrt`, `degrees`, `radians`):
+/// their loops vectorize or fold on integer arguments (`exp10` of a `UInt64` is a comparison with 308), so the
+/// arguments must not be converted to `Float64` beforehand.
+template <typename Name, Float64(Function)(Float64), bool inline_function = false>
 struct UnaryFunctionVectorized
 {
     static constexpr auto name = Name::name;
     static constexpr auto rows_per_iteration = 1;
     static constexpr bool always_returns_float64 = true;
+    static constexpr bool convert_arguments_first = !inline_function;
 
     template <typename T>
-    static void execute(const T * __restrict src, Float64 * __restrict dst)
+    static void execute(const T * src, Float64 * dst)
     {
         *dst = Function(static_cast<Float64>(*src));
     }
