@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+
+# A raw native-protocol client that logs in as a given user and sends queries with a chosen
+# `query_kind`, `initial_user` and `interface`. It is the minimal way to forge these fields: the stock
+# client fills `initial_user` with the authenticated user, so it cannot impersonate anyone.
+#
+# Each probe is an `INSERT ... SELECT` into the observations table, so the client never has to decode
+# a result block; the test reads the observations back with the ordinary client.
+
+import os
+import socket
+import struct
+import sys
+import uuid
+
+CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
+CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "9000"))
+CLIENT_NAME = "05616 forged secondary query"
+# A revision before query parameters, per-query ProfileEvents and custom serialization, to keep the
+# packets the client has to build and read minimal.
+REVISION = 54450
+
+INITIAL_QUERY = 1
+SECONDARY_QUERY = 2
+INTERFACE_TCP = 1
+INTERFACE_TCP_INTERSERVER = 7
+INITIAL_ADDRESS = "10.1.2.3"
+
+
+def write_varuint(x, ba):
+    while True:
+        byte = x & 0x7F
+        x >>= 7
+        if x:
+            ba.append(byte | 0x80)
+        else:
+            ba.append(byte)
+            return
+
+
+def write_string(s, ba):
+    b = s.encode()
+    write_varuint(len(b), ba)
+    ba.extend(b)
+
+
+class Client:
+    def __init__(self):
+        self.s = socket.create_connection((CLICKHOUSE_HOST, CLICKHOUSE_PORT), timeout=30)
+
+    def read(self, n):
+        res = bytearray()
+        while len(res) < n:
+            cur = self.s.recv(n - len(res))
+            if not cur:
+                raise EOFError("connection closed")
+            res.extend(cur)
+        return bytes(res)
+
+    def read_varuint(self):
+        x = 0
+        for i in range(10):
+            byte = self.read(1)[0]
+            x |= (byte & 0x7F) << (7 * i)
+            if not byte & 0x80:
+                return x
+        return x
+
+    def read_string(self):
+        return self.read(self.read_varuint()).decode("utf-8", "replace")
+
+    def hello(self, user, password, database):
+        ba = bytearray()
+        write_varuint(0, ba)  # Hello
+        write_string(CLIENT_NAME, ba)
+        write_varuint(24, ba)
+        write_varuint(9, ba)
+        write_varuint(REVISION, ba)
+        write_string(database, ba)
+        write_string(user, ba)
+        write_string(password, ba)
+        self.s.sendall(ba)
+        packet = self.read_varuint()
+        if packet != 0:
+            raise RuntimeError("expected Hello, got packet {}".format(packet))
+        self.read_string()  # server name
+        self.read_varuint()  # major
+        self.read_varuint()  # minor
+        self.read_varuint()  # revision
+        self.read_string()  # timezone
+        self.read_string()  # display name
+        self.read_varuint()  # version patch
+
+    def send_query(self, query, kind, initial_user, interface):
+        query_id = uuid.uuid4().hex
+        ba = bytearray()
+        write_varuint(1, ba)  # Query
+        write_string(query_id, ba)
+        ba.append(kind)  # query_kind: 1 = INITIAL_QUERY, 2 = SECONDARY_QUERY
+        write_string(initial_user, ba)
+        write_string(query_id, ba)  # initial_query_id
+        write_string(INITIAL_ADDRESS + ":4567", ba)  # initial_address, also forged
+        ba.extend(b"\x00" * 8)  # initial_query_start_time_microseconds
+        ba.append(interface)
+        if interface == INTERFACE_TCP:  # the only interface that carries these fields
+            write_string("os_user", ba)
+            write_string("host", ba)
+            write_string(CLIENT_NAME, ba)
+            write_varuint(24, ba)
+            write_varuint(9, ba)
+            write_varuint(REVISION, ba)
+        write_string("", ba)  # quota key
+        write_varuint(0, ba)  # distributed_depth
+        if interface == INTERFACE_TCP:
+            write_varuint(1, ba)  # client version patch
+        ba.append(0)  # no OpenTelemetry trace
+        write_string("", ba)  # end of settings
+        write_string("", ba)  # interserver secret hash (empty)
+        write_varuint(2, ba)  # stage: Complete
+        ba.append(0)  # no compression
+        write_string(query, ba)
+        self.s.sendall(ba)
+        # Empty data block: end of external tables.
+        ba = bytearray()
+        write_varuint(2, ba)  # Data
+        write_string("", ba)  # temporary table name
+        write_varuint(1, ba)  # block info: field 1 (is_overflows)
+        ba.append(0)  # is_overflows = false
+        write_varuint(2, ba)  # block info: field 2 (bucket_num)
+        ba.extend(struct.pack("<i", -1))  # bucket_num = -1
+        write_varuint(0, ba)  # block info: end of fields
+        write_varuint(0, ba)  # columns
+        write_varuint(0, ba)  # rows
+        self.s.sendall(ba)
+
+    def wait_for_end(self):
+        """An `INSERT ... SELECT` returns no data, so only Progress, EndOfStream or Exception can
+        arrive. Return whether the query ran to completion."""
+        while True:
+            packet = self.read_varuint()
+            if packet == 5:  # EndOfStream
+                return True
+            if packet == 2:  # Exception
+                return False
+            if packet == 3:  # Progress
+                for _ in range(5):
+                    self.read_varuint()
+            elif packet == 6:  # ProfileInfo
+                for _ in range(4):
+                    self.read_varuint()
+                self.read(1)
+                self.read_varuint()
+                self.read(1)
+            else:
+                raise RuntimeError("unexpected packet {}".format(packet))
+
+
+def probe(user, password, database, kind, initial_user, interface, query):
+    c = Client()
+    c.hello(user, password, database)
+    c.send_query(query, kind, initial_user, interface)
+    return c.wait_for_end()
+
+
+def main():
+    attacker, forwarder, password, victim, db = sys.argv[1:6]
+
+    scenarios = [
+        ("01_honest_initial", attacker, INITIAL_QUERY, attacker, INTERFACE_TCP),
+        ("02_forged_victim", attacker, SECONDARY_QUERY, victim, INTERFACE_TCP),
+        ("03_forged_default", attacker, SECONDARY_QUERY, "default", INTERFACE_TCP),
+        ("04_forged_unknown", attacker, SECONDARY_QUERY, "no_such_user", INTERFACE_TCP),
+        ("05_forged_empty", attacker, SECONDARY_QUERY, "", INTERFACE_TCP),
+        ("06_forged_address_only", attacker, SECONDARY_QUERY, attacker, INTERFACE_TCP),
+        ("07_forged_interserver", attacker, SECONDARY_QUERY, victim, INTERFACE_TCP_INTERSERVER),
+        # The forwarder has `IMPERSONATE` on the victim and on a name equal to the session database: an
+        # access check of an empty name falls back to the current database, which must not pass for a user.
+        ("08_forwarded_victim", forwarder, SECONDARY_QUERY, victim, INTERFACE_TCP),
+        ("09_forwarded_default", forwarder, SECONDARY_QUERY, "default", INTERFACE_TCP),
+        ("10_forwarded_empty", forwarder, SECONDARY_QUERY, "", INTERFACE_TCP),
+    ]
+    for label, user, kind, initial_user, interface in scenarios:
+        queries = [
+            "SELECT '{label}', 'current_user', currentUser()",
+            "SELECT '{label}', 'policy_rows', arrayStringConcat(arraySort(groupArray(secret)), ',') FROM {db}.docs",
+            "SELECT '{label}', 'client_info', concat(toString(interface), ' ', initial_user,"
+            " if(initial_address = toIPv6('{address}'), ' from {address}', ''))"
+            " FROM system.processes WHERE query_id = queryID()",
+        ]
+        for query in queries:
+            probe(user, password, db, kind, initial_user, interface,
+                  "INSERT INTO {db}.obs ".format(db=db) + query.format(label=label, db=db, address=INITIAL_ADDRESS))
+
+
+if __name__ == "__main__":
+    main()

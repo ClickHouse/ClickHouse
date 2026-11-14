@@ -1,0 +1,30 @@
+01_honest_initial	client_info	TCP ATTACKER
+01_honest_initial	current_user	ATTACKER
+01_honest_initial	policy_rows	attacker-row
+02_forged_victim	client_info	TCP ATTACKER
+02_forged_victim	current_user	ATTACKER
+02_forged_victim	policy_rows	attacker-row
+03_forged_default	client_info	TCP ATTACKER
+03_forged_default	current_user	ATTACKER
+03_forged_default	policy_rows	attacker-row
+04_forged_unknown	client_info	TCP ATTACKER
+04_forged_unknown	current_user	ATTACKER
+04_forged_unknown	policy_rows	attacker-row
+05_forged_empty	client_info	TCP ATTACKER
+05_forged_empty	current_user	ATTACKER
+05_forged_empty	policy_rows	attacker-row
+06_forged_address_only	client_info	TCP ATTACKER
+06_forged_address_only	current_user	ATTACKER
+06_forged_address_only	policy_rows	attacker-row
+07_forged_interserver	client_info	TCP ATTACKER
+07_forged_interserver	current_user	ATTACKER
+07_forged_interserver	policy_rows	attacker-row
+08_forwarded_victim	client_info	TCP VICTIM from 10.1.2.3
+08_forwarded_victim	current_user	VICTIM
+08_forwarded_victim	policy_rows	VICTIM-ROW
+09_forwarded_default	client_info	TCP FORWARDER
+09_forwarded_default	current_user	FORWARDER
+09_forwarded_default	policy_rows	forwarder-row
+10_forwarded_empty	client_info	TCP FORWARDER
+10_forwarded_empty	current_user	FORWARDER
+10_forwarded_empty	policy_rows	forwarder-row
