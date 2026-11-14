@@ -4419,9 +4419,16 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
             if (rejected_is_surviving_and && predicate->result_type->isNullable() && !rejected->result_type->isNullable())
             {
                 /// A carrier is picked by name, because that makes the choice stable for unordered rejected conjuncts.
+                /// An `equals` is picked last: wrapped, it is no longer read as a JOIN key.
+                auto carrier_key = [](const Node * node)
+                {
+                    bool is_equals = node->type == ActionType::FUNCTION && node->function_base->getName() == "equals";
+                    return std::pair<bool, std::string_view>(!is_equals, node->result_name);
+                };
+
                 size_t carrier = 0;
                 for (size_t i = 1; i < new_children.size(); ++i)
-                    if (new_children[i]->result_name > new_children[carrier]->result_name)
+                    if (carrier_key(new_children[i]) > carrier_key(new_children[carrier]))
                         carrier = i;
 
                 NodeRawConstPtrs retyped_children = new_children;
