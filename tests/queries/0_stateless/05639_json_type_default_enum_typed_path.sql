@@ -34,9 +34,17 @@ SELECT 'ttl compact', id, j FROM t_json_default_ttl_compact;
 CREATE TABLE t_json_default_skip_empty (id UInt32, j JSON(z Enum8('neg' = -1, 'zero' = 0, 'pos' = 1)))
 ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns';
+SYSTEM STOP MERGES t_json_default_skip_empty;
+-- The all-zero value is skipped and must read back as 'zero', also after a merge with a part that stores j.
 INSERT INTO t_json_default_skip_empty VALUES (1, '{"z":"zero"}');
 INSERT INTO t_json_default_skip_empty (id) VALUES (2);
+SELECT 'skip empty parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't_json_default_skip_empty' AND active;
+SELECT 'skip empty parts with j', count() FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_json_default_skip_empty' AND active AND column = 'j';
 SELECT 'skip empty', id, j FROM t_json_default_skip_empty ORDER BY id;
+SYSTEM START MERGES t_json_default_skip_empty;
+OPTIMIZE TABLE t_json_default_skip_empty FINAL;
+SELECT 'skip empty merged parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't_json_default_skip_empty' AND active;
+SELECT 'skip empty merged', id, j FROM t_json_default_skip_empty ORDER BY id;
 
 SELECT 'type name', defaultValueOfTypeName('JSON(a Enum8(\'x\' = 1, \'y\' = 2))');
 

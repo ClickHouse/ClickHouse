@@ -746,7 +746,9 @@ static void skipEmptyColumnsOnInsert(
             continue;
         /// The frozen IDataType default must match the column's zero representation
         /// (unlike some Enum and Date32 defaults).
-        if (!type->createColumnConstWithDefaultValue(1)->isDefaultAt(0))
+        auto default_sample = type->createColumn();
+        default_sample->insert(type->getDefault());
+        if (!default_sample->isDefaultAt(0))
             continue;
         empty_columns.insert(col_name);
     }

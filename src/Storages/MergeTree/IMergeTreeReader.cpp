@@ -311,7 +311,11 @@ void IMergeTreeReader::fillMissingColumns(
                         if (!res_columns[column_index] && !missing_info->type_name.empty())
                         {
                             auto frozen_type = DataTypeFactory::instance().get(missing_info->type_name);
-                            auto frozen_column = frozen_type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
+                            /// A marker stands for `insert(getDefault())`, the value the writer checks before skipping;
+                            /// for `JSON` it differs from `createColumnConstWithDefaultValue`.
+                            auto frozen_value = frozen_type->createColumn();
+                            frozen_value->insert(frozen_type->getDefault());
+                            auto frozen_column = ColumnConst::create(std::move(frozen_value), num_rows)->convertToFullColumnIfConst();
                             if (column.isSubcolumn())
                                 frozen_column = frozen_type->getSubcolumn(column.getSubcolumnName(), frozen_column);
                             res_columns[column_index] = std::move(frozen_column);
