@@ -132,6 +132,16 @@ using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext
 struct LazyMaterializingRows;
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
+/// The PREWHERE steps and the result header that all processors of one read derive from the same arguments.
+/// All streams of the read execute these steps concurrently, so their `ExpressionActions` must be thread-safe.
+struct MergeTreeSelectProcessorSharedState
+{
+    PrewhereExprInfo prewhere_actions;
+    Block result_header;
+};
+
+using MergeTreeSelectProcessorSharedStatePtr = std::shared_ptr<const MergeTreeSelectProcessorSharedState>;
+
 /// Base class for MergeTreeThreadSelectAlgorithm and MergeTreeSelectAlgorithm
 class MergeTreeSelectProcessor : private boost::noncopyable
 {
@@ -145,7 +155,8 @@ public:
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
         MergeTreeIndexBuildContextPtr merge_tree_index_build_context_ = {},
-        LazyMaterializingRowsPtr lazy_materializing_rows_ = {});
+        LazyMaterializingRowsPtr lazy_materializing_rows_ = {},
+        MergeTreeSelectProcessorSharedStatePtr shared_state_ = {});
 
     String getName() const;
     std::span<ISpillable * const> getSpillables() const { return set_spillables.get(); }
@@ -177,6 +188,14 @@ public:
         bool enable_multiple_prewhere_read_steps,
         bool force_short_circuit_execution,
         bool read_ahead_prewhere_columns);
+
+    static MergeTreeSelectProcessorSharedStatePtr buildSharedState(
+        const Block & pool_header,
+        const FilterDAGInfoPtr & row_level_filter,
+        const PrewhereInfoPtr & prewhere_info,
+        const IndexReadTasks & index_read_tasks,
+        const ExpressionActionsSettings & actions_settings,
+        const MergeTreeReaderSettings & reader_settings);
 
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
 

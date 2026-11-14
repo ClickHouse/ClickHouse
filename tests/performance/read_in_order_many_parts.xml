@@ -34,6 +34,7 @@
     <query>SELECT val2 FROM mt_{parts}_parts_10000_uniqs ORDER BY val1 LIMIT 1000000 FORMAT Null</query>
     <query>SELECT val2 FROM mt_{parts}_parts_10000_uniqs ORDER BY val1 LIMIT 10000000 FORMAT Null</query>
     <query>SELECT sum(val2) FROM mt_{parts}_parts_{uniqs}_uniqs GROUP BY val1 FORMAT Null</query>
+    <query>SELECT val2 FROM mt_{parts}_parts_10000_uniqs PREWHERE val2 % 3 = 0 AND id % 5 != 0 ORDER BY val1 LIMIT 1000 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS mt_{parts}_parts_{uniqs}_uniqs</drop_query>
 </test>

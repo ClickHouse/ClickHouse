@@ -240,13 +240,14 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
     MergeTreeIndexBuildContextPtr merge_tree_index_build_context_,
-    LazyMaterializingRowsPtr lazy_materializing_rows_)
+    LazyMaterializingRowsPtr lazy_materializing_rows_,
+    MergeTreeSelectProcessorSharedStatePtr shared_state_)
     : pool(std::move(pool_))
     , algorithm(std::move(algorithm_))
     , row_level_filter(row_level_filter_)
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
-    , prewhere_actions(getPrewhereActions(
+    , prewhere_actions(shared_state_ ? shared_state_->prewhere_actions : getPrewhereActions(
           row_level_filter,
           prewhere_info,
           index_read_tasks_,
@@ -256,7 +257,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
           reader_settings_.read_ahead_prewhere_columns))
     , reader_settings(reader_settings_)
     , prewhere_filters_by_top_k_threshold(prewhereFiltersByTopKThreshold(prewhere_info, reader_settings))
-    , result_header(transformHeader(pool->getHeader(), row_level_filter, prewhere_info))
+    , result_header(shared_state_ ? shared_state_->result_header : transformHeader(pool->getHeader(), row_level_filter, prewhere_info))
     , merge_tree_index_build_context(std::move(merge_tree_index_build_context_))
     , lazy_materializing_rows(std::move(lazy_materializing_rows_))
 {
@@ -475,6 +476,27 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
 
     addIndexReadSteps(prewhere_actions.steps, index_read_tasks, actions_settings);
     return prewhere_actions;
+}
+
+MergeTreeSelectProcessorSharedStatePtr MergeTreeSelectProcessor::buildSharedState(
+    const Block & pool_header,
+    const FilterDAGInfoPtr & row_level_filter,
+    const PrewhereInfoPtr & prewhere_info,
+    const IndexReadTasks & index_read_tasks,
+    const ExpressionActionsSettings & actions_settings,
+    const MergeTreeReaderSettings & reader_settings)
+{
+    auto state = std::make_shared<MergeTreeSelectProcessorSharedState>();
+    state->prewhere_actions = getPrewhereActions(
+        row_level_filter,
+        prewhere_info,
+        index_read_tasks,
+        actions_settings,
+        reader_settings.enable_multiple_prewhere_read_steps,
+        reader_settings.force_short_circuit_execution,
+        reader_settings.read_ahead_prewhere_columns);
+    state->result_header = transformHeader(pool_header, row_level_filter, prewhere_info);
+    return state;
 }
 
 ChunkAndProgress
