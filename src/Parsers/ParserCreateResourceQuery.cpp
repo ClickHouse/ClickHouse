@@ -160,4 +160,78 @@ bool ParserCreateResourceQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     return true;
 }
 
+std::map<String, Documentation> ParserCreateResourceQuery::getDocumentation() const
+{
+    std::map<String, Documentation> documentation;
+
+    documentation["CREATE RESOURCE"] =
+    {
+        .description = R"DOCS_MD(
+Introduced in: v24.11.0
+
+Creates a resource for [workload scheduling](/concepts/features/configuration/server-config/workload-scheduling): a kind of access, such as disk reads or CPU time, that is scheduled between the workloads created with [`CREATE WORKLOAD`](/reference/statements/create/workload).
+
+## Syntax {#syntax}
+
+```sql
+CREATE [OR REPLACE] RESOURCE [IF NOT EXISTS] name [ON CLUSTER cluster] (access_mode [, ...])
+```
+
+`OR REPLACE`, `IF NOT EXISTS` and `ON CLUSTER` work as in [`CREATE WORKLOAD`](/reference/statements/create/workload#syntax).
+
+## Access modes {#access-modes}
+
+| Access mode | Scheduled access | Introduced in |
+|---|---|---|
+| `READ DISK disk_name`, `WRITE DISK disk_name` | Reads from or writes to the disk `disk_name`, see [Resources](/concepts/features/configuration/server-config/workload-scheduling#resources) | v24.11.0 |
+| `READ ANY DISK`, `WRITE ANY DISK` | Reads from or writes to any disk | v24.11.0 |
+| `MASTER THREAD`, `WORKER THREAD` | CPU, see [CPU scheduling](/concepts/features/configuration/server-config/workload-scheduling#cpu_scheduling) | v25.4.0 |
+| `QUERY` | Query slots, see [Query slot scheduling](/concepts/features/configuration/server-config/workload-scheduling#query_scheduling) | v25.6.0 |
+| `MEMORY RESERVATION` | Memory, see [Memory reservations](/concepts/features/configuration/server-config/workload-scheduling#memory-reservations) | v26.7.0 |
+
+The access modes of one resource must be of one kind: disk, CPU threads, `QUERY` or `MEMORY RESERVATION`. Each of `MASTER THREAD`, `WORKER THREAD`, `QUERY` and `MEMORY RESERVATION` belongs to at most one resource. `CREATE OR REPLACE RESOURCE` cannot change the kind of a resource: drop it and create it again.
+
+<Note>
+`MEMORY RESERVATION` is experimental: its SQL surface and behavior may change in future releases.
+</Note>
+
+## Storage {#storage}
+
+Resources are stored like workloads, see [Storage](/reference/statements/create/workload#storage). The [`system.resources`](/reference/system-tables/resources) table lists the resources.
+
+## Privileges {#privileges}
+
+`CREATE RESOURCE` requires the `CREATE RESOURCE` privilege. `CREATE OR REPLACE RESOURCE` also requires the `DROP RESOURCE` privilege.
+
+## Example {#example}
+
+```sql title="Query"
+CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD);
+CREATE RESOURCE local_io (READ DISK default, WRITE DISK default);
+SELECT name, read_disks, write_disks, unit, create_query FROM system.resources ORDER BY name;
+```
+
+```text title="Response"
+┌─name─────┬─read_disks──┬─write_disks─┬─unit──────────┬─create_query─────────────────────────────────────────────────────┐
+│ cpu      │ []          │ []          │ CPUNanosecond │ CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)               │
+│ local_io │ ['default'] │ ['default'] │ IOByte        │ CREATE RESOURCE local_io (READ DISK default, WRITE DISK default) │
+└──────────┴─────────────┴─────────────┴───────────────┴──────────────────────────────────────────────────────────────────┘
+```
+
+## Related content {#related-content}
+
+- [Workload scheduling](/concepts/features/configuration/server-config/workload-scheduling)
+- [`DROP RESOURCE`](/reference/statements/drop#drop-resource)
+- [`system.resources`](/reference/system-tables/resources)
+)DOCS_MD",
+        .syntax = R"(
+CREATE [OR REPLACE] RESOURCE [IF NOT EXISTS] name [ON CLUSTER cluster] (access_mode [, ...])
+)",
+        .parent = "CREATE",
+        .related = {"CREATE WORKLOAD", "DROP"},
+    };
+
+    return documentation;
+}
+
 }
