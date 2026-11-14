@@ -202,6 +202,7 @@
 #include <ranges>
 #include <set>
 #include <thread>
+#include <unordered_map>
 #include <unordered_set>
 #include <filesystem>
 
@@ -2056,23 +2057,135 @@ ExpressionActionsPtr getCombinedIndicesExpression(
     ContextPtr context,
     const std::function<bool(const String &)> & use_index_expression = {})
 {
-    ASTPtr combined_expr_list = key ? key->expression_list_ast->clone() : make_intrusive<ASTExpressionList>();
-
-    for (const auto & index : indices)
+    const auto can_reuse_actions = [](const ExpressionActionsPtr & expression)
     {
-        /// `column_names` are the analyzed result names, one per expression.
-        const auto & index_exprs = index->index.expression_list_ast->children;
-        chassert(index_exprs.size() == index->index.column_names.size());
-        for (size_t i = 0; i < index_exprs.size(); ++i)
-            if (!use_index_expression || use_index_expression(index->index.column_names[i]))
-                combined_expr_list->children.push_back(index_exprs[i]->clone());
+        return std::ranges::all_of(expression->getActionsDAG().getNodes(), [](const auto & node)
+        {
+            return node.type == ActionsDAG::ActionType::INPUT || node.type == ActionsDAG::ActionType::ALIAS;
+        });
+    };
+
+    if ((key && !can_reuse_actions(key->expression))
+        || std::ranges::any_of(indices, [&](const auto & index)
+        {
+            return !can_reuse_actions(index->index.expression);
+        }))
+    {
+        /// Functions and folded constants can depend on analysis settings from the metadata rebuild.
+        /// Reanalyze computed expressions with the storage context, including captured lambda bodies.
+        ASTPtr combined_expr_list = key ? key->expression_list_ast->clone() : make_intrusive<ASTExpressionList>();
+
+        for (const auto & index : indices)
+        {
+            /// `column_names` are the analyzed result names, one per expression.
+            const auto & index_exprs = index->index.expression_list_ast->children;
+            chassert(index_exprs.size() == index->index.column_names.size());
+            for (size_t i = 0; i < index_exprs.size(); ++i)
+                if (!use_index_expression || use_index_expression(index->index.column_names[i]))
+                    combined_expr_list->children.push_back(index_exprs[i]->clone());
+        }
+
+        if (!key && combined_expr_list->children.empty())
+            return nullptr;
+
+        auto syntax_result = TreeRewriter(context).analyze(
+            combined_expr_list, VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(columns, virtuals));
+        return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
     }
 
-    if (!key && combined_expr_list->children.empty())
+    if (key && indices.empty())
+        return std::make_shared<ExpressionActions>(key->expression->getActionsDAG().clone(), ExpressionActionsSettings(context));
+
+    /// Key and index expressions are already analyzed in the metadata snapshot and consist only of
+    /// inputs and aliases. Copy their nodes into one DAG instead of analyzing the same syntax again
+    /// for every inserted part. Inputs are shared by name and outputs are deduplicated through a map,
+    /// so the work is linear in the number of key and index columns, even with many direct indexes.
+    ActionsDAG dag;
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> inputs_by_name;
+    ActionsDAG::NodeMapping copied_nodes;
+    std::function<const ActionsDAG::Node &(const ActionsDAG::Node &)> copy_node
+        = [&](const ActionsDAG::Node & node) -> const ActionsDAG::Node &
+    {
+        if (auto it = copied_nodes.find(&node); it != copied_nodes.end())
+            return *it->second;
+
+        const ActionsDAG::Node * copy = nullptr;
+        if (node.type == ActionsDAG::ActionType::INPUT)
+        {
+            auto it = inputs_by_name.find(node.result_name);
+            if (it == inputs_by_name.end())
+            {
+                const auto & input = dag.addInput(node.result_name, node.result_type);
+                it = inputs_by_name.emplace(input.result_name, &input).first;
+            }
+            copy = it->second;
+        }
+        else
+        {
+            chassert(node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1);
+            copy = &dag.addAlias(copy_node(*node.children.front()), node.result_name);
+        }
+
+        copied_nodes.emplace(&node, copy);
+        return *copy;
+    };
+
+    /// Several indexes can have the same expression; expose each result only once.
+    std::unordered_map<std::string_view, size_t> output_positions;
+    auto & outputs = dag.getOutputs();
+    const auto add_output = [&](const ActionsDAG::Node & node)
+    {
+        auto [it, inserted] = output_positions.emplace(node.result_name, outputs.size());
+        if (inserted)
+            outputs.push_back(&node);
+        else
+            outputs[it->second] = &node;
+    };
+
+    if (key)
+    {
+        const auto & key_dag = key->expression->getActionsDAG();
+        for (const auto * input : key_dag.getInputs())
+            copy_node(*input);
+        for (const auto * output : key_dag.getOutputs())
+            add_output(copy_node(*output));
+    }
+
+    bool has_index_expressions = false;
+    for (const auto & index : indices)
+    {
+        const auto & index_dag = index->index.expression->getActionsDAG();
+        NameSet required_names;
+        if (use_index_expression)
+        {
+            for (const auto & name : index->index.column_names)
+                if (use_index_expression(name))
+                    required_names.insert(name);
+
+            if (required_names.empty())
+                continue;
+        }
+        else
+        {
+            for (const auto * input : index_dag.getInputs())
+                copy_node(*input);
+        }
+        has_index_expressions = true;
+
+        for (const auto * output : index_dag.getOutputs())
+            if (!use_index_expression || required_names.contains(output->result_name))
+                add_output(copy_node(*output));
+    }
+
+    if (!key && !has_index_expressions)
         return nullptr;
 
-    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(columns, virtuals));
-    return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
+    /// Index actions project away their inputs. The writer must keep those columns to store them.
+    for (const auto * input : dag.getInputs())
+        if (!output_positions.contains(input->result_name))
+            add_output(*input);
+
+    return std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context));
 }
 
 }
