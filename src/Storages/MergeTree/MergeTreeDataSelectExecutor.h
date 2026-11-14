@@ -88,7 +88,9 @@ public:
         /// be consulted here. Projection candidate analysis is the only place a warm query consults
         /// the cache before the plan is final, so it has to pass the gate of the read it analyses;
         /// every other caller runs before `tryOptimizeTopK` and keeps the conservative default.
-        bool allow_top_k_prewhere_query_condition_cache = false) const;
+        bool allow_top_k_prewhere_query_condition_cache = false,
+        /// The caller needs only which parts may match; the returned ranges are then a coarse superset.
+        bool stop_at_first_match = false) const;
 
     static MarkRanges markRangesFromPKRange(
         const MergeTreeData::DataPartPtr & part,
@@ -101,7 +103,8 @@ public:
         MarkRanges * exact_ranges,
         const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
         const Settings & settings,
-        LoggerPtr log);
+        LoggerPtr log,
+        bool stop_at_first_match = false);
 
     /// Maps each primary-key column position to the slot of the matching column in a part's partition
     /// minmax index (nullopt when the primary-key column is not a partition-minmax column).
@@ -120,7 +123,8 @@ public:
         MarkRanges * exact_ranges,
         const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
         const Settings & settings,
-        LoggerPtr log);
+        LoggerPtr log,
+        bool stop_at_first_match = false);
 
     static MarkRanges markRangesFromPKRange(
         const RangesInDataPart & part_with_ranges,
@@ -131,7 +135,8 @@ public:
         MarkRanges * exact_ranges,
         const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
         const Settings & settings,
-        LoggerPtr log);
+        LoggerPtr log,
+        bool stop_at_first_match = false);
 
     static std::pair<MarkRanges, RangesInDataPartReadHints> filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
@@ -314,6 +319,7 @@ public:
         bool has_projections;
         bool check_row_limits;
         bool use_primary_key = true;
+        bool stop_at_first_match = false;
         ReadFromMergeTree::AnalysisResult & result;
     };
 

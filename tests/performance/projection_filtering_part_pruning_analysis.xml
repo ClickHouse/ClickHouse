@@ -1,0 +1,23 @@
+<test>
+    <create_query>
+        CREATE TABLE projection_filtering_pk
+        (
+            c1 LowCardinality(String), c4 LowCardinality(String), c5 Int64, c6 Int64,
+            PROJECTION p0 (SELECT c6, c4 ORDER BY c6)
+        )
+        ENGINE = MergeTree ORDER BY (c1, c5, c4, c6) SETTINGS index_granularity = 16
+    </create_query>
+
+    <fill_query>
+        INSERT INTO projection_filtering_pk
+        SELECT if(number % 200 = 0, 'a', ['b', 'c', 'd', 'e'][1 + intHash32(number) % 4]), ['x1', 'x2', 'x3', 'x4'][1 + intHash32(number + 1) % 4],
+               if(intHash32(number + 2) % 2 = 0, 7, intHash32(number + 2) % 1000), intHash64(number + 3) % 1000000
+        FROM numbers_mt(40000000)
+        SETTINGS max_insert_threads = 4, max_insert_block_size = 4000000, min_insert_block_size_rows = 4000000
+    </fill_query>
+
+    <query>SELECT count() FROM projection_filtering_pk WHERE c1 = 'a' AND c5 = 7 AND c6 IN (SELECT number * 5 FROM numbers(200000))</query>
+    <query>SELECT count() FROM projection_filtering_pk WHERE c1 = 'a' AND c5 = 7 AND c6 IN (SELECT number * 5 FROM numbers(200000)) SETTINGS optimize_use_projection_filtering = 0</query>
+
+    <drop_query>DROP TABLE IF EXISTS projection_filtering_pk</drop_query>
+</test>
