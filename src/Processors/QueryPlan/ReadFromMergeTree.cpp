@@ -2580,6 +2580,11 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
     if (data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
         return false;
 
+    return isPartitionKeyDerivedFromPrimaryKey();
+}
+
+bool ReadFromMergeTree::isPartitionKeyDerivedFromPrimaryKey() const
+{
     if (!storage_snapshot->metadata->hasPrimaryKey() || !storage_snapshot->metadata->hasPartitionKey())
         return false;
 
@@ -2603,14 +2608,15 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
       * partition expression can tell exactly those values apart - `toString(f)` maps `-0.0` and `0.0`
       * to `'-0'` and `'0'`, `reinterpretAsUInt64(f)` separates `NaN` payloads - so rows the comparator
       * treats as one key land in different partitions, and skipping the cross-partition merge would
-      * return both of them.
+      * return both of them. Likewise every `NULL` compares equal to every other, while `assumeNotNull(k)`
+      * reads the value stored under each one.
       */
     for (const auto & required_column : partition_key_expression->getRequiredColumnsWithTypes())
     {
         if (!primary_key_columns_set.contains(required_column.name))
             return false;
 
-        if (anyInTypeTree(*required_column.type, [](const IDataType & type) { return isFloat(type); }))
+        if (anyInTypeTree(*required_column.type, [](const IDataType & type) { return isFloat(type) || type.isNullable(); }))
             return false;
     }
 

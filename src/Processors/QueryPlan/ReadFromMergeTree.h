@@ -750,6 +750,8 @@ public:
     /// Whether a FINAL read must merge parts within each partition independently instead of globally
     /// (the `do_not_merge_across_partitions_select_final` rule, which may also be decided automatically).
     bool doNotMergePartsAcrossPartitionsFinal() const;
+    /// Whether rows with equal primary keys always belong to the same partition.
+    bool isPartitionKeyDerivedFromPrimaryKey() const;
 
     /// The computed SAMPLE filter (predicate over the sampling key) when this read uses sampling, else empty.
     /// A distributed read ships it to the worker, which reapplies it after reading parts like the local path.
