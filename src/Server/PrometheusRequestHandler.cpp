@@ -13,6 +13,7 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/String.h>
 #include <Poco/URI.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/maskSensitiveQueryParameters.h>
 #include <Common/SensitiveDataMasker.h>
@@ -53,10 +54,16 @@ namespace Setting
     extern const SettingsString log_comment;
 }
 
+namespace FailPoints
+{
+    extern const char prometheus_handler_finalize_throw[];
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_WRITE_TO_OSTREAM;
+    extern const int FAULT_INJECTED;
     extern const int INCOMPATIBLE_SCHEMA;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
@@ -183,6 +190,10 @@ protected:
         if (!authenticateUserAndMakeContext(request, response))
             return; /// The user is not authenticated yet, and the HTTP_UNAUTHORIZED response is sent with the "WWW-Authenticate" header,
                     /// and `request_credentials` must be preserved until the next request or until any exception.
+
+        /// Without a client trace, the user's and the request's settings decide whether to trace the request.
+        if (!parent().thread_trace_context)
+            parent().thread_trace_context = parent().startTracing(request, context);
 
         /// Apply `http_response_buffer_size` for the output buffer (0 means use the default).
         auto buffer_size = context->getSettingsRef()[Setting::http_response_buffer_size].value;
@@ -672,6 +683,9 @@ public:
             /// before writing the error response.
             getOutputStream(response).rejectBufferedDataSave();
 
+            if (parent().thread_trace_context)
+                parent().thread_trace_context->root_span.addAttribute(e);
+
             /// A schema-version rejection (see TimeSeriesVersion.h) is a problem with the server or the table,
             /// not with the query: report it as an internal error so that clients don't attribute it
             /// to the PromQL expression.
@@ -878,11 +892,22 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     DB::setThreadName(ThreadName::PROMETHEUS_HANDLER);
     applyHTTPResponseHeaders(response, response_headers);
 
-    OpenTelemetry::TracingContextHolderPtr thread_trace_context;
     SCOPE_EXIT({
         if (thread_trace_context)
             thread_trace_context->root_span.addAttribute("clickhouse.http_status", response.getStatus());
+        thread_trace_context.reset();
     });
+
+    /// A request that never reached the user's sampling, e.g. one failing authentication, is sampled by the server's settings.
+    const auto start_time_us
+        = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    auto trace_if_not_sampled = [&]
+    {
+        if (thread_trace_context)
+            return;
+        thread_trace_context = startTracing(request, Context::getGlobalContextInstance());
+        thread_trace_context->root_span.start_time_us = start_time_us;
+    };
 
     try
     {
@@ -890,7 +915,11 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         http_method = request.getMethod();
         chassert(!write_buffer_from_response); /// Nothing is written to the response yet.
 
-        thread_trace_context = startTracing(request);
+        parseClientTraceContext(request);
+        /// A client trace starts before authentication, so that requests failing there are traced too.
+        /// Metrics requests have no user, so the server's settings decide whether to trace them.
+        if (client_trace_context.isTraceEnabled() || config.type == PrometheusRequestHandlerConfig::Type::Metrics)
+            thread_trace_context = startTracing(request, Context::getGlobalContextInstance());
 
         /// Make keep-alive works.
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
@@ -900,11 +929,19 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
 
         impl->beforeHandlingRequest(request);
         impl->handleRequest(request, response);
+        trace_if_not_sampled();
 
+        fiu_do_on(FailPoints::prometheus_handler_finalize_throw,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while finalizing the Prometheus response");
+        });
         getOutputStream(response).finalize();
     }
     catch (...)
     {
+        trace_if_not_sampled();
+        thread_trace_context->root_span.addAttribute(std::current_exception());
+
         tryLogCurrentException(log);
 
         ExecutionStatus status = ExecutionStatus::fromCurrentException("", send_stacktrace);
@@ -933,7 +970,7 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     }
 }
 
-OpenTelemetry::TracingContextHolderPtr PrometheusRequestHandler::startTracing(const HTTPServerRequest & request)
+void PrometheusRequestHandler::parseClientTraceContext(const HTTPServerRequest & request)
 {
     if (request.has("traceparent"))
     {
@@ -943,21 +980,22 @@ OpenTelemetry::TracingContextHolderPtr PrometheusRequestHandler::startTracing(co
             LOG_DEBUG(log, "Failed to parse OpenTelemetry traceparent header '{}': {}", opentelemetry_traceparent, error);
         client_trace_context.tracestate = request.get("tracestate", "");
     }
+}
 
-    /// The user is not authenticated yet, so the global settings are used to decide whether to start a new trace.
-    /// The global context is taken from `Context` rather than from `IServer::context`, which throws in standalone Keeper.
-    /// Standalone Keeper has no span log, so the spans are not recorded there.
-    auto global_context = Context::getGlobalContextInstance();
-    auto thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("PrometheusRequestHandler",
+OpenTelemetry::TracingContextHolderPtr PrometheusRequestHandler::startTracing(const HTTPServerRequest & request, const ContextPtr & settings_context)
+{
+    /// Before authentication the global context is used. It is taken from `Context` rather than from `IServer::context`,
+    /// which throws in standalone Keeper. Standalone Keeper has no span log, so the spans are not recorded there.
+    auto holder = std::make_unique<OpenTelemetry::TracingContextHolder>("PrometheusRequestHandler",
         client_trace_context,
-        global_context->getSettingsRef(),
-        global_context->getOpenTelemetrySpanLog());
-    thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
-    thread_trace_context->root_span.addAttribute("clickhouse.uri", [&] { return getURIForLogging(request); });
-    thread_trace_context->root_span.addAttribute("http.referer", request.get("Referer", ""));
-    thread_trace_context->root_span.addAttribute("http.user.agent", request.get("User-Agent", ""));
-    thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
-    return thread_trace_context;
+        settings_context->getSettingsRef(),
+        settings_context->getOpenTelemetrySpanLog());
+    holder->root_span.kind = OpenTelemetry::SpanKind::SERVER;
+    holder->root_span.addAttribute("clickhouse.uri", [&] { return getURIForLogging(request); });
+    holder->root_span.addAttribute("http.referer", request.get("Referer", ""));
+    holder->root_span.addAttribute("http.user.agent", request.get("User-Agent", ""));
+    holder->root_span.addAttribute("http.method", request.getMethod());
+    return holder;
 }
 
 String PrometheusRequestHandler::getURIForLogging(const HTTPServerRequest & request) const
