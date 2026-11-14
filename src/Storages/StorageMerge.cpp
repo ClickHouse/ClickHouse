@@ -82,6 +82,7 @@
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/ColumnDefault.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
@@ -2098,7 +2099,10 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
 
         /// Converting query to AST because types might be different in the source table.
         /// Need to resolve types again.
-        auto ast = modified_query_info.query_tree->toAST();
+        /// The child's analyzer rebuilds the `grouping` specializations, which do not resolve from the query text.
+        auto query_tree_for_ast = modified_query_info.query_tree->clone();
+        removeGroupingFunctionSpecializations(query_tree_for_ast);
+        auto ast = query_tree_for_ast->toAST();
         /// The analyzer substitutes the inserted block of a materialized view for its source table only when given it.
         /// A child that is the source table itself reads the table, as it does at `FetchColumns`.
         auto view_source = modified_context->isViewInnerQuery() ? nullptr : modified_context->getViewSource();
