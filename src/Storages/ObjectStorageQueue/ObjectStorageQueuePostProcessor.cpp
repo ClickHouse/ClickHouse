@@ -1196,6 +1196,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                                 provenance,
                                 scheduler,
                                 BlobStorageLogWriter::create(object_storage->getDiskName()),
+                                /* allow_copy_through_buffers= */ true,
                                 /* dest_if_none_match */ move_if_none_match,
                                 /* src_etag */ src_etag);
                         }

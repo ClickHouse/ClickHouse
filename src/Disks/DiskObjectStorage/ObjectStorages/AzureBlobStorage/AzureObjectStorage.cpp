@@ -919,6 +919,7 @@ void AzureObjectStorage::copyObject( /// NOLINT
             object_to_attributes,
             scheduler,
             blob_storage_log,
+            /* allow_copy_through_buffers= */ true,
             if_none_match,
             src_etag);
     }

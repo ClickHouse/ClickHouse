@@ -787,7 +787,7 @@ namespace
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
-            std::function<void()> fallback_method_,
+            std::function<bool()> fallback_method_,
             bool is_ranged_copy_,
             const S3CopyFileSettings & copy_settings_)
             : UploadHelper(
@@ -817,7 +817,7 @@ namespace
         {
         }
 
-        void performCopy()
+        bool performCopy()
         {
             LOG_TEST(log, "Copy object {} to {} using native copy{}{}", src_key, dest_key,
                 copy_settings.source_version_id.empty() ? "" : fmt::format(" of version {}", copy_settings.source_version_id),
@@ -842,8 +842,7 @@ namespace
                               "the source is {} bytes, not above the {} bytes S3 requires of a ranged copy source",
                               src_object_size,
                               MIN_SOURCE_SIZE_FOR_RANGE_COPY));
-                fallback_method();
-                return;
+                return fallback_method();
             }
 
             bool use_single_operation_copy = !is_ranged_copy
@@ -854,18 +853,13 @@ namespace
 
             /// `CopyObject` ignores destination preconditions, so guarded copies must re-upload.
             if (use_single_operation_copy && !copy_settings.if_none_match.empty())
-            {
-                fallback_method();
-                return;
-            }
+                return fallback_method();
 
-            if (use_single_operation_copy)
-                performSingleOperationCopy();
-            else
-                performMultipartUploadCopy();
+            bool copied = use_single_operation_copy ? performSingleOperationCopy() : performMultipartUploadCopy();
 
-            if (request_settings[S3RequestSetting::check_objects_after_upload])
+            if (copied && request_settings[S3RequestSetting::check_objects_after_upload])
                 checkObjectAfterUpload();
+            return copied;
         }
 
     private:
@@ -877,7 +871,7 @@ namespace
         bool supports_multipart_copy;
         bool is_ranged_copy;
         const ReadSettings read_settings;
-        std::function<void()> fallback_method;
+        std::function<bool()> fallback_method;
 
         /// Whether the endpoint refused the copy because the source is not the pinned generation; the SDK has
         /// no typed error for `PreconditionFailed`, so the raw code and the HTTP status are both checked.
@@ -895,11 +889,11 @@ namespace
                 src_bucket, src_key, dest_bucket, dest_key, copy_settings.source_if_match);
         }
 
-        void performSingleOperationCopy()
+        bool performSingleOperationCopy()
         {
             S3::CopyObjectRequest request;
             fillCopyRequest(request);
-            processCopyRequest(request);
+            return processCopyRequest(request);
         }
 
         void fillCopyRequest(S3::CopyObjectRequest & request)
@@ -927,7 +921,7 @@ namespace
             client_ptr->setKMSHeaders(request);
         }
 
-        void processCopyRequest(S3::CopyObjectRequest & request)
+        bool processCopyRequest(S3::CopyObjectRequest & request)
         {
             size_t max_retries = std::max<UInt64>(request_settings[S3RequestSetting::max_unexpected_write_error_retries].value, 1UL);
             for (size_t retries = 1;; ++retries)
@@ -954,7 +948,7 @@ namespace
                         dest_bucket,
                         dest_key,
                         size);
-                    break;
+                    return true;
                 }
 
                 /// Decided before every other route: a `412` means the source is another generation
@@ -974,13 +968,11 @@ namespace
                     {
                         LOG_INFO(
                             log,
-                            "Multipart upload using copy is not supported, will try regular upload for Bucket: {}, Key: {}, Object size: "
-                            "{}",
+                            "Multipart upload using copy is not supported for Bucket: {}, Key: {}, Object size: {}; using fallback path",
                             dest_bucket,
                             dest_key,
                             size);
-                        fallback_method();
-                        break;
+                        return fallback_method();
                     }
 
                     // Can't come here with MinIO, MinIO allows single part upload for large objects.
@@ -993,8 +985,7 @@ namespace
                         dest_key,
                         size);
 
-                    performMultipartUploadCopy();
-                    break;
+                    return performMultipartUploadCopy();
                 }
 
                 if ((outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY) && (retries < max_retries))
@@ -1020,19 +1011,20 @@ namespace
             }
         }
 
-        void performMultipartUploadCopy()
+        bool performMultipartUploadCopy()
         {
             try
             {
                 UploadHelper::performMultipartUpload(offset, size);
+                return true;
             }
             catch (const S3Exception & e)
             {
                 if (e.getS3ErrorCode() != Aws::S3::S3Errors::ACCESS_DENIED)
                     throw;
 
-                tryLogCurrentException(log, "Multi part copy failed, trying with regular upload");
-                fallback_method();
+                tryLogCurrentException(log, "Multi part copy failed, using fallback path");
+                return fallback_method();
             }
         }
 
@@ -1138,7 +1130,7 @@ namespace
 {
     /// Shared by both public entry points. `is_ranged_copy` says whether only [src_offset, src_offset +
     /// src_size) of a larger source is wanted; it is internal, so no caller can leave it at a wrong default.
-    void copyS3FileImpl(
+    bool copyS3FileImpl(
         std::shared_ptr<const S3::Client> src_s3_client,
         const String & src_bucket,
         const String & src_key,
@@ -1160,8 +1152,10 @@ namespace
         if (!dest_s3_client)
             dest_s3_client = src_s3_client;
 
-        std::function<void()> fallback_method = [&] mutable
+        std::function<bool()> fallback_method = [&] mutable
         {
+            if (!fallback_file_reader)
+                return false;
             copyDataToS3File(
                 fallback_file_reader,
                 src_offset,
@@ -1174,13 +1168,13 @@ namespace
                 schedule,
                 object_metadata,
                 copy_settings);
+            return true;
         };
 
         if (!settings[S3RequestSetting::allow_native_copy])
         {
             LOG_TRACE(getLogger("copyS3File"), "Native copy is disable for {}", src_key);
-            fallback_method();
-            return;
+            return fallback_method();
         }
 
         CopyFileHelper helper{
@@ -1200,11 +1194,11 @@ namespace
             std::move(fallback_method),
             is_ranged_copy,
             copy_settings};
-        helper.performCopy();
+        return helper.performCopy();
     }
 }
 
-void copyS3File(
+bool copyS3File(
     std::shared_ptr<const S3::Client> src_s3_client,
     const String & src_bucket,
     const String & src_key,
@@ -1220,7 +1214,7 @@ void copyS3File(
     const std::optional<ObjectAttributes> & object_metadata,
     const S3CopyFileSettings & copy_settings)
 {
-    copyS3FileImpl(
+    return copyS3FileImpl(
         std::move(src_s3_client),
         src_bucket,
         src_key,
@@ -1240,7 +1234,7 @@ void copyS3File(
         copy_settings);
 }
 
-void copyS3FileRange(
+bool copyS3FileRange(
     std::shared_ptr<const S3::Client> src_s3_client,
     const String & src_bucket,
     const String & src_key,
@@ -1257,7 +1251,7 @@ void copyS3FileRange(
     const CreateReadBuffer & fallback_file_reader,
     const std::optional<ObjectAttributes> & object_metadata)
 {
-    copyS3FileImpl(
+    return copyS3FileImpl(
         std::move(src_s3_client),
         src_bucket,
         src_key,

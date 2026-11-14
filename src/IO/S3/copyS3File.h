@@ -51,11 +51,11 @@ std::unique_ptr<StdStreamFromReadBuffer> createS3UploadBody(
 ///
 /// Note, that it tries to copy file using native copy (CopyObject), but if it
 /// has been disabled (with settings.allow_native_copy) or request failed
-/// because it is a known issue, it is fallbacks to read-write copy
-/// (copyDataToS3File()).
+/// because it is a known issue, it falls back to read-write copy
+/// (copyDataToS3File()). If `fallback_file_reader` is empty, returns false instead.
 ///
 /// read_settings - is used for throttling in case of native copy is not possible
-void copyS3File(
+bool copyS3File(
     std::shared_ptr<const S3::Client> src_s3_client,
     const String & src_bucket,
     const String & src_key,
@@ -77,7 +77,7 @@ void copyS3File(
 /// `CopyObject` carries no byte range and would copy the entire source. A ranged copy uses multipart
 /// `UploadPartCopy` (a `CopySourceRange` per part), but S3 accepts a byte-range copy source only if the source
 /// object is greater than 5 MB, so a smaller source (or no multipart copy) reads the range through buffers.
-void copyS3FileRange(
+bool copyS3FileRange(
     std::shared_ptr<const S3::Client> src_s3_client,
     const String & src_bucket,
     const String & src_key,

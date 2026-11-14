@@ -27,7 +27,8 @@ bool isAzureDestinationAlreadyExistsError(const Azure::Core::RequestFailedExcept
 /// argument could only be honored by the read-write fallback and would be silently ignored whenever
 /// the native copy is enabled. Callers that need a range read the source themselves and use
 /// `copyDataToAzureBlobStorageFile()`.
-void copyAzureBlobStorageFile(
+/// Returns false when native copy cannot finish and `allow_copy_through_buffers` is false.
+bool copyAzureBlobStorageFile(
     std::shared_ptr<const AzureBlobStorage::ContainerClient> src_client,
     std::shared_ptr<const AzureBlobStorage::ContainerClient> dest_client,
     const String & src_container_for_logging,
@@ -40,6 +41,7 @@ void copyAzureBlobStorageFile(
     const std::optional<ObjectAttributes> & object_to_attributes,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
     BlobStorageLogWriterPtr blob_storage_log = {},
+    bool allow_copy_through_buffers = true,
     /// Pass `*` to fail instead of overwriting the destination blob.
     const String & dest_if_none_match = {},
     /// The `ETag` of the source generation to copy, or empty if unknown; the native copy is pinned to it
