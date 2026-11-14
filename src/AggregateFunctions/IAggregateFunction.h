@@ -638,23 +638,6 @@ public:
     /// Returns the parameters passed to the constructor as is.
     const Array & getParameters() const override { return parameters; }
 
-    // Any aggregate function can be calculated over a window, but there are some
-    // window functions such as rank() that require a different interface, e.g.
-    // because they don't respect the window frame, or need to be notified when
-    // a new peer group starts. They pretend to be normal aggregate functions,
-    // but will fail if you actually try to use them in Aggregator. The
-    // WindowTransform recognizes these functions and handles them differently.
-    // We could have a separate factory for window functions, and make all
-    // aggregate functions implement IWindowFunction interface and so on. This
-    // would be more logically correct, but more complex. We only have a handful
-    // of true window functions, so this hack-ish interface suffices.
-    virtual bool isOnlyWindowFunction() const
-    {
-        if (auto nested = getNestedFunction())
-            return nested->isOnlyWindowFunction();
-        return false;
-    }
-
     /// Description of AggregateFunction in form of name(parameters)(argument_types).
     String getDescription() const;
 

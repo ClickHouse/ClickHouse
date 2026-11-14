@@ -3,7 +3,6 @@
 #include <IO/Operators.h>
 #include <Interpreters/WindowDescription.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
-#include <WindowFunctions/WindowFunction.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldAccurateComparison.h>
 
@@ -40,17 +39,11 @@ const DataTypePtr & WindowFunctionDescription::getResultType() const
     return general_function ? general_function->getResultType() : aggregate_function->getResultType();
 }
 
-GeneralWindowFunctionPtr asGeneralWindowFunction(const AggregateFunctionPtr & aggregate_function)
-{
-    const auto * shell = dynamic_cast<const WindowFunction *>(aggregate_function.get());
-    return shell ? shell->getDefinition() : nullptr;
-}
-
 void validateWindowFunctions(const WindowDescription & window)
 {
     for (const auto & function : window.window_functions)
     {
-        const auto general = function.general_function ? function.general_function : asGeneralWindowFunction(function.aggregate_function);
+        const auto & general = function.general_function;
         if (general && general->getRequirements(window).order_by && window.order_by.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window function '{}' requires ORDER BY in its window definition", general->getName());
     }

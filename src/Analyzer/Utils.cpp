@@ -27,7 +27,6 @@
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/TypeTree.h>
-#include <DataTypes/getLeastSupertype.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
@@ -71,8 +70,6 @@
 #include <Analyzer/UnionNode.h>
 
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
-
-#include <Poco/String.h>
 
 #include <ranges>
 
@@ -1252,20 +1249,6 @@ void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const Stri
         function_node.resolveAsAggregateFunction(resolveWindowAggregateFunction(function_node, function_name));
     else
         function_node.resolveAsAggregateFunction(resolveAggregateFunction(function_node, function_name));
-}
-
-/// TODO(Michicosun): Move this to the window function factory.
-DataTypes bindWindowFunctionArgumentTypes(const String & function_name, DataTypes argument_types)
-{
-    const auto function_name_lowercase = Poco::toLower(function_name);
-
-    /// For lag/lead functions the value and the default are brought to their common type, like PostgreSQL's anycompatible.
-    const bool is_lag_or_lead = function_name_lowercase == "lag" || function_name_lowercase == "laginframe"
-                             || function_name_lowercase == "lead" || function_name_lowercase == "leadinframe";
-    if (is_lag_or_lead && argument_types.size() == 3)
-        argument_types[0] = argument_types[2] = getLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
-
-    return argument_types;
 }
 
 std::pair<TableExpressionNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node)

@@ -112,7 +112,6 @@ struct WindowDescription
 
 using WindowFunctionDescriptions = VectorWithMemoryTracking<WindowFunctionDescription>;
 
-GeneralWindowFunctionPtr asGeneralWindowFunction(const AggregateFunctionPtr & aggregate_function);
 void validateWindowFunctions(const WindowDescription & window);
 
 using WindowDescriptions = std::unordered_map<std::string, WindowDescription>;
