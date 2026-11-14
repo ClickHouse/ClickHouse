@@ -9,6 +9,9 @@ namespace DB
 {
 
 struct FormatTopKFilterInfo;
+
+class DefaultExpressionsSets;
+using DefaultExpressionsSetsPtr = std::shared_ptr<DefaultExpressionsSets>;
 using FormatTopKFilterInfoPtr = std::shared_ptr<const FormatTopKFilterInfo>;
 
 class SourceStepWithFilterBase : public ISourceStep
@@ -28,6 +31,7 @@ public:
         , filter_dags()
         , limit(other.limit)
         , filter_actions_dag()
+        , shared_default_expressions_sets(other.shared_default_expressions_sets)
     {
         filter_dags.reserve(other.filter_dags.size());
         filter_nodes.nodes.reserve(other.filter_dags.size());
@@ -84,6 +88,11 @@ public:
     virtual bool supportsMinMaxFromStatistics() const { return false; }
     virtual void setMinMaxFromStatistics() {}
 
+    /// Make the readers of this step share the sets of the column defaults that read a table (`x IN table`) with the
+    /// other reading steps of the same logical read, such as the children of a `Merge` read, so that each set is built
+    /// once for it, from one snapshot of its table. Without it, the step builds the sets for its own readers.
+    virtual void setDefaultExpressionsSets(DefaultExpressionsSetsPtr sets) { shared_default_expressions_sets = std::move(sets); }
+
     const std::shared_ptr<const ActionsDAG> & getFilterActionsDAG() const { return filter_actions_dag; }
     std::shared_ptr<const ActionsDAG> detachFilterActionsDAG() { return std::move(filter_actions_dag); }
 
@@ -102,6 +111,8 @@ private:
 protected:
     std::optional<size_t> limit;
     std::shared_ptr<const ActionsDAG> filter_actions_dag;
+    /// Set by `setDefaultExpressionsSets`.
+    DefaultExpressionsSetsPtr shared_default_expressions_sets;
 };
 
 /** Source step that can use filters and limit for more efficient pipeline initialization.

@@ -198,6 +198,8 @@ Pipe ReadFromObjectStorageStep::buildInOrderPipe(
     const size_t num_files = read_in_order_files.size();
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_files);
+    if (shared_default_expressions_sets)
+        parser_shared_resources->default_expressions_sets = shared_default_expressions_sets;
 
     /// Shared by every source of this read. Unlimited queue: scheduling must not be refused.
     auto shared_reader_pool = std::make_shared<ThreadPool>(
@@ -324,6 +326,8 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     // here create for node -> query -> level thread pool
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
+    if (shared_default_expressions_sets)
+        parser_shared_resources->default_expressions_sets = shared_default_expressions_sets;
 
     auto format_filter_actions_dag = info.getFormatFilter(filter_actions_dag);
     auto make_format_filter_info = [&]

@@ -26,7 +26,10 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/getColumnFromBlock.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Access/SettingsConstraintsAndProfileIDs.h>
+#include <Common/SettingsChanges.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Databases/enableAllExperimentalSettings.h>
 
@@ -361,9 +364,94 @@ bool IMergeTreeReader::mayEvaluateMissingDefaults() const
     return *may_evaluate_missing_defaults;
 }
 
+/// The settings of the reading query that a default reading a table (`x IN table`) is evaluated with, in place of
+/// the settings of the storage context: those that restrict the access, and all the limits and the resources -
+/// the settings named `max_*` and `min_*` and the overflow modes of the limits. None of them changes the meaning of
+/// an expression, so a default reads a table the same way as the reading query would read it directly.
+static const std::vector<std::string_view> & getReaderSettingsForDefaultExpressions()
+{
+    static const std::vector<std::string_view> names = []
+    {
+        static constexpr std::string_view other_names[] =
+        {
+            "readonly", "allow_ddl", "allow_introspection_functions",
+            "temporary_files_codec", "temporary_files_buffer_size",
+            "timeout_before_checking_execution_speed",
+        };
+
+        std::vector<std::string_view> result(std::begin(other_names), std::end(other_names));
+        for (std::string_view name : Settings().getAllRegisteredNames())
+        {
+            if (name.starts_with("max_") || name.starts_with("min_") || name.ends_with("_overflow_mode") || name.ends_with("_overflow_mode_leaf"))
+                result.push_back(name);
+        }
+        return result;
+    }();
+    return names;
+}
+
+/// The settings of the storage context that replace the settings of the reading query must not bypass the constraints
+/// of its user: a setting pinned by a settings profile, such as `allow_executable_tables = 0 READONLY`, restricts what
+/// the user may read, whatever the settings of the storage are. Such a setting keeps the value of the reading query
+/// (or the value clamped to its `MIN` / `MAX` constraint).
+static void keepReaderSettingsConstraints(Settings & default_expressions_settings, const Context & read_context)
+{
+    const auto constraints_and_profiles = read_context.getSettingsConstraintsAndCurrentProfiles();
+    const auto & constraints = constraints_and_profiles->constraints;
+    if (constraints.empty())
+        return;
+
+    const auto & reader_settings = read_context.getSettingsRef();
+    SettingsChanges storage_values;
+    for (std::string_view name : default_expressions_settings.getAllRegisteredNames())
+    {
+        Field value = default_expressions_settings.get(name);
+        if (value != reader_settings.get(name))
+            storage_values.emplace_back(name, std::move(value));
+    }
+    if (storage_values.empty())
+        return;
+
+    /// These settings are not set by the reading query, so its readonly mode does not apply, only the constraints do.
+    Settings check_settings = reader_settings;
+    check_settings.set("readonly", 0);
+    SettingsChanges allowed_values = storage_values;
+    constraints.clamp(check_settings, allowed_values, SettingSource::QUERY);
+
+    for (const auto & change : storage_values)
+    {
+        if (const auto * allowed_value = allowed_values.tryGet(change.name))
+            default_expressions_settings.set(change.name, *allowed_value);
+        else
+            default_expressions_settings.set(change.name, reader_settings.get(change.name));
+    }
+}
+
 ContextPtr IMergeTreeReader::createContextForDefaultExpressions() const
 {
-    auto context_copy = Context::createCopy(data_part_info_for_read->getContext());
+    auto storage_context = data_part_info_for_read->getContext();
+    ContextMutablePtr context_copy;
+    if (settings.read_context)
+    {
+        /// A default may read other tables, as in `DEFAULT x IN table`. Do that on behalf of the query
+        /// that reads the part: with the privileges and the row policies of its user, and with its query
+        /// status, so that the nested reading is cancelled together with the query. The settings of the
+        /// storage context define what the defaults mean, but the settings that restrict the access and the
+        /// resources of the reading query are taken from it, so that the limits of its user also bound the
+        /// queries that build the sets, including the aggregations, sorts and joins of a view they read.
+        context_copy = Context::createCopy(settings.read_context);
+        auto default_expressions_settings = storage_context->getSettingsCopy();
+        const auto & reader_settings = settings.read_context->getSettingsRef();
+        for (std::string_view name : getReaderSettingsForDefaultExpressions())
+            default_expressions_settings.set(name, reader_settings.get(name));
+        keepReaderSettingsConstraints(default_expressions_settings, *settings.read_context);
+        context_copy->setSettings(default_expressions_settings);
+        context_copy->setCurrentDatabaseUnchecked(storage_context->getCurrentDatabase());
+    }
+    else
+    {
+        context_copy = Context::createCopy(storage_context);
+    }
     /// Default/materialized expressions may contain experimental or suspicious types that can be
     /// disabled in the current context. We must not perform any checks during reads from existing tables.
     enableAllExperimentalSettings(context_copy);
@@ -426,7 +514,11 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
             additional_columns,
             full_requested_columns,
             combined_columns,
-            context_copy);
+            context_copy,
+            /*save_unneeded_columns=*/ true,
+            /*null_as_default=*/ false,
+            /*allow_reading_tables=*/ settings.read_context != nullptr,
+            settings.default_expressions_sets.get());
 
         if (dag)
         {
@@ -908,9 +1000,14 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
         if (copy_block.empty())
             return;
 
+        /// Converting `NULL` to a non-nullable type substitutes the default of the column, which may read
+        /// a table as well, so it is evaluated on behalf of the reading query, as for the missing columns.
         DB::performRequiredConversions(copy_block, getColumns(),
-            data_part_info_for_read->getContext(),
-            storage_snapshot->metadata->getColumns().getDefaults());
+            createContextForDefaultExpressions(),
+            storage_snapshot->metadata->getColumns().getDefaults(),
+            /*forbid_default_defaults=*/ false,
+            /*allow_reading_tables=*/ settings.read_context != nullptr,
+            settings.default_expressions_sets.get());
 
         /// Move columns from block.
         name_and_type = getColumns().begin();

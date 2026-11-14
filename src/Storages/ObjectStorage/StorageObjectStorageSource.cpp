@@ -2276,7 +2276,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             builder.addSimpleTransform(
                 [&](const SharedHeader & header)
                 {
-                    return std::make_shared<AddingDefaultsTransform>(header, read_from_format_info.columns_description, *input_format, context_);
+                    return std::make_shared<AddingDefaultsTransform>(
+                        header, read_from_format_info.columns_description, *input_format, context_,
+                        parser_shared_resources->default_expressions_sets);
                 });
         }
 

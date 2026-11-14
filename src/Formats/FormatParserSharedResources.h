@@ -11,6 +11,9 @@ struct Settings;
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 
+class DefaultExpressionsSets;
+using DefaultExpressionsSetsPtr = std::shared_ptr<DefaultExpressionsSets>;
+
 /// When reading many files in one query, e.g. `SELECT ... FROM file('part{00..99}.parquet')`,
 /// we want the file readers to share some resource limits, e.g. number of threads.
 /// This struct is shared among such group of readers (IInputFormat instances).
@@ -28,6 +31,12 @@ struct FormatParserSharedResources
 
     /// IInputFormat implementation may put arbitrary state here.
     std::shared_ptr<void> opaque;
+
+    /// The sets of the column defaults that read a table (`x IN table`), shared by the `AddingDefaultsTransform`
+    /// of every reader of the query, so that each set is built once per query, from one snapshot of its table,
+    /// rather than once per file or stream. Replaced by the sets shared with the other reading steps of a logical read,
+    /// see `SourceStepWithFilterBase::setDefaultExpressionsSets`, before the readers are created.
+    DefaultExpressionsSetsPtr default_expressions_sets;
 
     FormatParserSharedResources(const Settings & settings, size_t num_streams_);
 

@@ -48,6 +48,7 @@
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/addMissingDefaults.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -111,10 +112,13 @@ namespace Setting
 {
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsFloat max_streams_multiplier_for_merge_tables;
     extern const SettingsUInt64 merge_table_max_tables_to_look_for_schema_inference;
     extern const SettingsBool parallel_replicas_allow_merge_tables;
     extern const SettingsBool parallel_replicas_plan_based;
+    extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
 namespace MergeTreeSetting
@@ -814,6 +818,7 @@ ReadFromMerge::ReadFromMerge(
     , storage_merge(std::move(storage))
     , merge_storage_snapshot(storage_snapshot)
     , common_processed_stage(processed_stage)
+    , default_expressions_sets(createDefaultExpressionsSets())
 {
 }
 
@@ -857,15 +862,16 @@ static bool queryHasSubquerySets(const SelectQueryInfo & query_info)
 ///     call 1 would be built as pass-throughs. The verdict has to be applied in both directions, and
 ///     that is what the branches below do.
 static QueryPlanOptimizationSettings getChildPlanOptimizationSettings(
-    const ContextPtr & context, const SelectQueryInfo & query_info, QueryPlan & child_plan)
+    const ContextPtr & context, const SelectQueryInfo & query_info, QueryPlan & child_plan, bool child_uses_alias_sets)
 {
     QueryPlanOptimizationSettings optimization_settings(context);
     optimization_settings.enable_parallel_replicas = false;
 
     /// A child referencing an outer subquery set cannot ship it, so it is never asked to decide and
     /// runs locally. This must come first: a decision taken here would insert the logical exchanges
-    /// into the child plan, and they would then be built as pass-throughs.
-    if (queryHasSubquerySets(query_info))
+    /// into the child plan, and they would then be built as pass-throughs. The sets of the `ALIAS`
+    /// columns are owned by `ReadFromMerge` (see `ReadFromMerge::alias_sets`), so they are outer sets too.
+    if (queryHasSubquerySets(query_info) || child_uses_alias_sets)
     {
         optimization_settings.make_distributed_plan = false;
         return optimization_settings;
@@ -911,7 +917,7 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
             child.plan.addStep(std::move(filter_step));
 
             /// Push down this newly added filter if possible
-            child.plan.optimize(getChildPlanOptimizationSettings(context, query_info, child.plan));
+            child.plan.optimize(getChildPlanOptimizationSettings(context, query_info, child.plan, child.uses_alias_sets));
         }
     }
 
@@ -1076,7 +1082,43 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         pipeline.narrow(num_streams);
     }
 
+    addCreatingAliasSets(pipeline);
+
     pipeline.addResources(resources);
+}
+
+void ReadFromMerge::addCreatingAliasSets(QueryPipelineBuilder & pipeline)
+{
+    if (!alias_sets.hasSubqueries())
+        return;
+
+    const auto & settings = context->getSettingsRef();
+    SizeLimits network_transfer_limits(
+        settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
+
+    QueryPipelineBuilders set_pipelines;
+    for (const auto & subquery : alias_sets.getSubqueries())
+    {
+        /// A set built in place by the index analysis of a child has nothing left to build.
+        auto set_plan = subquery->build(network_transfer_limits, context->getPreparedSetsCache(), /*recoverable_build=*/ false);
+        if (!set_plan)
+            continue;
+
+        set_pipelines.push_back(set_plan->buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context)));
+
+        /// The processors of the set pipeline point to the steps of its plan, which `EXPLAIN ANALYZE` and the
+        /// step profiler look at, so the plan has to live as long as this step, the same as the child plans.
+        alias_set_plans.push_back(std::move(set_plan));
+    }
+
+    if (set_pipelines.empty())
+        return;
+
+    /// The children are read only after all sets are built, the same as with `CreatingSetsStep`.
+    if (set_pipelines.size() == 1)
+        pipeline.addPipelineBefore(std::move(*set_pipelines.front()));
+    else
+        pipeline.addPipelineBefore(QueryPipelineBuilder::unitePipelines(std::move(set_pipelines)));
 }
 
 void ReadFromMerge::filterTablesAndCreateChildrenPlans()
@@ -1085,7 +1127,7 @@ void ReadFromMerge::filterTablesAndCreateChildrenPlans()
         return;
 
     selected_tables = getSelectedTables(context);
-    child_plans = createChildrenPlans(query_info);
+    child_plans = createChildrenPlans(query_info, alias_sets);
 
     /// A `'break'`-mode deadline stops that loop early, so drop the tables left unplanned to keep
     /// `selected_tables` aligned 1:1 with `child_plans` for every reader.
@@ -1093,7 +1135,7 @@ void ReadFromMerge::filterTablesAndCreateChildrenPlans()
         selected_tables.resize(child_plans->size());
 }
 
-std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQueryInfo & query_info_) const
+std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQueryInfo & query_info_, PreparedSets & alias_sets_) const
 {
     if (selected_tables.empty())
         return {};
@@ -1484,7 +1526,8 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     context,
                     child,
                     is_smallest_column_requested,
-                    column_names_to_read);
+                    column_names_to_read,
+                    alias_sets_);
 
                 for (const auto & filter_info : pushed_down_filters)
                 {
@@ -1499,7 +1542,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
                 removeDelayedMaterializingCTEsStepFor(child.plan, outer_materialized_ctes);
 
-                child.plan.optimize(getChildPlanOptimizationSettings(modified_context, query_info, child.plan));
+                child.plan.optimize(getChildPlanOptimizationSettings(modified_context, query_info, child.plan, child.uses_alias_sets));
             }
 
             res.emplace_back(std::move(child));
@@ -1941,6 +1984,19 @@ static bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::fu
     return ok;
 }
 
+/// The defaults of the columns missing in the parts or the files of the children of a `Merge` read are evaluated by
+/// their readers. Make all of them share the sets of these defaults (`x IN table`), so that each set is built once for
+/// the read. Every reading step is visited, including the ones that build sets, since a set keyed by its subquery is
+/// the same wherever it is used. A nested `Merge` read passes the sets on to its own children when it builds them.
+/// The readers of the children may read on behalf of different users, which `DefaultExpressionsSets` keeps apart.
+static void shareDefaultExpressionsSets(QueryPlan::Node * node, const DefaultExpressionsSetsPtr & sets)
+{
+    if (auto * source = dynamic_cast<SourceStepWithFilterBase *>(node->step.get()))
+        source->setDefaultExpressionsSets(sets);
+    for (auto * child : node->children)
+        shareDefaultExpressionsSets(child, sets);
+}
+
 /// Whether both keys start with the same `prefix_size` columns, sorted in the same directions.
 static bool sortingKeysSharePrefix(const KeyDescription & lhs, const KeyDescription & rhs, size_t prefix_size)
 {
@@ -1966,7 +2022,10 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
     /// this is the run that materializes the logical exchanges inserted into the child plan when
     /// it was optimized at creation. See `getChildPlanOptimizationSettings` for why a child plan
     /// referencing a subquery set must not be distributed.
-    auto optimization_settings = getChildPlanOptimizationSettings(context, query_info, child.plan);
+    auto optimization_settings = getChildPlanOptimizationSettings(context, query_info, child.plan, child.uses_alias_sets);
+
+    shareDefaultExpressionsSets(child.plan.getRootNode(), default_expressions_sets);
+
     /// All optimizations will be done at plans creation
     optimization_settings.optimize_plan = false;
     auto builder = child.plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
@@ -2619,13 +2678,25 @@ void ReadFromMerge::convertAndFilterSourceStream(
     ContextPtr local_context,
     ChildPlan & child,
     bool is_smallest_column_requested,
-    const Names & column_names_read)
+    const Names & column_names_read,
+    PreparedSets & alias_sets)
 {
     auto before_block_header = child.plan.getCurrentHeader();
 
     auto pipe_columns = before_block_header->getNamesAndTypesList();
 
+    if (!aliases.empty())
     {
+        auto & child_sets = modified_query_info.planner_context->getPreparedSets();
+
+        /// An ALIAS expression may contain `x IN table`. Its set is shared by all children: make `collectSets`
+        /// below find the set that a previous child registered instead of registering one more for this child.
+        /// A set registered under the same key for the filter in `getModifiedQueryInfo` is only used to find the
+        /// columns to read, so it is replaced as well.
+        for (const auto & subquery : alias_sets.getSubqueries())
+            child_sets.addOrReplaceSubquery(subquery);
+
+        UsefulSets useful_sets;
         for (const auto & alias : aliases)
         {
             ActionsDAG actions_dag(pipe_columns);
@@ -2647,8 +2718,41 @@ void ReadFromMerge::convertAndFilterSourceStream(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected to have 1 output but got {}", nodes.size());
 
             actions_dag.addOrReplaceInOutputs(actions_dag.addAlias(*nodes.front(), alias.name));
+            appendSetsFromActionsDAG(actions_dag, useful_sets);
             auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(actions_dag));
             child.plan.addStep(std::move(expression_step));
+        }
+
+        /// No `CreatingSet` step of the outer query knows about the sets of the ALIAS expressions, so they are
+        /// built by `ReadFromMerge::initializePipeline`, otherwise `IN` reports "Not-ready Set is passed as the
+        /// second argument". Building them there, once for all children, keeps the semantics of the direct
+        /// spelling `x IN table`: every child sees the same snapshot of the table, which is read only once.
+        PreparedSets::Subqueries new_subqueries;
+        for (const auto & subquery : child_sets.getSubqueries())
+        {
+            if (!useful_sets.contains(subquery))
+                continue;
+
+            child.uses_alias_sets = true;
+            if (!alias_sets.findSubquery(subquery->getHash()))
+            {
+                alias_sets.addOrReplaceSubquery(subquery);
+                new_subqueries.push_back(subquery);
+            }
+        }
+
+        /// The sets are planned right away, so that the index analysis of this child can build them in place
+        /// (`FutureSetFromSubquery::buildOrderedSetInplace`), but only after the actions are built: planning
+        /// renames the table expressions of the set subquery, which the actions look the set up by.
+        if (!new_subqueries.empty())
+        {
+            planPreparedSetSubqueries(new_subqueries, local_context);
+
+            /// The plan of a set is destroyed once the set is built, while functions created with its
+            /// contexts may still be executed, so the child plan keeps those contexts alive.
+            for (const auto & subquery : new_subqueries)
+                if (const auto * subquery_plan = subquery->getQueryPlan())
+                    child.plan.takeContextsFrom(*subquery_plan);
         }
     }
 
@@ -2935,6 +3039,7 @@ void ReadFromMerge::resetChildPlans()
 {
     chassert(!order_info);
     child_plans.reset();
+    alias_sets = {};
     selected_tables.clear();
     expandable_reads.reset();
 }
@@ -3050,6 +3155,10 @@ std::vector<StorageID> ReadFromMerge::computeExpandableReads(
         if (!storage->isMergeTree() || !child.plan.isInitialized())
             return {};
 
+        /// The sets of the ALIAS columns are built in `initializePipeline`, which an expanded `Merge` does not run.
+        if (child.uses_alias_sets)
+            return {};
+
         const auto * node = child.plan.getRootNode();
 
         /// A row policy with an `IN (subquery)` predicate roots the child plan at a set-creating step
@@ -3112,6 +3221,7 @@ QueryPlan ReadFromMerge::expandForParallelReplicas()
     plans.reserve(child_plans->size());
     for (auto & child : *child_plans)
     {
+        shareDefaultExpressionsSets(child.plan.getRootNode(), default_expressions_sets);
         input_headers.push_back(child.plan.getCurrentHeader());
         plans.push_back(std::make_unique<QueryPlan>(std::move(child.plan)));
     }

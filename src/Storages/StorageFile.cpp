@@ -2428,7 +2428,8 @@ Chunk StorageFileSource::generate()
             {
                 builder.addSimpleTransform([&](const SharedHeader & header)
                 {
-                    return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, getContext());
+                    return std::make_shared<AddingDefaultsTransform>(
+                        header, columns_description, *input_format, getContext(), parser_shared_resources->default_expressions_sets);
                 });
             }
 
@@ -3295,6 +3296,8 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     /// is noticeable for short queries), and passing every task of the readers between the threads.
     if (split_file && num_streams >= parser_shared_resources->max_parsing_threads)
         parser_shared_resources = FormatParserSharedResources::singleThreaded(ctx->getSettingsRef(), num_streams);
+    if (shared_default_expressions_sets)
+        parser_shared_resources->default_expressions_sets = shared_default_expressions_sets;
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -3488,7 +3491,9 @@ public:
                 {
                     builder.addSimpleTransform([&](const SharedHeader & block_header)
                     {
-                        return std::make_shared<AddingDefaultsTransform>(block_header, info.columns_description, *input_format, getContext());
+                        return std::make_shared<AddingDefaultsTransform>(
+                            block_header, info.columns_description, *input_format, getContext(),
+                            parser_shared_resources->default_expressions_sets);
                     });
                 }
 

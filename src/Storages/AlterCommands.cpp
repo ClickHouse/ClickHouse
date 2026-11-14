@@ -1095,10 +1095,10 @@ void AlterCommand::apply(
             ++insert_it;
         }
 
-        metadata.secondary_indices.emplace(
-            insert_it,
-            IndexDescription::getIndexFromAST(
-                index_decl, metadata.columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
+        auto index = IndexDescription::getIndexFromAST(
+            index_decl, metadata.columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context);
+        index.checkExpandedExpressionDoesntContainSubqueries();
+        metadata.secondary_indices.emplace(insert_it, std::move(index));
     }
     else if (type == DROP_INDEX)
     {
@@ -1958,8 +1958,12 @@ void AlterCommands::apply(
     {
         try
         {
+            /// Do not break an index accepted before the check of its expanded expression existed.
+            const bool had_subqueries = index.expandedExpressionContainsSubqueries();
             index = IndexDescription::getIndexFromAST(
                 index.definition_ast, columns_with_virtuals, index.isImplicitlyCreated(), index.escape_filenames, index_context);
+            if (!had_subqueries)
+                index.checkExpandedExpressionDoesntContainSubqueries();
         }
         catch (const Exception & exception)
         {
@@ -1989,8 +1993,7 @@ void AlterCommands::apply(
             if (!blocksHaveEqualStructure(projection.sample_block_for_keys, new_projection.sample_block_for_keys))
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "Cannot ALTER column");
             /// Check if new metadata is convertible from old metadata for projection.
-            Block old_projection_block = projection.sample_block;
-            performRequiredConversions(old_projection_block, new_projection.sample_block.getNamesAndTypesList(), context, metadata_copy.getColumns().getDefaults());
+            checkRequiredConversions(projection.sample_block, new_projection.sample_block.getNamesAndTypesList(), context, metadata_copy.getColumns().getDefaults());
             new_projections.add(std::move(new_projection));
         }
         catch (const Exception & exception)
