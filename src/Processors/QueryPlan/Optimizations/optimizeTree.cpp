@@ -560,7 +560,11 @@ void optimizeTreeSecondPass(
     /// when nothing was distributed).
     traverseQueryPlan(stack, root,
         [&](auto &) {},
-        [&](auto & frame_node) { convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings); });
+        [&](auto & frame_node)
+        {
+            convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
+            skipDeduplicationAfterSetOperationJoin(frame_node);
+        });
 
     /// the conversion makes the pre-join expressions, also without plan optimizations
     lowerArrayJoinFunctions(root, nodes, extra_settings);

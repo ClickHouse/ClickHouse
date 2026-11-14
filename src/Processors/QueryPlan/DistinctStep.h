@@ -111,6 +111,16 @@ public:
     /// This affects only performance, so it is not serialized.
     void coalesceOutput() { coalesce_output = true; }
 
+    /// The input rows are already distinct, so the step only enforces the limit on rows, with the rows it passes as the
+    /// set.
+    void skipDeduplication() { skip_deduplication = true; }
+    bool isDeduplicationSkipped() const { return skip_deduplication; }
+
+    /// The step removes the duplicates of the join that executes `EXCEPT DISTINCT`, over all of its columns. It is needed
+    /// only when the join stays LEFT ANTI after optimization.
+    void markDeduplicatesExceptJoin() { deduplicates_except_join = true; }
+    bool deduplicatesExceptJoin() const { return deduplicates_except_join; }
+
 private:
     void updateOutputHeader() override;
 
@@ -127,6 +137,8 @@ private:
     bool parallel_distinct = false;
     bool preserve_input_order = false;
     bool coalesce_output = false;
+    bool skip_deduplication = false;
+    bool deduplicates_except_join = false;
 };
 
 }

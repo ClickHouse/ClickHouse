@@ -1,6 +1,7 @@
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -74,6 +75,10 @@ void tryMarkJoin(QueryPlan::Node & node)
 
     /// Only the hash-join pipeline (build the right side first) wires the seal.
     if (join_step->getJoin()->pipelineType() != JoinPipelineType::FillRightFirst)
+        return;
+
+    /// A set-operation join starts the build only after its probe side has a row, so this would deadlock.
+    if (join_step->getJoin()->getTableJoin().setOperation() != JoinSetOperation::None)
         return;
 
     const size_t probe_idx = join_step->swap_streams ? 1 : 0;
