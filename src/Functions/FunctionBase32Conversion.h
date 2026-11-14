@@ -23,7 +23,7 @@ struct Base32EncodeTraits
     }
 
     /// Base32 conversion is linear in the input length, so the cancellation callback is unused.
-    static size_t perform(std::string_view src, UInt8 * dst, const std::function<void()> & = {})
+    static size_t perform(std::string_view src, UInt8 * dst, const std::function<void()> &, size_t &)
     {
         return encodeBase32(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
     }
@@ -44,7 +44,7 @@ struct Base32DecodeTraits
     }
 
     /// Base32 conversion is linear in the input length, so the cancellation callback is unused.
-    static std::optional<size_t> perform(std::string_view src, UInt8 * dst, const std::function<void()> & = {})
+    static std::optional<size_t> perform(std::string_view src, UInt8 * dst, const std::function<void()> &, size_t &)
     {
         return decodeBase32(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
     }
