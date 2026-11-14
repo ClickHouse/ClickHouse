@@ -252,6 +252,7 @@ private:
         VectorWithMemoryTracking<char> class_single_type;   /// per class: one type up to `Nullable` and `LowCardinality`
         VectorWithMemoryTracking<VectorWithMemoryTracking<Int32>> rel_prefix_classes; /// per relation: the classes it can be read in order of, in order
         VectorWithMemoryTracking<Int32> edge_class;          /// per edge: the class of an equality of two columns, or -1
+        VectorWithMemoryTracking<char> edge_constant_key;    /// per edge: an equality of two constant columns, which every sort order satisfies
         TUInt prepared_storage_mask = 0;
         /// Relations a sharded merge can split by primary key ranges on the class they are read in order of.
         TUInt shardable_relations = 0;
@@ -443,6 +444,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     dpsub_data.class_single_type.assign(num_classes, 0);
     dpsub_data.rel_prefix_classes.assign(num_relations, {});
     dpsub_data.edge_class.assign(n, -1);
+    dpsub_data.edge_constant_key.assign(n, 0);
     dpsub_data.prepared_storage_mask = toMask(query_graph.prepared_storage_relations);
     dpsub_data.shardable_relations = 0;
     dpsub_data.rel_primary_key_prefix.assign(num_relations, 0);
@@ -506,6 +508,11 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
             auto [op, lhs, rhs] = edges[i].asBinaryPredicate();
             if (op != JoinConditionOperator::Equals)
                 continue;
+            if (query_graph.constantSides(edges[i]) == 2)
+            {
+                dpsub_data.edge_constant_key[i] = 1;
+                continue;
+            }
             auto lhs_class = query_graph.column_equivalences.getClass(lhs.resolveAliases());
             auto rhs_class = query_graph.column_equivalences.getClass(rhs.resolveAliases());
             if (!lhs_class || lhs_class != rhs_class)
@@ -783,8 +790,11 @@ UInt64 DPSubJoinOrderOptimizer::mergeKeyClasses(
         if (std::popcount(side) == 1 && (side & dpsub_data.prepared_storage_mask))
             return 0;
     for (const auto * edge : edges)
-        if (dpsub_data.edge_class[edge - query_graph.edges.data()] < 0)
+    {
+        const auto i = edge - query_graph.edges.data();
+        if (dpsub_data.edge_class[i] < 0 && !dpsub_data.edge_constant_key[i])
             return 0;
+    }
 
     UInt64 classes = 0;
     for (size_t c = 0; c < dpsub_data.class_relations.size(); ++c)

@@ -53,6 +53,10 @@ merge join
 Join conditions: k = k AND s = s
 -- two keys after a filter that fixes the first storage key column: sorted by the first join key only, a hash join
 hash join
+-- a constant key next to the sorted key: every order is also sorted by the constant, a merge join
+merge join
+-- a constant equated to a column: that input is not sorted by it within the groups of `k`, a hash join
+hash join
 -- without optimize_sorting_by_input_stream_properties a join result is sorted again, so the second join hashes
 hash join
 merge join
