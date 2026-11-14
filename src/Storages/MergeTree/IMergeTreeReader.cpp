@@ -28,6 +28,8 @@
 #include <Interpreters/getColumnFromBlock.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Access/SettingsConstraintsAndProfileIDs.h>
+#include <Common/SettingsChanges.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Databases/enableAllExperimentalSettings.h>
 
@@ -388,6 +390,43 @@ static const std::vector<std::string_view> & getReaderSettingsForDefaultExpressi
     return names;
 }
 
+/// The settings of the storage context that replace the settings of the reading query must not bypass the constraints
+/// of its user: a setting pinned by a settings profile, such as `allow_executable_tables = 0 READONLY`, restricts what
+/// the user may read, whatever the settings of the storage are. Such a setting keeps the value of the reading query
+/// (or the value clamped to its `MIN` / `MAX` constraint).
+static void keepReaderSettingsConstraints(Settings & default_expressions_settings, const Context & read_context)
+{
+    const auto constraints_and_profiles = read_context.getSettingsConstraintsAndCurrentProfiles();
+    const auto & constraints = constraints_and_profiles->constraints;
+    if (constraints.empty())
+        return;
+
+    const auto & reader_settings = read_context.getSettingsRef();
+    SettingsChanges storage_values;
+    for (std::string_view name : default_expressions_settings.getAllRegisteredNames())
+    {
+        Field value = default_expressions_settings.get(name);
+        if (value != reader_settings.get(name))
+            storage_values.emplace_back(name, std::move(value));
+    }
+    if (storage_values.empty())
+        return;
+
+    /// These settings are not set by the reading query, so its readonly mode does not apply, only the constraints do.
+    Settings check_settings = reader_settings;
+    check_settings.set("readonly", 0);
+    SettingsChanges allowed_values = storage_values;
+    constraints.clamp(check_settings, allowed_values, SettingSource::QUERY);
+
+    for (const auto & change : storage_values)
+    {
+        if (const auto * allowed_value = allowed_values.tryGet(change.name))
+            default_expressions_settings.set(change.name, *allowed_value);
+        else
+            default_expressions_settings.set(change.name, reader_settings.get(change.name));
+    }
+}
+
 ContextPtr IMergeTreeReader::createContextForDefaultExpressions() const
 {
     auto storage_context = data_part_info_for_read->getContext();
@@ -405,6 +444,7 @@ ContextPtr IMergeTreeReader::createContextForDefaultExpressions() const
         const auto & reader_settings = settings.read_context->getSettingsRef();
         for (std::string_view name : getReaderSettingsForDefaultExpressions())
             default_expressions_settings.set(name, reader_settings.get(name));
+        keepReaderSettingsConstraints(default_expressions_settings, *settings.read_context);
         context_copy->setSettings(default_expressions_settings);
         context_copy->setCurrentDatabaseUnchecked(storage_context->getCurrentDatabase());
     }
