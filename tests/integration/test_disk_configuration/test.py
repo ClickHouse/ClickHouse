@@ -271,6 +271,8 @@ def test_encrypted_path_prefix_of_table_path(start_cluster):
 def test_table_path_alias_on_reload(start_cluster):
     node = cluster.instances["node1"]
     reload_config_path = "/etc/clickhouse-server/config.d/table_path_alias_on_reload.xml"
+    rejected_reload_log_line = "storage policies were not applied: Disks .* keep the path .* in the same storage"
+    failpoint = "storage_merge_tree_load_mutations_pause_before_read"
 
     # The disk added by the reload is not in the policy while the reload is rejected, and it sees the
     # directory of the table, so the orphaned parts check would refuse to attach the table.
@@ -279,24 +281,45 @@ def test_table_path_alias_on_reload(start_cluster):
         "SETTINGS storage_policy = 'reload_policy', search_orphaned_parts_disks = 'none'"
     )
     node.query("INSERT INTO table_path_alias_on_reload VALUES (1)")
+    # A mutation record, so that the attach below can be paused while it loads the mutations.
+    node.query("ALTER TABLE table_path_alias_on_reload UPDATE x = x WHERE 1 SETTINGS mutations_sync = 1")
+
+    def reload_is_rejected():
+        # `SYSTEM RELOAD CONFIG` reloads the storage configuration before it returns.
+        rejections = int(node.count_in_log(rejected_reload_log_line))
+        node.query("SYSTEM RELOAD CONFIG")
+        assert int(node.count_in_log(rejected_reload_log_line)) == rejections + 1
+        assert (
+            node.query("SELECT count() FROM system.storage_policies WHERE policy_name = 'reload_policy'")
+            == "1\n"
+        )
 
     node.copy_file_to_container(
         os.path.join(SCRIPT_DIR, "configs/table_path_alias_on_reload.xml"),
         reload_config_path,
     )
-    # The roots of the disks differ, so the policy itself is valid, but the reloaded policy would make the
-    # table read its parts through both disks. The reload is not applied, and the table keeps working.
     try:
-        node.query("SYSTEM RELOAD CONFIG")
-        assert node.wait_for_log_line("While checking table .*table_path_alias_on_reload")
-        assert (
-            node.query("SELECT count() FROM system.storage_policies WHERE policy_name = 'reload_policy'")
-            == "1\n"
-        )
+        # The roots of the disks differ, so the policy itself is valid, but the reloaded policy would make the
+        # table read its parts through both disks. The reload is not applied, and the table keeps working.
+        reload_is_rejected()
+        node.query("DETACH TABLE table_path_alias_on_reload SYNC")
+        node.query("ATTACH TABLE table_path_alias_on_reload")
+        assert node.query("SELECT x FROM table_path_alias_on_reload") == "1\n"
+
+        # A table that is being attached while the configuration is reloaded is checked against the reloaded
+        # policy too, even though it is not in the database yet.
+        node.query("DETACH TABLE table_path_alias_on_reload SYNC")
+        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        attach = node.get_query_request("ATTACH TABLE table_path_alias_on_reload")
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
+        reload_is_rejected()
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        attach.get_answer()
         node.query("DETACH TABLE table_path_alias_on_reload SYNC")
         node.query("ATTACH TABLE table_path_alias_on_reload")
         assert node.query("SELECT x FROM table_path_alias_on_reload") == "1\n"
     finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
         node.exec_in_container(["rm", "-f", reload_config_path])
         node.query("SYSTEM RELOAD CONFIG")
         node.query("DROP TABLE IF EXISTS table_path_alias_on_reload SYNC")

@@ -34,7 +34,6 @@ class Exception;
 class ColumnsDescription;
 struct ConstraintsDescription;
 class IDisk;
-class StoragePolicySelector;
 
 using DatabasePtr = std::shared_ptr<IDatabase>;
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
@@ -292,11 +291,6 @@ public:
     }
 
     void triggerReloadDisksTask(const Strings & new_added_disks);
-
-    /// Throws if a loaded table cannot use the storage policy of the same name in `new_policies`, for example
-    /// because two disks of the reloaded policy keep the data path of the table in the same storage.
-    /// Called before a reloaded configuration of storage policies is published, so that a rejected one is not applied.
-    void checkTablesWithReloadedStoragePolicies(const StoragePolicySelector & new_policies) const;
 
     void stopReplicatedDDLQueries();
     void startReplicatedDDLQueries();

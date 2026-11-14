@@ -713,7 +713,17 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
     if (date_column_name.empty())
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
 
-    checkDisksHaveDistinctStorageForPath(getDisks(), relative_data_path, getStoragePolicy()->getName());
+    if (!relative_data_path.empty())
+    {
+        /// Checks and records the data path under the lock that a reload of the storage configuration holds from its own
+        /// checks of the recorded paths to the publication of the reloaded policies, so this table is checked against the
+        /// policy it ends up with, even if the reload happens while the table is being attached.
+        const auto context = getContext();
+        const auto lock = context->lockStorageConfigurationUpdates();
+        const auto storage_policy = getStoragePolicy();
+        checkDisksHaveDistinctStorageForPath(storage_policy->getDisks(), relative_data_path, storage_policy->getName());
+        context->addTableDataPath(this, relative_data_path, storage_policy->getName(), lock);
+    }
 
     const auto format_version_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
     std::optional<UInt32> read_format_version;
@@ -4079,6 +4089,16 @@ MergeTreeData::~MergeTreeData()
         tryLogCurrentException(log, "Failed to deactivate a background task");
     }
 
+    try
+    {
+        if (const auto context = Context::getGlobalContextInstance())
+            context->removeTableDataPath(this);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to forget the data path of the table");
+    }
+
     releaseTableDiskRoots();
 }
 
@@ -5604,21 +5624,42 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
 {
     LOG_INFO(log, "Renaming table to path {} with ID {}", new_table_path, new_table_id.getFullTableName());
 
-    auto disks = getStoragePolicy()->getDisks();
-    checkDisksHaveDistinctStorageForPath(disks, new_table_path, getStoragePolicy()->getName());
-
-    for (const auto & disk : disks)
+    const auto context = getContext();
+    Disks disks;
     {
-        if (disk->existsDirectory(new_table_path))
-            throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Target path already exists: {}", fullPath(disk, new_table_path));
+        /// Records the new path beside the old one before moving the data, so that a concurrent reload of the storage
+        /// configuration checks both. The path that is not used in the end is forgotten below.
+        const auto lock = context->lockStorageConfigurationUpdates();
+        const auto storage_policy = getStoragePolicy();
+        disks = storage_policy->getDisks();
+        checkDisksHaveDistinctStorageForPath(disks, new_table_path, storage_policy->getName());
+        context->addTableDataPath(this, new_table_path, storage_policy->getName(), lock);
     }
 
-    for (const auto & disk : disks)
+    try
     {
-        auto new_table_path_parent = parentPath(new_table_path);
-        disk->createDirectories(new_table_path_parent);
-        disk->moveDirectory(relative_data_path, new_table_path);
+        for (const auto & disk : disks)
+        {
+            if (disk->existsDirectory(new_table_path))
+                throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Target path already exists: {}", fullPath(disk, new_table_path));
+        }
+
+        for (const auto & disk : disks)
+        {
+            auto new_table_path_parent = parentPath(new_table_path);
+            disk->createDirectories(new_table_path_parent);
+            disk->moveDirectory(relative_data_path, new_table_path);
+        }
     }
+    catch (...)
+    {
+        if (new_table_path != relative_data_path)
+            context->removeTableDataPath(this, new_table_path);
+        throw;
+    }
+
+    if (new_table_path != relative_data_path)
+        context->removeTableDataPath(this, relative_data_path);
 
     if (!getStorageID().hasUUID())
         getContext()->clearCaches();
@@ -7731,6 +7772,18 @@ void MergeTreeData::changeSettings(
         auto new_changes = new_settings->as<const ASTSetQuery &>().changes;
         MergeTreeSettings::resolveDiskSetting(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
 
+        /// A change of the storage policy is checked and applied under the lock that a reload of the storage configuration
+        /// holds from its checks of the recorded data paths to the publication of the reloaded policies.
+        std::unique_lock<std::mutex> storage_configuration_lock;
+        for (const auto & change : new_changes)
+        {
+            if (change.name == "disk" || change.name == "storage_policy")
+            {
+                storage_configuration_lock = getContext()->lockStorageConfigurationUpdates();
+                break;
+            }
+        }
+
         StoragePolicyPtr new_storage_policy = nullptr;
 
         for (const auto & change : new_changes)
@@ -7795,6 +7848,10 @@ void MergeTreeData::changeSettings(
 
         storage_settings.set(std::move(copy));
         setFilenameRegexpForCachePrewarming(getSettings());
+
+        if (has_storage_policy_changed && !relative_data_path.empty())
+            getContext()->addTableDataPath(this, relative_data_path, getStoragePolicy()->getName(), storage_configuration_lock);
+        storage_configuration_lock = {};
 
         /// Route the new `StorageInMemoryMetadata` clone (and the deeper clone produced by
         /// `setInMemoryMetadata`) into the dedicated MergeTree arena.

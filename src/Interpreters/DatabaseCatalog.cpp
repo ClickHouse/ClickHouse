@@ -10,9 +10,7 @@
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/IDatabase.h>
-#include <Disks/DiskSelector.h>
 #include <Disks/IDisk.h>
-#include <Disks/StoragePolicy.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
 #include <Interpreters/Context.h>
@@ -2476,36 +2474,6 @@ void DatabaseCatalog::triggerReloadDisksTask(const Strings & new_added_disks)
     std::lock_guard lock{reload_disks_mutex};
     disks_to_reload.insert(new_added_disks.begin(), new_added_disks.end());
     (*reload_disks_task)->schedule();
-}
-
-void DatabaseCatalog::checkTablesWithReloadedStoragePolicies(const StoragePolicySelector & new_policies) const
-{
-    /// Tables that are not loaded yet are skipped instead of waited for: they check their storage policy
-    /// when they are attached (see `MergeTreeData::initializeDirectoriesAndFormatVersion`).
-    for (const auto & [database_name, database] : getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false, .with_remote_databases = false}))
-    {
-        for (auto it = database->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
-        {
-            const auto merge_tree = castStorage<MergeTreeData>(it->table(), DeferredTable::Skip);
-            if (!merge_tree)
-                continue;
-
-            const auto old_policy = merge_tree->getStoragePolicy();
-            const auto new_policy = new_policies.tryGet(old_policy->getName());
-            if (!new_policy)
-                continue;
-
-            try
-            {
-                checkDisksHaveDistinctStorageForPath(new_policy->getDisks(), merge_tree->getRelativeDataPath(), new_policy->getName());
-            }
-            catch (Exception & e)
-            {
-                e.addMessage("While checking table {}", merge_tree->getStorageID().getNameForLogs());
-                throw;
-            }
-        }
-    }
 }
 
 void DatabaseCatalog::stopReplicatedDDLQueries()
