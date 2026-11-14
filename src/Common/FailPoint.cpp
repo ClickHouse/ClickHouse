@@ -140,6 +140,7 @@ static struct InitFiu
     ONCE(distributed_cache_server_fail_metrics_request) \
     ONCE(distributed_cache_server_fail_show_request) \
     ONCE(distributed_cache_server_fail_show_streaming) \
+    ONCE(distributed_cache_fail_show_row_insert) \
     ONCE(distributed_cache_server_reply_slow_down) \
     REGULAR(distributed_cache_fail_request_in_the_middle_of_request_always) \
     REGULAR(distributed_cache_assume_gap_buffered_on_seek) \
@@ -184,6 +185,7 @@ static struct InitFiu
     REGULAR(database_catalog_shutdown_sleep_per_table) \
     REGULAR(dummy_failpoint) \
     ONCE(system_log_pipeline_fail_after_smt_restore) \
+    REGULAR(system_log_pipeline_inject_test_column) \
     REGULAR(prefetched_reader_pool_failpoint) \
     REGULAR(runtime_filter_skip_finish_insert) \
     REGULAR(taskstats_counters_reset_throw) \
