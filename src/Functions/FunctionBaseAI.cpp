@@ -40,6 +40,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_ai_functions;
     extern const SettingsUInt64 ai_function_request_timeout_sec;
     extern const SettingsUInt64 ai_function_max_retries;
     extern const SettingsNonZeroUInt64 ai_function_max_concurrent_requests_per_thread;
@@ -59,6 +60,7 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -389,8 +391,11 @@ void FunctionBaseAI::checkHasUser(const ContextPtr & context)
         "AI functions cannot be executed without a user, e.g. in background merges, mutations or `Buffer` flushes");
 }
 
-void FunctionBaseAI::throwIfBackgroundExpression(const ContextPtr & context)
+void FunctionBaseAI::throwIfNotAllowed(const ContextPtr & context)
 {
+    if (!context->getSettingsRef()[Setting::allow_ai_functions])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "AI functions are disabled. Set `allow_ai_functions` to enable them");
+
     if (context->isAnalyzingBackgroundExpressions())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "AI functions cannot be used in expressions executed in the background: mutations, keys, TTL, skip indexes "
