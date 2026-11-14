@@ -79,6 +79,8 @@ public:
         const DataTypePtr & dynamic_type_,
         const SerializationPtr & dynamic_serialization_);
 
+    bool isColumnCompatible(const IColumn & column) const override { return typeid(column) == typeid(ColumnObject); }
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,

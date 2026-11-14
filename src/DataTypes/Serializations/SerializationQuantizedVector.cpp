@@ -120,6 +120,9 @@ public:
         return ColumnConst::create(std::move(column), 0);
     }
 
+    /// Reads into the `ColumnConst` of `wrapColumnForDeserialization`, not a column of the subcolumn type.
+    bool isColumnCompatible(const IColumn & column) const override { return typeid(column) == typeid(ColumnConst); }
+
     void deserializeBinaryBulkWithMultipleStreams(
         IColumn & column,
         size_t limit,

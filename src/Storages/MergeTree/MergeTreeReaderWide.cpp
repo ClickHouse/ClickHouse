@@ -236,6 +236,24 @@ size_t MergeTreeReaderWide::readRows(
         if (shared_columns.size() != num_columns)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} shared columns, got {}", num_columns, shared_columns.size());
 
+        /// Result columns created by the data type alone may not match the part's serializations
+        /// (see ISerialization::isColumnCompatible): reading into them would be UB.
+        for (size_t pos = 0; pos < num_columns; ++pos)
+        {
+            if (res_columns[pos] && !serializations[pos]->isColumnCompatible(*res_columns[pos]))
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot append to the result column of family {} passed for column {} of part {}: "
+                    "the column is stored with serialization kind '{}' that deserializes into a column "
+                    "of a specific class and casts to it unchecked, so appending to a different one is "
+                    "undefined behaviour. Pass result columns created by the part's serializations "
+                    "(e.g. IDataType::createColumn(serialization)), not by the data type alone",
+                    res_columns[pos]->getFamilyName(),
+                    columns_to_read[pos].name,
+                    data_part_info_for_read->getPartName(),
+                    ISerialization::kindStackToString(serializations[pos]->getKindStack()));
+        }
+
         if (num_columns == 0)
             return max_rows_to_read;
 
