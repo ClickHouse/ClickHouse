@@ -513,6 +513,9 @@ struct GatherColumn
     /// Indexed by block_no; null when no block stores this column as `ColumnReplicated`.
     const GatherRowRemap * remap_by_block = nullptr;
     bool in_row_store = false;
+    /// See `StoredColumnsIndex::EmitColumn`.
+    size_t emit_bytes = 0;
+    size_t emit_rows = 0;
 };
 
 /// One column an emit table is asked for. `position` is the column's position in the saved block
@@ -565,6 +568,10 @@ public:
         /// Owns the shape when no live block resolved one - see `resolveEmitColumns`.
         MutableColumnPtr shape_prototype;
         bool in_row_store = false;
+        /// Logical bytes of this column over the live rows of the stored blocks, and those rows.
+        /// A `ColumnReplicated` is counted at its allocated bytes.
+        size_t emit_bytes = 0;
+        size_t emit_rows = 0;
     };
 
     /// Registers a stored block, returns its block_no. Throws when the 2^31 limit

@@ -277,8 +277,18 @@ planJoinEmit(const HashJoin::RightTableData & data, std::span<const size_t> posi
     data.stored_columns_index->resolveEmitColumns(data.sample_block.columns(), requests, gather_by_position);
 
     plan.gather.assign(positions.size(), {});
+    size_t emit_bytes = 0;
+    size_t emit_rows = 0;
     for (size_t dst_idx = 0; dst_idx < positions.size(); ++dst_idx)
-        plan.gather[dst_idx] = gather_by_position[positions[dst_idx]];
+    {
+        const GatherColumn & gather = gather_by_position[positions[dst_idx]];
+        plan.gather[dst_idx] = gather;
+        /// Every position is resolved over the same stored blocks.
+        chassert(dst_idx == 0 || gather.emit_rows == emit_rows);
+        emit_bytes += gather.emit_bytes;
+        emit_rows = gather.emit_rows;
+    }
+    plan.emit_bytes_per_row = emit_rows ? (emit_bytes + emit_rows - 1) / emit_rows : 0;
     return plan;
 }
 

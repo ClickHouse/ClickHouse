@@ -504,6 +504,7 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     /// nothing and must stay distinguishable from a measured zero.
     const std::optional<size_t> matched_right_rows
         = added_columns.record_row_refs ? std::optional<size_t>(added_columns.lazy_output.hash_table_matches) : std::nullopt;
+    const size_t emit_bytes_per_row = added_columns.lazy_output.emit_bytes_per_row;
 
     auto join_result = std::make_unique<HashJoinResult>(
         std::move(added_columns.lazy_output),
@@ -519,7 +520,7 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
             join.required_right_keys_sources,
             join.max_joined_block_rows,
             join.max_joined_block_bytes,
-            join.data->allocated_size / std::max<size_t>(1, join.data->rows_to_join),
+            emit_bytes_per_row,
             join_features.need_filter,
             is_join_get,
             join.joined_block_split_single_row,

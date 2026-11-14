@@ -44,3 +44,22 @@ FROM
     ON l.k = r.k
 )
 SETTINGS max_joined_block_size_rows = 0, max_joined_block_size_bytes = 4500, join_algorithm = 'hash';
+
+-- A right side of 2 rows filtered out of one 84-row granule, matching every left row: the byte budget
+-- must come from the right rows the join emits (~450 bytes per output row here), not from the capacity
+-- and the granule-wide `LowCardinality` dictionaries of the stored block divided by 2 rows.
+DROP TABLE IF EXISTS t_05058_right;
+CREATE TABLE t_05058_right (k UInt8, f LowCardinality(String), s LowCardinality(String), t String) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_05058_right SELECT 1, if(number IN (1, 31), 'yes', 'no'), concat('m', toString(number % 30)), toString(number) FROM numbers(84);
+
+SELECT max(bs) > 4096, max(bs) < 131072, count()
+FROM
+(
+    SELECT blockSize() AS bs
+    FROM (SELECT 1 AS k, rightPad(toString(number), 256, 'x') AS v FROM numbers(65536)) AS l
+    INNER JOIN (SELECT k, s, t FROM t_05058_right WHERE f = 'yes') AS r USING (k)
+    WHERE NOT ignore(v, s, t)
+)
+SETTINGS max_joined_block_size_rows = 0, max_joined_block_size_bytes = 4194304, join_algorithm = 'hash';
+
+DROP TABLE t_05058_right;

@@ -1,6 +1,8 @@
 #include <Interpreters/HashJoin/HashJoinResult.h>
 #include <Interpreters/castColumn.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnSparse.h>
 #include <Common/memcpySmall.h>
 
 namespace DB
@@ -90,6 +92,29 @@ static void replicateColumnLazily(ColumnPtr & column, const IColumn::Offsets & o
     }
 }
 
+static std::set<size_t> getLeftColumnsToErase(const Block & block, const TableJoin & table_join)
+{
+    std::set<size_t> block_columns_to_erase;
+    if (HashJoin::canRemoveColumnsFromLeftBlock(table_join))
+    {
+        /// Keep left columns matching getOutputColumns(Left) by name AND multiplicity: it may list a
+        /// name fewer times than the physical block holds it, and the surviving count must equal
+        /// getOutputColumns(Left).size() (used as left_columns_count downstream). Cap per name.
+        std::unordered_map<std::string_view, size_t> left_output_remaining;
+        for (const auto & out_column : table_join.getOutputColumns(JoinTableSide::Left))
+            ++left_output_remaining[out_column.name];
+        for (size_t i = 0; i < block.columns(); ++i)
+        {
+            auto it = left_output_remaining.find(block.getByPosition(i).name);
+            if (it != left_output_remaining.end() && it->second > 0)
+                --it->second;
+            else
+                block_columns_to_erase.insert(i);
+        }
+    }
+    return block_columns_to_erase;
+}
+
 static void appendRightColumns(
     Block & block,
     MutableColumns columns,
@@ -112,24 +137,7 @@ static void appendRightColumns(
         block.setColumns(cols);
     }
 
-    std::set<size_t> block_columns_to_erase;
-    if (HashJoin::canRemoveColumnsFromLeftBlock(table_join))
-    {
-        /// Keep left columns matching getOutputColumns(Left) by name AND multiplicity: it may list a
-        /// name fewer times than the physical block holds it, and the surviving count must equal
-        /// getOutputColumns(Left).size() (used as left_columns_count downstream). Cap per name.
-        std::unordered_map<std::string_view, size_t> left_output_remaining;
-        for (const auto & out_column : table_join.getOutputColumns(JoinTableSide::Left))
-            ++left_output_remaining[out_column.name];
-        for (size_t i = 0; i < block.columns(); ++i)
-        {
-            auto it = left_output_remaining.find(block.getByPosition(i).name);
-            if (it != left_output_remaining.end() && it->second > 0)
-                --it->second;
-            else
-                block_columns_to_erase.insert(i);
-        }
-    }
+    const std::set<size_t> block_columns_to_erase = getLeftColumnsToErase(block, table_join);
 
     for (size_t i = 0; i < columns.size(); ++i)
     {
@@ -403,6 +411,48 @@ static size_t getAvgBytesPerRow(const Block & block)
     return block.allocatedBytes() / std::max<size_t>(1, block.rows());
 }
 
+/// Per-row bytes the right keys appendRightColumns copies from the left add on top of getAvgBytesPerRow of the source block.
+static size_t getCopiedRightKeysBytesPerRow(const Block & block, const HashJoinResult::Properties & properties)
+{
+    const auto & table_join = properties.table_join;
+    if (properties.required_right_keys.columns() == 0 || block.rows() == 0)
+        return 0;
+
+    const std::set<size_t> left_columns_to_erase = getLeftColumnsToErase(block, table_join);
+    const bool is_asof_join = table_join.strictness() == JoinStrictness::Asof;
+    size_t bytes_per_row = 0;
+    for (size_t i = 0; i < properties.required_right_keys.columns(); ++i)
+    {
+        const auto & right_key = properties.required_right_keys.getByPosition(i);
+        if (is_asof_join && right_key.name == table_join.getOnlyClause().key_names_right.back())
+            continue;
+
+        const size_t source_position = block.getPositionByName(properties.required_right_keys_sources[i]);
+        const auto & source = block.getByPosition(source_position);
+        const size_t source_bytes_per_row = source.column->allocatedBytes() / block.rows();
+        size_t copy_bytes_per_row = source_bytes_per_row;
+        if (const auto * const_source = typeid_cast<const ColumnConst *>(source.column.get()))
+            copy_bytes_per_row = const_source->getDataColumn().byteSize();
+        else if ((source.column->isReplicated() || recursiveHasSparse(source.column))
+                 && (isNullableOrLowCardinalityNullable(right_key.type) || source.column->isNullable()))
+        {
+            /// Correcting the copy's nullability materializes a replicated or sparse source.
+            size_t materialized_bytes = 0;
+            for (size_t row = 0; row < block.rows(); ++row)
+                materialized_bytes += source.column->byteSizeAt(row);
+            copy_bytes_per_row = materialized_bytes / block.rows();
+        }
+        if (right_key.type->isNullable() && !source.type->isNullable())
+            copy_bytes_per_row += 1;
+
+        if (!left_columns_to_erase.contains(source_position))
+            bytes_per_row += copy_bytes_per_row;
+        else if (copy_bytes_per_row > source_bytes_per_row)
+            bytes_per_row += copy_bytes_per_row - source_bytes_per_row;
+    }
+    return bytes_per_row;
+}
+
 void HashJoinResult::setNextBlock(ScatteredBlock && block)
 {
     next_scattered_block.emplace(std::move(block));
@@ -440,7 +490,12 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         limit_bytes_per_key = properties.max_joined_block_bytes;
     }
 
-    size_t avg_bytes_per_row = properties.avg_joined_bytes_per_row + getAvgBytesPerRow(scattered_block->getSourceBlock());
+    /// Once per result.
+    if (next_row == 0 && properties.max_joined_block_bytes && !offsets.empty() && offsets.back() > offsets.size())
+        copied_right_keys_bytes_per_row = getCopiedRightKeysBytesPerRow(scattered_block->getSourceBlock(), properties);
+
+    size_t avg_bytes_per_row = properties.avg_joined_bytes_per_row + getAvgBytesPerRow(scattered_block->getSourceBlock())
+        + copied_right_keys_bytes_per_row;
     auto num_lhs_rows = numLeftRowsForNextBlock(next_row, offsets, properties.max_joined_block_rows, properties.max_joined_block_bytes, avg_bytes_per_row);
 
     if (num_lhs_rows == 0 || (next_row == 0 && num_lhs_rows >= scattered_block->rows()))

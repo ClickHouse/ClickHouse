@@ -358,6 +358,16 @@ void StoredColumnsIndex::invalidateEmitTable()
     ++blocks_generation;
 }
 
+/// Counts the share of `column_bytes` held by the rows the block's selector keeps, as `StoredBlock::allocatedBytes` does.
+static void addLiveRowsBytes(StoredColumnsIndex::EmitColumn & emit_column, const StoredBlock & block, size_t column_bytes)
+{
+    const size_t block_rows = block.blockRows();
+    if (block_rows == 0)
+        return;
+    emit_column.emit_bytes += column_bytes * block.selector.size() / block_rows;
+    emit_column.emit_rows += block.selector.size();
+}
+
 void StoredColumnsIndex::resolveEmitColumns(
     size_t saved_columns_count, const std::vector<EmitColumnRequest> & requests, std::vector<GatherColumn> & out_gather)
 {
@@ -413,10 +423,12 @@ void StoredColumnsIndex::resolveEmitColumns(
                     resolveRowStoreGatherNode(
                         emit_column->gather_root, request.type, *row_store, request.access, b, num_blocks);
                     emit_column->in_row_store = true;
+                    addLiveRowsBytes(*emit_column, *block, row_store->fieldByteSize(request.access.index));
                     continue;
                 }
 
                 const IColumn * column = block->columns[request.access.index].get();
+                size_t column_bytes = 0;
                 /// `row' = indexes[row]` addresses the nested column, so the planes come from there
                 /// and the remap entry carries the indexes plane.
                 if (const ColumnReplicated * replicated = block->replicated_columns[request.access.index])
@@ -434,6 +446,7 @@ void StoredColumnsIndex::resolveEmitColumns(
                     if (remap.empty())
                         remap.resize(num_blocks);
                     remap[b] = {.indexes_data = indexes_raw.data(), .index_width = static_cast<UInt8>(index_width)};
+                    column_bytes = replicated->allocatedBytes();
                     column = replicated->getNestedColumn().get();
                     /// `remapFlatWord` puts `indexes[row]` back in a 32-bit row field, so the nested
                     /// column has to fit a block's row limit as well. It can be larger than the block
@@ -444,8 +457,11 @@ void StoredColumnsIndex::resolveEmitColumns(
                             "Too many deduplicated rows in right table block for HashJoin: {}",
                             column->size());
                 }
+                else
+                    column_bytes = column->byteSize();
 
                 resolveGatherNode(emit_column->gather_root, request.type, *column, b, num_blocks);
+                addLiveRowsBytes(*emit_column, *block, column_bytes);
             }
             /// With no live block to decide the shape - an empty right side, or one whose blocks
             /// were all cleared - the join still emits, every row a default, so a column of the
@@ -464,7 +480,9 @@ void StoredColumnsIndex::resolveEmitColumns(
         out_gather[pos]
             = {.node = &emit_column.gather_root,
                .remap_by_block = emit_column.gather_remap_by_block.empty() ? nullptr : emit_column.gather_remap_by_block.data(),
-               .in_row_store = emit_column.in_row_store};
+               .in_row_store = emit_column.in_row_store,
+               .emit_bytes = emit_column.emit_bytes,
+               .emit_rows = emit_column.emit_rows};
     }
 }
 
