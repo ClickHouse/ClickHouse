@@ -1159,9 +1159,11 @@ fi
 
     def check_ch_is_oom_killed(self):
         if Shell.check(f"dmesg > {self.DMESG_LOG}"):
+            # The kernel logs oom_reaper for any victim, e.g. a runner agent killed in its
+            # own memory cgroup, so only ClickHouse counts; the other two are host-wide OOMs.
             return Result.from_commands_run(
                 name="OOM in dmesg",
-                command=f"! cat {self.DMESG_LOG} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
+                command=f"! cat {self.DMESG_LOG} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process [0-9]* (clickhouse' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
             )
         else:
             return None
