@@ -12,6 +12,7 @@ namespace DB::ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_DEEP_RECURSION;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int INCORRECT_DATA;
 }
 
 using namespace DB;
@@ -405,6 +406,77 @@ GTEST_TEST(Field, CompareUUID)
 }
 
 
+GTEST_TEST(Field, RestoreFromDumpRoundTripsNestedAndQuotedContainers)
+{
+    /// The value shapes below cannot be built from SQL: the SET grammar accepts only a literal or a
+    /// flat map of string literals, so a stateless test cannot reach a nested container, an array
+    /// element or an aggregate state.
+    auto round_trip = [](const Field & field) { return Field::restoreFromDump(field.dump()); };
+
+    /// Nested containers. A Map element is always dumped as a nested Tuple_(...), so any non-empty
+    /// map exercises this.
+    {
+        Array inner{Field{UInt64{1}}, Field{UInt64{2}}};
+        Field nested_array{Array{Field{std::move(inner)}, Field{Tuple{Field{String{"x"}}, Field{Int64{-3}}}}}};
+        ASSERT_EQ(round_trip(nested_array), nested_array);
+
+        Field nested_map{Map{Field{Tuple{Field{String{"k"}}, Field{Map{Field{Tuple{Field{String{"a"}}, Field{String{"b"}}}}}}}}}};
+        ASSERT_EQ(round_trip(nested_map), nested_map);
+    }
+
+    /// String elements holding the separators and the escape characters of the dump grammar.
+    {
+        Field hostile{Array{Field{String{"a,b]c)d'e\\f"}}, Field{String{"("}}, Field{String{"'"}}}};
+        ASSERT_EQ(round_trip(hostile), hostile);
+    }
+
+    /// An aggregate state: the name may be parameterised, and the data is quoted but its brackets
+    /// and commas are not escaped.
+    {
+        Field state{AggregateFunctionStateData{.name = "quantiles(0.5, 0.9)", .data = "a)b,c'd\\e"}};
+        ASSERT_EQ(round_trip(state), state);
+
+        Field states{Array{state, state}};
+        ASSERT_EQ(round_trip(states), states);
+    }
+
+    /// Empty containers.
+    {
+        ASSERT_EQ(round_trip(Field{Array{}}), Field{Array{}});
+        ASSERT_EQ(round_trip(Field{Tuple{}}), Field{Tuple{}});
+        ASSERT_EQ(round_trip(Field{Map{}}), Field{Map{}});
+    }
+
+    /// A value that parses only partially is an error, not a silently truncated one: a hand written
+    /// users.xml value of Map_('k':'v') must not restore as Map(String 'k').
+    ASSERT_THROW(Field::restoreFromDump("Map_('k':'v')"), DB::Exception);
+    ASSERT_THROW(Field::restoreFromDump("Array_['k':'v']"), DB::Exception);
+    for (const char * dump : {"Decimal32_'1e0' x", "Decimal64_'1e0' x", "Decimal128_'1e0' x", "Decimal256_'1e0' x"})
+        ASSERT_THROW(Field::restoreFromDump(dump), DB::Exception) << dump;
+    ASSERT_THROW(Field::restoreFromDump("AggregateFunctionState_('sum' x, 'ab')"), DB::Exception);
+    ASSERT_THROW(Field::restoreFromDump("AggregateFunctionState_('sum', 'ab' x)"), DB::Exception);
+    ASSERT_THROW(Field::restoreFromDump("AggregateFunctionState_('sum', 'ab') x"), DB::Exception);
+
+    /// A Map element is a key-value pair, so a dump that says otherwise must not restore: consumers
+    /// index the element as a two element tuple.
+    ASSERT_THROW(Field::restoreFromDump("Map_('k')"), DB::Exception);
+    ASSERT_THROW(Field::restoreFromDump("Map_(Tuple_('k'))"), DB::Exception);
+
+    /// A dump nests as deep as its text says, so the depth has to be bounded. Built as text
+    /// directly: dumping a Field this deep would recurse before the parser is reached.
+    {
+        static constexpr size_t depth = 100000;
+        String deep;
+        deep.reserve(depth * 8 + 16);
+        for (size_t i = 0; i < depth; ++i)
+            deep += "Array_[";
+        deep += "UInt64_1";
+        deep.append(depth, ']');
+        ASSERT_THROW(Field::restoreFromDump(deep), DB::Exception);
+    }
+}
+
+
 /// A malformed binary Field that declares an arbitrarily deep nesting must be rejected with
 /// TOO_DEEP_RECURSION, not run the reader past the stack guard page. The bytes are hand-built
 /// because the write side also bounds depth, so a legitimately serialized value cannot be this deep.
@@ -491,4 +563,35 @@ GTEST_TEST(Field, RestoreFromDumpDecimalOutOfRangeScaleThrows)
     /// An in-range exponent-form scale still round-trips.
     Field restored = Field::restoreFromDump("Decimal64_'1e-5'");
     ASSERT_EQ(restored.safeGet<DecimalField<Decimal64>>().getScale(), 5u);
+}
+
+
+/// A binary Map element must be a key-value tuple, as in the text dump reader.
+GTEST_TEST(Field, ReadBinaryMapElementMustBeKeyValueTuple)
+{
+    const Field k{String{"k"}};
+    const Field v{String{"v"}};
+    for (const Field & element : {Field{Tuple{}}, Field{Tuple{k}}, Field{Tuple{k, v, v}}, k})
+    {
+        WriteBufferFromOwnString wb;
+        writeFieldBinary(Field{Map{element}}, wb);
+        wb.finalize();
+        ReadBufferFromString rb(wb.str());
+        try
+        {
+            readFieldBinary(rb);
+            FAIL() << "expected INCORRECT_DATA for " << element.dump();
+        }
+        catch (const Exception & e)
+        {
+            ASSERT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
+        }
+    }
+
+    const Field map{Map{Field{Tuple{k, v}}}};
+    WriteBufferFromOwnString ok_wb;
+    writeFieldBinary(map, ok_wb);
+    ok_wb.finalize();
+    ReadBufferFromString ok_rb(ok_wb.str());
+    ASSERT_EQ(readFieldBinary(ok_rb), map);
 }
