@@ -1,0 +1,15 @@
+{
+  "name": "wasm-parser-playground",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@clickhouse/wasm-parser": "file:../npm"
+  },
+  "scripts": {
+    "start": "node repl.mjs",
+    "repl": "node repl.mjs"
+  }
+}
