@@ -7,6 +7,7 @@
 #include <Processors/Chunk.h>
 #include <QueryPipeline/SizeLimits.h>
 
+#include <atomic>
 #include <functional>
 
 namespace DB
@@ -71,7 +72,10 @@ public:
     /// distinct values. An empty (zero-size) mask means no row of the chunk can be a new value, so the
     /// whole chunk can be skipped. Returns `std::nullopt` when the fast path does not apply (not a
     /// `LowCardinality` column, or the optimization has disabled itself).
-    std::optional<IColumn::Filter> buildMaskIfApplicable(const IColumn & column, size_t num_rows);
+    /// `cancellation_flag` is polled while scanning the dictionary indexes; when it flips, the partially
+    /// built mask is returned as-is, whose unset tail marks the unscanned rows as not-new.
+    std::optional<IColumn::Filter> buildMaskIfApplicable(
+        const IColumn & column, size_t num_rows, const std::atomic<bool> * cancellation_flag = nullptr);
 
     /// Estimates additional bitmap storage without creating dictionary state. Each new dictionary needs
     /// one byte per entry. Empty input, reused dictionaries, and an inapplicable optimization need none.
@@ -83,7 +87,8 @@ public:
     size_t getTotalByteCount() const { return total_byte_count; }
 
 private:
-    std::pair<IColumn::Filter, size_t> buildMask(const ColumnLowCardinality & column, size_t num_rows);
+    std::pair<IColumn::Filter, size_t> buildMask(
+        const ColumnLowCardinality & column, size_t num_rows, const std::atomic<bool> * cancellation_flag);
 
     /// Per-dictionary bitmaps of the seen indices (behind a pointer to keep the hashing machinery
     /// types out of this header).
@@ -110,11 +115,15 @@ public:
     /// `skip_null_keys_` drops rows with a `NULL` key component, matching a `Set` filled with
     /// `transform_null_in = 0`. Enable it only for consumers that discard these rows; ordinary
     /// `DISTINCT` treats `NULL` as a value. Remaining keys use the nested, non-nullable columns.
+    /// `cancellation_flag_` is polled inside the row loops that dominate a chunk's processing time, so
+    /// a cancelled query abandons the rest of the chunk instead of finishing it. `nullptr` (the
+    /// default) disables the polling, for callers without a query pipeline to be cancelled.
     DistinctSetFilter(
         const Block & header,
         const Names & columns,
         const SizeLimits & set_size_limits_,
-        bool skip_null_keys_ = false);
+        bool skip_null_keys_ = false,
+        const std::atomic<bool> * cancellation_flag_ = nullptr);
 
     /// Returns the representation chosen from the materialized input columns. Requires an initialized set.
     DistinctKeyRepresentation getKeyRepresentation() const;
@@ -177,6 +186,8 @@ public:
     /// exception when exceeded; `BREAK` retains the crossing chunk and sets `isLimitReached`, so the
     /// caller must stop reading and return the partial result.
     /// In `skip_null_keys` mode, rows with a `NULL` key component are dropped. The result can be empty.
+    /// With a `cancellation_flag`, an observed cancellation abandons the rest of the chunk and returns an
+    /// empty chunk: the caller drops it anyway, so the output columns are not filtered.
     /// Requires `hasKeyColumns` to be true.
     Chunk filter(Chunk chunk);
 
@@ -235,6 +246,9 @@ private:
 
     const bool skip_null_keys;
     bool has_const_null_key = false;
+
+    /// Polled inside the chunk-processing loops while the flag is not null; see the constructor.
+    const std::atomic<bool> * cancellation_flag;
 };
 
 }

@@ -1,9 +1,13 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <atomic>
+#include <chrono>
+#include <future>
 #include <optional>
 #include <set>
 #include <thread>
+#include <vector>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
@@ -24,6 +28,7 @@
 #include <Common/assert_cast.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadStatus.h>
 #include <Common/iota.h>
@@ -31,6 +36,14 @@
 namespace DB::ErrorCodes
 {
     extern const int SET_SIZE_LIMIT_EXCEEDED;
+}
+
+namespace DB
+{
+namespace FailPoints
+{
+    extern const char distinct_transform_pause[];
+}
 }
 
 using namespace DB;
@@ -1242,4 +1255,42 @@ TEST(DistinctSetFilterInsertion, CheckedPrefixRespectsSizeLimits)
             EXPECT_TRUE(filter.isLimitReached());
         }
     }
+}
+
+TEST(DistinctSetFilterCancellation, CancelledBuildSkipsOutputColumns)
+{
+    const Block header{ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k")};
+
+    /// More rows than one poll interval: the hash loop inserts the keys of the first block, parks at the
+    /// next poll boundary when the failpoint is armed, and observes the flag there.
+    constexpr size_t num_rows = 20000;
+    std::vector<UInt64> values(num_rows);
+    iota(values.data(), values.size(), UInt64{0});
+
+    std::atomic<bool> cancelled = false;
+    DistinctSetFilter filter(header, {}, SizeLimits{}, /*skip_null_keys=*/ false, &cancelled);
+    Chunk input({makeColumn(values)}, num_rows);
+
+    FailPointInjection::enableFailPoint(FailPoints::distinct_transform_pause);
+    auto worker = std::async(std::launch::async, [&] { return filter.filter(input.clone()); });
+    auto paused = std::async(std::launch::async, []
+    {
+        FailPointInjection::waitForPause(FailPoints::distinct_transform_pause);
+    });
+
+    /// Flip the flag while the loop is parked, then release it: the poll right behind the failpoint sees
+    /// the cancellation. The failpoint is disabled before the assertion so that a failed wait still
+    /// releases the parked loop instead of leaving the test stuck.
+    const auto pause_status = paused.wait_for(std::chrono::seconds(60));
+    cancelled.store(true);
+    FailPointInjection::disableFailPoint(FailPoints::distinct_transform_pause);
+    ASSERT_EQ(pause_status, std::future_status::ready) << "the hash loop never reached the poll boundary";
+
+    const Chunk result = worker.get();
+
+    /// The keys inserted before the cancellation stay in the set, but the rows that carry them are
+    /// discarded together with the rest of the chunk, so the output columns must not be filtered at all.
+    EXPECT_GT(filter.getTotalRowCount(), 0u);
+    EXPECT_LT(filter.getTotalRowCount(), num_rows);
+    EXPECT_EQ(result.getNumRows(), 0u);
 }
