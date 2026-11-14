@@ -89,6 +89,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     , pool{createPool(configuration)}
     , load_all_query{query_builder->composeLoadAllQuery()}
 {
+    query_builder->quote_wide_numbers = true;
 }
 
 ClickHouseDictionarySource::ClickHouseDictionarySource(const ClickHouseDictionarySource & other)
@@ -102,6 +103,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(const ClickHouseDictionar
     , pool{createPool(configuration)}
     , load_all_query{other.load_all_query}
 {
+    query_builder->quote_wide_numbers = true;
 }
 
 std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
