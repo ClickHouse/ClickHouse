@@ -19,6 +19,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/IStorage.h>
@@ -627,6 +628,9 @@ void calculateHashTableCacheKeys(
             frame.hash.update(calculateHashFromStep(*source));
         else if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
             frame.hash.update(calculateHashFromStep(*read));
+        /// An empty read has no table identity: it shares a key only with other empty reads, whose builds are empty too.
+        else if (typeid_cast<const ReadNothingStep *>(node.step.get()))
+            frame.hash.update("ReadNothingStep");
         else if (const auto * transform = dynamic_cast<const ITransformingStep *>(node.step.get()))
         {
             // Completely ignore the ignored steps (i.e. the ones for which we return 0)

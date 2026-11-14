@@ -1727,9 +1727,9 @@ HashJoin::~HashJoin()
     {
         if (build_phase_finished)
         {
-            /// Like `ConcurrentHashJoin`, a parallel build of a fixed-key map leaves no entry: it has nothing to preallocate.
-            if (stats_collecting_params.build.isCollectionAndUseEnabled() && data->type != Type::two_level_key8
-                && data->type != Type::two_level_key16)
+            /// A parallel build of a fixed-key map has nothing to preallocate and leaves no entry, unless it is empty.
+            if (stats_collecting_params.build.isCollectionAndUseEnabled()
+                && ((data->type != Type::two_level_key8 && data->type != Type::two_level_key16) || data->rows_to_join == 0))
             {
                 /// An empty build is recorded too: its `source_rows = 0` is the estimate of the next run.
                 getHashTablesStatistics<HashJoinEntry>().update(

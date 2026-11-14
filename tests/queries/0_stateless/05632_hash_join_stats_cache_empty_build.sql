@@ -14,6 +14,13 @@ INSERT INTO rhs VALUES (0);
 SELECT * FROM lhs AS t0 LEFT JOIN (SELECT DISTINCT a FROM rhs WHERE a > 0) AS t1 ON t0.a = t1.a SETTINGS log_comment = '05632_empty_cold' FORMAT Null;
 SELECT * FROM lhs AS t0 LEFT JOIN (SELECT DISTINCT a FROM rhs WHERE a > 0) AS t1 ON t0.a = t1.a SETTINGS log_comment = '05632_empty_warm' FORMAT Null;
 
+CREATE TABLE lhs16 (a UInt16) ENGINE = MergeTree ORDER BY ();
+CREATE TABLE rhs16 (a UInt16) ENGINE = MergeTree ORDER BY ();
+INSERT INTO lhs16 SELECT number FROM numbers(1000);
+INSERT INTO rhs16 VALUES (0);
+SELECT * FROM lhs16 AS t0 LEFT JOIN (SELECT DISTINCT a FROM rhs16 WHERE a > 0) AS t1 ON t0.a = t1.a SETTINGS log_comment = '05632_empty_cold_uint16' FORMAT Null;
+SELECT * FROM lhs16 AS t0 LEFT JOIN (SELECT DISTINCT a FROM rhs16 WHERE a > 0) AS t1 ON t0.a = t1.a SETTINGS log_comment = '05632_empty_warm_uint16' FORMAT Null;
+
 CREATE TABLE lhs2 (a String) ENGINE = MergeTree ORDER BY ();
 CREATE TABLE rhs2 (a String, b UInt8) ENGINE = MergeTree ORDER BY ();
 INSERT INTO lhs2 SELECT toString(number) FROM numbers(1000);
@@ -25,10 +32,22 @@ ALTER TABLE rhs2 UPDATE b = 0 WHERE 1 SETTINGS mutations_sync = 2;
 SELECT * FROM lhs2 AS t0 LEFT JOIN (SELECT a FROM rhs2 WHERE b = 1 UNION ALL SELECT a FROM rhs2 WHERE b = 1) AS t1 ON t0.a = t1.a SETTINGS log_comment = '05632_emptied' FORMAT Null;
 SELECT * FROM lhs2 AS t0 LEFT JOIN (SELECT a FROM rhs2 WHERE b = 1 UNION ALL SELECT a FROM rhs2 WHERE b = 1) AS t1 ON t0.a = t1.a SETTINGS log_comment = '05632_after_empty' FORMAT Null;
 
+CREATE TABLE lhs3 (k05632 UInt64) ENGINE = MergeTree ORDER BY ();
+CREATE TABLE empty3 (k05632 UInt64) ENGINE = MergeTree ORDER BY ();
+CREATE TABLE log3 (k05632 UInt64) ENGINE = Log;
+INSERT INTO lhs3 SELECT number FROM numbers(1000);
+INSERT INTO log3 SELECT number FROM numbers(3000);
+
+-- A `Log` read has no table identity in the statistics key either, and must not share the entry of an empty table
+SELECT * FROM lhs3 AS t0 LEFT JOIN log3 AS t1 ON t0.k05632 = t1.k05632 SETTINGS log_comment = '05632_log' FORMAT Null;
+SELECT * FROM lhs3 AS t0 LEFT JOIN empty3 AS t1 ON t0.k05632 = t1.k05632 SETTINGS log_comment = '05632_empty_table' FORMAT Null;
+SELECT * FROM lhs3 AS t0 LEFT JOIN log3 AS t1 ON t0.k05632 = t1.k05632 SETTINGS log_comment = '05632_log_after_empty' FORMAT Null;
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT log_comment, ProfileEvents['HashJoinBuiltWithSerialLayout'] AS serial, ProfileEvents['HashJoinBuiltWithParallelLayout'] AS parallel
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-    AND log_comment IN ('05632_empty_cold', '05632_empty_warm', '05632_one_key', '05632_emptied', '05632_after_empty')
+    AND log_comment IN ('05632_empty_cold', '05632_empty_warm', '05632_empty_cold_uint16', '05632_empty_warm_uint16', '05632_one_key', '05632_emptied',
+        '05632_after_empty', '05632_log', '05632_empty_table', '05632_log_after_empty')
 ORDER BY event_time_microseconds;

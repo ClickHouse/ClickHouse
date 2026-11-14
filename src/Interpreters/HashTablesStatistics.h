@@ -76,7 +76,7 @@ struct HashJoinEntry
 
     bool shouldBeUpdated(const HashJoinEntry & new_entry) const
     {
-        const auto differs = [](size_t stored, size_t observed) { return observed < stored / MAX_OVERESTIMATION_FACTOR || stored < observed; };
+        const auto differs = [](size_t stored, size_t observed) { return observed * MAX_OVERESTIMATION_FACTOR < stored || stored < observed; };
         return differs(ht_size, new_entry.ht_size) || differs(source_rows, new_entry.source_rows);
     }
 
