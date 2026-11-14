@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <div id="introduction">
   ## 介绍
 </div>
@@ -17,7 +15,15 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 仅凭 ClickHouse 本身并不能构成开箱即用的可观测性解决方案。不过，它可以作为可观测性数据的高效存储引擎，具备无与伦比的压缩率和极快的查询响应速度。要在可观测性解决方案中使用 ClickHouse，还需要配备用户界面和数据采集框架。我们目前建议使用 **Grafana** 来可视化可观测性信号，并使用 **OpenTelemetry** 进行数据采集 (两者都是官方支持的集成) 。
 
-<Image img="/images/use-cases/observability/observability-1.webp" alt="简单 OTel" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![简单 OTel](/images/use-cases/observability/observability-1.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -103,6 +109,14 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 大多数可观测性厂商会将这些信息以瀑布图的形式可视化，并用按比例显示的水平条展示相对时序。例如，在 Grafana 中：
 
-<Image img="/images/use-cases/observability/observability-2.webp" alt="示例 trace" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![示例 trace](/images/use-cases/observability/observability-2.webp)
+
+</Frame>
+
+</div>
 
 对于希望深入了解日志和链路追踪相关概念的用户，我们强烈推荐阅读 [OpenTelemetry 文档](https://opentelemetry.io/docs/concepts/).
