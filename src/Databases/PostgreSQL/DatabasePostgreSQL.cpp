@@ -20,6 +20,8 @@
 #include <Common/RemoteHostFilter.h>
 #include <IO/WriteHelpers.h>
 #include <Databases/DatabaseFactory.h>
+#include <Databases/LoadingStrictnessLevel.h>
+#include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
@@ -707,6 +709,48 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
 }
 
 
+namespace
+{
+
+/// Checks the `SETTINGS` clause of a definition that a user gives against the constraints of the user: its values, which are
+/// settings of the engine, not query settings that `applySettingsFromQuery` checks, as a `SET` would check them, and the value
+/// that a setting reset with `name = DEFAULT` gets, the default of the engine instead of the value of the session, unless the
+/// named collection sets it.
+void checkSettingsOfDefinition(const ASTStorage & engine_define, const NamedCollection * named_collection, const ContextPtr & context)
+{
+    const auto * settings = engine_define.settings;
+    if (!settings)
+        return;
+
+    const auto & query_settings = context->getSettingsRef();
+    const auto constraints = context->getSettingsConstraintsAndCurrentProfiles();
+    query_settings.checkShorthandChanges(settings->changes);
+    /// The overload for constant changes, because the other one removes a change equal to the current setting, which the
+    /// definition keeps.
+    constraints->constraints.check(query_settings, std::as_const(settings->changes), SettingSource::QUERY);
+
+    const PostgreSQLSettings engine_defaults;
+    for (const auto & name : settings->default_settings)
+    {
+        if (PostgreSQLSettings::hasBuiltin(name) && !(named_collection && named_collection->has(name)))
+            constraints->constraints.check(query_settings, SettingChange{name, engine_defaults.get(name)}, SettingSource::QUERY);
+    }
+}
+
+/// The checks of a definition that need the user, before `CREATE DATABASE ... ON CLUSTER` is dispatched: the override of a key
+/// of the named collection by the `SETTINGS` clause (`NOT OVERRIDABLE`, `SHOW NAMED COLLECTIONS SECRETS`), and the constraints.
+void checkDefinition(const ASTStorage & engine_define, const ContextPtr & context)
+{
+    if (!engine_define.settings || !engine_define.engine || !engine_define.engine->arguments)
+        return;
+    const auto named_collection = tryGetNamedCollectionWithOverrides(
+        engine_define.engine->arguments->children, context, /*throw_unknown_collection=*/ true, /*complex_args=*/ nullptr,
+        /*dependent_table_id=*/ nullptr, engine_define.settings);
+    checkSettingsOfDefinition(engine_define, named_collection.get(), context);
+}
+
+}
+
 void registerDatabasePostgreSQL(DatabaseFactory & factory);
 void registerDatabasePostgreSQL(DatabaseFactory & factory)
 {
@@ -724,12 +768,23 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         auto use_table_cache = false;
         StoragePostgreSQL::Configuration configuration;
 
-        /// The connection-pool parameters are seeded from the query-level `postgresql_*` settings
-        /// (preserving the historical behaviour); a named collection may override them.
+        /// Precedence, as for the table engine: the SETTINGS clause, the named collection, the session; a new database stores
+        /// the values from the session that differ from the server's.
         PostgreSQLSettings postgresql_settings;
-        postgresql_settings.loadFromQueryContext(*args.context);
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
+        /// The server's own replay of stored metadata, see the check of the hosts below.
+        const bool is_internal_metadata_replay = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
+        /// A definition the user gives is held to the user's constraints, not one the server stored itself.
+        const bool is_stored_definition = is_internal_metadata_replay || isLoadingFromExistingMetadata(args.mode)
+            || args.create_query.attach_short_syntax;
+
+        /// The SETTINGS clause overrides the collection like its key-value arguments do, so it is checked the same way, when
+        /// the definition is given: a stored definition was checked when it was written, and a key that the collection marks
+        /// `NOT OVERRIDABLE` later must not make the database fail to load, also at the startup of the server.
+        auto named_collection = tryGetNamedCollectionWithOverrides(
+            engine_args, args.context, /*throw_unknown_collection=*/ true, /*complex_args=*/ nullptr,
+            /*dependent_table_id=*/ nullptr, is_stored_definition ? nullptr : engine_define->settings);
+        if (named_collection)
         {
             configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, &postgresql_settings, args.context, /*require_table=*/ false);
             use_table_cache = named_collection->getOrDefault<UInt64>("use_table_cache", 0);
@@ -789,12 +844,24 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         /// that cannot boot. The loader flag, not `internal`, is the discriminator: wrappers such as
         /// `PARALLEL WITH` run user statements as internal ones, and a user-issued `ATTACH DATABASE`
         /// is not a replay and stays fail-closed, otherwise it would be a direct bypass of the policy.
-        const bool is_internal_metadata_replay = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
         if (!is_internal_metadata_replay)
         {
             for (const auto & address : configuration.addresses)
                 args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
         }
+
+        if (!is_stored_definition)
+            checkSettingsOfDefinition(*engine_define, named_collection.get(), args.context);
+        postgresql_settings.loadFromQuery(*engine_define);
+
+        /// Only a definition that is written now stores the values: not one read from the metadata file, not on `RESTORE`,
+        /// which rejects a database whose definition differs from the one in the backup, and not a full `ATTACH DATABASE` of a
+        /// detached database, whose metadata file `InterpreterCreateQuery::createDatabase` keeps instead of writing the
+        /// definition, so the values would be shown but not stored.
+        const bool keeps_metadata_file = args.create_query.attach
+            && args.context->getDatabaseDisk()->existsFile(DatabaseCatalog::getMetadataFilePath(args.database_name));
+        const bool is_new_definition = !is_stored_definition && !args.is_restore_from_backup && !keeps_metadata_file;
+        postgresql_settings.loadFromQueryContext(*args.context, engine_define->settings, is_new_definition ? engine_define : nullptr);
 
         if (!postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "postgresql_connection_pool_size cannot be zero.");
@@ -819,8 +886,11 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
     };
     factory.registerDatabase("PostgreSQL", create_fn, mysqlPostgreSQLSecretArguments(3), {
         .supports_arguments = true,
+        .supports_settings = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::POSTGRES,
+        .has_builtin_setting_fn = PostgreSQLSettings::hasBuiltin,
+        .check_definition_fn = checkDefinition,
     }, Documentation{
         .description = R"DOCS_MD(
 Allows to connect to databases on a remote [PostgreSQL](https://www.postgresql.org) server. Supports read and write operations (`SELECT` and `INSERT` queries) to exchange data between ClickHouse and PostgreSQL.
@@ -846,6 +916,18 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 - `use_table_cache` —  Defines if the database table structure is cached or not. Optional. Default value: `0`.
 
 TLS/SSL parameters are forwarded to `libpq` and can be supplied through a [named collection](/operations/named-collections.md) or as trailing key-value arguments: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`), and the certificates and the key in one of two forms. `sslrootcert` (CA certificate), `sslcert` (client certificate) and `sslkey` (client private key) are paths to server-local files, accepted only from a named collection defined in the server configuration file. `sslrootcert_pem`, `sslcert_pem` and `sslkey_pem` accept the literal contents of the corresponding file instead, can be specified from SQL (for example, `ENGINE = PostgreSQL('host:port', 'database', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')`), and are masked in logs and `SHOW` queries like a password. When unset, `libpq` defaults apply (`sslmode=prefer`).
+
+## Settings {#settings}
+
+The connection pool of the database, which its tables share, can be configured with a `SETTINGS` clause, using the settings of the [`PostgreSQL` table engine](/reference/engines/table-engines/integrations/postgresql#settings): `postgresql_connection_pool_size`, `postgresql_connection_pool_wait_timeout`, `postgresql_connection_pool_retries`, `postgresql_connection_pool_auto_close_connection` and `postgresql_connection_attempt_timeout`.
+
+```sql
+CREATE DATABASE test_database
+ENGINE = PostgreSQL('host:port', 'database', 'user', 'password')
+SETTINGS postgresql_connection_pool_size = 32;
+```
+
+The `SETTINGS` clause takes precedence over a named collection, unless the collection marks the setting `NOT OVERRIDABLE`. A setting set by neither defaults to the corresponding query-level `postgresql_*` setting; a new database (not one restored from a backup) stores the values it takes this way that differ from the server's in its `SETTINGS`, so it keeps them after a restart. A stored value keeps applying if the named collection later marks the key `NOT OVERRIDABLE`. A setting reset with `name = DEFAULT` is not taken from the query-level setting.
 
 <a id="data_types-support"></a>
 ## Data types support {#data-types-support}

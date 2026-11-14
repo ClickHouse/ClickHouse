@@ -1,0 +1,22 @@
+--- a stated value equal to the value of the session stays in the definition
+SETTINGS postgresql_connection_pool_size = 16
+SETTINGS postgresql_connection_pool_size = 16
+--- and takes precedence over the named collection
+PostgreSQL connection pool size: 16
+SETTINGS postgresql_connection_pool_size = 16
+--- an override of a key of the named collection needs SHOW NAMED COLLECTIONS SECRETS
+ACCESS_DENIED
+ACCESS_DENIED
+0
+0
+--- the checks run before ON CLUSTER is dispatched
+SETTING_CONSTRAINT_VIOLATION
+SETTING_CONSTRAINT_VIOLATION
+ACCESS_DENIED
+0
+0
+--- a user who may not create the database gets that error first
+necessary to have the grant CREATE DATABASE
+--- the override is allowed with SHOW NAMED COLLECTIONS SECRETS
+SETTINGS postgresql_connection_pool_size = 4
+SETTINGS postgresql_connection_pool_size = 4
