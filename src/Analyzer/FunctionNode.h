@@ -22,6 +22,9 @@ namespace ErrorCodes
 class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
+class IGeneralWindowFunction;
+using GeneralWindowFunctionPtr = std::shared_ptr<const IGeneralWindowFunction>;
+
 /** Function node represents function in query tree.
   * Function syntax: function_name(parameter_1, ...)(argument_1, ...).
   * If function does not have parameters its syntax is function_name(argument_1, ...).
@@ -149,6 +152,12 @@ public:
       */
     AggregateFunctionPtr getAggregateFunction() const;
 
+    /** Get window function.
+      * If function is not resolved nullptr returned.
+      * If function is resolved as non window function nullptr returned.
+      */
+    GeneralWindowFunctionPtr getWindowFunction() const;
+
     /// Is function node resolved
     bool isResolved() const { return function != nullptr; }
 
@@ -156,7 +165,7 @@ public:
     bool isWindowFunction() const { return hasWindow(); }
 
     /// Is function node aggregate function
-    bool isAggregateFunction() const { return kind == FunctionKind::AGGREGATE; }
+    bool isAggregateFunction() const { return kind == FunctionKind::AGGREGATE && !isWindowFunction(); }
 
     /// Is function node ordinary function
     bool isOrdinaryFunction() const { return kind == FunctionKind::ORDINARY; }
@@ -184,7 +193,7 @@ public:
       * It is important that function name is updated with resolved function name.
       * Main motivation for this is query tree optimizations.
       */
-    void resolveAsWindowFunction(AggregateFunctionPtr window_function_value);
+    void resolveAsWindowFunction(GeneralWindowFunctionPtr window_function_value);
 
     QueryTreeNodeType getNodeType() const override { return QueryTreeNodeType::FUNCTION; }
 

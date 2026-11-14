@@ -16,6 +16,7 @@
 #include <Functions/IFunction.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <WindowFunctions/IGeneralWindowFunction.h>
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/ConstantNode.h>
@@ -86,9 +87,16 @@ ColumnsWithTypeAndName FunctionNode::getArgumentColumns() const
 
 AggregateFunctionPtr  FunctionNode::getAggregateFunction() const
 {
-    if (kind == FunctionKind::UNKNOWN || kind == FunctionKind::ORDINARY)
+    if (kind != FunctionKind::AGGREGATE)
         return {};
     return std::static_pointer_cast<const IAggregateFunction>(function);
+}
+
+GeneralWindowFunctionPtr FunctionNode::getWindowFunction() const
+{
+    if (kind != FunctionKind::WINDOW)
+        return {};
+    return std::static_pointer_cast<const IGeneralWindowFunction>(function);
 }
 
 void FunctionNode::resolveAsFunction(FunctionBasePtr function_value)
@@ -112,13 +120,15 @@ void FunctionNode::resolveAsAggregateFunction(AggregateFunctionPtr aggregate_fun
     nulls_action = NullsAction::EMPTY;
 }
 
-void FunctionNode::resolveAsWindowFunction(AggregateFunctionPtr window_function_value)
+void FunctionNode::resolveAsWindowFunction(GeneralWindowFunctionPtr window_function_value)
 {
     if (!hasWindow())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Trying to resolve FunctionNode without window definition as a window function {}", window_function_value->getName());
-    resolveAsAggregateFunction(window_function_value);
+    function_name = window_function_value->getName();
+    function = std::move(window_function_value);
     kind = FunctionKind::WINDOW;
+    nulls_action = NullsAction::EMPTY;
 }
 
 void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
