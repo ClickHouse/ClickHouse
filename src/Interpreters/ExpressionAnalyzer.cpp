@@ -791,7 +791,6 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
         getRootActionsNoMakeSet(function_node.clone(), actions);
 
         const ASTs & arguments = function_node.arguments->children;
-        ColumnsWithTypeAndName argument_columns(arguments.size());
         window_function.argument_types.resize(arguments.size());
         window_function.argument_names.resize(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -808,7 +807,6 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
 
             window_function.argument_types[i] = node->result_type;
             window_function.argument_names[i] = name;
-            argument_columns[i] = ColumnWithTypeAndName(node->column, node->result_type, name);
         }
 
         if (WindowFunctionFactory::instance().isWindowFunctionName(function_node.name))
@@ -817,7 +815,9 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} does not support RESPECT NULLS", function_node.name);
 
             window_function.general_function = WindowFunctionFactory::instance().get(
-                function_node.name, argument_columns, window_function.function_parameters, getContext()->getSettingsRef());
+                function_node.name,
+                window_function.argument_types,
+                window_function.function_parameters);
         }
         else
         {

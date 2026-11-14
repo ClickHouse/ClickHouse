@@ -4,8 +4,6 @@
 
 #include <DataTypes/IDataType_fwd.h>
 
-#include <Core/ColumnsWithTypeAndName.h>
-
 #include <Common/FunctionDocumentation.h>
 #include <Common/IFactoryWithAliases.h>
 
@@ -20,7 +18,7 @@ namespace DB
 struct Array;
 struct Settings;
 
-using WindowFunctionCreator = std::function<GeneralWindowFunctionPtr(const String & name, const ColumnsWithTypeAndName & arguments, const Array & parameters, const Settings & settings)>;
+using WindowFunctionCreator = std::function<GeneralWindowFunctionPtr(const String &, const DataTypes &, const Array &, const Settings *)>;
 using WindowFunctionArgumentTypesBinder = std::function<DataTypes(DataTypes argument_types)>;
 
 struct WindowFunctionRegistration
@@ -46,7 +44,7 @@ public:
 
     bool isWindowFunctionName(const String & name) const;
     DataTypes bindArgumentTypes(const String & name, DataTypes argument_types) const;
-    GeneralWindowFunctionPtr get(const String & name, const ColumnsWithTypeAndName & arguments, const Array & parameters, const Settings & settings) const;
+    GeneralWindowFunctionPtr get(const String & name, const DataTypes & argument_types, const Array & parameters) const;
     FunctionDocumentation getDocumentation(const String & name) const;
 
 private:

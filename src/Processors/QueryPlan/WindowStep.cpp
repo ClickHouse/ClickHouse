@@ -8,7 +8,6 @@
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
 #include <Parsers/NullsAction.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -289,7 +288,7 @@ static void serializeWindowFunctions(
 }
 
 static VectorWithMemoryTracking<WindowFunctionDescription>
-deserializeWindowFunctions(ReadBuffer & in, const Block & input_header, const Settings & settings)
+deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
 {
     UInt64 num_functions = 0;
     readVarUInt(num_functions, in);
@@ -311,7 +310,6 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header, const Se
         /// casts them to its argument types, so types that disagree with the real columns would cause an
         /// out-of-bounds read or an invalid cast. Deriving from the header also rebuilds the aggregate
         /// exactly as the planner did, which uses the argument column types.
-        ColumnsWithTypeAndName argument_columns(func.argument_names.size());
         func.argument_types.resize(func.argument_names.size());
         for (size_t i = 0; i < func.argument_names.size(); ++i)
         {
@@ -319,8 +317,7 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header, const Se
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "WindowStep: argument column '{}' is not present in the input header", func.argument_names[i]);
 
-            argument_columns[i] = input_header.getByName(func.argument_names[i]);
-            func.argument_types[i] = argument_columns[i].type;
+            func.argument_types[i] = input_header.getByName(func.argument_names[i]).type;
         }
 
         String function_name;
@@ -334,7 +331,7 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header, const Se
 
         if (WindowFunctionFactory::instance().isWindowFunctionName(function_name))
         {
-            func.general_function = WindowFunctionFactory::instance().get(function_name, argument_columns, func.function_parameters, settings);
+            func.general_function = WindowFunctionFactory::instance().get(function_name, func.argument_types, func.function_parameters);
         }
         else
         {
@@ -422,7 +419,7 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
         window_description.order_by.begin(),
         window_description.order_by.end());
 
-    window_description.window_functions = deserializeWindowFunctions(ctx.in, *ctx.input_headers.front(), ctx.context->getSettingsRef());
+    window_description.window_functions = deserializeWindowFunctions(ctx.in, *ctx.input_headers.front());
 
     return std::make_unique<WindowStep>(
         ctx.input_headers.front(),

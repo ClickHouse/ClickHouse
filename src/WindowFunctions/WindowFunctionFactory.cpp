@@ -25,21 +25,18 @@ namespace ErrorCodes
 namespace
 {
 
-ColumnsWithTypeAndName convertLowCardinalityTypesToNested(ColumnsWithTypeAndName arguments)
+DataTypes convertLowCardinalityTypesToNested(const DataTypes & types)
 {
-    for (auto & argument : arguments)
-    {
-        argument.type = recursiveRemoveLowCardinality(argument.type);
-        if (argument.column)
-            argument.column = recursiveRemoveLowCardinality(argument.column);
-    }
+    DataTypes res_types;
+    res_types.reserve(types.size());
+    for (const auto & type : types)
+        res_types.emplace_back(recursiveRemoveLowCardinality(type));
 
-    return arguments;
+    return res_types;
 }
 
-void addToQueryLog(const String & name)
+void addToQueryLog(const ContextPtr & query_context, const String & name)
 {
-    auto query_context = CurrentThread::tryGetQueryContext();
     if (query_context && query_context->getSettingsRef()[Setting::log_queries])
         query_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, name);
 }
@@ -85,12 +82,16 @@ DataTypes WindowFunctionFactory::bindArgumentTypes(const String & name, DataType
     return registration.binder(std::move(argument_types));
 }
 
-GeneralWindowFunctionPtr WindowFunctionFactory::get(const String & name, const ColumnsWithTypeAndName & arguments, const Array & parameters, const Settings & settings) const
+GeneralWindowFunctionPtr WindowFunctionFactory::get(const String & name, const DataTypes & argument_types, const Array & parameters) const
 {
     const Value & registration = find(name);
     const String resolved_name = getAliasToOrName(name);
-    addToQueryLog(resolved_name);
-    return registration.creator(resolved_name, convertLowCardinalityTypesToNested(arguments), parameters, settings);
+
+    const ContextPtr query_context = CurrentThread::tryGetQueryContext();
+    const Settings * settings = query_context ? &query_context->getSettingsRef() : nullptr;
+    addToQueryLog(query_context, resolved_name);
+
+    return registration.creator(resolved_name, convertLowCardinalityTypesToNested(argument_types), parameters, settings);
 }
 
 FunctionDocumentation WindowFunctionFactory::getDocumentation(const String & name) const

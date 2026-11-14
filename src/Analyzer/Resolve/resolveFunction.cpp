@@ -3223,8 +3223,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 if (!function_arguments[i]->getResultType()->equals(*argument_types[i]))
                     function_arguments[i] = castNodeToType(function_arguments[i], argument_types[i], scope);
 
-            function_node.resolveAsWindowFunction(
-                window_function_factory.get(function_name, function_node.getArgumentColumns(), parameters, scope.context->getSettingsRef()));
+            function_node.resolveAsWindowFunction(window_function_factory.get(function_name, argument_types, parameters));
         }
         else
         {

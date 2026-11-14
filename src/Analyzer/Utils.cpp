@@ -999,7 +999,7 @@ inline GeneralWindowFunctionPtr resolveWindowFunctionImpl(FunctionNode & functio
         if (!arguments[i]->getResultType()->equals(*argument_types[i]))
             arguments[i] = createCastFunction(arguments[i], argument_types[i], context);
 
-    return window_function_factory.get(function_name, function_node.getArgumentColumns(), getParameterValues(function_node), context->getSettingsRef());
+    return window_function_factory.get(function_name, argument_types, getParameterValues(function_node));
 }
 
 inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode & function_node, const String & function_name)

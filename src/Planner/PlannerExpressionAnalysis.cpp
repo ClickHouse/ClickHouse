@@ -417,9 +417,7 @@ std::optional<WindowAnalysisResult> analyzeWindow(
         {
             bool types_changed = false;
             DataTypes actual_argument_types;
-            ColumnsWithTypeAndName actual_argument_columns;
             actual_argument_types.reserve(window_function.argument_names.size());
-            actual_argument_columns.reserve(window_function.argument_names.size());
 
             for (size_t i = 0; i < window_function.argument_names.size(); ++i)
             {
@@ -433,8 +431,6 @@ std::optional<WindowAnalysisResult> analyzeWindow(
                 {
                     actual_argument_types.push_back(window_function.argument_types[i]);
                 }
-
-                actual_argument_columns.emplace_back(dag_node ? dag_node->column : nullptr, actual_argument_types.back(), window_function.argument_names[i]);
             }
 
             if (!types_changed)
@@ -444,9 +440,8 @@ std::optional<WindowAnalysisResult> analyzeWindow(
             {
                 window_function.general_function = WindowFunctionFactory::instance().get(
                     window_function.getFunctionName(),
-                    actual_argument_columns,
-                    window_function.function_parameters,
-                    planner_context->getQueryContext()->getSettingsRef());
+                    actual_argument_types,
+                    window_function.function_parameters);
             }
             else
             {
