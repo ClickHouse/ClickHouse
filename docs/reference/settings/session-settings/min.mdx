@@ -109,6 +109,18 @@ The `min_outstreams_per_resize_after_split` setting ensures that the splitting o
 ### Disabling the Setting
 To disable the split of `Resize` nodes, set this setting to 0. This will prevent the splitting of `Resize` nodes during pipeline generation, allowing them to retain their original structure without division into smaller nodes.
 
+## min_rows_for_packed_string_keys_in_hash_join {#min_rows_for_packed_string_keys_in_hash_join}
+
+<SettingsInfoBlock type="UInt64" default_value="100000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "100000"},{"label": "New setting: `enable_packed_string_keys_in_hash_join` applies only when the right side of the join is estimated at 100000 rows or more, or has no estimate."}]}]}/>
+
+The minimum estimated number of rows in the right side of a join for `enable_packed_string_keys_in_hash_join` to apply. Smaller joins gain little from it, and can be slower with long keys.
+
+The estimate is the number of right-side rows in an earlier run of the same join, if `collect_hash_table_stats_during_joins` is enabled. Otherwise it is the query optimizer's estimate. `parallel_hash_join_threshold` uses the same estimate. A join without an estimate always uses `enable_packed_string_keys_in_hash_join`.
+
+0 means no minimum.
+
 ## min_rows_ratio_for_hash_join_row_store {#min_rows_ratio_for_hash_join_row_store}
 
 <SettingsInfoBlock type="Double" default_value="3" />

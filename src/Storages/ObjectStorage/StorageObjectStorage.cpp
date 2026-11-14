@@ -710,6 +710,9 @@ std::optional<UInt64> StorageObjectStorage::totalRowsInSnapshot(const StorageSna
     if (distributed_processing)
         return std::nullopt;
 
+    if (query_context->totalsWithoutStorageAccess())
+        return std::nullopt;
+
     std::optional<DataLakeTableStateSnapshot> state;
     if (storage_snapshot && storage_snapshot->metadata)
         state = storage_snapshot->metadata->datalake_table_state;
@@ -728,6 +731,9 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
         return std::nullopt;
 
     if (distributed_processing)
+        return std::nullopt;
+
+    if (query_context->totalsWithoutStorageAccess())
         return std::nullopt;
 
     is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context) : configuration->update(object_storage, query_context);

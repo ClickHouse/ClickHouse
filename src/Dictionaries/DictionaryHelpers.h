@@ -32,6 +32,7 @@ namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int CORRUPTED_DATA;
 }
 
 class Arena;
@@ -242,8 +243,12 @@ static inline void deserializeAndInsertIntoColumns( /// NOLINT
 
     /// The buffer is contiguous and never refills, so the header is read in
     /// place and stays addressable while the values are deserialized.
+    /// The data may be read from a file (`ssd_cache` dictionaries), so check that it has the header.
     size_t sizes_header_size = columns_size * sizeof(UInt32);
-    chassert(in.available() >= sizes_header_size);
+    if (in.available() < sizes_header_size)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Cache data corrupted. A record of {} bytes is shorter than the sizes of its {} columns ({} bytes)",
+            in.available(), columns_size, sizes_header_size);
     const char * sizes_header = in.position();
     in.ignore(sizes_header_size);
 
@@ -540,6 +545,32 @@ public:
     {
         if constexpr (key_type == DictionaryKeyType::Complex)
             complex_key_arena->rollback(current_complex_key.size());
+    }
+
+    /// Calls `callback(key_index, key)` for every key, in order, and leaves the extractor past the last key.
+    /// Hot loops use it instead of `extractCurrentKey` per key: a simple key is then read through one
+    /// hoisted data pointer, where `extractCurrentKey` goes through `key_columns[0]`, the column and its
+    /// data pointer every time, and the store of `current_key_index` keeps clang-23 with libc++ 23 (whose
+    /// `std::vector` keeps a `size_t` size) from hoisting those loads and their bounds checks out of the loop.
+    template <typename Callback>
+    void forEachKey(Callback && callback)
+    {
+        if constexpr (key_type == DictionaryKeyType::Simple)
+        {
+            const UInt64 * __restrict keys = static_cast<const ColumnVector<UInt64> &>(*key_columns[0]).getData().data();
+            for (size_t key_index = current_key_index; key_index < keys_size; ++key_index)
+                callback(key_index, keys[key_index]);
+            current_key_index = keys_size;
+        }
+        else
+        {
+            while (current_key_index < keys_size)
+            {
+                size_t key_index = current_key_index;
+                callback(key_index, extractCurrentKey());
+                rollbackCurrentKey();
+            }
+        }
     }
 
     PaddedPODArray<KeyType> extractAllKeys()

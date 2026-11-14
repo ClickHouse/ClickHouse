@@ -385,6 +385,9 @@ std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_co
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRowsInSnapshot(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
 {
+    if (query_context->totalsWithoutStorageAccess())
+        return std::nullopt;
+
     configuration->lazyInitializeIfNeeded(
         object_storage,
         query_context);
@@ -398,6 +401,9 @@ std::optional<UInt64> StorageObjectStorageCluster::totalRowsInSnapshot(const Sto
 
 std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
 {
+    if (query_context->totalsWithoutStorageAccess())
+        return std::nullopt;
+
     configuration->lazyInitializeIfNeeded(
         object_storage,
         query_context);
