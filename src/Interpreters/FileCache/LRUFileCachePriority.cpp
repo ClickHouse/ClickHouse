@@ -379,31 +379,33 @@ void LRUFileCachePriority::iterate(
         {
             /// Algorithm R: the first `query_max_elements` segments fill the reservoir, then the n-th segment
             /// replaces a random one with the probability `query_max_elements / n`.
+            ///
+            /// The segment must be materialized before the random draw, and a segment that cannot be
+            /// materialized : the key was removed, the key lock is busy,
+            /// the segment is gone or empty) must be skipped entirely, without counting it in `result.seen`.
+            /// Otherwise whether it counts depends on the draw: a draw outside the reservoir would count it
+            /// without checking it, and a draw inside would drop it, which biases the sample towards the
+            /// segments seen earlier.
+            auto info = tryGetSummaryInfo(*entry, queue_entry_type);
+            if (!info)
+                return true;
+
+            /// This is the n-th segment that can be returned, with n = `result.seen`.
+            info->priority_rank = ++result.seen;
+
             /// The reservoir is not full yet: take every segment.
             if (result.infos.size() < query_max_elements)
             {
-                if (auto info = tryGetSummaryInfo(*entry, queue_entry_type))
-                {
-                    info->priority_rank = ++result.seen;
-                    result.total_size += info->size;
-                    result.infos.push_back(std::move(*info));
-                }
+                result.total_size += info->size;
+                result.infos.push_back(std::move(*info));
                 return true;
             }
 
-            /// The reservoir is full: this is the n-th segment, with n = `result.seen + 1`,
-            /// and it replaces a random one with the probability `query_max_elements / n`.
-            const UInt64 slot = std::uniform_int_distribution<UInt64>(0, result.seen)(rng);
-            /// We need to increment result.seen for probability reasons
-            if (slot >= query_max_elements)
+            /// The reservoir is full: replace a random segment with the probability `query_max_elements / n`.
+            const UInt64 slot = std::uniform_int_distribution<UInt64>(0, result.seen - 1)(rng);
+            if (slot < query_max_elements)
             {
-                ++result.seen;
-                return true;
-            }
-            if (auto info = tryGetSummaryInfo(*entry, queue_entry_type))
-            {
-                info->priority_rank = ++result.seen;
-                /// Keep up to date total size we don't need to iterate at the end again for trimming purposes
+                /// Keep the total size up to date, so there is no need to iterate again at the end for trimming.
                 result.total_size = result.total_size - result.infos[slot].size + info->size;
                 result.infos[slot] = std::move(*info);
             }
