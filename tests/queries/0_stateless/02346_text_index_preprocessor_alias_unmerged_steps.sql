@@ -163,6 +163,8 @@ SELECT hasAnyTokens(v, 'FOO'), hasAnyTokens(w, 'FOO') FROM tab SETTINGS query_pl
 SELECT hasAnyTokens(v, 'FOO'), hasAnyTokens(w, 'FOO') FROM (SELECT v, w FROM tab ORDER BY v LIMIT 1);
 SELECT count() FROM tab WHERE hasAnyTokens(v, 'FOO') SETTINGS query_plan_enable_optimizations = 0, use_skip_indexes = 0;
 SELECT count() FROM tab WHERE hasAnyTokens(w, 'FOO') SETTINGS query_plan_enable_optimizations = 0, use_skip_indexes = 0;
+-- Matching a step expands its own shared subexpressions, also over a column renamed in a step below.
+WITH if(x = 'a', 'b', x) AS y1, if(y1 = 'a', 'b', y1) AS y2, if(y2 = 'a', 'b', y2) AS y3, if(y3 = 'a', 'b', y3) AS y4, if(y4 = 'a', 'b', y4) AS y5, if(y5 = 'a', 'b', y5) AS y6, if(y6 = 'a', 'b', y6) AS y7, if(y7 = 'a', 'b', y7) AS y8, if(y8 = 'a', 'b', y8) AS y9, if(y9 = 'a', 'b', y9) AS y10 SELECT hasAnyTokens(y10, 'FOO') FROM (SELECT j.a AS x FROM tab ORDER BY x LIMIT 1);
 
 DROP TABLE tab;
 

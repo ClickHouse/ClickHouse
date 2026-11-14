@@ -105,69 +105,65 @@ String getNameWithoutAliases(const ActionsDAG::Node * node)
     return node->result_name;
 }
 
-using NameLengthBounds = std::unordered_map<const ActionsDAG::Node *, size_t>;
+using ExpandedSizes = std::unordered_map<const ActionsDAG::Node *, size_t>;
 
-/// A lower bound, at most `limit`, of the length of the name of `node` in index analysis (`RPNBuilderTreeNode::getColumnName`).
-/// Every column and every function occurs in that name, except casts, `materialize` and `not`, which the analysis may remove.
-/// A lambda occurs with its body, in which a captured expression occurs once per reference.
-size_t getNameLengthLowerBound(
-    const ActionsDAG::Node * node,
-    size_t limit,
-    NameLengthBounds & bounds,
-    const std::unordered_map<String, size_t> & captured_bounds)
+/// The size of `node` expanded into a tree, as index analysis expands it to match it (`ActionsDAGWithInversionPushDown`):
+/// one per node plus the bytes of its constant, aliases excluded. A lambda counts its body, in which a captured expression
+/// counts once per reference.
+size_t getExpandedSize(const ActionsDAG::Node * node, ExpandedSizes & sizes, const std::unordered_map<String, size_t> & captured_sizes)
 {
-    if (auto it = bounds.find(node); it != bounds.end())
+    if (auto it = sizes.find(node); it != sizes.end())
         return it->second;
 
-    size_t bound = 0;
+    /// Saturates instead of overflowing on an exponential expansion.
+    auto add = [](size_t lhs, size_t rhs) { return std::min(lhs + rhs, std::numeric_limits<size_t>::max() / 2); };
+
+    size_t size = 1;
     if (node->type == ActionsDAG::ActionType::INPUT)
     {
-        auto it = captured_bounds.find(node->result_name);
-        bound = it == captured_bounds.end() ? 1 : it->second;
+        if (auto it = captured_sizes.find(node->result_name); it != captured_sizes.end())
+            size = it->second;
+    }
+    else if (node->type == ActionsDAG::ActionType::ALIAS)
+    {
+        size = getExpandedSize(node->children.front(), sizes, captured_sizes);
     }
     else if (const auto * capture = typeid_cast<const ExecutableFunctionCapture *>(node->function.get()))
     {
         const auto & captured_names = capture->getCapture()->captured_names;
-        std::unordered_map<String, size_t> body_captured_bounds;
+        std::unordered_map<String, size_t> body_captured_sizes;
         for (size_t i = 0; i < captured_names.size() && i < node->children.size(); ++i)
-            body_captured_bounds[captured_names[i]] = getNameLengthLowerBound(node->children[i], limit, bounds, captured_bounds);
+            body_captured_sizes[captured_names[i]] = getExpandedSize(node->children[i], sizes, captured_sizes);
 
-        NameLengthBounds body_bounds;
+        ExpandedSizes body_sizes;
         const auto & body = capture->getActions()->getActionsDAG().getOutputs();
-        bound = 1 + (body.empty() ? 0 : getNameLengthLowerBound(body.front(), limit, body_bounds, body_captured_bounds));
+        if (!body.empty())
+            size = add(size, getExpandedSize(body.front(), body_sizes, body_captured_sizes));
     }
     else
     {
-        static const NameSet removable_functions = {"CAST", "_CAST", "toNullable", "toLowCardinality", "materialize", "not"};
-        if (node->type == ActionsDAG::ActionType::FUNCTION)
-            bound = removable_functions.contains(node->function_base->getName()) ? 0 : 1;
-        else if (node->type == ActionsDAG::ActionType::ARRAY_JOIN || node->type == ActionsDAG::ActionType::PLACEHOLDER)
-            bound = 1;
+        if (node->column)
+            size = add(size, node->column->byteSize());
 
         for (const auto * child : node->children)
-            bound = std::min(bound + getNameLengthLowerBound(child, limit, bounds, captured_bounds), limit);
+            size = add(size, getExpandedSize(child, sizes, captured_sizes));
     }
 
-    bound = std::min(bound, limit);
-    bounds.emplace(node, bound);
-    return bound;
+    sizes.emplace(node, size);
+    return size;
 }
 
-/// Replaces the parts of `node` whose name in index analysis is longer than `max_name_length` by opaque inputs of `dag`
-/// named `opaque_name` and a number. `max_name_length` is at least the length of every index column name, so such a part
-/// is not in an indexed expression, but one may ignore it, like the key of `m[key]` for `mapValues(m)`.
+/// Replaces the parts of `node` whose expanded size exceeds `max_size` by opaque inputs of `dag` named `opaque_name` and a
+/// number, which index analysis matches as columns. It may ignore a part, like the key of `m[key]` for `mapValues(m)`.
 const ActionsDAG::Node * replaceLongSubexpressions(
     const ActionsDAG::Node * node,
-    size_t max_name_length,
+    size_t max_size,
     const String & opaque_name,
     ActionsDAG & dag,
-    NameLengthBounds & bounds,
+    ExpandedSizes & sizes,
     ActionsDAG::NodeMapping & replaced)
 {
-    auto is_long = [&](const ActionsDAG::Node * expression)
-    {
-        return getNameLengthLowerBound(expression, max_name_length + 1, bounds, {}) > max_name_length;
-    };
+    auto is_long = [&](const ActionsDAG::Node * expression) { return getExpandedSize(expression, sizes, {}) > max_size; };
 
     auto add_opaque_input = [&](const DataTypePtr & type) -> const ActionsDAG::Node *
     {
@@ -183,13 +179,13 @@ const ActionsDAG::Node * replaceLongSubexpressions(
     const ActionsDAG::Node * result = nullptr;
     if (node->type == ActionsDAG::ActionType::ALIAS)
     {
-        result = replaceLongSubexpressions(node->children.front(), max_name_length, opaque_name, dag, bounds, replaced);
+        result = replaceLongSubexpressions(node->children.front(), max_size, opaque_name, dag, sizes, replaced);
     }
     else if (node->type == ActionsDAG::ActionType::FUNCTION)
     {
         auto children = node->children;
         for (auto & child : children)
-            child = replaceLongSubexpressions(child, max_name_length, opaque_name, dag, bounds, replaced);
+            child = replaceLongSubexpressions(child, max_size, opaque_name, dag, sizes, replaced);
 
         /// A long `m[key]` is matched only to `mapValues(m)` or with a constant key, so any other key is opaque.
         if (node->function_base->getName() == "arrayElement" && children.size() == 2 && isMap(children[0]->result_type)
@@ -573,6 +569,8 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const UnorderedMapWithMem
 
 }
 
+using ComposedNodeGetter = std::function<const ActionsDAG::Node *(const ActionsDAG::Node &)>;
+
 /// This class substitutes filters with text-search functions by virtual columns which skip IO and read less data.
 ///
 /// The substitution is performed after the index analysis and before PREWHERE optimization:
@@ -601,11 +599,11 @@ public:
         ActionsDAG & actions_dag_,
         const TextIndexReadInfos & text_index_read_infos_,
         bool direct_read_from_text_index_,
-        const ActionsDAG::NodeMapping * composed_nodes_ = nullptr)
+        ComposedNodeGetter get_composed_node_ = {})
         : actions_dag(actions_dag_)
         , text_index_read_infos(text_index_read_infos_)
         , direct_read_from_text_index(direct_read_from_text_index_)
-        , composed_nodes(composed_nodes_)
+        , get_composed_node(std::move(get_composed_node_))
     {
         /// Register the text-index virtual column inputs that are already present in this DAG from a previous
         /// optimization pass. This prevents them from being re-added to `index_read_tasks` when the same DAG is processed again.
@@ -702,8 +700,8 @@ private:
     ActionsDAG & actions_dag;
     TextIndexReadInfos text_index_read_infos;
     bool direct_read_from_text_index = false;
-    /// Maps the nodes of this DAG to the DAG composed with the steps below, i.e. to what they compute over the scan columns.
-    const ActionsDAG::NodeMapping * composed_nodes = nullptr;
+    /// Maps a node of this DAG to the DAG composed with the steps below, i.e. to what it computes over the scan columns.
+    ComposedNodeGetter get_composed_node;
     /// Input nodes of the virtual columns in the DAG, by column name.
     UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *> virtual_column_inputs;
     /// Read tasks of the virtual columns added to the DAG, by index name. `replace` keeps only the columns still used after the rewrite.
@@ -711,10 +709,7 @@ private:
 
     const ActionsDAG::Node * getComposedNode(const ActionsDAG::Node * node) const
     {
-        if (composed_nodes)
-            if (auto it = composed_nodes->find(node); it != composed_nodes->end())
-                return it->second;
-        return node;
+        return get_composed_node ? get_composed_node(*node) : node;
     }
 
     /// has/hasAll/hasAny operate on array elements directly, bypassing the tokenizer, preprocessor, and postprocessor.
@@ -1223,9 +1218,9 @@ static bool applyTextIndexInject(
     ReadFromMergeTree & read_from_merge_tree_step,
     ActionsDAG & dag,
     const TextIndexReadInfos & text_index_infos,
-    const ActionsDAG::NodeMapping & composed_nodes)
+    const ComposedNodeGetter & get_composed_node)
 {
-    TextIndexDAGReplacer replacer(dag, text_index_infos, /*direct_read_from_text_index=*/ false, &composed_nodes);
+    TextIndexDAGReplacer replacer(dag, text_index_infos, /*direct_read_from_text_index=*/ false, get_composed_node);
     return replacer.replace(read_from_merge_tree_step.getContext(), /*filter_column_name=*/ String{}).has_value();
 }
 
@@ -1335,25 +1330,16 @@ void processAndOptimizeTextIndexFunctions(
 
     /// Longer than every index column name, so no indexed expression contains the name of an opaque input.
     const String opaque_name(max_index_name_length + 1, '_');
-    /// Bounds the expansion of columns referenced several times by the steps above; a written expression is far shorter.
-    const size_t max_name_length = std::max<size_t>(max_index_name_length, 10000);
+    /// A written expression is far smaller; only columns referenced several times by the steps above expand to more.
+    const size_t min_max_size = std::max<size_t>(max_index_name_length, 10000);
 
     /// The steps walked so far, composed into one DAG over the scan columns. Each step is composed before it is rewritten.
     ActionsDAG steps_below;
-    NameLengthBounds name_length_bounds;
-    ActionsDAG::NodeMapping replaced_nodes;
+    ExpandedSizes expanded_sizes;
     auto compose = [&](const ActionsDAG & dag)
     {
         ActionsDAG::NodeMapping composed_nodes;
         steps_below.mergeInplace(dag.clone(composed_nodes));
-
-        /// The steps above see the long subexpressions of a column as opaque inputs and do not expand them.
-        for (auto & output : steps_below.getOutputs())
-            if (const auto * replacement
-                = replaceLongSubexpressions(output, max_name_length, opaque_name, steps_below, name_length_bounds, replaced_nodes);
-                replacement != output)
-                output = &steps_below.addAlias(*replacement, output->result_name);
-
         return composed_nodes;
     };
 
@@ -1403,7 +1389,33 @@ void processAndOptimizeTextIndexFunctions(
         /// Inject-only rewrite: a merged postprocessor DAG reads only the indexed column, so inputs and output names are unchanged -- reuse the step's input header.
         ActionsDAG & dag = filter_step ? filter_step->getExpression() : expression_step->getExpression();
         auto composed_nodes = compose(dag);
-        bool is_rewritten = applyTextIndexInject(*read_from_merge_tree_step, dag, text_index_infos, composed_nodes);
+        ExpandedSizes step_sizes;
+        ActionsDAG::NodeMapping matched_nodes;
+        /// Matching expands the haystack, so its composed parts expanding to more than twice the step's own expression are
+        /// opaque inputs, as the step's inputs are when matching the step alone.
+        auto get_composed_node = [&](const ActionsDAG::Node & function_node) -> const ActionsDAG::Node *
+        {
+            auto composed = composed_nodes.find(&function_node);
+            if (composed == composed_nodes.end() || composed->second->children.empty())
+                return &function_node;
+
+            auto [matched, inserted] = matched_nodes.emplace(&function_node, composed->second);
+            if (!inserted)
+                return matched->second;
+
+            const auto * haystack = composed->second->children.front();
+            size_t max_size = std::max(min_max_size, 2 * getExpandedSize(&function_node, step_sizes, {}));
+            ActionsDAG::NodeMapping replaced;
+            if (const auto * replacement = replaceLongSubexpressions(haystack, max_size, opaque_name, steps_below, expanded_sizes, replaced);
+                replacement != haystack)
+            {
+                auto children = composed->second->children;
+                children.front() = replacement;
+                matched->second = &steps_below.addFunction(composed->second->function_base, std::move(children), {});
+            }
+            return matched->second;
+        };
+        bool is_rewritten = applyTextIndexInject(*read_from_merge_tree_step, dag, text_index_infos, get_composed_node);
         if (!is_rewritten)
             continue;
 
