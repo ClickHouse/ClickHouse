@@ -221,7 +221,7 @@ public:
         const ReadFromFormatInfo & info,
         const ContextPtr & context,
         size_t max_block_size,
-        std::vector<FileLazyMaterializingRows::FileRows> files);
+        VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files);
 
 protected:
     friend class StorageFileSource;

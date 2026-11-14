@@ -142,6 +142,7 @@ namespace Setting
     extern const SettingsBool enable_subcolumn_codecs;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
+    extern const SettingsBool allow_reserved_column_names;
     extern const SettingsBool cloud_mode;
     extern const SettingsBool compatibility_ignore_collation_in_create_table;
     extern const SettingsBool compatibility_ignore_auto_increment_in_create_table;
@@ -2032,7 +2033,7 @@ void addTableDependencies(const ASTCreateQuery & create, const ASTPtr & query_pt
     QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
 
     auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr);
     DatabaseCatalog::instance().addDependencies(qualified_name, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});
 }
 
@@ -2042,7 +2043,7 @@ void checkTableCanBeAddedWithNoCyclicDependencies(const ASTCreateQuery & create,
     auto ref_dependencies = getDependenciesFromCreateQuery(
         context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase(), /*can_throw*/true,
         /*validate_current_database*/true, context->getSettingsRef()[Setting::max_expanded_ast_elements]);
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase(), /*can_throw*/true);
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, /*can_throw*/true);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(qualified_name, ref_dependencies.dependencies, loading_dependencies);
 }
 
@@ -2376,15 +2377,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     // substitute possible UDFs with their definitions
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
-
-    /// SQL UDF expansion can introduce unqualified table names into persisted metadata. Resolve
-    /// them in the query's current database without revisiting scalar aliases generated during
-    /// query normalization.
-    AddDefaultDatabaseVisitor visitor(getContext(), current_database);
-    if (create.select && create.isView())
-        visitor.visitTableExpressions(*create.select);
-    if (create.columns_list)
-        visitor.visitTableExpressions(*create.columns_list);
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
@@ -2720,9 +2712,13 @@ void checkForUnsupportedColumns(
     }
 }
 
-void validateVirtualColumns(IStorage & storage, ContextPtr context)
+void validateVirtualColumns(IStorage & storage, const ASTCreateQuery & create, LoadingStrictnessLevel mode, ContextPtr context)
 {
     const auto metadata = storage.getInMemoryMetadataPtr(context, false);
+    /// A stored definition is not checked, so existing tables keep loading.
+    /// NOLINT(storage-cast): the storage `StorageFactory` has just built, never a proxy.
+    const bool reject_reserved_names = dynamic_cast<const MergeTreeData *>(&storage)
+        && !context->getSettingsRef()[Setting::allow_reserved_column_names] && !isReplayedTableDefinition(mode, create, context);
     for (const auto & storage_column : metadata->columns)
     {
         if (metadata->virtuals.tryGet(storage_column.name, VirtualsKind::Persistent, VirtualsMaterializationPlace::All))
@@ -2743,13 +2739,21 @@ void validateVirtualColumns(IStorage & storage, ContextPtr context)
                 "because it conflicts with a virtual column of the same name",
                 storage_column.name, storage.getName());
         }
+
+        if (reject_reserved_names && metadata->virtuals.has(storage_column.name))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot create table with column '{}' for {} engines because it is reserved for a virtual column. "
+                "Use another name or enable the setting `allow_reserved_column_names`",
+                storage_column.name, storage.getName());
+        }
     }
 }
 
 void validateStorage(IStorage & storage, const ASTCreateQuery & create, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
 try
 {
-    validateVirtualColumns(storage, context);
+    validateVirtualColumns(storage, create, mode, context);
     checkForUnsupportedColumns(storage, create, mode, context, is_temporary);
 }
 catch (...)
@@ -3927,7 +3931,7 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImp
     auto context = getContext();
     QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
     auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr);
     auto source_uuid = source->getStorageID().uuid;
 
     /// Subscribe the view to new inserts and capture a snapshot of the existing source data together, under
