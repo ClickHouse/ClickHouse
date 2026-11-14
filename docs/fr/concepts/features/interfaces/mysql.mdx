@@ -7,8 +7,6 @@ title: 'Interface MySQL'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 ClickHouse prend en charge le MySQL wire protocol. Cela permet à certains clients qui ne disposent pas de connecteurs ClickHouse natifs d’utiliser le protocole MySQL à la place. Cette compatibilité a été validée avec les outils BI suivants :
 
 * [Looker Studio](/fr/integrations/connectors/data-visualization/looker-studio-and-clickhouse)
@@ -37,23 +35,55 @@ Si votre use case implique un outil particulier qui ne dispose pas d’un driver
 
 <br />
 
-<Image img="/images/interfaces/mysql0.webp" alt="Écran des identifiants - Prompt" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Écran des identifiants - Prompt](/images/interfaces/mysql0.webp)
+
+</Frame>
+
+</div>
 
 2. Dans le menu déroulant `Connect with`, sélectionnez `MySQL`.
 
 <br />
 
-<Image img="/images/interfaces/mysql1.webp" alt="Écran des identifiants - MySQL sélectionné" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Écran des identifiants - MySQL sélectionné](/images/interfaces/mysql1.webp)
+
+</Frame>
+
+</div>
 
 3. Basculez l’interrupteur pour activer l’interface MySQL pour ce service. Cela exposera le port `3306` pour ce service et affichera votre écran de connexion MySQL, avec votre nom d’utilisateur MySQL unique. Le mot de passe sera le même que celui de l’utilisateur par défaut du service.
 
 <br />
 
-<Image img="/images/interfaces/mysql2.webp" alt="Écran des identifiants - MySQL activé" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Écran des identifiants - MySQL activé](/images/interfaces/mysql2.webp)
+
+</Frame>
+
+</div>
 
 Copiez la chaîne de connexion MySQL affichée.
 
-<Image img="/images/interfaces/mysql3.webp" alt="Écran des identifiants - Chaîne de connexion" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Écran des identifiants - Chaîne de connexion](/images/interfaces/mysql3.webp)
+
+</Frame>
+
+</div>
 
 <div id="creating-multiple-mysql-users-in-clickhouse-cloud">
   ## Création de plusieurs utilisateurs MySQL dans ClickHouse Cloud
