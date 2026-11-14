@@ -6,26 +6,37 @@
 #include <Common/FailPoint.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
+#include <Core/DecimalFunctions.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 #include <Functions/ComparisonNames.h>
+#include <Functions/DateTimeTransforms.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Functions/FunctionsLogical.h>
+#include <base/arithmeticOverflow.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Parsers/ASTHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 
+#include <algorithm>
 #include <array>
+#include <functional>
+#include <limits>
 #include <optional>
 #include <utility>
+#include <vector>
 
 namespace DB::ErrorCodes
 {
@@ -78,38 +89,173 @@ namespace
         return nullable->getNestedType();
     }
 
-    /// Kernel visitor for `left OP right` over two expression IDs:
-    /// `visit_predicate_eq`, `_ne`, `_lt`, `_le`, `_gt`, `_ge`.
-    using ComparisonVisitor = uintptr_t (*)(ffi::KernelExpressionVisitorState *, uintptr_t, uintptr_t);
-
-    struct ComparisonVisitors
+    enum class ComparisonOperator : uint8_t
     {
-        ComparisonVisitor direct;
-        /// Reads the comparison with its operands swapped (`literal OP column`).
-        ComparisonVisitor mirrored;
-
-        ComparisonVisitor forOperands(bool swapped) const
-        {
-            return swapped ? mirrored : direct;
-        }
+        Equals,
+        NotEquals,
+        Less,
+        LessOrEquals,
+        Greater,
+        GreaterOrEquals,
     };
 
-    std::optional<ComparisonVisitors> getComparisonVisitors(const String & name)
+    std::optional<ComparisonOperator> parseComparisonOperator(const String & name)
     {
         if (name == DB::NameEquals::name)
-            return ComparisonVisitors{&ffi::visit_predicate_eq, &ffi::visit_predicate_eq};
+            return ComparisonOperator::Equals;
         if (name == DB::NameNotEquals::name)
-            return ComparisonVisitors{&ffi::visit_predicate_ne, &ffi::visit_predicate_ne};
+            return ComparisonOperator::NotEquals;
         if (name == DB::NameLess::name)
-            return ComparisonVisitors{&ffi::visit_predicate_lt, &ffi::visit_predicate_gt};
+            return ComparisonOperator::Less;
         if (name == DB::NameLessOrEquals::name)
-            return ComparisonVisitors{&ffi::visit_predicate_le, &ffi::visit_predicate_ge};
+            return ComparisonOperator::LessOrEquals;
         if (name == DB::NameGreater::name)
-            return ComparisonVisitors{&ffi::visit_predicate_gt, &ffi::visit_predicate_lt};
+            return ComparisonOperator::Greater;
         if (name == DB::NameGreaterOrEquals::name)
-            return ComparisonVisitors{&ffi::visit_predicate_ge, &ffi::visit_predicate_le};
+            return ComparisonOperator::GreaterOrEquals;
         return std::nullopt;
     }
+
+    /// `literal OP column` read as `column OP' literal`.
+    ComparisonOperator mirror(ComparisonOperator op)
+    {
+        switch (op)
+        {
+            case ComparisonOperator::Equals:
+            case ComparisonOperator::NotEquals:
+                return op;
+            case ComparisonOperator::Less:
+                return ComparisonOperator::Greater;
+            case ComparisonOperator::LessOrEquals:
+                return ComparisonOperator::GreaterOrEquals;
+            case ComparisonOperator::Greater:
+                return ComparisonOperator::Less;
+            case ComparisonOperator::GreaterOrEquals:
+                return ComparisonOperator::LessOrEquals;
+        }
+        UNREACHABLE();
+    }
+
+    /// `column OP x` for `x` strictly between two adjacent column values `q` and `q + 1`, read as a
+    /// comparison with `q`. Nullopt for `=` and `!=`: no column value equals such `x`, and the
+    /// comparison is left untranslated.
+    std::optional<ComparisonOperator> againstFloor(ComparisonOperator op)
+    {
+        switch (op)
+        {
+            case ComparisonOperator::Equals:
+            case ComparisonOperator::NotEquals:
+                return std::nullopt;
+            case ComparisonOperator::Less:
+            case ComparisonOperator::LessOrEquals:
+                return ComparisonOperator::LessOrEquals;
+            case ComparisonOperator::Greater:
+            case ComparisonOperator::GreaterOrEquals:
+                return ComparisonOperator::Greater;
+        }
+        UNREACHABLE();
+    }
+
+    /// Kernel visitor for `left OP right` over two expression IDs.
+    using ComparisonVisitor = uintptr_t (*)(ffi::KernelExpressionVisitorState *, uintptr_t, uintptr_t);
+
+    /// The visitor for `column OP literal`.
+    ComparisonVisitor getComparisonVisitor(ComparisonOperator op)
+    {
+        switch (op)
+        {
+            case ComparisonOperator::Equals:
+                return &ffi::visit_predicate_eq;
+            case ComparisonOperator::NotEquals:
+                return &ffi::visit_predicate_ne;
+            case ComparisonOperator::Less:
+                return &ffi::visit_predicate_lt;
+            case ComparisonOperator::LessOrEquals:
+                return &ffi::visit_predicate_le;
+            case ComparisonOperator::Greater:
+                return &ffi::visit_predicate_gt;
+            case ComparisonOperator::GreaterOrEquals:
+                return &ffi::visit_predicate_ge;
+        }
+        UNREACHABLE();
+    }
+
+    bool holds(ComparisonOperator op, Int64 value, Int64 bound)
+    {
+        switch (op)
+        {
+            case ComparisonOperator::Equals: return value == bound;
+            case ComparisonOperator::NotEquals: return value != bound;
+            case ComparisonOperator::Less: return value < bound;
+            case ComparisonOperator::LessOrEquals: return value <= bound;
+            case ComparisonOperator::Greater: return value > bound;
+            case ComparisonOperator::GreaterOrEquals: return value >= bound;
+        }
+        UNREACHABLE();
+    }
+
+    /// Whether the comparison `node` agrees with `operand OP bound` at `bound - 1`, `bound` and `bound + 1`,
+    /// evaluated by the comparison itself: it was built with the settings of its query (how a string is
+    /// parsed, how an out-of-range literal converts), which can differ from those of the read and which
+    /// pruning cannot read. A comparison monotonic in the operand that agrees at these points selects the
+    /// same operand values as `operand OP bound`. `to_field` gives an operand value as a `Field` of the
+    /// operand type, `[min, max]` the values the type holds.
+    bool agreesWithComparison(
+        const DB::ActionsDAG::Node & node,
+        bool swapped,
+        ComparisonOperator op,
+        Int64 bound,
+        Int64 min,
+        Int64 max,
+        const std::function<DB::Field(Int64)> & to_field)
+    {
+        const size_t operand_index = swapped ? 1 : 0;
+        const auto * operand = node.children[operand_index];
+        const auto * literal = node.children[1 - operand_index];
+
+        if (bound < min || bound > max)
+            return false;
+        std::vector<Int64> values;
+        if (bound > min)
+            values.push_back(bound - 1);
+        values.push_back(bound);
+        if (bound < max)
+            values.push_back(bound + 1);
+
+        auto column = operand->result_type->createColumn();
+        for (Int64 value : values)
+            column->insert(to_field(value));
+
+        DB::ColumnsWithTypeAndName arguments(2);
+        arguments[operand_index] = {std::move(column), operand->result_type, operand->result_name};
+        arguments[1 - operand_index] = {literal->column->cloneResized(values.size()), literal->result_type, literal->result_name};
+
+        DB::ColumnPtr result;
+        try
+        {
+            result = node.function_base->execute(arguments, node.result_type, values.size(), /* dry_run = */ false);
+        }
+        catch (...)
+        {
+            return false;
+        }
+        result = result->convertToFullColumnIfConst();
+        const auto * nullable = typeid_cast<const DB::ColumnNullable *>(result.get());
+        const auto & matches = nullable ? nullable->getNestedColumn() : *result;
+
+        for (size_t i = 0; i < values.size(); ++i)
+            if ((nullable && nullable->isNullAt(i)) || matches.getBool(i) != holds(op, values[i], bound))
+                return false;
+        return true;
+    }
+
+    /// The modes the comparison may have parsed a string literal in: the read's
+    /// `cast_string_to_date_time_mode` need not be the one of the query that built the comparison.
+    constexpr std::array DATE_TIME_INPUT_FORMATS = {
+        DB::FormatSettings::DateTimeInputFormat::Basic,
+        DB::FormatSettings::DateTimeInputFormat::BestEffort,
+        DB::FormatSettings::DateTimeInputFormat::BestEffortUS,
+    };
 
     struct DateComparison
     {
@@ -123,8 +269,8 @@ namespace
     /// Converts the literal and selects its visitor; returns nullopt when translation is unsafe.
     std::optional<DateComparison> matchDateComparison(
         const DB::ActionsDAG::Node * node,
-        const ComparisonVisitors & visitors,
-        const DB::FormatSettings & format_settings)
+        ComparisonOperator op,
+        DB::FormatSettings format_settings)
     {
         const auto * conversion = node->children[0];
         const auto * literal = node->children[1];
@@ -158,29 +304,225 @@ namespace
             && !DB::isDateOrDate32(literal_type->getTypeId()))
             return std::nullopt;
 
-        /// Convert the literal exactly as the real comparison does: under the query's format settings
-        /// (notably `date_time_overflow_behavior`), not the default `ignore`. `FunctionComparison`'s
-        /// `executeWithConstString` converts the constant string with `params.format_settings`, so a
-        /// bare `tryConvertFieldToType` here would translate e.g.
-        /// `toDate(d) = '1969-12-31' SETTINGS date_time_overflow_behavior='throw'` as if the literal
-        /// had been clamped, and could prune away the exception the comparison must raise. Under
-        /// `throw` an out-of-range literal makes this return null, so the file stays unpruned.
-        const auto value = DB::tryConvertFieldToType(literal->column->getField(), *result_type, literal_type.get(), format_settings);
-        if (value.isNull())
+        /// Convert the literal as the real comparison does, then let the comparison confirm it: e.g.
+        /// `toDate(d) = '1969-12-31' SETTINGS date_time_overflow_behavior='throw'` throws, which pruning
+        /// must not hide by translating a clamped literal.
+        const auto column_op = swapped ? mirror(op) : op;
+        const bool is_date = result_type->getTypeId() == DB::TypeIndex::Date;
+        const auto to_field = [is_date](Int64 day) { return is_date ? DB::Field(static_cast<UInt64>(day)) : DB::Field(day); };
+        const Int64 min_day = is_date ? 0 : std::numeric_limits<Int32>::min();
+        const Int64 max_day = is_date ? std::numeric_limits<UInt16>::max() : std::numeric_limits<Int32>::max();
+        for (const auto mode : DATE_TIME_INPUT_FORMATS)
+        {
+            format_settings.date_time_input_format = mode;
+            const auto value = DB::tryConvertFieldToType(literal->column->getField(), *result_type, literal_type.get(), format_settings);
+            if (value.isNull())
+                continue;
+            const Int64 day = is_date ? static_cast<Int64>(value.safeGet<UInt64>()) : value.safeGet<Int64>();
+            if (agreesWithComparison(*node, swapped, column_op, day, min_day, max_day, to_field))
+                return DateComparison{column, static_cast<Int32>(day), is_date, getComparisonVisitor(column_op)};
+            if (!isString(literal_type))
+                break;
+        }
+        return std::nullopt;
+    }
+
+    /// Scale of the `DateTime64` that a Delta `timestamp` / `timestamp_ntz` is read as: microseconds.
+    constexpr UInt32 DELTA_TIMESTAMP_SCALE = 6;
+
+    /// With `decimal_check_overflow = 0`, a comparison at a finer scale multiplies the column by up to 1000
+    /// and wraps around `Int64` outside these microseconds, the range of `Int64` nanoseconds (about 1677 to
+    /// 2262). Whether it wraps depends on that setting of the comparison, which pruning cannot read.
+    constexpr Int64 SCALED_COMPARISON_MIN = std::numeric_limits<Int64>::min() / 1000;
+    constexpr Int64 SCALED_COMPARISON_MAX = std::numeric_limits<Int64>::max() / 1000;
+
+    /// With `date_time_overflow_behavior = 'saturate'`, the Parquet reader clamps a timestamp to the range
+    /// of `DateTime64(6)` (0000-01-01 to 9999-12-31 23:59:59.999999), while the statistics keep the value
+    /// as written. The reader takes this setting from its own format settings (for a table engine, the
+    /// table's `SETTINGS` and the server's default profile; on a cluster, each replica's), which pruning
+    /// cannot see. Clamping keeps the order with a literal strictly between the bounds, so only a literal
+    /// on or beyond a bound is fenced for it.
+    const Int64 READ_MIN = DB::minTicksForDateTime64(DB::DecimalUtils::scaleMultiplier<Int64>(DELTA_TIMESTAMP_SCALE));
+    const Int64 READ_MAX = DB::maxTicksForDateTime64(DB::DecimalUtils::scaleMultiplier<Int64>(DELTA_TIMESTAMP_SCALE));
+
+    /// Before the epoch, a value finer than microseconds (`INT96`, `TIMESTAMP(NANOS)`) is read rounded
+    /// towards zero, that is up, while the statistics hold its floor truncated to milliseconds. The read
+    /// value can then exceed the maximum by a full millisecond, one microsecond more than the slack that
+    /// delta-kernel allows. Only a negative value is affected, so a literal at or before the epoch keeps
+    /// the rows below it undecided.
+    constexpr Int64 TIMESTAMP_ROUNDING_FENCE_MIN = 0;
+
+    struct TimestampLiteral
+    {
+        /// The literal in microseconds, or its floor when the comparison runs at a finer scale.
+        Int64 micros;
+        /// Whether `micros` is the literal itself rather than its floor.
+        bool exact;
+        /// The ratio of the literal's ticks to microseconds; 1 when the comparison runs at microseconds.
+        Int64 multiplier;
+    };
+
+    /// Converts a literal compared with a `DateTime64(6)` column exactly as `FunctionComparison` does,
+    /// so that the result can be compared with the raw column microseconds. Returns nullopt when it cannot.
+    std::optional<TimestampLiteral> convertTimestampLiteral(
+        const DB::DataTypePtr & column_type,
+        const DB::ActionsDAG::Node & literal,
+        const DB::FormatSettings & format_settings)
+    {
+        if (!literal.column)
+            return std::nullopt;
+        const auto field = literal.column->getField();
+        if (field.isNull())
             return std::nullopt;
 
-        return DateComparison{
-            column,
-            static_cast<Int32>(value.safeGet<Int32>()),
-            result_type->getTypeId() == DB::TypeIndex::Date,
-            visitors.forOperands(swapped)};
+        const auto literal_type = getTypeOrNestedType(&literal);
+        const DB::WhichDataType which(literal_type);
+
+        /// `executeWithConstString` parses the string as the column type, in its time zone and under
+        /// the comparison's format settings. A string it cannot parse makes it throw or return a constant.
+        if (which.isStringOrFixedString())
+        {
+            const auto value = DB::tryConvertFieldToType(field, *column_type, literal_type.get(), format_settings);
+            if (value.isNull())
+                return std::nullopt;
+            return TimestampLiteral{value.safeGet<DB::DecimalField<DB::DateTime64>>().getValue().value, true, 1};
+        }
+
+        /// Two `DateTime64` compare by ticks at the larger scale, whatever their time zones.
+        if (which.isDateTime64())
+        {
+            const auto scale = assert_cast<const DB::DataTypeDateTime64 &>(*literal_type).getScale();
+            const Int64 ticks = field.safeGet<DB::DecimalField<DB::DateTime64>>().getValue().value;
+            if (scale <= DELTA_TIMESTAMP_SCALE)
+            {
+                Int64 micros = 0;
+                if (common::mulOverflow(ticks, DB::DecimalUtils::scaleMultiplier<Int64>(DELTA_TIMESTAMP_SCALE - scale), micros))
+                    return std::nullopt;
+                return TimestampLiteral{micros, true, 1};
+            }
+
+            /// The column is scaled up instead: `column * multiplier OP ticks`. Round the literal towards
+            /// minus infinity; a remainder means no column value equals it.
+            const Int64 multiplier = DB::DecimalUtils::scaleMultiplier<Int64>(scale - DELTA_TIMESTAMP_SCALE);
+            Int64 quotient = ticks / multiplier;
+            Int64 remainder = ticks % multiplier;
+            if (remainder < 0)
+            {
+                --quotient;
+                remainder += multiplier;
+            }
+            return TimestampLiteral{quotient, remainder == 0, multiplier};
+        }
+
+        /// A `DateTime`, `Date` or `Date32` is cast to the common type, which is the column type itself
+        /// (the `DateTime64` of the larger scale). Cast it the same way: in the column's time zone,
+        /// saturation included.
+        if (which.isDateTime() || which.isDate() || which.isDate32())
+        {
+            const auto converted = DB::castColumn({literal_type->createColumnConst(1, field), literal_type, ""}, column_type);
+            return TimestampLiteral{(*converted)[0].safeGet<DB::DecimalField<DB::DateTime64>>().getValue().value, true, 1};
+        }
+
+        return std::nullopt;
+    }
+
+    struct TimestampComparison
+    {
+        const DB::ActionsDAG::Node * column;
+        DeltaTimestampKind kind;
+        Int64 micros;
+        ComparisonVisitor visitor;
+        /// Whether the rows outside `[fence_min, fence_max]` are kept undecided.
+        bool fenced;
+        Int64 fence_min;
+        Int64 fence_max;
+    };
+
+    /// Matches a comparison of a column backed by a Delta `timestamp` / `timestamp_ntz` with a literal.
+    /// Returns nullopt when no kernel predicate keeps every file the comparison can match.
+    std::optional<TimestampComparison> matchTimestampComparison(
+        const DB::ActionsDAG::Node & node,
+        const DB::ActionsDAG::Node * column,
+        const DB::ActionsDAG::Node * literal,
+        bool swapped,
+        const DeltaTimestampColumn & delta_column,
+        ComparisonOperator op,
+        DB::FormatSettings format_settings)
+    {
+        /// A column declared with another type is read with a conversion that pruning does not mirror.
+        const auto column_type = getTypeOrNestedType(column);
+        const auto * date_time64 = typeid_cast<const DB::DataTypeDateTime64 *>(column_type.get());
+        if (!date_time64 || date_time64->getScale() != DELTA_TIMESTAMP_SCALE)
+            return std::nullopt;
+
+        /// The statistics leave out NULLs, which a column declared not `Nullable` reads as the default value.
+        if (delta_column.nullable && !column->result_type->isNullable())
+            return std::nullopt;
+
+        const bool is_string = isString(getTypeOrNestedType(literal));
+        const auto to_field = [](Int64 micros) { return DB::Field(DB::DecimalField<DB::DateTime64>(micros, DELTA_TIMESTAMP_SCALE)); };
+        for (const auto mode : DATE_TIME_INPUT_FORMATS)
+        {
+            format_settings.date_time_input_format = mode;
+            const auto value = convertTimestampLiteral(column_type, *literal, format_settings);
+            if (!value)
+            {
+                if (is_string)
+                    continue;
+                return std::nullopt;
+            }
+
+            auto column_op = swapped ? mirror(op) : op;
+            if (!value->exact)
+            {
+                const auto floor_op = againstFloor(column_op);
+                if (!floor_op)
+                    return std::nullopt;
+                column_op = *floor_op;
+            }
+
+            if (!agreesWithComparison(node, swapped, column_op, value->micros,
+                    std::numeric_limits<Int64>::min(), std::numeric_limits<Int64>::max(), to_field))
+            {
+                if (is_string)
+                    continue;
+                return std::nullopt;
+            }
+
+            /// The finest `DateTime64` is nanoseconds, so the comparison scales the column up by at most 1000.
+            chassert(value->multiplier <= 1000);
+            const bool scaled = value->multiplier > 1;
+            const bool at_read_bound = value->micros <= READ_MIN || value->micros >= READ_MAX;
+            const bool before_epoch = value->micros <= TIMESTAMP_ROUNDING_FENCE_MIN;
+
+            Int64 fence_min = std::numeric_limits<Int64>::min();
+            Int64 fence_max = std::numeric_limits<Int64>::max();
+            if (scaled)
+            {
+                fence_min = SCALED_COMPARISON_MIN;
+                fence_max = SCALED_COMPARISON_MAX;
+            }
+            if (at_read_bound)
+            {
+                fence_min = std::max(fence_min, READ_MIN);
+                fence_max = std::min(fence_max, READ_MAX);
+            }
+            if (before_epoch)
+                fence_min = std::max(fence_min, TIMESTAMP_ROUNDING_FENCE_MIN);
+
+            return TimestampComparison{
+                column, delta_column.kind, value->micros, getComparisonVisitor(column_op),
+                scaled || at_read_bound || before_epoch, fence_min, fence_max};
+        }
+        return std::nullopt;
     }
 }
 
 std::shared_ptr<EnginePredicate> getEnginePredicate(
-    const DB::ActionsDAG & filter, std::exception_ptr & exception, DB::ContextPtr context)
+    const DB::ActionsDAG & filter, std::exception_ptr & exception, DB::ContextPtr context,
+    DeltaTimestampColumns timestamp_columns)
 {
-    return std::make_unique<EnginePredicate>(filter, exception, context);
+    return std::make_unique<EnginePredicate>(filter, exception, context, std::move(timestamp_columns));
 }
 
 /// Contains state for EngineIterator
@@ -325,6 +667,10 @@ private:
     static uintptr_t visitComparisonOverDateConversion(
         EngineIteratorData & iterator_data,
         const DateComparison & comparison);
+
+    static uintptr_t visitTimestampComparison(
+        EngineIteratorData & iterator_data,
+        const TimestampComparison & comparison);
 };
 
 uintptr_t EnginePredicate::visitPredicate(void * data, ffi::KernelExpressionVisitorState * state)
@@ -338,6 +684,14 @@ uintptr_t EnginePredicate::visitPredicate(void * data, ffi::KernelExpressionVisi
     return result;
 }
 
+static void injectLiteralVisitorFault()
+{
+    fiu_do_on(DB::FailPoints::delta_kernel_fail_literal_visitor,
+    {
+        throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injecting fault for visitLiteralValue");
+    });
+}
+
 static uintptr_t visitLiteralValue(
     const DB::Field & value,
     DB::TypeIndex type_index,
@@ -346,10 +700,7 @@ static uintptr_t visitLiteralValue(
 {
     LOG_TEST(getLogger("EnginePredicate"), "Type index: {}, data type: {}", type_index, data_type->getName());
 
-    fiu_do_on(DB::FailPoints::delta_kernel_fail_literal_visitor,
-    {
-        throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injecting fault for visitLiteralValue");
-    });
+    injectLiteralVisitorFault();
 
     switch (type_index)
     {
@@ -456,14 +807,32 @@ static uintptr_t visitJunction(
         : ffi::visit_predicate_or(state, &iterator);
 }
 
+/// Visits a kernel literal of the column's type from the integer a comparison reduces to.
+using LiteralVisitor = uintptr_t (*)(ffi::KernelExpressionVisitorState *, Int64);
+
+static uintptr_t visitDateLiteral(ffi::KernelExpressionVisitorState * state, Int64 day)
+{
+    return ffi::visit_expression_literal_date(state, static_cast<int32_t>(day));
+}
+
+static uintptr_t visitTimestampLiteral(ffi::KernelExpressionVisitorState * state, Int64 micros)
+{
+    return ffi::visit_expression_literal_timestamp(state, micros);
+}
+
+static uintptr_t visitTimestampNtzLiteral(ffi::KernelExpressionVisitorState * state, Int64 micros)
+{
+    return ffi::visit_expression_literal_timestamp_ntz(state, micros);
+}
+
 /// Builds predicates for one column and validates every kernel ID.
 struct ColumnPredicateBuilder
 {
     ffi::KernelExpressionVisitorState * visitor_state;
     const DB::ActionsDAG::Node * column_node;
-    DB::DataTypePtr column_type;
+    LiteralVisitor visit_literal;
 
-    uintptr_t compare(ComparisonVisitor visitor, Int32 day) const
+    uintptr_t compare(ComparisonVisitor visitor, Int64 value) const
     {
         /// Comparisons consume expression IDs, so register a fresh column and literal each time.
         auto column_id = assertValid(
@@ -474,11 +843,9 @@ struct ColumnPredicateBuilder
                     &KernelUtils::allocateError),
                 "visit_expression_column"),
             "column");
-        auto literal_id = assertValid(
-            visitLiteralValue(
-                DB::Field(Int64(day)), column_type->getTypeId(), column_type, visitor_state),
-            "date literal");
-        return assertValid(visitor(visitor_state, column_id, literal_id), "date comparison");
+        injectLiteralVisitorFault();
+        auto literal_id = assertValid(visit_literal(visitor_state, value), "literal");
+        return assertValid(visitor(visitor_state, column_id, literal_id), "comparison");
     }
 
     uintptr_t andOf(uintptr_t left, uintptr_t right) const
@@ -489,6 +856,15 @@ struct ColumnPredicateBuilder
     uintptr_t orOf(uintptr_t left, uintptr_t right) const
     {
         return junction(Junction::Or, left, right, "OR");
+    }
+
+    /// `compared` holds for a row only while the column is within `[min, max]`. Keeps the rows outside
+    /// undecided: `(min <= column <= max AND compared) OR ((column < min OR column > max) AND unknown)`.
+    uintptr_t fenced(uintptr_t compared, Int64 min, Int64 max, uintptr_t unknown) const
+    {
+        auto in_range = andOf(compare(ffi::visit_predicate_ge, min), compare(ffi::visit_predicate_le, max));
+        auto out_of_range = orOf(compare(ffi::visit_predicate_lt, min), compare(ffi::visit_predicate_gt, max));
+        return orOf(andOf(in_range, compared), andOf(out_of_range, unknown));
     }
 
 private:
@@ -517,25 +893,29 @@ uintptr_t EngineIterator::visitComparisonOverDateConversion(
     EngineIteratorData & iterator_data,
     const DateComparison & comparison)
 {
-    ColumnPredicateBuilder predicates{
-        iterator_data.state, comparison.column, getTypeOrNestedType(comparison.column)};
+    ColumnPredicateBuilder predicates{iterator_data.state, comparison.column, &visitDateLiteral};
 
     auto compared = predicates.compare(comparison.visitor, comparison.day);
     if (!comparison.narrows_to_date)
         return compared;
 
     /// `Date32` -> `Date` can wrap, saturate, or throw outside the Date domain.
-    /// Preserve outside-domain rows: (inside AND comparison) OR (outside AND Unknown).
-    auto is_date_range = predicates.andOf(
-        predicates.compare(ffi::visit_predicate_ge, 0),
-        predicates.compare(ffi::visit_predicate_le, DATE_LUT_MAX_DAY_NUM));
-    auto outside_date_range = predicates.orOf(
-        predicates.compare(ffi::visit_predicate_lt, 0),
-        predicates.compare(ffi::visit_predicate_gt, DATE_LUT_MAX_DAY_NUM));
-    auto unknown_outside_range =
-        predicates.andOf(outside_date_range, visitUntranslated(iterator_data));
-    return predicates.orOf(
-        predicates.andOf(is_date_range, compared), unknown_outside_range);
+    return predicates.fenced(compared, 0, DATE_LUT_MAX_DAY_NUM, visitUntranslated(iterator_data));
+}
+
+uintptr_t EngineIterator::visitTimestampComparison(
+    EngineIteratorData & iterator_data,
+    const TimestampComparison & comparison)
+{
+    ColumnPredicateBuilder predicates{
+        iterator_data.state,
+        comparison.column,
+        comparison.kind == DeltaTimestampKind::TimestampNtz ? &visitTimestampNtzLiteral : &visitTimestampLiteral};
+
+    auto compared = predicates.compare(comparison.visitor, comparison.micros);
+    if (!comparison.fenced)
+        return compared;
+    return predicates.fenced(compared, comparison.fence_min, comparison.fence_max, visitUntranslated(iterator_data));
 }
 
 uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const DB::ActionsDAG::Node * node)
@@ -596,7 +976,7 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                     return ffi::visit_predicate_not(iterator_data.state, column);
                 }
             }
-            else if (auto visitors = getComparisonVisitors(func_name))
+            else if (auto op = parseComparisonOperator(func_name))
             {
                 if (node->children.size() != 2)
                 {
@@ -636,6 +1016,17 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
 
                 if (literal_node && column_node)
                 {
+                    /// A Delta timestamp column never takes the non-accurate cast below,
+                    /// which would truncate a literal finer than microseconds.
+                    if (const auto * delta_column = iterator_data.predicate.getTimestampColumn(column_node->result_name))
+                    {
+                        if (auto comparison = matchTimestampComparison(
+                                *node, column_node, literal_node, isConstNode(node->children[0]), *delta_column, *op,
+                                DB::getFormatSettings(iterator_data.predicate.getContext())))
+                            return visitTimestampComparison(iterator_data, *comparison);
+                        return VISITOR_FAILED_OR_UNSUPPORTED;
+                    }
+
                     /// If literal node has a different type from column's,
                     /// cast it to column's type.
                     if (!column_node->result_type->equals(*literal_node->result_type))
@@ -687,12 +1078,11 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                         return VISITOR_FAILED_OR_UNSUPPORTED;
                     }
 
-                    auto visitor = visitors->forOperands(isConstNode(node->children[0]));
+                    auto visitor = getComparisonVisitor(isConstNode(node->children[0]) ? mirror(*op) : *op);
                     return visitor(iterator_data.state, column, constant);
                 }
 
-                if (auto comparison = matchDateComparison(
-                        node, *visitors, iterator_data.predicate.getFormatSettings()))
+                if (auto comparison = matchDateComparison(node, *op, DB::getFormatSettings(iterator_data.predicate.getContext())))
                     return visitComparisonOverDateConversion(iterator_data, *comparison);
             }
 

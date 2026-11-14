@@ -118,7 +118,9 @@ TableChanges::KernelTableChangesScanIterator & TableChanges::getTableChangesScan
     std::exception_ptr engine_predicate_exception;
     if (filter.has_value())
     {
-        auto predicate = getEnginePredicate(filter.value(), engine_predicate_exception, getContext());
+        /// No timestamp columns: the change data feed scan does not collect the Delta types of its columns,
+        /// so its timestamp comparisons stay untranslated.
+        auto predicate = getEnginePredicate(filter.value(), engine_predicate_exception, getContext(), {});
         table_changes_scan = KernelUtils::unwrapResult(
             ffi::table_changes_scan(
                 getTableChanges().release(),

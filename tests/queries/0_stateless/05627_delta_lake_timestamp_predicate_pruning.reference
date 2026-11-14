@@ -1,0 +1,69 @@
+ts: ts = '2026-01-01 00:00:00.123456'	1
+ts: '2026-01-01 00:00:00.123456' = ts	1
+ts: ts < '2026-01-01 00:00:00.123456'	3
+ts: ts = '2026-01-01 05:30:00.123456' SETTINGS session_timezone='Asia/Kolkata'	1
+ts: ts >= toDate('2026-01-02')	2
+ts: ts < toDate32('1970-01-01')	1
+ts: ts < toDate('2026-01-01') SETTINGS session_timezone='America/New_York'	5
+ts: ts < toDateTime('2026-01-01 05:30:01', 'Asia/Kolkata')	4
+ts: ts < '2026-01-01 00:00:00.1234565'	3
+ts: ts > '2300-01-01 00:00:00'	0
+ts: ts < '1899-12-31 00:00:00'	1
+ntz: ts = '2026-01-01 05:30:00.123456' SETTINGS session_timezone='Asia/Kolkata'	1
+ntz: ts < toDate('2026-01-01') SETTINGS session_timezone='America/New_York'	5
+ts: ts < '20260102' SETTINGS date_time_input_format='basic'	5
+ts: ts >= '20260102' SETTINGS cast_string_to_date_time_mode='basic'	5
+ts_best_effort: ts > '20260102' SETTINGS cast_string_to_date_time_mode='basic'	5
+ts_basic: ts < '20260102'	5
+ts: ts = toDateTime64('2026-01-01 05:30:00.123456', 6, 'Asia/Kolkata')	1
+ts: ts < toDateTime64('2026-01-01 00:00:00.123', 3, 'UTC')	3
+ts: ts < toDateTime64('2026-01-01 00:00:00.123456500', 9, 'UTC')	5
+ts: ts >= toDateTime64('2026-01-01 00:00:00.123456500', 9, 'UTC')	4
+ts: toDateTime64('2026-01-01 00:00:00.123456500', 9, 'UTC') < ts	4
+ts: toDateTime64('2026-01-01 00:00:00.123456500', 9, 'UTC') >= ts	5
+ntz: ts < toDateTime64('2026-01-01 00:00:00.123456500', 9, 'UTC')	5
+ts: ts = toDateTime64('2026-01-01 00:00:00.123456500', 9, 'UTC')	7
+ts: NOT (ts < toDateTime64('2026-01-01 00:00:00.123456500', 9, 'UTC'))	4
+ts: ts = toDateTime64('2026-01-01 00:00:00.123456000', 9, 'UTC')	2
+ts: ts = toDateTime64('2026-01-01 00:00:00.123456000', 9, 'UTC') SETTINGS decimal_check_overflow=0	2
+ts: NOT (ts = toDateTime64('2026-01-01 00:00:00.123456000', 9, 'UTC')) SETTINGS decimal_check_overflow=0	7
+ts: ts < toDateTime64('2026-01-01 00:00:00.123456500', 9, 'UTC') SETTINGS decimal_check_overflow=0	5
+ts: ts <= toDateTime64('1969-12-31 23:59:59.9999995', 9, 'UTC')	2
+ts: ts = '2026-01-01 00:00:00.123456' SETTINGS date_time_overflow_behavior='saturate'	1
+int96: ts = '9999-12-31 23:59:59'	1
+int96: ts < '2262-04-12 00:00:00'	0
+int96: ts < '2262-04-12 00:00:00' SETTINGS date_time_overflow_behavior='saturate'	0
+int96: ts >= '9999-12-31 23:59:59.999999' SETTINGS date_time_overflow_behavior='saturate'	0
+int96_saturate: ts < '2262-04-12 00:00:00'	0
+int96_before_epoch: ts = '1970-01-01 00:00:00'	1
+int96_before_epoch: ts >= '1970-01-01 00:00:00'	1
+int96_before_epoch: ts > '1970-01-01 00:00:00'	1
+ts: ts BETWEEN '2026-01-01 00:00:00' AND '2026-01-01 00:00:00.5'	2
+ts: NOT (ts = toDateTime64('2026-01-01 00:00:00.123456500', 9, 'UTC') AND ts > '1970-01-01')	7
+ts: ts IN ('2026-01-01 00:00:00.123456', '2026-01-02 00:00:00')	7
+ts: toDate(ts) = '2026-01-01'	7
+ts_ms: ts = '2026-01-01 00:00:00.123'	3
+ts_ns: ts = '2026-01-01 00:00:00.123456'	3
+ts_kolkata: ts = '2026-01-01 05:30:00.123456'	1
+ts_kolkata: ts < toDate('2026-01-01')	0
+nullable: ts = '2026-01-01 00:00:00'	1
+nullable: NOT (ts <= '2026-01-01 00:00:00.5')	1
+nullable: ts IS NULL OR ts > '2026-01-01 00:00:00.5'	3
+nullable_as_default: ts < '2000-01-01 00:00:00'	3
+nullable_as_default: NOT (ts >= '2026-01-01 00:00:00')	3
+ancient: ts > toDateTime64('2026-01-01 00:00:00.123456500', 9, 'UTC') SETTINGS decimal_check_overflow=0	1
+ancient: ts > toDateTime64('2026-01-01 00:00:00.123456500', 9, 'UTC')	1
+no_stats: ts = '2026-01-01 00:00:00.123456'	2
+millis: ts > '2026-01-01 00:00:00.123400'	2
+millis: ts = '2026-01-01 00:00:00.123456'	1
+part: ts > '2026-01-01 00:00:00.123456'	1
+part: ts = '2026-01-01 00:00:00.123456'	1
+part: ts < toDateTime64('2026-01-01 00:00:00.123456500', 9, 'UTC')	4
+part: ts <= toDateTime64('1969-12-31 23:59:59.9999995', 9, 'UTC')	1
+part: ts > '2300-01-01 00:00:00'	0
+part_ntz: ts = '2026-01-01 05:30:00.123456' SETTINGS session_timezone='Asia/Kolkata'	1
+part_ntz: ts > '2026-01-01 00:00:00.123456'	1
+failpoint: NOT (ts >= '2026-01-01 00:00:01')	['1969-12-31 23:59:59.999999','1970-01-01 00:00:00.000000','2026-01-01 00:00:00.000000','2026-01-01 00:00:00.123456']	7
+failpoint: NOT (ts < toDateTime64('2026-01-01 00:00:00.123456500', 9, 'UTC')), decimal_check_overflow=0	['2026-01-01 00:00:01.000000','2026-01-02 00:00:00.000000','2026-01-03 00:00:00.000000']	7
+widened: date_timestamp_ntz >= '2024-09-09 00:00:00'	['2024-09-09 04:00:00.000000','2024-09-09 12:34:56.123456']	2
+1

@@ -101,6 +101,7 @@ public:
         DB::NamesAndTypesList names_and_types;
         DB::NameToNameMap physical_names_map;
         std::unordered_set<String> timestamp_ntz_paths;
+        DeltaTimestampColumns timestamp_columns;
         /// A Delta field name may contain a dot, so two leaves can flatten to one writer path: a path
         /// that a Delta `timestamp` leaf also takes is ambiguous and keeps the default annotation.
         std::unordered_set<String> timestamp_writer_paths;
@@ -154,6 +155,9 @@ private:
         bool is_bool = false;
 
         bool is_timestamp_ntz = false;
+
+        /// Whether the field metadata records a type change (`delta.typeChanges`, type widening).
+        bool has_type_changes = false;
     };
     using Fields = std::vector<Field>;
 
@@ -326,6 +330,21 @@ private:
         return physical_name ? std::unique_ptr<std::string>(physical_name) : nullptr;
     }
 
+    static bool hasTypeChanges(const ffi::CStringMap * metadata)
+    {
+        if (!metadata)
+            return false;
+        bool found = false;
+        ffi::visit_string_map(
+            metadata, &found,
+            [](ffi::NullableCvoid ctx, ffi::KernelStringSlice key, ffi::KernelStringSlice)
+            {
+                if (std::string_view(key.ptr, key.len) == "delta.typeChanges")
+                    *static_cast<bool *>(ctx) = true;
+            });
+        return found;
+    }
+
     template <DB::TypeIndex type, bool is_bool = false, bool is_timestamp_ntz = false>
     static void simpleTypeVisitor(
         void * data,
@@ -355,6 +374,7 @@ private:
         SchemaVisitorData::Field field(column_name, std::move(type), nullable, physical_name);
         field.is_bool = is_bool;
         field.is_timestamp_ntz = is_timestamp_ntz;
+        field.has_type_changes = hasTypeChanges(metadata);
         it->second->push_back(std::move(field));
     }
 
@@ -596,6 +616,11 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
             result.timestamp_ntz_paths.insert(field_writer_path);
         else if (in_data_file && field.type == DB::TypeIndex::DateTime64)
             result.timestamp_writer_paths.insert(field_writer_path);
+        if (parent_logical_path.empty() && field.type == DB::TypeIndex::DateTime64 && !field.has_type_changes)
+            result.timestamp_columns.emplace(
+                field.name,
+                DeltaTimestampColumn{
+                    field.is_timestamp_ntz ? DeltaTimestampKind::TimestampNtz : DeltaTimestampKind::Timestamp, field.nullable});
 
         if (!field.physical_name.empty())
         {
@@ -621,7 +646,11 @@ TableSchemaResult getTableSchemaFromSnapshot(
     SchemaVisitor::visitTableSchema(snapshot, data);
     SchemaVisitor::visitPartitionColumns(snapshot, data);
     auto result = data.getSchemaResult();
-    return {std::move(result.names_and_types), std::move(result.physical_names_map), std::move(result.timestamp_ntz_paths)};
+    return {
+        std::move(result.names_and_types),
+        std::move(result.physical_names_map),
+        std::move(result.timestamp_ntz_paths),
+        std::move(result.timestamp_columns)};
 }
 
 DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan, ffi::SharedExternEngine * engine)
