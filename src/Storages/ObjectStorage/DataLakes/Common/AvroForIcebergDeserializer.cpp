@@ -12,6 +12,10 @@
 #if USE_AVRO
 
 #include <Columns/ColumnTuple.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Processors/Formats/Impl/JSONObjectEachRowRowOutputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
@@ -31,6 +35,34 @@ namespace DB::Iceberg
 
 using namespace DB;
 
+namespace
+{
+
+/// A field of the Avro type `null` is read as `Nothing`, which has no values. The Iceberg writers use it for a type
+/// that has no values but NULL: the partition field of a `void` transform whose source column was dropped (the `unknown`
+/// type of Iceberg v3). Read it as `Nullable(Nothing)`, so that its values are NULL.
+DataTypePtr makeNothingNullable(const DataTypePtr & type)
+{
+    if (isNothing(type))
+        return makeNullable(type);
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        DataTypes elements;
+        for (const auto & element : tuple->getElements())
+            elements.push_back(makeNothingNullable(element));
+        if (tuple->hasExplicitNames())
+            return std::make_shared<DataTypeTuple>(elements, tuple->getElementNames());
+        return std::make_shared<DataTypeTuple>(elements);
+    }
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        return std::make_shared<DataTypeArray>(makeNothingNullable(array->getNestedType()));
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+        return std::make_shared<DataTypeMap>(map->getKeyType(), makeNothingNullable(map->getValueType()));
+    return type;
+}
+
+}
+
 AvroForIcebergDeserializer::AvroForIcebergDeserializer(
     std::unique_ptr<ReadBufferFromFileBase> buffer_,
     const IcebergPathFromMetadata & manifest_file_path_,
@@ -43,7 +75,7 @@ try
         = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer), MAX_AVRO_SCHEMA_DEPTH);
 
     avro::NodePtr root_node = manifest_file_reader->dataSchema().root();
-    auto data_type = AvroSchemaReader::avroNodeToDataType(root_node);
+    auto data_type = makeNothingNullable(AvroSchemaReader::avroNodeToDataType(root_node));
 
     MutableColumns columns;
     columns.push_back(data_type->createColumn());
