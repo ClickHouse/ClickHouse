@@ -31,7 +31,9 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -61,6 +63,8 @@
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
+
+#include <cmath>
 
 
 namespace DB
@@ -101,6 +105,7 @@ namespace Setting
     extern const SettingsBool allow_correlated_subqueries;
     extern const SettingsBool rewrite_in_to_join;
     extern const SettingsMap additional_table_filters;
+    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 namespace
@@ -732,7 +737,8 @@ static bool isNullConstant(const QueryTreeNodePtr & node)
 static DataTypePtr getLeastSupertypeForInArrayElements(
     const QueryTreeNodes & array_elements,
     const QueryTreeNodePtr & in_first_argument,
-    bool left_is_null)
+    bool left_is_null,
+    bool allow_lossy_numeric_supertype)
 {
     DataTypes arg_types;
     arg_types.reserve(array_elements.size() + 1);
@@ -743,7 +749,7 @@ static DataTypePtr getLeastSupertypeForInArrayElements(
     for (const auto & arg : array_elements)
         arg_types.push_back(arg->getResultType());
 
-    return tryGetLeastSupertype(arg_types);
+    return tryGetLeastSupertype(arg_types, allow_lossy_numeric_supertype);
 }
 
 template <typename CastNodeToType>
@@ -1271,21 +1277,49 @@ QueryTreeNodes QueryAnalyzer::getArrayElementsForInTupleArguments(
     return array_elements;
 }
 
+static QueryTreeNodePtr buildBoundNullSafeInComparison(
+    const QueryTreeNodePtr & left_argument,
+    const QueryTreeNodePtr & right_argument,
+    bool is_not_in,
+    const ContextPtr & context);
+static QueryTreeNodePtr buildResolvedFunction(
+    const String & name,
+    QueryTreeNodes arguments,
+    const ContextPtr & context);
+static QueryTreeNodePtr buildPortableNullSafeEquals(
+    const QueryTreeNodePtr & left_argument,
+    const QueryTreeNodePtr & right_argument,
+    const ContextPtr & context,
+    bool inside_container = false);
+static bool isCheapInOperand(const QueryTreeNodePtr & argument);
+
 /// Builds the row-wise comparison for a one-element IN set: the compare-nulls functions
-/// (`nullIn`, `notNullIn`) map to isDistinctFrom/isNotDistinctFrom, the others map to
+/// (`nullIn`, `notNullIn`) compare nulls explicitly, while the others map to
 /// ifNull(equals/notEquals(...), default), with a NULL result for a NULL LHS value.
 /// The caller must resolve the returned node.
 static QueryTreeNodePtr buildScalarInComparison(
     const QueryTreeNodePtr & left_argument,
     const QueryTreeNodePtr & right_argument,
     bool is_not_in,
-    bool compare_nulls)
+    bool compare_nulls,
+    const ContextPtr & context)
 {
     if (compare_nulls)
     {
-        auto comparison_fn = std::make_shared<FunctionNode>(is_not_in ? "isDistinctFrom" : "isNotDistinctFrom");
-        comparison_fn->getArguments().getNodes() = {left_argument, right_argument};
-        return comparison_fn;
+        if (hasTypeThatCanContainNulls(left_argument->getResultType())
+            || hasTypeThatCanContainNulls(right_argument->getResultType()))
+        {
+            if (isCheapInOperand(left_argument) && isCheapInOperand(right_argument))
+            {
+                auto result = buildPortableNullSafeEquals(left_argument, right_argument, context);
+                if (is_not_in)
+                    result = buildResolvedFunction("not", {std::move(result)}, context);
+                return result;
+            }
+            return buildBoundNullSafeInComparison(left_argument, right_argument, is_not_in, context);
+        }
+
+        return buildResolvedFunction(is_not_in ? "notEquals" : "equals", {left_argument, right_argument}, context);
     }
 
     auto eq_fn = std::make_shared<FunctionNode>(is_not_in ? "notEquals" : "equals");
@@ -1310,23 +1344,557 @@ static QueryTreeNodePtr buildScalarInComparison(
     return raw_if;
 }
 
+static QueryTreeNodePtr buildResolvedFunction(
+    const String & name,
+    QueryTreeNodes arguments,
+    const ContextPtr & context)
+{
+    auto function = std::make_shared<FunctionNode>(name);
+    function->getArguments().getNodes() = std::move(arguments);
+    function->resolveAsFunction(FunctionFactory::instance().get(name, context));
+    return function;
+}
+
+static bool isCheapInOperand(const QueryTreeNodePtr & argument)
+{
+    if (const auto * column = argument->as<ColumnNode>())
+        return !column->hasExpression();
+    if (argument->as<ConstantNode>())
+        return true;
+
+    const auto * function = argument->as<FunctionNode>();
+    if (!function || function->getFunctionName() != "materialize")
+        return false;
+
+    const auto & arguments = function->getArguments().getNodes();
+    return arguments.size() == 1 && isCheapInOperand(arguments[0]);
+}
+
+/// Small derived column expressions can be repeated in a scalar comparison
+/// without growing a nested `IN` rewrite beyond a fixed size. This avoids an
+/// `arrayMap` binding for ordinary projected values.
+static bool isSmallNumericInOperand(const QueryTreeNodePtr & argument, size_t & remaining_nodes)
+{
+    if (!remaining_nodes)
+        return false;
+    --remaining_nodes;
+
+    if (const auto * column = argument->as<ColumnNode>())
+        return !column->hasExpression() || isSmallNumericInOperand(column->getExpression(), remaining_nodes);
+    if (const auto * constant = argument->as<ConstantNode>())
+        return constant->isDeterministic() && !constant->hasSourceExpression();
+
+    const auto * function = argument->as<FunctionNode>();
+    if (!function || !function->isResolved())
+        return false;
+    const auto function_base = function->getFunction();
+    if (!function_base || !function_base->isDeterministic()
+        || !function_base->isDeterministicInScopeOfQuery() || function_base->isStateful())
+        return false;
+    for (const auto & child : function->getArguments().getNodes())
+    {
+        if (!isSmallNumericInOperand(child, remaining_nodes))
+            return false;
+    }
+    return true;
+}
+
+static bool areSmallNumericInOperands(const QueryTreeNodePtr & left_argument, const QueryTreeNodePtr & right_argument)
+{
+    size_t left_budget = 12;
+    size_t right_budget = 12;
+    return isSmallNumericInOperand(left_argument, left_budget)
+        && isSmallNumericInOperand(right_argument, right_budget);
+}
+
+static QueryTreeNodePtr buildNumericScalarInComparison(
+    const QueryTreeNodePtr & left_argument,
+    const QueryTreeNodePtr & right_argument,
+    bool is_not_in,
+    bool compare_nulls,
+    const ContextPtr & context,
+    bool bind_arguments,
+    bool match_nullable_nans);
+
+static QueryTreeNodePtr includeMatchingNaNs(
+    QueryTreeNodePtr result,
+    const QueryTreeNodePtr & left_argument,
+    const QueryTreeNodePtr & right_argument,
+    const ContextPtr & context,
+    bool inside_container = false)
+{
+    const auto left_type = removeNullable(removeLowCardinality(left_argument->getResultType()));
+    const auto right_type = removeNullable(removeLowCardinality(right_argument->getResultType()));
+    if (!isFloat(left_type) || !isFloat(right_type)
+        || (!inside_container
+            && !isNullableOrLowCardinalityNullable(left_argument->getResultType())
+            && !isNullableOrLowCardinalityNullable(right_argument->getResultType())))
+        return result;
+
+    auto both_nan = buildResolvedFunction(
+        "and",
+        {buildResolvedFunction("isNaN", {left_argument}, context), buildResolvedFunction("isNaN", {right_argument}, context)},
+        context);
+    return buildResolvedFunction("or", {std::move(result), std::move(both_nan)}, context);
+}
+
+static QueryTreeNodePtr buildPortableNullSafeEquals(
+    const QueryTreeNodePtr & left_argument,
+    const QueryTreeNodePtr & right_argument,
+    const ContextPtr & context,
+    bool inside_container)
+{
+    const auto left_type = removeNullable(removeLowCardinality(left_argument->getResultType()));
+    const auto right_type = removeNullable(removeLowCardinality(right_argument->getResultType()));
+    const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left_type.get());
+    const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right_type.get());
+    const auto * left_array = typeid_cast<const DataTypeArray *>(left_type.get());
+    const auto * right_array = typeid_cast<const DataTypeArray *>(right_type.get());
+    const auto * left_map = typeid_cast<const DataTypeMap *>(left_type.get());
+    const auto * right_map = typeid_cast<const DataTypeMap *>(right_type.get());
+
+    QueryTreeNodePtr result;
+    if (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+    {
+        const bool tuple_has_container_semantics = inside_container
+            || isNullableOrLowCardinalityNullable(left_argument->getResultType())
+            || isNullableOrLowCardinalityNullable(right_argument->getResultType());
+        QueryTreeNodes element_comparisons;
+        element_comparisons.reserve(left_tuple->getElements().size());
+        for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+        {
+            auto index = std::make_shared<ConstantNode>(static_cast<UInt64>(i + 1));
+            auto left_element = buildResolvedFunction("tupleElement", {left_argument, index}, context);
+            auto right_element = buildResolvedFunction("tupleElement", {right_argument, std::move(index)}, context);
+            element_comparisons.push_back(buildPortableNullSafeEquals(left_element, right_element, context, tuple_has_container_semantics));
+        }
+        if (element_comparisons.empty())
+            result = std::make_shared<ConstantNode>(Field{1u}, std::make_shared<DataTypeUInt8>());
+        else if (element_comparisons.size() == 1)
+            result = std::move(element_comparisons.front());
+        else
+            result = buildResolvedFunction("and", std::move(element_comparisons), context);
+    }
+    else if (left_array && right_array)
+    {
+        /// `arrayZipUnaligned` pads missing elements with `Nullable(T)`, which cannot
+        /// contain an `Array` or `Map`. Compare the common prefix and lengths separately.
+        auto left_length = buildResolvedFunction("length", {left_argument}, context);
+        auto right_length = buildResolvedFunction("length", {right_argument}, context);
+        auto common_length = buildResolvedFunction("least", {left_length, right_length}, context);
+        auto left_slice = buildResolvedFunction(
+            "arraySlice", {left_argument, std::make_shared<ConstantNode>(Field{1u}), common_length}, context);
+        auto right_slice = buildResolvedFunction(
+            "arraySlice", {right_argument, std::make_shared<ConstantNode>(Field{1u}), common_length}, context);
+        const DataTypes argument_types{
+            recursiveRemoveLowCardinality(left_array->getNestedType()),
+            recursiveRemoveLowCardinality(right_array->getNestedType())};
+        auto lambda_arguments = std::make_shared<LambdaArgumentsNode>(Names{"__in_null_left_element", "__in_null_right_element"});
+        lambda_arguments->resolve(argument_types);
+        auto left_element = std::make_shared<ColumnNode>(
+            NameAndTypePair{"__in_null_left_element", argument_types[0]}, lambda_arguments);
+        auto right_element = std::make_shared<ColumnNode>(
+            NameAndTypePair{"__in_null_right_element", argument_types[1]}, lambda_arguments);
+        auto body = buildPortableNullSafeEquals(left_element, right_element, context, true);
+        auto lambda = std::make_shared<LambdaNode>(
+            lambda_arguments, body, false /*is_operator*/,
+            std::make_shared<DataTypeFunction>(argument_types, body->getResultType()));
+        auto mapped = buildResolvedFunction(
+            "arrayMap", {std::move(lambda), std::move(left_slice), std::move(right_slice)}, context);
+        auto has_mismatch = buildResolvedFunction("has", {std::move(mapped), std::make_shared<ConstantNode>(Field{0u})}, context);
+        auto same_length = buildResolvedFunction("equals", {std::move(left_length), std::move(right_length)}, context);
+        result = buildResolvedFunction("and", {std::move(same_length), buildResolvedFunction("not", {std::move(has_mismatch)}, context)}, context);
+    }
+    else if (left_map && right_map && tryGetLeastSupertype(DataTypes{left_type, right_type}))
+    {
+        /// Whole-value `Map` equality compares compatible nullable values and
+        /// `NaN` with container semantics. Keep the vectorized comparison when
+        /// a lossless common map type exists.
+        result = buildResolvedFunction("equals", {left_argument, right_argument}, context);
+    }
+    else if (left_map && right_map)
+    {
+        auto left_keys = buildResolvedFunction("mapKeys", {left_argument}, context);
+        auto right_keys = buildResolvedFunction("mapKeys", {right_argument}, context);
+        auto left_values = buildResolvedFunction("mapValues", {left_argument}, context);
+        auto right_values = buildResolvedFunction("mapValues", {right_argument}, context);
+        auto keys_equal = buildPortableNullSafeEquals(left_keys, right_keys, context, true);
+        auto values_equal = buildPortableNullSafeEquals(left_values, right_values, context, true);
+        result = buildResolvedFunction("and", {std::move(keys_equal), std::move(values_equal)}, context);
+    }
+    else
+    {
+        const bool both_numeric = isNumber(left_type) && isNumber(right_type);
+        if (both_numeric
+            && ((isDecimal(left_type) != isDecimal(right_type))
+                || !tryGetLeastSupertype(DataTypes{left_type, right_type}))
+            && (context->getSettingsRef()[Setting::allow_lossy_numeric_supertype]
+                || !(isDecimal(left_type) || isDecimal(right_type))
+                || !(isFloat(left_type) || isFloat(right_type))))
+        {
+            /// Keep mixed numeric comparisons on functions understood by older shards.
+            return buildNumericScalarInComparison(left_argument, right_argument, false, true, context, false, true);
+        }
+        if (left_type->hasDynamicStructure() || right_type->hasDynamicStructure()
+            || isVariant(left_type) || isVariant(right_type))
+        {
+            auto candidates = buildResolvedFunction("array", {right_argument}, context);
+            result = buildResolvedFunction("has", {std::move(candidates), left_argument}, context);
+        }
+        else
+        {
+            result = buildResolvedFunction("equals", {left_argument, right_argument}, context);
+            result = includeMatchingNaNs(std::move(result), left_argument, right_argument, context, inside_container);
+        }
+    }
+
+    if (canContainNull(*left_argument->getResultType()) || canContainNull(*right_argument->getResultType()))
+    {
+        auto left_is_null = buildResolvedFunction("isNull", {left_argument}, context);
+        auto right_is_null = buildResolvedFunction("isNull", {right_argument}, context);
+        auto either_is_null = buildResolvedFunction("or", {left_is_null, right_is_null}, context);
+        auto both_are_null = buildResolvedFunction("and", {std::move(left_is_null), std::move(right_is_null)}, context);
+        auto non_null_equals = buildResolvedFunction(
+            "ifNull", {std::move(result), std::make_shared<ConstantNode>(Field{0u})}, context);
+        result = buildResolvedFunction("if", {std::move(either_is_null), std::move(both_are_null), std::move(non_null_equals)}, context);
+    }
+
+    return result;
+}
+
+static QueryTreeNodePtr buildBoundNullSafeInComparison(
+    const QueryTreeNodePtr & left_argument,
+    const QueryTreeNodePtr & right_argument,
+    bool is_not_in,
+    const ContextPtr & context)
+{
+    auto left_array = buildResolvedFunction("array", {left_argument}, context);
+    auto right_array = buildResolvedFunction("array", {right_argument}, context);
+    const auto * left_array_type = typeid_cast<const DataTypeArray *>(left_array->getResultType().get());
+    const auto * right_array_type = typeid_cast<const DataTypeArray *>(right_array->getResultType().get());
+    chassert(left_array_type && right_array_type);
+    const DataTypes argument_types{
+        recursiveRemoveLowCardinality(left_array_type->getNestedType()),
+        recursiveRemoveLowCardinality(right_array_type->getNestedType())};
+    auto lambda_arguments = std::make_shared<LambdaArgumentsNode>(Names{"__in_null_left", "__in_null_right"});
+    lambda_arguments->resolve(argument_types);
+    auto left_value = std::make_shared<ColumnNode>(
+        NameAndTypePair{"__in_null_left", argument_types[0]}, lambda_arguments);
+    auto right_value = std::make_shared<ColumnNode>(
+        NameAndTypePair{"__in_null_right", argument_types[1]}, lambda_arguments);
+
+    auto body = buildPortableNullSafeEquals(left_value, right_value, context);
+    if (is_not_in)
+        body = buildResolvedFunction("not", {std::move(body)}, context);
+
+    auto lambda = std::make_shared<LambdaNode>(
+        lambda_arguments, body, false /*is_operator*/,
+        std::make_shared<DataTypeFunction>(argument_types, body->getResultType()));
+    auto mapped = buildResolvedFunction(
+        "arrayMap", {std::move(lambda), std::move(left_array), std::move(right_array)}, context);
+    return buildResolvedFunction("arrayElement", {std::move(mapped), std::make_shared<ConstantNode>(Field{1u})}, context);
+}
+
+static QueryTreeNodePtr buildNumericScalarInComparison(
+    const QueryTreeNodePtr & left_argument,
+    const QueryTreeNodePtr & right_argument,
+    bool is_not_in,
+    bool compare_nulls,
+    const ContextPtr & context,
+    bool bind_arguments,
+    bool match_nullable_nans)
+{
+    const auto left_type = removeNullable(removeLowCardinality(left_argument->getResultType()));
+    const auto right_type = removeNullable(removeLowCardinality(right_argument->getResultType()));
+    const bool left_is_decimal = isDecimal(left_type);
+    const bool right_is_decimal = isDecimal(right_type);
+    const bool left_nullable = isNullableOrLowCardinalityNullable(left_argument->getResultType());
+    const bool right_nullable = isNullableOrLowCardinalityNullable(right_argument->getResultType());
+
+    if (bind_arguments && (left_is_decimal != right_is_decimal
+        || (compare_nulls && (left_nullable || right_nullable || (isFloat(left_type) && isFloat(right_type)))))
+        && !areSmallNumericInOperands(left_argument, right_argument))
+    {
+        /// The exact comparison uses each operand in several branches. Bind both
+        /// operands once so nested `IN` expressions grow linearly and the query
+        /// can still be sent to older shards using existing function names.
+        auto left_array = buildResolvedFunction("array", {left_argument}, context);
+        auto right_array = buildResolvedFunction("array", {right_argument}, context);
+        const auto * left_array_type = typeid_cast<const DataTypeArray *>(left_array->getResultType().get());
+        const auto * right_array_type = typeid_cast<const DataTypeArray *>(right_array->getResultType().get());
+        chassert(left_array_type && right_array_type);
+        const DataTypes argument_types{
+            recursiveRemoveLowCardinality(left_array_type->getNestedType()),
+            recursiveRemoveLowCardinality(right_array_type->getNestedType())};
+        auto lambda_arguments = std::make_shared<LambdaArgumentsNode>(Names{"__in_exact_left", "__in_exact_right"});
+        lambda_arguments->resolve(argument_types);
+        auto left_value = std::make_shared<ColumnNode>(
+            NameAndTypePair{"__in_exact_left", argument_types[0]}, lambda_arguments);
+        auto right_value = std::make_shared<ColumnNode>(
+            NameAndTypePair{"__in_exact_right", argument_types[1]}, lambda_arguments);
+        auto body = buildNumericScalarInComparison(
+            left_value, right_value, is_not_in, compare_nulls, context, false, match_nullable_nans);
+        auto lambda = std::make_shared<LambdaNode>(
+            lambda_arguments, body, false /*is_operator*/,
+            std::make_shared<DataTypeFunction>(argument_types, body->getResultType()));
+        auto mapped = buildResolvedFunction("arrayMap", {lambda, std::move(left_array), std::move(right_array)}, context);
+        return buildResolvedFunction("arrayElement", {std::move(mapped), std::make_shared<ConstantNode>(Field{1u})}, context);
+    }
+
+    QueryTreeNodePtr result;
+    if (left_is_decimal != right_is_decimal)
+    {
+        /// Older shards can evaluate this using existing conversion and comparison
+        /// functions. Keep both operands in the `Decimal` domain before checking a match.
+        const auto & decimal_argument = left_is_decimal ? left_argument : right_argument;
+        const auto & numeric_argument = left_is_decimal ? right_argument : left_argument;
+        const auto & decimal_type = left_is_decimal ? left_type : right_type;
+        const auto & numeric_type = left_is_decimal ? right_type : left_type;
+        const bool numeric_is_float = isFloat(numeric_type);
+        const auto numeric_type_id = numeric_type->getTypeId();
+        const bool wide_integer = numeric_type_id == TypeIndex::Int128 || numeric_type_id == TypeIndex::UInt128
+            || numeric_type_id == TypeIndex::Int256 || numeric_type_id == TypeIndex::UInt256;
+
+        auto build_cast_comparison = [&]() -> QueryTreeNodePtr
+        {
+            /// Convert floats to `Float64` first because `accurateCastOrNull` does
+            /// not accept `BFloat16` directly. An out-of-range value becomes `NULL`.
+            auto numeric_value = numeric_is_float
+                ? buildResolvedFunction("toFloat64", {numeric_argument}, context) : numeric_argument;
+            auto converted = buildResolvedFunction(
+                "accurateCastOrNull", {numeric_value, std::make_shared<ConstantNode>(decimal_type->getName())}, context);
+            QueryTreeNodePtr cast_result = buildResolvedFunction("equals", {decimal_argument, converted}, context);
+            if (numeric_is_float)
+            {
+                /// A rounded float-to-Decimal conversion cannot create a match.
+                auto decimal_as_float = buildResolvedFunction("toFloat64", {decimal_argument}, context);
+                auto float_matches = buildResolvedFunction("equals", {numeric_value, std::move(decimal_as_float)}, context);
+                cast_result = buildResolvedFunction("and", {std::move(cast_result), std::move(float_matches)}, context);
+            }
+            if (!left_nullable && !right_nullable)
+                cast_result = buildResolvedFunction(
+                    "ifNull", {std::move(cast_result), std::make_shared<ConstantNode>(Field{0u})}, context);
+            return cast_result;
+        };
+
+        if (!wide_integer && !numeric_is_float)
+            result = build_cast_comparison();
+        else
+        {
+            /// Wide integers cannot use `accurateCastOrNull`. A floating-point
+            /// integer can also be rounded by conversion into a wide `Decimal`.
+            /// Compare raw `Decimal` units after checking that the scale divides them.
+            String reinterpret_name;
+            String integer_cast_name;
+            switch (decimal_type->getTypeId())
+            {
+                case TypeIndex::Decimal32: reinterpret_name = "reinterpretAsInt32"; integer_cast_name = "toInt32"; break;
+                case TypeIndex::Decimal64: reinterpret_name = "reinterpretAsInt64"; integer_cast_name = "toInt64"; break;
+                case TypeIndex::Decimal128: reinterpret_name = "reinterpretAsInt128"; integer_cast_name = "toInt128"; break;
+                case TypeIndex::Decimal256: reinterpret_name = "reinterpretAsInt256"; integer_cast_name = "toInt256"; break;
+                default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Decimal type in numeric `IN` comparison");
+            }
+
+            auto raw_decimal = buildResolvedFunction(reinterpret_name, {decimal_argument}, context);
+            const auto scale = getDecimalScale(*decimal_type);
+            if (!numeric_is_float)
+            {
+                QueryTreeNodePtr decimal_integer = raw_decimal;
+                QueryTreeNodePtr decimal_is_integral;
+                if (scale)
+                {
+                    auto multiplier = buildResolvedFunction(
+                        integer_cast_name, {std::make_shared<ConstantNode>("1" + String(scale, '0'))}, context);
+                    auto remainder = buildResolvedFunction("modulo", {raw_decimal, multiplier}, context);
+                    decimal_is_integral = buildResolvedFunction(
+                        "equals", {std::move(remainder), std::make_shared<ConstantNode>(Field{0u})}, context);
+                    decimal_integer = buildResolvedFunction("intDiv", {raw_decimal, std::move(multiplier)}, context);
+                }
+
+                result = buildResolvedFunction("equals", {std::move(decimal_integer), numeric_argument}, context);
+                if (decimal_is_integral)
+                    result = buildResolvedFunction("and", {std::move(decimal_is_integral), std::move(result)}, context);
+            }
+            else
+            {
+                /// `Float64` multiplication by a power of two is exact. Divide
+                /// the raw `Decimal` units by 5^scale, then compare them with
+                /// the float multiplied by 2^scale. This avoids multiplying a
+                /// float by 10^scale, which can round an exact decimal value.
+                Int256 five_power = 1;
+                for (UInt32 i = 0; i < scale; ++i)
+                    five_power *= 5;
+                auto five_power_node = buildResolvedFunction(
+                    integer_cast_name, {std::make_shared<ConstantNode>(toString(five_power))}, context);
+                QueryTreeNodePtr exact_divisor = five_power_node;
+                if (decimal_type->getTypeId() == TypeIndex::Decimal64)
+                {
+                    /// A full divisor lets both guarded exact operations run lazily under
+                    /// the default short-circuit policy. The divisor remains a nonzero power of five.
+                    exact_divisor = buildResolvedFunction("materialize", {std::move(exact_divisor)}, context);
+                }
+                auto remainder = buildResolvedFunction("modulo", {raw_decimal, exact_divisor}, context);
+                auto divisible = buildResolvedFunction(
+                    "equals", {std::move(remainder), std::make_shared<ConstantNode>(Field{0u})}, context);
+                auto quotient = buildResolvedFunction("intDiv", {raw_decimal, std::move(exact_divisor)}, context);
+                auto float_value = buildResolvedFunction("toFloat64", {numeric_argument}, context);
+                auto scaled_float = buildResolvedFunction(
+                    "multiply", {float_value, std::make_shared<ConstantNode>(Field{std::ldexp(1.0, static_cast<int>(scale))})}, context);
+                auto exact_equal = buildResolvedFunction("equals", {std::move(quotient), scaled_float}, context);
+                auto exact_match = buildResolvedFunction("and", {std::move(divisible), std::move(exact_equal)}, context);
+                if (!scale)
+                    result = std::move(exact_match);
+                else
+                {
+                    auto truncated = buildResolvedFunction("trunc", {scaled_float}, context);
+                    auto scaled_is_integral = buildResolvedFunction("equals", {scaled_float, std::move(truncated)}, context);
+                    auto fractional_match = buildResolvedFunction(
+                        "and", {buildResolvedFunction("not", {std::move(scaled_is_integral)}, context), build_cast_comparison()}, context);
+                    result = buildResolvedFunction("or", {std::move(exact_match), std::move(fractional_match)}, context);
+                }
+
+                if (decimal_type->getTypeId() == TypeIndex::Decimal64)
+                {
+                    /// Below 2^51 raw units, adjacent decimal values are farther apart
+                    /// than one `Float64` ULP at every scale. The ordinary comparison
+                    /// is therefore safe and avoids the scaled fallback on common values.
+                    auto raw_magnitude = buildResolvedFunction("abs", {raw_decimal}, context);
+                    auto within_exact_range = buildResolvedFunction(
+                        "less", {std::move(raw_magnitude), std::make_shared<ConstantNode>(Field{UInt64{1} << 51})}, context);
+                    auto fast_equal = buildResolvedFunction("equals", {decimal_argument, numeric_argument}, context);
+                    result = buildResolvedFunction("if", {std::move(within_exact_range), std::move(fast_equal), std::move(result)}, context);
+                }
+            }
+        }
+    }
+    else if (compare_nulls)
+    {
+        result = buildResolvedFunction("equals", {left_argument, right_argument}, context);
+    }
+    else
+    {
+        result = buildResolvedFunction("equals", {left_argument, right_argument}, context);
+    }
+
+    if (compare_nulls && match_nullable_nans)
+        result = includeMatchingNaNs(std::move(result), left_argument, right_argument, context);
+
+    if (compare_nulls)
+    {
+        if (left_nullable || right_nullable)
+        {
+            auto left_is_null = buildResolvedFunction("isNull", {left_argument}, context);
+            auto right_is_null = buildResolvedFunction("isNull", {right_argument}, context);
+            auto both_are_null = buildResolvedFunction("and", {std::move(left_is_null), std::move(right_is_null)}, context);
+            result = buildResolvedFunction("ifNull", {std::move(result), std::move(both_are_null)}, context);
+        }
+        if (is_not_in)
+            result = buildResolvedFunction("not", {std::move(result)}, context);
+        return result;
+    }
+
+    if (left_nullable || right_nullable)
+        result = buildResolvedFunction("ifNull", {std::move(result), std::make_shared<ConstantNode>(Field{0u})}, context);
+
+    if (left_nullable)
+    {
+        auto left_is_null = buildResolvedFunction("isNull", {left_argument}, context);
+        auto null_value = std::make_shared<ConstantNode>(
+            Field{},
+            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()));
+        result = buildResolvedFunction(
+            "if", {std::move(left_is_null), std::move(null_value), std::move(result)}, context);
+    }
+
+    if (is_not_in)
+    {
+        result = buildResolvedFunction("not", {std::move(result)}, context);
+    }
+
+    return result;
+}
+
+/// Builds the row-wise equivalent of membership in a heterogeneous numeric value list.
+/// A single array element type cannot preserve every integer, decimal, and floating-point
+/// candidate, while the comparison functions compare each numeric pair accurately.
+static QueryTreeNodePtr buildNumericInComparison(
+    const QueryTreeNodePtr & left_argument,
+    const QueryTreeNodes & right_arguments,
+    bool is_not_in,
+    bool compare_nulls,
+    const ContextPtr & context)
+{
+    if (right_arguments.empty())
+        return std::make_shared<ConstantNode>(is_not_in ? Field{1u} : Field{0u}, std::make_shared<DataTypeUInt8>());
+
+    if (right_arguments.size() == 1)
+        return buildNumericScalarInComparison(
+            left_argument, right_arguments.front(), is_not_in, compare_nulls, context, true, false);
+
+    /// Each scalar comparison refers to the left operand. Bind it with all
+    /// candidates once, so nested multi-candidate membership grows linearly.
+    QueryTreeNodes arrays;
+    arrays.reserve(right_arguments.size() + 1);
+    DataTypes argument_types;
+    argument_types.reserve(right_arguments.size() + 1);
+    Names argument_names;
+    argument_names.reserve(right_arguments.size() + 1);
+
+    auto bind_argument = [&](const QueryTreeNodePtr & argument)
+    {
+        auto array = buildResolvedFunction("array", {argument}, context);
+        const auto * array_type = typeid_cast<const DataTypeArray *>(array->getResultType().get());
+        chassert(array_type);
+        argument_types.push_back(recursiveRemoveLowCardinality(array_type->getNestedType()));
+        argument_names.push_back("__in_exact_arg_" + std::to_string(arrays.size()));
+        arrays.push_back(std::move(array));
+    };
+
+    bind_argument(left_argument);
+    for (const auto & right_argument : right_arguments)
+        bind_argument(right_argument);
+
+    auto lambda_arguments = std::make_shared<LambdaArgumentsNode>(argument_names);
+    lambda_arguments->resolve(argument_types);
+    QueryTreeNodes bound_arguments;
+    bound_arguments.reserve(argument_types.size());
+    for (size_t i = 0; i < argument_types.size(); ++i)
+        bound_arguments.push_back(std::make_shared<ColumnNode>(
+            NameAndTypePair{argument_names[i], argument_types[i]}, lambda_arguments));
+
+    QueryTreeNodes comparisons;
+    comparisons.reserve(right_arguments.size());
+    for (size_t i = 0; i < right_arguments.size(); ++i)
+        comparisons.push_back(buildNumericScalarInComparison(
+            bound_arguments.front(), bound_arguments[i + 1], is_not_in, compare_nulls, context, false, false));
+
+    auto body = buildResolvedFunction(is_not_in ? "and" : "or", std::move(comparisons), context);
+    auto lambda = std::make_shared<LambdaNode>(
+        lambda_arguments, body, false /*is_operator*/,
+        std::make_shared<DataTypeFunction>(argument_types, body->getResultType()));
+    arrays.insert(arrays.begin(), std::move(lambda));
+    auto mapped = buildResolvedFunction("arrayMap", std::move(arrays), context);
+    return buildResolvedFunction("arrayElement", {std::move(mapped), std::make_shared<ConstantNode>(Field{1u})}, context);
+}
+
 /// converts tuple to array with proper type handling
 QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
-    const QueryTreeNodes & tuple_args,
+    const QueryTreeNodes & array_elements,
     const QueryTreeNodePtr & in_first_argument,
     IdentifierResolveScope & scope,
-    bool expand_single_tuple_value,
     bool compare_nulls)
 {
-    QueryTreeNodes array_elements = getArrayElementsForInTupleArguments(tuple_args, in_first_argument, scope, expand_single_tuple_value);
-
     bool left_is_null = isNullConstant(in_first_argument);
 
     bool rhs_has_null = std::any_of(array_elements.begin(), array_elements.end(),
         [](const auto & arg)
         { return isNullConstant(arg) || isNullableOrLowCardinalityNullable(arg->getResultType()); });
 
-    DataTypePtr common_type = getLeastSupertypeForInArrayElements(array_elements, in_first_argument, left_is_null);
+    DataTypePtr common_type = getLeastSupertypeForInArrayElements(
+        array_elements,
+        in_first_argument,
+        left_is_null,
+        scope.context->getSettingsRef()[Setting::allow_lossy_numeric_supertype]);
     /// If no supertype exists, keep the old behaviour for non-NULL left-hand side
     /// values and let per-element `CAST` handle or reject the mismatch. For NULL
     /// left-hand side values, let `array` infer the right-hand side type on its own.
@@ -2726,8 +3294,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         if (isStringOrFixedString(removeNullable(removeLowCardinality(right_type)))
                             && !tryGetLeastSupertype(DataTypes{left_type, right_type}))
                             right_argument = castNodeToType(right_argument, left_type, scope);
-                        node = buildScalarInComparison(fn_args[0], right_argument, is_not_in, compare_nulls);
-                        resolveFunction(node, scope);
+                        node = buildScalarInComparison(fn_args[0], right_argument, is_not_in, compare_nulls, scope.context);
+                        if (!compare_nulls)
+                            resolveFunction(node, scope);
                         return ProjectionNames{proj};
                     }
                 }
@@ -2889,8 +3458,27 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         return ProjectionNames{proj};
                     }
 
-                    /// convert tuple to array and rewrite to has()
-                    QueryTreeNodePtr array_arg = convertTupleToArray(tuple_args, in_first_argument, scope, expand_single_tuple_value, compare_nulls);
+                    QueryTreeNodes array_elements = getArrayElementsForInTupleArguments(
+                        tuple_args, in_first_argument, scope, expand_single_tuple_value);
+
+                    /// A heterogeneous numeric list with no lossless common type cannot be
+                    /// represented by one array element type without changing membership near
+                    /// precision boundaries. When the lossy numeric setting makes this list
+                    /// eligible, compare every candidate directly instead.
+                    const bool allow_lossy_numeric_supertype
+                        = scope.context->getSettingsRef()[Setting::allow_lossy_numeric_supertype];
+                    if (allow_lossy_numeric_supertype
+                        && !getLeastSupertypeForInArrayElements(array_elements, in_first_argument, false, false)
+                        && getLeastSupertypeForInArrayElements(array_elements, in_first_argument, false, true))
+                    {
+                        auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+                        node = buildNumericInComparison(
+                            in_first_argument, array_elements, is_not_in, compare_nulls, scope.context);
+                        return ProjectionNames{proj};
+                    }
+
+                    /// Convert the value list to an array and rewrite to `has`.
+                    QueryTreeNodePtr array_arg = convertTupleToArray(array_elements, in_first_argument, scope, compare_nulls);
                     return buildHasExpression(
                         node,
                         array_arg,
@@ -2936,8 +3524,19 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         }
                     }
 
-                    node = buildScalarInComparison(fn_args[0], right_argument, is_not_in, compare_nulls);
-                    resolveFunction(node, scope);
+                    const auto & right_type = non_const_set_candidate->getResultType();
+                    const bool is_number_comparison = isNumber(removeNullable(removeLowCardinality(left_type)))
+                        && isNumber(removeNullable(removeLowCardinality(right_type)));
+                    if (is_number_comparison && scope.context->getSettingsRef()[Setting::allow_lossy_numeric_supertype])
+                    {
+                        node = buildNumericScalarInComparison(
+                            fn_args[0], right_argument, is_not_in, compare_nulls, scope.context, true, true);
+                        return ProjectionNames{proj};
+                    }
+
+                    node = buildScalarInComparison(fn_args[0], right_argument, is_not_in, compare_nulls, scope.context);
+                    if (!compare_nulls)
+                        resolveFunction(node, scope);
                     return ProjectionNames{proj};
                 }
             }

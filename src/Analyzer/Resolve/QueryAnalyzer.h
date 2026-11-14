@@ -197,10 +197,9 @@ private:
         IdentifierResolveScope & scope);
 
     QueryTreeNodePtr convertTupleToArray(
-        const QueryTreeNodes & tuple_args,
+        const QueryTreeNodes & array_elements,
         const QueryTreeNodePtr & in_first_argument,
         IdentifierResolveScope & scope,
-        bool expand_single_tuple_value,
         bool compare_nulls);
 
     QueryTreeNodes getArrayElementsForInTupleArguments(
