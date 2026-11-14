@@ -81,6 +81,17 @@ TEST(TreeHashCompleteness, ColumnDeclarationCloneAndJSONRoundTripHashEqual)
     EXPECT_EQ(restored->getTreeHash(/*ignore_aliases=*/ false), hash);
 }
 
+TEST(TreeHashCompleteness, ViewTargetsCloneAndJSONRoundTripHashEqual)
+{
+    /// `clone` and `readJSON` must rebuild the children of `ASTViewTargets` in the order the parser produces.
+    const std::string query = "CREATE TABLE ts ENGINE = TimeSeries TAGS INNER COLUMNS (x UInt8) TAGS INNER ENGINE = ReplacingMergeTree";
+    ASTPtr ast = parse(query);
+    const auto hash = ast->getTreeHash(/*ignore_aliases=*/ false);
+
+    EXPECT_EQ(ast->clone()->getTreeHash(/*ignore_aliases=*/ false), hash);
+    EXPECT_EQ(hashOfJSONRoundTrip(query), hash);
+}
+
 TEST(TreeHashCompleteness, ColumnCollationIsSignificant)
 {
     /// `ASTCollation` keeps the collation name out of `children`.
