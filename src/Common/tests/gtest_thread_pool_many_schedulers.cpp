@@ -3,6 +3,7 @@
 #include <vector>
 
 #include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadPool.h>
 
 #include <gtest/gtest.h>
@@ -14,8 +15,13 @@ namespace CurrentMetrics
     extern const Metric LocalThreadScheduled;
 }
 
+namespace ProfileEvents
+{
+    extern const Event LocalThreadPoolExpansions;
+}
+
 /// Many threads wait in `scheduleImpl` for a slot of a full pool, and a finished job wakes only one of them.
-/// Every job must still be scheduled and run.
+/// Every job must still be scheduled and run, and threads must stay for the waiting schedulers instead of exiting.
 TEST(ThreadPool, ManySchedulersOnFullPool)
 {
     constexpr size_t num_schedulers = 32;
@@ -27,6 +33,7 @@ TEST(ThreadPool, ManySchedulersOnFullPool)
     /// The global pool is created lazily without synchronization, so create it before the schedulers start threads in it.
     GlobalThreadPool::instance();
 
+    const UInt64 threads_created_before = ProfileEvents::global_counters[ProfileEvents::LocalThreadPoolExpansions];
     std::atomic<size_t> counter = 0;
     std::vector<std::thread> schedulers;
     for (size_t i = 0; i < num_schedulers; ++i)
@@ -43,4 +50,8 @@ TEST(ThreadPool, ManySchedulersOnFullPool)
     pool.wait();
 
     EXPECT_EQ(counter, num_schedulers * jobs_per_scheduler);
+
+    /// A thread exits only when no scheduler is waiting, which is rare here, so far fewer threads are created than jobs.
+    const UInt64 threads_created = ProfileEvents::global_counters[ProfileEvents::LocalThreadPoolExpansions] - threads_created_before;
+    EXPECT_LT(threads_created, num_schedulers * jobs_per_scheduler / 10);
 }
