@@ -569,63 +569,30 @@ static bool addFilters(
     if (table_expressions.size() != 1)
         return false;
 
-    /// Extract the storage snapshot, identifier (when available) and alias from the table expression.
     /// Supported cases:
     ///   - TableNode (a real table)
     ///   - TableFunctionNode (e.g. `numbers(3)`, `remote(...)`)
     ///   - QueryNode wrapping any of the above (one level of subquery)
-    StorageSnapshotPtr table_snapshot;
-    ASTPtr table_identifier_ast;
-    String table_alias;
-
-    auto extract_from_expression = [&](const QueryTreeNodePtr & expr) -> bool
+    if (const auto * inner_query_node = table_expressions.front()->as<QueryNode>())
     {
-        if (const auto * tn = expr->as<TableNode>())
-        {
-            table_snapshot = tn->getStorageSnapshot();
-            table_identifier_ast = tn->toASTIdentifier();
-            table_alias = tn->getAlias();
-            return true;
-        }
-        if (const auto * tfn = expr->as<TableFunctionNode>())
-        {
-            table_snapshot = tfn->getStorageSnapshot();
-            /// Table functions don't have a stable database/table identifier - we only
-            /// need the alias on the receiving side so `setColumnShortName` can strip it.
-            table_identifier_ast = nullptr;
-            table_alias = tfn->getAlias();
-            return true;
-        }
-        return false;
-    };
-
-    if (!extract_from_expression(table_expressions.front()))
-    {
-        const auto * inner_query_node = table_expressions.front()->as<QueryNode>();
-        if (!inner_query_node)
-            return false;
-
         table_expressions = extractTableExpressions(inner_query_node->getJoinTreeNodeTyped());
         /// Case with JOIN is not supported so far.
         if (table_expressions.size() != 1)
             return false;
-
-        if (!extract_from_expression(table_expressions.front()))
-            return false;
     }
 
-    TableWithColumnNamesAndTypes table_with_columns(
-        table_identifier_ast ? DatabaseAndTableWithAlias(table_identifier_ast) : DatabaseAndTableWithAlias{},
-        table_snapshot->getColumns(GetColumnsOptions::Kind::Ordinary));
-    table_with_columns.table.alias = table_alias;
+    if (!table_expressions.front()->as<TableNode>() && !table_expressions.front()->as<TableFunctionNode>())
+        return false;
 
     bool optimize_final = settings[Setting::enable_optimize_predicate_expression_to_final_subquery];
     bool optimize_with = settings[Setting::allow_push_predicate_when_subquery_contains_with];
 
     ASTs predicates{predicate};
-    PredicateRewriteVisitor::Data data(rewrite_context, predicates, table_with_columns, optimize_final, optimize_with);
+    /// The names of columns stay qualified: short ones could mean aliases or lambda arguments of the query.
+    const TableWithColumnNamesAndTypes no_columns(DatabaseAndTableWithAlias{}, NamesAndTypesList{});
+    PredicateRewriteVisitor::Data data(rewrite_context, predicates, no_columns, optimize_final, optimize_with);
 
-    return data.rewriteSubquery(getSelectQuery(query_ast), table_with_columns.columns.getNames());
+    return data.rewriteSubquery(getSelectQuery(query_ast), {});
 }
 
 ActionsDAG::NodeRawConstPtrs conjunctsLeftOutOfRemoteQuery(
