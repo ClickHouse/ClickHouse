@@ -7,8 +7,6 @@ doc_type: 'reference'
 keywords: ['ClickHouse Cloud', 'データレジリエンス', '災害復旧']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 このページでは、ClickHouse Cloud の災害復旧に関する推奨事項と、障害発生時にお客様が復旧するためのガイダンスを説明します。
 現在、ClickHouse Cloud は自動フェイルオーバーおよび複数の地理的リージョン間での自動同期をサポートしていません。
 
@@ -102,7 +100,15 @@ ClickHouse Cloud は、バックアップについて以下の機能をサポー
 2. 復元元にするバックアップの「Actions」にある三点メニューをクリックします。
 3. 新しいサービスに名前を付け、このバックアップから復元します
 
-<Image img="/images/cloud/guides/restore_backup.webp" size="md" alt="バックアップから復元" />
+<div className="ch-image-md">
+
+<Frame>
+
+![バックアップから復元](/images/cloud/guides/restore_backup.webp)
+
+</Frame>
+
+</div>
 
 <div id="primary-region-downtime">
   ### プライマリリージョンのダウンタイム

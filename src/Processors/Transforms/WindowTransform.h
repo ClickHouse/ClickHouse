@@ -62,7 +62,6 @@ class WindowTransform final : public IProcessor
     void computeReadyRows();
     void recordCurrentRowBounds();
     void evaluateRowsBatch();
-    void packReadyBlock();
     void startNextPartition();
     void releaseUnusedBlocks();
 

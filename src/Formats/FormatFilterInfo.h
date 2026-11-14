@@ -55,6 +55,9 @@ struct FormatTopKFilterInfo
     bool filter_rows = true;
 };
 
+/// Throws INCORRECT_DATA if `type` at `path`, or any field nested in it, has no id in `field_ids` (a `ColumnMapper` storage encoding).
+void validateIcebergFieldIds(const DataTypePtr & type, const String & path, const ColumnNameToFieldId & field_ids);
+
 /// Some formats needs to custom mapping between columns in file and clickhouse columns.
 class ColumnMapper
 {
