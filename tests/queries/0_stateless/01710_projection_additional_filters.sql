@@ -1,3 +1,6 @@
+-- Tags: no-random-detach
+-- no-random-detach: additional_table_filters with parallel_replicas may misbehave when tables are detached/attached
+
 DROP TABLE IF EXISTS t;
 
 set parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;

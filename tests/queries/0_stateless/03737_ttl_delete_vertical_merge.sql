@@ -1,3 +1,7 @@
+-- Tags: no-random-detach
+-- no-random-detach: the test inspects `system.part_log` for the merge algorithm of the just-finished merge.
+-- Random `DETACH`/`ATTACH` cycles around `OPTIMIZE TABLE FINAL` can produce a stale
+-- `MergeParts` row whose `merge_algorithm` is `Undecided`, which makes the assertions flaky.
 -- max_bytes_to_merge_at_max_space_in_pool = 0 makes background merges impossible for these
 -- tables: it is only read when selecting a background merge, so OPTIMIZE FINAL still merges.
 

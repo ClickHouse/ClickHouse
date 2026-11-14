@@ -1,4 +1,5 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-random-detach
+-- no-random-detach: test uses File engine tables
 
 drop table if exists test;
 create table test (number UInt64) engine=File('Parquet');

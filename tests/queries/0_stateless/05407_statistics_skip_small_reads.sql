@@ -1,3 +1,6 @@
+-- Tags: no-random-detach
+-- no-random-detach: the test checks which statistics and primary indexes are kept in memory between queries, and reattaching the table drops them.
+
 -- Statistics are not loaded when the primary key leaves fewer than `min_marks_per_part_to_load_statistics` marks to read
 -- per part whose statistics would be loaded: neither for pruning parts nor for ordering the conditions of `PREWHERE`.
 

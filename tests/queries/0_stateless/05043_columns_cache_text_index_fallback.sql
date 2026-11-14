@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-parallel-replicas
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-parallel-replicas, no-random-detach
+-- no-random-detach: the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 -- A direct-read text-index `LIKE` query whose dictionary scan is cut short falls
 -- back to evaluating the predicate on the physical column through the fallback
 -- reader of `MergeTreeReaderTextIndex`. The fallback columns are discovered after

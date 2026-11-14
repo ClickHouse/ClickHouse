@@ -1,4 +1,5 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-random-detach
+-- no-random-detach: the test checks the `ProfileEvents` of loading the statistics, which differ when the table was just reattached
 
 SET optimize_move_to_prewhere = 1;
 SET use_statistics = 1;

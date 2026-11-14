@@ -1,6 +1,7 @@
--- Tags: no-tsan, no-asan, no-msan, no-ubsan, no-debug, no-parallel, no-fasttest
+-- Tags: no-tsan, no-asan, no-msan, no-ubsan, no-debug, no-parallel, no-fasttest, no-random-detach
 -- Random settings limits: index_granularity=(8192, None); index_granularity_bytes=(10485760, None)
 -- `OPTIMIZE` can be slow under parallel load, causing flaky timeouts.
+-- no-random-detach: test checks system.parts
 
 DROP TABLE IF EXISTS t_patch_join_cache;
 

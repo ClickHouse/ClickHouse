@@ -1,0 +1,7 @@
+alias only
+OK
+alias and target
+POSTGRESQL_CONNECTION_FAILURE
+alias and target without the source grant
+ACCESS_DENIED
+ACCESS_DENIED

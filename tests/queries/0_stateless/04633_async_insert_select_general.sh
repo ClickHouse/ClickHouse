@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Exercises basic async insert routing across protocols; no tags needed.
+# Tags: no-random-detach
+# no-random-detach: case 4 queues an async insert with `wait_for_async_insert=0`; if the background flush runs while the internal `DETACH` holds the table, the insert fails and the rows never land.
+# Exercises basic async insert routing across protocols.
 # async_insert defaults on for this server; the setting below is made explicit only for clarity.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

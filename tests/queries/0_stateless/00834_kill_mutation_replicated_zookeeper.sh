@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: replica, no-debug, no-fasttest, no-shared-merge-tree
+# Tags: replica, no-debug, no-fasttest, no-shared-merge-tree, no-random-detach
+# Tag no-random-detach: mutation_id may be affected by DETACH/ATTACH
 # no-fasttest: Waiting for failed mutations is slow: https://github.com/ClickHouse/ClickHouse/issues/67936
 # no-shared-merge-tree: kill mutation looks different for shared merge tree, implemented another test
 

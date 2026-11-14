@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-random-detach
+-- no-random-detach: the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 -- Verify the columns cache is invalidated when a column is renamed away and a new
 -- column with the same name is added back. Reads of the freshly added column must
 -- return its default values, not stale data from the previous incarnation, and the

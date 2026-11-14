@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-object-storage, no-random-merge-tree-settings
+# Tags: no-object-storage, no-random-detach, no-random-merge-tree-settings
 # Tag no-object-storage: s3 does not have fsync
+# Tag no-random-detach: extra FileOpen while attach.
 # add_minmax_index_for_numeric_columns=0: More files
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

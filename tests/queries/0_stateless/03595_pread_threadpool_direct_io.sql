@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas, no-object-storage, no-darwin
+-- Tags: no-parallel-replicas, no-object-storage, no-random-detach, no-darwin
+-- no-random-detach: test checks profile events
 -- no-darwin: the test asserts on ProfileEvents['OSReadBytes'], which is populated via Linux taskstats only.
 
 set min_bytes_to_use_direct_io = 0;
