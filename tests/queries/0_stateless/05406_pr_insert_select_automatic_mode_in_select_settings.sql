@@ -11,14 +11,15 @@
 -- Without a local pipeline every replica of `test_cluster_one_shard_three_replicas_localhost` gets a
 -- query, so a distributed insert has the initiator's own `Insert` row plus three shipped ones - 4. All
 -- three replicas are this same server, so every one of those rows lands in this `system.query_log`.
+-- The target is replicated because only such a target takes the distributed path.
 
 SET parallel_distributed_insert_select = 2;
 
 DROP TABLE IF EXISTS t_src;
-DROP TABLE IF EXISTS t_dst;
+DROP TABLE IF EXISTS t_dst SYNC;
 
 CREATE TABLE t_src (k UInt64) ENGINE = MergeTree ORDER BY k;
-CREATE TABLE t_dst (k UInt64) ENGINE = Memory;
+CREATE TABLE t_dst (k UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_dst', 'r1') ORDER BY ();
 
 INSERT INTO t_src SELECT number FROM numbers(1e5);
 
@@ -44,4 +45,4 @@ SELECT count(), countIf(NOT is_initial_query AND position(query, 'automatic_para
 SELECT count(), uniqExact(k) FROM t_dst;
 
 DROP TABLE t_src;
-DROP TABLE t_dst;
+DROP TABLE t_dst SYNC;
