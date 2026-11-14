@@ -390,6 +390,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     /// `set_hyperrectangle` comes from `getExtremes`/`getExtremesNullLast`, which skip NaN, and
     /// `mayBeTrueOnGranule` uses it as a pre-check before the exact per-value evaluation.
     condition.relaxAtomsOverNaNHidingColumns(index_data_types);
+    columns_may_hide_value_above_max = KeyCondition::getColumnsMayHideValueAboveMax(index_data_types);
 
     for (const auto & column : index_description.sample_block)
         key_columns.emplace(column.name, column.type);
@@ -434,7 +435,12 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
     if (size == 0 || (max_rows != 0 && size > max_rows))
         return true;
 
-    if (!condition.checkInHyperrectangle(granule.set_hyperrectangle, index_data_types, {}, update_partial_disjunction_result_fn).can_be_true)
+    std::optional<Hyperrectangle> widened_bounds;
+    if (!columns_may_hide_value_above_max.empty())
+        widened_bounds = KeyCondition::widenBoundsMayHideValues(granule.set_hyperrectangle, columns_may_hide_value_above_max);
+    const auto & bounds = widened_bounds ? *widened_bounds : granule.set_hyperrectangle;
+
+    if (!condition.checkInHyperrectangle(bounds, index_data_types, {}, update_partial_disjunction_result_fn).can_be_true)
         return false;
 
     Block result = granule.block;
