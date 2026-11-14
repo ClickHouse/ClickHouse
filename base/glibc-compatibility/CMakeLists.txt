@@ -43,6 +43,28 @@ if (GLIBC_COMPATIBILITY)
 
     target_link_libraries(global-libs INTERFACE glibc-compatibility)
 
+    if (USE_BRANCH_PROTECTION)
+        # Startup code with the BTI property, linked into every executable instead of the startup objects
+        # of the sysroot (see cmake/linux/default_libs.cmake). It's copied to a stable path that the link
+        # flags reference, and every executable links `glibc-compatibility`, which depends on the copy.
+        add_library(glibc-compatibility-crt1 OBJECT crt/aarch64/crt1.c)
+        # Runs before the sanitizer runtimes are initialized.
+        target_compile_options(glibc-compatibility-crt1 PRIVATE -fno-sanitize=all -fno-stack-protector)
+        set_target_properties(glibc-compatibility-crt1 PROPERTIES LINK_LIBRARIES "" INTERFACE_LINK_LIBRARIES "")
+        add_custom_command(
+            OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/crt1.o"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_OBJECTS:glibc-compatibility-crt1>" "${CMAKE_CURRENT_BINARY_DIR}/crt1.o"
+            DEPENDS glibc-compatibility-crt1 "$<TARGET_OBJECTS:glibc-compatibility-crt1>"
+            COMMENT "Copying crt1.o"
+            VERBATIM
+        )
+        add_custom_target(glibc-compatibility-crt DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/crt1.o")
+        add_dependencies(glibc-compatibility glibc-compatibility-crt)
+        # The dependency above only orders the build: relink the executables when the object changes
+        # (CMake >= 3.27, older versions ignore the property).
+        set_property(TARGET glibc-compatibility APPEND PROPERTY INTERFACE_LINK_DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/crt1.o")
+    endif ()
+
     message (STATUS "Some symbols from glibc will be replaced for compatibility")
 
 elseif (CLICKHOUSE_OFFICIAL_BUILD)

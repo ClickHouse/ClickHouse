@@ -1,6 +1,7 @@
 .global musl_glibc_longjmp
 .type musl_glibc_longjmp,@function
 musl_glibc_longjmp:
+	hint #34 // bti c
 	// IHI0055B_aapcs64.pdf 5.1.1, 5.1.2 callee saved registers
 	ldp x19, x20, [x0,#0]
 	ldp x21, x22, [x0,#16]
@@ -19,3 +20,16 @@ musl_glibc_longjmp:
 	cbnz x1, 1f
 	mov x0, #1
 1:	br x30
+
+// BTI landing pad above, and the BTI and PAC properties (GNU_PROPERTY_AARCH64_FEATURE_1_AND), without which
+// the linker disables BTI for the whole executable. Both are no-ops for builds and CPUs without branch protection.
+.section .note.gnu.property,"a"
+.p2align 3
+.word 4
+.word 16
+.word 5
+.asciz "GNU"
+.word 0xc0000000
+.word 4
+.word 3
+.word 0

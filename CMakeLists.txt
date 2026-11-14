@@ -437,6 +437,28 @@ if (NOT OS_DARWIN AND NOT OS_SUNOS AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-clash-protection")
 endif ()
 
+# Pointer authentication of return addresses (PAC) and branch target identification (BTI) on AArch64.
+# Both are encoded as hint instructions, which CPUs without the extensions execute as no-ops.
+# BTI is enabled for the executable only if every linked object carries the BTI property, otherwise
+# the linker silently drops it, so report the objects that lack it (an error with `--fatal-warnings`).
+# Only glibc builds with `GLIBC_COMPATIBILITY` are supported: they replace the startup objects of the
+# sysroot, which lack the property (see base/glibc-compatibility/crt/aarch64/crt1.c). Neither the startup
+# objects of musl nor the assembly of the sanitizer runtimes carry it.
+if (ARCH_AARCH64 AND GLIBC_COMPATIBILITY AND NOT SANITIZE)
+    set (ENABLE_BRANCH_PROTECTION_DEFAULT ON)
+else ()
+    set (ENABLE_BRANCH_PROTECTION_DEFAULT OFF)
+endif ()
+option (ENABLE_BRANCH_PROTECTION "Enable PAC and BTI on AArch64 Linux" ${ENABLE_BRANCH_PROTECTION_DEFAULT})
+if (ENABLE_BRANCH_PROTECTION)
+    if (NOT (ARCH_AARCH64 AND GLIBC_COMPATIBILITY))
+        message (FATAL_ERROR "ENABLE_BRANCH_PROTECTION requires an AArch64 build with GLIBC_COMPATIBILITY")
+    endif ()
+    set (USE_BRANCH_PROTECTION 1)
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -mbranch-protection=standard")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,bti-report=warning")
+endif ()
+
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 

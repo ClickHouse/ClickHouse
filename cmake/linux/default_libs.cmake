@@ -75,6 +75,10 @@ elseif (USE_MUSL)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,pack-relative-relocs")
 else ()
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -lrt -lpthread -ldl")
+    if (USE_BRANCH_PROTECTION)
+        # The startup objects of the sysroot lack the BTI property, see base/glibc-compatibility/crt/aarch64/crt1.c.
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -nostartfiles ${CMAKE_BINARY_DIR}/base/glibc-compatibility/crt1.o")
+    endif ()
 endif ()
 
 # The GPU island is built against the system libstdc++, so a binary carrying it needs that library.
