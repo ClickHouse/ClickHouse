@@ -10,7 +10,7 @@ DROP TABLE IF EXISTS test_morton_zero_rows;
 CREATE TABLE test_morton_zero_rows (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY a;
 
 -- 0-row MergeTree source, simple mode
-SELECT count() FROM (SELECT mortonEncode(a, b) AS m FROM test_morton_zero_rows);
+SELECT count(m) FROM (SELECT mortonEncode(a, b) AS m FROM test_morton_zero_rows);
 
 -- 0-row source, simple mode, single arg (nd == 1 path)
 SELECT count() FROM (SELECT mortonEncode(toUInt32(number)) AS m FROM numbers(0));

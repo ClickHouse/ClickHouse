@@ -49,13 +49,13 @@ DROP TABLE t_04278;
 --   * non-materialized `rs` CTE inlined into the outer query (so all `ct`
 --     references end up in the outer plan, not in a nested materialized CTE);
 --   * PREWHERE / FINAL / QUALIFY / constant filters that the fuzzer injected.
--- Wrapped in `SELECT count() FROM (...)` so the test pins a single integer
--- instead of an unordered row set.
+-- Wrapped in `SELECT count(ignore(*)) FROM (...)` so the test pins a single integer
+-- instead of an unordered row set, and every column of `rs` is still computed.
 DROP TABLE IF EXISTS t2_04227__fuzz_37 SYNC;
 CREATE TABLE t2_04227__fuzz_37 (a Int32, b Int32) ENGINE = ReplacingMergeTree ORDER BY a;
 INSERT INTO t2_04227__fuzz_37 VALUES (1, 10), (2, 20), (3, 30);
 
-SELECT count() FROM (
+SELECT count(ignore(*)) FROM (
     WITH ct AS MATERIALIZED (SELECT DISTINCT b FROM t2_04227__fuzz_37 FINAL PREWHERE 1023 LIMIT 2147483646),
          rs AS (SELECT b GLOBAL IN (SELECT DISTINCT b FROM ct WHERE 17 LIMIT 69 UNION DISTINCT SELECT b FROM ct LIMIT 1), *
                 FROM t2_04227__fuzz_37 FINAL
