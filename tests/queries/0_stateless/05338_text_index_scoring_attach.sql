@@ -51,10 +51,8 @@ SELECT '-- the table stays alterable after the gate is turned off, but a new sco
 ALTER TABLE tab_scoring_attach ADD COLUMN title String;
 ALTER TABLE tab_scoring_attach ADD INDEX idx_title(title) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', scoring = 'bm25'); -- { serverError SUPPORT_IS_DISABLED }
 
--- A new index is checked against the settings the table has after the statement.
-ALTER TABLE tab_scoring_attach
-    ADD INDEX idx_title(title) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', scoring = 'bm25'),
-    MODIFY SETTING allow_experimental_text_index_scoring = 1;
+ALTER TABLE tab_scoring_attach MODIFY SETTING allow_experimental_text_index_scoring = 1;
+ALTER TABLE tab_scoring_attach ADD INDEX idx_title(title) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', scoring = 'bm25');
 
 ALTER TABLE tab_scoring_attach MODIFY SETTING allow_experimental_text_index_scoring = 0;
 ALTER TABLE tab_scoring_attach MODIFY SETTING allow_experimental_text_index_scoring = 1;
