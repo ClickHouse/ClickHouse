@@ -1277,31 +1277,96 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
               * The join tree is walked the way `tryResolveIdentifierFromJoinTreeNode` walks it, so the column that
               * the lookup actually binds decides: when both sides of a `JOIN` bind the identifier, the left side
               * wins with `single_join_prefer_left_table` (for a single `JOIN`) or for a `USING` column, and
-              * otherwise the identifier is ambiguous.
+              * otherwise the identifier is ambiguous. As in `tryResolveIdentifierFromJoin` and
+              * `tryResolveIdentifierFromCrossJoin`, the sides are not ambiguous when they bind equal columns:
+              * the identifier names the same column of two equal table expressions (e.g. two references to one
+              * table, or two equal subqueries), or, for an unqualified identifier, the columns are equated by a
+              * top-level `equals` conjunct of the `ON` condition of an `INNER JOIN`.
               */
             const bool prefer_left_table = outer_scope->joins_count == 1
                 && outer_scope->context->getSettingsRef()[Setting::single_join_prefer_left_table];
 
-            std::function<JoinTreeReading(const QueryTreeNodePtr &)> join_tree_reading = [&](const QueryTreeNodePtr & node) -> JoinTreeReading
+            /// The reading of a subtree of the join tree, and the table expression whose column binds the identifier
+            /// there, if it is known and the identifier names the column of that table expression by its whole name.
+            struct JoinTreeBinding
+            {
+                JoinTreeReading reading = JoinTreeReading::ABSENT;
+                const IQueryTreeNode * source = nullptr;
+            };
+
+            const auto compare_options = IQueryTreeNode::CompareOptions{.compare_aliases = false};
+
+            /// Whether both sides bind the identifier to the same column of two equal table expressions.
+            auto sides_bind_equal_columns = [&](const JoinTreeBinding & left, const JoinTreeBinding & right)
+            {
+                return left.source && right.source && left.source->isEqual(*right.source, compare_options);
+            };
+
+            /// Whether the column `identifier` of `left.source` and of `right.source` are equated by a top-level
+            /// `equals` conjunct of the `ON` condition of an `INNER JOIN`, see `innerJoinKeyColumnsAreEquated`.
+            auto sides_are_equated_inner_join_keys = [&](const JoinNode & join_node, const JoinTreeBinding & left, const JoinTreeBinding & right)
+            {
+                if (!identifier.isShort() || !left.source || !right.source
+                    || join_node.getKind() != JoinKind::Inner || !join_node.isOnJoinExpression())
+                    return false;
+
+                auto is_column_of = [&](const QueryTreeNodePtr & argument, const IQueryTreeNode * source)
+                {
+                    const auto * column = argument->as<ColumnNode>();
+                    return column && column->getColumnName() == identifier.front() && column->getColumnSourceOrNull().get() == source;
+                };
+
+                QueryTreeNodes conjuncts{join_node.getJoinExpression()};
+                while (!conjuncts.empty())
+                {
+                    auto conjunct = std::move(conjuncts.back());
+                    conjuncts.pop_back();
+
+                    const auto * function_node = conjunct->as<FunctionNode>();
+                    if (!function_node)
+                        continue;
+
+                    const auto & arguments = function_node->getArguments().getNodes();
+                    if (function_node->getFunctionName() == "and")
+                    {
+                        conjuncts.insert(conjuncts.end(), arguments.begin(), arguments.end());
+                    }
+                    else if (function_node->getFunctionName() == "equals" && arguments.size() == 2)
+                    {
+                        if ((is_column_of(arguments[0], left.source) && is_column_of(arguments[1], right.source))
+                            || (is_column_of(arguments[0], right.source) && is_column_of(arguments[1], left.source)))
+                            return true;
+                    }
+                }
+
+                return false;
+            };
+
+            std::function<JoinTreeBinding(const QueryTreeNodePtr &)> join_tree_reading = [&](const QueryTreeNodePtr & node) -> JoinTreeBinding
             {
                 if (!node)
-                    return JoinTreeReading::ABSENT;
+                    return {};
 
                 /// Combines the readings of two sides of a `JOIN` (or of two consecutive tables of a `CROSS JOIN`).
-                auto combine_sides = [&](JoinTreeReading left, JoinTreeReading right, bool left_wins)
+                auto combine_sides = [&](const JoinTreeBinding & left, const JoinTreeBinding & right, bool left_wins) -> JoinTreeBinding
                 {
-                    if (left == JoinTreeReading::AMBIGUOUS || right == JoinTreeReading::AMBIGUOUS)
-                        return JoinTreeReading::AMBIGUOUS;
-                    if (left == JoinTreeReading::ABSENT)
+                    if (left.reading == JoinTreeReading::AMBIGUOUS || right.reading == JoinTreeReading::AMBIGUOUS)
+                        return {JoinTreeReading::AMBIGUOUS, nullptr};
+                    if (left.reading == JoinTreeReading::ABSENT)
                         return right;
-                    if (right == JoinTreeReading::ABSENT)
+                    if (right.reading == JoinTreeReading::ABSENT)
                         return left;
-                    return left_wins ? left : JoinTreeReading::AMBIGUOUS;
+                    if (left_wins || sides_bind_equal_columns(left, right))
+                        return left;
+                    return {JoinTreeReading::AMBIGUOUS, nullptr};
                 };
 
                 if (const auto * join_node = node->as<JoinNode>())
                 {
-                    bool left_wins = prefer_left_table;
+                    auto left = join_tree_reading(join_node->getLeftTableExpressionNode());
+                    auto right = join_tree_reading(join_node->getRightTableExpressionNode());
+
+                    bool left_wins = prefer_left_table || sides_are_equated_inner_join_keys(*join_node, left, right);
                     if (join_node->isUsingJoinExpression())
                     {
                         if (const auto * using_list = join_node->getJoinExpression()->as<ListNode>())
@@ -1315,15 +1380,12 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
                         }
                     }
 
-                    return combine_sides(
-                        join_tree_reading(join_node->getLeftTableExpressionNode()),
-                        join_tree_reading(join_node->getRightTableExpressionNode()),
-                        left_wins);
+                    return combine_sides(left, right, left_wins);
                 }
 
                 if (const auto * cross_join_node = node->as<CrossJoinNode>())
                 {
-                    JoinTreeReading result = JoinTreeReading::ABSENT;
+                    JoinTreeBinding result;
                     for (const auto & table_expression : cross_join_node->getTableExpressions())
                         result = combine_sides(result, join_tree_reading(table_expression), prefer_left_table);
                     return result;
@@ -1333,19 +1395,20 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
                     return join_tree_reading(array_join_node->getTableExpressionNode());
 
                 if (!table_expression_is_visible(node.get()))
-                    return JoinTreeReading::ABSENT;
+                    return {};
 
                 auto data_it = std::find_if(
                     outer_scope->table_expression_node_to_data.begin(),
                     outer_scope->table_expression_node_to_data.end(),
                     [&](const auto & entry) { return entry.first.get() == node.get(); });
                 if (data_it == outer_scope->table_expression_node_to_data.end())
-                    return JoinTreeReading::ABSENT;
+                    return {};
 
                 const auto & [outer_table_expression_node, outer_table_expression_data] = *data_it;
 
                 /// The readings of one table expression: a readable one takes precedence over a blocking one.
                 OuterReading reading = tableExpressionDataReadingOfIdentifier(outer_table_expression_data, identifier, identifier_lookup, outer_scope->context);
+                const IQueryTreeNode * source = reading == OuterReading::ABSENT ? nullptr : node.get();
 
                 /// What looks like `database.table` in this scope can be `table.column` in the enclosing one, e.g.
                 /// `FROM u AS default` with a `Tuple` column `t` gives `default.t.val` a reading there.
@@ -1357,22 +1420,26 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
                     rest.popFirst();
                     auto rest_reading = tableExpressionDataReadingOfIdentifier(outer_table_expression_data, rest, identifier_lookup, outer_scope->context);
                     if (rest_reading != OuterReading::ABSENT)
+                    {
+                        /// The identifier names another column here, which an equal table expression does not bind the same way.
                         reading = rest_reading;
+                        source = nullptr;
+                    }
                 }
 
                 switch (reading)
                 {
                     case OuterReading::READABLE:
-                        return JoinTreeReading::READABLE;
+                        return {JoinTreeReading::READABLE, source};
                     case OuterReading::BLOCKS:
-                        return JoinTreeReading::BLOCKS;
+                        return {JoinTreeReading::BLOCKS, source};
                     case OuterReading::ABSENT:
-                        return JoinTreeReading::ABSENT;
+                        return {};
                 }
             };
 
             const auto * outer_query_node = outer_scope->scope_node->as<QueryNode>();
-            switch (outer_query_node ? join_tree_reading(outer_query_node->getJoinTreeNode()) : JoinTreeReading::ABSENT)
+            switch (outer_query_node ? join_tree_reading(outer_query_node->getJoinTreeNode()).reading : JoinTreeReading::ABSENT)
             {
                 case JoinTreeReading::READABLE:
                     return true;
