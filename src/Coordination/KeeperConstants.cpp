@@ -522,12 +522,20 @@ namespace HistogramMetrics
 #undef M
 
 
-std::vector<MetricFamily *> keeper_histograms
+/// The histograms are references initialized dynamically in another translation unit, so taking their
+/// addresses during the static initialization of this one would depend on the unspecified initialization
+/// order across translation units (and indeed yields null pointers on macOS). Build the list on first use.
+const std::vector<MetricFamily *> & getKeeperHistograms();
+const std::vector<MetricFamily *> & getKeeperHistograms()
 {
+    static const std::vector<MetricFamily *> keeper_histograms
+    {
 #define M(NAME) &(NAME),
-    APPLY_FOR_KEEPER_HISTOGRAMS(M)
+        APPLY_FOR_KEEPER_HISTOGRAMS(M)
 #undef M
-};
+    };
+    return keeper_histograms;
+}
 
 }
 
