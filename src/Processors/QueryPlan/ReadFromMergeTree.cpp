@@ -4,6 +4,7 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/SetWithMemoryTracking.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <base/sort.h>
 #include <Columns/ColumnConst.h>
@@ -87,6 +88,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/StorageSnapshot.h>
@@ -372,6 +374,7 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_sort_description;
     extern const SettingsBool optimize_constant_columns_after_filter;
     extern const SettingsBool optimize_read_in_reverse_order_final;
+    extern const SettingsUInt64 query_plan_max_set_size_for_projection_match;
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsUInt64 parallel_replicas_count;
@@ -3189,6 +3192,10 @@ bool areAllSkipIndexColumnsInPrimaryKey(const KeyDescription & primary_key, cons
 
     for (const auto & skip_index : skip_indexes.useful_indices)
     {
+        /// A partial index may skip the granule with the newest version of a row when it does not satisfy `WHERE`.
+        if (skip_index.index->index.where_expression)
+            return false;
+
         for (const auto & column : skip_index.index->index.column_names)
         {
             if (!primary_key_columns_set.contains(column))
@@ -3232,6 +3239,8 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(
     for (const auto & index : metadata.getSecondaryIndices())
     {
         if (index.type != "minmax" && index.type != "set" && index.type != "bloom_filter")
+            continue;
+        if (index.where_expression)
             continue;
         if (std::find(index.column_names.begin(), index.column_names.end(), column_name) != index.column_names.end())
         {
@@ -3315,6 +3324,161 @@ RangesInDataParts ReadFromMergeTree::filterPartsForStatistics(
         parts, partition_indexes.partition_pruner, partition_indexes.minmax_idx_condition,
         std::nullopt, metadata_snapshot, data, query_context, nullptr, getLogger("ReadFromMergeTree"), unused_stats,
         /* check_index_usage */ false);
+}
+
+namespace
+{
+
+void collectConjuncts(const ActionsDAG::Node * node, std::unordered_set<const ActionsDAG::Node *> & conjuncts)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and")
+    {
+        for (const auto * child : node->children)
+            collectConjuncts(child, conjuncts);
+    }
+    else
+    {
+        conjuncts.insert(node);
+    }
+}
+
+/// matchTrees() equates two functions by name, result type and arguments. That is not enough for a
+/// partial index, where a wrong match drops rows: a lambda is compared by its captured arguments and
+/// type names but not by its body, and a function can capture a setting that changes its value without
+/// changing its name or type (`JSON_VALUE`, `JSONExtract`). So a filter with a lambda never matches, and each
+/// function of the filter must carry the same captured state (`IFunctionBase::updateHash`) as the function of
+/// the stored condition it is matched to. The stored condition is analysed in the server context, like the writers
+/// do, so this is the state the data was written with. The settings salt is a coarse check of the same, kept first.
+bool hasSameFunctionSemantics(const ActionsDAG::Node * query_node, const MatchedTrees::Matches & matches)
+{
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::vector<const ActionsDAG::Node *> stack{query_node};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.insert(node).second)
+            continue;
+
+        stack.insert(stack.end(), node->children.begin(), node->children.end());
+
+        /// matchTrees() compares types with `equals`, which equates `Bool` with `UInt8` and time zones, so compare the names.
+        auto it = matches.find(node);
+        if (it != matches.end() && it->second.node && node->result_type && it->second.node->result_type
+            && node->result_type->getName() != it->second.node->result_type->getName())
+            return false;
+
+        if (node->type != ActionsDAG::ActionType::FUNCTION)
+            continue;
+
+        if (typeid_cast<const FunctionCapture *>(node->function_base.get()))
+            return false;
+
+        if (it == matches.end() || !it->second.node || it->second.node->type != ActionsDAG::ActionType::FUNCTION)
+            return false;
+
+        SipHash query_hash;
+        SipHash index_hash;
+        node->function_base->updateHash(query_hash);
+        it->second.node->function_base->updateHash(index_hash);
+        if (query_hash.get128() != index_hash.get128())
+            return false;
+
+        /// matchTrees() compares constants as Fields, which equates 0. and -0., so compare their bytes too.
+        const auto & index_children = it->second.node->children;
+        for (size_t i = 0; i < node->children.size() && i < index_children.size(); ++i)
+        {
+            /// Constant arguments are not matched by matchTrees() on their own, so compare their types here too.
+            if (node->children[i]->result_type->getName() != index_children[i]->result_type->getName())
+                return false;
+
+            const auto & query_column = node->children[i]->column;
+            const auto & index_column = index_children[i]->column;
+            if (!query_column || !index_column || !isColumnConst(*query_column) || !isColumnConst(*index_column))
+                continue;
+
+            SipHash query_value_hash;
+            SipHash index_value_hash;
+            query_column->updateHashWithValue(0, query_value_hash);
+            index_column->updateHashWithValue(0, index_value_hash);
+            if (query_value_hash.get128() != index_value_hash.get128())
+                return false;
+        }
+    }
+    return true;
+}
+
+/// A partial index has no data for rows outside its `WHERE`, so it can be used only if
+/// every conjunct of that condition is also a conjunct of the query filter.
+bool filterImpliesIndexCondition(
+    const ActionsDAG & filter_dag,
+    const ActionsDAG & index_analysis_dag,
+    const IndexDescription & index,
+    const ContextPtr & context,
+    size_t max_set_size_to_compare)
+{
+    const auto & settings = context->getSettingsRef();
+    if (!index.where_is_session_independent && queryConditionCacheSettingsSalt(settings) != index.where_settings_salt)
+        return false;
+
+    /// The constants of the stored condition were folded in the time zone it was analysed in: it can be matched
+    /// only by a filter analysed in the same one.
+    if (!index.where_is_session_independent && DateLUT::instance().getTimeZone() != index.where_timezone)
+        return false;
+
+    std::unordered_set<const ActionsDAG::Node *> index_conjuncts;
+    collectConjuncts(&index.where_expression->getActionsDAG().findInOutputs(index.where_column_name), index_conjuncts);
+
+    std::unordered_set<const ActionsDAG::Node *> filter_conjuncts;
+    collectConjuncts(filter_dag.getOutputs().front(), filter_conjuncts);
+
+    const auto matches = matchTrees(
+        ActionsDAG::NodeRawConstPtrs(index_conjuncts.begin(), index_conjuncts.end()), filter_dag, /*check_monotonicity=*/false, max_set_size_to_compare);
+    for (const auto * conjunct : filter_conjuncts)
+    {
+        auto it = matches.find(conjunct);
+        if (it != matches.end() && it->second.node && !it->second.monotonicity && hasSameFunctionSemantics(conjunct, matches))
+            index_conjuncts.erase(it->second.node);
+    }
+    if (!index_conjuncts.empty())
+        return false;
+
+    /// Index conditions find indexed expressions and their subexpressions by name in `index_analysis_dag`, so the filter
+    /// must calculate each of them like the writer did.
+    const auto indexed_matches = matchTrees(
+        index.selected_rows_expression->getActionsDAG().getOutputs(), index_analysis_dag, /*check_monotonicity=*/false, max_set_size_to_compare);
+    NameSet index_subexpressions;
+    std::unordered_map<std::string_view, ActionsDAG::ActionType> index_subexpression_types;
+    for (const auto & action : index.expression->getActions())
+    {
+        index_subexpressions.insert(action.node->result_name);
+        index_subexpression_types.emplace(action.node->result_name, action.node->getWithoutAlias()->type);
+    }
+    for (const auto & node : index_analysis_dag.getNodes())
+    {
+        /// A column or a constant named like an indexed expression of another kind, such as a column named `toString(n)`.
+        if (node.type == ActionsDAG::ActionType::INPUT || node.type == ActionsDAG::ActionType::COLUMN)
+        {
+            auto it = index_subexpression_types.find(node.result_name);
+            if (it != index_subexpression_types.end() && it->second != node.type)
+                return false;
+            continue;
+        }
+        if (node.type != ActionsDAG::ActionType::FUNCTION)
+            continue;
+        const RPNBuilderTreeNode rpn_node(&node, context);
+        if (!index_subexpressions.contains(rpn_node.getColumnName()) && !index_subexpressions.contains(rpn_node.getColumnNameWithModuloLegacy()))
+            continue;
+        auto it = indexed_matches.find(&node);
+        if (it == indexed_matches.end() || !it->second.node || it->second.monotonicity || !hasSameFunctionSemantics(&node, indexed_matches))
+            return false;
+    }
+    return true;
+}
+
 }
 
 ConditionTemplate<KeyCondition>::Ptr ReadFromMergeTree::buildPrimaryKeyCondition(
@@ -3419,6 +3583,12 @@ void ReadFromMergeTree::buildIndexes(
         if (index_helper->isInert())
             continue;
 
+        if (index.where_expression
+            && (!filter_actions_dag_
+                || !filterImpliesIndexCondition(
+                    *filter_actions_dag_, *filter_dag.dag, index, query_context, settings[Setting::query_plan_max_set_size_for_projection_match])))
+            continue;
+
         ConditionTemplate<MergeTreeIndexConditionPtr>::Factory factory;
         if (index_helper->isVectorSimilarityIndex())
         {
@@ -3449,7 +3619,7 @@ void ReadFromMergeTree::buildIndexes(
         auto can_skip_index_be_used_for_top_k_filtering = [top_k_filter_info](const MergeTreeIndexPtr & skip_index)
         {
                 if (!top_k_filter_info || !skip_index->index.isSimpleSingleColumnIndex()
-                    || skip_index->index.type != "minmax"
+                    || skip_index->index.type != "minmax" || skip_index->index.where_expression
                     || top_k_filter_info->column_name != skip_index->index.column_names[0])
                     return false;
 
@@ -5986,6 +6156,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                     continue;
                 if (index.type != "minmax" && index.type != "set" && index.type != "bloom_filter")
                     continue;
+                /// The join key filter does not imply the `WHERE` of a partial index.
+                if (index.where_expression)
+                    continue;
                 if (std::find(index.column_names.begin(), index.column_names.end(), descr.key_column_name) == index.column_names.end())
                     continue;
                 if (seen_index_names.insert(index.name).second)
@@ -7031,7 +7204,7 @@ bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) 
 
     for (const auto & index : all_indexes)
     {
-        if (index.isSimpleSingleColumnIndex() && index.type == "minmax" && index.column_names[0] == sort_column)
+        if (index.isSimpleSingleColumnIndex() && index.type == "minmax" && index.column_names[0] == sort_column && !index.where_expression)
             return true;
     }
     return false;

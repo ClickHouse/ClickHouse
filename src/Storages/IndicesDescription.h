@@ -52,6 +52,26 @@ struct IndexDescription
     /// Index granularity, make sense for skip indices
     size_t granularity{};
 
+    /// Condition of a partial index (`WHERE` clause): only rows satisfying it are indexed. Null if absent.
+    ASTPtr where_ast;
+    ExpressionActionsPtr where_expression;
+    String where_column_name;
+    /// The indexed expressions, analysed like the condition. The writer runs them only on the rows the condition selects.
+    ExpressionActionsPtr selected_rows_expression;
+    /// `queryConditionCacheSettingsSalt` of the settings the condition's functions were built with: they decide
+    /// what the condition evaluated to when the index was written, and the name and types of a function do not.
+    UInt64 where_settings_salt = 0;
+    /// Identity of the condition: its AST and the settings above. Parts of a partial index are written with a
+    /// marker that holds it, so granules built for another condition are never read as this one's.
+    UInt128 where_identity = 0;
+    /// The time zone the condition was analysed in. Constants of the condition are folded during the analysis, and
+    /// a function such as `toDateTime` folds differently under another zone, so the condition can be matched
+    /// only by a query that is analysed in the same zone.
+    String where_timezone;
+    /// True if neither the settings salt nor the time zone above can change what the condition and the indexed
+    /// expressions evaluate to.
+    bool where_is_session_independent = false;
+
     /// True if index is created implicitly using settings:
     /// add_minmax_index_for_numeric_columns, add_minmax_index_for_string_columns, or add_minmax_index_for_temporal_columns
     bool is_implicitly_created{};
@@ -85,7 +105,15 @@ struct IndexDescription
     void initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context);
 
     bool isSimpleSingleColumnIndex() const;
+
+    /// Columns needed to calculate the index, including the ones of its `WHERE` condition.
+    Names getRequiredColumns() const;
 };
+
+/// Analyses the `WHERE` condition of a partial index with the permissions of `context`. `getIndexFromAST` analyses it with the
+/// privileges of the server, so call this first, where a user declares the index: they must not reach what they can't access
+/// (for example `hasColumnInTable` of a protected table). Stored metadata is not re-checked.
+void checkPartialIndexConditionAsUser(const ASTPtr & definition_ast, const ColumnsDescription & columns, const ContextPtr & context);
 
 /// Checks that the functions referenced by the text index preprocessor and postprocessor expressions
 /// may run with the permissions of `context`, and that they read no table, set or dictionary. Call only
@@ -96,6 +124,9 @@ void checkTextIndexPreAndPostProcessorPermissions(const IndexDescription & index
 /// Refuses a transform when the other hosts of an `ON CLUSTER` query do not run it as the initiator.
 void rejectTextIndexTransformWithoutInitiatorUser(const ASTIndexDeclaration & declaration);
 void rejectTextIndexTransformWithoutInitiatorUser(const IndexDescription & index);
+
+/// Refuses a partial index condition that the hosts of an `ON CLUSTER` query would resolve without the user.
+void rejectPartialIndexConditionWithoutInitiatorUser(const ASTPtr & definition_ast);
 
 /// Whether the declaration is a text index with a `preprocessor` or a `postprocessor` argument.
 bool hasTextIndexPreOrPostProcessor(const ASTIndexDeclaration & declaration);

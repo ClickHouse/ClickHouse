@@ -135,6 +135,7 @@ namespace Setting
     extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsBool enable_xgboost;
     extern const SettingsBool enable_database_materialized_postgresql;
+    extern const SettingsBool allow_experimental_partial_skip_indexes;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool enable_subcolumn_codecs;
     extern const SettingsBool allow_statistics;
@@ -1108,6 +1109,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             {
                 constexpr bool is_implicitly_created = false;
                 constexpr bool escape_index_filenames = true; /// We don't care about this value because it won't be used
+                if (isFreshTableDefinition(mode, create.attach_short_syntax))
+                    checkPartialIndexConditionAsUser(index, properties.columns, getContext());
                 IndexDescription index_desc = IndexDescription::getIndexFromAST(
                     index->clone(), properties.columns, is_implicitly_created, escape_index_filenames, getContext());
                 if (properties.indices.has(index_desc.name))
@@ -1387,8 +1390,20 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         properties.constraints.checkExpressionsPreserveRowCount();
         properties.constraints.checkNamesAreUnique();
 
+        /// Indices of every origin: an explicit list, and the copy made by `AS src` / `CLONE AS src`.
+        if (!getContext()->getSettingsRef()[Setting::allow_experimental_partial_skip_indexes])
+            for (const auto & index : properties.indices)
+                if (index.where_expression)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Skip index '{}' with WHERE is experimental. Enable the setting 'allow_experimental_partial_skip_indexes' to use it",
+                        index.name);
+
         for (const auto & index : properties.indices)
+        {
             checkTextIndexPreAndPostProcessorPermissions(index, getContext());
+            if (index.where_expression)
+                checkPartialIndexConditionAsUser(index.definition_ast, properties.columns, getContext());
+        }
     }
 
     ASTPtr new_columns = formatColumns(properties.columns);
@@ -4106,7 +4121,7 @@ BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
     prepareOnClusterQuery(create, getContext(), create.cluster);
     DDLQueryOnClusterParams params;
     params.access_to_check = getRequiredAccess();
-    params.additional_access_check = [captured_query_ptr = query_ptr](const String &, bool throw_if_unresolved)
+    params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String &, bool throw_if_unresolved)
     {
         /// `throw_if_unresolved` means the hosts do not run the query as this user.
         if (!throw_if_unresolved)
@@ -4116,9 +4131,22 @@ BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
         if (!captured_create.columns_list || !captured_create.columns_list->indices)
             return;
 
+        std::optional<ColumnsDescription> columns;
         for (const auto & index : captured_create.columns_list->indices->children)
-            if (const auto * declaration = index->as<ASTIndexDeclaration>())
-                rejectTextIndexTransformWithoutInitiatorUser(*declaration);
+        {
+            const auto * declaration = index->as<ASTIndexDeclaration>();
+            if (!declaration)
+                continue;
+            rejectTextIndexTransformWithoutInitiatorUser(*declaration);
+            if (!declaration->getWhere())
+                continue;
+            /// The condition is checked as the user against the declared columns instead.
+            if (!captured_create.columns_list->columns)
+                rejectPartialIndexConditionWithoutInitiatorUser(index);
+            if (!columns)
+                columns = getColumnsDescription(*captured_create.columns_list, context, LoadingStrictnessLevel::CREATE);
+            checkPartialIndexConditionAsUser(index, *columns, context);
+        }
     };
     return executeDDLQueryOnCluster(query_ptr, getContext(), params);
 }
@@ -4224,6 +4252,12 @@ BlockIO InterpreterCreateQuery::execute()
                         if (!workers_use_initiator_user)
                             rejectTextIndexTransformWithoutInitiatorUser(index);
                         checkTextIndexPreAndPostProcessorPermissions(index, getContext());
+                        if (index.where_expression)
+                        {
+                            if (!workers_use_initiator_user)
+                                rejectPartialIndexConditionWithoutInitiatorUser(index.definition_ast);
+                            checkPartialIndexConditionAsUser(index.definition_ast, as_storage_metadata->getColumns(), getContext());
+                        }
                     }
                 }
             }
