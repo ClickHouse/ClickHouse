@@ -4,6 +4,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Disks/IDisk.h>
+#include <Disks/IVolume.h>
 #include <Disks/StoragePolicy.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -77,6 +79,7 @@ namespace ErrorCodes
     extern const int CANNOT_SELECT;
     extern const int QUERY_NOT_ALLOWED;
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int DATABASE_ACCESS_DENIED;
 }
 
 namespace
@@ -194,7 +197,9 @@ StorageFileLog::StorageFileLog(
     , WithContext(context_->getGlobalContext())
     , filelog_context(configureContext(getContext()))
     , filelog_settings(std::move(settings))
-    , path(resolveFileLogPath(path_, getContext()->getUserFilesPath()))
+    /// Normalized once, so that the containment check below validates exactly the path that `loadFiles` probes:
+    /// removing `..` before and after a symlink is resolved can select different files.
+    , path(std::filesystem::absolute(resolveFileLogPath(path_, getContext()->getUserFilesPath())).lexically_normal())
     , metadata_base_path(std::filesystem::path(metadata_base_path_) / "metadata")
     , format_name(format_name_)
     , log(getLogger("StorageFileLog (" + table_id_.getFullTableName() + ")"))
@@ -207,7 +212,43 @@ StorageFileLog::StorageFileLog(
     storage_metadata.setVirtuals(createVirtuals((*filelog_settings)[FileLogSetting::handle_error_mode]));
     setInMemoryMetadata(storage_metadata);
 
-    if (!fileOrSymlinkPathStartsWith(path, getContext()->getUserFilesPath()))
+    /// `StorageFileLog` reads and watches data via local filesystem APIs
+    /// (`std::filesystem` in `loadFiles`, `stat` in `getInode`, and
+    /// `FileLogDirectoryWatcher`). With a non-local `user_files_policy` disk
+    /// (for example `s3_plain`), the configured user-files root resolves to a
+    /// local metadata directory rather than the disk's backing store, so
+    /// containment under that path would let `StorageFileLog` operate on
+    /// unrelated local files. Reject up front, mirroring the explicit guards
+    /// added in `InputFormatErrorsLogger`, `EmbeddedRocksDB`, the `file`
+    /// dictionary source, and `openSQLiteDB`.
+    ///
+    /// Like the path check below, only a fresh `CREATE` fails: on `ATTACH` and metadata replay
+    /// (for example after an admin enables such a policy) the table is kept, but stays inert.
+    if (auto user_files_volume = getContext()->getUserFilesVolume())
+    {
+        for (const auto & user_files_disk : user_files_volume->getDisks())
+        {
+            if (isPlainLocalDisk(*user_files_disk))
+                continue;
+
+            if (LoadingStrictnessLevel::SECONDARY_CREATE <= mode)
+            {
+                LOG_ERROR(
+                    log,
+                    "Engine FileLog is not supported with non-plain-local `user_files_policy` disks "
+                    "(disk `{}` is not a plain local filesystem disk), the table will not read any data",
+                    user_files_disk->getName());
+                return;
+            }
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Engine FileLog is not supported with non-plain-local `user_files_policy` disks "
+                "(disk `{}` is not a plain local filesystem disk)",
+                user_files_disk->getName());
+        }
+    }
+
+    if (!getContext()->isUserFilesPath(path))
     {
         if (LoadingStrictnessLevel::SECONDARY_CREATE <= mode)
         {
@@ -297,10 +338,25 @@ void StorageFileLog::loadMetaFiles(bool attach)
     }
 }
 
+bool StorageFileLog::isDataFileAllowed(const String & file_path, bool log_if_denied) const
+{
+    /// Under `user_files_policy` the user files directory is a boundary that symlinks must not escape, so a file
+    /// found in the directory, e.g. `logs/leak.log -> /outside/secret`, is checked like the configured path.
+    /// Without a policy, admin-managed symlinks inside `user_files_path` are allowed, as for the configured path.
+    if (!getContext()->getUserFilesVolume())
+        return true;
+    if (getContext()->isUserFilesPath(file_path))
+        return true;
+    if (log_if_denied)
+        LOG_WARNING(log, "File {} resolves outside `user_files_path` ({}) after symlink resolution, it will not be read",
+            file_path, getContext()->getUserFilesPath());
+    return false;
+}
+
 void StorageFileLog::loadFiles()
 {
-    auto absolute_path = std::filesystem::absolute(path);
-    absolute_path = absolute_path.lexically_normal(); /// Normalize path.
+    /// Already absolute and normalized in the constructor.
+    const std::filesystem::path absolute_path = path;
 
     std::vector<String> matching_files;
     /// Files that the glob excludes but whose inode has a stored meta, with that inode.
@@ -340,7 +396,7 @@ void StorageFileLog::loadFiles()
         /// Just consider file with depth 1
         for (const auto & dir_entry : std::filesystem::directory_iterator{root_data_path})
         {
-            if (!dir_entry.is_regular_file())
+            if (!dir_entry.is_regular_file() || !isDataFileAllowed(dir_entry.path()))
                 continue;
             String file_name = dir_entry.path().filename();
             struct stat file_stat{};
@@ -597,16 +653,26 @@ void StorageFileLog::openFilesAndSetPos()
         auto & file_ctx = findInMap(file_infos.context_by_name, file);
         if (file_ctx.status != FileStatus::NO_CHANGE || file_ctx.open_failed)
         {
-            file_ctx.reader.emplace(getFullDataPath(file));
-            const int open_errno = errno;
-            if (!file_ctx.reader->is_open() && open_errno == ENOENT && isTrackedByDirectoryEvents(file))
+            /// The path was checked when the file was found, but a symlink can be retargeted outside
+            /// `user_files_path` afterwards, so it is checked again right before every (re)open. A file
+            /// that is not allowed is handled as one that cannot be opened for lack of permissions.
+            int open_errno = EACCES;
+            if (isDataFileAllowed(getFullDataPath(file), /*log_if_denied=*/ false))
+            {
+                file_ctx.reader.emplace(getFullDataPath(file));
+                open_errno = errno;
+            }
+            else
+                file_ctx.reader.reset();
+            const bool is_open = file_ctx.reader && file_ctx.reader->is_open();
+            if (!is_open && open_errno == ENOENT && isTrackedByDirectoryEvents(file))
             {
                 /// Removed or renamed: the pending directory events drop the file or move its offset to the new name.
                 file_ctx.reader.reset();
                 file_ctx.status = FileStatus::NO_CHANGE;
                 continue;
             }
-            if (!file_ctx.reader->is_open()
+            if (!is_open
                 && (open_errno == ENOENT || open_errno == EACCES || open_errno == EPERM || open_errno == ELOOP))
             {
                 if (!file_ctx.open_failed)
@@ -1325,7 +1391,7 @@ bool StorageFileLog::updateFileInfos()
                     break;
                 /// Check if it is a regular file, and new file may be renamed or removed.
                 /// Another name of a file that is still read here (a hard link) is not read again.
-                if (!std::filesystem::is_regular_file(file_path) || !fileNameMatches(file_name)
+                if (!std::filesystem::is_regular_file(file_path) || !isDataFileAllowed(file_path) || !fileNameMatches(file_name)
                     || isReadUnderOtherName(file_name, getInode(file_path)))
                 {
                     name_is_read[file_name] = false;
@@ -1386,7 +1452,7 @@ bool StorageFileLog::updateFileInfos()
                     break;
                 /// Similar to DW_ITEM_ADDED, but if it removed from an old file
                 /// should obtain old meta file and rename meta file
-                if (std::filesystem::is_regular_file(file_path))
+                if (std::filesystem::is_regular_file(file_path) && isDataFileAllowed(file_path))
                 {
                     auto inode = getInode(file_path);
 
@@ -1494,9 +1560,15 @@ void StorageFileLog::resetReadPosition(const std::optional<String> & file_name, 
             auto it = file_infos.context_by_name.find(*file_name);
             if (it == file_infos.context_by_name.end())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} does not read a file named '{}'", getStorageID().getNameForLogs(), *file_name);
-            auto size = tryGetSizeFromFilePath(getFullDataPath(*file_name));
+            const auto full_data_path = getFullDataPath(*file_name);
+            /// The file may have become a symlink to a target outside the user files directory since it was
+            /// found. Check it before deriving its size, so that the size of an outside file is not revealed.
+            if (!isDataFileAllowed(full_data_path, /*log_if_denied=*/ false))
+                throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                    "File {} resolves outside `user_files_path` after symlink resolution", full_data_path);
+            auto size = tryGetSizeFromFilePath(full_data_path);
             if (!size)
-                throw Exception(ErrorCodes::CANNOT_STAT, "Cannot get the size of file {}", getFullDataPath(*file_name));
+                throw Exception(ErrorCodes::CANNOT_STAT, "Cannot get the size of file {}", full_data_path);
             if (offset && *offset > *size)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Offset {} is beyond the end of file {} ({} bytes)", *offset, *file_name, *size);
             add_target(*file_name, it->second, offset.value_or(*size));

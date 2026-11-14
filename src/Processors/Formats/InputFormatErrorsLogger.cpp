@@ -1,6 +1,8 @@
 #include <Processors/Formats/InputFormatErrorsLogger.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Port.h>
+#include <Disks/IDisk.h>
+#include <Disks/IVolume.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -45,22 +47,47 @@ InputFormatErrorsLogger::InputFormatErrorsLogger(const ContextPtr & context) : m
 
     if (context->getApplicationType() == Context::ApplicationType::SERVER)
     {
-        auto user_files_path = context->getUserFilesPath();
+        /// `WriteBufferFromFile` requires a local-filesystem destination, but
+        /// `user_files_policy` may resolve `user_files_path` to a non-local disk
+        /// root (e.g. `s3_plain`) whose `getPath()` is a virtual marker. Reject
+        /// up front instead of failing later with an opaque I/O error.
+        if (auto user_files_volume = context->getUserFilesVolume())
+        {
+            for (const auto & disk : user_files_volume->getDisks())
+            {
+                if (!isPlainLocalDisk(*disk))
+                    throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                                    "input_format_record_errors_file_path is not supported "
+                                    "with non-plain-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
+                                    disk->getName());
+            }
+        }
+        const auto user_files_path = context->getUserFilesPath();
         errors_file_path = fs::path(user_files_path) / path_in_setting;
-        if (!fileOrSymlinkPathStartsWith(errors_file_path, user_files_path))
-            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                            "Cannot log errors in path `{}`, because it is not inside `{}`",
-                            errors_file_path, user_files_path);
     }
     else
     {
         errors_file_path = path_in_setting;
     }
 
+    /// Check every candidate name before probing whether it exists. `fs::exists` follows symlinks,
+    /// so probing a name that resolves outside the user files directory would reveal whether the
+    /// target exists. The last checked name is also the name that is actually opened.
+    auto check_errors_file_path = [&]
+    {
+        if (context->getApplicationType() == Context::ApplicationType::SERVER && !context->isUserFilesPath(errors_file_path))
+            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                            "Cannot log errors in path `{}`, because it is not inside user files path",
+                            errors_file_path);
+    };
+
+    check_errors_file_path();
     while (fs::exists(errors_file_path))
     {
         errors_file_path += "_new";
+        check_errors_file_path();
     }
+
     write_buf = std::make_shared<WriteBufferFromFile>(errors_file_path);
 
     header = Block{

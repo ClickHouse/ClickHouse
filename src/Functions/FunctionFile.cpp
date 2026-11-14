@@ -6,11 +6,13 @@
 #include <Access/Common/AccessFlags.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Common/filesystemHelpers.h>
+#include <Disks/IVolume.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
-#include <Common/filesystemHelpers.h>
+#include <Storages/StorageFile.h>
 #include <filesystem>
 #include <Functions/FunctionHelpers.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -25,6 +27,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int DATABASE_ACCESS_DENIED;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -104,6 +107,128 @@ public:
         res_offsets.resize(input_rows_count);
 
         const auto & context = Context::getGlobalContextInstance();
+        auto user_files_volume = context->getUserFilesVolume();
+
+        /// When user_files_policy is set, use disk-based I/O
+        if (user_files_volume)
+        {
+            const auto disks = user_files_volume->getDisks();
+
+            auto disk_path_with_slash = [](const DiskPtr & d)
+            {
+                String p = d->getPath();
+                if (p.empty() || p.back() != '/')
+                    p += '/';
+                return p;
+            };
+
+            auto normalize_relative = [](const String & rel) -> String
+            {
+                if (!rel.empty() && rel[0] == '/')
+                    throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                        "Path `{}` must be relative to user files disk", rel);
+                String normalized = fs::path(rel).lexically_normal().generic_string();
+                if (normalized == ".")
+                    return "";
+                if (normalized == ".." || normalized.starts_with("../"))
+                    throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                        "Path `{}` escapes user files directory", rel);
+                return normalized;
+            };
+
+            /// The lexical pass of `normalize_relative` blocks `..`, but cannot detect an in-root
+            /// symlink (e.g. `<disk_root>/link -> /etc`) used as `link/passwd` to escape the disk
+            /// root. `isDiskRelativePathInsideRoot` checks that and is shared with `StorageFile`,
+            /// so the scalar `file` and the `file` table function agree.
+            for (size_t row = 0; row < input_rows_count; ++row)
+            {
+                std::string_view filename = column_src->getDataAt(row);
+                String file_path_str(filename);
+
+                try
+                {
+                    /// The containment checks below see the whole string, while a local disk opens
+                    /// the path through libc, which stops at the first NUL. The path is not echoed:
+                    /// it would put the NUL byte into the logs.
+                    if (file_path_str.contains('\0'))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "File path contains an embedded NUL byte");
+
+                    DiskPtr found_disk;
+                    String relative_path;
+
+                    if (!file_path_str.empty() && file_path_str[0] == '/')
+                    {
+                        /// Match the disk by longest prefix, then validate the remaining
+                        /// disk-relative portion (no '..' escape). Longest-prefix matching
+                        /// keeps absolute-path resolution consistent with `StorageFile` when
+                        /// multiple disks have overlapping roots (e.g. `/mnt/user_files/` and
+                        /// `/mnt/user_files/archive/`): the more specific disk wins.
+                        size_t best_prefix_size = 0;
+                        for (const auto & disk : disks)
+                        {
+                            const String prefix = disk_path_with_slash(disk);
+                            if (file_path_str.starts_with(prefix) && prefix.size() > best_prefix_size)
+                            {
+                                found_disk = disk;
+                                best_prefix_size = prefix.size();
+                            }
+                        }
+                        if (!found_disk)
+                            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                                "Absolute path '{}' is not inside any user files disk", String(filename));
+                        relative_path = normalize_relative(file_path_str.substr(best_prefix_size));
+                        if (!isDiskRelativePathInsideRoot(found_disk, relative_path))
+                            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                                "Path `{}` resolves outside user files disk root after symlink resolution",
+                                String(filename));
+                    }
+                    else
+                    {
+                        relative_path = normalize_relative(file_path_str);
+                        /// A `user_files_policy` volume always contains exactly one disk
+                        /// (enforced by `Context::setUserFilesPolicy`), so there is no routing
+                        /// decision to make here: validate the disk-root containment and select
+                        /// that disk directly. Probing with `existsFile` first would turn every
+                        /// in-bounds but missing file into a misleading `DATABASE_ACCESS_DENIED`;
+                        /// instead let `readFile` below surface the natural error
+                        /// (`FILE_DOESNT_EXIST` and friends) for a path that does not exist.
+                        if (!disks.empty())
+                        {
+                            const auto & disk = disks.front();
+                            if (!isDiskRelativePathInsideRoot(disk, relative_path))
+                                throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                                    "Path `{}` resolves outside user files disk root after symlink resolution",
+                                    String(filename));
+                            found_disk = disk;
+                        }
+                    }
+
+                    if (!found_disk)
+                        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File not found on any user files disk");
+
+                    /// `context` is the global context; take the settings of the current query, so that
+                    /// its limits (e.g. `max_remote_read_network_bandwidth`) and throttlers apply.
+                    auto read_settings = getUserFilesDiskReadSettings(DB::getReadSettings());
+                    auto in = found_disk->readFile(relative_path, read_settings);
+                    auto out = WriteBufferFromVector<ColumnString::Chars>(res_chars, AppendModeTag{});
+                    copyData(*in, out);
+                }
+                catch (...)
+                {
+                    if (arguments.size() == 1)
+                        throw;
+
+                    if (vec_null_map_to)
+                        (*vec_null_map_to)[row] = true;
+                    else
+                        res_chars.insert(default_result.data(), default_result.data() + default_result.size());
+                }
+
+                res_offsets[row] = res_chars.size();
+            }
+        }
+        else
+        {
         fs::path user_files_absolute_path = fs::canonical(fs::path(context->getUserFilesPath()));
         std::string user_files_absolute_path_string = user_files_absolute_path.string();
 
@@ -144,6 +269,7 @@ public:
 
             res_offsets[row] = res_chars.size();
         }
+        } /// end of else (no user_files_volume)
 
         if (vec_null_map_to)
             return ColumnNullable::create(std::move(result), std::move(col_null_map_to));

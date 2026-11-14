@@ -1,0 +1,4 @@
+--- a root that is a symlink to an outside directory
+BAD_ARGUMENTS
+--- a root that is a symlink to a directory inside user_files
+2

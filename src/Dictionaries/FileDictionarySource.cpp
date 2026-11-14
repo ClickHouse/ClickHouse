@@ -2,6 +2,8 @@
 #include <Common/logger_useful.h>
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
+#include <Disks/IDisk.h>
+#include <Disks/IVolume.h>
 #include <QueryPipeline/BlockIO.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context.h>
@@ -32,15 +34,46 @@ namespace ErrorCodes
 
 FileDictionarySource::FileDictionarySource(
     const std::string & filepath_, const std::string & format_,
-    Block & sample_block_, ContextPtr context_, bool created_from_ddl)
+    Block & sample_block_, ContextPtr context_, bool created_from_ddl_)
     : filepath{filepath_}
     , format{format_}
     , sample_block{sample_block_}
     , context(context_)
+    , created_from_ddl(created_from_ddl_)
 {
-    auto user_files_path = context->getUserFilesPath();
-    if (created_from_ddl && !fileOrSymlinkPathStartsWith(filepath, user_files_path))
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", filepath, user_files_path);
+    /// DDL-created `file` dictionaries are required to live under `user_files_path`.
+    /// `loadAll` reads them via `ReadBufferFromFile`, which only works on the local
+    /// filesystem. With `user_files_policy` on a non-local disk (for example
+    /// `s3_plain`), the configured user-files roots are not reachable through local
+    /// APIs, so a DDL-created dictionary cannot work. Reject up front instead of
+    /// failing later with an opaque local I/O error.
+    ///
+    /// XML-config dictionaries (`created_from_ddl == false`) are not constrained to
+    /// `user_files_path` and may point at arbitrary local files, so they are not
+    /// affected by `user_files_policy` and must not be rejected here.
+    if (created_from_ddl)
+    {
+        if (auto user_files_volume = context->getUserFilesVolume())
+        {
+            for (const auto & disk : user_files_volume->getDisks())
+            {
+                if (!isPlainLocalDisk(*disk))
+                    throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
+                                    "Dictionary source `file` is not supported "
+                                    "with non-plain-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
+                                    disk->getName());
+            }
+        }
+
+        checkFilePath();
+    }
+}
+
+
+void FileDictionarySource::checkFilePath() const
+{
+    if (created_from_ddl && !context->isUserFilesPath(filepath))
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside user files path", filepath);
 }
 
 
@@ -49,6 +82,7 @@ FileDictionarySource::FileDictionarySource(const FileDictionarySource & other)
     , format{other.format}
     , sample_block{other.sample_block}
     , context(Context::createCopy(other.context))
+    , created_from_ddl(other.created_from_ddl)
     , last_modification{other.last_modification}
 {
 }
@@ -57,6 +91,7 @@ FileDictionarySource::FileDictionarySource(const FileDictionarySource & other)
 BlockIO FileDictionarySource::loadAll()
 {
     LOG_TRACE(getLogger("FileDictionary"), "loadAll {}", toString());
+    checkFilePath();
     auto in_ptr = std::make_unique<ReadBufferFromFile>(filepath);
     auto source = context->getInputFormat(format, *in_ptr, sample_block, max_block_size);
     source->addBuffer(std::move(in_ptr));
@@ -76,6 +111,7 @@ std::string FileDictionarySource::toString() const
 
 Poco::Timestamp FileDictionarySource::getLastModification() const
 {
+    checkFilePath();
     return FS::getModificationTimestamp(filepath);
 }
 

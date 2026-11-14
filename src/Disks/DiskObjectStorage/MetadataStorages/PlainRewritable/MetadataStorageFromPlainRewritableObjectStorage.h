@@ -196,6 +196,9 @@ public:
     bool areBlobPathsRandom() const override { return false; }
     bool isPlain() const override { return true; }
     bool isWriteOnce() const override { return false; }
+    /// Existence, sizes and modification times are served from the in-memory snapshot of the file tree,
+    /// which does not see files created or changed by another server sharing the storage until it is refreshed.
+    bool cachesObjectMetadata() const override { return true; }
     /// Blobs are removed right in the transaction, and there is nothing to replicate.
     bool hasDeadBlobsQueue() const override { return false; }
     bool hasMissingBlobsQueue() const override { return false; }
