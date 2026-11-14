@@ -288,9 +288,12 @@ private:
 class CollectPrewhereTableExpressionVisitor : public ConstInDepthQueryTreeVisitor<CollectPrewhereTableExpressionVisitor>
 {
 public:
-    explicit CollectPrewhereTableExpressionVisitor(const QueryTreeNodePtr & query_node_)
+    CollectPrewhereTableExpressionVisitor(const QueryTreeNodePtr & query_node_, const TableExpressionNodes & query_table_expressions)
         : query_node(query_node_)
-    {}
+    {
+        for (const auto & query_table_expression : query_table_expressions)
+            query_table_expressions_set.insert(query_table_expression.get());
+    }
 
     const QueryTreeNodePtr & getPrewhereTableExpression() const
     {
@@ -304,6 +307,12 @@ public:
             return;
 
         auto column_source = column_node->getColumnSourceOrNull();
+
+        /// Lambda bodies are visited too, so that a column captured by a lambda (e.g. a correlated column of
+        /// the outer query) is checked like any other column; the lambda's own arguments are not table columns.
+        if (column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS)
+            return;
+
         if (!column_source)
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                 "Invalid column {} in PREWHERE. In query {}",
@@ -318,6 +327,14 @@ public:
                 "Invalid column {} in PREWHERE. Expected column source to be table or table function. Actual {}. In query {}",
                 column_node->formatASTForErrorMessage(),
                 column_source->formatASTForErrorMessage(),
+                query_node->formatASTForErrorMessage());
+
+        /// A column of a table of an outer query is a correlated column. It is not a column of the table the `PREWHERE`
+        /// is applied to, so it cannot be read with it, and binding `PREWHERE` to the outer table would filter the outer query.
+        if (!query_table_expressions_set.contains(column_source.get()))
+            throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+                "Invalid column {} in PREWHERE. Correlated columns are not supported in PREWHERE, use WHERE instead. In query {}",
+                column_node->formatASTForErrorMessage(),
                 query_node->formatASTForErrorMessage());
 
         if (table_expression && table_expression.get() != column_source.get())
@@ -362,12 +379,12 @@ public:
     {
         auto child_node_type = child_node->getNodeType();
         return child_node_type != QueryTreeNodeType::QUERY &&
-               child_node_type != QueryTreeNodeType::UNION &&
-               child_node_type != QueryTreeNodeType::LAMBDA;
+               child_node_type != QueryTreeNodeType::UNION;
     }
 
 private:
     QueryTreeNodePtr query_node;
+    std::unordered_set<const IQueryTreeNode *> query_table_expressions_set;
     QueryTreeNodePtr table_expression;
     StorageSnapshotPtr table_storage_snapshot;
     std::optional<NameSet> table_supported_prewhere_columns;
@@ -441,7 +458,7 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
 
     if (query_node_typed.hasPrewhere())
     {
-        CollectPrewhereTableExpressionVisitor collect_prewhere_table_expression_visitor(query_node);
+        CollectPrewhereTableExpressionVisitor collect_prewhere_table_expression_visitor(query_node, table_expressions_nodes);
         collect_prewhere_table_expression_visitor.visit(query_node_typed.getPrewhere());
 
         auto prewhere_table_expression = collect_prewhere_table_expression_visitor.getPrewhereTableExpression();
