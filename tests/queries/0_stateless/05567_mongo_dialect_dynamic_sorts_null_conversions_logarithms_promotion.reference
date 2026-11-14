@@ -1,0 +1,36 @@
+-- a sort on a Dynamic holding arrays
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+-- a sort on a Dynamic holding scalars
+{"id":2}
+{"id":3}
+{"id":1}
+-- conversions of a null held by a Dynamic
+{"id":1,"d":null,"i":null,"l":null,"s":null}
+{"id":2,"d":1,"i":1,"l":1,"s":"1"}
+{"id":3,"d":0,"i":0,"l":0,"s":"0"}
+1
+2
+-- logarithms
+{"a":3,"b":0,"c":2,"n":null,"m":null}
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+-- integers are added exactly before a double
+{"s":1,"d":1,"p":9007199254740992}
+-- an arithmetic update of a boolean field
+(UNKNOWN_ELEMENT_OF_ENUM)
+(UNKNOWN_ELEMENT_OF_ENUM)
+0
+1	false
+-- an insert into a temporary table that shadows a table
+(CANNOT_CONVERT_TYPE)
+2147483647
+0
+-- consecutive unions under a small AST budget
+{"n":9}
