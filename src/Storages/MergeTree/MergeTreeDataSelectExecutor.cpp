@@ -106,6 +106,8 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_bernoulli_sample;
+    extern const SettingsUInt64 bernoulli_sample_seed;
     extern const SettingsBool per_part_index_stats;
     extern const SettingsBool apply_deleted_mask;
     extern const SettingsString force_data_skipping_indexes;
@@ -335,7 +337,6 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     NamesAndTypesList available_real_columns,
     const RangesInDataParts & parts,
     ConditionTemplate<KeyCondition>::Ptr & key_condition,
-    const MergeTreeData & data,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
     LoggerPtr log)
@@ -431,7 +432,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     /// Parallel replicas has been requested but there is no way to sample data.
     /// Select all data from first replica and no data from other replicas.
     if (can_use_sampling_key_parallel_replicas && settings[Setting::parallel_replicas_count] > 1
-        && !data.supportsSampling() && settings[Setting::parallel_replica_offset] > 0)
+        && !metadata_snapshot->hasSamplingKey() && settings[Setting::parallel_replica_offset] > 0)
     {
         LOG_DEBUG(
             log,
@@ -441,7 +442,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         return sampling;
     }
 
-    sampling.use_sampling = relative_sample_size > 0 || (can_use_sampling_key_parallel_replicas && settings[Setting::parallel_replicas_count] > 1 && data.supportsSampling());
+    sampling.use_sampling = relative_sample_size > 0 || (can_use_sampling_key_parallel_replicas && settings[Setting::parallel_replicas_count] > 1 && metadata_snapshot->hasSamplingKey());
     bool no_data = false; /// There is nothing left after sampling.
 
     if (sampling.use_sampling)
@@ -450,12 +451,43 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             sampling.used_sample_factor = 1.0 / boost::rational_cast<Float64>(relative_sample_size);
 
         RelativeSize size_of_universum = 0;
-        const auto & sampling_key = metadata_snapshot->getSamplingKey();
 
         if (!metadata_snapshot->hasSamplingKey())
-            throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED,
-                "Sampling is not supported: the table does not have a sampling key");
+        {
+            if (!settings[Setting::allow_experimental_bernoulli_sample])
+                throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED,
+                    "Sampling is not supported: the table does not have a sampling key. "
+                    "Set allow_experimental_bernoulli_sample = 1 to enable Bernoulli sampling");
 
+            if (relative_sample_offset > 0)
+                throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED,
+                    "SAMPLE OFFSET is not supported for tables without a SAMPLE BY key");
+
+            /// The Bernoulli filter drops physical rows before `FINAL` merges the versions of a key, and the masks of
+            /// different versions are independent. So `FINAL` could return an obsolete version or resurrect a deleted key.
+            if (select_query_info.isFinal())
+                throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED,
+                    "Bernoulli sampling (SAMPLE on a table without a SAMPLE BY key) is not supported with FINAL");
+
+            Float64 probability = boost::rational_cast<Float64>(relative_sample_size);
+            if (probability <= 0.0 || probability >= 1.0)
+            {
+                sampling.use_sampling = false;
+                return sampling;
+            }
+
+            sampling.use_sampling = false;
+            sampling.use_bernoulli_sampling = true;
+            sampling.bernoulli_probability = probability;
+            UInt64 seed_setting = settings[Setting::bernoulli_sample_seed];
+            if (seed_setting != 0)
+                sampling.bernoulli_seed = seed_setting;
+            else
+                sampling.bernoulli_seed = context->getQueryContext()->getBernoulliSampleSeed();
+            return sampling;
+        }
+
+        const auto & sampling_key = metadata_snapshot->getSamplingKey();
         DataTypePtr sampling_column_type = sampling_key.data_types.at(0);
 
         if (sampling_key.data_types.size() == 1)
@@ -1395,10 +1427,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     std::vector<std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>> parts_top_k_granules(
                     parts_with_ranges.size(), std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>());
 
-    /// Perform top-K optimization during index analysis itself? Not with sampling: its filter runs after the read and
-    /// can discard every row of the granules selected here.
+    /// Perform top-K optimization during index analysis itself? Not with sampling (by a key or Bernoulli): its filter
+    /// runs after the read and can discard every row of the granules selected here.
     const bool perform_top_k_optimization = top_k_filter_info && skip_indexes.skip_index_for_top_k_filtering
-        && !top_k_filter_info->where_clause && !result.sampling.use_sampling;
+        && !top_k_filter_info->where_clause && !result.sampling.use_sampling && !result.sampling.use_bernoulli_sampling;
     const bool top_k_handle_ties = perform_top_k_optimization && (top_k_filter_info->num_sort_columns > 1 || skip_indexes.skip_index_for_top_k_filtering->index.granularity > 1);
 
     size_t num_threads = std::min<size_t>(num_streams, parts_with_ranges.size());
