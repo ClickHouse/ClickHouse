@@ -7,8 +7,6 @@ slug: /guides/working-with-joins
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 ClickHouse prend entièrement en charge les jointures SQL standard, ce qui permet une analyse efficace des données.
 Dans ce guide, vous découvrirez quelques-uns des types de jointure les plus couramment utilisés et apprendrez à les utiliser à l’aide de diagrammes de Venn et de requêtes d’exemple sur un jeu de données [IMDB](https://en.wikipedia.org/wiki/IMDb) normalisé issu du [dépôt de jeux de données relationnels](https://relational.fit.cvut.cz/dataset/IMDb).
 
@@ -22,7 +20,15 @@ les tables localement.
 
 Vous utiliserez les quatre tables suivantes du jeu de données d&#39;exemple :
 
-<Image img="/images/starter_guides/joins/imdb_schema.webp" alt="Schéma IMDB" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Schéma IMDB](/images/starter_guides/joins/imdb_schema.webp)
+
+</Frame>
+
+</div>
 
 Les données de ces quatre tables représentent des films, qui peuvent appartenir à un ou plusieurs genres.
 Les rôles d&#39;un film sont interprétés par des acteurs.
@@ -56,7 +62,15 @@ Dans les sections suivantes, vous rédigerez des requêtes d&#39;exemple pour ch
 L’`INNER JOIN` renvoie, pour chaque paire de lignes correspondant aux clés de jointure, les valeurs des colonnes de la ligne de la table de gauche, combinées avec les valeurs des colonnes de la ligne de la table de droite.
 Si une ligne a plus d’une correspondance, toutes les correspondances sont renvoyées (ce qui signifie que le [produit cartésien](https://en.wikipedia.org/wiki/Cartesian_product) est généré pour les lignes dont les clés de jointure correspondent).
 
-<Image img="/images/starter_guides/joins/inner_join.webp" alt="Jointure interne" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Jointure interne](/images/starter_guides/joins/inner_join.webp)
+
+</Frame>
+
+</div>
 
 Cette requête trouve les genres de chaque film en joignant la table `movies` à la table `genres` :
 
@@ -104,7 +118,15 @@ Une requête `RIGHT OUTER JOIN` est similaire et renvoie également les valeurs 
 
 Une requête `FULL OUTER JOIN` combine `LEFT` et `RIGHT OUTER JOIN` et renvoie les valeurs des lignes non correspondantes des tables de gauche et de droite, avec les valeurs par défaut pour les colonnes des tables de droite et de gauche, respectivement.
 
-<Image img="/images/starter_guides/joins/outer_join.webp" alt="Jointure externe" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Jointure externe](/images/starter_guides/joins/outer_join.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   ClickHouse peut être [configuré](/fr/reference/settings/session-settings/join#join_use_nulls) pour renvoyer des [NULL](/fr/reference/syntax#null)s au lieu de valeurs par défaut (cependant, cela est moins recommandé pour des [raisons de performances](/fr/reference/data-types/nullable#storage-features)).
@@ -149,7 +171,15 @@ LIMIT 10;
 Le `CROSS JOIN` produit l’intégralité du produit cartésien des deux tables, sans tenir compte des clés de jointure.
 Chaque ligne de la table de gauche est combinée avec chaque ligne de la table de droite.
 
-<Image img="/images/starter_guides/joins/cross_join.webp" alt="Jointure croisée" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Jointure croisée](/images/starter_guides/joins/cross_join.webp)
+
+</Frame>
+
+</div>
 
 La requête suivante combine donc chaque ligne de la table `movies` avec chaque ligne de la table `genres` :
 
@@ -249,7 +279,15 @@ Seule la première correspondance trouvée est renvoyée (le produit cartésien 
 
 Une requête `RIGHT SEMI JOIN` est similaire : elle renvoie les valeurs de toutes les lignes de la table de droite ayant au moins une correspondance dans la table de gauche, mais seule la première correspondance trouvée est renvoyée.
 
-<Image img="/images/starter_guides/joins/semi_join.webp" alt="Semi Join" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Semi Join](/images/starter_guides/joins/semi_join.webp)
+
+</Frame>
+
+</div>
 
 Cette requête trouve tous les acteurs et actrices ayant joué dans un film en 2023.
 Notez qu&#39;avec une jointure (`INNER`) classique, un même acteur ou une même actrice apparaîtrait plusieurs fois s&#39;il ou elle avait eu plus d&#39;un rôle en 2023 :
@@ -288,7 +326,15 @@ Un `LEFT ANTI JOIN` renvoie les valeurs des colonnes de toutes les lignes non co
 
 De même, un `RIGHT ANTI JOIN` renvoie les valeurs des colonnes de toutes les lignes non correspondantes de la table de droite.
 
-<Image img="/images/starter_guides/joins/anti_join.webp" alt="Anti Join" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Anti Join](/images/starter_guides/joins/anti_join.webp)
+
+</Frame>
+
+</div>
 
 Une autre formulation de l’exemple de requête de jointure externe précédent consiste à utiliser un anti join pour trouver les films qui n’ont pas de genre dans le jeu de données :
 
@@ -328,7 +374,15 @@ De même, `RIGHT ANY JOIN` combine `RIGHT OUTER JOIN` et `RIGHT SEMI JOIN`.
 
 Et `INNER ANY JOIN` correspond à `INNER JOIN` avec le produit cartésien désactivé.
 
-<Image img="/images/starter_guides/joins/any_join.webp" alt="Jointure ANY" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Jointure ANY](/images/starter_guides/joins/any_join.webp)
+
+</Frame>
+
+</div>
 
 L’exemple suivant illustre `LEFT ANY JOIN` à l’aide d’un exemple abstrait utilisant deux tables temporaires (`left_table` et `right_table`) construites avec la [values](https://github.com/ClickHouse/ClickHouse/blob/23.2/src/TableFunctions/TableFunctionValues.h) [table function](/fr/reference/functions/table-functions/index):
 
@@ -403,14 +457,30 @@ Si une ligne de la table de gauche n’a pas de correspondance exacte dans la ta
 
 C’est particulièrement utile pour l’analyse de séries temporelles et peut réduire considérablement la complexité des requêtes.
 
-<Image img="/images/starter_guides/joins/asof_join.webp" alt="Jointure ASOF" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Jointure ASOF](/images/starter_guides/joins/asof_join.webp)
+
+</Frame>
+
+</div>
 
 L’exemple suivant effectue une analyse de séries temporelles sur des données boursières.
 Une table `quotes` contient les cotations de symboles boursiers à des moments précis de la journée.
 Dans les données d’exemple, le prix est mis à jour toutes les 10 secondes.
 Une table `trades` répertorie les transactions par symbole : un certain volume d’un symbole a été acheté à un instant précis :
 
-<Image img="/images/starter_guides/joins/asof_example.webp" alt="Exemple ASOF" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Exemple ASOF](/images/starter_guides/joins/asof_example.webp)
+
+</Frame>
+
+</div>
 
 Pour calculer le coût réel de chaque transaction, nous devons faire correspondre les transactions avec l’heure de cotation la plus proche.
 

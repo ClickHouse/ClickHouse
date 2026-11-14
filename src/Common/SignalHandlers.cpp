@@ -437,8 +437,8 @@ void SignalListener::run()
     if (daemon)
     {
         build_id = [this]{ return daemon->build_id; };
-        /// A daemon has built the symbol index during initialization, so this is a plain string
-        /// that neither builds anything nor waits for anything.
+        /// A daemon has read its build id during initialization (without the symbol index), so this is
+        /// a plain string that neither builds anything nor waits for anything.
         build_id_if_already_known = build_id;
     }
     else
