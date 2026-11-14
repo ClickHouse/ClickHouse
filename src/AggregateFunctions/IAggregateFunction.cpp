@@ -1,6 +1,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <base/arithmeticOverflow.h>
@@ -21,6 +22,11 @@ namespace
 /// The choice of this number is arbitrary; it is the per-level limit of -Resample.
 constexpr size_t max_zero_sized_nested_states = 1048576;
 
+}
+
+void checkMemoryLimitForAggregateFunctionState()
+{
+    CurrentMemoryTracker::check();
 }
 
 DataTypePtr IAggregateFunction::getStateType() const

@@ -684,6 +684,10 @@ protected:
 };
 
 
+/// Temporary workaround until all allocations inside aggregation states will be allowed to throw MEMORY_LIMIT_EXCEEDED
+void checkMemoryLimitForAggregateFunctionState();
+
+
 /// Implement method to obtain an address of 'add' function.
 template <typename Derived>
 class IAggregateFunctionHelper : public IAggregateFunction
@@ -829,6 +833,8 @@ public:
         std::optional<size_t> version,
         Arena * arena) const final
     {
+        const bool check_memory_limit = !static_cast<const Derived *>(this)->hasTrivialDestructor();
+
         for (size_t i = 0; i < limit; ++i)
         {
             if (buf.eof())
@@ -839,6 +845,9 @@ public:
             try
             {
                 static_cast<const Derived *>(this)->deserialize(place, buf, version, arena);
+
+                if (check_memory_limit)
+                    checkMemoryLimitForAggregateFunctionState();
 
                 /// Appending the pointer allocates, so it can throw as well, and then the state
                 /// would be neither destroyed here nor owned by the column.
