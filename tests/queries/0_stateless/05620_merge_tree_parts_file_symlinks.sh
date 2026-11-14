@@ -15,22 +15,18 @@ SOURCE_ROOT="${BASE_ROOT}/source"
 READER_ROOT="${BASE_ROOT}/reader"
 INDEX_GRANULARITY_BYTES=10485760
 
-${CLICKHOUSE_CLIENT} --query "
-    DROP TABLE IF EXISTS mtp_file_symlinks_source SYNC;
+# The source part outside the root of the disk is written by `clickhouse-local` into a directory
+# of the test itself, so that the test does not touch any part of the server.
+SOURCE_PART_INFO=$(${CLICKHOUSE_LOCAL} --path "${SOURCE_ROOT}" --query "
     CREATE TABLE mtp_file_symlinks_source (id Int64)
     ENGINE = MergeTree ORDER BY id
-    SETTINGS disk = disk(type = local, path = '${SOURCE_ROOT}/data/'),
-        index_granularity = 512,
+    SETTINGS index_granularity = 512,
         index_granularity_bytes = ${INDEX_GRANULARITY_BYTES},
         min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
-    INSERT INTO mtp_file_symlinks_source SELECT number FROM numbers(10);"
-
-SOURCE_PART_PATH=$(${CLICKHOUSE_CLIENT} --query "
-    SELECT path FROM system.parts
-    WHERE database = currentDatabase() AND table = 'mtp_file_symlinks_source' AND active")
-MARKS=$(${CLICKHOUSE_CLIENT} --query "
-    SELECT marks FROM system.parts
-    WHERE database = currentDatabase() AND table = 'mtp_file_symlinks_source' AND active")
+    INSERT INTO mtp_file_symlinks_source SELECT number FROM numbers(10);
+    SELECT path, marks FROM system.parts WHERE table = 'mtp_file_symlinks_source' AND active")
+SOURCE_PART_PATH=$(echo "${SOURCE_PART_INFO}" | cut -f1)
+MARKS=$(echo "${SOURCE_PART_INFO}" | cut -f2)
 
 function read_part()
 {
@@ -69,5 +65,4 @@ rm "${READER_ROOT}/one_file/all_1_1_0/id.bin"
 ln -s "${SOURCE_PART_PATH%/}/id.bin" "${READER_ROOT}/one_file/all_1_1_0/id.bin"
 read_part "one_file"
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE mtp_file_symlinks_source SYNC"
 rm -rf "${BASE_ROOT}"
