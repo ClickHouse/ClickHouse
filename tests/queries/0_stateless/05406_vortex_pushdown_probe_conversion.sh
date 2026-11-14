@@ -7,10 +7,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # ClickHouse converts a row to the type of a set key or a `FixedString` constant before comparing,
-# and those conversions are not injective: `'a'` is padded to `'a\0'`, `UInt8` `2` becomes `true`,
-# a `DateTime` is cut down to a `Date`. A filter pushed into the Vortex scan compares the raw values
-# instead, so such conditions must not be pushed down: the results with the pushdown on and off
-# must be the same.
+# and those conversions are not injective: `'a'` is padded to `'a\0'`, a `DateTime` is cut down
+# to a `Date`. A filter pushed into the Vortex scan compares the raw values instead, so such
+# conditions must not be pushed down: the results with the pushdown on and off must be the same.
+# A `UInt8` row is compared with a `Bool` key by its value: `2` is not `true`.
 
 USER_FILES_PATH=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.server_settings WHERE name = 'user_files_path'")
 WORKING_DIR="${USER_FILES_PATH%/}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
