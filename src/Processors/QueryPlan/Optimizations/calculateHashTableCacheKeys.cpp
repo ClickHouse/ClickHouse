@@ -13,6 +13,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/SetSerialization.h>
 #include <Interpreters/TableJoin.h>
+#include <Parsers/IAST.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -21,10 +22,13 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageLog.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -40,6 +44,53 @@ UInt64 calculateHashFromStep(const ReadFromParallelRemoteReplicasStep & source)
     SipHash hash;
     hash.update(source.getSerializationName());
     hash.update(source.getStorageID().getFullTableName());
+    return hash.get64();
+}
+
+/// A read without the `SourceStepWithFilter` interface is identified by the table it reads, and by the arguments of a table function.
+SipHash hashTableRead(const IQueryPlanStep & read, const StorageID & storage_id)
+{
+    SipHash hash;
+    hash.update(read.getSerializationName());
+    hash.update(storage_id.uuid.toUnderType());
+    hash.update(storage_id.database_name.size());
+    hash.update(storage_id.database_name);
+    hash.update(storage_id.table_name.size());
+    hash.update(storage_id.table_name);
+    return hash;
+}
+
+UInt64 calculateHashFromStep(const ReadFromStorageLogStep & read)
+{
+    return hashTableRead(read, read.getStorage()->getStorageID()).get64();
+}
+
+UInt64 calculateHashFromStep(const ReadFromStorageStep & read)
+{
+    auto hash = hashTableRead(read, read.getStorage()->getStorageID());
+    if (const auto & table_expression = read.getQueryInfo().table_expression; table_expression && table_expression->as<TableFunctionNode>())
+        hash.update(table_expression->getTreeHash({.compare_aliases = false}));
+    return hash.get64();
+}
+
+/// A remote read is identified by the query each shard is sent and by the replicas that answer it.
+UInt64 calculateHashFromStep(const ReadFromRemote & read)
+{
+    SipHash hash;
+    hash.update(read.getSerializationName());
+    for (const auto & shard : read.getShards())
+    {
+        shard.query->updateTreeHash(hash, /*ignore_aliases=*/true);
+        hash.update(shard.shard_info.default_database.size());
+        hash.update(shard.shard_info.default_database);
+        for (const auto & pool : shard.shard_info.per_replica_pools)
+        {
+            if (!pool)
+                continue;
+            hash.update(pool->getAddress().size());
+            hash.update(pool->getAddress());
+        }
+    }
     return hash.get64();
 }
 
@@ -630,6 +681,15 @@ void calculateHashTableCacheKeys(
             frame.hash.update(calculateHashFromStep(*source));
         else if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
             frame.hash.update(calculateHashFromStep(*read));
+        /// An empty read has no table identity: it shares a key only with other empty reads, whose builds are empty too.
+        else if (typeid_cast<const ReadNothingStep *>(node.step.get()))
+            frame.hash.update("ReadNothingStep");
+        else if (const auto * log_read = typeid_cast<const ReadFromStorageLogStep *>(node.step.get()))
+            frame.hash.update(calculateHashFromStep(*log_read));
+        else if (const auto * storage_read = typeid_cast<const ReadFromStorageStep *>(node.step.get()))
+            frame.hash.update(calculateHashFromStep(*storage_read));
+        else if (const auto * remote = typeid_cast<const ReadFromRemote *>(node.step.get()))
+            frame.hash.update(calculateHashFromStep(*remote));
         else if (const auto * transform = dynamic_cast<const ITransformingStep *>(node.step.get()))
         {
             // Completely ignore the ignored steps (i.e. the ones for which we return 0)

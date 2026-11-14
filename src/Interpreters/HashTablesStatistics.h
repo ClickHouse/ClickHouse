@@ -76,7 +76,8 @@ struct HashJoinEntry
 
     bool shouldBeUpdated(const HashJoinEntry & new_entry) const
     {
-        return new_entry.ht_size < ht_size / MAX_OVERESTIMATION_FACTOR || ht_size < new_entry.ht_size;
+        const auto differs = [](size_t stored, size_t observed) { return observed * MAX_OVERESTIMATION_FACTOR < stored || stored < observed; };
+        return differs(ht_size, new_entry.ht_size) || differs(source_rows, new_entry.source_rows);
     }
 
     std::string dump() const { return fmt::format("ht_size={}", ht_size); }
@@ -136,8 +137,8 @@ public:
     /// Collection and use of the statistics should be enabled.
     std::optional<Entry> getSizeHint(const Params & params);
 
-    /// Collection and use of the statistics should be enabled.
-    void update(const Entry & new_entry, const Params & params);
+    /// Collection and use of the statistics should be enabled. Without `insert`, only an existing entry is updated.
+    void update(const Entry & new_entry, const Params & params, bool insert = true);
 
     std::optional<DB::HashTablesCacheStatistics> getCacheStats() const;
 
