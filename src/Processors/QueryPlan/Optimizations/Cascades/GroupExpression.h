@@ -19,17 +19,6 @@ namespace DB
 class IOptimizationRule;
 using OptimizationRulePtr = std::shared_ptr<const IOptimizationRule>;
 
-/// Which physical property a self-referential enforcer adds; `None` for ordinary expressions. Lets
-/// the input resolver stop an enforcer from satisfying its own input by over-providing on a
-/// wildcard (empty sort / empty distribution columns), which would form a cycle. A sorted gather is a
-/// `Distribution` enforcer even though it preserves sorting.
-enum class EnforcedProperty : uint8_t
-{
-    None,
-    Sorting,
-    Distribution,
-};
-
 class GroupExpression final
 {
 public:
@@ -47,7 +36,6 @@ public:
         , strategy(other_.strategy)
         , description_suffix(other_.description_suffix)
         , inputs(other_.inputs)
-        , enforced_property(other_.enforced_property)
         , is_partial_of_two_stage_aggregation(other_.is_partial_of_two_stage_aggregation)
     {}
 
@@ -81,8 +69,18 @@ public:
 
     ExpressionProperties properties;
 
-    /// Non-`None` for self-referential enforcer expressions (see `EnforcedProperty`).
-    EnforcedProperty enforced_property = EnforcedProperty::None;
+    /// For an enforcer: the required properties that enforcer rules made it for. Empty for other
+    /// expressions. An enforcer is an answer only to these required properties and to required
+    /// properties equal to its own (see `answers`).
+    VectorWithMemoryTracking<ExpressionProperties> enforced_for;
+
+    bool isEnforcer() const { return !enforced_for.empty(); }
+
+    /// Whether the group can use this expression as an implementation for `required_properties`.
+    /// The properties of the expression must satisfy them. An enforcer adds an operator to get
+    /// some properties, so it also satisfies weaker required properties, among them the ones of
+    /// its own input in the same group. It is not an answer to those: the plan below it is.
+    bool answers(const ExpressionProperties & required_properties) const;
 
     /// Set on the partial half of a two-stage aggregation split. Its promise of bucket order is kept
     /// for the merge half of the same plan, which reads the gathered inputs one stream per node, so

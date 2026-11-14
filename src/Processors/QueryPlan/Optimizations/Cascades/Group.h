@@ -40,10 +40,12 @@ public:
         : group_id(group_id_)
     {}
 
-    /// Both return true if the expression was inserted, false if an equal expression already
+    /// Returns true if the expression was inserted, false if an equal expression already
     /// exists in the group (the duplicate is dropped).
     bool addLogicalExpression(GroupExpressionPtr group_expression);
-    bool addPhysicalExpression(GroupExpressionPtr group_expression);
+    /// Returns the expression that the group keeps: the given one, or an equal expression that
+    /// the group already has (the given one is then dropped).
+    GroupExpressionPtr addPhysicalExpression(GroupExpressionPtr group_expression);
     bool isExplored() const { return is_explored; }
     void setExplored() { is_explored = true; }
     bool isOptimizedFor(const ExpressionProperties & required_properties) const;
@@ -56,26 +58,15 @@ public:
     bool isFullyDoneFor(const ExpressionProperties & required_properties) const;
     void setFullyDoneFor(const ExpressionProperties & required_properties);
     void updateBestImplementation(GroupExpressionPtr expression, const CostConfig & cost_config);
-    ExpressionWithCost getBestImplementation(const ExpressionProperties & required_properties, const CostConfig & cost_config) const;
 
-    /// Cheapest costed implementation of `required_properties` for an input edge, scanning the
-    /// best-implementation cache then `physical_expressions`, skipping anything in `active_path`
-    /// (the chain being built/costed) to break cycles.
-    ///
-    /// `input_is_self_referential` marks an input pointing back to its own group (a same-group
-    /// enforcer's input): an enforcer candidate that matches only by over-providing on a wildcard
-    /// axis (empty sort met by a sorted enforcer, or empty distribution columns met by a keyed
-    /// exchange) is rejected, so an enforcer cannot pick itself. Base candidates and productive
-    /// compositions (Gather -> Sort, Sort-per-node -> SortedGather) stay eligible.
-    ExpressionWithCost selectInputImplementation(
+    /// The cheapest best implementation that answers `required_properties` (see
+    /// `GroupExpression::answers`) and is not in `excluded`. Plan extraction excludes the
+    /// expressions of the chain that it is building, so the chain cannot come back to itself.
+    ExpressionWithCost getBestImplementation(
         const ExpressionProperties & required_properties,
         const CostConfig & cost_config,
-        const UnorderedSetWithMemoryTracking<GroupExpression *> & active_path,
-        bool input_is_self_referential) const;
+        const UnorderedSetWithMemoryTracking<GroupExpression *> & excluded = {}) const;
 
-    /// Returns the weighted subtree cost of the best implementation satisfying
-    /// the given properties, or infinity if none exists.
-    Float64 getBestCostForProperties(const ExpressionProperties & required_properties, const CostConfig & cost_config) const;
 
     void dump(WriteBuffer & out, const CostConfig & cost_config, String indent = {}) const;
     String dump(const CostConfig & cost_config) const;
@@ -100,7 +91,7 @@ private:
     /// Deduplicates physical expressions by STRUCTURAL identity. Bucketed by fingerprint hash;
     /// a hit is dropped only when an existing expression is structurally equal, so a genuine
     /// hash collision keeps both alternatives instead of silently discarding one.
-    UnorderedMapWithMemoryTracking<size_t, VectorWithMemoryTracking<GroupExpression *>> physical_expressions_by_fingerprint;
+    UnorderedMapWithMemoryTracking<size_t, VectorWithMemoryTracking<GroupExpressionPtr>> physical_expressions_by_fingerprint;
     UnorderedMapWithMemoryTracking<size_t, VectorWithMemoryTracking<GroupExpression *>> logical_expressions_by_fingerprint;
 
     /// Encode (node_count, is_replicated) into a single key for best_implementations lookup.
