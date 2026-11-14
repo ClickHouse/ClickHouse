@@ -1,0 +1,7 @@
+=== happy path: MODIFY TTL still works ===
+1
+0
+=== crash after TTL metadata commit: no mutation wedge ===
+1
+0
+20
