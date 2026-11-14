@@ -754,7 +754,6 @@ struct ContextSharedPart : boost::noncopyable
     String license_file TSA_GUARDED_BY(mutex);                  /// BYOC license text, deliberately not exposed to SQL
     bool show_license_expiration_warnings TSA_GUARDED_BY(mutex) = true; /// Whether to show the license expiration warning in system.warnings
     bool throw_on_unknown_workload TSA_GUARDED_BY(mutex) = false;
-    bool cpu_slot_preemption TSA_GUARDED_BY(mutex) = false;
     UInt64 cpu_slot_quantum_ns TSA_GUARDED_BY(mutex) = 10'000'000;
     UInt64 cpu_slot_preemption_timeout_ms TSA_GUARDED_BY(mutex) = 1000;
     bool cpu_slot_parking TSA_GUARDED_BY(mutex) = true;
@@ -3062,12 +3061,6 @@ void Context::setThrowOnUnknownWorkload(bool value)
     shared->throw_on_unknown_workload = value;
 }
 
-bool Context::getCPUSlotPreemption() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->cpu_slot_preemption;
-}
-
 UInt64 Context::getCPUSlotQuantum() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -3080,10 +3073,9 @@ UInt64 Context::getCPUSlotPreemptionTimeout() const
     return shared->cpu_slot_preemption_timeout_ms;
 }
 
-void Context::setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_quantum_ns, UInt64 cpu_slot_preemption_timeout_ms)
+void Context::setCPUSlotPreemption(UInt64 cpu_slot_quantum_ns, UInt64 cpu_slot_preemption_timeout_ms)
 {
     std::lock_guard lock(shared->mutex);
-    shared->cpu_slot_preemption = cpu_slot_preemption;
     shared->cpu_slot_quantum_ns = cpu_slot_quantum_ns;
     shared->cpu_slot_preemption_timeout_ms = cpu_slot_preemption_timeout_ms;
 }

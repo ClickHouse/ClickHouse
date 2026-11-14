@@ -1393,23 +1393,45 @@ Defines behaviour on access to unknown WORKLOAD with query setting 'workload'.
 **See Also**
 - [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
-    DECLARE(Bool, cpu_slot_preemption, true, R"(
-Defines how workload scheduling for CPU resources (MASTER THREAD and WORKER THREAD) is done.
-
-- If `true` (default), accounting is done based on actual CPU time consumed. A fair number of CPU time would be allocated to competing workloads. Slots are allocated for a limited amount of time and re-requested after expiry. Slot requesting may block thread execution in case of CPU resource overload, i.e., preemption may happen. This ensures CPU-time fairness.
-- If `false`, accounting is based on the number of CPU slots allocated. A fair number of CPU slots would be allocated to competing workloads. A slot is allocated when a thread starts, held continuously, and released when the thread ends execution. The number of threads allocated for query execution may only increase from 1 to `max_threads` and never decrease. This is more favorable to long-running queries and may lead to CPU starvation of short queries.
+    DECLARE(Bool, workloads_respect_server_cpu_limit, false, R"(
+When enabled, the server-wide CPU concurrency limit is applied through the workload scheduler. A CPU resource `__server_cpu__` (`CONSUME CPU`) is created implicitly if no CPU resource is defined, and the `max_concurrent_threads` of the root workload (the workload with an empty name) is derived from `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores`, so every workload shares one CPU-slot budget taken from those settings. CPU scheduling then goes through the workload scheduler instead of the built-in concurrency control. Only queries classified into a workload are limited by this budget: a query using the default `workload` setting value counts against it only when a `default` workload exists — created explicitly with `CREATE WORKLOAD default`, or implicitly via `implicit_default_workload`. Otherwise, with the default `throw_on_unknown_workload = 0`, such queries — and the background merges and mutations that use the default workload — run without workload CPU scheduling and are not limited by this setting. Changeable at runtime. Disabled by default.
 
 **Example**
 
 ```xml
-<cpu_slot_preemption>true</cpu_slot_preemption>
+<workloads_respect_server_cpu_limit>true</workloads_respect_server_cpu_limit>
 ```
 
 **See Also**
 - [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
+    DECLARE(Bool, workloads_respect_server_memory_limit, false, R"(
+When enabled, the server-wide memory limit is applied through the workload scheduler as a memory-reservation budget. A `MEMORY RESERVATION` resource `__server_memory__` is created implicitly if none is defined, and the `max_memory` of the root workload (the workload with an empty name) is derived from `max_server_memory_usage` (and its RAM ratio), so every workload shares one memory-reservation budget taken from that setting. This is a reservation-admission budget and does not replace the process-wide memory limit, which continues to apply. The budget is taken from the configured `max_server_memory_usage` when the configuration is loaded or reloaded; it does not follow runtime adjustments of the process-wide limit made by `memory_worker_dynamic_hard_limit`, so between reloads it may be larger than the limit in effect. Only queries classified into a workload reserve from this budget: a query using the default `workload` setting value counts against it only when a `default` workload exists — created explicitly with `CREATE WORKLOAD default`, or implicitly via `implicit_default_workload`. Otherwise, with the default `throw_on_unknown_workload = 0`, such queries — and the background merges and mutations that use the default workload — do not reserve from this budget and are not limited by this setting. Changeable at runtime. Disabled by default.
+
+**Example**
+
+```xml
+<workloads_respect_server_memory_limit>true</workloads_respect_server_memory_limit>
+```
+
+**See Also**
+- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
+)", 0) \
+    DECLARE(Bool, implicit_default_workload, false, R"(
+When enabled, a `default` workload is created implicitly if one is not defined explicitly, so that queries using the default `workload` setting are scheduled. The implicit `default` workload cannot be a parent of other workloads; create `default` explicitly for that. This is also what brings those queries under the budgets set by `workloads_respect_server_cpu_limit` and `workloads_respect_server_memory_limit`. Changeable at runtime. Disabled by default.
+
+**Example**
+
+```xml
+<implicit_default_workload>true</implicit_default_workload>
+```
+
+**See Also**
+- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
+)", 0) \
+    DECLARE(Bool, cpu_slot_preemption, true, R"(The setting is deprecated and has no effect: workload scheduling of CPU resources is always preemptive.)", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, cpu_slot_quantum_ns, 10000000, R"(
-It defines how many CPU nanoseconds a thread is allowed to consume after acquired a CPU slot and before it should request another CPU slot. Makes sense only if `cpu_slot_preemption` is enabled and CPU resource is defined for MASTER THREAD or WORKER THREAD.
+It defines how many CPU nanoseconds a thread is allowed to consume after acquired a CPU slot and before it should request another CPU slot. Makes sense only if a CPU resource is defined.
 
 **Example**
 
@@ -1421,7 +1443,7 @@ It defines how many CPU nanoseconds a thread is allowed to consume after acquire
 - [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
     DECLARE(Bool, cpu_slot_parking, true, R"(
-Defines whether a query thread releases (parks) its CPU slot while it is blocked on a non-CPU wait, such as some I/O operations or idling with no task available. A parked thread does not count against the CPU concurrency limit, so another thread can use the otherwise-idle CPU; the slot is re-acquired when the wait ends. Applies only when `cpu_slot_preemption` is enabled and a single CPU resource defines both MASTER THREAD and WORKER THREAD; in other configurations it has no effect. Can be changed without a server restart.
+Defines whether a query thread releases (parks) its CPU slot while it is blocked on a non-CPU wait, such as some I/O operations or idling with no task available. A parked thread does not count against the CPU concurrency limit, so another thread can use the otherwise-idle CPU; the slot is re-acquired when the wait ends. Applies only if a CPU resource is defined. Can be changed without a server restart.
 
 **Example**
 
@@ -1433,7 +1455,7 @@ Defines whether a query thread releases (parks) its CPU slot while it is blocked
 - [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
     DECLARE(UInt64, cpu_slot_preemption_timeout_ms, 1000, R"(
-It defines how many milliseconds could a worker thread wait during preemption, i.e. while waiting for another CPU slot to be granted. After this timeout, if thread was unable to acquire a new CPU slot it will exit and the query is scaled down to a lower number of concurrently executing threads dynamically. Note that master thread never downscaled, but could be preempted indefinitely. Makes sense only when `cpu_slot_preemption` is enabled and CPU resource is defined for WORKER THREAD.
+It defines how many milliseconds could a worker thread wait during preemption, i.e. while waiting for another CPU slot to be granted. After this timeout, if thread was unable to acquire a new CPU slot it will exit and the query is scaled down to a lower number of concurrently executing threads dynamically. Note that master thread never downscaled, but could be preempted indefinitely. Makes sense only if a CPU resource is defined.
 
 **Example**
 
@@ -3932,7 +3954,9 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"mutation_workload", {context->getMutationWorkload(), ChangeableWithoutRestart::Yes}},
             {"show_license_expiration_warnings", {std::to_string(context->getShowLicenseExpirationWarnings()), ChangeableWithoutRestart::Yes}},
             {"throw_on_unknown_workload", {std::to_string(context->getThrowOnUnknownWorkload()), ChangeableWithoutRestart::Yes}},
-            {"cpu_slot_preemption", {std::to_string(context->getCPUSlotPreemption()), ChangeableWithoutRestart::Yes}},
+            {"workloads_respect_server_cpu_limit", {std::to_string(context->getConfigRef().getBool("workloads_respect_server_cpu_limit", false)), ChangeableWithoutRestart::Yes}},
+            {"workloads_respect_server_memory_limit", {std::to_string(context->getConfigRef().getBool("workloads_respect_server_memory_limit", false)), ChangeableWithoutRestart::Yes}},
+            {"implicit_default_workload", {std::to_string(context->getConfigRef().getBool("implicit_default_workload", false)), ChangeableWithoutRestart::Yes}},
             {"cpu_slot_quantum_ns", {std::to_string(context->getCPUSlotQuantum()), ChangeableWithoutRestart::Yes}},
             {"cpu_slot_preemption_timeout_ms", {std::to_string(context->getCPUSlotPreemptionTimeout()), ChangeableWithoutRestart::Yes}},
             {"cpu_slot_parking", {std::to_string(context->getCPUSlotParking()), ChangeableWithoutRestart::Yes}},

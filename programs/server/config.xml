@@ -1852,11 +1852,10 @@
     <!-- Workload scheduling: throw or provide unlimited access to resource given unknown `workload` query setting -->
     <!-- <throw_on_unknown_workload>true</throw_on_unknown_workload> -->
 
-    <!-- Workload scheduling: if enabled during CPU overloaded periods, long-running queries will downscale to lower number of threads dynamically.
-         Ensures more fair CPU resource distribution. (Enabled by default)
+    <!-- Workload scheduling: during CPU overloaded periods, long-running queries downscale to lower number of threads dynamically.
+         Ensures more fair CPU resource distribution.
     -->
     <!--
-    <cpu_slot_preemption>true</cpu_slot_preemption>
     <cpu_slot_quantum_ns>10000000</cpu_slot_quantum_ns>
     <cpu_slot_preemption_timeout_ms>1000</cpu_slot_preemption_timeout_ms>
     <cpu_slot_parking>true</cpu_slot_parking>

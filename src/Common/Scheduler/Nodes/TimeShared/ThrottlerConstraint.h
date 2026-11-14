@@ -86,7 +86,7 @@ public:
         if (request)
         {
             // We don't do `request->addConstraint(this)` because `finishRequest()` is no-op
-            ResourceCost cost = request->ignore_throttling ? 0 : request->cost;
+            ResourceCost cost = request->cost;
             updateBucket(cost);
             SCHED_DBG("{} -- dequeue(cost={}, tokens={:.2f}, max_speed={:.2f})",
                 getPath(), cost, tokens, max_speed);

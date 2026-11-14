@@ -22,7 +22,6 @@ class FifoAlgorithm;
 class FairAlgorithm;
 class LasAlgorithm;
 class PriorityAlgorithm;
-class CPUSlotsAllocation;
 class ResourceSchedulingContext;
 struct ResourceQueryState;
 /// Fallback per-query state for requests not stamped by a classifier (defined in ResourceLink.cpp).
@@ -64,10 +63,6 @@ public:
     /// Cost of request execution; should be filled before request enqueueing and remain constant until `finish()`.
     /// NOTE: If cost is not known in advance, ResourceBudget should be used (note that every ISchedulerQueue has it)
     ResourceCost cost{};
-
-    /// If true, request is not throttled by the scheduler
-    /// This is used for special requests that should not be throttled, e.g. for CPUSlotsAllocation
-    bool ignore_throttling = false;
 
     /// Query-aware scheduling state (`fair` / `las` / `priority`), filled at enqueue by the
     /// `RequestQueue` schedulers and reset by `reset()`.
@@ -167,7 +162,6 @@ private:
     friend class LasAlgorithm; // uses `scheduling_hook` + `scheduling.key` for the `las` scheduler
     friend class PriorityAlgorithm; // uses `scheduling_hook` + `scheduling.key` for the `priority` scheduler
     friend class RequestQueue;
-    friend class CPUSlotsAllocation; // hack for tests only
 
     /// For an intrusive list of enqueued requests (the `fifo` scheduler).
     /// NOTE: Can only be accessed under the owning queue's mutex.

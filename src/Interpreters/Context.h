@@ -904,6 +904,7 @@ public:
         AVAILABLE_MEMORY_TOO_LOW,
         DB_ORDINARY_DEPRECATED,
         DELAY_ACCOUNTING_DISABLED,
+        DEPRECATED_CPU_RESOURCE_SYNTAX,
         LINUX_FAST_CLOCK_SOURCE_NOT_USED,
         LINUX_MDRAID_IS_BEING_RESYNCHRONIZED,
         LINUX_MDRAID_IS_DEGRADED,
@@ -1089,10 +1090,9 @@ public:
     void setMutationWorkload(const String & value);
     bool getThrowOnUnknownWorkload() const;
     void setThrowOnUnknownWorkload(bool value);
-    bool getCPUSlotPreemption() const;
     UInt64 getCPUSlotQuantum() const;
     UInt64 getCPUSlotPreemptionTimeout() const;
-    void setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_quantum_ns, UInt64 cpu_slot_preemption_timeout_ms);
+    void setCPUSlotPreemption(UInt64 cpu_slot_quantum_ns, UInt64 cpu_slot_preemption_timeout_ms);
     bool getCPUSlotParking() const;
     void setCPUSlotParking(bool value);
     UInt64 getConcurrentThreadsSoftLimitNum() const;

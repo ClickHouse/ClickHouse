@@ -12,10 +12,10 @@ When ClickHouse executes multiple queries simultaneously, they use shared resour
 
 By default, workload scheduling is disabled. To enable it you have to create resources that will be used for scheduling and at least one workload. All resources are independent and could be used in any combination.
 
-To enable CPU scheduling, you have to create CPU resource for MASTER or WORKER threads (see [CPU scheduling](#cpu_scheduling) for details):
+To enable CPU scheduling, you have to create a CPU resource (see [CPU scheduling](#cpu_scheduling) for details):
 
 ```sql
-CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+CREATE RESOURCE cpu (CONSUME CPU)
 ```
 
 To enable memory reservation for workloads, you have to create MEMORY resource (see [Memory reservations](#memory-reservations) for details):
@@ -56,7 +56,7 @@ ClickHouse provides convenient SQL syntax to define scheduling hierarchy. All re
 Here is an example of a hierarchy that divides all resources between "user" and "system" workloads with a guarantee of 90% and 10% correspondingly. Note that weights defined for workloads are used for max-min fairness and thus only provide best-effort guarantee from below (not a limit or quota from above). All the scheduling is done on every host independently and thus limits defined by `max_*` settings are per host. Workload "user" subdivides its resources between "development" and "production" workloads with "production" having 3 times more resources than "development":
 
 ```sql
-CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+CREATE RESOURCE cpu (CONSUME CPU)
 CREATE RESOURCE memory (MEMORY RESERVATION)
 CREATE RESOURCE s3_read (READ DISK s3)
 CREATE RESOURCE s3_write (WRITE DISK s3)
@@ -155,32 +155,22 @@ It is possible to assign a `workload` setting for background activities. Merges 
 To enable CPU scheduling for workloads create CPU resource and set a limit for the number of concurrent threads:
 
 ```sql
-CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+CREATE RESOURCE cpu (CONSUME CPU)
 CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100
 ```
 
 When ClickHouse server executes many concurrent queries with [multiple threads](/reference/settings/session-settings/max-threads#max_threads) and all CPU slots are in use the overload state is reached. In the overload state every released CPU slot is rescheduled to proper workload according to scheduling policies. For queries sharing the same workload, slots are allocated using round-robin. For queries in separate workloads, slots are allocated according to weights, priorities, and limits specified for workloads.
 
-CPU time is consumed by threads when they are not blocked and work on CPU-intensive tasks. For scheduling purpose, two kinds of threads are distinguished:
-* Master thread — the first thread that starts working on a query or background activity like a merge or a mutation.
-* Worker thread — the additional threads that master can spawn to work on CPU-intensive tasks.
+CPU time is consumed by threads when they are not blocked and work on CPU-intensive tasks. One CPU resource covers all threads of a query. The first thread of a query (the master thread) spawns the additional worker threads. It is never downscaled, but it can be preempted like the others.
 
-It may be desirable to use separate resources for master and worker threads to achieve better responsiveness. A high number of worker threads can easily monopolize CPU resource when high `max_threads` query setting values are used. Then incoming queries should block and wait for a CPU slot so their master threads can start execution. To avoid this the following configuration could be used:
-
-```sql
-CREATE RESOURCE worker_cpu (WORKER THREAD)
-CREATE RESOURCE master_cpu (MASTER THREAD)
-CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100 FOR worker_cpu, max_concurrent_threads = 1000 FOR master_cpu
-```
-
-It will create separate limits on master and worker threads. Even if all 100 worker CPU slots are busy, new queries will not be blocked until there are available master CPU slots. They will start execution with one thread. Later, if worker CPU slots become available, such queries could upscale and spawn their worker threads. On the other hand, such an approach does not bind the total number of slots to the number of CPU processors, and running too many concurrent threads will affect performance.
-
-Limiting the concurrency of master threads will not limit the number of concurrent queries. CPU slots could be released in the middle of the query execution and reacquired by other threads. For example, 4 concurrent queries with 2 concurrent master thread limit could all be executed in parallel. In this case, every query will receive 50% of a CPU processor. A separate logic should be used to limit the number of concurrent queries and it is not currently supported for workloads.
+<Note>
+The older syntax `MASTER THREAD` / `WORKER THREAD` is deprecated, but still accepted. A resource with `WORKER THREAD` (with or without `MASTER THREAD`) acts as `CONSUME CPU`. A resource with only `MASTER THREAD` schedules nothing. While such resources exist, `system.warnings` shows a deprecation warning.
+</Note>
 
 Separate thread concurrency limits could be used for workloads:
 
 ```sql
-CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+CREATE RESOURCE cpu (CONSUME CPU)
 CREATE WORKLOAD all
 CREATE WORKLOAD admin IN all SETTINGS max_concurrent_threads = 10
 CREATE WORKLOAD production IN all SETTINGS max_concurrent_threads = 100
@@ -194,16 +184,12 @@ To exclude a query from CPU scheduling set a query setting [use_concurrency_cont
 
 CPU scheduling is not supported for merges and mutations yet.
 
-To provide fair allocations for workload it is necessary to perform preemption and down-scaling during query execution. Preemption is enabled with `cpu_slot_preemption` server setting. If it is enabled, every thread renews its CPU slot periodically (according to `cpu_slot_quantum_ns` server setting). Such a renewal can block execution if CPU is overloaded. When execution is blocked for a prolonged time (see `cpu_slot_preemption_timeout_ms` server setting), the query scales down and the number of concurrently running threads decreases dynamically. Note that CPU time fairness is guaranteed between workloads, but between queries inside the same workload it might be violated in some corner cases.
+To provide fair allocations for workload it is necessary to perform preemption and down-scaling during query execution. Every thread renews its CPU slot periodically (according to `cpu_slot_quantum_ns` server setting). Such a renewal can block execution if CPU is overloaded. When execution is blocked for a prolonged time (see `cpu_slot_preemption_timeout_ms` server setting), the query scales down and the number of concurrently running threads decreases dynamically. Note that CPU time fairness is guaranteed between workloads, but between queries inside the same workload it might be violated in some corner cases.
 
-While a thread holds a CPU slot it does not always use the CPU, and by default the slot stays held even when it is not — so other queries cannot use it even though the CPU is idle. Enabling the `cpu_slot_parking` server setting lets a thread release ("park") its CPU slot at certain waits where it is not using the CPU — an idle worker with no task to run, a thread waiting on a remote or asynchronous source, a cached read fetching data from storage, or a thread paused by read-bandwidth throttling — and acquire a slot again when it resumes CPU work. Not every non-CPU wait releases the slot; an ordinary local file read, for example, does not. This allows other queries to use the freed CPU capacity while a query is stalled, which improves CPU utilization and query latency under overload. Parking applies only when `cpu_slot_preemption` is enabled and a single CPU resource defines both `MASTER THREAD` and `WORKER THREAD` (as in the `CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)` example above); in other configurations it has no effect.
-
-<Warning>
-Slot scheduling provides a way to control [query concurrency](/reference/settings/session-settings/max-threads#max_threads) but does not guarantee fair CPU time allocation unless server setting `cpu_slot_preemption` is set to `true`, otherwise fairness is provided based on number of CPU slot allocations among competing workloads. It does not imply equal amount of CPU seconds because without preemption CPU slot may be held indefinitely. A thread acquires a slot at the beginning and release when work is done.
-</Warning>
+While a thread holds a CPU slot it does not always use the CPU, and by default the slot stays held even when it is not — so other queries cannot use it even though the CPU is idle. Enabling the `cpu_slot_parking` server setting lets a thread release ("park") its CPU slot at certain waits where it is not using the CPU — an idle worker with no task to run, a thread waiting on a remote or asynchronous source, a cached read fetching data from storage, or a thread paused by read-bandwidth throttling — and acquire a slot again when it resumes CPU work. Not every non-CPU wait releases the slot; an ordinary local file read, for example, does not. This allows other queries to use the freed CPU capacity while a query is stalled, which improves CPU utilization and query latency under overload.
 
 <Note>
-Declaring CPU resource disables effect of [`concurrent_threads_soft_limit_num`](/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_num) and [`concurrent_threads_soft_limit_ratio_to_cores`](/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_ratio_to_cores) settings. Instead, workload setting `max_concurrent_threads` is used to limit the number of CPUs allocated for a specific workload. To achieve the previous behavior create only WORKER THREAD resource, set `max_concurrent_threads` for the workload `all` to the same value as `concurrent_threads_soft_limit_num` and use `workload = "all"` query setting. This configuration corresponds to [`concurrent_threads_scheduler`](/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_scheduler) setting set "fair_round_robin" value.
+Declaring CPU resource disables effect of [`concurrent_threads_soft_limit_num`](/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_num) and [`concurrent_threads_soft_limit_ratio_to_cores`](/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_ratio_to_cores) settings. Instead, workload setting `max_concurrent_threads` is used to limit the number of CPUs allocated for a specific workload.
 </Note>
 
 ## Query-aware scheduling {#query_aware_scheduling}
@@ -220,8 +206,6 @@ CREATE WORKLOAD all SETTINGS scheduler = 'fair'
 - **`priority`** — strict priority by the query's `workload_priority` setting (an `Int64`, lower value means higher priority). Queries are served in priority order, FIFO within the same priority. The default `0` is the neutral baseline; a negative value raises a query above the default and a positive value lowers it. Like any strict-priority scheme it can starve low-priority queries.
 
 The `scheduler` is time-shared only (CPU and IO) and can be set per resource with the `FOR <resource>` clause. Changing it on an existing workload swaps the algorithm in place, without interrupting other resources.
-
-For CPU resources, the `scheduler` and the per-query settings below are only meaningful with CPU slot preemption (`cpu_slot_preemption = 1`, the default). Without preemption, CPU slots carry a fixed per-slot cost rather than real CPU time, so these settings no longer reflect actual CPU consumption.
 
 Under the `fair` scheduler, a query's effective weight can be **lowered as it runs**, so shorter or newer queries get a larger share. This is controlled by per-query settings (all default to disabled):
 
@@ -247,10 +231,6 @@ There are two ways to control CPU consumption of a workload:
 * Thread number limit: `max_concurrent_threads` and `max_concurrent_threads_ratio_to_cores`
 * CPU throttling: `max_cpus`, `max_cpu_share` and `max_burst_cpu_seconds`
 
-<Warning>
-CPU throttling settings are active only if `cpu_slot_preemption` server setting is enabled and ignored otherwise.
-</Warning>
-
 The first allows one to dynamically control how many threads are spawned for a query, depending on the current server load. It effectively lowers what `max_threads` query setting dictates. The second throttles CPU consumption of the workload using token bucket algorithm. It does not affect thread number directly, but throttles the total CPU consumption of all threads in the workload.
 
 Token bucket throttling with `max_cpus` and `max_burst_cpu_seconds` means the following. During any interval of `delta` seconds, the total CPU consumption by all queries in the workload is not allowed to be greater than `max_cpus * delta + max_burst_cpu_seconds` CPU seconds. It limits average consumption by `max_cpus` in long-term, but this limit might be exceeded in short-term. For example, given `max_burst_cpu_seconds = 60` and `max_cpus=0.001`, one is allowed to run either 1 thread for 60 seconds or 2 threads for 30 seconds or 60 threads for 1 second without being throttled. Default value for `max_burst_cpu_seconds` is 1 second. Lower values may lead to under-utilization of allowed `max_cpus` cores given many concurrent threads.
@@ -263,7 +243,7 @@ While holding a CPU slot, a thread can be in one of three main states:
 Let's consider an example of configuration that combines both CPU throttling and thread number limits:
 
 ```sql
-CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+CREATE RESOURCE cpu (CONSUME CPU)
 CREATE WORKLOAD all SETTINGS max_concurrent_threads_ratio_to_cores = 2
 CREATE WORKLOAD admin IN all SETTINGS max_concurrent_threads = 2, priority = -1
 CREATE WORKLOAD production IN all SETTINGS weight = 4
@@ -421,7 +401,7 @@ In addition to SQL-based definitions, workloads and resources can be predefined 
 </clickhouse>
 ```
 
-The configuration uses the same SQL syntax as `CREATE WORKLOAD` and `CREATE RESOURCE` statements. All queries must be valid.
+The configuration uses the same SQL syntax as `CREATE WORKLOAD` and `CREATE RESOURCE` statements. All queries must be valid. A workload defined in the configuration can only have a parent workload and `FOR` resources that are defined in the configuration as well. SQL-defined workloads may be children of configuration-based workloads. Do not remove a workload or a resource from the configuration while SQL-defined workloads reference it: the server cannot load such SQL-defined workloads.
 
 ### Usage recommendations {#config_based_workloads_usage_recommendations}
 
@@ -536,6 +516,5 @@ The `create_workloads_and_resources` restore setting selects how a workload or r
 - [mutation_workload](/reference/settings/server-settings/settings/other#mutation_workload) global server setting
 - [workload_path](/reference/settings/server-settings/settings/workload#workload_path) global server setting
 - [workload_zookeeper_path](/reference/settings/server-settings/settings/workload#workload_zookeeper_path) global server setting
-- [cpu_slot_preemption](/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption) global server setting
 - [cpu_slot_quantum_ns](/reference/settings/server-settings/settings/cpu-slot#cpu_slot_quantum_ns) global server setting
 - [cpu_slot_preemption_timeout_ms](/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption_timeout_ms) global server setting

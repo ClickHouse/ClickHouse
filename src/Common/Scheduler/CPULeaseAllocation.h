@@ -91,10 +91,6 @@ using CPULeaseAllocationPtr = std::shared_ptr<CPULeaseAllocation>;
  *    - Master threads is never downscaled, but can be preempted.
  *    - When resource request is done for a renewal, the thread can still run for
  *      a while without an acquired slot to avoid unnecessary preemptions.
- *  - Although master thread is never downscaled, its request follows the same logic
- *    as worker requests and lives in the same circular buffer. It has a marker meaning
- *    that is should be enqueued into its own queue (which may be the same of different
- *    from queue for worker requests).
  *  - Thread acquired though acquire() call is granted immediately (master thread)
  *    to avoid delay, request is enqueued in the background.
  *  - If consumed CPU exceeds granted and requests (not yet granted) CPU,
@@ -153,7 +149,6 @@ private:
 
         CPULeaseAllocation * lease = nullptr;
         ResourceCost max_consumed = 0; /// Maximum consumption value for this request before it should be finished
-        bool is_master_slot = false; /// (true) master or (false) worker slot
         bool is_noncompeting = false; /// Noncompeting slot has `ResourceLink::queue == nullptr` and is granted immediately w/o scheduling
     };
 
@@ -164,8 +159,7 @@ public:
     /// the master thread count (typically 1) and grow the ceiling later via `setMax`.
     CPULeaseAllocation(
         SlotCount max_threads_,
-        ResourceLink master_link_,
-        ResourceLink worker_link_,
+        ResourceLink link_,
         CPULeaseSettings settings = {},
         SlotCount initial_max_slots_ = 0);
     ~CPULeaseAllocation() override;
@@ -258,8 +252,7 @@ private:
     /// Configuration
     const SlotCount max_threads; /// Max number of threads (and allocated slots)
     const CPULeaseSettings settings;
-    /// Parking gives back the oldest request, which may be a master or a worker one,
-    /// so it requires the master and worker threads to use the same resource
+    /// Parking requires a scheduled resource: a noncompeting link has nothing to give back
     const bool parking_supported;
     LoggerPtr log;
 
@@ -354,8 +347,8 @@ private:
     ///  - from 0 up to `max_threads` requests in "consuming" state (i.e. allocated by the scheduler);
     ///  - 0 or 1 request in "enqueued" state (i.e. sent to the scheduler, but not yet granted);
     /// RATIONALE:
-    /// The scheduler works with is a ResourceRequest. Old non-preemptive `CPUSlotsAllocation` has one-to-one mapping with a CPU slot.
-    /// But `CPULeaseAllocation` interact with the scheduler more intensively. Every consumed quantum (10ms) is reported to the scheduler.
+    /// The scheduler works with is a ResourceRequest. `CPULeaseAllocation` interacts with the scheduler intensively:
+    /// every consumed quantum (10ms) is reported to the scheduler.
     /// We want interaction to be as reactive as possible to minimize scheduling latencies.
     /// So instead of having one request for every thread, we have a chain (cyclic buffer) of requests.
     /// Newly granted requests are added to the `head`, while current consumption of ALL threads goes to the `tail` request.
@@ -368,7 +361,7 @@ private:
     class RequestChain
     {
     public:
-        RequestChain(CPULeaseAllocation * lease, size_t max_threads_, ResourceLink master_link_, ResourceLink worker_link_);
+        RequestChain(CPULeaseAllocation * lease, size_t max_threads_, ResourceLink link_);
         void finish();
         void granted();
         bool enqueue(ResourceCost cost, ResourceCost requested_ns_);
@@ -380,8 +373,7 @@ private:
 
     private:
         // Configuration
-        const ResourceLink master_link; /// Resource link to use for master thread resource requests
-        const ResourceLink worker_link; /// Resource link to use for worker threads resource requests
+        const ResourceLink link; /// Resource link to use for resource requests of all threads
 
         // Current state
         using Requests = std::vector<Request>;
@@ -389,7 +381,6 @@ private:
         Requests::iterator head; /// Next request to be enqueued
         Requests::iterator tail; /// Next request to be finished
         bool enqueued = false; /// True if the next request is already enqueued to the scheduler
-        bool request_master_slot = true; /// The next request should use (true) master_link or (false) worker_link
 
         // Bumped on every detach; several parking threads may wait in `cancel` at once
         std::condition_variable cancel_cv;

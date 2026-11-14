@@ -9111,7 +9111,7 @@ For the `fair` workload scheduler: once the query has been running (wall-clock) 
 )", 0, \
     {"26.10", 0, 0, "New query setting: wall-clock age threshold after which a query's weight is lowered in the `fair` workload scheduler."}) \
     DECLARE(Double, weight_lowering_cpu_seconds, 0, R"(
-For the `fair` workload scheduler: once the query has attained this many CPU-seconds, its weight is lowered by `weight_lowering_factor`. Applies to CPU resources. `0` (or any negative value) disables the CPU threshold. Attained CPU is the granted scheduler service, charged when a request is granted rather than as CPU is spent, so it leads actual consumption by at most one quantum (`cpu_slot_quantum_ns`) per active slot. This is only meaningful with CPU slot preemption (`cpu_slot_preemption = 1`, the default); without preemption CPU slots carry a fixed per-slot cost rather than real CPU time, so this threshold — like the other `fair` CPU settings — no longer reflects actual CPU consumption.
+For the `fair` workload scheduler: once the query has attained this many CPU-seconds, its weight is lowered by `weight_lowering_factor`. Applies to CPU resources. `0` (or any negative value) disables the CPU threshold. Attained CPU is the granted scheduler service, charged when a request is granted rather than as CPU is spent, so it leads actual consumption by at most one quantum (`cpu_slot_quantum_ns`) per active slot.
 )", 0, \
     {"26.10", 0, 0, "New query setting: attained CPU-seconds threshold after which a query's weight is lowered in the `fair` workload scheduler."}) \
     DECLARE(Double, weight_lowering_io_bytes, 0, R"(

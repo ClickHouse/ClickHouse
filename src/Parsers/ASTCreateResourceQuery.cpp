@@ -46,7 +46,11 @@ void ASTCreateResourceQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSe
         else
             first = false;
 
-        if (operation.mode == ResourceAccessMode::MasterThread)
+        if (operation.mode == ResourceAccessMode::CPU)
+        {
+            ostr << "CONSUME CPU";
+        }
+        else if (operation.mode == ResourceAccessMode::MasterThread)
         {
             ostr << "MASTER THREAD";
         }

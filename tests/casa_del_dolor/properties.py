@@ -254,7 +254,6 @@ possible_properties = {
         0.2, 0.2, 500, 10000, allow_unlimited=False
     ),
     "cpu_slot_parking": true_false_lambda,
-    "cpu_slot_preemption": true_false_lambda,
     "cpu_slot_preemption_timeout_ms": threshold_generator(
         0.2, 0.2, 0, 5000, allow_unlimited=False
     ),

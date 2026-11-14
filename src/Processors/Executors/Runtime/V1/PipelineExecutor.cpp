@@ -8,7 +8,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ConcurrencyControl.h>
 #include <Common/Scheduler/CPULeaseAllocation.h>
-#include <Common/Scheduler/CPUSlotsAllocation.h>
 #include <Common/Scheduler/CurrentCPULease.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
@@ -538,7 +537,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
             }
 
             /// Preemption and downscaling.
-            if (resources.isCPULeaseRenewNeeded()) // Check if preemption is enabled (see `cpu_slot_preemption` server setting)
+            if (resources.isCPULeaseRenewNeeded())
             {
                 try
                 {
@@ -594,32 +593,15 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
 {
     // The first thread is called master thread.
     // It is NOT the thread that handles async tasks (unless query has max_threads=1).
-    // Master thread is different from other threads due to special role in scheduling:
-    //  1. During query start, master thread spawns worker threads, so starting it fast is important.
-    //  2. It should never be downscaled to avoid query deadlock (0 threads to process tasks), although it can be preempted.
-    //  3. When using ConcurrencyControl, master thread is granted immediately and may not request CPU slot (see 'fair_round_robin').
-    //  4. When using resource scheduler, master thread may use different resource link than worker threads.
+    // It spawns the other (worker) threads and is never downscaled, although it can be preempted.
     const auto master_threads = 1uz;
 
-    // Other threads are called worker threads.
-    // They are competing for CPU slots with other queries and may not start or can be preempted and downscaled after they start.
-    // Worker threads are spawned by master thread or other worker threads.
-    const auto worker_threads = num_threads - master_threads;
-
-    // There are a few possible modes of concurrency control.
-    // 1) If we have `CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)`:
-    //    all thread should be allocated through scheduler using the same resource link
-    // 2) If we have `CREATE RESOURCE cpu (WORKER THREAD)`:
-    //    master thread uses "free" noncompeting CPU slot, the other threads are allocated through resource scheduler
-    // 3) If we have two resources `CREATE RESOURCE master_cpu (MASTER THREAD)` and `CREATE RESOURCE worker_cpu (WORKER THREAD)`:
-    //    all thread should be allocated through scheduler using different resource links
-    // 4) If we have no cpu-related resources:
-    //    the ConcurrencyControl class is used instead of resource scheduler
+    // If a CPU resource is declared, all threads are scheduled by the workload scheduler through a CPU lease.
+    // Otherwise `ConcurrencyControl` is used, and the master thread is granted immediately.
     if (concurrency_control)
     {
         auto query_context = CurrentThread::tryGetQueryContext();
-        ResourceLink master_thread_link;
-        ResourceLink worker_thread_link;
+        ResourceLink cpu_link;
         bool workload_cpu_scheduling_is_enabled = false;
 
         if (query_context)
@@ -630,47 +612,38 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
             auto workload_storage = query_context->getWorkloadEntityStoragePtr();
             if (workload_storage)
             {
-                String master_thread_resource_name = workload_storage->getMasterThreadResourceName();
-                if (!master_thread_resource_name.empty())
-                    master_thread_link = query_context->getWorkloadClassifier()->get(master_thread_resource_name);
-                String worker_thread_resource_name = workload_storage->getWorkerThreadResourceName();
-                if (!worker_thread_resource_name.empty())
-                    worker_thread_link = query_context->getWorkloadClassifier()->get(worker_thread_resource_name);
-                workload_cpu_scheduling_is_enabled = !master_thread_resource_name.empty() || !worker_thread_resource_name.empty();
+                String cpu_resource_name = workload_storage->getCPUResourceName();
+                if (!cpu_resource_name.empty())
+                {
+                    cpu_link = query_context->getWorkloadClassifier()->get(cpu_resource_name);
+                    workload_cpu_scheduling_is_enabled = true;
+                }
             }
         }
 
         if (workload_cpu_scheduling_is_enabled)
         {
-            if (master_thread_link || worker_thread_link) // Only use resource scheduler if at least one resource link is specified, otherwise unlimited
+            if (cpu_link) // Only use resource scheduler if the resource link is specified, otherwise unlimited
             {
-                /// Allocate CPU slots through resource scheduler
-                if (query_context->getCPUSlotPreemption())
-                {
-                    auto quantum_ns = std::max<UInt64>(10, query_context->getCPUSlotQuantum());
-                    // Mirror the ConcurrencyControl branch: under lazy allocation, request only
-                    // `master_threads` from the workload scheduler at startup and let the
-                    // PipelineExecutor upscaling block grow the ceiling via `setMax` as the
-                    // pipeline actually pushes parallelizable work.
-                    SlotCount initial_max = lazy_allocation ? master_threads : num_threads;
-                    return std::make_shared<CPULeaseAllocation>(num_threads, master_thread_link, worker_thread_link,
-                        CPULeaseSettings
-                        {
-                            .quantum_ns = static_cast<ResourceCost>(quantum_ns),
-                            .report_ns = static_cast<ResourceCost>(quantum_ns / 10),
-                            .preemption_timeout = std::chrono::milliseconds(query_context->getCPUSlotPreemptionTimeout()),
-                            .on_preempt = [this](size_t slot_id) { tasks.preempt(slot_id); },
-                            .on_resume = [this](size_t slot_id) { tasks.resume(slot_id); },
-                            .workload = query_context->getSettingsRef()[Setting::workload],
-                            .parking_enabled = query_context->getCPUSlotParking(),
-                            .trace_cpu_scheduling = trace_cpu_scheduling,
-                        },
-                        initial_max);
-                }
-                else
-                {
-                    return std::make_shared<CPUSlotsAllocation>(master_threads, worker_threads, master_thread_link, worker_thread_link);
-                }
+                auto quantum_ns = std::max<UInt64>(10, query_context->getCPUSlotQuantum());
+                // Mirror the ConcurrencyControl branch: under lazy allocation, request only
+                // `master_threads` from the workload scheduler at startup and let the
+                // PipelineExecutor upscaling block grow the ceiling via `setMax` as the
+                // pipeline actually pushes parallelizable work.
+                SlotCount initial_max = lazy_allocation ? master_threads : num_threads;
+                return std::make_shared<CPULeaseAllocation>(num_threads, cpu_link,
+                    CPULeaseSettings
+                    {
+                        .quantum_ns = static_cast<ResourceCost>(quantum_ns),
+                        .report_ns = static_cast<ResourceCost>(quantum_ns / 10),
+                        .preemption_timeout = std::chrono::milliseconds(query_context->getCPUSlotPreemptionTimeout()),
+                        .on_preempt = [this](size_t slot_id) { tasks.preempt(slot_id); },
+                        .on_resume = [this](size_t slot_id) { tasks.resume(slot_id); },
+                        .workload = query_context->getSettingsRef()[Setting::workload],
+                        .parking_enabled = query_context->getCPUSlotParking(),
+                        .trace_cpu_scheduling = trace_cpu_scheduling,
+                    },
+                    initial_max);
             }
         }
         else

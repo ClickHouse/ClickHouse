@@ -59,7 +59,7 @@ function thread_drop_create()
 
 # Create resource and workload (no concurrent thread limit to avoid throttling)
 $CLICKHOUSE_CLIENT -nm -q "
-    CREATE OR REPLACE RESOURCE $RESOURCE_NAME (WORKER THREAD, MASTER THREAD);
+    CREATE OR REPLACE RESOURCE $RESOURCE_NAME (CONSUME CPU);
     CREATE OR REPLACE WORKLOAD $WORKLOAD_NAME;
 "
 
