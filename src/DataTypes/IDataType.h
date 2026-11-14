@@ -613,6 +613,27 @@ FOR_TYPES_OF_TYPE(DISPATCH)
 #undef DISPATCH
 #undef FOR_TYPES_OF_TYPE
 
+/// Whether the two types are `equals`-equal and agree on the time zone a date or time function
+/// reads from its argument, at every temporal position and at any depth. A zone this walk cannot
+/// reach, inside a declared name or inside a type that does not expose its nested types as children,
+/// is compared as part of the declared name of the position holding it.
+bool haveSameExpressionIdentity(const IDataType & lhs, const IDataType & rhs);
+
+/// Appends the time zones the predicate above compares beyond `equals`. A type that carries no zone,
+/// reachable or not, keeps the digest its caller has already produced.
+void updateExpressionIdentityHash(const IDataType & type, SipHash & hash);
+
+/// Whether a value of the type holds a type of its own at any depth: the type a `Dynamic` value holds,
+/// the member a `Variant` value is, the paths of a `JSON` value. `Field` and `updateHashFast` can lose it.
+bool holdsATypeOfItsOwn(const IDataType & type);
+
+/// Whether the first rows hold the same value stored the same way. For such a type a function can see how a
+/// value is stored (`JSONDynamicPaths`), which `Field`, `compareAt` and `updateHashWithValue` leave out.
+bool haveSameStoredValue(const IDataType & lhs_type, const IColumn & lhs, const IDataType & rhs_type, const IColumn & rhs);
+
+/// A hash of what `haveSameStoredValue` compares.
+void updateStoredValueHash(const IDataType & type, const IColumn & column, SipHash & hash);
+
 // Same as isColumnedAsDecimal but also checks value type of underlyig column.
 template <typename T, typename DataType>
 inline bool isColumnedAsDecimalT(const DataType & data_type)

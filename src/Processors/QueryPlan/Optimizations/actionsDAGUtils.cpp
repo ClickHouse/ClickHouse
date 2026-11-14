@@ -204,7 +204,8 @@ MatchedTrees::Matches matchTrees(
                                         {
                                             const auto * inner_col = children[i]->column.get();
                                             const auto * outer_col = frame.node->children[i]->column.get();
-                                            if (!inner_col || !children[i]->result_type->equals(*frame.node->children[i]->result_type))
+                                            if (!inner_col
+                                                || !haveSameExpressionIdentity(*children[i]->result_type, *frame.node->children[i]->result_type))
                                             {
                                                 all_children_matched = false;
                                             }
@@ -243,6 +244,12 @@ MatchedTrees::Matches matchTrees(
                                             else
                                             {
                                                 all_children_matched = inner_col->getField() == outer_col->getField();
+
+                                                /// `Field` can lose the type such a value holds.
+                                                if (all_children_matched && holdsATypeOfItsOwn(*children[i]->result_type))
+                                                    all_children_matched = haveSameStoredValue(
+                                                        *children[i]->result_type, inner_col->getDataColumn(),
+                                                        *frame.node->children[i]->result_type, outer_col->getDataColumn());
                                             }
                                         }
                                         else

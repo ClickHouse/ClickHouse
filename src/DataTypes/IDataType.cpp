@@ -3,14 +3,24 @@
 #include <Columns/ColumnConst.h>
 
 #include <Common/checkStackSize.h>
+#include <Common/DateLUT.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Common/SipHash.h>
 
+#include <Core/ProtocolDefines.h>
+
+#include <Formats/NativeWriter.h>
+
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypeFunction.h>
+#include <DataTypes/TimezoneMixin.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
@@ -94,6 +104,153 @@ void IDataType::updateHash(SipHash & hash) const
 
     hash.update(getTypeId());
     updateHashImpl(hash);
+}
+
+namespace
+{
+
+/// What decides which expression a type names, beyond what `equals` already compares: the time zone
+/// a date or time function reads from it, and a declared name of its own, which
+/// `IDataType::updateHash` hashes wherever it sits.
+struct ExpressionIdentityComponent
+{
+    std::string_view time_zone;
+    String declared_name;
+
+    bool operator==(const ExpressionIdentityComponent & rhs) const = default;
+};
+
+/// One component per type visited, the type itself and every type nested in it, in nesting order.
+/// A position is part of the type, so this is a sequence and never a set: the same two zones in the
+/// other order describe another type, and so does the same declared name at another position.
+using ExpressionIdentity = std::vector<ExpressionIdentityComponent>;
+
+/// These keep a nested type that is not one of their children (`getChild`), so a zone inside one is not
+/// reachable here: the argument types of an aggregate function and of a lambda, a QBit element type.
+bool keepsANestedTypeOutOfReach(const IDataType & type)
+{
+    const auto type_id = type.getTypeId();
+    return type_id == TypeIndex::AggregateFunction || type_id == TypeIndex::Function || type_id == TypeIndex::QBit;
+}
+
+/// A QBit element type is a float, so only these two can hide a zone.
+DataTypes getTypesOutOfReach(const IDataType & type)
+{
+    if (const auto * aggregate_function = typeid_cast<const DataTypeAggregateFunction *>(&type))
+        return aggregate_function->getArgumentsDataTypes();
+
+    DataTypes types;
+    if (const auto * function = typeid_cast<const DataTypeFunction *>(&type))
+    {
+        types = function->getArgumentTypes();
+        types.push_back(function->getReturnType());
+    }
+    return types;
+}
+
+bool carriesATimeZone(const IDataType & type)
+{
+    return anyInTypeTree(type, [](const IDataType & one)
+    {
+        if (dynamic_cast<const TimezoneMixin *>(&one))
+            return true;
+        if (!keepsANestedTypeOutOfReach(one))
+            return false;
+        for (const auto & nested : getTypesOutOfReach(one))
+            if (nested && carriesATimeZone(*nested))
+                return true;
+        return false;
+    });
+}
+
+ExpressionIdentity collectExpressionIdentity(const IDataType & type)
+{
+    ExpressionIdentity identity;
+
+    auto visit = [&](const IDataType & one)
+    {
+        ExpressionIdentityComponent component;
+        if (const auto * with_time_zone = dynamic_cast<const TimezoneMixin *>(&one))
+        {
+            /** A type that spells no zone out means the session's, and that is not the zone the type
+              * object happens to carry: `DataTypeFactory` hands out one cached object per type name,
+              * so the zone in it is whichever session first asked for the name, while a date or time
+              * function reads the session's zone when it runs. Read the session's zone here, so that
+              * `toHour(CAST(x, 'Nullable(DateTime)'))` is a different expression in a session with a
+              * different `session_timezone` - it computes different values there.
+              */
+            component.time_zone = with_time_zone->hasExplicitTimeZone()
+                ? getDateLUTTimeZone(with_time_zone->getTimeZone())
+                : getDateLUTTimeZone(DateLUT::instance());
+        }
+        /// The name carries what this walk cannot see: the interior of a declared name, and the
+        /// nested types of a type that does not expose them as children, zone included.
+        if (one.hasCustomName() || keepsANestedTypeOutOfReach(one))
+            component.declared_name = one.getName();
+        identity.push_back(std::move(component));
+    };
+
+    forEachInTypeTree(type, visit);
+    return identity;
+}
+
+}
+
+bool haveSameExpressionIdentity(const IDataType & lhs, const IDataType & rhs)
+{
+    if (!lhs.equals(rhs))
+        return false;
+
+    /// A time zone left out of the type means the session time zone, so it is the same expression as
+    /// that zone spelled out, while two different zones differ however they are spelled. A declared
+    /// name is compared at its own position, since the interior of one is an opaque string.
+    return collectExpressionIdentity(lhs) == collectExpressionIdentity(rhs);
+}
+
+void updateExpressionIdentityHash(const IDataType & type, SipHash & hash)
+{
+    if (!carriesATimeZone(type))
+        return;
+
+    for (const auto & component : collectExpressionIdentity(type))
+    {
+        hash.update(component.time_zone.size());
+        hash.update(component.time_zone);
+        hash.update(component.declared_name.size());
+        hash.update(component.declared_name);
+    }
+}
+
+bool holdsATypeOfItsOwn(const IDataType & type)
+{
+    return anyInTypeTree(type, [](const IDataType & nested) { return isDynamic(nested) || isVariant(nested) || isObject(nested); });
+}
+
+namespace
+{
+
+/// The Native format reads back into the same column, so for one type equal bytes are one value stored one way.
+String serializeStoredValue(const IDataType & type, const IColumn & column)
+{
+    WriteBufferFromOwnString buf;
+    NativeWriter::writeData(
+        *type.getDefaultSerialization(), column.convertToFullIfWrapped(), buf,
+        /* format_settings */ nullptr, /* offset */ 0, /* limit */ 1, DBMS_TCP_PROTOCOL_VERSION);
+    return buf.str();
+}
+
+}
+
+bool haveSameStoredValue(const IDataType & lhs_type, const IColumn & lhs, const IDataType & rhs_type, const IColumn & rhs)
+{
+    return serializeStoredValue(lhs_type, lhs) == serializeStoredValue(rhs_type, rhs);
+}
+
+void updateStoredValueHash(const IDataType & type, const IColumn & column, SipHash & hash)
+{
+    const String value = serializeStoredValue(type, column);
+    hash.update(value.size());
+    hash.update(value);
 }
 
 void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint)
