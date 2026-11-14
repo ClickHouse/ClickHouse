@@ -178,7 +178,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             }
         },
         {
-            /// For a non-NULL constant `c`, `key <=> c` matches the same rows as `key = c`.
+            /// For a non-NULL constant `c` compared by its value (see `extractBinaryComparisonAtoms`), `key <=> c` matches `key = c`.
             /// The NULL-constant case (`<=>` meaning "is NULL") is rejected earlier, before the atom is built.
             "isNotDistinctFrom",
             [] (RPNElement & out, const Field & value)
@@ -1026,6 +1026,8 @@ static bool predicateIsBooleanResult(const ActionsDAG::Node * predicate, bool al
         || extra_boolean_result_functions.contains(unwrapped_name);
 }
 
+static bool nullSafeEqualityComparesFieldOnly(const DataTypePtr & operand_type, const ColumnWithTypeAndName & constant);
+
 /// Rewrite a positive boolean wrapper around a predicate `X` to bare `X` for key analysis, so a
 /// wrapped predicate like `(k = 42) IS TRUE` or `(k = 42) != false` becomes a prunable key atom on
 /// `k`. Two truth-equivalent wrapper forms the analyzer produces are handled:
@@ -1076,6 +1078,10 @@ static const ActionsDAG::Node * tryRewriteIsTrueCondition(
     /// they are not rewritten here.
     const Field const_value = (*const_node->column)[0];
     if (const_value.getType() != Field::Types::UInt64 || const_value.safeGet<UInt64>() != expected_const)
+        return nullptr;
+
+    if (name == "isNotDistinctFrom"
+        && !nullSafeEqualityComparesFieldOnly(predicate->result_type, {const_node->column, const_node->result_type, ""}))
         return nullptr;
 
     if (!predicateIsBooleanResult(predicate, context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite]))
@@ -2636,6 +2642,23 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
 static bool typeHasValueCarriers(const IDataType & type)
 {
     return anyInTypeTree(type, [](const IDataType & node) { return isDynamic(node) || isVariant(node) || isObject(node); });
+}
+
+/// Whether `operand <=> constant` matches exactly the operand values equal to the constant's `Field`: a value with a
+/// type of its own is compared by that type first (`ColumnDynamic::compareAt`), and its `Field` holds only the value.
+static bool nullSafeEqualityComparesFieldOnly(const DataTypePtr & operand_type, const ColumnWithTypeAndName & constant)
+{
+    DataTypePtr value_type = constant.type;
+    if (isDynamic(value_type))
+    {
+        const auto & column = assert_cast<const ColumnConst &>(*constant.column).getDataColumn();
+        value_type = assert_cast<const ColumnDynamic &>(column).getTypeAt(0);
+        chassert(value_type);
+        /// The operand loses `LowCardinality` before the cast into `Dynamic`, which stores a `Nullable` value as its nested type.
+        if (value_type->getName() != removeLowCardinalityAndNullable(operand_type)->getName())
+            return false;
+    }
+    return !typeHasValueCarriers(*value_type);
 }
 
 /// Returns deterministic sub-DAGs that can be extracted to compute key columns
@@ -5727,6 +5750,9 @@ void KeyCondition::extractBinaryComparisonAtoms(
     /// or a `Map` is not: `[nan] <=> [nan]` is true, as in key order.
     const bool nested_null_is_ordinary_value = func_name == "isNotDistinctFrom";
     if (nested_null_is_ordinary_value ? hasNaNInside(const_value) : hasNullOrNaNInside(const_value))
+        return;
+
+    if (func_name == "isNotDistinctFrom" && !nullSafeEqualityComparesFieldOnly(key_arg.getDAGNode()->result_type, constant))
         return;
 
     /// Normalize `const <op> key` to `key <op'> const`. Pattern functions cannot swap their operands:
