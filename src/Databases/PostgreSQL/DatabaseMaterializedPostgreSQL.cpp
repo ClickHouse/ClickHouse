@@ -617,6 +617,16 @@ void DatabaseMaterializedPostgreSQL::shutdown()
 }
 
 
+void DatabaseMaterializedPostgreSQL::assertCanBeDetached(bool cleanup)
+{
+    if (!empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "DETACH DATABASE is not allowed for a nonempty MaterializedPostgreSQL database, "
+            "use DROP DATABASE, or remove its tables from replication with DETACH TABLE ... PERMANENTLY first");
+    DatabaseAtomic::assertCanBeDetached(cleanup);
+}
+
+
 void DatabaseMaterializedPostgreSQL::stopReplication()
 {
     /// Cancel the startup retry loop first: `tryStartSynchronization` keeps re-scheduling itself
