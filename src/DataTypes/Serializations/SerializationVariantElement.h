@@ -64,7 +64,7 @@ public:
     /// there and so is not one of them.
     static bool isNullMapSubstream(Substream::Type type);
     size_t allocatedBytes() const override;
-    MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override;
+    MutableColumnPtr createColumnForDeserialization(const IDataType & type) const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

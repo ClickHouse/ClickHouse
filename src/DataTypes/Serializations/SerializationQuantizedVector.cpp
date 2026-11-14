@@ -111,11 +111,11 @@ public:
         state = std::make_shared<DeserializedStateProductQuantization>();
     }
 
-    /// The codebook is a single per-part value broadcast to the whole range. Wrap the base column as an empty
-    /// ColumnConst; deserialize sets its value and grows its size, so the (large) codebook is never materialized
-    /// per row.
-    MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override
+    /// The codebook is a single per-part value broadcast to the whole range. Create it as an empty `ColumnConst`;
+    /// deserialize sets its value and grows its size, so the (large) codebook is never materialized per row.
+    MutableColumnPtr createColumnForDeserialization(const IDataType & type) const override
     {
+        auto column = type.createColumn();
         column->insertDefault(); /// placeholder single value; the real one is set during deserialization
         return ColumnConst::create(std::move(column), 0);
     }

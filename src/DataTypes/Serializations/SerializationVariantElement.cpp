@@ -2,6 +2,7 @@
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/MaskOperations.h>
@@ -526,20 +527,16 @@ size_t SerializationVariantElement::allocatedBytes() const
     return sizeof(*this) + variant_element_name.capacity();
 }
 
-MutableColumnPtr SerializationVariantElement::wrapColumnForDeserialization(MutableColumnPtr column) const
+MutableColumnPtr SerializationVariantElement::createColumnForDeserialization(const IDataType & type) const
 {
     /// The Nullable level is either one the extraction added, which deserializeBinaryBulkWithMultipleStreams
     /// fills from the discriminators and peels off before recursing, or nested_serialization's own, which this
-    /// rebuild reproduces unchanged. A LowCardinality(Nullable) result is deserialized whole and keeps it.
-    if (isColumnNullable(*column))
-    {
-        const auto & nullable = assert_cast<const ColumnNullable &>(*column);
+    /// reproduces unchanged. A `LowCardinality(Nullable)` result is deserialized whole and keeps it.
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
         return ColumnNullable::create(
-            nested_serialization->wrapColumnForDeserialization(nullable.getNestedColumnPtr()->cloneEmpty()),
-            nullable.getNullMapColumnPtr()->cloneEmpty());
-    }
+            nested_serialization->createColumnForDeserialization(*nullable_type->getNestedType()), ColumnUInt8::create());
 
-    return nested_serialization->wrapColumnForDeserialization(std::move(column));
+    return nested_serialization->createColumnForDeserialization(type);
 }
 
 }
