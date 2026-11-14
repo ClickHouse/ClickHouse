@@ -11,7 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-EXPECTED="certificate of the system through the links: visible"
+EXPECTED="certificates of the system read inside through the links: 1"
 
 # The configuration of the tests enables the isolation only where the container allows the namespaces: see
 # `tests/config/install.sh`.
@@ -22,11 +22,14 @@ fi
 
 DIR="${CLICKHOUSE_TMP}/filesystem_isolation_system_ca_directory_link"
 rm -rf "$DIR"
-mkdir -p "$DIR/conf" "$DIR/data" "$DIR/log" "$DIR/ssl" "$DIR/hashed" "$DIR/private"
+mkdir -p "$DIR/conf" "$DIR/data" "$DIR/log" "$DIR/ssl" "$DIR/hashed" "$DIR/private" "$DIR/out"
 DIR=$(cd "$DIR" && pwd -P)
 echo "placeholder" > "$DIR/private/root.pem"
 ln -s "$DIR/private/root.pem" "$DIR/hashed/0123abcd.0"
 ln -s "$DIR/hashed" "$DIR/ssl/certs"
+# The server reads the certificate with `file` from its `user_files_path`, through an absolute link that is followed
+# inside its isolated filesystem.
+ln -s /etc/ssl/certs/0123abcd.0 "$DIR/out/0123abcd.0"
 
 cat > "$DIR/conf/config.xml" <<EOF
 <clickhouse>
@@ -36,6 +39,12 @@ cat > "$DIR/conf/config.xml" <<EOF
         <errorlog>$DIR/log/server.err.log</errorlog>
     </logger>
     <path>$DIR/data/</path>
+    <user_files_path>$DIR/out/</user_files_path>
+    <startup_scripts>
+        <scripts>
+            <query>INSERT INTO FUNCTION file('result.tsv', 'TSV', 'c UInt64') SELECT count() FROM file('0123abcd.0', 'LineAsString')</query>
+        </scripts>
+    </startup_scripts>
     <!-- Any free port: nothing connects to this server. -->
     <tcp_port>0</tcp_port>
     <filesystem_isolation>enforce</filesystem_isolation>
@@ -76,6 +85,13 @@ if ! grep -q 'Ready for connections' "$DIR/log/server.log" 2>/dev/null || ! grep
     exit 1
 fi
 
-# `unshare` executes the server in place of itself, so the process is the server. Through the links, as OpenSSL reads
-# the certificate inside.
-echo "certificate of the system through the links: $([ -f "/proc/$PID/root/etc/ssl/certs/0123abcd.0" ] && echo visible || echo invisible)"
+RESULT="$DIR/out/result.tsv"
+# The lookup is done inside the isolated server, by a startup script that reads the certificates through the links
+# with `file` and writes how many lines it read, because an absolute link seen from outside, through `/proc/<pid>/root`,
+# leads to the root of the observer instead. The startup script can finish after the server is ready.
+for _ in {1..600}; do
+    [ -s "$RESULT" ] && break
+    grep -q 'Failed to parse startup scripts' "$DIR/log/server.err.log" 2>/dev/null && break
+    sleep 0.1
+done
+echo "certificates of the system read inside through the links: $(cat "$RESULT" 2>/dev/null || grep -m1 -o 'Code: [0-9]*.*' "$DIR/log/server.err.log")"

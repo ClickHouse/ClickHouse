@@ -2,6 +2,7 @@
 
 #include <Core/Defines.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/Exception.h>
 #include <Common/Jemalloc.h>
 #include <Common/filesystemHelpers.h>
 
@@ -27,6 +28,11 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_CREATE_DIRECTORY;
+}
 
 namespace
 {
@@ -325,9 +331,12 @@ private:
                     const fs::path real_location = fs::canonical(location, entry_error);
                     if (entry_error)
                         break;
+                    /// A location inside the scanned directory, as the link names it, is visible anyway. One outside, even
+                    /// if it leads back inside through other links, as `/opt/ca-link -> /srv/ca`, is kept, so that these
+                    /// links are recreated. A directory that is scanned already is not scanned again.
                     const fs::path relative = real_location.relative_path();
-                    if (!isSameOrInside(real_location, real_directory) && !isSameOrInside(real_location, "/dev")
-                        && std::distance(relative.begin(), relative.end()) >= 2)
+                    if (!isSameOrInside(location, current_directory) && !isSameOrInside(location, real_directory)
+                        && !isSameOrInside(real_location, "/dev") && std::distance(relative.begin(), relative.end()) >= 2)
                     {
                         targets.insert(location);
                         if (is_directory)
@@ -570,6 +579,18 @@ private:
         /// They are inside `path` by default, which is not executable, and are mounted separately to be read-only and,
         /// for the scripts, executable.
         const fs::path user_scripts_path = absolute(getPathSetting(config, "user_scripts_path", "user_scripts"), data_path);
+        /// Created if it does not exist, as the other directories of the server are, so that it is a mount of its own,
+        /// executable, also for the scripts added after the startup; otherwise they would be on the `noexec` mount of
+        /// `path`.
+        {
+            std::error_code error;
+            if (!fs::exists(user_scripts_path, error))
+            {
+                fs::create_directories(user_scripts_path, error);
+                if (error)
+                    throw Exception(ErrorCodes::CANNOT_CREATE_DIRECTORY, "Cannot create the directory {} (`user_scripts_path`): {}", user_scripts_path.string(), error.message());
+            }
+        }
         add(user_scripts_path, Access::ReadOnly, "`user_scripts_path`");
         /// Except the WebAssembly modules, which `WasmModuleManager` keeps in the subdirectory `wasm` and writes when
         /// they are inserted into or deleted from `system.webassembly_modules`. It is created before the mount.
