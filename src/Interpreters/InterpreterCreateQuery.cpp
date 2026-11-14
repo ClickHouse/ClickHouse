@@ -2473,6 +2473,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 "CREATE CLONE AS is not supported with Replicated databases. Consider using separate CREATE and INSERT queries.");
     }
 
+    /// Both replace paths below silently drop whatever has this name, so refuse to replace a table and its data,
+    /// as `DROP VIEW` does. A dictionary keeps no data of its own and may still be replaced by a view.
+    if (create.replace_view && database)
+    {
+        if (auto existing = database->tryGetTable(create.getTable(), getContext());
+            existing && !existing->isView() && !existing->isDictionary())
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Table {} is not a View", existing->getStorageID().getNameForLogs());
+    }
+
     if (database && database->shouldReplicateQuery(getContext(), query_ptr))
     {
         chassert(!ddl_guard);
