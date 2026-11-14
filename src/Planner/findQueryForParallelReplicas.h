@@ -54,6 +54,10 @@ bool tableFunctionCanDriveParallelReplicasRead(const TableFunctionNode & table_f
 /// Check whether a resolved storage is eligible for parallel replicas (MergeTree, replication, no FINAL).
 bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const StoragePtr & storage, const ContextPtr & context);
 
+/// A table or table function that reads a table a non-APPEND refreshable materialized view replaces on every refresh, directly
+/// (by the name recorded at resolution, since the refresh renames the replaced table) or behind an `Alias` or a materialized view.
+bool isRefreshableMaterializedViewSwapTarget(const IQueryTreeNode & table_expression, const ContextPtr & context);
+
 /// Same, resolving a View / MaterializedView storage to the table that would actually be read.
 bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context);
 
