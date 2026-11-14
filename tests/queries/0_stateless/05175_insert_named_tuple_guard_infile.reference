@@ -1,0 +1,10 @@
+--- INSERT ... SELECT
+rejected
+--- INSERT ... VALUES
+rejected
+--- INSERT ... FROM INFILE
+rejected
+0
+--- accepted
+2	1
+3	0
