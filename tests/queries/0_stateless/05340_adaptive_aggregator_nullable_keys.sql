@@ -99,15 +99,19 @@ SELECT 'external',
         FROM numbers_mt(300000) GROUP BY a, b) SETTINGS enable_adaptive_aggregator = 1, max_bytes_before_external_group_by = 1)
 SETTINGS log_comment = '05340_arm_external';
 
--- nullable_keys128 under ROLLUP
+-- nullable_keys128 under ROLLUP. The aggregation under `ROLLUP` is partial, and the adaptive aggregator
+-- takes a partial aggregation only with two-level aggregation on. That needs non-zero thresholds and,
+-- without external aggregation, several streams, so the arm pins the thresholds and four threads.
 SELECT 'rollup',
     (SELECT count(), sum(c), sum(cityHash64(isNull(a), ifNull(a, 0), isNull(b), ifNull(b, 0), c, s)) FROM (
         SELECT if(number % 7 = 0, NULL, number % 1000) AS a, if(number % 11 = 0, NULL, toUInt32(intDiv(number, 3) % 500)) AS b, count() AS c, sum(number) AS s
-        FROM numbers_mt(300000) GROUP BY ROLLUP(a, b)) SETTINGS enable_adaptive_aggregator = 0, group_by_use_nulls = 1)
+        FROM numbers_mt(300000) GROUP BY ROLLUP(a, b))
+        SETTINGS enable_adaptive_aggregator = 0, group_by_use_nulls = 1, max_threads = 4, max_threads_min_free_memory_per_thread = 0, group_by_two_level_threshold = 10000000, group_by_two_level_threshold_bytes = 500000000)
     =
     (SELECT count(), sum(c), sum(cityHash64(isNull(a), ifNull(a, 0), isNull(b), ifNull(b, 0), c, s)) FROM (
         SELECT if(number % 7 = 0, NULL, number % 1000) AS a, if(number % 11 = 0, NULL, toUInt32(intDiv(number, 3) % 500)) AS b, count() AS c, sum(number) AS s
-        FROM numbers_mt(300000) GROUP BY ROLLUP(a, b)) SETTINGS enable_adaptive_aggregator = 1, group_by_use_nulls = 1)
+        FROM numbers_mt(300000) GROUP BY ROLLUP(a, b))
+        SETTINGS enable_adaptive_aggregator = 1, group_by_use_nulls = 1, max_threads = 4, max_threads_min_free_memory_per_thread = 0, group_by_two_level_threshold = 10000000, group_by_two_level_threshold_bytes = 500000000)
 SETTINGS log_comment = '05340_arm_rollup';
 
 -- nullable_key64 keeps NULL in a separate cell and stays on the ordinary path
