@@ -21,11 +21,15 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <TableFunctions/ITableFunction.h>
+
+#include <boost/algorithm/string/join.hpp>
 
 namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
     extern const SettingsBool enable_time_time64_type;
     extern const SettingsBool enable_nullable_tuple_type;
     extern const SettingsBool allow_suspicious_fixed_string_types;
@@ -303,6 +307,66 @@ void removeMisboundDefaultsFromStructureHint(
 
     for (const auto & name : removed)
         structure_hint.modify(name, [](ColumnDescription & column) { column.default_desc = {}; });
+}
+
+String getStructureHintColumnName(
+    const Strings & identifier_parts,
+    const String & table_function_alias,
+    const ITableFunction & table_function,
+    const ContextPtr & context,
+    std::optional<ColumnsDescription> & source_columns)
+{
+    String full_name = boost::algorithm::join(identifier_parts, ".");
+    if (identifier_parts.size() == 1 && !full_name.contains('.'))
+        return full_name;
+
+    bool alias_prefix = identifier_parts.size() > 1 && !table_function_alias.empty() && identifier_parts.front() == table_function_alias;
+
+    /// `input` has no structure of its own, it takes it from the structure hint.
+    if (table_function.getName() != "input")
+    {
+        if (!source_columns)
+        {
+            try
+            {
+                source_columns = table_function.getActualTableStructureWithAccess(context, /*is_insert_query=*/ false);
+            }
+            catch (const Exception &)
+            {
+                /// A source always has columns, so an empty description remembers the failed lookup.
+                source_columns.emplace();
+            }
+        }
+
+        if (source_columns->empty())
+            return full_name;
+
+        if (alias_prefix && context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn])
+        {
+            String stripped_name = boost::algorithm::join(Strings(identifier_parts.begin() + 1, identifier_parts.end()), ".");
+            if (source_columns->has(stripped_name))
+                return stripped_name;
+            if (source_columns->hasSubcolumn(GetColumnsOptions::All, stripped_name))
+                return {};
+        }
+
+        if (source_columns->has(full_name))
+            return full_name;
+
+        if (source_columns->hasSubcolumn(GetColumnsOptions::All, full_name))
+            return {};
+
+        if (alias_prefix && identifier_parts.size() == 2 && source_columns->hasSubcolumn(GetColumnsOptions::All, identifier_parts.back()))
+            return {};
+    }
+
+    if (identifier_parts.size() == 1)
+        return full_name;
+
+    if (alias_prefix && identifier_parts.size() == 2)
+        return identifier_parts.back();
+
+    return {};
 }
 
 String getStructureToSend(const ColumnsDescription & columns, const ColumnsDescription * insertion_columns)

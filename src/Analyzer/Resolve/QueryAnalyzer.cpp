@@ -5826,6 +5826,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         auto insert_column_name_it = insert_column_names.begin();
         auto insert_column_names_end = insert_column_names.end();  /// end iterator of the range covered by possible asterisk
         auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
+        std::optional<ColumnsDescription> source_columns;
         bool asterisk = false;
         const auto & expression_list = scope.scope_node->as<QueryNode &>().getProjection();
         auto expression = expression_list.begin();
@@ -5836,8 +5837,22 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         {
             if (auto * identifier_node = (*expression)->as<IdentifierNode>())
             {
+                auto column_name = getStructureHintColumnName(
+                    identifier_node->getIdentifier().getParts(),
+                    table_function_node->getAlias(),
+                    *table_function_ptr,
+                    scope_context,
+                    source_columns);
 
-                if (!virtual_column_names.contains(identifier_node->getIdentifier().getFullName()))
+                if (column_name.empty())
+                {
+                    if (use_structure_from_insertion_table_in_table_functions == 2)
+                    {
+                        use_columns_from_insert_query = false;
+                        break;
+                    }
+                }
+                else if (!virtual_column_names.contains(column_name))
                 {
                     if (asterisk)
                     {
@@ -5849,7 +5864,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     }
 
                     ColumnDescription column = insert_columns.get(*insert_column_name_it);
-                    column.name = identifier_node->getIdentifier().getFullName();
+                    column.name = column_name;
                     /// Change ephemeral columns to default columns.
                     column.default_desc.kind = ColumnDefaultKind::Default;
 

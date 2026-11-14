@@ -3692,6 +3692,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             auto insert_column_name_it = insert_column_names.begin();
             auto insert_column_names_end = insert_column_names.end();  /// end iterator of the range covered by possible asterisk
             auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
+            std::optional<ColumnsDescription> source_columns;
             bool asterisk = false;
             const auto & expression_list = select_query_hint->select()->as<ASTExpressionList>()->children;
             auto expression = expression_list.begin();
@@ -3702,7 +3703,22 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             {
                 if (auto * identifier = (*expression)->as<ASTIdentifier>())
                 {
-                    if (!virtual_column_names.contains(identifier->name()))
+                    auto column_name = getStructureHintColumnName(
+                        identifier->name_parts,
+                        table_expression->tryGetAlias(),
+                        *table_function_ptr,
+                        shared_from_this(),
+                        source_columns);
+
+                    if (column_name.empty())
+                    {
+                        if (use_structure_from_insertion_table_in_table_functions == 2)
+                        {
+                            use_columns_from_insert_query = false;
+                            break;
+                        }
+                    }
+                    else if (!virtual_column_names.contains(column_name))
                     {
                         if (asterisk)
                         {
@@ -3714,7 +3730,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                         }
 
                         ColumnDescription column = insert_columns.get(*insert_column_name_it);
-                        column.name = identifier->name();
+                        column.name = column_name;
                         /// Change ephemeral columns to default columns.
                         column.default_desc.kind = ColumnDefaultKind::Default;
 
