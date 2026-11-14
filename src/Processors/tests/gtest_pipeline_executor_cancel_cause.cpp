@@ -4,7 +4,14 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
+#include <Common/Scheduler/MemoryReservation.h>
+#include <Common/tests/gtest_global_context.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/ClientInfo.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
+#include <Parsers/IAST.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
@@ -112,6 +119,27 @@ std::exception_ptr makeCause()
     return std::make_exception_ptr(Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Memory limit exceeded in the caller"));
 }
 
+QueryStatusPtr makeQueryStatus()
+{
+    ClientInfo client_info;
+    client_info.current_query_id = "pipeline_executor_cancel_cause";
+    Settings settings;
+    return std::make_shared<QueryStatus>(
+        getContext().context,
+        "SELECT 1",
+        /*normalized_query_hash_*/ 0,
+        client_info,
+        /*user_id_*/ std::nullopt,
+        /*priority_handle_*/ QueryPriorities::Handle{},
+        /*query_slot_*/ nullptr,
+        /*memory_reservation_*/ nullptr,
+        /*thread_group_*/ nullptr,
+        IAST::QueryKind::Select,
+        settings,
+        /*watch_start_nanoseconds*/ 0,
+        /*is_internal*/ false);
+}
+
 }
 
 /// A processor can react to its cancellation by making other processors throw (the in-memory exchanges of a
@@ -120,7 +148,7 @@ TEST(PipelineExecutor, PushTasksFailureIsRecordedBeforeCancellingProcessors)
 {
     bool exception_callback_called = false;
 
-    SharedHeader header = std::make_shared<Block>(Block{ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "x")});
+    SharedHeader header = makeHeader();
     auto source = std::make_shared<ThrowingScheduleSource>(header, exception_callback_called);
     auto sink = std::make_shared<EmptySink>(header);
     connect(source->getOutputs().front(), sink->getPort());
@@ -196,6 +224,43 @@ TEST(PushingAsyncPipelineExecutor, CancelWithCauseRethrowsIt)
     {
         EXPECT_EQ(e.code(), ErrorCodes::MEMORY_LIMIT_EXCEEDED);
     }
+}
+
+/// A query cancelled with an exception (a client `Cancel` or disconnect) must record it in its executors
+/// before their processors are cancelled.
+TEST(QueryStatus, CancelQueryWithExceptionRecordsItBeforeCancellingProcessors)
+{
+    std::atomic_bool exception_callback_called = false;
+
+    /// Outlives the executor, which unregisters itself from it.
+    auto query_status = makeQueryStatus();
+
+    auto source = std::make_shared<EndlessSource>(makeHeader(), exception_callback_called);
+    Pipe pipe(source);
+    QueryPipeline pipeline(std::move(pipe));
+    pipeline.setProcessListElement(query_status);
+
+    PullingAsyncPipelineExecutor executor(pipeline);
+    executor.setExceptionCallback([&] { exception_callback_called = true; });
+
+    Chunk chunk;
+    ASSERT_TRUE(executor.pull(chunk));
+    ASSERT_EQ(chunk.getNumRows(), 1);
+
+    query_status->cancelQuery(CancelReason::CANCELLED_BY_USER, makeCause());
+
+    try
+    {
+        executor.cancel();
+        FAIL() << "The cancellation did not rethrow the cause";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+    }
+
+    EXPECT_TRUE(source->cancelled);
+    EXPECT_TRUE(source->exception_callback_called_on_cancel);
 }
 
 #endif
