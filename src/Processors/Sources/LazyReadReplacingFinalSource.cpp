@@ -36,6 +36,7 @@ extern const SettingsBool collect_hash_table_stats_during_aggregation;
 extern const SettingsBool enable_adaptive_aggregator;
 extern const SettingsBool enable_packed_string_keys_in_aggregation;
 extern const SettingsBool enable_parallel_single_level_merge;
+extern const SettingsBool enable_parallel_single_level_merge_by_index;
 extern const SettingsBool enable_software_prefetch_in_aggregation;
 extern const SettingsUInt64 group_by_two_level_threshold;
 extern const SettingsUInt64 group_by_two_level_threshold_bytes;
@@ -289,6 +290,7 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             /*enable_producing_buckets_out_of_order_in_aggregation_=*/false,
             /*serialize_string_with_zero_byte_=*/false,
             /*enable_parallel_single_level_merge_=*/settings[Setting::enable_parallel_single_level_merge],
+            /*enable_parallel_single_level_merge_by_index_=*/settings[Setting::enable_parallel_single_level_merge_by_index],
             /*enable_packed_string_keys_=*/settings[Setting::enable_packed_string_keys_in_aggregation],
             /*enable_adaptive_aggregator_=*/settings[Setting::enable_adaptive_aggregator],
             /*adaptive_aggregator_freeze_threshold_=*/settings[Setting::adaptive_aggregator_freeze_threshold],

@@ -244,6 +244,11 @@ public:
         /// instead of the serial merge.
         bool enable_parallel_single_level_merge = false;
 
+        /// Let the parallel single-level merge read the tables through their cell indexes when every table
+        /// has one (see `Aggregator::mergesByCellIndex`), instead of scanning every cell of every table for
+        /// each partition.
+        bool enable_parallel_single_level_merge_by_index = true;
+
         bool serialize_string_with_zero_byte = false;
 
         struct TopKParams
@@ -380,6 +385,7 @@ public:
             bool enable_producing_buckets_out_of_order_in_aggregation_,
             bool serialize_string_with_zero_byte_,
             bool enable_parallel_single_level_merge_,
+            bool enable_parallel_single_level_merge_by_index_,
             bool enable_packed_string_keys_,
             bool enable_adaptive_aggregator_,
             UInt64 adaptive_aggregator_freeze_threshold_,
@@ -650,8 +656,9 @@ public:
     using ClaimMergePartition = std::function<std::optional<size_t>(size_t rows)>;
 
     /// Whether the merge by partitions of `tables` reads them through their cell indexes (see
-    /// `AggregatedDataVariants::indexCells`), which every one of them has then.
-    static bool mergesByCellIndex(const ManyAggregatedDataVariants & tables);
+    /// `AggregatedDataVariants::indexCells`): when every one of them has one, unless
+    /// `enable_parallel_single_level_merge_by_index` is off.
+    bool mergesByCellIndex(const ManyAggregatedDataVariants & tables) const;
 
     /// Merges partition `first_partition` of `num_partitions`, then the partitions that `claim` hands out, out of every
     /// table of `non_empty_data` into one fresh table, and converts it to one output chunk. The partitions hold disjoint

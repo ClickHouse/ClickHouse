@@ -1001,13 +1001,14 @@ private:
             return {};
 
         /// The producers of an adaptive aggregation index the cells of their tables (see
-        /// `AggregatedDataVariants::indexCells`), so that a partition reads only its own cells instead of walking all
-        /// source tables. The partitions are those of the indexes then, and the workers claim them one by one, so a
-        /// worker beyond the partitions would claim none. The layout of more than 256 producers can have fewer
-        /// partitions than producers when an external-aggregation threshold reduces it. A single worker would only
-        /// rebuild the result into a fresh table, like a single partition.
+        /// `AggregatedDataVariants::indexCells`), so that a partition reads only its own cells instead of
+        /// scanning every cell of every table, unless `enable_parallel_single_level_merge_by_index` is off.
+        /// The partitions are those of the indexes then, and the workers claim them one by one, so a worker
+        /// beyond the partitions would claim none. The layout of more than 256 producers can have fewer
+        /// partitions than producers when an external-aggregation threshold reduces it. A single worker would
+        /// only rebuild the result into a fresh table, like a single partition.
         PartitionMergePlan plan;
-        if (Aggregator::mergesByCellIndex(*data))
+        if (params->aggregator.mergesByCellIndex(*data))
         {
             plan.partitions = data->at(0)->numCellIndexPartitions();
             plan.workers = std::min(singleLevelMergeWorkerCount(source_cells, source_memory), plan.partitions);

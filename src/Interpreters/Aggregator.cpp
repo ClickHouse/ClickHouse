@@ -430,6 +430,7 @@ Aggregator::Params::Params(
     bool enable_producing_buckets_out_of_order_in_aggregation_,
     bool serialize_string_with_zero_byte_,
     bool enable_parallel_single_level_merge_,
+    bool enable_parallel_single_level_merge_by_index_,
     bool enable_packed_string_keys_,
     bool enable_adaptive_aggregator_,
     UInt64 adaptive_aggregator_freeze_threshold_,
@@ -466,6 +467,7 @@ Aggregator::Params::Params(
     , use_aggregation_memory_tracker(use_aggregation_memory_tracker_)
     , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)
     , enable_parallel_single_level_merge(enable_parallel_single_level_merge_)
+    , enable_parallel_single_level_merge_by_index(enable_parallel_single_level_merge_by_index_)
     , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
     , enable_packed_string_keys(enable_packed_string_keys_)
 {
@@ -3753,9 +3755,10 @@ bool Aggregator::canMergeSingleLevelInPartitions(const AggregatedDataVariants & 
     }
 }
 
-bool Aggregator::mergesByCellIndex(const ManyAggregatedDataVariants & tables)
+bool Aggregator::mergesByCellIndex(const ManyAggregatedDataVariants & tables) const
 {
-    return std::ranges::all_of(tables, [](const auto & variants) { return variants->hasCellIndex(); });
+    return params.enable_parallel_single_level_merge_by_index
+        && std::ranges::all_of(tables, [](const auto & variants) { return variants->hasCellIndex(); });
 }
 
 Aggregator::AggregatedChunk Aggregator::mergeSingleLevelPartitionsAndConvertToChunk(
