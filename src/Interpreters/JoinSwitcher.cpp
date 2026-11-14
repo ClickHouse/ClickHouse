@@ -42,7 +42,15 @@ bool JoinSwitcher::addBlockToJoin(const Block & block, size_t num_rows, JoinBuil
     size_t bytes = join->getTotalByteCount();
 
     if (!limits.softCheck(rows, bytes))
-        return switchJoin(context);
+    {
+        /// Another build stream may still hold blocks stored uncompressed before `enable_join_in_memory_compression`
+        /// decided to compress; count them compressed before deciding to switch.
+        assert_cast<HashJoin *>(join.get())->compressPendingBuildStreams();
+        rows = join->getTotalRowCount();
+        bytes = join->getTotalByteCount();
+        if (!limits.softCheck(rows, bytes))
+            return switchJoin(context);
+    }
 
     return true;
 }

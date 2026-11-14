@@ -987,6 +987,13 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context)
         }
         auto prev_keys_num = hash_join->getTotalRowCount();
         size_t pre_total_bytes = hash_join->getTotalByteCount();
+        /// A build stream may still hold blocks stored uncompressed before `enable_join_in_memory_compression` decided
+        /// to compress; count them compressed before deciding to spill.
+        if (external_join_threshold > 0 && pre_total_bytes * 2 >= external_join_threshold)
+        {
+            hash_join->compressPendingBuildStreams();
+            pre_total_bytes = hash_join->getTotalByteCount();
+        }
 
         /// Pre-check: rehash when the in-memory bucket alone is already past half of the
         /// owner-supplied auto-spill cap. The inner `HashJoin::addBlockToJoin` grows its
@@ -1009,6 +1016,9 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context)
             size_t hash_join_total_keys = hash_join->getTotalRowCount();
             size_t hash_join_total_bytes = hash_join->getTotalByteCount();
             if (!hasMemoryOverflow(hash_join_total_keys, hash_join_total_bytes))
+                return;
+            hash_join->compressPendingBuildStreams();
+            if (!hasMemoryOverflow(hash_join->getTotalRowCount(), hash_join->getTotalByteCount()))
                 return;
         }
 

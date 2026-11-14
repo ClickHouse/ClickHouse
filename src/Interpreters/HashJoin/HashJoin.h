@@ -618,6 +618,9 @@ public:
         /// The blocks of this build stream are compressed by `enable_join_in_memory_compression`, and the blocks
         /// it adds later are compressed on insertion.
         bool compression_done = false;
+        /// Held by the build stream's own thread while it stores a block, and by another thread that catches
+        /// this build stream up with the compression of the whole join (see `compressPendingBuildStreams`).
+        std::mutex mutex;
     };
 
     struct RightTableData
@@ -767,6 +770,13 @@ public:
     /// Streams out the stored blocks of one build stream, see `ReleasedJoinedBlocks`. `data` stays alive.
     ReleasedJoinedBlocks releaseBuildStreamBlocks(size_t stream);
     void releaseJoinMaps();
+
+    /// Once `enable_join_in_memory_compression` decided to compress, compresses the stored blocks of every
+    /// build stream that has not caught up yet, so that `getTotalByteCount` sees the compressed size of the
+    /// whole join. A build stream catches up on its own only on its next insert, which may never come, so call
+    /// this before enforcing a size limit or deciding to spill. Must not be called by a thread that holds the
+    /// mutex of a build stream.
+    void compressPendingBuildStreams();
 
     /// Modify right block (update structure according to sample block) to save it in block list
     static Block prepareRightBlock(const Block & block, const Block & saved_block_sample_);

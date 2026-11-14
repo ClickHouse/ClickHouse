@@ -1241,6 +1241,8 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
             context.getNumStreams(),
             data->build_streams.size());
     auto & build_stream = data->build_streams[context.getStream()];
+    /// Uncontended unless another thread catches this build stream up in `compressPendingBuildStreams`.
+    std::unique_lock build_stream_lock(build_stream.mutex);
 
     if (in_memory_compression_min_bytes)
     {
@@ -1497,7 +1499,35 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
     if (!context.joinChecksLimits())
         return true;
     shrinkStoredBlocksToFit(total_bytes, /*force_optimize=*/false, context.getStream());
-    return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    build_stream_lock.unlock();
+
+    /// The total counts the blocks of the other build streams as they are now: one of them may still hold blocks
+    /// stored uncompressed before the join decided to compress, with no later insert to catch it up. Compress them
+    /// before reporting that the limit is exceeded, so that the limit sees the compressed size of the whole join.
+    const auto & size_limits = table_join->sizeLimits();
+    if (compress_stored_blocks.load(std::memory_order_relaxed) && !size_limits.softCheck(total_rows, total_bytes))
+    {
+        compressPendingBuildStreams();
+        total_rows = getTotalRowCount();
+        total_bytes = getTotalByteCount();
+    }
+    return size_limits.check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+}
+
+void HashJoin::compressPendingBuildStreams()
+{
+    if (!compress_stored_blocks.load(std::memory_order_relaxed))
+        return;
+
+    /// A build stream that is storing a block holds its mutex until it is done, and compresses that block too
+    /// since the compression is already decided; waiting for it is enough. The locks are taken one at a time,
+    /// and a build stream never waits for another one while it holds its own, so this cannot deadlock.
+    for (auto & build_stream : data->build_streams)
+    {
+        std::lock_guard lock(build_stream.mutex);
+        if (!build_stream.compression_done)
+            compressBuildStreamBlocks(build_stream);
+    }
 }
 
 DecompressedColumnsPtr HashJoin::getDecompressedColumns(const StoredBlock * compressed)
@@ -2560,6 +2590,7 @@ HashJoin::ReleasedJoinedBlocks HashJoin::releaseJoinedBlocks(bool restructure)
 HashJoin::ReleasedJoinedBlocks HashJoin::releaseBuildStreamBlocks(size_t stream)
 {
     auto & build_stream = data->build_streams[stream];
+    std::lock_guard lock(build_stream.mutex);
     ReleasedJoinedBlocks released;
     released.columns_list = std::move(build_stream.columns);
     /// Other threads may still be draining the lists of other build streams, and the sample block is shared, so `data`
@@ -3372,11 +3403,8 @@ bool HashJoin::recordsRowRefsForStats() const
 void HashJoin::onBuildPhaseFinish()
 {
     /// A build stream that stored its last block before another one decided to compress has no later insert
-    /// to catch it up in `addBlockToJoin`. The build streams are done, so their lists can be rewritten here.
-    if (compress_stored_blocks.load(std::memory_order_relaxed))
-        for (auto & build_stream : data->build_streams)
-            if (!build_stream.compression_done)
-                compressBuildStreamBlocks(build_stream);
+    /// to catch it up in `addBlockToJoin`.
+    compressPendingBuildStreams();
 
     freezeMapsForProbing();
     reinitUsedFlags();

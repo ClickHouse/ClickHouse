@@ -152,7 +152,18 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, Join
     /// the switch the live buffer (already at half) plus the conversion peak still fit under the
     /// configured cap.
     if (hash_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
-        switchToExternalJoin(context);
+    {
+        /// Another build stream may still hold blocks stored uncompressed before `enable_join_in_memory_compression`
+        /// decided to compress; count them compressed before deciding to spill. Under the shared lock, so that the
+        /// join is not drained meanwhile.
+        {
+            std::shared_lock lock(switch_mutex);
+            if (state.load(std::memory_order_acquire) == State::COLLECTING)
+                hash_join->compressPendingBuildStreams();
+        }
+        if (hash_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
+            switchToExternalJoin(context);
+    }
 
     /// Re-check: we may have just switched.
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
@@ -342,7 +353,9 @@ void SpillingHashJoin::onBuildPhaseFinish()
         /// Safety net for the terminal block: the proactive pre-insert check in `addBlockToJoin`
         /// fires only on subsequent calls. If the very last block pushed total bytes past
         /// `max_bytes_before_external_join` without a follow-up insert to trigger the switch,
-        /// promote it to `GraceHashJoin` here so the configured cap is honored.
+        /// promote it to `GraceHashJoin` here so the configured cap is honored. The build is over, so the build
+        /// streams that have not caught up with the compression of the join are compressed before the size is checked.
+        hash_join->compressPendingBuildStreams();
         const size_t total_bytes = hash_join->getTotalByteCount();
         if (total_bytes >= max_bytes_before_external_join)
         {
