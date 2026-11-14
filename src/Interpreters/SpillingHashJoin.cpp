@@ -142,8 +142,7 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, Join
         return addBlockToExternalJoin(block, num_rows, context);
     }
 
-    /// Checked before the insert, which can grow the maps: a map doubles its buffer and an arena adds a chunk up
-    /// to the size it holds, while the stored blocks keep their size. Switch before that growth crosses the threshold.
+    /// Checked before the insert, which can double the maps and their arenas but not the stored blocks.
     if (hash_join->getSpillByteCount() >= max_bytes_before_external_join)
         switchToExternalJoin(context);
 

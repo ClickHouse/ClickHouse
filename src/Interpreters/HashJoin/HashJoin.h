@@ -656,8 +656,7 @@ public:
         /// `allocated_size + nullmaps_allocated_size + bucket_bytes` in one atomic: summing the three while build threads
         /// update them can under-count `max_bytes_in_join`. Size-limit checks and `peak_build_bytes` read only this.
         std::atomic<size_t> total_bytes = 0;
-        /// `total_bytes` with `bucket_bytes` counted twice (the maps and their arenas can double on the next insert,
-        /// the stored blocks cannot), in one atomic for the same reason. `SpillingHashJoin` switches on it.
+        /// `total_bytes` with `bucket_bytes` counted twice, in one atomic for the same reason.
         std::atomic<size_t> spill_bytes = 0;
 
         size_t spillWeight(const std::atomic<size_t> & part) const { return &part == &bucket_bytes ? 2 : 1; }
