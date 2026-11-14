@@ -161,7 +161,7 @@ std::map<String, Documentation> ParserCreateWorkloadQuery::getDocumentation() co
         .description = R"DOCS_MD(
 Introduced in: v24.11.0
 
-Creates a workload: a node of the hierarchy that [workload scheduling](/concepts/features/configuration/server-config/workload-scheduling) uses to share resources between queries. The resources to schedule are created with [`CREATE RESOURCE`](/reference/statements/create/resource).
+Creates a workload: a node of the hierarchy that [workload scheduling](/concepts/features/configuration/server-config/workload-scheduling) uses to share resources between workloads. The resources to schedule are created with [`CREATE RESOURCE`](/reference/statements/create/resource).
 
 ## Syntax {#syntax}
 
