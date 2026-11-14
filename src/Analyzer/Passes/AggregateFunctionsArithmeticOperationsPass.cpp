@@ -84,7 +84,7 @@ public:
             return;
 
         auto * aggregate_function_node = node->as<FunctionNode>();
-        if (!aggregate_function_node || !aggregate_function_node->isAggregateFunction())
+        if (!aggregate_function_node || !aggregate_function_node->isAggregateFunction() || aggregate_function_node->hasWindow())
             return;
 
         static std::unordered_map<std::string_view, std::unordered_set<std::string_view>> supported_aggregate_functions

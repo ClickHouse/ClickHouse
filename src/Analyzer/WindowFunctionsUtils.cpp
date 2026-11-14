@@ -37,7 +37,7 @@ public:
             return;
 
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || !function_node->isWindowFunction())
+        if (!function_node || !function_node->hasWindow())
             return;
 
         if (!assert_no_window_functions_place_message.empty())

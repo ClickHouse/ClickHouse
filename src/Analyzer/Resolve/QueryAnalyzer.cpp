@@ -1201,7 +1201,7 @@ std::pair<bool, UInt64> QueryAnalyzer::recursivelyCollectMaxOrdinaryExpressions(
 
     // We don't need to have GROUPING under GROUP BY ALL, so we treat GROUPING
     // as an aggregate function for GROUP BY ALL expansion
-    if (function->isAggregateFunction() || function->isWindowFunction() || Poco::icompare(function->getFunctionName(), "grouping") == 0)
+    if (function->isAggregateFunction() || function->hasWindow() || Poco::icompare(function->getFunctionName(), "grouping") == 0)
         return {true, 0};
 
     UInt64 pushed_children = 0;
@@ -7338,7 +7338,7 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(const QueryTreeNodePtr & 
 
         if (auto * function_node = current->as<FunctionNode>())
         {
-            if (function_node->isWindowFunction())
+            if (function_node->hasWindow())
                 return HavingConjunctMoveAction::AbortRewrite;
 
             if (function_node->isOrdinaryFunction())

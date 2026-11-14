@@ -254,7 +254,7 @@ private:
             return false;
 
         auto * function = node->as<FunctionNode>();
-        if (!function || !function->isAggregateFunction())
+        if (!function || !function->isAggregateFunction() || function->hasWindow())
             return false;
 
         /// Every aggregate here returns an actual element of its input column, so over a group where

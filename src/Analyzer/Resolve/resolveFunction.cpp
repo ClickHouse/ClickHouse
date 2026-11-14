@@ -27,6 +27,7 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/HiddenSecret.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -76,7 +77,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
     extern const int UNKNOWN_FUNCTION;
-    extern const int UNKNOWN_AGGREGATE_FUNCTION;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int TYPE_MISMATCH;
@@ -215,7 +215,7 @@ std::optional<bool> getEarlyShortCircuitResultForAndOr(
         || function_node->getFunctionName() != function_name_to_fold
         || !function_node->getParameters().getNodes().empty()
         || function_node->getNullsAction() != NullsAction::EMPTY
-        || function_node->isWindowFunction())
+        || function_node->hasWindow())
         return {};
 
     const bool decisive_value = function_name_to_fold == "or";
@@ -1402,7 +1402,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// Only the bracket syntax is rewritten, not an explicit `arrayElement(array, x)` call.
     if (function_name == "arrayElement"
         && function_node_ptr->isOperator()
-        && !function_node_ptr->isWindowFunction()
+        && !function_node_ptr->hasWindow()
         && function_node_ptr->getParameters().getNodes().empty()
         && function_node_ptr->getArguments().getNodes().size() == 2)
     {
@@ -1470,7 +1470,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     //// If function node is not window function try to lookup function node name as lambda identifier.
     QueryTreeNodePtr lambda_expression_untyped;
-    if (!function_node_ptr->isWindowFunction())
+    if (!function_node_ptr->hasWindow())
     {
         auto function_lookup_result = tryResolveIdentifier({Identifier{function_name}, IdentifierLookupContext::FUNCTION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
         lambda_expression_untyped = function_lookup_result.resolved_identifier;
@@ -1486,7 +1486,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         && (function_name == "and" || function_name == "or")
         && parameters.empty()
         && function_node_ptr->getNullsAction() == NullsAction::EMPTY
-        && !function_node_ptr->isWindowFunction()
+        && !function_node_ptr->hasWindow()
         /// JOIN planning unwraps root constant source expressions. Keep JOIN ON expressions on
         /// the regular path so a preserved scalar-subquery source is never sent to the planner.
         && !(scope.resolving_join_on_expression && scope.resolving_join_on_expression->getNodeType() == QueryTreeNodeType::JOIN)
@@ -3033,7 +3033,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
       *
       * TODO: Provide better error hints.
       */
-    if (!function_node.isWindowFunction())
+    if (!function_node.hasWindow())
     {
         user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function_name);
 
@@ -3184,14 +3184,26 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
-    if (function_node.isWindowFunction())
+    if (function_node.hasWindow())
     {
-        if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
+        const auto & window_function_factory = WindowFunctionFactory::instance();
+        const auto & aggregate_function_factory = AggregateFunctionFactory::instance();
+        const bool is_window_function = window_function_factory.isWindowFunctionName(function_name);
+        const bool is_aggregate_function = aggregate_function_factory.isAggregateFunctionName(function_name);
+
+        if (!is_window_function && !is_aggregate_function)
         {
-            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function with name '{}' does not exist{}. In scope {}",
-                            function_name,
-                            getHintsErrorMessageSuffix(AggregateFunctionFactory::instance().getHints(function_name)),
-                            scope.scope_node->formatASTForErrorMessage());
+            VectorWithMemoryTracking<String> possible_function_names;
+            possible_function_names.append_range(window_function_factory.getAllRegisteredNames());
+            possible_function_names.append_range(aggregate_function_factory.getAllRegisteredNames());
+
+            auto hints = NamePrompter<2>::getHints(function_name, possible_function_names);
+
+            throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
+                "Window function or aggregate function with name {} does not exist{}. In scope {}",
+                backQuote(function_name),
+                getHintsErrorMessageSuffix(hints),
+                scope.scope_node->formatASTForErrorMessage());
         }
 
         if (!function_lambda_arguments_indexes.empty())
@@ -3200,23 +3212,32 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 function_name);
 
         auto action = function_node_ptr->getNullsAction();
-        std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
 
-        argument_types = bindWindowFunctionArgumentTypes(function_name, std::move(argument_types));
-        for (size_t i = 0; i < argument_types.size(); ++i)
-            function_arguments[i] = castNodeToType(function_arguments[i], argument_types[i], scope);
+        if (is_window_function)
+        {
+            if (action == NullsAction::RESPECT_NULLS)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} does not support RESPECT NULLS", function_name);
 
-        AggregateFunctionProperties properties;
-        auto aggregate_function
-            = AggregateFunctionFactory::instance().get(
-                aggregate_function_name,
-                action,
-                argument_types,
-                parameters,
-                properties,
-                AggregateFunctionStateVariant::Window);
+            argument_types = window_function_factory.bindArgumentTypes(function_name, std::move(argument_types));
+            for (size_t i = 0; i < function_arguments.size(); ++i)
+                if (!function_arguments[i]->getResultType()->equals(*argument_types[i]))
+                    function_arguments[i] = castNodeToType(function_arguments[i], argument_types[i], scope);
 
-        function_node.resolveAsAggregateFunction(std::move(aggregate_function));
+            function_node.resolveAsWindowFunction(
+                window_function_factory.get(function_name, function_node.getArgumentColumns(), parameters, scope.context->getSettingsRef()));
+        }
+        else
+        {
+            std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
+
+            argument_types = bindWindowFunctionArgumentTypes(function_name, std::move(argument_types));
+            for (size_t i = 0; i < argument_types.size(); ++i)
+                function_arguments[i] = castNodeToType(function_arguments[i], argument_types[i], scope);
+
+            AggregateFunctionProperties properties;
+            function_node.resolveAsAggregateFunction(
+                aggregate_function_factory.get(aggregate_function_name, action, argument_types, parameters, properties, AggregateFunctionStateVariant::Window));
+        }
 
         bool window_node_is_identifier = function_node.getWindowNode()->getNodeType() == QueryTreeNodeType::IDENTIFIER;
         ProjectionName window_projection_name = resolveWindow(function_node.getWindowNode(), scope);
@@ -3285,6 +3306,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
     else
     {
+        if (WindowFunctionFactory::instance().isWindowFunctionName(function_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} is a window function and requires an OVER clause", function_name);
+
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
         {
             VectorWithMemoryTracking<std::string> possible_function_names;

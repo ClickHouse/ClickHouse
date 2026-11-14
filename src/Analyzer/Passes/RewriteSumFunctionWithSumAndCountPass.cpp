@@ -37,7 +37,7 @@ public:
         };
 
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || !function_node->isAggregateFunction() || Poco::toLower(function_node->getFunctionName()) != "sum")
+        if (!function_node || !function_node->isAggregateFunction() || function_node->hasWindow() || Poco::toLower(function_node->getFunctionName()) != "sum")
             return;
 
         const auto & function_nodes = function_node->getArguments().getNodes();
