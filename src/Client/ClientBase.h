@@ -442,7 +442,7 @@ private:
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
     void receiveLogsAndProfileEvents(ASTPtr parsed_query);
-    bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
+    bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query, bool wait_for_timezone_update);
     bool receiveEndOfQueryForInsert(ASTPtr parsed_query);
     void cancelQuery();
     bool sendCancel(std::exception_ptr exception_ptr = nullptr);

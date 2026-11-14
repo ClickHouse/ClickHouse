@@ -86,7 +86,7 @@ void CrashLogElement::appendToBlock(MutableColumns & columns) const
 
     String build_id_hex;
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    build_id_hex = SymbolIndex::instance().getBuildIDHex();
+    build_id_hex = SymbolIndex::getSelfBuildIDHex();
 #endif
     columns[i++]->insert(build_id_hex);
     columns[i++]->insertData(git_hash.data(), git_hash.size());

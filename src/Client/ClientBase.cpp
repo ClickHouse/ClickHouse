@@ -2627,8 +2627,9 @@ void ClientBase::resetOutput()
 
 
 /// Receive the block that serves as an example of the structure of table where data will be inserted.
-bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query)
+bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query, bool wait_for_timezone_update)
 {
+    bool received_sample = false;
     while (true)
     {
         Packet packet = connection->receivePacket();
@@ -2637,7 +2638,10 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
         {
             case Protocol::Server::Data:
                 out = packet.block;
-                return true;
+                if (!wait_for_timezone_update)
+                    return true;
+                received_sample = true;
+                break;
 
             case Protocol::Server::Exception:
                 onReceiveExceptionFromServer(std::move(packet.exception));
@@ -2649,10 +2653,13 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
 
             case Protocol::Server::TableColumns:
                 columns_description = ColumnsDescription::parse(packet.columns_description);
-                return receiveSampleBlock(out, columns_description, parsed_query);
+                return receiveSampleBlock(out, columns_description, parsed_query, wait_for_timezone_update);
 
             case Protocol::Server::TimezoneUpdate:
                 onTimezoneUpdate(packet.server_timezone);
+                if (received_sample)
+                    return true;
+                wait_for_timezone_update = false;
                 break;
 
             /// A subquery executed while the server is still analysing the query reports progress and
@@ -2780,10 +2787,19 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
         startKeystrokeInterceptorIfExists();
         SCOPE_EXIT({ stopKeystrokeInterceptorIfExists(); });
 
+        /// The server sends its `session_timezone` with the structure of the data it reads through `input`
+        /// (also for RETURNING); it must be applied before the data is parsed in other threads.
+        ASTPtr input_function;
+        if (parsed_insert_query.select)
+            parsed_insert_query.tryFindInputFunction(input_function);
+        const bool wait_for_timezone_update = (input_function || parsed_insert_query.returning)
+            && connection->getConnectionType() != IServerConnection::Type::LOCAL
+            && connection->getServerRevision(connection_parameters.timeouts) >= DBMS_MIN_PROTOCOL_VERSION_WITH_TIMEZONE_UPDATES;
+
         /// Receive description of table structure.
         Block sample;
         ColumnsDescription columns_description;
-        if (receiveSampleBlock(sample, columns_description, parsed_query))
+        if (receiveSampleBlock(sample, columns_description, parsed_query, wait_for_timezone_update))
         {
             /// If structure was received (thus, server has not thrown an exception),
             /// send our data with that structure.
@@ -6752,6 +6768,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("max_memory_usage_in_client", po::value<std::string>(), "Set memory limit in client/local server")
 
         ("client_logs_file", po::value<std::string>(), "Path to a file for writing client logs. Currently we only have fatal logs (when the client crashes)")
+        ("vim", "Use emulated vim editing mode.")
     ;
 }
 
@@ -6809,6 +6826,8 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     }
     if (options.contains("multiline"))
         getClientConfiguration().setBool("multiline", true);
+    if (options.contains("vim"))
+        getClientConfiguration().setBool("vim", true);
     if (options.contains("ignore-error"))
         getClientConfiguration().setBool("ignore-error", true);
     if (options.contains("format"))
@@ -7192,6 +7211,7 @@ void ClientBase::runInteractive()
         .enable_slash_commands = true,
         /// The lines of the AI-chat mode are dispatched to the agent in `processQueryText`.
         .enable_ai_chat = true,
+        .vim = getClientConfiguration().getBool("vim", false),
         .extenders = query_extenders,
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,
