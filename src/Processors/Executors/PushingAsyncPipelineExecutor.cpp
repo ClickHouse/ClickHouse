@@ -214,16 +214,11 @@ void PushingAsyncPipelineExecutor::finish()
         data->rethrowExceptionIfHas();
 }
 
-void PushingAsyncPipelineExecutor::cancel(std::exception_ptr cause)
+void PushingAsyncPipelineExecutor::cancel()
 {
     /// Cancel execution if it wasn't finished.
     if (data && !data->is_finished && data->executor)
-    {
-        if (cause)
-            data->executor->cancelWithException(cause);
-        else
-            data->executor->cancel(IProcessor::CancelReason::CancelledByUser);
-    }
+        data->executor->cancel(IProcessor::CancelReason::CancelledByUser);
 
     finish();
 }

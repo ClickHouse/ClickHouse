@@ -1,5 +1,4 @@
 #pragma once
-#include <exception>
 #include <functional>
 #include <memory>
 
@@ -42,8 +41,7 @@ public:
     bool pull(Block & block, uint64_t milliseconds = 0);
 
     /// Stop execution of all processors. It is not necessary, but helps to stop execution before executor is destroyed.
-    /// `cause`, if set, is the exception that stops the execution, see `IExecutor::cancelWithException`.
-    void cancel(std::exception_ptr cause = nullptr);
+    void cancel();
 
     /// Stop processors which only read data from source.
     void cancelReading();

@@ -229,8 +229,6 @@ void PipelineExecutor::cancelWithException(std::exception_ptr cause)
 void PipelineExecutor::logAndRethrowException()
 {
     tasks.logLogicalErrors(log);
-    /// Waits for a `cancelWithException` of another thread that may still be recording.
-    std::call_once(cancel_exception_once, [] {});
     if (cancel_exception)
         std::rethrow_exception(cancel_exception);
 }

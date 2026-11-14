@@ -205,7 +205,7 @@ protected:
     {
         explicit ExecutorHolder(IExecutor * e) : executor(e) {}
 
-        void cancel(std::exception_ptr cause);
+        void cancel();
 
         void remove();
 

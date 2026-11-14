@@ -43,7 +43,6 @@ public:
     void execute(size_t num_threads, bool concurrency_control) override;
     bool executeUntil(std::atomic_bool * yield_flag) override;
     void cancel(IProcessor::CancelReason reason) override;
-    void cancelWithException(std::exception_ptr cause) override;
     void cancelReading() override;
     void setReadProgressCallback(ReadProgressCallbackPtr callback) override;
     void setStepProfiler(StepProfilerPtr step_profiler_) override;
@@ -94,6 +93,7 @@ private:
     void executeSingleThread(size_t thread_num, WorkloadResources && resources);
     void finish();
     void detachSpillables();
+    void cancelWithException(std::exception_ptr cause);
     void logAndRethrowException();
 
     // Methods for CPU scheduling

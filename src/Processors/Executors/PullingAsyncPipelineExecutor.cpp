@@ -209,7 +209,7 @@ bool PullingAsyncPipelineExecutor::pull(Block & block, uint64_t milliseconds)
     return true;
 }
 
-void PullingAsyncPipelineExecutor::cancel(std::exception_ptr cause)
+void PullingAsyncPipelineExecutor::cancel()
 {
     if (!data)
         return;
@@ -218,12 +218,7 @@ void PullingAsyncPipelineExecutor::cancel(std::exception_ptr cause)
     cancelWithExceptionHandling([&]()
     {
         if (!data->is_finished && data->executor)
-        {
-            if (cause)
-                data->executor->cancelWithException(cause);
-            else
-                data->executor->cancel(IProcessor::CancelReason::CancelledByUser);
-        }
+            data->executor->cancel(IProcessor::CancelReason::CancelledByUser);
     });
 
     /// The result is abandoned: a pipeline broken off by a time limit keeps the chunks queued in the lazy format

@@ -663,14 +663,10 @@ QueryStatus::~QueryStatus()
     }
 }
 
-void QueryStatus::ExecutorHolder::cancel(std::exception_ptr cause)
+void QueryStatus::ExecutorHolder::cancel()
 {
     std::lock_guard lock(mutex);
-    if (!executor)
-        return;
-    if (cause)
-        executor->cancelWithException(std::move(cause));
-    else
+    if (executor)
         executor->cancel(IProcessor::CancelReason::CancelledByUser);
 }
 
@@ -682,7 +678,6 @@ void QueryStatus::ExecutorHolder::remove()
 
 CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_ptr exception)
 {
-    std::exception_ptr cause;
     {
         std::lock_guard<std::mutex> lock(cancel_mutex);
 
@@ -695,7 +690,6 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_pt
         cancel_reason = reason;
         /// Only ever read (copied) after this, so it must not alias an object a caller still decorates.
         cancellation_exception = exception ? copyMutableException(exception) : nullptr;
-        cause = cancellation_exception;
     }
 
     std::vector<ExecutorHolderPtr> executors_snapshot;
@@ -718,9 +712,8 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_pt
     /// 2) We don't actually remove executor holder from executors in removePipelineExecutor,
     /// just mark that executor is invalid.
     /// So, it's ok to use a snapshot created above under a mutex, it won't be any differ from actual executors.
-    /// A private copy per executor: each rethrows it from its own thread.
     for (const auto & e : executors_snapshot)
-        e->cancel(cause ? copyMutableException(cause) : nullptr);
+        e->cancel();
 
     return CancellationCode::CancelSent;
 }
