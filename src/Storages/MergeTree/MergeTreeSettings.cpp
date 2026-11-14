@@ -795,6 +795,7 @@ fsynced on this replica, and acknowledge it before the data is durable.
         {"26.11", false, "auto", "New setting"}) \
     DECLARE(Bool, fsync_part_directory, false, R"(
 Do fsync for part directory after all part operations (writes, renames, etc.).
+Also fsyncs the table directory when a mutation entry file is created or removed (including `KILL MUTATION`), so the mutation is durable across power loss.
 )", 0) \
     DECLARE(UInt64, non_replicated_deduplication_window, 0, R"(
 The number of the most recently inserted blocks in the non-replicated
