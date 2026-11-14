@@ -11,6 +11,8 @@ SELECT formatQueryFromJSON(parseQueryToJSON('DELETE FROM t ON CLUSTER c WHERE id
 SELECT formatQueryFromJSON(parseQueryToJSON('OPTIMIZE TABLE t ON CLUSTER c FINAL'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SHOW TABLES FORMAT JSON'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM DROP DATABASE REPLICA \'r\' FROM DATABASE db WITH TABLES'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM DROP DATABASE REPLICA \'r\' FROM ZKPATH \'/clickhouse/zkpath\' WITH TABLES'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM DROP DATABASE REPLICA \'r\' WITH TABLES'));
 
 -- Column aliases of a derived table (Expression::ALIASES) survive:
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * FROM (SELECT 1, 2) AS x(a, b)'));
