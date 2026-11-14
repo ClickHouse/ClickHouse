@@ -42,12 +42,12 @@ namespace Setting
 namespace
 {
 
-class FunctionMapStringEqualsForIn final : public IFunction
+class FunctionMapValueEqualsForIn final : public IFunction
 {
 public:
-    static constexpr auto name = "__mapStringEqualsForIn";
+    static constexpr auto name = "__mapValueEqualsForIn";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapStringEqualsForIn>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapValueEqualsForIn>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
@@ -60,11 +60,12 @@ public:
         if (!isMap(removeNullable(removeLowCardinality(arguments[0]))))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument for function {} must be a Map", getName());
-        if (!isStringOrFixedString(removeNullable(removeLowCardinality(arguments[1]))))
+        const auto source_type = removeNullable(removeLowCardinality(arguments[1]));
+        if (!isStringOrFixedString(source_type) && !isDynamic(source_type) && !isVariant(source_type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Second argument for function {} must be a String", getName());
+                "Second argument for function {} must be a String, Dynamic or Variant", getName());
         auto result_type = std::make_shared<DataTypeUInt8>();
-        if (isNullableOrLowCardinalityNullable(arguments[1]))
+        if (canContainNull(*arguments[1]))
             return std::make_shared<DataTypeNullable>(result_type);
         return result_type;
     }
@@ -73,16 +74,20 @@ public:
     {
         const auto & map_type = assert_cast<const DataTypeMap &>(*removeNullable(removeLowCardinality(arguments[0].type)));
         auto maps = arguments[0].column->convertToFullColumnIfConst();
-        auto strings = arguments[1].column->convertToFullColumnIfConst();
-        const auto * nullable_strings = checkAndGetColumn<ColumnNullable>(strings.get());
-        const auto & string_values = nullable_strings ? nullable_strings->getNestedColumn() : *strings;
+        auto sources = arguments[1].column->convertToFullColumnIfConst();
         auto result = ColumnUInt8::create(input_rows_count, UInt8{0});
+        auto null_map = ColumnUInt8::create(input_rows_count, UInt8{0});
         auto & values = result->getData();
+        auto & null_values = null_map->getData();
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            if (nullable_strings && nullable_strings->isNullAt(row))
+            if (sources->isNullAt(row))
+            {
+                null_values[row] = 1;
                 continue;
-            const Field source{String(string_values.getDataAt(row))};
+            }
+            /// Preserve the contained `Field` type so conversion follows prepared `Set` insertion.
+            const Field source = (*sources)[row];
             const Field converted = convertFieldToType(source, map_type, nullptr, {}, true);
             if (converted.isNull())
                 continue;
@@ -91,8 +96,8 @@ public:
             candidate->insert(converted);
             values[row] = maps->compareAt(row, 0, *candidate, 1) == 0;
         }
-        if (nullable_strings)
-            return ColumnNullable::create(std::move(result), nullable_strings->getNullMapColumnPtr());
+        if (canContainNull(*arguments[1].type))
+            return ColumnNullable::create(std::move(result), std::move(null_map));
         return result;
     }
 };
@@ -665,7 +670,7 @@ REGISTER_FUNCTION(In)
 {
     registerFunctionsInImpl(factory, false);
     registerFunctionsInImpl(factory, true);
-    factory.registerFunction<FunctionMapStringEqualsForIn>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
+    factory.registerFunction<FunctionMapValueEqualsForIn>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 }
 
 }

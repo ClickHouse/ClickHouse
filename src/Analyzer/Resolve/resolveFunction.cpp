@@ -1271,6 +1271,14 @@ static QueryTreeNodePtr buildCompoundCarrierInComparison(
 {
     const auto left_bare = removeNullable(removeLowCardinality(left_type));
     const auto right_bare = removeNullable(removeLowCardinality(right_type));
+    if (isMap(left_bare))
+    {
+        auto compare = std::make_shared<FunctionNode>("__mapValueEqualsForIn");
+        compare->getArguments().getNodes() = {left, right};
+        auto non_null_match = std::make_shared<FunctionNode>("ifNull");
+        non_null_match->getArguments().getNodes() = {std::move(compare), std::make_shared<ConstantNode>(Field{0u})};
+        return non_null_match;
+    }
     if (const auto * variant = typeid_cast<const DataTypeVariant *>(right_bare.get());
         variant && !variant->tryGetVariantDiscriminator(left_bare->getName()))
         return std::make_shared<ConstantNode>(Field{0u});
@@ -1596,7 +1604,7 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
             && isStringOrFixedString(removeNullable(removeLowCardinality(source_array_type->getNestedType()))))
         {
             const String candidate_name = "__in_map_string_array_candidate";
-            auto comparison = std::make_shared<FunctionNode>("__mapStringEqualsForIn");
+            auto comparison = std::make_shared<FunctionNode>("__mapValueEqualsForIn");
             comparison->getArguments().getNodes() = {
                 element_arg, std::make_shared<IdentifierNode>(Identifier{candidate_name})};
             auto non_null_match = std::make_shared<FunctionNode>("ifNull");
@@ -3808,7 +3816,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         {
                             /// Parse the string with the same typed conversion as a
                             /// constant set member, including noncanonical spacing.
-                            auto equals = std::make_shared<FunctionNode>("__mapStringEqualsForIn");
+                            auto equals = std::make_shared<FunctionNode>("__mapValueEqualsForIn");
                             equals->getArguments().getNodes() = {in_first_argument, source_string};
                             auto non_null_match = std::make_shared<FunctionNode>("ifNull");
                             non_null_match->getArguments().getNodes() = {std::move(equals), std::make_shared<ConstantNode>(Field{0u})};
@@ -3933,7 +3941,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         && isMap(left_bare_type)
                         && isStringOrFixedString(right_bare_type))
                     {
-                        auto map_equals_string = std::make_shared<FunctionNode>("__mapStringEqualsForIn");
+                        auto map_equals_string = std::make_shared<FunctionNode>("__mapValueEqualsForIn");
                         map_equals_string->getArguments().getNodes() = {fn_args[0], fn_args[1]};
                         node = std::move(map_equals_string);
                         resolveFunction(node, scope);

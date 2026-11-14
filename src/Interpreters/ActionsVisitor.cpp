@@ -704,7 +704,10 @@ ASTPtr makeComplexNonConstantInReplacement(
         }
         else if (isDynamic(source_bare_type) || isVariant(source_bare_type))
         {
-            if (const auto * variant = typeid_cast<const DataTypeVariant *>(source_bare_type.get());
+            if (isMap(left_bare_type))
+                match = makeASTFunction(
+                    "__mapValueEqualsForIn", left_operand->clone(), elements[i]->clone());
+            else if (const auto * variant = typeid_cast<const DataTypeVariant *>(source_bare_type.get());
                 variant && !variant->tryGetVariantDiscriminator(left_bare_type->getName()))
                 match = make_intrusive<ASTLiteral>(0u);
             else
@@ -729,7 +732,7 @@ ASTPtr makeComplexNonConstantInReplacement(
         {
             if (isMap(left_bare_type))
             {
-                match = makeASTFunction("__mapStringEqualsForIn", left_operand->clone(), elements[i]->clone());
+                match = makeASTFunction("__mapValueEqualsForIn", left_operand->clone(), elements[i]->clone());
             }
             else
             {

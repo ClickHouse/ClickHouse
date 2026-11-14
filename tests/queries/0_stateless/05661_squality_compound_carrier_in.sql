@@ -30,6 +30,12 @@ SELECT
     map('a', toUInt8(1)) IN materialize(CAST('other' AS Variant(Map(UInt8, UInt8), String)))
 SETTINGS in_null_as_unknown = 1, short_circuit_function_evaluation = 'disable';
 
+SELECT
+    map('a', toUInt8(1)) IN materialize(CAST(map('a', toUInt16(1)) AS Dynamic)),
+    map('a', toUInt8(1)) IN materialize(CAST(map('a', '1') AS Dynamic)),
+    map('a', toUInt8(1)) IN materialize(CAST(map('a', toUInt16(1)) AS Variant(Map(String, UInt16), String)))
+SETTINGS in_null_as_unknown = 1, short_circuit_function_evaluation = 'disable';
+
 SET in_null_as_unknown = 1;
 CREATE TABLE squality_compound_carrier_check
 (
