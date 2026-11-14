@@ -5,7 +5,6 @@
 #include <Interpreters/callWithOrderedBits.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/HyperLogLogCounter.h>
 #include <Common/PODArray.h>
 #include <Common/RadixSort.h>
 #include <Common/iota.h>
@@ -283,34 +282,57 @@ WideColumnSample sampleWideColumn(const char * data, size_t rows, size_t max_dis
     return result;
 }
 
-/// An approximate count of the whole column; the exact count of `rankWideColumn` decides near the limit.
+/// The number of distinct values of the whole column by linear counting: n distinct values set about m (1 - e^(-n/m))
+/// of the m bits of a bitmap. Returns `limit + 1` as soon as the bits set show more than `limit` values.
 template <typename GetBits>
-bool hasTooManyDistinct(const char * data, size_t rows, size_t max_distinct)
+size_t estimateDistinct(const char * data, size_t rows, size_t limit)
 {
     using Bits = OrderedBits<GetBits>;
-    HyperLogLogCounter<12, UInt64, TrivialHash, UInt64> counter;
+
+    /// 2 to 4 bits per value up to the limit.
+    const size_t log2_bits = std::max<size_t>(12, static_cast<size_t>(std::bit_width(2 * limit)));
+    chassert(log2_bits <= 32);
+    const size_t bit_mask = (size_t(1) << log2_bits) - 1;
+    const double bits = static_cast<double>(size_t(1) << log2_bits);
+    const size_t max_set_bits = static_cast<size_t>(-std::expm1(-static_cast<double>(limit) / bits) * bits);
+
+    PODArray<UInt64> bitmap;
+    bitmap.resize_fill((size_t(1) << log2_bits) / 64, 0);
+    UInt64 * __restrict words = bitmap.data();
+
+    size_t set_bits = 0;
     for (size_t i = 0; i < rows; ++i)
     {
-        if constexpr (sizeof(Bits) <= sizeof(UInt64))
-            counter.insert(intHash64(valueAt<GetBits>(data, i)));
-        else
-            counter.insert(UInt128Hash{}(valueAt<GetBits>(data, i)));
+        /// Multiplicative hashing of the 32-bit hash: the top `log2_bits` bits of the product modulo 2^32.
+        const UInt64 product = UInt64{static_cast<UInt32>(WideColumnHash<Bits>{}(valueAt<GetBits>(data, i)))} * 0x9E3779B9ULL;
+        const size_t bit = static_cast<size_t>(product >> (32 - log2_bits)) & bit_mask;
+        const UInt64 mask = UInt64(1) << (bit % 64);
+        set_bits += !(words[bit / 64] & mask);
+        words[bit / 64] |= mask;
+        if (set_bits > max_set_bits)
+            return limit + 1;
     }
-    return counter.size() > max_distinct + max_distinct / 16;
+
+    return static_cast<size_t>(-std::log1p(-static_cast<double>(set_bits) / bits) * bits);
 }
 
 /// Replaces the values by their ranks among the distinct values of the block, unless there are more than `max_distinct` of them.
 template <typename GetBits>
 bool rankWideColumn(
-    const char * data, size_t rows, bool descending, size_t max_distinct, PaddedPODArray<UInt32> & ranks, PackedSortColumn & column)
+    const char * data,
+    size_t rows,
+    bool descending,
+    size_t max_distinct,
+    size_t expected_distinct,
+    PaddedPODArray<UInt32> & ranks,
+    PackedSortColumn & column)
 {
     using Bits = OrderedBits<GetBits>;
     using Map = HashMap<Bits, UInt32, WideColumnHash<Bits>>;
 
-    Map ids;
-    ids.reserve(max_distinct);
+    Map ids(expected_distinct);
     std::vector<Bits> distinct;
-    distinct.reserve(max_distinct);
+    distinct.reserve(expected_distinct);
     ranks.resize(rows);
 
     for (size_t i = 0; i < rows; ++i)
@@ -381,9 +403,15 @@ WidePacking packWideColumn(
     const bool range_may_fit = sizeof(Bits) <= sizeof(UInt64) && sample.range_bits <= bits_left;
     const bool rank = !range_may_fit || (!is_last && sample.range_bits > max_rank_bits);
 
-    if (may_rank && rank && sample.few_distinct && !hasTooManyDistinct<GetBits>(data, rows, max_distinct)
-        && rankWideColumn<GetBits>(data, rows, descending, max_distinct, ranks, column))
-        return WidePacking::Ranked;
+    if (may_rank && rank && sample.few_distinct)
+    {
+        /// A sample does not show a tail of unique values.
+        const size_t limit = max_distinct + max_distinct / 16;
+        const size_t estimate = estimateDistinct<GetBits>(data, rows, limit);
+        if (estimate <= limit
+            && rankWideColumn<GetBits>(data, rows, descending, max_distinct, std::min(max_distinct, estimate + estimate / 8 + 16), ranks, column))
+            return WidePacking::Ranked;
+    }
 
     /// Packing would stop after a first column this wide, and a single wide column is not worth packing.
     if (bits_left == 64 && sample.range_bits > 64 - 8)
