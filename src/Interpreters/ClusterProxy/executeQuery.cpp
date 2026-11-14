@@ -352,6 +352,9 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     if (is_remote_function)
     {
         const auto & address = cluster.getShardsAddresses().front().front();
+        /// The forwarded current roles are the roles of the initial user, so they cannot be passed on for another user.
+        if (new_client_info.initial_user != address.user)
+            new_client_info.current_roles.reset();
         new_client_info.initial_user = address.user;
     }
 
