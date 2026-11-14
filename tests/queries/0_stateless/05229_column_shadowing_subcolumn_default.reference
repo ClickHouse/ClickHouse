@@ -14,6 +14,13 @@ ALTER that takes such a subcolumn away from the prefix column is refused
 1	[1,2]	5
 2	[3]	6
 2
+ALTER that changes the type of such a subcolumn of the prefix column is refused
+1	11
+2	22
+1	11
+2	22
+1
+1
 a part that does not hold the column reads its default
 Wide
 1

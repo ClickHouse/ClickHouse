@@ -6485,8 +6485,26 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                     if (was_stored_as_is(column.name))
                     {
                         auto old_other_column = was_stored_as_is(other_column->name);
-                        if (old_other_column && old_other_column->type->tryGetSubcolumnType(subcolumn))
-                            continue;
+                        auto old_subcolumn_type = old_other_column ? old_other_column->type->tryGetSubcolumnType(subcolumn) : nullptr;
+                        if (old_subcolumn_type)
+                        {
+                            /// The pair existed before, but the names of deeper subcolumns (`a.x.UInt64` of a column `a.x`
+                            /// next to a `Tuple(x ...)` column `a`) are resolved through the prefix column only if the type
+                            /// of its subcolumn has them. Changing that type (`Tuple(x UInt64)` to `Tuple(x Dynamic)`) would
+                            /// move them from one column to the other, so it must stay the same.
+                            if (old_subcolumn_type->equals(*other_column->type->getSubcolumnType(subcolumn)))
+                                continue;
+
+                            throw Exception(
+                                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                "Cannot alter the table: the type of subcolumn {} of column {} would change from {} to {}, "
+                                "while there is a column with this name, so the names of its subcolumns could be read "
+                                "from a different column",
+                                backQuoteIfNeed(column.name),
+                                backQuoteIfNeed(other_column->name),
+                                old_subcolumn_type->getName(),
+                                other_column->type->getSubcolumnType(subcolumn)->getName());
+                        }
                     }
 
                     throw Exception(

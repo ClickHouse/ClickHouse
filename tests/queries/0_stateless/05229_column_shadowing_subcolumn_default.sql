@@ -95,6 +95,23 @@ SELECT count() FROM t_shadow_lost;
 
 DROP TABLE t_shadow_lost;
 
+-- Nor may a pair that stays change the type of the subcolumn of the prefix column: `a.x.UInt64` is a path of the
+-- `JSON` column `a.x` while `x` of `a` is a `UInt64`, and would become a subcolumn of `a` if it were a `Dynamic`.
+SELECT 'ALTER that changes the type of such a subcolumn of the prefix column is refused';
+DROP TABLE IF EXISTS t_shadow_deeper;
+CREATE TABLE t_shadow_deeper (id UInt64, a Tuple(x UInt64, y UInt64), `a.x` JSON)
+ENGINE = MergeTree ORDER BY assumeNotNull(toUInt64(`a.x.UInt64`))
+SETTINGS index_granularity = 1, share_nested_offsets = 0;
+INSERT INTO t_shadow_deeper VALUES (1, tuple(22, 1), '{"UInt64":11}'), (2, tuple(11, 2), '{"UInt64":22}');
+ALTER TABLE t_shadow_deeper MODIFY COLUMN a Tuple(x Dynamic, y UInt64) SETTINGS mutations_sync = 2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_shadow_deeper MODIFY COLUMN a Tuple(x UInt64, y UInt32) SETTINGS mutations_sync = 2;
+SELECT id, `a.x.UInt64` FROM t_shadow_deeper ORDER BY assumeNotNull(toUInt64(`a.x.UInt64`)) SETTINGS optimize_read_in_order = 1;
+SELECT id, `a.x.UInt64` FROM t_shadow_deeper ORDER BY assumeNotNull(toUInt64(`a.x.UInt64`)) SETTINGS optimize_read_in_order = 0;
+SELECT count() FROM t_shadow_deeper WHERE assumeNotNull(toUInt64(`a.x.UInt64`)) = 11;
+SELECT countIf(assumeNotNull(toUInt64(`a.x.UInt64`)) = 11) FROM t_shadow_deeper;
+
+DROP TABLE t_shadow_deeper;
+
 -- A table created with such a column may still have parts that do not hold it: with
 -- `skip_empty_columns_on_insert`, an `INSERT` that omits the column records it as missing.
 SELECT 'a part that does not hold the column reads its default';
