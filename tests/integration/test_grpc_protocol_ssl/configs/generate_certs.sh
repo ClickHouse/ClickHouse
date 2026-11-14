@@ -17,3 +17,9 @@ openssl x509 -req -days 3650 -in client-req.pem -CA ca-cert.pem -CAkey ca-key.pe
 
 # 6. Generate one more self-signed certificate and private key for using as wrong certificate (because it's not signed by CA)
 openssl req -newkey rsa:4096 -x509 -days 3650 -nodes -batch -keyout wrong-client-key.pem -out wrong-client-cert.pem -subj "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=client"
+
+# 7. Generate another CA and a server certificate signed by it, to test that the server certificate is reloaded
+openssl req -newkey rsa:4096 -x509 -days 3650 -nodes -batch -keyout second-ca-key.pem -out second-ca-cert.pem -subj "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=second-ca"
+openssl req -newkey rsa:4096 -nodes -batch -keyout second-server-key.pem -out second-server-req.pem -subj "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=server"
+openssl x509 -req -days 3650 -in second-server-req.pem -CA second-ca-cert.pem -CAkey second-ca-key.pem -CAcreateserial -extfile server-ext.cnf -out second-server-cert.pem
+openssl pkey -in second-server-key.pem -pubout -out second-server-public-key.pem
