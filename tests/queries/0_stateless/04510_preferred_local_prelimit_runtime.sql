@@ -52,17 +52,18 @@ WHERE id < 30 ORDER BY id LIMIT 1 OFFSET 3 FORMAT Template;
 SET prefer_localhost_replica = 1;
 SELECT '' FROM cluster(test_cluster_two_shards, currentDatabase(), preferred_local_prelimit_rt)
 WHERE id < 30 ORDER BY id LIMIT 1 OFFSET 3 FORMAT Template;
+-- extremes = 1 keeps the shard query at WithMergeableState.
+SELECT '' FROM cluster(test_cluster_two_shards, currentDatabase(), preferred_local_prelimit_rt)
+WHERE id < 30 ORDER BY id LIMIT 1 OFFSET 3 FORMAT Template SETTINGS extremes = 1, prefer_localhost_replica = 0;
+SELECT '' FROM cluster(test_cluster_two_shards, currentDatabase(), preferred_local_prelimit_rt)
+WHERE id < 30 ORDER BY id LIMIT 1 OFFSET 3 FORMAT Template SETTINGS extremes = 1, prefer_localhost_replica = 1;
 
 -- (2) Parallel replicas. A single shard read cooperatively by three replicas
 -- => exact count 30. Assert the statistic at runtime, not just the plan shape
 -- (which is all 04509 checks for this path).
 --
--- `parallel_replicas_local_plan = 0` is deliberate, and this assertion does NOT
--- cover the local-plan path: with the local plan the statistic comes back as 0,
--- because the local branch's preliminary LIMIT is never marked as a shard limit
--- (the marking added in #110136 is gated on a processing stage that parallel
--- replicas never use), so `initRowsBeforeLimit` stops at it and only the remote
--- replicas are counted. Restore this to 1 once #113279 is fixed.
+-- The count must be 30 both without (this query) and with (below) the local
+-- replica plan.
 SELECT '' FROM preferred_local_prelimit_rt
 WHERE id < 30 ORDER BY id LIMIT 1 OFFSET 3
 FORMAT Template
@@ -75,5 +76,14 @@ SETTINGS
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1,
     parallel_replicas_local_plan = 0;
+
+SET automatic_parallel_replicas_mode = 0, enable_parallel_replicas = 1, max_parallel_replicas = 3,
+    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+    parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1;
+SELECT '' FROM preferred_local_prelimit_rt WHERE id < 30 ORDER BY id LIMIT 1 OFFSET 3 FORMAT Template;
+SELECT '' FROM preferred_local_prelimit_rt WHERE id < 30 LIMIT 1 OFFSET 3 FORMAT Template;
+SELECT '' FROM preferred_local_prelimit_rt WHERE id < 30 ORDER BY id LIMIT -1 OFFSET 3 FORMAT Template;
+-- A LIMIT inside the query stays a boundary.
+SELECT '' FROM (SELECT id FROM preferred_local_prelimit_rt WHERE id < 30 ORDER BY id LIMIT 17) LIMIT 1 FORMAT Template;
 
 DROP TABLE preferred_local_prelimit_rt;
