@@ -166,7 +166,8 @@ public:
         const String & compression_method,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context,
-        const std::optional<ArchiveInfo> & archive_info = std::nullopt);
+        const std::optional<ArchiveInfo> & archive_info = std::nullopt,
+        bool structure_is_required = true);
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
 
@@ -199,7 +200,8 @@ private:
         const String & compression_method,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context,
-        const std::optional<ArchiveInfo> & archive_info = std::nullopt);
+        const std::optional<ArchiveInfo> & archive_info = std::nullopt,
+        bool structure_is_required = true);
 
     void setStorageMetadata(CommonArguments args);
 
