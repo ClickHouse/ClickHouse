@@ -232,6 +232,35 @@ def test_delta_lake_cached_stats_follow_the_session(started_cluster):
     delta_node.query("DROP TABLE t_delta_stats SYNC")
 
 
+def test_delta_lake_restricted_after_restart(started_cluster):
+    """After a restart the table loads restricted, so the client is not rebuilt for a restricted session and only the
+    metadata checks refuse it: no token request, no storage request, not even an unsigned one."""
+
+    if int(delta_node.query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLakeAzure'").strip()) == 0:
+        pytest.skip("DeltaLakeAzure engine is not available")
+
+    allow = {"s3_allow_server_credentials_in_user_queries": 1}
+    kernel = {"allow_experimental_delta_kernel_rs": 1, "azure_sdk_max_retries": 0}
+    delta_node.query("DROP TABLE IF EXISTS t_delta_restart SYNC")
+    delta_node.query(
+        f"ATTACH TABLE t_delta_restart UUID '{uuid.uuid4()}' (c Int64) ENGINE = DeltaLakeAzure('http://127.0.0.1:{TOKEN_PORT}/account', 'cont', 'stats_table/')",
+        settings=allow,
+    )
+    delta_node.restart_clickhouse()
+
+    for query in ["SELECT * FROM t_delta_restart", "SELECT count() FROM t_delta_restart"]:
+        before_tokens = len(get_delta_node_hits(started_cluster, "hits"))
+        before_storage = len(get_delta_node_hits(started_cluster, "storage_hits"))
+        assert "ACCESS_DENIED" in delta_node.query_and_get_error(query, settings=kernel)
+        assert get_delta_node_hits(started_cluster, "hits")[before_tokens:] == []
+        assert get_delta_node_hits(started_cluster, "storage_hits")[before_storage:] == []
+
+    # The opt-in still works after the restart.
+    assert delta_node.query("SELECT count() FROM t_delta_restart", settings={**allow, **kernel}).strip() == "3"
+
+    delta_node.query("DROP TABLE t_delta_restart SYNC")
+
+
 def test_truncate_follows_the_session(started_cluster):
     """`TRUNCATE` uses the client of the truncating session, not one an opted-in session left: a restricted session is
     refused before any delete is sent."""
