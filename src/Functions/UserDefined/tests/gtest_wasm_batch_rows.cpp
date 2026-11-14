@@ -47,3 +47,15 @@ TEST(WasmBatchRows, FixedPartOverCeilingSendsOneRow)
 {
     EXPECT_EQ(chooseWasmBatchRows(oneArgument(), 0, 10000, 32768, 65536, affineMeasurer(70000, 16)), 1);
 }
+
+/// Rows that add no bytes, like a constant argument the wire keeps constant, must not split the
+/// block into one-row steps when the fixed cost sits at the budget or just under it.
+TEST(WasmBatchRows, FlatCostAtBudgetTakesWholeBlock)
+{
+    EXPECT_EQ(chooseWasmBatchRows(oneArgument(), 0, 65536, 131072, 1048576, affineMeasurer(131072, 0)), 65536u);
+}
+
+TEST(WasmBatchRows, FlatCostJustUnderBudgetTakesWholeBlock)
+{
+    EXPECT_EQ(chooseWasmBatchRows(oneArgument(), 0, 65536, 131072, 1048576, affineMeasurer(131000, 0)), 65536u);
+}

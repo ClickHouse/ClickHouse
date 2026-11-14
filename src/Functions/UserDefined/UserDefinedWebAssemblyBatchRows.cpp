@@ -85,18 +85,24 @@ size_t chooseWasmBatchRows(
         /// the clamp below still moves the walk on by a row, which buys the second measurement
         /// the slope needs.
         Float64 bytes_per_row = static_cast<Float64>(measured) / static_cast<Float64>(candidate);
+        /// Rows that add no bytes, such as rows of a `ColumnConst` the wire keeps constant, leave
+        /// nothing for the average to divide; the walk then grows as fast as a probe may.
+        bool rows_are_free = false;
         if (previous_rows != 0 && candidate != previous_rows)
         {
             const Float64 slope = (static_cast<Float64>(measured) - static_cast<Float64>(previous_bytes))
                 / (static_cast<Float64>(candidate) - static_cast<Float64>(previous_rows));
             if (slope > 0.0)
                 bytes_per_row = slope;
+            else
+                rows_are_free = true;
         }
         previous_rows = candidate;
         previous_bytes = measured;
 
-        const Float64 target = static_cast<Float64>(candidate)
-            + (static_cast<Float64>(budget) - static_cast<Float64>(measured)) / bytes_per_row;
+        const Float64 target = rows_are_free
+            ? static_cast<Float64>(remaining)
+            : static_cast<Float64>(candidate) + (static_cast<Float64>(budget) - static_cast<Float64>(measured)) / bytes_per_row;
 
         size_t next = 1;
         if (target >= static_cast<Float64>(remaining))
