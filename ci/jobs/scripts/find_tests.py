@@ -32,7 +32,7 @@ from ci.jobs.scripts.test_selection_config import (
     SELECTION_CONFIG,
 )
 
-from ci.praktika.cidb import CIDB
+from ci.praktika.cidb import CIDB, CIDBTimeoutError
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell
@@ -120,6 +120,7 @@ class Targeting:
                 url=conn.get("url"),
                 user=conn.get("user"),
                 passwd=conn.get("password"),
+                refused_retry_sec=self.config.cidb_refused_retry_sec,
             )
         return self._cidb
 
@@ -1076,8 +1077,8 @@ class Targeting:
             tests = self.get_previously_failed_tests()
         except Exception as e:
             if strict:
-                # The targeted jobs skip when GitHub is unavailable.
-                if isinstance(e, GitHubUnavailableError):
+                # The targeted jobs skip when CIDB or GitHub is unavailable.
+                if isinstance(e, (CIDBTimeoutError, GitHubUnavailableError)):
                     raise
                 raise RuntimeError(
                     "Failed to get previously failed tests required for test selection"
