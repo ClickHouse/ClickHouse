@@ -2,7 +2,7 @@ t: has([NULL, 1], p)	[2]	[2]	3
 t: has([NULL, 5], p)	[1,2]	[1,2]	2
 t: NOT has([NULL, 1], p)	[1,3,4]	[1,3,4]	0
 t: has([NULL, 1]::Array(Nullable(Int64)), p)	[2]	[2]	3
-t: NOT has([NULL, 1]::Array(Nullable(Int64)), p)	[1,3,4]	[1,3,4]	1
+t: NOT has([NULL, 1]::Array(Nullable(Int64)), p)	[1,3,4]	[1,3,4]	0
 t: p IN (NULL, 1), transform_null_in = 1	[2]	[2]	3
 t: p IS NULL, delta_lake_enable_engine_predicate = 0	[2]	[2]	3
 t: p = 7, delta_lake_enable_engine_predicate = 0	[3]	[3]	3
