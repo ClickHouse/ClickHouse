@@ -97,6 +97,7 @@ namespace Setting
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
     extern const SettingsBool async_insert_use_adaptive_busy_timeout;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
+    extern const SettingsBool implicit_transaction;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsString insert_deduplication_token;
     extern const SettingsUInt64Auto insert_quorum;
@@ -110,6 +111,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsSnappyMode snappy_mode;
+    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
 }
 
 namespace ErrorCodes
@@ -120,6 +122,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
+    extern const int NOT_IMPLEMENTED;
     extern const int USER_EXPIRED;
     extern const int UNSUPPORTED_PARAMETER;
 }
@@ -998,6 +1001,21 @@ void AsynchronousInsertQueue::validateSettings(const Settings & settings, Logger
 
     if (settings[Setting::async_insert_busy_timeout_decrease_rate] <= 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'async_insert_busy_timeout_decrease_rate' must be greater than zero");
+}
+
+bool AsynchronousInsertQueue::checkInsideTransaction(const ContextPtr & query_context)
+{
+    const auto & settings = query_context->getSettingsRef();
+    if (!query_context->getCurrentTransaction() && !settings[Setting::implicit_transaction])
+        return false;
+
+    if (settings[Setting::throw_on_unsupported_query_inside_transaction])
+    {
+        if (settings[Setting::implicit_transaction])
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts inside transactions are not supported");
+    }
+    return true;
 }
 
 void AsynchronousInsertQueue::flush(const std::vector<StorageID> & tables)

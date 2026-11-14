@@ -73,6 +73,10 @@ public:
 
     static void validateSettings(const Settings & settings, LoggerPtr log);
 
+    /// Async inserts never take part in a transaction, explicit or `implicit_transaction`. Inside one, throws NOT_IMPLEMENTED,
+    /// or returns true (the caller must insert synchronously) if `throw_on_unsupported_query_inside_transaction` is disabled.
+    static bool checkInsideTransaction(const ContextPtr & query_context);
+
     /// Force flush the whole queue.
     void flushAll();
     void flush(const std::vector<StorageID> & tables);
