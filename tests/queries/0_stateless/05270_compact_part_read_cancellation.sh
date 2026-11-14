@@ -23,6 +23,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+run_start=$(${CLICKHOUSE_CLIENT} -q "SELECT toUnixTimestamp(now())")
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_compact_read_cancel SYNC"
 
 # ReplicatedMergeTree so that a wrongly reported broken part is observable: its
@@ -167,7 +169,7 @@ WHERE database = currentDatabase() AND table = 't_compact_read_cancel'"
 # rows left by other runs of this test.
 ${CLICKHOUSE_CLIENT} -q "
 SELECT 'part checks', count() FROM system.text_log
-WHERE event_date >= yesterday()
+WHERE event_date >= yesterday() AND event_time >= toDateTime(${run_start})
   AND logger_name LIKE concat(currentDatabase(), '.t_compact_read_cancel%PartCheckThread%')
   AND message LIKE 'Enqueueing%for check%'"
 
