@@ -1,0 +1,29 @@
+Arrow
+number	UInt64
+v	Nullable(String)
+arr	Array(Nullable(String))
+t	Tuple(\n    `1` Nullable(String))
+42	['42','42']	('42')
+"a\\"b"	['"a\\"b"','"a\\"b"']	('"a\\"b"')
+[1,2]	['[1,2]','[1,2]']	('[1,2]')
+\N	[NULL,NULL]	(NULL)
+ArrowStream
+number	UInt64
+v	Nullable(String)
+arr	Array(Nullable(String))
+t	Tuple(\n    `1` Nullable(String))
+42	['42','42']	('42')
+"a\\"b"	['"a\\"b"','"a\\"b"']	('"a\\"b"')
+[1,2]	['[1,2]','[1,2]']	('[1,2]')
+\N	[NULL,NULL]	(NULL)
+default
+42	Variant(Array(UInt8), String, UInt8)
+a"b	Variant(Array(UInt8), String, UInt8)
+[1,2]	Variant(Array(UInt8), String, UInt8)
+\N	Variant(Array(UInt8), String, UInt8)
+map key
+m	Map(String, String)
+{'42':'x','null':'y'}
+batch size
+batches>1=1 max_bytes<=16=1
+64	2016	63
