@@ -83,6 +83,7 @@ namespace Setting
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsTimezone session_timezone;
+    extern const SettingsBool use_constant_folding_in_index_analysis;
     extern const SettingsBool validate_enum_literals_in_operators;
 }
 
@@ -104,6 +105,10 @@ namespace
 
 size_t getMaxThreadsForIndexAnalysis(const Settings & settings)
 {
+    /// With constant folding, a condition is built for each partition on the threads that already analyze parts in parallel.
+    if (settings[Setting::use_constant_folding_in_index_analysis])
+        return 1;
+
     size_t max_threads = getEffectiveMaxThreads(settings);
     if (settings[Setting::max_threads_for_indexes])
         max_threads = std::min<size_t>(max_threads, settings[Setting::max_threads_for_indexes]);

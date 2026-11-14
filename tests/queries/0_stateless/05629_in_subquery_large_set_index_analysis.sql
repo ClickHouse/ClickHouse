@@ -2,7 +2,7 @@
 -- a set of 200000 elements that matches two narrow ranges of the key, so the primary key must prune, and the
 -- pruning must neither drop matching rows nor differ from the single-threaded sort.
 
-DROP TABLE IF EXISTS t_u64, t_str, t_nullable, t_tuple;
+DROP TABLE IF EXISTS t_u64, t_str, t_nullable, t_tuple, t_partitioned;
 
 CREATE TABLE t_u64 (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1024;
 CREATE TABLE t_str (k String) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1024;
@@ -62,5 +62,28 @@ FROM
      FROM (EXPLAIN indexes = 1 SELECT count() FROM t_tuple WHERE (a, b) IN (SELECT intDiv(x, 1000), x % 1000 FROM set_numbers) SETTINGS max_threads = 1, use_query_condition_cache = 0)
      WHERE explain ILIKE '%Granules: %/%') AS g1;
 
+SELECT 'Constant folding';
+-- With `use_constant_folding_in_index_analysis`, each partition gets its own condition, built on a thread of the parallel
+-- per-part analysis, so the set is sorted on the `SortBlock` pool only without it.
+CREATE TABLE t_partitioned (k UInt64) ENGINE = MergeTree PARTITION BY intDiv(k, 100000) ORDER BY k SETTINGS index_granularity = 1024;
+INSERT INTO t_partitioned SELECT number FROM numbers(400000);
+SET log_queries = 1, log_query_threads = 1, log_queries_min_query_duration_ms = 0;
+SELECT count() FROM t_partitioned WHERE k IN (SELECT x FROM set_numbers)
+SETTINGS max_threads = 4, max_threads_for_indexes = 4, use_query_condition_cache = 0, use_constant_folding_in_index_analysis = 0, log_comment = '05629_no_folding';
+SELECT count() FROM t_partitioned WHERE k IN (SELECT x FROM set_numbers)
+SETTINGS max_threads = 4, max_threads_for_indexes = 4, use_query_condition_cache = 0, use_constant_folding_in_index_analysis = 1, log_comment = '05629_folding';
+SYSTEM FLUSH LOGS query_log, query_thread_log;
+SELECT
+    log_comment,
+    query_id IN (
+        SELECT query_id
+        FROM system.query_thread_log
+        WHERE event_date >= yesterday() AND current_database = currentDatabase() AND thread_name = 'SortBlock'
+    ) AS sorted_on_pool
+FROM system.query_log
+WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish'
+    AND log_comment IN ('05629_no_folding', '05629_folding')
+ORDER BY log_comment DESC;
+
 DROP VIEW set_numbers;
-DROP TABLE t_u64, t_str, t_nullable, t_tuple;
+DROP TABLE t_u64, t_str, t_nullable, t_tuple, t_partitioned;

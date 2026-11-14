@@ -10,3 +10,8 @@ Nullable(String)
 Tuple
 200000
 1	1
+Constant folding
+200000
+200000
+05629_no_folding	1
+05629_folding	0
