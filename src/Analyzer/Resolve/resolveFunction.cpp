@@ -1286,6 +1286,15 @@ static bool needsExactCompoundNumericInComparison(const DataTypePtr & left_type,
             && (nested_pair_needs_exact_comparison(left_map->getKeyType(), right_map->getKeyType())
                 || nested_pair_needs_exact_comparison(left_map->getValueType(), right_map->getValueType()));
     }
+    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
+    {
+        const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
+        if (!right_tuple || left_tuple->getElements().size() != right_tuple->getElements().size())
+            return false;
+        for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+            if (nested_pair_needs_exact_comparison(left_tuple->getElements()[i], right_tuple->getElements()[i]))
+                return true;
+    }
     return false;
 }
 
@@ -1294,6 +1303,35 @@ static QueryTreeNodePtr buildExactCompoundNumericInComparison(
     const QueryTreeNodePtr & right,
     const DataTypePtr & left_type,
     const DataTypePtr & right_type);
+
+static QueryTreeNodePtr buildExactCompoundValueInComparison(
+    const QueryTreeNodePtr & left,
+    const QueryTreeNodePtr & right,
+    const DataTypePtr & left_type,
+    const DataTypePtr & right_type)
+{
+    QueryTreeNodePtr equal;
+    if (needsExactCompoundNumericInComparison(left_type, right_type))
+        equal = buildExactCompoundNumericInComparison(left, right, left_type, right_type);
+    else if (isNumber(removeNullable(removeLowCardinality(left_type)))
+        && isNumber(removeNullable(removeLowCardinality(right_type))))
+        equal = buildNumericInEquality(left, right, left_type, right_type);
+    else
+    {
+        auto equals = std::make_shared<FunctionNode>("equals");
+        equals->getArguments().getNodes() = {left, right};
+        equal = std::move(equals);
+    }
+    auto left_null = std::make_shared<FunctionNode>("isNull");
+    left_null->getArguments().getNodes().push_back(left);
+    auto right_null = std::make_shared<FunctionNode>("isNull");
+    right_null->getArguments().getNodes().push_back(right);
+    auto both_null = std::make_shared<FunctionNode>("and");
+    both_null->getArguments().getNodes() = {std::move(left_null), std::move(right_null)};
+    auto value_equal = std::make_shared<FunctionNode>("ifNull");
+    value_equal->getArguments().getNodes() = {std::move(equal), std::move(both_null)};
+    return value_equal;
+}
 
 static QueryTreeNodePtr buildExactArrayInComparison(
     const QueryTreeNodePtr & left_array,
@@ -1305,26 +1343,7 @@ static QueryTreeNodePtr buildExactArrayInComparison(
     const String right_name = "__in_exact_compound_right";
     auto left_value = std::make_shared<IdentifierNode>(Identifier{left_name});
     auto right_value = std::make_shared<IdentifierNode>(Identifier{right_name});
-    QueryTreeNodePtr equal;
-    if (needsExactCompoundNumericInComparison(left_value_type, right_value_type))
-        equal = buildExactCompoundNumericInComparison(left_value, right_value, left_value_type, right_value_type);
-    else if (isNumber(removeNullable(removeLowCardinality(left_value_type)))
-        && isNumber(removeNullable(removeLowCardinality(right_value_type))))
-        equal = buildNumericInEquality(left_value, right_value, left_value_type, right_value_type);
-    else
-    {
-        auto equals = std::make_shared<FunctionNode>("equals");
-        equals->getArguments().getNodes() = {left_value, right_value};
-        equal = std::move(equals);
-    }
-    auto left_null = std::make_shared<FunctionNode>("isNull");
-    left_null->getArguments().getNodes().push_back(left_value);
-    auto right_null = std::make_shared<FunctionNode>("isNull");
-    right_null->getArguments().getNodes().push_back(right_value);
-    auto both_null = std::make_shared<FunctionNode>("and");
-    both_null->getArguments().getNodes() = {std::move(left_null), std::move(right_null)};
-    auto value_equal = std::make_shared<FunctionNode>("ifNull");
-    value_equal->getArguments().getNodes() = {std::move(equal), std::move(both_null)};
+    auto value_equal = buildExactCompoundValueInComparison(left_value, right_value, left_value_type, right_value_type);
     auto lambda = std::make_shared<LambdaNode>(
         std::make_shared<LambdaArgumentsNode>(Names{left_name, right_name}), std::move(value_equal), false /*is_operator*/);
     auto left_length = std::make_shared<FunctionNode>("length");
@@ -1350,6 +1369,29 @@ static QueryTreeNodePtr buildExactCompoundNumericInComparison(
 {
     const auto left_bare = removeNullable(removeLowCardinality(left_type));
     const auto right_bare = removeNullable(removeLowCardinality(right_type));
+    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left_bare.get()))
+    {
+        const auto * right_tuple = assert_cast<const DataTypeTuple *>(right_bare.get());
+        QueryTreeNodes comparisons;
+        comparisons.reserve(left_tuple->getElements().size());
+        for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+        {
+            auto index = std::make_shared<ConstantNode>(static_cast<UInt64>(i + 1));
+            auto left_element = std::make_shared<FunctionNode>("tupleElement");
+            left_element->getArguments().getNodes() = {left, index};
+            auto right_element = std::make_shared<FunctionNode>("tupleElement");
+            right_element->getArguments().getNodes() = {right, index};
+            comparisons.push_back(buildExactCompoundValueInComparison(
+                left_element, right_element, left_tuple->getElements()[i], right_tuple->getElements()[i]));
+        }
+        if (comparisons.empty())
+            return std::make_shared<ConstantNode>(Field{1u});
+        if (comparisons.size() == 1)
+            return std::move(comparisons.front());
+        auto result = std::make_shared<FunctionNode>("and");
+        result->getArguments().getNodes() = std::move(comparisons);
+        return result;
+    }
     if (const auto * left_array = typeid_cast<const DataTypeArray *>(left_bare.get()))
     {
         const auto * right_array = assert_cast<const DataTypeArray *>(right_bare.get());

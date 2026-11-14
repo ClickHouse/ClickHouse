@@ -945,7 +945,8 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 
 bool Set::hasNull() const
 {
-    checkIsCreated();
+    /// `StorageSet` exposes inserted rows before its first `finishInsert`. The null
+    /// marker is atomic and can be read alongside those rows while the set is built.
     return transform_null_in && contains_null_row.load();
 }
 

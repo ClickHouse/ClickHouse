@@ -550,37 +550,49 @@ bool needsExactCompoundNumericInComparison(const DataTypePtr & left_type, const 
             && (nested_pair_needs_exact_comparison(left_map->getKeyType(), right_map->getKeyType())
                 || nested_pair_needs_exact_comparison(left_map->getValueType(), right_map->getValueType()));
     }
+    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
+    {
+        const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
+        if (!right_tuple || left_tuple->getElements().size() != right_tuple->getElements().size())
+            return false;
+        for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+            if (nested_pair_needs_exact_comparison(left_tuple->getElements()[i], right_tuple->getElements()[i]))
+                return true;
+    }
     return false;
 }
 
 ASTPtr makeExactCompoundNumericInComparison(
     ASTPtr left, ASTPtr right, const DataTypePtr & left_type, const DataTypePtr & right_type);
 
+ASTPtr makeExactCompoundValueInComparison(
+    ASTPtr left, ASTPtr right, const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    ASTPtr equal;
+    if (needsExactCompoundNumericInComparison(left_type, right_type))
+        equal = makeExactCompoundNumericInComparison(left->clone(), right->clone(), left_type, right_type);
+    else if (isNumber(removeNullable(removeLowCardinality(left_type)))
+        && isNumber(removeNullable(removeLowCardinality(right_type))))
+    {
+        auto scalar_in = makeASTFunction("in", left->clone(), right->clone());
+        equal = makeNumericNonConstantInReplacement(
+            *scalar_in, left_type, right_type, DataTypes{right_type}, false);
+    }
+    else
+        equal = makeASTFunction("equals", left->clone(), right->clone());
+    auto both_null = makeASTFunction(
+        "and", makeASTFunction("isNull", left->clone()), makeASTFunction("isNull", right->clone()));
+    return makeASTFunction("ifNull", std::move(equal), std::move(both_null));
+}
+
 ASTPtr makeExactArrayInComparison(
     ASTPtr left_array, ASTPtr right_array, const DataTypePtr & left_value_type, const DataTypePtr & right_value_type)
 {
     const String left_name = "__in_exact_compound_left";
     const String right_name = "__in_exact_compound_right";
-    ASTPtr equal;
-    if (needsExactCompoundNumericInComparison(left_value_type, right_value_type))
-        equal = makeExactCompoundNumericInComparison(
-            make_intrusive<ASTIdentifier>(left_name), make_intrusive<ASTIdentifier>(right_name),
-            left_value_type, right_value_type);
-    else if (isNumber(removeNullable(removeLowCardinality(left_value_type)))
-        && isNumber(removeNullable(removeLowCardinality(right_value_type))))
-    {
-        auto scalar_in = makeASTFunction(
-            "in", make_intrusive<ASTIdentifier>(left_name), make_intrusive<ASTIdentifier>(right_name));
-        equal = makeNumericNonConstantInReplacement(
-            *scalar_in, left_value_type, right_value_type, DataTypes{right_value_type}, false);
-    }
-    else
-        equal = makeASTFunction(
-            "equals", make_intrusive<ASTIdentifier>(left_name), make_intrusive<ASTIdentifier>(right_name));
-    auto both_null = makeASTFunction(
-        "and", makeASTFunction("isNull", make_intrusive<ASTIdentifier>(left_name)),
-        makeASTFunction("isNull", make_intrusive<ASTIdentifier>(right_name)));
-    auto value_equal = makeASTFunction("ifNull", std::move(equal), std::move(both_null));
+    auto value_equal = makeExactCompoundValueInComparison(
+        make_intrusive<ASTIdentifier>(left_name), make_intrusive<ASTIdentifier>(right_name),
+        left_value_type, right_value_type);
     auto lambda = makeASTLambda({left_name, right_name}, std::move(value_equal));
     auto same_length = makeASTFunction(
         "equals", makeASTFunction("length", left_array->clone()), makeASTFunction("length", right_array->clone()));
@@ -595,6 +607,21 @@ ASTPtr makeExactCompoundNumericInComparison(
 {
     const auto left_bare = removeNullable(removeLowCardinality(left_type));
     const auto right_bare = removeNullable(removeLowCardinality(right_type));
+    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left_bare.get()))
+    {
+        const auto * right_tuple = assert_cast<const DataTypeTuple *>(right_bare.get());
+        ASTPtr result;
+        for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+        {
+            auto index = make_intrusive<ASTLiteral>(static_cast<UInt64>(i + 1));
+            auto equal = makeExactCompoundValueInComparison(
+                makeASTFunction("tupleElement", left->clone(), index->clone()),
+                makeASTFunction("tupleElement", right->clone(), index),
+                left_tuple->getElements()[i], right_tuple->getElements()[i]);
+            result = result ? makeASTFunction("and", std::move(result), std::move(equal)) : std::move(equal);
+        }
+        return result ? result : make_intrusive<ASTLiteral>(1u);
+    }
     if (const auto * left_array = typeid_cast<const DataTypeArray *>(left_bare.get()))
     {
         const auto * right_array = assert_cast<const DataTypeArray *>(right_bare.get());
