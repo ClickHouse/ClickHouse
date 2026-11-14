@@ -24,6 +24,8 @@
 
 #include <atomic>
 
+#include <unistd.h>
+
 using namespace DB;
 using namespace DB::Runtime::V1;
 
@@ -106,6 +108,48 @@ protected:
     }
 
 private:
+    const std::atomic_bool & exception_callback_called;
+};
+
+/// The write end stays open, so the read end never becomes readable.
+struct NeverReadyFd
+{
+    int fds[2]{-1, -1};
+    NeverReadyFd() { EXPECT_EQ(0, ::pipe(fds)); }
+    ~NeverReadyFd() { ::close(fds[0]); ::close(fds[1]); }
+    int get() const { return fds[0]; }
+};
+
+/// Never produces data: waits for an fd that never becomes ready, so no task completes while the query is cancelled.
+class IdleSource final : public IProcessor
+{
+public:
+    IdleSource(SharedHeader header, int fd_, const std::atomic_bool & exception_callback_called_)
+        : IProcessor({}, OutputPorts(1, header)), fd(fd_), exception_callback_called(exception_callback_called_) {}
+
+    String getName() const override { return "IdleSource"; }
+
+    Status prepare() override
+    {
+        if (outputs.front().isFinished())
+            return Status::Finished;
+        return Status::Async;
+    }
+
+    int schedule() override { return fd; }
+
+    std::atomic_bool cancelled = false;
+    std::atomic_bool exception_callback_called_on_cancel = false;
+
+protected:
+    void onCancel() noexcept override
+    {
+        exception_callback_called_on_cancel = exception_callback_called.load();
+        cancelled = true;
+    }
+
+private:
+    const int fd;
     const std::atomic_bool & exception_callback_called;
 };
 
@@ -227,15 +271,17 @@ TEST(PushingAsyncPipelineExecutor, CancelWithCauseRethrowsIt)
 }
 
 /// A query cancelled with an exception (a client `Cancel` or disconnect) must record it in its executors
-/// before their processors are cancelled.
+/// before their processors are cancelled. The source never completes a task, so no worker observes the kill before
+/// `cancelQuery` reaches the executor.
 TEST(QueryStatus, CancelQueryWithExceptionRecordsItBeforeCancellingProcessors)
 {
+    NeverReadyFd idle_fd;
     std::atomic_bool exception_callback_called = false;
 
     /// Outlives the executor, which unregisters itself from it.
     auto query_status = makeQueryStatus();
 
-    auto source = std::make_shared<EndlessSource>(makeHeader(), exception_callback_called);
+    auto source = std::make_shared<IdleSource>(makeHeader(), idle_fd.get(), exception_callback_called);
     Pipe pipe(source);
     QueryPipeline pipeline(std::move(pipe));
     pipeline.setProcessListElement(query_status);
@@ -244,8 +290,8 @@ TEST(QueryStatus, CancelQueryWithExceptionRecordsItBeforeCancellingProcessors)
     executor.setExceptionCallback([&] { exception_callback_called = true; });
 
     Chunk chunk;
-    ASSERT_TRUE(executor.pull(chunk));
-    ASSERT_EQ(chunk.getNumRows(), 1);
+    ASSERT_TRUE(executor.pull(chunk, /*milliseconds=*/ 10));
+    ASSERT_EQ(chunk.getNumRows(), 0);
 
     query_status->cancelQuery(CancelReason::CANCELLED_BY_USER, makeCause());
 
