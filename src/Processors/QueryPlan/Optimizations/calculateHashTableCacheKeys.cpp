@@ -70,11 +70,24 @@ UInt64 calculateHashFromStep(const ReadFromStorageStep & read)
     return hash.get64();
 }
 
+/// A remote read is identified by the query each shard is sent and by the replicas that answer it.
 UInt64 calculateHashFromStep(const ReadFromRemote & read)
 {
-    auto hash = hashTableRead(read, read.getMainTable());
-    if (const auto & table_function = read.getTableFunction())
-        table_function->updateTreeHash(hash, /*ignore_aliases=*/true);
+    SipHash hash;
+    hash.update(read.getSerializationName());
+    for (const auto & shard : read.getShards())
+    {
+        shard.query->updateTreeHash(hash, /*ignore_aliases=*/true);
+        hash.update(shard.shard_info.default_database.size());
+        hash.update(shard.shard_info.default_database);
+        for (const auto & pool : shard.shard_info.per_replica_pools)
+        {
+            if (!pool)
+                continue;
+            hash.update(pool->getAddress().size());
+            hash.update(pool->getAddress());
+        }
+    }
     return hash.get64();
 }
 

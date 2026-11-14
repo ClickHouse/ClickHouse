@@ -24,4 +24,10 @@
 05632_remote	0	1
 05632_remote_empty	0	1
 05632_remote_after_empty	0	1
+05632_address	0	1
+05632_other_address_empty	0	1
+05632_address_after_empty	0	1
+05632_shard_filter	0	1
+05632_shard_filter_empty	0	1
+05632_shard_filter_after_empty	0	1
 05632_values_after_empty	0	1

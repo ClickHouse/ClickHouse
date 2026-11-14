@@ -45,8 +45,7 @@ public:
 
     String getName() const override { return "ReadFromRemote"; }
 
-    const StorageID & getMainTable() const { return main_table; }
-    const ASTPtr & getTableFunction() const { return table_func_ptr; }
+    const ClusterProxy::SelectStreamFactory::Shards & getShards() const { return shards; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
