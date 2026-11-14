@@ -1220,6 +1220,11 @@ public:
     /// Only for a definition written now: an existing table with such a column must still load and replicate.
     static void checkLossyCodecOnLowCardinality(const ColumnsDescription & columns);
 
+    /// Throws if a partition or sorting key of an `AggregatingMergeTree` table uses a column whose values merges aggregate, unless
+    /// `old_metadata` already uses it. Only for a definition written now: an existing table with such a key must still load.
+    static void checkAggregatedColumnsAreNotInKeys(
+        const StorageInMemoryMetadata & metadata, const StorageInMemoryMetadata * old_metadata, bool allow_tuple_element_aggregation);
+
     /// Throw exception if command is some kind of DROP command (drop column, drop index, etc) or rename command
     /// and we have unfinished mutation which need this column to finish.
     void checkDropOrRenameCommandDoesntAffectInProgressMutations(

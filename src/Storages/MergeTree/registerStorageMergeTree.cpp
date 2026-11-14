@@ -66,6 +66,7 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_tuple_element_aggregation;
+    extern const MergeTreeSettingsBool allow_aggregating_columns_in_partition_or_order_key;
     extern const MergeTreeSettingsBool allow_floating_point_partition_key;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsUInt64 index_granularity;
@@ -1254,6 +1255,15 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         merging_params.allow_tuple_element_aggregation = false;
     }
+
+    /// Only a fresh definition, including a full-definition `ATTACH`, which can bring a new table: a table created by an earlier
+    /// version, or re-derived from metadata stored in Keeper (as `SYSTEM DROP DATABASE REPLICA ... WITH TABLES` does, or a new
+    /// replica that takes its columns from Keeper), keeps loading. A full-definition `ATTACH` of an existing table with such a
+    /// key needs the setting in its definition.
+    if (merging_params.mode == MergeTreeData::MergingParams::Aggregating && is_fresh_definition
+        && !is_ddl_replay && !is_stored_definition && !args.columns.empty()
+        && !(*storage_settings)[MergeTreeSetting::allow_aggregating_columns_in_partition_or_order_key])
+        MergeTreeData::checkAggregatedColumnsAreNotInKeys(metadata, nullptr, merging_params.allow_tuple_element_aggregation);
 
     if (replicated)
     {
