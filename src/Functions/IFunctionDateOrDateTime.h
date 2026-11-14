@@ -110,7 +110,11 @@ public:
 
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
-        if constexpr (std::is_same_v<typename Transform::FactorTransform, ZeroTransform>)
+        if constexpr (requires { Transform::is_monotonic_only_on_each_side_of_local_epoch; })
+        {
+            return getMonotonicityOnEachSideOfLocalEpoch(type, left, right);
+        }
+        else if constexpr (std::is_same_v<typename Transform::FactorTransform, ZeroTransform>)
         {
             return { .is_monotonic = true, .is_always_monotonic = true };
         }
@@ -202,6 +206,38 @@ public:
         }
     }
 
+private:
+    /// A DateTime on the local day 1969-12-31 (west of UTC) gives 65535, the value stored in existing parts, and the
+    /// next local day gives 0, so the function is monotonic only on each side of the start of local 1970-01-01.
+    static Monotonicity getMonotonicityOnEachSideOfLocalEpoch(const IDataType & type, const Field & left, const Field & right)
+    {
+        const auto * type_ptr = &type;
+
+        if (const auto * lc_type = checkAndGetDataType<DataTypeLowCardinality>(type_ptr))
+            type_ptr = lc_type->getDictionaryType().get();
+
+        if (const auto * nullable_type = checkAndGetDataType<DataTypeNullable>(type_ptr))
+            type_ptr = nullable_type->getNestedType().get();
+
+        const auto * date_time_type = checkAndGetDataType<DataTypeDateTime>(type_ptr);
+        if (!date_time_type)
+            return { .is_monotonic = true, .is_always_monotonic = true };
+
+        const DateLUTImpl & time_zone = date_time_type->getTimeZone();
+        auto is_before = [&](UInt64 t) { return time_zone.toDayNum(static_cast<time_t>(t)) < ExtendedDayNum(0); };
+
+        if (!is_before(0))
+            return { .is_monotonic = true, .is_always_monotonic = true };
+
+        const bool left_before = left.isNull() ? !left.isPositiveInfinity() : is_before(left.safeGet<UInt64>());
+        const bool right_before = right.isNull() ? right.isNegativeInfinity() : is_before(right.safeGet<UInt64>());
+
+        if (left_before == right_before)
+            return { .is_monotonic = true };
+        return {};
+    }
+
+public:
     bool hasInformationAboutPreimage() const override
     {
         if constexpr (requires { Transform::hasPreimage(); })

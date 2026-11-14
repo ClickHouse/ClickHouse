@@ -3,6 +3,7 @@
 #include <Common/DateLUT.h>
 #include <Core/ColumnsWithTypeAndName.h>
 
+#include <optional>
 #include <string>
 
 
@@ -10,6 +11,7 @@ namespace DB
 {
 
 class Block;
+class IFunctionBase;
 
 std::string extractTimeZoneNameFromColumn(const IColumn * column, const String & column_name);
 
@@ -28,5 +30,10 @@ std::string extractTimeZoneNameFromFunctionArguments(
 
 const DateLUTImpl & extractTimeZoneFromFunctionArguments(
     const ColumnsWithTypeAndName & arguments, size_t time_zone_arg_num, size_t datetime_arg_num);
+
+/// `type` with the constant time zone argument `time_zone_argument` of `function`, or `nullptr` if `type` is not `DateTime` or
+/// `DateTime64`; `std::nullopt` if `function` is neither a `FunctionDateOrDateTimeBase` nor `toString`, or the time zone is `NULL`.
+std::optional<DataTypePtr> getDateTimeTypeWithTimeZoneArgument(
+    const IFunctionBase & function, const IDataType & type, const ColumnWithTypeAndName & time_zone_argument);
 
 }
