@@ -53,6 +53,10 @@ struct PrewhereExprStep
     /// Version of mutation if step is a part of on-fly mutation.
     std::optional<UInt64> mutation_version;
 
+    /// Whether `actions` were built to project their inputs (an on-fly mutation step): after the step, the block holds
+    /// only the outputs of the actions, and every other column, including the ones read in this step, is gone.
+    bool project_inputs = false;
+
     /// The last step of the PREWHERE part covered by `PrewhereInfo::query_condition_cache_attribution`.
     bool query_condition_cache_attribution_boundary = false;
 

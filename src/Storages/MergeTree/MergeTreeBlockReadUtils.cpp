@@ -612,7 +612,18 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         }
 
         /// Add results of the step to the list of already "known" columns so that we don't read or compute them again.
-        if (step.actions)
+        if (step.actions && step.project_inputs)
+        {
+            /// A step that projects its inputs (an on-fly mutation step) keeps in the block only the outputs of its
+            /// actions. Every other column, read in this step or in an earlier one, is gone after it, e.g. a subcolumn
+            /// `b.x` read to evaluate `z DEFAULT b.x + 1` while the mutation outputs only its parent `b`. Such a column
+            /// is not "known" to the later steps: the ones that need it, including the last one when the query selects
+            /// it, read it again.
+            columns_from_previous_steps.clear();
+            for (const auto * output : step.actions->getActionsDAG().getOutputs())
+                columns_from_previous_steps.insert(output->result_name);
+        }
+        else if (step.actions)
         {
             for (const auto & name : step.actions->getActionsDAG().getNames())
                 columns_from_previous_steps.insert(name);
