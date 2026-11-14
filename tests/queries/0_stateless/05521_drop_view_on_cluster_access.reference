@@ -1,0 +1,15 @@
+-- DROP VIEW, with DROP VIEW
+0
+-- DROP VIEW ON CLUSTER, with DROP VIEW
+0
+-- DETACH VIEW ON CLUSTER, with DROP VIEW
+0
+-- DROP TABLE ON CLUSTER of a table, with DROP VIEW only
+necessary to have the grant DROP TABLE
+1
+-- DETACH TABLE ON CLUSTER of a table, with DROP VIEW only
+necessary to have the grant DROP TABLE
+1
+-- DROP VIEW ON CLUSTER of a table, with DROP VIEW only
+is not a View
+1
