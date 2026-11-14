@@ -31,6 +31,7 @@
 #include <Common/HashTable/HashTableTraits.h>
 #include <Common/HashTable/PartitionedFixedHashTable.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -918,6 +919,7 @@ private:
     void tryConvertToFixedHashMap();
 
     template <bool is_signed, typename Key, typename MapsTemplate>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void tryConvertToFixedHashMapImpl(MapsTemplate & maps);
 
     void freezeMapsForProbing();

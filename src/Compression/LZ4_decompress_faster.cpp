@@ -574,7 +574,7 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
         /// The check is done before forming `match`, so `op - offset` is never computed for a malformed
         /// offset that would point before `output_begin` (which would be out-of-range pointer arithmetic).
         const size_t produced = static_cast<size_t>(op - output_begin);
-        if (unlikely(offset - 1 >= produced))
+        if (unlikely(offset == 0 || offset > produced))
             return false;
 
         UInt8 * match = op - offset;

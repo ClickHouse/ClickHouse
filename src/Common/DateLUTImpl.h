@@ -11,6 +11,7 @@
 #include <optional>
 #include <string>
 #include <type_traits>
+#include <base/arithmeticOverflow.h>
 
 namespace cctz
 {
@@ -112,38 +113,42 @@ private:
         return LUTIndex{static_cast<UInt32>(index)};
     }
 
+    /// The additive operators compute in `Int64`, so that a result below zero saturates to the first index
+    /// instead of wrapping around to a huge `UInt32` and saturating to the last one.
+    /// Note: `LUTIndex` converts to `UInt32 &` implicitly, so `index += x` and `index -= x` would bypass
+    /// the normalization - write `index = index + x` instead.
     template <typename T>
     friend LUTIndex operator+(const LUTIndex & index, const T v)
     {
-        return normalizeLUTIndex(index.toUnderType() + UInt32(v));
+        return normalizeLUTIndex(static_cast<Int64>(index.toUnderType()) + static_cast<Int64>(v));
     }
 
     template <typename T>
     friend LUTIndex operator+(const T v, const LUTIndex & index)
     {
-        return normalizeLUTIndex(static_cast<Int64>(v + index.toUnderType()));
+        return normalizeLUTIndex(static_cast<Int64>(v) + static_cast<Int64>(index.toUnderType()));
     }
 
     friend LUTIndex operator+(const LUTIndex & index, const LUTIndex & v)
     {
-        return normalizeLUTIndex(static_cast<UInt32>(index.toUnderType() + v.toUnderType()));
+        return normalizeLUTIndex(static_cast<Int64>(index.toUnderType()) + static_cast<Int64>(v.toUnderType()));
     }
 
     template <typename T>
     friend LUTIndex operator-(const LUTIndex & index, const T v)
     {
-        return normalizeLUTIndex(static_cast<Int64>(index.toUnderType() - UInt32(v)));
+        return normalizeLUTIndex(static_cast<Int64>(index.toUnderType()) - static_cast<Int64>(v));
     }
 
     template <typename T>
     friend LUTIndex operator-(const T v, const LUTIndex & index)
     {
-        return normalizeLUTIndex(static_cast<Int64>(v - index.toUnderType()));
+        return normalizeLUTIndex(static_cast<Int64>(v) - static_cast<Int64>(index.toUnderType()));
     }
 
     friend LUTIndex operator-(const LUTIndex & index, const LUTIndex & v)
     {
-        return normalizeLUTIndex(static_cast<Int64>(index.toUnderType() - v.toUnderType()));
+        return normalizeLUTIndex(static_cast<Int64>(index.toUnderType()) - static_cast<Int64>(v.toUnderType()));
     }
 
     template <typename T>
@@ -312,7 +317,7 @@ private:
     template <typename T>
     static constexpr bool may_be_out_of_lut_range = std::is_same_v<T, Time> || std::is_same_v<T, ExtendedDayNum>;
 
-    static bool isOutOfLUTRange(Time t)
+    static bool NO_SANITIZE_UNSIGNED_OVERFLOW isOutOfLUTRange(Time t)
     {
         /// Single unsigned comparison against compile-time constants, equivalent to
         /// (t < lut_in_range_min || t >= lut_in_range_max). Cast before subtracting to avoid signed overflow.
@@ -352,6 +357,7 @@ private:
     /// 400-year cycles, reuse the in-range logic, and adjust the resulting year by 400 * (number of cycles).
     /// Returns the in-range day number; `cycles` receives the number of cycles added (negative if subtracted).
     static constexpr Int64 days_in_400_years = DATE_LUT_SIZE;
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     ExtendedDayNum shiftIntoLUTRange(ExtendedDayNum d, Int32 & cycles) const
     {
         Int64 index = static_cast<Int64>(d.toUnderType()) + daynum_offset_epoch;
@@ -453,6 +459,18 @@ private:
         return res;
     }
 
+    /// `date` plus `x - date` rounded down to a multiple of `divisor`, in `Time`: an unsigned divisor would make the
+    /// arithmetic unsigned, and wrap for a date before the epoch. A divisor that does not fit in `Time` is larger than
+    /// any `x - date`, so the result is `date` then.
+    template <typename Divisor>
+    static Time roundDownFromDate(Time date, Time x, Divisor divisor)
+    {
+        if (static_cast<UInt64>(divisor) > static_cast<UInt64>(std::numeric_limits<Time>::max()))
+            return date;
+        const Time signed_divisor = static_cast<Time>(divisor);
+        return date + (x - date) / signed_divisor * signed_divisor;
+    }
+
     template <typename DateOrTime, typename Divisor>
     DateOrTime roundDown(DateOrTime x, Divisor divisor) const
     {
@@ -466,7 +484,7 @@ private:
             if (unlikely(isOutOfLUTRange(x)))
             {
                 const Time date = outOfRangeValues(x).date;
-                return static_cast<DateOrTime>(date + (static_cast<Time>(x) - date) / divisor * divisor);
+                return static_cast<DateOrTime>(roundDownFromDate(date, static_cast<Time>(x), divisor));
             }
 
         /// The property is computed over the epoch onward, so a value before it may sit in a period whose
@@ -476,7 +494,7 @@ private:
             return roundDownToMultiple(x, divisor);
 
         const Time date = find(x).date;
-        Time res = date + (x - date) / divisor * divisor;
+        Time res = roundDownFromDate(date, static_cast<Time>(x), divisor);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
         {
             if (unlikely(res < 0))
@@ -573,6 +591,7 @@ public:
 
     /// All functions below are thread-safe; arguments are not checked.
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static UInt32 saturateMinus(UInt32 x, UInt32 y)
     {
         UInt32 res = x - y;
@@ -585,6 +604,7 @@ public:
         return d;
     }
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static ExtendedDayNum toDayNum(LUTIndex d)
     {
         return ExtendedDayNum{static_cast<ExtendedDayNum::UnderlyingType>(d.toUnderType() - daynum_offset_epoch)};
@@ -596,6 +616,7 @@ public:
     }
 
     template <typename DateOrTime>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     auto toDayNum(DateOrTime v) const
     {
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
@@ -751,17 +772,22 @@ public:
     template <typename DateOrTime>
     LUTIndex toFirstDayOfQuarterIndex(DateOrTime v) const
     {
-        LUTIndex index = toLUTIndex(v);
+        UInt32 index = toLUTIndex(v).toUnderType();
         size_t month_inside_quarter = (lut[index].month - 1) % 3;
 
-        index -= lut[index].day_of_month;
+        /// Step to the first day of each month, never to the day before it, because that day is not in the LUT
+        /// for the first month of the LUT. The LUT begins on January 1, the first day of a quarter, so the walk stays
+        /// inside the LUT, and plain arithmetic on the underlying index is enough: the saturating operators of
+        /// `LUTIndex` make this hot loop measurably slower.
+        index -= lut[index].day_of_month - 1;
         while (month_inside_quarter)
         {
-            index -= lut[index].day_of_month;
+            --index;
+            index -= lut[index].day_of_month - 1;
             --month_inside_quarter;
         }
 
-        return index + 1;
+        return LUTIndex(index);
     }
 
     template <typename DateOrTime>
@@ -814,7 +840,7 @@ public:
         }
 
         LUTIndex index = findIndexInRange(t);
-        index += 32 - lut[index].day_of_month;
+        index = index + (32 - lut[index].day_of_month);
         return lut[index - (lut[index].day_of_month - 1)].date;
     }
 
@@ -827,7 +853,7 @@ public:
         }
 
         LUTIndex index = findIndexInRange(t);
-        index -= lut[index].day_of_month;
+        index = index - lut[index].day_of_month;
         return lut[index - (lut[index].day_of_month - 1)].date;
     }
 
@@ -895,7 +921,7 @@ public:
         Time time = t - lut[index].date;
 
         if (time >= lut[index].time_at_offset_change())
-            time += lut[index].amount_of_offset_change();
+            time = common::addIgnoreOverflow(time, lut[index].amount_of_offset_change());
 
         unsigned res = static_cast<unsigned>(time / 3600);
 
@@ -962,7 +988,7 @@ public:
         Time time = t - lut[index].date;
 
         if (time >= lut[index].time_at_offset_change())
-            time += lut[index].amount_of_offset_change();
+            time = common::addIgnoreOverflow(time, lut[index].amount_of_offset_change());
 
         return time % 60;
     }
@@ -993,7 +1019,7 @@ public:
         UInt32 time = static_cast<UInt32>(t - lut[index].date);
 
         if (time >= lut[index].time_at_offset_change())
-            time += lut[index].amount_of_offset_change();
+            time = common::addIgnoreOverflow(time, lut[index].amount_of_offset_change());
 
         return time / 60 % 60;
     }
@@ -1089,8 +1115,10 @@ public:
             }
 
         // TODO: different overload for ExtendedDayNum
-        const LUTIndex i = toLUTIndex(v);
-        return static_cast<UInt16>(i + 1 - toFirstDayNumOfYearIndex(i));
+        /// The first day of the year of `i` is in the LUT and is not after `i`, so plain arithmetic on the underlying index
+        /// cannot overflow: the saturating operators of `LUTIndex` make this hot function measurably slower.
+        const UInt32 i = toLUTIndex(v).toUnderType();
+        return static_cast<UInt16>(i + 1 - years_lut[lut[i].year - DATE_LUT_MIN_YEAR].toUnderType());
     }
 
     /// Number of week from some fixed moment in the past. Week begins at monday.

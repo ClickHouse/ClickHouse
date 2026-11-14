@@ -279,7 +279,8 @@ bool UnityCatalog::tryGetTableMetadata(
                         /// NOTE: Weird case with OSS Unity catalog, when instead of JSON for simple we have just string with type name
                         if (type_json_str.starts_with("\"") && type_json_str.ends_with("\"") && !type_json_str.contains('{'))
                         {
-                            String type_name = type_json_str.substr(1, type_json_str.size() - 2);
+                            /// A lone `"` both starts and ends with a quote: its name is empty, which raises `BAD_ARGUMENTS` below.
+                            String type_name = type_json_str.size() >= 2 ? type_json_str.substr(1, type_json_str.size() - 2) : String{};
                             auto data_type_from_str = DB::getDeltaLakeSimpleTypeByName(type_name);
                             data_type = is_nullable ? makeNullable(data_type_from_str) : data_type_from_str;
                         }

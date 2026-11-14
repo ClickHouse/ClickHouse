@@ -18,6 +18,7 @@
 #include <mutex>
 #include <optional>
 #include <variant>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -875,6 +876,7 @@ private:
 
         BloomFilterLookup(Prefetcher & prefetcher_, ColumnChunk & column_) : prefetcher(prefetcher_), column(column_) {}
 
+        NO_SANITIZE_UNSIGNED_OVERFLOW
         bool findAnyHash(const VectorWithMemoryTracking<uint64_t> & hashes) override;
 
     private:

@@ -6,10 +6,17 @@
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+#include <Common/Exception.h>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
 
 /** `bfloat16` is a 16-bit floating point data type that is the same as the corresponding most significant 16 bits of the `float`.
   * https://en.wikipedia.org/wiki/Bfloat16_floating-point_format
@@ -57,13 +64,16 @@ struct QuantileBFloat16Histogram
         add(x, 1);
     }
 
-    void add(const Value & x, Weight w)
+    /// The weight comes straight from the caller's column, so a negative one arrives as a huge
+    /// `UInt64` and the per-value sums are modular. Annotated rather than rewritten so the hash
+    /// map is still looked up once per row.
+    void NO_SANITIZE_UNSIGNED_OVERFLOW add(const Value & x, Weight w)
     {
         if (!isNaN(x))
             data[toBFloat16(x)] += w;
     }
 
-    void merge(const QuantileBFloat16Histogram & rhs)
+    void NO_SANITIZE_UNSIGNED_OVERFLOW merge(const QuantileBFloat16Histogram & rhs)
     {
         for (const auto & pair : rhs.data)
             data[pair.getKey()] += pair.getMapped();
@@ -77,6 +87,10 @@ struct QuantileBFloat16Histogram
     void deserialize(ReadBuffer & buf)
     {
         data.read(buf);
+        /// `add` skips NaNs, and the finalization relies on that (a NaN does not convert to an integer result).
+        for (const auto & pair : data)
+            if ((pair.getKey() & 0x7FFF) > 0x7F80)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "NaN in the state of quantileBFloat16");
     }
 
     Value get(Float64 level) const

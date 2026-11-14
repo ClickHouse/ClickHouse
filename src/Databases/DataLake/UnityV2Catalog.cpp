@@ -690,7 +690,8 @@ bool UnityV2Catalog::tryGetDeltaTableMetadata(
                     /// where Databricks reports the JSON object every type gets there. Both forms occur.
                     if (type_json_str.starts_with("\"") && type_json_str.ends_with("\"") && !type_json_str.contains('{'))
                     {
-                        String type_name = type_json_str.substr(1, type_json_str.size() - 2);
+                        /// A lone `"` both starts and ends with a quote: its name is empty, which raises `BAD_ARGUMENTS` below.
+                        String type_name = type_json_str.size() >= 2 ? type_json_str.substr(1, type_json_str.size() - 2) : String{};
                         auto data_type_from_str = DB::getDeltaLakeSimpleTypeByName(type_name);
                         data_type = is_nullable ? makeNullable(data_type_from_str) : data_type_from_str;
                     }

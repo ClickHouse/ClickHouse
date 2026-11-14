@@ -341,7 +341,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
 
                         size_t place_offset = 0;
                         if (level)
-                            place_offset = place_offsets[level - 1];
+                            place_offset = place_offsets[static_cast<ssize_t>(level) - 1];
 
                         true_func->merge(place, places[place_offset + (place_curr >> level)], arena.get());
                         place_curr += 1 << level;

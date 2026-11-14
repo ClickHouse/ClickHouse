@@ -2,14 +2,20 @@
 
 #include <base/extended_types.h>
 #include <base/defines.h>
+#include <base/sanitizer_defs.h>
 
 // NOLINTBEGIN(google-runtime-int)
 
 namespace common
 {
     /// Multiply and ignore overflow.
+    ///
+    /// These four do the arithmetic in the unsigned type on purpose, which is what keeps them free of
+    /// *signed* overflow - but an unsigned wrap is exactly what they exist to perform, so they are the
+    /// one place that must stay exempt from `unsigned-integer-overflow`. Without the attribute every
+    /// caller in the tree aborts.
     template <typename T1, typename T2>
-    inline auto mulIgnoreOverflow(T1 x, T2 y)
+    inline auto NO_SANITIZE_UNSIGNED_OVERFLOW mulIgnoreOverflow(T1 x, T2 y)
     {
         using Result = decltype(x * y);
         if constexpr (is_integer<Result>)
@@ -23,7 +29,7 @@ namespace common
     }
 
     template <typename T1, typename T2>
-    inline auto addIgnoreOverflow(T1 x, T2 y)
+    inline auto NO_SANITIZE_UNSIGNED_OVERFLOW addIgnoreOverflow(T1 x, T2 y)
     {
         using Result = decltype(x + y);
         if constexpr (is_integer<Result>)
@@ -37,7 +43,7 @@ namespace common
     }
 
     template <typename T1, typename T2>
-    inline auto subIgnoreOverflow(T1 x, T2 y)
+    inline auto NO_SANITIZE_UNSIGNED_OVERFLOW subIgnoreOverflow(T1 x, T2 y)
     {
         using Result = decltype(x - y);
         if constexpr (is_integer<Result>)
@@ -51,7 +57,7 @@ namespace common
     }
 
     template <typename T>
-    inline auto negateIgnoreOverflow(T x)
+    inline auto NO_SANITIZE_UNSIGNED_OVERFLOW negateIgnoreOverflow(T x)
     {
         using Result = decltype(-x);
         if constexpr (is_integer<Result>)

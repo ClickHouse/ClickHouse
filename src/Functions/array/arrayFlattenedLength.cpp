@@ -72,7 +72,7 @@ public:
             const IColumn::Offsets & nested_offsets = nested_col->getOffsets();
 
             for (size_t i = 0; i < input_rows_count; ++i)
-                flat_offsets[i] = nested_offsets[(*offsets)[i] - 1];    /// -1 array subscript is Ok, see PaddedPODArray
+                flat_offsets[i] = nested_offsets[static_cast<ssize_t>((*offsets)[i]) - 1];    /// -1 array subscript is Ok, see PaddedPODArray
 
             offsets = &flat_offsets;
             data = &nested_col->getData();
@@ -82,7 +82,7 @@ public:
         ColumnUInt64::Container & result_data = result_column->getData();
 
         for (size_t i = 0; i < input_rows_count; ++i)
-            result_data[i] = (*offsets)[i] - (*offsets)[i - 1];    /// -1 array subscript is Ok, see PaddedPODArray
+            result_data[i] = (*offsets)[i] - (*offsets)[static_cast<ssize_t>(i) - 1];    /// -1 array subscript is Ok, see PaddedPODArray
 
         return result_column;
     }

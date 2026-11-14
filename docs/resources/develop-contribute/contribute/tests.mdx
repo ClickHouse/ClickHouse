@@ -477,6 +477,14 @@ We run functional, integration, stress and unit tests under MSan on per-commit b
 We run functional, integration, stress and unit tests under UBSan on per-commit basis.
 The code of some third-party libraries is not sanitized for UB.
 
+We additionally enable the `unsigned-integer-overflow` check, which is not a part of
+`-fsanitize=undefined`, because overflow of an unsigned integer is well-defined behaviour - it wraps
+around modulo 2<sup>N</sup>. An *unintended* wraparound is nevertheless a bug, so the places that
+wrap around on purpose - hash functions, checksums, pseudo-random number generators, the semantics of
+ClickHouse arithmetic over unsigned types - are annotated with the `NO_SANITIZE_UNSIGNED_OVERFLOW`
+attribute (see `base/base/sanitizer_defs.h`). For whole files, and for third-party header-only code,
+the check is switched off in `tests/ubsan_ignorelist.txt` instead.
+
 ### Valgrind (memcheck) {#valgrind-memcheck}
 
 We used to run functional tests under Valgrind overnight, but don't do it anymore.

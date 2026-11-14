@@ -7,6 +7,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/Arena.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerSwitcher.h>
@@ -105,7 +106,7 @@ ALWAYS_INLINE inline UInt64 bucketHash(UInt256 x)
 ///   of the set.
 ALWAYS_INLINE inline UInt64 slotHash(UInt64 x)
 {
-    return x * 0x9E3779B97F4A7C15ULL;
+    return common::mulIgnoreOverflow(x, 0x9E3779B97F4A7C15ULL); /// Modulo 2^64 by design.
 }
 
 ALWAYS_INLINE inline UInt64 slotHash(UInt32 x)
@@ -125,7 +126,9 @@ ALWAYS_INLINE inline UInt64 slotHash(UInt128 x)
 ALWAYS_INLINE inline UInt64 slotHash(UInt256 x)
 {
     return slotHash(static_cast<UInt64>(
-        x.items[0] ^ (x.items[1] * 0xC2B2AE3D27D4EB4FULL) ^ (x.items[2] * 0x165667B19E3779F9ULL) ^ (x.items[3] * 0x27D4EB2F165667C5ULL)));
+        x.items[0] ^ common::mulIgnoreOverflow(UInt64{x.items[1]}, 0xC2B2AE3D27D4EB4FULL)
+        ^ common::mulIgnoreOverflow(UInt64{x.items[2]}, 0x165667B19E3779F9ULL)
+        ^ common::mulIgnoreOverflow(UInt64{x.items[3]}, 0x27D4EB2F165667C5ULL)));
 }
 
 /// A bijection that makes the 128-bit values that are not hashes (`UUID`, `UInt128`, `Int128`, `Decimal128`) uniformly
@@ -1293,7 +1296,7 @@ private:
         {
             /// `min_free_disk_space` is checked only here: the later spills append to the file without a check, as to the
             /// other temporary files that are appended to.
-            stream.spill_file = std::make_unique<TemporaryDataBuffer>(spill_scope, stream.arena->allocatedBytes() + min_free_disk_space);
+            stream.spill_file = std::make_unique<TemporaryDataBuffer>(spill_scope, getTemporaryFileReserveSize(stream.arena->allocatedBytes(), min_free_disk_space));
             stream.spilled_frames.resize(num_buckets);
             stream.spilled_keys.resize(num_buckets);
         }

@@ -470,7 +470,7 @@ size_t Aggregator::spillAdaptiveProducer(
         return released;
 
     const size_t before = result.memoryUsage();
-    spillAdaptiveTable(result, adaptive, before + params.min_free_disk_space);
+    spillAdaptiveTable(result, adaptive, getTemporaryFileReserveSize(before, params.min_free_disk_space));
     const size_t after = result.memoryUsage();
     return released + (before > after ? before - after : 0);
 }
@@ -538,7 +538,7 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationSession & shared, Pa
             continue;
 
         const UInt64 partition_bytes = shared.spilled_partitions[partition].append(
-            shared.spill_scope, partitions, partition, unwritten_bytes + params.min_free_disk_space, space_check);
+            shared.spill_scope, partitions, partition, getTemporaryFileReserveSize(unwritten_bytes, params.min_free_disk_space), space_check);
         unwritten_bytes -= std::min<size_t>(unwritten_bytes, partition_bytes);
         spilled_bytes += partition_bytes;
         partitions.releasePartition(partition);

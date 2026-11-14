@@ -165,8 +165,8 @@ public:
 
         /// Move the values to their rows from the back: the k-th value goes to a row i >= k, so it is not overwritten before it is moved.
         size_t next_value = num_present;
-        for (size_t i = num_values; i-- > 0;)
-            out[i] = not_null[i] ? out[--next_value] : 0;
+        for (size_t i = num_values; i > 0; --i)
+            out[i - 1] = not_null[i - 1] ? out[--next_value] : 0;
     }
 
     void seekToRowGroup(RowGroupPositions & positions) override
@@ -607,9 +607,9 @@ private:
     Int64 readInt64(Int32 current_scale)
     {
         UInt64 encoded = readVarint(*value_stream);
-        Int64 value = static_cast<Int64>((encoded >> 1) ^ (~(encoded & 1) + 1));
+        Int64 value = static_cast<Int64>(encoded >> 1) ^ -static_cast<Int64>(encoded & 1);
         if (scale > current_scale && static_cast<UInt64>(scale - current_scale) <= MAX_PRECISION_64)
-            value = static_cast<Int64>(static_cast<UInt64>(value) * static_cast<UInt64>(POWERS_OF_TEN[scale - current_scale]));
+            value = static_cast<Int64>(common::mulIgnoreOverflow(static_cast<UInt64>(value), static_cast<UInt64>(POWERS_OF_TEN[scale - current_scale])));
         else if (scale < current_scale && static_cast<UInt64>(current_scale - scale) <= MAX_PRECISION_64)
             value /= POWERS_OF_TEN[current_scale - scale];
         else if (scale != current_scale)

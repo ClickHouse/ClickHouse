@@ -12,6 +12,7 @@
 #include <boost/integer/common_factor.hpp>
 #include <libdivide-config.h>
 #include <libdivide.h>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -93,7 +94,8 @@ namespace
 {
 
 template <typename T>
-void compressDataForType(const char * source, UInt32 source_size, char * dest, bool is_signed)
+/// Negating the quotient of the most negative value only exists modulo 2^N, as with the magnitude.
+void NO_SANITIZE_UNSIGNED_OVERFLOW compressDataForType(const char * source, UInt32 source_size, char * dest, bool is_signed)
 {
     /// T must be unsigned even when `is_signed` is true, because the codec's arithmetic needs
     /// well-defined modulo-2^N semantics, which only unsigned types provide: the magnitude of the
@@ -107,7 +109,8 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest, b
 
     /// Return the unsigned magnitude of a raw value, handling signed wrap-around.
     using S = make_signed_t<T>;
-    auto toMagnitude = [is_signed](T val) -> T
+    /// The magnitude of the most negative value only exists modulo 2^N, which is what GCD stores.
+    auto toMagnitude = [is_signed](T val) NO_SANITIZE_UNSIGNED_OVERFLOW -> T
     {
         return (is_signed && static_cast<S>(val) < S(0)) ? T(0) - val : val;
     };
@@ -166,8 +169,9 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest, b
     }
 }
 
+/// Multiplying the quotients back by the GCD wraps modulo 2^N, which is how the codec round-trips.
 template <typename T>
-UInt32 decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
+UInt32 NO_SANITIZE_UNSIGNED_OVERFLOW decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
 {
     const char * original_dest = dest;
     if (source_size % sizeof(T) != 0)

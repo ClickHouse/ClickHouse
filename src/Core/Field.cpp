@@ -766,7 +766,7 @@ void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
             throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
     }
     else
-        scale = -exponent;
+        scale = static_cast<UInt32>(std::min<Int64>(-static_cast<Int64>(exponent), std::numeric_limits<UInt32>::max()));
     /// The scale comes from the text: an exponent-form value such as `Decimal64_'1e-1000'` (e.g. in a
     /// `CUSTOM`-flagged setting parsed by `SettingFieldCustom::parseFromString`) builds a scale that
     /// bypasses the binary reader's check. An out-of-range scale later overruns a fixed-size buffer in
@@ -1114,8 +1114,10 @@ Field Field::restoreFromDump(std::string_view dump_)
     {
         std::string_view after_prefix = dump.substr(prefix.length());
         size_t comma = after_prefix.find(',');
+        if (comma == std::string_view::npos)
+            show_error();
         size_t end = after_prefix.find(')', comma + 1);
-        if ((comma == std::string_view::npos) || (end != after_prefix.length() - 1))
+        if (end != after_prefix.length() - 1)
             show_error();
         std::string_view name_view = after_prefix.substr(0, comma);
         std::string_view data_view = after_prefix.substr(comma + 1, end - comma - 1);

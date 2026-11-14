@@ -517,7 +517,7 @@ void RecordBatchEncoder::encodeValues(
             appendOffsets(array_offsets, begin, end);
             const DataTypePtr & element_type = assert_cast<const DataTypeArray &>(*type).getNestedType();
             encodeField(
-                ca.getData(), element_type, array_offsets[static_cast<ssize_t>(begin) - 1], array_offsets[end - 1]);
+                ca.getData(), element_type, array_offsets[static_cast<ssize_t>(begin) - 1], array_offsets[static_cast<ssize_t>(end) - 1]);
             return;
         }
         case TypeIndex::Tuple:
@@ -537,7 +537,7 @@ void RecordBatchEncoder::encodeValues(
 
             const auto & entries = assert_cast<const ColumnTuple &>(arr.getData());
             const size_t entries_begin = array_offsets[static_cast<ssize_t>(begin) - 1];
-            const size_t entries_end = array_offsets[end - 1];
+            const size_t entries_end = array_offsets[static_cast<ssize_t>(end) - 1];
             /// The entries struct node (non-nullable), then its key and value children.
             nodes.emplace_back(static_cast<Int64>(entries_end - entries_begin), 0);
             appendEmptyBuffer();

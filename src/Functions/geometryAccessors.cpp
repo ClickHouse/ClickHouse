@@ -106,10 +106,10 @@ public:
                     const auto & arrays = assert_cast<const ColumnArray &>(geometries->getVariantByGlobalDiscriminator(discriminator));
                     const auto & offsets = arrays.getOffsets();
                     const size_t offset = geometries->offsetAt(row);
-                    if (auto pos = position(row, offsets[offset] - offsets[offset - 1]))
+                    if (auto pos = position(row, offsets[offset] - offsets[static_cast<ssize_t>(offset) - 1]))
                     {
                         result_geometries.insertIntoVariantFrom(
-                            static_cast<ColumnVariant::Discriminator>(Impl::element_type), arrays.getData(), offsets[offset - 1] + *pos);
+                            static_cast<ColumnVariant::Discriminator>(Impl::element_type), arrays.getData(), offsets[static_cast<ssize_t>(offset) - 1] + *pos);
                         continue;
                     }
                 }
@@ -126,8 +126,8 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            if (auto pos = position(row, offsets[row] - offsets[row - 1]))
-                result->insertFrom(arrays.getData(), offsets[row - 1] + *pos);
+            if (auto pos = position(row, offsets[row] - offsets[static_cast<ssize_t>(row) - 1]))
+                result->insertFrom(arrays.getData(), offsets[static_cast<ssize_t>(row) - 1] + *pos);
             else
                 result->insertDefault();
         }

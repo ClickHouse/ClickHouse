@@ -1,0 +1,6 @@
+-- nullable floating-point columns of ORC
+\N	0
+1	\N
+2	2
+-- page_cache_block_size of UInt64 max
+INVALID_SETTING_VALUE

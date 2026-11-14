@@ -122,6 +122,7 @@ template <bool B, class T, class F>
 using cond = typename _cond<B, T, F>::type;
 
 template <class T>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 inline ALWAYS_INLINE char * to_text_from_integer(char * b, T i)
 {
     constexpr auto q = sizeof(T);
@@ -366,7 +367,11 @@ namespace avx512ifma
 
 #define ITOA_IFMA_TARGET __attribute__((target("avx512f,avx512vl,avx512bw,avx512dq,avx512ifma,avx512vbmi")))
 
-ALWAYS_INLINE inline char * shiftedPointer(char * p, Int32 offset)
+/// The offset is negative when a masked store writes the last digits, so the base pointer is built
+/// by wrapping the address around on purpose - which is exactly why the arithmetic goes through
+/// `uintptr_t` rather than the pointer. The attribute has to carry `always_inline` itself, since
+/// `no_sanitize` does not survive a separate `__attribute__((always_inline))`.
+ALWAYS_INLINE_NO_SANITIZE_UNSIGNED_OVERFLOW inline char * shiftedPointer(char * p, Int32 offset)
 {
     return reinterpret_cast<char *>(reinterpret_cast<uintptr_t>(p) + static_cast<uintptr_t>(static_cast<intptr_t>(offset)));
 }
@@ -829,7 +834,8 @@ ALWAYS_INLINE inline UInt64 divideByFiveToThirtyTwo(unsigned __int128 value)
 }
 
 /// `value` is at least 2^64, so the part above the last 16 digits is at least 1844.
-NO_INLINE char * writeLargeUInt128Text(unsigned __int128 value, char * p)
+/// The remainders are computed modulo 2^64 on purpose: the products wrap around, but the differences are exact.
+NO_SANITIZE_UNSIGNED_OVERFLOW NO_INLINE char * writeLargeUInt128Text(unsigned __int128 value, char * p)
 {
     constexpr UInt64 ten_to_16 = 10000000000000000ULL;
     unsigned __int128 high = divideByTenToSixteen(value);
@@ -872,8 +878,9 @@ ALWAYS_INLINE inline void divideByTenToThirtyTwo(unsigned __int128 high, unsigne
 
 /// The value in `high` and `low` is at least 2^128. One division by 10^32 leaves a remainder of 32 digits and a quotient
 /// below 2^150. When the quotient does not fit in 128 bits, a second division by 10^32 splits it into at most 14 digits
-/// and 32 more.
-NO_INLINE char * writeLargeUInt256Text(unsigned __int128 high, unsigned __int128 low, char * p)
+/// and 32 more. The remainders are computed modulo 2^128 and 2^64 on purpose: the products wrap around, but the
+/// differences are exact.
+NO_SANITIZE_UNSIGNED_OVERFLOW NO_INLINE char * writeLargeUInt256Text(unsigned __int128 high, unsigned __int128 low, char * p)
 {
     unsigned __int128 quotient_high = 0;
     unsigned __int128 quotient_low = 0;

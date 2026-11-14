@@ -2464,8 +2464,8 @@ double Counters::getCPUOverload(Int64 os_cpu_busy_time_threshold, bool reset)
     Int64 curr_cpu_wait_microseconds = static_cast<Int64>(load(OSCPUWaitMicroseconds));
     Int64 curr_cpu_virtual_time_microseconds = static_cast<Int64>(load(OSCPUVirtualTimeMicroseconds));
 
-    Int64 os_cpu_wait_microseconds = curr_cpu_wait_microseconds - prev_cpu_wait_microseconds.load(std::memory_order_acquire);
-    Int64 os_cpu_virtual_time_microseconds = curr_cpu_virtual_time_microseconds - prev_cpu_virtual_time_microseconds.load(std::memory_order_acquire);
+    Int64 os_cpu_wait_microseconds = curr_cpu_wait_microseconds - static_cast<Int64>(prev_cpu_wait_microseconds.load(std::memory_order_acquire));
+    Int64 os_cpu_virtual_time_microseconds = curr_cpu_virtual_time_microseconds - static_cast<Int64>(prev_cpu_virtual_time_microseconds.load(std::memory_order_acquire));
 
     if (reset)
     {
