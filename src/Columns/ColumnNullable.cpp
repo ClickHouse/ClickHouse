@@ -109,7 +109,7 @@ constexpr size_t zeros_size = std::numeric_limits<size_t>::max() / 4;
 const UInt8 * getZeros(size_t size)
 {
     static std::mutex mutex;
-    static std::vector<std::unique_ptr<UInt8[]>> buffers;
+    static std::vector<std::unique_ptr<UInt8[]>> buffers; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     static std::atomic<const UInt8 *> current_zeros = nullptr;
     static std::atomic<size_t> current_size = 0;
 
