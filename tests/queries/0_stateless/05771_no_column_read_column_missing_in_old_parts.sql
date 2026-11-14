@@ -22,3 +22,23 @@ INSERT INTO t_default (k, s) VALUES (1000, '1000');
 SELECT count() FROM t_default SETTINGS query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
 SELECT count() FROM t_default SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
 DROP TABLE t_default;
+
+DROP TABLE IF EXISTS t_readd;
+CREATE TABLE t_readd (k UInt64, s String, c UInt8) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP MERGES t_readd;
+INSERT INTO t_readd SELECT number, if(number = 500, 'n/a', toString(number)), 0 FROM numbers(1000);
+ALTER TABLE t_readd DROP COLUMN c, ADD COLUMN c UInt64 DEFAULT toUInt64(s) SETTINGS alter_sync = 0;
+SELECT count() FROM t_readd SETTINGS query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+SELECT count() FROM t_readd SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+DROP TABLE t_readd;
+
+DROP TABLE IF EXISTS t_rename;
+CREATE TABLE t_rename (k UInt64, s String, a UInt8) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP MERGES t_rename;
+INSERT INTO t_rename SELECT number, if(number = 500, 'n/a', toString(number)), 0 FROM numbers(1000);
+ALTER TABLE t_rename RENAME COLUMN a TO b, DROP COLUMN b, ADD COLUMN a UInt64 DEFAULT toUInt64(s) SETTINGS alter_sync = 0;
+SELECT count() FROM t_rename SETTINGS query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+SELECT count() FROM t_rename SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+DROP TABLE t_rename;

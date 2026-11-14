@@ -9907,18 +9907,41 @@ IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns, 
     return result;
 }
 
-NamesAndTypesList MergeTreeData::getColumnsStoredInAllParts(const NamesAndTypesList & columns, const RangesInDataParts & parts)
+NamesAndTypesList MergeTreeData::getColumnsStoredInAllParts(
+    const NamesAndTypesList & columns, const RangesInDataParts & parts, const MutationsSnapshotPtr & mutations_snapshot)
 {
     /// Parts with the same columns share one interned set of column positions, so each set is checked once.
     std::unordered_set<const IMergeTreeDataPart::NameToNumber *> part_columns;
     for (const auto & part : parts)
         part_columns.insert(&part.data_part->getColumnPositions());
 
+    /// A pending drop or rename leaves the old data under a name that a re-added column can reuse.
+    NameSet changed_on_fly;
+    if (mutations_snapshot)
+    {
+        changed_on_fly = mutations_snapshot->getColumnsChangedOnFly();
+        if (mutations_snapshot->hasMetadataMutations())
+        {
+            for (const auto & part : parts)
+            {
+                for (const auto & command : mutations_snapshot->getOnFlyMutationCommandsForPart(part.data_part))
+                {
+                    if (command.type == MutationCommand::RENAME_COLUMN)
+                    {
+                        changed_on_fly.insert(command.column_name);
+                        changed_on_fly.insert(command.rename_to);
+                    }
+                }
+            }
+        }
+    }
+
     NamesAndTypesList result;
     for (const auto & column : columns)
     {
         const auto name_in_storage = column.getNameInStorage();
-        if (std::ranges::all_of(part_columns, [&](const auto * positions) { return positions->contains(name_in_storage); }))
+        if (!changed_on_fly.contains(name_in_storage)
+            && std::ranges::all_of(part_columns, [&](const auto * positions) { return positions->contains(name_in_storage); }))
             result.push_back(column);
     }
     return result;
