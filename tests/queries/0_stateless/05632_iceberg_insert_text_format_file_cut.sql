@@ -16,7 +16,7 @@ SELECT concat(
     user_files_path, '/', currentDatabase(), '/05632_iceberg_insert_text_format_file_cut/') AS path
 FROM system.server_settings WHERE name = 'user_files_path';
 
-CREATE TABLE t (k UInt64, s String) ENGINE = IcebergLocal((SELECT path FROM iceberg_path), 'JSONEachRow');
+CREATE TABLE t (k Int64, s String) ENGINE = IcebergLocal((SELECT path FROM iceberg_path), 'JSONEachRow');
 INSERT INTO t SELECT number, repeat('x', number % 100) FROM numbers(50000);
 
 SELECT count(), sum(k), sum(length(s)) FROM t;
