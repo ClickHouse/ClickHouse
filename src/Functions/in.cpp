@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include <Common/FieldAccurateComparison.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -436,18 +437,24 @@ public:
 
         if (check_numeric_probe_exactness && columns_of_key_columns.size() == 1)
         {
-            /// A rounded probe can find a different stored key. Retain only matches
-            /// whose original value is exactly representable in the key type.
+            /// A rounded probe can find a different stored key. A successful cast
+            /// alone is insufficient: compare its round trip in the original type.
             auto exact_matches = ColumnUInt8::create(res->size());
             auto & exact_data = exact_matches->getData();
             const auto key_type = removeNullable(removeLowCardinality(set_types[0]));
+            const auto left_type = removeNullable(removeLowCardinality(left_arg.type));
             for (size_t row = 0; row < res->size(); ++row)
             {
                 if (!res->getBool(row) || left_arg.column->isNullAt(row))
                     continue;
                 auto probe = left_arg.column->cut(row, 1);
-                exact_data[row] = static_cast<bool>(tryConvertColumnToTypeOrNull(
-                    *probe, left_arg.type, key_type, {}, /*strict=*/true));
+                auto converted = tryConvertColumnToTypeOrNull(
+                    *probe, left_arg.type, key_type, {}, /*strict=*/true);
+                if (!converted)
+                    continue;
+                auto restored = tryConvertColumnToTypeOrNull(
+                    *converted, key_type, left_type, {}, /*strict=*/true);
+                exact_data[row] = restored && accurateEquals((*probe)[0], (*restored)[0]);
             }
             res = std::move(exact_matches);
         }
