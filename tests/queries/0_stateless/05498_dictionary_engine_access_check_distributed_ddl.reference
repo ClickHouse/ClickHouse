@@ -1,0 +1,62 @@
+--- ON CLUSTER
+CREATE TABLE cluster_db.w_1 ON CLUSTER test_shard_localhost (id UInt64, value String) ENGINE = Dictionary(db.d)
+ACCESS_DENIED
+NOT_LOADED
+CREATE TABLE cluster_db.w_2 ON CLUSTER test_shard_localhost (id UInt64, value String) ENGINE = Dictionary(db.d)
+ACCESS_DENIED
+NOT_LOADED
+CREATE TABLE cluster_db.w_default ON CLUSTER test_shard_localhost (id UInt64, value String) ENGINE = Dictionary(db.d)
+ACCESS_DENIED
+NOT_LOADED
+--- inner table of a materialized view
+CREATE MATERIALIZED VIEW mv ENGINE = Dictionary(db.d) AS SELECT id, value FROM db.src
+ACCESS_DENIED
+NOT_LOADED
+--- table function
+CREATE TABLE w_function (id UInt64, value String) AS dictionary('db.d')
+ACCESS_DENIED
+NOT_LOADED
+0
+CREATE TABLE cluster_db.w_function ON CLUSTER test_shard_localhost (id UInt64, value String) AS dictionary('db.d')
+ACCESS_DENIED
+NOT_LOADED
+0
+CREATE TABLE w_view (value String) AS view(SELECT dictGet('db.d', 'value', toUInt64(1)) AS value)
+
+SELECT * FROM w_view
+ACCESS_DENIED
+NOT_LOADED
+CREATE TABLE cluster_db.w_view ON CLUSTER test_shard_localhost (value String) AS view(SELECT dictGet('db.d', 'value', toUInt64(1)) AS value)
+
+SELECT * FROM cluster_db.w_view
+ACCESS_DENIED
+NOT_LOADED
+CREATE TABLE w_loop (id UInt64, value String) AS loop(dictionary('db.d'))
+
+SELECT * FROM w_loop LIMIT 1
+ACCESS_DENIED
+NOT_LOADED
+CREATE TABLE w_loop_inferred AS loop(dictionary('db.d'))
+ACCESS_DENIED
+NOT_LOADED
+CREATE TABLE w_missing (x UInt64) AS view(SELECT x FROM db.missing_table)
+
+CREATE TABLE cluster_db.w_missing ON CLUSTER test_shard_localhost (x UInt64) AS view(SELECT x FROM db.missing_table)
+
+2
+CREATE TABLE w_context (value String) AS view(SELECT dictGet(if(currentUser() = 'user', 'db.d_unqualified', 'db.d'), 'value', toUInt64(1)) AS value)
+
+SELECT * FROM w_context
+a
+NOT_LOADED
+--- unqualified name, resolved by ON CLUSTER in the default database of the server
+CREATE TABLE cluster_db.w_unqualified ON CLUSTER test_shard_localhost (id UInt64, value String) ENGINE = Dictionary('d_unqualified')
+ACCESS_DENIED
+NOT_LOADED
+--- dictionary name given by an expression
+CREATE TABLE w_expression (id UInt64, value String) ENGINE = Dictionary(concat(currentDatabase(), '.d'))
+ACCESS_DENIED
+NOT_LOADED
+CREATE TABLE cluster_db.w_expression ON CLUSTER test_shard_localhost (id UInt64, value String) ENGINE = Dictionary(concat(currentDatabase(), '.d'))
+
+1

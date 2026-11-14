@@ -1,0 +1,134 @@
+NOT_LOADED
+--- no grants
+SELECT * FROM dictionary('db.d')
+ACCESS_DENIED
+NOT_LOADED
+DESCRIBE TABLE dictionary('db.d')
+ACCESS_DENIED
+NOT_LOADED
+SELECT dictGet('db.d', 'value', toUInt64(1))
+ACCESS_DENIED
+NOT_LOADED
+SELECT dictHas('db.d', toUInt64(1))
+ACCESS_DENIED
+NOT_LOADED
+SELECT count() FROM numbers(1) GROUP BY dictGet('db.d', 'value', number) SETTINGS enable_analyzer = 0
+ACCESS_DENIED
+NOT_LOADED
+SELECT * FROM dictionary('d')
+ACCESS_DENIED
+NOT_LOADED
+DESCRIBE TABLE dictionary('d')
+ACCESS_DENIED
+NOT_LOADED
+SELECT dictGet('d', 'value', toUInt64(1))
+ACCESS_DENIED
+NOT_LOADED
+SELECT dictHas('d', toUInt64(1))
+ACCESS_DENIED
+NOT_LOADED
+SELECT count() FROM numbers(1) GROUP BY dictGet('d', 'value', number) SETTINGS enable_analyzer = 0
+ACCESS_DENIED
+NOT_LOADED
+--- SELECT on a Dictionary table is not enough without a grant on the dictionary
+SELECT * FROM w
+ACCESS_DENIED
+NOT_LOADED
+SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct'
+ACCESS_DENIED
+NOT_LOADED
+SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'hash'
+ACCESS_DENIED
+NOT_LOADED
+SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct', enable_analyzer = 0
+ACCESS_DENIED
+NOT_LOADED
+EXPLAIN SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct', enable_analyzer = 1
+ACCESS_DENIED
+NOT_LOADED
+CREATE VIEW v_by_user AS SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct', enable_analyzer = 1
+ACCESS_DENIED
+NOT_LOADED
+EXPLAIN SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct', enable_analyzer = 0
+ACCESS_DENIED
+NOT_LOADED
+CREATE VIEW v_by_user AS SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct', enable_analyzer = 0
+ACCESS_DENIED
+NOT_LOADED
+--- creating a Dictionary table needs access to the dictionary
+CREATE TABLE w_by_user (id UInt64, value String) ENGINE = Dictionary(db.d)
+ACCESS_DENIED
+NOT_LOADED
+CREATE TABLE w_by_user (id UInt64, value String) ENGINE = Dictionary(d)
+ACCESS_DENIED
+NOT_LOADED
+--- no grants, naiveBayesClassifier
+NOT_LOADED
+SELECT naiveBayesClassifier('nb', 'good')
+ACCESS_DENIED
+NOT_LOADED
+SELECT naiveBayesClassifierWithProb('nb', 'good')
+ACCESS_DENIED
+NOT_LOADED
+SELECT naiveBayesClassifierWithAllProbs('nb', 'good')
+ACCESS_DENIED
+NOT_LOADED
+--- SELECT is enough for the dictionary table function, but not for dictGet
+SELECT dictGet('d', 'value', toUInt64(1))
+ACCESS_DENIED
+NOT_LOADED
+DESCRIBE TABLE dictionary('d')
+id	UInt64					
+value	String					
+SELECT * FROM dictionary('d')
+1	a
+LOADED
+NOT_LOADED
+SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id ORDER BY n.number SETTINGS join_algorithm = 'direct', enable_analyzer = 1
+0	
+1	a
+LOADED
+NOT_LOADED
+SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id ORDER BY n.number SETTINGS join_algorithm = 'direct', enable_analyzer = 0
+0	
+1	a
+LOADED
+--- dictGet
+NOT_LOADED
+SELECT dictGet('d', 'value', toUInt64(1))
+a
+LOADED
+NOT_LOADED
+SELECT dictHas('db.d', toUInt64(1))
+1
+LOADED
+NOT_LOADED
+SELECT count() FROM numbers(1) GROUP BY dictGet('d', 'value', number) SETTINGS enable_analyzer = 0
+1
+LOADED
+NOT_LOADED
+SELECT * FROM dictionary('d')
+1	a
+LOADED
+NOT_LOADED
+SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id ORDER BY n.number SETTINGS join_algorithm = 'direct'
+0	
+1	a
+LOADED
+NOT_LOADED
+CREATE VIEW v_by_user AS SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct'
+
+LOADED
+NOT_LOADED
+CREATE TABLE w_by_user (id UInt64, value String) ENGINE = Dictionary(db.d)
+
+LOADED
+CREATE TABLE w_unqualified_by_user (id UInt64, value String) ENGINE = Dictionary(d)
+
+LOADED
+1	a
+LOADED
+--- dictGet, naiveBayesClassifier
+SELECT naiveBayesClassifier('nb', 'good')
+0
+LOADED
