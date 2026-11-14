@@ -3,8 +3,6 @@
 namespace DB
 {
 
-class AggregateFunctionFactory;
-
-void registerWindowFunctions(AggregateFunctionFactory & factory);
+void registerWindowFunctions();
 
 }

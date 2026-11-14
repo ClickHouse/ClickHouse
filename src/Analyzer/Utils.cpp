@@ -27,7 +27,6 @@
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/TypeTree.h>
-#include <DataTypes/getLeastSupertype.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
@@ -45,6 +44,7 @@
 #include <base/unit.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -70,8 +70,6 @@
 #include <Analyzer/UnionNode.h>
 
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
-
-#include <Poco/String.h>
 
 #include <ranges>
 
@@ -969,7 +967,7 @@ inline DataTypes getArgumentNodeTypes(const FunctionNode & function_node)
         | std::ranges::to<DataTypes>();
 }
 
-inline AggregateFunctionPtr resolveAggregateFunctionImpl(FunctionNode & function_node, const String & function_name, AggregateFunctionStateVariant state_variant)
+inline Array getParameterValues(const FunctionNode & function_node)
 {
     Array parameters;
     for (const auto & param : function_node.getParameters())
@@ -978,9 +976,27 @@ inline AggregateFunctionPtr resolveAggregateFunctionImpl(FunctionNode & function
         parameters.push_back(constant->getValue());
     }
 
+    return parameters;
+}
+
+inline AggregateFunctionPtr resolveAggregateFunctionImpl(FunctionNode & function_node, const String & function_name, AggregateFunctionStateVariant state_variant)
+{
     AggregateFunctionProperties properties;
     auto action = NullsAction::EMPTY;
-    return AggregateFunctionFactory::instance().get(function_name, action, getArgumentNodeTypes(function_node), parameters, properties, state_variant);
+    return AggregateFunctionFactory::instance().get(function_name, action, getArgumentNodeTypes(function_node), getParameterValues(function_node), properties, state_variant);
+}
+
+inline GeneralWindowFunctionPtr resolveWindowFunctionImpl(FunctionNode & function_node, const String & function_name, const ContextPtr & context)
+{
+    const auto & window_function_factory = WindowFunctionFactory::instance();
+
+    auto & arguments = function_node.getArguments().getNodes();
+    auto argument_types = window_function_factory.bindArgumentTypes(function_name, getArgumentNodeTypes(function_node));
+    for (size_t i = 0; i < arguments.size(); ++i)
+        if (!arguments[i]->getResultType()->equals(*argument_types[i]))
+            arguments[i] = createCastFunction(arguments[i], argument_types[i], context);
+
+    return window_function_factory.get(function_name, argument_types, getParameterValues(function_node));
 }
 
 inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode & function_node, const String & function_name)
@@ -988,9 +1004,14 @@ inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode & function_nod
     return resolveAggregateFunctionImpl(function_node, function_name, AggregateFunctionStateVariant::Aggregation);
 }
 
-inline AggregateFunctionPtr resolveWindowFunction(FunctionNode & function_node, const String & function_name)
+inline AggregateFunctionPtr resolveWindowAggregateFunction(FunctionNode & function_node, const String & function_name)
 {
     return resolveAggregateFunctionImpl(function_node, function_name, AggregateFunctionStateVariant::Window);
+}
+
+inline GeneralWindowFunctionPtr resolveWindowFunction(FunctionNode & function_node, const String & function_name, const ContextPtr & context)
+{
+    return resolveWindowFunctionImpl(function_node, function_name, context);
 }
 
 }
@@ -1078,17 +1099,15 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
     {
         if (name == "nothing" || name == "nothingUInt64" || name == "nothingNull")
             return;
-        function_node->resolveAsAggregateFunction(resolveAggregateFunction(*function_node, function_node->getFunctionName()));
+
+        if (function_node->hasWindow())
+            function_node->resolveAsAggregateFunction(resolveWindowAggregateFunction(*function_node, name));
+        else
+            function_node->resolveAsAggregateFunction(resolveAggregateFunction(*function_node, function_node->getFunctionName()));
     }
     else if (function_node->isWindowFunction())
     {
-        auto & arguments = function_node->getArguments().getNodes();
-        auto argument_types = bindWindowFunctionArgumentTypes(name, getArgumentNodeTypes(*function_node));
-        for (size_t i = 0; i < arguments.size(); ++i)
-            if (!arguments[i]->getResultType()->equals(*argument_types[i]))
-                arguments[i] = createCastFunction(arguments[i], argument_types[i], context);
-
-        function_node->resolveAsWindowFunction(resolveWindowFunction(*function_node, name));
+        function_node->resolveAsWindowFunction(resolveWindowFunction(*function_node, name, context));
     }
 }
 
@@ -1225,26 +1244,11 @@ void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const Strin
 
 void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name)
 {
-    /// A node that keeps its window definition must stay a window function: one that reports both
-    /// aggregate and window is collected by both the aggregation and the window analysis.
+    /// A node with a window definition takes the window variant of the aggregate function.
     if (function_node.hasWindow())
-        function_node.resolveAsWindowFunction(resolveWindowFunction(function_node, function_name));
+        function_node.resolveAsAggregateFunction(resolveWindowAggregateFunction(function_node, function_name));
     else
         function_node.resolveAsAggregateFunction(resolveAggregateFunction(function_node, function_name));
-}
-
-/// TODO(Michicosun): Move this to the window function factory.
-DataTypes bindWindowFunctionArgumentTypes(const String & function_name, DataTypes argument_types)
-{
-    const auto function_name_lowercase = Poco::toLower(function_name);
-
-    /// For lag/lead functions the value and the default are brought to their common type, like PostgreSQL's anycompatible.
-    const bool is_lag_or_lead = function_name_lowercase == "lag" || function_name_lowercase == "laginframe"
-                             || function_name_lowercase == "lead" || function_name_lowercase == "leadinframe";
-    if (is_lag_or_lead && argument_types.size() == 3)
-        argument_types[0] = argument_types[2] = getLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
-
-    return argument_types;
 }
 
 std::pair<TableExpressionNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node)

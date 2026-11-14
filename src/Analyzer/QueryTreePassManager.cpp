@@ -158,7 +158,7 @@ private:
             if (!expected_argument_type->equals(*actual_argument_type))
             {
                 /// Aggregate functions remove low cardinality for their argument types
-                if ((function->isAggregateFunction() || function->isWindowFunction()) &&
+                if ((function->isAggregateFunction() || function->hasWindow()) &&
                     expected_argument_type->equals(*recursiveRemoveLowCardinality(actual_argument_type)))
                     continue;
 

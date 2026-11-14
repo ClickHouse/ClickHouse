@@ -1,10 +1,9 @@
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <WindowFunctions/Common/WindowArguments.h>
 #include <WindowFunctions/Common/WindowBounds.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
-#include <WindowFunctions/WindowFunction.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 
@@ -83,13 +82,13 @@ public:
 
 }
 
-void registerWindowFunctionNtile(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
-void registerWindowFunctionNtile(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
+void registerWindowFunctionNtile(WindowFunctionFactory & factory);
+void registerWindowFunctionNtile(WindowFunctionFactory & factory)
 {
     factory.registerFunction("ntile", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionNtile>(name, argument_types, parameters));
+            return std::make_shared<WindowFunctionNtile>(name, argument_types, parameters);
         }, {.description = R"DOCS_MD(
 Divides the ordered rows within a partition into a specified number of buckets (groups) of as equal a size as possible, and returns the bucket number that the current row belongs to. Buckets are numbered starting from 1. For each partition, the rows are assigned to buckets in order: if the number of rows is not divisible by the number of buckets, the earlier buckets receive one more row than the later ones.
 
@@ -155,7 +154,7 @@ FROM salaries;
 ```
 
 Here there are seven rows and four buckets, so the first three buckets contain two rows each and the last bucket contains a single row.
-)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties}, AggregateFunctionFactory::Case::Insensitive);
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}}, WindowFunctionFactory::Case::Insensitive);
 }
 
 }

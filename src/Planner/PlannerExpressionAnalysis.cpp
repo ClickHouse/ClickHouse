@@ -16,6 +16,8 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
+#include <WindowFunctions/WindowFunctionFactory.h>
+
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/HashUtils.h>
@@ -431,18 +433,28 @@ std::optional<WindowAnalysisResult> analyzeWindow(
                 }
             }
 
-            if (types_changed)
+            if (!types_changed)
+                continue;
+
+            if (window_function.general_function)
+            {
+                window_function.general_function = WindowFunctionFactory::instance().get(
+                    window_function.getFunctionName(),
+                    actual_argument_types,
+                    window_function.function_parameters);
+            }
+            else
             {
                 AggregateFunctionProperties properties;
-                auto new_function = AggregateFunctionFactory::instance().get(
-                    window_function.aggregate_function->getName(),
+                window_function.aggregate_function = AggregateFunctionFactory::instance().get(
+                    window_function.getFunctionName(),
                     NullsAction::EMPTY,
                     actual_argument_types,
                     window_function.function_parameters,
                     properties);
-                window_function.aggregate_function = std::move(new_function);
-                window_function.argument_types = std::move(actual_argument_types);
             }
+
+            window_function.argument_types = std::move(actual_argument_types);
         }
     }
 
@@ -450,7 +462,7 @@ std::optional<WindowAnalysisResult> analyzeWindow(
 
     for (auto & window_description : window_descriptions)
         for (auto & window_function : window_description.window_functions)
-            window_functions_additional_columns.emplace_back(nullptr, window_function.aggregate_function->getResultType(), window_function.column_name);
+            window_functions_additional_columns.emplace_back(nullptr, window_function.getResultType(), window_function.column_name);
 
     auto before_window_step = std::make_unique<ActionsChainStep>(before_window_actions,
         true /*use_actions_nodes_as_output_columns*/,

@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
+#include <WindowFunctions/IGeneralWindowFunction_fwd.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -149,11 +150,17 @@ public:
       */
     AggregateFunctionPtr getAggregateFunction() const;
 
+    /** Get window function.
+      * If function is not resolved nullptr returned.
+      * If function is resolved as non window function nullptr returned.
+      */
+    GeneralWindowFunctionPtr getWindowFunction() const;
+
     /// Is function node resolved
     bool isResolved() const { return function != nullptr; }
 
     /// Is function node window function
-    bool isWindowFunction() const { return hasWindow(); }
+    bool isWindowFunction() const { return kind == FunctionKind::WINDOW; }
 
     /// Is function node aggregate function
     bool isAggregateFunction() const { return kind == FunctionKind::AGGREGATE; }
@@ -184,7 +191,7 @@ public:
       * It is important that function name is updated with resolved function name.
       * Main motivation for this is query tree optimizations.
       */
-    void resolveAsWindowFunction(AggregateFunctionPtr window_function_value);
+    void resolveAsWindowFunction(GeneralWindowFunctionPtr window_function_value);
 
     QueryTreeNodeType getNodeType() const override { return QueryTreeNodeType::FUNCTION; }
 

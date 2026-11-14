@@ -1,9 +1,8 @@
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <WindowFunctions/Common/WindowBounds.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
-#include <WindowFunctions/WindowFunction.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -40,13 +39,13 @@ public:
 
 }
 
-void registerWindowFunctionPercentRank(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
-void registerWindowFunctionPercentRank(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
+void registerWindowFunctionPercentRank(WindowFunctionFactory & factory);
+void registerWindowFunctionPercentRank(WindowFunctionFactory & factory)
 {
     factory.registerFunction("percentRank", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionPercentRank>(name, argument_types, parameters));
+            return std::make_shared<WindowFunctionPercentRank>(name, argument_types, parameters);
         }, {.description = R"DOCS_MD(
 returns the relative rank (i.e. percentile) of rows within a window partition.
 
@@ -107,9 +106,9 @@ FROM salaries;
    └─────────────────┴────────┴────────────────────┘
 
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties});
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}});
 
-    factory.registerAlias("percent_rank", "percentRank", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("percent_rank", "percentRank", WindowFunctionFactory::Case::Insensitive);
 }
 
 }

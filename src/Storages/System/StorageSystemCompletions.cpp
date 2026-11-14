@@ -1,6 +1,7 @@
 #include <Access/ContextAccess.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
@@ -182,6 +183,9 @@ static void fillDataWithFunctions(MutableColumns & res_columns, const ContextPtr
     const auto & aggregate_functions_factory = AggregateFunctionFactory::instance();
     const auto & aggregate_function_names = aggregate_functions_factory.getAllRegisteredNames();
     for (const auto & function_name : aggregate_function_names)
+        insert_function(function_name);
+    const auto & window_function_names = WindowFunctionFactory::instance().getAllRegisteredNames();
+    for (const auto & function_name : window_function_names)
         insert_function(function_name);
     const auto & user_defined_function_names = UserDefinedExecutableFunctionFactory::getRegisteredNames(context);
     for (const auto & function_name : user_defined_function_names)

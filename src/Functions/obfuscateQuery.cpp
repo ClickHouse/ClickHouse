@@ -8,6 +8,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Functions/FunctionHelpers.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -84,6 +85,7 @@ const KnownIdentifierFunc & getKnownIdentifierFunc()
             std::string what(name);
             if (FunctionFactory::instance().has(what)
                 || AggregateFunctionFactory::instance().isAggregateFunctionName(what)
+                || WindowFunctionFactory::instance().isWindowFunctionName(what)
                 || TableFunctionFactory::instance().isTableFunctionName(what)
                 || FormatFactory::instance().isOutputFormat(what)
                 || FormatFactory::instance().isInputFormat(what)

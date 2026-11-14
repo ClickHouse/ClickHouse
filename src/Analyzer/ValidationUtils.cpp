@@ -261,7 +261,7 @@ private:
     bool nodeIsAggregateFunctionOrInGroupByKeys(const QueryTreeNodePtr & node) const
     {
         if (auto * function_node = node->as<FunctionNode>())
-            if (function_node->isAggregateFunction())
+            if (function_node->isAggregateFunction() && !function_node->hasWindow())
                 return true;
 
         for (const auto & group_by_key_node : group_by_keys_nodes)
@@ -509,7 +509,7 @@ void assertNoArrayJoinOutside(const QueryTreeNodePtr & node,
         if (const auto * function_node = current->as<FunctionNode>())
         {
             /// the query computes arguments of an aggregate or window function before the step
-            if (function_node->isAggregateFunction() || function_node->isWindowFunction())
+            if (function_node->isAggregateFunction() || function_node->hasWindow())
                 continue;
             if (function_node->getFunctionName() == "arrayJoin")
                 throw Exception(exception_code,

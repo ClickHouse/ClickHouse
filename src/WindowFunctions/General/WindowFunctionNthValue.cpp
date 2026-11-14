@@ -1,9 +1,8 @@
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/IColumn.h>
 #include <WindowFunctions/Common/WindowArguments.h>
 #include <WindowFunctions/Common/WindowBounds.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
-#include <WindowFunctions/WindowFunction.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -63,13 +62,13 @@ public:
 
 }
 
-void registerWindowFunctionNthValue(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
-void registerWindowFunctionNthValue(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
+void registerWindowFunctionNthValue(WindowFunctionFactory & factory);
+void registerWindowFunctionNthValue(WindowFunctionFactory & factory)
 {
     factory.registerFunction("nth_value", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionNthValue>(name, argument_types, parameters));
+            return std::make_shared<WindowFunctionNthValue>(name, argument_types, parameters);
         }, {.description = R"DOCS_MD(
 Returns the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
 
@@ -134,7 +133,7 @@ SELECT player, salary, nth_value(player,3) OVER(ORDER BY salary DESC) AS third_h
 7. │ Michael Stanley │ 100000 │ Charles Juarez       │
    └─────────────────┴────────┴──────────────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties}, AggregateFunctionFactory::Case::Insensitive);
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}}, WindowFunctionFactory::Case::Insensitive);
 }
 
 }

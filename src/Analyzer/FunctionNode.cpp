@@ -16,6 +16,7 @@
 #include <Functions/IFunction.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <WindowFunctions/IGeneralWindowFunction.h>
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/ConstantNode.h>
@@ -86,9 +87,16 @@ ColumnsWithTypeAndName FunctionNode::getArgumentColumns() const
 
 AggregateFunctionPtr  FunctionNode::getAggregateFunction() const
 {
-    if (kind == FunctionKind::UNKNOWN || kind == FunctionKind::ORDINARY)
+    if (kind != FunctionKind::AGGREGATE)
         return {};
     return std::static_pointer_cast<const IAggregateFunction>(function);
+}
+
+GeneralWindowFunctionPtr FunctionNode::getWindowFunction() const
+{
+    if (kind != FunctionKind::WINDOW)
+        return {};
+    return std::static_pointer_cast<const IGeneralWindowFunction>(function);
 }
 
 void FunctionNode::resolveAsFunction(FunctionBasePtr function_value)
@@ -112,13 +120,15 @@ void FunctionNode::resolveAsAggregateFunction(AggregateFunctionPtr aggregate_fun
     nulls_action = NullsAction::EMPTY;
 }
 
-void FunctionNode::resolveAsWindowFunction(AggregateFunctionPtr window_function_value)
+void FunctionNode::resolveAsWindowFunction(GeneralWindowFunctionPtr window_function_value)
 {
     if (!hasWindow())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Trying to resolve FunctionNode without window definition as a window function {}", window_function_value->getName());
-    resolveAsAggregateFunction(window_function_value);
+    function_name = window_function_value->getName();
+    function = std::move(window_function_value);
     kind = FunctionKind::WINDOW;
+    nulls_action = NullsAction::EMPTY;
 }
 
 void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
@@ -131,10 +141,10 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     buffer << ", function_name: " << function_name;
 
     std::string function_type = "ordinary";
-    if (isAggregateFunction())
-        function_type = "aggregate";
-    else if (isWindowFunction())
+    if (hasWindow())
         function_type = "window";
+    else if (isAggregateFunction())
+        function_type = "aggregate";
 
     buffer << ", function_type: " << function_type;
 
@@ -146,7 +156,7 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     if (function)
     {
         buffer << ", result_type: " + getResultType()->getName();
-        if (!isAggregateFunction() && !isWindowFunction() && getFunction()->isSpatialPredicate())
+        if (!isAggregateFunction() && !hasWindow() && getFunction()->isSpatialPredicate())
             buffer << ", is_spatial_predicate: true";
     }
 
@@ -249,7 +259,7 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     /// Table functions are `TableFunctionNode`, so `not` here is boolean NOT
     function_ast->setIsOperator(is_operator || function_name == "not");
 
-    if (isWindowFunction())
+    if (hasWindow())
     {
         function_ast->setIsWindowFunction(true);
         function_ast->setKind(ASTFunction::Kind::WINDOW_FUNCTION);

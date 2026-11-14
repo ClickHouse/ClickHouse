@@ -3,6 +3,7 @@
 
 #include <Access/ContextAccess.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
@@ -170,6 +171,9 @@ namespace
 
         if (AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
             throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The aggregate function '{}' already exists", function_name);
+
+        if (WindowFunctionFactory::instance().hasNameOrAlias(function_name))
+            throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The window function '{}' already exists", function_name);
 
         auto & storage = current_context->getUserDefinedSQLObjectsStorage();
         if (storage.has(function_name))

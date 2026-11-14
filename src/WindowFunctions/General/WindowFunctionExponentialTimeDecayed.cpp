@@ -1,10 +1,9 @@
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <WindowFunctions/Common/WindowArguments.h>
 #include <WindowFunctions/Common/WindowBounds.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
-#include <WindowFunctions/WindowFunction.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/assert_cast.h>
@@ -323,8 +322,8 @@ private:
 
 }
 
-void registerWindowFunctionsExponentialTimeDecayed(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
-void registerWindowFunctionsExponentialTimeDecayed(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
+void registerWindowFunctionsExponentialTimeDecayed(WindowFunctionFactory & factory);
+void registerWindowFunctionsExponentialTimeDecayed(WindowFunctionFactory & factory)
 {
     FunctionDocumentation::Description exponentialTimeDecayedSum_description = R"(
 Returns the sum of exponentially smoothed moving average values of a time series at the index `t` in time.
@@ -418,8 +417,8 @@ FROM
     factory.registerFunction("exponentialTimeDecayedSum", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionExponentialTimeDecayedSum>(name, argument_types, parameters));
-        }, exponentialTimeDecayedSum_documentation, properties});
+            return std::make_shared<WindowFunctionExponentialTimeDecayedSum>(name, argument_types, parameters);
+        }, exponentialTimeDecayedSum_documentation});
 
     FunctionDocumentation::Description exponentialTimeDecayedMax_description = R"(
 Returns the maximum of the computed exponentially smoothed moving average at index `t` in time with that at `t-1`.
@@ -513,8 +512,8 @@ FROM
     factory.registerFunction("exponentialTimeDecayedMax", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionExponentialTimeDecayedMax>(name, argument_types, parameters));
-        }, exponentialTimeDecayedMax_documentation, properties});
+            return std::make_shared<WindowFunctionExponentialTimeDecayedMax>(name, argument_types, parameters);
+        }, exponentialTimeDecayedMax_documentation});
 
     FunctionDocumentation::Description exponentialTimeDecayedCount_description = R"(
 Returns the cumulative exponential decay over a time series at the index `t` in time.
@@ -607,8 +606,8 @@ FROM
     factory.registerFunction("exponentialTimeDecayedCount", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionExponentialTimeDecayedCount>(name, argument_types, parameters));
-        }, exponentialTimeDecayedCount_documentation, properties});
+            return std::make_shared<WindowFunctionExponentialTimeDecayedCount>(name, argument_types, parameters);
+        }, exponentialTimeDecayedCount_documentation});
 
     FunctionDocumentation::Description exponentialTimeDecayedAvg_description = R"(
 Returns the exponentially smoothed weighted moving average of values of a time series at point `t` in time.
@@ -702,8 +701,8 @@ FROM
     factory.registerFunction("exponentialTimeDecayedAvg", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionExponentialTimeDecayedAvg>(name, argument_types, parameters));
-        }, exponentialTimeDecayedAvg_documentation, properties});
+            return std::make_shared<WindowFunctionExponentialTimeDecayedAvg>(name, argument_types, parameters);
+        }, exponentialTimeDecayedAvg_documentation});
 }
 
 }

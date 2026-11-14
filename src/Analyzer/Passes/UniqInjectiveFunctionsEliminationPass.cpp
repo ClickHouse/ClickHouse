@@ -46,7 +46,7 @@ public:
             return;
 
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || !function_node->isAggregateFunction() || !isUniqFunction(function_node->getFunctionName()))
+        if (!function_node || !function_node->isAggregateFunction() || function_node->hasWindow() || !isUniqFunction(function_node->getFunctionName()))
             return;
 
         bool replaced_argument = false;

@@ -99,7 +99,7 @@ public:
             return;
 
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || !function_node->isAggregateFunction() || !names_to_collect.contains(function_node->getFunctionName()))
+        if (!function_node || !function_node->isAggregateFunction() || function_node->hasWindow() || !names_to_collect.contains(function_node->getFunctionName()))
             return;
 
         if (function_node->getResultType()->isNullable())

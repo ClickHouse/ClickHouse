@@ -5,6 +5,7 @@
 #include <Common/ThreadStatus.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
@@ -207,6 +208,9 @@ static void checkCanBeRegistered(const ContextPtr & context, const String & func
     if (AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The aggregate function '{}' already exists", function_name);
 
+    if (WindowFunctionFactory::instance().hasNameOrAlias(function_name))
+        throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The window function '{}' already exists", function_name);
+
     if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context)) /// NOLINT(readability-static-accessed-through-instance)
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined executable function '{}' already exists", function_name);
 
@@ -220,7 +224,8 @@ static void checkCanBeRegistered(const ContextPtr & context, const String & func
 static void checkCanBeUnregistered(const ContextPtr & context, const String & function_name)
 {
     if (FunctionFactory::instance().hasNameOrAlias(function_name) ||
-        AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
+        AggregateFunctionFactory::instance().hasNameOrAlias(function_name) ||
+        WindowFunctionFactory::instance().hasNameOrAlias(function_name))
         throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop system function '{}'", function_name);
 
     if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context)) // NOLINT(readability-static-accessed-through-instance)

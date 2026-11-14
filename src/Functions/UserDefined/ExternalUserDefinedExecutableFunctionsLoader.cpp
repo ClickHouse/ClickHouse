@@ -17,6 +17,7 @@
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 
 #include <filesystem>
 
@@ -186,6 +187,9 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
 
     if (AggregateFunctionFactory::instance().hasNameOrAlias(name))
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The aggregate function '{}' already exists", name);
+
+    if (WindowFunctionFactory::instance().hasNameOrAlias(name))
+        throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The window function '{}' already exists", name);
 
     String type = config.getString(key_in_config + ".type");
 

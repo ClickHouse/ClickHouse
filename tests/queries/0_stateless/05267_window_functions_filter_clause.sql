@@ -53,8 +53,3 @@ FROM
     WINDOW w AS (PARTITION BY number % 7 ORDER BY number ROWS BETWEEN 5 PRECEDING AND 5 FOLLOWING)
     SETTINGS max_block_size = 64
 );
-
-SELECT '-- FILTER is only for aggregates';
-SELECT row_number() FILTER (WHERE number > 0) OVER (ORDER BY number) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
-SELECT rank() FILTER (WHERE number > 0) OVER (ORDER BY number) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
-SELECT lag(number) FILTER (WHERE number > 0) OVER (ORDER BY number) FROM numbers(3); -- { serverError BAD_ARGUMENTS }

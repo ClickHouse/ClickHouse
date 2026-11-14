@@ -718,11 +718,6 @@ DataTypePtr AggregateFunctionTuple::getNormalizedStateType() const
     return std::make_shared<DataTypeAggregateFunction>(std::move(normalized_function), nested_normalized_state_types, Array{});
 }
 
-bool AggregateFunctionTuple::isOnlyWindowFunction() const
-{
-    return std::ranges::any_of(nested_functions, [](const auto & nested) { return nested->isOnlyWindowFunction(); });
-}
-
 AggregateFunctionStateVariant AggregateFunctionTuple::getStateVariant() const
 {
     /// All elements are resolved together under one requested variant, so any element reporting
