@@ -119,6 +119,16 @@ auto extractSingleValueFromBlock(const Block & block, const String & name)
 }
 
 NameSet getVirtualNamesForFileLikeStorage();
+
+/// Whether a file-like storage may have the virtual column `name`, as `getVirtualsForFileLikeStorage` adds it. A hive partition
+/// column, only without a partition strategy, is one of `sample_path`, the path from which the storage takes them, or may have
+/// any name if `sample_path` is std::nullopt, when only listing the files would tell it.
+bool mayHaveVirtualColumnOfFileLikeStorage(
+    const String & name,
+    const std::optional<String> & sample_path,
+    PartitionStrategyFactory::StrategyType partition_strategy,
+    const ContextPtr & context);
+
 VirtualColumnsDescription getVirtualsForFileLikeStorage(
     ColumnsDescription & storage_columns,
     ContextPtr context,

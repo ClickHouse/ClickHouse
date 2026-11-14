@@ -12,7 +12,13 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/HivePartitioningUtils.h>
+#include <Storages/PartitionedSink.h>
+#include <Storages/VirtualColumnUtils.h>
+#include <Common/StringUtils.h>
 
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -95,7 +101,10 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first argument of table function '{}' must be a path, not an array", getName());
 
         filename = arg->formatForErrorMessage();
-        file_source = parseFileSourceFromStringArray(literal->value.safeGet<Array>(), context);
+        const auto & sources = literal->value.safeGet<Array>();
+        file_source = parseFileSourceFromStringArray(sources, context);
+        is_array_source = true;
+        first_array_path = sources.front().safeGet<String>(); /// `parseFileSourceFromStringArray` checks that it exists and is a `String`.
         return;
     }
 
@@ -136,6 +145,44 @@ std::optional<String> TableFunctionFile::tryGetFormatFromFirstArgument()
 
     chassert(file_source); /// TableFunctionFile::parseFirstArguments() initializes either `fd` or `file_source`.
     return file_source->format_from_filenames;
+}
+
+std::optional<bool> TableFunctionFile::mayHaveColumnOutsideStructure(const String & column_name, const ContextPtr & context) const
+{
+    /// `StorageFile` takes the hive partition columns from the first of its files, and has none for an archive or a file
+    /// descriptor. The files of a glob are those that exist now, so any name is accepted for them. A path with `{_partition_id}`
+    /// is not listed. A path without globs lists none only if it is a directory without files, whose files would take the hive
+    /// partition columns of the directory, so they are taken from it, as when it has files. The first path of an array is its
+    /// first file unless it is a glob or a directory, which is listed, and then the first file depends on the files that exist.
+    auto resolve = [&](const String & path)
+    {
+        /// As `StorageFile` resolves a path to list it.
+        fs::path resolved(path);
+        if (resolved.is_relative())
+            resolved = fs::weakly_canonical(context->getUserFilesPath()) / resolved;
+        return fs::absolute(resolved).lexically_normal();
+    };
+
+    std::optional<String> sample_path;
+    if (fd >= 0 || !file_source || file_source->archive_info)
+    {
+        sample_path = "";
+    }
+    else if (is_array_source)
+    {
+        if (!containsGlobs(first_array_path) && !file_source->paths.empty()
+            && file_source->paths.front() == resolve(first_array_path).string())
+            sample_path = file_source->paths.front();
+    }
+    else if (!containsGlobs(filename) || filename.contains(PartitionedSink::PARTITION_ID_WILDCARD))
+    {
+        if (!file_source->paths.empty())
+            sample_path = file_source->paths.front();
+        else
+            sample_path = (resolve(filename) / "").string();
+    }
+    return VirtualColumnUtils::mayHaveVirtualColumnOfFileLikeStorage(
+        column_name, sample_path, PartitionStrategyFactory::StrategyType::NONE, context);
 }
 
 StoragePtr TableFunctionFile::getStorage(

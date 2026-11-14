@@ -53,6 +53,22 @@ public:
         return VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
     }
 
+    /// `StorageObjectStorage` reads subcolumns, and building it may read the source.
+    std::optional<bool> storageSupportsSubcolumns() const override { return true; }
+
+    std::optional<bool> mayHaveColumnOutsideStructure(const String & column_name, const ContextPtr & context) const override
+    {
+        /// The storage of a data lake may take its columns from the metadata of the lake rather than from the structure (see
+        /// `shouldReloadSchemaForConsistency`), so it may have any column, which only reading the metadata tells.
+        if constexpr (is_data_lake)
+            return true;
+        return VirtualColumnUtils::mayHaveVirtualColumnOfFileLikeStorage(
+            column_name,
+            StorageObjectStorage::tryGetPathSampleWithoutListing(*configuration, /*distributed_processing=*/ false),
+            configuration->partition_strategy_type,
+            context);
+    }
+
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context)
     {
         StorageObjectStorageConfiguration::initialize(*getConfiguration(context), args, context, true);

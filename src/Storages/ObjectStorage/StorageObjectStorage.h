@@ -45,6 +45,11 @@ using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
 class StorageObjectStorage : public IStorage, public IBackgroundOperation
 {
 public:
+    /// The path from which the storage takes the hive partition columns, if it is known without listing the objects: the path
+    /// itself, or the first address of a pattern of `{...}` alternatives. Otherwise std::nullopt.
+    static std::optional<String> tryGetPathSampleWithoutListing(
+        const StorageObjectStorageConfiguration & configuration, bool distributed_processing);
+
     StorageObjectStorage(
         StorageObjectStorageConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,

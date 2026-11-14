@@ -11,6 +11,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 
 
@@ -52,6 +53,10 @@ public:
     /// Returns true if we always know table structure when executing table function
     /// (e.g. structure is specified in table function arguments)
     virtual bool hasStaticStructure() const { return false; }
+    /// Returns true if the structure is known without reading anything outside the query, so that the columns of a table `AS`
+    /// the function can be checked against it at `CREATE`. Unlike `hasStaticStructure`, it does not make the table create the
+    /// storage of the function when it is loaded, rather than when it is first read.
+    virtual bool hasStructureKnownWithoutReading() const { return hasStaticStructure(); }
     /// Returns false if storage returned by table function supports type conversion (e.g. StorageDistributed)
     virtual bool needStructureConversion() const { return true; }
     /// Returns true if the storage created by this table function can store its own unreplicated data on disk.
@@ -101,6 +106,18 @@ public:
     /// one of these columns, the structure from insertion table won't be used as a structure hint,
     /// because we cannot determine which column from table correspond to this virtual column.
     virtual NameSet getVirtualsToCheckBeforeUsingStructureHint() const { return {}; }
+
+    /// Whether a table `AS` the function can read the column `column_name`, which the structure does not have, from the storage of
+    /// the function, such as a virtual column, or std::nullopt if only the storage knows. A function whose storage reads its
+    /// source when it is built decides it without the storage.
+    virtual std::optional<bool> mayHaveColumnOutsideStructure(const String & /*column_name*/, const ContextPtr & /*context*/) const
+    {
+        return std::nullopt;
+    }
+
+    /// Whether the storage of the function reads a subcolumn by its name, such as `t.x` of a `Tuple` column `t`, which a table
+    /// `AS` the function asks it for, or std::nullopt if only the storage knows (`IStorage::supportsSubcolumns`).
+    virtual std::optional<bool> storageSupportsSubcolumns() const { return std::nullopt; }
 
     virtual bool supportsReadingSubsetOfColumns(const ContextPtr &) { return true; }
 

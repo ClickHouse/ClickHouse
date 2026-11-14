@@ -26,6 +26,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
 
@@ -1011,6 +1012,86 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' cannot be used to create a table", table_function.getName());
 
     throwIfNestedTableFunctionDependsOnCurrentUserGrants(table_function_ast, context);
+}
+
+/// A table `AS` a table function reads the columns of the function's storage by name (see `StorageTableFunctionProxy`), so a
+/// stored column of the table that the storage does not have fails on every read. Checked only for a structure that does not
+/// depend on the data. A name outside the structure may be a virtual column of the storage: the function tells it if it can
+/// without the storage, such as a file-like function, whose storage may list the files when it is built; otherwise it is
+/// looked up in the storage built as the table builds it.
+void throwIfTableColumnsAreMissingFromTableFunction(
+    const ColumnsDescription & columns,
+    const ITableFunction & table_function,
+    const ASTPtr & table_function_ast,
+    const String & table_name,
+    const ContextPtr & context)
+{
+    if (!table_function.hasStructureKnownWithoutReading())
+        return;
+
+    /// The table builds the storage with the global context.
+    const auto global_context = context->getGlobalContext();
+    const auto function_columns = table_function.getActualTableStructure(context, /*is_insert_query=*/ true);
+    Names missing;
+    /// Names that only the storage can tell: outside the structure, and subcolumns of the structure, which the storage may read
+    /// as subcolumns, or have as columns with these names, such as `document.foo` of `elasticsearch`.
+    Names unknown;
+    /// A physical column of the structure: the storage of the function does not compute an `ALIAS` or `EPHEMERAL` one, which
+    /// the table would read by name.
+    const auto physical = GetColumnsOptions(GetColumnsOptions::AllPhysical);
+    for (const auto & column : columns.getAllPhysical())
+    {
+        if (function_columns.tryGetColumn(physical, column.name))
+            continue;
+        if (function_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name))
+        {
+            /// The table asks the storage for the subcolumn by its name.
+            const auto supports_subcolumns = table_function.storageSupportsSubcolumns();
+            if (!supports_subcolumns)
+                unknown.push_back(column.name);
+            else if (!*supports_subcolumns)
+                missing.push_back(column.name);
+            continue;
+        }
+        const auto may_have = table_function.mayHaveColumnOutsideStructure(column.name, global_context);
+        if (!may_have)
+            unknown.push_back(column.name);
+        else if (!*may_have)
+            missing.push_back(column.name);
+    }
+
+    if (!unknown.empty())
+    {
+        const auto storage = table_function.execute(
+            table_function_ast, context, table_name, columns, /*use_global_context=*/ true, /*is_insert_query=*/ true);
+        SCOPE_EXIT_SAFE(storage->shutdown());
+        const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get());
+        const auto nested = proxy ? proxy->getNested() : storage;
+        const auto nested_metadata = nested->getInMemoryMetadataPtr(context, false);
+        const auto nested_snapshot = nested->getStorageSnapshot(nested_metadata, context);
+        const auto readable = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(nested->supportsSubcolumns()).withVirtuals(
+            VirtualsKind::All, VirtualsMaterializationPlace::All);
+        for (const auto & name : unknown)
+            if (!nested_snapshot->tryGetColumn(readable, name))
+                missing.push_back(name);
+    }
+    if (missing.empty())
+        return;
+
+    String missing_list;
+    for (const auto & name : missing)
+    {
+        if (!missing_list.empty())
+            missing_list += ", ";
+        missing_list += backQuote(name);
+    }
+    throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
+        "Table function '{}' has no {} {} of the table, so the table could not read {}. The structure has the columns {}. "
+        "A column of the table, unless it is an `ALIAS` column, needs the name of a column of the structure that is not `ALIAS` "
+        "or `EPHEMERAL`, of its subcolumn if the storage of the function reads subcolumns, or of a virtual column of the function, "
+        "such as `_path` or a hive partition column of a file-like function",
+        table_function.getName(), missing.size() == 1 ? "column" : "columns", missing_list, missing.size() == 1 ? "it" : "them",
+        function_columns.getAllPhysical().toNamesAndTypesDescription());
 }
 
 /// Whether `database_replicated_allow_only_replicated_engine` restricts the tables that `create` may define.
@@ -2968,6 +3049,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// against `url_base`), see `ITableFunction::hasUnreplicatedTableDataOnDisk`.
         if (only_replicated_engine_allowed && table_function->hasUnreplicatedTableDataOnDisk())
             throwUnreplicatedTableDataNotAllowed();
+
+        /// Only for a definition written now, so that an existing table still loads.
+        if (isFreshTableDefinition(mode, create.attach_short_syntax))
+            throwIfTableColumnsAreMissingFromTableFunction(
+                properties.columns, *table_function, table_function_ast, create.getTable(), getContext());
 
         /// In case of CREATE AS table_function() query we should use global context
         /// in storage creation because there will be no query context on server startup

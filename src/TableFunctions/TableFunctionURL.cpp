@@ -17,6 +17,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/Web/Configuration.h>
 #include <Storages/StorageURLCluster.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <IO/WriteHelpers.h>
@@ -323,6 +324,20 @@ bool TableFunctionURL::supportsReadingSubsetOfColumns(const ContextPtr & context
 NameSet TableFunctionURL::getVirtualsToCheckBeforeUsingStructureHint() const
 {
     return delegate ? delegate->getVirtualsToCheckBeforeUsingStructureHint() : ITableFunctionFileLike::getVirtualsToCheckBeforeUsingStructureHint();
+}
+
+std::optional<bool> TableFunctionURL::mayHaveColumnOutsideStructure(const String & column_name, const ContextPtr & context) const
+{
+    if (delegate)
+        return delegate->mayHaveColumnOutsideStructure(column_name, context);
+    /// `StorageURL` also has the response headers.
+    if (column_name == "_headers")
+        return true;
+    /// The storage of a table, built with its stored columns, is `StorageURL` also for a `*` in the path, which it does not
+    /// expand by listing index pages (see `executeImpl`): it takes the hive partition columns from the first address of the
+    /// pattern, without a request.
+    return VirtualColumnUtils::mayHaveVirtualColumnOfFileLikeStorage(
+        column_name, getSampleURI(filename, context), PartitionStrategyFactory::StrategyType::NONE, context);
 }
 
 bool TableFunctionURL::hasStaticStructure() const

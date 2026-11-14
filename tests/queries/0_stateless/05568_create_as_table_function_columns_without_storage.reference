@@ -1,0 +1,13 @@
+--- the files of a path with globs are not listed
+a
+_path
+k
+--- without globs, the hive partition columns are those of the path
+--- the hive partition columns of a pattern of alternatives are those of its first address, which needs no request
+--- a placeholder is not a glob, and a partition strategy has no hive partition columns
+--- the response headers of url
+a
+_headers
+--- a data lake that has no metadata yet
+--- a column of a data lake outside the structure
+7	x

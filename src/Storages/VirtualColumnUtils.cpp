@@ -231,6 +231,19 @@ NameSet getVirtualNamesForFileLikeStorage()
     return getCommonVirtualsForFileLikeStorage().getNameSet();
 }
 
+bool mayHaveVirtualColumnOfFileLikeStorage(
+    const String & name,
+    const std::optional<String> & sample_path,
+    PartitionStrategyFactory::StrategyType partition_strategy,
+    const ContextPtr & context)
+{
+    if (getVirtualNamesForFileLikeStorage().contains(name))
+        return true;
+    if (!context->getSettingsRef()[Setting::use_hive_partitioning] || partition_strategy != PartitionStrategyFactory::StrategyType::NONE)
+        return false;
+    return !sample_path || HivePartitioningUtils::parseHivePartitioningKeysAndValues(*sample_path).contains(name);
+}
+
 /// Virtual columns that can only be materialized after the read buffer is opened (e.g. HTTP response
 /// headers exposed as `_headers` for web reads). They are not known during object listing, so they must
 /// not participate in the path/file pre-listing predicate split, where the listing-time block can only
