@@ -4,6 +4,7 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/likePatternToRegexp.h>
 #include <Common/quoteString.h>
+#include <Common/StringUtils.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
@@ -718,8 +719,15 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         && constantIsIndexDomainDefault(index_data_types[*key_index], const_source_type, const_value))
         return false;
 
-    const auto lowercase_key_index = getKeyIndex(fmt::format("lower({})", column_name));
     const auto is_has_token_case_insensitive = function_name.starts_with("hasTokenCaseInsensitive");
+    auto lowercase_key_index = getKeyIndex(fmt::format("lower({})", column_name));
+    /// `lowerUTF8` folds ASCII letters as `hasTokenCaseInsensitive` does but non-ASCII ones differently (e.g. final sigma),
+    /// so an index on it can only be used for an ASCII needle. Only for `tokenbf_v1`: `lowerUTF8` can change the byte
+    /// length of characters, which shifts the n-grams of invalid UTF-8 in `ngrambf_v1`.
+    if (is_has_token_case_insensitive && !lowercase_key_index && tokenizer->getType() == ITokenizer::Type::SplitByNonAlpha
+        && const_value.getType() == Field::Types::String
+        && std::ranges::all_of(const_value.safeGet<String>(), [](char c) { return isASCII(c); }))
+        lowercase_key_index = getKeyIndex(fmt::format("lowerUTF8({})", column_name));
     if (const auto is_case_insensitive_scenario = is_has_token_case_insensitive && lowercase_key_index;
         function_name.starts_with("hasToken") && ((!is_has_token_case_insensitive && key_index) || is_case_insensitive_scenario))
     {
