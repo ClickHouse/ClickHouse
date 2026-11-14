@@ -259,8 +259,8 @@ void rekeyBuildSideStatistics(JoinStepLogical & join, const QueryPlan::Node & bu
 {
     if (!join.getRightHashTableCacheKey())
         return;
-    std::unordered_map<const QueryPlan::Node *, UInt64> cache_keys;
-    std::unordered_map<const QueryPlan::Node *, UInt64> raw_hashes;
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> cache_keys;
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> raw_hashes;
     calculateHashTableCacheKeys(build_root, cache_keys, raw_hashes);
     join.setRightHashTableCacheKey(raw_hashes.at(&build_root) ^ calculateJoinStepCacheKeyContribution(join, JoinTableSide::Right));
 }
