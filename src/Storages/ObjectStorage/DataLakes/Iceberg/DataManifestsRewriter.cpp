@@ -500,8 +500,44 @@ const DataManifestsRewriter::ResolvedPartitionSpec & DataManifestsRewriter::reso
         }
     }
     if (!spec_sample_block)
+    {
+        /// A `void` partition field may reference a source column that was dropped later, and its schemas may be
+        /// expired from the metadata: the Iceberg spec allows that. The values of such a field are always null and its
+        /// manifests are readable, but the type of its partition values, which is the type of the source column, is not
+        /// known, so its manifests cannot be rewritten. They are kept unchanged.
+        for (size_t i = 0; i < source_ids.size(); ++i)
+        {
+            if (Poco::toLower(transforms[i]) != "void")
+                continue;
+            bool source_found = false;
+            for (UInt32 j = 0; j < schemas->size() && !source_found; ++j)
+            {
+                auto schema_fields = schemas->getObject(j)->getArray(f_fields);
+                for (UInt32 k = 0; k < schema_fields->size(); ++k)
+                {
+                    if (schema_fields->getObject(k)->getValue<Int32>(f_id) == source_ids[i])
+                    {
+                        source_found = true;
+                        break;
+                    }
+                }
+            }
+            if (!source_found)
+            {
+                LOG_DEBUG(
+                    log,
+                    "Iceberg data manifests of partition spec {} are not rewritten: the source column {} of the void partition field {} "
+                    "is not defined in the schemas of the metadata",
+                    spec_id,
+                    source_ids[i],
+                    resolved.partition_columns[i]);
+                resolved.is_supported = false;
+                return resolved_specs.emplace(std::make_pair(spec_id, files_schema_id), std::move(resolved)).first->second;
+            }
+        }
         throw Exception(
             ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No Iceberg schema defines all source columns referenced by partition spec {}", spec_id);
+    }
 
     auto schema_for_spec = persistent_table_components.schema_processor->getIcebergTableSchemaById(schema_id_for_spec);
     auto schema_fields = schema_for_spec->getArray(f_fields);
