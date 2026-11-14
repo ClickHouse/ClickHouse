@@ -453,6 +453,46 @@ private:
         return res;
     }
 
+    /// Rounds `t`, which must be inside the LUT range, down to a multiple of `seconds` counted from the
+    /// local midnight, aligned to the new hour numbers after an offset change within the day.
+    template <typename DateOrTime>
+    DateOrTime roundDownToWallClockHours(DateOrTime t, UInt64 seconds) const
+    {
+        const LUTIndex index = findIndexInRange(t);
+        const Values & values = lut[index];
+
+        Time time = t - values.date;
+        if (time >= values.time_at_offset_change())
+        {
+            /// Align to new hour numbers before rounding.
+            time += values.amount_of_offset_change();
+            time = time / seconds * seconds;
+
+            /// Should subtract the shift back but only if rounded time is not before shift.
+            if (time >= values.time_at_offset_change())
+            {
+                time -= values.amount_of_offset_change();
+
+                /// With cutoff at the time of the shift. Otherwise we may end up with something like 23:00 previous day.
+                time = std::max<Time>(time, values.time_at_offset_change());
+            }
+        }
+        else
+        {
+            time = time / seconds * seconds;
+        }
+
+        Time res = addSaturating(values.date, time);
+        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+        {
+            if (unlikely(res < 0))
+                return 0;
+            return static_cast<DateOrTime>(res);
+        }
+        else
+            return res;
+    }
+
     template <typename DateOrTime, typename Divisor>
     DateOrTime roundDown(DateOrTime x, Divisor divisor) const
     {
@@ -1008,7 +1048,23 @@ public:
     template <typename DateOrTime>
     DateOrTime toStartOfTenMinutes(DateOrTime t) const { return toStartOfMinuteInterval(t, 10); }
     template <typename DateOrTime>
-    DateOrTime toStartOfHour(DateOrTime t) const { return roundDown(t, 3600); }
+    DateOrTime toStartOfHour(DateOrTime t) const
+    {
+        /// On a day when the offset changes by a fraction of an hour (e.g. Lord Howe shifts by 30 minutes),
+        /// the hours after the change are not aligned to the hours counted from the local midnight, so
+        /// `roundDown` would return a `:30` boundary. Align to the new hour numbers like `toStartOfHourInterval` does.
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(t)))
+                return roundDown(t, 3600);
+
+        if (static_cast<Time>(t) >= 0 && offset_is_whole_number_of_hours_during_epoch) [[likely]]
+            return roundDownToMultiple(t, 3600);
+
+        if (unlikely(find(t).amount_of_offset_change() % 3600 != 0))
+            return roundDownToWallClockHours(t, 3600);
+
+        return roundDown(t, 3600);
+    }
 
     /** Number of calendar day since the beginning of UNIX epoch (1970-01-01 is zero)
       * We use just two bytes for it. It covers the range up to 2105 and slightly more.
@@ -1721,39 +1777,7 @@ public:
                 return static_cast<DateOrTime>(values.date + time);
             }
 
-        const LUTIndex index = findIndexInRange(t);
-        const Values & values = lut[index];
-
-        Time time = t - values.date;
-        if (time >= values.time_at_offset_change())
-        {
-            /// Align to new hour numbers before rounding.
-            time += values.amount_of_offset_change();
-            time = time / seconds * seconds;
-
-            /// Should subtract the shift back but only if rounded time is not before shift.
-            if (time >= values.time_at_offset_change())
-            {
-                time -= values.amount_of_offset_change();
-
-                /// With cutoff at the time of the shift. Otherwise we may end up with something like 23:00 previous day.
-                time = std::max<Time>(time, values.time_at_offset_change());
-            }
-        }
-        else
-        {
-            time = time / seconds * seconds;
-        }
-
-        Time res = addSaturating(values.date, time);
-        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-        {
-            if (unlikely(res < 0))
-                return 0;
-            return static_cast<DateOrTime>(res);
-        }
-        else
-            return res;
+        return roundDownToWallClockHours(t, seconds);
     }
 
     /// The rounding divisor of a `minutes`-long interval, in seconds. An extreme interval count (e.g.
