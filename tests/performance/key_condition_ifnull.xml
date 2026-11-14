@@ -1,0 +1,22 @@
+<test>
+    <!-- A range, a `LIKE` and an `isNull` condition on `y` use a primary key on `ifNull(y, c)`. -->
+
+    <settings>
+        <use_query_condition_cache>0</use_query_condition_cache>
+    </settings>
+
+    <create_query>CREATE TABLE key_ifnull (y Nullable(UInt64)) ENGINE = MergeTree ORDER BY ifNull(y, 0) SETTINGS allow_nullable_key = 1</create_query>
+    <create_query>CREATE TABLE key_ifnull_string (s Nullable(String)) ENGINE = MergeTree ORDER BY ifNull(s, '') SETTINGS allow_nullable_key = 1</create_query>
+
+    <fill_query>INSERT INTO key_ifnull SELECT if(number % 10 = 0, NULL, number) FROM numbers_mt(200000000) SETTINGS max_insert_threads = 8</fill_query>
+    <fill_query>INSERT INTO key_ifnull_string SELECT if(number % 10 = 0, NULL, toString(number)) FROM numbers_mt(200000000) SETTINGS max_insert_threads = 8</fill_query>
+    <fill_query>OPTIMIZE TABLE key_ifnull FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE key_ifnull_string FINAL</fill_query>
+
+    <query>SELECT count() FROM key_ifnull WHERE y BETWEEN 100000000 AND 120000000</query>
+    <query>SELECT count() FROM key_ifnull_string WHERE s LIKE '12%'</query>
+    <query>SELECT count() FROM key_ifnull WHERE isNull(y)</query>
+
+    <drop_query>DROP TABLE IF EXISTS key_ifnull</drop_query>
+    <drop_query>DROP TABLE IF EXISTS key_ifnull_string</drop_query>
+</test>
