@@ -352,6 +352,67 @@ max_read_bytes:     ᴺᵁᴸᴸ
 execution_time:     0
 max_execution_time: ᴺᵁᴸᴸ
 ```
+#### OS CPU
+**query**
+```sql
+SELECT
+    metric,
+    value
+FROM system.asynchronous_metrics
+WHERE metric in ('OSSystemTimeNormalized','OSUserTimeNormalized')
+```
+**result**
+```
+┌─metric─────────────────┬─────────────────value─┐
+│ OSSystemTimeNormalized │   0.00499844048656819 │
+│ OSUserTimeNormalized   │ 0.0037488303649261426 │
+└────────────────────────┴───────────────────────┘
+```
+#### Memory Tracking
+**query**
+```sql
+SELECT
+    metric,
+    formatReadableSize(value) AS memory_tracking
+FROM system.metrics
+WHERE metric = 'MemoryTracking'
+```
+**result**
+```
+┌─metric─────────┬─memory_tracking─┐
+│ MemoryTracking │ 248.66 MiB      │
+└────────────────┴─────────────────┘
+```
+#### Connections
+**query**
+```sql
+SELECT
+    metric,
+    value
+FROM system.metrics
+WHERE metric IN ('TCPConnection', 'HTTPConnection')
+```
+**result**
+```
+┌─metric─────────┬─value─┐
+│ TCPConnection  │     1 │
+│ HTTPConnection │     1 │
+└────────────────┴───────┘
+```
+#### Disks
+**query**
+```sql
+SELECT
+    name,
+    path,
+    formatReadableSize(free_space) AS free_space_size,
+    formatReadableSize(total_space) AS total_space_size,
+    round(free_space / total_space, 3) AS ratio
+FROM system.disks
+ORDER BY ratio DESC
+```
+**result**
+```
 #### Schema
 ##### Database engines
 **query**
