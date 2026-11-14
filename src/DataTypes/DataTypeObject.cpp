@@ -35,6 +35,7 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <boost/algorithm/string.hpp>
 
 #include "config.h"

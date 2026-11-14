@@ -24,7 +24,8 @@ ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_05401 SELECT number FROM numbers(10)"
 ${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_05401 TO ${U}"
 ${CLICKHOUSE_CLIENT} -q "CREATE QUOTA ${Q} FOR INTERVAL 100 year MAX SelectQuery = 1, QueryCacheHits = 100 TO ${U}"
 
-CACHED_QUERY="SELECT sum(a) FROM ${CLICKHOUSE_DATABASE}.t_05401 SETTINGS use_query_cache = 1, query_cache_min_query_duration = 0, query_cache_min_query_runs = 0, query_cache_ttl = 3600"
+# No parallel replicas for the reads of the quota user: each replica that reads charges the `SelectQuery` of its own interpreter.
+CACHED_QUERY="SELECT sum(a) FROM ${CLICKHOUSE_DATABASE}.t_05401 SETTINGS use_query_cache = 1, query_cache_min_query_duration = 0, query_cache_min_query_runs = 0, query_cache_ttl = 3600, enable_parallel_replicas = 0"
 
 # Populates the cache.
 ${CLICKHOUSE_CLIENT} --user "${U}" -q "${CACHED_QUERY}"
@@ -33,7 +34,7 @@ ${CLICKHOUSE_CLIENT} -q "SELECT profile_events['SelectQuery'], profile_events['Q
 ${CLICKHOUSE_CLIENT} --user "${U}" -q "${CACHED_QUERY}"
 ${CLICKHOUSE_CLIENT} -q "SELECT profile_events['SelectQuery'], profile_events['QueryCacheHits'] FROM system.quotas_usage WHERE quota_name = '${Q}'"
 # Exhausts the quota with an uncached query.
-${CLICKHOUSE_CLIENT} --user "${U}" -q "SELECT count() FROM ${CLICKHOUSE_DATABASE}.t_05401"
+${CLICKHOUSE_CLIENT} --user "${U}" -q "SELECT count() FROM ${CLICKHOUSE_DATABASE}.t_05401 SETTINGS enable_parallel_replicas = 0"
 ${CLICKHOUSE_CLIENT} -q "SELECT profile_events['SelectQuery'], profile_events['QueryCacheHits'] FROM system.quotas_usage WHERE quota_name = '${Q}'"
 # A cache hit is rejected now as well.
 ${CLICKHOUSE_CLIENT} --user "${U}" -q "${CACHED_QUERY}" 2>&1 | grep -o -m1 "QUOTA_EXCEEDED"

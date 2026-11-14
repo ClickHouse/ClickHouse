@@ -48,7 +48,10 @@
 #include <mach/mach.h>
 #include <mach/mach_vm.h>
 #include <mach/thread_act.h>
+#include <mach-o/ldsyms.h>
+#include <mach-o/loader.h>
 #include <pthread/stack_np.h>
+#include <cstring>
 #endif
 
 #pragma clang diagnostic push
@@ -86,7 +89,7 @@ std::optional<StackTrace::ResolvedAddress> resolveFaultAddress(const void * addr
     if (reinterpret_cast<uintptr_t>(addr) < 4096)
         return StackTrace::ResolvedAddress{.address = addr, .object = {}, .kind = StackTrace::AddressKind::Unsupported};
 
-    /// Where the address cannot be resolved into an object (e.g. on macOS and FreeBSD),
+    /// Where the address cannot be resolved into an object (e.g. on FreeBSD),
     /// `tryResolveAddress` returns the runtime address unchanged, so it must not be shown either.
     auto resolved = StackTrace::tryResolveAddress(addr);
     if (!resolved.address || resolved.kind == StackTrace::AddressKind::Unsupported)
@@ -125,7 +128,7 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused
             address = resolved->object.empty()
                 ? fmt::format("{:#x}", reinterpret_cast<uintptr_t>(resolved->address))
                 : fmt::format("{:#x} in {}", reinterpret_cast<uintptr_t>(resolved->address), resolved->object);
-        std::string access = getFaultMemoryAccessType(sig, context);
+        std::string_view access = getFaultMemoryAccessType(sig, info, context);
         if (access.empty())
             access = "<not available>";
         return fmt::format("Address: {}. Access: {}. {}", address, access, message);
@@ -159,14 +162,45 @@ std::optional<UInt64> getFaultAddress(int sig, const siginfo_t & info)
     return reinterpret_cast<UInt64>(resolved->address);
 }
 
-std::string getFaultMemoryAccessType(int sig, [[maybe_unused]] const ucontext_t & context)
+std::string_view getFaultMemoryAccessType(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
     /// Only SIGSEGV and SIGBUS have meaningful memory access types
     if (sig != SIGSEGV && sig != SIGBUS)
         return "";
 
+    /// Ignore explicit kill(SIGSEGV)
+    if (info.si_code <= 0)
+        return "";
+
 #if defined(__x86_64__) && !defined(OS_DARWIN) && !defined(OS_FREEBSD)
     return (context.uc_mcontext.gregs[REG_ERR] & 0x02) ? "write" : "read";
+#elif defined(__aarch64__) && defined(OS_LINUX)
+    const auto * records = reinterpret_cast<const char *>(context.uc_mcontext.__reserved);
+    constexpr size_t records_size = sizeof(context.uc_mcontext.__reserved);
+    for (size_t offset = 0; offset + sizeof(_aarch64_ctx) <= records_size;)
+    {
+        _aarch64_ctx head{};
+        memcpy(&head, records + offset, sizeof(head));
+        if (head.size < sizeof(head) || head.size > records_size - offset)
+            return "";
+
+        if (head.magic == ESR_MAGIC && head.size >= sizeof(esr_context))
+        {
+            esr_context record{};
+            memcpy(&record, records + offset, sizeof(record));
+            constexpr UInt64 ESR_ELx_EC_SHIFT = 26;
+            constexpr UInt64 ESR_ELx_EC_MASK = 0x3FULL << ESR_ELx_EC_SHIFT;
+            constexpr UInt64 ESR_ELx_EC_DABT_LOW = 0x24;
+            constexpr UInt64 ESR_ELx_CM = 1ULL << 8;
+            constexpr UInt64 ESR_ELx_WNR = 1ULL << 6;
+            if ((record.esr & ESR_ELx_EC_MASK) >> ESR_ELx_EC_SHIFT != ESR_ELx_EC_DABT_LOW || (record.esr & ESR_ELx_CM))
+                return "";
+
+            return (record.esr & ESR_ELx_WNR) ? "write" : "read";
+        }
+        offset += head.size;
+    }
+    return "";
 #else
     return "";  // Not available on this platform
 #endif
@@ -388,18 +422,28 @@ static void * getCallerAddress([[maybe_unused]] const ucontext_t & context)
 #endif
 }
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 namespace
 {
-/// Returns the address relative to the object that contains it plus that object, or the address
-/// unchanged and `nullptr` when no loaded object contains it.
+/// Returns the address relative to the object that contains it plus that object, or 0 and `nullptr`
+/// when no loaded object contains it: the runtime address (e.g. of JIT code) must not be published.
 std::pair<uintptr_t, const DB::SymbolIndex::Object *>
 resolveAddressImpl(const DB::SymbolIndex & symbol_index, const void * virtual_addr)
 {
     const auto * object = symbol_index.findObject(virtual_addr);
-    const uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
-    return {uintptr_t(virtual_addr) - virtual_offset, object};
+    if (!object)
+        return {0, nullptr};
+    return {uintptr_t(virtual_addr) - uintptr_t(object->address_begin), object};
 }
+
+/// The load bias and the address range of the main executable, read from its own headers,
+/// so that they are known without the symbol index and without taking the loader lock.
+struct MainObjectBounds
+{
+    uintptr_t bias = 0;
+    uintptr_t begin = 0;
+    uintptr_t end = 0;
+};
 }
 #endif
 
@@ -412,15 +456,6 @@ extern "C" const ElfW(Ehdr) __ehdr_start; // NOLINT(bugprone-reserved-identifier
 
 namespace
 {
-/// The load bias and the address range of the main executable, read from its own program headers,
-/// so that they are known without the symbol index and without taking the loader lock.
-struct MainObjectBounds
-{
-    uintptr_t bias = 0;
-    uintptr_t begin = 0;
-    uintptr_t end = 0;
-};
-
 MainObjectBounds getMainObjectBounds()
 {
     const auto header = reinterpret_cast<uintptr_t>(&__ehdr_start);
@@ -441,7 +476,44 @@ MainObjectBounds getMainObjectBounds()
     bounds.end += bounds.bias;
     return bounds;
 }
+}
+#elif defined(OS_DARWIN)
+namespace
+{
+/// The same range as the main executable's `SymbolIndex::Object`: the file-backed segments, so that
+/// offsets are relative to the Mach-O header, which `__TEXT` maps from file offset 0.
+MainObjectBounds getMainObjectBounds()
+{
+    const auto header = reinterpret_cast<uintptr_t>(&_mh_execute_header);
+    const auto * command = reinterpret_cast<const uint8_t *>(&_mh_execute_header + 1);
 
+    uintptr_t slide = 0;
+    MainObjectBounds bounds{.bias = 0, .begin = UINTPTR_MAX, .end = 0};
+    for (uint32_t i = 0; i < _mh_execute_header.ncmds; ++i)
+    {
+        const auto * load_command = reinterpret_cast<const struct load_command *>(command);
+        command += load_command->cmdsize;
+        if (load_command->cmd != LC_SEGMENT_64)
+            continue;
+        const auto * segment = reinterpret_cast<const struct segment_command_64 *>(load_command);
+        if (strncmp(segment->segname, SEG_TEXT, sizeof(segment->segname)) == 0)
+            slide = header - segment->vmaddr;
+        if (segment->filesize == 0 || segment->vmsize == 0)
+            continue;
+        bounds.begin = std::min<uintptr_t>(bounds.begin, segment->vmaddr);
+        bounds.end = std::max<uintptr_t>(bounds.end, segment->vmaddr + segment->vmsize);
+    }
+    bounds.begin += slide;
+    bounds.end += slide;
+    bounds.bias = bounds.begin;
+    return bounds;
+}
+}
+#endif
+
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+namespace
+{
 StackTrace::ResolvedAddress resolveAddress(const DB::SymbolIndex & symbol_index, const void * virtual_addr)
 {
     const auto [address, object] = resolveAddressImpl(symbol_index, virtual_addr);
@@ -457,7 +529,7 @@ StackTrace::ResolvedAddress resolveAddress(const DB::SymbolIndex & symbol_index,
 
 StackTrace::ResolvedAddress StackTrace::resolveAddress(const void * virtual_addr)
 {
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     return ::resolveAddress(DB::SymbolIndex::instance(), virtual_addr);
 #else
     return {virtual_addr, {}, AddressKind::Unsupported};
@@ -466,7 +538,7 @@ StackTrace::ResolvedAddress StackTrace::resolveAddress(const void * virtual_addr
 
 StackTrace::ResolvedAddress StackTrace::tryResolveAddress(const void * virtual_addr)
 {
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     if (const DB::SymbolIndex * symbol_index = DB::SymbolIndex::instanceIfInitialized())
         return ::resolveAddress(*symbol_index, virtual_addr);
 
@@ -592,9 +664,9 @@ void StackTrace::forEachFrame(
         StackTrace::Frame current_frame;
         DB::VectorWithMemoryTracking<DB::Dwarf::SymbolizedFrame> inline_frames;
         current_frame.virtual_addr = frame_pointers[i];
-        current_frame.physical_addr = frame_pointers[i];
+        const auto [physical_addr, object] = resolveAddressImpl(symbol_index, current_frame.virtual_addr);
+        current_frame.physical_addr = reinterpret_cast<void *>(physical_addr);
 
-        const auto * object = symbol_index.findObject(current_frame.virtual_addr);
         if (object)
         {
             current_frame.object = object->name;
@@ -621,7 +693,7 @@ void StackTrace::forEachFrame(
             }
         }
 
-        if (const auto * symbol = symbol_index.findSymbol(current_frame.virtual_addr))
+        if (const auto * symbol = symbol_index.findSymbolByAddress(current_frame.virtual_addr))
         {
             if (const char * symbol_name = symbol_index.getSymbolNameCString(*symbol); *symbol_name)
                 current_frame.symbol = demangle(symbol_name);
@@ -1130,7 +1202,6 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         else
             out << "?";
 
-        /// Without an object, `physical_addr` is the runtime address (e.g. JIT code).
         if (frame.object && shouldShowAddress(frame.physical_addr))
         {
             out << " @ ";

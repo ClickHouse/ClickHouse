@@ -671,9 +671,81 @@ static void dispatchFillColumnFromRowStorePtrs(ColumnType * col, const DataTypeP
     }
 }
 
+#define APPLY_FOR_FIELD_SIZES(M) \
+    M(1) M(2) M(3) M(4) M(5) M(6) M(7) M(8) \
+    M(9) M(10) M(11) M(12) M(13) M(14) M(15) M(16) \
+    M(17) M(18) M(19) M(20) M(21) M(22) M(23) M(24) \
+    M(25) M(26) M(27) M(28) M(29) M(30) M(31) M(32)
+
+template <size_t value_size, bool nullable, typename SourceRow, typename DestinationRow>
+static void gatherField(
+    const char * __restrict values,
+    const UInt8 * __restrict null_map,
+    size_t runtime_value_size,
+    size_t count,
+    SourceRow source_row,
+    DestinationRow destination_row)
+{
+    const size_t bytes = value_size ? value_size : runtime_value_size;
+    for (size_t i = 0; i < count; ++i)
+    {
+        const size_t row = source_row(i);
+        char * dst = destination_row(i);
+        if constexpr (nullable)
+            *dst++ = static_cast<char>(null_map[row]);
+        memcpy(dst, values + row * bytes, bytes);
+    }
+}
+
+template <bool nullable, typename SourceRow, typename DestinationRow>
+static void gatherColumn(const IColumn & values, const UInt8 * null_map, size_t count, SourceRow source_row, DestinationRow destination_row)
+{
+    chassert(values.isFixedAndContiguous());
+    const size_t value_size = values.sizeOfValueIfFixed();
+    const char * data = values.getRawData().data();
+    switch (value_size)
+    {
+#define M(N) \
+        case N: \
+            gatherField<N, nullable>(data, null_map, value_size, count, source_row, destination_row); \
+            break;
+        APPLY_FOR_FIELD_SIZES(M)
+#undef M
+        default:
+            gatherField<0, nullable>(data, null_map, value_size, count, source_row, destination_row);
+    }
+}
+
+#undef APPLY_FOR_FIELD_SIZES
+
 void IColumn::fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map)
 {
     dispatchFillColumnFromRowStorePtrs<IColumn>(this, type, row_store_ptrs, field_offset, field_size, null_map, begin, count);
+}
+
+void IColumn::gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *&, const UInt8 * null_map) const
+{
+    if (!isFixedAndContiguous())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} cannot be stored in the hash join row store", getName());
+    auto source_row = [start](size_t row) { return start + row; };
+    auto destination_row = [rows, row_length, field_offset](size_t row) { return rows + row * row_length + field_offset; };
+    if (null_map)
+        gatherColumn<true>(*this, null_map, count, source_row, destination_row);
+    else
+        gatherColumn<false>(*this, nullptr, count, source_row, destination_row);
+}
+
+void IColumn::gatherSelectedIntoRows(std::span<const UInt32> source_rows, std::span<char * const> destination_rows, size_t field_offset, const UInt8 * null_map) const
+{
+    if (!isFixedAndContiguous())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} cannot be gathered into rows", getName());
+    chassert(source_rows.size() == destination_rows.size());
+    auto source_row = [source_rows](size_t row) { return source_rows[row]; };
+    auto destination_row = [destination_rows, field_offset](size_t row) { return destination_rows[row] + field_offset; };
+    if (null_map)
+        gatherColumn<true>(*this, null_map, source_rows.size(), source_row, destination_row);
+    else
+        gatherColumn<false>(*this, nullptr, source_rows.size(), source_row, destination_row);
 }
 
 template <typename Derived, typename Parent>
@@ -855,6 +927,14 @@ static ColumnPtr updateFrom(const Derived & dst, const IColumn::Patch & patch)
 
         if (src_version > patch.dst_versions[dst_row])
         {
+            /// Destination indices originate from on-disk data (_part_offset of a patch part).
+            /// A duplicate or descending index would make the range below negative, so it must
+            /// be rejected before the subtraction wraps around and reads out of bounds.
+            if (dst_row < current_row)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Destination row indices in patch must be strictly increasing, got {} after {}",
+                    dst_row, current_row - 1);
+
             patch.dst_versions[dst_row] = src_version;
 
             res_typed.insertRangeFrom(dst, current_row, dst_row - current_row);
@@ -903,6 +983,17 @@ static void assertPatch(const Derived & dst, const IColumn::Patch & patch)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Size of destination versions ({}) doesn't match the size of destination column ({})",
             patch.dst_versions.size(), dst.size());
+
+    /// Indices originate from on-disk data (_part_offset of a patch part), so validate
+    /// their contents and not only their sizes: updateAt and dst_versions are written
+    /// with these indices without any further bounds check.
+    for (auto dst_row : patch.dst_row_indices)
+    {
+        if (dst_row >= dst.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Destination row index {} in patch is out of bounds of destination column with {} rows",
+                dst_row, dst.size());
+    }
 
     if (patch.sources.size() != 1 && !patch.src_col_indices)
         throw Exception(ErrorCodes::LOGICAL_ERROR,

@@ -71,6 +71,7 @@ $CLICKHOUSE_CLIENT --max_threads 1 \
     --remote_filesystem_read_prefetch 0 \
     --allow_prefetched_read_pool_for_remote_filesystem 0 \
     --filesystem_cache_allow_background_download 0 \
+    --use_statistics_for_sum_avg_aggregation 0 \
     --query "SELECT sum(a) FROM $table" &
 downloader_pid=$!
 
@@ -108,6 +109,7 @@ $CLICKHOUSE_CLIENT --query_id "$waiter_query_id" --max_threads 1 \
     --use_uncompressed_cache 0 \
     --filesystem_cache_wait_for_concurrent_download_timeout_milliseconds 600000 \
     --max_execution_time 3 \
+    --use_statistics_for_sum_avg_aggregation 0 \
     --query "SELECT sum(a) FROM $table" > "$waiter_out" 2>&1 &
 waiter_pid=$!
 
@@ -137,7 +139,7 @@ fi
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
 checks=$($CLICKHOUSE_CLIENT --query "
     SELECT count() FROM system.text_log
-    WHERE event_date >= yesterday() AND query_id = '$waiter_query_id'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$waiter_query_id'
       AND message LIKE 'Enqueueing % for check after %'")
 echo "spurious part checks: $checks"
 

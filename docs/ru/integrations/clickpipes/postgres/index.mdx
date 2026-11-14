@@ -12,9 +12,9 @@ integration:
 
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/ru/clickpipes/_changing_tls_settings.mdx';
 import PostgresClickPipeCli from '/snippets/ru/clickpipes/_postgres_clickpipe_cli.mdx';
+
 import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.mdx';
 
 <Visibility for="agents">
@@ -65,15 +65,39 @@ import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.
 
     1. В консоли ClickHouse Cloud перейдите к своему сервису ClickHouse Cloud.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="Сервис ClickPipes" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Сервис ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+    </Frame>
+
+    </div>
 
     2. Нажмите кнопку `Data Sources` в меню слева и выберите &quot;Set up a ClickPipe&quot;
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Выбор импортов" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Выбор импортов](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+    </Frame>
+
+    </div>
 
     3. Выберите плитку `Postgres CDC`
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp" alt="Выберите Postgres" size="lg" border />
+       <div className="ch-image-lg">
+
+       <Frame>
+
+       ![Выберите Postgres](/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp)
+
+       </Frame>
+
+       </div>
 
 ### Добавление подключения к исходной базе данных Postgres {#adding-your-source-postgres-database-connection}
 
@@ -84,7 +108,15 @@ import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.
       Дополнительную информацию см. в руководствах по настройке исходного Postgres, ссылки на которые приведены [в начале этой страницы](#prerequisites).
     </Info>
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg" alt="Введите сведения о подключении" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Введите сведения о подключении](/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg)
+
+    </Frame>
+
+    </div>
 
 #### (Опционально) Настройка AWS Private Link {#optional-setting-up-aws-private-link}
 
@@ -104,7 +136,15 @@ import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.
 
     2. Укажите сведения о подключении по SSH.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="SSH tunneling" size="lg" border />
+       <div className="ch-image-lg">
+
+       <Frame>
+
+       ![SSH tunneling](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
+
+       </Frame>
+
+       </div>
 
     3. Чтобы использовать аутентификацию на основе ключей, нажмите &quot;Revoke and generate key pair&quot; для генерации новой пары ключей и скопируйте полученный открытый ключ на ваш SSH-сервер в файл `~/.ssh/authorized_keys`.
 
@@ -120,7 +160,15 @@ import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.
 
     5. Обязательно выберите в выпадающем списке слот репликации, созданный вами на шаге предварительных требований.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg" alt="Выбор слота репликации" size="lg" border />
+       <div className="ch-image-lg">
+
+       <Frame>
+
+       ![Выбор слота репликации](/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg)
+
+       </Frame>
+
+       </div>
 
 #### Расширенная настройка {#advanced-settings}
 
@@ -136,7 +184,15 @@ import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.
 
     6. Здесь вы можете выбрать базу данных назначения для вашего ClickPipe. Можно либо выбрать существующую базу данных, либо создать новую.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg" alt="Выбор базы данных назначения" size="lg" border />
+       <div className="ch-image-lg">
+
+       <Frame>
+
+       ![Выбор базы данных назначения](/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg)
+
+       </Frame>
+
+       </div>
 
     7. Вы можете выбрать таблицы, которые хотите реплицировать из исходной базы данных Postgres. При выборе таблиц вы также можете переименовать их в целевой базе данных ClickHouse и исключить отдельные столбцы.
 
@@ -150,7 +206,15 @@ import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.
 
     9. Выберите роль &quot;Full access&quot; в выпадающем списке разрешений и нажмите &quot;Complete Setup&quot;.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="Проверка разрешений" size="lg" border />
+       <div className="ch-image-lg">
+
+       <Frame>
+
+       ![Проверка разрешений](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
+
+       </Frame>
+
+       </div>
 
 ## Что дальше? {#whats-next}
 
