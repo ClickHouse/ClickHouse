@@ -797,16 +797,26 @@ void OwnAsyncSplitChannel::addChannel(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempted to register channel '{}' while the split channel is open", name);
 
     std::lock_guard lock(registration_mutex);
-    auto element = name_to_channels.try_emplace(name, channel);
-    if (!element.second)
+    if (name_to_channels.contains(name))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Channel {} is already registered", name);
-    channel->setLevel(level);
 
+    /// Do everything that can throw before changing any state, so a failure leaves the object as it was and
+    /// `channels`, `queues`, `threads` and `runnables` keep the same size for getAsynchronousMetrics.
+    auto queue = std::make_unique<LogQueue>(async_queue_size, event_on_passed_message_, event_on_dropped_message_);
+    const size_t i = channels.size();
+    auto runnable = std::make_unique<OwnRunnableForChannel>(*this, i);
+    channels.reserve(i + 1);
+    queues.reserve(i + 1);
+    threads.reserve(i + 1);
+    runnables.reserve(i + 1);
+    auto element = name_to_channels.try_emplace(name, channel);
+
+    /// Nothing below can throw.
+    channel->setLevel(level);
     channels.emplace_back(element.first->second.get());
-    queues.emplace_back(std::make_unique<LogQueue>(async_queue_size, event_on_passed_message_, event_on_dropped_message_));
+    queues.emplace_back(std::move(queue));
     threads.emplace_back(nullptr);
-    const size_t i = threads.size() - 1;
-    runnables.emplace_back(new OwnRunnableForChannel(*this, i));
+    runnables.emplace_back(std::move(runnable));
 }
 
 void OwnAsyncSplitChannel::addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority)
