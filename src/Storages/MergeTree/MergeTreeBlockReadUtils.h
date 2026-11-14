@@ -19,6 +19,10 @@ NameSet injectRequiredColumns(
     bool with_subcolumns,
     Names & columns);
 
+/// The storage names of the columns the sorting key reads: a subcolumn of the key (`k.x`) is replaced by its column
+/// in storage (`k`). Used wherever a column the part does not store has to be recognized as a sort-key column.
+NameSet getSortingKeyColumnsInStorage(const StorageInMemoryMetadata & metadata);
+
 /// Whether the virtual columns of a text index can be read from the index in a part (direct read).
 /// Otherwise they are computed by their default expressions.
 bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions);
