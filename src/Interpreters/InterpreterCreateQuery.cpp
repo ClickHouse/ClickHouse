@@ -79,6 +79,7 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Interpreters/pullUpTupleElementDefaults.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
 
 #include <Access/Common/AccessRightsElement.h>
@@ -817,9 +818,19 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         && !already_normalized_on_initiator
         && !is_restore_from_backup;
 
+    /// Normalize DEFAULT expressions written inside Tuple data types by pulling them up to the
+    /// column level, so the stored type carries no DEFAULTs (https://github.com/ClickHouse/ClickHouse/issues/2797).
+    /// The same condition as for `flattenNested` below: a default may reference a flattened column.
+    const bool flatten_nested = mode < LoadingStrictnessLevel::SECONDARY_CREATE && !already_normalized_on_initiator
+        && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested];
+
+    pullUpTupleElementDefaultsInColumnList(columns_ast,
+        pin_current_state_version ? TupleElementDefaultStateVersion::PinCurrent : TupleElementDefaultStateVersion::PinOldest,
+        flatten_nested);
+
     for (const auto & ast : columns_ast.children)
     {
-        const auto & col_decl = ast->as<ASTColumnDeclaration &>();
+        auto & col_decl = ast->as<ASTColumnDeclaration &>();
 
         if (col_decl.getCollation() && !context_->getSettingsRef()[Setting::compatibility_ignore_collation_in_create_table])
         {
@@ -936,8 +947,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         res.add(std::move(column));
     }
 
-    if (mode < LoadingStrictnessLevel::SECONDARY_CREATE && !already_normalized_on_initiator
-        && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested])
+    if (flatten_nested)
         res.flattenNested();
 
     if (res.getAllPhysical().empty())
@@ -4152,6 +4162,27 @@ BlockIO InterpreterCreateQuery::execute()
         auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value;
         if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
         {
+            /// Older distributed DDL entry formats dispatch the query before createTable() reaches
+            /// getColumnsDescription(). Normalize here so older workers receive a regular
+            /// column-level DEFAULT rather than the new Tuple element syntax. Inner column lists of
+            /// targets (e.g. `SAMPLES INNER COLUMNS (...)` of a TimeSeries table) are dispatched
+            /// the same way, so they are normalized too. The workers replay the query as a normalized
+            /// one, so an unversioned aggregate-function state in it gets version 0 there.
+            /// The workers flatten `Nested` declarations of the query as configured by its settings.
+            const bool flatten_nested = getContext()->getSettingsRef()[Setting::flatten_nested];
+            auto pull_up_tuple_element_defaults = [flatten_nested](const ASTColumns * columns_list)
+            {
+                if (!columns_list || !columns_list->columns)
+                    return;
+                pullUpTupleElementDefaultsInColumnList(
+                    *columns_list->columns, TupleElementDefaultStateVersion::PinOldest, flatten_nested);
+            };
+
+            pull_up_tuple_element_defaults(create.columns_list);
+            if (create.targets)
+                for (const auto & target : create.targets->targets)
+                    pull_up_tuple_element_defaults(target.inner_columns ? target.inner_columns->as<ASTColumns>() : nullptr);
+
             /// Authorize here: this is the last point that still runs as the real user, and worker legs
             /// run with no user by default.
             if (is_create_database && create.storage && create.storage->engine

@@ -27,6 +27,7 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Interpreters/pullUpTupleElementDefaults.h>
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
@@ -252,6 +253,45 @@ void checkColumnDeclarationIsSupportedByAlter(const ASTColumnDeclaration & ast_c
 
 }
 
+bool AlterCommand::isAlterCommand(const ASTAlterCommand & command)
+{
+    switch (command.type)
+    {
+        case ASTAlterCommand::ADD_COLUMN:
+        case ASTAlterCommand::DROP_COLUMN:
+        case ASTAlterCommand::MODIFY_COLUMN:
+        case ASTAlterCommand::COMMENT_COLUMN:
+        case ASTAlterCommand::MODIFY_COMMENT:
+        case ASTAlterCommand::MODIFY_DATABASE_COMMENT:
+        case ASTAlterCommand::MODIFY_ORDER_BY:
+        case ASTAlterCommand::MODIFY_SAMPLE_BY:
+        case ASTAlterCommand::REMOVE_SAMPLE_BY:
+        case ASTAlterCommand::ADD_INDEX:
+        case ASTAlterCommand::ADD_STATISTICS:
+        case ASTAlterCommand::MODIFY_STATISTICS:
+        case ASTAlterCommand::ADD_CONSTRAINT:
+        case ASTAlterCommand::MODIFY_CONSTRAINT:
+        case ASTAlterCommand::ADD_PROJECTION:
+        case ASTAlterCommand::MODIFY_PROJECTION:
+        case ASTAlterCommand::DROP_CONSTRAINT:
+        case ASTAlterCommand::DROP_INDEX:
+        case ASTAlterCommand::DROP_STATISTICS:
+        case ASTAlterCommand::DROP_PROJECTION:
+        case ASTAlterCommand::MODIFY_TTL:
+        case ASTAlterCommand::REMOVE_TTL:
+        case ASTAlterCommand::MODIFY_SETTING:
+        case ASTAlterCommand::MODIFY_DATABASE_SETTING:
+        case ASTAlterCommand::RESET_SETTING:
+        case ASTAlterCommand::MODIFY_QUERY:
+        case ASTAlterCommand::MODIFY_REFRESH:
+        case ASTAlterCommand::RENAME_COLUMN:
+        case ASTAlterCommand::MODIFY_SQL_SECURITY:
+            return true;
+        default:
+            return false;
+    }
+}
+
 std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
@@ -262,7 +302,14 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.ast = command_ast->clone();
         command.type = AlterCommand::ADD_COLUMN;
 
-        const auto & ast_col_decl = command_ast->col_decl->as<ASTColumnDeclaration &>();
+        /// Pull up DEFAULT expressions written inside Tuple data types to the column level, the same
+        /// normalization the CREATE TABLE path applies. Without this, `ALTER TABLE t ADD COLUMN
+        /// c Tuple(a UInt8 DEFAULT 1)` would be rejected when the data type is built below (the embedded
+        /// DEFAULT makes DataTypeTuple::create throw), instead of being stored as a column-level
+        /// `DEFAULT tuple(1)`. The clone owned by `command.ast` is normalized in place so the extracted
+        /// type, the extracted default, and the stored AST all agree.
+        auto & ast_col_decl = command.ast->as<ASTAlterCommand &>().col_decl->as<ASTColumnDeclaration &>();
+        pullUpTupleElementDefaults(ast_col_decl, TupleElementDefaultStateVersion::PinCurrent);
         checkColumnDeclarationIsSupportedByAlter(ast_col_decl, "ADD COLUMN");
 
         command.column_name = ast_col_decl.name;
@@ -330,9 +377,14 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_COLUMN;
 
-        const auto & ast_col_decl = command_ast->col_decl->as<ASTColumnDeclaration &>();
+        /// Pull up DEFAULT expressions written inside Tuple data types to the column level, the same
+        /// normalization the CREATE TABLE path applies, so that `ALTER TABLE t MODIFY COLUMN
+        /// c Tuple(a UInt8 DEFAULT 1)` is accepted and stored as a column-level `DEFAULT tuple(1)` instead
+        /// of being rejected when the data type is built below. The clone owned by `command.ast` is
+        /// normalized in place so the extracted type, the extracted default, and the stored AST all agree.
+        auto & ast_col_decl = command.ast->as<ASTAlterCommand &>().col_decl->as<ASTColumnDeclaration &>();
+        pullUpTupleElementDefaults(ast_col_decl, TupleElementDefaultStateVersion::AsWritten);
         checkColumnDeclarationIsSupportedByAlter(ast_col_decl, "MODIFY COLUMN");
-
         command.column_name = ast_col_decl.name;
         command.to_remove = removePropertyFromString(command_ast->remove_property);
 
@@ -729,6 +781,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         return command;
     }
 
+    chassert(!isAlterCommand(*command_ast));
     return {};
 }
 

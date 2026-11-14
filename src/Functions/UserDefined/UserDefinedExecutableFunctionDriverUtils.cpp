@@ -1,6 +1,7 @@
 #include <Functions/UserDefined/UserDefinedExecutableFunctionDriverUtils.h>
 
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -70,6 +71,24 @@ String formatReturnType(const ASTPtr & return_type_ast)
     IAST::FormatStateStacked frame;
     return_type_ast->format(out, settings, state, frame);
     return out.str();
+}
+
+void validateSignatureTypes(const ASTPtr & arguments_ast, const ASTPtr & return_type_ast)
+{
+    const auto & data_type_factory = DataTypeFactory::instance();
+    if (arguments_ast)
+    {
+        for (const auto & argument : arguments_ast->children)
+        {
+            if (const auto * name_type_pair = argument->as<ASTNameTypePair>())
+                data_type_factory.get(name_type_pair->type);
+            else
+                data_type_factory.get(argument);
+        }
+    }
+
+    if (return_type_ast)
+        data_type_factory.get(return_type_ast);
 }
 
 String engineArgumentToString(const ASTLiteral & literal)

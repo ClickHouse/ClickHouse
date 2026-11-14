@@ -189,6 +189,10 @@ struct AlterCommand
 
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
+    /// Whether `parse` makes an `AlterCommand` of this command (and not a mutation, partition or execute
+    /// command). It depends only on the type of the command.
+    static bool isAlterCommand(const ASTAlterCommand & command);
+
     /// `MODIFY SETTING name = DEFAULT` means a reset, but `parse` leaves it in a MODIFY_SETTING command.
     /// Engines key their checks on the command type, so the resets are moved out: the command itself
     /// becomes RESET_SETTING, or, when it changes other settings too, the resets are returned as a

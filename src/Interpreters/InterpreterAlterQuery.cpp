@@ -31,6 +31,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/pullUpTupleElementDefaults.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier.h>
@@ -82,6 +83,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsBool use_legacy_to_time;
     extern const SettingsBool data_type_default_nullable;
+    extern const SettingsBool flatten_nested;
 }
 
 namespace ServerSetting
@@ -226,6 +228,167 @@ void applyDataTypeDefaultNullableToColumnDeclarations(ASTAlterQuery & alter)
 using CommandSegment = std::variant<AlterCommands, MutationCommands, PartitionCommands, ExecuteCommands>;
 using CommandSegments = std::vector<CommandSegment>;
 
+/// Normalize the query itself before it can be sent to an ON CLUSTER or replicated-DDL worker.
+/// AlterCommand::parse normalizes only its private clone, which is too late for a dispatched AST.
+/// `table` is the altered table if it exists on this host: the names of the columns the table is going
+/// to have after the query tell a reference to an independent column with a dotted name (`c.a`) from a
+/// reference to a subcolumn of the column the default is written in. The table schema is consulted only
+/// after `check_access` succeeds, so that an unauthorized query cannot learn which columns exist.
+void pullUpTupleElementDefaultsInAlterQuery(
+    ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context, const std::function<void()> & check_access)
+{
+    const auto & commands = alter.command_list->children;
+
+    /// The columns of the table after the query, and the renames the query makes: the position of the
+    /// command, the old name and the new name.
+    struct ResultingSchema
+    {
+        NameSet column_names;
+        std::vector<std::tuple<size_t, String, String>> renames;
+    };
+
+    bool access_checked = false;
+    std::optional<ResultingSchema> resulting_schema;
+    auto build_resulting_schema = [&]
+    {
+        /// The columns of the table, then the commands of the query applied in order, as `AlterCommand::apply` does.
+        ResultingSchema result;
+        auto metadata_snapshot = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+        for (const auto & column : metadata_snapshot->getColumns())
+            result.column_names.insert(column.name);
+
+        const bool flatten_nested = context->getSettingsRef()[Setting::flatten_nested];
+        bool share_nested_offsets = true;
+        if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
+            share_nested_offsets = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
+        auto has_nested_in = [](const NameSet & column_names, const String & name)
+        {
+            const String prefix = name + ".";
+            return std::ranges::any_of(column_names, [&](const String & column_name) { return column_name.starts_with(prefix); });
+        };
+        auto has_nested = [&](const String & name) { return has_nested_in(result.column_names, name); };
+
+        /// `AlterCommands::prepare` ignores a conditional command (`IF EXISTS`, `IF NOT EXISTS`) by checking
+        /// whether its column exists in the table before its segment, not after the preceding commands.
+        /// `AlterCommand::apply` then checks once more against the columns so far, as done below.
+        /// The query is executed as segments of consecutive commands of the same kind (see
+        /// `parseAlterCommandSegments` and `runCommandSegments`), and each segment of `AlterCommands`
+        /// is prepared with the metadata committed by the preceding segments.
+        NameSet initial_column_names;
+        bool starts_alter_segment = true;
+        auto existed_initially = [&](const String & name)
+        {
+            return initial_column_names.contains(name) || (share_nested_offsets && has_nested_in(initial_column_names, name));
+        };
+
+        for (size_t i = 0; i < commands.size(); ++i)
+        {
+            const auto & command = commands[i]->as<const ASTAlterCommand &>();
+            if (!AlterCommand::isAlterCommand(command))
+            {
+                /// A mutation, partition or execute command does not change the columns, but it ends the segment.
+                starts_alter_segment = true;
+                continue;
+            }
+
+            if (starts_alter_segment)
+            {
+                initial_column_names = result.column_names;
+                starts_alter_segment = false;
+            }
+
+            if (command.type == ASTAlterCommand::ADD_COLUMN)
+            {
+                /// The same columns as `columnsAddedByAlter`: a `Nested` column is added as its flattened
+                /// columns, and `IF NOT EXISTS` skips the whole command if the column (or, with
+                /// `share_nested_offsets`, the `Nested` group) exists, otherwise each existing flattened column.
+                const auto & col_decl = command.col_decl->as<const ASTColumnDeclaration &>();
+                if (command.if_not_exists
+                    && (existed_initially(col_decl.name) || result.column_names.contains(col_decl.name)
+                        || (share_nested_offsets && has_nested(col_decl.name))))
+                    continue;
+
+                /// With `IF NOT EXISTS`, the names which exist already are not added, which keeps the set unchanged.
+                addColumnNamesOfDeclaration(col_decl, flatten_nested, result.column_names);
+            }
+            else if (command.type == ASTAlterCommand::DROP_COLUMN && !command.clear_column && !command.partition)
+            {
+                /// `DROP COLUMN IF EXISTS` is skipped if the column did not exist before the query, and
+                /// `AlterCommand::apply` skips it if there is no column with exactly this name so far
+                /// (a flattened `Nested` group is not such a column).
+                const String name = getIdentifierName(command.column);
+                if (command.if_exists && (!existed_initially(name) || !result.column_names.contains(name)))
+                    continue;
+
+                /// As `ColumnsDescription::remove`: the column with exactly this name, otherwise the whole
+                /// flattened `Nested` group with this name.
+                if (!result.column_names.erase(name))
+                {
+                    const String prefix = name + ".";
+                    std::erase_if(result.column_names, [&](const String & column_name) { return column_name.starts_with(prefix); });
+                }
+            }
+            else if (command.type == ASTAlterCommand::RENAME_COLUMN)
+            {
+                /// `RENAME COLUMN IF EXISTS` of a column which did not exist before the query, or does not
+                /// exist so far, is a no-op and must not invent the target. Without `IF EXISTS`, a rename
+                /// of an absent column fails the query anyway.
+                const String from = getIdentifierName(command.column);
+                const String to = getIdentifierName(command.rename_to);
+                if (command.if_exists && !existed_initially(from))
+                    continue;
+                if (result.column_names.erase(from))
+                {
+                    result.column_names.insert(to);
+                    result.renames.emplace_back(i, from, to);
+                }
+            }
+        }
+        return result;
+    };
+
+    for (size_t i = 0; i < commands.size(); ++i)
+    {
+        auto & command = commands[i]->as<ASTAlterCommand &>();
+        if (command.type != ASTAlterCommand::ADD_COLUMN && command.type != ASTAlterCommand::MODIFY_COLUMN)
+            continue;
+
+        auto is_table_column = [&, i](const String & name)
+        {
+            /// Checked even if the table does not exist, so that the outcome does not reveal whether it exists.
+            if (!access_checked)
+            {
+                check_access();
+                access_checked = true;
+            }
+
+            if (!table)
+                return false;
+
+            if (!resulting_schema)
+                resulting_schema = build_resulting_schema();
+
+            /// A rename applied after this command rewrites the references in the defaults of all columns
+            /// (see `AlterCommand::apply`), including the default this command sets.
+            String resulting_name = name;
+            for (const auto & [position, from, to] : resulting_schema->renames)
+                if (position > i && resulting_name == from)
+                    resulting_name = to;
+            return resulting_schema->column_names.contains(resulting_name);
+        };
+
+        /// `AlterCommand::parse` pins the current state version for `ADD COLUMN` (on the workers as
+        /// well), while `MODIFY COLUMN` keeps the version as written.
+        if (command.type == ASTAlterCommand::ADD_COLUMN)
+            pullUpTupleElementDefaults(
+                command.col_decl->as<ASTColumnDeclaration &>(), TupleElementDefaultStateVersion::PinCurrent, is_table_column);
+        else
+            pullUpTupleElementDefaults(
+                command.col_decl->as<ASTColumnDeclaration &>(), TupleElementDefaultStateVersion::AsWritten, is_table_column);
+    }
+}
+
 struct SegmentsHolder
 {
     CommandSegments segments;
@@ -260,6 +423,8 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
         }
         else if (auto alter_command = AlterCommand::parse(command_ast))
         {
+            /// `pullUpTupleElementDefaultsInAlterQuery` relies on this to find the segments.
+            chassert(AlterCommand::isAlterCommand(*command_ast));
             auto reset_command = alter_command->extractSettingsResets();
             auto & alter_commands = segments_holder.take<AlterCommands>();
             /// The reset goes first, as it does inside one command, where the resets are applied
@@ -629,10 +794,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
         normalizeLegacyToTimeInAlterMetadataDefinitions(query_ptr->as<ASTAlterQuery &>());
 
-    if (settings[Setting::data_type_default_nullable] && !getContext()->isDDLOrOnClusterInternal()
-        && !getContext()->getClientInfo().is_shared_catalog_internal)
-        applyDataTypeDefaultNullableToColumnDeclarations(query_ptr->as<ASTAlterQuery &>());
-
     auto table_id = getContext()->tryResolveStorageID(alter);
     StoragePtr table;
 
@@ -643,6 +804,26 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         /// the columns-only metadata a lazily loaded table reports.
         table = resolveStorageProxyLoading(DatabaseCatalog::instance().tryGetTable(table_id, getContext()));
     }
+
+    /// `ON CLUSTER` and replicated DDL serialize `query_ptr` before `AlterCommand::parse` runs.
+    /// Normalize this AST on the initiator so all workers receive ordinary column defaults.
+    /// It must run before the `data_type_default_nullable` rewrite below, which builds the data type
+    /// from the declaration and would reject a type that still carries element defaults.
+    /// The schema of the table is consulted only for the privileges this query requires anyway (as checked
+    /// below, or by `executeDDLQueryOnCluster`), so that the outcome does not reveal it to an unauthorized user.
+    pullUpTupleElementDefaultsInAlterQuery(
+        query_ptr->as<ASTAlterQuery &>(),
+        table,
+        getContext(),
+        [&]
+        {
+            if (!skip_access_check)
+                getContext()->checkAccess(getRequiredAccess(table));
+        });
+
+    if (settings[Setting::data_type_default_nullable] && !getContext()->isDDLOrOnClusterInternal()
+        && !getContext()->getClientInfo().is_shared_catalog_internal)
+        applyDataTypeDefaultNullableToColumnDeclarations(query_ptr->as<ASTAlterQuery &>());
 
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
