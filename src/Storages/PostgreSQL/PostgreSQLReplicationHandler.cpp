@@ -1,4 +1,5 @@
 #include <optional>
+#include <filesystem>
 #include <random>
 #include <unordered_set>
 #include <base/sort.h>
@@ -511,6 +512,9 @@ void PostgreSQLReplicationHandler::saveSnapshotPositions(const SnapshotPositions
         writeChar('\n', out);
     }
 
+    /// The metadata directory of a database is created lazily, with its first table: the single-table engine writes
+    /// the file while its own `CREATE TABLE` is executed, which may be the first table of the database.
+    snapshot_positions_disk->createDirectories(std::filesystem::path(snapshot_positions_path).parent_path());
     const String tmp_path = snapshot_positions_path + ".tmp";
     writeMetadataFile(snapshot_positions_disk, tmp_path, out.str(), /* fsync_metadata */ true);
     snapshot_positions_disk->replaceFile(tmp_path, snapshot_positions_path);
@@ -529,9 +533,8 @@ void PostgreSQLReplicationHandler::markSnapshotCompleted(const String & table_na
 }
 
 
-void PostgreSQLReplicationHandler::markSingleTableSnapshotIncomplete() const
+void PostgreSQLReplicationHandler::markAllSnapshotsIncomplete() const
 {
-    chassert(!is_materialized_postgresql_database);
     SnapshotPositions positions;
     for (const auto & [table_name, storage] : materialized_storages)
         positions[table_name] = SnapshotPosition{.start_lsn = "", .completed = false, .owns_publication_entry = false};
@@ -706,9 +709,16 @@ void PostgreSQLReplicationHandler::finishInterruptedDetaches(pqxx::nontransactio
 void PostgreSQLReplicationHandler::dropNestedTable(StorageMaterializedPostgreSQL * materialized_storage) const
 {
     if (materialized_storage->tryGetNested())
+    {
+        /// After a restart the single-table engine is registered as a loading dependent of its own nested table, so the
+        /// dependency check would refuse to drop the nested table, although the wrapper only replaces it.
+        auto drop_context = Context::createCopy(materialized_storage->getNestedTableContext());
+        drop_context->setSetting("check_table_dependencies", false);
+        drop_context->setSetting("check_referential_table_dependencies", false);
         InterpreterDropQuery::executeDropQuery(
-            ASTDropQuery::Kind::Drop, getContext(), materialized_storage->getNestedTableContext(),
+            ASTDropQuery::Kind::Drop, getContext(), drop_context,
             materialized_storage->getNestedStorageID(), /* sync */ true, /* ignore_sync_setting */ true);
+    }
 
     /// The wrapper may stay without a nested table if its replacement snapshot fails: it must not be counted as
     /// a materialized table by the last-table check of `DETACH TABLE ... PERMANENTLY` or by a database backup.
@@ -1154,6 +1164,54 @@ void PostgreSQLReplicationHandler::checkPublicationReusableForUserManagedSnapsho
             "slot {}: {}. Replicating through this publication would silently filter the replication stream. "
             "Startup will be retried",
             replication_slot, definition_conflict);
+
+    /// The checks above see the current publication, but the changes committed after the supplied snapshot are decoded
+    /// with the publication as it was when they were committed. If the publication was changed after the snapshot (for
+    /// example, a table was added to it, or its `publish` parameter was fixed), the changes committed in between were
+    /// filtered out of the replication stream and are not in the snapshot either. The system catalogs read under the
+    /// imported snapshot show the publication as it was at the snapshot (unlike `pg_publication_tables`, which is
+    /// computed from the latest catalog state), and every change of the publication replaces or adds catalog rows.
+    const auto current_rows = fetchPublicationCatalogRows(tx);
+
+    postgres::Connection snapshot_connection(connection_info);
+    pqxx::ReplicationTransaction snapshot_tx(snapshot_connection.getRef());
+    snapshot_tx.exec(fmt::format("SET TRANSACTION SNAPSHOT {}", quoteStringPostgreSQL(user_provided_snapshot)));
+    const auto snapshot_rows = fetchPublicationCatalogRows(snapshot_tx);
+
+    if (current_rows != snapshot_rows)
+        throw Exception(
+            ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "Cannot start MaterializedPostgreSQL replication from the snapshot supplied for the user-managed replication "
+            "slot {}: the publication {} was changed after the snapshot was exported. The changes committed between the "
+            "snapshot and the change of the publication may be absent from both the snapshot and the replication stream. "
+            "Create a new replication slot and pass the snapshot exported for it (`materialized_postgresql_snapshot`) "
+            "after the publication is ready. Startup will be retried",
+            replication_slot, doubleQuoteString(publication_name));
+}
+
+
+std::set<String> PostgreSQLReplicationHandler::fetchPublicationCatalogRows(pqxx::transaction_base & tx) const
+{
+    const String quoted_name = quoteStringPostgreSQL(publication_name);
+    /// `xmin` is the transaction that wrote a row version, so it changes with every update of the row.
+    String query = fmt::format(
+        "SELECT 'publication:' || p.oid::text || ':' || p.xmin::text FROM pg_publication p WHERE p.pubname = {0} "
+        "UNION ALL "
+        "SELECT 'relation:' || r.oid::text || ':' || r.xmin::text FROM pg_publication_rel r "
+        "JOIN pg_publication p ON r.prpubid = p.oid WHERE p.pubname = {0}",
+        quoted_name);
+    /// Schema-level membership (`FOR TABLES IN SCHEMA`) exists since PostgreSQL 15.
+    if (tx.conn().server_version() >= 150000)
+        query += fmt::format(
+            " UNION ALL "
+            "SELECT 'schema:' || n.oid::text || ':' || n.xmin::text FROM pg_publication_namespace n "
+            "JOIN pg_publication p ON n.pnpubid = p.oid WHERE p.pubname = {}",
+            quoted_name);
+
+    std::set<String> rows;
+    for (const auto row : pqxx::result{tx.exec(query)})
+        rows.insert(row[0].as<String>());
+    return rows;
 }
 
 
@@ -1165,7 +1223,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     if (is_attach && is_materialized_postgresql_database)
         finishInterruptedDetaches(tx);
     /// The single-table engine was terminated while its nested table was being loaded from a snapshot (see
-    /// `markSingleTableSnapshotIncomplete`): the nested table holds only a part of the rows and must not be resumed.
+    /// `markAllSnapshotsIncomplete`): the nested table holds only a part of the rows and must not be resumed.
     if (is_attach && !is_materialized_postgresql_database && hasIncompleteSingleTableSnapshot())
     {
         for (const auto & [table_name, storage] : materialized_storages)
@@ -1207,13 +1265,11 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     {
         LOG_DEBUG(log, "Starting tables sync load");
 
-        /// All tables are loaded from the snapshot of the new replication slot.
-        saveSnapshotPositions({});
-
-        /// The single-table engine records that its snapshot is being loaded before anything is created, so that a nested
-        /// table left by an interrupted snapshot (the server was terminated) is not resumed by the next attach.
-        if (!is_materialized_postgresql_database)
-            markSingleTableSnapshotIncomplete();
+        /// All tables are loaded from the snapshot of the new replication slot. Both engines record that the snapshots
+        /// are being loaded before anything is created, so that a nested table left by an interrupted snapshot (the
+        /// server was terminated, or the connection was lost) is not resumed by the next attach: the replication slot
+        /// does not contain the rows committed before it was created.
+        markAllSnapshotsIncomplete();
 
         if (user_managed_slot)
         {
@@ -1238,18 +1294,17 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             createReplicationSlot(tx, start_lsn, snapshot_name);
         }
 
-        /// A partially loaded nested table of the single-table engine must not stay: a retried startup would take it
-        /// for replicated data. If dropping it fails, the snapshot stays marked incomplete, and the next attach drops it.
-        auto drop_partially_loaded_single_table = [&](StorageMaterializedPostgreSQL * materialized_storage)
+        /// A partially loaded nested table must not stay: a retried startup would take it for replicated data. If dropping
+        /// it fails, the snapshot stays marked incomplete, and the next attach drops it. The database engine keeps the
+        /// entry of the table either way: the next attach takes the first snapshot of a published table without a nested
+        /// table from a temporary replication slot.
+        auto drop_partially_loaded_table = [&](StorageMaterializedPostgreSQL * materialized_storage)
         {
-            if (is_materialized_postgresql_database)
-                return;
-
             try
             {
                 dropNestedTable(materialized_storage);
-                /// The object is not created if its `CREATE TABLE` fails, so nothing is left to mark.
-                if (!is_attach)
+                /// The single-table object is not created if its `CREATE TABLE` fails, so nothing is left to mark.
+                if (!is_attach && !is_materialized_postgresql_database)
                     saveSnapshotPositions({});
             }
             catch (...)
@@ -1264,14 +1319,13 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             try
             {
                 nested_storages.emplace(table_name, loadFromSnapshot(*tmp_connection, snapshot_name, table_name, materialized_storage));
-                if (!is_materialized_postgresql_database)
-                    saveSnapshotPositions({});
+                removeSnapshotPosition(table_name);
             }
             catch (Exception & e)
             {
                 e.addMessage("while loading table `{}`.`{}`", postgres_database, table_name);
                 tryLogCurrentException(log);
-                drop_partially_loaded_single_table(materialized_storage);
+                drop_partially_loaded_table(materialized_storage);
 
                 /// Throw in case of single MaterializedPostgreSQL storage, because initial setup is done immediately
                 /// (unlike database engine where it is done in a separate thread).
@@ -1281,7 +1335,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             catch (...)
             {
                 /// Not only `DB::Exception`: a lost connection during the snapshot throws `pqxx::failure`.
-                drop_partially_loaded_single_table(materialized_storage);
+                drop_partially_loaded_table(materialized_storage);
                 throw;
             }
         }
@@ -1461,7 +1515,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             {
                 /// The single-table engine has no snapshot position to persist, but a nested table left by an interrupted
                 /// snapshot must not be resumed by the next attach.
-                markSingleTableSnapshotIncomplete();
+                markAllSnapshotsIncomplete();
 
                 /// The replication slot of the single-table engine streams only this table, so nothing needs
                 /// the changes before the snapshot position.

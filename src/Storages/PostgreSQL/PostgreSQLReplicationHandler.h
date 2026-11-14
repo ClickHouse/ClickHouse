@@ -195,6 +195,9 @@ private:
     /// Throws if the existing publication reused by a fresh object with a user-managed replication slot does not publish
     /// all replicated tables, publishes same-name tables from other schemas, or has a filtering definition.
     void checkPublicationReusableForUserManagedSnapshot(pqxx::nontransaction & tx);
+    /// The rows of the publication in the system catalogs, as seen by `tx`, to compare the publication at the snapshot
+    /// supplied for a user-managed replication slot with the current one.
+    std::set<String> fetchPublicationCatalogRows(pqxx::transaction_base & tx) const;
 
     /// See `snapshot_positions_path`.
     struct SnapshotPosition
@@ -213,10 +216,11 @@ private:
     SnapshotPositions loadSnapshotPositions() const;
     void saveSnapshotPositions(const SnapshotPositions & positions) const;
     void markSnapshotCompleted(const String & table_name) const;
-    /// The single-table engine persists only whether the snapshot of its table is being loaded: the entry is written
-    /// before the snapshot starts and removed once it completes. A nested table left by an interrupted snapshot (the
-    /// server was terminated while loading it) holds only a part of the rows, so it is dropped and loaded again.
-    void markSingleTableSnapshotIncomplete() const;
+    /// Replaces the snapshot positions with an entry without a position for every replicated table, written before the
+    /// initial snapshot starts. The entry of a table is removed once its snapshot completes. A nested table left by an
+    /// interrupted snapshot (the server was terminated while loading it) holds only a part of the rows, so the next
+    /// attach drops it and loads it again instead of resuming it. The single-table engine persists only this.
+    void markAllSnapshotsIncomplete() const;
     bool hasIncompleteSingleTableSnapshot() const;
 
     /// See `detaching_tables_path`.
@@ -324,7 +328,8 @@ private:
     /// loaded again on attach rather than resumed. A completed entry is removed on attach once the shared replication
     /// slot has passed it. The single-table engine does not need the position: its replication slot is moved to the
     /// snapshot position instead, because it does not stream changes of other tables. It only records there that its
-    /// snapshot is being loaded (see markSingleTableSnapshotIncomplete).
+    /// snapshot is being loaded. During the initial synchronization, both engines record there the tables whose snapshot
+    /// has not completed yet (see markAllSnapshotsIncomplete).
     DiskPtr snapshot_positions_disk;
     String snapshot_positions_path;
 
