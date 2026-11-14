@@ -224,12 +224,12 @@ void pushLimitIntoJoin(QueryPlan::Node & node)
     if (!limit || limit->withTies() || limit->alwaysReadTillEnd() || limit->getLimitForSorting() == 0)
         return;
 
-    /// Every join down the probe side (through expressions, filters and other joins' probe inputs) is marked.
+    /// Every join down the probe side (through expressions, filters, filled joins and other joins' probe inputs) is marked.
     QueryPlan::Node * child = node.children.front();
     while (true)
     {
         IQueryPlanStep * step = child->step.get();
-        if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step))
+        if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<FilledJoinStep *>(step))
         {
             if (child->children.size() != 1)
                 return;
