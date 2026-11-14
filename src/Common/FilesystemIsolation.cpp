@@ -1336,7 +1336,9 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
     for (const auto & file : mapped_files)
         all_paths.push_back({file, FilesystemIsolationPath::Access::ReadOnly, "mapped into the process"});
     /// The libraries of the programs that are started later, with the links that name them, as for the mapped files.
+    /// Only with glibc: a build with musl is linked statically, as the programs it starts are.
     std::vector<std::string> executable_dependencies;
+#if defined(__GLIBC__)
     for (const auto & path : std::vector<FilesystemIsolationPath>(all_paths))
         if (path.executable)
             for (auto & dependency : getExecutableDependencies(path.path, mapped_files))
@@ -1344,6 +1346,7 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
                 all_paths.push_back({dependency, FilesystemIsolationPath::Access::ReadOnly, fmt::format("needed by {}", path.path)});
                 executable_dependencies.push_back(std::move(dependency));
             }
+#endif
     if (const auto interpreter = getInterpreter())
     {
         all_paths.push_back({*interpreter, FilesystemIsolationPath::Access::ReadOnly, "the dynamic loader of the executable"});
