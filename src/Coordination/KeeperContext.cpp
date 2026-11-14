@@ -84,6 +84,7 @@ KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr co
         KeeperFeatureFlag::TRY_REMOVE,
         KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA,
         KeeperFeatureFlag::LIST_WITH_OPTIONS,
+        KeeperFeatureFlag::LIST_WITH_OPTIONS_V2,
         KeeperFeatureFlag::MAX_REQUEST_SIZE,
     };
 
@@ -812,6 +813,8 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
             return feature_flags.isEnabled(KeeperFeatureFlag::GET_CHILDREN_RECURSIVE);
         case Coordination::OpNum::ListWithOptions:
             return feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS);
+        case Coordination::OpNum::ListWithOptionsV2:
+            return feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS_V2);
         case Coordination::OpNum::CheckStat:
             return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_STAT);
         case Coordination::OpNum::Create2:

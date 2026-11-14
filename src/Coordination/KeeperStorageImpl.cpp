@@ -5,6 +5,7 @@
 #include <Coordination/KeeperStorage_fwd.h>
 
 #include <algorithm>
+#include <concepts>
 #include <limits>
 #include <ranges>
 #include <shared_mutex>
@@ -16,6 +17,7 @@
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/logger_useful.h>
@@ -159,6 +161,8 @@ auto callOnConcreteRequestType(Coordination::ZooKeeperRequest & zk_request, F fu
             return function(static_cast<Coordination::ZooKeeperListRecursiveRequest &>(zk_request));
         case Coordination::OpNum::ListWithOptions:
             return function(static_cast<Coordination::ZooKeeperListWithOptionsRequest &>(zk_request));
+        case Coordination::OpNum::ListWithOptionsV2:
+            return function(static_cast<Coordination::ZooKeeperListWithOptionsV2Request &>(zk_request));
         case Coordination::OpNum::Exists:
             return function(static_cast<Coordination::ZooKeeperExistsRequest &>(zk_request));
         case Coordination::OpNum::Set:
@@ -1228,23 +1232,41 @@ static Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperL
 }
 /// LIST Request ///
 
-template <typename Storage>
-static Coordination::ZooKeeperResponsePtr processLocal(
-    const Coordination::ZooKeeperListWithOptionsRequest & zk_request,
+template <typename Storage, typename Request>
+static Coordination::ZooKeeperResponsePtr processLocalListWithOptions(
+    const Request & zk_request,
     Storage & storage,
     int64_t session_id,
     bool check_acl)
 {
     ProfileEvents::increment(ProfileEvents::KeeperListWithOptionsRequest);
     auto response = std::static_pointer_cast<Coordination::ZooKeeperListWithOptionsResponse>(zk_request.makeResponse());
+    const bool paginated = zk_request.getOpNum() == Coordination::OpNum::ListWithOptionsV2;
 
-    if (zk_request.options_version != Coordination::ListOptionsVersion::V1)
+    if (paginated && !storage.keeper_context->getFeatureFlags().isEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS_V2))
     {
         response->error = Coordination::Error::ZUNIMPLEMENTED;
         return response;
     }
 
+    try
+    {
+        zk_request.options.validate();
+    }
+    catch (const Coordination::Exception &)
+    {
+        /// `ListOptions::validate()` only throws ZBADARGUMENTS.
+        response->error = Coordination::Error::ZBADARGUMENTS;
+        return response;
+    }
+
     if (zk_request.options.recursive && zk_request.has_watch)
+    {
+        response->error = Coordination::Error::ZBADARGUMENTS;
+        return response;
+    }
+
+    if (paginated && (zk_request.options.shuffle || zk_request.options.recursive))
     {
         response->error = Coordination::Error::ZBADARGUMENTS;
         return response;
@@ -1275,6 +1297,7 @@ static Coordination::ZooKeeperResponsePtr processLocal(
     };
     const bool materialize_shuffled_subtree = zk_request.options.recursive && zk_request.options.shuffle;
     std::vector<String> shuffled_subtree_candidates;
+    const std::string_view start_after = zk_request.options.startAfter();
 
     const auto append_result = [&](std::string_view relative, const auto * child)
     {
@@ -1297,21 +1320,117 @@ static Coordination::ZooKeeperResponsePtr processLocal(
     };
 
     if (!zk_request.options.recursive && zk_request.options.filter == Coordination::ListRequestType::ALL
-        && !zk_request.options.with_stat && !zk_request.options.with_data)
+        && (paginated || (!zk_request.options.with_stat && !zk_request.options.with_data)))
     {
-        std::vector<String> children = storage.nodes.listCommittedChildrenNames(zk_request.path);
-        if (zk_request.options.shuffle)
-            shuffle_with_limit(children.begin(), children.end(), zk_request.options.max_results, thread_local_rng);
-
-        if (zk_request.options.max_results != 0 && children.size() > zk_request.options.max_results)
+        /// V2 is cursor pagination: `start_after` empty means the first page, still in lexicographic order.
+        /// V1 `max_results` keeps the previous unordered prefix.
+        /// `with_data` / `with_stat` on a V2 page are filled only for the names on that page.
+        if (paginated)
         {
-            response->names.assign(children.begin(), children.begin() + zk_request.options.max_results);
-            response->truncated = true;
+            storage.nodes.listCommittedDirectChildrenPaginated(
+                zk_request.path,
+                start_after,
+                zk_request.options.max_results,
+                response->names,
+                response->truncated);
+
+            if (zk_request.options.with_stat)
+                response->stats.reserve(response->names.size());
+            if (zk_request.options.with_data)
+                response->data.reserve(response->names.size());
+
+            if (zk_request.options.with_stat || zk_request.options.with_data)
+            {
+                for (const String & name : response->names)
+                {
+                    const String child_path = zk_request.path == "/" ? "/" + name : zk_request.path + "/" + name;
+                    const auto child_holder = storage.nodes.getCommittedNode(child_path);
+                    const auto * child = child_holder.get();
+                    chassert(child != nullptr);
+                    if (check_acl && !storage.checkACL(child->stats.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
+                        return auth_error();
+
+                    if (zk_request.options.with_stat)
+                    {
+                        Coordination::Stat stat;
+                        child->stats.setResponseStat(stat);
+                        response->stats.emplace_back(stat);
+                    }
+                    if (zk_request.options.with_data)
+                        response->data.emplace_back(child->getData());
+                }
+            }
         }
         else
         {
-            response->names = std::move(children);
+            std::vector<String> children = storage.nodes.listCommittedChildrenNames(zk_request.path);
+            if (zk_request.options.shuffle)
+                shuffle_with_limit(children.begin(), children.end(), zk_request.options.max_results, thread_local_rng);
+
+            if (zk_request.options.max_results != 0 && children.size() > zk_request.options.max_results)
+            {
+                response->names.assign(children.begin(), children.begin() + zk_request.options.max_results);
+                response->truncated = true;
+            }
+            else
+            {
+                response->names = std::move(children);
+            }
         }
+
+        response->error = Coordination::Error::ZOK;
+        return response;
+    }
+
+    /// V2 with `PERSISTENT_ONLY` or `EPHEMERAL_ONLY`. Recursive and shuffle are rejected above.
+    /// Names arrive in order from the cursor. Stop after `max_results + 1` matches, so children
+    /// before the cursor are not read and a later page can move past an unreadable sibling.
+    if (paginated)
+    {
+        const uint32_t max_results = zk_request.options.max_results;
+        size_t matches = 0;
+        bool auth_failed = false;
+        storage.nodes.visitCommittedDirectChildrenAfter(zk_request.path, start_after, [&](std::string_view child_name)
+        {
+            const String child_path = zk_request.path == "/" ? "/" + String(child_name) : zk_request.path + "/" + String(child_name);
+            const auto child_holder = storage.nodes.getCommittedNode(child_path);
+            const auto * child = child_holder.get();
+            chassert(child != nullptr);
+
+            /// The ephemeral bit is secret, so a child read for the filter must be readable.
+            if (check_acl && !storage.checkACL(child->stats.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
+            {
+                auth_failed = true;
+                return false;
+            }
+
+            const bool matches_filter = zk_request.options.filter == Coordination::ListRequestType::PERSISTENT_ONLY
+                ? !child->stats.isEphemeral()
+                : child->stats.isEphemeral();
+            if (!matches_filter)
+                return true;
+
+            if (max_results != 0 && matches == max_results)
+            {
+                response->truncated = true;
+                return false;
+            }
+
+            response->names.emplace_back(child_name);
+            if (zk_request.options.with_stat)
+            {
+                Coordination::Stat stat;
+                child->stats.setResponseStat(stat);
+                response->stats.emplace_back(stat);
+            }
+            if (zk_request.options.with_data)
+                response->data.emplace_back(child->getData());
+            ++matches;
+            return true;
+        });
+
+        if (auth_failed)
+            return auth_error();
 
         response->error = Coordination::Error::ZOK;
         return response;
@@ -1391,8 +1510,30 @@ static Coordination::ZooKeeperResponsePtr processLocal(
 }
 
 template <typename Storage>
+static Coordination::ZooKeeperResponsePtr processLocal(
+    const Coordination::ZooKeeperListWithOptionsRequest & zk_request, Storage & storage, int64_t session_id, bool check_acl)
+{
+    return processLocalListWithOptions(zk_request, storage, session_id, check_acl);
+}
+
+template <typename Storage>
+static Coordination::ZooKeeperResponsePtr processLocal(
+    const Coordination::ZooKeeperListWithOptionsV2Request & zk_request, Storage & storage, int64_t session_id, bool check_acl)
+{
+    return processLocalListWithOptions(zk_request, storage, session_id, check_acl);
+}
+
+template <typename Storage>
 static Coordination::ZooKeeperResponsePtr
 process(const Coordination::ZooKeeperListWithOptionsRequest & zk_request, Storage & storage, KeeperStorage::DeltaRange deltas, int64_t session_id)
+{
+    chassert(deltas.empty());
+    return processLocal(zk_request, storage, session_id, /*check_acl=*/true);
+}
+
+template <typename Storage>
+static Coordination::ZooKeeperResponsePtr
+process(const Coordination::ZooKeeperListWithOptionsV2Request & zk_request, Storage & storage, KeeperStorage::DeltaRange deltas, int64_t session_id)
 {
     chassert(deltas.empty());
     return processLocal(zk_request, storage, session_id, /*check_acl=*/true);
@@ -2310,6 +2451,7 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processLocalRequests(
             case Coordination::OpNum::SimpleList:
             case Coordination::OpNum::List:
             case Coordination::OpNum::ListWithOptions:
+            case Coordination::OpNum::ListWithOptionsV2:
             case Coordination::OpNum::Check:
             case Coordination::OpNum::MultiRead:
             case Coordination::OpNum::FilteredList:
@@ -2450,10 +2592,7 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processLocalRequests(
 
         const auto process_request = [&]<std::derived_from<Coordination::ZooKeeperRequest> T>(T & concrete_zk_request)
         {
-            if constexpr (std::same_as<T, Coordination::ZooKeeperListWithOptionsRequest>)
-                response = processLocal(concrete_zk_request, *this, task.session_id, check_acl);
-            else
-                response = processLocal(concrete_zk_request, *this, task.session_id, check_acl);
+            response = processLocal(concrete_zk_request, *this, task.session_id, check_acl);
         };
 
         try

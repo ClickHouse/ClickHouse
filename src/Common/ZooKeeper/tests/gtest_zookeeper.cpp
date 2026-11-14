@@ -1,6 +1,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
@@ -251,6 +252,7 @@ TEST(ZooKeeperTest, ListWithOptionsWireRoundTrip)
         .recursive = true,
         .max_results = 17,
         .shuffle = true,
+        .start_after = std::nullopt,
     };
 
     WriteBufferFromOwnString request_out;
@@ -261,7 +263,7 @@ TEST(ZooKeeperTest, ListWithOptionsWireRoundTrip)
     decoded.readImpl(request_in);
 
     EXPECT_TRUE(request_in.eof());
-    EXPECT_EQ(decoded.options_version, ListOptionsVersion::V1);
+    EXPECT_EQ(decoded.getOpNum(), OpNum::ListWithOptions);
     EXPECT_EQ(decoded.path, request.path);
     EXPECT_EQ(decoded.has_watch, request.has_watch);
     EXPECT_EQ(decoded.options.filter, request.options.filter);
@@ -284,6 +286,103 @@ TEST(ZooKeeperTest, ListWithOptionsWireRoundTrip)
     ReadBufferFromString response_in(response_out.str());
     dynamic_cast<ZooKeeperListWithOptionsResponse &>(*decoded_response).readImpl(response_in);
     EXPECT_TRUE(response_in.eof());
+}
+
+TEST(ZooKeeperTest, ListWithOptionsV2WireRoundTrip)
+{
+    ZooKeeperListWithOptionsV2Request request;
+    request.path = "/cursor/page";
+    request.options = {
+        .filter = ListRequestType::ALL,
+        .with_stat = false,
+        .with_data = false,
+        .recursive = false,
+        .max_results = 100,
+        .shuffle = false,
+        .start_after = "child-42",
+    };
+
+    WriteBufferFromOwnString request_out;
+    request.writeImpl(request_out);
+    auto decoded_request = ZooKeeperRequestFactory::instance().get(OpNum::ListWithOptionsV2);
+    auto & decoded = dynamic_cast<ZooKeeperListWithOptionsV2Request &>(*decoded_request);
+    ReadBufferFromString request_in(request_out.str());
+    decoded.readImpl(request_in);
+
+    EXPECT_TRUE(request_in.eof());
+    EXPECT_EQ(decoded.getOpNum(), OpNum::ListWithOptionsV2);
+    EXPECT_EQ(decoded.options.max_results, 100u);
+    ASSERT_TRUE(decoded.options.paginates());
+    EXPECT_EQ(decoded.options.startAfter(), "child-42");
+}
+
+TEST(ZooKeeperTest, ListWithOptionsOpNumSelectsV2ForEmptyCursor)
+{
+    ListOptions first_page;
+    first_page.start_after = "";
+    EXPECT_EQ(listWithOptionsOpNum(first_page), OpNum::ListWithOptionsV2);
+
+    ListOptions legacy;
+    EXPECT_EQ(listWithOptionsOpNum(legacy), OpNum::ListWithOptions);
+
+    ListOptions continuation;
+    continuation.start_after = "child";
+    EXPECT_EQ(listWithOptionsOpNum(continuation), OpNum::ListWithOptionsV2);
+
+    ListOptions shuffle;
+    shuffle.shuffle = true;
+    EXPECT_EQ(listWithOptionsOpNum(shuffle), OpNum::ListWithOptions);
+}
+
+TEST(ZooKeeperTest, ListWithOptionsRequestBytesSizeCountsCursor)
+{
+    ListWithOptionsRequest short_cursor;
+    short_cursor.path = "/p";
+    short_cursor.options.start_after = "a";
+
+    ListWithOptionsRequest long_cursor = short_cursor;
+    long_cursor.options.start_after = String(4096, 'z');
+
+    EXPECT_EQ(long_cursor.bytesSize() - short_cursor.bytesSize(), 4095u);
+}
+
+TEST(ZooKeeperTest, ListWithOptionsV2EmptyCursorWireRoundTrip)
+{
+    ZooKeeperListWithOptionsV2Request request;
+    request.path = "/first/page";
+    request.options.start_after = "";
+
+    WriteBufferFromOwnString request_out;
+    request.writeImpl(request_out);
+    auto decoded_request = ZooKeeperRequestFactory::instance().get(OpNum::ListWithOptionsV2);
+    auto & decoded = dynamic_cast<ZooKeeperListWithOptionsV2Request &>(*decoded_request);
+    ReadBufferFromString request_in(request_out.str());
+    decoded.readImpl(request_in);
+
+    EXPECT_TRUE(request_in.eof());
+    EXPECT_EQ(decoded.getOpNum(), OpNum::ListWithOptionsV2);
+    ASSERT_TRUE(decoded.options.paginates());
+    EXPECT_TRUE(decoded.options.startAfter().empty());
+}
+
+TEST(ZooKeeperTest, ListWithOptionsV1RejectsVersionTwoOnSameOpcode)
+{
+    WriteBufferFromOwnString out;
+    Coordination::write(static_cast<int32_t>(2), out);
+    Coordination::write(String("/p"), out);
+    Coordination::write(false, out);
+    Coordination::write(static_cast<uint8_t>(0), out);
+    Coordination::write(false, out);
+    Coordination::write(false, out);
+    Coordination::write(false, out);
+    Coordination::write(static_cast<uint32_t>(0), out);
+    Coordination::write(false, out);
+    Coordination::write(String(""), out);
+
+    auto decoded_request = ZooKeeperRequestFactory::instance().get(OpNum::ListWithOptions);
+    auto & decoded = dynamic_cast<ZooKeeperListWithOptionsRequest &>(*decoded_request);
+    ReadBufferFromString in(out.str());
+    EXPECT_THROW(decoded.readImpl(in), Coordination::Exception);
 }
 
 TEST(ZooKeeperTest, Create2ResponseWireRoundTrip)

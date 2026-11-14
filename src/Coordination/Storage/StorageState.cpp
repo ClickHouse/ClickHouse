@@ -5,6 +5,7 @@
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperContext.h>
 #include <base/getMemoryAmount.h>
+#include <base/scope_guard.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -21,7 +22,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <limits>
 #include <mutex>
+#include <queue>
 #include <shared_mutex>
 #include <thread>
 
@@ -66,6 +69,9 @@ namespace ProfileEvents
     extern const Event KeeperLSMTNodeCacheEntriesUpdated;
     extern const Event KeeperLSMTListNamesFromMemtables;
     extern const Event KeeperLSMTListNamesFromFiles;
+    extern const Event KeeperLSMTListScannedBlocks;
+    extern const Event KeeperLSMTListScannedEntries;
+    extern const Event KeeperLSMTListFilterSkipped;
 }
 
 namespace Coordination::Storage
@@ -429,6 +435,282 @@ void StorageState::listCommittedChildrenNames(
     }
 
     ProfileEvents::increment(ProfileEvents::KeeperLSMTListNamesFromFiles, out.set.size() - names_before_files);
+}
+
+namespace
+{
+
+struct ListDirectChildrenPageCtx
+{
+    NodePath range_end;
+    UInt128 parent_hash{};
+    BlockCache * block_cache = nullptr;
+    std::string path_buf;
+    size_t scanned_blocks = 0;
+    size_t scanned_entries = 0;
+};
+
+/// One sorted run, positioned on the next direct child in (range_start, range_end).
+struct RunChildCursor
+{
+    static constexpr uint32_t unpositioned_block = std::numeric_limits<uint32_t>::max();
+
+    const SortedRun * run = nullptr;
+    NodePath range_start;
+
+    uint32_t file_idx = 0;
+    uint32_t block_idx = unpositioned_block;
+    BlockPtr block;
+    uint32_t offset = 0;
+
+    /// Current child basename; heap items view this until the source is advanced.
+    std::string name;
+    NodeAction action = NodeAction::Remove;
+    bool has_value = false;
+    bool past_start = false;
+
+    void advance(ListDirectChildrenPageCtx & ctx)
+    {
+        has_value = false;
+
+        const uint32_t files_size = static_cast<uint32_t>(run->files.size());
+        while (file_idx < files_size)
+        {
+            const SortedFile & file = *run->files[file_idx];
+            if (file.parent_paths_filter && !file.parent_paths_filter->findHashPair(
+                    DB::BloomFilterHashPair{ctx.parent_hash.items[0], ctx.parent_hash.items[1]}))
+            {
+                ProfileEvents::increment(ProfileEvents::KeeperLSMTListFilterSkipped);
+                ++file_idx;
+                block_idx = unpositioned_block;
+                block.reset();
+                continue;
+            }
+
+            if (block_idx == unpositioned_block)
+            {
+                if (!file.blocks.empty() && file.blocks.front().min_path.compare(ctx.range_end) >= 0)
+                    return;
+                const auto block_it = std::ranges::partition_point(
+                    file.blocks, [&](const SortedFile::BlockInfo & info) { return info.max_path.compare(range_start) <= 0; });
+                block_idx = static_cast<uint32_t>(block_it - file.blocks.begin());
+                block.reset();
+            }
+
+            while (block_idx < file.blocks.size())
+            {
+                if (file.blocks[block_idx].min_path.compare(ctx.range_end) >= 0)
+                    return;
+
+                if (!block)
+                {
+                    block = file.getOrLoadBlock(block_idx, ctx.block_cache);
+                    offset = block->entries_start;
+                    ctx.scanned_blocks += 1;
+                }
+
+                NodeRef ref{.block = block};
+                NodePath node_path;
+                uint32_t serialized_size = 0;
+                NodeAction node_action = NodeAction::Remove;
+                while (offset < block->size)
+                {
+                    ref.offset = offset;
+                    ref.readPath(node_path, ctx.path_buf, serialized_size, node_action);
+                    offset += serialized_size;
+                    ctx.scanned_entries += 1;
+
+                    if (!past_start && node_path.compare(range_start) <= 0)
+                        continue;
+                    if (node_path.compare(ctx.range_end) >= 0)
+                    {
+                        file_idx = files_size;
+                        return;
+                    }
+
+                    name.assign(node_path.baseName());
+                    action = node_action;
+                    has_value = true;
+                    past_start = true;
+                    return;
+                }
+
+                ++block_idx;
+                block.reset();
+            }
+
+            ++file_idx;
+            block_idx = unpositioned_block;
+            block.reset();
+        }
+    }
+};
+
+}
+
+template <typename OnLiveName>
+void visitDirectChildrenAfterImpl(
+    const StorageState & state,
+    const NodePathWithHash & path,
+    std::string_view start_after,
+    OnLiveName && on_live_name)
+{
+    /// Newest memtable wins. Children sets are unordered, so this parent’s memtable names are read in full.
+    ChildrenSet2 mem_set;
+    DB::Arena arena;
+    if (state.mutable_memtable)
+        state.mutable_memtable->listChildrenNames(path, mem_set, arena);
+    for (auto it = state.immutable_memtables.rbegin(); it != state.immutable_memtables.rend(); ++it)
+        (*it)->listChildrenNames(path, mem_set, arena);
+
+    std::vector<std::pair<std::string, NodeAction>> mem_names;
+    mem_names.reserve(mem_set.set.size());
+    for (const auto & entry : mem_set.set)
+    {
+        if (entry.str() > start_after)
+            mem_names.emplace_back(entry.str(), entry.action);
+    }
+    std::ranges::sort(mem_names, [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+
+    std::string range_prefix(path.path.str());
+    if (!range_prefix.ends_with('/'))
+        range_prefix += '/';
+    std::string range_start_str = range_prefix;
+    range_start_str.append(start_after);
+    std::string range_end_str = range_prefix;
+    ++range_end_str.back();
+    NodePath range_start(range_start_str, path.path.depth + 1);
+    const NodePath range_end(range_end_str, path.path.depth + 1);
+
+    ListDirectChildrenPageCtx ctx;
+    ctx.range_end = range_end;
+    ctx.parent_hash = path.hash;
+    ctx.block_cache = state.block_cache.get();
+    SCOPE_EXIT({
+        if (ctx.scanned_blocks)
+            ProfileEvents::increment(ProfileEvents::KeeperLSMTListScannedBlocks, ctx.scanned_blocks);
+        if (ctx.scanned_entries)
+            ProfileEvents::increment(ProfileEvents::KeeperLSMTListScannedEntries, ctx.scanned_entries);
+    });
+
+    std::vector<RunChildCursor> runs;
+    runs.reserve(state.sorted_runs.size());
+    for (auto it = state.sorted_runs.rbegin(); it != state.sorted_runs.rend(); ++it)
+    {
+        const SortedRun & run = **it;
+        RunChildCursor cursor;
+        cursor.run = &run;
+        cursor.range_start = range_start;
+        if (run.min_path_cutoff && run.min_path_cutoff->compare(cursor.range_start) > 0)
+            cursor.range_start = *run.min_path_cutoff;
+        if (cursor.range_start.compare(range_end) >= 0)
+            continue;
+
+        cursor.file_idx = static_cast<uint32_t>(std::partition_point(
+            run.files.begin(), run.files.end(),
+            [&](const SortedFilePtr & file) { return file->blocks.back().max_path.compare(cursor.range_start) <= 0; })
+            - run.files.begin());
+        cursor.advance(ctx);
+        if (cursor.has_value)
+            runs.push_back(std::move(cursor));
+    }
+
+    /// Source 0 is the memtable vector. Sources 1.. are sorted runs, newest first.
+    /// Heap items view the current name in-place; copy it before advancing that source.
+    size_t mem_idx = 0;
+    const auto source_valid = [&](size_t source)
+    {
+        return source == 0 ? mem_idx < mem_names.size() : runs[source - 1].has_value;
+    };
+    const auto source_name = [&](size_t source) -> std::string_view
+    {
+        return source == 0 ? mem_names[mem_idx].first : runs[source - 1].name;
+    };
+    const auto source_action = [&](size_t source)
+    {
+        return source == 0 ? mem_names[mem_idx].second : runs[source - 1].action;
+    };
+    const auto advance_source = [&](size_t source)
+    {
+        if (source == 0)
+            ++mem_idx;
+        else
+            runs[source - 1].advance(ctx);
+    };
+
+    struct HeapItem
+    {
+        std::string_view name;
+        size_t source = 0;
+        bool operator>(const HeapItem & rhs) const
+        {
+            if (name != rhs.name)
+                return name > rhs.name;
+            return source > rhs.source;
+        }
+    };
+    std::priority_queue<HeapItem, std::vector<HeapItem>, std::greater<>> heap;
+    const size_t source_count = runs.size() + 1;
+    for (size_t source = 0; source < source_count; ++source)
+    {
+        if (source_valid(source))
+            heap.push(HeapItem{.name = source_name(source), .source = source});
+    }
+
+    while (!heap.empty())
+    {
+        const HeapItem top = heap.top();
+        heap.pop();
+        std::string name(top.name);
+        const NodeAction action = source_action(top.source);
+        advance_source(top.source);
+        if (source_valid(top.source))
+            heap.push(HeapItem{.name = source_name(top.source), .source = top.source});
+
+        while (!heap.empty() && heap.top().name == name)
+        {
+            const size_t source = heap.top().source;
+            heap.pop();
+            advance_source(source);
+            if (source_valid(source))
+                heap.push(HeapItem{.name = source_name(source), .source = source});
+        }
+
+        if (action == NodeAction::Remove)
+            continue;
+
+        if (!on_live_name(std::string_view{name}))
+            return;
+    }
+}
+
+void StorageState::listDirectChildrenPage(
+    const NodePathWithHash & path,
+    std::string_view start_after,
+    uint32_t max_results,
+    std::vector<std::string> & out,
+    bool & truncated) const
+{
+    out.clear();
+    truncated = false;
+    visitDirectChildrenAfterImpl(*this, path, start_after, [&](std::string_view name)
+    {
+        if (max_results != 0 && out.size() == max_results)
+        {
+            truncated = true;
+            return false;
+        }
+        out.emplace_back(name);
+        return true;
+    });
+}
+
+void StorageState::visitDirectChildrenAfter(
+    const NodePathWithHash & path,
+    std::string_view start_after,
+    absl::FunctionRef<bool(std::string_view name)> on_name) const
+{
+    visitDirectChildrenAfterImpl(*this, path, start_after, on_name);
 }
 
 void StorageState::getNodeCountAndDataSize(uint64_t & out_node_count, uint64_t & out_data_size) const

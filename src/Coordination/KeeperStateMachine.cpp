@@ -387,6 +387,7 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
         case OpNum::FilteredListWithStatsAndData:
         case OpNum::ListRecursive:
         case OpNum::ListWithOptions:
+        case OpNum::ListWithOptionsV2:
         case OpNum::Check:
         case OpNum::CheckNotExists:
         case OpNum::CheckStat:
@@ -398,17 +399,17 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
             ///  - `RemoveRecursive` of `/` or of anything under the internal Keeper path returns
             ///    `ZBADARGUMENTS` (`preprocess` for `ZooKeeperRemoveRecursiveRequest` in
             ///    KeeperStorageImpl.cpp);
-            ///  - `ListWithOptions` with an unsupported options version (`ZUNIMPLEMENTED`), or recursive
-            ///    with a watch (`ZBADARGUMENTS`), in its `processLocal`.
+            ///  - `ListWithOptions` / `ListWithOptionsV2` with recursive + watch (`ZBADARGUMENTS`)
+            ///    in its `processLocal`.
             /// Reporting their paths would turn a harmless tail entry such as `RemoveRecursive("/")` into
             /// a false conflict with every removed subtree.
             if (request.getOpNum() == OpNum::RemoveRecursive
                 && (path == "/" || Coordination::matchPath(path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH))
                 return true;
-            if (request.getOpNum() == OpNum::ListWithOptions)
+            if (request.getOpNum() == OpNum::ListWithOptions || request.getOpNum() == OpNum::ListWithOptionsV2)
             {
-                const auto & lwo = dynamic_cast<const Coordination::ZooKeeperListWithOptionsRequest &>(request);
-                if (lwo.options_version != Coordination::ListOptionsVersion::V1 || (lwo.options.recursive && lwo.has_watch))
+                const auto & lwo = dynamic_cast<const Coordination::ListWithOptionsRequest &>(request);
+                if (lwo.options.recursive && request.has_watch)
                     return true;
             }
 
@@ -437,9 +438,9 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
                 if (check.stat_to_check && check.stat_to_check->numChildren == -1 && check.stat_to_check->cversion == -1)
                     kind = RequestPathKind::NodeOnly;
             }
-            if (request.getOpNum() == OpNum::ListWithOptions)
+            if (request.getOpNum() == OpNum::ListWithOptions || request.getOpNum() == OpNum::ListWithOptionsV2)
             {
-                const auto & lwo = dynamic_cast<const Coordination::ZooKeeperListWithOptionsRequest &>(request);
+                const auto & lwo = dynamic_cast<const Coordination::ListWithOptionsRequest &>(request);
                 if (lwo.options.recursive)
                     kind = RequestPathKind::Subtree;
             }

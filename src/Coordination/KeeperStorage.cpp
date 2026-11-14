@@ -1305,7 +1305,8 @@ void KeeperStorage::updateWatches(
                 Coordination::OpNum::SimpleList,
                 Coordination::OpNum::FilteredList,
                 Coordination::OpNum::FilteredListWithStatsAndData,
-                Coordination::OpNum::ListWithOptions};
+                Coordination::OpNum::ListWithOptions,
+                Coordination::OpNum::ListWithOptionsV2};
 
             std::optional<Coordination::ListRequestType> list_with_data_filter;
             auto watch_type = WatchType::WATCH;

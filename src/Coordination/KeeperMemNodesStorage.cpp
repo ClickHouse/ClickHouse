@@ -8,7 +8,9 @@
 
 #include <fmt/ranges.h>
 
+#include <algorithm>
 #include <filesystem>
+#include <queue>
 #include <set>
 #include <unordered_set>
 #include <mutex>
@@ -243,6 +245,79 @@ std::vector<std::string> KeeperMemNodesStorage::listCommittedChildrenNames(std::
     res.reserve(set.size());
     res.insert(res.end(), set.begin(), set.end());
     return res;
+}
+
+void KeeperMemNodesStorage::listCommittedDirectChildrenPaginated(
+    std::string_view path,
+    std::string_view start_after,
+    uint32_t max_results,
+    std::vector<std::string> & out,
+    bool & truncated) const
+{
+    out.clear();
+    truncated = false;
+
+    auto node_it = container.find(path);
+    if (node_it == container.end())
+        return;
+
+    /// The child set is unordered and stores `string_view`s into node keys.
+    /// A page only needs the next `max_results` names after the cursor, so
+    /// keep views until that page is known and copy only those strings.
+    const CompactChildrenSet & children = node_it->value.getChildren();
+    std::vector<std::string_view> after_cursor;
+    after_cursor.reserve(children.size());
+    for (const std::string_view name : children)
+    {
+        if (start_after.empty() || name > start_after)
+            after_cursor.push_back(name);
+    }
+
+    /// `max_results == 0` means the rest of the listing, same as a full sort.
+    const size_t limit = max_results == 0 ? after_cursor.size() : std::min(after_cursor.size(), static_cast<size_t>(max_results));
+    truncated = max_results != 0 && after_cursor.size() > limit;
+    if (limit == 0)
+        return;
+
+    const auto page_end = std::next(after_cursor.begin(), static_cast<std::ptrdiff_t>(limit));
+    if (limit < after_cursor.size())
+        std::nth_element(after_cursor.begin(), page_end, after_cursor.end());
+    std::sort(after_cursor.begin(), page_end);
+
+    out.reserve(limit);
+    for (auto it = after_cursor.begin(); it != page_end; ++it)
+        out.emplace_back(*it);
+}
+
+void KeeperMemNodesStorage::visitCommittedDirectChildrenAfter(
+    std::string_view path,
+    std::string_view start_after,
+    absl::FunctionRef<bool(std::string_view name)> on_name) const
+{
+    auto node_it = container.find(path);
+    if (node_it == container.end())
+        return;
+
+    /// Unordered views. A heap yields the next name after the cursor without sorting the tail
+    /// the caller never asks for.
+    const CompactChildrenSet & children = node_it->value.getChildren();
+    std::vector<std::string_view> after_cursor;
+    after_cursor.reserve(children.size());
+    for (const std::string_view name : children)
+    {
+        if (start_after.empty() || name > start_after)
+            after_cursor.push_back(name);
+    }
+
+    std::priority_queue<std::string_view, std::vector<std::string_view>, std::greater<>> heap(
+        std::greater<>{}, std::move(after_cursor));
+    while (!heap.empty())
+    {
+        const std::string_view name = heap.top();
+        heap.pop();
+        if (!on_name(name))
+            return;
+    }
 }
 
 bool KeeperMemNodesStorage::addCommittedNodeIfNotExists(std::string_view path, const KeeperNodeStats & stats, std::string_view data, bool update_parent_num_children, uint64_t * out_digest)

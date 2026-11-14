@@ -162,15 +162,25 @@ void ListOptions::validate() const
         case ListRequestType::ALL:
         case ListRequestType::PERSISTENT_ONLY:
         case ListRequestType::EPHEMERAL_ONLY:
+        {
+            if (paginates())
+            {
+                if (shuffle)
+                    throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions does not support shuffle with start_after");
+                if (recursive)
+                    throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions does not support recursive listing with start_after");
+            }
             return;
+        }
     }
+
     throw Exception::fromMessage(Error::ZBADARGUMENTS, "Unknown ListWithOptions filter");
 }
 
-ListOptionsVersion requiredListOptionsVersion(const ListOptions & options)
+OpNum listWithOptionsOpNum(const ListOptions & options)
 {
     options.validate();
-    return ListOptionsVersion::V1;
+    return options.paginates() ? OpNum::ListWithOptionsV2 : OpNum::ListWithOptions;
 }
 
 size_t ListWithOptionsResponse::bytesSize() const

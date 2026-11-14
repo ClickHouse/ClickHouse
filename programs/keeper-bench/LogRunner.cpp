@@ -338,6 +338,7 @@ struct ZooKeeperRequestFromLogReader
                 break;
             }
             case Coordination::OpNum::ListWithOptions:
+            case Coordination::OpNum::ListWithOptionsV2:
                 throw DB::Exception(
                     DB::ErrorCodes::BAD_ARGUMENTS,
                     "ListWithOptions cannot be replayed because system.zookeeper_log does not store its options");
