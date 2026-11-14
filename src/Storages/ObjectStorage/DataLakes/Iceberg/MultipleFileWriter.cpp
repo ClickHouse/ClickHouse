@@ -82,7 +82,10 @@ void MultipleFileWriter::startNewFile()
     /// The ORC String/FixedString logical-type handling lives in ORCBlockOutputFormat, keyed on
     /// the column mapper, so it covers the compaction/mutation rewrite paths too.
     FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
-    output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
+    /// Not `getOutputFormatParallelIfPossible`: `ParallelFormattingOutputFormat` writes to `buffer` from its own thread,
+    /// and `consume` reads `buffer->count()` to cut the file. The Iceberg data file formats are not formatted
+    /// in parallel anyway: the Parquet writer encodes row groups in parallel itself and writes them on the calling thread.
+    output_format = FormatFactory::instance().getOutputFormat(
         write_format, *buffer, *sample_block, context, file_format_settings, format_filter_info);
 }
 
