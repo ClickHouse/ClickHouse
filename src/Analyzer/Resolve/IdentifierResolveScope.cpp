@@ -217,12 +217,16 @@ bool IdentifierResolveScope::canCacheIdentifier(
     if (expressions_in_resolve_process_stack.hasExpressionWithAlias(lookup.identifier.front()))
         return false;
 
-    /// Cannot use cache for a hidden lambda argument: outside of the hiding window the same name
-    /// resolves to the argument, inside it resolves to whatever the enclosing scopes provide.
-    if (!hidden_expression_arguments.empty() && hidden_expression_arguments.contains(lookup.identifier.front()))
-        return false;
-
     return true;
+}
+
+IdentifierResolveScope::HiddenExpressionArgumentsInScopes IdentifierResolveScope::getHiddenExpressionArgumentsInScopes() const
+{
+    HiddenExpressionArgumentsInScopes result;
+    for (const auto * scope = this; scope; scope = scope->parent_scope)
+        if (!scope->hidden_expression_arguments.empty())
+            result.emplace_back(scope, scope->hidden_expression_arguments);
+    return result;
 }
 
 std::optional<IdentifierResolveResult> IdentifierResolveScope::findCachedIdentifier(
@@ -236,13 +240,16 @@ std::optional<IdentifierResolveResult> IdentifierResolveScope::findCachedIdentif
     if (it == identifier_resolve_cache.end())
         return {};
 
+    const auto & entry = it->second;
+    if (entry.hidden_expression_arguments != getHiddenExpressionArgumentsInScopes())
+        return {};
+
     /// There are 2 kinds of expressions:
     /// 1. Does not contain any subquery -- it is safe to return by reference
     /// 2. Contains subqueries -- it is required to make a deep copy because
     ///    distributed queries may fail.
     /// It could be simplified once StorageDistributed and Parallel Replicas
     /// stop using AST to send task to the shards.
-    const auto & entry = it->second;
     if (!entry.needs_clone_on_retrieval)
         return entry.result;
 
@@ -282,6 +289,7 @@ void IdentifierResolveScope::tryCacheIdentifier(
 
     identifier_resolve_cache[lookup] = IdentifierResolveCacheEntry{
         .result = result,
+        .hidden_expression_arguments = getHiddenExpressionArgumentsInScopes(),
         .needs_clone_on_retrieval = subtreeContainsQueryOrUnion(result.resolved_identifier)};
 }
 
