@@ -590,9 +590,34 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     rx.bind_key(Replxx::KEY::PAGE_DOWN, [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_LAST, code); });
     rx.bind_key(Replxx::KEY::control('G'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_RESTORE_CURRENT, code); });
     rx.bind_key(Replxx::KEY::meta('g'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_RESTORE, code); });
-    rx.bind_key(Replxx::KEY::control('R'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, code); });
-    rx.bind_key(Replxx::KEY::control('S'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, code); });
-    rx.bind_key(Replxx::KEY::meta('r'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_SEEDED_INCREMENTAL_SEARCH, code); });
+
+    /// Bind a shortcut that does not edit the text. With `--vim`, `replxx` dispatches only through
+    /// the keymap of the current mode, so the shortcut is bound in the vim normal mode as well.
+    auto bind_non_editing_key = [this, vim_mode = options.vim](char32_t key, Replxx::key_press_handler_t handler)
+    {
+        rx.bind_key(key, handler);
+        if (!vim_mode)
+            return;
+        rx.bind_key(
+            key,
+            [this, handler](char32_t code)
+            {
+                resetVim();
+                Replxx::ACTION_RESULT ret = handler(code);
+                /// Stay in normal mode with the cursor on a character of the (possibly recalled) line.
+                if (ret == Replxx::ACTION_RESULT::CONTINUE)
+                {
+                    rx.set_editing_mode(MODE_NORMAL);
+                    withVimState([this](int & pos, std::u32string & text) { resetVim(&pos, &text); });
+                }
+                return ret;
+            },
+            MODE_NORMAL);
+    };
+
+    bind_non_editing_key(Replxx::KEY::control('R'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, code); });
+    bind_non_editing_key(Replxx::KEY::control('S'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, code); });
+    bind_non_editing_key(Replxx::KEY::meta('r'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_SEEDED_INCREMENTAL_SEARCH, code); });
 
     /// We don't want the default, "suspend" behavior, it confuses people.
     /// In the embedded mode, it would stop the whole server process with `SIGSTOP`.
@@ -737,7 +762,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
         return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
     };
-    rx.bind_key(Replxx::KEY::meta('#'), insert_comment_action);
+    bind_non_editing_key(Replxx::KEY::meta('#'), insert_comment_action);
 
     char key_fuzzy = 'R';
     char key_regular = 'T';
@@ -789,7 +814,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             return result;
         };
 
-        rx.bind_key(Replxx::KEY::control(key_fuzzy), interactive_history_search);
+        bind_non_editing_key(Replxx::KEY::control(key_fuzzy), interactive_history_search);
     }
 #endif
 
@@ -797,7 +822,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     ///
     /// NOTE: C-T by default this is a binding to swap adjustent chars
     /// (TRANSPOSE_CHARACTERS), but for SQL it sounds pretty useless.
-    rx.bind_key(Replxx::KEY::control(key_regular), [this](char32_t)
+    bind_non_editing_key(Replxx::KEY::control(key_regular), [this](char32_t)
     {
         /// Reverse search is detected by C-R.
         uint32_t reverse_search = Replxx::KEY::control('R');
@@ -814,6 +839,14 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             rx.print("%s", "\033[0 q");
         return rx.invoke(Replxx::ACTION::TOGGLE_OVERWRITE_MODE, 0);
     });
+
+    if (options.vim)
+    {
+        vim = true;
+        rx.set_escdelay(10);
+        /// We don't want to allow opening EDITOR in the embedded mode.
+        setupVimKeybindings(/* allow_editor= */ !options.embedded_mode);
+    }
 }
 
 bool ReplxxLineReader::isCursorAtEndOfInput()
@@ -912,6 +945,10 @@ ReplxxLineReader::~ReplxxLineReader()
 LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
 {
     input.clear();
+
+    /// Every input starts in insert mode without a pending vim command, however the previous one ended.
+    if (vim)
+        resetVimForNewInput();
 
     const char* cinput = rx.input(prompt);
     if (cinput == nullptr)

@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Grafana es la herramienta de visualización preferida para los datos de observabilidad en ClickHouse. Esto se consigue mediante el plugin oficial de ClickHouse para Grafana. Puede seguir las instrucciones de instalación [aquí](/es/integrations/connectors/data-visualization/grafana/index).
 
 La V4 del plugin convierte los logs y las trazas en funcionalidades de primer nivel dentro de una nueva experiencia de constructor de consultas. Esto reduce la necesidad de que los SRE escriban consultas SQL y simplifica la observabilidad basada en SQL, haciendo avanzar este paradigma emergente.
@@ -30,7 +28,15 @@ La configuración de Logs requiere una columna de tiempo, una de nivel de log y 
 
 La configuración de Traces es algo más compleja (la lista completa está [aquí](/es/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)). Estas columnas obligatorias son necesarias para abstraer las consultas posteriores que construyen un perfil completo de la traza. Estas consultas asumen que los datos tienen una estructura similar a OTel, por lo que los usuarios que se desvíen significativamente del esquema estándar tendrán que usar vistas para aprovechar esta funcionalidad.
 
-<Image img="/images/use-cases/observability/observability-15.webp" alt="Configuración del conector" size="sm" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Configuración del conector](/images/use-cases/observability/observability-15.webp)
+
+</Frame>
+
+</div>
 
 Una vez configurado, puedes ir a [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/) y empezar a buscar logs y trazas.
 
@@ -44,7 +50,15 @@ Si cumples con los requisitos de Grafana para logs, puedes seleccionar `Query Ty
 SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as traceID FROM "default"."otel_logs" WHERE ( timestamp >= $__fromTime AND timestamp <= $__toTime ) ORDER BY timestamp DESC LIMIT 1000
 ```
 
-<Image img="/images/use-cases/observability/observability-16.webp" alt="Configuración de logs del conector" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Configuración de logs del conector](/images/use-cases/observability/observability-16.webp)
+
+</Frame>
+
+</div>
 
 El constructor de consultas ofrece una forma sencilla de modificar la consulta sin necesidad de escribir SQL. El filtrado, incluida la búsqueda de logs que contengan palabras clave, puede realizarse desde el constructor de consultas. Los usuarios que necesiten escribir consultas más complejas pueden cambiar al editor SQL. Siempre que la consulta devuelva las columnas adecuadas y se seleccione `logs` como tipo de consulta, los resultados se mostrarán como logs. Las columnas necesarias para la visualización de logs se enumeran [aquí](https://grafana.com/developers/plugin-tools/tutorials/build-a-logs-data-source-plugin#logs-data-frame-format).
 
@@ -54,7 +68,15 @@ El constructor de consultas ofrece una forma sencilla de modificar la consulta s
 
 Si los logs contienen IDs de traza, puedes navegar desde una línea de log concreta hasta su traza correspondiente.
 
-<Image img="/images/use-cases/observability/observability-17.webp" alt="De logs a trazas" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![De logs a trazas](/images/use-cases/observability/observability-17.webp)
+
+</Frame>
+
+</div>
 
 <div id="traces">
   ## Trazas
@@ -77,7 +99,15 @@ WHERE ( Timestamp >= $__fromTime AND Timestamp <= $__toTime )
 
 Esta consulta devuelve los nombres de columna que espera Grafana y muestra una tabla de trazas, como se ve a continuación. Se puede filtrar por la duración u otras columnas sin necesidad de escribir SQL.
 
-<Image img="/images/use-cases/observability/observability-18.webp" alt="Trazas" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Trazas](/images/use-cases/observability/observability-18.webp)
+
+</Frame>
+
+</div>
 
 Los usuarios que deseen escribir consultas más complejas pueden cambiar al `SQL Editor`.
 
@@ -115,7 +145,15 @@ LIMIT 1000
   Fíjese en cómo la consulta anterior usa la vista materializada `otel_traces_trace_id_ts` para realizar la búsqueda por ID de traza. Consulte [Aceleración de consultas: uso de vistas materializadas para búsquedas](/es/guides/use-cases/observability/build-your-own/schema-design#using-materialized-views-incremental--for-fast-lookups) para obtener más información.
 </Note>
 
-<Image img="/images/use-cases/observability/observability-19.webp" alt="Detalles de la traza" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Detalles de la traza](/images/use-cases/observability/observability-19.webp)
+
+</Frame>
+
+</div>
 
 <div id="traces-to-logs">
   ### De trazas a logs
@@ -131,7 +169,15 @@ WHERE ( traceID = '<trace_id>' )
 ORDER BY timestamp ASC LIMIT 1000
 ```
 
-<Image img="/images/use-cases/observability/observability-20.webp" alt="De trazas a logs" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![De trazas a logs](/images/use-cases/observability/observability-20.webp)
+
+</Frame>
+
+</div>
 
 <div id="dashboards">
   ## Paneles
@@ -141,7 +187,15 @@ Puede crear paneles en Grafana con el origen de datos de ClickHouse. Para obtene
 
 El complemento incluye varios paneles listos para usar, entre ellos un panel de ejemplo, &quot;Simple ClickHouse OTel dashboarding&quot;, para datos de logging y tracing conformes con la especificación OTel. Para ello, los usuarios deben ceñirse a los nombres de columna predeterminados de OTel, y puede instalarse desde la configuración del origen de datos.
 
-<Image img="/images/use-cases/observability/observability-21.webp" alt="Paneles" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Paneles](/images/use-cases/observability/observability-21.webp)
+
+</Frame>
+
+</div>
 
 A continuación, ofrecemos algunos consejos sencillos para crear visualizaciones.
 
@@ -164,7 +218,15 @@ ORDER BY time ASC
 LIMIT 100000
 ```
 
-<Image img="/images/use-cases/observability/observability-22.webp" alt="Serie temporal" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Serie temporal](/images/use-cases/observability/observability-22.webp)
+
+</Frame>
+
+</div>
 
 <div id="multi-line-charts">
   ### Gráficos multilínea
@@ -191,7 +253,15 @@ ORDER BY time ASC
 LIMIT 100000
 ```
 
-<Image img="/images/use-cases/observability/observability-23.webp" alt="Gráficos de varias líneas" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Gráficos de varias líneas](/images/use-cases/observability/observability-23.webp)
+
+</Frame>
+
+</div>
 
 <div id="visualizing-geo-data">
   ### Visualización de datos geográficos
@@ -217,4 +287,12 @@ FROM coords
 GROUP BY hash
 ```
 
-<Image img="/images/use-cases/observability/observability-24.webp" alt="Visualización de datos geográficos" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Visualización de datos geográficos](/images/use-cases/observability/observability-24.webp)
+
+</Frame>
+
+</div>

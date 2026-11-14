@@ -358,7 +358,7 @@ SELECT extractAll('test@example.com, user@domain.org', '([a-zA-Z0-9]+)@')
 
 Добавленный в: v20.5.0
 
-Сопоставляет все группы в строке с помощью указанного регулярного выражения и возвращает массив массивов, где каждый массив содержит все совпадения одной и той же группы захвата, упорядоченные по номеру группы.
+Сопоставляет все группы в строке с помощью указанного регулярного выражения и возвращает массив массивов, где каждый массив содержит все совпадения одной и той же захватывающей группы, упорядоченные по номеру группы.
 
 **Синтаксис**
 
@@ -369,11 +369,11 @@ extractAllGroupsHorizontal(s, regexp)
 **Аргументы**
 
 * `s` — Входная строка, из которой выполняется извлечение. [`String`](/ru/reference/data-types/string) или [`FixedString`](/ru/reference/data-types/fixedstring)
-* `regexp` — Регулярное выражение для поиска совпадений. [`const String`](/ru/reference/data-types/string) или [`const FixedString`](/ru/reference/data-types/fixedstring)
+* `regexp` — Регулярное выражение для поиска совпадений. Должно содержать от 1 до 127 захватывающих групп. [`const String`](/ru/reference/data-types/string) или [`const FixedString`](/ru/reference/data-types/fixedstring)
 
 **Возвращаемое значение**
 
-Возвращает массив массивов, где каждый внутренний массив содержит все подстроки, захваченные одной группой захвата во всех совпадениях. Первый внутренний массив содержит все захваченные подстроки из группы 1, второй — из группы 2 и т. д. Если совпадения не найдены, возвращается пустой массив. [`Array(Array(String))`](/ru/reference/data-types/array)
+Возвращает массив массивов, где каждый внутренний массив содержит все подстроки, захваченные одной захватывающей группой во всех совпадениях. Первый внутренний массив содержит все захваченные подстроки из группы 1, второй — из группы 2 и т. д. Если совпадения не найдены, возвращается пустой массив. [`Array(Array(String))`](/ru/reference/data-types/array)
 
 **Примеры**
 
@@ -396,7 +396,7 @@ SELECT extractAllGroupsHorizontal(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 Добавленный в: v20.5.0
 
-Извлекает группы захвата из первой подстроки, соответствующей регулярному выражению. Чтобы извлечь группы из всех совпадений, используйте [`extractAllGroupsHorizontal`](#extractAllGroupsHorizontal) или [`extractAllGroupsVertical`](/ru/reference/functions/regular-functions/splitting-merging-functions#extractAllGroupsVertical).
+Извлекает захватывающие группы из первой подстроки, соответствующей регулярному выражению. Чтобы извлечь группы из всех совпадений, используйте [`extractAllGroupsHorizontal`](#extractAllGroupsHorizontal) или [`extractAllGroupsVertical`](/ru/reference/functions/regular-functions/splitting-merging-functions#extractAllGroupsVertical).
 
 **Синтаксис**
 
@@ -407,11 +407,11 @@ extractGroups(s, regexp)
 **Аргументы**
 
 * `s` — Входная строка, из которой выполняется извлечение. [`String`](/ru/reference/data-types/string) или [`FixedString`](/ru/reference/data-types/fixedstring)
-* `regexp` — Регулярное выражение. Должно содержать как минимум одну группу захвата. Константа. [`const String`](/ru/reference/data-types/string) или [`const FixedString`](/ru/reference/data-types/fixedstring)
+* `regexp` — Регулярное выражение. Должно содержать от 1 до 127 захватывающих групп. Константа. [`const String`](/ru/reference/data-types/string) или [`const FixedString`](/ru/reference/data-types/fixedstring)
 
 **Возвращаемое значение**
 
-Если регулярное выражение найдено, возвращается массив, содержащий группы захвата (`1`–`N`, где `N` — число групп захвата в `regexp`) из первого совпадения. Если совпадений нет, возвращается пустой массив. [`Array(String)`](/ru/reference/data-types/array)
+Если регулярное выражение найдено, возвращается массив, содержащий захватывающие группы (`1`–`N`, где `N` — число захватывающих групп в `regexp`) из первого совпадения. Если совпадений нет, возвращается пустой массив. [`Array(String)`](/ru/reference/data-types/array)
 
 **Примеры**
 
@@ -452,12 +452,11 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
   Если для текстового индекса настроено выражение [постпроцессор](/ru/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional), постпроцессор применяется к токенам `needle` и токенам `input` (то есть к обоим после токенизации).
 
 Повторяющиеся токены игнорируются.
-Например, needles = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] обрабатывается так же, как [&#39;ClickHouse&#39;].
+Например, искомые шаблоны = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] обрабатывается так же, как [&#39;ClickHouse&#39;].
 
 <Note>
   Когда текстовый индекс определяет [предобработчик](/ru/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (например, `lowerUTF8`), `hasAllTokens` применяет его к `input` и, если `needles` имеет тип [String](/ru/reference/data-types/string), к `needles` перед токенизацией. Когда `needles` имеет тип [Array(String)](/ru/reference/data-types/array), его элементы передаются как есть, и предобработчик к ним не применяется.
-  Предобработчик применяется только при использовании текстового индекса, поэтому результаты могут различаться между запросами, использующими текстовый индекс, и запросами, которые его не используют (например, `SETTINGS use_skip_indexes = 0`).
-  Эта несогласованность допускается для повышения удобства полнотекстового поиска.
+  Предобработчик является частью определения индекса, поэтому он применяется везде, где вычисляется функция: в фильтре `WHERE`/`PREWHERE`, в списке `SELECT` — и независимо от того, читается ли индекс (например, при `SETTINGS use_skip_indexes = 0`).
 </Note>
 
 **Синтаксис**
@@ -476,7 +475,7 @@ hasAllTokens(input, needles[, tokenizer])
 
 **Возвращаемое значение**
 
-Возвращает 1, если все искомые элементы совпадают. 0 в противном случае. [`UInt8`](/ru/reference/data-types/int-uint)
+Возвращает 1, если все искомые шаблоны совпадают. 0 в противном случае. [`UInt8`](/ru/reference/data-types/int-uint)
 
 **Примеры**
 
@@ -698,8 +697,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 
 <Note>
   Если для текстового индекса определён [предобработчик](/ru/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (например, `lowerUTF8`), `hasAnyTokens` применяет его к `input` и, если `needles` имеет тип [String](/ru/reference/data-types/string), к `needles` перед токенизацией. Если `needles` имеет тип [Array(String)](/ru/reference/data-types/array), его элементы передаются как есть, и предобработчик к ним не применяется.
-  Предобработчик применяется только при использовании текстового индекса, поэтому результаты могут различаться между запросами, использующими текстовый индекс, и запросами, которые его не используют (например, `SETTINGS use_skip_indexes = 0`).
-  Такая несогласованность допускается для повышения удобства полнотекстового поиска.
+  Предобработчик является частью определения индекса, поэтому он применяется везде, где вычисляется функция: в фильтре `WHERE`/`PREWHERE`, в списке `SELECT` — и независимо от того, читается ли индекс (например, при `SETTINGS use_skip_indexes = 0`).
 </Note>
 
 **Синтаксис**
@@ -746,7 +744,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**Укажите в массиве искомые строки, которые будут искаться КАК ЕСТЬ (без токенизации)**
+**Укажите в массиве искомые шаблоны, которые нужно искать КАК ЕСТЬ (без токенизации)**
 
 ```sql title=Query
 DROP TABLE IF EXISTS doc;
@@ -770,7 +768,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, ['a', 'd']);
 └─────────┘
 ```
 
-**Сгенерируйте needle с помощью функции `tokens`**
+**Сгенерируйте искомые шаблоны с помощью функции `tokens`**
 
 ```sql title=Query
 DROP TABLE IF EXISTS doc;
@@ -923,8 +921,7 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
 
 <Note>
   Когда текстовый индекс определяет [предобработчик](/ru/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (например, `lowerUTF8`), `hasPhrase` применяет его к `input` и `phrase` перед токенизацией.
-  Предобработчик применяется только при использовании текстового индекса, поэтому результаты могут различаться между запросами, использующими текстовый индекс, и запросами, которые его не используют (например, `SETTINGS use_skip_indexes = 0`).
-  Эта несогласованность допускается для повышения удобства полнотекстового поиска.
+  Предобработчик является частью определения индекса, поэтому он применяется везде, где вычисляется функция: в фильтре `WHERE`/`PREWHERE`, в списке `SELECT`, — и независимо от того, читается ли индекс (например, `SETTINGS use_skip_indexes = 0`).
 </Note>
 
 В отличие от [`hasToken`](#hasToken), [`hasAnyTokens`](#hasAnyTokens) и [`hasAllTokens`](#hasAllTokens), `hasPhrase` требует, чтобы токены шли в том же порядке
@@ -1549,7 +1546,7 @@ SELECT locate('ca', 'abcabc')
 match(haystack, pattern)
 ```
 
-**Псевдонимы**: `REGEXP_MATCHES`
+**Псевдонимы**: `REGEXP_MATCHES`, `REGEXP_LIKE`
 
 **Аргументы**
 

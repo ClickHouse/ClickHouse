@@ -1,0 +1,26 @@
+--- a part whose rows are mostly, then all deleted ---
+status: applicable
+empirical_status: unsupported
+empirical_reason: The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)
+status: not_applicable
+reason: no selected part has the projection materialized, or its analysis exceeded the read limits
+--- a part with every row deleted next to a live part ---
+marks: 20
+rows: 2000
+marks: 13
+rows: 1300
+verdict: chosen
+real marks: 13
+--- a mostly deleted part with a byte-driven granularity ---
+marks: 239
+rows: 10000
+marks: 7
+rows: 301
+verdict: chosen
+real marks: 7
+--- a projection that stores _row_exists on a part with deleted rows ---
+marks: 10
+rows: 1000
+status: applicable
+marks: 2
+rows: 200
