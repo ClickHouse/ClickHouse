@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel
 # - no-fasttest: writes and reads Parquet files, needs S3 (MinIO) and Iceberg
+# - no-parallel: checks hits in the server-wide query condition cache, which a concurrent test can clear
 
 # ORDER BY <String column> LIMIT over Parquet skips row groups by the statistics of the sort column
 # also without `use_top_k_dynamic_filtering_for_variable_length_types`, but then without a per-row filter.
@@ -220,30 +221,28 @@ reads+="SELECT s FROM t_05339_s3_glob ORDER BY s DESC LIMIT 3 SETTINGS ${SETTING
 ${CLICKHOUSE_CLIENT} --query "${reads}"
 
 # The predicate is false only in row group 8, which holds the largest s, so the read for DESC skips row groups
-# whose rows match it. Another test can drop the cache at any time, hence the attempts, each with a new predicate.
+# whose rows match it.
 declare -A cache_counts
 # $1: table, $2: 1 to also count after a read without use_query_condition_cache_for_top_k
 read_with_query_condition_cache() {
-    local queries="" attempt predicate counts without_cache count correct=1
-    for attempt in 1 2; do
-        predicate="intDiv(v, 1000) != 8 AND v != ${attempt}000000"
+    local queries="" predicate counts without_cache count correct=1
+    predicate="intDiv(v, 1000) != 8 AND v != 1000000"
+    queries+="
+        SELECT s FROM $1 WHERE ${predicate} ORDER BY s DESC LIMIT 3
+            SETTINGS ${qcc_settings}, use_query_condition_cache = 1 FORMAT Null;
+        SELECT count() FROM $1 WHERE ${predicate}
+            SETTINGS ${qcc_settings}, use_query_condition_cache = 1, log_comment = '$1_count';
+        SELECT s FROM $1 WHERE ${predicate} ORDER BY s DESC LIMIT 3
+            SETTINGS ${qcc_settings}, use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 0,
+                log_comment = '$1_topk' FORMAT Null;"
+    if [ "$2" = 1 ]; then
+        predicate="intDiv(v, 1000) != 8 AND v != 1100000"
         queries+="
-            SELECT s FROM $1 WHERE ${predicate} ORDER BY s DESC LIMIT 3
-                SETTINGS ${qcc_settings}, use_query_condition_cache = 1 FORMAT Null;
-            SELECT count() FROM $1 WHERE ${predicate}
-                SETTINGS ${qcc_settings}, use_query_condition_cache = 1, log_comment = '$1_count';
-            SELECT s FROM $1 WHERE ${predicate} ORDER BY s DESC LIMIT 3
-                SETTINGS ${qcc_settings}, use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 0,
-                    log_comment = '$1_topk' FORMAT Null;"
-        if [ "$2" = 1 ]; then
-            predicate="intDiv(v, 1000) != 8 AND v != ${attempt}100000"
-            queries+="
-            SELECT s FROM $1 WHERE ${predicate} ORDER BY s DESC LIMIT 3
-                SETTINGS ${qcc_settings}, use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 0 FORMAT Null;
-            SELECT count() FROM $1 WHERE ${predicate}
-                SETTINGS ${qcc_settings}, use_query_condition_cache = 1, log_comment = '$1_written';"
-        fi
-    done
+        SELECT s FROM $1 WHERE ${predicate} ORDER BY s DESC LIMIT 3
+            SETTINGS ${qcc_settings}, use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 0 FORMAT Null;
+        SELECT count() FROM $1 WHERE ${predicate}
+            SETTINGS ${qcc_settings}, use_query_condition_cache = 1, log_comment = '$1_written';"
+    fi
     counts=$(${CLICKHOUSE_CLIENT} --query "${queries}
         SELECT count() FROM $1 WHERE intDiv(v, 1000) != 8 AND v != 1000000 SETTINGS ${qcc_settings}, use_query_condition_cache = 0")
     without_cache=$(tail -n 1 <<< "${counts}")

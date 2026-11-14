@@ -7,8 +7,6 @@ description: 'Monitoriza y observa tu implementación BYOC de ClickHouse con das
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Las implementaciones BYOC incluyen completas capacidades de observabilidad, lo que le permite supervisar sus servicios de ClickHouse mediante una pila de monitorización de Prometheus dedicada y endpoints de métricas expuestos directamente por los servidores de ClickHouse. Sus datos de monitorización permanecen dentro de su cuenta en la nube, lo que le proporciona un control total sobre su infraestructura de monitorización. La telemetría acotada de uso y estado que se detalla en [límites de red](/es/products/bring-your-own-cloud/reference/network-security#outbound-connections) son los únicos datos de monitorización que se exportan a ClickHouse; por separado, los dashboards de ClickHouse y, previa escalación aprobada, sus ingenieros pueden consultar esta pila in situ a través de Tailscale, sin que nada se persista del lado de ClickHouse; consulte [Acceso a datos de ClickHouse](/es/products/bring-your-own-cloud/reference/clickhouse-data-access).
 
 <div id="prometheus-monitoring">
@@ -205,19 +203,59 @@ Una vez que su instancia de Prometheus esté integrada con su pila de monitoriza
 1. **Agregar Prometheus como fuente de datos en Grafana**
    Vaya a &quot;Data sources&quot; en la barra lateral de Grafana, haga clic en &quot;Add data source&quot; y seleccione &quot;Prometheus&quot;. Introduzca la URL de su instancia de Prometheus y las credenciales necesarias para conectarse.
 
-<Image img="/images/cloud/reference/byoc-mixin-1.webp" size="lg" alt="BYOC Mixin 1" background="black" />
+<div className="ch-image-lg ch-image-background-black">
 
-<Image img="/images/cloud/reference/byoc-mixin-2.webp" size="lg" alt="BYOC Mixin 2" background="black" />
+<Frame>
 
-<Image img="/images/cloud/reference/byoc-mixin-3.webp" size="lg" alt="BYOC Mixin 3" background="black" />
+![BYOC Mixin 1](/images/cloud/reference/byoc-mixin-1.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg ch-image-background-black">
+
+<Frame>
+
+![BYOC Mixin 2](/images/cloud/reference/byoc-mixin-2.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg ch-image-background-black">
+
+<Frame>
+
+![BYOC Mixin 3](/images/cloud/reference/byoc-mixin-3.webp)
+
+</Frame>
+
+</div>
 
 2. **Importar el dashboard de ClickHouse**
    En Grafana, vaya a la sección de dashboards y elija &quot;Import&quot;. Puede subir el archivo JSON del dashboard o pegar su contenido directamente. Obtenga el archivo JSON del repositorio del mixin de ClickHouse:
    [Dashboard JSON del Mix-in de ClickHouse](https://github.com/ClickHouse/clickhouse-mixin/blob/main/dashboard_byoc.json)
 
-<Image img="/images/cloud/reference/byoc-mixin-4.webp" size="lg" alt="BYOC Mixin 4" background="black" />
+<div className="ch-image-lg ch-image-background-black">
+
+<Frame>
+
+![BYOC Mixin 4](/images/cloud/reference/byoc-mixin-4.webp)
+
+</Frame>
+
+</div>
 
 3. **Explore sus métricas**
    Una vez que el dashboard se haya importado y configurado con su fuente de datos de Prometheus, debería ver métricas en tiempo real de sus servicios de ClickHouse Cloud.
 
-<Image img="/images/cloud/reference/byoc-mixin-5.webp" size="lg" alt="BYOC Mixin 5" background="black" />
+<div className="ch-image-lg ch-image-background-black">
+
+<Frame>
+
+![BYOC Mixin 5](/images/cloud/reference/byoc-mixin-5.webp)
+
+</Frame>
+
+</div>
