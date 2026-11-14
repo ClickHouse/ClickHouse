@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/TypeTree.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -13,15 +12,14 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
-#include <Parsers/ASTQueryWithOutput.h>
-#include <Parsers/ASTSelectIntersectExceptQuery.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
+#include <Parsers/Access/ASTCreateUserQuery.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Analyzer/Utils.h>
 #include <Common/SettingsChanges.h>
@@ -55,56 +53,19 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
         visitIdentifier(ast);
     else if (auto * set_query = ast->as<ASTSetQuery>())
         visitSetQuery(*set_query);
-    else if (const auto settings_clauses = [&]
-             {
-                 /// The query-level `SETTINGS` clauses of this node, in the order they are applied.
-                 std::vector<const ASTSetQuery *> clauses;
-                 auto add_clause = [&](const ASTPtr & settings_ast)
-                 {
-                     if (const auto * clause = settings_ast ? settings_ast->as<ASTSetQuery>() : nullptr;
-                         clause && !clause->query_parameters.empty())
-                         clauses.push_back(clause);
-                 };
-
-                 if (const auto * select_query = ast->as<ASTSelectQuery>())
-                 {
-                     add_clause(select_query->settings());
-                     return clauses;
-                 }
-
-                 if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
-                     add_clause(query_with_output->settings_ast);
-
-                 /// A trailing `SETTINGS` clause of a set operation is query-level - it applies to every
-                 /// operand - but the grammar leaves it on the LAST operand, possibly nested into
-                 /// `INTERSECT` / `EXCEPT` nodes (`ASTQueryWithOutput::settings_ast` is filled only for the
-                 /// top-level query, after `FORMAT`). Scope its `param_*` bindings over every operand, after
-                 /// the ones of `settings_ast`, in the same order as `QueryTreeBuilder` applies both clauses
-                 /// to the whole union; otherwise a placeholder in another operand would be substituted
-                 /// with a different value or reported as an unknown query parameter.
-                 if (const auto * select_with_union = ast->as<ASTSelectWithUnionQuery>();
-                     select_with_union && select_with_union->list_of_selects && !select_with_union->list_of_selects->children.empty())
-                     add_clause(ASTSelectIntersectExceptQuery::getTrailingSettings(select_with_union->list_of_selects->children.back()));
-                 else if (const auto * intersect_except = ast->as<ASTSelectIntersectExceptQuery>(); intersect_except && !intersect_except->children.empty())
-                     add_clause(ASTSelectIntersectExceptQuery::getTrailingSettings(intersect_except->children.back()));
-
-                 return clauses;
-             }();
-             !settings_clauses.empty())
-    {
-        NameToNameMap scoped_parameters = query_parameters;
-        for (const auto * settings : settings_clauses)
-            for (const auto & [name, value] : settings->query_parameters)
-                scoped_parameters.insert_or_assign(name, value);
-
-        ReplaceQueryParameterVisitor scoped_visitor(scoped_parameters);
-        scoped_visitor.visitChildren(ast);
-        num_replaced_parameters += scoped_visitor.getNumberOfReplacedParameters();
-    }
     else
     {
         if (auto * describe_query = dynamic_cast<ASTDescribeQuery *>(ast.get()); describe_query && describe_query->table_expression)
             visitChildren(describe_query->table_expression);
+        else if (auto * create_user_query = dynamic_cast<ASTCreateUserQuery *>(ast.get()))
+        {
+            if (create_user_query->names)
+            {
+                ASTPtr names = create_user_query->names;
+                visitChildren(names);
+            }
+            visitChildren(ast);
+        }
         else if (dynamic_cast<ASTCreateHandlerQuery *>(ast.get()))
         {
             /// The handler's query (the AS clause) is the parameterizable interface of the handler;
@@ -202,7 +163,15 @@ bool needCastFromString(const DataTypePtr & type)
     if (type->getCustomSerialization())
         return true;
 
-    return anyInTypeTree(*type, [](const IDataType & t) { return isVariant(t) || isDynamic(t) || isObject(t); });
+    bool result = false;
+    auto check = [&](const IDataType & t)
+    {
+        result |= isVariant(t) || isDynamic(t) || isObject(t);
+    };
+
+    check(*type);
+    type->forEachChild(check);
+    return result;
 }
 
 /// Build an AST literal for a query parameter, optionally wrapping it in a CAST.

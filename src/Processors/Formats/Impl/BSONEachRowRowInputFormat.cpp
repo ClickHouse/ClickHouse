@@ -523,10 +523,7 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
                             "Cannot insert BSON Null value into non-nullable column with type {}",
                             data_type->getName());
 
-        if (!data_type->isDefaultInsertTrivial())
-            data_type->insertDefaultInto(column);
-        else
-            column.insertDefault();
+        column.insertDefault();
         return false;
     }
 
@@ -1099,7 +1096,7 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
             throw Exception(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
 
         size_t old_size = memory.size();
-        memory.resizeAmortized(old_size + document_size);
+        memory.resize(old_size + document_size);
         unalignedStoreLittleEndian<BSONSizeT>(memory.data() + old_size, document_size);
         in.readStrict(memory.data() + old_size + sizeof(document_size), document_size - sizeof(document_size));
         ++number_of_rows;

@@ -1,9 +1,7 @@
 #include <base/types.h>
-#include <Formats/FormatSettings.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
-#include <DataTypes/Serializations/ISerialization.h>
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -15,7 +13,6 @@
 #include <Parsers/ParserDataType.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
-#include <Parsers/SecretArguments.h>
 
 #include <Core/Field.h>
 
@@ -24,10 +21,6 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 
 #include <iostream>
-
-/// No engine is registered, so the secrets of their arguments are shown.
-[[maybe_unused]] static const bool secret_arguments_finder_installed
-    = (DB::setSecretArgumentsFinder(&DB::NoSecretArgumentsFinder::instance()), true);
 
 /// This fuzzer supports its own arguments:
 /// - `-max_parser_depth=N` sets the maximum parser depth (default: 150 for debug/sanitizer, 300 otherwise)

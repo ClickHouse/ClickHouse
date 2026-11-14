@@ -6,19 +6,13 @@ keywords: ['vista materializada actualizable', 'actualización', 'vistas materia
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 Las [vistas materializadas actualizables](/es/reference/statements/create/view#refreshable-materialized-view) son conceptualmente similares a las vistas materializadas de las bases de datos OLTP tradicionales: almacenan el resultado de una consulta específica para recuperarlo rápidamente y reducir la necesidad de ejecutar repetidamente consultas que consumen muchos recursos. A diferencia de las [vistas materializadas incrementales](/es/concepts/features/materialized-views/incremental-materialized-view) de ClickHouse, estas requieren la ejecución periódica de la consulta sobre el conjunto de datos completo; los resultados se almacenan en una tabla de destino para su consulta. En teoría, este conjunto de resultados debería ser más pequeño que el conjunto de datos original, lo que permite que las consultas posteriores se ejecuten más rápido.
 
 El diagrama explica cómo funcionan las vistas materializadas actualizables:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Diagrama de vista materializada actualizable](/images/materialized-view/refreshable-materialized-view-diagram.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/materialized-view/refreshable-materialized-view-diagram.webp" size="lg" alt="Diagrama de vista materializada actualizable" />
 
 También puede ver el siguiente video:
 
@@ -36,7 +30,9 @@ Sin embargo, hay casos de uso en los que este proceso incremental no es necesari
 
 > Las vistas materializadas actualizables pueden ejecutar procesos por lotes que realizan tareas como la desnormalización. Se pueden crear dependencias entre vistas materializadas actualizables, de modo que una vista dependa de los resultados de otra y solo se ejecute cuando esta haya finalizado. Esto puede sustituir flujos de trabajo programados o DAG sencillos, como un job de [dbt](https://www.getdbt.com/). Para obtener más información sobre cómo establecer dependencias entre vistas materializadas actualizables, consulte [CREATE VIEW](/es/reference/statements/create/view#refresh-dependencies), sección `Dependencies`.
 
-## ¿Cómo se actualiza una vista materializada actualizable? {#how-do-you-refresh-a-refreshable-materialized-view}
+<div id="how-do-you-refresh-a-refreshable-materialized-view">
+  ## ¿Cómo se actualiza una vista materializada actualizable?
+</div>
 
 Las vistas materializadas actualizables se actualizan automáticamente según un intervalo definido durante su creación.
 Por ejemplo, la siguiente vista materializada se actualiza cada minuto:
@@ -55,10 +51,6 @@ SYSTEM REFRESH VIEW table_name_mv;
 
 También puedes cancelar, detener o iniciar una vista.
 Para obtener más información, consulta la documentación sobre [la gestión de vistas materializadas actualizables](/es/reference/statements/system#managing-refreshable-materialized-views).
-
-<Warning>
-  Las vistas materializadas actualizables cuyas actualizaciones no se coordinan a través de ClickHouse Keeper no recuerdan cuándo se actualizaron por última vez, por lo que, tras reiniciar el servidor, pueden actualizarse todas a la vez. Consulta [Qué ocurre con las vistas materializadas actualizables cuando se reinicia el servidor](/es/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts) para saber qué vistas se ven afectadas y cómo volver a iniciarlas de una en una.
-</Warning>
 
 <div id="when-was-a-refreshable-materialized-view-last-refreshed">
   ## ¿Cuándo se actualizó por última vez una vista materializada actualizable?

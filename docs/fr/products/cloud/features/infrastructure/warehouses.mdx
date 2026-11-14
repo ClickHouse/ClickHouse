@@ -6,11 +6,14 @@ description: 'Séparation compute-compute dans ClickHouse Cloud'
 doc_type: 'reference'
 ---
 
+import { Image } from "/snippets/fr/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/fr/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="séparation compute-compute" />
 
-## Qu&#39;est-ce que la séparation compute-compute ? {#what-is-compute-compute-separation}
+<div id="what-is-compute-compute-separation">
+  ## Qu&#39;est-ce que la séparation compute-compute ?
+</div>
 
 Avant d&#39;expliquer ce qu&#39;est la séparation compute-compute, il est utile de comprendre ce qu&#39;est un **service** dans ClickHouse Cloud.
 
@@ -20,15 +23,7 @@ Chaque service ClickHouse Cloud inclut :
 * un endpoint (ou plusieurs endpoints créés via la Console de l&#39;UI ClickHouse Cloud) pour se connecter au service (par exemple, `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`) pour les connexions locales et celles d&#39;applications tierces
 * un dossier de stockage objet dans lequel le service stocke toutes les données et une partie des métadonnées :
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Service unique dans ClickHouse Cloud](/images/cloud/reference/compute-compute-1.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="Service unique dans ClickHouse Cloud" />
 
 <br />
 
@@ -42,71 +37,49 @@ Vous pouvez ainsi choisir la capacité de calcul adaptée à votre workload. Cer
 
 La séparation compute-compute vous permet également de séparer les opérations de lecture des opérations d&#39;écriture afin qu&#39;elles n&#39;interfèrent pas entre elles :
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Compute separation dans ClickHouse Cloud](/images/cloud/reference/compute-compute-2.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/reference/compute-compute-2.webp" size="md" alt="Compute separation dans ClickHouse Cloud" />
 
 <br />
 
 *Fig. 2 - Compute separation dans ClickHouse Cloud*
 
-## Qu’est-ce qu’un warehouse ? {#what-is-a-warehouse}
+<div id="what-is-a-warehouse">
+  ## Qu’est-ce qu’un warehouse ?
+</div>
 
 Dans ClickHouse Cloud, un *warehouse* est un ensemble de **services** qui partagent les mêmes données.
 Chaque warehouse possède un service principal (le premier service créé) et un ou plusieurs services secondaires.
-Par exemple, dans la capture d’écran ci-dessous, vous pouvez voir un warehouse « DWH Prod » composé de deux services :
+Par exemple, dans la capture d’écran ci-dessous, vous pouvez voir un warehouse « DWH Prod » composé de deux services :
 
 * Service principal `DWH Prod`
 * Service secondaire `DWH Prod Subservice`
 
-<div className="ch-image-lg ch-image-background-white">
-
-<Frame>
-
-![Exemple de warehouse avec services principal et secondaire](/images/cloud/reference/compute-compute-8.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/reference/compute-compute-8.webp" size="lg" alt="Exemple de warehouse avec services principal et secondaire" background="white" />
 
 <br />
 
 *Fig. 3 - Exemple de warehouse*
 
-Tous les services d’un warehouse partagent les mêmes éléments :
+Tous les services d’un warehouse partagent les mêmes éléments :
 
 * Région (par exemple, us-east1)
 * Fournisseur de services Cloud (AWS, GCP ou Azure)
 * Version de la base de données ClickHouse
 * ClickHouse Keeper (pour gérer les répliques)
 
-Les warehouses regroupent des services ClickHouse Cloud durables qui partagent les mêmes données, chaque service disposant de son propre compute dédié et de son endpoint. [On-Demand Compute](/fr/products/cloud/features/infrastructure/on-demand-compute) affecte temporairement des workers issus d’un pool géré aux workloads pris en charge, via un service et un endpoint existants.
-
 <div id="access-controls">
   ## Contrôles d&#39;accès
 </div>
 
-### Identifiants de la base de données {#database-credentials}
+<div id="database-credentials">
+  ### Identifiants de la base de données
+</div>
 
 Comme tous les services d’un warehouse partagent le même ensemble de tables, ils partagent aussi les mêmes contrôles d’accès.
 Cela signifie que tous les utilisateurs de la base de données créés dans le Service 1 pourront également utiliser le Service 2 avec les mêmes permissions (grants sur les tables, les vues, etc.), et inversement.
 Chaque service utilise un endpoint distinct, mais le même nom d’utilisateur et le même mot de passe sont utilisés pour tous les services. En d’autres termes, **les utilisateurs sont partagés entre les services qui utilisent le même stockage**, comme illustré dans la figure ci-dessous :
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Accès des utilisateurs entre des services partageant les mêmes données](/images/cloud/reference/compute-compute-3.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/reference/compute-compute-3.webp" size="md" alt="Accès des utilisateurs entre des services partageant les mêmes données" />
 
 <br />
 
@@ -124,15 +97,7 @@ Cela vous permet de restreindre l’accès à des services spécifiques.
 
 Dans l’exemple ci-dessous, l’accès d’Alice au service 2 dans le warehouse est restreint :
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Paramètres de contrôle d’accès réseau](/images/cloud/reference/compute-compute-4.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/reference/compute-compute-4.webp" size="md" alt="Paramètres de contrôle d’accès réseau" />
 
 <br />
 
@@ -140,7 +105,9 @@ Dans l’exemple ci-dessous, l’accès d’Alice au service 2 dans le warehouse
 
 Les rôles et grants ClickHouse peuvent également être utilisés pour contrôler l’accès aux données lorsque vous vous connectez en tant qu’utilisateur individuel plutôt qu’avec l’utilisateur *default*.
 
-### Services read-only et read-write {#read-vs-read-write}
+<div id="read-vs-read-write">
+  ### Services read-only et read-write
+</div>
 
 Les services peuvent être de l&#39;un des types suivants :
 
@@ -157,15 +124,7 @@ Les services peuvent être de l&#39;un des types suivants :
 Il est parfois utile d&#39;isoler des workloads de lecture critiques du surcoût lié aux écritures et aux fusions en configurant un service en lecture seule.
 Vous pouvez le faire pour le deuxième service ainsi que pour tous les services supplémentaires que vous créez. En revanche, le premier service sera toujours en read-write, comme illustré dans la figure ci-dessous :
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Services read-write et read-only dans un warehouse](/images/cloud/reference/compute-compute-5.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="Services read-write et read-only dans un warehouse" />
 
 <br />
 
@@ -177,7 +136,9 @@ Vous pouvez le faire pour le deuxième service ainsi que pour tous les services 
   3. Le type d&#39;un service (read-only ou read-write) est défini lors de sa création et ne peut pas être modifié ensuite depuis la Cloud Console. Pour passer d&#39;un accès read-only à read-write ou inversement, créez un nouveau service dans le warehouse avec le type souhaité.
 </Note>
 
-## Mise à l’échelle {#scaling}
+<div id="scaling">
+  ## Mise à l’échelle
+</div>
 
 Chaque service d’un warehouse évolue indépendamment. Vous pouvez ajuster le nombre et la taille des répliques, activer la mise à l’échelle automatique horizontale et verticale, et configurer la mise en veille automatique en cas d’inactivité.
 
@@ -187,7 +148,9 @@ Par défaut, le nombre total de répliques de l’ensemble des services d’un w
 
 La [mise à l’échelle planifiée](/fr/products/cloud/features/autoscaling/scheduled-scaling) fonctionne pour les services individuels d’un warehouse. Les limites du warehouse s’appliquent toujours : planifiez les calendriers de sorte que le nombre total de répliques de l’ensemble des services aux heures de pointe reste dans la limite du warehouse. Pour plus d’informations, consultez [Mise à l’échelle automatique](/fr/products/cloud/features/autoscaling/overview).
 
-## Changements du comportement de `clusterAllReplicas` {#changes-in-behavior}
+<div id="changes-in-behavior">
+  ## Changements du comportement de `clusterAllReplicas`
+</div>
 
 Lorsqu’un warehouse comporte plusieurs services, le comportement de `clusterAllReplicas()` change.
 L’utilisation du nom de cluster `default` ne cible que les répliques du service actuel, et non l’ensemble des services du warehouse.
@@ -203,7 +166,9 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
   ## Limitations
 </div>
 
-### Limites de l’isolation des workloads {#workload-isolation-limitations}
+<div id="workload-isolation-limitations">
+  ### Limites de l’isolation des workloads
+</div>
 
 Certains workloads ne peuvent pas être isolés sur des services spécifiques ; dans certains cas limites, un workload sur un service affecte un autre service du warehouse. Cela inclut :
 
@@ -215,7 +180,9 @@ Certains workloads ne peuvent pas être isolés sur des services spécifiques ; 
 * **Les insertions sur un service en read-write peuvent empêcher un autre service en read-write de passer en veille si la mise en veille est activée.** Il existe des situations où
   un service effectue des opérations de fusion en arrière-plan pour un autre service. Ces opérations en arrière-plan peuvent empêcher le second service de passer en veille. Une fois les opérations en arrière-plan terminées, le service repassera en veille. Les services en read-only ne sont pas affectés.
 
-### Informations utiles {#callouts}
+<div id="callouts">
+  ### Informations utiles
+</div>
 
 * **Versions de ClickHouse** : le [calendrier des mises à niveau](/fr/products/cloud/features/admin-features/upgrades) est déterminé par les paramètres du service principal. Les services secondaires ne peuvent pas avoir de calendrier de publication distinct de celui du service principal.
 
@@ -251,19 +218,13 @@ Consultez le pricing calculator sur la page [tarification](https://clickhouse.co
   ## Comment configurer un warehouse
 </div>
 
-### Création d’un warehouse {#creating-a-warehouse}
+<div id="creating-a-warehouse">
+  ### Création d’un warehouse
+</div>
 
 Pour créer un warehouse, vous devez créer un second service qui partagera les données avec un service existant. Pour ce faire, cliquez sur l’icône plus de l’un des services existants :
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Création d’un nouveau service dans un warehouse](/images/cloud/reference/compute-compute-7.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/reference/compute-compute-7.webp" size="md" alt="Création d’un nouveau service dans un warehouse" />
 
 <br />
 

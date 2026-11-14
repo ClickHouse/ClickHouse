@@ -124,7 +124,7 @@ bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
         {
             if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
                 read = SerializationNullable::deserializeNullAsDefaultOrNestedWholeText(
-                    *columns[index], field_buf, format_settings, serializations[index], type.get());
+                    *columns[index], field_buf, format_settings, serializations[index]);
             else
             {
                 serializations[index]->deserializeWholeText(*columns[index], field_buf, format_settings);

@@ -7,26 +7,26 @@ doc_type: 'guide'
 keywords: ['clickstack', 'implantação', 'instalação', 'configuração', 'observabilidade']
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 import { TrackedLink } from "/snippets/pt-BR/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 import JSONSupport from '/snippets/pt-BR/_json_support.mdx';
-
 import ExampleOTelConfig from '/snippets/pt-BR/clickstack/_config_example_otel.mdx';
 
 import SetupManagedIngestion from '/snippets/pt-BR/clickstack/_setup_managed_ingestion.mdx';
 import NavigateClickStackUI from '/snippets/pt-BR/clickstack/_navigate_managed.mdx';
-
 import ProviderSelection from '/snippets/pt-BR/clickstack/_select_provider.mdx';
 
 Este **guia é para usuários atuais do ClickHouse Cloud**. Se você está começando no ClickHouse Cloud, recomendamos nosso guia de [Primeiros passos](/pt-BR/clickstack/getting-started/managed) para o Managed ClickStack.
 
 Nesse padrão de implantação, tanto o ClickHouse quanto a UI do ClickStack (HyperDX) são hospedados no ClickHouse Cloud, minimizando a quantidade de componentes que o usuário precisa hospedar por conta própria.
 
-Além de reduzir o gerenciamento da infraestrutura, esse padrão de implantação garante que a authentication esteja integrada ao SSO/SAML do ClickHouse Cloud. Ao contrário das implantações self-hosted, também não é necessário provisionar uma instância do MongoDB para armazenar o estado da aplicação — como dashboards, buscas salvas, configurações do usuário e alertas. Os usuários também se beneficiam de:
+Além de reduzir o gerenciamento da infraestrutura, esse padrão de implantação garante que a authentication esteja integrada ao SSO/SAML do ClickHouse Cloud. Ao contrário das implantações self-hosted, também não é necessário provisionar uma instância do MongoDB para armazenar o estado da aplicação — como dashboards, pesquisas salvas, configurações do usuário e alertas. Os usuários também se beneficiam de:
 
 * Escalonamento automático da capacidade computacional, independentemente do armazenamento
 * Retenção de baixo custo e praticamente ilimitada com base em armazenamento de objetos
-* A capacidade de [isolar de forma independente cargas de trabalho de leitura e gravação](/pt-BR/clickstack/managing/isolating-read-write) com Warehouses.
+* A capacidade de isolar de forma independente workloads de leitura e gravação com Warehouses.
 * Authentication integrada
 * Backups automatizados
 * Recursos de segurança e compliance
@@ -58,15 +58,7 @@ O guia a seguir pressupõe que você já criou um serviço do ClickHouse Cloud. 
       <Step title="Crie um novo serviço" id="create-a-service">
         Na página inicial do ClickHouse Cloud, selecione `New service` para criar um novo serviço.
 
-        <div className="ch-image-lg">
-
-        <Frame>
-
-        ![Serviço](/images/clickstack/getting-started/new_service.webp)
-
-        </Frame>
-
-        </div>
+        <Image img="/images/clickstack/getting-started/new_service.webp" size="lg" alt="Serviço" border />
       </Step>
 
       <Step title="Especifique seu provedor, a região e o recurso" id="specify-your-region-and-resources">
@@ -102,15 +94,7 @@ O guia a seguir pressupõe que você já criou um serviço do ClickHouse Cloud. 
           Se o seu serviço do ClickHouse já hospeda cargas de trabalho existentes, como análises de aplicações em tempo real, recomendamos criar um serviço filho usando o [recurso de warehouses do ClickHouse Cloud](/pt-BR/products/cloud/features/infrastructure/warehouses) para isolar a carga de trabalho de observabilidade. Isso garante que suas aplicações existentes não sejam afetadas, mantendo os conjuntos de dados acessíveis a partir de ambos os serviços.
         </Warning>
 
-        <div className="ch-image-lg">
-
-        <Frame>
-
-        ![Selecionar serviço](/images/clickstack/select_service.webp)
-
-        </Frame>
-
-        </div>
+        <Image img="/images/clickstack/select_service.webp" alt="Selecionar serviço" size="lg" />
       </Step>
 
       <Step title="Acesse a UI do ClickStack" id="navigate-to-the-clickstack-ui-existing">
@@ -126,15 +110,7 @@ O guia a seguir pressupõe que você já criou um serviço do ClickHouse Cloud. 
 
         Se a detecção automática for bem-sucedida, você deverá ser direcionado para a Search view, onde poderá começar imediatamente a explorar seus dados.
 
-        <div className="ch-image-lg">
-
-        <Frame>
-
-        ![UI do ClickStack](/images/clickstack/getting-started/clickstack_managed_ui.webp)
-
-        </Frame>
-
-        </div>
+        <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="UI do ClickStack" />
 
         Se esta etapa for bem-sucedida, pronto — está tudo certo 🎉. Caso contrário, prossiga para a configuração da ingestão.
       </Step>
@@ -142,27 +118,11 @@ O guia a seguir pressupõe que você já criou um serviço do ClickHouse Cloud. 
       <Step title="Configurar ingestão" id="setup-ingestion-existing-service">
         Se a detecção automática falhar ou você não tiver tabelas existentes, será solicitado que configure a ingestão.
 
-        <div className="ch-image-lg">
-
-        <Frame>
-
-        ![Configuração da ingestão na UI do ClickStack](/images/clickstack/clickstack-ui-setup-ingestion.webp)
-
-        </Frame>
-
-        </div>
+        <Image img="/images/clickstack/clickstack-ui-setup-ingestion.webp" alt="Configuração da ingestão na UI do ClickStack" size="lg" />
 
         Selecione &quot;Start Ingestion&quot; e você será solicitado a escolher uma fonte de ingestão. O Managed ClickStack oferece suporte a OpenTelemetry e [Vector](https://vector.dev/) como principais fontes de ingestão. No entanto, os usuários também têm a liberdade de enviar dados diretamente para o ClickHouse em seu próprio schema usando qualquer uma das [integrações compatíveis com o ClickHouse Cloud](/pt-BR/integrations/home).
 
-        <div className="ch-image-lg">
-
-        <Frame>
-
-        ![Selecionar source - UI do ClickStack](/images/clickstack/select-source-clickstack-ui.webp)
-
-        </Frame>
-
-        </div>
+        <Image img="/images/clickstack/select-source-clickstack-ui.webp" size="lg" alt="Selecionar source - UI do ClickStack" border />
 
         <Info>
           **OpenTelemetry recomendado**
@@ -177,21 +137,13 @@ O guia a seguir pressupõe que você já criou um serviço do ClickHouse Cloud. 
 
             Se você ainda não tiver um em execução, inicie um collector usando as etapas abaixo. Se você já tiver collectors, também há um exemplo de configuração.
 
-### Iniciar um collector
+            ### Iniciar um collector
 
             O texto a seguir parte do uso recomendado da **distribuição ClickStack do OpenTelemetry Collector**, que inclui processamento adicional e é otimizada especificamente para o ClickHouse Cloud. Se você quiser usar seu próprio OpenTelemetry Collector, consulte [&quot;Configurar collectors existentes.&quot;](#configure-existing-collectors-existing)
 
             Para começar rapidamente, copie e execute o comando Docker mostrado.
 
-            <div className="ch-image-md">
-
-            <Frame>
-
-            ![Origem do OTel collector](/images/clickstack/otel-collector-start-clickstack-ui.webp)
-
-            </Frame>
-
-            </div>
+            <Image img="/images/clickstack/otel-collector-start-clickstack-ui.webp" size="md" alt="Origem do OTel collector" />
 
             **Modifique este comando com as credenciais do seu serviço, anotadas quando você criou o serviço.**
 
@@ -203,7 +155,7 @@ O guia a seguir pressupõe que você já criou um serviço do ClickHouse Cloud. 
 
             Executar esse único comando inicia o ClickStack collector com endpoints OTLP expostos nas portas 4317 (gRPC) e 4318 (HTTP). Se você já tiver instrumentação OpenTelemetry e agents, poderá começar imediatamente a enviar dados de telemetria para esses endpoints.
 
-### Configurar collectors existentes
+            ### Configurar collectors existentes
 
             Também é possível configurar seus OpenTelemetry Collectors existentes ou usar sua própria distribuição do collector.
 
@@ -217,19 +169,11 @@ O guia a seguir pressupõe que você já criou um serviço do ClickHouse Cloud. 
 
             <ExampleOTelConfig />
 
-            <div className="ch-image-lg">
-
-            <Frame>
-
-            ![Origem avançada do OTel collector](/images/clickstack/advanced-otel-collector-clickstack-ui.webp)
-
-            </Frame>
-
-            </div>
+            <Image img="/images/clickstack/advanced-otel-collector-clickstack-ui.webp" size="lg" alt="Origem avançada do OTel collector" />
 
             Para mais detalhes sobre como configurar collectors OpenTelemetry, consulte [&quot;Ingestão com OpenTelemetry.&quot;](/pt-BR/clickstack/ingesting-data/opentelemetry)
 
-### Iniciar a ingestão (opcional)
+            ### Iniciar a ingestão (opcional)
 
             Se você tiver aplicações ou infraestrutura existentes para instrumentar com OpenTelemetry, acesse os guias relevantes vinculados em &quot;Conectar uma aplicação&quot;.
 
@@ -253,7 +197,7 @@ O guia a seguir pressupõe que você já criou um serviço do ClickHouse Cloud. 
 
             O conteúdo a seguir pressupõe que você já tenha uma instância do Vector em execução, pré-configurada com pipelines de ingestão e enviando dados.
 
-### Crie um banco de dados e uma tabela
+            ### Crie um banco de dados e uma tabela
 
             O Vector exige que uma tabela e um esquema sejam definidos antes da ingestão de dados.
 
@@ -293,15 +237,7 @@ O guia a seguir pressupõe que você já criou um serviço do ClickHouse Cloud. 
 
             Depois que a tabela existir, copie o trecho de configuração exibido. Ajuste a entrada para consumir seus pipelines existentes, bem como a tabela de destino e o banco de dados, se necessário. As credenciais devem vir pré-preenchidas.
 
-            <div className="ch-image-lg">
-
-            <Frame>
-
-            ![Configuração do Vector](/images/clickstack/vector-config-clickstack-ui.webp)
-
-            </Frame>
-
-            </div>
+            <Image img="/images/clickstack/vector-config-clickstack-ui.webp" size="lg" alt="Configuração do Vector" />
 
             Para mais exemplos de ingestão de dados com o Vector, consulte [&quot;Ingestão com o Vector&quot;](/pt-BR/clickstack/ingesting-data/vector) ou a [documentação do sink ClickHouse do Vector](https://vector.dev/docs/reference/configuration/sinks/clickhouse/) para opções avançadas.
 
@@ -317,15 +253,7 @@ O guia a seguir pressupõe que você já criou um serviço do ClickHouse Cloud. 
           <Tab title="OpenTelemetry">
             Se você tiver feito a ingestão de dados do OpenTelemetry usando este guia, as fontes de dados serão criadas automaticamente e nenhuma configuração adicional será necessária. Você pode começar a explorar o ClickStack imediatamente. Você será direcionado para a Search view, com uma fonte selecionada automaticamente, para que possa começar a executar consultas na hora.
 
-            <div className="ch-image-lg">
-
-            <Frame>
-
-            ![interface do ClickStack](/images/clickstack/getting-started/clickstack_managed_ui.webp)
-
-            </Frame>
-
-            </div>
+            <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="interface do ClickStack" />
 
             É isso — está tudo pronto 🎉.
 
@@ -335,15 +263,7 @@ O guia a seguir pressupõe que você já criou um serviço do ClickHouse Cloud. 
           <Tab title="Vector">
             Se você tiver feito a ingestão de dados via Vector ou outra fonte, será solicitado que configure a fonte de dados.
 
-            <div className="ch-image-lg">
-
-            <Frame>
-
-            ![Criar fonte de dados - Vector](/images/clickstack/create-vector-datasource.webp)
-
-            </Frame>
-
-            </div>
+            <Image img="/images/clickstack/create-vector-datasource.webp" alt="Criar fonte de dados - Vector" size="lg" />
 
             A configuração acima pressupõe um schema no estilo Nginx, com uma coluna `time_local` usada como timestamp. Sempre que possível, essa deve ser a coluna de timestamp declarada na chave primária. **Essa coluna é obrigatória**.
 
@@ -355,15 +275,7 @@ O guia a seguir pressupõe que você já criou um serviço do ClickHouse Cloud. 
 
             Depois que a fonte estiver configurada, clique em &quot;Save&quot; e comece a explorar seus dados.
 
-            <div className="ch-image-lg">
-
-            <Frame>
-
-            ![interface do ClickStack](/images/clickstack/getting-started/clickstack_managed_ui.webp)
-
-            </Frame>
-
-            </div>
+            <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="interface do ClickStack" />
 
             <br />
           </Tab>
@@ -377,7 +289,9 @@ O guia a seguir pressupõe que você já criou um serviço do ClickHouse Cloud. 
   ## Tarefas adicionais
 </div>
 
-### Concedendo acesso ao Managed ClickStack {#configure-access}
+<div id="configure-access">
+  ### Concedendo acesso ao Managed ClickStack
+</div>
 
 1. Acesse seu serviço no console do ClickHouse Cloud
 2. Vá para **Configurações** → **Acesso ao SQL Console**
@@ -386,15 +300,7 @@ O guia a seguir pressupõe que você já criou um serviço do ClickHouse Cloud. 
    * **Service Read Only → Read Only** - Pode visualizar dados de observabilidade e criar dashboards
    * **No access** - Não pode acessar o HyperDX
 
-<div className="ch-image-md">
-
-<Frame>
-
-![ClickHouse Cloud Somente Leitura](/images/clickstack/read-only-access.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/read-only-access.webp" alt="ClickHouse Cloud Somente Leitura" size="md" />
 
 <Warning>
   **Alertas exigem acesso de administrador**
@@ -433,10 +339,6 @@ Para executar o ClickStack em capacidade computacional somente leitura:
 
 Depois de iniciado, a UI do ClickStack será vinculada automaticamente a esse serviço somente leitura.
 
-Observe que dashboards, buscas salvas, alertas e fontes de dados têm escopo limitado ao serviço a partir do qual o ClickStack foi iniciado, portanto qualquer coisa salva em outro serviço do warehouse não fica disponível aqui e precisa ser recriada. Fontes de dados que usam o schema padrão do OpenTelemetry são detectadas automaticamente, de modo que a busca nesses dados funciona de imediato — já as fontes de dados personalizadas ou configuradas manualmente não são detectadas e precisam ser configuradas novamente.
-
-Para conhecer a topologia completa — incluindo para onde direcionar a ingestão, em qual serviço executar DDL e como os alertas se comportam — consulte [&quot;Isolando cargas de trabalho de leitura e escrita&quot;](/pt-BR/clickstack/managing/isolating-read-write).
-
 <div id="adding-data-sources">
   ### Adicionando mais fontes de dados
 </div>
@@ -445,43 +347,21 @@ O ClickStack é nativo do OpenTelemetry, mas não se limita ao OpenTelemetry —
 
 A seguir, descrevemos como adicionar outras fontes de dados além das que são configuradas automaticamente.
 
-#### Usando esquemas do OpenTelemetry {#using-otel-schemas}
+<div id="using-otel-schemas">
+  #### Usando esquemas do OpenTelemetry
+</div>
 
 Se você estiver usando um OTel collector para criar o banco de dados e as tabelas no ClickHouse, mantenha todos os valores padrão no modelo de criação da fonte de dados, preenchendo o campo `Table` com o valor `otel_logs` para criar uma fonte de logs. Todas as outras configurações devem ser detectadas automaticamente, permitindo que você clique em `Salvar Nova Fonte de Dados`.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Fonte de dados do HyperDX no ClickHouse Cloud](/images/use-cases/observability/hyperdx_cloud_datasource.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx_cloud_datasource.webp" alt="Fonte de dados do HyperDX no ClickHouse Cloud" size="lg" />
 
 Para criar fontes para traces e métricas do OTel, você pode selecionar `Criar Nova Fonte de Dados` no menu superior.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![ClickStack criar nova fonte de dados](/images/use-cases/observability/hyperdx_create_new_source.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx_create_new_source.webp" alt="ClickStack criar nova fonte de dados" size="lg" />
 
 A partir daí, selecione o tipo de fonte necessário e, em seguida, a tabela apropriada. Por exemplo, para traces, selecione a tabela `otel_traces`. Todas as configurações devem ser detectadas automaticamente.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![ClickStack criar fonte de traces](/images/use-cases/observability/hyperdx_create_trace_datasource.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx_create_trace_datasource.webp" alt="ClickStack criar fonte de traces" size="lg" />
 
 <Info>
   **Correlacionando fontes**

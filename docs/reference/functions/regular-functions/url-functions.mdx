@@ -684,8 +684,6 @@ Decodes URL-encoded strings using form encoding rules ([RFC-1866](https://www.rf
 decodeURLFormComponent(url)
 ```
 
-**Aliases**: `url_decode`
-
 **Arguments**
 
 - `url` — URL. [`String`](/reference/data-types/string)
@@ -758,8 +756,6 @@ Similar to [`domain`](#domain), but [RFC 3986](https://datatracker.ietf.org/doc/
 ```sql
 domainRFC(url)
 ```
-
-**Aliases**: `url_extract_host`
 
 **Arguments**
 
@@ -904,8 +900,6 @@ Encodes strings using form encoding rules ([RFC-1866](https://www.rfc-editor.org
 ```sql
 encodeURLFormComponent(url)
 ```
-
-**Aliases**: `url_encode`
 
 **Arguments**
 
@@ -1395,8 +1389,6 @@ Examples of typical returned values: http, https, ftp, mailto, tel, magnet.
 protocol(url)
 ```
 
-**Aliases**: `url_extract_protocol`
-
 **Arguments**
 
 - `url` — URL. [`String`](/reference/data-types/string)
@@ -1493,7 +1485,7 @@ SELECT queryStringAndFragment('https://clickhouse.com/docs?query=value&param=123
 
 Introduced in: v1.1.0
 
-Extracts the top-level domain from a URL.
+Extracts the the top-level domain from a URL.
 
 <Note>
 The URL can be specified with or without a protocol.
@@ -1539,7 +1531,7 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk');
 
 Introduced in: v22.10.0
 
-Extracts the top-level domain from a URL.
+Extracts the the top-level domain from a URL.
 Similar to [`topLevelDomain`](#topLevelDomain), but conforms to [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
     
 

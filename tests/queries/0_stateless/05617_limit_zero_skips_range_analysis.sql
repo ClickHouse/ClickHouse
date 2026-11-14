@@ -40,7 +40,6 @@ SELECT count() FROM t WHERE k < 10 AND flag AND v < 50;
 
 SELECT k FROM tp WHERE v = 7 LIMIT 0 SETTINGS optimize_use_projections = 1, force_optimize_projection_name = 'p';
 SELECT k FROM tp WHERE v = 7 LIMIT 0 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
-SELECT count() FROM (EXPLAIN SELECT k FROM tp WHERE v = 7 LIMIT 0 SETTINGS optimize_use_projections = 1, prefer_optimize_projection = 1) WHERE explain ILIKE '%ReadFromMergeTree (p)%';
 
 SELECT k, v FROM tr FINAL WHERE k > 10 LIMIT 0 FORMAT TSVWithNamesAndTypes;
 

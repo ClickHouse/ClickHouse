@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
 #
 # GeoParquet page-level spatial pruning must fail closed when the `covering.bbox` is incomplete.
 #

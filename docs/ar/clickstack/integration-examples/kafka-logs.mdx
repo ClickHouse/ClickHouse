@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['Kafka', 'السجلات', 'OTEL', 'ClickStack', 'مراقبة الوسطاء', 'Log4j']
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -161,25 +163,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
   <Step title="التحقق من السجلات في HyperDX" id="verifying-logs">
     بعد إكمال الإعداد، سجّل الدخول إلى HyperDX وتحقّق من أن السجلات تتدفق:
 
-    <div className="ch-image-lg">
+    <Image img="/images/clickstack/kafka/logs/search-view.webp" alt="واجهة البحث" />
 
-    <Frame>
-
-    ![واجهة البحث](/images/clickstack/kafka/logs/search-view.webp)
-
-    </Frame>
-
-    </div>
-
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![واجهة السجل](/images/clickstack/kafka/logs/log-view.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/kafka/logs/log-view.webp" alt="واجهة السجل" />
   </Step>
 </Steps>
 
@@ -267,25 +253,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     2. انتقل إلى Search view واضبط المصدر على `Logs`
     3. اضبط النطاق الزمني ليشمل **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**
 
-    <div className="ch-image-lg">
+    <Image img="/images/clickstack/kafka/logs/search-view.webp" alt="عرض البحث" />
 
-    <Frame>
-
-    ![عرض البحث](/images/clickstack/kafka/logs/search-view.webp)
-
-    </Frame>
-
-    </div>
-
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![عرض السجل](/images/clickstack/kafka/logs/log-view.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/kafka/logs/log-view.webp" alt="عرض السجل" />
   </Step>
 </Steps>
 
@@ -302,41 +272,17 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     1. افتح HyperDX وانتقل إلى قسم لوحات المعلومات.
     2. انقر على &quot;Import Dashboard&quot; في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![استيراد لوحة معلومات](/images/clickstack/import-dashboard.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/import-dashboard.webp" alt="استيراد لوحة معلومات" />
 
     3. حمّل ملف kafka-logs-dashboard.json وانقر على إنهاء الاستيراد.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![إنهاء استيراد لوحة معلومات سجلات Kafka](/images/clickstack/kafka/logs/finish-import.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/kafka/logs/finish-import.webp" alt="إنهاء استيراد لوحة معلومات سجلات Kafka" />
   </Step>
 
   <Step title="سيتم إنشاء لوحة المعلومات مع ضبط جميع التصورات مسبقًا" id="created-dashboard">
     بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني ليشمل **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![لوحة معلومات سجلات Kafka التجريبية](/images/clickstack/kafka/logs/example-dashboard.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/kafka/logs/example-dashboard.webp" alt="لوحة معلومات سجلات Kafka التجريبية" />
   </Step>
 </Steps>
 

@@ -15,7 +15,9 @@ O ClickHouse oferece suporte a tipos de dados para representar objetos geográfi
 
 * [Representação de feições geográficas simples](https://en.wikipedia.org/wiki/GeoJSON).
 
-## Point {#point}
+<div id="point">
+  ## Point
+</div>
 
 `Point` é representado por suas coordenadas X e Y, armazenadas como [Tuple](/pt-BR/reference/data-types/tuple)([Float64](/pt-BR/reference/data-types/float), [Float64](/pt-BR/reference/data-types/float)).
 
@@ -33,10 +35,11 @@ SELECT p, toTypeName(p) FROM geo_point;
 └─────────┴───────────────┘
 ```
 
-## MultiPoint {#multipoint}
+<div id="multipoint">
+  ## MultiPoint
+</div>
 
 `MultiPoint` é um conjunto de pontos armazenado como um Array de pontos: [Array](/pt-BR/reference/data-types/array)([Point](#point)).
-Um `Point` pode ser convertido em `MultiPoint`; o resultado contém esse ponto como único elemento.
 
 **Exemplo**
 
@@ -52,7 +55,9 @@ SELECT mp, toTypeName(mp) FROM geo_multipoint;
 └───────────────────────────────┴────────────────┘
 ```
 
-## Ring {#ring}
+<div id="ring">
+  ## Ring
+</div>
 
 `Ring` é um polígono simples, sem buracos, armazenado como um array de pontos: [Array](/pt-BR/reference/data-types/array)([Point](#point)).
 
@@ -70,7 +75,9 @@ SELECT r, toTypeName(r) FROM geo_ring;
 └───────────────────────────────┴───────────────┘
 ```
 
-## LineString {#linestring}
+<div id="linestring">
+  ## LineString
+</div>
 
 `LineString` é uma linha armazenada como um Array de pontos: [Array](/pt-BR/reference/data-types/array)([Point](#point)).
 
@@ -88,10 +95,11 @@ SELECT l, toTypeName(l) FROM geo_linestring;
 └───────────────────────────────┴───────────────┘
 ```
 
-## MultiLineString {#multilinestring}
+<div id="multilinestring">
+  ## MultiLineString
+</div>
 
 `MultiLineString` é composto por múltiplas linhas armazenadas como um array de `LineString`: [Array](/pt-BR/reference/data-types/array)([LineString](#linestring)).
-Um `LineString` pode ser convertido em `MultiLineString`; o resultado contém essa linha como seu único elemento.
 
 **Exemplo**
 
@@ -107,7 +115,9 @@ SELECT l, toTypeName(l) FROM geo_multilinestring;
 └─────────────────────────────────────────────────────┴─────────────────┘
 ```
 
-## Polygon {#polygon}
+<div id="polygon">
+  ## Polygon
+</div>
 
 `Polygon` é um polígono com buracos armazenado como um array de anéis: [Array](/pt-BR/reference/data-types/array)([Ring](#ring)). O primeiro elemento do array externo é o contorno externo do polígono, e todos os elementos seguintes são buracos.
 
@@ -127,10 +137,11 @@ SELECT pg, toTypeName(pg) FROM geo_polygon;
 └───────────────────────────────────────────────────────────────┴────────────────┘
 ```
 
-## MultiPolygon {#multipolygon}
+<div id="multipolygon">
+  ## MultiPolygon
+</div>
 
 `MultiPolygon` consiste em múltiplos polígonos e é armazenado como um array de polígonos: [Array](/pt-BR/reference/data-types/array)([Polygon](#polygon)).
-Um `Polygon` pode ser convertido em `MultiPolygon`; o resultado contém esse polígono como seu único elemento.
 
 **Exemplo**
 
@@ -148,7 +159,9 @@ SELECT mpg, toTypeName(mpg) FROM geo_multipolygon;
 └─────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────┘
 ```
 
-## Geometry {#geometry}
+<div id="geometry">
+  ## Geometry
+</div>
 
 `Geometry` é um tipo comum a todos os tipos acima. Equivale a um Variant desses tipos.
 
@@ -192,7 +205,9 @@ SELECT * FROM geo_dst;
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Conteúdo relacionado {#related-content}
+<div id="related-content">
+  ## Conteúdo relacionado
+</div>
 
 * [Explorando conjuntos massivos de dados do mundo real: mais de 100 anos de registros meteorológicos no ClickHouse](https://clickhouse.com/blog/real-world-data-noaa-climate-data)
 

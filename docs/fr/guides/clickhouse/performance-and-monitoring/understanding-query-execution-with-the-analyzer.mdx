@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['exécution des requêtes', 'analyseur', 'optimisation des requêtes', 'explain', 'performance']
 ---
 
+import { Image } from "/snippets/fr/components/Image.jsx";
+
 ClickHouse traite les requêtes extrêmement rapidement, mais l’exécution d’une requête n’a rien de simple. Essayons de comprendre comment une requête `SELECT` est exécutée. Pour l’illustrer, ajoutons des données dans une Table dans ClickHouse :
 
 ```sql
@@ -27,19 +29,13 @@ INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,
 
 Maintenant que nous avons des données dans ClickHouse, nous voulons exécuter quelques requêtes et comprendre comment elles s’exécutent. L’exécution d’une requête se décompose en de nombreuses étapes. Chaque étape de l’exécution d’une requête peut être analysée et dépannée à l’aide de la requête `EXPLAIN` correspondante. Ces étapes sont résumées dans le schéma ci-dessous :
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Étapes de la requête Explain](/images/guides/developer/analyzer1.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/guides/developer/analyzer1.webp" alt="Étapes de la requête Explain" size="md" />
 
 Voyons maintenant chaque composant à l’œuvre lors de l’exécution d’une requête. Nous allons prendre quelques requêtes, puis les examiner à l’aide de l’instruction `EXPLAIN`.
 
-## Analyseur syntaxique {#parser}
+<div id="parser">
+  ## Analyseur syntaxique
+</div>
 
 L’objectif d’un analyseur syntaxique est de transformer le texte de la requête en un AST (arbre syntaxique abstrait). Cette étape peut être visualisée à l’aide de `EXPLAIN AST` :
 
@@ -84,21 +80,22 @@ graph TD
     tisqe --> te["TableExpression"]
     te --> ti["TableIdentifier session_events"]
 ```
-
 Chaque nœud a des nœuds enfants, et l’ensemble de l’arbre représente la structure globale de votre requête. Il s’agit d’une structure logique qui facilite le traitement d’une requête. Du point de vue de l’utilisateur final (sauf s’il s’intéresse à l’exécution des requêtes), ce n’est pas très utile ; cet outil est principalement destiné aux développeurs.
 
-## Analyseur {#analyzer}
+<div id="analyzer">
+  ## Analyseur
+</div>
 
-L’analyseur est activé par défaut depuis ClickHouse `24.3` et constitue le seul mode d’analyse de requête depuis la version `26.9`, où `enable_analyzer` est devenu un paramètre obsolète qui ne peut plus être désactivé.
+ClickHouse dispose actuellement de deux architectures pour l’analyseur. Vous pouvez utiliser l’ancienne architecture en définissant : `enable_analyzer=0`. L’architecture actuelle est activée par défaut depuis ClickHouse `24.3`. Nous ne décrirons ici que l’architecture actuelle, puisque l’ancienne est dépréciée et n’est conservée que pour la compatibilité descendante.
 
 <Note>
-  L’analyseur est un composant fondamental du traitement des requêtes, et il peut avoir un impact négatif sur certaines requêtes : consultez les [incompatibilités connues](/fr/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities) pour connaître les requêtes qui doivent être adaptées.
+  L’architecture actuelle devrait nous offrir un meilleur cadre pour améliorer les performances de ClickHouse. Cependant, comme il s’agit d’un composant fondamental du traitement des requêtes, elle peut aussi avoir un impact négatif sur certaines requêtes, et il existe des [incompatibilités connues](/fr/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities). Vous pouvez revenir à l’ancienne architecture en modifiant le paramètre `enable_analyzer` au niveau de la requête ou de l’utilisateur.
 </Note>
 
-L’analyseur est une étape importante de l’exécution des requêtes. Il prend un AST et le transforme en arbre de requête. Le principal avantage d’un arbre de requête par rapport à un AST est que de nombreux composants y sont résolus, comme le stockage, par exemple. On sait également dans quelle table lire, les alias sont aussi résolus, et l’arbre connaît les différents types de données utilisés. Grâce à tout cela, l’analyseur peut appliquer des optimisations. Ces optimisations fonctionnent au moyen de « passes ». Chaque passe recherche différents types d’optimisation. Vous pouvez voir toutes les passes [ici](https://github.com/ClickHouse/ClickHouse/blob/76578ebf92af3be917cd2e0e17fea2965716d958/src/Analyzer/QueryTreePassManager.cpp#L249) ; voyons cela en pratique avec notre requête précédente :
+L’analyseur est une étape importante de l’exécution des requêtes. Il prend un AST et le transforme en arbre de requête. Le principal avantage d’un arbre de requête par rapport à un AST est que de nombreux composants y sont résolus, comme le stockage, par exemple. On sait également dans quelle table lire, les alias sont aussi résolus, et l’arbre connaît les différents types de données utilisés. Grâce à tout cela, l’analyseur peut appliquer des optimisations. Ces optimisations fonctionnent au moyen de « passes ». Chaque passe recherche différents types d’optimisation. Vous pouvez voir toutes les passes [ici](https://github.com/ClickHouse/ClickHouse/blob/76578ebf92af3be917cd2e0e17fea2965716d958/src/Analyzer/QueryTreePassManager.cpp#L249) ; voyons cela en pratique avec notre requête précédente :
 
 ```sql
-EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
+EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events SETTINGS allow_experimental_analyzer=1;
 ```
 
 ```response
@@ -116,11 +113,12 @@ EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp
 │             IDENTIFIER id: 7, identifier: timestamp                                    │
 │   JOIN TREE                                                                            │
 │     IDENTIFIER id: 8, identifier: session_events                                       │
+│   SETTINGS allow_experimental_analyzer=1                                               │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```sql
-EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
+EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events SETTINGS allow_experimental_analyzer=1;
 ```
 
 ```response
@@ -141,6 +139,7 @@ EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestam
 │             COLUMN id: 4, column_name: timestamp, result_type: DateTime, source_id: 5     │
 │   JOIN TREE                                                                               │
 │     TABLE id: 5, alias: __table1, table_name: default.session_events                      │
+│   SETTINGS allow_experimental_analyzer=1                                                  │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -364,15 +363,7 @@ digraph
 
 Vous pouvez ensuite copier cette sortie et la coller [ici](https://dreampuf.github.io/GraphvizOnline), ce qui générera le graphe suivant :
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Sortie du graphe](/images/guides/developer/analyzer3.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/guides/developer/analyzer3.webp" alt="Sortie du graphe" size="md" />
 
 Un rectangle blanc correspond à un nœud du pipeline, le rectangle gris aux étapes du plan de requête, et le `x` suivi d’un nombre indique le nombre d’entrées/sorties utilisées. Si vous ne souhaitez pas les afficher sous une forme compacte, vous pouvez toujours ajouter `compact=0` :
 
@@ -412,15 +403,7 @@ digraph
 }
 ```
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Sortie du graphe compact](/images/guides/developer/analyzer4.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/guides/developer/analyzer4.webp" alt="Sortie du graphe compact" size="md" />
 
 Pourquoi ClickHouse ne lit-il pas la table avec plusieurs threads ? Essayons d&#39;ajouter davantage de données à notre table :
 
@@ -479,15 +462,7 @@ digraph
 }
 ```
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Résultat du graphe parallèle](/images/guides/developer/analyzer5.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/guides/developer/analyzer5.webp" alt="Résultat du graphe parallèle" size="md" />
 
 L’Executor a donc décidé de ne pas paralléliser les opérations, car le volume de données n&#39;était pas suffisant. En ajoutant davantage de lignes, l’Executor a ensuite décidé d’utiliser plusieurs threads, comme le montre le graphe.
 

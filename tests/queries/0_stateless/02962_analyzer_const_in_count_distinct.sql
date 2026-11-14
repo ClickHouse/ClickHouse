@@ -1,3 +1,5 @@
+set count_distinct_optimization = 1;
+
 SELECT uniqExact('257')
 FROM
   (SELECT

@@ -1,3 +1,5 @@
+-- Tags: no-darwin
+-- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
 
 -- Distribution-column matching in `isDistributionSatisfiedBy` must be
 -- positional: the partition hash is computed over the key columns in order,
@@ -5,6 +7,7 @@
 -- `(a, b)`. A subquery aggregated with `GROUP BY b, a` must be re-shuffled
 -- when the parent join requires distribution by `(a, b)`.
 
+SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;
@@ -32,8 +35,7 @@ SELECT '-- 1. Join on (a, b) with subquery grouped by (b, a): all rows must matc
 SELECT count(), sum(l.x + sq.s)
 FROM t_dist_left AS l
 JOIN (SELECT b, a, sum(y) AS s FROM t_dist_right GROUP BY b, a) AS sq
-ON l.a = sq.a AND l.b = sq.b
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+ON l.a = sq.a AND l.b = sq.b;
 
 SELECT '-- 2. Baseline without Cascades';
 SELECT count(), sum(l.x + sq.s)

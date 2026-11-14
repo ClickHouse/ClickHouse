@@ -58,8 +58,7 @@ jobs:
 
   update_pr_version_info:
     runs-on: [self-hosted, arm-tiny]
-    needs:
-    - config_workflow
+    needs: [config_workflow]
     name: "Update PR version info"
     outputs:
       data: ${{ steps.run.outputs.DATA }}

@@ -6,19 +6,13 @@ keywords: ['refreshable materialized view', 'refresh', 'materialized views', 'sp
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
+
 [Refreshable materialized views](/reference/statements/create/view#refreshable-materialized-view) are conceptually similar to materialized views in traditional OLTP databases, storing the result of a specified query for quick retrieval and reducing the need to repeatedly execute resource-intensive queries. Unlike ClickHouse's [incremental materialized views](/concepts/features/materialized-views/incremental-materialized-view), this requires the periodic execution of the query over the full dataset - the results of which are stored in a target table for querying. This result set should, in theory, be smaller than the original dataset, allowing the subsequent query to execute faster.
 
 The diagram explains how Refreshable Materialized Views work:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Refreshable materialized view diagram](/images/materialized-view/refreshable-materialized-view-diagram.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/materialized-view/refreshable-materialized-view-diagram.webp" size="lg" alt="Refreshable materialized view diagram"/>
 
 You can also see the following video:
 
@@ -53,10 +47,6 @@ SYSTEM REFRESH VIEW table_name_mv;
 
 You can also cancel, stop, or start a view.
 For more details, see the [managing refreshable materialized views](/reference/statements/system#managing-refreshable-materialized-views) documentation.
-
-<Warning>
-Refreshable materialized views whose refreshes are not coordinated through ClickHouse Keeper forget when they last refreshed, so after a server restart they can all refresh at once. See [What happens to refreshable materialized views when the server restarts](/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts) for which views are affected and how to start them again one at a time.
-</Warning>
 
 ## When was a refreshable materialized view last refreshed? {#when-was-a-refreshable-materialized-view-last-refreshed}
 

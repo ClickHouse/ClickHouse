@@ -1,18 +1,20 @@
 ---
 slug: /use-cases/observability/clickstack/getting-started/oss
 title: 'Getting started with ClickStack Open Source'
-sidebarTitle: 'Getting started'
+sidebarTitle: 'Open source'
 description: 'Run ClickStack Open Source locally, send test data, and confirm that ingestion works'
 doc_type: 'guide'
 keywords: ['ClickStack Open Source', 'getting started', 'Docker deployment', 'OpenTelemetry', 'local deployment']
 ---
+
+import { Image } from "/snippets/components/Image.jsx";
 
 Run ClickStack Open Source locally, send a test event through its OpenTelemetry Collector, and confirm that the event is available in the ClickStack UI.
 
 With ClickStack Open Source, you run and manage the ClickHouse backend, ClickStack UI, and ingestion pipeline. The all-in-one image bundles these components with MongoDB in a single Docker container for local evaluation and testing.
 
 <Tip>
-Explore logs, metrics, and traces without managing the infrastructure with [ClickHouse Observability](/clickstack/observability). [Sign up for ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-clickstack-oss-inline) to get started.
+A managed version of ClickStack is also available — see [Managed ClickStack](/clickstack/getting-started/managed).
 </Tip>
 
 The steps below use the authenticated all-in-one image. If you want a local UI without creating an account, follow the [local mode with Docker walkthrough](/clickstack/deployment/local-mode-only) instead.
@@ -127,15 +129,7 @@ Open the **Search** view in ClickStack and search for `ClickStack ingestion test
 
 The result should include the test event with the `clickstack-docs-test` service name.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![ClickStack Open Source logs view showing the ClickStack ingestion test event](/images/clickstack/getting-started/clickstack_ingestion_test_oss.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/getting-started/clickstack_ingestion_test_oss.webp" size="lg" alt="ClickStack Open Source logs view showing the ClickStack ingestion test event" border/>
 </Step>
 </Steps>
 

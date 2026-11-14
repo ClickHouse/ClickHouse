@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'SAML', 'SSO', 'single sign-on', 'IdP', 'Okta', 'Google']
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 import { EnterprisePlanFeatureBadge } from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <EnterprisePlanFeatureBadge feature="SAML SSO" />
@@ -17,11 +19,15 @@ Admitimos SSO iniciado por el proveedor de servicios, múltiples organizaciones 
 
 Los clientes que habilitan integraciones SAML también pueden designar el rol predeterminado que se asignará a los nuevos usuarios y ajustar la configuración del tiempo de espera de sesión.
 
-## Antes de empezar {#before-you-begin}
+<div id="before-you-begin">
+  ## Antes de empezar
+</div>
 
 Necesitarás permisos de administrador en tu IdP, la capacidad de añadir un registro TXT a la configuración DNS de tu dominio y el rol de **Admin** en tu organización de ClickHouse Cloud. Te recomendamos configurar un **enlace directo a tu organización** además de tu conexión SAML para simplificar el proceso de inicio de sesión. Cada IdP lo gestiona de forma diferente. A continuación, te explicamos cómo hacerlo en tu IdP.
 
-## Cómo funciona {#how-it-works}
+<div id="how-it-works">
+  ## Cómo funciona
+</div>
 
 Una vez configurado SAML SSO, los usuarios inician sesión mediante un flujo iniciado por el proveedor de servicios:
 
@@ -32,11 +38,11 @@ Una vez configurado SAML SSO, los usuarios inician sesión mediante un flujo ini
 
 El resto de esta guía trata la configuración que solo se realiza una vez.
 
-## Cómo configurar el IdP {#how-to-configure-your-idp}
+<div id="how-to-configure-your-idp">
+  ## Cómo configurar el IdP
+</div>
 
-Si SAML ya está habilitado y necesita acceso de administrador, consulte [Configurar el usuario administrador](#configure-your-admin-user) o [Solución de problemas](#troubleshooting).
-
-<Steps titleSize="h3">
+<Steps>
   <Step title="Acceda a la configuración de la organización" id="access-organization-settings">
     Haga clic en el nombre de su organización, en la esquina inferior izquierda, y seleccione Detalles de la organización.
   </Step>
@@ -44,15 +50,7 @@ Si SAML ya está habilitado y necesita acceso de administrador, consulte [Config
   <Step title="Habilite el inicio de sesión único con SAML" id="enable-saml-sso">
     Haga clic en el interruptor situado junto a `Enable SAML single sign-on`. Deje esta pantalla abierta, ya que tendrá que volver a consultarla varias veces durante el proceso de configuración.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Iniciar la configuración de SAML](/images/cloud/security/saml-self-serve-1.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/security/saml-self-serve-1.webp" size="lg" alt="Iniciar la configuración de SAML" force />
   </Step>
 
   <Step title="Cree una aplicación en su proveedor de identidad" id="create-idp-application">
@@ -67,43 +65,19 @@ Si SAML ya está habilitado y necesita acceso de administrador, consulte [Config
       ClickHouse no admite el inicio de sesión iniciado por el proveedor de identidad. Para facilitar el acceso de sus usuarios a ClickHouse Cloud, cree un marcador para ellos con este formato de URL de inicio de sesión: `https://console.clickhouse.cloud/?connection={orgId}`, donde `{orgID}` es el ID de su organización en la página de detalles de la organización.
     </Tip>
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Crear una aplicación en el proveedor de identidad](/images/cloud/security/saml-self-serve-2.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/security/saml-self-serve-2.webp" size="lg" alt="Crear una aplicación en el proveedor de identidad" force />
   </Step>
 
   <Step title="Agrega la URL de metadatos a tu configuración de SAML" id="add-metadata-url">
     Obtén la `Metadata URL` de tu proveedor de SAML. Vuelve a ClickHouse Cloud, haz clic en `Next: Provide metadata URL` y pega la URL en el cuadro de texto.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Agrega la URL de metadatos](/images/cloud/security/saml-self-serve-3.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/security/saml-self-serve-3.webp" size="lg" alt="Agrega la URL de metadatos" force />
   </Step>
 
   <Step title="Obtener el código de verificación del dominio" id="get-domain-verification-code">
     Haz clic en `Next: Verify your domains`. Introduce tu dominio en el cuadro de texto y haz clic en `Check domain`. El sistema generará un código de verificación aleatorio para que lo añadas a un registro TXT con tu proveedor de DNS.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Añadir dominio para verificar](/images/cloud/security/saml-self-serve-4.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/security/saml-self-serve-4.webp" size="lg" alt="Añadir dominio para verificar" force />
   </Step>
 
   <Step title="Verifica tu dominio" id="verify-your-domain">
@@ -113,15 +87,7 @@ Si SAML ya está habilitado y necesita acceso de administrador, consulte [Config
       La actualización y verificación del registro DNS pueden tardar varios minutos. Puedes salir de la página de configuración y volver más tarde para completar el proceso sin tener que empezar de nuevo. El valor de verificación es válido durante 48 horas desde el momento en que se genera por primera vez.
     </Note>
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Verifica tu dominio](/images/cloud/security/saml-self-serve-5.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/security/saml-self-serve-5.webp" size="lg" alt="Verifica tu dominio" force />
   </Step>
 
   <Step title="Actualizar el rol predeterminado y el tiempo de espera de la sesión" id="update-defaults">
@@ -158,13 +124,15 @@ Si SAML ya está habilitado y necesita acceso de administrador, consulte [Config
   </Step>
 </Steps>
 
-### Configure su proveedor de identidad {#configure-idp}
+<div id="configure-idp">
+  ### Configure su proveedor de identidad
+</div>
 
 <Tabs>
   <Tab title="Okta" id="okta">
     Configurarás dos integraciones de aplicaciones en Okta para cada organización de ClickHouse: una aplicación SAML y un marcador que contendrá tu enlace directo.
 
-#### Crea un grupo para administrar el acceso {#okta-create-group}
+    #### Crea un grupo para administrar el acceso
 
     1. Inicia sesión en tu instancia de Okta como **Administrator**.
     2. Selecciona **Groups** en el panel izquierdo.
@@ -174,7 +142,7 @@ Si SAML ya está habilitado y necesita acceso de administrador, consulte [Config
     6. Haz clic en el nombre del grupo que creaste.
     7. Haz clic en **Assign people** para asignar a los usuarios a los que quieras dar acceso a esta organización de ClickHouse.
 
-#### Crea una aplicación de marcador para que los usuarios inicien sesión sin problemas {#okta-bookmark-app}
+    #### Crea una aplicación de marcador para que los usuarios inicien sesión sin problemas
 
     1. Selecciona **Applications** en el panel izquierdo y, a continuación, selecciona el subapartado **Applications**.
     2. Haz clic en **Browse App Catalog**.
@@ -184,7 +152,7 @@ Si SAML ya está habilitado y necesita acceso de administrador, consulte [Config
     6. Introduce la URL como `https://console.clickhouse.cloud/?connection={organizationid}`
     7. Ve a la pestaña **Assignments** y añade el grupo que creaste antes.
 
-#### Crea una aplicación SAML para habilitar la conexión {#okta-saml-app}
+    #### Crea una aplicación SAML para habilitar la conexión
 
     1. Selecciona **Applications** en el panel izquierdo y, a continuación, selecciona el subapartado **Applications**.
 
@@ -225,19 +193,11 @@ Si SAML ya está habilitado y necesita acceso de administrador, consulte [Config
   <Tab title="Google" id="google">
     Configurarás una aplicación SAML en Google para cada organización y, si usas SSO multi-org, deberás proporcionar a tus usuarios el enlace directo (`https://console.clickhouse.cloud/?connection={organizationId}`) para que lo guarden en sus marcadores.
 
-#### Crear una aplicación web en Google {#google-web-app}
+    #### Crear una aplicación web en Google
 
     1. Ve a la consola de administración de Google (admin.google.com).
 
-       <div className="ch-image-md">
-
-       <Frame>
-
-       ![Aplicación SAML de Google](/images/cloud/security/saml-google-app.webp)
-
-       </Frame>
-
-       </div>
+       <Image img="/images/cloud/security/saml-google-app.webp" size="md" alt="Aplicación SAML de Google" force />
 
     2. Haz clic en **Apps** y, después, en **Web and mobile apps** en el panel izquierdo.
 
@@ -277,7 +237,7 @@ Si SAML ya está habilitado y necesita acceso de administrador, consulte [Config
   <Tab title="Azure (Microsoft)" id="azure">
     Azure (Microsoft) SAML también puede aparecer como Azure Active Directory (AD) o Microsoft Entra.
 
-#### Crear una aplicación empresarial de Azure {#azure-enterprise-app}
+    #### Crear una aplicación empresarial de Azure
 
     Configurarás una integración de aplicación con una URL de inicio de sesión independiente para cada organización.
 
@@ -291,15 +251,7 @@ Si SAML ya está habilitado y necesita acceso de administrador, consulte [Config
 
     5. Introduce un nombre y selecciona **Integrate any other application you don&#39;t find in the gallery (Non-gallery)**; luego, haz clic en **Create**.
 
-       <div className="ch-image-md">
-
-       <Frame>
-
-       ![Aplicación de Azure no incluida en la galería](/images/cloud/security/saml-azure-app.webp)
-
-       </Frame>
-
-       </div>
+       <Image img="/images/cloud/security/saml-azure-app.webp" size="md" alt="Aplicación de Azure no incluida en la galería" force />
 
     6. Haz clic en **Users and groups** en el panel izquierdo y asigna usuarios.
 
@@ -325,21 +277,13 @@ Si SAML ya está habilitado y necesita acceso de administrador, consulte [Config
         | (A) email                                    | Basic                           | user.mail          |
         | (U) /identity/claims/name                    | Omitted                         | user.mail          |
 
-        <div className="ch-image-md">
-
-        <Frame>
-
-        ![Atributos y notificaciones](/images/cloud/security/saml-azure-claims.webp)
-
-        </Frame>
-
-        </div>
+        <Image img="/images/cloud/security/saml-azure-claims.webp" size="md" alt="Atributos y notificaciones" force />
 
     11. Copia la metadata URL y vuelve a [Add the metadata URL to your SAML configuration](#add-metadata-url) para continuar con el proceso.
   </Tab>
 
   <Tab title="Duo" id="duo">
-#### Cree un proveedor de servicios SAML genérico para Duo {#duo-saml-provider}
+    #### Cree un proveedor de servicios SAML genérico para Duo
 
     1. Siga las instrucciones de [Duo Single Sign-On for Generic SAML Service Providers](https://duo.com/docs/sso-generic).
 
@@ -361,20 +305,11 @@ Si SAML ya está habilitado y necesita acceso de administrador, consulte [Config
   </Tab>
 </Tabs>
 
-## Solución de problemas {#troubleshooting}
+<div id="troubleshooting">
+  ## Solución de problemas
+</div>
 
 <AccordionGroup>
-  <Accordion title="Faltan los permisos de administrador después de iniciar sesión con SAML">
-    **Causa:** tu nueva cuenta de SAML recibe el rol de SAML predeterminado que esté configurado. Si ese rol no es **Admin**, la cuenta no tendrá permisos de administrador, aunque tu cuenta original tenga el rol **Admin**. ClickHouse Cloud no vincula automáticamente las cuentas de SAML con las que no lo son.
-
-    **Solución:** inicia sesión una vez mediante SAML para que el nuevo usuario aparezca en ClickHouse Cloud. A continuación, cierra sesión e inicia sesión con tu cuenta de administrador original para asignar el rol **Admin** al usuario de SAML:
-
-    * Para cuentas con correo electrónico y contraseña, usa [el enlace de inicio de sesión por correo electrónico](https://console.clickhouse.cloud/?with=email) para evitar la redirección automática a SAML. El `email` de `?with=email` es un valor literal, no un marcador de posición para tu dirección de correo electrónico.
-    * Para cuentas de Google o Microsoft, selecciona **Continue with Google** o **Continue with Microsoft**.
-
-    Cierra sesión y vuelve a iniciarla mediante SAML para comprobar que tienes acceso de administrador antes de eliminar tu cuenta de administrador original. Consulta [Configurar tu usuario administrador](#configure-your-admin-user) para ver el procedimiento completo.
-  </Accordion>
-
   <Accordion title="Podría haber una configuración incorrecta en el sistema o una interrupción del servicio">
     **Causa:** inicio de sesión iniciado por el proveedor de identidad, que no es compatible.
 
@@ -406,7 +341,9 @@ Si SAML ya está habilitado y necesita acceso de administrador, consulte [Config
   </Accordion>
 </AccordionGroup>
 
-## Preguntas frecuentes {#faq}
+<div id="faq">
+  ## Preguntas frecuentes
+</div>
 
 <AccordionGroup>
   <Accordion title="¿ClickHouse Cloud admite el inicio de sesión iniciado por el proveedor de identidad?">
@@ -428,7 +365,9 @@ Si SAML ya está habilitado y necesita acceso de administrador, consulte [Config
   </Accordion>
 </AccordionGroup>
 
-## Próximos pasos {#next-steps}
+<div id="next-steps">
+  ## Próximos pasos
+</div>
 
 * [Manage cloud users](/es/products/cloud/guides/security/cloud-access-management/manage-cloud-users) — administra los permisos y restringe el acceso únicamente a las conexiones SAML.
 * Aprovisionamiento de SCIM — automatiza el aprovisionamiento de usuarios y grupos con [Okta](/es/products/cloud/guides/security/cloud-access-management/scim-setup) o [Microsoft Entra ID](/es/products/cloud/guides/security/cloud-access-management/scim-setup-entra).

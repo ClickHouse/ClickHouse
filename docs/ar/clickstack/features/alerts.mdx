@@ -4,8 +4,10 @@ title: 'تنبيهات ClickStack'
 sidebarTitle: 'التنبيهات'
 description: 'تنبيهات ClickStack'
 doc_type: 'guide'
-keywords: ['ClickStack', 'observability', 'التنبيهات', 'search-alerts', 'اكتشاف-الحالات-الشاذة', 'الإشعارات', 'العتبات', 'slack', 'email', 'pagerduty', 'مراقبة-الأخطاء', 'مراقبة-الأداء', 'أحداث-المستخدم']
+keywords: ['ClickStack', 'observability', 'التنبيهات', 'search-alerts', 'الإشعارات', 'العتبات', 'slack', 'email', 'pagerduty', 'مراقبة-الأخطاء', 'مراقبة-الأداء', 'أحداث-المستخدم']
 ---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
 
 يتضمن ClickStack دعمًا مدمجًا للتنبيهات، ما يتيح للفرق اكتشاف المشكلات والاستجابة لها في الوقت الفعلي عبر السجلات والمقاييس والتتبعات.
 
@@ -19,12 +21,9 @@ keywords: ['ClickStack', 'observability', 'التنبيهات', 'search-alerts',
 
 يدعم ClickStack طريقتين متكاملتين لإنشاء التنبيهات: **تنبيهات البحث** و**تنبيهات مخططات لوحة المعلومات**. بعد إنشاء التنبيه، يُرفَق إما بعملية البحث أو بالمخطط.
 
-يستخدم كل تنبيه أحد وضعَين للاكتشاف، يُحدَّد من خلال **Alert type** في محرر التنبيهات:
-
-* **Static threshold**: ينطلق التنبيه عندما تتجاوز القيمة رقمًا تحدده. هذا هو الوضع الافتراضي، وهو الوضع الذي تتناوله هذه الصفحة.
-* **اكتشاف الحالات الشاذة** (في Managed ClickStack فقط): ينطلق التنبيه عندما تخرج القيمة عن نطاقها المتوقع، الذي يُستنتَج من السجل الحديث. راجع [تنبيهات اكتشاف الحالات الشاذة](/ar/clickstack/features/anomaly-detection).
-
-### 1. تنبيهات البحث {#search-alerts}
+<div id="search-alerts">
+  ### 1. تنبيهات البحث
+</div>
 
 تتيح لك تنبيهات البحث تشغيل الإشعارات استنادًا إلى نتائج بحث محفوظ. وهي تساعدك على اكتشاف الحالات التي تتكرر فيها أحداث أو أنماط معيّنة بمعدل أعلى (أو أقل) من المتوقع.
 
@@ -38,15 +37,7 @@ keywords: ['ClickStack', 'observability', 'التنبيهات', 'search-alerts',
   <Step title="فتح مربع حوار إنشاء التنبيه" id="open-dialog">
     ابدأ بإدخال [بحث](/ar/clickstack/features/search) ثم انقر على زر `Alerts` في الزاوية العلوية اليمنى من صفحة `Search`.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![طريقة عرض البحث للتنبيهات](/images/use-cases/observability/alerts_search_view.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/observability/alerts_search_view.webp" alt="طريقة عرض البحث للتنبيهات" size="lg" />
   </Step>
 
   <Step title="إنشاء التنبيه" id="create-the-alert">
@@ -59,31 +50,17 @@ keywords: ['ClickStack', 'observability', 'التنبيهات', 'search-alerts',
 
     قبل الحفظ، يعرض ClickStack تمثيلًا مرئيًا لشرط العتبة حتى تتمكن من التأكد من أنه سيعمل كما هو متوقع.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![تنبيهات البحث](/images/use-cases/observability/search_alert.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/observability/search_alert.webp" alt="تنبيهات البحث" size="lg" />
   </Step>
 </Steps>
 
 لاحظ أنه يمكن إضافة عدة تنبيهات إلى بحث واحد. وإذا كررت العملية المذكورة أعلاه، فستظهر التنبيهات الحالية على شكل علامات تبويب في أعلى مربع حوار تعديل التنبيه، مع تخصيص رقم لكل تنبيه.
 
-<div className="ch-image-md">
+<Image img="/images/use-cases/observability/multiple_search_alerts.webp" alt="تنبيهات متعددة" size="md" />
 
-<Frame>
-
-![تنبيهات متعددة](/images/use-cases/observability/multiple_search_alerts.webp)
-
-</Frame>
-
+<div id="dashboard-alerts">
+  ### 2. تنبيهات مخططات لوحة المعلومات
 </div>
-
-### 2. تنبيهات مخططات لوحة المعلومات {#dashboard-alerts}
 
 توسّع تنبيهات لوحة المعلومات إمكانات التنبيه لتشمل المخططات.
 
@@ -103,49 +80,27 @@ keywords: ['ClickStack', 'observability', 'التنبيهات', 'search-alerts',
   <Step title="افتح مربع حوار تحرير المخطط" id="open-chart-dialog">
     افتح قائمة إعدادات المخطط وحدد زر التنبيه. سيؤدي ذلك إلى عرض مربع حوار تحرير المخطط.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![تحرير تنبيه المخطط](/images/use-cases/observability/edit_chart_alert.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/observability/edit_chart_alert.webp" alt="تحرير تنبيه المخطط" size="lg" />
   </Step>
 
   <Step title="أضف التنبيه" id="add-chart-alert">
     حدد **إضافة تنبيه**.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![إضافة تنبيه إلى المخطط](/images/use-cases/observability/add_chart_alert.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/observability/add_chart_alert.webp" alt="إضافة تنبيه إلى المخطط" size="lg" />
   </Step>
 
   <Step title="حدّد شروط التنبيه" id="define-alert-conditions">
     حدّد الشرط (`>=`, `>`, `<=`, `<`, `=`, `!=`, `<= x >=`, `> or <`) والعتبة والمدة وwebhook. كما تحدد المدة هنا أيضًا عدد مرات تشغيل التنبيه.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![إنشاء تنبيه للمخطط](/images/use-cases/observability/create_chart_alert.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/observability/create_chart_alert.webp" alt="إنشاء تنبيه للمخطط" size="lg" />
 
     يمكنك إضافة webhook جديد مباشرةً من هذه الواجهة. راجع [إضافة webhook](#add-webhook) لمزيد من التفاصيل.
   </Step>
 </Steps>
 
-## إضافة webhook {#add-webhook}
+<div id="add-webhook">
+  ## إضافة webhook
+</div>
 
 أثناء إنشاء تنبيه، يمكنك إما استخدام webhook موجود أو إنشاء webhook جديد. وبمجرد إنشائه، سيكون webhook متاحًا لإعادة الاستخدام في تنبيهات أخرى.
 
@@ -153,27 +108,11 @@ keywords: ['ClickStack', 'observability', 'التنبيهات', 'search-alerts',
 
 على سبيل المثال، لنلقِ نظرة على إنشاء تنبيه لمخطط مخطط أدناه. قبل تحديد webhook، يمكن للمستخدم اختيار `Add New Webhook`.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![إضافة webhook جديد](/images/use-cases/observability/add_new_webhook.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/add_new_webhook.webp" alt="إضافة webhook جديد" size="lg" />
 
 يؤدي ذلك إلى فتح مربع حوار إنشاء webhook، حيث يمكنك إنشاء webhook جديد:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![إنشاء webhook](/images/use-cases/observability/add_webhook_dialog.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/add_webhook_dialog.webp" alt="إنشاء webhook" size="md" />
 
 اسم webhook مطلوب، بينما يكون الوصف اختياريًا. أما Settings الأخرى المطلوب إكمالها فتعتمد على نوع الخدمة.
 
@@ -221,27 +160,11 @@ keywords: ['ClickStack', 'observability', 'التنبيهات', 'search-alerts',
 
 يمكن إدارة التنبيهات مركزيًا من خلال لوحة التنبيهات على الجانب الأيسر من HyperDX.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![إدارة التنبيهات](/images/use-cases/observability/manage_alerts.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/manage_alerts.webp" alt="إدارة التنبيهات" size="lg" />
 
 من هذا العرض، يمكنك رؤية جميع التنبيهات التي تم إنشاؤها والمفعّلة حاليًا في ClickStack.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![عرض التنبيهات](/images/use-cases/observability/alerts_view.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/alerts_view.webp" alt="عرض التنبيهات" size="lg" />
 
 يعرض هذا العرض أيضًا سجل تقييم التنبيهات. تُقيَّم التنبيهات على فاصل زمني متكرر (يُحدَّد بحسب الفترة/المدة التي ضُبطت عند إنشاء التنبيه). وأثناء كل تقييم، يستعلم HyperDX عن بياناتك للتحقق مما إذا كان شرط التنبيه قد تحقق:
 
@@ -261,15 +184,7 @@ keywords: ['ClickStack', 'observability', 'التنبيهات', 'search-alerts',
 لإزالة تنبيه، افتح مربع حوار التعديل لصفحة البحث أو المخطط المرتبط، ثم اختر **إزالة التنبيه**.
 في المثال أدناه، سيؤدي الزر `Remove Alert` إلى إزالة التنبيه من المخطط.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![إزالة تنبيه من المخطط](/images/use-cases/observability/remove_chart_alert.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/remove_chart_alert.webp" alt="إزالة تنبيه من المخطط" size="lg" />
 
 <div id="sql-based-alerts">
   ## تنبيهات المخططات المستندة إلى SQL
@@ -291,7 +206,9 @@ keywords: ['ClickStack', 'observability', 'التنبيهات', 'search-alerts',
 
 أما أنواع المخططات الأخرى المستندة إلى SQL (جدول، مخطط دائري، خريطة حرارية، إلخ) فلا تدعم التنبيهات.
 
-### إنشاء تنبيه SQL {#create-sql-based-alert}
+<div id="create-sql-based-alert">
+  ### إنشاء تنبيه SQL
+</div>
 
 لإنشاء تنبيه لمخطط يستند إلى SQL:
 
@@ -301,15 +218,7 @@ keywords: ['ClickStack', 'observability', 'التنبيهات', 'search-alerts',
 
     اختر **خطي** أو **شريط متراكم** أو **رقم** كنوع العرض.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![إنشاء مخطط SQL](/images/use-cases/observability/open_sql_chart_mode.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/observability/open_sql_chart_mode.webp" alt="إنشاء مخطط SQL" size="lg" />
   </Step>
 
   <Step title="أضف التنبيه" id="add-sql-alert">
@@ -320,15 +229,7 @@ keywords: ['ClickStack', 'observability', 'التنبيهات', 'search-alerts',
     * **Interval**: عدد مرات تقييم التنبيه (1m أو 5m أو 15m أو 30m أو 1h أو 6h أو 12h أو 1d). ويحدِّد هذا أيضًا النافذة الزمنية لكل تقييم.
     * **Webhook**: قناة الإشعارات التي تُستخدم عند انطلاق التنبيه. راجع [إضافة webhook](#add-webhook).
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![تحرير تنبيه المخطط](/images/use-cases/observability/add_raw_sql_alert.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/observability/add_raw_sql_alert.webp" alt="تحرير تنبيه المخطط" size="lg" />
 
     <Warning>
       **النطاق الزمني للتنبيه**
@@ -407,13 +308,11 @@ WHERE request_count > 10
 
 في هذا الاستعلام، يُعدّ `ServiceName` عمودًا غير رقمي وليس عمود طابع زمني، لذا تُتَابَع كل خدمة بوصفها مجموعة تنبيه منفصلة. ويُطلق التنبيه بشكل مستقل لكل خدمة.
 
-#### اكتشاف الحالات الشاذة باستخدام المتوسط المتأخر (السلاسل الزمنية) {#example-anomaly-detection}
+<div id="example-anomaly-detection">
+  #### كشف الشذوذ باستخدام المتوسط المتأخر (السلاسل الزمنية)
+</div>
 
 أنشئ تنبيهًا عند زيادة عدد الأخطاء بما يتجاوز متوسطًا متحركًا بأكثر من انحرافين معياريين. يلتقط هذا الارتفاعات المفاجئة مقارنةً بالسلوك المعتاد مؤخرًا بدلًا من الاعتماد على عتبة ثابتة.
-
-<Tip>
-  في Managed ClickStack، تؤدي [تنبيهات اكتشاف الحالات الشاذة](/ar/clickstack/features/anomaly-detection) هذه المهمة دون الحاجة إلى SQL مخصّص، كما توفّر معاينة واختبارًا رجعيًا وقيمًا مرجعية لكل مجموعة. استخدم نهج SQL الموضّح أدناه عندما تحتاج إلى تحكّم كامل في حساب القيمة المرجعية، أو عند استخدام ClickStack Open Source.
-</Tip>
 
 ```sql
 WITH buckets AS (
@@ -456,7 +355,7 @@ WHERE ts >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
 ```
 
 **نوع العرض**: خطّي
-**العتبة**: `> 0` (يُفعَّل التنبيه عند رصد أخطاء تتجاوز خط الأساس المتحرك)
+**العتبة**: `> 0` (يُفعَّل التنبيه عند رصد أخطاء تتجاوز خط الأساس المتحرك)
 
 لاحظ أن الاستعلام يجلب 30 فترة *قبل* بداية نطاق التاريخ لتهيئة حسابات النافذة المتحركة، ثم يُصفّي الناتج النهائي ليقتصر على نافذة التقييم.
 
@@ -475,8 +374,3 @@ WHERE ts >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
 
 **أحداث المستخدمين:** يمكنك أيضًا إعداد تنبيهات للفرق التي تتعامل مباشرةً مع العملاء
 لتتلقى إشعارًا عند تسجيل مستخدمين جدد أو عند تنفيذ إجراء حرج من إجراءات المستخدم.
-
-**التغيرات غير المعتادة:** عندما لا تتوفر عتبة واضحة، كأن تتفاوت أعداد الأخطاء
-من خدمة إلى أخرى أو تتغير حركة المرور على مدار اليوم، استخدم
-[تنبيه اكتشاف الحالات الشاذة](/ar/clickstack/features/anomaly-detection) مجمّعًا حسب
-`ServiceName`.

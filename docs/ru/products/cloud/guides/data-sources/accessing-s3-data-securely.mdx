@@ -7,25 +7,21 @@ keywords: ['RBAC', 'Amazon S3', 'аутентификация']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 В этом руководстве показано, как клиенты ClickHouse Cloud могут использовать ролевой доступ для аутентификации в Amazon Simple Storage Service (S3) и безопасного доступа к своим данным.
 Прежде чем переходить к настройке безопасного доступа к S3, важно понять, как это работает. Ниже приведен обзор того, как сервисы ClickHouse могут получать доступ к приватным S3 бакетам, принимая на себя роль в аккаунте AWS клиента.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Обзор безопасного доступа к S3 с ClickHouse](/images/cloud/security/secures3.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/security/secures3.webp" size="lg" alt="Обзор безопасного доступа к S3 с ClickHouse" />
 
 <br />
 
 Этот подход позволяет клиентам управлять всем доступом к своим S3 бакетам в одном месте (в политике IAM для принимаемой роли), не просматривая все политики бакетов, чтобы добавить или удалить доступ.
 В разделе ниже вы узнаете, как это настроить.
 
-## Получение ARN роли IAM вашего сервиса ClickHouse {#obtaining-the-clickhouse-service-iam-role-arn}
+<div id="obtaining-the-clickhouse-service-iam-role-arn">
+  ## Получение ARN роли IAM вашего сервиса ClickHouse
+</div>
 
 1. Войдите в свой аккаунт ClickHouse Cloud.
 
@@ -37,15 +33,7 @@ doc_type: 'guide'
 
 5. Скопируйте значение **Service role ID (IAM)** для сервиса, как показано ниже.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Получение ARN роли IAM сервиса ClickHouse](/images/cloud/security/secures3_arn.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="Получение ARN роли IAM сервиса ClickHouse" border />
 
 <div id="setting-up-iam-assume-role">
   ## Настройка IAM Assume Role
@@ -93,15 +81,7 @@ IAM Assume Role можно настроить одним из двух спос�
 
 10. Скопируйте значение **RoleArn** для этой интеграции — оно потребуется для доступа к вашему S3 бакету.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Вывод стека CloudFormation с IAM Role ARN](/images/cloud/security/secures3_output.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/security/secures3_output.webp" size="lg" alt="Вывод стека CloudFormation с IAM Role ARN" border />
 
 <div id="option-2-manually-create-iam-role">
   ### Создайте роль IAM вручную
@@ -160,7 +140,9 @@ IAM Assume Role можно настроить одним из двух спос�
 
 4. После создания скопируйте новый **ARN роли IAM** — он понадобится для доступа к вашему **S3 бакету**.
 
-## Получите доступ к S3 бакету с ролью ClickHouseAccess {#access-your-s3-bucket-with-the-clickhouseaccess-role}
+<div id="access-your-s3-bucket-with-the-clickhouseaccess-role">
+  ## Получите доступ к S3 бакету с ролью ClickHouseAccess
+</div>
 
 ClickHouse Cloud позволяет указывать `extra_credentials` в табличной функции S3.
 Ниже приведён пример выполнения запроса с использованием только что созданной роли, скопированной выше.
@@ -171,7 +153,6 @@ DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWit
 
 Ниже приведён пример запроса, в котором `role_session_name` используется в качестве общего секрета для запроса данных из бакета.
 Если `role_session_name` указан неверно, эта операция завершится ошибкой.
-Поскольку `role_session_name` может выступать в роли общего секрета, ClickHouse, как и в случае с `external_id`, скрывает его значение, заменяя на `[HIDDEN]` в `system.query_log`, `SHOW CREATE TABLE` и везде, где отображается текст запроса.
 
 ```sql
 DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWithNames',extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001', role_session_name = 'secret-role-name'))
@@ -182,7 +163,9 @@ DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWit
   Подробнее см. в разделе [Тарифы S3](https://aws.amazon.com/s3/pricing/)
 </Note>
 
-## Расширенный контроль действий {#advanced-action-control}
+<div id="advanced-action-control">
+  ## Расширенный контроль действий
+</div>
 
 Для более строгого управления доступом можно ограничить политику бакета так, чтобы она принимала только запросы, поступающие через конечные точки VPC ClickHouse Cloud, с помощью [условия `aws:SourceVpce`](https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-bucket-policies-vpc-endpoint.html#example-bucket-policies-restrict-accesss-vpc-endpoint). Чтобы получить конечные точки VPC для вашего региона ClickHouse Cloud, откройте терминал и выполните:
 

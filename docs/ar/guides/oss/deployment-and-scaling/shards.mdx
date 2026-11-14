@@ -6,6 +6,8 @@ keywords: ['شظية', 'شظايا', 'التشذير', 'نسخة متماثلة'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 <br />
 
 <Note>
@@ -18,29 +20,13 @@ doc_type: 'guide'
 
 في مجموعات ClickHouse التقليدية ذات معمارية [shared-nothing](https://en.wikipedia.org/wiki/Shared-nothing_architecture)، يُستخدم التشذير عندما ① تكون البيانات أكبر من أن يستوعبها خادم واحد، أو ② يكون الخادم الواحد بطيئًا جدًا في معالجة البيانات. يوضّح الشكل التالي الحالة ①، حيث يتجاوز جدول [uk&#95;price&#95;paid&#95;simple](/ar/concepts/core-concepts/parts) سعة جهاز واحد:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![SHARDS](/images/managing-data/core-concepts/shards_01.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/shards_01.webp" size="lg" alt="SHARDS" />
 
 <br />
 
 في هذه الحالة، يمكن تقسيم البيانات عبر عدة خوادم ClickHouse على شكل شظايا جدول:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![SHARDS](/images/managing-data/core-concepts/shards_02.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/shards_02.webp" size="lg" alt="SHARDS" />
 
 <br />
 
@@ -73,15 +59,7 @@ ENGINE = Distributed('test_cluster', 'uk', 'uk_price_paid_simple', rand())
 
 يوضح المخطط أدناه كيفية معالجة عمليات INSERT إلى جدول موزّع في ClickHouse:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![SHARDS](/images/managing-data/core-concepts/shards_03.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/shards_03.webp" size="lg" alt="SHARDS" />
 
 <br />
 
@@ -97,15 +75,7 @@ ENGINE = Distributed('test_cluster', 'uk', 'uk_price_paid_simple', rand())
 
 يوضح هذا المخطط كيفية معالجة استعلامات `SELECT` باستخدام جدول موزّع في ClickHouse:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![SHARDS](/images/managing-data/core-concepts/shards_04.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/shards_04.webp" size="lg" alt="SHARDS" />
 
 <br />
 
@@ -125,15 +95,7 @@ ENGINE = Distributed('test_cluster', 'uk', 'uk_price_paid_simple', rand())
 
 يوضح المخطط التالي عنقود ClickHouse يضم ستة خوادم، حيث إن الشظيتين `Shard-1` و`Shard-2` من الجدول، اللتين قُدِّمتا سابقًا، تمتلك كلٌّ منهما ثلاث نسخ متماثلة. ويُرسَل استعلام إلى هذا العنقود:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![SHARDS](/images/managing-data/core-concepts/shards_replicas_01.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/shards_replicas_01.webp" size="lg" alt="SHARDS" />
 
 <br />
 

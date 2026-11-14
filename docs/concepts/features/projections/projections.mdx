@@ -1,12 +1,14 @@
 ---
 slug: /data-modeling/projections
 title: 'Projections'
-description: 'Page describing what projections are, how they can be used to improve query performance, and how they differ from materialized views.'
+description: 'Page describing what projections are, how they can be used to improve
+query performance, and how they differ from materialized views.'
 keywords: ['projection', 'projections', 'query optimization']
 sidebar_order: 1
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
 import { RunnableCode } from "/snippets/components/RunnableCode/RunnableCode.jsx";
 
 ## Introduction {#introduction}
@@ -47,15 +49,7 @@ ClickHouse automatically samples the primary keys and chooses a table that can
 generate the same correct result, but requires the least amount of data to be 
 read as shown in the figure below:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Projections in ClickHouse](/images/data-modeling/projections_1.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/data-modeling/projections_1.webp" size="md" alt="Projections in ClickHouse"/>
 
 ### Smarter storage with `_part_offset` {#smarter_storage_with_part_offset}
 
@@ -316,15 +310,7 @@ becomes `AggregatingMergeTree`, and all aggregate functions are converted to
 The figure below is a visualization of the main table `uk_price_paid_with_projections`
 and its two projections:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Visualization of the main table uk_price_paid_with_projections and its two projections](/images/data-modeling/projections_2.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/data-modeling/projections_2.webp" size="md" alt="Visualization of the main table uk_price_paid_with_projections and its two projections"/>
 
 If we now run the query that lists the counties in London for the three highest 
 paid prices again, we see an improvement in query performance:
@@ -429,28 +415,21 @@ INSERT INTO uk.uk_price_paid_with_projections_v2 SELECT * FROM uk.uk_price_paid;
 
 #### Build a Projection {#build-projection}
 
-Let's create an aggregate projection by the dimensions `year`, `district`, and `town`.
-The projection groups sales by the year of each sale, so we materialize that
-expression as a column to make it referable by filters:
-
-```sql
-ALTER TABLE uk.uk_price_paid_with_projections_v2
-    ADD COLUMN year UInt16 MATERIALIZED toYear(date)
-```
+Let's create an aggregate projection by the dimensions `toYear(date)`, `district`, and `town`:
 
 ```sql
 ALTER TABLE uk.uk_price_paid_with_projections_v2
     ADD PROJECTION projection_by_year_district_town
     (
         SELECT
-            year,
+            toYear(date),
             district,
             town,
             avg(price),
             sum(price),
             count()
         GROUP BY
-            year,
+            toYear(date),
             district,
             town
     )
@@ -471,7 +450,7 @@ The following queries contrast performance with and without projections. To disa
 <RunnableCode>
 ```sql
 SELECT
-    year,
+    toYear(date) AS year,
     round(avg(price)) AS price,
     bar(price, 0, 1000000, 80)
 FROM uk.uk_price_paid_with_projections_v2
@@ -483,7 +462,7 @@ SETTINGS optimize_use_projections=0
 <RunnableCode>
 ```sql
 SELECT
-    year,
+    toYear(date) AS year,
     round(avg(price)) AS price,
     bar(price, 0, 1000000, 80)
 FROM uk.uk_price_paid_with_projections_v2
@@ -499,7 +478,7 @@ The results should be the same, but the performance better on the latter example
 <RunnableCode>
 ```sql
 SELECT
-    year,
+    toYear(date) AS year,
     round(avg(price)) AS price,
     bar(price, 0, 2000000, 100)
 FROM uk.uk_price_paid_with_projections_v2
@@ -512,7 +491,7 @@ SETTINGS optimize_use_projections=0
 <RunnableCode>
 ```sql
 SELECT
-    year,
+    toYear(date) AS year,
     round(avg(price)) AS price,
     bar(price, 0, 2000000, 100)
 FROM uk.uk_price_paid_with_projections_v2
@@ -523,7 +502,7 @@ ORDER BY year ASC
 </RunnableCode>
 #### Query 3. The most expensive neighborhoods {#most-expensive-neighborhoods-projections}
 
-The filter for rows from 2020 onwards references the stored projection dimension `year` directly:
+The condition (date >= '2020-01-01') needs to be modified so that it matches the projection dimension (`toYear(date) >= 2020)`:
 
 <RunnableCode>
 ```sql
@@ -534,7 +513,7 @@ SELECT
     round(avg(price)) AS price,
     bar(price, 0, 5000000, 100)
 FROM uk.uk_price_paid_with_projections_v2
-WHERE year >= 2020
+WHERE toYear(date) >= 2020
 GROUP BY
     town,
     district
@@ -553,7 +532,7 @@ SELECT
     round(avg(price)) AS price,
     bar(price, 0, 5000000, 100)
 FROM uk.uk_price_paid_with_projections_v2
-WHERE year >= 2020
+WHERE toYear(date) >= 2020
 GROUP BY
     town,
     district
@@ -563,13 +542,6 @@ LIMIT 100
 ```
 </RunnableCode>
 Again, the result is the same but notice the improvement in query performance for the 2nd query.
-
-<Note>
-The filter must reference the stored dimension `year` directly. Writing
-`WHERE toYear(date) >= 2020` doesn't use the projection: the optimizer rewrites
-the condition into a range on `date`, and the projection doesn't store a `date`
-column, so ClickHouse falls back to scanning the base table.
-</Note>
 
 ### Combining projections in one query {#combining-projections}
 

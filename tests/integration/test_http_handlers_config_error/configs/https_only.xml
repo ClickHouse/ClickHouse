@@ -1,0 +1,19 @@
+<clickhouse>
+    <!-- The certificate, key and DH parameters are copied into `config.d/` by the harness as
+         `main_configs` entries, so they are already in place when this file is added. -->
+    <openSSL>
+        <server>
+            <certificateFile>/etc/clickhouse-server/config.d/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/server.key</privateKeyFile>
+            <dhParamsFile>/etc/clickhouse-server/config.d/dhparam.pem</dhParamsFile>
+            <verificationMode>none</verificationMode>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+        </server>
+    </openSSL>
+    <https_port>8443</https_port>
+    <!-- Removing `http_port` leaves HTTPS as the only listener that reads `<http_handlers>`, so a
+         failure can only be attributed to the HTTPS path. -->
+    <http_port remove="remove"></http_port>
+</clickhouse>

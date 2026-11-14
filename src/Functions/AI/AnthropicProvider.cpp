@@ -1,7 +1,5 @@
 #include <Functions/AI/AnthropicProvider.h>
 #include <IO/HTTPCommon.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
 
 #include <Poco/Net/HTTPRequest.h>
@@ -97,15 +95,18 @@ void AnthropicProvider::call(const AIChatRequest & ai_request, const ConnectionT
         http_request.set(header.name, header.value);
     http_request.setContentLength(body.size());
 
-    auto request_body = sendHTTPRequest(*session, http_request);
-    writeString(body, *request_body);
-    request_body->finalize();
+    auto & out_stream = session->sendRequest(http_request);
+    out_stream << body;
 
     Poco::Net::HTTPResponse http_response;
-    auto response_stream = receiveHTTPResponse(*session, http_response);
+    auto & in_stream = session->receiveResponse(http_response);
 
     String response_body;
-    readStringUntilEOF(response_body, *response_stream);
+    {
+        std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        ss << in_stream.rdbuf();
+        response_body = std::move(ss).str();
+    }
 
     auto status = http_response.getStatus();
     if (status != Poco::Net::HTTPResponse::HTTP_OK)
@@ -127,11 +128,6 @@ void AnthropicProvider::call(const AIChatRequest & ai_request, const ConnectionT
         {
             response.input_tokens = usage->optValue<UInt64>("input_tokens", 0);
             response.output_tokens = usage->optValue<UInt64>("output_tokens", 0);
-            response.cache_read_tokens = usage->optValue<UInt64>("cache_read_input_tokens", 0);
-            response.cache_write_tokens = usage->optValue<UInt64>("cache_creation_input_tokens", 0);
-
-            /// Anthropic reports uncached input separately from cache reads and writes.
-            response.input_tokens += response.cache_read_tokens + response.cache_write_tokens;
         }
     }
 

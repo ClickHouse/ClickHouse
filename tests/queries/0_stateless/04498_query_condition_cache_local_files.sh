@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-fasttest, no-parallel
+# Tag no-fasttest: needs Parquet
 # Tag no-parallel: asserts `QueryConditionCacheHits` on the instance-wide query condition cache.
 # A parallel sibling test can wipe that cache at any moment: dropping or renaming any UUID-less
 # (path-keyed) `MergeTree` table calls `Context::clearCaches`, which clears the query condition

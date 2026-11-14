@@ -16,11 +16,9 @@ public:
     static const ColumnWithTypeAndName rows_in_granule_column;
     static const Block virtuals_sample_block;
 
-    /// `source_metadata_snapshot_` must be the metadata `columns` were built from.
     StorageMergeTreeIndex(
         const StorageID & table_id_,
         const StoragePtr & source_table_,
-        const StorageMetadataPtr & source_metadata_snapshot_,
         const ColumnsDescription & columns,
         bool with_marks_,
         bool with_minmax_);
@@ -46,9 +44,6 @@ private:
     bool with_marks;
     bool with_minmax;
 
-    /// The source metadata the exposed columns, `key_sample_block` and `minmax_sample_block` are built from. The access
-    /// check in `readImpl` resolves subcolumns against it, so it authorizes the columns this storage actually returns.
-    StorageMetadataPtr source_metadata_snapshot;
     MergeTreeData::DataPartsVector data_parts;
     SharedHeader key_sample_block;
     SharedHeader minmax_sample_block;

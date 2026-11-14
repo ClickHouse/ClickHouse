@@ -1,5 +1,4 @@
 #include <Common/StringUtils.h>
-#include <Formats/FormatSettings.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>
@@ -137,7 +136,7 @@ SerializationPtr DataTypeMap::doGetSerialization(const SerializationInfoSettings
     /// Instead, reuse already created serializations for keys and values.
     auto key_serialization_named = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(key_serialization, "keys", SubstreamType::TupleElement));
     auto value_serialization_named = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(value_serialization, "values", SubstreamType::TupleElement));
-    auto nested_serialization = SerializationArray::create(SerializationTuple::create(SerializationTuple::ElementSerializations{key_serialization_named, value_serialization_named}, DataTypes{key_type, value_type}, true));
+    auto nested_serialization = SerializationArray::create(SerializationTuple::create(SerializationTuple::ElementSerializations{key_serialization_named, value_serialization_named}, true));
     return SerializationMap::create(key_serialization, value_serialization, nested_serialization, settings.map_serialization_version);
 }
 
@@ -173,14 +172,17 @@ void DataTypeMap::updateHashImpl(SipHash & hash) const
     value_type->updateHash(hash);
 }
 
-DataTypePtr DataTypeMap::doCloneWithChildren(const DataTypes & new_children) const
+void DataTypeMap::forEachChild(const DB::IDataType::ChildCallback & callback) const
 {
-    return std::make_shared<DataTypeMap>(new_children[0], new_children[1]);
+    callback(*key_type);
+    callback(*value_type);
+    key_type->forEachChild(callback);
+    value_type->forEachChild(callback);
 }
 
 /// Resolves a dynamic subcolumn like `map['key']` by parsing the key from the subcolumn name,
-/// creating a `SerializationMapKeyValue` that reads the bucket of the key (the whole Map when the key
-/// has a float zero), and optionally pre-extracting the values from an existing column.
+/// creating a `SerializationMapKeyValue` that knows how to read only the relevant bucket,
+/// and optionally pre-extracting the values from an existing column.
 /// The subcolumn name must start with "key_" followed by the text-serialized key value.
 std::unique_ptr<IDataType::SubcolumnInfo> DataTypeMap::getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t /*initial_array_level*/, bool throw_if_null) const
 {
@@ -208,23 +210,14 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeMap::getDynamicSubcolumnInfo(s
         return nullptr;
     }
 
-    /// Create a serialization that reads the bucket containing the requested key.
-    auto map_serialization_ptr = removeNamedSerialization(data.serialization);
-    const auto & map_serialization = assert_cast<const SerializationMap &>(*map_serialization_ptr);
-
-    /// The bucket of a key is the hash of its bits. The two zeros are equal, but their bits differ,
-    /// so the other zero may be in another bucket. A key with a float zero at any depth, e.g. in a `Tuple`
-    /// or in a path of a `JSON`, reads the whole Map.
-    bool read_whole_map = map_serialization.getMapSerializationVersion() == MergeTreeMapSerializationVersion::WITH_BUCKETS
-        && anyFieldSatisfies((*key_column)[0], isFloatZeroField);
-
+    /// Create a serialization that reads only the bucket containing the requested key.
+    const auto & map_serialization = assert_cast<const SerializationMap &>(*removeNamedSerialization(data.serialization));
     auto key_value_serialization = SerializationMapKeyValue::create(
         map_serialization.getValueSerialization(),
-        read_whole_map ? map_serialization_ptr : map_serialization.getNestedSerialization(),
+        map_serialization.getNestedSerialization(),
         map_serialization.getMapSerializationVersion(),
         key_column->getPtr(),
-        read_whole_map ? getPtr() : nested,
-        read_whole_map);
+        nested);
     auto res = std::make_unique<SubcolumnInfo>();
     res->data = SubstreamData(key_value_serialization).withType(value_type);
 
@@ -262,7 +255,7 @@ void registerDataTypeMap(DataTypeFactory & factory)
 {
     factory.registerDataType("Map", create, DataTypeFactory::Case::Sensitive, Documentation{
             .description = R"DOCS_MD(
-Data type `Map(K, V)` stores key-value pairs. It can also be written as `MAP(K, V)`.
+Data type `Map(K, V)` stores key-value pairs.
 
 Unlike other databases, maps are not unique in ClickHouse, i.e. a map can contain two elements with the same key.
 (The reason for that is that maps are internally implemented as `Array(Tuple(K, V))`.)

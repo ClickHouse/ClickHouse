@@ -1,4 +1,3 @@
-#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
@@ -17,9 +16,10 @@ extern const int LOGICAL_ERROR;
 namespace
 {
 
-bool byteSizeAtCanUnderestimateGrowth(const IColumn & column)
+bool hasNonAdditiveByteSizeAt(const IColumn & column)
 {
-    if (column.getDataType() == TypeIndex::AggregateFunction
+    if (column.getDataType() == TypeIndex::LowCardinality
+        || column.getDataType() == TypeIndex::AggregateFunction
         || column.isReplicated()
         || column.hasDynamicStructure())
         return true;
@@ -27,7 +27,7 @@ bool byteSizeAtCanUnderestimateGrowth(const IColumn & column)
     bool result = false;
     column.forEachSubcolumn([&](const ColumnPtr & subcolumn)
     {
-        result = result || byteSizeAtCanUnderestimateGrowth(*subcolumn);
+        result = result || hasNonAdditiveByteSizeAt(*subcolumn);
     });
     return result;
 }
@@ -37,8 +37,8 @@ bool byteSizeAtCanUnderestimateGrowth(const IColumn & column)
 void MergedData::initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs)
 {
     columns = header.cloneEmptyColumns();
-    VectorWithMemoryTracking<VectorWithMemoryTracking<ColumnPtr>> source_columns(columns.size());
-    VectorWithMemoryTracking<bool> is_replicated(columns.size());
+    std::vector<VectorWithMemoryTracking<ColumnPtr>> source_columns(columns.size());
+    std::vector<bool> is_replicated(columns.size());
     for (const auto & input : inputs)
     {
         if (!input.chunk)
@@ -228,8 +228,6 @@ Chunk MergedData::pull()
         empty_columns.emplace_back(column->cloneEmpty());
 
     empty_columns.swap(columns);
-    for (auto & column : empty_columns)
-        finishMergedReplicatedColumn(column);
     Chunk chunk(std::move(empty_columns), merged_rows);
 
     merged_rows = 0;
@@ -301,19 +299,16 @@ size_t MergedData::rowsToInsertBeforeFlush(
         }
     }
 
-    if (!max_block_size_bytes || rows_to_insert == 1)
+    if (!max_block_size_bytes)
         return rows_to_insert;
 
     chassert(columns.size() == raw_columns.size());
 
-    /// The sum of `IColumn::byteSizeAt` over the source rows can arbitrarily underestimate how much
-    /// the destination grows for aggregate states (their data is copied into the destination arena)
-    /// and dynamic columns (the destination adds defaults for paths missing in the source), so let
-    /// `hasEnoughRows` measure the actual size after inserting one row. For `LowCardinality` the sum
-    /// is a close, mostly pessimistic estimate: a repeated value adds just an index entry.
+    /// `byteSizeAt` is not additive for dictionary/index-backed columns, so let
+    /// `hasEnoughRows` measure the actual size after inserting one row.
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        if (byteSizeAtCanUnderestimateGrowth(*columns[i]) || byteSizeAtCanUnderestimateGrowth(*raw_columns[i]))
+        if (hasNonAdditiveByteSizeAt(*columns[i]) || hasNonAdditiveByteSizeAt(*raw_columns[i]))
             return 1;
     }
 

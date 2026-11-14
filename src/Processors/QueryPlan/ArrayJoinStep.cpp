@@ -1,8 +1,4 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
-#include <Formats/FormatSettings.h>
-#include <DataTypes/DataTypeArray.h>
-#include <Functions/IFunctionAdaptors.h>
-#include <Functions/array/emptyArrayToSingle.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -12,14 +8,13 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
-#include <IO/ReadHelpers.h>
 #include <Common/JSONBuilder.h>
 namespace DB
 {
 
 namespace QueryPlanSerializationSetting
 {
-    extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsUInt64 max_block_size;
 }
 
 static ITransformingStep::Traits getTraits()
@@ -52,69 +47,6 @@ ArrayJoinStep::ArrayJoinStep(const SharedHeader & input_header_, ArrayJoin array
 void ArrayJoinStep::updateOutputHeader()
 {
     output_header = std::make_shared<const Block>(ArrayJoinTransform::transformHeader(*input_headers.front(), array_join.columns));
-}
-
-std::optional<ActionsDAG> ArrayJoinStep::toActionsDAG() const
-{
-    if (is_unaligned)
-        return {};
-
-    ActionsDAG dag(getInputHeaders().front()->getNamesAndTypesList());
-    for (const auto & name : array_join.columns)
-    {
-        const auto * array = &dag.findInOutputs(name);
-        if (array_join.is_left)
-        {
-            if (!isArray(array->result_type))
-                return {};
-            array = &dag.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(FunctionEmptyArrayToSingle::createImpl()), {array}, {});
-        }
-        /// the alias keeps the column name, the index still sees arrayJoin(col)
-        dag.addOrReplaceInOutputs(dag.addAlias(dag.addArrayJoin(*array, {}), name));
-    }
-    return dag;
-}
-
-NameSet ArrayJoinStep::getReadColumns() const
-{
-    NameSet names(array_join.columns.begin(), array_join.columns.end());
-    if (element_filter)
-        for (const auto & name : element_filter->getRequiredColumnsNames())
-            names.insert(name);
-    return names;
-}
-
-bool ArrayJoinStep::canRemoveUnusedColumns() const
-{
-    /// The step finds the columns it reads by name.
-    const auto & header = *input_headers.front();
-    return std::ranges::all_of(getReadColumns(), [&](const String & name)
-    {
-        return std::ranges::count_if(header, [&](const auto & column) { return column.name == name; }) == 1;
-    });
-}
-
-IQueryPlanStep::UnneededInputPositions ArrayJoinStep::getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
-{
-    auto unneeded = unneeded_output_positions;
-    for (const auto & name : getReadColumns())
-        std::erase(unneeded, input_headers.front()->getPositionByName(name));
-    return {std::move(unneeded)};
-}
-
-IQueryPlanStep::RemoveUnusedColumnsResult
-ArrayJoinStep::removeUnusedColumns(const std::vector<size_t> & /*unneeded_output_positions*/, const std::vector<PrunedInput> & inputs)
-{
-    const auto & pruned = inputs.at(0);
-
-    RemoveUnusedColumnsResult result;
-    result.dropped_output_positions = pruned.dropped_positions;
-    result.step_changed = !blocksHaveEqualStructure(*input_headers.front(), *pruned.header);
-
-    if (result.step_changed)
-        updateInputHeader(pruned.header, 0);
-
-    return result;
 }
 
 void ArrayJoinStep::setElementFilter(ActionsDAG filter_dag, String filter_column_name, bool remove_filter_column)
@@ -201,9 +133,8 @@ void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings,
 
 void ArrayJoinStep::serialize(Serialization & ctx) const
 {
-    /// The filter is serialized locally (e.g. calculateHashTableCacheKeys) and in plan fragments of plan-based
-    /// parallel replicas, which go only to replicas at `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS`
-    /// or later, which can read it. Fusion bails for distributed and serialized plans, so an older worker never receives it
+    /// The filter is only ever serialized locally (e.g. calculateHashTableCacheKeys); fusion bails for
+    /// distributed/serialized plans, so an older worker never receives it and no version bump is needed
     const bool serialize_filter = element_filter.has_value();
 
     UInt8 flags = 0;
@@ -225,26 +156,12 @@ void ArrayJoinStep::serialize(Serialization & ctx) const
 
     writeVarUInt(array_join.columns.size(), ctx.out);
     for (const auto & column : array_join.columns)
-    {
-        /// An array-joined column is named by the plan that built it (`__table1.arr` inside a shipped
-        /// fragment, `__table2.arr` outside it), so a cache key takes its position in the input header
-        /// instead - the same column sits in the same place in every build.
-        if (ctx.for_cache_key)
-        {
-            const auto & header = *getInputHeaders().front();
-            writeVarUInt(header.has(column) ? header.getPositionByName(column) : header.columns(), ctx.out);
-        }
-        else
-            writeStringBinary(column, ctx.out);
-    }
+        writeStringBinary(column, ctx.out);
 
     if (serialize_filter)
     {
-        if (ctx.for_cache_key)
-            writeIntBinary(element_filter->getOutputIdentity(element_filter_column_name, ctx.input_header), ctx.out);
-        else
-            writeStringBinary(element_filter_column_name, ctx.out);
-        element_filter->serialize(ctx.out, ctx.registry, ctx.input_header);
+        writeStringBinary(element_filter_column_name, ctx.out);
+        element_filter->serialize(ctx.out, ctx.registry);
     }
 }
 

@@ -12,11 +12,15 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estos ajustes configuran el servidor de ClickHouse y se generan automáticamente a partir del código fuente de ClickHouse.
 
-## encryption_header_cache_policy {#encryption_header_cache_policy}
+<div id="encryption_header_cache_policy">
+  ## encryption_header_cache_policy
+</div>
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nombre de la política de desalojo de la caché de encabezados de cifrado. Valores posibles: `LRU`, `SLRU`, `SIEVE`.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nombre de la política de la caché de encabezados de cifrado.
 
-## encryption_header_cache_size {#encryption_header_cache_size}
+<div id="encryption_header_cache_size">
+  ## encryption_header_cache_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="52428800" changeable_without_restart="Yes" />
 
@@ -26,7 +30,9 @@ Tamaño máximo de la caché de encabezados de cifrado leídos de archivos cifra
   Esta configuración puede modificarse en tiempo de ejecución y surtirá efecto de inmediato.
 </Note>
 
-## encryption_header_cache_size_ratio {#encryption_header_cache_size_ratio}
+<div id="encryption_header_cache_size_ratio">
+  ## encryption_header_cache_size_ratio
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />El tamaño de la cola protegida (en el caso de la política SLRU) de la caché de encabezados de cifrado con respecto al tamaño total de la caché.
 

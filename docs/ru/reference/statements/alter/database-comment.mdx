@@ -11,13 +11,17 @@ doc_type: 'reference'
 
 Добавляет, изменяет или удаляет комментарий к базе данных независимо от того, был ли он задан ранее. Изменение комментария отражается как в [`system.databases`](/ru/reference/system-tables/databases), так и в запросе `SHOW CREATE DATABASE`.
 
-## Синтаксис {#syntax}
+<div id="syntax">
+  ## Синтаксис
+</div>
 
 ```sql
 ALTER DATABASE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 ```
 
-## Примеры {#examples}
+<div id="examples">
+  ## Примеры
+</div>
 
 Чтобы создать `DATABASE` с комментарием:
 
@@ -67,7 +71,9 @@ WHERE  name = 'database_with_comment';
 └─────────┘
 ```
 
-## Связанные материалы {#related-content}
+<div id="related-content">
+  ## Связанные материалы
+</div>
 
 * предложение [`COMMENT`](/ru/reference/statements/create/table#comment-clause)
 * [`ALTER TABLE ... MODIFY COMMENT`](/ru/reference/statements/alter/comment)

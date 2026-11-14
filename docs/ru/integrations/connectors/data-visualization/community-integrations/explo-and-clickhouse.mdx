@@ -10,6 +10,7 @@ integration:
   - category: 'data_visualization'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
 import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
 
 import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
@@ -24,15 +25,7 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
 
 В этом руководстве вы подключите данные из ClickHouse к Explo и визуализируете результаты. Диаграмма будет выглядеть так:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![панель мониторинга Explo](/images/integrations/data-visualization/explo_15.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="панель мониторинга Explo" />
 
 <p />
 
@@ -52,75 +45,27 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
 
     2. На левой боковой панели нажмите вкладку **Data** в Explo.
 
-    <div className="ch-image-sm">
-
-    <Frame>
-
-    ![Вкладка Data](/images/integrations/data-visualization/explo_01.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-visualization/explo_01.webp" size="sm" alt="Вкладка Data" border />
 
     3. В правом верхнем углу нажмите **Connect Data Source**.
 
-    <div className="ch-image-sm">
-
-    <Frame>
-
-    ![Connect Data Source](/images/integrations/data-visualization/explo_02.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-visualization/explo_02.webp" size="sm" alt="Connect Data Source" border />
 
     4. Заполните информацию на странице **Getting Started**
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Getting Started](/images/integrations/data-visualization/explo_03.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-visualization/explo_03.webp" size="md" alt="Getting Started" border />
 
     5. Выберите **ClickHouse**
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![ClickHouse](/images/integrations/data-visualization/explo_04.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-visualization/explo_04.webp" size="md" alt="ClickHouse" border />
 
     6. Введите **учётные данные ClickHouse**.
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Учётные данные](/images/integrations/data-visualization/explo_05.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-visualization/explo_05.webp" size="md" alt="Учётные данные" border />
 
     7. Настройте **Security**
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Security](/images/integrations/data-visualization/explo_06.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-visualization/explo_06.webp" size="md" alt="Security" border />
 
     8. В ClickHouse **добавьте IP-адреса Explo в список разрешённых**.
        `54.211.43.19, 52.55.98.121, 3.214.169.94 и 54.156.141.148`
@@ -129,39 +74,15 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
   <Step title="Создайте панель мониторинга" id="3-create-a-dashboard">
     1. Перейдите на вкладку **панель мониторинга** на левой панели навигации.
 
-    <div className="ch-image-sm">
-
-    <Frame>
-
-    ![Панель мониторинга](/images/integrations/data-visualization/explo_07.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-visualization/explo_07.webp" size="sm" alt="Панель мониторинга" border />
 
     2. В правом верхнем углу нажмите **Create Dashboard** и задайте имя панели мониторинга. Теперь панель мониторинга создана!
 
-    <div className="ch-image-sm">
-
-    <Frame>
-
-    ![Create Dashboard](/images/integrations/data-visualization/explo_08.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-visualization/explo_08.webp" size="sm" alt="Create Dashboard" border />
 
     3. Теперь вы должны увидеть экран, похожий на этот:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![панель мониторинга Explo](/images/integrations/data-visualization/explo_09.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-visualization/explo_09.webp" size="md" alt="панель мониторинга Explo" border />
   </Step>
 
   <Step title="Выполните SQL-запрос" id="4-run-a-sql-query">
@@ -169,89 +90,33 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
        `SELECT * FROM YOUR_TABLE_NAME
        LIMIT 100`
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![панель мониторинга Explo](/images/integrations/data-visualization/explo_10.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-visualization/explo_10.webp" size="md" alt="панель мониторинга Explo" border />
 
     2. Теперь нажмите **Run** и перейдите на вкладку preview, чтобы увидеть свои данные.
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![панель мониторинга Explo](/images/integrations/data-visualization/explo_11.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-visualization/explo_11.webp" size="md" alt="панель мониторинга Explo" border />
   </Step>
 
   <Step title="Создайте диаграмму" id="5-build-a-chart">
     1. Слева перетащите значок столбчатой диаграммы на экран.
 
-    <div className="ch-image-sm">
-
-    <Frame>
-
-    ![панель мониторинга Explo](/images/integrations/data-visualization/explo_16.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-visualization/explo_16.webp" size="sm" alt="панель мониторинга Explo" border />
 
     2. Выберите набор данных. Теперь вы должны увидеть экран, похожий на следующий:
 
-    <div className="ch-image-sm">
-
-    <Frame>
-
-    ![панель мониторинга Explo](/images/integrations/data-visualization/explo_12.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-visualization/explo_12.webp" size="sm" alt="панель мониторинга Explo" border />
 
     3. Укажите **графство** для оси X, а **Price** — в разделе оси Y, как показано ниже:
 
-    <div className="ch-image-sm">
-
-    <Frame>
-
-    ![панель мониторинга Explo](/images/integrations/data-visualization/explo_13.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-visualization/explo_13.webp" size="sm" alt="панель мониторинга Explo" border />
 
     4. Теперь измените aggregation на **AVG**.
 
-    <div className="ch-image-sm">
-
-    <Frame>
-
-    ![панель мониторинга Explo](/images/integrations/data-visualization/explo_14.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-visualization/explo_14.webp" size="sm" alt="панель мониторинга Explo" border />
 
     5. Теперь у нас есть средняя цена домов с разбивкой по графствам!
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![панель мониторинга Explo](/images/integrations/data-visualization/explo_15.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="панель мониторинга Explo" />
   </Step>
 </Steps>
 

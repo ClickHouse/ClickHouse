@@ -12,6 +12,8 @@ integration:
 keywords: ['vector', 'ログ収集', 'オブザーバビリティ', 'データインジェスト', 'パイプライン']
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -111,15 +113,7 @@ ClickHouse は、優れた圧縮率 (ログで最大 [170 倍](https://clickhous
     SELECT * FROM nginxdb.access_logs
     ```
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![ClickHouseのログをテーブル形式で表示](/images/integrations/data-ingestion/etl-tools/vector_01.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-ingestion/etl-tools/vector_01.webp" size="lg" border alt="ClickHouseのログをテーブル形式で表示" />
   </Step>
 
   <Step title="ログの解析" id="4-parse-the-logs">
@@ -222,15 +216,7 @@ ClickHouse は、優れた圧縮率 (ログで最大 [170 倍](https://clickhous
     SELECT * FROM nginxdb.access_logs_view
     ```
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![解析済みのClickHouseログをテーブル形式で表示](/images/integrations/data-ingestion/etl-tools/vector_02.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-ingestion/etl-tools/vector_02.webp" size="lg" border alt="解析済みのClickHouseログをテーブル形式で表示" />
 
     <Note>
       上のレッスンではデータを2つのテーブルに保存しましたが、最初の`nginxdb.access_logs`テーブルを[`Null`](/ja/reference/engines/table-engines/special/null)テーブルエンジンに変更することもできます。

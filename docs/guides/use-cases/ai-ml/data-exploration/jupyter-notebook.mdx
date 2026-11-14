@@ -2,10 +2,12 @@
 slug: /use-cases/AI/jupyter-notebook
 sidebarTitle: 'Exploring data with Jupyter notebooks and chDB'
 title: 'Exploring data with Jupyter notebooks and chDB'
-description: 'This guide explains how to setup and use chDB to explore data from ClickHouse Cloud or local files in Jupyter notebooks'
-keywords: ['ML', 'Jupyter', 'chDB', 'pandas']
+description: 'This guide explains how to setup and use chDB to explore data from ClickHouse Cloud or local files in Jupyer notebooks'
+keywords: ['ML', 'Jupyer', 'chDB', 'pandas']
 doc_type: 'guide'
 ---
+
+import { Image } from "/snippets/components/Image.jsx";
 
 In this guide, you will learn how you can explore a dataset on ClickHouse Cloud data in Jupyter notebook with the help of [chDB](/chdb/index) - a fast in-process SQL OLAP Engine powered by ClickHouse.
 
@@ -33,39 +35,15 @@ To add this dataset to an existing ClickHouse Cloud service, login to [console.c
 
 In the left hand menu, click on `Data sources`. Then click `Predefined sample data`:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Add example data set](/images/use-cases/AI_ML/jupyter/1.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/1.webp" alt="Add example data set"/>
 
 Select `Get started` in the UK property price paid data (4GB) card: 
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Select UK price paid dataset](/images/use-cases/AI_ML/jupyter/2.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/2.webp" alt="Select UK price paid dataset"/>
 
 Then click `Import dataset`:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Import UK price paid dataset](/images/use-cases/AI_ML/jupyter/3.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/3.webp" alt="Import UK price paid dataset"/>
 
 ClickHouse will automatically create the `pp_complete` table in the `default` database and fill the table with 28.92 million rows of price point data.
 
@@ -98,28 +76,12 @@ jupyter notebook
 A new browser window should open with the Jupyter interface on `localhost:8888`.
 Click `File` > `New` > `Notebook` to create a new Notebook.
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Create a new notebook](/images/use-cases/AI_ML/jupyter/4.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/4.webp" alt="Create a new notebook"/>
 
 You will be prompted to select a kernel.
 Select any Python kernel available to you, in this example we will select the `ipykernel`:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Select kernel](/images/use-cases/AI_ML/jupyter/5.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/5.webp" alt="Select kernel"/>
 
 In a blank cell, you can type the following command to install chDB which we will be using connect to our remote ClickHouse Cloud instance:
 
@@ -196,15 +158,7 @@ The result is then stored as a DataFrame in a variable called `df`.
 
 `df.head` displays only the first few rows of the returned data:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![dataframe preview](/images/use-cases/AI_ML/jupyter/6.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/6.webp" alt="dataframe preview"/>
 
 Run the following command in a new cell to check the types of the columns:
 
@@ -241,15 +195,7 @@ plt.tight_layout()
 plt.show()
 ```
 
-<div className="ch-image-md">
-
-<Frame>
-
-![dataframe preview](/images/use-cases/AI_ML/jupyter/7.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/7.webp" alt="dataframe preview"/>
 
 Perhaps unsurprisingly, property prices in London have increased substantially over time.
 
@@ -305,15 +251,7 @@ ORDER BY year;
 ```
 </Accordion>
 
-<div className="ch-image-md">
-
-<Frame>
-
-![dataframe preview](/images/use-cases/AI_ML/jupyter/8.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/8.webp" alt="dataframe preview"/>
 
 Although we're missing data from 2020 onwards, we can plot the two datasets against each other for the years 1995 to 2019.
 In a new cell run the following command:
@@ -359,15 +297,7 @@ plt.tight_layout()
 plt.show()
 ```
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Plot of remote data set and local data set](/images/use-cases/AI_ML/jupyter/9.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/9.webp" alt="Plot of remote data set and local data set"/>
 
 From the plotted data, we see that sales started around 160,000 in the year 1995 and surged quickly, peaking at around 540,000 in 1999.
 After that, volumes declined sharply through the mid-2000s, dropping severely during the 2007-2008 financial crisis and falling to around 140,000.

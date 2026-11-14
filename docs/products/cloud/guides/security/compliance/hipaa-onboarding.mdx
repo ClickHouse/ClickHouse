@@ -10,6 +10,8 @@ keywords: ['hipaa', 'compliance', 'healthcare', 'security', 'data protection']
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
+import { Image } from "/snippets/components/Image.jsx";
+
 <EnterprisePlanFeatureBadge feature="HIPAA"/>
 
 ClickHouse offers services that are compliant with the Health Information Portability and Accountability Act (HIPAA) of 1996's Security Rule. Customers may process protected health information (PHI) within these services after signing a Business Associate Agreement (BAA) and deploying services to a compliant region.
@@ -37,12 +39,7 @@ This page describes the process for enabling deployment of HIPAA compliant servi
 
 <br />
 
-<div className="ch-image-md">
-  <Frame>
-    <img className="block dark:hidden" src="/images/cloud/security/compliance/hipaa_1-light.webp" alt="Request HIPAA enablement (light mode)" />
-    <img className="hidden dark:block" src="/images/cloud/security/compliance/hipaa_1.webp" alt="Request HIPAA enablement (dark mode)" />
-  </Frame>
-</div>
+<Image img="/images/cloud/security/compliance/hipaa_1.webp" size="md" alt="Request HIPAA enablement" background='black'/>
 
 <br />
 
@@ -50,12 +47,7 @@ This page describes the process for enabling deployment of HIPAA compliant servi
 
 <br />
 
-<div className="ch-image-md">
-  <Frame>
-    <img className="block dark:hidden" src="/images/cloud/security/compliance/hipaa_2-light.webp" alt="Submit a BAA request (light mode)" />
-    <img className="hidden dark:block" src="/images/cloud/security/compliance/hipaa_2.webp" alt="Submit a BAA request (dark mode)" />
-  </Frame>
-</div>
+<Image img="/images/cloud/security/compliance/hipaa_2.webp" size="md" alt="Submit a BAA request" background='black'/>
 
 <br />
 
@@ -63,12 +55,7 @@ This page describes the process for enabling deployment of HIPAA compliant servi
 
 <br />
 
-<div className="ch-image-md">
-  <Frame>
-    <img className="block dark:hidden" src="/images/cloud/security/compliance/hipaa_3-light.webp" alt="HIPAA enabled (light mode)" />
-    <img className="hidden dark:block" src="/images/cloud/security/compliance/hipaa_3.webp" alt="HIPAA enabled (dark mode)" />
-  </Frame>
-</div>
+<Image img="/images/cloud/security/compliance/hipaa_3.webp" size="md" alt="HIPAA enabled" background='black'/>
 
 <br />
 </Step>
@@ -79,12 +66,7 @@ This page describes the process for enabling deployment of HIPAA compliant servi
 
 <br />
 
-<div className="ch-image-md">
-  <Frame>
-    <img className="block dark:hidden" src="/images/cloud/security/compliance/hipaa_4-light.webp" alt="Deploy to HIPAA region (light mode)" />
-    <img className="hidden dark:block" src="/images/cloud/security/compliance/hipaa_4.webp" alt="Deploy to HIPAA region (dark mode)" />
-  </Frame>
-</div>
+<Image img="/images/cloud/security/compliance/hipaa_4.webp" size="md" alt="Deploy to HIPAA region" background='black'/>
 
 <br />
 
@@ -112,9 +94,3 @@ If migration from standard to HIPAA compliant regions is required, follow these 
 
 Services must remain in the same cloud provider and geographic region. This process migrates the service to the compliant environment in the same cloud provider and region.
 </Info>
-
-## Backups for HIPAA compliant services {#backups}
-
-ClickHouse-managed backups work the same way for HIPAA compliant services as for other services. Backups are stored in the same cloud provider and region as the service, and Enterprise plan customers can configure the backup frequency and retention. A backup can be restored to a new service in the same region, including another HIPAA compliant service.
-
-Exporting backups to your own cloud account is not available for HIPAA compliant services. The regulated environment does not permit writes to storage outside it, so the **Set up external backup** option is disabled in the console and the `BACKUP` privilege is not granted on these services.

@@ -52,8 +52,6 @@ public:
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
-    bool supportsTruncate() const override { return false; }
-
     SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, bool) override
     {
         return std::make_shared<NullSinkToStorage>(std::make_shared<const Block>(metadata_snapshot->getSampleBlock()));

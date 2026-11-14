@@ -14,7 +14,7 @@
 #endif
 
 #if USE_SILK && USE_SSL
-#include <Common/Silk/SecureFiberStreamSocketImpl.h>
+#include <IO/SilkSecureFiberStreamSocketImpl.h>
 #endif
 
 namespace DB

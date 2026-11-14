@@ -20,11 +20,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Poco/UUIDGenerator.h>
 
-#include "config.h"
-#if USE_AZURE_BLOB_STORAGE
-#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
-#endif
-
 namespace DB
 {
 
@@ -56,10 +51,7 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
 
     if (settings.create_new_file_on_insert)
     {
-        /// Insert the sequence number before the first dot of the file name (the last path component),
-        /// so that a dot in a directory name does not move the new file into another directory.
-        auto last_slash = key.find_last_of('/');
-        auto pos = key.find_first_of('.', last_slash == std::string::npos ? 0 : last_slash + 1);
+        auto pos = key.find_first_of('.');
         String new_key;
         do
         {
@@ -424,14 +416,4 @@ extern const SettingsBool use_cache_for_count_from_files;
 extern const SettingsString filesystem_cache_name;
 extern const SettingsUInt64 filesystem_cache_boundary_alignment;
 }
-
-void checkSessionMayUseServerIdentity([[maybe_unused]] const IObjectStorage & object_storage, [[maybe_unused]] const ContextPtr & context)
-{
-#if USE_AZURE_BLOB_STORAGE
-    if (object_storage.getType() == ObjectStorageType::Azure)
-        object_storage.getAzureBlobStorageConnectionParams()->checkSessionMayUseServerIdentity(
-            context->shouldRestrictUserQueryS3Credentials());
-#endif
-}
-
 }

@@ -508,9 +508,9 @@ void LinearModelData::returnWeights(IColumn & to) const
 void LinearModelData::read(ReadBuffer & buf, UInt64 expected_param_num)
 {
     readBinary(bias, buf);
-    readVectorBinary(weights, buf, expected_param_num);
+    readBinary(weights, buf);
     readBinary(iter_num, buf);
-    readVectorBinary(gradient_batch, buf, expected_param_num + 1);
+    readBinary(gradient_batch, buf);
     readBinary(batch_size, buf);
 
     if (weights.size() != expected_param_num)
@@ -608,8 +608,8 @@ void Adam::write(WriteBuffer & buf) const
 
 void Adam::read(ReadBuffer & buf, UInt64 expected_size)
 {
-    readVectorBinary(average_gradient, buf, expected_size);
-    readVectorBinary(average_squared_gradient, buf, expected_size);
+    readBinary(average_gradient, buf);
+    readBinary(average_squared_gradient, buf);
     checkUpdaterVectorSize(average_gradient.size(), expected_size);
     checkUpdaterVectorSize(average_squared_gradient.size(), expected_size);
 
@@ -687,7 +687,7 @@ void Adam::addToBatch(
 
 void Nesterov::read(ReadBuffer & buf, UInt64 expected_size)
 {
-    readVectorBinary(accumulated_gradient, buf, expected_size);
+    readBinary(accumulated_gradient, buf);
     checkUpdaterVectorSize(accumulated_gradient.size(), expected_size);
 }
 
@@ -754,7 +754,7 @@ void Nesterov::addToBatch(
 
 void Momentum::read(ReadBuffer & buf, UInt64 expected_size)
 {
-    readVectorBinary(accumulated_gradient, buf, expected_size);
+    readBinary(accumulated_gradient, buf);
     checkUpdaterVectorSize(accumulated_gradient.size(), expected_size);
 }
 

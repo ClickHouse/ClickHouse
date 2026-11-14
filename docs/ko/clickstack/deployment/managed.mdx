@@ -7,18 +7,18 @@ doc_type: 'guide'
 keywords: ['clickstack', '배포', '설정', '구성', '관측성']
 ---
 
+import { Image } from "/snippets/ko/components/Image.jsx";
+
 import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 import JSONSupport from '/snippets/ko/_json_support.mdx';
-
 import ExampleOTelConfig from '/snippets/ko/clickstack/_config_example_otel.mdx';
 
 import SetupManagedIngestion from '/snippets/ko/clickstack/_setup_managed_ingestion.mdx';
 import NavigateClickStackUI from '/snippets/ko/clickstack/_navigate_managed.mdx';
-
 import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
 
-이 **가이드는 기존 ClickHouse Cloud 사용자를 대상**으로 합니다. ClickHouse Cloud를 처음 사용하는 경우 관리형 ClickStack용 [시작하기](/ko/clickstack/getting-started/managed) 가이드를 권장합니다.
+이 **가이드는 기존 ClickHouse Cloud 사용자를 대상**으로 합니다. ClickHouse Cloud를 처음 사용하는 경우 Managed ClickStack용 [시작하기](/ko/clickstack/getting-started/managed) 가이드를 권장합니다.
 
 이 배포 패턴에서는 ClickHouse와 ClickStack UI(HyperDX)를 모두 ClickHouse Cloud에서 호스팅하므로, 자체 호스팅해야 하는 구성 요소를 최소화할 수 있습니다.
 
@@ -26,7 +26,7 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
 
 * 스토리지와 독립적인 컴퓨트 자동 스케일링
 * 객체 스토리지 기반의 저비용, 사실상 무제한 보존
-* Warehouses를 사용해 [읽기 및 쓰기 워크로드를 독립적으로 격리](/ko/clickstack/managing/isolating-read-write)할 수 있는 기능
+* Warehouses를 사용해 읽기 및 쓰기 워크로드를 독립적으로 격리할 수 있는 기능
 * 통합 인증
 * 자동 백업
 * 보안 및 컴플라이언스 기능
@@ -58,15 +58,7 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
       <Step title="새 서비스 생성" id="create-a-service">
         ClickHouse Cloud 랜딩 페이지에서 `New service`를 선택해 새 서비스를 생성합니다.
 
-        <div className="ch-image-lg">
-
-        <Frame>
-
-        ![서비스](/images/clickstack/getting-started/new_service.webp)
-
-        </Frame>
-
-        </div>
+        <Image img="/images/clickstack/getting-started/new_service.webp" size="lg" alt="서비스" border />
       </Step>
 
       <Step title="provider, region 및 리소스 지정" id="specify-your-region-and-resources">
@@ -102,15 +94,7 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
           ClickHouse 서비스에서 이미 실시간 애플리케이션 분석과 같은 기존 워크로드를 실행 중이라면, 관측성 워크로드를 격리하기 위해 [ClickHouse Cloud&#39;s warehouses feature](/ko/products/cloud/features/infrastructure/warehouses)를 사용해 하위 서비스를 생성하는 것이 좋습니다. 이렇게 하면 기존 애플리케이션에 영향을 주지 않으면서도 두 서비스 모두에서 데이터셋에 액세스할 수 있습니다.
         </Warning>
 
-        <div className="ch-image-lg">
-
-        <Frame>
-
-        ![서비스 선택](/images/clickstack/select_service.webp)
-
-        </Frame>
-
-        </div>
+        <Image img="/images/clickstack/select_service.webp" alt="서비스 선택" size="lg" />
       </Step>
 
       <Step title="ClickStack UI로 이동" id="navigate-to-the-clickstack-ui-existing">
@@ -126,15 +110,7 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
 
         자동 감지가 성공하면 Search view로 이동하며, 즉시 데이터를 탐색할 수 있습니다.
 
-        <div className="ch-image-lg">
-
-        <Frame>
-
-        ![ClickStack UI](/images/clickstack/getting-started/clickstack_managed_ui.webp)
-
-        </Frame>
-
-        </div>
+        <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="ClickStack UI" />
 
         이 단계가 성공하면 설정이 완료된 것입니다 — 모두 준비되었습니다 🎉. 그렇지 않으면 수집 설정을 계속 진행하세요.
       </Step>
@@ -142,27 +118,11 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
       <Step title="수집 설정" id="setup-ingestion-existing-service">
         자동 감지에 실패하거나 기존 테이블이 없는 경우, 수집 설정을 완료하라는 안내 메시지가 표시됩니다.
 
-        <div className="ch-image-lg">
-
-        <Frame>
-
-        ![ClickStack UI에서 수집 설정](/images/clickstack/clickstack-ui-setup-ingestion.webp)
-
-        </Frame>
-
-        </div>
+        <Image img="/images/clickstack/clickstack-ui-setup-ingestion.webp" alt="ClickStack UI에서 수집 설정" size="lg" />
 
         &quot;Start Ingestion&quot;을 선택하면 수집 소스를 선택하는 화면이 표시됩니다. Managed ClickStack은 OpenTelemetry와 [Vector](https://vector.dev/)를 주요 수집 소스로 지원합니다. 또한 사용자는 [ClickHouse Cloud 지원 통합](/ko/integrations/home) 중 하나를 사용하여 자체 스키마로 ClickHouse에 직접 데이터를 전송할 수도 있습니다.
 
-        <div className="ch-image-lg">
-
-        <Frame>
-
-        ![소스 선택 - ClickStack UI](/images/clickstack/select-source-clickstack-ui.webp)
-
-        </Frame>
-
-        </div>
+        <Image img="/images/clickstack/select-source-clickstack-ui.webp" size="lg" alt="소스 선택 - ClickStack UI" border />
 
         <Info>
           **OpenTelemetry 권장**
@@ -177,21 +137,13 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
 
             아직 실행 중인 collector가 없다면 아래 단계에 따라 시작하세요. 기존 collector가 있다면 구성 예시도 제공됩니다.
 
-### collector 시작
+            ### collector 시작
 
             다음 내용은 권장 방식인 **ClickStack distribution of the OpenTelemetry Collector** 사용을 전제로 합니다. 이 배포판에는 추가 처리 기능이 포함되어 있으며 ClickHouse Cloud에 맞게 특별히 최적화되어 있습니다. 자체 OpenTelemetry Collector를 사용하려면 [&quot;기존 collector 구성&quot;](#configure-existing-collectors-existing)을 참조하세요.
 
             빠르게 시작하려면 아래에 표시된 Docker 명령을 복사해 실행하세요.
 
-            <div className="ch-image-md">
-
-            <Frame>
-
-            ![OTel collector 소스](/images/clickstack/otel-collector-start-clickstack-ui.webp)
-
-            </Frame>
-
-            </div>
+            <Image img="/images/clickstack/otel-collector-start-clickstack-ui.webp" size="md" alt="OTel collector 소스" />
 
             **서비스를 생성할 때 기록한 서비스 자격 증명에 맞게 이 명령을 수정하세요.**
 
@@ -203,7 +155,7 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
 
             이 명령 하나로 4317(gRPC) 및 4318(HTTP) 포트에 OTLP endpoint를 노출하는 ClickStack collector가 시작됩니다. 이미 OpenTelemetry instrumentation과 agent가 있다면 이 endpoint로 즉시 텔레메트리 데이터를 보내기 시작할 수 있습니다.
 
-### 기존 collector 구성
+            ### 기존 collector 구성
 
             기존 OpenTelemetry Collectors를 직접 구성하거나 자체 배포판의 collector를 사용할 수도 있습니다.
 
@@ -217,19 +169,11 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
 
             <ExampleOTelConfig />
 
-            <div className="ch-image-lg">
-
-            <Frame>
-
-            ![고급 OTel collector 소스](/images/clickstack/advanced-otel-collector-clickstack-ui.webp)
-
-            </Frame>
-
-            </div>
+            <Image img="/images/clickstack/advanced-otel-collector-clickstack-ui.webp" size="lg" alt="고급 OTel collector 소스" />
 
             OpenTelemetry collector 구성에 대한 자세한 내용은 [&quot;OpenTelemetry로 수집하기&quot;](/ko/clickstack/ingesting-data/opentelemetry)를 참조하세요.
 
-### 수집 시작(선택 사항)
+            ### 수집 시작(선택 사항)
 
             기존 애플리케이션이나 OpenTelemetry로 instrument할 infrastructure가 있다면 &quot;애플리케이션 연결&quot;에 링크된 관련 가이드로 이동하세요.
 
@@ -253,7 +197,7 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
 
             다음 내용에서는 수집 파이프라인이 미리 구성되어 데이터를 전달하는 Vector 인스턴스가 이미 실행 중이라고 가정합니다.
 
-### 데이터베이스와 테이블 생성
+            ### 데이터베이스와 테이블 생성
 
             Vector는 데이터를 수집하기 전에 테이블과 스키마가 정의되어 있어야 합니다.
 
@@ -293,15 +237,7 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
 
             테이블이 생성되면 표시된 구성 스니펫을 복사하십시오. 기존 파이프라인을 사용하도록 입력을 조정하고, 필요한 경우 대상 테이블과 데이터베이스도 수정하십시오. 자격 증명은 미리 채워져 있어야 합니다.
 
-            <div className="ch-image-lg">
-
-            <Frame>
-
-            ![Vector 구성](/images/clickstack/vector-config-clickstack-ui.webp)
-
-            </Frame>
-
-            </div>
+            <Image img="/images/clickstack/vector-config-clickstack-ui.webp" size="lg" alt="Vector 구성" />
 
             Vector로 데이터를 수집하는 추가 예시는 [&quot;Vector로 수집하기&quot;](/ko/clickstack/ingesting-data/vector)를 참조하십시오. 고급 옵션은 [Vector ClickHouse sink documentation](https://vector.dev/docs/reference/configuration/sinks/clickhouse/)에서 확인할 수 있습니다.
 
@@ -317,15 +253,7 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
           <Tab title="OpenTelemetry">
             이 가이드를 사용해 OpenTelemetry 데이터를 수집했다면 데이터 소스가 자동으로 생성되므로 추가 설정이 필요하지 않습니다. 바로 ClickStack을 탐색할 수 있습니다. 즉시 쿼리를 시작할 수 있도록 소스가 자동으로 선택된 검색 보기로 이동됩니다.
 
-            <div className="ch-image-lg">
-
-            <Frame>
-
-            ![ClickStack UI](/images/clickstack/getting-started/clickstack_managed_ui.webp)
-
-            </Frame>
-
-            </div>
+            <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="ClickStack UI" />
 
             이제 모든 설정이 완료되었습니다 🎉.
 
@@ -335,15 +263,7 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
           <Tab title="Vector">
             Vector나 다른 소스를 통해 데이터를 수집했다면 데이터 소스를 구성하라는 메시지가 표시됩니다.
 
-            <div className="ch-image-lg">
-
-            <Frame>
-
-            ![데이터 소스 생성 - vector](/images/clickstack/create-vector-datasource.webp)
-
-            </Frame>
-
-            </div>
+            <Image img="/images/clickstack/create-vector-datasource.webp" alt="데이터 소스 생성 - vector" size="lg" />
 
             위 구성은 타임스탬프로 `time_local` 컬럼을 사용하는 Nginx 스타일 스키마(schema)를 가정합니다. 가능하다면 프라이머리 키에 선언된 타임스탬프 컬럼을 사용해야 합니다. **이 컬럼은 필수입니다**.
 
@@ -355,15 +275,7 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
 
             소스 구성을 마친 후 &quot;Save&quot;를 클릭하고 데이터 탐색을 시작하세요.
 
-            <div className="ch-image-lg">
-
-            <Frame>
-
-            ![ClickStack UI](/images/clickstack/getting-started/clickstack_managed_ui.webp)
-
-            </Frame>
-
-            </div>
+            <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="ClickStack UI" />
 
             <br />
           </Tab>
@@ -377,7 +289,9 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
   ## 추가 작업
 </div>
 
-### Managed ClickStack에 대한 액세스 권한 부여 {#configure-access}
+<div id="configure-access">
+  ### Managed ClickStack에 대한 액세스 권한 부여
+</div>
 
 1. ClickHouse Cloud 콘솔에서 해당 서비스로 이동합니다
 2. **설정** → **SQL 콘솔 액세스**로 이동합니다
@@ -386,15 +300,7 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
    * **서비스 읽기 전용 → 읽기 전용** - 관측성 데이터를 확인하고 대시보드를 생성할 수 있습니다
    * **액세스 없음** - HyperDX에 액세스할 수 없습니다
 
-<div className="ch-image-md">
-
-<Frame>
-
-![ClickHouse Cloud 읽기 전용](/images/clickstack/read-only-access.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/read-only-access.webp" alt="ClickHouse Cloud 읽기 전용" size="md" />
 
 <Warning>
   **알림을 사용하려면 관리자 권한이 필요합니다**
@@ -433,10 +339,6 @@ ClickStack UI는 항상 ClickHouse Cloud 콘솔에서 실행한 ClickHouse 서�
 
 실행되면 ClickStack UI가 이 읽기 전용 서비스에 자동으로 바인딩됩니다.
 
-대시보드, 저장된 검색, 알림, 소스는 ClickStack을 실행한 서비스로 범위가 한정되므로, warehouse 내 다른 서비스에 저장된 항목은 여기에서 사용할 수 없으며 다시 생성해야 합니다. 표준 OpenTelemetry 스키마를 사용하는 소스는 자동으로 감지되어 해당 데이터에 대한 검색이 즉시 동작하지만, 사용자 정의 소스나 수동으로 구성한 소스는 그렇지 않으므로 다시 설정해야 합니다.
-
-수집을 어디로 보낼지, 어떤 서비스에 DDL을 실행할지, 알림이 어떻게 동작하는지를 포함한 전체 토폴로지는 [&quot;읽기 및 쓰기 워크로드 분리&quot;](/ko/clickstack/managing/isolating-read-write)를 참조하십시오.
-
 <div id="adding-data-sources">
   ### 데이터 소스 추가하기
 </div>
@@ -445,43 +347,21 @@ ClickStack은 OpenTelemetry 네이티브이지만 OpenTelemetry에만 국한되�
 
 다음에서는 자동으로 구성되는 데이터 소스 외에 데이터 소스를 추가하는 방법을 설명합니다.
 
-#### OpenTelemetry 스키마 사용 {#using-otel-schemas}
+<div id="using-otel-schemas">
+  #### OpenTelemetry 스키마 사용
+</div>
 
 OTel collector를 사용해 ClickHouse 내에 데이터베이스와 테이블을 생성하는 경우, 소스 생성 모델에서는 기본값을 모두 그대로 유지하고 `Table` 필드에 `otel_logs`를 입력하여 로그 소스를 생성하십시오. 다른 모든 설정은 자동으로 감지되므로 `Save New Source`를 클릭하면 됩니다.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![ClickHouse Cloud HyperDX 데이터 소스](/images/use-cases/observability/hyperdx_cloud_datasource.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx_cloud_datasource.webp" alt="ClickHouse Cloud HyperDX 데이터 소스" size="lg" />
 
 트레이스 및 OTel 메트릭용 소스를 생성하려면 상단 메뉴에서 `Create New Source`를 선택하면 됩니다.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![ClickStack 새 소스 생성](/images/use-cases/observability/hyperdx_create_new_source.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx_create_new_source.webp" alt="ClickStack 새 소스 생성" size="lg" />
 
 여기에서 필요한 소스 유형을 선택한 다음 해당 테이블을 선택하십시오. 예를 들어 트레이스의 경우 `otel_traces` 테이블을 선택합니다. 모든 설정은 자동으로 감지됩니다.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![ClickStack 트레이스 소스 생성](/images/use-cases/observability/hyperdx_create_trace_datasource.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx_create_trace_datasource.webp" alt="ClickStack 트레이스 소스 생성" size="lg" />
 
 <Info>
   **상관관계 소스**

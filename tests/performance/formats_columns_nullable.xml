@@ -82,9 +82,7 @@
 
     <fill_query>INSERT INTO table_{format}_with_nullable_columns SELECT * FROM source_table</fill_query>
 
-    <!-- The whole file with parallel parsing: a LIMIT makes the parallel parser read ahead a varying amount, and parsing
-         the text formats in one thread runs at a different speed in each server process on ARM. -->
-    <query>SELECT * FROM table_{format}_with_nullable_columns FORMAT Null</query>
+    <query>SELECT * FROM table_{format}_with_nullable_columns LIMIT 1000 FORMAT Null</query>
     <query>SELECT count() FROM table_{format}_with_nullable_columns FORMAT Null</query>
     <query>SELECT avg(col_int32) FROM table_{format}_with_nullable_columns FORMAT Null</query>
     <query>SELECT sum(if(col_int8 IS NULL, 1, 0)) FROM table_{format}_with_nullable_columns FORMAT Null</query>
