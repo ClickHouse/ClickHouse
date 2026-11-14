@@ -32,6 +32,7 @@ PartitionedSink::PartitionedSink(
     , partition_strategy(partition_strategy_)
     , context(context_)
     , source_header(source_header_)
+    , partition_key_actions(partition_strategy->getPartitionKeyActions())
 {
 }
 
@@ -50,7 +51,7 @@ SinkPtr PartitionedSink::getSinkForPartitionKey(std::string_view partition_key)
 
 void PartitionedSink::consume(Chunk & source_chunk)
 {
-    const ColumnPtr partition_by_result_column = partition_strategy->computePartitionKey(source_chunk);
+    const ColumnPtr partition_by_result_column = partition_strategy->computePartitionKey(source_chunk, partition_key_actions);
 
     /// Not all columns are serialized using the format writer (e.g, hive partitioning stores partition columns in the file path)
     const auto columns_to_consume = partition_strategy->getFormatChunkColumns(source_chunk);

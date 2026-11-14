@@ -52,7 +52,7 @@ using AIParamValues = std::map<String, Field, std::less<>>; // STYLE_CHECK_ALLOW
 class FunctionBaseAI : public IFunction
 {
 public:
-    explicit FunctionBaseAI(ContextPtr context_) : context(context_) {}
+    explicit FunctionBaseAI(ContextPtr context_) : context(context_) { throwIfBackgroundExpression(context); }
 
     bool isStateful() const override { return true; }
     bool isDeterministic() const override { return false; }
@@ -138,6 +138,14 @@ public:
     /// required positional argument (not read from the map or the named collection). `dimensions` requests a
     /// target vector size when the model supports it.
     static AIParamSpecs embeddingParams();
+
+    /// Throws if the context has no user. Background work (merges, mutations, `Buffer` flushes) evaluates
+    /// expressions with such a context, which has full access, so the privilege checks do not apply to it.
+    static void checkHasUser(const ContextPtr & context);
+
+    /// Throws if the context analyzes expressions that are executed in the background (mutations, expressions stored
+    /// in a table definition), where `checkHasUser` throws.
+    static void throwIfBackgroundExpression(const ContextPtr & context);
 
     /// Result of `embedTexts`. `embeddings` is aligned 1:1 with the `inputs` argument of `embedTexts`. An
     /// entry is empty when that input was not embedded (quota exceeded, or a failed request with

@@ -11,13 +11,14 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Common/Exception.h>
+#include <Formats/ColumnNameMaps.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
 #include <arrow/type.h>
 #include <fmt/ranges.h>
 
-#include <unordered_set>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <vortex_ffi.h>
 
@@ -65,8 +66,8 @@ VortexExpressionPtr buildFilter(
         return nullptr;
 
     /// The top-level conjuncts, in their original order.
-    std::vector<const ActionsDAG::Node *> conjuncts;
-    std::vector<const ActionsDAG::Node *> stack{inverted.predicate};
+    VectorWithMemoryTracking<const ActionsDAG::Node *> conjuncts;
+    VectorWithMemoryTracking<const ActionsDAG::Node *> stack{inverted.predicate};
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -84,7 +85,7 @@ VortexExpressionPtr buildFilter(
     /// With a per-file column mapper (data lake schema evolution) the header and the file use the
     /// names of the schema the file was written under, while the filter uses the current names.
     /// Both mappers know the field ids, which is how a current name finds the file's one.
-    std::optional<std::unordered_map<String, String>> file_column_names;
+    std::optional<ColumnNameMap> file_column_names;
     if (filter_info.current_schema_column_mapper && filter_info.column_mapper)
     {
         file_column_names.emplace();
@@ -132,7 +133,7 @@ VortexScanPlan planVortexScan(
     ///
     /// A header entry can also name a subcolumn, `name.sub`, which `ArrowColumnToCHColumn` can only
     /// extract once the whole field `name` has been read - hence the second name per column.
-    std::unordered_set<std::string> added_column_names;
+    UnorderedSetWithMemoryTracking<std::string> added_column_names;
     auto add_column_name = [&](const std::string & name)
     {
         if (file_schema.GetFieldByName(name) && added_column_names.emplace(name).second)

@@ -7,6 +7,9 @@
 #include <Processors/IProcessor.h>
 #include <Common/PODArray.h>
 
+#include <memory>
+#include <pcg_random.hpp>
+
 namespace DB
 {
 
@@ -19,6 +22,9 @@ struct ScatterByPartitionTransform : IProcessor
     /// Round-robin mode: each input chunk goes whole to the next output in turn, starting
     /// at `start_bucket`. For distribution without a placement requirement.
     static std::shared_ptr<ScatterByPartitionTransform> createRoundRobin(SharedHeader header, size_t output_size_, size_t start_bucket);
+
+    /// Random mode: every row goes to a uniformly random output (used to shuffle the rows in parallel).
+    static std::shared_ptr<ScatterByPartitionTransform> createRandom(SharedHeader header, size_t output_size_);
 
     String getName() const override { return "ScatterByPartitionTransform"; }
 
@@ -39,6 +45,8 @@ private:
     DataTypes hash_cast_types;
     /// When set, chunks are routed round-robin starting from this output instead of by key hash.
     std::optional<size_t> round_robin_bucket;
+    /// When set, every row goes to a random output.
+    std::unique_ptr<pcg64> random_generator;
 
     bool has_output_chunks = false;
     VectorWithMemoryTracking<char> was_output_processed;
