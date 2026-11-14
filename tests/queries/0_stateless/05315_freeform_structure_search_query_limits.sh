@@ -44,11 +44,11 @@ for attempt in 1 2 3; do
     client_pid=$!
     killed=""
     while [ -z "$killed" ] && kill -0 "$client_pid" 2>/dev/null && clickhouse_test_time_left; do
-        killed=$($CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$QUERY_ID' AND peak_memory_usage BETWEEN 10000000 AND 1000000000 ASYNC SETTINGS kill_throw_if_noop = 0")
+        killed=$($CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$QUERY_ID' AND peak_memory_usage BETWEEN 10000000 AND 1000000000 ASYNC SETTINGS kill_throw_if_noop = 0" | cut -f1)
         [ -n "$killed" ] || sleep 0.1
     done
     wait "$client_pid"
-    [ -n "$killed" ] && break
+    [ "$killed" = waiting ] && break
 done
 grep -oE 'BAD_ARGUMENTS|MEMORY_LIMIT_EXCEEDED|TIMEOUT_EXCEEDED|QUERY_WAS_CANCELLED' "$KILL_OUTPUT" | head -1
 
