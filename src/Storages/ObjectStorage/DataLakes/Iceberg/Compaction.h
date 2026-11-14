@@ -6,6 +6,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
+#include <Poco/JSON/Object.h>
+
 
 namespace DB::Iceberg
 {
@@ -20,11 +22,13 @@ bool overwriteIsPositionDeleteOnly(const SnapshotSummaryUpdateOverwrite & update
 /// Throws for one it cannot represent.
 [[nodiscard]] std::optional<SnapshotSummaryUpdateAppend> tryGetAppendUpdate(const IcebergHistoryRecord & history_record);
 
+/// `metadata_object` is the parsed metadata file of version `metadata_version` that `snapshots_info` was read from.
 void compactIcebergTable(
     IcebergHistory snapshots_info,
+    Poco::JSON::Object::Ptr metadata_object,
+    Int32 metadata_version,
     const PersistentTableComponents & persistent_table_components,
     DB::ObjectStoragePtr object_storage_,
-    const DataLakeStorageSettings & data_lake_settings,
     const std::optional<DB::FormatSettings> & format_settings_,
     DB::SharedHeader sample_block_,
     DB::ContextPtr context_,
