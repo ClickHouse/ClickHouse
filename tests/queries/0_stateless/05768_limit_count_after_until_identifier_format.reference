@@ -1,0 +1,11 @@
+SELECT 1 LIMIT (after - 5)
+SELECT 1 LIMIT (until - 5) AS c
+SELECT 1 LIMIT (after - 5), 3
+SELECT 1 LIMIT (after[1])
+SELECT 1 LIMIT (until - 1) BY x
+SELECT 1 LIMIT (after - 1), 2 BY x
+SELECT 1 LIMIT 1 BY x LIMIT (after(2))
+SELECT 1 LIMIT after, until BY x LIMIT until AS c
+1
+[0,1]
+[2,3,4]
