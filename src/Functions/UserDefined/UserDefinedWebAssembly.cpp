@@ -558,7 +558,8 @@ public:
         {
             /// A const column stays one row on the wire; pass it whole.
             bool whole_column = isColumnConst(*col.column) || (start_idx == 0 && length == col.column->size());
-            batch.emplace_back(whole_column ? col.column : col.column->cut(start_idx, length), col.type, col.name);
+            batch.emplace_back(
+                whole_column ? col.column : cutColumnar(col.column, col.type, start_idx, length), col.type, col.name);
         }
 
         std::vector<ColDescriptor> descs; // STYLE_CHECK_ALLOW_STD_CONTAINERS
@@ -945,7 +946,9 @@ public:
                         /// cut() copies; skip it when the batch is the whole column.
                         bool whole_column = batch_start == 0 && batch_size == arg.column->size();
                         batch_cols.emplace_back(
-                            whole_column ? arg.column : arg.column->cut(batch_start, batch_size), arg.type, arg.name);
+                            whole_column ? arg.column : cutColumnar(arg.column, arg.type, batch_start, batch_size),
+                            arg.type,
+                            arg.name);
                     }
                     auto result = cv1->executeColumnar(compartment_ptr, batch_cols, batch_size, context, stop_token);
                     /// A const result is valid; compare its nested column.
@@ -957,7 +960,7 @@ public:
                             "COLUMNAR_V1: returned column structure {} does not match declared type {}",
                             result->dumpStructure(),
                             user_defined_function->getResultType()->getName());
-                    result_parts.push_back(result->convertToFullColumnIfConst());
+                    result_parts.push_back(convertToFullColumnarIfConst(ColumnPtr(std::move(result)), user_defined_function->getResultType()));
                 };
 
                 const size_t fixed_block_size = context->getSettingsRef()[Setting::webassembly_udf_max_input_block_size];

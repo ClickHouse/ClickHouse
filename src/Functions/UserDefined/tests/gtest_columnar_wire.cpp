@@ -1165,6 +1165,27 @@ TEST(ColumnarWire, ConcatNullableTupleLowCardinalityKeepsNegativeZero)
     }
 }
 
+/// `ColumnArray::replicate` and `cut` reinsert nested dictionary entries by value; `-0.0` must survive both.
+TEST(ColumnarWire, ConstAndCutArrayLowCardinalityKeepNegativeZero)
+{
+    DataTypePtr lowcard_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeFloat64>());
+    DataTypePtr type = std::make_shared<DataTypeArray>(lowcard_type);
+    auto offsets = ColumnArray::ColumnOffsets::create();
+    offsets->insertValue(1);
+    ColumnPtr array = ColumnArray::create(makeNegativeZeroLowCardinality(false), std::move(offsets));
+
+    ColumnPtr expanded = convertToFullColumnarIfConst(ColumnConst::create(array, 2), type);
+    ASSERT_EQ(expanded->size(), 2u);
+    const auto & expanded_array = assert_cast<const ColumnArray &>(*expanded);
+    ASSERT_EQ(expanded_array.getData().size(), 2u);
+    for (size_t i = 0; i < 2; ++i)
+        EXPECT_TRUE(std::signbit(expanded_array.getData().getFloat64(i))) << "row " << i;
+
+    ColumnPtr cut = cutColumnar(expanded, type, 1, 1);
+    ASSERT_EQ(cut->size(), 1u);
+    EXPECT_TRUE(std::signbit(assert_cast<const ColumnArray &>(*cut).getData().getFloat64(0)));
+}
+
 /// `LowCardinality(UInt64)` with the given dictionary keys (slot 0 is the default) and indexes.
 /// `ColumnUnique` does not deduplicate keys passed this way, as a guest-built dictionary would not be.
 static ColumnPtr makeUInt64LowCardinality(const std::vector<UInt64> & keys, const std::vector<UInt8> & indexes)

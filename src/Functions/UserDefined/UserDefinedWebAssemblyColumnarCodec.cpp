@@ -4,6 +4,7 @@
 #include <cstring>
 #include <span>
 #include <functional>
+#include <numeric>
 #include <utility>
 #include <vector>
 
@@ -523,6 +524,23 @@ ColumnPtr concatColumnarResults(const Columns & parts, const DataTypePtr & type)
         variants.push_back(concatColumnarResults(variant_parts, variant_types[global]));
     }
     return ColumnVariant::create(std::move(discriminators), std::move(offsets), variants);
+}
+
+ColumnPtr cutColumnar(const ColumnPtr & col, const DataTypePtr & type, size_t start, size_t length)
+{
+    if (!containsLowCardinality(type))
+        return col->cut(start, length);
+    auto rows = ColumnUInt64::create(length);
+    std::iota(rows->getData().begin(), rows->getData().end(), start);
+    return col->index(*rows, 0);
+}
+
+ColumnPtr convertToFullColumnarIfConst(const ColumnPtr & col, const DataTypePtr & type)
+{
+    const auto * const_col = typeid_cast<const ColumnConst *>(col.get());
+    if (!const_col || !containsLowCardinality(type))
+        return col->convertToFullColumnIfConst();
+    return const_col->getDataColumn().index(*ColumnUInt64::create(const_col->size(), 0), 0);
 }
 
 /// COL_COMPLEX data, recursive:
