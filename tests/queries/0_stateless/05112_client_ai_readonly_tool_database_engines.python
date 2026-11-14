@@ -54,7 +54,9 @@ CASES = [
     # `system.tables` and `information_schema.views` expose the stored texts of the queries of views.
     ("system_tables", "SELECT count() FROM system.tables", False),
     ("information_schema_views", "SELECT count() FROM information_schema.views", False),
-    ("information_schema_tables", "SELECT count() FROM information_schema.tables", True),
+    # A view of `information_schema` can be replaced by a user under its predefined name
+    # (`CREATE OR REPLACE VIEW`), so it is a view like any other.
+    ("information_schema_tables", "SELECT count() FROM information_schema.tables", False),
     # The `*_privileges` views are `system.grants` under other names: access metadata.
     ("system_grants", "SELECT count() FROM system.grants", False),
     ("information_schema_user_privileges", "SELECT count() FROM information_schema.user_privileges", False),

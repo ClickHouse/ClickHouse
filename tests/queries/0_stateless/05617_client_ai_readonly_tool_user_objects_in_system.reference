@@ -4,5 +4,7 @@ show_cluster: OK
 user_view_in_system: OK
 user_alias_in_system: OK
 show_create_user_view_in_system: OK
+information_schema_view: OK
+show_create_information_schema_view: OK
 predefined_system_table: OK
 truncated_probe: OK

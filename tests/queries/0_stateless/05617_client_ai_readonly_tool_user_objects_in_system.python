@@ -71,6 +71,20 @@ TURNS = [
                 {"database": "system", "table": "ai_view"},
                 lambda r: "stored query" in r and "provider-secret" not in r,
             ),
+            # A view of `information_schema` is not judged by its predefined name: a user can replace
+            # it under that name (`CREATE OR REPLACE VIEW`), and the replacement is not told apart.
+            (
+                "information_schema_view",
+                "run_readonly_query",
+                {"query": "SELECT count() FROM information_schema.schemata"},
+                lambda r: not succeeded(r) and "View" in r,
+            ),
+            (
+                "show_create_information_schema_view",
+                "show_create_table",
+                {"database": "information_schema", "table": "schemata"},
+                lambda r: "stored query" in r,
+            ),
             # The predefined tables of `system` are still judged by name.
             (
                 "predefined_system_table",

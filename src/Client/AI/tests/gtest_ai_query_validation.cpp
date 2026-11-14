@@ -292,10 +292,11 @@ TEST(AIQueryValidation, DistinguishesPredefinedServerOwnedTables)
     EXPECT_FALSE(isPredefinedServerOwnedTableForAIAgent("system", "ai_view", "View"));
     EXPECT_FALSE(isPredefinedServerOwnedTableForAIAgent("system", "renamed", "Memory"));
     EXPECT_FALSE(isPredefinedServerOwnedTableForAIAgent("system", "query_log", "MergeTree"));
-    /// The views of `information_schema` have fixed names, in both spellings and in both databases.
-    EXPECT_TRUE(isPredefinedServerOwnedTableForAIAgent("information_schema", "tables", "View"));
-    EXPECT_TRUE(isPredefinedServerOwnedTableForAIAgent("INFORMATION_SCHEMA", "TABLES", "View"));
-    EXPECT_TRUE(isPredefinedServerOwnedTableForAIAgent("INFORMATION_SCHEMA", "columns", "View"));
+    /// The views of `information_schema` can be replaced by a user under the same name and engine,
+    /// so none of them is taken for the definition of the server.
+    EXPECT_FALSE(isPredefinedServerOwnedTableForAIAgent("information_schema", "tables", "View"));
+    EXPECT_FALSE(isPredefinedServerOwnedTableForAIAgent("INFORMATION_SCHEMA", "TABLES", "View"));
+    EXPECT_FALSE(isPredefinedServerOwnedTableForAIAgent("INFORMATION_SCHEMA", "columns", "View"));
     EXPECT_FALSE(isPredefinedServerOwnedTableForAIAgent("information_schema", "ai_view", "View"));
     EXPECT_FALSE(isPredefinedServerOwnedTableForAIAgent("information_schema", "tables", "URL"));
     /// No other database has predefined tables.

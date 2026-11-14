@@ -792,27 +792,14 @@ bool isServerOwnedDatabaseForAIAgent(const String & database)
     return database == "system" || database == "information_schema" || database == "INFORMATION_SCHEMA";
 }
 
-bool isPredefinedServerOwnedTableForAIAgent(const String & database, const String & table, const String & engine)
+bool isPredefinedServerOwnedTableForAIAgent(const String & database, const String & /*table*/, const String & engine)
 {
-    if (database == "system")
-        return engine.starts_with("System");
-
-    if (database == "information_schema" || database == "INFORMATION_SCHEMA")
-    {
-        /// Each view is attached under both its lowercase and its uppercase name in both databases.
-        static const std::unordered_set<std::string_view> information_schema_views
-        {
-            "schemata", "tables", "views", "columns", "key_column_usage", "referential_constraints", "statistics",
-            "engines", "character_sets", "collations", "user_privileges", "schema_privileges", "table_privileges",
-            "column_privileges",
-            "SCHEMATA", "TABLES", "VIEWS", "COLUMNS", "KEY_COLUMN_USAGE", "REFERENTIAL_CONSTRAINTS", "STATISTICS",
-            "ENGINES", "CHARACTER_SETS", "COLLATIONS", "USER_PRIVILEGES", "SCHEMA_PRIVILEGES", "TABLE_PRIVILEGES",
-            "COLUMN_PRIVILEGES",
-        };
-        return engine == "View" && information_schema_views.contains(table);
-    }
-
-    return false;
+    /// The views of `information_schema` are not exempt, although the server creates them with fixed
+    /// names: they live in a `Memory` database, so `CREATE OR REPLACE VIEW information_schema.tables`
+    /// replaces one with an arbitrary stored query under the same name and the same `View` engine.
+    /// Neither the name nor the engine tells the original definition apart from such a replacement,
+    /// so these views are checked like those of any other database, which refuses them.
+    return database == "system" && engine.starts_with("System");
 }
 
 bool isAllowedServerOwnedTableForAIAgent(const String & database, const String & table)

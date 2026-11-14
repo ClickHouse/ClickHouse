@@ -112,8 +112,8 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
                         /// table, so it is not read without the user seeing it. A table that is not
                         /// in `system.tables` - one of a database backed by an external system,
                         /// which is not enumerated there - has no definition of a view of this server.
-                        /// The views the server defines in the databases it owns (`information_schema`)
-                        /// are its own; a view a user created there is a stored query like any other.
+                        /// The views of `information_schema` are included: a user can replace one under
+                        /// its predefined name, so it is a stored query like any other.
                         String engine = hooks->execute_scalar(
                             "SELECT engine FROM system.tables WHERE database = {database:String} AND name = {table:String}",
                             {{"database", database}, {"table", table}});
@@ -266,7 +266,7 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
           "The query is executed in readonly mode with strict limits: 30 seconds and 10 GiB of memory. "
         + (enable_schema_access
                ? "It can select from any ordinary table of the server: the MergeTree and Log families, Memory, and the "
-                 "`system` and `information_schema` tables. "
+                 "`system` tables (the views of `information_schema` are views, and are rejected like any view). "
                : "The user disabled schema access for this session: SHOW (including SHOW PROCESSLIST and SHOW GRANTS), "
                  "DESCRIBE and EXISTS, and every read of the "
                  "`system` and `information_schema` databases, are rejected here - only SELECT and EXPLAIN over the "

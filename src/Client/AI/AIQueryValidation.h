@@ -116,8 +116,9 @@ bool isAllowedServerOwnedTableForAIAgent(const String & database, const String &
 /// judged by name; a user object is checked like a table of any other database. The tables of
 /// `system` the server defines have engines of their own (`SystemNumbers`, `SystemTables`, ...),
 /// which no `CREATE` can use; the log tables (`query_log`, ...) are `MergeTree` and are checked by
-/// engine like any user table. The views of `information_schema` have the fixed names of
-/// `DatabaseCatalog::isPredefinedTable`.
+/// engine like any user table. The views of `information_schema` are never predefined here: a user
+/// can replace one (`CREATE OR REPLACE VIEW`) under the same name, and nothing the client sees tells
+/// the replacement apart from the original, so they are checked like the views of any database.
 bool isPredefinedServerOwnedTableForAIAgent(const String & database, const String & table, const String & engine);
 
 /// Whether a table with this engine holds data of this server only, so that the unconfirmed

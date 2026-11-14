@@ -5768,11 +5768,12 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
             database = current_database;
         }
 
-        /// The tables the server defines in the databases it owns are judged by name, because their
-        /// engines are one per table (`SystemTables`, `SystemNumbers`, ...) and the views of
-        /// `information_schema` read `system` by design. These databases can also hold objects
-        /// that a user created there (`CREATE VIEW system.v AS ...`), and those are checked below
-        /// like a table of any other database, in addition to the check by name.
+        /// The tables the server defines in `system` are judged by name, because their engines are
+        /// one per table (`SystemTables`, `SystemNumbers`, ...). The server-owned databases can also
+        /// hold objects that a user created there (`CREATE VIEW system.v AS ...`), and those are
+        /// checked below like a table of any other database, in addition to the check by name. The
+        /// views of `information_schema` are among them: a user can replace one under its predefined
+        /// name (`CREATE OR REPLACE VIEW`), so they are refused like any other view.
         bool is_user_object_in_server_owned_database = false;
         if (isServerOwnedDatabaseForAIAgent(database))
         {
