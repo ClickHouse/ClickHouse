@@ -4,6 +4,7 @@
 #include <memory>
 
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/filesystemHelpers.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Formats/MarkInCompressedFile.h>
@@ -23,6 +24,7 @@
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
+#include <Storages/MergeTree/MergeCheckpoint.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeProgress.h>
@@ -182,6 +184,8 @@ public:
 
     bool execute();
 
+    void setMergeCheckpoint(MergeCheckpointPtr checkpoint) { global_ctx->checkpoint = std::move(checkpoint); }
+
     void cancel() noexcept;
 
 private:
@@ -298,6 +302,10 @@ private:
         PlainMarksByName cached_marks;
         PlainMarksByName cached_index_marks;
 
+        MergeCheckpointPtr checkpoint;
+        MergeCheckpointIdentity checkpoint_identity;
+        std::optional<size_t> resumed_columns;
+
         MergeTreeTransactionPtr txn;
         String suffix;
         MergeTreeData::MergingParams merging_params{};
@@ -400,6 +408,16 @@ private:
         bool executeMergeProjections() const;
 
         MergeAlgorithm chooseMergeAlgorithm() const;
+        bool canCheckpointVerticalMerge() const;
+
+        struct SavedCheckpointLoadResult
+        {
+            MergeCheckpointState state;
+            MergedBlockOutputStream::FinishedColumns finished_columns;
+        };
+        /// Read and check the saved checkpoint, or discard it and throw.
+        SavedCheckpointLoadResult readSavedCheckpoint() const;
+
         void createMergedStream() const;
         void extractMergingAndGatheringColumns(const std::unordered_set<String> & exclude_index_names) const;
 
@@ -458,6 +476,7 @@ private:
         std::unique_ptr<PullingPipelineExecutor> executor;
         BuildStatisticsTransformMap build_statistics_transforms;
         UInt64 elapsed_execute_ns{0};
+        Stopwatch since_checkpoint;
     };
 
     using VerticalMergeRuntimeContextPtr = std::shared_ptr<VerticalMergeRuntimeContext>;
@@ -494,6 +513,7 @@ private:
         void prepareVerticalMergeForOneColumn() const;
         bool executeVerticalMergeForOneColumn() const;
         void finalizeVerticalMergeForOneColumn() const;
+        void saveCheckpoint() const;
 
         VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForReadingOneColumn(const String & column_name) const;
 
@@ -624,6 +644,7 @@ private:
     static bool hasLightweightDelete(const FutureMergedMutatedPartPtr & future_part);
     static bool isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx);
     static bool canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx);
+    static MergeCheckpointIdentity makeMergeCheckpointIdentity(const GlobalRuntimeContext & global_ctx);
     static bool isVerticalTTLDelete(const GlobalRuntimeContext & global_ctx, const ExecuteAndFinalizeHorizontalPartRuntimeContext & ctx);
     static void addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx);
     static void addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
