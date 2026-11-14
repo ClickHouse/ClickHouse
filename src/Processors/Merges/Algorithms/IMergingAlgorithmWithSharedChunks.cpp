@@ -56,8 +56,7 @@ void IMergingAlgorithmWithSharedChunks::initialize(Inputs inputs)
 
 bool IMergingAlgorithmWithSharedChunks::sourcesHaveLongBatchesOfUniqueKeys() const
 {
-    /// Merges the first rows of the current chunks with the batch detection on, without taking any rows,
-    /// and stops at the end of a chunk, since the next chunk of a source is not available here.
+    /// The sample stops at the end of a chunk, since the next chunk of a source is not available here.
     static constexpr size_t max_rows_to_check = 1024;
 
     bool has_source_with_unique_keys = false;

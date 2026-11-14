@@ -63,7 +63,6 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
         && out_row_sources_buf == nullptr && !enable_vertical_final && !read_in_reverse;
     uses_runs_of_equal_keys = can_skip_to_run_end;
 
-    /// In the reverse reading order the rows of a batch stay on the per-row path.
     uses_batches_of_unique_keys = !read_in_reverse;
 }
 
@@ -220,7 +219,7 @@ void ReplacingSortedAlgorithm::insertUniqueRows(const SortCursor & current, size
         return;
     }
 
-    /// The same checks as for each row in `merge` and in `isSelectedRowSkipped`.
+    /// The same checks as for each row in `mergeImpl` and in `isSelectedRowSkipped`.
     size_t kept_begin = begin;
     for (size_t row = begin; row < end; ++row)
     {
@@ -248,28 +247,23 @@ void ReplacingSortedAlgorithm::insertUniqueRows(const SortCursor & current, size
         merged_data->insertRows(current->all_columns, kept_begin, end - kept_begin, num_rows);
 }
 
-/// Out of line, so that the per-row loop of `mergeImpl` stays compact.
 NO_INLINE bool ReplacingSortedAlgorithm::takeUniqueRowsOfBatch(SortCursor * current_ptr, size_t batch_size)
 {
     SortCursor current = *current_ptr;
 
-    /// The group of the current row ends with it. As for each row in `mergeImpl`, a full block is emitted
-    /// before writing the group.
     if (!enable_vertical_final && merged_data->hasEnoughRows())
         return false;
 
     insertRow();
     selected_row.clear();
 
-    /// The rows [begin, end) are written right away, the row `end` becomes the selected one and is written
-    /// with the next row as usual.
+    /// The rows [begin, end) are written now, the row `end` becomes the selected row.
     const size_t begin = current->getRow() + 1;
     size_t end = current->getRow() + batch_size - 2;
 
     bool inserted = false;
     if (!enable_vertical_final && begin < end)
     {
-        /// Keep the limits of the block size: write only the rows that fit before a flush.
         if (merged_data->hasEnoughRows())
             end = begin;
         else
@@ -296,7 +290,6 @@ NO_INLINE bool ReplacingSortedAlgorithm::takeUniqueRowsOfBatch(SortCursor * curr
     if (!inserted && begin < end)
         insertUniqueRows(current, begin, end);
 
-    /// Select the row `end`.
     if (is_deleted_column_number != -1)
     {
         const UInt8 is_deleted = assert_cast<const ColumnUInt8 &>(*current->all_columns[is_deleted_column_number]).getData()[end];
@@ -454,9 +447,8 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::mergeImpl()
             setRowRef(selected_row, current);
         }
 
-        /// The rows strictly inside a batch from a source with unique keys are groups of one: the per-row path compares
-        /// them only with a selected row of another source (see `rowsHaveDifferentSortColumns`), hence the condition
-        /// that the current row is selected. The last row of the batch can equal the next source's row.
+        /// With the current row selected, `rowsHaveDifferentSortColumns` makes each row inside the batch a group of one
+        /// (it compares no two rows of a source with unique keys). The last row of the batch can equal the next source's row.
         if constexpr (take_batches)
         {
             if (unlikely(current_batch_size >= min_batch_size_to_take) && replace_with_current_row && !current->permutation

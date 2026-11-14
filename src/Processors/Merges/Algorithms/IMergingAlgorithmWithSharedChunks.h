@@ -64,17 +64,14 @@ protected:
     /// outside runs too.
     bool sourcesHaveRunsWorthSkipping() const;
 
-    /// Set by a derived algorithm before `initialize` when it takes the rows inside a batch from a source with
-    /// unique keys in one go. Batch detection is then also enabled when `sourcesHaveLongBatchesOfUniqueKeys`.
+    /// Set by a derived algorithm before `initialize` to also enable batch detection when `sourcesHaveLongBatchesOfUniqueKeys`.
     bool uses_batches_of_unique_keys = false;
 
-    /// Shorter batches are merged row by row.
     static constexpr size_t min_batch_size_to_take = 8;
     /// At most 1 / `max_share_of_rows_to_check` of the rows is sampled.
     static constexpr size_t max_share_of_rows_to_check = 8;
 
-    /// Whether most of the first rows of the merge come in batches of at least `min_batch_size_to_take` rows
-    /// from sources with unique keys.
+    /// Whether most of the first rows come in batches of at least `min_batch_size_to_take` rows of sources with unique keys.
     bool sourcesHaveLongBatchesOfUniqueKeys() const;
 
     /// Whether the queue detects batches longer than one row (decided in `initialize`).
