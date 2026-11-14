@@ -1,0 +1,34 @@
+<clickhouse>
+    <ldap_servers>
+        <openldap>
+            <host>openldap</host>
+            <port>1389</port>
+            <bind_dn>cn={user_name},ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>no</enable_tls>
+            <!-- Service-bind credentials used to resolve users on EXECUTE AS before
+                 they have authenticated against this server. -->
+            <lookup_bind_dn>cn=admin,dc=example,dc=org</lookup_bind_dn>
+            <lookup_password>clickhouse</lookup_password>
+            <user_dn_detection>
+                <base_dn>ou=users,dc=example,dc=org</base_dn>
+                <search_filter>(&amp;(objectClass=person)(cn={user_name}))</search_filter>
+            </user_dn_detection>
+        </openldap>
+    </ldap_servers>
+    <user_directories>
+        <ldap>
+            <server>openldap</server>
+            <!-- Roles for an LDAP user are derived from groupOfNames entries whose CN
+                 starts with `clickhouse-`. The CN minus the prefix is the local role
+                 name that gets granted to the materialized user. The pre-login
+                 EXECUTE AS path must apply this mapping via the service-bind lookup. -->
+            <role_mapping>
+                <base_dn>dc=example,dc=org</base_dn>
+                <scope>subtree</scope>
+                <search_filter>(&amp;(objectClass=groupOfNames)(member={bind_dn}))</search_filter>
+                <attribute>cn</attribute>
+                <prefix>clickhouse-</prefix>
+            </role_mapping>
+        </ldap>
+    </user_directories>
+</clickhouse>
