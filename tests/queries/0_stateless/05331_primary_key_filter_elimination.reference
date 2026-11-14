@@ -1,0 +1,59 @@
+disabled_plan	1
+enabled_plan	1
+where_disabled	0	14316
+where_disabled	1	15496
+where_disabled	2	15522
+where_enabled	0	14316
+where_enabled	1	15496
+where_enabled	2	15522
+serialized_plan	1
+serialized	0	14316
+serialized	1	15496
+serialized	2	15522
+automatic_prewhere_plan	1
+automatic_prewhere	0	14316
+automatic_prewhere	1	15496
+automatic_prewhere	2	15522
+explicit_prewhere	45334
+prewhere_and_where	45334
+reversed	45334
+inclusive_upper	45334
+aggregate_expression	91874
+unmerged_disabled	45334
+unmerged_enabled	45334
+subquery_alias	45334
+retained_key	13	50	2394	45334
+retained_all_keys	1	2394	45334
+retained_all_keys_plan	1
+aggregation_in_order_plan	1
+aggregation_in_order_pipeline	1
+aggregation_in_order	0	40470
+aggregation_in_order	1	45334
+default_dependency_plan	1
+default_dependency	52516
+all_rows	229056
+empty	0
+boundary_only_plan	1
+boundary_only	2314
+residual_plan	1
+residual	41667
+disjunction_plan	1
+disjunction	21554
+fractional_literal_plan	1
+fractional_literal	44178
+negative_literal_plan	1
+negative_literal	76352
+final_plan	1
+final	41667
+count_plan	1
+count	76
+datetime_plan	1
+datetime	6477
+datetime64_plan	1
+datetime64	6477
+nullable_plan	1
+nullable	1037
+float_plan	1
+float	1197
+transformed_key_plan	1
+transformed_key	1197
