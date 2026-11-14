@@ -12179,7 +12179,7 @@ MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(
     return res;
 }
 
-DetachedPartsInfo MergeTreeData::getDetachedParts() const
+DetachedPartsInfo MergeTreeData::getDetachedParts(bool include_read_only_disks) const
 {
     auto component_guard = Coordination::setCurrentComponent("MergeTreeData::getDetachedParts");
     DetachedPartsInfo res;
@@ -12189,7 +12189,7 @@ DetachedPartsInfo MergeTreeData::getDetachedParts() const
         /// While it is possible to have detached parts on readonly/write-once disks
         /// (if they were produced on another machine, where it wasn't readonly)
         /// to avoid wasting resources for slow disks, avoid trying to enumerate them.
-        if (disk->isReadOnly() || disk->isWriteOnce())
+        if (disk->isWriteOnce() || (include_read_only_disks ? disk->isBroken() : disk->isReadOnly()))
             continue;
 
         String detached_path = fs::path(relative_data_path) / DETACHED_DIR_NAME;

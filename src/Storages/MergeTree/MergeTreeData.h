@@ -917,8 +917,8 @@ public:
     /// Makes sense only for ordinary MergeTree engines because for them block numbering doesn't depend on partition.
     std::optional<Int64> getMinPartDataVersion() const;
 
-    /// Returns all detached parts
-    DetachedPartsInfo getDetachedParts() const;
+    /// Returns all detached parts. With `include_read_only_disks`, also lists the read-only disks and skips the broken ones.
+    DetachedPartsInfo getDetachedParts(bool include_read_only_disks = false) const;
 
     static void validateDetachedPartName(const String & name);
 
