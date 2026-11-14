@@ -2,7 +2,7 @@
 
 #include <Common/VectorWithMemoryTracking.h>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
-#include <WindowFunctions/IGeneralWindowFunction.h>
+#include <WindowFunctions/IGeneralWindowFunction_fwd.h>
 #include <Core/Field.h>
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
@@ -16,7 +16,6 @@ namespace DB
 {
 
 class ActionsDAG;
-class IGeneralWindowFunction;
 
 struct WindowFunctionDescription
 {
@@ -113,7 +112,7 @@ struct WindowDescription
 
 using WindowFunctionDescriptions = VectorWithMemoryTracking<WindowFunctionDescription>;
 
-std::shared_ptr<const IGeneralWindowFunction> asGeneralWindowFunction(const AggregateFunctionPtr & aggregate_function);
+GeneralWindowFunctionPtr asGeneralWindowFunction(const AggregateFunctionPtr & aggregate_function);
 void validateWindowFunctions(const WindowDescription & window);
 
 using WindowDescriptions = std::unordered_map<std::string, WindowDescription>;
