@@ -181,6 +181,31 @@ template <typename T>
 void SerializationNumber<T>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     auto x = assert_cast<const ColumnVector<T> &>(column).getData()[row_num];
+    if constexpr (is_floating_point<T>)
+    {
+        if (settings.json.write_float_type_markers && settings.float_precision == 0 && isFinite(x))
+        {
+            const bool need_quote = sizeof(T) >= 8 && settings.json.quote_64bit_floats;
+            /// Room for the shortest representation, and the `.0` suffix.
+            char buffer[DoubleConverter<false>::MAX_REPRESENTATION_LENGTH + 2];
+            /// The text is parsed back as `Float64`. The shortest representation of a narrower value is
+            /// only guaranteed to round-trip to the narrower type, not to the value promoted to `Float64`
+            /// (`Float32` `1234567808` is shortest as `1234567800`), so the promoted value is written.
+            size_t size = writeFloatTextFastPath(static_cast<Float64>(x), buffer, /* force_decimal_point= */ true);
+            if (buffer[size - 1] == '.')
+                buffer[size++] = '0';
+
+            if (need_quote)
+                writeChar('"', ostr);
+            /// Only negative zero has the sign bit set and is written without a minus.
+            if (signBit(x) && buffer[0] != '-')
+                writeChar('-', ostr);
+            ostr.write(buffer, size);
+            if (need_quote)
+                writeChar('"', ostr);
+            return;
+        }
+    }
     writeJSONNumber(x, ostr, settings);
 }
 
