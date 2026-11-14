@@ -72,7 +72,7 @@ function partitions_logging()
     $CLICKHOUSE_CLIENT --max_rows_to_read 0 --query "
         SELECT DISTINCT splitByChar('_', splitByString('::', query_id)[2])[1] AS p
         FROM system.text_log
-        WHERE event_date >= yesterday() AND logger_name = 'CreatingSetsTransform'
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name = 'CreatingSetsTransform'
           AND query_id LIKE concat('${table_uuid}', '::%') AND message LIKE '$1%'
         ORDER BY p"
 }
@@ -120,7 +120,7 @@ while [ $SECONDS -lt $deadline ]; do
         SELECT countIf(message LIKE 'Failed to use set from cache, key: %') > 0
            AND countIf(message LIKE 'Building set, key: %') > 0
         FROM system.text_log
-        WHERE event_date >= yesterday() AND logger_name = 'CreatingSetsTransform'
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name = 'CreatingSetsTransform'
           AND query_id LIKE concat('${table_uuid}', '::${waiter_2}\\_%')")
     [ "$retried" = 1 ] && break
     sleep 1
