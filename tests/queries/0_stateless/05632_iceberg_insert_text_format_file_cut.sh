@@ -18,7 +18,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DATA_PATH="${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE}/05632_iceberg_insert_text_format_file_cut/"
 TABLE_UUID=$(${CLICKHOUSE_CLIENT} --query "SELECT generateUUIDv4()")
 
-${CLICKHOUSE_CLIENT} --query "
+${CLICKHOUSE_CLIENT} --send_logs_level=error --query "
 SET allow_insert_into_iceberg = 1, allow_experimental_iceberg_compaction = 0, use_iceberg_metadata_files_cache = 0, iceberg_delete_data_on_drop = 0, async_insert = 0;
 SET output_format_parallel_formatting = 1, max_threads = 4, max_insert_threads = 1, max_block_size = 1000, min_insert_block_size_rows = 1000, min_insert_block_size_bytes = 0;
 SET iceberg_insert_max_bytes_in_data_file = 100000;
