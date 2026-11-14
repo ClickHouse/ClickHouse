@@ -5,6 +5,7 @@ name: PR
 on:
   pull_request:
     branches: ['master']
+    types: [opened, synchronize, reopened, ready_for_review]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
