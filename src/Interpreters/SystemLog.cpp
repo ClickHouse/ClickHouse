@@ -1607,7 +1607,22 @@ ASTPtr SystemLog<LogElement>::getCreateUnionTableQuery()
         }
     }
     else if (!flush_policy->shouldSkipAliasColumns())
+    {
+        /// The tables rotated from older versions have a renamed column only under its former name, which the log table keeps
+        /// as an `ALIAS`: only that name is provided by every table, so read it and derive the current name from it.
+        if constexpr (requires { LogElement::renamed_columns; })
+        {
+            for (const auto & [former_name, current_name] : LogElement::renamed_columns)
+            {
+                auto alias = std::ranges::find_if(alias_columns, [&](const auto & column) { return column.name == former_name; });
+                if (alias == alias_columns.end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "{} has no ALIAS column {}", LogElement::name(), former_name);
+                ordinary_columns.rename(String(current_name), String(former_name));
+                *alias = NameAndAliasPair(String(current_name), alias->type, String(former_name), alias->comment);
+            }
+        }
         ordinary_columns.setAliases(alias_columns);
+    }
     new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns));
     create->set(create->columns_list, new_columns_list);
 
