@@ -78,6 +78,16 @@ SELECT count() FROM (SELECT 1 FROM format(RowBinary, 'd Date32', unhex('00943577
 SELECT uniqExact(toString(d)) FROM format(RowBinary, 'd Date32', unhex('00943577FF933577'));
 SELECT uniqExact(toString(d)) FROM format(RowBinary, 'd Date32', unhex('00943577FF933577')) SETTINGS optimize_injective_functions_inside_uniq = 0;
 
+SELECT 'an out-of-range DateTime64, Time and Time64';
+-- Each pair below renders to one string: `DateTime64` saturates outside `0000-01-01`..`9999-12-31`,
+-- `Time` and `Time64` outside `-999:59:59`..`999:59:59`.
+SELECT uniqExact(toString(d)) FROM format(RowBinary, 'd DateTime64(3, \'UTC\')', unhex('00C06E31D9100100001C9536D9100100')) SETTINGS optimize_injective_functions_inside_uniq = 1;
+SELECT uniqExact(toString(d)) FROM format(RowBinary, 'd DateTime64(3, \'UTC\')', unhex('00C06E31D9100100001C9536D9100100')) SETTINGS optimize_injective_functions_inside_uniq = 0;
+SELECT uniqExact(toString(t)) FROM format(RowBinary, 't Time', unhex('80EE360081EE3600')) SETTINGS optimize_injective_functions_inside_uniq = 1;
+SELECT uniqExact(toString(t)) FROM format(RowBinary, 't Time', unhex('80EE360081EE3600')) SETTINGS optimize_injective_functions_inside_uniq = 0;
+SELECT uniqExact(toString(t)) FROM format(RowBinary, 't Time64(0)', unhex('80EE36000000000081EE360000000000')) SETTINGS optimize_injective_functions_inside_uniq = 1;
+SELECT uniqExact(toString(t)) FROM format(RowBinary, 't Time64(0)', unhex('80EE36000000000081EE360000000000')) SETTINGS optimize_injective_functions_inside_uniq = 0;
+
 SELECT 'a too narrow target width still throws';
 -- `toFixedString(FixedString(3), 2)` must not be eliminated: it has to raise the exception.
 SELECT count() FROM (SELECT 1 FROM (SELECT materialize(toFixedString('abc', 3)) AS f) GROUP BY toFixedString(f, 2)); -- { serverError TOO_LARGE_STRING_SIZE }
@@ -141,6 +151,9 @@ SELECT uniqExact(toString(x)) FROM (SELECT arrayJoin([reinterpretAsFloat64(toUIn
 SELECT uniqExact(toString(x)) FROM (SELECT arrayJoin([reinterpretAsFloat64(toUInt64(0x7FF0000000000001)), reinterpretAsFloat64(toUInt64(0x7FF8000000000001))]) AS x) SETTINGS optimize_injective_functions_inside_uniq = 0;
 SELECT count() FROM (SELECT 1 FROM (SELECT arrayJoin([reinterpretAsFloat64(toUInt64(0x7FF0000000000001)), reinterpretAsFloat64(toUInt64(0x7FF8000000000001))]) AS x) GROUP BY toString(x));
 SELECT count() FROM (SELECT 1 FROM (SELECT arrayJoin([reinterpretAsFloat64(toUInt64(0x7FF0000000000001)), reinterpretAsFloat64(toUInt64(0x7FF8000000000001))]) AS x) GROUP BY toString(x)) SETTINGS optimize_injective_functions_in_group_by = 0;
+-- The same holds for the elements of a `QBit`.
+SELECT uniqExact(toString(q)) FROM (SELECT CAST(arrayJoin([[reinterpretAsFloat32(toUInt32(2143289345))], [reinterpretAsFloat32(toUInt32(2143289346))]]), 'QBit(Float32, 1)') AS q) SETTINGS optimize_injective_functions_inside_uniq = 1;
+SELECT uniqExact(toString(q)) FROM (SELECT CAST(arrayJoin([[reinterpretAsFloat32(toUInt32(2143289345))], [reinterpretAsFloat32(toUInt32(2143289346))]]), 'QBit(Float32, 1)') AS q) SETTINGS optimize_injective_functions_inside_uniq = 0;
 
 
 SELECT 'coinciding boolean representations';
