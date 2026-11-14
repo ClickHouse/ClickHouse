@@ -226,6 +226,44 @@ int HTTPSession::write(const char* buffer, std::streamsize length)
 }
 
 
+int HTTPSession::writeRawNonBlocking(const char* buffer, std::streamsize length, const std::function<bool()>& ready_to_send)
+{
+	_socket.impl()->throttleSendBlocking(static_cast<size_t>(length));
+
+	try
+	{
+		if (_sendDataHooks)
+			_sendDataHooks->atStart((int) length);
+		if (ready_to_send && !ready_to_send())
+		{
+			if (_sendDataHooks)
+				_sendDataHooks->atFail();
+			return 0;
+		}
+		/// A negative result means that the socket would block.
+		int result = _socket.sendBytes(buffer, (int) length);
+		if (result < 0)
+		{
+			if (_sendDataHooks)
+				_sendDataHooks->atFail();
+			result = 0;
+		}
+		else if (_sendDataHooks)
+		{
+			_sendDataHooks->atFinish(result);
+		}
+		return result;
+	}
+	catch (Poco::Exception& exc)
+	{
+		if (_sendDataHooks)
+			_sendDataHooks->atFail();
+		setException(exc);
+		throw;
+	}
+}
+
+
 int HTTPSession::fillBuffer()
 {
 	if (!_pBuffer)

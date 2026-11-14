@@ -28,7 +28,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/S3/ProviderType.h>
-#include <IO/SocketPeerClosed.h>
 #include <Interpreters/Context.h>
 
 #include <aws/core/http/HttpRequest.h>
@@ -686,11 +685,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 .name_length = static_cast<int>(http_max_field_name_size),
                 .value_length = static_cast<int>(http_max_field_value_size)};
 
-            /// The limits of the response are used only by `receiveEarlyHTTPResponse`.
             Poco::Net::HTTPResponse poco_response;
-            poco_response.setFieldLimit(response_header_limits.fields);
-            poco_response.setNameLengthLimit(response_header_limits.name_length);
-            poco_response.setValueLengthLimit(response_header_limits.value_length);
 
             Stopwatch watch;
 
@@ -701,9 +696,6 @@ void PocoHTTPClient::makeRequestInternalImpl(
             observeLatency(request, S3LatencyType::Connect, static_cast<HistogramMetrics::Value>(connect_time));
             observeLatency(request, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
             latency_recorded = true;
-
-            /// Set when the server has already answered while the request body was being sent.
-            std::unique_ptr<HTTPResponseReadBuffer> response_body;
 
             if (request.GetContentBody())
             {
@@ -717,40 +709,23 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 request.GetContentBody()->seekg(0);
 
                 setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
-                try
-                {
-                    auto size = copyFromIStreamToWriteBuffer(*request.GetContentBody(), *request_body);
-                    request_body->finalize();
-                    if (enable_s3_requests_logging)
-                        LOG_TEST(log, "Written {} bytes to request body", size);
-                }
-                catch (const Poco::IOException &)
-                {
-                    /// A server may answer with an error and close the connection before reading the whole body.
-                    /// TLS allows no I/O after a failed write.
-                    if (session->secure()
-                        || DB::getSocketState(session->socket()) != DB::SocketState::DataPending
-                        || !(response_body = receiveEarlyHTTPResponse(session, poco_response, DBMS_DEFAULT_BUFFER_SIZE))
-                        || poco_response.getStatus() < Poco::Net::HTTPResponse::HTTP_MULTIPLE_CHOICES)
-                        throw;
-                    LOG_DEBUG(log, "Failed to send the request body to {}, using the response the server has already sent: {}",
-                        uri, getCurrentExceptionMessage(/* with_stacktrace */ false));
-                }
-            }
-
-            if (!response_body)
-            {
-                request_body->finalize();
-
-                setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
-
-                /// Test-only slow-S3 simulation: delay each request after sending and before receiving its response.
-                fiu_do_on(FailPoints::s3_slow_response, { sleepForMilliseconds(simulated_network_latency_ms); });
-
+                auto size = copyFromIStreamToWriteBuffer(*request.GetContentBody(), *request_body);
                 if (enable_s3_requests_logging)
-                    LOG_TEST(log, "Receiving response...");
-                response_body = receiveHTTPResponse(session, poco_response, DBMS_DEFAULT_BUFFER_SIZE);
+                    LOG_TEST(log, "Written {} bytes to request body", size);
             }
+
+            /// When the server answers with an error while the body is sent, the rest of the body is
+            /// dropped, and the error is received here.
+            request_body->finalize();
+
+            setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
+
+            /// Test-only slow-S3 simulation: delay each request after sending and before receiving its response.
+            fiu_do_on(FailPoints::s3_slow_response, { sleepForMilliseconds(simulated_network_latency_ms); });
+
+            if (enable_s3_requests_logging)
+                LOG_TEST(log, "Receiving response...");
+            auto response_body = receiveHTTPResponse(session, poco_response, DBMS_DEFAULT_BUFFER_SIZE);
 
             watch.stop();
             addMetric(request, S3MetricType::Microseconds, watch.elapsedMicroseconds());
