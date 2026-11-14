@@ -72,9 +72,8 @@ static MutableColumnPtr cloneEmptyFromFirstConvertedColumn(const VectorWithMemor
     return nullptr;
 }
 
-/// Returns a function that inserts the default of `result_type` into `res`. `IColumn::insertDefault` inserts 0,
-/// which is not the default of an `Enum` (its first value). A `Nullable` `res` made by `accurateCastOrNull`
-/// conversions keeps NULL as its default.
+/// `IColumn::insertDefault` inserts 0, which is not the default of an `Enum` (its first value).
+/// A `Nullable` `res` made by `accurateCastOrNull` conversions keeps NULL as its default.
 static auto makeDefaultInserter(IColumn & res, const IDataType & result_type)
 {
     const bool use_type_default = !result_type.isDefaultInsertTrivial() && !isColumnNullable(res);
