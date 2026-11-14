@@ -15080,8 +15080,8 @@ void MergeTreeData::removePartContributionToDataVolume(const DataPartPtr & part)
 {
     /// Negated modulo 2^64 and converted afterwards: negating a converted counter read from the part could overflow.
     increaseDataVolume(
-        static_cast<ssize_t>(common::negateIgnoreOverflow(static_cast<UInt64>(part->getBytesOnDisk()))),
-        static_cast<ssize_t>(common::negateIgnoreOverflow(static_cast<UInt64>(part->rows_count))),
+        static_cast<ssize_t>(common::negateIgnoreOverflow(part->getBytesOnDisk())),
+        static_cast<ssize_t>(common::negateIgnoreOverflow(part->rows_count)),
         -1);
 }
 
