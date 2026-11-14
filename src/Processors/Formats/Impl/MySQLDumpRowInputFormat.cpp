@@ -266,7 +266,7 @@ static void readUnquotedColumnName(String & name, ReadBuffer & in)
     name.clear();
     while (!in.eof())
     {
-        char * pos = find_first_symbols<',', ')', ' '>(in.position(), in.buffer().end());
+        char * pos = find_first_symbols<',', ')', ' ', '\t', '\n', '\r'>(in.position(), in.buffer().end());
         name.append(in.position(), pos - in.position());
         in.position() = pos;
 
@@ -300,6 +300,8 @@ static void tryReadColumnNames(ReadBuffer & in, Names * column_names)
         String name;
         if (!in.eof() && *in.position() == '`')
             readBackQuotedString(name, in);
+        else if (!in.eof() && *in.position() == '"')
+            readDoubleQuotedString(name, in);
         else
             readUnquotedColumnName(name, in);
 
@@ -455,8 +457,22 @@ static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name
     /// The values are in the order of the INSERT column list, which can differ from CREATE (mysqldump omits generated columns).
     Names insert_column_names;
     skipToDataInInsertQuery(in, &insert_column_names);
-    if (!insert_column_names.empty())
-        column_names = std::move(insert_column_names);
+    if (insert_column_names.empty())
+        return;
+
+    /// MySQL column names are case-insensitive, so take the spelling from CREATE. If a name is not in CREATE, keep the CREATE order.
+    if (!structure_from_create.empty())
+    {
+        for (auto & name : insert_column_names)
+        {
+            auto it = std::ranges::find_if(column_names, [&](const String & create_name) { return boost::iequals(create_name, name); });
+            if (it == column_names.end())
+                return;
+            name = *it;
+        }
+    }
+
+    column_names = std::move(insert_column_names);
 }
 
 void MySQLDumpRowInputFormat::readPrefix()
