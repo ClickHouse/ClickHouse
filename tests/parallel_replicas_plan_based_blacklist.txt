@@ -31,28 +31,6 @@
     `SHUFFLE` is not shipped with the plan fragment, so replicas return every row they read and lazy materialization does not apply
 05480_shuffle_clause
 
-    The subquery query result cache is not used with plan-based parallel replicas, so a test that expects a cached subquery fails
-    https://github.com/ClickHouse/ClickHouse/pull/130376
-03381_query_result_cache_cte_subqueries
-03381_query_result_cache_explicit_optin
-03381_query_result_cache_join_subqueries
-03381_query_result_cache_nested_subqueries
-03381_query_result_cache_subqueries_settings
-03381_query_result_cache_subqueries_with_aliases
-03381_query_result_cache_subquery_settings_propagation
-03381_query_result_cache_table_subqueries
-03381_query_result_cache_union_subqueries
-04327_wait_timeout_chrono_overflow
-04651_query_result_cache_subquery_parallel_replicas_plan_serialization
-05025_union_subquery_explicit_query_cache
-05055_subquery_profile_query_cache
-05141_settings_constraints_nested_settings_effective
-05154_subquery_duplicate_use_query_cache
-05325_union_subquery_opt_out_query_cache_arms
-05331_query_result_cache_subquery_partial_read
-05332_obfuscate_profile_seed_query_cache
-05488_shuffle_query_cache
-
     A query that is not distributed keeps a split aggregation and a `ParallelReplicasSplit` step
     https://github.com/ClickHouse/ClickHouse/issues/128539
 02377_optimize_sorting_by_input_stream_properties_2
@@ -85,7 +63,6 @@
 05175_time_series_table_functions_parallel_replicas
 
     The test greps EXPLAIN, and ReadFromParallelReplicas prints the whole shipped fragment in its description
-02810_fix_remove_dedundant_distinct_view
 05141_hypothetical_projection_verdict_rules
 05175_hypothetical_projection_part_offset
 

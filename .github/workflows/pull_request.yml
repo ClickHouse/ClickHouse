@@ -4782,11 +4782,11 @@ jobs:
     - dockers_build_arm
     - dockers_build_multiplatform_manifest
     - fast_test
-    - integration_tests_amd_asan_ubsan_db_disk_targeted
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -4843,11 +4843,11 @@ jobs:
     - dockers_build_arm
     - dockers_build_multiplatform_manifest
     - fast_test
-    - integration_tests_amd_asan_ubsan_db_disk_targeted
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
