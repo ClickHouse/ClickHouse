@@ -44,6 +44,11 @@ namespace DB
         /// For example can be retrieved from the destination table in INSERT SELECT query.
         SerializationInfoByName serialization_hints{{}};
 
+        /// The serialization version of the enclosing step (`ctx.step_version`) since which `columns_added_after_format`
+        /// is written. The step that serializes this structure (`ReadFromObjectStorage`) has to register this version in
+        /// `QueryPlanStepRegistry` to send the set; at an older version it is dropped, and the peer reads it as empty.
+        static constexpr UInt64 SERIALIZATION_VERSION_WITH_COLUMNS_ADDED_AFTER_FORMAT = 1;
+
         void serialize(QueryPlanStepSerialization & ctx) const;
         static ReadFromFormatInfo deserialize(QueryPlanStepDeserialization & ctx);
 
