@@ -6,7 +6,9 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Settings.h>
+#include <Common/Stopwatch.h>
 #include <Interpreters/Context.h>
+#include <Columns/ColumnFunction.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/MaskOperations.h>
@@ -131,7 +133,55 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        return executeWithOptionalProfile(args, result_type, input_rows_count, nullptr);
+    }
+
+    ColumnPtr executeImplWithProfile(
+        const ColumnsWithTypeAndName & args,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        FunctionExecutionProfile * profile) const override
+    {
+        if (!profile)
+            return executeImpl(args, result_type, input_rows_count);
+
+        /// Creating a `Stopwatch` costs a `clock_gettime`, so it is only done when profiling is requested.
+        Stopwatch watch;
+        auto res = executeWithOptionalProfile(args, result_type, input_rows_count, profile);
+        profile->executed_rows = input_rows_count;
+        profile->execution_elapsed = watch.elapsed();
+        return res;
+    }
+
+private:
+    /// When `profile` is set, the execution of the lazily executed second argument is measured and reported
+    /// through `profile->argument_profiles`, so that `enable_adaptive_short_circuit_lazy_execution` learns
+    /// how much it costs and can revisit the decision to execute it lazily.
+    ColumnPtr executeWithOptionalProfile(
+        const ColumnsWithTypeAndName & args,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        FunctionExecutionProfile * profile) const
+    {
         ColumnsWithTypeAndName arguments = args;
+
+        auto alternative_profile = [&]() -> FunctionExecutionProfile *
+        {
+            if (!profile || !checkAndGetShortCircuitArgument(arguments[1].column))
+                return nullptr;
+            profile->argument_profiles.emplace_back(1, FunctionExecutionProfile());
+            return &profile->argument_profiles.back().second;
+        };
+
+        auto accumulate_arguments_elapsed = [&]
+        {
+            if (!profile)
+                return;
+            size_t side_elapsed = 0;
+            for (const auto & [_, arg_profile] : profile->argument_profiles)
+                side_elapsed += arg_profile.lazy_executed_additional_elapsed;
+            profile->lazy_executed_additional_elapsed = side_elapsed;
+        };
 
         /// The first argument is always needed, but it can still be lazily executed when `ifNull`
         /// itself is an argument of an enclosing short-circuit function.
@@ -140,7 +190,8 @@ public:
         /// Always null.
         if (arguments[0].type->onlyNull())
         {
-            executeColumnIfNeeded(arguments[1]);
+            executeColumnIfNeeded(arguments[1], false, alternative_profile());
+            accumulate_arguments_elapsed();
             return arguments[1].column;
         }
 
@@ -165,7 +216,8 @@ public:
         {
             IColumn::Filter mask(input_rows_count, 1);
             MaskInfo mask_info = extractInvertedMask(mask, recursiveRemoveSparse(is_not_null_res));
-            maskedExecute(arguments[1], mask, mask_info);
+            maskedExecute(arguments[1], mask, mask_info, alternative_profile());
+            accumulate_arguments_elapsed();
         }
 
         ColumnsWithTypeAndName if_columns
@@ -178,7 +230,6 @@ public:
         return if_function->build(if_columns)->execute(if_columns, result_type, input_rows_count, /* dry_run = */ false);
     }
 
-private:
     FunctionOverloadResolverPtr is_not_null;
     FunctionOverloadResolverPtr assume_not_null;
     FunctionOverloadResolverPtr if_function;

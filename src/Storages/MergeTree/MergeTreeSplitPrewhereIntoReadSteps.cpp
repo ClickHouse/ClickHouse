@@ -533,7 +533,7 @@ bool tryBuildPrewhereSteps(
             PrewhereExprStep new_step
             {
                 .type = PrewhereExprStep::Filter,
-                .actions = std::make_shared<ExpressionActions>(std::move(*step.actions), actions_settings),
+                .actions = ExpressionActions::create(std::move(*step.actions), actions_settings),
                 .filter_column_name = step.result_node->result_name,
                 /// Don't remove a condition that is an original output or that a later step uses.
                 /// An AND of several conditions is a node the steps create, nothing else references it.

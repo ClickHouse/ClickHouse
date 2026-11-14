@@ -7,6 +7,7 @@
 #include <Columns/ColumnFunction.h>
 #include <Columns/MaskOperations.h>
 #include <Core/Settings.h>
+#include <Common/Stopwatch.h>
 #include <Interpreters/Context.h>
 
 
@@ -153,6 +154,36 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        return executeWithOptionalProfile(args, result_type, input_rows_count, nullptr);
+    }
+
+    ColumnPtr executeImplWithProfile(
+        const ColumnsWithTypeAndName & args,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        FunctionExecutionProfile * profile) const override
+    {
+        if (!profile)
+            return executeImpl(args, result_type, input_rows_count);
+
+        /// Creating a `Stopwatch` costs a `clock_gettime`, so it is only done when profiling is requested.
+        Stopwatch watch;
+        auto res = executeWithOptionalProfile(args, result_type, input_rows_count, profile);
+        profile->executed_rows = input_rows_count;
+        profile->execution_elapsed = watch.elapsed();
+        return res;
+    }
+
+private:
+    /// When `profile` is set, the execution of every lazily executed THEN and ELSE value is measured and
+    /// reported through `profile->argument_profiles`, so that `enable_adaptive_short_circuit_lazy_execution`
+    /// learns how much they cost and can revisit the decision to execute them lazily.
+    ColumnPtr executeWithOptionalProfile(
+        const ColumnsWithTypeAndName & args,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        FunctionExecutionProfile * profile) const
+    {
         if (args.empty())
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects at least 1 argument", getName());
 
@@ -280,7 +311,15 @@ public:
 
                         IColumn::Filter unmatched(input_rows_count, 1);
                         auto unmatched_info = extractInvertedMask(unmatched, matched);
-                        maskedExecute(transform_args.back(), unmatched, unmatched_info);
+                        FunctionExecutionProfile * else_profile = nullptr;
+                        if (profile)
+                        {
+                            profile->argument_profiles.emplace_back(args.size() - 1, FunctionExecutionProfile());
+                            else_profile = &profile->argument_profiles.back().second;
+                        }
+                        maskedExecute(transform_args.back(), unmatched, unmatched_info, else_profile);
+                        if (profile)
+                            profile->lazy_executed_additional_elapsed = else_profile->lazy_executed_additional_elapsed;
                     }
                     return function_base->execute(transform_args, result_type, input_rows_count, /* dry_run = */ false);
                 }
@@ -303,11 +342,20 @@ public:
         multi_if_args.push_back(args.back());
 
         // Execute multiIf
-        return fun_multi_if->build(multi_if_args)
-            ->execute(multi_if_args, result_type, input_rows_count, false);
+        if (!profile)
+            return fun_multi_if->build(multi_if_args)->execute(multi_if_args, result_type, input_rows_count, false);
+
+        /// `multiIf` executes the lazy THEN and ELSE values and reports their profiles at its own positions:
+        /// the value at the position `i` of `multi_if_args` is the argument at the position `i + 1` of `args`.
+        /// The conditions are computed here, so they are never lazy and have no profiles.
+        FunctionExecutionProfile multi_if_profile;
+        auto res = fun_multi_if->build(multi_if_args)->execute(multi_if_args, result_type, input_rows_count, false, &multi_if_profile);
+        for (auto & [arg_pos, arg_profile] : multi_if_profile.argument_profiles)
+            profile->argument_profiles.emplace_back(arg_pos + 1, std::move(arg_profile));
+        profile->lazy_executed_additional_elapsed = multi_if_profile.lazy_executed_additional_elapsed;
+        return res;
     }
 
-private:
     FunctionOverloadResolverPtr fun_is_null;
     FunctionOverloadResolverPtr fun_if;
     FunctionOverloadResolverPtr fun_equals;

@@ -13,7 +13,9 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
+#include <Common/Stopwatch.h>
 #include <Common/assert_cast.h>
+#include <Functions/IFunction.h>
 
 #include <algorithm>
 
@@ -170,6 +172,7 @@ static bool extractMaskNumeric(
 
     mask_info.has_ones = ones_count > 0;
     mask_info.has_zeros = ones_count != mask.size();
+    mask_info.ones_count = ones_count;
     return true;
 }
 
@@ -359,7 +362,7 @@ static void fillUnusedRowsWithValidValues(IColumn & column, const IDataType & ty
     }
 }
 
-void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, const MaskInfo & mask_info)
+void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, const MaskInfo & mask_info, FunctionExecutionProfile * profile)
 {
     const auto * column_function = checkAndGetShortCircuitArgument(column.column);
     if (!column_function)
@@ -389,15 +392,31 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
         /// Expanding is done to keep consistency in function calls (all columns the same size) and it's ok
         /// since the values won't be used by `if`. But they are still converted together with the used values,
         /// e.g. when `if` converts its branches to the common type, so they must be valid values of the type.
-        auto filtered = column_function->filter(mask, -1);
-        auto filter_after_execution = typeid_cast<const ColumnFunction *>(filtered.get())->reduce();
-        auto mut_column = IColumn::mutate(std::move(filter_after_execution.column));
-        mut_column->expand(mask, false);
-        fillUnusedRowsWithValidValues(*mut_column, *filter_after_execution.type, mask);
-        column.column = std::move(mut_column);
+        if (profile)
+        {
+            Stopwatch watch;
+            auto filtered = column_function->filter(mask, -1);
+            auto filter_after_execution = typeid_cast<const ColumnFunction *>(filtered.get())->reduce(/* dry_run = */ false, profile);
+            auto mut_column = IColumn::mutate(std::move(filter_after_execution.column));
+            mut_column->expand(mask, false);
+            fillUnusedRowsWithValidValues(*mut_column, *filter_after_execution.type, mask);
+            auto total_elapsed = watch.elapsed();
+            profile->lazy_executed_additional_elapsed = total_elapsed - profile->execution_elapsed + profile->lazy_executed_additional_elapsed;
+            profile->execution_elapsed = total_elapsed;
+            column.column = std::move(mut_column);
+        }
+        else
+        {
+            auto filtered = column_function->filter(mask, -1);
+            auto filter_after_execution = typeid_cast<const ColumnFunction *>(filtered.get())->reduce(/* dry_run = */ false, profile);
+            auto mut_column = IColumn::mutate(std::move(filter_after_execution.column));
+            mut_column->expand(mask, false);
+            fillUnusedRowsWithValidValues(*mut_column, *filter_after_execution.type, mask);
+            column.column = std::move(mut_column);
+        }
     }
     else
-        column = column_function->reduce();
+        column = column_function->reduce(/* dry_run = */ false, profile);
 
     chassert(column.column->size() == original_size);
 }
@@ -408,7 +427,8 @@ static MaskInfo maskedExecuteAndUpdateMaskImpl(
     PaddedPODArray<UInt8> & mask,
     const MaskInfo & mask_info,
     PaddedPODArray<UInt8> * nulls,
-    UInt8 null_value)
+    UInt8 null_value,
+    FunctionExecutionProfile * profile)
 {
     if (!mask_info.has_ones)
         return mask_info;
@@ -419,7 +439,7 @@ static MaskInfo maskedExecuteAndUpdateMaskImpl(
 
     if (!mask_info.has_zeros)
     {
-        auto result = column_function->reduce();
+        auto result = column_function->reduce(/* dry_run = */ false, profile);
         return extractMaskImpl<inverted>(mask, result.column, null_value, nullptr, nulls);
     }
 
@@ -427,6 +447,19 @@ static MaskInfo maskedExecuteAndUpdateMaskImpl(
     /// result directly instead of expanding it to the full block and reading it again.
     /// Only this path accepts compact columns; the public `extractMask` functions keep
     /// requiring full-sized columns.
+    if (profile)
+    {
+        /// Filtering is the only extra work of the lazy execution here: the mask is updated
+        /// from the argument's result in either case, so it is not counted as an overhead.
+        Stopwatch watch;
+        auto filtered = column_function->filter(mask, -1);
+        auto result = assert_cast<const ColumnFunction &>(*filtered).reduce(/* dry_run = */ false, profile);
+        auto total_elapsed = watch.elapsed();
+        profile->lazy_executed_additional_elapsed = total_elapsed - profile->execution_elapsed + profile->lazy_executed_additional_elapsed;
+        profile->execution_elapsed = total_elapsed;
+        return extractMaskImpl<inverted, true>(mask, result.column, null_value, nullptr, nulls);
+    }
+
     auto filtered = column_function->filter(mask, -1);
     auto result = assert_cast<const ColumnFunction &>(*filtered).reduce();
     return extractMaskImpl<inverted, true>(mask, result.column, null_value, nullptr, nulls);
@@ -438,13 +471,14 @@ MaskInfo maskedExecuteAndUpdateMask(
     const MaskInfo & mask_info,
     bool inverted,
     PaddedPODArray<UInt8> * nulls,
-    UInt8 null_value)
+    UInt8 null_value,
+    FunctionExecutionProfile * profile)
 {
-    return inverted ? maskedExecuteAndUpdateMaskImpl<true>(column, mask, mask_info, nulls, null_value)
-                    : maskedExecuteAndUpdateMaskImpl<false>(column, mask, mask_info, nulls, null_value);
+    return inverted ? maskedExecuteAndUpdateMaskImpl<true>(column, mask, mask_info, nulls, null_value, profile)
+                    : maskedExecuteAndUpdateMaskImpl<false>(column, mask, mask_info, nulls, null_value, profile);
 }
 
-void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty)
+void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty, FunctionExecutionProfile * profile)
 {
     const auto * column_function = checkAndGetShortCircuitArgument(column.column);
     if (!column_function)
@@ -453,7 +487,7 @@ void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty)
     size_t original_size = column.column->size();
 
     if (!empty)
-        column = column_function->reduce();
+        column = column_function->reduce(/* dry_run = */ false, profile);
     else
         column.column = column_function->getResultType()->createColumnConstWithDefaultValue(original_size)->convertToFullColumnIfConst();
 

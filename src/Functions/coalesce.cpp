@@ -1,9 +1,12 @@
+#include <Columns/ColumnFunction.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/MaskOperations.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Settings.h>
+#include <Common/Stopwatch.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -189,20 +192,56 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        return executeWithOptionalProfile(arguments, result_type, input_rows_count, nullptr);
+    }
+
+    ColumnPtr executeImplWithProfile(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        FunctionExecutionProfile * profile) const override
+    {
+        if (!profile)
+            return executeImpl(arguments, result_type, input_rows_count);
+
+        /// Creating a `Stopwatch` costs a `clock_gettime`, so it is only done when profiling is requested.
+        Stopwatch watch;
+        auto res = executeWithOptionalProfile(arguments, result_type, input_rows_count, profile);
+        profile->executed_rows = input_rows_count;
+        profile->execution_elapsed = watch.elapsed();
+        return res;
+    }
+
+private:
+    /// When `profile` is set, the execution of every lazily executed argument is measured and reported
+    /// through `profile->argument_profiles`, so that `enable_adaptive_short_circuit_lazy_execution` learns
+    /// how much they cost and can revisit the decision to execute them lazily.
+    ColumnPtr executeWithOptionalProfile(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        FunctionExecutionProfile * profile) const
+    {
         /// coalesce(arg0, arg1, ..., argN) is essentially
         /// multiIf(isNotNull(arg0), assumeNotNull(arg0), isNotNull(arg1), assumeNotNull(arg1), ..., argN)
         /// with constant NULL arguments removed.
 
         ColumnsWithTypeAndName filtered_args;
         filtered_args.reserve(arguments.size());
-        for (const auto & arg : arguments)
+        /// The positions of the profiles in `profile->argument_profiles` are the positions in `arguments`,
+        /// not in `filtered_args`, because they are matched with the arguments of the action.
+        VectorWithMemoryTracking<size_t> filtered_args_positions;
+        filtered_args_positions.reserve(arguments.size());
+        for (size_t arg_pos = 0; arg_pos < arguments.size(); ++arg_pos)
         {
+            const auto & arg = arguments[arg_pos];
             const auto & type = arg.type;
 
             if (type->onlyNull())
                 continue;
 
             filtered_args.push_back(arg);
+            filtered_args_positions.push_back(arg_pos);
 
             if (!canContainNull(*type))
                 break;
@@ -231,7 +270,15 @@ public:
             bool is_last = i + 1 == filtered_args.size();
 
             if (has_lazy_arguments && i > 0)
-                maskedExecute(filtered_args[i], mask, mask_info);
+            {
+                FunctionExecutionProfile * arg_profile = nullptr;
+                if (profile && checkAndGetShortCircuitArgument(filtered_args[i].column))
+                {
+                    profile->argument_profiles.emplace_back(filtered_args_positions[i], FunctionExecutionProfile());
+                    arg_profile = &profile->argument_profiles.back().second;
+                }
+                maskedExecute(filtered_args[i], mask, mask_info, arg_profile);
+            }
 
             if (is_last)
             {
@@ -260,6 +307,14 @@ public:
                 if (has_lazy_arguments && static_cast<int>(i) < last_lazy_argument_index)
                     mask_info = extractInvertedMask(mask, recursiveRemoveSparse(cond_column));
             }
+        }
+
+        if (profile)
+        {
+            size_t side_elapsed = 0;
+            for (const auto & [_, arg_profile] : profile->argument_profiles)
+                side_elapsed += arg_profile.lazy_executed_additional_elapsed;
+            profile->lazy_executed_additional_elapsed = side_elapsed;
         }
 
         ColumnPtr res;
@@ -308,7 +363,6 @@ public:
         return res;
     }
 
-private:
     FunctionOverloadResolverPtr is_not_null;
     FunctionOverloadResolverPtr assume_not_null;
     FunctionOverloadResolverPtr if_function;
