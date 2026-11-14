@@ -1505,7 +1505,8 @@ public:
         const ConnectionTimeouts & timeouts_,
         const CompressionMethod compression_method_,
         const HTTPHeaderEntries & headers_,
-        const String & http_method_)
+        const String & http_method_,
+        PartitionedWriteAccessCheck write_access_check_)
         : PartitionedSink(partition_strategy_, context_, std::make_shared<const Block>(sample_block_))
         , uri(uri_)
         , format(format_)
@@ -1516,12 +1517,17 @@ public:
         , compression_method(compression_method_)
         , headers(headers_)
         , http_method(http_method_)
+        , write_access_check(std::move(write_access_check_))
     {
     }
 
     SinkPtr createSinkForPartition(const String & partition_id) override
     {
         std::string partition_path = partition_strategy->getPathForWrite(uri, partition_id);
+
+        /// The partition id comes from the data, so its destination is checked before anything is written to it.
+        if (write_access_check)
+            write_access_check(context, partition_path);
 
         context->getRemoteHostFilter().checkURL(Poco::URI(partition_path));
         return std::make_shared<StorageURLSink>(
@@ -1539,6 +1545,7 @@ private:
     const CompressionMethod compression_method;
     const HTTPHeaderEntries headers;
     const String http_method;
+    const PartitionedWriteAccessCheck write_access_check;
 };
 
 std::string IStorageURLBase::getReadMethod() const
@@ -2325,7 +2332,8 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             getHTTPTimeouts(context),
             compression_method,
             headers,
-            write_method);
+            write_method,
+            getPartitionedWriteAccessCheck());
     }
 
     return std::make_shared<StorageURLSink>(

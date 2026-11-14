@@ -128,9 +128,9 @@ public:
     /// query do not register anything.
     virtual String getUsedNamedCollectionName() const { return {}; }
 
-    // INSERT INTO TABLE FUNCTION ... PARTITION BY
-    // Set partition by expression so `ITableFunctionObjectStorage` can construct a proper representation
-    virtual void setPartitionBy(const ASTPtr &) {}
+    /// The function sets the expression of `INSERT INTO FUNCTION ... PARTITION BY`.
+    /// Only the interpreter of `INSERT INTO FUNCTION` calls it.
+    void setPartitionBy(const ASTPtr & partition_by_) { partition_by = partition_by_; }
 
     /// Create storage according to the query.
     /// `check_create_temporary_table` is passed as false by database engines that resolve their
@@ -172,6 +172,10 @@ public:
     /// Check the `TABLE ENGINE` grant, for engines that opt in via `requiresTableEngineGrant`.
     void checkEngineAccess(ContextPtr context) const;
 
+    /// The function returns the name of the table engine that this function uses, as the `TABLE ENGINE` grant names it:
+    /// a cluster function is checked as its non-clustered engine. It is empty when the function has no engine.
+    String getEngineNameForAccessCheck() const;
+
     /// `uri` normalized by Poco; an unparsable URI becomes empty.
     static String normalizeURIForAccessCheck(const String & uri);
 
@@ -183,6 +187,10 @@ public:
 
 protected:
     virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
+
+    /// Set only for `INSERT INTO FUNCTION ... PARTITION BY`. Each partition's destination then comes from the data,
+    /// so it needs its own write access check.
+    ASTPtr partition_by;
 
     /// Check `access_type` on the name the function was given, before that name is resolved.
     void checkSourceTableAccess(const ContextPtr & context, const StorageID & table_id, AccessType access_type) const;

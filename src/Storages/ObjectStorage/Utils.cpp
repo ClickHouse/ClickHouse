@@ -48,7 +48,8 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
     const StorageObjectStorageConfiguration & configuration,
     const StorageObjectStorageQuerySettings & settings,
     const String & key,
-    size_t sequence_number)
+    size_t sequence_number,
+    const std::function<void(const String & new_key)> & check_new_key)
 {
     if (settings.truncate_on_insert
         || !object_storage.exists(StoredObject(key)))
@@ -65,6 +66,8 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
         {
             new_key = key.substr(0, pos) + "." + std::to_string(sequence_number) + (pos == std::string::npos ? "" : key.substr(pos));
             ++sequence_number;
+            if (check_new_key)
+                check_new_key(new_key);
         }
         while (object_storage.exists(StoredObject(new_key)));
 

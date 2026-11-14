@@ -1049,7 +1049,9 @@ SinkToStoragePtr StorageObjectStorage::write(
         configuration->update(object_storage, local_context);
     }
 
-    return createSink(configuration, object_storage, storage_id, format_settings, catalog, metadata_snapshot, local_context);
+    return createSink(
+        configuration, object_storage, storage_id, format_settings, catalog, metadata_snapshot, local_context,
+        getPartitionedWriteAccessCheck());
 }
 
 SinkToStoragePtr StorageObjectStorage::createSink(
@@ -1059,7 +1061,8 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     const std::optional<FormatSettings> & format_settings,
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const StorageMetadataPtr & metadata_snapshot,
-    const ContextPtr & local_context)
+    const ContextPtr & local_context,
+    const PartitionedWriteAccessCheck & write_access_check)
 {
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
     const auto & settings = configuration->getQuerySettings(local_context);
@@ -1090,13 +1093,26 @@ SinkToStoragePtr StorageObjectStorage::createSink(
 
     if (configuration->partition_strategy)
     {
-        return std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, format_settings, sample_block, local_context);
+        return std::make_shared<PartitionedStorageObjectStorageSink>(
+            object_storage, configuration, format_settings, sample_block, local_context, write_access_check);
     }
 
     const auto paths = configuration->getPaths();
     /// Unless the insert truncates, the probe below checks the first path, which is written when it is free.
     auto write_path = settings.truncate_on_insert ? paths.back().path : paths.front().path;
-    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front().path, paths.size()))
+
+    /// The written key can differ from the typed URI that the source access check covered, e.g. after `{_schema_hash}`
+    /// is expanded, so it is checked before it is probed or written.
+    if (write_access_check)
+        write_access_check(local_context, configuration->getURIForAccessCheck(write_path));
+
+    /// A key renamed by `s3_create_new_file_on_insert` can be outside the grant, e.g. `data.1.tsv` for `data.tsv`.
+    std::function<void(const String &)> check_new_key;
+    if (write_access_check)
+        check_new_key = [&](const String & new_key) { write_access_check(local_context, configuration->getURIForAccessCheck(new_key)); };
+
+    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
+            *object_storage, *configuration, settings, paths.front().path, paths.size(), check_new_key))
     {
         configuration->addPath({*new_key});
         write_path = *new_key;

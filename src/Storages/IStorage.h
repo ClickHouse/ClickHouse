@@ -31,6 +31,12 @@ namespace DB
 
 using StorageActionBlockType = size_t;
 
+/// The function checks that the user may write to the destination of a partition of `INSERT INTO FUNCTION ... PARTITION BY`,
+/// and throws otherwise. The table function checks only the URI template, but a partition id comes from the inserted data
+/// and can point outside the granted path: with `WRITE ON URL('^http://host/allowed/.*$')`, the partition id
+/// `../protected/x` writes to `http://host/protected/x`.
+using PartitionedWriteAccessCheck = std::function<void(const ContextPtr & context, const String & uri)>;
+
 class ASTCreateQuery;
 class ASTInsertQuery;
 
@@ -932,6 +938,19 @@ public:
         ContextPtr context,
         std::shared_ptr<IStorage> storage_);
 
+    /// The class lets only table functions set the partitioned write access check:
+    /// the setter requires the key, and only `ITableFunction` can create one.
+    class PartitionedWriteAccessKey
+    {
+        friend class ITableFunction;
+        PartitionedWriteAccessKey() = default;
+    };
+
+    void setPartitionedWriteAccessCheck(PartitionedWriteAccessCheck check, const PartitionedWriteAccessKey &)
+    {
+        partitioned_write_access_check = std::move(check);
+    }
+
 private:
     /// Lock required for alter queries (lockForAlter).
     /// Allows to execute only one simultaneous alter query.
@@ -942,6 +961,13 @@ private:
     /// DROP-like queries take this lock for write (lockExclusively), to be sure
     /// that all table threads finished.
     mutable RWLock drop_lock = RWLockImpl::create();
+
+    /// The write access check for each partition of `INSERT INTO FUNCTION ... PARTITION BY`. It is kept in the storage
+    /// because the destinations of partitions are known only when the storage writes. Only table functions set it.
+    PartitionedWriteAccessCheck partitioned_write_access_check;
+
+protected:
+    const PartitionedWriteAccessCheck & getPartitionedWriteAccessCheck() const { return partitioned_write_access_check; }
 };
 
 }
