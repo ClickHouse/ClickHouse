@@ -13,15 +13,32 @@
 namespace DB
 {
 
-/// Whether an aggregation table iterates its cells. The string table does not: it keeps the keys of each key
-/// class in a separate submap with its own type of cell (see `StringHashTable::forEachCellWithHash`).
+/// Whether an aggregation table iterates its cells, which all have one type, as `HashTable` does.
 template <typename Table>
 concept IterableCells = requires (Table & table) { table.begin(); };
 
-/// How a cell index sees the cells of an aggregation table (see `AggregationCellIndex`): in key classes, each
-/// with a type of cell of its own. A table that iterates its cells has one key class.
+/// Whether an aggregation table keeps its cells in submaps, each with its own type of cell, as the string
+/// table does. Such a table gives the number of its submaps and the type of the cells of each. It walks its
+/// cells submap by submap with their hashes (see `StringHashTable::forEachCellWithHash`), and turns a cell
+/// into the key that its iterations hand out.
 template <typename Table>
-struct CellIndexTraits
+concept SubmapCells = requires (Table & table)
+{
+    Table::NUM_SUBMAPS;
+    table.forEachCellWithHash([](auto, auto &, size_t) {});
+    Table::template iteratedKey<0>(std::declval<const typename Table::template SubmapCell<0> &>());
+};
+
+/// How a cell index sees the cells of an aggregation table (see `AggregationCellIndex`): in key classes, each
+/// with its own type of cell. Each kind of table has its own specialization. It provides the number of
+/// classes `key_classes`, the type `Cell<key_class>` of the cells of a class, `forEachCellWithHash` and
+/// `iteratedKey`. A table of any other kind does not compile.
+template <typename Table>
+struct CellIndexTraits;
+
+/// A table that iterates its cells has one key class.
+template <IterableCells Table>
+struct CellIndexTraits<Table>
 {
     static constexpr size_t key_classes = 1;
 
@@ -46,9 +63,8 @@ struct CellIndexTraits
     }
 };
 
-/// The string table has a key class per submap (see `StringHashTable::forEachCellWithHash`).
-template <typename Table>
-requires (!IterableCells<Table>)
+/// A table of submaps has a key class per submap.
+template <SubmapCells Table>
 struct CellIndexTraits<Table>
 {
     static constexpr size_t key_classes = Table::NUM_SUBMAPS;
