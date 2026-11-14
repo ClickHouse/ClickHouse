@@ -268,7 +268,7 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
 
         part->writeChecksums(part->checksums, data.getContext()->getWriteSettings());
         part->setBytesOnDisk(part->checksums.getTotalSizeOnDisk());
-        part->setBytesUncompressedOnDisk(part->checksums.getTotalSizeUncompressedOnDisk());
+        part->setBytesUncompressedOnDisk(part->calculateBytesUncompressedOnDisk());
 
         const UInt64 elapsed_us = rebuild_watch.elapsedMicroseconds();
         ProfileEvents::increment(ProfileEvents::UniqueKeyLoadTimeSSTRebuildCount);

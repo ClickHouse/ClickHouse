@@ -84,9 +84,9 @@ MergeTreeReadPool::MergeTreeReadPool(
         for (size_t i = 0; i < parts_ranges.size(); ++i)
         {
             /// Only the parts the reader caches, see `IMergeTreeReader::initColumnsCache`: for the others an aligned
-            /// cut only moves the boundaries of the tasks.
+            /// cut only moves the boundaries of the tasks. The reader of `Parquet` parts caches whole row groups.
             const auto & part = parts_ranges[i].data_part;
-            if (!canUseColumnsCacheForPart(part->storage.getStorageID().uuid))
+            if (part->getType() == MergeTreeDataPartType::Parquet || !canUseColumnsCacheForPart(part->storage.getStorageID().uuid))
                 continue;
 
             const size_t stripe_marks = ColumnsCacheStripes::forPart(*part->index_granularity).stripe_marks;

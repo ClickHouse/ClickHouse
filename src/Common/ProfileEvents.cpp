@@ -723,8 +723,10 @@
     \
     M(InsertedWideParts, "Number of parts inserted in Wide format.", ValueType::Number) \
     M(InsertedCompactParts, "Number of parts inserted in Compact format.", ValueType::Number) \
+    M(InsertedParquetParts, "Number of parts inserted in Parquet format.", ValueType::Number) \
     M(MergedIntoWideParts, "Number of parts merged into Wide format.", ValueType::Number) \
     M(MergedIntoCompactParts, "Number of parts merged into Compact format.", ValueType::Number) \
+    M(MergedIntoParquetParts, "Number of parts merged into Parquet format.", ValueType::Number) \
     M(AdaptiveCodecBlocksPriced, "Number of blocks that adaptive codec selection priced from the start, compressing them with every candidate codec and keeping the smallest output.", ValueType::Number) \
     M(AdaptiveCodecBlocksRepriced, "Number of blocks that adaptive codec selection priced after the remembered winner had lost ground on them.", ValueType::Number) \
     M(AdaptiveCodecBlocksReused, "Number of blocks that adaptive codec selection compressed with the remembered winner alone.", ValueType::Number) \

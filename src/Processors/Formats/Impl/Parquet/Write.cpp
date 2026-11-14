@@ -17,6 +17,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnObject.h>
 #include <IO/WriteHelpers.h>
+#include <IO/VarInt.h>
 #include <IO/Libdeflate.h>
 #include <Common/WKB.h>
 #include <Common/config_version.h>
@@ -1364,6 +1365,139 @@ private:
     size_t num_booleans = 0;
 };
 
+/// Accumulates the `BYTE_STREAM_SPLIT` encoding of the values of a page: the first (least significant)
+/// bytes of all values, then the second bytes, and so on. Used for floating point values.
+template <typename ParquetDType>
+class ByteStreamSplitEncoder
+{
+public:
+    using T = typename ParquetDType::c_type;
+    static_assert(std::is_floating_point_v<T>);
+
+    void put(const T * values, size_t count)
+    {
+        size_t offset = buf.size();
+        buf.resize(offset + count * sizeof(T));
+        for (size_t i = 0; i < count; ++i)
+            unalignedStoreLittleEndian<T>(buf.data() + offset + i * sizeof(T), values[i]);
+    }
+
+    size_t estimatedDataEncodedSize() const { return buf.size(); }
+
+    /// Appends the encoded values to `out` and starts a new page.
+    void flush(PODArray<char> & out)
+    {
+        const size_t count = buf.size() / sizeof(T);
+        const size_t offset = out.size();
+        out.resize(offset + buf.size());
+        for (size_t byte = 0; byte < sizeof(T); ++byte)
+            for (size_t i = 0; i < count; ++i)
+                out[offset + byte * count + i] = buf[i * sizeof(T) + byte];
+        buf.clear();
+    }
+
+private:
+    /// The values in the `PLAIN` encoding.
+    PODArray<char> buf;
+};
+
+/// Accumulates the values of a page and writes them in the `DELTA_BINARY_PACKED` encoding. Used for integers.
+/// The arithmetic is done on unsigned integers of the physical type, so it wraps around on overflow,
+/// as the encoding requires.
+template <typename ParquetDType>
+class DeltaBinaryPackedEncoder
+{
+public:
+    using T = typename ParquetDType::c_type;
+    using U = std::make_unsigned_t<T>;
+    static_assert(std::is_same_v<T, Int32> || std::is_same_v<T, Int64>);
+
+    static constexpr size_t VALUES_PER_BLOCK = 128;
+    static constexpr size_t MINIBLOCKS_PER_BLOCK = 4;
+    static constexpr size_t VALUES_PER_MINIBLOCK = VALUES_PER_BLOCK / MINIBLOCKS_PER_BLOCK;
+
+    void put(const T * values_, size_t count) { values.insert(values_, values_ + count); }
+
+    /// An upper bound in most cases, the same as the size of the `PLAIN` encoding.
+    size_t estimatedDataEncodedSize() const { return values.size() * sizeof(T); }
+
+    /// Appends the encoded values to `out` and starts a new page.
+    void flush(PODArray<char> & out)
+    {
+        /// The header: <block size in values> <number of miniblocks in a block> <total value count> <first value>.
+        writeVarUInt(VALUES_PER_BLOCK, out);
+        writeVarUInt(MINIBLOCKS_PER_BLOCK, out);
+        writeVarUInt(values.size(), out);
+        writeVarUInt(encodeZigZag(values.empty() ? 0 : Int64(values[0])), out);
+
+        U deltas[VALUES_PER_BLOCK];
+        for (size_t block_start = 1; block_start < values.size(); block_start += VALUES_PER_BLOCK)
+        {
+            const size_t num_deltas = std::min(VALUES_PER_BLOCK, values.size() - block_start);
+
+            /// Each block: <min delta> <list of bitwidths of miniblocks> <miniblocks>.
+            T min_delta = std::numeric_limits<T>::max();
+            for (size_t i = 0; i < num_deltas; ++i)
+            {
+                deltas[i] = U(values[block_start + i]) - U(values[block_start + i - 1]);
+                min_delta = std::min(min_delta, T(deltas[i]));
+            }
+            for (size_t i = 0; i < num_deltas; ++i)
+                deltas[i] -= U(min_delta);
+            /// The miniblocks are padded to the full number of values.
+            std::fill(deltas + num_deltas, deltas + VALUES_PER_BLOCK, U(0));
+
+            writeVarUInt(encodeZigZag(Int64(min_delta)), out);
+
+            /// The bit widths of the unneeded miniblocks of the last block are present and zero,
+            /// but these miniblocks themselves are not written.
+            const size_t num_miniblocks = (num_deltas + VALUES_PER_MINIBLOCK - 1) / VALUES_PER_MINIBLOCK;
+            UInt8 bit_widths[MINIBLOCKS_PER_BLOCK] = {};
+            for (size_t miniblock = 0; miniblock < num_miniblocks; ++miniblock)
+            {
+                U all_bits = 0;
+                for (size_t i = 0; i < VALUES_PER_MINIBLOCK; ++i)
+                    all_bits |= deltas[miniblock * VALUES_PER_MINIBLOCK + i];
+                bit_widths[miniblock] = static_cast<UInt8>(std::bit_width(all_bits));
+            }
+            out.insert(bit_widths, bit_widths + MINIBLOCKS_PER_BLOCK);
+
+            for (size_t miniblock = 0; miniblock < num_miniblocks; ++miniblock)
+            {
+                /// Bit-packed, least significant bit first.
+                const size_t bit_width = bit_widths[miniblock];
+                unsigned __int128 bits = 0;
+                size_t num_bits = 0;
+                for (size_t i = 0; i < VALUES_PER_MINIBLOCK; ++i)
+                {
+                    bits |= static_cast<unsigned __int128>(deltas[miniblock * VALUES_PER_MINIBLOCK + i]) << num_bits;
+                    num_bits += bit_width;
+                    while (num_bits >= 8)
+                    {
+                        out.push_back(static_cast<char>(static_cast<UInt8>(bits)));
+                        bits >>= 8;
+                        num_bits -= 8;
+                    }
+                }
+                /// A miniblock of 32 values takes a whole number of bytes.
+                chassert(num_bits == 0);
+            }
+        }
+
+        values.clear();
+    }
+
+private:
+    PODArray<T> values;
+
+    static void writeVarUInt(UInt64 x, PODArray<char> & out)
+    {
+        char buf[10];
+        char * end = DB::writeVarUInt(x, buf);
+        out.insert(buf, end);
+    }
+};
+
 /// Collects distinct values into a dictionary, and accumulates the indexes of the values of a page in
 /// the dictionary. The dictionary is in the order of the first occurrence of each value.
 /// Not used for booleans.
@@ -1732,8 +1866,13 @@ void writeColumnImpl(
     };
     reset_size_statistics();
 
-    /// The only non-dictionary encodings we write are PLAIN and ALP.
-    if (encoding != parq::Encoding::PLAIN && !(is_floating_point && encoding == parq::Encoding::ALP))
+    static constexpr bool is_int32_or_int64 = std::is_same_v<ParquetDType, Int32Type> || std::is_same_v<ParquetDType, Int64Type>;
+
+    /// The only non-dictionary encodings we write are PLAIN, ALP and BYTE_STREAM_SPLIT for floating point
+    /// values, and DELTA_BINARY_PACKED for integers.
+    if (encoding != parq::Encoding::PLAIN
+        && !(is_floating_point && (encoding == parq::Encoding::ALP || encoding == parq::Encoding::BYTE_STREAM_SPLIT))
+        && !(is_int32_or_int64 && encoding == parq::Encoding::DELTA_BINARY_PACKED))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported Parquet encoding for writing: {}", static_cast<int>(encoding));
 
     /// Exactly one of these is used at a time, depending on `use_dictionary` and `encoding`.
@@ -1741,6 +1880,10 @@ void writeColumnImpl(
     std::optional<PlainEncoder<ParquetDType>> plain_encoder;
     using ALPEncoderType = std::conditional_t<is_floating_point, ALPEncoder<typename ParquetDType::c_type>, std::monostate>;
     std::optional<ALPEncoderType> alp_encoder;
+    using ByteStreamSplitEncoderType = std::conditional_t<is_floating_point, ByteStreamSplitEncoder<ParquetDType>, std::monostate>;
+    std::optional<ByteStreamSplitEncoderType> byte_stream_split_encoder;
+    using DeltaBinaryPackedEncoderType = std::conditional_t<is_int32_or_int64, DeltaBinaryPackedEncoder<ParquetDType>, std::monostate>;
+    std::optional<DeltaBinaryPackedEncoderType> delta_binary_packed_encoder;
 
     auto make_non_dictionary_encoder = [&]
     {
@@ -1749,6 +1892,19 @@ void writeColumnImpl(
             if (encoding == parq::Encoding::ALP)
             {
                 alp_encoder.emplace();
+                return;
+            }
+            if (encoding == parq::Encoding::BYTE_STREAM_SPLIT)
+            {
+                byte_stream_split_encoder.emplace();
+                return;
+            }
+        }
+        if constexpr (is_int32_or_int64)
+        {
+            if (encoding == parq::Encoding::DELTA_BINARY_PACKED)
+            {
+                delta_binary_packed_encoder.emplace();
                 return;
             }
         }
@@ -1767,8 +1923,15 @@ void writeColumnImpl(
             if (use_dictionary)
                 return f(*dict_encoder);
         if constexpr (is_floating_point)
+        {
             if (alp_encoder)
                 return f(*alp_encoder);
+            if (byte_stream_split_encoder)
+                return f(*byte_stream_split_encoder);
+        }
+        if constexpr (is_int32_or_int64)
+            if (delta_binary_packed_encoder)
+                return f(*delta_binary_packed_encoder);
         return f(*plain_encoder);
     };
 
@@ -2656,7 +2819,8 @@ void writeFileFooter(FileWriteState & file,
     SchemaElements schema,
     const WriteOptions & options,
     WriteBuffer & out,
-    const Block & header)
+    const Block & header,
+    const std::vector<std::pair<String, String>> & key_value_metadata) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     chassert(file.offset != 0);
     chassert(file.current_row_group.row_group.columns.empty());
@@ -2681,7 +2845,10 @@ void writeFileFooter(FileWriteState & file,
     ///  >  This should be in the format
     ///  >  <Application> version <App Version> (build <App Build Hash>).
     ///  >  e.g. impala version 1.0 (build 6cf94d29b2b7115df4de2c06e2ab4326d721eb55)
-    meta.__set_created_by(fmt::format("ClickHouse version {}.{}.{} (build {})", VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, VERSION_GITHASH));
+    if (!options.created_by.empty())
+        meta.__set_created_by(options.created_by);
+    else
+        meta.__set_created_by(fmt::format("ClickHouse version {}.{}.{} (build {})", VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, VERSION_GITHASH));
 
     if (options.write_page_statistics || options.write_column_chunk_statistics)
     {
@@ -2762,6 +2929,16 @@ void writeFileFooter(FileWriteState & file,
             meta.key_value_metadata.push_back(std::move(key_value));
             meta.__isset.key_value_metadata = true;
         }
+    }
+
+    for (const auto & [key, value] : key_value_metadata)
+    {
+        parquet::format::KeyValue key_value;
+        key_value.__set_key(key);
+        key_value.__set_value(value);
+
+        meta.key_value_metadata.push_back(std::move(key_value));
+        meta.__isset.key_value_metadata = true;
     }
 
     size_t footer_size = serializeThriftStruct(meta, out);

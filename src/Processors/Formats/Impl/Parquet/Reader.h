@@ -838,6 +838,10 @@ struct Reader
     /// Whether `estimateColumnMemoryBytesPerRow` can only guess: the column is of dictionary-encoded strings, the
     /// metadata has no length of the strings, and the dictionary is not decoded.
     bool decodedSizeIsUnknown(const ColumnChunk & column, const PrimitiveColumnInfo & column_info) const;
+    /// Whether a whole chunk of `COLUMNS_CACHE_CHUNK_ROWS` rows of the columns of a row group that uses the columns cache
+    /// would take a large part of the memory the current thread may use, while only `rows_requested` rows are asked for.
+    /// Then the row group is read in smaller blocks, never crossing a chunk, and is not written to the cache.
+    bool columnsCacheChunkTooLarge(const RowGroup & row_group, size_t rows_requested) const;
     /// Bound for memory estimates charged to the read scheduler: the larger memory watermark plus one,
     /// capped far below overflow.
     size_t memoryEstimateLimit() const;
@@ -858,6 +862,8 @@ struct Reader
     /// Take back out of the columns cache the columns of the row groups that were not read to the end,
     /// e.g. because of `LIMIT`. Called when the reading is finished or abandoned.
     void withdrawColumnsCacheWrites();
+    /// The same for one row group, e.g. when a reader moves past it without reading it to the end.
+    void withdrawColumnsCacheWrites(RowGroup & row_group);
 
     void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx);
 

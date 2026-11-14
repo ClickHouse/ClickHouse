@@ -3320,33 +3320,7 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
         /// When the size of the decoded strings of a column is not known, a whole chunk is not risked: the dictionary
         /// of such a column is decoded in advance (see `ColumnChunk::decode_dictionary_early`), unless it does not
         /// fit the memory budget of the reader either.
-        double bytes_per_row = 0;
-        bool size_unknown = false;
-        for (size_t i = 0; i < primitive_columns.size(); ++i)
-        {
-            const ColumnChunk & column = row_group.columns.at(i);
-            /// The columns served from the cache are counted below, by the size of the cached chunks.
-            if (column.served_from_cache)
-                continue;
-            bytes_per_row += estimateColumnMemoryBytesPerRow(column, row_group, primitive_columns.at(i));
-            size_unknown = size_unknown || decodedSizeIsUnknown(column, primitive_columns.at(i));
-        }
-        for (const auto & chunks : row_group.cached_columns)
-        {
-            size_t bytes = 0;
-            size_t rows = 0;
-            for (const auto & chunk : chunks)
-            {
-                bytes += chunk->byteSize();
-                rows += chunk->size();
-            }
-            if (rows)
-                bytes_per_row += static_cast<double>(bytes) / static_cast<double>(rows);
-        }
-        const size_t memory_limit = memoryLimitOfCurrentThread();
-        const bool chunk_too_large = memory_limit != 0 && rows_per_subgroup < COLUMNS_CACHE_CHUNK_ROWS
-            && (size_unknown || bytes_per_row * static_cast<double>(COLUMNS_CACHE_CHUNK_ROWS) > static_cast<double>(memory_limit) / 4);
-        if (chunk_too_large)
+        if (columnsCacheChunkTooLarge(row_group, rows_per_subgroup))
             row_group.columns_cache_writes.clear();
         else
             rows_per_subgroup = COLUMNS_CACHE_CHUNK_ROWS;
@@ -3609,6 +3583,40 @@ bool Reader::decodedSizeIsUnknown(const ColumnChunk & column, const PrimitiveCol
         && !(meta.__isset.size_statistics && meta.size_statistics.__isset.unencoded_byte_array_data_bytes)
         && meta.__isset.dictionary_page_offset
         && !column.dictionary.isInitialized();
+}
+
+bool Reader::columnsCacheChunkTooLarge(const RowGroup & row_group, size_t rows_requested) const
+{
+    if (rows_requested >= COLUMNS_CACHE_CHUNK_ROWS)
+        return false;
+    const size_t memory_limit = memoryLimitOfCurrentThread();
+    if (memory_limit == 0)
+        return false;
+
+    double bytes_per_row = 0;
+    bool size_unknown = false;
+    for (size_t i = 0; i < primitive_columns.size(); ++i)
+    {
+        const ColumnChunk & column = row_group.columns.at(i);
+        /// The columns served from the cache are counted below, by the size of the cached chunks.
+        if (column.served_from_cache)
+            continue;
+        bytes_per_row += estimateColumnMemoryBytesPerRow(column, row_group, primitive_columns.at(i));
+        size_unknown = size_unknown || decodedSizeIsUnknown(column, primitive_columns.at(i));
+    }
+    for (const auto & chunks : row_group.cached_columns)
+    {
+        size_t bytes = 0;
+        size_t rows = 0;
+        for (const auto & chunk : chunks)
+        {
+            bytes += chunk->byteSize();
+            rows += chunk->size();
+        }
+        if (rows)
+            bytes_per_row += static_cast<double>(bytes) / static_cast<double>(rows);
+    }
+    return size_unknown || bytes_per_row * static_cast<double>(COLUMNS_CACHE_CHUNK_ROWS) > static_cast<double>(memory_limit) / 4;
 }
 
 size_t Reader::memoryEstimateLimit() const
@@ -5049,7 +5057,9 @@ void Reader::initColumnsCache()
 
     columns_cache_writes_possible = cache_options.enable_writes && canWriteToColumnsCache();
     if (columns_cache_writes_possible)
-        columns_cache_generation = cache.getInvalidationGeneration(cache_options.table_uuid);
+        columns_cache_generation = cache_options.invalidation_generation
+            ? *cache_options.invalidation_generation
+            : cache.getInvalidationGeneration(cache_options.table_uuid);
 
     size_t hits = 0;
     size_t misses = 0;
@@ -5117,7 +5127,7 @@ void Reader::initColumnsCache()
     /// The estimate budget of the query, charged with the uncompressed size of the column chunks
     /// that are to be written, before anything is read. Once the query exceeds it, the writes are
     /// disabled for the rest of the query, here and in all other readers.
-    if (estimated_bytes_to_write)
+    if (estimated_bytes_to_write && cache_options.charge_estimated_bytes)
     {
         ColumnsCacheWriteBudget & budget = *cache_options.write_budget;
         const size_t max_estimated_bytes = cache_options.max_estimated_bytes_to_write != 0
@@ -5293,12 +5303,15 @@ void Reader::flushColumnsCacheWrites(RowGroup & row_group)
 void Reader::withdrawColumnsCacheWrites()
 {
     for (RowGroup & row_group : row_groups)
-    {
-        for (auto & write : row_group.columns_cache_writes)
-            if (write.active)
-                withdrawColumnsCacheWrite(write);
-        row_group.columns_cache_writes.clear();
-    }
+        withdrawColumnsCacheWrites(row_group);
+}
+
+void Reader::withdrawColumnsCacheWrites(RowGroup & row_group)
+{
+    for (auto & write : row_group.columns_cache_writes)
+        if (write.active)
+            withdrawColumnsCacheWrite(write);
+    row_group.columns_cache_writes.clear();
 }
 
 Reader::PrimitiveColumnInfo::~PrimitiveColumnInfo() = default;

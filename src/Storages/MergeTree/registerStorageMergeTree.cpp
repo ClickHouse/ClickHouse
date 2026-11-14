@@ -973,8 +973,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// `merge_tree` config section and `compatibility`: those are not changes made by the query. A
         /// full-definition `ATTACH` states its settings itself, so it is checked like a `CREATE`.
         if (is_fresh_definition)
-            args.getLocalContext()->checkMergeTreeSettingsConstraints(
-                initial_storage_settings, storage_settings->changesFrom(initial_storage_settings));
+        {
+            const auto settings_changes = storage_settings->changesFrom(initial_storage_settings);
+            args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, settings_changes);
+            MergeTreeData::checkParquetPartsAllowed(settings_changes, args.getLocalContext());
+            if (args.query.columns_list)
+                MergeTreeData::checkParquetPartsAllowedInProjections(args.query.columns_list->projections, args.getLocalContext());
+        }
 
         /// After the constraints, so a forbidden `storage_policy` is reported as such and not as an unknown policy.
         if ((*storage_settings)[MergeTreeSetting::storage_policy].changed)
@@ -1484,6 +1489,10 @@ Data belonging to different partitions are separated into different parts. In th
 Data parts can be stored in `Wide` or `Compact` format. In `Wide` format each column is stored in a separate file in a filesystem, in `Compact` format all columns are stored in one file. `Compact` format can be used to increase performance of small and frequent inserts.
 
 Data storing format is controlled by the `min_bytes_for_wide_part` and `min_rows_for_wide_part` settings of the table engine. If the number of bytes or rows in a data part is less then the corresponding setting's value, the part is stored in `Compact` format. Otherwise it is stored in `Wide` format. If none of these settings is set, data parts are stored in `Wide` format.
+
+Data parts can also be stored in `Parquet` format. In `Parquet` format all columns of a data part are stored in a single `data.parquet` file in the [Parquet](/reference/formats/Parquet/Parquet) format, so it can be read by external applications. The other files of the data part, such as the primary index, data skipping indexes, marks, statistics, and metadata files, are the same as in other formats. The usage of the `Parquet` format is controlled by the `min_bytes_for_parquet_part`, `min_rows_for_parquet_part`, and `min_level_for_parquet_part` settings: a data part is stored in `Parquet` format if at least one of them is not zero, and the part satisfies all of them. For example, set `min_rows_for_parquet_part = 1` to store all data parts in `Parquet` format, or `min_level_for_parquet_part = 1` to store only merged data parts in `Parquet` format. The `Parquet` format of data parts is experimental: to enable it in `CREATE TABLE`, `ALTER TABLE`, or the settings of a projection, set `allow_experimental_parquet_parts = 1`.
+
+In a data part in `Parquet` format, the granules are the row groups of the Parquet file, and there is one mark and one value of the primary key for each row group. The size of row groups is restricted by the `parquet_row_group_granularity_rows` and `parquet_row_group_granularity_bytes` settings, which act like `index_granularity` and `index_granularity_bytes`. Row groups are usually much larger than granules. The data types of the columns are stored as similar Parquet types; values of the types that cannot be represented in Parquet without loss (such as `Variant`, `Dynamic`, `JSON`, `AggregateFunction`) are stored as binary strings in the ClickHouse binary format. The codecs of the columns are mapped to similar Parquet compression methods and encodings, for example, `ZSTD(3)` to the `ZSTD` compression with level 3, and `Delta` to the `DELTA_BINARY_PACKED` encoding. A table with columns with encryption codecs or the `Quantized` codec does not create data parts in `Parquet` format. The Parquet file contains column statistics, page indexes, and bloom filters for external applications, while ClickHouse uses the usual index files of the data part.
 
 Each data part is logically divided into granules. A granule is the smallest indivisible data set that ClickHouse reads when selecting data. ClickHouse does not split rows or values, so each granule always contains an integer number of rows. The first row of a granule is marked with the value of the primary key for the row. For each data part, ClickHouse creates an index file that stores the marks. For each column, whether it's in the primary key or not, ClickHouse also stores the same marks. These marks let you find data directly in column files.
 
@@ -2002,6 +2011,18 @@ The framework allows adding more index types in the future.
 
 ### Projection storage {#projection-storage}
 Projections are stored inside the part directory. It's similar to an index but contains a subdirectory that stores an anonymous `MergeTree` table's part. The table is induced by the definition query of the projection. If there is a `GROUP BY` clause, the underlying storage engine becomes [AggregatingMergeTree](/reference/engines/table-engines/mergetree-family/aggregatingmergetree), and all aggregate functions are converted to `AggregateFunction`. If there is an `ORDER BY` clause, the `MergeTree` table uses it as its primary key expression. During the merge process the projection part is merged via its storage's merge routine. The checksum of the parent table's part is combined with the projection's part. Other maintenance jobs are similar to skip indices.
+
+The format of the parts of a projection can be tuned with the `WITH SETTINGS` clause of the projection. For example, a projection can be stored in `Parquet` format inside the data parts of a table in `Wide` or `Compact` format:
+
+```sql
+CREATE TABLE t
+(
+    key UInt64,
+    value String,
+    PROJECTION p (SELECT * ORDER BY value) WITH SETTINGS (min_rows_for_parquet_part = 1)
+)
+ENGINE = MergeTree ORDER BY key;
+```
 
 ### Query analysis {#projection-query-analysis}
 1. Check if the projection can be used to answer the given query, that is, it generates the same answer as querying the base table.
