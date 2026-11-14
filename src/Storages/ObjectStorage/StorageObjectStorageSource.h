@@ -272,7 +272,8 @@ protected:
         FormatFilterInfoPtr format_filter_info,
         bool need_only_count,
         ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key = nullptr,
-        bool prefetch_input_format = false);
+        bool prefetch_input_format = false,
+        std::atomic_bool * iterator_consumed = nullptr);
 
     ReaderHolder createReader(bool prefetch_input_format = false);
 

@@ -72,7 +72,7 @@ void ObjectStorageQueueExclusiveFileMetadata::prepareFailedRequestsImpl(Coordina
     LOG_TRACE(log, "File {} failed to process and will not be retried.", path);
 }
 
-std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueExclusiveFileMetadata::setProcessingImpl()
+std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueExclusiveFileMetadata::setProcessingImpl(std::optional<FileTerminalState> & /* terminal_state */)
 {
     if (file_status->state.load() == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed &&
         (!file_status->retries || file_status->retries >= max_loading_retries))
