@@ -571,6 +571,9 @@ private:
     void addDataPaths()
     {
         add(data_path, Access::ReadWrite, "`path`");
+        /// Also as it is written, relative to the original working directory: `Server::main` resolves it again inside
+        /// the isolated filesystem, so the links on the way, as `link` in `link/../data/`, must be there too.
+        add(absolute(getPathSetting(config, "path", DBMS_DEFAULT_PATH), working_directory), Access::ReadWrite, "`path` as it is written");
         addCanonicalPathKey("tmp_path");
         addCanonicalPathKey("user_files_path");
         addCanonicalPathKey("format_schema_path");
