@@ -855,7 +855,7 @@ public:
     /// Passed context pointer must not be `nullptr`.
     virtual std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG &, ContextPtr) const { return {}; }
 
-    /// Aggregated `(num_rows, num_defaults)` for `column_name` across all visible parts,
+    /// Aggregated `(num_rows, num_defaults)` for `column_name` across the parts of `storage_snapshot`,
     /// taken from per-part `SerializationInfo`. Returns nullopt when the storage cannot
     /// supply an exact count -- see `Storages/MergeTree/SparsityFilter.h` for the precise
     /// reliability rules. Default implementation returns nullopt.
@@ -865,7 +865,7 @@ public:
         UInt64 num_defaults = 0;
     };
     virtual std::optional<ColumnDefaultnessStats>
-    getColumnDefaultnessStats(const String & /*column_name*/, ContextPtr) const { return {}; }
+    getColumnDefaultnessStats(const String & /*column_name*/, const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr) const { return {}; }
 
     /// If it is possible to quickly determine exact number of bytes for the table on storage:
     /// - memory (approximated, resident)

@@ -506,6 +506,9 @@ namespace FailPoints
     /// transient error (e.g. temporary disk unavailability). Used to test that the refresh task
     /// reschedules itself after such an error instead of stopping permanently.
     extern const char merge_tree_refresh_parts_throw_once[];
+    /// Pauses `getColumnDefaultnessStats` before it consumes the parts of the query's storage snapshot, so a test can
+    /// complete or remove a pending metadata mutation before the defaultness stats of these parts are consumed.
+    extern const char mt_column_defaultness_stats_pause_after_parts_snapshot[];
     /// Throws a retryable error (`MEMORY_LIMIT_EXCEEDED`) while loading every outdated part in the
     /// background. Used to test that the loading is retried later instead of terminating the server.
     extern const char merge_tree_load_outdated_parts_retryable_error[];
@@ -8838,7 +8841,7 @@ const char * MergeTreeData::columnDefaultnessStatsUnavailableReasonToString(Colu
 }
 
 std::optional<IStorage::ColumnDefaultnessStats>
-MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr query_context) const
+MergeTreeData::getColumnDefaultnessStats(const String & column_name, const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
 {
     auto unavailable_reason = getColumnDefaultnessStatsUnavailableReason(query_context);
     if (unavailable_reason != ColumnDefaultnessStatsUnavailableReason::None)
@@ -8851,16 +8854,79 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
         return std::nullopt;
     }
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/ false);
+    /// The stats are taken from the parts of the query's storage snapshot and checked against the mutations
+    /// of the same snapshot, which are exactly the parts and the mutations that the row scan of the query would use.
+    /// A mutation that finishes, or is removed from the history (`finished_mutations_to_keep`, `KILL MUTATION`,
+    /// reinitialization of the replication queue) after the snapshot is taken does not change what the query reads,
+    /// so it must not change the stats either.
+    /// A snapshot without data (e.g. the metadata-only snapshot of a table replaced by a view source) has no parts.
+    if (!storage_snapshot || !storage_snapshot->data)
+    {
+        LOG_DEBUG(log, "No defaultness stats for column {}: the storage snapshot has no data", column_name);
+        return std::nullopt;
+    }
+
+    const auto & snapshot_data = assert_cast<const SnapshotData &>(*storage_snapshot->data);
+    if (!snapshot_data.parts || !snapshot_data.mutations_snapshot || snapshot_data.storage.get() != this)
+    {
+        LOG_DEBUG(log, "No defaultness stats for column {}: the storage snapshot has no data", column_name);
+        return std::nullopt;
+    }
+
+    const auto & metadata_snapshot = storage_snapshot->metadata;
     auto column_in_metadata = metadata_snapshot->getColumns().tryGetPhysical(column_name);
     if (!column_in_metadata)
         return std::nullopt;
 
+    FailPointInjection::pauseFailPoint(FailPoints::mt_column_defaultness_stats_pause_after_parts_snapshot);
+
+    DataPartsVector parts;
+    parts.reserve(snapshot_data.parts->size());
+    for (const auto & part_with_ranges : *snapshot_data.parts)
+        parts.push_back(part_with_ranges.data_part);
+    parts = filterPartsForColumnDefaultnessStats(std::move(parts), query_context);
+
+    /// Pending metadata mutations (`RENAME COLUMN`, `DROP COLUMN` possibly followed by re-adding a
+    /// column with the same name) are applied to reads on the fly, while `serialization.json`
+    /// stays keyed by the on-disk column names. The counter looked up by the queried name would
+    /// then describe a different column's data, or the data of a dropped column whose reads are
+    /// already filled with the new default. Only the parts where such a mutation touches the
+    /// requested column are affected.
+    const auto & mutations_snapshot = snapshot_data.mutations_snapshot;
+
+    /// Two dotted column names overlap when they are equal, or when one is an ancestor of the other
+    /// in the subcolumn hierarchy, e.g. a dropped `n` affects `n.a`.
+    auto overlaps_requested_column = [&](std::string_view name)
+    {
+        std::string_view lhs = name;
+        std::string_view rhs = column_name;
+        if (lhs.size() > rhs.size())
+            std::swap(lhs, rhs);
+        return rhs.starts_with(lhs) && (lhs.size() == rhs.size() || rhs[lhs.size()] == '.');
+    };
+
     ColumnDefaultnessStats aggregate;
-    for (const auto & part : getActivePartsForColumnDefaultnessStats(query_context))
+    for (const auto & part : parts)
     {
         if (part->isEmpty())
             continue;
+
+        if (mutations_snapshot->hasMetadataMutations())
+        {
+            auto alter_conversions = getAlterConversionsForPart(part, mutations_snapshot, query_context
+#if CLICKHOUSE_CLOUD
+                , query_context->getAccess()->getEnabledMaskingPolicies()
+#endif
+            );
+
+            /// Every name touched by a pending `DROP COLUMN` or `RENAME COLUMN`, including the intermediate
+            /// names of chained renames, and the columns changed on the fly.
+            if (std::ranges::any_of(alter_conversions->getColumnsInvalidatingIndexes(), overlaps_requested_column))
+            {
+                LOG_DEBUG(log, "No defaultness stats for column {}: part {} has a pending metadata mutation of this column", column_name, part->name);
+                return std::nullopt;
+            }
+        }
 
         /// A metadata-only `MODIFY COLUMN` (e.g. `UInt64` -> `Nullable(UInt64)`) does not rewrite the part,
         /// so its `num_defaults` counts defaults of the old type while reads return the new type.
@@ -8893,9 +8959,9 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
 }
 
 MergeTreeData::DataPartsVector
-MergeTreeData::getActivePartsForColumnDefaultnessStats(ContextPtr query_context) const
+MergeTreeData::filterPartsForColumnDefaultnessStats(DataPartsVector parts, ContextPtr /*query_context*/) const
 {
-    return getVisibleDataPartsVector(query_context);
+    return parts;
 }
 
 size_t MergeTreeData::getActivePartsCount() const
