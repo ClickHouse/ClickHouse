@@ -316,8 +316,10 @@ static std::optional<ComparisonFunction> toComparisonFunction(const String & nam
     return it->second;
 }
 
-/// Inserts the function nodes and the subqueries in `node`. Column nodes are left out: they are shared with the rest of the query.
-static void insertFunctionsAndSubqueries(const QueryTreeNodePtr & node, std::unordered_set<QueryTreeNodePtr> & nodes)
+/// Inserts the function nodes and the subqueries in `node`, and appends the inserted function nodes to `inserted_functions`.
+/// Column nodes are left out: they are shared with the rest of the query.
+static void insertFunctionsAndSubqueries(
+    const QueryTreeNodePtr & node, std::unordered_set<QueryTreeNodePtr> & nodes, QueryTreeNodes & inserted_functions)
 {
     std::vector<QueryTreeNodePtr> nodes_to_process{node};
     while (!nodes_to_process.empty())
@@ -332,8 +334,12 @@ static void insertFunctionsAndSubqueries(const QueryTreeNodePtr & node, std::uno
             continue;
         }
 
-        if (node_type == QueryTreeNodeType::FUNCTION && !nodes.insert(current).second)
-            continue;
+        if (node_type == QueryTreeNodeType::FUNCTION)
+        {
+            if (!nodes.insert(current).second)
+                continue;
+            inserted_functions.push_back(current);
+        }
 
         for (const auto & child : current->getChildren())
             if (child)
@@ -467,79 +473,117 @@ static std::unordered_set<QueryTreeNodePtr> collectGroupByKeyNodes(const QueryNo
     const bool ignore_types = group_by_use_nulls
         && (query_node.isGroupByWithGroupingSets() || query_node.isGroupByWithRollup() || query_node.isGroupByWithCube());
 
-    std::unordered_map<UInt64, QueryTreeNodes> keys_by_hash;
-    std::unordered_set<String> key_function_names;
-    auto add_key = [&](const QueryTreeNodePtr & key)
-    {
-        key_function_names.insert(key->as<FunctionNode &>().getFunctionName());
-        keys_by_hash[getGroupByKeyHash(*key)].push_back(key);
-    };
-
+    QueryTreeNodes keys_to_process;
     QueryTreeNodes other_keys;
+    std::unordered_set<String> key_function_names;
     for (const auto & key : getGroupByKeys(query_node))
     {
         const auto * function_node = key->as<FunctionNode>();
         if (!function_node)
             continue;
 
+        key_function_names.insert(function_node->getFunctionName());
         if (function_node->getFunctionName() == "and" || toComparisonFunction(function_node->getFunctionName()))
-            add_key(key);
+            keys_to_process.push_back(key);
         else
             other_keys.push_back(key);
     }
 
-    if (keys_by_hash.empty())
+    if (keys_to_process.empty())
         return result;
 
-    auto is_key = [&](const QueryTreeNodePtr & node)
+    std::unordered_map<UInt64, QueryTreeNodes> candidates_by_hash;
+    std::unordered_set<const IQueryTreeNode *> visited;
+    std::vector<const IQueryTreeNode *> nodes_to_process{&query_node};
+    while (!nodes_to_process.empty())
     {
-        const auto * function_node = node->as<FunctionNode>();
-        if (!function_node || !key_function_names.contains(function_node->getFunctionName()))
-            return false;
+        const auto * node = nodes_to_process.back();
+        nodes_to_process.pop_back();
 
-        auto it = keys_by_hash.find(getGroupByKeyHash(*node));
-        return it != keys_by_hash.end()
-            && std::ranges::any_of(it->second, [&](const QueryTreeNodePtr & key)
-                { return ignore_types ? isEqualExceptTypes(*node, *key) : compareGroupByKeys(node, key); });
-    };
-
-    while (true)
-    {
-        std::unordered_set<const IQueryTreeNode *> visited;
-        std::vector<const IQueryTreeNode *> nodes_to_process{&query_node};
-        while (!nodes_to_process.empty())
+        for (const auto & child : node->getChildren())
         {
-            const auto * node = nodes_to_process.back();
-            nodes_to_process.pop_back();
+            if (!child || child->getNodeType() == QueryTreeNodeType::QUERY || child->getNodeType() == QueryTreeNodeType::UNION
+                || !visited.insert(child.get()).second)
+                continue;
 
-            for (const auto & child : node->getChildren())
+            if (const auto * function_node = child->as<FunctionNode>();
+                function_node && key_function_names.contains(function_node->getFunctionName()))
+                candidates_by_hash[getGroupByKeyHash(*child)].push_back(child);
+
+            nodes_to_process.push_back(child.get());
+        }
+    }
+
+    /// The identifier resolve cache can make a key and a part of another key the same node.
+    std::unordered_map<const IQueryTreeNode *, std::vector<size_t>> other_keys_by_function;
+    for (size_t i = 0; i < other_keys.size(); ++i)
+    {
+        std::vector<const IQueryTreeNode *> key_nodes{other_keys[i].get()};
+        while (!key_nodes.empty())
+        {
+            const auto * current = key_nodes.back();
+            key_nodes.pop_back();
+
+            const auto node_type = current->getNodeType();
+            if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+                continue;
+
+            if (node_type == QueryTreeNodeType::FUNCTION)
             {
-                if (!child || child->getNodeType() == QueryTreeNodeType::QUERY || child->getNodeType() == QueryTreeNodeType::UNION
-                    || result.contains(child) || !visited.insert(child.get()).second)
+                auto & keys = other_keys_by_function[current];
+                if (!keys.empty() && keys.back() == i)
                     continue;
+                keys.push_back(i);
+            }
 
-                if (is_key(child))
-                    insertFunctionsAndSubqueries(child, result);
-                else
-                    nodes_to_process.push_back(child.get());
+            for (const auto & child : current->getChildren())
+                if (child)
+                    key_nodes.push_back(child.get());
+        }
+    }
+
+    std::vector<bool> is_other_key_added(other_keys.size());
+    QueryTreeNodes inserted_functions;
+    while (!keys_to_process.empty())
+    {
+        auto key = std::move(keys_to_process.back());
+        keys_to_process.pop_back();
+
+        auto it = candidates_by_hash.find(getGroupByKeyHash(*key));
+        if (it == candidates_by_hash.end())
+            continue;
+
+        std::erase_if(it->second, [&](const QueryTreeNodePtr & candidate)
+        {
+            if (result.contains(candidate))
+                return true;
+
+            if (ignore_types ? !isEqualExceptTypes(*candidate, *key) : !compareGroupByKeys(candidate, key))
+                return false;
+
+            insertFunctionsAndSubqueries(candidate, result, inserted_functions);
+            return true;
+        });
+
+        for (const auto & function : inserted_functions)
+        {
+            auto keys_it = other_keys_by_function.find(function.get());
+            if (keys_it == other_keys_by_function.end())
+                continue;
+
+            for (size_t i : keys_it->second)
+            {
+                if (!is_other_key_added[i])
+                {
+                    is_other_key_added[i] = true;
+                    keys_to_process.push_back(other_keys[i]);
+                }
             }
         }
-
-        /// The identifier resolve cache can make a key and a part of another key the same node.
-        QueryTreeNodes remaining_keys;
-        for (auto & key : other_keys)
-        {
-            if (containsAnyOf(key, result))
-                add_key(key);
-            else
-                remaining_keys.push_back(std::move(key));
-        }
-
-        if (remaining_keys.size() == other_keys.size())
-            return result;
-
-        other_keys = std::move(remaining_keys);
+        inserted_functions.clear();
     }
+
+    return result;
 }
 
 static bool isLessThanCompare(ComparisonFunction f)

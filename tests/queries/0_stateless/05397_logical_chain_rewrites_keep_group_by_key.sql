@@ -11,6 +11,7 @@ SELECT ((x = 1) = 1) OR ((x = 2) = 1) OR ((x = 3) = 1) AS e, count() FROM (SELEC
 SELECT (x = 1) OR (x = 2) OR (x = 3) AS e, count() FROM (SELECT number % 4 AS x FROM numbers(8)) GROUP BY e, if(e, x, 0) = 1 ORDER BY ALL SETTINGS enable_identifier_resolve_cache = 1;
 SELECT countIf(e), count() FROM (SELECT x, (x = 1) OR (x = 2) OR (x = 3) AS e FROM (SELECT number % 4 AS x FROM numbers(8)) GROUP BY ROLLUP(x, e, if(e, x, 0) = 1)) SETTINGS enable_identifier_resolve_cache = 1;
 SELECT (x = reinterpretAsFloat64(0x7ff8000000000001)) OR (x = reinterpretAsFloat64(0x7ff8000000000002)) OR (x = reinterpretAsFloat64(0xfff8000000000003)) AS e, count() FROM (SELECT toFloat64(number % 4) AS x FROM numbers(8)) GROUP BY x = reinterpretAsFloat64(0x7ff8000000000000) ORDER BY ALL;
+WITH x + 1 AS y, (x = 1) OR (x = 2) OR (x = 3) AS e SELECT bitXor(toUInt64((x = 1) OR (x = 2) OR (x = 3)), 5) AS k, count() FROM (SELECT number % 4 AS x FROM numbers(8)) GROUP BY y = 1, bitXor(y, toUInt64(e)), bitXor(toUInt64(e), 5) ORDER BY ALL SETTINGS enable_identifier_resolve_cache = 1;
 
 SELECT 'or, group_by_use_nulls';
 SELECT (x = 1) OR (x = 2) OR (x = 3) AS e, count() FROM (SELECT number % 4 AS x FROM numbers(8)) GROUP BY ROLLUP(x = 1, x = 2, x = 3) ORDER BY ALL SETTINGS group_by_use_nulls = 1;
