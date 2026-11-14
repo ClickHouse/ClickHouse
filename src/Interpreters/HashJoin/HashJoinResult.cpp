@@ -490,7 +490,6 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         limit_bytes_per_key = properties.max_joined_block_bytes;
     }
 
-    /// Once per result.
     if (next_row == 0 && properties.max_joined_block_bytes && !offsets.empty() && offsets.back() > offsets.size())
         copied_right_keys_bytes_per_row = getCopiedRightKeysBytesPerRow(scattered_block->getSourceBlock(), properties);
 

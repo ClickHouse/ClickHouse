@@ -513,7 +513,6 @@ struct GatherColumn
     /// Indexed by block_no; null when no block stores this column as `ColumnReplicated`.
     const GatherRowRemap * remap_by_block = nullptr;
     bool in_row_store = false;
-    /// See `StoredColumnsIndex::EmitColumn`.
     size_t emit_bytes = 0;
     size_t emit_rows = 0;
 };

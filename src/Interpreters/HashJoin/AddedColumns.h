@@ -91,7 +91,6 @@ struct LazyOutput
     ColumnAccessIndexes output_access_indexes;
     std::optional<size_t> row_store_row_length;
     bool has_columns = false;
-    /// See `EmitPlan`.
     size_t emit_bytes_per_row = 0;
 
     const PaddedPODArray<UInt64> & getRowRefs() const { return row_refs; }
