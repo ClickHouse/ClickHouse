@@ -1,0 +1,8 @@
+after insert
+['idx_a','idx_b']
+after add index
+['idx_a','idx_b']
+after materialize index
+['idx_a','idx_b','idx_c']
+no secondary indices
+[]
