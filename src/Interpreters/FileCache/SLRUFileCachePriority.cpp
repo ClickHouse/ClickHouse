@@ -213,33 +213,18 @@ void SLRUFileCachePriority::iterate(IterateFunc func, FileCacheReserveStat & sta
     probationary_queue.iterateImpl(probationary_queue.queue.begin(), func, stat, lock);
 }
 
-FileSegmentSummaryInfos SLRUFileCachePriority::iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, UInt64 start_priority_rank, QueueEntryType queue_entry_type)
+void SLRUFileCachePriority::iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, QueueEntryType queue_entry_type, FileSegmentSummaryInfos & result)
 {
     auto lock = getPriorityGuard().readLock();
 
-    if (query_order == IterationOrder::RANDOM)
-    {
-        /// The probationary queue is colder, so its segments get the lower ranks.
-        auto probationary_sample = probationary_queue.sample(query_max_elements, start_priority_rank, queue_entry_type, lock);
-        auto protected_sample = protected_queue.sample(
-            query_max_elements, start_priority_rank + probationary_sample.population, queue_entry_type, lock);
-        return mergeSamples(std::move(probationary_sample), std::move(protected_sample), query_max_elements);
-    }
-
-    FileSegmentSummaryInfos result;
-
-    /// probationary queue contains colder segments than protected queue
-    auto & first_queue = query_order == IterationOrder::COLDEST ? probationary_queue : protected_queue;
-    auto & second_queue = query_order == IterationOrder::COLDEST ? protected_queue : probationary_queue;
+    /// The probationary queue contains colder segments than the protected one: it comes first in `COLDEST` and `RANDOM`.
+    auto & first_queue = query_order == IterationOrder::HOTTEST ? protected_queue : probationary_queue;
+    auto & second_queue = query_order == IterationOrder::HOTTEST ? probationary_queue : protected_queue;
 
     /// underlying implementation if LRUFileCachePriority will take care of respecting query_max_elements, query_max_total_size and query_order
-    first_queue.iterate(query_max_elements, query_max_total_size, query_order, start_priority_rank, queue_entry_type, result, lock);
-    second_queue.iterate(
-        query_max_elements, query_max_total_size, query_order, start_priority_rank + result.infos.size(), queue_entry_type, result, lock);
-
-    return result;
+    first_queue.iterate(query_max_elements, query_max_total_size, query_order, queue_entry_type, result, lock);
+    second_queue.iterate(query_max_elements, query_max_total_size, query_order, queue_entry_type, result, lock);
 }
-
 
 void SLRUFileCachePriority::resetEvictionPos(EvictionCursor cursor)
 {

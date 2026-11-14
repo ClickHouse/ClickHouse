@@ -96,7 +96,7 @@ public:
         QueueEntryType reservee_queue_type = QueueEntryType::None) override;
 
     void iterate(IterateFunc func, FileCacheReserveStat & stat) override;
-    FileSegmentSummaryInfos iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, UInt64 start_priority_rank, QueueEntryType queue_entry_type) override;
+    void iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, QueueEntryType queue_entry_type, FileSegmentSummaryInfos & result) override;
 
     void shuffle() override;
 

@@ -4644,7 +4644,14 @@ try
         }
     };
 
-    /// Checks a `RANDOM` sample: at most `query_max_elements` segments within `query_max_total_size`, sorted by rank,
+    /// `RANDOM` returns the segments in random order.
+    auto sorted_by_rank = [](std::vector<FileSegmentSummaryInfo> infos)
+    {
+        std::ranges::sort(infos, {}, &FileSegmentSummaryInfo::priority_rank);
+        return infos;
+    };
+
+    /// Checks a `RANDOM` sample: at most `query_max_elements` distinct segments within `query_max_total_size`,
     /// where the rank of a segment is its position in `coldest`.
     auto assert_random_sample
         = [&](FileCache & cache, UInt64 query_max_elements, UInt64 query_max_total_size, const std::vector<ExpectedSegment> & coldest)
@@ -4652,13 +4659,13 @@ try
         const auto infos = cache.observeFilesystemCache(query_max_elements, query_max_total_size, Order::RANDOM);
         ASSERT_LE(infos.size(), query_max_elements);
         UInt64 total_size = 0;
-        for (size_t i = 0; i < infos.size(); ++i)
+        std::vector<bool> is_rank_seen(coldest.size() + 1);
+        for (const auto & info : infos)
         {
-            const auto & info = infos[i];
             ASSERT_GE(info.priority_rank, 1);
             ASSERT_LE(info.priority_rank, coldest.size());
-            if (i > 0)
-                ASSERT_LT(infos[i - 1].priority_rank, info.priority_rank);
+            ASSERT_FALSE(is_rank_seen[info.priority_rank]) << "duplicate rank " << info.priority_rank;
+            is_rank_seen[info.priority_rank] = true;
             const auto & segment = coldest[info.priority_rank - 1];
             ASSERT_EQ(info.key, segment.key.toString());
             ASSERT_EQ(info.offset, segment.range.left);
@@ -4722,7 +4729,7 @@ try
         assert_observed(cache.observeFilesystemCache(2, 5, Order::COLDEST), {first});
 
         /// A sample of everything is the whole queue, sorted coldest first.
-        assert_observed(cache.observeFilesystemCache(10, 100, Order::RANDOM), {first, second, third});
+        assert_observed(sorted_by_rank(cache.observeFilesystemCache(10, 100, Order::RANDOM)), {first, second, third});
         assert_observed(cache.observeFilesystemCache(10, 0, Order::RANDOM), {});
         for (size_t i = 0; i < 100; ++i)
         {
@@ -4778,7 +4785,7 @@ try
 
         /// The ranks of a sample continue from the probationary queue to the protected one.
         const std::vector<ExpectedSegment> coldest{probationary_head, probationary_tail, protected_head, protected_tail};
-        assert_observed(cache.observeFilesystemCache(10, 100, Order::RANDOM), coldest);
+        assert_observed(sorted_by_rank(cache.observeFilesystemCache(10, 100, Order::RANDOM)), coldest);
         for (size_t i = 0; i < 100; ++i)
         {
             assert_random_sample(cache, 2, 100, coldest);
@@ -4829,7 +4836,7 @@ try
 
         /// The ranks of a sample continue from the data queue to the system one.
         const std::vector<ExpectedSegment> coldest{data_head, data_tail, system_head, system_tail};
-        assert_observed(cache.observeFilesystemCache(10, 100, Order::RANDOM), coldest);
+        assert_observed(sorted_by_rank(cache.observeFilesystemCache(10, 100, Order::RANDOM)), coldest);
         for (size_t i = 0; i < 100; ++i)
         {
             assert_random_sample(cache, 2, 100, coldest);

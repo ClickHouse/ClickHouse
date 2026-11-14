@@ -126,45 +126,17 @@ void SplitFileCachePriority::iterate(IterateFunc func, FileCacheReserveStat & st
     getPriority(SegmentType::System).iterate(func, stat);
 }
 
-FileSegmentSummaryInfos SplitFileCachePriority::iterate(
+void SplitFileCachePriority::iterate(
     UInt64 query_max_elements,
     UInt64 query_max_total_size,
     IterationOrder query_order,
-    UInt64 start_priority_rank,
-    QueueEntryType /* queue_entry_type */)
+    QueueEntryType /* queue_entry_type */,
+    FileSegmentSummaryInfos & result)
 {
-    if (query_order == IterationOrder::RANDOM)
-    {
-        auto data_sample = getPriority(SegmentType::Data)
-                               .iterate(query_max_elements, query_max_total_size, query_order, start_priority_rank, QueueEntryType::SplitCache_Data);
-        auto system_sample = getPriority(SegmentType::System)
-                                 .iterate(
-                                     query_max_elements,
-                                     query_max_total_size,
-                                     query_order,
-                                     start_priority_rank + data_sample.population,
-                                     QueueEntryType::SplitCache_System);
-        return mergeSamples(std::move(data_sample), std::move(system_sample), query_max_elements);
-    }
-
-    /// Random decision to iterate first over data than system table
-    auto result = getPriority(SegmentType::Data)
-                      .iterate(query_max_elements, query_max_total_size, query_order, start_priority_rank, QueueEntryType::SplitCache_Data);
-    if (result.limit_reached)
-        return result;
-
-    auto system_result = getPriority(SegmentType::System)
-                             .iterate(
-                                 query_max_elements - result.infos.size(),
-                                 query_max_total_size - result.total_size,
-                                 query_order,
-                                 start_priority_rank + result.infos.size(),
-                                 QueueEntryType::SplitCache_System);
-    result.infos.insert(
-        result.infos.end(), std::make_move_iterator(system_result.infos.begin()), std::make_move_iterator(system_result.infos.end()));
-    result.total_size += system_result.total_size;
-    result.limit_reached = system_result.limit_reached;
-    return result;
+    /// Decision to iterate first over data than system table
+    getPriority(SegmentType::Data).iterate(query_max_elements, query_max_total_size, query_order, QueueEntryType::SplitCache_Data, result);
+    getPriority(SegmentType::System)
+        .iterate(query_max_elements, query_max_total_size, query_order, QueueEntryType::SplitCache_System, result);
 }
 
 bool SplitFileCachePriority::modifySizeLimits(

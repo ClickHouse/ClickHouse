@@ -123,7 +123,7 @@ public:
 
     PriorityDumpPtr dump() override;
 
-    FileSegmentSummaryInfos iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, UInt64 start_priority_rank, QueueEntryType queue_entry_type) override;
+    void iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, QueueEntryType queue_entry_type, FileSegmentSummaryInfos & result) override;
 
     bool modifySizeLimits(
         size_t max_size_,
@@ -257,28 +257,18 @@ private:
 
     void iterate(IterateFunc func, FileCacheReserveStat & stat) override;
 
-    /// Appends the file segments of this queue to `result` in `query_order`, until `result` has `query_max_elements`
-    /// segments or the next one would make `result.total_size` exceed `query_max_total_size`.
+    /// `HOTTEST` and `COLDEST`: appends the file segments of this queue to `result` in `query_order`, until `result` has
+    /// `query_max_elements` segments or the next one would make `result.total_size` exceed `query_max_total_size`.
     /// Sets `result.limit_reached` when it stops on a limit, and does nothing if it is already set.
+    /// The appended segments get consecutive ranks after the ones already in `result`.
+    /// `RANDOM`: continues the reservoir sampling (Algorithm R) of `result`, coldest first; `query_max_total_size` is ignored.
     /// SLRU calls it for both of its sub-queues with the same `result` and its shared lock.
-    /// The appended segments get consecutive ranks starting from `start_priority_rank`.
     void iterate(
         UInt64 query_max_elements,
         UInt64 query_max_total_size,
         IterationOrder query_order,
-        UInt64 start_priority_rank,
         QueueEntryType queue_entry_type,
         FileSegmentSummaryInfos & result,
-        const CachePriorityGuard::ReadLock &);
-
-    /// A uniformly random sample of at most `query_max_elements` file segments of this queue (Algorithm L).
-    /// `priority_rank` of a segment is its position among the observable segments of the queue, coldest first,
-    /// starting from `start_priority_rank`. `population` of the result is the number of those segments.
-    /// The segments are not in any particular order.
-    FileSegmentSummaryInfos sample(
-        UInt64 query_max_elements,
-        UInt64 start_priority_rank,
-        QueueEntryType queue_entry_type,
         const CachePriorityGuard::ReadLock &);
 
     LRUQueue::iterator iterateImpl(

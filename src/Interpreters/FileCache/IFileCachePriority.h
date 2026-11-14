@@ -262,7 +262,7 @@ public:
         HOTTEST = 0,
         /// Next eviction candidates first.
         COLDEST,
-        /// A uniformly random sample of entries, sorted by their position in the queue (coldest first).
+        /// A uniformly random sample of entries in random order
         RANDOM,
     };
 
@@ -270,8 +270,16 @@ public:
     observeFilesystemCache(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order);
 
     /// Each concrete implementation of IFileCachePriority should know better how to implement this
+    /// Adds the file segments of this queue to `result`, which may already hold the segments of previous sub-queues
+    /// (SLRU's probationary one, Split's data one): the limits apply to all of them and the ranks continue.
+    /// For `RANDOM`, `result.infos` is a reservoir which all sub-queues share.
     /// If `queue_entry_type` is not `None`, it is reported for every segment instead of the type of the segment's own queue entry.
-    virtual FileSegmentSummaryInfos iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, UInt64 start_priority_rank, QueueEntryType queue_entry_type) = 0;
+    virtual void iterate(
+        UInt64 query_max_elements,
+        UInt64 query_max_total_size,
+        IterationOrder query_order,
+        QueueEntryType queue_entry_type,
+        FileSegmentSummaryInfos & result) = 0;
 
     /// Throws exception if there is not enough size to fit it.
     virtual IteratorPtr add( /// NOLINT
@@ -330,12 +338,6 @@ protected:
     {
         return state == Entry::State::Active || state == Entry::State::Evicting || state == Entry::State::Moving;
     }
-
-    /// For `IterationOrder::RANDOM`: merges uniformly random samples of two disjoint populations into a uniformly
-    /// random sample of at most `query_max_elements` segments of their union.
-    /// Each sample must have `min(query_max_elements, population)` segments.
-    static FileSegmentSummaryInfos
-    mergeSamples(FileSegmentSummaryInfos first, FileSegmentSummaryInfos second, UInt64 query_max_elements);
 
 public:
     /// Which cursor a candidate-collection pass resumes from.

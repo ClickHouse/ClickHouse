@@ -79,8 +79,8 @@ $CLICKHOUSE_CLIENT -m --query "
 SELECT
     (SELECT arraySort(groupArray((priority_rank, path))) FROM filesystemCache('$lru', 100, 1000000, 'random'))
     = (SELECT arraySort(groupArray((priority_rank, path))) FROM filesystemCache('$lru', 100, 1000000, 'coldest'));
--- A smaller sample: sorted by rank, and every row is the segment with that rank in 'coldest'.
-SELECT count(), groupArray(priority_rank) = arraySort(groupArray(priority_rank)) FROM filesystemCache('$lru', 3, 1000000, 'random');
+-- A smaller sample: distinct ranks, and every row is the segment with that rank in 'coldest'.
+SELECT count(), uniqExact(priority_rank) = count() FROM filesystemCache('$lru', 3, 1000000, 'random');
 SELECT count(), countIf(r.path != c.path)
 FROM filesystemCache('$lru', 3, 1000000, 'random') AS r
 INNER JOIN filesystemCache('$lru', 100, 1000000, 'coldest') AS c USING (priority_rank);

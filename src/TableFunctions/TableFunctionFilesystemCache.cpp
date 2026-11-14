@@ -125,7 +125,7 @@ Unlike `system.filesystem_cache`, which walks all keys of all caches, it walks t
                 {"cache_name", "The name of the cache, the same as in `SYSTEM DROP FILESYSTEM CACHE` and `system.filesystem_cache.cache_name`.", {"String"}},
                 {"max_elements", "The maximum number of returned segments.", {"UInt64"}},
                 {"max_total_size", "The maximum sum of `size` of the returned segments.", {"UInt64"}},
-                {"order", "'hottest' (the default): the highest-priority segments first. 'coldest': the next eviction candidates first. 'random': a uniform sample of segments, sorted by their position in the queue, coldest first.", {"String"}},
+                {"order", "'hottest' (the default): the highest-priority segments first. 'coldest': the next eviction candidates first. 'random': a uniform sample of segments in random order, with `priority_rank` being the position of the segment in the queue, coldest first.", {"String"}},
             },
             .returned_value = {"A table with the columns `priority_rank`, `path`, `key`, `offset`, `size`, `state`, `queue` and `user_id`, one row per segment.", {}},
             .examples = {

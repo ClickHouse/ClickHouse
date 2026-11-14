@@ -11,8 +11,6 @@
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
 
-#include <cmath>
-#include <limits>
 #include <optional>
 #include <random>
 #include <ranges>
@@ -322,39 +320,35 @@ std::optional<FileSegmentSummaryInfo> tryGetSummaryInfo(const IFileCachePriority
 
 }
 
-FileSegmentSummaryInfos LRUFileCachePriority::iterate(
+void LRUFileCachePriority::iterate(
     UInt64 query_max_elements,
     UInt64 query_max_total_size,
     IterationOrder query_order,
-    UInt64 start_priority_rank,
-    QueueEntryType queue_entry_type)
+    QueueEntryType queue_entry_type,
+    FileSegmentSummaryInfos & result)
 {
     assertNotSealed("iterate");
     auto lock = getPriorityGuard().readLock();
-    if (query_order == IterationOrder::RANDOM)
-        return sample(query_max_elements, start_priority_rank, queue_entry_type, lock);
-
-    FileSegmentSummaryInfos result;
-    iterate(query_max_elements, query_max_total_size, query_order, start_priority_rank, queue_entry_type, result, lock);
-    return result;
+    iterate(query_max_elements, query_max_total_size, query_order, queue_entry_type, result, lock);
 }
 
 void LRUFileCachePriority::iterate(
     UInt64 query_max_elements,
     UInt64 query_max_total_size,
     IterationOrder query_order,
-    UInt64 start_priority_rank,
     QueueEntryType queue_entry_type,
     FileSegmentSummaryInfos & result,
     const CachePriorityGuard::ReadLock &)
 {
     /// return early since result is aggregation for e.g probationary and protected queue in the case of SLRUFileCachePriority and
-    /// an aggregation of system cache and data cache in the case of SplitFileCachePriority
-    if (result.limit_reached || result.infos.size() >= query_max_elements)
+    /// an aggregation of system cache and data cache in the case of SplitFileCachePriority.
+    if (result.limit_reached)
         return;
 
-    UInt64 next_priority_rank = start_priority_rank;
+    UInt64 next_priority_rank = result.infos.size() + 1;
+    pcg64 rng(randomSeed());
 
+    /// Returns false to stop the walk on a limit
     auto add_entry = [&](const EntryPtr & entry)
     {
         /// TODO: (andi) check this
@@ -362,6 +356,43 @@ void LRUFileCachePriority::iterate(
         if (!isObservable(entry->getState()) || entry->size.load() == 0)
             return true;
 
+        /// For random sampling we walk through the whole queue
+        if (query_order == IterationOrder::RANDOM)
+        {
+            /// Algorithm R: the first `query_max_elements` segments fill the reservoir, then the n-th segment
+            /// replaces a random one with the probability `query_max_elements / n`.
+            /// The reservoir is not full yet: take every segment.
+            if (result.infos.size() < query_max_elements)
+            {
+                if (auto info = tryGetSummaryInfo(*entry, queue_entry_type))
+                {
+                    info->priority_rank = ++result.seen;
+                    result.total_size += info->size;
+                    result.infos.push_back(std::move(*info));
+                }
+                return true;
+            }
+
+            /// The reservoir is full: this is the n-th segment, with n = `result.seen + 1`,
+            /// and it replaces a random one with the probability `query_max_elements / n`.
+            const UInt64 slot = std::uniform_int_distribution<UInt64>(0, result.seen)(rng);
+            /// We need to increment result.seen for probability reasons
+            if (slot >= query_max_elements)
+            {
+                ++result.seen;
+                return true;
+            }
+            if (auto info = tryGetSummaryInfo(*entry, queue_entry_type))
+            {
+                info->priority_rank = ++result.seen;
+                /// Keep up to date total size we don't need to iterate at the end again for trimming purposes
+                result.total_size = result.total_size - result.infos[slot].size + info->size;
+                result.infos[slot] = std::move(*info);
+            }
+            return true;
+        }
+
+        /// coldest/hottest, no need for sampling
         auto info = tryGetSummaryInfo(*entry, queue_entry_type);
         if (!info)
             return true;
@@ -391,81 +422,10 @@ void LRUFileCachePriority::iterate(
         }
     };
 
-    chassert(query_order != IterationOrder::RANDOM);
-    if (query_order == IterationOrder::COLDEST)
-        add_entries(queue);
-    else
+    if (query_order == IterationOrder::HOTTEST)
         add_entries(queue | std::views::reverse);
-}
-
-FileSegmentSummaryInfos LRUFileCachePriority::sample(
-    UInt64 query_max_elements,
-    UInt64 start_priority_rank,
-    QueueEntryType queue_entry_type,
-    const CachePriorityGuard::ReadLock &)
-{
-    FileSegmentSummaryInfos result;
-    if (query_max_elements == 0)
-        return result;
-    result.infos.reserve(std::min<UInt64>(query_max_elements, queue.size()));
-
-    pcg64 rng(randomSeed());
-    /// A uniformly distributed random number in (0, 1), so that its logarithm is finite.
-    auto random_unit = [&] { return (static_cast<double>(rng() >> 11) + 0.5) / 9007199254740992.0; };
-
-    /// Algorithm L: once the reservoir is full, the number of segments to skip before the next one to put into it
-    /// has the geometric distribution with the probability `w` of success, and `w` decreases after each pick.
-    const double k = static_cast<double>(query_max_elements);
-    double w = std::exp(std::log(random_unit()) / k);
-    auto next_pick_after = [&](UInt64 index) -> UInt64
-    {
-        /// `skip` is huge or infinite when `w` is tiny: saturate instead of overflowing.
-        const double skip = std::floor(std::log(random_unit()) / std::log1p(-w));
-        constexpr UInt64 max_index = std::numeric_limits<UInt64>::max();
-        if (!(skip < 0x1p63))
-            return max_index;
-        const auto skip_count = static_cast<UInt64>(skip);
-        return skip_count > max_index - index ? max_index : index + skip_count;
-    };
-
-    /// The index of the next segment to put into the full reservoir.
-    UInt64 next_pick = next_pick_after(query_max_elements);
-    /// The number of observable segments seen so far.
-    UInt64 population = 0;
-    for (const auto & entry : queue)
-    {
-        /// Check the state without the key lock first, as an optimization.
-        if (!isObservable(entry->getState()) || entry->size.load() == 0)
-            continue;
-
-        /// Only the segments which go into the reservoir take the key lock.
-        if (population >= query_max_elements && population != next_pick)
-        {
-            ++population;
-            continue;
-        }
-
-        auto info = tryGetSummaryInfo(*entry, queue_entry_type);
-        /// The segment is gone: do not count it, as if it was not in the queue. If it was picked, the next one is picked instead.
-        if (!info)
-            continue;
-
-        info->priority_rank = start_priority_rank + population;
-        if (population < query_max_elements)
-        {
-            result.infos.push_back(std::move(*info));
-        }
-        else
-        {
-            result.infos[std::uniform_int_distribution<UInt64>(0, query_max_elements - 1)(rng)] = std::move(*info);
-            w *= std::exp(std::log(random_unit()) / k);
-            next_pick = next_pick_after(population + 1);
-        }
-        ++population;
-    }
-
-    result.population = population;
-    return result;
+    else
+        add_entries(queue);
 }
 
 size_t LRUFileCachePriority::removeInvalidatedEntries(size_t max_batch)
