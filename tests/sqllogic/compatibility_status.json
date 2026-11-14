@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-11-05",
+  "count_scope": "Observed counts come from analyzed mismatch samples, can overlap, and do not partition the full pinned corpus.",
+  "findings": [
+    {
+      "title": "`GROUPING` masks for distinct constant expressions in `GROUPING SETS`",
+      "issue": {
+        "url": "https://github.com/ClickHouse/ClickHouse/issues/124098",
+        "state": "open"
+      },
+      "pull_request": {
+        "url": "https://github.com/ClickHouse/ClickHouse/pull/124203",
+        "state": "open"
+      }
+    },
+    {
+      "title": "`ANY`/`SOME`/`ALL` comparisons lose `NULL`",
+      "issue": {
+        "url": "https://github.com/ClickHouse/ClickHouse/issues/124494",
+        "state": "open"
+      },
+      "note": "No complete fixing pull request."
+    },
+    {
+      "title": "Correlated Boolean scalar aggregate rejected in `WHERE`",
+      "issue": {
+        "url": "https://github.com/ClickHouse/ClickHouse/issues/124499",
+        "state": "closed"
+      },
+      "pull_request": {
+        "url": "https://github.com/ClickHouse/ClickHouse/pull/124594",
+        "state": "merged"
+      }
+    },
+    {
+      "title": "`ALTER TABLE ... ADD COLUMN` ignored `data_type_default_nullable`",
+      "issue": {
+        "url": "https://github.com/ClickHouse/ClickHouse/issues/124504",
+        "state": "closed"
+      },
+      "pull_request": {
+        "url": "https://github.com/ClickHouse/ClickHouse/pull/124597",
+        "state": "merged"
+      }
+    },
+    {
+      "title": "Exact integer division evaluated unselected conditional branches",
+      "observed_cases": 144,
+      "issue": {
+        "url": "https://github.com/ClickHouse/ClickHouse/issues/126510",
+        "state": "closed"
+      },
+      "pull_request": {
+        "url": "https://github.com/ClickHouse/ClickHouse/pull/126535",
+        "state": "merged"
+      }
+    },
+    {
+      "title": "Different result expressions with the same output label are rejected",
+      "observed_cases": 41425,
+      "issue": {
+        "url": "https://github.com/ClickHouse/ClickHouse/issues/126525",
+        "state": "open"
+      },
+      "note": "No fixing pull request."
+    },
+    {
+      "title": "Correlated qualifier resolves to an aliased inner table",
+      "observed_cases": 553,
+      "issue": {
+        "url": "https://github.com/ClickHouse/ClickHouse/issues/99310",
+        "state": "open"
+      },
+      "pull_request": {
+        "url": "https://github.com/ClickHouse/ClickHouse/pull/129231",
+        "state": "open"
+      }
+    },
+    {
+      "title": "Simple `CASE` treats `NULL` as matching `WHEN NULL`",
+      "observed_cases": 550,
+      "issue": {
+        "url": "https://github.com/ClickHouse/ClickHouse/issues/101262",
+        "state": "closed"
+      },
+      "pull_request": {
+        "url": "https://github.com/ClickHouse/ClickHouse/pull/129261",
+        "state": "open"
+      }
+    },
+    {
+      "title": "Scalar `IN` and `NOT IN` do not use SQL three-valued logic",
+      "observed_cases": 102,
+      "issue": {
+        "url": "https://github.com/ClickHouse/ClickHouse/issues/34737",
+        "state": "open"
+      },
+      "pull_request": {
+        "url": "https://github.com/ClickHouse/ClickHouse/pull/129296",
+        "state": "open"
+      }
+    },
+    {
+      "title": "`nullIf` rejects `Variant` and `Dynamic` arguments",
+      "observed_cases": 1,
+      "pull_request": {
+        "url": "https://github.com/ClickHouse/ClickHouse/pull/129313",
+        "state": "open"
+      }
+    },
+    {
+      "title": "Correlated scalar projections in `ORDER BY` lose the outer projection",
+      "observed_cases": 467,
+      "pull_request": {
+        "url": "https://github.com/ClickHouse/ClickHouse/pull/129377",
+        "state": "open"
+      }
+    },
+    {
+      "title": "Row-dependent `IN` lists truncate or round mixed numeric candidates",
+      "observed_cases": 1,
+      "pull_request": {
+        "url": "https://github.com/ClickHouse/ClickHouse/pull/129419",
+        "state": "open"
+      }
+    },
+    {
+      "title": "Division of exact-numeric operands does not preserve an exact-numeric result",
+      "observed_cases": 15,
+      "note": "Unfiled SQL-standard compatibility improvement."
+    },
+    {
+      "title": "Residual division-by-zero exceptions in inessential expressions",
+      "observed_cases": 12,
+      "issue": {
+        "url": "https://github.com/ClickHouse/ClickHouse/issues/126510",
+        "state": "closed"
+      },
+      "note": "Needs a reduced current-master reproducer before filing a follow-up."
+    }
+  ]
+}
