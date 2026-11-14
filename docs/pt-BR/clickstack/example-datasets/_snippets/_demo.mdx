@@ -2,15 +2,21 @@
 title: Demonstração
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 <div id="demo-architecture">
   ### Arquitetura da demo
 </div>
 
 A demo é composta por microsserviços escritos em diferentes linguagens de programação que se comunicam entre si via gRPC e HTTP e por um gerador de carga que usa o Locust para simular tráfego de usuários. O código-fonte original desta demo foi modificado para usar a [instrumentação do ClickStack](/pt-BR/clickstack/ingesting-data/sdks/index).
 
-<Image img="/images/use-cases/observability/hyperdx-demo/architecture.webp" alt="Arquitetura" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Arquitetura](/images/use-cases/observability/hyperdx-demo/architecture.webp)
+
+</Frame>
+
+</div>
 
 *Crédito: https://opentelemetry.io/docs/demo/architecture/*
 

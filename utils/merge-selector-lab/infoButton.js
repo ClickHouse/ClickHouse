@@ -1,12 +1,14 @@
 import { renderMath } from './renderMath.js';
 
-import tippy from 'https://cdn.skypack.dev/tippy.js@6';
-import 'https://cdn.skypack.dev/@popperjs/core';
+// UMD builds: they define the `Popper` and `tippy` globals (tippy needs `Popper`, so it goes second).
+import './vendor/popper.min.js';
+import './vendor/tippy-bundle.umd.min.js';
+const tippy = globalThis.tippy;
 
 export function infoButton(svgContainer, x, y, content)
 {
     // Import CSS once
-    let css_href = 'https://unpkg.com/tippy.js@6/themes/light.css';
+    let css_href = new URL('./vendor/tippy-light.css', import.meta.url).href;
     if (!document.querySelector(`link[href="${css_href}"]`)) {
         // Create and append link tag to load CSS if not already present
         const link = document.createElement('link');

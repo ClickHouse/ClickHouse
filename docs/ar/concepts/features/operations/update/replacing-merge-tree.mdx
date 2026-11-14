@@ -7,8 +7,6 @@ doc_type: 'guide'
 sidebarTitle: 'العمل باستخدام محرك ReplacingMergeTree'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 في حين أن قواعد البيانات المعاملاتية مُحسّنة لأعباء عمل التحديث والحذف المعاملاتية، فإن قواعد بيانات OLAP توفّر ضمانات أقل لمثل هذه العمليات. وبدلاً من ذلك، فهي مُحسّنة للبيانات غير القابلة للتغيير التي تُدرج على دفعات، بما يتيح استعلامات تحليلية أسرع بكثير. ومع أن ClickHouse يوفّر عمليات التحديث من خلال mutations، بالإضافة إلى وسيلة lightweight لحذف الصفوف، فإن بنيته المعتمدة على الأعمدة تعني أنه ينبغي جدولة هذه العمليات بعناية، كما هو موضح أعلاه. وتُعالَج هذه العمليات بشكل غير متزامن، وتُنفَّذ باستخدام خيط تنفيذ واحد، وتتطلب (في حالة التحديثات) إعادة كتابة البيانات على القرص. لذلك لا ينبغي استخدامها عند وجود أعداد كبيرة من التغييرات الصغيرة.
 ولمعالجة تدفق من صفوف التحديث والحذف مع تجنّب أنماط الاستخدام المذكورة أعلاه، يمكننا استخدام محرك الجداول ReplacingMergeTree في ClickHouse.
 
@@ -32,7 +30,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <br />
 
-<Image img="/images/migrations/postgres-replacingmergetree.webp" size="md" alt="عملية ReplacingMergeTree" />
+<div className="ch-image-md">
+
+<Frame>
+
+![عملية ReplacingMergeTree](/images/migrations/postgres-replacingmergetree.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

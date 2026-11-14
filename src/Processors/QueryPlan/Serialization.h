@@ -55,7 +55,7 @@ struct QueryPlanStepDeserialization
 {
     ReadBuffer & in;
     DeserializedSetsRegistry & registry;
-    std::vector<StoragePtr> storage_holders;    /// Storages that are referenced by the step and need to be kept alive
+    VectorWithMemoryTracking<StoragePtr> storage_holders;    /// Storages that are referenced by the step and need to be kept alive
 
     const ContextPtr & context;
 
