@@ -39,6 +39,7 @@
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunction.h>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
@@ -706,6 +707,7 @@ private:
     {
         PrometheusQueryTree promql_tree;
         promql_tree.parse(query);
+        PrometheusQueryToSQL::checkFunctionNames(promql_tree.getRoot());
 
         writeString(R"({"status":"success","data":)", out);
         writeJSONString(promql_tree.toString(), out, FormatSettings{});
