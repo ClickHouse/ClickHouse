@@ -112,6 +112,19 @@ ASTPtr makeMongoSortKey(ASTPtr key);
   */
 ASTPtr makeMongoOrderByElement(ASTPtr key, int direction);
 
+/** Whether `value` is an array in each row: by the type of its value for a `Dynamic` - a document
+  * whose first value of a field is `null` stores the field as `Dynamic`, which holds an array in
+  * some rows only - and by its own type, a constant, otherwise.
+  */
+ASTPtr makeIsRuntimeArray(ASTPtr value);
+
+/** The number of elements of `value` in each row, for a value that `makeIsRuntimeArray` tells is
+  * an array. For a `Dynamic` it is taken from the JSON text of the value, `NULL` when that is not an
+  * array: `length` of a `Dynamic` throws for a row that holds a number. For any other type it is
+  * `length` of the value. The type of the result is `Nullable(UInt64)`.
+  */
+ASTPtr makeRuntimeArraySize(ASTPtr value);
+
 /** A constant converted to the type `type` - an expression that folds to the name of the type of
   * the column the value goes to - with `accurateCast`, which rejects a value the type cannot
   * represent - a number out of its range, a fraction for an integer - instead of storing it

@@ -87,6 +87,10 @@ void flattenDocument(const std::string & prefix, const rapidjson::Value & docume
             continue;
         if (name.starts_with("$"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "A field name of an inserted document must not start with '$', got '{}'", name);
+        /// A dot is the separator of the flattened column names, so `{"a.b": 1}` and
+        /// `{"a": {"b": 1}}` would map onto the same column `a.b`.
+        if (name.contains('.'))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A field name of an inserted document must not contain '.', got '{}'", name);
 
         std::string path = prefix.empty() ? name : prefix + "." + name;
         /// A document that is not an Extended JSON wrapper holds fields of its own. The check

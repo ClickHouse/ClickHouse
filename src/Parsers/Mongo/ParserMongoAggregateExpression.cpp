@@ -1575,18 +1575,18 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
           * Mongo does. Unlike the `$size` of a filter, which is a predicate and can simply not
           * match, this one has to produce a value, so the rejection is a `throwIf` on the type
           * of the argument: the type name is a constant, and a non-array argument fails when
-          * the query is analyzed.
+          * the query is analyzed. For a `Dynamic` it is the type of the value in each row (see
+          * `makeIsRuntimeArray`), and a row that does not hold an array fails when it is read.
+          * The size is `NULL` only for such a row, so it is not `Nullable`.
           */
-        /// The argument is used twice, so it is bound once (see `withValue`).
+        /// The argument is used several times, so it is bound once (see `withValue`).
         return withValue(arguments[0], [](const ASTPtr & value)
         {
-            auto is_array = makeASTFunction(
-                "startsWith", makeASTFunction("toTypeName", value->clone()), makeLiteral(Field(String("Array"))));
             auto guard = makeASTFunction(
                 "throwIf",
-                makeASTFunction("not", std::move(is_array)),
+                makeASTFunction("not", makeIsRuntimeArray(value)),
                 makeLiteral(Field(String("The argument of '$size' must be an array"))));
-            return makeASTFunction("plus", makeASTFunction("length", value->clone()), std::move(guard));
+            return makeASTFunction("plus", makeASTFunction("assumeNotNull", makeRuntimeArraySize(value)), std::move(guard));
         });
     }
 

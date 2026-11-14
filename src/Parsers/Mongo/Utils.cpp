@@ -417,6 +417,38 @@ ASTPtr makeMongoSortKey(ASTPtr key)
     return makeASTFunction("if", std::move(guard), key->clone(), key);
 }
 
+namespace
+{
+
+ASTPtr makeIsDynamicType(const ASTPtr & value)
+{
+    return makeASTFunction(
+        "equals", makeASTFunction("toTypeName", value->clone()), make_intrusive<ASTLiteral>(Field(String("Dynamic"))));
+}
+
+}
+
+ASTPtr makeIsRuntimeArray(ASTPtr value)
+{
+    /// `dynamicType` only accepts a `Dynamic`, so the value is cast to it, which is a no-op for a
+    /// `Dynamic` and analyzes for the other types too, which the constant condition then drops.
+    auto type_name = makeASTFunction(
+        "if",
+        makeIsDynamicType(value),
+        makeASTFunction("dynamicType", makeASTFunction("CAST", value->clone(), make_intrusive<ASTLiteral>(Field(String("Dynamic"))))),
+        makeASTFunction("toTypeName", value->clone()));
+    return makeASTFunction("startsWith", std::move(type_name), make_intrusive<ASTLiteral>(Field(String("Array("))));
+}
+
+ASTPtr makeRuntimeArraySize(ASTPtr value)
+{
+    return makeASTFunction(
+        "if",
+        makeIsDynamicType(value),
+        makeASTFunction("JSONArrayLength", makeASTFunction("toJSONString", value->clone())),
+        makeASTFunction("length", value->clone()));
+}
+
 ASTPtr makeMongoOrderByElement(ASTPtr key, int direction)
 {
     auto element = make_intrusive<ASTOrderByElement>();

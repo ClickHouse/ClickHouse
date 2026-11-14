@@ -2287,8 +2287,8 @@ def test_list_collections_and_databases_honor_filter_and_name_only(started_clust
 
 
 def test_unsupported_command_options_are_rejected(started_cluster):
-    """Options that change the result of a command - a `collation`, the `arrayFilters` of an update,
-    the `validator` of a collection - are not implemented, so a command carrying one is an error
+    """Options that change the result of a command - a `collation`, the `arrayFilters` or the `hint`
+    of an update, the `validator` of a collection - are not implemented, so a command carrying one is an error
     rather than being answered as if the option were absent. A `collation` with the `simple` locale
     asks for the binary comparison the translation does, and is accepted."""
     client = make_client()
@@ -2313,6 +2313,11 @@ def test_unsupported_command_options_are_rejected(started_cluster):
             "update": "t",
             "updates": [{"q": {"name": "foo"}, "u": {"$set": {"id": 3}}, "multi": True, "arrayFilters": [{"x": 1}]}],
         },
+        {"delete": "t", "deletes": [{"q": {"name": "foo"}, "limit": 0, "hint": "missing_index"}]},
+        {
+            "update": "t",
+            "updates": [{"q": {"name": "foo"}, "u": {"$set": {"id": 3}}, "multi": True, "hint": "missing_index"}],
+        },
         {"find": "t", "filter": {"name": "foo"}, "let": {"x": 1}},
     ]:
         with pytest.raises(pymongo.errors.OperationFailure) as error:
@@ -2320,6 +2325,14 @@ def test_unsupported_command_options_are_rejected(started_cluster):
         assert "is not supported" in str(error.value)
 
     assert [doc["id"] for doc in collection.find({"name": "foo"}, collation={"locale": "simple"})] == [1]
+    assert collection.count_documents({}) == 2
+
+    # A field name with a dot would alias the nested field of the same path, which is stored in the
+    # same column; one starting with `$` or an empty one is not a field name at all.
+    for document in [{"a.b": 1}, {"nested": {"a.b": 1}}, {"$x": 1}, {"": 1}]:
+        with pytest.raises(pymongo.errors.OperationFailure) as error:
+            database.command({"insert": "t", "documents": [{"id": 3, **document}]})
+        assert "field name of an inserted document" in str(error.value)
     assert collection.count_documents({}) == 2
 
     # A malformed `upsert` is an error of its own rather than being read as an absent one.

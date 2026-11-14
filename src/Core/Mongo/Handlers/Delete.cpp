@@ -69,7 +69,7 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
         String serialized_filter;
         {
             auto json_representation = delete_spec.getRapidJSONRepresentation();
-            rejectUnsupportedOptions(json_representation, "delete", {"collation"});
+            rejectUnsupportedOptions(json_representation, "delete", {"collation", "hint"});
             auto filter_it = json_representation.FindMember("q");
             if (filter_it == json_representation.MemberEnd())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'delete' command does not contain the 'q' filter");

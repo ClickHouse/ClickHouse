@@ -140,7 +140,7 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
         String serialized_update;
         {
             auto json_representation = update_spec.getRapidJSONRepresentation();
-            rejectUnsupportedOptions(json_representation, "update", {"collation", "arrayFilters"});
+            rejectUnsupportedOptions(json_representation, "update", {"collation", "arrayFilters", "hint"});
             serialized_filter = serializeRequiredMember(json_representation, "q");
             serialized_update = serializeRequiredMember(json_representation, "u");
 
