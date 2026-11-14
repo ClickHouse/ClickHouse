@@ -1,0 +1,47 @@
+equals	50
+equals	1
+in	150
+in	2
+like	50
+like	1
+no match	0
+no match	0
+and	50
+and	1
+not equals	250
+not equals	3
+default	0
+default	0
+or other column	51
+or other column	3
+disabled	50
+disabled	3
+too large	3
+mutation on the fly	1
+mutation on the fly	3
+merged	10
+merged	1
+merged	10
+merged	1
+nullable equals	100
+nullable equals	2
+nullable is null	50
+nullable coalesce	150
+nullable coalesce	2
+unused cast	1
+unused conversion	1
+unused conversion	2
+skipped null	1
+used null	1
+used default	1
+used default	1
+overflow	0
+overflow	1
+overflow	104
+overflow	2
+compact	100
+compact	2
+no marker	100
+no marker	2
+final	0
+final	1

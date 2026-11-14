@@ -1,0 +1,8 @@
+blockSize	10000
+rowNumberInBlock	1
+match pattern	1
+indexHint	1
+match haystack	1
+match haystack	1
+mixed codecs	1
+mixed codecs	1

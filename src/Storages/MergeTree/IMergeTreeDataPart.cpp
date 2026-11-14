@@ -1593,6 +1593,20 @@ Estimates IMergeTreeDataPart::getEstimates(const NameSet & required_columns) con
     return *getEstimatesImpl(required_columns, /* only_from_memory = */ false);
 }
 
+bool IMergeTreeDataPart::hasIncompleteLowCardinalityDictionaries(const String & column_name) const
+{
+    std::lock_guard lock(estimates_mutex);
+    return incomplete_low_cardinality_dictionaries && incomplete_low_cardinality_dictionaries->contains(column_name);
+}
+
+void IMergeTreeDataPart::setIncompleteLowCardinalityDictionaries(const String & column_name) const
+{
+    std::lock_guard lock(estimates_mutex);
+    if (!incomplete_low_cardinality_dictionaries)
+        incomplete_low_cardinality_dictionaries = std::make_unique<NameSet>();
+    incomplete_low_cardinality_dictionaries->insert(column_name);
+}
+
 std::optional<Estimates> IMergeTreeDataPart::tryGetEstimatesFromMemory(const NameSet & required_columns) const
 {
     return getEstimatesImpl(required_columns, /* only_from_memory = */ true);

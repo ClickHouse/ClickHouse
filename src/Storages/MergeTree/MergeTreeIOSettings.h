@@ -191,6 +191,7 @@ struct MergeTreeWriterSettings
 
     size_t low_cardinality_max_dictionary_size{};
     bool low_cardinality_use_single_dictionary_for_part{};
+    bool low_cardinality_write_complete_dictionaries_marker{};
     bool use_compact_variant_discriminators_serialization{};
     MergeTreeDynamicSerializationVersion dynamic_serialization_version{};
     MergeTreeObjectSerializationVersion object_serialization_version{};

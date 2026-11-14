@@ -15,6 +15,9 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
+#include <Storages/MergeTree/MergeTreeIndexSet.h>
+#include <Compression/CompressedReadBufferFromFile.h>
+#include <DataTypes/Serializations/SerializationLowCardinality.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/GenericExclusionSearch.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -61,6 +64,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/indexHint.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/LoggingFormatStringHelpers.h>
@@ -134,6 +138,8 @@ namespace Setting
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_statistics_for_part_pruning;
+    extern const SettingsBool use_low_cardinality_dictionaries_for_part_pruning;
+    extern const SettingsUInt64 max_low_cardinality_dictionaries_bytes_for_part_pruning;
     extern const SettingsBool use_partition_minmax_for_primary_key_pruning;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
@@ -1139,6 +1145,291 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     return res_parts;
 }
 
+
+namespace
+{
+
+/// Whether every function of `node` that depends on the input `column_name` cannot throw on any value of its arguments.
+/// Pruning by dictionaries evaluates the filter on all values of a part, including the values of the rows that the query
+/// skips by other indexes or does not read at all, so a function that can throw on some values (e.g. a conversion, or
+/// `CAST` of `NULL` to a non-Nullable type) would make a query fail that succeeds without the pruning.
+/// Also, the filter must not contain functions whose result depends on the block or the row rather than on the values
+/// of the arguments (e.g. `blockSize`, `rowNumberInBlock`, `rand`), even if they do not depend on the column, because
+/// they are evaluated on the block of dictionary values, which differs from the blocks of the rows.
+class SafeFunctionsChecker
+{
+public:
+    explicit SafeFunctionsChecker(const String & column_name_) : column_name(column_name_) {}
+
+    bool isSafe(const ActionsDAG::Node & node) { return check(node).safe; }
+
+private:
+    struct Result
+    {
+        bool depends = false;
+        bool safe = true;
+    };
+
+    const String & column_name;
+    std::unordered_map<const ActionsDAG::Node *, Result> visited;
+
+    static const ActionsDAG::NodeRawConstPtrs & getArguments(const ActionsDAG::Node & node)
+    {
+        if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.function_base->getName() != "indexHint")
+            return node.children;
+
+        /// The arguments of `indexHint` are stored inside of `FunctionIndexHint`, and the `set` index evaluates them.
+        const auto & adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor &>(*node.function_base);
+        const auto & index_hint = typeid_cast<const FunctionIndexHint &>(*adaptor.getFunction());
+        return index_hint.getActions().getOutputs();
+    }
+
+    Result check(const ActionsDAG::Node & node)
+    {
+        if (auto it = visited.find(&node); it != visited.end())
+            return it->second;
+
+        Result result;
+        const auto & arguments = getArguments(node);
+        std::vector<Result> argument_results;
+        argument_results.reserve(arguments.size());
+        for (const auto * argument : arguments)
+        {
+            auto argument_result = check(*argument);
+            result.depends = result.depends || argument_result.depends;
+            result.safe = result.safe && argument_result.safe;
+            argument_results.push_back(argument_result);
+        }
+
+        if (node.type == ActionsDAG::ActionType::INPUT)
+        {
+            result.depends = node.result_name == column_name;
+        }
+        else if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
+        {
+            result.safe = result.safe && !result.depends;
+        }
+        else if (node.type == ActionsDAG::ActionType::FUNCTION)
+        {
+            if (!node.function_base || node.function_base->isStateful() || !node.function_base->isDeterministicInScopeOfQuery())
+            {
+                result.safe = false;
+            }
+            else if (result.depends)
+            {
+                const auto & name = node.function_base->getName();
+                /// The pattern is compiled and can be invalid, so it must not depend on the column.
+                if (functions_with_pattern.contains(name))
+                    result.safe = result.safe && argument_results.size() >= 2 && !argument_results[1].depends;
+                else
+                    result.safe = result.safe && safe_functions.contains(name);
+            }
+        }
+
+        visited[&node] = result;
+        return result;
+    }
+
+    static inline const std::unordered_set<std::string_view> safe_functions = {
+        "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
+        "in", "notIn", "globalIn", "globalNotIn", "nullIn", "notNullIn", "globalNullIn", "globalNotNullIn",
+        "startsWith", "endsWith", "startsWithUTF8", "endsWithUTF8",
+        "position", "positionCaseInsensitive", "positionUTF8", "positionCaseInsensitiveUTF8",
+        "empty", "notEmpty", "length", "lengthUTF8",
+        "lower", "upper", "lowerUTF8", "upperUTF8",
+        "isNull", "isNotNull", "coalesce", "ifNull", "assumeNotNull", "toLowCardinality", "materialize", "identity",
+        "and", "or", "not", "xor", "indexHint",
+    };
+
+    /// Safe if only the first argument depends on the column.
+    static inline const std::unordered_set<std::string_view> functions_with_pattern = {
+        "like", "notLike", "ilike", "notILike", "match",
+    };
+};
+
+}
+
+RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByLowCardinalityDictionaries(
+    const RangesInDataParts & parts,
+    const StorageMetadataPtr & metadata_snapshot,
+    const SelectQueryInfo & query_info,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ConditionTemplate<KeyCondition>::Ptr & key_condition,
+    size_t min_marks_per_part_to_load_statistics,
+    const ContextPtr & context,
+    LoggerPtr log,
+    ReadFromMergeTree::IndexStats & index_stats)
+{
+    const auto & settings = context->getSettingsRef();
+
+    /// The dictionaries describe the values as they are stored in the part, so they are not used in the same cases
+    /// as statistics, see `filterPartsByStatistics`: with `FINAL`, with on-the-fly mutations or patch parts, with
+    /// masking policies and row policies. Pending alter and metadata mutations are checked per part below.
+    if (!settings[Setting::use_low_cardinality_dictionaries_for_part_pruning]
+        || parts.empty()
+        || !query_info.filter_actions_dag
+        || query_info.isFinal()
+        || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+        || parts.front().data_part->storage.hasEnabledMaskingPolicies(context)
+        || query_info.row_level_filter
+        || getEffectiveRowPolicyFilter(parts.front().data_part->storage, context))
+    {
+        return parts;
+    }
+
+    const auto * predicate = query_info.filter_actions_dag->getOutputs().front();
+
+    /// A skip index of type `set` on each top-level `LowCardinality` column used by the filter.
+    struct ColumnCondition
+    {
+        NameAndTypePair column;
+        std::shared_ptr<const SerializationLowCardinality> serialization;
+        /// `IMergeTreeIndex` refers to its description, which is not in the metadata.
+        std::shared_ptr<const IndexDescription> index_description;
+        MergeTreeIndexPtr index;
+        MergeTreeIndexConditionPtr condition;
+    };
+    std::vector<ColumnCondition> conditions;
+
+    const auto & columns = metadata_snapshot->getColumns();
+    NameSet used_columns;
+    for (const auto * input : query_info.filter_actions_dag->getInputs())
+    {
+        if (!used_columns.insert(input->result_name).second)
+            continue;
+
+        auto column = columns.tryGetPhysical(input->result_name);
+        if (!column || !column->type->lowCardinality())
+            continue;
+
+        auto serialization = std::dynamic_pointer_cast<const SerializationLowCardinality>(column->type->getDefaultSerialization());
+        if (!serialization)
+            continue;
+
+        if (!SafeFunctionsChecker(column->name).isSafe(*predicate))
+            continue;
+
+        auto index_description = std::make_shared<const IndexDescription>(createImplicitSetIndexDescription(column->name, columns, context));
+        auto index = std::make_shared<MergeTreeIndexSet>(metadata_snapshot, *index_description, /*max_rows=*/ 0);
+        auto condition = index->createIndexCondition(predicate, context);
+        if (!condition || condition->alwaysUnknownOrTrue())
+            continue;
+
+        conditions.push_back({*column, std::move(serialization), std::move(index_description), std::move(index), std::move(condition)});
+    }
+
+    if (conditions.empty())
+        return parts;
+
+    /// Reading the dictionaries costs a read per part and column, which is more than a small read could save.
+    const size_t num_wide_parts = std::ranges::count_if(parts, [](const auto & part) { return isWidePart(part.data_part); });
+    if (num_wide_parts == 0
+        || hasFewerMarksToReadThan(parts, metadata_snapshot, key_condition,
+            getMinMarksToLoadStatistics(min_marks_per_part_to_load_statistics, num_wide_parts), settings, log))
+        return parts;
+
+    const UInt64 max_dictionaries_bytes = settings[Setting::max_low_cardinality_dictionaries_bytes_for_part_pruning];
+    ISerialization::SubstreamPath dictionary_keys_path;
+    dictionary_keys_path.emplace_back(ISerialization::Substream::DictionaryKeys);
+
+    /// Whether the part can match the filter by the dictionaries of its columns.
+    auto part_can_match = [&](const MergeTreeData::DataPartPtr & part)
+    {
+        if (!isWidePart(part) || partHasPendingAlterOrMetadataMutations(part, mutations_snapshot))
+            return true;
+
+        /// The dictionaries are read before the pipeline starts, a few at a time and without prefetching,
+        /// so on a remote disk the round trips can cost more than the reads that the pruning saves.
+        if (part->getDataPartStorage().isStoredOnRemoteDisk())
+            return true;
+
+        for (const auto & condition : conditions)
+        {
+            /// The column is converted on read if the part stores it with another type, and absent in old parts.
+            auto part_column = part->tryGetColumn(condition.column.name);
+            if (!part_column || !part_column->type->equals(*condition.column.type))
+                continue;
+
+            if (part->hasIncompleteLowCardinalityDictionaries(part_column->name))
+                continue;
+
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                *part_column, dictionary_keys_path, ".bin", part->checksums, part->storage.getSettings());
+            if (!stream_name)
+                continue;
+
+            const auto file_name = *stream_name + ".bin";
+            const size_t file_size = part->checksums.files.at(file_name).file_size;
+            if (file_size > max_dictionaries_bytes)
+                continue;
+
+            auto file = part->getDataPartStorage().readFile(file_name, context->getReadSettings().adjustBufferSize(file_size), file_size);
+            CompressedReadBufferFromFile keys_stream(std::move(file), /* allow_different_codecs */ true);
+            auto dictionaries = condition.serialization->deserializeCompleteDictionaries(keys_stream);
+            if (!dictionaries)
+            {
+                part->setIncompleteLowCardinalityDictionaries(part_column->name);
+                continue;
+            }
+
+            /// Each dictionary is a granule of the `set` index, and the part can match if any of them can.
+            /// The condition is evaluated on every value anyway, so the range of values is not computed
+            /// to check the condition on it first: it would materialize every value.
+            const auto & index_description = condition.index->index;
+            const bool can_match_by_column = std::ranges::any_of(*dictionaries, [&](const ColumnPtr & values)
+            {
+                auto granule = std::make_shared<MergeTreeIndexGranuleSet>(index_description.name, index_description.sample_block, /*max_rows=*/ 0);
+                granule->block = index_description.sample_block.cloneWithColumns(Columns{values});
+                granule->set_hyperrectangle.assign(1, Range::createWholeUniverse());
+                return condition.condition->mayBeTrueOnGranule(granule, {});
+            });
+
+            if (!dictionaries->empty() && !can_match_by_column)
+            {
+                LOG_TRACE(log, "Part {} pruned by the dictionaries of column {}", part->name, condition.column.name);
+                return false;
+            }
+        }
+
+        return true;
+    };
+
+    std::vector<char> can_match(parts.size(), true);
+    MergeTreeData::loadStatisticsOfPartsInParallel(
+        parts.size(),
+        settings[Setting::max_threads],
+        [](size_t) { return false; },
+        [&](size_t part_index) { can_match[part_index] = part_can_match(parts[part_index].data_part); },
+        [](size_t) {});
+
+    RangesInDataParts res_parts;
+    size_t total_granules_after = 0;
+    for (size_t i = 0; i < parts.size(); ++i)
+    {
+        if (can_match[i])
+        {
+            res_parts.push_back(parts[i]);
+            total_granules_after += parts[i].getMarksCount();
+        }
+    }
+
+    if (res_parts.size() < parts.size())
+    {
+        Names used_keys;
+        for (const auto & condition : conditions)
+            used_keys.push_back(condition.column.name);
+
+        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::LowCardinalityDictionary,
+            .used_keys = std::move(used_keys),
+            .num_parts_after = res_parts.size(),
+            .num_granules_after = total_granules_after});
+
+        LOG_DEBUG(log, "Pruning by LowCardinality dictionaries: {} parts -> {} parts", parts.size(), res_parts.size());
+    }
+
+    return res_parts;
+}
 
 /// The minmax skip index reflects the physical rows of a part as they were written, so it goes
 /// stale when a pending or materialized change is not yet merged into the part:

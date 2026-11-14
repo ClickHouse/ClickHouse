@@ -52,6 +52,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool use_adaptive_write_buffer_for_dynamic_subcolumns;
     extern const MergeTreeSettingsUInt64 min_columns_to_activate_adaptive_write_buffer;
     extern const MergeTreeSettingsBool use_compact_variant_discriminators_serialization;
+    extern const MergeTreeSettingsBool write_low_cardinality_complete_dictionaries_marker;
     extern const MergeTreeSettingsNonZeroUInt64 marks_compress_block_size;
     extern const MergeTreeSettingsString marks_compression_codec;
     extern const MergeTreeSettingsString primary_key_compression_codec;
@@ -107,6 +108,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , query_write_settings(query_write_settings_)
     , low_cardinality_max_dictionary_size(global_settings[Setting::low_cardinality_max_dictionary_size])
     , low_cardinality_use_single_dictionary_for_part(global_settings[Setting::low_cardinality_use_single_dictionary_for_part] != 0)
+    , low_cardinality_write_complete_dictionaries_marker((*storage_settings)[MergeTreeSetting::write_low_cardinality_complete_dictionaries_marker])
     , use_compact_variant_discriminators_serialization((*storage_settings)[MergeTreeSetting::use_compact_variant_discriminators_serialization])
     , dynamic_serialization_version(global_settings[Setting::merge_tree_use_v1_object_and_dynamic_serialization] ? MergeTreeDynamicSerializationVersion::V1 : (*storage_settings)[MergeTreeSetting::dynamic_serialization_version])
     , object_serialization_version(global_settings[Setting::merge_tree_use_v1_object_and_dynamic_serialization] ? MergeTreeObjectSerializationVersion::V1 : (*storage_settings)[MergeTreeSetting::object_serialization_version])

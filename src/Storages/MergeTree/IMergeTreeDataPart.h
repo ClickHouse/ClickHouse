@@ -282,6 +282,12 @@ public:
     /// The result of `getEstimates(required_columns)` if it needs nothing read from disk, otherwise `std::nullopt`.
     std::optional<Estimates> tryGetEstimatesFromMemory(const NameSet & required_columns) const;
 
+    /// Whether the dictionaries of a `LowCardinality` column were read and found not to contain all its values,
+    /// so `filterPartsByLowCardinalityDictionaries` does not read them again. The part is immutable, so the
+    /// result stays valid; the parts written before the marker of complete dictionaries existed are read only once.
+    bool hasIncompleteLowCardinalityDictionaries(const String & column_name) const;
+    void setIncompleteLowCardinalityDictionaries(const String & column_name) const;
+
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version = true);
@@ -958,6 +964,9 @@ private:
     mutable NameSet estimates_loaded_columns TSA_GUARDED_BY(estimates_mutex);
     /// The estimates of all columns are known.
     mutable bool estimates_complete TSA_GUARDED_BY(estimates_mutex) = false;
+    /// See `hasIncompleteLowCardinalityDictionaries`. Empty for almost every part, so it is allocated only when needed
+    /// and guarded by `estimates_mutex` to keep the size of the part small.
+    mutable std::unique_ptr<NameSet> incomplete_low_cardinality_dictionaries TSA_GUARDED_BY(estimates_mutex);
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();

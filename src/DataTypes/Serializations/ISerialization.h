@@ -303,6 +303,9 @@ public:
 
         size_t low_cardinality_max_dictionary_size = 0;
         bool low_cardinality_use_single_dictionary_for_part = true;
+        /// Write a marker at the end of the `DictionaryKeys` stream of a top-level `LowCardinality` column
+        /// if its dictionaries contain all its keys. Only `Wide` parts of `MergeTree` set it.
+        bool low_cardinality_write_complete_dictionaries_marker = false;
 
         bool position_independent_encoding = true;
 

@@ -14,6 +14,6 @@ patch part substream sizes
 patch-483e107c29559e27e89615746adde79f-all_3_3_0_2	_block_number	80
 patch-483e107c29559e27e89615746adde79f-all_3_3_0_2	_block_offset	80
 patch-483e107c29559e27e89615746adde79f-all_3_3_0_2	_part	26
-patch-483e107c29559e27e89615746adde79f-all_3_3_0_2	_part.dict	27
+patch-483e107c29559e27e89615746adde79f-all_3_3_0_2	_part.dict	43
 patch-483e107c29559e27e89615746adde79f-all_3_3_0_2	_part_data_version	80
 patch-483e107c29559e27e89615746adde79f-all_3_3_0_2	b	80

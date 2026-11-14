@@ -37,11 +37,8 @@ namespace
     }
 
     /// The key count comes from the stream and must not size an allocation, so the keys are read in batches.
-    MutableColumnPtr deserializeDictionaryKeys(const IDataType & keys_type, const ISerialization & keys_serialization, ReadBuffer & istr)
+    MutableColumnPtr deserializeDictionaryKeys(const IDataType & keys_type, const ISerialization & keys_serialization, ReadBuffer & istr, UInt64 num_keys)
     {
-        UInt64 num_keys = 0;
-        readBinaryLittleEndian(num_keys, istr);
-
         auto keys = keys_type.createColumn();
         while (keys->size() < num_keys)
         {
@@ -52,6 +49,13 @@ namespace
                     "Cannot read all keys of a LowCardinality dictionary: read {} of {}", keys_read, num_keys);
         }
         return keys;
+    }
+
+    MutableColumnPtr deserializeDictionaryKeys(const IDataType & keys_type, const ISerialization & keys_serialization, ReadBuffer & istr)
+    {
+        UInt64 num_keys = 0;
+        readBinaryLittleEndian(num_keys, istr);
+        return deserializeDictionaryKeys(keys_type, keys_serialization, istr, num_keys);
     }
 }
 
@@ -117,6 +121,39 @@ void SerializationLowCardinality::enumerateStreams(
 
     callback(settings.path);
     settings.path.pop_back();
+}
+
+/// Written instead of the number of keys of the next dictionary after the last dictionary in the `DictionaryKeys`
+/// stream, if all keys of the column are in its dictionaries. See `serializeBinaryBulkStateSuffix`.
+/// The marker is followed by a UInt64 with these flags: whether the rows use the `NULL` and the default value,
+/// which every dictionary contains anyway.
+constexpr UInt64 COMPLETE_DICTIONARIES_MARKER = 0;
+constexpr UInt64 COMPLETE_DICTIONARIES_HAS_NULL = 1;
+constexpr UInt64 COMPLETE_DICTIONARIES_HAS_DEFAULT = 2;
+
+namespace
+{
+
+template <typename T>
+bool containsIndexImpl(const IColumn & positions, UInt64 index, bool & found)
+{
+    const auto * column = typeid_cast<const ColumnVector<T> *>(&positions);
+    if (!column)
+        return false;
+    const auto & data = column->getData();
+    found = std::find(data.begin(), data.end(), static_cast<T>(index)) != data.end();
+    return true;
+}
+
+bool containsIndex(const IColumn & positions, UInt64 index)
+{
+    bool found = false;
+    if (containsIndexImpl<UInt8>(positions, index, found) || containsIndexImpl<UInt16>(positions, index, found)
+        || containsIndexImpl<UInt32>(positions, index, found) || containsIndexImpl<UInt64>(positions, index, found))
+        return found;
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for LowCardinality must be UInt, got {}", positions.getName());
+}
+
 }
 
 struct KeysSerializationVersion
@@ -254,6 +291,17 @@ struct SerializeStateLowCardinality : public ISerialization::SerializeBinaryBulk
     KeysSerializationVersion key_version;
     MutableColumnUniquePtr shared_dictionary;
 
+    /// Whether some keys were written as additional keys into the `DictionaryIndexes` stream,
+    /// so that the dictionaries in the `DictionaryKeys` stream do not contain all keys of the column.
+    bool has_additional_keys = false;
+
+    /// Whether at least one dictionary was written into the `DictionaryKeys` stream.
+    bool has_dictionaries = false;
+
+    /// Whether the rows use the `NULL` or the default value of the dictionaries (only for the marker of complete dictionaries).
+    bool uses_null = false;
+    bool uses_default = false;
+
     explicit SerializeStateLowCardinality(UInt64 key_version_) : key_version(key_version_) {}
 };
 
@@ -330,7 +378,90 @@ void SerializationLowCardinality::serializeBinaryBulkStateSuffix(
         writeBinaryLittleEndian(num_keys, *stream);
         dict_inner_serialization->serializeBinaryBulk(*nested_column, *stream, 0, num_keys);
         low_cardinality_state->shared_dictionary = nullptr;
+        low_cardinality_state->has_dictionaries = true;
     }
+
+    /// A dictionary always contains the default value, so a dictionary of zero keys is never written,
+    /// and the zero number of keys after the last dictionary marks that the dictionaries contain all keys.
+    /// Readers never read past the last dictionary, so the marker is invisible to them.
+    /// Only a top-level column is marked: its dictionaries are what `deserializeCompleteDictionaries` reads.
+    /// The marker always follows a dictionary, so a reader that takes it for the size of a dictionary
+    /// has read a dictionary before and can tell them apart.
+    if (settings.low_cardinality_write_complete_dictionaries_marker && settings.path.empty()
+        && settings.low_cardinality_max_dictionary_size && low_cardinality_state->has_dictionaries
+        && !low_cardinality_state->has_additional_keys)
+    {
+        settings.path.push_back(Substream::DictionaryKeys);
+        auto * stream = settings.getter(settings.path);
+        settings.path.pop_back();
+
+        if (!stream)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream in SerializationLowCardinality::serializeBinaryBulkStateSuffix");
+
+        writeBinaryLittleEndian(COMPLETE_DICTIONARIES_MARKER, *stream);
+        UInt64 flags = (low_cardinality_state->uses_null ? COMPLETE_DICTIONARIES_HAS_NULL : 0)
+            | (low_cardinality_state->uses_default ? COMPLETE_DICTIONARIES_HAS_DEFAULT : 0);
+        writeBinaryLittleEndian(flags, *stream);
+    }
+}
+
+std::optional<Columns> SerializationLowCardinality::deserializeCompleteDictionaries(ReadBuffer & keys_stream) const
+{
+    UInt64 keys_version = 0;
+    readBinaryLittleEndian(keys_version, keys_stream);
+    KeysSerializationVersion::checkVersion(keys_version);
+
+    auto keys_type = removeNullable(dictionary_type);
+    std::vector<MutableColumnUniquePtr> dictionaries;
+
+    while (!keys_stream.eof())
+    {
+        UInt64 num_keys = 0;
+        readBinaryLittleEndian(num_keys, keys_stream);
+
+        if (num_keys == COMPLETE_DICTIONARIES_MARKER)
+            break;
+
+        auto keys = deserializeDictionaryKeys(*keys_type, *dict_inner_serialization, keys_stream, num_keys);
+        dictionaries.push_back(DataTypeLowCardinality::createColumnUnique(*dictionary_type, std::move(keys)));
+    }
+
+    if (keys_stream.eof())
+        return std::nullopt;
+
+    UInt64 flags = 0;
+    readBinaryLittleEndian(flags, keys_stream);
+    if (!keys_stream.eof())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected data after the marker of complete LowCardinality dictionaries");
+
+    /// The rows use every key of the dictionaries, and also `NULL` and the default value if the flags say so.
+    /// A function that cannot be executed on the default value is then executed only on the values of the rows,
+    /// like when the column is read, see `IExecutableFunction::executeWithoutSparseColumns`.
+    Columns result;
+    result.reserve(dictionaries.size());
+    for (auto & dictionary : dictionaries)
+    {
+        auto positions = ColumnUInt64::create();
+        auto & positions_data = positions->getData();
+        positions_data.reserve(dictionary->size());
+        for (size_t i = 0; i < dictionary->size(); ++i)
+        {
+            if (dictionary_type->isNullable() && i == dictionary->getNullValueIndex() && !(flags & COMPLETE_DICTIONARIES_HAS_NULL))
+                continue;
+            if (i == dictionary->getDefaultValueIndex() && !(flags & COMPLETE_DICTIONARIES_HAS_DEFAULT))
+                continue;
+            positions_data.push_back(i);
+        }
+
+        if (positions_data.empty())
+            continue;
+
+        ColumnPtr dictionary_ptr = std::move(dictionary);
+        ColumnPtr positions_ptr = std::move(positions);
+        result.push_back(ColumnLowCardinality::create(dictionary_ptr, positions_ptr, /*is_shared=*/ false));
+    }
+
+    return result;
 }
 
 void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
@@ -389,7 +520,22 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
         /// bound to the next different mark or to the file end. So this `eof`
         /// check is not limited by the current task range in the only case where
         /// `might_have_single_dictionary` can prove useful.
-        if (stream->eof())
+        /// The dictionary can be followed by the marker of complete dictionaries (see `serializeBinaryBulkStateSuffix`).
+        /// If anything else follows it, the stream is read again from the start below.
+        auto is_last_dictionary = [&]
+        {
+            if (stream->eof())
+                return true;
+            UInt64 next_num_keys = 0;
+            readBinaryLittleEndian(next_num_keys, *stream);
+            if (next_num_keys != COMPLETE_DICTIONARIES_MARKER || stream->eof())
+                return false;
+            UInt64 flags = 0;
+            readBinaryLittleEndian(flags, *stream);
+            return stream->eof();
+        };
+
+        if (is_last_dictionary())
         {
             new_state->single_dictionary_for_part = true;
             new_state->global_dictionary = std::move(global_dictionary);
@@ -614,6 +760,17 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
     if (const auto * nullable_keys = checkAndGetColumn<ColumnNullable>(&*keys))
         keys = nullable_keys->getNestedColumnPtr();
 
+    /// The marker of complete dictionaries tells whether the rows use the values that every dictionary has.
+    /// If there are additional keys, the marker is not written, and the positions are not only in the dictionary.
+    if (settings.low_cardinality_write_complete_dictionaries_marker && settings.path.empty()
+        && keys->empty() && !low_cardinality_state->has_additional_keys)
+    {
+        if (!low_cardinality_state->uses_null && dictionary_type->isNullable())
+            low_cardinality_state->uses_null = containsIndex(*positions, global_dictionary->getNullValueIndex());
+        if (!low_cardinality_state->uses_default)
+            low_cardinality_state->uses_default = containsIndex(*positions, global_dictionary->getDefaultValueIndex());
+    }
+
     bool need_additional_keys = !keys->empty();
     bool need_dictionary = settings.low_cardinality_max_dictionary_size != 0;
     bool need_write_dictionary = !settings.low_cardinality_use_single_dictionary_for_part
@@ -629,10 +786,12 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
         writeBinaryLittleEndian(num_keys, *keys_stream);
         dict_inner_serialization->serializeBinaryBulk(*nested_column, *keys_stream, 0, num_keys);
         low_cardinality_state->shared_dictionary = nullptr;
+        low_cardinality_state->has_dictionaries = true;
     }
 
     if (need_additional_keys)
     {
+        low_cardinality_state->has_additional_keys = true;
         UInt64 num_keys = keys->size();
         writeBinaryLittleEndian(num_keys, *indexes_stream);
         dict_inner_serialization->serializeBinaryBulk(*keys, *indexes_stream, 0, num_keys);

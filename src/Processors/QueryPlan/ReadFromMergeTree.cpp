@@ -3935,6 +3935,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         res_parts, metadata_snapshot, query_info_, mutations_snapshot, indexes->key_condition,
         settings[Setting::min_marks_per_part_to_load_statistics], context_, log, result.index_stats);
 
+    res_parts = MergeTreeDataSelectExecutor::filterPartsByLowCardinalityDictionaries(
+        res_parts, metadata_snapshot, query_info_, mutations_snapshot, indexes->key_condition,
+        settings[Setting::min_marks_per_part_to_load_statistics], context_, log, result.index_stats);
+
     result.sampling = MergeTreeDataSelectExecutor::getSampling(
         query_info_,
         metadata_snapshot->getColumns().getAllPhysical(),
@@ -6416,6 +6420,8 @@ static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
             return "PrimaryKeyExpand";
         case ReadFromMergeTree::IndexType::NonIntersectingSplit:
             return "NonIntersectingSplit";
+        case ReadFromMergeTree::IndexType::LowCardinalityDictionary:
+            return "LowCardinalityDictionary";
     }
 }
 

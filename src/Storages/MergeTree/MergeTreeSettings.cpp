@@ -307,6 +307,14 @@ Possible values:
 **See Also**
 - [exclude_deleted_rows_for_part_size_in_merge](#exclude_deleted_rows_for_part_size_in_merge) setting
 )", 0) \
+    DECLARE(Bool, write_low_cardinality_complete_dictionaries_marker, true, R"(
+In `Wide` parts, write a marker at the end of the dictionary file of a `LowCardinality` column when
+its dictionaries contain all its values (there are no keys written next to the granules because of
+an overflow of a dictionary, see `low_cardinality_max_dictionary_size`). The marker allows queries to skip
+parts by the dictionaries of `LowCardinality` columns, see `use_low_cardinality_dictionaries_for_part_pruning`.
+Older versions ignore the marker.
+)", 0, \
+        {"26.11", false, true, "New setting"}) \
     DECLARE(Bool, use_compact_variant_discriminators_serialization, true, R"(
 Enables compact mode for binary serialization of discriminators in Variant
 data type.

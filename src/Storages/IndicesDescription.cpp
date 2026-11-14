@@ -438,6 +438,17 @@ ASTPtr createImplicitMinMaxIndexAST(const String & column_name)
     return index_ast;
 }
 
+IndexDescription createImplicitSetIndexDescription(const String & column_name, const ColumnsDescription & columns, ContextPtr context)
+{
+    auto index_type = makeASTFunction("set", make_intrusive<ASTLiteral>(static_cast<UInt64>(0)));
+    auto index_ast = make_intrusive<ASTIndexDeclaration>(
+        make_intrusive<ASTIdentifier>(column_name), index_type,
+        IMPLICIT_LOW_CARDINALITY_DICTIONARY_INDEX_PREFIX + column_name);
+
+    index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
+    return IndexDescription::getIndexFromAST(index_ast, columns, /* is_implicitly_created */ true, /* escape_index_filenames */ true, context);
+}
+
 IndexDescription createImplicitMinMaxIndexDescription(
     const String & column_name, const ColumnsDescription & columns, bool escape_index_filenames, ContextPtr context)
 {
