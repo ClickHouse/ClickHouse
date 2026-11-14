@@ -330,6 +330,7 @@ private:
     RequestResult processRequestResult(RequestResult && outcome) const;
 
     void updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws::Client::CoreErrors> error, Int64 attempt_no) const;
+    /// Waits until `next_time_to_retry_after_retryable_error`. Throws when the query of the current thread is cancelled.
     void slowDownAfterRetryableError() const;
 
     void logConfiguration() const;

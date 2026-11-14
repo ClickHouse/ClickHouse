@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <Common/ThreadStatus.h>
 
 
 namespace DB
@@ -149,6 +150,8 @@ void MultipleFileWriter::cancel()
 
 void MultipleFileWriter::clearAllDataFiles() const
 {
+    /// Keep the retries of this cleanup when the query is cancelled: nothing removes uncommitted files later.
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
     for (const auto & metadata_path : data_file_names)
         object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(metadata_path)));
 }

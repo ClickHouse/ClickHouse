@@ -12,6 +12,7 @@
 #include <Common/FailPoint.h>
 #include <Common/StackTrace.h>
 #include <Common/StringUtils.h>
+#include <Common/ThreadStatus.h>
 #include <Common/Hex.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -1248,6 +1249,8 @@ bool BackupImpl::removeLockFile()
     /// is still there. Report that as a failure to remove: everything upstream that decides whether the
     /// destination is clean has to treat an unverifiable lock as one that survived.
     fiu_do_on(FailPoints::backup_fail_lock_file_removal, { return false; });
+    /// Keep the retries of this cleanup when the query is cancelled: a left `.lock` makes later backups to this destination fail.
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
     if (!checkLockFile(false))
         return false;
     writer->removeFile(lock_file_name);
@@ -1943,6 +1946,9 @@ bool BackupImpl::setIsCorrupted() noexcept
 
 bool BackupImpl::tryRemoveAllFiles() noexcept
 {
+    /// Keep the retries of this cleanup when the query is cancelled: a left `.lock` makes later backups to this destination fail.
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
+
     try
     {
         std::lock_guard lock{mutex};

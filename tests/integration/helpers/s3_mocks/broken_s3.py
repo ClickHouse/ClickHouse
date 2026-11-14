@@ -1,3 +1,4 @@
+import http.client
 import http.server
 import random
 import socket
@@ -354,7 +355,9 @@ class _ServerRuntime:
 
         def inject_error(self, request_handler):
             request_handler.read_all_input()
+            self.reset(request_handler)
 
+        def reset(self, request_handler):
             if self.partial_data:
                 request_handler.send_response(200)
                 request_handler.send_header("Content-Type", "text/xml")
@@ -368,6 +371,39 @@ class _ServerRuntime:
                 socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
             )
             request_handler.connection.close()
+
+    class ForwardThenResetAction(ConnectionResetByPeerAction):
+        """Stores the request upstream and then loses the response: the client sees a partial body
+        and a reset, as when a request succeeds in S3 but its answer does not arrive."""
+
+        def __init__(self):
+            super().__init__(with_partial_data="1")
+
+        def inject_error(self, request_handler):
+            body = request_handler.rfile.read(
+                int(request_handler.headers.get("Content-Length", 0))
+            )
+            # The same headers, `Host` included, keep the signature of the request valid.
+            headers = {
+                name: value
+                for name, value in request_handler.headers.items()
+                if name.lower() not in ("connection", "keep-alive", "expect")
+            }
+            upstream = http.client.HTTPConnection(
+                request_handler.server.upstream_host,
+                request_handler.server.upstream_port,
+                timeout=30,
+            )
+            upstream.request(
+                request_handler.command, request_handler.path, body=body, headers=headers
+            )
+            response = upstream.getresponse()
+            response.read()
+            upstream.close()
+            request_handler.log_message(
+                "forward_then_reset: upstream answered %s", response.status
+            )
+            self.reset(request_handler)
 
     class BrokenPipeAction:
         def inject_error(self, request_handler):
@@ -444,6 +480,8 @@ class _ServerRuntime:
                 )
             elif self.action == "timeout":
                 self.error_handler = _ServerRuntime.TimeoutAction()
+            elif self.action == "forward_then_reset":
+                self.error_handler = _ServerRuntime.ForwardThenResetAction()
             elif self.action == "no_such_upload":
                 self.error_handler = _ServerRuntime.NoSuchUploadAction(
                     *self.action_args

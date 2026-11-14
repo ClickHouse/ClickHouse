@@ -1079,7 +1079,16 @@ void Client::slowDownAfterRetryableError() const
         sleep_ms = static_cast<UInt64>(jitter * static_cast<double>(sleep_ms));
 
         LOG_TRACE(log, "Request failed from a retryable error, now waiting {} ms before retrying", sleep_ms);
-        sleepForMilliseconds(sleep_ms);
+
+        /// Nothing notifies a cancelled query or merge, so poll for cancellation between short slices.
+        static constexpr UInt64 cancellation_check_interval_ms = 100;
+        while (sleep_ms > 0)
+        {
+            CurrentThread::checkIfNotCancelled();
+            const UInt64 slice_ms = std::min(sleep_ms, cancellation_check_interval_ms);
+            sleepForMilliseconds(slice_ms);
+            sleep_ms -= slice_ms;
+        }
     }
 }
 
