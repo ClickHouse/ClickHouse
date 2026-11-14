@@ -45,6 +45,7 @@ void BlockIO::reset()
     /// must outlive them.
     resetPipeline(/*cancel=*/false);
     releaseWorkloadResources();
+    releaseAdmissionSlot();
     process_list_entries.clear();
 
     /// TODO Do we need also reset callbacks? In which order?
@@ -87,6 +88,7 @@ void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
     /// in `PipelineExecutor`) and read it until the pipeline is finalized below, so releasing it here would
     /// be a data race. It is released a bit later instead — the extra hold is brief and harmless.
     releaseQuerySlot();
+    releaseAdmissionSlot();
 
     /// The teardown below releases the table locks the interpreter moved into the pipeline's
     /// resources, and a patch sink's lightweight update lock: after it, neither is held.
@@ -118,6 +120,7 @@ void BlockIO::onException(bool log_as_error)
     /// pointers to `MemoryReservation` and call `syncWithMemoryTracker` between processors.
     resetPipeline(/*cancel=*/true);
     releaseWorkloadResources();
+    releaseAdmissionSlot();
 }
 
 void BlockIO::onCancelOrConnectionLoss()
@@ -126,6 +129,7 @@ void BlockIO::onCancelOrConnectionLoss()
     /// pointers to `MemoryReservation` and call `syncWithMemoryTracker` between processors.
     resetPipeline(/*cancel=*/true);
     releaseWorkloadResources();
+    releaseAdmissionSlot();
 
     /// After the pipeline has been stopped, so that its threads have flushed their counters.
     for (const auto & callback : cancel_callbacks)
@@ -168,6 +172,15 @@ void BlockIO::releaseMemoryReservation() const
     {
         if (entry)
             entry->getQueryStatus()->releaseMemoryReservation();
+    }
+}
+
+void BlockIO::releaseAdmissionSlot() const
+{
+    for (const auto & entry : process_list_entries)
+    {
+        if (entry)
+            entry->getQueryStatus()->releaseAdmissionSlot();
     }
 }
 

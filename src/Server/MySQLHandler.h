@@ -94,6 +94,10 @@ protected:
     std::optional<ReadBufferFromString> getPreparedStatement(UInt32 statement_id);
     void erasePreparedStatement(UInt32 statement_id);
 
+    /// The socket the client currently talks through: the TLS wrapper after the TLS upgrade, the plain socket
+    /// otherwise. A liveness check must use it to recognize a TLS `close_notify` as a disconnect.
+    virtual Poco::Net::StreamSocket & activeSocket() { return socket(); }
+
     virtual void authPluginSSL();
     virtual void finishHandshakeSSL(size_t packet_size, char * buf, size_t pos, std::function<void(size_t)> read_bytes, MySQLProtocol::ConnectionPhase::HandshakeResponse & packet);
 
@@ -153,6 +157,8 @@ public:
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
 private:
+    Poco::Net::StreamSocket & activeSocket() override;
+
     void authPluginSSL() override;
 
     void finishHandshakeSSL(
