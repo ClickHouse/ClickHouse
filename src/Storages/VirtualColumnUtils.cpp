@@ -46,7 +46,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
@@ -354,8 +353,8 @@ static void addPathAndFileToVirtualColumns(
         if (!keys_and_values)
             keys_and_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
 
-        ReadBufferFromString buf(HivePartitioningUtils::getPartitionValueFromPath(*keys_and_values, column.name, path));
-        column.type->getDefaultSerialization()->deserializeWholeText(*columns[pos], buf, format_settings);
+        const auto value = HivePartitioningUtils::getPartitionValueFromPath(*keys_and_values, column.name, path);
+        columns[pos]->insert(HivePartitioningUtils::convertPartitionValueToType(value, *column.type, column.name, path, format_settings));
     }
 
     columns[block.getPositionByName("_idx")]->insert(idx);
