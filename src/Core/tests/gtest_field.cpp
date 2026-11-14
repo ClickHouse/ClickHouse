@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <Common/Exception.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/Field.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -12,6 +13,8 @@ namespace DB::ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_DEEP_RECURSION;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int CANNOT_PARSE_NUMBER;
+    extern const int DECIMAL_OVERFLOW;
 }
 
 using namespace DB;
@@ -491,4 +494,79 @@ GTEST_TEST(Field, RestoreFromDumpDecimalOutOfRangeScaleThrows)
     /// An in-range exponent-form scale still round-trips.
     Field restored = Field::restoreFromDump("Decimal64_'1e-5'");
     ASSERT_EQ(restored.safeGet<DecimalField<Decimal64>>().getScale(), 5u);
+}
+
+GTEST_TEST(Field, RestoreFromDumpDecimalExtremeExponent)
+{
+    auto expect_error = [](const std::string & dump, int code)
+    {
+        try
+        {
+            Field::restoreFromDump(dump);
+            FAIL() << "expected error " << code << " for " << dump;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), code) << dump;
+        }
+    };
+
+    /// Negating `INT32_MIN` must not be reached.
+    expect_error("Decimal64_'1e-2147483648'", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    /// The exponent sum overflows `int32_t` (only digits after the point decrease it).
+    expect_error("Decimal64_'0.1e-2147483648'", ErrorCodes::CANNOT_PARSE_NUMBER);
+    /// `scaleMultiplier` saturates beyond the precision, so `1 * max` must not be accepted as the value.
+    expect_error("Decimal64_'1e100'", ErrorCodes::DECIMAL_OVERFLOW);
+    expect_error("Decimal32_'1e2147483647'", ErrorCodes::DECIMAL_OVERFLOW);
+    expect_error("Decimal256_'1e100'", ErrorCodes::DECIMAL_OVERFLOW);
+
+    /// The largest exponents that fit still work, and zero takes any positive exponent.
+    ASSERT_EQ(Field::restoreFromDump("Decimal64_'1e18'").safeGet<DecimalField<Decimal64>>().getValue(), Decimal64(1000000000000000000LL));
+    ASSERT_EQ(Field::restoreFromDump("Decimal64_'1e-18'").safeGet<DecimalField<Decimal64>>().getScale(), 18u);
+    ASSERT_EQ(Field::restoreFromDump("Decimal64_'0e2147483647'").safeGet<DecimalField<Decimal64>>().getValue(), Decimal64(0));
+}
+
+GTEST_TEST(Field, RestoreFromDumpDecimalMantissaOverflow)
+{
+    auto expect_error = [](const std::string & dump, int code)
+    {
+        try
+        {
+            Field::restoreFromDump(dump);
+            FAIL() << "expected error " << code << " for " << dump;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), code) << dump;
+        }
+    };
+
+    /// A mantissa that does not fit the native integer must not wrap (here to zero, skipping the exponent check).
+    expect_error("Decimal32_'4294967296e2147483647'", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    expect_error("Decimal64_'18446744073709551616e2147483647'", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    expect_error("Decimal32_'2147483648'", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    expect_error("Decimal128_'170141183460469231731687303715884105728'", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    expect_error("Decimal256_'-57896044618658097711785492504343953926634992332820282019728792003956564819969'", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+    /// The exponent must not wrap the wide types either.
+    expect_error("Decimal128_'2e38'", ErrorCodes::DECIMAL_OVERFLOW);
+    expect_error("Decimal128_'-18e37'", ErrorCodes::DECIMAL_OVERFLOW);
+    expect_error("Decimal256_'6e76'", ErrorCodes::DECIMAL_OVERFLOW);
+    expect_error("Decimal256_'-58e75'", ErrorCodes::DECIMAL_OVERFLOW);
+    ASSERT_EQ(Field::restoreFromDump("Decimal128_'17e37'").safeGet<DecimalField<Decimal128>>().getValue(), Decimal128(Int128(17) * DecimalUtils::scaleMultiplier<Int128>(37)));
+    ASSERT_EQ(Field::restoreFromDump("Decimal256_'-57e75'").safeGet<DecimalField<Decimal256>>().getValue().value, Int256(-57) * DecimalUtils::scaleMultiplier<Int256>(75));
+
+    /// The full native range still round-trips through a dump.
+    auto round_trip = [](const Field & field)
+    {
+        EXPECT_EQ(Field::restoreFromDump(field.dump()), field) << field.dump();
+    };
+    round_trip(DecimalField<Decimal32>(std::numeric_limits<Int32>::max(), 0));
+    round_trip(DecimalField<Decimal32>(std::numeric_limits<Int32>::min(), 3));
+    round_trip(DecimalField<Decimal64>(std::numeric_limits<Int64>::max(), 18));
+    round_trip(DecimalField<Decimal64>(std::numeric_limits<Int64>::min(), 0));
+    round_trip(DecimalField<Decimal128>(std::numeric_limits<Int128>::max(), 38));
+    round_trip(DecimalField<Decimal128>(std::numeric_limits<Int128>::min(), 1));
+    round_trip(DecimalField<Decimal256>(std::numeric_limits<Int256>::max(), 0));
+    round_trip(DecimalField<Decimal256>(std::numeric_limits<Int256>::min(), 76));
 }

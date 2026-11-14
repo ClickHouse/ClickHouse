@@ -2,6 +2,7 @@
 
 #include <Common/FieldVisitorToString.h>
 #include <Common/intExp.h>
+#include <base/arithmeticOverflow.h>
 
 #include <limits>
 
@@ -12,6 +13,28 @@ namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_NUMBER;
     extern const int ARGUMENT_OUT_OF_BOUND;
+}
+
+/// Sets `x = x * 10^power + addend` and returns false if the result does not fit `N`. `addend` must be zero or
+/// have the sign of `x`, or `x` must be zero. Exact for the wide integer types too, unlike `common::mulOverflow`,
+/// which never reports overflow for them.
+template <typename N>
+inline bool mulPow10AddChecked(N & x, uint32_t power, N addend)
+{
+    if (x == 0)
+    {
+        x = addend;
+        return true;
+    }
+    /// A nonzero `x` times `10^(digits10 + 1)` does not fit.
+    if (power > static_cast<uint32_t>(std::numeric_limits<N>::digits10))
+        return false;
+    const N multiplier = intExp10OfSize<N>(static_cast<int>(power));
+    if (x > 0 ? x > (std::numeric_limits<N>::max() - addend) / multiplier
+              : x < (std::numeric_limits<N>::min() - addend) / multiplier)
+        return false;
+    x = x * multiplier + addend;
+    return true;
 }
 
 /// Try to read Decimal into underlying type T from ReadBuffer. Throws if 'digits_only' is set and there's unexpected symbol in input.
@@ -30,6 +53,9 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
     digits = 0;
     uint32_t places = 0;
     typename T::NativeType sign = 1;
+    /// When more digits are allowed than the native integer always holds (`Field` dumps allow any number), the
+    /// mantissa is accumulated with its sign and checked, so it does not wrap and keeps the full native range.
+    const bool check_overflow = max_digits > static_cast<uint32_t>(std::numeric_limits<typename T::NativeType>::digits10);
     bool leading_zeroes = true;
     bool after_point = false;
 
@@ -112,11 +138,21 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
                 if (after_point)
                     exponent -= places;
 
-                // TODO: accurate shift10 for big integers
-                x *= intExp10OfSize<typename T::NativeType>(places);
+                if (check_overflow)
+                {
+                    if (!mulPow10AddChecked(x.value, places, sign * static_cast<typename T::NativeType>(byte - '0')))
+                    {
+                        if constexpr (_throw_on_error)
+                            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Decimal value does not fit its native integer type");
+                        return false;
+                    }
+                }
+                else
+                {
+                    x *= intExp10OfSize<typename T::NativeType>(places);
+                    x += (byte - '0');
+                }
                 places = 0;
-
-                x += (byte - '0');
                 break;
             }
             case 'e': [[fallthrough]];
@@ -131,7 +167,14 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
                     else
                         return false;
                 }
-                exponent += addition_exp;
+                /// The exponent comes from the text, so the sum can be anything, e.g. `0.1e-2147483648`.
+                if (common::addOverflow(exponent, addition_exp, exponent))
+                {
+                    if constexpr (_throw_on_error)
+                        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Exponent is out of range while reading decimal");
+                    else
+                        return false;
+                }
                 stop = true;
                 continue;
             }
@@ -149,7 +192,8 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
         ++buf.position();
     }
 
-    x *= sign;
+    if (!check_overflow)
+        x *= sign;
     return true;
 }
 
@@ -165,7 +209,8 @@ inline ReturnType readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, u
     if (!throw_exception && !ok)
         return ReturnType(false);
 
-    if (static_cast<int32_t>(digits) + exponent > static_cast<int32_t>(precision - scale))
+    /// Compute in 64 bits: the exponent can be close to the `int32_t` limits.
+    if (static_cast<int64_t>(digits) + exponent > static_cast<int64_t>(precision) - static_cast<int64_t>(scale))
     {
         if constexpr (throw_exception)
         {
@@ -177,9 +222,9 @@ inline ReturnType readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, u
             return ReturnType(false);
     }
 
-    if (static_cast<int32_t>(scale) + exponent < 0)
+    if (static_cast<int64_t>(scale) + exponent < 0)
     {
-        auto divisor_exp = -exponent - static_cast<int32_t>(scale);
+        int64_t divisor_exp = -static_cast<int64_t>(exponent) - static_cast<int64_t>(scale);
 
         if (divisor_exp >= std::numeric_limits<typename T::NativeType>::digits10)
         {
@@ -190,7 +235,7 @@ inline ReturnType readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, u
         }
 
         /// Too many digits after point. Just cut off excessive digits.
-        auto divisor = intExp10OfSize<typename T::NativeType>(divisor_exp);
+        auto divisor = intExp10OfSize<typename T::NativeType>(static_cast<int>(divisor_exp));
         chassert(divisor > 0); /// This is for Clang Static Analyzer. It is not smart enough to infer it automatically.
         x.value /= divisor;  /// NOLINT(clang-analyzer-core.DivideZero)
         scale = 0;
