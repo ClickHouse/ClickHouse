@@ -39,6 +39,7 @@ public:
 
     void onError(AMQP::TcpConnection * connection, const char * message) override;
     void onReady(AMQP::TcpConnection * connection) override;
+    uint16_t onNegotiate(AMQP::TcpConnection * connection, uint16_t interval) override;
 
     /// Loop for background thread worker.
     void startLoop();
@@ -61,6 +62,9 @@ public:
     bool connectionRunning() const { return connection_running.load(); }
     bool loopRunning() const { return loop_running.load(); }
 
+    /// Heartbeat interval in seconds negotiated with the server, 0 if heartbeats are disabled.
+    uint16_t getHeartbeatInterval() const { return heartbeat_interval.load(); }
+
     void updateLoopState(UInt8 state) { loop_state.store(state); }
     UInt8 getLoopState() { return loop_state.load(); }
 
@@ -70,6 +74,7 @@ private:
 
     std::atomic<bool> connection_running, loop_running;
     std::atomic<UInt8> loop_state;
+    std::atomic<uint16_t> heartbeat_interval{0};
     std::mutex startup_mutex;
 };
 
