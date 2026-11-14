@@ -247,13 +247,15 @@ public:
     /// Whether fewer than `limit` marks of the parts are left to read after the primary key analysis.
     /// Stops the analysis as soon as `limit` marks are found, and bounds the analysis of each part,
     /// so the answer is false when it cannot be established cheaply. Always false if `limit` is zero.
+    /// If `probe_cache` is not nullptr, a part probed with the same key condition and ranges is not probed again.
     static bool hasFewerMarksToReadThan(
         const RangesInDataParts & parts,
         const StorageMetadataPtr & metadata_snapshot,
         const ConditionTemplate<KeyCondition>::Ptr & key_condition,
         size_t limit,
         const Settings & settings,
-        LoggerPtr log);
+        LoggerPtr log,
+        PrimaryKeyProbeCache * probe_cache = nullptr);
 
     /// Apply snapshot, virtual-column, min-max and partition filters before range analysis.
     static RangesInDataParts filterParts(
@@ -296,7 +298,8 @@ public:
         const ContextPtr & context,
         LoggerPtr log,
         ReadFromMergeTree::IndexStats & index_stats,
-        RangesInDataParts * deferred_parts = nullptr);
+        RangesInDataParts * deferred_parts = nullptr,
+        PrimaryKeyProbeCache * probe_cache = nullptr);
 
     struct IndexAnalysisContext
     {

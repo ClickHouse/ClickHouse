@@ -237,7 +237,8 @@ bool MergeTreeDataSelectExecutor::hasFewerMarksToReadThan(
     const ConditionTemplate<KeyCondition>::Ptr & key_condition,
     size_t limit,
     const Settings & settings,
-    LoggerPtr log)
+    LoggerPtr log,
+    PrimaryKeyProbeCache * probe_cache)
 {
     if (limit == 0)
         return false;
@@ -247,6 +248,8 @@ bool MergeTreeDataSelectExecutor::hasFewerMarksToReadThan(
 
     if (!metadata_snapshot->hasPrimaryKey() || !key_condition || key_condition->generateUnsubstituted().alwaysUnknownOrTrue())
         return false;
+
+    const size_t key_condition_transformations = probe_cache ? key_condition->getNumTransformations() : 0;
 
     std::vector<std::optional<size_t>> pk_to_minmax_slot;
     if (settings[Setting::use_partition_minmax_for_primary_key_pruning] && !parts.empty())
@@ -266,10 +269,33 @@ bool MergeTreeDataSelectExecutor::hasFewerMarksToReadThan(
     size_t marks = 0;
     for (const auto & part : parts)
     {
-        marks += markRangesFromPKRange(
-            part, metadata_snapshot, key_condition->generateForPart(part.data_part), nullptr, nullptr,
-            /*exact_ranges=*/nullptr, pk_to_minmax_slot_ptr, probe_settings, log).getNumberOfMarks();
+        std::optional<size_t> part_marks;
+        String cache_key;
+        if (probe_cache)
+        {
+            cache_key = SkipIndexOrderCache::makeKey(*part.data_part);
+            std::lock_guard lock(probe_cache->mutex);
+            auto it = probe_cache->marks.find(cache_key);
+            if (it != probe_cache->marks.end() && it->second.key_condition_transformations == key_condition_transformations
+                && std::ranges::equal(it->second.ranges, part.ranges))
+                part_marks = it->second.marks;
+        }
 
+        if (!part_marks)
+        {
+            part_marks = markRangesFromPKRange(
+                part, metadata_snapshot, key_condition->generateForPart(part.data_part), nullptr, nullptr,
+                /*exact_ranges=*/nullptr, pk_to_minmax_slot_ptr, probe_settings, log).getNumberOfMarks();
+
+            if (probe_cache)
+            {
+                std::lock_guard lock(probe_cache->mutex);
+                probe_cache->marks.insert_or_assign(
+                    cache_key, PrimaryKeyProbeCache::Entry{part.ranges, key_condition_transformations, *part_marks});
+            }
+        }
+
+        marks += *part_marks;
         if (marks >= limit)
             return false;
     }
@@ -962,7 +988,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     const ContextPtr & context,
     LoggerPtr log,
     ReadFromMergeTree::IndexStats & index_stats,
-    RangesInDataParts * deferred_parts)
+    RangesInDataParts * deferred_parts,
+    PrimaryKeyProbeCache * probe_cache)
 {
     const auto & settings = context->getSettingsRef();
 
@@ -1079,7 +1106,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
         min_marks_per_part_to_load_statistics, parts_to_load_statistics.size());
 
     const bool load_statistics = !hasFewerMarksToReadThan(
-        parts_to_load_statistics, metadata_snapshot, key_condition, min_marks_to_load_statistics, settings, log);
+        parts_to_load_statistics, metadata_snapshot, key_condition, min_marks_to_load_statistics, settings, log, probe_cache);
 
     if (!load_statistics)
         LOG_TRACE(log, "Not pruning {} parts without statistics in memory, because fewer than {} marks are left to read in them by the primary key",

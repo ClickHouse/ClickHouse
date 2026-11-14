@@ -73,6 +73,21 @@ struct SkipIndexOrderCache
 };
 using SkipIndexOrderCachePtr = std::shared_ptr<SkipIndexOrderCache>;
 
+/// Mark counts per part found by `hasFewerMarksToReadThan` with the key condition of one `ReadFromMergeTree::Indexes`.
+struct PrimaryKeyProbeCache
+{
+    struct Entry
+    {
+        MarkRanges ranges;
+        size_t key_condition_transformations = 0;
+        size_t marks = 0;
+    };
+
+    std::mutex mutex;
+    std::unordered_map<String, Entry> marks TSA_GUARDED_BY(mutex);
+};
+using PrimaryKeyProbeCachePtr = std::shared_ptr<PrimaryKeyProbeCache>;
+
 /// Contains parts each from different projection index
 using ProjectionIndexReadRangesByIndex = UnorderedMapWithMemoryTracking<size_t, RangesInDataParts>;
 
@@ -371,6 +386,7 @@ public:
         UsefulSkipIndexes skip_indexes;
         /// Shared by every index analysis of this step, see `SkipIndexOrderCache`.
         SkipIndexOrderCachePtr skip_index_orders = std::make_shared<SkipIndexOrderCache>();
+        PrimaryKeyProbeCachePtr primary_key_probe_cache = std::make_shared<PrimaryKeyProbeCache>();
         bool use_skip_indexes;
         bool use_skip_indexes_for_disjunctions;
         bool use_skip_indexes_if_final_exact_mode;
