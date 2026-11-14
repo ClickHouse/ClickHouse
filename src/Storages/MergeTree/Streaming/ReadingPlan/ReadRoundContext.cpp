@@ -7,7 +7,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Streaming/Utils.h>
 
-
 #include <algorithm>
 #include <optional>
 
@@ -22,6 +21,10 @@ ContextPtr makeStreamingContext(ContextPtr context_, const ProjectionDescription
     auto copy = Context::createCopy(context_);
     copy->makeQueryContext();
     copy->setQueryMetadataCache(nullptr);
+
+    /// The stream applies these limits per read round, so the round reads must not check them against whole partitions.
+    copy->setSetting("max_rows_to_read", Field(UInt64(0)));
+    copy->setSetting("max_bytes_to_read", Field(UInt64(0)));
 
     if (projection)
     {
@@ -45,6 +48,18 @@ SelectQueryInfo makeStreamingSelectQueryInfo(SelectQueryInfo info)
     info.row_level_filter.reset();
 
     info.input_order_info.reset();
+
+    /// Same as in `makeStreamingContext`.
+    if (info.storage_limits)
+    {
+        auto storage_limits = std::make_shared<StorageLimitsList>(*info.storage_limits);
+        for (auto & limits : *storage_limits)
+        {
+            limits.local_limits.size_limits.max_rows = 0;
+            limits.local_limits.size_limits.max_bytes = 0;
+        }
+        info.storage_limits = std::move(storage_limits);
+    }
 
     info.trivial_limit = 0;
     info.optimize_trivial_count = false;
@@ -167,7 +182,29 @@ ReadRoundContext makeReadRoundContext(
         .columns_to_read = std::move(columns_to_read),
         .requested_num_streams = requested_num_streams,
         .max_block_size = max_block_size,
-        .output_header = std::move(output_header)};
+        .output_header = std::move(output_header),
+        .storage_limits = query_info.storage_limits};
+}
+
+ReadRoundLimits getReadRoundLimits(const StorageLimitsList * storage_limits)
+{
+    ReadRoundLimits result;
+    if (!storage_limits)
+        return result;
+
+    const auto tighten = [](UInt64 & current, UInt64 limit)
+    {
+        if (limit && (!current || limit < current))
+            current = limit;
+    };
+
+    for (const auto & limits : *storage_limits)
+    {
+        tighten(result.max_rows, limits.local_limits.size_limits.max_rows);
+        tighten(result.max_bytes, limits.local_limits.size_limits.max_bytes);
+    }
+
+    return result;
 }
 
 }

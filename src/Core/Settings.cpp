@@ -3828,12 +3828,20 @@ The maximum number of rows that can be read from a table when running a query.
 The restriction is checked for each processed chunk of data, applied only to the
 deepest table expression and when reading from a remote server, checked only on
 the remote server.
+
+For a `STREAM` query over `MergeTree` the limit applies to each read round instead
+(one refresh of an incremental refreshable materialized view): the round reads whole source parts
+up to this many rows, at least one part, and the next round continues from where it stopped.
+`read_overflow_mode` is ignored in this case, and the stream uses a single source.
 )", 0) \
     DECLARE(UInt64, max_bytes_to_read, 0, R"(
 The maximum number of bytes (of uncompressed data) that can be read from a table when running a query.
 The restriction is checked for each processed chunk of data, applied only to the
 deepest table expression and when reading from a remote server, checked only on
 the remote server.
+
+For a `STREAM` query over `MergeTree` the limit applies to each read round, like `max_rows_to_read`;
+it is estimated from the uncompressed size of the source parts.
 )", 0) \
     DECLARE(OverflowMode, read_overflow_mode, OverflowMode::THROW, R"(
 What to do when the limit is exceeded.

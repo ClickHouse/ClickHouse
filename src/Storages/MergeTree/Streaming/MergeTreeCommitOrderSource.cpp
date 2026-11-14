@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSource.h>
 #include <Storages/MergeTree/Streaming/PartitionsClassification.h>
 #include <Storages/MergeTree/Streaming/ReadingPlan/ReadRoundContext.h>
+#include <Storages/MergeTree/Streaming/ReadingPlan/limitReadRoundBounds.h>
 #include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionCursors.h>
 #include <Storages/MergeTree/Streaming/ReadingPlan/AlignStreams.h>
 
@@ -272,12 +273,13 @@ void MergeTreeCommitOrderSource::work()
     if (subscription->isDisabled())
         return;
 
-    auto [safe_block_numbers, was_updated] = subscription->snapshot();
-    auto classification = classifyPartitions(read_state, safe_block_numbers, stream_settings);
+    auto [snapshot_block_numbers, was_updated] = subscription->snapshot();
+    auto safe_block_numbers = limitReadRoundBounds(reading_context, read_state, snapshot_block_numbers);
+    auto classification = classifyPartitions(read_state, safe_block_numbers, snapshot_block_numbers, stream_settings);
 
     read_state.updatePartitionSet(classification);
     pending_round = {
-        .pipeline = buildReadRoundPipeline(reading_context, read_state, safe_block_numbers),
+        .pipeline = buildReadRoundPipeline(reading_context, read_state, safe_block_numbers, classification),
         .safe_block_numbers = std::move(safe_block_numbers),
         .partitions = std::move(classification),
     };

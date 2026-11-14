@@ -23,12 +23,13 @@ INSERT INTO t_stream_pipeline_teardown SELECT number, toString(number) FROM numb
 
 -- The fuzzed query: the cursor skips partition '0', `LIMIT 909, 257` terminates the stream once satisfied,
 -- and `max_threads = 16` gives 16 streaming sources whose sub-pipelines are torn down concurrently.
+-- Read limits (set by the test profile) would leave one source, so they are disabled.
 SELECT toFixedString('^$', 65536), toInt128(-2)
 FROM t_stream_pipeline_teardown
 STREAM CURSOR {'0': {'block_number': 10, 'block_offset': 1000000}}
 WHERE toLowCardinality(1048577)
 LIMIT 909, 257
-SETTINGS max_threads = 16
+SETTINGS max_threads = 16, max_rows_to_read = 0, max_bytes_to_read = 0
 FORMAT Null;
 
 DROP TABLE t_stream_pipeline_teardown;
