@@ -1,0 +1,199 @@
+--- 1. the clause is stored, and the names are qualified
+OK
+CREATE HANDLER hd_DB URL \'/DB/hd\' METHODS (GET) TYPE query DEFINER = u_def_DB SQL SECURITY DEFINER AS SELECT * FROM DB.t ORDER BY id ASC
+OK
+CREATE HANDLER hi_DB URL \'/DB/hi\' METHODS (GET) TYPE query AS SELECT * FROM DB.t ORDER BY id ASC
+--- 2. DEFINER runs the query as the definer, INVOKER as the requesting user
+1	a
+2	b
+(ACCESS_DENIED)
+--- 3. SQL SECURITY NONE
+OK
+2
+ALLOW SQL SECURITY NONE
+--- 4. DEFINER
+SET DEFINER
+(ACCESS_DENIED)
+OK
+CREATE HANDLER h4_DB URL \'/DB/h4\' METHODS (GET) TYPE query DEFINER = u_lim_DB SQL SECURITY DEFINER AS SELECT * FROM DB.t ORDER BY id ASC
+1	a
+2	b
+(ACCESS_DENIED)
+--- 5. a handler with SQL SECURITY DEFINER or NONE runs only SELECT and INSERT
+(NOT_IMPLEMENTED)
+(NOT_IMPLEMENTED)
+OK
+(NOT_IMPLEMENTED)
+(NOT_IMPLEMENTED)
+OK
+(NOT_IMPLEMENTED)
+(NOT_IMPLEMENTED)
+OK
+(NOT_IMPLEMENTED)
+(NOT_IMPLEMENTED)
+OK
+(NOT_IMPLEMENTED)
+(NOT_IMPLEMENTED)
+OK
+(NOT_IMPLEMENTED)
+(NOT_IMPLEMENTED)
+OK
+(NOT_IMPLEMENTED)
+(NOT_IMPLEMENTED)
+OK
+(NOT_IMPLEMENTED)
+(NOT_IMPLEMENTED)
+OK
+--- 6. a request to it can choose only the output format and the query parameters
+OK
+role: (BAD_ARGUMENTS)
+max_threads: (BAD_ARGUMENTS)
+filter: (BAD_ARGUMENTS)
+select: (BAD_ARGUMENTS)
+profile: (BAD_ARGUMENTS)
+database: (BAD_ARGUMENTS)
+session_id: (BAD_ARGUMENTS)
+query_id: (BAD_ARGUMENTS)
+quota_key: (BAD_ARGUMENTS)
+foo: (BAD_ARGUMENTS)
+X-ClickHouse-Database: (BAD_ARGUMENTS)
+X-ClickHouse-Query-Id: (BAD_ARGUMENTS)
+X-ClickHouse-Quota: (BAD_ARGUMENTS)
+0
+
+1
+INVOKER:
+2
+OK
+0
+--- 7. a safe method runs it in the readonly mode
+OK
+(READONLY)
+
+1
+--- 8. the settings of the requesting user do not apply, except readonly
+(TOO_MANY_ROWS_OR_BYTES)
+1	a
+2	b
+{"id":1,"v":"a"}
+{"id":2,"v":"b"}
+{"id":1,"v":"a"}
+{"id":2,"v":"b"}
+(READONLY)
+2
+OK
+(READONLY)
+0
+OK
+OK
+DateTime
+Time
+(NOT_IMPLEMENTED)
+(NOT_IMPLEMENTED)
+(NOT_IMPLEMENTED)
+(NOT_IMPLEMENTED)
+0
+--- 9. ALTER HANDLER
+OK
+CREATE HANDLER hd_DB URL \'/DB/hd\' METHODS (GET) TYPE query SQL SECURITY INVOKER AS SELECT * FROM DB.t ORDER BY id ASC
+OK
+SET DEFINER
+OK
+CREATE HANDLER hd_DB URL \'/DB/hd\' METHODS (GET) TYPE query DEFINER = u_def_DB SQL SECURITY DEFINER AS SELECT * FROM DB.t ORDER BY id ASC
+--- 10. a definer cannot be dropped
+HAVE_DEPENDENT_OBJECTS
+1
+OK
+(HAVE_DEPENDENT_OBJECTS)
+OK
+OK
+OK
+OK
+OK
+--- 12. an ephemeral definer
+OK
+1
+HAVE_DEPENDENT_OBJECTS
+OK
+1
+1
+OK
+0
+--- 13. a request to it cannot choose the database
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+1	a
+2	b
+--- 14. the creator must be allowed to run the query of a handler running as another user
+(ACCESS_DENIED)
+OK
+(ACCESS_DENIED)
+OK
+(ACCESS_DENIED)
+--- 15. the restrictions of the definer apply
+OK
+(READONLY)
+0
+--- 16. ON CLUSTER
+(NOT_IMPLEMENTED)
+(ACCESS_DENIED)
+OK
+(ACCESS_DENIED)
+/DB/h16
+OK
+/DB/h16b
+--- 17. a Distributed table
+OK
+1	a
+2	b
+1	u_def_DB
+--- 18. SQL SECURITY NONE keeps the readonly mode
+OK
+OK
+(READONLY)
+(READONLY)
+(READONLY)
+(READONLY)
+0
+
+
+[1,2,3]
+--- 19. ALTER HANDLER checks the DEFINER and SQL SECURITY it sets or keeps
+OK
+OK
+SET DEFINER
+ALLOW SQL SECURITY NONE
+ALLOW SQL SECURITY NONE
+CREATE HANDLER h19_DB URL \'/DB/h19\' METHODS (GET) TYPE query AS SELECT 1
+CREATE HANDLER h19n_DB URL \'/DB/h19n\' METHODS (GET) TYPE query SQL SECURITY NONE AS SELECT 1
+OK
+/DB/h19m
+--- 20. a definer named <user>:definer is not the ephemeral <user>
+OK
+SET DEFINER
+SET DEFINER
+CREATE HANDLER h20_DB URL \'/DB/h20\' METHODS (POST) TYPE query DEFINER = `ee_DB:definer` SQL SECURITY DEFINER AS SELECT 1
+OK
+SET DEFINER
+OK
+/DB/h20f
+--- 21. the RETURNING query of an INSERT is qualified
+OK
+CREATE HANDLER h21_DB URL \'/DB/h21\' METHODS (POST) TYPE query DEFINER = u_ret_DB SQL SECURITY DEFINER AS INSERT INTO DB.t5 RETURNING (SELECT v FROM DB.t ORDER BY id ASC LIMIT 1) SELECT 21
+a
+--- 22. neither the definer's nor the requesting user's profile runs it in the background
+OK
+OK
+(NOT_IMPLEMENTED)
+(NOT_IMPLEMENTED)
+2
+--- 23. a query parameter naming the database of an INSERT is kept
+OK
+INSERT INTO {db:Identifier}.t5 SELECT 23
+
+[23]
+--- 24. a request to it cannot attach external tables
+OK
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+1

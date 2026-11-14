@@ -10,8 +10,9 @@
 namespace DB
 {
 
-/// CREATE [IF NOT EXISTS] HANDLER name [PROTOCOL p] URL [PREFIX|REGEXP] '/x' [METHODS (GET, POST)] [TYPE query] AS SELECT ...
-/// ALTER HANDLER name [PROTOCOL p|ANY] [URL ...] [METHODS ...] [TYPE ...] [AS ...]
+/// CREATE [IF NOT EXISTS] HANDLER name [PROTOCOL p] URL [PREFIX|REGEXP] '/x' [METHODS (GET, POST)] [TYPE query]
+///     [DEFINER = user] [SQL SECURITY DEFINER|INVOKER|NONE] AS SELECT ...
+/// ALTER HANDLER name [PROTOCOL p|ANY] [URL ...] [METHODS ...] [TYPE ...] [DEFINER = ...] [SQL SECURITY ...] [AS ...]
 ///
 /// The same AST is used for CREATE and ALTER. For ALTER (is_alter == true) the clauses are optional and
 /// only the specified ones are updated; the unspecified clauses keep their previous values.
@@ -52,6 +53,9 @@ public:
 
     /// The query to be executed by the handler (the part after AS). Stored as a child.
     ASTPtr query;
+
+    /// Optional `DEFINER = ... SQL SECURITY ...` clause (an `ASTSQLSecurity`), absent means INVOKER. Stored as a child.
+    ASTPtr sql_security;
 
     String getID(char) const override { return "CreateHandlerQuery"; }
 

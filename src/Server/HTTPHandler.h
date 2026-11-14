@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Access/Common/SQLSecurityDefs.h>
+
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -97,6 +99,18 @@ protected:
     /// Set by SQL-defined handlers so that `currentHandler()` and the query_log can report the handler name.
     void setIntrospectionHandlerName(const String & name_) { introspection_handler_name = name_; }
 
+    /// Set by SQL-defined handlers whose query runs as `definer_` (DEFINER) or with the global context (NONE).
+    void setSQLSecurity(SQLSecurityType type_, std::optional<String> definer_, bool query_requires_mutating_method_)
+    {
+        sql_security_type = type_;
+        sql_security_definer = std::move(definer_);
+        sql_security_query_requires_mutating_method = query_requires_mutating_method_;
+    }
+
+    /// A DEFINER or NONE query does not run as the authenticated user: a request can only bind parameters and choose the format.
+    bool runsWithSQLSecurity() const { return sql_security_type && *sql_security_type != SQLSecurityType::INVOKER; }
+    [[noreturn]] void rejectRequestInput(const String & input) const;
+
     /// The query text belongs to the server rather than to the HTTP request. Its parsing limits must therefore
     /// not be lowered by request settings.
     void setHasServerOwnedQuery() { has_server_owned_query = true; }
@@ -116,6 +130,10 @@ private:
     String getURIForLogging(const HTTPServerRequest & request) const;
 
     String introspection_handler_name;
+
+    std::optional<SQLSecurityType> sql_security_type;
+    std::optional<String> sql_security_definer;
+    bool sql_security_query_requires_mutating_method = false;
 
     bool has_server_owned_query = false;
 
@@ -246,6 +264,9 @@ private:
         Output & used_output);
 
     void releaseOrCloseSession(const String & session_id, bool close_session);
+
+    /// The query context for SQL SECURITY DEFINER or NONE, made from the global context; `caller_context` is the requester's.
+    ContextMutablePtr makeSQLSecurityQueryContext(const ContextPtr & caller_context) const;
 
     static void pushDelayedResults(Output & used_output);
 

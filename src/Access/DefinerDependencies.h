@@ -35,6 +35,15 @@ public:
     /// Check if a definer has any dependencies
     bool hasDependencies(const String & definer) const;
 
+    /// Replaces the definers of all SQL-defined HTTP handlers (handler name -> definer), releasing the unused ones.
+    void setHandlerDefiners(const std::unordered_map<String, String> & handler_to_definer);
+
+    /// Adds a definer of a handler, keeping its other ones, until the next `setHandlerDefiners`.
+    void addHandlerDefiner(const String & handler, const String & definer);
+
+    /// The names of the SQL-defined HTTP handlers defined by a specific definer.
+    std::vector<String> getHandlersForDefiner(const String & definer) const;
+
 private:
     DefinerDependencies() = default;
 
@@ -42,9 +51,14 @@ private:
     /// account that no object references any more. Call with `mutex` held.
     void unregisterObject(const UUID & object_uuid);
 
+    /// Removes an auto-created `<user>:definer` account that no table or handler references. Call with `mutex` held.
+    void releaseDefinerIfUnusedLocked(const String & definer);
+
     std::unordered_map<String, std::unordered_set<UUID>> definer_to_objects;
 
     std::unordered_map<UUID, String> object_to_definer;
+
+    std::unordered_map<String, std::unordered_set<String>> definer_to_handlers;
 
     mutable std::mutex mutex;
 

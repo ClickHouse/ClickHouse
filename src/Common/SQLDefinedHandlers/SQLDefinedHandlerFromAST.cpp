@@ -9,6 +9,10 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTParallelWithQuery.h>
+#include <Parsers/ASTSQLSecurity.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/Access/ASTExecuteAsQuery.h>
 #include <Parsers/QueryParameterVisitor.h>
 
@@ -302,6 +306,44 @@ bool isMutatingHTTPMethod(const String & method)
     return method == "POST" || method == "PUT" || method == "DELETE";
 }
 
+
+void collectExecutedStatementsMutable(ASTPtr & query, std::vector<ASTPtr *> & result)
+{
+    if (query->as<ASTParallelWithQuery>())
+    {
+        for (auto & child : query->children)
+            collectExecutedStatementsMutable(child, result);
+        return;
+    }
+
+    if (auto * execute_as = query->as<ASTExecuteAsQuery>(); execute_as && execute_as->subquery)
+    {
+        result.push_back(&query);
+        collectExecutedStatementsMutable(execute_as->subquery, result);
+        return;
+    }
+
+    result.push_back(&query);
+}
+
+}
+
+std::vector<ASTPtr *> getExecutedStatements(ASTPtr & query)
+{
+    std::vector<ASTPtr *> result;
+    collectExecutedStatementsMutable(query, result);
+    return result;
+}
+
+bool isSelectShapedStatement(const IAST & statement)
+{
+    return statement.as<ASTSelectWithUnionQuery>() || statement.as<ASTSelectQuery>() || statement.as<ASTSelectIntersectExceptQuery>();
+}
+
+bool isInsertIntoTableStatement(const IAST & statement)
+{
+    const auto * insert = statement.as<ASTInsertQuery>();
+    return insert && insert->getQueryKind() == IAST::QueryKind::Insert && !insert->table_function && insert->table;
 }
 
 SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
@@ -343,6 +385,14 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
     handler->url = create.url;
     handler->type = type;
 
+    if (create.sql_security)
+    {
+        const auto & sql_security = create.sql_security->as<const ASTSQLSecurity &>();
+        handler->sql_security_type = sql_security.type;
+        if (sql_security.type == SQLSecurityType::DEFINER && sql_security.definer)
+            handler->definer = sql_security.definer->toString();
+    }
+
     if (handler->url.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Handler `{}` URL cannot be empty", create.handler_name);
 
@@ -364,7 +414,8 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
     /// A handler whose query modifies data must accept at least one mutating HTTP method. Otherwise, the HTTP
     /// execution path enables `readonly` for every allowed (safe) method, and the handler could never run its
     /// query - so reject it here with a clear error instead of silently creating a broken handler.
-    if (queryRequiresMutatingMethod(*create.query)
+    handler->requires_mutating_method = queryRequiresMutatingMethod(*create.query);
+    if (handler->requires_mutating_method
         && std::none_of(handler->methods.begin(), handler->methods.end(), isMutatingHTTPMethod))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -499,12 +550,16 @@ void mergeAlterIntoCreateHandler(ASTCreateHandlerQuery & create, const ASTCreate
         create.handler_type = alter.handler_type;
 
     if (alter.query)
-    {
-        /// Replace the query child. The query is the only child of ASTCreateHandlerQuery.
-        create.children.clear();
         create.query = alter.query->clone();
+
+    if (alter.sql_security)
+        create.sql_security = alter.sql_security->clone();
+
+    create.children.clear();
+    if (create.query)
         create.children.push_back(create.query);
-    }
+    if (create.sql_security)
+        create.children.push_back(create.sql_security);
 }
 
 }

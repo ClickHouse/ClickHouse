@@ -423,6 +423,19 @@ private:
 };
 
 
+ASTPtr parseStoredHandlerStatement(const String & statement, const String & handler_location)
+{
+    /// The stored statement is the server's own canonical `CREATE HANDLER` text, already parsed and
+    /// validated when the handler was created. Re-parse it with unlimited depth and backtracks (`0`
+    /// disables the limit) rather than the reader's session/default `max_parser_depth` /
+    /// `max_parser_backtracks`: a handler created in a session with raised limits must stay reloadable on
+    /// restart, background reload, `ALTER HANDLER`, or `system.handlers`, where the reader would otherwise
+    /// impose a stricter limit and reject the server's own valid output. `parseQuery` still guards against
+    /// stack overflow via `checkStackSize`.
+    ParserCreateHandlerQuery parser(statement.data() + statement.size());
+    return parseQuery(parser, statement, "in handler " + handler_location, 0, 0, 0);
+}
+
 SQLDefinedHandlersMetadataStorage::SQLDefinedHandlersMetadataStorage(std::shared_ptr<IStorage> storage_, ContextPtr context_)
     : WithContext(context_)
     , storage(std::move(storage_))
@@ -456,17 +469,8 @@ SQLDefinedHandlerPtr SQLDefinedHandlersMetadataStorage::readHandler(const std::s
     const auto path = getFileName(handler_name);
     auto statement = storage->read(path);
 
-    /// The stored statement is the server's own canonical `CREATE HANDLER` text, already parsed and
-    /// validated when the handler was created. Re-parse it with unlimited depth and backtracks (`0`
-    /// disables the limit) rather than the reader's session/default `max_parser_depth` /
-    /// `max_parser_backtracks`: a handler created in a session with raised limits must stay reloadable on
-    /// restart, background reload, `ALTER HANDLER`, or `system.handlers`, where the reader would otherwise
-    /// impose a stricter limit and reject the server's own valid output. `parseQuery` still guards against
-    /// stack overflow via `checkStackSize`.
-    ParserCreateHandlerQuery parser(statement.data() + statement.size());
-    auto ast = parseQuery(parser, statement, "in handler " + path, 0, 0, 0);
-    const auto & create_query = ast->as<const ASTCreateHandlerQuery &>();
-    return makeSQLDefinedHandler(create_query);
+    auto ast = parseStoredHandlerStatement(statement, path);
+    return makeSQLDefinedHandler(ast->as<const ASTCreateHandlerQuery &>());
 }
 
 SQLDefinedHandlers SQLDefinedHandlersMetadataStorage::getAll() const
@@ -538,25 +542,6 @@ SQLDefinedHandlers SQLDefinedHandlersMetadataStorage::readHandlers(const std::ve
         }
     }
     return result;
-}
-
-SQLDefinedHandlerPtr SQLDefinedHandlersMetadataStorage::buildUpdatedHandler(const ASTCreateHandlerQuery & alter_query) const
-{
-    return buildUpdatedHandler(storage->read(getFileName(alter_query.handler_name)), alter_query);
-}
-
-SQLDefinedHandlerPtr SQLDefinedHandlersMetadataStorage::buildUpdatedHandler(const String & base_create_statement, const ASTCreateHandlerQuery & alter_query) const
-{
-    /// `base_create_statement` is the stored canonical statement (already validated at creation); re-parse
-    /// it with unlimited depth and backtracks for the same reason as `readHandler`, so an `ALTER HANDLER`
-    /// of a handler created under raised parser limits is not rejected when merging the change.
-    ParserCreateHandlerQuery parser(base_create_statement.data() + base_create_statement.size());
-    auto ast = parseQuery(parser, base_create_statement, "in handler " + alter_query.handler_name, 0, 0, 0);
-    auto & create_query = ast->as<ASTCreateHandlerQuery &>();
-
-    mergeAlterIntoCreateHandler(create_query, alter_query);
-
-    return makeSQLDefinedHandler(create_query);
 }
 
 void SQLDefinedHandlersMetadataStorage::remove(const std::string & handler_name)

@@ -3,6 +3,7 @@
 #include <Server/HTTPQueryConstructor.h>
 
 #include <Access/AccessControl.h>
+#include <Access/User.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/chooseNetworkCompressionCodec.h>
@@ -51,6 +52,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatFactory.h>
 
+#include <base/EnumReflection.h>
 #include <base/getFQDNOrHostName.h>
 #include <base/isSharedPtrUnique.h>
 #include <Server/HTTP/HTTPResponse.h>
@@ -60,6 +62,7 @@
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
 
 #include <Poco/Net/HTTPMessage.h>
+#include <Poco/Net/MessageHeader.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <algorithm>
@@ -125,6 +128,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int FAULT_INJECTED;
+    extern const int READONLY;
 }
 
 namespace FailPoints
@@ -198,6 +202,24 @@ void processOptionsRequest(HTTPServerResponse & response, const Poco::Util::Laye
     response.setStatusAndReason(HTTPResponse::HTTP_NO_CONTENT);
     response.send();
 }
+
+/// Passes the name of the external table of every file part to `reject`, before its data is read.
+class RejectingPartHandler : public HTMLForm::PartHandler
+{
+public:
+    explicit RejectingPartHandler(std::function<void(const String &)> reject_) : reject(std::move(reject_)) {}
+
+    void handlePart(const Poco::Net::MessageHeader & header, ReadBuffer &) override
+    {
+        Poco::Net::NameValueCollection content;
+        std::string label;
+        Poco::Net::MessageHeader::splitParameters(header.get("Content-Disposition"), label, content);
+        reject(content.get("name", "_data"));
+    }
+
+private:
+    std::function<void(const String &)> reject;
+};
 }
 
 static std::chrono::steady_clock::duration parseSessionTimeout(
@@ -295,6 +317,10 @@ void HTTPHandler::processQuery(
 
     if (!authenticateUser(request, params, response))
         return; // '401 Unauthorized' response with 'Negotiate' has been sent at this point.
+
+    const bool runs_with_sql_security = runsWithSQLSecurity();
+    if (runs_with_sql_security && params.has("session_id"))
+        rejectRequestInput("session_id");
 
     /// The user could specify session identifier and session timeout.
     /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
@@ -432,7 +458,29 @@ void HTTPHandler::processQuery(
     /// `http_x_clickhouse_format_overrides_output_format`.
     const String format_header_value = request.get("X-ClickHouse-Format", "");
 
+    if (runs_with_sql_security)
+    {
+        for (const auto & change : settings_changes)
+            if (change.name != "default_format" && change.name != "output_format")
+                rejectRequestInput(change.name);
+        if (!url_filters_from_params.empty())
+            rejectRequestInput("filter");
+        if (!deferred_unrecognized_params.empty())
+            rejectRequestInput(deferred_unrecognized_params.front().first);
+        if (params.has("role"))
+            rejectRequestInput("role");
+        /// The query runs as the definer: these would choose its running query to replace and its quota key.
+        for (const auto * name : {"query_id", "quota_key"})
+            if (params.has(name))
+                rejectRequestInput(name);
+        for (const auto * name : {"X-ClickHouse-Query-Id", "X-ClickHouse-Quota"})
+            if (request.has(name))
+                rejectRequestInput(name);
+    }
+
     ContextMutablePtr context;
+    /// The query context of the authenticated user, when `context` is not.
+    ContextPtr caller_context;
     {
         /// To decide whether to make a detached query context, we need the run_query_in_background setting's value.
         /// But the setting value may be altered by setting the profile via HTTP params.
@@ -450,7 +498,18 @@ void HTTPHandler::processQuery(
         const bool run_query_in_background = tmp_context->getSettingsRef()[Setting::run_query_in_background];
         const bool throw_on_unsupported_query_inside_transaction = tmp_context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction];
 
-        context = run_query_in_background ? session->makeDetachedQueryContext() : session->makeQueryContext();
+        if (runs_with_sql_security)
+        {
+            /// Made for every request: it checks that the credentials are still valid and records the login.
+            caller_context = session->makeQueryContext();
+            context = makeSQLSecurityQueryContext(caller_context);
+            if (run_query_in_background || context->getSettingsRef()[Setting::run_query_in_background])
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Handler `{}` with SQL SECURITY {} does not support `run_query_in_background`",
+                    introspection_handler_name, magic_enum::enum_name(*sql_security_type));
+        }
+        else
+            context = run_query_in_background ? session->makeDetachedQueryContext() : session->makeQueryContext();
 
         if (run_query_in_background && session->sessionContext()->getCurrentTransaction()
             && throw_on_unsupported_query_inside_transaction)
@@ -488,6 +547,14 @@ void HTTPHandler::processQuery(
         request.getMethod(),
         /*allow_mutating_idempotent_methods=*/ !introspection_handler_name.empty() || is_path_table_upload);
 
+    /// `ContextAccess` does not check `readonly` for a context without a user.
+    if (sql_security_type == SQLSecurityType::NONE && sql_security_query_requires_mutating_method
+        && context->getSettingsRef()[Setting::readonly])
+        throw Exception(ErrorCodes::READONLY,
+            "Cannot execute the query of handler `{}` in readonly mode: it modifies data. "
+            "For queries over HTTP, safe methods such as GET imply readonly",
+            introspection_handler_name);
+
     /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
     String query_id = params.get("query_id", request.get("X-ClickHouse-Query-Id", ""));
 
@@ -513,10 +580,11 @@ void HTTPHandler::processQuery(
         /// `request.clientAddress` is always the direct TCP peer. Behind a proxy, it is the address of the proxy.
         /// `authenticateUserByHTTP` sets `current_address`. If `auth_use_forwarded_address` is `true`, this address comes from `X-Forwarded-For`.
         /// Thus, `system.connections`, `system.processes`, and `system.query_log` show the same address and port.
-        const auto & http_client_info = context->getClientInfo();
+        const auto & peer_context = caller_context ? caller_context : context;
+        const auto & http_client_info = peer_context->getClientInfo();
         ConnectionPeer peer;
         peer.user = http_client_info.current_user;
-        peer.user_id = context->getUserID();
+        peer.user_id = peer_context->getUserID();
         peer.client_address = http_client_info.current_address->host();
         peer.client_port = http_client_info.current_address->port();
         peer.client_name = request.get("User-Agent", "");
@@ -1532,6 +1600,45 @@ void HTTPHandler::processQuery(
         http_continue_callback);
 }
 
+void HTTPHandler::rejectRequestInput(const String & input) const
+{
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Handler `{}` with SQL SECURITY {} does not accept `{}` in a request: its query does not run as the "
+        "requesting user, so a request can choose only the output format (`default_format`, `output_format` or the "
+        "`X-ClickHouse-Format` header) and query parameters",
+        introspection_handler_name, magic_enum::enum_name(*sql_security_type), input);
+}
+
+ContextMutablePtr HTTPHandler::makeSQLSecurityQueryContext(const ContextPtr & caller_context) const
+{
+    auto query_context = Context::createCopy(server.context()->getGlobalContext());
+    query_context->makeQueryContext();
+    /// The client info of a normal query of this request: the query kind, the addresses, the interface.
+    query_context->setClientInfo(caller_context->getClientInfo());
+
+    if (*sql_security_type == SQLSecurityType::DEFINER)
+    {
+        if (!sql_security_definer)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Handler `{}` with SQL SECURITY DEFINER has no definer", introspection_handler_name);
+        query_context->setUser(query_context->getAccessControl().getID<User>(*sql_security_definer));
+        /// So the remote parts of the query authenticate as the definer as well.
+        query_context->setCurrentUserName(*sql_security_definer);
+        query_context->setInitialUserName(*sql_security_definer);
+    }
+    else
+    {
+        query_context->setCurrentUserName({});
+        query_context->setInitialUserName({});
+    }
+
+    /// The stricter of the caller's and the definer's readonly modes (1 is stricter than 2).
+    const UInt64 caller_readonly = caller_context->getSettingsRef()[Setting::readonly].value;
+    const UInt64 definer_readonly = query_context->getSettingsRef()[Setting::readonly].value;
+    const UInt64 readonly = (caller_readonly == 1 || definer_readonly == 1) ? 1 : std::max(caller_readonly, definer_readonly);
+    query_context->setSetting("readonly", Field(readonly));
+    return query_context;
+}
+
 bool HTTPHandler::trySendExceptionToClient(
     int exception_code, const std::string & message, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
 try
@@ -2042,7 +2149,10 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
     if (unlikely(startsWith(request.getContentType(), "multipart/form-data")))
     {
         /// Support for "external data for query processing".
-        ExternalTablesHandler handler(context, params);
+        ExternalTablesHandler external_tables_handler(context, params);
+        RejectingPartHandler rejecting_handler([this](const String & name) { rejectRequestInput(name); });
+        HTMLForm::PartHandler & handler = runsWithSQLSecurity()
+            ? static_cast<HTMLForm::PartHandler &>(rejecting_handler) : external_tables_handler;
         if (wants_request_body)
         {
             auto body_copy = preserve_raw_body();
@@ -2111,6 +2221,8 @@ SQLDefinedQueryHandler::SQLDefinedQueryHandler(
     setIntrospectionHandlerName(handler.name);
     setRequestBodyContract(handler.consumes_request_body, handler.feeds_request_body_to_query);
     setUsesRequestBodyParam(handler.uses_request_body_param);
+    if (handler.sql_security_type)
+        setSQLSecurity(*handler.sql_security_type, handler.definer, handler.requires_mutating_method);
 }
 
 std::string SQLDefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)
