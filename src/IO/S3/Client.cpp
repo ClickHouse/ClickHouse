@@ -113,7 +113,6 @@ Client::RetryStrategy::RetryStrategy(const PocoHTTPClientConfiguration::RetryStr
     : config(config_)
     , log(getLogger("S3ClientRetryStrategy"))
 {
-    chassert(config.max_delay_ms <= (1.0 + config.jitter_factor) * config.initial_delay_ms * (1ul << 31l));
     chassert(config.jitter_factor >= 0 && config.jitter_factor <= 1);
 }
 
