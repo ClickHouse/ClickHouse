@@ -45,10 +45,12 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -11464,6 +11466,45 @@ std::unordered_set<String> MergeTreeData::getPartitionIDsFromQuery(const ASTs & 
     return partition_ids;
 }
 
+namespace
+{
+
+/// A DateTime that pins no timezone is resolved against the timezone of the server that reads it,
+/// so the same expression can mean different instants on two replicas.
+bool isExplicitlyZonedDateTimeArray(const String & type_name)
+{
+    const auto type = DataTypeFactory::instance().tryGet(type_name);
+    if (!type)
+        return false;
+
+    const auto * array = typeid_cast<const DataTypeArray *>(type.get());
+    if (!array)
+        return false;
+
+    const auto * nested = array->getNestedType().get();
+    if (const auto * dt = typeid_cast<const DataTypeDateTime *>(nested))
+        return dt->hasExplicitTimeZone();
+    if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(nested))
+        return dt64->hasExplicitTimeZone();
+    return false;
+}
+
+/// `toDateTime(<literal>, '<tz>')` or `toDateTime64(<literal>, <scale>, '<tz>')`.
+bool isExplicitlyZonedDateTimeOfLiteral(const ASTFunction & function)
+{
+    const auto & arguments = function.arguments->children;
+    if (arguments.size() != (function.name == "toDateTime64" ? 3 : 2))
+        return false;
+
+    if (!std::ranges::all_of(arguments, [](const ASTPtr & argument) { return argument->as<ASTLiteral>() != nullptr; }))
+        return false;
+
+    const auto & timezone = arguments.back()->as<const ASTLiteral &>().value;
+    return timezone.getType() == Field::Types::String && !timezone.safeGet<String>().empty();
+}
+
+}
+
 std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     const ASTPtr & predicate,
     ContextPtr query_context,
@@ -11506,7 +11547,25 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
                         return true;
 
                     const auto * rhs_function = node->as<ASTFunction>();
-                    if (!rhs_function || !rhs_function->arguments || (rhs_function->name != "tuple" && rhs_function->name != "array"))
+                    if (!rhs_function || !rhs_function->arguments)
+                        return false;
+
+                    /// A cast of literals to a timezone-pinned DateTime array is as stable as the literals.
+                    if (rhs_function->name == "CAST" || rhs_function->name == "_CAST")
+                    {
+                        const auto & cast_arguments = rhs_function->arguments->children;
+                        if (cast_arguments.size() != 2 || !literal_self(cast_arguments[0], literal_self))
+                            return false;
+
+                        const auto * type_name = cast_arguments[1]->as<ASTLiteral>();
+                        return type_name && type_name->value.getType() == Field::Types::String
+                            && isExplicitlyZonedDateTimeArray(type_name->value.safeGet<String>());
+                    }
+
+                    if (rhs_function->name == "toDateTime" || rhs_function->name == "toDateTime64")
+                        return isExplicitlyZonedDateTimeOfLiteral(*rhs_function);
+
+                    if (rhs_function->name != "tuple" && rhs_function->name != "array")
                         return false;
 
                     return std::ranges::all_of(rhs_function->arguments->children, [&](const auto & child)
