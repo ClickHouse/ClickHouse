@@ -7,10 +7,11 @@ SET use_skip_indexes = 1, use_skip_indexes_if_final = 1, use_skip_indexes_if_fin
 SET use_partition_pruning = 1, defer_partition_pruning_after_final = 1;
 SET do_not_merge_across_partitions_select_final = 0, enable_automatic_decision_for_merging_across_partitions_for_final = 0;
 
+-- nullable_serialization_version = 'basic': a sparse Nullable column does not keep the value stored under a NULL
 DROP TABLE IF EXISTS t_final_nullable_key;
 CREATE TABLE t_final_nullable_key (n UInt64, k Nullable(UInt64), ver UInt64)
 ENGINE = ReplacingMergeTree(ver) ORDER BY (n, k)
-SETTINGS allow_nullable_key = 1, index_granularity = 100, index_granularity_bytes = '10Mi';
+SETTINGS allow_nullable_key = 1, index_granularity = 100, index_granularity_bytes = '10Mi', nullable_serialization_version = 'basic';
 SYSTEM STOP MERGES t_final_nullable_key;
 INSERT INTO t_final_nullable_key SELECT number, nullIf(toUInt64(1), toUInt64(1)), 1 FROM numbers(1000);
 INSERT INTO t_final_nullable_key SELECT number, nullIf(toUInt64(2), toUInt64(2)), 2 FROM numbers(1000);
@@ -30,7 +31,7 @@ DROP TABLE t_final_nullable_key;
 DROP TABLE IF EXISTS t_final_nullable_key_index;
 CREATE TABLE t_final_nullable_key_index (n UInt64, k Nullable(UInt64), ver UInt64, INDEX ik k TYPE set(0) GRANULARITY 1)
 ENGINE = ReplacingMergeTree(ver) ORDER BY (n, k)
-SETTINGS allow_nullable_key = 1, index_granularity = 100, index_granularity_bytes = '10Mi';
+SETTINGS allow_nullable_key = 1, index_granularity = 100, index_granularity_bytes = '10Mi', nullable_serialization_version = 'basic';
 SYSTEM STOP MERGES t_final_nullable_key_index;
 INSERT INTO t_final_nullable_key_index SELECT number, nullIf(toUInt64(1), toUInt64(1)), 1 FROM numbers(1000);
 INSERT INTO t_final_nullable_key_index SELECT number, nullIf(toUInt64(2), toUInt64(2)), 2 FROM numbers(1000);
@@ -41,7 +42,7 @@ DROP TABLE t_final_nullable_key_index;
 DROP TABLE IF EXISTS t_final_nullable_key_partition;
 CREATE TABLE t_final_nullable_key_partition (n UInt64, k Nullable(UInt64), ver UInt64)
 ENGINE = ReplacingMergeTree(ver) PARTITION BY assumeNotNull(k) ORDER BY (n, k)
-SETTINGS allow_nullable_key = 1, index_granularity = 100, index_granularity_bytes = '10Mi';
+SETTINGS allow_nullable_key = 1, index_granularity = 100, index_granularity_bytes = '10Mi', nullable_serialization_version = 'basic';
 SYSTEM STOP MERGES t_final_nullable_key_partition;
 INSERT INTO t_final_nullable_key_partition SELECT number, nullIf(toUInt64(1), toUInt64(1)), 1 FROM numbers(1000);
 INSERT INTO t_final_nullable_key_partition SELECT number, nullIf(toUInt64(2), toUInt64(2)), 2 FROM numbers(1000);
@@ -57,6 +58,6 @@ CREATE TABLE t_final_nullable_key_partition_plain (n UInt64, k Nullable(UInt64),
 ENGINE = ReplacingMergeTree(ver) PARTITION BY k ORDER BY (n, k) SETTINGS allow_nullable_key = 1;
 INSERT INTO t_final_nullable_key_partition_plain VALUES (0, 1, 1);
 INSERT INTO t_final_nullable_key_partition_plain VALUES (0, 2, 1);
-SELECT 'partition pruning kept', count() > 0 FROM (EXPLAIN indexes = 1 SELECT ver FROM t_final_nullable_key_partition_plain FINAL WHERE k = 1)
-WHERE explain ILIKE '%Parts: 1/2%';
+SELECT 'partition pruning kept', countIf(trimLeft(explain) = 'Partition'), countIf(trimLeft(explain) = 'Condition: true')
+FROM (EXPLAIN indexes = 1 SELECT ver FROM t_final_nullable_key_partition_plain FINAL WHERE k = 1);
 DROP TABLE t_final_nullable_key_partition_plain;

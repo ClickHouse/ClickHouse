@@ -7,4 +7,4 @@ row policy	[]
 skip index	[]
 partitions	['1','2']
 partition pruning	[]
-partition pruning kept	1
+partition pruning kept	1	0
