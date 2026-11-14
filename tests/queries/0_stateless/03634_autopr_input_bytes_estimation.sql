@@ -11,6 +11,10 @@ SET apply_string_filters_during_scan=0;
 -- estimate for every query after the first one.
 SET use_columns_cache=0;
 
+-- The query condition cache keeps the granules that previous runs of the same query filtered out, so repeated runs
+-- read fewer and more scattered granules and `ReadCompressedBytes` moves away from the estimate.
+SET use_query_condition_cache=0;
+
 -- `test.hits` lives on a `web` disk (S3) behind a local filesystem cache. With the randomized
 -- `enable_filesystem_cache=0` every query of this test downloads the whole table from S3 again, and when
 -- the S3 throughput drops the full scans become slow enough to be killed by `max_estimated_execution_time`.
