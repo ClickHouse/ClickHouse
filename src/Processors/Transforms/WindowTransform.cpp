@@ -59,6 +59,15 @@ void destroyStates(VectorWithMemoryTracking<GeneralWindowFunctionSlot> & general
             slot.function->destroyState(slot.state.data());
 }
 
+void resetPartitions(VectorWithMemoryTracking<GeneralWindowFunctionSlot> & general_functions, VectorWithMemoryTracking<AggregateWindowFunctionSlot> & aggregate_functions)
+{
+    for (auto & slot : general_functions)
+        slot.function->resetPartition(slot.state.data());
+
+    for (auto & slot : aggregate_functions)
+        slot.function->resetPartition();
+}
+
 MutableColumns initializeResultColumns(const VectorWithMemoryTracking<GeneralWindowFunctionSlot> & general_functions, const VectorWithMemoryTracking<AggregateWindowFunctionSlot> & aggregate_functions, int64_t rows_count)
 {
     MutableColumns columns(general_functions.size() + aggregate_functions.size());
@@ -75,6 +84,41 @@ MutableColumns initializeResultColumns(const VectorWithMemoryTracking<GeneralWin
     return columns;
 }
 
+Int64 evaluateFunctions(
+    VectorWithMemoryTracking<GeneralWindowFunctionSlot> & general_functions,
+    VectorWithMemoryTracking<AggregateWindowFunctionSlot> & aggregate_functions,
+    const WindowBounds & bounds, SlidingArguments & arguments, MutableColumns & results)
+{
+    Int64 first_row = std::numeric_limits<Int64>::max();
+
+    for (auto & slot : general_functions)
+        first_row = std::min(first_row, slot.function->evaluate(slot.state.data(), bounds, arguments.view(slot.function_index), *results[slot.function_index]));
+
+    for (auto & slot : aggregate_functions)
+        first_row = std::min(first_row, slot.function->evaluate(bounds, arguments.view(slot.function_index), *results[slot.function_index]));
+
+    return first_row;
+}
+
+Chunk packBlock(const SlidingBlock & block, MutableColumns results)
+{
+    Columns columns = block.input_columns;
+    columns.insert(columns.end(), std::make_move_iterator(results.begin()), std::make_move_iterator(results.end()));
+
+    Chunk chunk;
+    chunk.setColumns(std::move(columns), block.rows_count);
+    return chunk;
+}
+
+bool isRowReady(const WindowFunctionRequirements & required, const Frame & frame, const Peers & peers, const Partition & partition)
+{
+    return (!required.frame_start || frame.bounds().start_visible)
+        && (!required.frame_end || frame.bounds().end_visible)
+        && (!required.peers_start || peers.bounds().start_visible)
+        && (!required.peers_end || peers.bounds().end_visible)
+        && (!required.partition_end || partition.bounds().end_visible);
+}
+
 }
 
 WindowTransform::WindowTransform(
@@ -86,10 +130,6 @@ WindowTransform::WindowTransform(
     , arguments(params.input_header, functions)
     , frame(params)
 {
-    for (const auto & function : functions)
-        if (const auto general = asGeneralWindowFunction(function.aggregate_function))
-            general->checkWindowFrameType(params.window_description);
-
     try
     {
         general_functions.reserve(functions.size());
@@ -98,15 +138,9 @@ WindowTransform::WindowTransform(
         {
             const WindowFunctionDescription & function = functions[function_index];
             if (auto general = asGeneralWindowFunction(function.aggregate_function))
-            {
-                required = unionOf(required, general->getRequirements(params.window_description));
                 general_functions.push_back(createGeneralSlot(std::move(general), function_index));
-            }
             else
-            {
-                required = unionOf(required, WindowFunctionRequirements{.frame = true});
                 aggregate_functions.push_back(createAggregateSlot(function.aggregate_function, params.window_description, function_index));
-            }
         }
     }
     catch (...)
@@ -139,23 +173,25 @@ void WindowTransform::computeReadyRows()
         if (bounds.rows != 0 && peers.current().location.block != batch_start.block)
             evaluateRowsBatch();
 
-        if (peers.current().location == partition.bounds().end.location)
+        if (peers.current().location == partition.bounds().end)
         {
             /// The rest of this partition is not read yet, or the last partition is done.
-            if (!partition.bounds().fully_visible || input_is_finished)
+            if (!partition.bounds().end_visible || input_is_finished)
                 break;
 
             evaluateRowsBatch();
             startNextPartition();
         }
 
-        peers.advancePeerGroupBounds(blocks, partition.bounds());
-        frame.advance(blocks, peers.current(), partition.bounds());
-        if (!frame.bounds().fully_visible)
+        if (params.requirements.peers_start || params.requirements.peers_end)
+            peers.advancePeerGroupBounds(blocks, partition.bounds());
+        if (params.requirements.frame_start || params.requirements.frame_end)
+            frame.advance(blocks, peers.current(), partition.bounds());
+        if (!isRowReady(params.requirements, frame, peers, partition))
             break;
 
         recordCurrentRowBounds();
-        peers.advanceCurrentRow(blocks, partition.bounds());
+        peers.advanceCurrentRow(blocks);
     }
 
     evaluateRowsBatch();
@@ -168,21 +204,18 @@ void WindowTransform::recordCurrentRowBounds()
         batch_start = current.location;
 
     bounds.row.push_back(current.row_index_in_partition);
-    if (required.frame)
-    {
+    if (params.requirements.frame_start)
         bounds.frame_start.push_back(frame.bounds().start.row_index_in_partition);
+    if (params.requirements.frame_end)
         bounds.frame_end.push_back(frame.bounds().end.row_index_in_partition);
-    }
-    if (required.peers)
-    {
+    if (params.requirements.peers_start)
         bounds.peers_start.push_back(peers.bounds().start.row_index_in_partition);
+    if (params.requirements.peers_start)
+        bounds.peer_group_index.push_back(peers.bounds().group_index);
+    if (params.requirements.peers_end)
         bounds.peers_end.push_back(peers.bounds().end.row_index_in_partition);
-        bounds.peer_group_index.push_back(current.peer_group_index_in_partition);
-    }
-    if (required.partition && partition.bounds().fully_visible)
-    {
-        bounds.partition_end.push_back(partition.bounds().end.row_index_in_partition);
-    }
+    if (params.requirements.partition_end)
+        bounds.partition_end.push_back(partition.bounds().rows_count);
     ++bounds.rows;
 }
 
@@ -195,48 +228,27 @@ void WindowTransform::evaluateRowsBatch()
     if (current_results.empty())
         current_results = initializeResultColumns(general_functions, aggregate_functions, block.rows_count);
 
-    Int64 first_row = std::numeric_limits<Int64>::max();
-    for (auto & slot : general_functions)
-        first_row = std::min(first_row, slot.function->evaluate(slot.state.data(), bounds, arguments.view(slot.function_index), *current_results[slot.function_index]));
-    for (auto & slot : aggregate_functions)
-        first_row = std::min(first_row, slot.function->evaluate(bounds, arguments.view(slot.function_index), *current_results[slot.function_index]));
+    first_row_read_by_functions = evaluateFunctions(general_functions, aggregate_functions, bounds, arguments, current_results);
 
     const bool block_complete = batch_start.row + bounds.rows == block.rows_count;
     if (block_complete)
-        packReadyBlock();
+        pending_outputs.push_back(packBlock(block, std::exchange(current_results, {})));
 
-    first_row_read_by_functions = first_row;
     clearBounds(bounds);
-}
-
-void WindowTransform::packReadyBlock()
-{
-    const SlidingBlock & block = blocks.blockAt(batch_start.block);
-    Columns columns = block.input_columns;
-    columns.insert(columns.end(), std::make_move_iterator(current_results.begin()), std::make_move_iterator(current_results.end()));
-    current_results.clear();
-
-    Chunk chunk;
-    chunk.setColumns(std::move(columns), block.rows_count);
-    pending_outputs.push_back(std::move(chunk));
 }
 
 void WindowTransform::startNextPartition()
 {
-    const RowNumber partition_start = partition.bounds().end.location;
+    const RowNumber partition_start = partition.bounds().end;
     chassert(peers.current().location == partition_start);
 
-    arguments.startPartition(partition.bounds().end.row_index_in_partition);
+    arguments.startPartition(peers.current().row_index_in_partition);
     partition.beginAt(blocks, partition_start);
     peers.enterPartition(partition_start);
     frame.enterPartition(partition_start);
     first_row_read_by_functions = 0;
 
-    for (auto & slot : general_functions)
-        slot.function->resetPartition(slot.state.data());
-
-    for (auto & slot : aggregate_functions)
-        slot.function->resetPartition();
+    resetPartitions(general_functions, aggregate_functions);
 }
 
 IProcessor::Status WindowTransform::prepare()
@@ -312,10 +324,11 @@ void WindowTransform::work()
 void WindowTransform::releaseUnusedBlocks()
 {
     const RowPoint & current = peers.current();
-    const Int64 first_row = std::min({current.row_index_in_partition, frame.firstRowToRead(), first_row_read_by_functions});
-    const Int64 first_row_position = blocks.positionOf(current.location) - (current.row_index_in_partition - first_row);
+    const Int64 first_row_read_by_frame = (params.requirements.frame_start || params.requirements.frame_end) ? frame.firstRowToRead() : std::numeric_limits<Int64>::max();
+    const Int64 first_row_to_keep = std::min({current.row_index_in_partition, first_row_read_by_frame, first_row_read_by_functions});
+    const Int64 first_position_to_keep = blocks.positionOf(current.location) - (current.row_index_in_partition - first_row_to_keep);
 
-    while (blocks.begin() != blocks.end() && blocks.front().end_position <= first_row_position)
+    while (blocks.begin() != blocks.end() && blocks.front().end_position <= first_position_to_keep)
     {
         blocks.pop();
         arguments.pop();

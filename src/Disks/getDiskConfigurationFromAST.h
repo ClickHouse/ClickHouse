@@ -47,7 +47,7 @@ struct DynamicS3DiskCredentialInfo
     bool ast_has_explicit_key_pair = false;                 /// literal `access_key_id` + `secret_access_key`
     bool ast_has_no_sign_request = false;                   /// literal `no_sign_request`
     bool ast_has_use_environment_credentials_off = false;   /// literal `use_environment_credentials = 0`, no `role_arn`
-    bool ast_has_explicit_gcp_adc = false;                  /// complete literal Google ADC triple
+    bool ast_has_explicit_gcp_adc = false;                  /// complete literal Google ADC triple or service account key
 };
 
 /// The same as above function, but return XML::Document for easier modification of result configuration.
@@ -59,7 +59,17 @@ struct DynamicS3DiskCredentialInfo
 /// The server-managed S3 credential restriction is applied even on metadata load. The pre-resolution outcome
 /// is reported through `*info`; after resolving `include`, the caller must call `forceAnonymousS3DiskConfig`
 /// (when `info->load_anonymously`) or `validateResolvedS3DiskCredentials`.
-[[ maybe_unused ]] Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & disk_args, ContextPtr context, bool is_loading_from_existing_metadata = false, DynamicS3DiskCredentialInfo * info = nullptr, bool for_system_database = false);
+///
+/// `stored_definition`: the definition was read from the metadata the server stored for the table (short `ATTACH`).
+/// Like `is_loading_from_existing_metadata`, it allows a repeated key that a definition stored by an older version
+/// may have, but it does not skip the other restrictions.
+[[ maybe_unused ]] Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(
+    const ASTs & disk_args,
+    ContextPtr context,
+    bool is_loading_from_existing_metadata = false,
+    DynamicS3DiskCredentialInfo * info = nullptr,
+    bool for_system_database = false,
+    bool stored_definition = false);
 
 /// Rewrite a dynamic disk configuration so its S3 client is built anonymously (see `getDiskConfigurationFromASTImpl`).
 void forceAnonymousS3DiskConfig(Poco::Util::AbstractConfiguration & config);

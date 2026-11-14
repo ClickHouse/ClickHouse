@@ -185,6 +185,9 @@ public:
 
     /// Try to remove all files copied to the backup. Could be used after setIsCorrupted().
     virtual bool tryRemoveAllFiles() noexcept = 0;
+
+    /// Try to remove the lock file of a backup which wrote nothing else. Could be used after setIsCorrupted().
+    virtual bool tryRemoveLockFileIfNothingWritten() noexcept = 0;
 };
 
 using BackupPtr = std::shared_ptr<const IBackup>;

@@ -252,39 +252,6 @@
       "group": "Herramientas y agentes de IA",
       "pages": [
         "es/products/cloud/features/ai-ml/index",
-        {
-          "group": "Agents",
-          "pages": [
-            "es/products/cloud/features/ai-ml/agents/index",
-            "es/products/cloud/features/ai-ml/agents/quickstart",
-            "es/products/cloud/features/ai-ml/agents/chat",
-            {
-              "group": "Creador de agentes",
-              "pages": [
-                "es/products/cloud/features/ai-ml/agents/builder/index",
-                "es/products/cloud/features/ai-ml/agents/builder/model-parameters",
-                "es/products/cloud/features/ai-ml/agents/builder/code-interpreter",
-                "es/products/cloud/features/ai-ml/agents/builder/web-search",
-                "es/products/cloud/features/ai-ml/agents/builder/image-generation",
-                "es/products/cloud/features/ai-ml/agents/builder/vision",
-                "es/products/cloud/features/ai-ml/agents/builder/mcp-servers",
-                "es/products/cloud/features/ai-ml/agents/builder/skills",
-                "es/products/cloud/features/ai-ml/agents/builder/subagents"
-              ]
-            },
-            "es/products/cloud/features/ai-ml/agents/prompts",
-            "es/products/cloud/features/ai-ml/agents/memory",
-            "es/products/cloud/features/ai-ml/agents/marketplace",
-            "es/products/cloud/features/ai-ml/agents/sharing-and-access",
-            {
-              "group": "Assistant",
-              "pages": [
-                "es/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
-                "es/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer"
-              ]
-            }
-          ]
-        },
         "es/products/cloud/features/ai-ml/langfuse",
         {
           "expanded": false,
