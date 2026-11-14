@@ -2085,7 +2085,11 @@ void IcebergMetadata::addDeleteTransformers(
                 = FormatFactory::instance().checkIfFormatIsRandomAccessInput(delete_file.file_format, local_context);
             {
                 auto schema_read_buffer = createReadBuffer(delete_file_object, object_storage, local_context, log, read_settings);
-                auto schema_reader = FormatFactory::instance().getSchemaReader(delete_file.file_format, *schema_read_buffer, local_context);
+                /// The set below must keep the delete file's NULLs, so take nullability from the file whatever the query settings say.
+                FormatSettings delete_schema_format_settings = getFormatSettings(local_context);
+                delete_schema_format_settings.schema_inference_make_columns_nullable = 3;
+                auto schema_reader = FormatFactory::instance().getSchemaReader(
+                    delete_file.file_format, *schema_read_buffer, local_context, delete_schema_format_settings);
                 auto columns_with_names = schema_reader->readSchema();
                 ColumnsWithTypeAndName initial_header_data;
                 for (const auto & elem : columns_with_names)

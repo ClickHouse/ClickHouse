@@ -20,4 +20,8 @@ ${CLICKHOUSE_CLIENT} --query "SELECT id, category, name, tag FROM icebergLocal('
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM icebergLocal('${LAKE_DIR}/')"
 ${CLICKHOUSE_CLIENT} --query "SELECT name FROM icebergLocal('${LAKE_DIR}/') WHERE id IS NULL ORDER BY name"
 
+# The delete file keeps its NULLs whatever the schema inference settings are.
+${CLICKHOUSE_CLIENT} --query "SELECT name FROM icebergLocal('${LAKE_DIR}/') ORDER BY name SETTINGS schema_inference_make_columns_nullable = 0"
+${CLICKHOUSE_CLIENT} --query "SELECT name FROM icebergLocal('${LAKE_DIR}/') ORDER BY name SETTINGS schema_inference_make_columns_nullable = 0, input_format_null_as_default = 0"
+
 rm -rf "${CLICKHOUSE_USER_FILES_UNIQUE}"
