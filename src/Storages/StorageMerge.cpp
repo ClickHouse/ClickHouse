@@ -2099,9 +2099,9 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
 
         /// Converting query to AST because types might be different in the source table.
         /// Need to resolve types again.
-        /// The child's analyzer rebuilds the `grouping` specializations, which do not resolve from the query text.
+        /// The child's analyzer rebuilds the `grouping` specializations that do not resolve from the query text.
         auto query_tree_for_ast = modified_query_info.query_tree->clone();
-        removeGroupingFunctionSpecializations(query_tree_for_ast);
+        removeGroupingFunctionSpecializations(query_tree_for_ast, /*keep_ordinary=*/ true);
         auto ast = query_tree_for_ast->toAST();
         /// The analyzer substitutes the inserted block of a materialized view for its source table only when given it.
         /// A child that is the source table itself reads the table, as it does at `FetchColumns`.
