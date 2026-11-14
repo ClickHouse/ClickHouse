@@ -292,6 +292,13 @@ protected:
     bool is_table_function = false;
     bool has_cluster_variant = false;
 
+    /// `PARTITION BY` and `ORDER BY` of a data lake table as in its stored definition. The partitioning and the sorting
+    /// of a data lake are in its own metadata, which refers to the columns by id, so they are not in the in-memory
+    /// metadata of the table, but the stored definition names the columns and has to follow their renames.
+    /// Accessed under the alter lock.
+    ASTPtr data_lake_partition_by;
+    ASTPtr data_lake_order_by;
+
     struct HivePartitioningColumns
     {
         NamesAndTypesList hive_partition_columns_to_read_from_file_path;
