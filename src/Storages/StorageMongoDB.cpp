@@ -961,6 +961,7 @@ void registerStorageMongoDB(StorageFactory & factory)
     },
     mongoDBSecretArguments(),
     {
+        .supports_named_collections = true,
         .source_access_type = AccessTypeObjects::Source::MONGO,
     },
     Documentation{

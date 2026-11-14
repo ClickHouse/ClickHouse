@@ -1,0 +1,27 @@
+<clickhouse>
+    <dictionary>
+        <name>config_dict_lazy_using_collection</name>
+        <source>
+            <mongodb>
+                <name>config_dict_lazy_collection</name>
+            </mongodb>
+        </source>
+        <layout>
+            <flat/>
+        </layout>
+        <structure>
+            <id>
+                <name>key</name>
+            </id>
+            <attribute>
+                <name>value</name>
+                <type>UInt64</type>
+                <null_value>0</null_value>
+            </attribute>
+        </structure>
+        <lifetime>0</lifetime>
+        <settings>
+            <dictionary_lazy_load>1</dictionary_lazy_load>
+        </settings>
+    </dictionary>
+</clickhouse>

@@ -1,0 +1,6 @@
+--- a database using the collection holds it ---
+--- a detached database holds it, too: its metadata is still replayed ---
+--- dropping the database releases it ---
+0
+--- a database that uses no collection is detached and dropped as usual ---
+0

@@ -100,6 +100,13 @@ public:
 
     LoadablesConfigurationPtr getConfiguration() const;
 
+    /// A dictionary created with DDL registers its named collection dependencies only when its source is
+    /// loaded, which may not have happened yet (`dictionary_lazy_load`), and `shutdown` removes the
+    /// definition from the loader, after which `DROP NAMED COLLECTION` cannot find it either. Registers
+    /// the collections referenced by the definition the storage holds, so that a DDL query that shuts the
+    /// dictionary down or moves it keeps them protected if it fails while the definition survives.
+    void addNamedCollectionDependencies() const;
+
     String getDictionaryName() const { return dictionary_name; }
 
 private:
