@@ -26,6 +26,9 @@ enum class LoadBalancing : uint8_t
     FIRST_OR_RANDOM,
     // round robin across replicas with the same number of errors.
     ROUND_ROBIN,
+    /// among replicas with a minimum number of errors, a few random replicas are sampled
+    /// ("power of two choices") and the one with the fewest in-flight requests is preferred
+    LEAST_REQUEST,
 };
 
 }

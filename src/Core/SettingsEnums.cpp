@@ -40,7 +40,8 @@ IMPLEMENT_SETTING_ENUM(LoadBalancing, ErrorCodes::UNKNOWN_LOAD_BALANCING,
      {"hostname_longest_common_suffix", LoadBalancing::HOSTNAME_LONGEST_COMMON_SUFFIX},
      {"in_order",         LoadBalancing::IN_ORDER},
      {"first_or_random",  LoadBalancing::FIRST_OR_RANDOM},
-     {"round_robin",      LoadBalancing::ROUND_ROBIN}})
+     {"round_robin",      LoadBalancing::ROUND_ROBIN},
+     {"least_request",    LoadBalancing::LEAST_REQUEST}})
 
 
 IMPLEMENT_SETTING_ENUM(JoinStrictness, ErrorCodes::UNKNOWN_JOIN,
