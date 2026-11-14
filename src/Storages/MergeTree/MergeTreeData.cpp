@@ -9916,6 +9916,7 @@ NamesAndTypesList MergeTreeData::getColumnsStoredInAllParts(
         part_columns.insert(&part.data_part->getColumnPositions());
 
     /// A pending drop or rename leaves the old data under a name that a re-added column can reuse.
+    NameSet retired;
     NameSet changed_on_fly;
     if (mutations_snapshot)
     {
@@ -9926,28 +9927,42 @@ NamesAndTypesList MergeTreeData::getColumnsStoredInAllParts(
             {
                 for (const auto & command : mutations_snapshot->getOnFlyMutationCommandsForPart(part.data_part))
                 {
-                    if (command.type == MutationCommand::RENAME_COLUMN)
+                    if (command.type == MutationCommand::DROP_COLUMN)
                     {
-                        changed_on_fly.insert(command.column_name);
-                        changed_on_fly.insert(command.rename_to);
+                        retired.insert(command.column_name);
+                    }
+                    else if (command.type == MutationCommand::RENAME_COLUMN)
+                    {
+                        retired.insert(command.column_name);
+                        retired.insert(command.rename_to);
                     }
                 }
             }
         }
     }
 
+    /// A pending drop of a `Nested` column drops its members too, see `AlterConversions::isColumnDropped`.
+    const bool share_nested_offsets
+        = !retired.empty() && (*parts.front().data_part->storage.getSettings())[MergeTreeSetting::share_nested_offsets];
+
     NamesAndTypesList result;
+    NamesAndTypesList updated;
     for (const auto & column : columns)
     {
         const auto name_in_storage = column.getNameInStorage();
-        /// A pending drop or rename of a `Nested` column changes its members too, see `AlterConversions::isColumnDropped`.
-        const auto nested_parent = name_in_storage.substr(0, name_in_storage.find('.'));
-        if (!changed_on_fly.contains(name_in_storage)
-            && !changed_on_fly.contains(nested_parent)
-            && std::ranges::all_of(part_columns, [&](const auto * positions) { return positions->contains(name_in_storage); }))
+        const auto dot = name_in_storage.find('.');
+        if (retired.contains(name_in_storage)
+            || (share_nested_offsets && dot != std::string::npos && retired.contains(name_in_storage.substr(0, dot)))
+            || !std::ranges::all_of(part_columns, [&](const auto * positions) { return positions->contains(name_in_storage); }))
+            continue;
+
+        /// A column that a pending mutation updates is still read from the parts, with the update applied.
+        if (changed_on_fly.contains(name_in_storage))
+            updated.push_back(column);
+        else
             result.push_back(column);
     }
-    return result;
+    return result.empty() ? updated : result;
 }
 
 void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const

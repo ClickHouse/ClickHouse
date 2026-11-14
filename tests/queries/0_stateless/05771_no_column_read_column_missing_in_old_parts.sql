@@ -65,3 +65,25 @@ ALTER TABLE t_nested DROP COLUMN n, ADD COLUMN `n.a` Array(UInt64) DEFAULT [toUI
 SELECT count() FROM t_nested SETTINGS query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
 SELECT count() FROM t_nested SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
 DROP TABLE t_nested;
+
+DROP TABLE IF EXISTS t_updated;
+CREATE TABLE t_updated (a UInt64, s String) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP MERGES t_updated;
+INSERT INTO t_updated SELECT number, if(number = 500, 'n/a', toString(number % 100)) FROM numbers(1000);
+ALTER TABLE t_updated UPDATE a = a + 0, s = concat(s, '') WHERE 1 SETTINGS mutations_sync = 0;
+ALTER TABLE t_updated ADD COLUMN n UInt8 DEFAULT toUInt8(s);
+INSERT INTO t_updated (a, s) VALUES (1000, '1');
+SELECT count() FROM t_updated SETTINGS apply_mutations_on_fly = 1, query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+SELECT count() FROM t_updated SETTINGS apply_mutations_on_fly = 1, query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+DROP TABLE t_updated;
+
+DROP TABLE IF EXISTS t_independent;
+CREATE TABLE t_independent (`n` UInt8, `n.a` String) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, share_nested_offsets = 0;
+SYSTEM STOP MERGES t_independent;
+INSERT INTO t_independent SELECT 0, if(number = 500, 'n/a', repeat(hex(sipHash64(number)), 8)) FROM numbers(1000);
+ALTER TABLE t_independent DROP COLUMN n, ADD COLUMN n UInt8 DEFAULT toUInt8(`n.a`) SETTINGS alter_sync = 0;
+SELECT count() FROM t_independent SETTINGS query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+SELECT count() FROM t_independent SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+DROP TABLE t_independent;
