@@ -1,0 +1,37 @@
+<test>
+    <settings>
+        <max_threads>4</max_threads>
+    </settings>
+
+    <!-- One large merged part and ten small parts of updates as INSERT writes them: most rows come from the large part,
+         between the keys of the updates. Background merges are disabled by the pool limits; the merge query needs merges
+         running, so SYSTEM STOP MERGES is not used. -->
+    <create_query>CREATE TABLE replacing_updated (id UInt64, ver UInt32, a Float64, b Int64) ENGINE = ReplacingMergeTree(ver) ORDER BY id SETTINGS auto_statistics_types = ''</create_query>
+    <create_query>CREATE TABLE replacing_updated_key2 (k UInt8, id UInt64, ver UInt32, a Float64, b Int64) ENGINE = ReplacingMergeTree(ver) ORDER BY (k, id) SETTINGS auto_statistics_types = ''</create_query>
+    <create_query>CREATE TABLE replacing_updated_merge (id UInt64, ver UInt32, a Float64, b Int64) ENGINE = ReplacingMergeTree(ver) ORDER BY id SETTINGS auto_statistics_types = '', old_parts_lifetime = 10, max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1</create_query>
+
+    <fill_query>INSERT INTO replacing_updated SELECT intHash64(number), 0, (number % 997) / 7.0, toInt64(number % 100003) FROM numbers(8000000)</fill_query>
+    <fill_query>INSERT INTO replacing_updated_key2 SELECT intHash64(number) % 16, intHash64(number), 0, (number % 997) / 7.0, toInt64(number % 100003) FROM numbers(8000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE replacing_updated FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE replacing_updated_key2 FINAL</fill_query>
+    <fill_query>ALTER TABLE replacing_updated MODIFY SETTING max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1</fill_query>
+    <fill_query>ALTER TABLE replacing_updated_key2 MODIFY SETTING max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1</fill_query>
+    <!-- Ten parts of 20000 updates of existing ids, versions 1 to 10. -->
+    <fill_query>INSERT INTO replacing_updated SELECT intHash64(cityHash64(number % 20000, intDiv(number, 20000)) % 8000000), intDiv(number, 20000) + 1, (number % 991) / 3.0, toInt64(number % 7919) FROM numbers(200000) SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 20000, max_insert_block_size = 20000, min_insert_block_size_rows = 20000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO replacing_updated_key2 SELECT h % 16, h, intDiv(number, 20000) + 1, (number % 991) / 3.0, toInt64(number % 7919) FROM (SELECT number, intHash64(cityHash64(number % 20000, intDiv(number, 20000)) % 8000000) AS h FROM numbers(200000)) SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 20000, max_insert_block_size = 20000, min_insert_block_size_rows = 20000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>SELECT throwIf(count() != 11 OR min(level) = 0) FROM system.parts WHERE database = currentDatabase() AND table = 'replacing_updated' AND active</fill_query>
+    <fill_query>SELECT throwIf(count() != 11 OR min(level) = 0) FROM system.parts WHERE database = currentDatabase() AND table = 'replacing_updated_key2' AND active</fill_query>
+    <fill_query>ALTER TABLE replacing_updated_merge ATTACH PARTITION ALL FROM replacing_updated</fill_query>
+    <fill_query>OPTIMIZE TABLE replacing_updated_merge FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
+    <fill_query>SELECT throwIf(count() != 1) FROM system.parts WHERE database = currentDatabase() AND table = 'replacing_updated_merge' AND active</fill_query>
+    <fill_query>SELECT throwIf((SELECT (count(), sum(cityHash64(*))) FROM replacing_updated_merge) != (SELECT (count(), sum(cityHash64(*))) FROM replacing_updated FINAL))</fill_query>
+
+    <query>SELECT id, ver, a, b FROM replacing_updated FINAL FORMAT Null</query>
+    <query>SELECT id, ver, a, b FROM replacing_updated FINAL FORMAT Null SETTINGS enable_vertical_final = 0</query>
+    <query>SELECT k, id, ver, a, b FROM replacing_updated_key2 FINAL FORMAT Null</query>
+    <query type="shell"><![CDATA[
+        ${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE replacing_updated_merge; ALTER TABLE replacing_updated_merge ATTACH PARTITION ALL FROM replacing_updated; OPTIMIZE TABLE replacing_updated_merge FINAL SETTINGS optimize_throw_if_noop = 1"
+    ]]></query>
+
+    <drop_query>DROP TABLE IF EXISTS replacing_updated, replacing_updated_key2, replacing_updated_merge SYNC</drop_query>
+</test>

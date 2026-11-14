@@ -62,6 +62,9 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     can_skip_to_run_end = version_column_number == -1 && is_deleted_column_number == -1
         && out_row_sources_buf == nullptr && !enable_vertical_final && !read_in_reverse;
     uses_runs_of_equal_keys = can_skip_to_run_end;
+
+    /// In the reverse reading order the rows of a batch stay on the per-row path.
+    uses_batches_of_unique_keys = !read_in_reverse;
 }
 
 void ReplacingSortedAlgorithm::initialize(Inputs inputs)
@@ -77,6 +80,12 @@ void ReplacingSortedAlgorithm::initialize(Inputs inputs)
     /// that block holds no runs of equal keys, the detection is disabled and the merge has to
     /// cost exactly what it costs with the plain heap.
     skip_runs_of_equal_keys = can_skip_to_run_end && batch_detection_enabled;
+
+    take_batches_of_unique_keys = false;
+    if (uses_batches_of_unique_keys && batch_detection_enabled)
+        for (size_t source_num = 0; source_num < sources.size(); ++source_num)
+            if (sources[source_num].chunk && sourceHasUniqueKeys(source_num))
+                take_batches_of_unique_keys = true;
     source_key_runs.assign(sources.size(), {});
 }
 
@@ -176,7 +185,145 @@ void ReplacingSortedAlgorithm::insertChunk(size_t source_num, Chunk chunk)
     merged_data->insertChunk(Chunk(std::move(columns), num_kept_rows), num_kept_rows);
 }
 
+void ReplacingSortedAlgorithm::insertUniqueRows(const SortCursor & current, size_t begin, size_t end)
+{
+    const auto & chunk = sources[current->order].chunk;
+    const size_t source_num = current->order;
+    const size_t num_rows = chunk->getNumRows();
+    const auto * mask = chunk->row_filter_mask;
+    const UInt8 * is_deleted = is_deleted_column_number == -1 ? nullptr
+        : assert_cast<const ColumnUInt8 &>(*current->all_columns[is_deleted_column_number]).getData().data();
+
+    PaddedPODArray<UInt64> * selection = nullptr;
+    if (enable_vertical_final)
+    {
+        if (!chunk->replace_final_selection)
+            chunk->replace_final_selection = ColumnUInt64::create();
+        selection = &assert_cast<ColumnUInt64 &>(*chunk->replace_final_selection).getData();
+    }
+
+    if (!mask && !is_deleted)
+    {
+        if (out_row_sources_buf)
+            for (size_t row = begin; row < end; ++row)
+                out_row_sources_buf->write(RowSourcePart(source_num, /*skip_flag=*/ false).data);
+
+        if (selection)
+        {
+            const size_t old_size = selection->size();
+            selection->resize(old_size + (end - begin));
+            for (size_t row = begin; row < end; ++row)
+                (*selection)[old_size + row - begin] = row;
+        }
+        else
+            merged_data->insertRows(current->all_columns, begin, end - begin, num_rows);
+        return;
+    }
+
+    /// The same checks as for each row in `merge` and in `isSelectedRowSkipped`.
+    size_t kept_begin = begin;
+    for (size_t row = begin; row < end; ++row)
+    {
+        if (is_deleted && is_deleted[row] > 1)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect data: is_deleted = {} (must be 1 or 0).", toString(is_deleted[row]));
+
+        const bool skipped = (cleanup && is_deleted && is_deleted[row]) || (mask && !(*mask)[row]);
+        if (out_row_sources_buf)
+            out_row_sources_buf->write(RowSourcePart(source_num, skipped).data);
+
+        if (selection)
+        {
+            if (!skipped)
+                selection->push_back(row);
+        }
+        else if (skipped)
+        {
+            if (kept_begin < row)
+                merged_data->insertRows(current->all_columns, kept_begin, row - kept_begin, num_rows);
+            kept_begin = row + 1;
+        }
+    }
+
+    if (!selection && kept_begin < end)
+        merged_data->insertRows(current->all_columns, kept_begin, end - kept_begin, num_rows);
+}
+
+/// Out of line, so that the per-row loop of `mergeImpl` stays compact.
+NO_INLINE bool ReplacingSortedAlgorithm::takeUniqueRowsOfBatch(SortCursor * current_ptr, size_t batch_size)
+{
+    SortCursor current = *current_ptr;
+
+    /// The group of the current row ends with it. As for each row in `mergeImpl`, a full block is emitted
+    /// before writing the group.
+    if (!enable_vertical_final && merged_data->hasEnoughRows())
+        return false;
+
+    insertRow();
+    selected_row.clear();
+
+    /// The rows [begin, end) are written right away, the row `end` becomes the selected one and is written
+    /// with the next row as usual.
+    const size_t begin = current->getRow() + 1;
+    size_t end = current->getRow() + batch_size - 2;
+
+    bool inserted = false;
+    if (!enable_vertical_final && begin < end)
+    {
+        /// Keep the limits of the block size: write only the rows that fit before a flush.
+        if (merged_data->hasEnoughRows())
+            end = begin;
+        else
+        {
+            size_t max_rows = std::min<size_t>(end - begin, merged_data->maxBlockSize() - merged_data->mergedRows());
+            size_t rows = merged_data->rowsToInsertBeforeFlush(current->all_columns, begin, max_rows, sources[current->order].chunk->getNumRows());
+            if (rows == 1 && max_rows > 1)
+            {
+                /// The byte size of the rows cannot be estimated: check the limit before each row, as `mergeImpl` does.
+                size_t row = begin;
+                while (row < begin + max_rows && !merged_data->hasEnoughRows())
+                {
+                    insertUniqueRows(current, row, row + 1);
+                    ++row;
+                }
+                end = row;
+                inserted = true;
+            }
+            else
+                end = begin + rows;
+        }
+    }
+
+    if (!inserted && begin < end)
+        insertUniqueRows(current, begin, end);
+
+    /// Select the row `end`.
+    if (is_deleted_column_number != -1)
+    {
+        const UInt8 is_deleted = assert_cast<const ColumnUInt8 &>(*current->all_columns[is_deleted_column_number]).getData()[end];
+        if (is_deleted > 1)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect data: is_deleted = {} (must be 1 or 0).", toString(is_deleted));
+    }
+
+    queue.next(end - current->getRow());
+    if (out_row_sources_buf)
+    {
+        max_pos = current_row_sources.size();
+        current_row_sources.emplace_back(current.impl->order, true);
+    }
+    setRowRef(selected_row, current);
+    queue.next(1);
+    return true;
+}
+
 IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
+{
+    if (take_batches_of_unique_keys)
+        return mergeImpl<true>();
+    return mergeImpl<false>();
+}
+
+template <bool take_batches>
+IMergingAlgorithm::Status ReplacingSortedAlgorithm::mergeImpl()
 {
     /// Skipping final: we've done processing some chunk and can emit them
     if (!to_be_emitted.empty())
@@ -219,7 +366,7 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         if (current->isFirst()
             && key_differs
             && is_deleted_column_number == -1 /// Ignore optimization if we need to filter deleted rows.
-            && sources_origin_merge_tree_part_level[current->order] > 0
+            && sourceHasUniqueKeys(current->order)
             && !skipLastRowFor(current->order) /// Ignore optimization if last row should be skipped.
             && (queue.size() == 1 || (queue.size() >= 2 && current.totallyLess(queue.nextChild()))))
         {
@@ -307,6 +454,16 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
             setRowRef(selected_row, current);
         }
 
+        /// The rows strictly inside a batch from a source with unique keys are groups of one: the per-row path compares
+        /// them only with a selected row of another source (see `rowsHaveDifferentSortColumns`), hence the condition
+        /// that the current row is selected. The last row of the batch can equal the next source's row.
+        if constexpr (take_batches)
+        {
+            if (unlikely(current_batch_size >= min_batch_size_to_take) && replace_with_current_row && !current->permutation
+                && sourceHasUniqueKeys(current->order) && takeUniqueRowsOfBatch(current_ptr, current_batch_size))
+                continue;
+        }
+
         /// All rows of one batch come consecutively from the same cursor. When only the last
         /// row of a run of equal keys is kept and processing a row has no other effects, jump
         /// to the last row of the run of the current key within the batch: the intermediate
@@ -314,7 +471,7 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         /// non-zero part level are excluded to keep the exact behavior of
         /// `rowsHaveDifferentSortColumns`, which does not compare rows of such sources at all.
         if (skip_runs_of_equal_keys && current_batch_size > 1 && !current->permutation
-            && sources_origin_merge_tree_part_level[current->order] == 0)
+            && !sourceHasUniqueKeys(current->order))
         {
             size_t run_begin = current->getPos();
             size_t run_bound = run_begin + current_batch_size;

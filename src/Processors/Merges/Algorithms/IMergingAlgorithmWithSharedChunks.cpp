@@ -48,8 +48,57 @@ void IMergingAlgorithmWithSharedChunks::initialize(Inputs inputs)
     /// `SortCursor`, so it keeps the heap container (see `sortDescriptionCompareIsExpensive`),
     /// and the batches are detected only when the algorithm can make use of them.
     bool compare_is_expensive = sortDescriptionCompareIsExpensive(description);
-    batch_detection_enabled = compare_is_expensive || (uses_runs_of_equal_keys && sourcesHaveRunsWorthSkipping());
+    batch_detection_enabled = compare_is_expensive
+        || (uses_batches_of_unique_keys && sourcesHaveLongBatchesOfUniqueKeys())
+        || (uses_runs_of_equal_keys && sourcesHaveRunsWorthSkipping());
     queue = SortingQueueForCursor<SortCursor, SortingQueueStrategy::Batch>(cursors, compare_is_expensive, batch_detection_enabled);
+}
+
+bool IMergingAlgorithmWithSharedChunks::sourcesHaveLongBatchesOfUniqueKeys() const
+{
+    /// Merges the first rows of the current chunks with the batch detection on, without taking any rows,
+    /// and stops at the end of a chunk, since the next chunk of a source is not available here.
+    static constexpr size_t max_rows_to_check = 1024;
+
+    bool has_source_with_unique_keys = false;
+    for (size_t source_num = 0; source_num < cursors.size(); ++source_num)
+    {
+        const auto & cursor = cursors[source_num];
+        if (!cursor.empty() && !cursor.permutation && sourceHasUniqueKeys(source_num))
+            has_source_with_unique_keys = true;
+    }
+    if (!has_source_with_unique_keys)
+        return false;
+
+    size_t total_rows = 0;
+    for (const auto & cursor : cursors)
+        if (!cursor.empty())
+            total_rows += cursor.rowsLeft();
+
+    const size_t rows_to_check = std::min(total_rows / max_share_of_rows_to_check, max_rows_to_check);
+    if (rows_to_check < min_batch_size_to_take)
+        return false;
+
+    SortCursorImpls sample_cursors = cursors;
+    SortingQueueForCursor<SortCursor, SortingQueueStrategy::Batch> sample_queue(
+        sample_cursors, /*enable_array_container=*/ false, /*enable_batch_detection=*/ true);
+
+    size_t rows = 0;
+    size_t rows_in_long_batches = 0;
+    while (sample_queue.isValid() && rows < rows_to_check)
+    {
+        auto [cursor, batch_size] = sample_queue.current();
+        if ((*cursor)->isLast(batch_size))
+            break;
+
+        rows += batch_size;
+        if (batch_size >= min_batch_size_to_take && !(*cursor)->permutation && sourceHasUniqueKeys((*cursor)->order))
+            rows_in_long_batches += batch_size - 2;
+
+        sample_queue.next(batch_size);
+    }
+
+    return rows_in_long_batches * 2 >= rows && rows_in_long_batches > 0;
 }
 
 bool IMergingAlgorithmWithSharedChunks::sourcesHaveRunsWorthSkipping() const
@@ -59,7 +108,6 @@ bool IMergingAlgorithmWithSharedChunks::sourcesHaveRunsWorthSkipping() const
     /// all over or none at all. The sample is also capped at a share of the chunk, so that this
     /// scan stays amortized over the merge of a small chunk as well.
     static constexpr size_t max_rows_to_check = 8192;
-    static constexpr size_t max_share_of_rows_to_check = 8;
 
     /// Skipping a run replaces the merge iterations of the rows strictly inside it by one probe
     /// for the end of the run, and that probe also runs on the rows that turn out not to be
@@ -74,7 +122,7 @@ bool IMergingAlgorithmWithSharedChunks::sourcesHaveRunsWorthSkipping() const
 
         /// Parts with a non-zero level are assumed to have no duplicates (see `rowsHaveDifferentSortColumns`),
         /// and rows sorted through a permutation are not physically adjacent.
-        if (cursor.empty() || cursor.permutation || sources_origin_merge_tree_part_level[source_num] > 0)
+        if (cursor.empty() || cursor.permutation || sourceHasUniqueKeys(source_num))
             continue;
 
         /// Three rows are needed for one of them to be strictly inside a run.
