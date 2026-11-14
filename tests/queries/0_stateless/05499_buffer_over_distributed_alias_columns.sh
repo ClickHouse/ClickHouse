@@ -9,6 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 USER="user_${CLICKHOUSE_DATABASE}"
+USER2="user2_${CLICKHOUSE_DATABASE}"
 
 ${CLICKHOUSE_CLIENT} --multiquery <<'EOF'
 CREATE TABLE t_05499_dst (s String, n UInt32, a String ALIAS upper(s), b UInt32 ALIAS n, c UInt32 ALIAS b, w UInt64 ALIAS n, d UInt8 ALIAS n > 1, aa String ALIAS lower(a)) ENGINE = MergeTree ORDER BY tuple();
@@ -87,6 +88,14 @@ ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_05499_dst
 ${CLICKHOUSE_CLIENT} --user "${USER}" --query "SELECT a FROM t_05499_buf1 ORDER BY a"
 ${CLICKHOUSE_CLIENT} --user "${USER}" --query "SELECT s FROM t_05499_buf1" 2>&1 | grep -o 'ACCESS_DENIED' | head -1
 
+echo "-- a grant on one column, a query that reads none"
+${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${USER2}"
+${CLICKHOUSE_CLIENT} --query "CREATE USER ${USER2}"
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT(s) ON ${CLICKHOUSE_DATABASE}.t_05499_buf1 TO ${USER2}"
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_05499_dist1 TO ${USER2}"
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_05499_dst TO ${USER2}"
+${CLICKHOUSE_CLIENT} --user "${USER2}" --query "SELECT length(groupArray(repeat('x', 1000))), count() FROM t_05499_buf1"
+
 ${CLICKHOUSE_CLIENT} --multiquery <<'EOF'
 -- DROP flushes the buffers, which a Merge or a two-shard Distributed without a sharding key cannot accept.
 SET send_logs_level = 'fatal';
@@ -103,3 +112,4 @@ DROP TABLE t_05499_dist1;
 DROP TABLE t_05499_dst;
 EOF
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${USER}"
+${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${USER2}"

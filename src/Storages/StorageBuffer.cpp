@@ -654,7 +654,7 @@ void StorageBuffer::read(
                     storage_snapshot->metadata->virtuals);
             /// The shipped query names the ALIAS's base columns; the caller checked access on the ALIAS names.
             if (is_shipped_query)
-                storage->setAccessChecked();
+                storage->setAccessChecked(NameSet(column_names.begin(), column_names.end()));
 
             auto interpreter = InterpreterSelectQueryAnalyzer(query, local_context, buffers_select_query_options, storage);
             interpreter.addStorageLimits(*query_info.storage_limits);

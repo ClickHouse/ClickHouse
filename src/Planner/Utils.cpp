@@ -641,7 +641,7 @@ NameSet checkAccessRights(
         return {};
 
     if (const auto * values = typeid_cast<const StorageValues *>(storage.get()); values && values->isAccessChecked())
-        return {};
+        return values->getColumnsAllowedToSelect();
 
     if (isInsertedDataOfTableFunction(storage, storage_id, query_context))
         return {};

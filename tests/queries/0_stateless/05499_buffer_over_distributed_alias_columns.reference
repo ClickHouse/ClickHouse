@@ -76,3 +76,5 @@ X
 Y
 Z
 ACCESS_DENIED
+-- a grant on one column, a query that reads none
+3	3
