@@ -18,6 +18,7 @@
 #include <base/itoa.h>
 #include <base/range.h>
 #include <base/sort.h>
+#include <base/unaligned.h>
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySource.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
@@ -25,7 +26,10 @@
 #include <Dictionaries/DictionaryFactory.h>
 #include <Functions/FunctionHelpers.h>
 
+#include <algorithm>
+#include <array>
 #include <charconv>
+#include <limits>
 #include <ranges>
 #include <stack>
 
@@ -206,6 +210,37 @@ inline static void mapIPv4ToIPv6(UInt32 addr, uint8_t * buf)
     buf[11] = '\xFF';
     addr = Poco::ByteOrder::toNetwork(addr);
     memcpy(&buf[12], &addr, 4);
+}
+
+/// An index holds 2^bits + 1 positions of 4 bytes, from about 1 KiB for 8 bits to about 64 MiB for 24 bits.
+static constexpr size_t DEFAULT_RADIX_BITS = 16;
+static constexpr std::array<UInt64, 7> ALLOWED_RADIX_BITS = {8, 14, 16, 18, 20, 22, 24};
+
+/// With the default size, a dictionary with fewer subnets of an address family does not get an index for it: the index would take
+/// about as much memory as the subnets themselves, or more.
+static constexpr size_t RADIX_INDEX_MIN_SUBNETS = 10000;
+
+void IPAddressDictionary::checkRadixPrefix(UInt64 value)
+{
+    if (std::find(ALLOWED_RADIX_BITS.begin(), ALLOWED_RADIX_BITS.end(), value) == ALLOWED_RADIX_BITS.end())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Parameter 'radix_prefix' of a dictionary of layout 'ip_trie' must be one of 8, 14, 16, 18, 20, 22, 24, got {}",
+            value);
+}
+
+/// Indexes `count` sorted subnets located at `offset` in ip_column. `get_bucket` must not decrease with the position.
+template <typename GetBucket>
+static void fillRadixIndex(VectorWithMemoryTracking<UInt32> & index, size_t buckets, size_t offset, size_t count, GetBucket && get_bucket)
+{
+    index.assign(buckets + 1, 0);
+
+    for (size_t i = offset; i < offset + count; ++i)
+        ++index[get_bucket(i) + 1];
+
+    index[0] = static_cast<UInt32>(offset);
+    for (size_t bucket = 1; bucket <= buckets; ++bucket)
+        index[bucket] += index[bucket - 1];
 }
 
 IPAddressDictionary::IPAddressDictionary(
@@ -612,10 +647,70 @@ void IPAddressDictionary::loadData()
         subnets_stack.push(i);
     }
 
+    buildRadixIndexes();
+
     LOG_TRACE(logger, "{} ip records are read", ip_records.size());
 
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
+}
+
+void IPAddressDictionary::buildRadixIndexes()
+{
+    const size_t rows = row_idx.size();
+
+    /// Positions in an index are 32-bit.
+    if (rows > std::numeric_limits<UInt32>::max())
+        return;
+
+    const size_t bits = configuration.radix_bits;
+    if (bits == 0)
+        return;
+
+    const size_t min_subnets = configuration.radix_min_subnets;
+    const size_t buckets = 1ULL << bits;
+    radix_shift = 32 - bits;
+
+    if (const auto * ipv4_col = std::get_if<IPv4Container>(&ip_column))
+    {
+        if (rows >= min_subnets)
+            fillRadixIndex(radix_index, buckets, 0, rows, [&](size_t i) { return (*ipv4_col)[i] >> radix_shift; });
+        return;
+    }
+
+    const auto & ipv6_col = std::get<IPv6Container>(ip_column);
+
+    /// IPv4-mapped addresses are adjacent because ip_column is sorted.
+    size_t mapped_begin = 0;
+    size_t mapped_count = 0;
+    for (const auto i : collections::range(0, rows))
+    {
+        bool is_mapped = false;
+        mappedIPv4ToBinary(getIPv6FromOffset(ipv6_col, i), is_mapped);
+        if (is_mapped)
+        {
+            if (mapped_count == 0)
+                mapped_begin = i;
+            ++mapped_count;
+        }
+    }
+
+    if (mapped_count >= min_subnets)
+    {
+        fillRadixIndex(mapped_ipv4_radix_index, buckets, mapped_begin, mapped_count, [&](size_t i)
+        {
+            bool is_mapped = false;
+            return mappedIPv4ToBinary(getIPv6FromOffset(ipv6_col, i), is_mapped) >> radix_shift;
+        });
+    }
+
+    if (rows - mapped_count >= min_subnets)
+    {
+        fillRadixIndex(radix_index, buckets, 0, rows, [&](size_t i)
+        {
+            return unalignedLoadBigEndian<UInt32>(getIPv6FromOffset(ipv6_col, i)) >> radix_shift;
+        });
+    }
 }
 
 template <typename T>
@@ -646,6 +741,8 @@ void IPAddressDictionary::calculateBytesAllocated()
     bytes_allocated += mask_column.size() * sizeof(mask_column[0]);
     bytes_allocated += parent_subnet.size() * sizeof(parent_subnet[0]);
     bytes_allocated += row_idx.size() * sizeof(row_idx[0]);
+    bytes_allocated += radix_index.size() * sizeof(UInt32);
+    bytes_allocated += mapped_ipv4_radix_index.size() * sizeof(UInt32);
     bytes_allocated += attributes.size() * sizeof(attributes.front());
 
     for (const auto & attribute : attributes)
@@ -1190,16 +1287,41 @@ IPAddressDictionary::RowIdxConstIter IPAddressDictionary::lookupIP(IPValueType t
             return memcmp16(value, getIPv6FromOffset(*ipv4or6_col, idx)) < 0;
     };
 
-    auto range = collections::range(0, row_idx.size());
-    auto found_it = std::upper_bound(range.begin(), range.end(), target, comp);
+    /// Subnets before `first` have lower addresses than the target, and subnets from `last` have higher ones.
+    size_t first = 0;
+    size_t last = row_idx.size();
+    const auto narrow_search = [&](const ContainerType<UInt32> & index, UInt32 top_bits)
+    {
+        const UInt32 bucket = top_bits >> radix_shift;
+        first = index[bucket];
+        last = index[bucket + 1];
+    };
 
-    if (found_it == range.begin())
-        return ipNotFound();
-
-    --found_it;
     if constexpr (std::is_same_v<IPContainerType, IPv4Container>)
     {
-        for (auto idx = *found_it;; idx = parent_subnet[idx])
+        if (!radix_index.empty())
+            narrow_search(radix_index, target);
+    }
+    else
+    {
+        bool is_mapped = false;
+        const UInt32 mapped_ipv4 = mapped_ipv4_radix_index.empty() ? 0 : mappedIPv4ToBinary(target, is_mapped);
+        if (is_mapped)
+            narrow_search(mapped_ipv4_radix_index, mapped_ipv4);
+        else if (!radix_index.empty())
+            narrow_search(radix_index, unalignedLoadBigEndian<UInt32>(target));
+    }
+
+    auto range = collections::range(first, last);
+    auto found_it = std::upper_bound(range.begin(), range.end(), target, comp);
+    const size_t found = first + std::distance(range.begin(), found_it);
+
+    if (found == 0)
+        return ipNotFound();
+
+    if constexpr (std::is_same_v<IPContainerType, IPv4Container>)
+    {
+        for (auto idx = found - 1;; idx = parent_subnet[idx])
         {
             if (matchIPv4Subnet(target, (*ipv4or6_col)[idx], mask_column[idx]))
                 return row_idx.begin() + idx;
@@ -1210,7 +1332,7 @@ IPAddressDictionary::RowIdxConstIter IPAddressDictionary::lookupIP(IPValueType t
     }
     else
     {
-        for (auto idx = *found_it;; idx = parent_subnet[idx])
+        for (auto idx = found - 1;; idx = parent_subnet[idx])
         {
             if (matchIPv6Subnet(target, getIPv6FromOffset(*ipv4or6_col, idx), mask_column[idx]))
                 return row_idx.begin() + idx;
@@ -1247,6 +1369,25 @@ void registerDictionaryTrie(DictionaryFactory & factory)
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
 
+        UInt8 radix_bits = 0;
+        size_t radix_min_subnets = 1;
+        const std::string radix_prefix_key = config_prefix + ".layout.ip_trie.radix_prefix";
+        if (config.has(radix_prefix_key))
+        {
+            if (config.getString(radix_prefix_key).empty())
+            {
+                radix_bits = DEFAULT_RADIX_BITS;
+                radix_min_subnets = RADIX_INDEX_MIN_SUBNETS;
+            }
+            else
+            {
+                /// A dictionary created by a DDL query was already checked, but not one from a configuration file.
+                const UInt64 value = config.getUInt64(radix_prefix_key);
+                IPAddressDictionary::checkRadixPrefix(value);
+                radix_bits = static_cast<UInt8>(value);
+            }
+        }
+
         auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
         const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
         bool use_async_executor
@@ -1256,6 +1397,8 @@ void registerDictionaryTrie(DictionaryFactory & factory)
             .dict_lifetime = dict_lifetime,
             .require_nonempty = require_nonempty,
             .use_async_executor = use_async_executor,
+            .radix_bits = radix_bits,
+            .radix_min_subnets = radix_min_subnets,
         };
         // This is specialised dictionary for storing IPv4 and IPv6 prefixes.
         return std::make_unique<IPAddressDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
@@ -1380,8 +1523,15 @@ SELECT dictGet('my_ip_trie_dictionary', ('asn', 'cca2'), IPv6StringToNum('2001:d
 Other types are not supported yet. The function returns the attribute for the prefix that corresponds to this IP address. If there are overlapping prefixes, the most specific one is returned.
 
 Data must completely fit into RAM.
+
+To speed up lookups in large dictionaries, use the `RADIX_PREFIX` parameter of the layout, which adds an index on the first bits of addresses. It does not change the results of lookups:
+
+- `LAYOUT(IP_TRIE(RADIX_PREFIX))` builds an index on the first 16 bits of addresses for each address family with at least 10000 subnets. It takes about 256 KiB of memory for each such address family.
+- `LAYOUT(IP_TRIE(RADIX_PREFIX n))`, with `n` one of 8, 14, 16, 18, 20, 22, 24, builds an index on the first `n` bits of addresses for each address family, whatever its number of subnets. It takes `4 * (2^n + 1)` bytes for each address family.
+
+In a configuration file, use `<radix_prefix/>` or `<radix_prefix>16</radix_prefix>` inside `<ip_trie>`. Without this parameter, the dictionary has no index.
 )DOCS_MD",
-        .syntax = "LAYOUT(IP_TRIE())",
+        .syntax = "LAYOUT(IP_TRIE([RADIX_PREFIX [n]]))",
         .related = {}});
 }
 

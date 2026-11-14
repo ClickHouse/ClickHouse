@@ -17,6 +17,7 @@
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Poco/String.h>
 #include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/IPAddressDictionary.h>
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Common/DNSResolver.h>
@@ -247,6 +248,22 @@ void buildLayoutConfiguration(
                 param->formatForErrorMessage());
         }
 
+        if (pair->value_omitted)
+        {
+            if (layout->layout_type != "ip_trie" || pair->first != "radix_prefix")
+            {
+                throw DB::Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Dictionary layout parameter '{}' of layout '{}' must have a value",
+                    pair->first,
+                    layout->layout_type);
+            }
+
+            AutoPtr<Element> parameter_without_value(doc->createElement(pair->first));
+            layout_type_element->appendChild(parameter_without_value);
+            continue;
+        }
+
         const ASTLiteral * value_literal = pair->second->as<ASTLiteral>();
         if (!value_literal)
         {
@@ -285,6 +302,19 @@ void buildLayoutConfiguration(
                 "Dictionary layout parameter value must be an UInt64, Float64, String, or a collection of (key, value) pairs, "
                 "got '{}' instead",
                 value_field.getTypeName());
+        }
+
+        /// Checked here, so that an invalid size is rejected by the CREATE query rather than at the first use of the dictionary.
+        if (layout->layout_type == "ip_trie" && pair->first == "radix_prefix")
+        {
+            if (value_field.getType() != Field::Types::UInt64)
+            {
+                throw DB::Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Parameter 'radix_prefix' of a dictionary of layout 'ip_trie' must be one of 8, 14, 16, 18, 20, 22, 24, got {}",
+                    applyVisitor(FieldVisitorToString(), value_field));
+            }
+            IPAddressDictionary::checkRadixPrefix(value_field.safeGet<UInt64>());
         }
 
         if (is_ssd_cache_layout)

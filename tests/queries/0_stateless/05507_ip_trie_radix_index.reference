@@ -1,0 +1,90 @@
+0
+Addresses
+300486	13820	152037	134388	241
+300120	299494	213	353	60
+Only IPv4 subnets
+0
+0
+0
+0
+Only IPv6 subnets
+0
+0
+0
+IPv4 and IPv6 subnets
+0
+0
+0
+Few IPv4 subnets
+0
+0
+Few IPv6 subnets
+0
+0
+Few subnets
+0
+Around the number of subnets that gets an index
+99.255.255.255	0	0
+100.0.0.0	1	1
+100.0.39.14	9999	9999
+100.0.39.15	0	10000
+100.0.39.16	0	0
+Around the IPv4-mapped addresses
+::	1	1	1
+::1	1	1	1
+::fffe:ffff:ffff	1	1	1
+::ffff:0:0	2	2	2
+::ffff:1.0.0.1	3000000	1000000	3000000
+::ffff:255.255.255.255	2	2	2
+::1:0:0:0	1	1	1
+2a00::	4000000	4000000	1
+ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff	1	1	1
+The parameter without a value survives a restart of the dictionary
+0
+CREATE DICTIONARY d (`prefix` String, `value` UInt64) PRIMARY KEY prefix SOURCE(NULL()) LIFETIME(MIN 0 MAX 0) LAYOUT(IP_TRIE(RADIX_PREFIX))
+CREATE DICTIONARY d (`prefix` String, `value` UInt64) PRIMARY KEY prefix SOURCE(NULL()) LIFETIME(MIN 0 MAX 0) LAYOUT(IP_TRIE(ACCESS_TO_KEY_FROM_ATTRIBUTES 1 RADIX_PREFIX))
+CREATE DICTIONARY d (`prefix` String, `value` UInt64) PRIMARY KEY prefix SOURCE(NULL()) LIFETIME(MIN 0 MAX 0) LAYOUT(IP_TRIE(RADIX_PREFIX 16))
+CREATE DICTIONARY d (`prefix` String, `value` UInt64) PRIMARY KEY prefix SOURCE(NULL()) LIFETIME(MIN 0 MAX 0) LAYOUT(IP_TRIE)
+Number of indexes
+ip_trie_radix_at_threshold	1
+ip_trie_radix_below_threshold	0
+ip_trie_radix_few_ipv4	1
+ip_trie_radix_few_ipv6	1
+ip_trie_radix_mixed	2
+ip_trie_radix_small	0
+ip_trie_radix_v4	1
+ip_trie_radix_v6	1
+Chosen size of the index
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+Memory of the index: 4 * (2^RADIX_PREFIX + 1) bytes for each one
+ip_trie_radix_v4	262148
+ip_trie_radix_v4_bits_22	16777220
+ip_trie_radix_v4_bits_8	1028
+ip_trie_radix_v6	262148
+ip_trie_radix_v6_bits_22	16777220
+ip_trie_radix_v6_bits_8	1028
+ip_trie_radix_mixed_bits_8	2056
+ip_trie_radix_small_bits_14	65540
+ip_trie_radix_small_bits_16	262148
+ip_trie_radix_small_bits_18	1048580
+ip_trie_radix_small_bits_20	4194308
+ip_trie_radix_small_bits_22	16777220
+ip_trie_radix_small_bits_24	67108868
+ip_trie_radix_small_bits_8	1028

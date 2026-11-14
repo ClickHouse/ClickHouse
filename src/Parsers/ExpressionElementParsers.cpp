@@ -2948,7 +2948,7 @@ bool ParserInterpolateElement::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 bool ParserFunctionWithKeyValueArguments::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserIdentifier id_parser;
-    ParserKeyValuePairsList pairs_list_parser;
+    ParserKeyValuePairsList pairs_list_parser(allow_key_without_value);
 
     ASTPtr identifier;
     ASTPtr expr_list_args;

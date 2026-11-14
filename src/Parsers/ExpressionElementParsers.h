@@ -523,8 +523,9 @@ protected:
 class ParserFunctionWithKeyValueArguments : public IParserBase
 {
 public:
-    explicit ParserFunctionWithKeyValueArguments(bool brackets_can_be_omitted_ = false)
+    explicit ParserFunctionWithKeyValueArguments(bool brackets_can_be_omitted_ = false, bool allow_key_without_value_ = false)
         : brackets_can_be_omitted(brackets_can_be_omitted_)
+        , allow_key_without_value(allow_key_without_value_)
     {
     }
 
@@ -534,6 +535,9 @@ protected:
 
     /// brackets for function arguments can be omitted
     bool brackets_can_be_omitted;
+
+    /// the last key of the arguments can have no value
+    bool allow_key_without_value;
 };
 
 /** Table engine, possibly with parameters. See examples from ParserIdentifierWithParameters

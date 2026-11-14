@@ -22,6 +22,8 @@ public:
     IAST * second = nullptr;
     /// Value is closed in brackets (HOST '127.0.0.1')
     bool second_with_brackets;
+    /// The key has no value (RADIX_PREFIX), then `second` is a NULL literal
+    bool value_omitted = false;
 
     ASTPair() : second_with_brackets(false) {}
 

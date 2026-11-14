@@ -110,7 +110,7 @@ bool ParserDictionaryRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
 bool ParserDictionaryLayout::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserFunctionWithKeyValueArguments key_value_func_p(/* brackets_can_be_omitted = */ true);
+    ParserFunctionWithKeyValueArguments key_value_func_p(/* brackets_can_be_omitted = */ true, /* allow_key_without_value = */ true);
     ASTPtr ast_func;
     if (!key_value_func_p.parse(pos, ast_func, expected))
         return false;

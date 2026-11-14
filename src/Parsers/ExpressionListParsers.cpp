@@ -480,6 +480,16 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     if (!id_parser.parse(pos, identifier, expected))
         return false;
 
+    if (allow_key_without_value && pos->type == TokenType::ClosingRoundBracket)
+    {
+        auto pair = make_intrusive<ASTPair>();
+        pair->first = Poco::toLower(identifier->as<ASTIdentifier>()->name());
+        pair->value_omitted = true;
+        pair->set(pair->second, make_intrusive<ASTLiteral>(Field()));
+        node = pair;
+        return true;
+    }
+
     /// If it's neither literal (scalar or collection), nor identifier, nor function, then it's possibly a list of pairs
     if (!func_parser.parse(pos, value, expected) && !literal_parser.parse(pos, value, expected)
         && !(pos->type == TokenType::OpeningSquareBracket && collections_parser.parse(pos, value, expected))
@@ -510,7 +520,7 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
 bool ParserKeyValuePairsList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserList parser(std::make_unique<ParserKeyValuePair>(), std::make_unique<ParserNothing>(), true, 0);
+    ParserList parser(std::make_unique<ParserKeyValuePair>(allow_key_without_value), std::make_unique<ParserNothing>(), true, 0);
     return parser.parse(pos, node, expected);
 }
 

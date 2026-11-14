@@ -24,6 +24,10 @@ public:
         DictionaryLifetime dict_lifetime;
         bool require_nonempty;
         bool use_async_executor = false;
+        /// The size of the radix index, in bits. Zero means no index.
+        UInt8 radix_bits = 0;
+        /// An address family with fewer subnets does not get an index.
+        size_t radix_min_subnets = 1;
     };
 
     IPAddressDictionary(
@@ -31,6 +35,9 @@ public:
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         Configuration configuration_);
+
+    /// Throws if `value` is not an allowed size of the radix index, the value of the layout parameter `radix_prefix`.
+    static void checkRadixPrefix(UInt64 value);
 
     std::string getKeyDescription() const { return key_description; }
 
@@ -163,6 +170,8 @@ private:
 
     void loadData();
 
+    void buildRadixIndexes();
+
     template <typename T>
     void addAttributeSize(const Attribute & attribute);
 
@@ -236,6 +245,20 @@ private:
 
     /// Contains corresponding indices in attributes array.
     ContainerType<size_t> row_idx;
+
+    /** Narrows down the binary search in ip_column. Subnets are sorted, so those whose addresses have the same top bits
+      * are adjacent: radix_index[top_bits] is the position of the first of them and radix_index[top_bits + 1] is the
+      * position past the last of them. Empty if the index is not requested, or if there are too few subnets for it.
+      */
+    ContainerType<UInt32> radix_index;
+
+    /** The same for IPv4 subnets stored in an IPv6 ip_column, by the top bits of the IPv4 address. All IPv4-mapped
+      * addresses have the same top bits as IPv6 addresses, so radix_index can not tell them apart.
+      */
+    ContainerType<UInt32> mapped_ipv4_radix_index;
+
+    /// Gives the position in the indexes from the top 32 bits of an address.
+    size_t radix_shift = 0;
 
     MapWithMemoryTracking<std::string, size_t> attribute_index_by_name;
     VectorWithMemoryTracking<Attribute> attributes;
