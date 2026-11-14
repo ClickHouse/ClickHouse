@@ -129,6 +129,16 @@ Once you set up CMEK, rotate the key by following the procedures above for creat
 
 When using CMEK, the validity of the provided KMS key is checked every 10 minutes. If access to the KMS key is invalid, the ClickHouse service will stop. To resume service, restore access to the KMS key by following the steps in this guide, and then restart the service.
 
+A service stopped by the key poller is not deleted, and there is no time limit for recovering it. If the key was revoked or disabled, restore access to the key and restart the service, and it comes back with its data.
+
+Deleting the key is different. Once a key is permanently deleted, the service data and its backups can no longer be decrypted (see the warning in [Customer Managed Encryption Keys](#customer-managed-encryption-keys-cmek)). Each KMS provider keeps a deleted key recoverable for a waiting period before destroying it:
+
+- AWS KMS: 7 to 30 days (30 by default). [Cancel the key deletion](https://docs.aws.amazon.com/kms/latest/developerguide/deleting-keys-scheduling-key-deletion.html), then enable the key.
+- GCP Cloud KMS: 30 days by default, configurable when the key is created. [Restore the key version](https://docs.cloud.google.com/kms/docs/destroy-restore), then enable it.
+- Azure Key Vault: 7 to 90 days, if soft-delete is enabled on the vault. [Recover the deleted key](https://learn.microsoft.com/en-us/azure/key-vault/general/key-vault-recovery).
+
+Once the key is usable again, restart the service.
+
 ### Backup and restore {#backup-and-restore}
 
 Backups are encrypted using the same key as the associated service. When you restore an encrypted backup, it creates an encrypted instance that uses the same KMS key as the original instance. If needed, you can rotate the KMS key after restoration; see [Key Rotation](#key-rotation) for more details.
