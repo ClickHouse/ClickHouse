@@ -1,5 +1,6 @@
 import base64
 import dataclasses
+import fnmatch
 import glob
 import json
 import multiprocessing
@@ -18,7 +19,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from shlex import quote
 from threading import Event, Thread
 from types import SimpleNamespace
@@ -756,14 +757,39 @@ class Utils:
     ) -> List["str"]:
         included_files_ = set()
         for path in include_paths:
-            included_files_.update(cls.traverse_path(path, file_suffixes=file_suffixes))
+            included_files_.update(
+                cls.traverse_path(
+                    path, file_suffixes=file_suffixes, not_exists_ok=not_exists_ok
+                )
+            )
 
-        exclude_paths = ["./" + p.removeprefix("./") for p in exclude_paths]
-        res = [
-            f
-            for f in included_files_
-            if not any(f.startswith(exclude_path) for exclude_path in exclude_paths)
-        ]
+        def is_excluded(file):
+            # Matching follows the digest-config semantics used by
+            # Job.CacheDigestConfig.is_excluded and
+            # workflow_hooks/filter_job.py: an exclude is an exact path, a
+            # directory prefix on a path boundary, or a glob. A plain
+            # startswith check silently ignores glob entries (an include may
+            # be one, so an exclude written the same way must work too) and
+            # also swallows sibling paths that merely share a name prefix.
+            file = os.path.normpath(file)
+            for exclude_path in exclude_paths:
+                exclude_path = os.path.normpath(exclude_path)
+                if file == exclude_path or file.startswith(exclude_path + os.sep):
+                    return True
+                if any(c in exclude_path for c in "*?["):
+                    if PurePosixPath("/" + file).match("/" + exclude_path):
+                        return True
+                    # PurePosixPath.match cannot cross directories with `**`
+                    # before Python 3.13; fnmatch covers the any-depth intent
+                    # of patterns such as `./**/*.pyc` in ci/praktika/cache.py.
+                    if "**" in exclude_path and (
+                        fnmatch.fnmatchcase(file, exclude_path)
+                        or fnmatch.fnmatchcase(file, exclude_path.replace("**/", ""))
+                    ):
+                        return True
+            return False
+
+        res = [f for f in included_files_ if not is_excluded(f)]
         if sorted:
             res.sort(reverse=True)
         return res
