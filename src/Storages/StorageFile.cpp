@@ -3377,6 +3377,16 @@ public:
 
     String getName() const override { return "StorageFileLazyRows"; }
 
+    void cancel(CancelReason reason) noexcept override
+    {
+        /// A partial result must still get the deferred columns of the rows already selected by the main branch.
+        if (reason == CancelReason::PartialResult)
+            return;
+
+        ISource::cancel(reason);
+    }
+    using ISource::cancel;
+
     Chunk generate() override
     {
         while (true)
