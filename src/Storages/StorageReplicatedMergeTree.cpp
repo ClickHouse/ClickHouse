@@ -277,6 +277,7 @@ namespace FailPoints
     extern const char rmt_mutation_prune_pause_before_zk_partition_list[];
     extern const char check_table_inject_retryable_zk_error[];
     extern const char check_table_inject_shutdown_abort[];
+    extern const char check_table_inject_no_keeper[];
 }
 
 namespace ErrorCodes
@@ -11036,6 +11037,18 @@ std::optional<CheckResult> StorageReplicatedMergeTree::checkDataNext(DataValidat
         fiu_do_on(FailPoints::check_table_inject_shutdown_abort, { aborted_by_shutdown = true; });
         if (aborted_by_shutdown)
             throw Exception(ErrorCodes::ABORTED, "Table shutdown was called");
+
+        /// A replica that attached without ever reaching Keeper (e.g. restart during Keeper outage)
+        /// has no Keeper session: `current_zookeeper` stays null (see StorageReplicatedMergeTree.cpp:535).
+        /// `findLocalPart` would then throw `NO_ZOOKEEPER` from `getZooKeeper()` (StorageReplicatedMergeTree.cpp:366),
+        /// which is not retryable, so the catch below would turn it into a failed per-part result and
+        /// `CHECK TABLE ... check_query_single_value_result = 1` would return 0 (false corruption alarm).
+        /// Treat it like shutdown: throw `ABORTED` (retryable) so the query fails instead.
+        /// See https://github.com/ClickHouse/ClickHouse/issues/124457
+        bool no_keeper = !tryGetZooKeeper();
+        fiu_do_on(FailPoints::check_table_inject_no_keeper, { no_keeper = true; });
+        if (no_keeper)
+            throw Exception(ErrorCodes::ABORTED, "Cannot check table without Keeper session");
 
         try
         {
