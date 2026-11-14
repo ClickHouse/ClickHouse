@@ -58,6 +58,7 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int CORRUPTED_DATA;
     extern const int FILE_DOESNT_EXIST;
+    extern const int LOGICAL_ERROR;
     extern const int UNSUPPORTED_METHOD;
     extern const int NOT_IMPLEMENTED;
 }
@@ -846,6 +847,7 @@ public:
     }
 
     size_t getCurrentBlockIndex() const { return current_block_index; }
+    size_t getCurrentBlocksSize() const { return current_blocks_size; }
 
     void reset()
     {
@@ -1488,6 +1490,12 @@ private:
                     }
                     else
                     {
+                        if (file_buffer.getCurrentBlockIndex() == 0)
+                            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Cannot flush write buffer of {} blocks into cache file of {} blocks",
+                                configuration.write_buffer_blocks_size,
+                                file_buffer.getCurrentBlocksSize());
+
                         /// Start reusing old partitions
                         current_partition_index = (current_partition_index + 1) % memory_buffer_partitions.size();
                         file_buffer.reset();

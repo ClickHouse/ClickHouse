@@ -93,6 +93,14 @@ static SSDCacheDictionaryStorageConfiguration parseSSDCacheStorageConfiguration(
             full_name,
             layout_type);
 
+    if (write_buffer_size > max_partitions_count * file_size)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "{}: dictionary of layout '{}' setting 'write_buffer_size' ({}) cannot be greater than maximum file capacity (max_partitions_count * file_size = {})",
+            full_name,
+            layout_type,
+            write_buffer_size,
+            max_partitions_count * file_size);
+
     auto file_path = config.getString(dictionary_layout_prefix + ".path");
     if (file_path.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
