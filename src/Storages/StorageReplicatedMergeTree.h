@@ -174,7 +174,7 @@ public:
     MutationCounters getMutationCounters() const override;
 
 protected:
-    DataPartsVector getActivePartsForColumnDefaultnessStats(ContextPtr query_context) const override;
+    DataPartsVector filterPartsForColumnDefaultnessStats(DataPartsVector parts, ContextPtr query_context) const override;
 public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
@@ -969,7 +969,6 @@ private:
         const Strings & replicas, const String & mutation_id, bool only_active = false) const;
 
     MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const override;
-    std::optional<Int64> getMaxRemovedMutationVersion(const String & partition_id) const override;
 
     void startBackgroundMovesIfNeeded() override;
 

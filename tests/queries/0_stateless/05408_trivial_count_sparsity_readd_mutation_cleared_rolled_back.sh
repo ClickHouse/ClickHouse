@@ -85,7 +85,7 @@ $CLICKHOUSE_CLIENT --query "SELECT 'part is active again:', count() FROM system.
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FAILPOINT"
 wait
 
-# The part is active again, but the commands it needs are no longer known, so the rewrite is declined.
+# The storage snapshot of the query still has the commands the part needs, so the rewrite is declined.
 echo "count with the rewrite:"
 cat "$OUTPUT"
 
@@ -95,4 +95,4 @@ $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
 $CLICKHOUSE_CLIENT --query "
     SELECT count() > 0 FROM system.text_log
     WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 1 HOUR AND logger_name LIKE '%$TABLE%'
-        AND message LIKE 'No defaultness stats for column x: part $PART has data version %, and a mutation with version % that may be required for it was removed from the history'"
+        AND message = 'No defaultness stats for column x: part $PART has a pending metadata mutation of this column'"

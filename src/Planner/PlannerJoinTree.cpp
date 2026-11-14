@@ -751,7 +751,9 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
     if (!classified)
         return false;
 
-    auto stats = storage->getColumnDefaultnessStats(classified->column_name, query_context);
+    /// The snapshot that the row scan of the table would read, so that the stats are consistent with it.
+    const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+    auto stats = storage->getColumnDefaultnessStats(classified->column_name, storage_snapshot, query_context);
     if (!stats)
         return false;
 

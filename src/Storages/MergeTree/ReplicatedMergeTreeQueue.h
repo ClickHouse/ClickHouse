@@ -187,13 +187,6 @@ private:
 
     /// Partition -> (block_number -> MutationStatus)
     std::unordered_map<String, std::map<Int64, MutationStatus *>> mutations_by_partition;
-    /// Partition -> the maximum block number of a mutation removed from `mutations_by_partition`.
-    /// A part captured by a running query may still need the commands of such a mutation
-    /// (see `MergeTreeData::getColumnDefaultnessStats`). Protected by `state_mutex`.
-    std::unordered_map<String, Int64> max_removed_mutation_block_number_by_partition;
-
-    /// Must be called under `state_mutex`.
-    void updateMaxRemovedMutationBlockNumber(const String & partition_id, Int64 block_number);
     /// Znode ID of the latest mutation that is done.
     String mutation_pointer;
     /// Modification time of the `mutation_pointer` znode, i.e. the time when the mutation
@@ -497,11 +490,6 @@ public:
     /// it according to part mutation version. Used when we apply alter commands on fly,
     /// without actual data modification on disk.
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot(const MutationsSnapshot::Params & params) const;
-
-    /// Returns the maximum block number of a mutation of the partition that was removed from the local state,
-    /// either because it was killed or because it was cleaned up from ZooKeeper. Zero if there was none.
-    /// See `MergeTreeData::getMaxRemovedMutationVersion`.
-    Int64 getMaxRemovedMutationBlockNumber(const String & partition_id) const;
 
     MutationCounters getMutationCounters() const;
 

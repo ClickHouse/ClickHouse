@@ -6528,12 +6528,18 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(
 }
 
 MergeTreeData::DataPartsVector
-StorageReplicatedMergeTree::getActivePartsForColumnDefaultnessStats(ContextPtr query_context) const
+StorageReplicatedMergeTree::filterPartsForColumnDefaultnessStats(DataPartsVector parts, ContextPtr query_context) const
 {
-    DataPartsVector parts;
-    foreachActiveParts(
-        [&](auto & part) { parts.push_back(part); },
-        query_context->getSettingsRef()[Setting::select_sequential_consistency]);
+    if (!query_context->getSettingsRef()[Setting::select_sequential_consistency])
+        return parts;
+
+    /// The same filter as in `foreachActiveParts`: skip the parts that are not yet written to the quorum.
+    const auto max_added_blocks = getMaxAddedBlocks();
+    std::erase_if(parts, [&](const DataPartPtr & part)
+    {
+        auto blocks_iterator = max_added_blocks.find(part->info.getPartitionId());
+        return blocks_iterator == max_added_blocks.end() || part->info.max_block > blocks_iterator->second;
+    });
     return parts;
 }
 
@@ -11126,11 +11132,6 @@ bool StorageReplicatedMergeTree::canUseAdaptiveGranularity() const
 MergeTreeData::MutationsSnapshotPtr StorageReplicatedMergeTree::getMutationsSnapshot(const IMutationsSnapshot::Params & params) const
 {
     return queue.getMutationsSnapshot(params);
-}
-
-std::optional<Int64> StorageReplicatedMergeTree::getMaxRemovedMutationVersion(const String & partition_id) const
-{
-    return queue.getMaxRemovedMutationBlockNumber(partition_id);
 }
 
 MutationCounters StorageReplicatedMergeTree::getMutationCounters() const

@@ -43,6 +43,14 @@ $CLICKHOUSE_CLIENT --query "
     ALTER TABLE $TABLE DROP COLUMN x, ADD COLUMN x Int64 SETTINGS alter_sync = 0, mutations_sync = 0;
 "
 
+# With `alter_sync = 0` the replica applies the new metadata asynchronously. Wait until the reads apply the pending
+# `DROP COLUMN x, ADD COLUMN x Int64`, otherwise the query below would still read the old column.
+for _ in {1..600}
+do
+    [[ $($CLICKHOUSE_CLIENT --query "SELECT count() FROM $TABLE WHERE x = 0 SETTINGS optimize_trivial_count_with_sparsity_filter = 0") == 2 ]] && break
+    sleep 0.1
+done
+
 PART=$($CLICKHOUSE_CLIENT --query "SELECT name FROM system.parts WHERE database = currentDatabase() AND table = '$TABLE' AND active")
 
 QUERY="SELECT count(),
@@ -75,7 +83,7 @@ $CLICKHOUSE_CLIENT --query "
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FAILPOINT"
 wait
 
-# The part is still active, but the commands it needs are not known at the moment, so the rewrite is declined
+# The storage snapshot of the query still has the commands the part needs, so the rewrite is declined
 # and the count matches the row scan.
 echo "count with the rewrite and the row scan:"
 cat "$OUTPUT"
@@ -84,4 +92,4 @@ $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
 $CLICKHOUSE_CLIENT --query "
     SELECT count() > 0 FROM system.text_log
     WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 1 HOUR AND logger_name LIKE '%$TABLE%'
-        AND message LIKE 'No defaultness stats for column x: part $PART has data version %, and a mutation with version % that may be required for it was removed from the history'"
+        AND message = 'No defaultness stats for column x: part $PART has a pending metadata mutation of this column'"

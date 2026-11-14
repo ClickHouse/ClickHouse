@@ -889,15 +889,15 @@ public:
     size_t getTotalUncompressedBytesInPatches() const;
 
     /// All-or-nothing aggregate of per-part `SerializationInfo::Data` for `column_name`:
-    /// returns nullopt unless every visible part has exact stats (see `SparsityFilter.h`).
+    /// returns nullopt unless every part of `storage_snapshot` has exact stats (see `SparsityFilter.h`).
     std::optional<ColumnDefaultnessStats>
-    getColumnDefaultnessStats(const String & column_name, ContextPtr query_context) const override;
+    getColumnDefaultnessStats(const String & column_name, const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override;
 
 protected:
-    /// Active parts to consult when aggregating whole-table column statistics. The base
-    /// returns `getVisibleDataPartsVector`; `StorageReplicatedMergeTree` overrides this
+    /// Filters the parts of the query's storage snapshot to consult when aggregating whole-table column statistics.
+    /// The base returns them as is; `StorageReplicatedMergeTree` overrides this
     /// to honor `select_sequential_consistency` the same way `totalRows` does.
-    virtual DataPartsVector getActivePartsForColumnDefaultnessStats(ContextPtr query_context) const;
+    virtual DataPartsVector filterPartsForColumnDefaultnessStats(DataPartsVector parts, ContextPtr query_context) const;
 public:
 
     size_t getAllPartsCount() const;
@@ -1508,14 +1508,6 @@ public:
 
     /// Returns a snapshot of mutations that probably will be applied on the fly to parts during reading.
     virtual MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const = 0;
-
-    /// Returns the maximum version of a mutation that was removed from the history of mutations of the partition
-    /// (see `finished_mutations_to_keep` and `KILL MUTATION`). The commands of such a mutation are no longer
-    /// in the snapshot of mutations, even for a part of this partition with a lower data version that is still
-    /// active (e.g. the mutation was killed), visible to a transaction, or activated again by a rollback
-    /// of the transaction that removed it. Storages with versions that are global for the table may ignore `partition_id`.
-    /// The default is `std::nullopt`, which means that the removed versions are not tracked.
-    virtual std::optional<Int64> getMaxRemovedMutationVersion(const String & /*partition_id*/) const { return std::nullopt; }
 
     /// Per-partition promoters for streaming reads.
     virtual CursorPromotersMap buildPromoters() = 0;
