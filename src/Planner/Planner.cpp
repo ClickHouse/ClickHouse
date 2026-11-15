@@ -3243,13 +3243,15 @@ void Planner::buildPlanForQueryNode()
     /// The check is skipped when the filter travels inside a shipped plan: on the plan-based path, or
     /// with `serialize_query_plan` and a local plan, which a leaf timeout the local replica cannot
     /// honor rules out. With `serialize_query_plan` and no local plan only the entries a follower
-    /// would match differently are refused, see `hasSessionRelativeAdditionalFilter`.
+    /// would match differently are refused, see `hasSessionRelativeAdditionalFilter`, and only when
+    /// some table of the query can be read with replicas.
     if (query_context->canUseParallelReplicasOnInitiator()
         && !settings[Setting::parallel_replicas_plan_based]
         && (!settings[Setting::serialize_query_plan]
                 ? hasAdditionalTableFilters(query_tree, query_context)
                 : (!ClusterProxy::canUseLocalPlanForParallelReplicas(query_context)
                         || ClusterProxy::leafTimeoutRequiresRemoteOnlyLeafReading(settings))
+                    && findTableForParallelReplicas(query_tree, SelectQueryOptions{})
                     && hasSessionRelativeAdditionalFilter(query_tree, query_context)))
     {
         if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
