@@ -110,6 +110,8 @@ def test_inactive_replica_changes_min_marks_per_task_on_s3(start_cluster):
                 "enable_parallel_replicas": 1,
                 "max_parallel_replicas": 3,
                 "cluster_for_parallel_replicas": db,
+                # Read the data: do not answer `sum` from the per-part statistics.
+                "use_statistics_for_sum_avg_aggregation": 0,
                 "max_threads": 1,
                 # Keep the byte term out of the min(), so `total_query_nodes` drives `min_marks_per_task`.
                 "merge_tree_min_bytes_per_task_for_remote_reading": 10 * 1024 * 1024 * 1024,

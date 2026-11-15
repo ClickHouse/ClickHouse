@@ -91,6 +91,8 @@ def test_inactive_replica_excluded_from_parallel_replicas(start_cluster):
                 "enable_parallel_replicas": 1,
                 "max_parallel_replicas": 3,
                 "cluster_for_parallel_replicas": db,
+                # Read the data: do not answer `sum` from the per-part statistics.
+                "use_statistics_for_sum_avg_aggregation": 0,
             },
         )
         assert result == "4999950000\n"
@@ -150,6 +152,8 @@ def test_replica_count_capped_by_max_parallel_replicas(start_cluster):
             "enable_parallel_replicas": 1,
             "max_parallel_replicas": 2,
             "cluster_for_parallel_replicas": db,
+            # Read the data: do not answer `sum` from the per-part statistics.
+            "use_statistics_for_sum_avg_aggregation": 0,
         },
     )
     assert result == "4999950000\n"
