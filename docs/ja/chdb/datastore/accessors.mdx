@@ -1,0 +1,640 @@
+---
+title: 'DataStore アクセサ'
+sidebarTitle: 'アクセサ'
+slug: /chdb/datastore/accessors
+description: 'String、DateTime、Array、JSON、URL、IP、Geo のアクセサと 185 以上のメソッド'
+keywords: ['chdb', 'datastore', 'accessor', 'str', 'dt', 'arr', 'json', 'url', 'ip', 'geo']
+doc_type: 'reference'
+---
+
+DataStore では、ドメイン固有の操作に対応する 7 つのアクセサ名前空間で、185 以上のメソッドを利用できます。
+
+| アクセサ    | メソッド | 説明                         |
+| ------- | ---- | -------------------------- |
+| `.str`  | 56   | 文字列操作                      |
+| `.dt`   | 42+  | DateTime 操作                |
+| `.arr`  | 37   | Array 操作 (ClickHouse 固有)   |
+| `.json` | 13   | JSON のパース (ClickHouse 固有)  |
+| `.url`  | 15   | URL のパース (ClickHouse 固有)   |
+| `.ip`   | 9    | IP アドレス操作 (ClickHouse 固有)  |
+| `.geo`  | 14   | Geo/距離の操作 (ClickHouse 固有)  |
+
+***
+
+<div id="str">
+  ## String アクセサ (`.str`)
+</div>
+
+pandas の `.str` メソッド全 56 種類に加え、ClickHouse の文字列関数にも対応しています。
+
+<div id="str-case">
+  ### 大文字・小文字の変換
+</div>
+
+| Method         | ClickHouse  | Description   |
+| -------------- | ----------- | ------------- |
+| `upper()`      | `upper()`   | 大文字に変換        |
+| `lower()`      | `lower()`   | 小文字に変換        |
+| `capitalize()` | `initcap()` | 先頭文字を大文字化     |
+| `title()`      | `initcap()` | タイトルケースに変換    |
+| `swapcase()`   | -           | 大文字・小文字を反転    |
+| `casefold()`   | `lower()`   | 大文字・小文字を折りたたむ |
+
+```python
+ds['name_upper'] = ds['name'].str.upper()
+ds['name_title'] = ds['name'].str.title()
+```
+
+<div id="str-length">
+  ### 長さとサイズ
+</div>
+
+| Method          | ClickHouse      | Description    |
+| --------------- | --------------- | -------------- |
+| `len()`         | `length()`      | 文字列の長さ (バイト数)  |
+| `char_length()` | `char_length()` | 文字数            |
+
+```python
+ds['name_len'] = ds['name'].str.len()
+```
+
+<div id="str-substring">
+  ### 部分文字列とスライス
+</div>
+
+| メソッド                 | ClickHouse    | 説明        |
+| -------------------- | ------------- | --------- |
+| `slice(start, stop)` | `substring()` | 部分文字列を抽出  |
+| `slice_replace()`    | -             | スライスを置換   |
+| `left(n)`            | `left()`      | 左端から n 文字 |
+| `right(n)`           | `right()`     | 右端から n 文字 |
+| `get(i)`             | -             | 指定した位置の文字 |
+
+```python
+ds['first_3'] = ds['name'].str.slice(0, 3)
+ds['last_4'] = ds['name'].str.right(4)
+```
+
+<div id="str-trim">
+  ### トリミング
+</div>
+
+| メソッド       | ClickHouse    | 説明         |
+| ---------- | ------------- | ---------- |
+| `strip()`  | `trim()`      | 空白文字を削除    |
+| `lstrip()` | `trimLeft()`  | 先頭の空白文字を削除 |
+| `rstrip()` | `trimRight()` | 末尾の空白文字を削除 |
+
+```python
+ds['trimmed'] = ds['text'].str.strip()
+```
+
+<div id="str-search">
+  ### 検索とマッチング
+</div>
+
+| Method            | ClickHouse     | 説明                   |
+| ----------------- | -------------- | -------------------- |
+| `contains(pat)`   | `position()`   | 部分文字列を含む             |
+| `startswith(pat)` | `startsWith()` | プレフィックスで始まる          |
+| `endswith(pat)`   | `endsWith()`   | 接尾辞で終わる              |
+| `find(sub)`       | `position()`   | 位置を検索                |
+| `rfind(sub)`      | -              | 末尾側から検索              |
+| `index(sub)`      | `position()`   | 検索し、見つからなければエラー      |
+| `rindex(sub)`     | -              | 末尾側から検索し、見つからなければエラー |
+| `match(pat)`      | `match()`      | 正規表現に一致              |
+| `fullmatch(pat)`  | -              | 文字列全体が正規表現に一致        |
+| `count(pat)`      | -              | 出現回数を数える             |
+
+```python
+# 部分文字列を含むか確認
+ds['has_john'] = ds['name'].str.contains('John')
+
+# 正規表現マッチ
+ds['valid_email'] = ds['email'].str.match(r'^[\w.-]+@[\w.-]+\.\w+$')
+```
+
+<div id="str-replace">
+  ### 置換
+</div>
+
+| メソッド                             | ClickHouse           | 説明         |
+| -------------------------------- | -------------------- | ---------- |
+| `replace(pat, repl)`             | `replace()`          | 一致箇所を置換    |
+| `replace(pat, repl, regex=True)` | `replaceRegexpAll()` | 正規表現で置換    |
+| `removeprefix(prefix)`           | -                    | プレフィックスを削除 |
+| `removesuffix(suffix)`           | -                    | 接尾辞を削除     |
+| `translate(table)`               | -                    | 文字を変換      |
+
+```python
+ds['cleaned'] = ds['text'].str.replace('\n', ' ')
+ds['digits_only'] = ds['phone'].str.replace(r'\D', '', regex=True)
+```
+
+<div id="str-split">
+  ### 分割
+</div>
+
+| Method            | ClickHouse        | Description |
+| ----------------- | ----------------- | ----------- |
+| `split(sep)`      | `splitByString()` | Arrayに分割    |
+| `rsplit(sep)`     | -                 | 右から分割       |
+| `partition(sep)`  | -                 | 3つに分割       |
+| `rpartition(sep)` | -                 | 右から3つに分割    |
+
+```python
+ds['parts'] = ds['path'].str.split('/')
+```
+
+<div id="str-padding">
+  ### パディング
+</div>
+
+| Method          | ClickHouse          | Description |
+| --------------- | ------------------- | ----------- |
+| `pad(width)`    | `leftPad()`         | 左埋め         |
+| `ljust(width)`  | `rightPad()`        | 右寄せ         |
+| `rjust(width)`  | `leftPad()`         | 左寄せ         |
+| `center(width)` | -                   | 中央寄せ        |
+| `zfill(width)`  | `leftPad(..., '0')` | ゼロ埋め        |
+
+```python
+ds['padded_id'] = ds['id'].astype(str).str.zfill(6)
+```
+
+<div id="str-tests">
+  ### 文字種のテスト
+</div>
+
+| メソッド          | 説明      |
+| ------------- | ------- |
+| `isalpha()`   | すべて英字   |
+| `isdigit()`   | すべて数字   |
+| `isalnum()`   | 英数字     |
+| `isspace()`   | すべて空白文字 |
+| `isupper()`   | すべて大文字  |
+| `islower()`   | すべて小文字  |
+| `istitle()`   | タイトルケース |
+| `isnumeric()` | 数値文字    |
+| `isdecimal()` | 10進数字文字 |
+
+```python
+ds['is_numeric'] = ds['code'].str.isdigit()
+```
+
+<div id="str-other">
+  ### その他
+</div>
+
+| メソッド               | 説明             |
+| ------------------ | -------------- |
+| `repeat(n)`        | n 回繰り返す        |
+| `reverse()`        | 文字列を反転する       |
+| `wrap(width)`      | テキストを折り返す      |
+| `encode(enc)`      | エンコードする        |
+| `decode(enc)`      | デコードする         |
+| `normalize(form)`  | Unicode 正規化を行う |
+| `extract(pat)`     | 正規表現のグループを抽出する |
+| `extractall(pat)`  | 一致したものをすべて抽出する |
+| `cat(sep)`         | すべてを連結する       |
+| `get_dummies(sep)` | ダミー変数に変換する     |
+
+***
+
+<div id="dt">
+  ## DateTime アクセサ (`.dt`)
+</div>
+
+pandas の `.dt` メソッド (42 種類以上) に加え、ClickHouse の datetime 関数もすべて利用できます。
+
+<div id="dt-components">
+  ### 日付の部分
+</div>
+
+| プロパティ           | ClickHouse        | 説明        |
+| --------------- | ----------------- | --------- |
+| `year`          | `toYear()`        | 年         |
+| `month`         | `toMonth()`       | 月 (1-12)  |
+| `day`           | `toDayOfMonth()`  | 日 (1-31)  |
+| `hour`          | `toHour()`        | 時 (0-23)  |
+| `minute`        | `toMinute()`      | 分 (0-59)  |
+| `second`        | `toSecond()`      | 秒 (0-59)  |
+| `millisecond`   | `toMillisecond()` | ミリ秒       |
+| `microsecond`   | `toMicrosecond()` | マイクロ秒     |
+| `quarter`       | `toQuarter()`     | 四半期 (1-4) |
+| `dayofweek`     | `toDayOfWeek()`   | 曜日 (0=月)  |
+| `dayofyear`     | `toDayOfYear()`   | 年内通算日     |
+| `week`          | `toWeek()`        | 週番号       |
+| `days_in_month` | -                 | 月の日数      |
+
+```python
+ds['year'] = ds['date'].dt.year
+ds['month'] = ds['date'].dt.month
+ds['day_of_week'] = ds['date'].dt.dayofweek
+```
+
+<div id="dt-truncation">
+  ### 切り捨て
+</div>
+
+| Method                  | ClickHouse           | 説明      |
+| ----------------------- | -------------------- | ------- |
+| `to_start_of_day()`     | `toStartOfDay()`     | 日の始まり   |
+| `to_start_of_week()`    | `toStartOfWeek()`    | 週の始まり   |
+| `to_start_of_month()`   | `toStartOfMonth()`   | 月の始まり   |
+| `to_start_of_quarter()` | `toStartOfQuarter()` | 四半期の始まり |
+| `to_start_of_year()`    | `toStartOfYear()`    | 年の始まり   |
+| `to_start_of_hour()`    | `toStartOfHour()`    | 時間の始まり  |
+| `to_start_of_minute()`  | `toStartOfMinute()`  | 分の始まり   |
+
+```python
+ds['month_start'] = ds['date'].dt.to_start_of_month()
+```
+
+<div id="dt-arithmetic">
+  ### 算術演算
+</div>
+
+| Method               | ClickHouse         | Description |
+| -------------------- | ------------------ | ----------- |
+| `add_years(n)`       | `addYears()`       | 年を加算        |
+| `add_months(n)`      | `addMonths()`      | 月を加算        |
+| `add_weeks(n)`       | `addWeeks()`       | 週を加算        |
+| `add_days(n)`        | `addDays()`        | 日を加算        |
+| `add_hours(n)`       | `addHours()`       | 時間を加算       |
+| `add_minutes(n)`     | `addMinutes()`     | 分を加算        |
+| `add_seconds(n)`     | `addSeconds()`     | 秒を加算        |
+| `subtract_years(n)`  | `subtractYears()`  | 年を減算        |
+| `subtract_months(n)` | `subtractMonths()` | 月を減算        |
+| `subtract_days(n)`   | `subtractDays()`   | 日を減算        |
+
+```python
+ds['next_month'] = ds['date'].dt.add_months(1)
+ds['last_week'] = ds['date'].dt.subtract_weeks(1)
+```
+
+<div id="dt-checks">
+  ### 真偽値判定
+</div>
+
+| メソッド                 | 説明     |
+| -------------------- | ------ |
+| `is_month_start()`   | 月の初日   |
+| `is_month_end()`     | 月の末日   |
+| `is_quarter_start()` | 四半期の初日 |
+| `is_quarter_end()`   | 四半期の末日 |
+| `is_year_start()`    | 年の初日   |
+| `is_year_end()`      | 年の末日   |
+| `is_leap_year()`     | うるう年   |
+
+```python
+ds['is_eom'] = ds['date'].dt.is_month_end()
+```
+
+<div id="dt-formatting">
+  ### フォーマット
+</div>
+
+| メソッド            | ClickHouse         | 説明           |
+| --------------- | ------------------ | ------------ |
+| `strftime(fmt)` | `formatDateTime()` | 文字列形式でフォーマット |
+| `day_name()`    | -                  | 曜日名          |
+| `month_name()`  | -                  | 月名           |
+
+```python
+ds['date_str'] = ds['date'].dt.strftime('%Y-%m-%d')
+ds['day_name'] = ds['date'].dt.day_name()
+```
+
+<div id="dt-timezone">
+  ### タイムゾーン
+</div>
+
+| メソッド              | ClickHouse     | 説明        |
+| ----------------- | -------------- | --------- |
+| `tz_convert(tz)`  | `toTimezone()` | タイムゾーンを変換 |
+| `tz_localize(tz)` | -              | タイムゾーンを付与 |
+
+```python
+ds['utc_time'] = ds['timestamp'].dt.tz_convert('UTC')
+```
+
+***
+
+<div id="arr">
+  ## Array アクセサ (`.arr`)
+</div>
+
+ClickHouse 固有の配列操作 (37 個のメソッド) 。
+
+<div id="arr-properties">
+  ### プロパティ
+</div>
+
+| プロパティ       | ClickHouse   | 説明        |
+| ----------- | ------------ | --------- |
+| `length`    | `length()`   | Arrayの長さ  |
+| `size`      | `length()`   | lengthの別名 |
+| `empty`     | `empty()`    | 空であるか     |
+| `not_empty` | `notEmpty()` | 空でないか     |
+
+```python
+ds['tag_count'] = ds['tags'].arr.length
+ds['has_tags'] = ds['tags'].arr.not_empty
+```
+
+<div id="arr-access">
+  ### 要素アクセス
+</div>
+
+| Method                  | ClickHouse              | Description |
+| ----------------------- | ----------------------- | ----------- |
+| `array_first()`         | `arrayElement(..., 1)`  | 最初の要素       |
+| `array_last()`          | `arrayElement(..., -1)` | 最後の要素       |
+| `array_element(n)`      | `arrayElement()`        | N番目の要素      |
+| `array_slice(off, len)` | `arraySlice()`          | 配列のスライス     |
+
+```python
+ds['first_tag'] = ds['tags'].arr.array_first()
+ds['last_tag'] = ds['tags'].arr.array_last()
+```
+
+<div id="arr-aggregations">
+  ### 集計
+</div>
+
+| メソッド              | ClickHouse       | 説明     |
+| ----------------- | ---------------- | ------ |
+| `array_sum()`     | `arraySum()`     | 要素の合計  |
+| `array_avg()`     | `arrayAvg()`     | 平均     |
+| `array_min()`     | `arrayMin()`     | 最小値    |
+| `array_max()`     | `arrayMax()`     | 最大値    |
+| `array_product()` | `arrayProduct()` | 要素の積   |
+| `array_uniq()`    | `arrayUniq()`    | 一意な値の数 |
+
+```python
+ds['total'] = ds['values'].arr.array_sum()
+ds['average'] = ds['values'].arr.array_avg()
+```
+
+<div id="arr-transformations">
+  ### 変換
+</div>
+
+| Method                 | ClickHouse           | 説明        |
+| ---------------------- | -------------------- | --------- |
+| `array_sort()`         | `arraySort()`        | 昇順でソート    |
+| `array_reverse_sort()` | `arrayReverseSort()` | 降順でソート    |
+| `array_reverse()`      | `arrayReverse()`     | 順序を逆にする   |
+| `array_distinct()`     | `arrayDistinct()`    | 要素を一意化    |
+| `array_compact()`      | `arrayCompact()`     | 連続する重複を削除 |
+| `array_flatten()`      | `arrayFlatten()`     | ネストを平坦化   |
+
+```python
+ds['sorted_tags'] = ds['tags'].arr.array_sort()
+ds['unique_tags'] = ds['tags'].arr.array_distinct()
+```
+
+<div id="arr-modifications">
+  ### 変更
+</div>
+
+| メソッド                     | ClickHouse         | 説明    |
+| ------------------------ | ------------------ | ----- |
+| `array_push_back(elem)`  | `arrayPushBack()`  | 末尾に追加 |
+| `array_push_front(elem)` | `arrayPushFront()` | 先頭に追加 |
+| `array_pop_back()`       | `arrayPopBack()`   | 末尾を削除 |
+| `array_pop_front()`      | `arrayPopFront()`  | 先頭を削除 |
+| `array_concat(other)`    | `arrayConcat()`    | 連結    |
+
+<div id="arr-search">
+  ### 検索
+</div>
+
+| メソッド                | ClickHouse     | 説明       |
+| ------------------- | -------------- | -------- |
+| `has(elem)`         | `has()`        | 要素を含む    |
+| `index_of(elem)`    | `indexOf()`    | 位置を取得    |
+| `count_equal(elem)` | `countEqual()` | 出現回数を数える |
+
+```python
+ds['has_python'] = ds['skills'].arr.has('Python')
+```
+
+<div id="arr-string">
+  ### 文字列操作
+</div>
+
+| メソッド                       | ClickHouse            | 説明       |
+| -------------------------- | --------------------- | -------- |
+| `array_string_concat(sep)` | `arrayStringConcat()` | 文字列として連結 |
+
+```python
+ds['tags_str'] = ds['tags'].arr.array_string_concat(', ')
+```
+
+***
+
+<div id="json">
+  ## JSON アクセサ (`.json`)
+</div>
+
+ClickHouse 固有の JSON パース (13 個のメソッド) 。
+
+| Method             | ClickHouse            | Description |
+| ------------------ | --------------------- | ----------- |
+| `get_string(path)` | `JSONExtractString()` | 文字列を抽出      |
+| `get_int(path)`    | `JSONExtractInt()`    | 整数を抽出       |
+| `get_float(path)`  | `JSONExtractFloat()`  | 浮動小数点数を抽出   |
+| `get_bool(path)`   | `JSONExtractBool()`   | 真偽値を抽出      |
+| `get_raw(path)`    | `JSONExtractRaw()`    | 生の JSON を抽出 |
+| `get_keys()`       | `JSONExtractKeys()`   | キーを取得       |
+| `get_type(path)`   | `JSONType()`          | 型を取得        |
+| `get_length(path)` | `JSONLength()`        | 長さを取得       |
+| `has_key(key)`     | `JSONHas()`           | キーの存在を確認    |
+| `is_valid()`       | `isValidJSON()`       | JSON が有効か検証 |
+| `to_json_string()` | `toJSONString()`      | JSON 文字列に変換 |
+
+```python
+# JSONカラムをパースする
+ds['user_name'] = ds['json_data'].json.get_string('user.name')
+ds['user_age'] = ds['json_data'].json.get_int('user.age')
+ds['is_active'] = ds['json_data'].json.get_bool('user.active')
+ds['has_email'] = ds['json_data'].json.has_key('user.email')
+```
+
+***
+
+<div id="url">
+  ## URL アクセサ (`.url`)
+</div>
+
+ClickHouse 固有の URL パース用メソッド (15 個) 。
+
+| メソッド                          | ClickHouse               | 説明                  |
+| ----------------------------- | ------------------------ | ------------------- |
+| `domain()`                    | `domain()`               | ドメインを抽出             |
+| `domain_without_www()`        | `domainWithoutWWW()`     | www を除いたドメイン        |
+| `top_level_domain()`          | `topLevelDomain()`       | TLD                 |
+| `protocol()`                  | `protocol()`             | プロトコル (http/https)  |
+| `path()`                      | `path()`                 | URL パス              |
+| `path_full()`                 | `pathFull()`             | クエリ文字列を含むパス         |
+| `query_string()`              | `queryString()`          | クエリ文字列              |
+| `fragment()`                  | `fragment()`             | フラグメント (#...)       |
+| `port()`                      | `port()`                 | ポート番号               |
+| `extract_url_parameter(name)` | `extractURLParameter()`  | クエリパラメータを取得         |
+| `extract_url_parameters()`    | `extractURLParameters()` | すべてのパラメータ           |
+| `cut_url_parameter(name)`     | `cutURLParameter()`      | パラメータを削除            |
+| `decode_url_component()`      | `decodeURLComponent()`   | URL デコード            |
+| `encode_url_component()`      | `encodeURLComponent()`   | URL エンコード           |
+
+```python
+# URLを解析
+ds['domain'] = ds['url'].url.domain()
+ds['path'] = ds['url'].url.path()
+ds['utm_source'] = ds['url'].url.extract_url_parameter('utm_source')
+```
+
+***
+
+<div id="ip">
+  ## IP アクセサ (`.ip`)
+</div>
+
+ClickHouse固有の IP アドレス操作 (9 個のメソッド) 。
+
+| Method                     | ClickHouse          | Description     |
+| -------------------------- | ------------------- | --------------- |
+| `to_ipv4()`                | `toIPv4()`          | IPv4 に変換        |
+| `to_ipv6()`                | `toIPv6()`          | IPv6 に変換        |
+| `ipv4_num_to_string()`     | `IPv4NumToString()` | 数値を文字列に変換       |
+| `ipv4_string_to_num()`     | `IPv4StringToNum()` | 文字列を数値に変換       |
+| `ipv6_num_to_string()`     | `IPv6NumToString()` | IPv6 の数値を文字列に変換 |
+| `ipv4_to_ipv6()`           | `IPv4ToIPv6()`      | IPv6 に変換        |
+| `is_ipv4_string()`         | `isIPv4String()`    | IPv4 形式か検証      |
+| `is_ipv6_string()`         | `isIPv6String()`    | IPv6 形式か検証      |
+| `ipv4_cidr_to_range(cidr)` | `IPv4CIDRToRange()` | CIDR を範囲に変換     |
+
+```python
+# IP関連の操作
+ds['is_valid_ip'] = ds['ip'].ip.is_ipv4_string()
+ds['ip_num'] = ds['ip'].ip.ipv4_string_to_num()
+```
+
+***
+
+<div id="geo">
+  ## Geo アクセサ (`.geo`)
+</div>
+
+ClickHouse固有のGeo/距離関連の操作 (14メソッド) 。
+
+<div id="geo-distance">
+  ### 距離関数
+</div>
+
+| メソッド                          | ClickHouse              | 説明          |
+| ----------------------------- | ----------------------- | ----------- |
+| `great_circle_distance(...)`  | `greatCircleDistance()` | 大円距離        |
+| `geo_distance(...)`           | `geoDistance()`         | WGS-84での距離  |
+| `l1_distance(v1, v2)`         | `L1Distance()`          | マンハッタン距離    |
+| `l2_distance(v1, v2)`         | `L2Distance()`          | ユークリッド距離    |
+| `l2_squared_distance(v1, v2)` | `L2SquaredDistance()`   | ユークリッド距離の二乗 |
+| `linf_distance(v1, v2)`       | `LinfDistance()`        | チェビシェフ距離    |
+| `cosine_distance(v1, v2)`     | `cosineDistance()`      | コサイン距離      |
+
+<div id="geo-vector">
+  ### ベクトル演算
+</div>
+
+| メソッド                  | ClickHouse      | 説明       |
+| --------------------- | --------------- | -------- |
+| `dot_product(v1, v2)` | `dotProduct()`  | 内積       |
+| `l2_norm(vec)`        | `L2Norm()`      | ベクトルのノルム |
+| `l2_normalize(vec)`   | `L2Normalize()` | 正規化      |
+
+<div id="geo-h3">
+  ### H3 関数
+</div>
+
+| メソッド                       | ClickHouse  | 説明                 |
+| -------------------------- | ----------- | ------------------ |
+| `geo_to_h3(lon, lat, res)` | `geoToH3()` | Geo を H3 index に変換 |
+| `h3_to_geo(h3)`            | `h3ToGeo()` | H3 を Geo 座標に変換     |
+
+<div id="geo-point">
+  ### Point 演算
+</div>
+
+| Method                       | ClickHouse          | 説明          |
+| ---------------------------- | ------------------- | ----------- |
+| `point_in_polygon(pt, poly)` | `pointInPolygon()`  | Polygon 内の点 |
+| `point_in_ellipses(...)`     | `pointInEllipses()` | 楕円内の点       |
+
+```python
+from chdb.datastore import F
+
+# 距離を計算する
+ds['distance'] = F.great_circle_distance(
+    ds['lon1'], ds['lat1'],
+    ds['lon2'], ds['lat2']
+)
+
+# ベクトル類似度
+ds['similarity'] = F.cosine_distance(ds['embedding1'], ds['embedding2'])
+```
+
+***
+
+<div id="using-accessors">
+  ## アクセサの使用
+</div>
+
+<div id="lazy">
+  ### 遅延評価
+</div>
+
+ほとんどのアクセサメソッドは遅延評価されるため、後で評価される式を返します:
+
+```python
+# これらはすべて遅延評価される
+ds['name_upper'] = ds['name'].str.upper()  # まだ実行されない
+ds['year'] = ds['date'].dt.year            # まだ実行されない
+ds['domain'] = ds['url'].url.domain()      # まだ実行されない
+
+# 結果にアクセスした時点で実行される
+df = ds.to_df()  # ここですべてが実行される
+```
+
+<div id="execute-immediately">
+  ### 直ちに実行されるメソッド
+</div>
+
+構造が変わるため、すぐに実行される `.str` メソッドがあります：
+
+| メソッド               | 戻り値               | 理由                  |
+| ------------------ | ----------------- | ------------------- |
+| `partition(sep)`   | DataStore (3 カラム) | 複数のカラムを作成するため       |
+| `rpartition(sep)`  | DataStore (3 カラム) | 複数のカラムを作成するため       |
+| `get_dummies(sep)` | DataStore (N カラム) | カラム数が動的に決まるため       |
+| `extractall(pat)`  | DataStore         | MultiIndex の結果になるため |
+| `cat(sep)`         | str               | 集約 (N 行 → 1)        |
+
+<div id="chaining">
+  ### アクセサのチェーン
+</div>
+
+アクセサメソッドはチェーンできます。
+
+```python
+ds['clean_name'] = (ds['name']
+    .str.strip()
+    .str.lower()
+    .str.replace(' ', '_')
+)
+
+ds['next_month_start'] = (ds['date']
+    .dt.add_months(1)
+    .dt.to_start_of_month()
+)
+```

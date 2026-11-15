@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 #include <Common/HashTable/HashMap.h>
@@ -25,15 +26,15 @@ private:
     const String & columnName(size_t i) const;
 
     /// Hash table matches field name to position in the block
-    using NameMap = HashMap<StringRef, size_t, StringRefHash>;
+    using NameMap = HashMap<std::string_view, size_t, StringViewHash>;
     NameMap name_map;
 
 protected:
     const FormatSettings format_settings;
-    std::vector<UInt8> seen_columns;
+    VectorWithMemoryTracking<UInt8> seen_columns;
 };
 
-class FormSchemaReader : public IRowWithNamesSchemaReader
+class FormSchemaReader final : public IRowWithNamesSchemaReader
 {
 public:
     FormSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);

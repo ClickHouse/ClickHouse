@@ -1,4 +1,5 @@
 #include <Access/Credentials.h>
+#include <Common/StringUtils.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/LDAPClient.h>
 #include <Access/SettingsAuthResponseParser.h>
@@ -12,7 +13,6 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/ClientInfo.h>
 
-#include <boost/algorithm/string/case_conv.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <map>
@@ -50,7 +50,7 @@ void parseLDAPSearchParams(LDAPClient::SearchParams & params, const Poco::Util::
     if (has_scope)
     {
         auto scope = config.getString(prefix + ".scope");
-        boost::algorithm::to_lower(scope);
+        toLowerASCII(scope);
 
         if (scope == "base")           params.scope = LDAPClient::SearchParams::Scope::BASE;
         else if (scope == "one_level") params.scope = LDAPClient::SearchParams::Scope::ONE_LEVEL;
@@ -86,6 +86,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     const bool has_tls_ca_cert_dir = config.has(ldap_server_config + ".tls_ca_cert_dir");
     const bool has_tls_cipher_suite = config.has(ldap_server_config + ".tls_cipher_suite");
     const bool has_search_limit = config.has(ldap_server_config + ".search_limit");
+    const bool has_follow_referrals = config.has(ldap_server_config + ".follow_referrals");
 
     if (!has_host)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'host' entry");
@@ -126,7 +127,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     if (has_enable_tls)
     {
         String enable_tls_lc_str = config.getString(ldap_server_config + ".enable_tls");
-        boost::to_lower(enable_tls_lc_str);
+        toLowerASCII(enable_tls_lc_str);
 
         if (enable_tls_lc_str == "starttls")
             params.enable_tls = LDAPClient::Params::TLSEnable::YES_STARTTLS;
@@ -139,7 +140,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     if (has_tls_minimum_protocol_version)
     {
         String tls_minimum_protocol_version_lc_str = config.getString(ldap_server_config + ".tls_minimum_protocol_version");
-        boost::to_lower(tls_minimum_protocol_version_lc_str);
+        toLowerASCII(tls_minimum_protocol_version_lc_str);
 
         if (tls_minimum_protocol_version_lc_str == "ssl2")
             params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::SSL2;
@@ -160,7 +161,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     if (has_tls_require_cert)
     {
         String tls_require_cert_lc_str = config.getString(ldap_server_config + ".tls_require_cert");
-        boost::to_lower(tls_require_cert_lc_str);
+        toLowerASCII(tls_require_cert_lc_str);
 
         if (tls_require_cert_lc_str == "never")
             params.tls_require_cert = LDAPClient::Params::TLSRequireCert::NEVER;
@@ -197,13 +198,16 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         if (port > 65535)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad value for 'port' entry");
 
-        params.port = port;
+        params.port = static_cast<UInt16>(port);
     }
     else
         params.port = (params.enable_tls == LDAPClient::Params::TLSEnable::YES ? 636 : 389);
 
     if (has_search_limit)
         params.search_limit = static_cast<UInt32>(config.getUInt64(ldap_server_config + ".search_limit"));
+
+    if (has_follow_referrals)
+        params.follow_referrals = config.getBool(ldap_server_config + ".follow_referrals");
 }
 
 void parseKerberosParams(GSSAcceptorContext::Params & params, const Poco::Util::AbstractConfiguration & config)
@@ -220,7 +224,7 @@ void parseKerberosParams(GSSAcceptorContext::Params & params, const Poco::Util::
         if (bracket_pos != std::string::npos)
             key.resize(bracket_pos);
 
-        boost::algorithm::to_lower(key);
+        toLowerASCII(key);
 
         reealm_key_count += (key == "realm");
         principal_keys_count += (key == "principal");
@@ -340,7 +344,7 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
         if (bracket_pos != std::string::npos)
             key.resize(bracket_pos);
 
-        boost::algorithm::to_lower(key);
+        toLowerASCII(key);
 
         ldap_servers_key_count += (key == "ldap_servers");
         kerberos_keys_count += (key == "kerberos");

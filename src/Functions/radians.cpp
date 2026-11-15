@@ -18,7 +18,7 @@ namespace
         return radians;
     }
 
-    using FunctionRadians = FunctionMathUnary<UnaryFunctionVectorized<RadiansName, radians>>;
+    using FunctionRadians = FunctionMathUnary<UnaryFunctionVectorized<RadiansName, radians, true>>;
 }
 
 REGISTER_FUNCTION(Radians)
@@ -36,7 +36,7 @@ Converts degrees to radians.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionRadians>(documentation, FunctionFactory::Case::Insensitive);
 }

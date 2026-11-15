@@ -1,0 +1,55 @@
+-- query_plan_optimize_lazy_materialization_for_object_storage = 1
+-- sorting by a defaulted column whose input is also selected
+937	val_9
+944	val_8
+951	val_7
+-- selecting a defaulted column together with its input
+1001	1000	val_0
+994	993	val_1
+987	986	val_2
+-- selecting a defaulted column whose input is the sorting key
+0	val_0
+10	val_1
+20	val_2
+-- the number of lazy read steps in the plan
+1
+-- neither the defaulted columns nor the inputs of their expressions are deferred
+Lazily read columns: s
+Lazily read columns: s
+-- a defaulted column that the query does not read does not pin the inputs of its expression
+1000	val_0
+993	val_1
+986	val_2
+Lazily read columns: b, s
+-- a defaulted column needed only after the LIMIT is deferred with the inputs of its expression
+Lazily read columns: a, b, s
+-- a defaulted column whose expression input stays on the main branch is not deferred
+938	val_9
+945	val_8
+952	val_7
+Lazily read columns: s
+-- query_plan_optimize_lazy_materialization_for_object_storage = 0
+-- sorting by a defaulted column whose input is also selected
+937	val_9
+944	val_8
+951	val_7
+-- selecting a defaulted column together with its input
+1001	1000	val_0
+994	993	val_1
+987	986	val_2
+-- selecting a defaulted column whose input is the sorting key
+0	val_0
+10	val_1
+20	val_2
+-- the number of lazy read steps in the plan
+0
+-- neither the defaulted columns nor the inputs of their expressions are deferred
+-- a defaulted column that the query does not read does not pin the inputs of its expression
+1000	val_0
+993	val_1
+986	val_2
+-- a defaulted column needed only after the LIMIT is deferred with the inputs of its expression
+-- a defaulted column whose expression input stays on the main branch is not deferred
+938	val_9
+945	val_8
+952	val_7

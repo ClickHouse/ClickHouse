@@ -9,16 +9,11 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
 
 /** partitionId(x, y, ...) is a function that computes partition ids of arguments.
   * The function is slow and should not be called for large amount of rows.
   */
-class FunctionPartitionId : public IFunction
+class FunctionPartitionId final : public IFunction
 {
 public:
     static constexpr auto name = "partitionId";
@@ -37,12 +32,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
-
-        return std::make_shared<DataTypeString>();
+        return "(Any, ...) -> String";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -66,11 +58,11 @@ public:
 REGISTER_FUNCTION(PartitionId)
 {
     FunctionDocumentation::Description description = R"(
-Computes the [partition ID](../../engines/table-engines/mergetree-family/custom-partitioning-key.md).
+Computes the [partition ID](/reference/engines/table-engines/mergetree-family/custom-partitioning-key).
 
-:::note
+<Note>
 This function is slow and should not be called for large numbers of rows.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax syntax = "partitionId(column1[, column2, ...])";
     FunctionDocumentation::Arguments arguments = {
@@ -110,7 +102,7 @@ SELECT i, j, partitionId(i), _partition_id FROM tab ORDER BY i, j;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionPartitionId>(documentation);
     factory.registerAlias("partitionID", "partitionId");

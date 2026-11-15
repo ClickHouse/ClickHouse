@@ -15,7 +15,7 @@ void applyTableOverrideToCreateQuery(const ASTTableOverride & override, ASTCreat
     if (auto * columns = override.columns)
     {
         if (!create_query->columns_list)
-            create_query->set(create_query->columns_list, std::make_shared<ASTColumns>());
+            create_query->set(create_query->columns_list, make_intrusive<ASTColumns>());
         if (columns->columns)
         {
             for (const auto & override_column_ast : columns->columns->children)
@@ -24,9 +24,9 @@ void applyTableOverrideToCreateQuery(const ASTTableOverride & override, ASTCreat
                 if (!override_column)
                     continue;
                 if (!create_query->columns_list->columns)
-                    create_query->columns_list->set(create_query->columns_list->columns, std::make_shared<ASTExpressionList>());
+                    create_query->columns_list->set(create_query->columns_list->columns, make_intrusive<ASTExpressionList>());
                 auto & dest_children = create_query->columns_list->columns->children;
-                auto * exists = std::find_if(
+                auto exists = std::find_if(
                     dest_children.begin(),
                     dest_children.end(),
                     [&](ASTPtr node) -> bool { return node->as<ASTColumnDeclaration>()->name == override_column->name; });
@@ -35,7 +35,7 @@ void applyTableOverrideToCreateQuery(const ASTTableOverride & override, ASTCreat
                 ///       executed from InterpreterCreateQuery / InterpreterAlterQuery.
                 if (exists == dest_children.end())
                 {
-                    if (override_column->default_specifier == "ALIAS")
+                    if (override_column->default_specifier == ColumnDefaultSpecifier::Alias)
                         dest_children.emplace_back(override_column_ast);
                 }
                 else
@@ -50,9 +50,9 @@ void applyTableOverrideToCreateQuery(const ASTTableOverride & override, ASTCreat
                 if (!override_index)
                     continue;
                 if (!create_query->columns_list->indices)
-                    create_query->columns_list->set(create_query->columns_list->indices, std::make_shared<ASTExpressionList>());
+                    create_query->columns_list->set(create_query->columns_list->indices, make_intrusive<ASTExpressionList>());
                 auto & dest_children = create_query->columns_list->indices->children;
-                auto * exists = std::find_if(
+                auto exists = std::find_if(
                     dest_children.begin(),
                     dest_children.end(),
                     [&](ASTPtr node) -> bool { return node->as<ASTIndexDeclaration>()->name == override_index->name; });
@@ -70,9 +70,9 @@ void applyTableOverrideToCreateQuery(const ASTTableOverride & override, ASTCreat
                 if (!override_constraint)
                     continue;
                 if (!create_query->columns_list->constraints)
-                    create_query->columns_list->set(create_query->columns_list->constraints, std::make_shared<ASTExpressionList>());
+                    create_query->columns_list->set(create_query->columns_list->constraints, make_intrusive<ASTExpressionList>());
                 auto & dest_children = create_query->columns_list->constraints->children;
-                auto * exists = std::find_if(
+                auto exists = std::find_if(
                     dest_children.begin(),
                     dest_children.end(),
                     [&](ASTPtr node) -> bool { return node->as<ASTConstraintDeclaration>()->name == override_constraint->name; });
@@ -90,9 +90,9 @@ void applyTableOverrideToCreateQuery(const ASTTableOverride & override, ASTCreat
                 if (!override_projection)
                     continue;
                 if (!create_query->columns_list->projections)
-                    create_query->columns_list->set(create_query->columns_list->projections, std::make_shared<ASTExpressionList>());
+                    create_query->columns_list->set(create_query->columns_list->projections, make_intrusive<ASTExpressionList>());
                 auto & dest_children = create_query->columns_list->projections->children;
-                auto * exists = std::find_if(
+                auto exists = std::find_if(
                     dest_children.begin(),
                     dest_children.end(),
                     [&](ASTPtr node) -> bool { return node->as<ASTProjectionDeclaration>()->name == override_projection->name; });
@@ -106,7 +106,7 @@ void applyTableOverrideToCreateQuery(const ASTTableOverride & override, ASTCreat
     if (auto * storage = override.storage)
     {
         if (!create_query->storage)
-            create_query->set(create_query->storage, std::make_shared<ASTStorage>());
+            create_query->set(create_query->storage, make_intrusive<ASTStorage>());
         if (storage->partition_by)
             create_query->storage->set(create_query->storage->partition_by, storage->partition_by->clone());
         if (storage->primary_key)

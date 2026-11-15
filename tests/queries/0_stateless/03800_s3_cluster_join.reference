@@ -1,0 +1,18 @@
+LEFT JOIN
+false	2000	false	2000
+true	1000	true	1000
+INNER JOIN
+false	2000	false	2000
+true	1000	true	1000
+RIGHT JOIN
+false	2000	false	2000
+true	1000	true	1000
+LEFT OUTER JOIN
+false	2000	false	2000
+true	1000	true	1000
+FULL OUTER JOIN
+false	2000	false	2000
+true	1000	true	1000
+Simple SELECT
+false	2000
+true	1000

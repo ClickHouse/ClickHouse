@@ -25,7 +25,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
     ASTPtr database;
     ASTPtr table;
-    std::shared_ptr<ASTQueryWithTableAndOutput> query;
+    boost::intrusive_ptr<ASTQueryWithTableAndOutput> query;
 
     bool parse_only_database_name = false;
     bool parse_show_create_view = false;
@@ -37,7 +37,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     {
         if (s_database.ignore(pos, expected))
         {
-            query = std::make_shared<ASTExistsDatabaseQuery>();
+            query = make_intrusive<ASTExistsDatabaseQuery>();
             parse_only_database_name = true;
         }
         else
@@ -47,15 +47,15 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
             if (s_view.ignore(pos, expected))
             {
-                query = std::make_shared<ASTExistsViewQuery>();
+                query = make_intrusive<ASTExistsViewQuery>();
                 exists_view = true;
             }
             else if (s_table.checkWithoutMoving(pos, expected))
-                query = std::make_shared<ASTExistsTableQuery>();
+                query = make_intrusive<ASTExistsTableQuery>();
             else if (s_dictionary.checkWithoutMoving(pos, expected))
-                query = std::make_shared<ASTExistsDictionaryQuery>();
+                query = make_intrusive<ASTExistsDictionaryQuery>();
             else
-                query = std::make_shared<ASTExistsTableQuery>();
+                query = make_intrusive<ASTExistsTableQuery>();
         }
     }
     else if (s_show.ignore(pos, expected))
@@ -75,13 +75,13 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         if (s_database.ignore(pos, expected))
         {
             parse_only_database_name = true;
-            query = std::make_shared<ASTShowCreateDatabaseQuery>();
+            query = make_intrusive<ASTShowCreateDatabaseQuery>();
         }
         else if (s_dictionary.checkWithoutMoving(pos, expected))
-            query = std::make_shared<ASTShowCreateDictionaryQuery>();
+            query = make_intrusive<ASTShowCreateDictionaryQuery>();
         else if (s_view.ignore(pos, expected))
         {
-            query = std::make_shared<ASTShowCreateViewQuery>();
+            query = make_intrusive<ASTShowCreateViewQuery>();
             parse_show_create_view = true;
         }
         else
@@ -90,7 +90,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
             /// but do not support `SHOW tbl`, which is ambiguous
             /// with other statement like `SHOW PRIVILEGES`.
             if (has_create || s_table.checkWithoutMoving(pos, expected))
-                query = std::make_shared<ASTShowCreateTableQuery>();
+                query = make_intrusive<ASTShowCreateTableQuery>();
             else
                 return false;
         }
@@ -109,13 +109,13 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         if (!(exists_view || parse_show_create_view))
         {
             if (temporary || s_temporary.ignore(pos, expected))
-                query->temporary = true;
+                query->setIsTemporary(true);
 
             if (!s_table.ignore(pos, expected))
                 s_dictionary.ignore(pos, expected);
         }
 
-        query->temporary = temporary;
+        query->setIsTemporary(temporary);
 
         if (!name_p.parse(pos, table, expected))
             return false;
@@ -141,5 +141,82 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     return true;
 }
 
+std::map<String, Documentation> ParserTablePropertiesQuery::getDocumentation() const
+{
+    std::map<String, Documentation> documentation;
+
+    documentation["EXISTS"] =
+    {
+        .description = R"DOCS_MD(
+```sql
+EXISTS [TEMPORARY] [TABLE|DICTIONARY|DATABASE] [db.]name [INTO OUTFILE filename] [FORMAT format]
+```
+
+Returns a single `UInt8`-type column, which contains the single value `0` if the table or database does not exist, or `1` if the table exists in the specified database.
+
+## Subquery form {#subquery-form}
+
+The `EXISTS` operator checks whether a subquery returns any rows. It returns `0` if the subquery result is empty; otherwise, it returns `1`.
+
+You can use `EXISTS` in a [`WHERE`](/reference/statements/select/where) clause. The subquery cannot reference tables or columns from the outer query.
+
+**Syntax**
+
+```sql
+EXISTS(subquery)
+```
+
+**Examples**
+
+Check whether a subquery returns rows:
+
+```sql title="Query"
+SELECT
+    EXISTS(SELECT * FROM numbers(10) WHERE number > 8),
+    EXISTS(SELECT * FROM numbers(10) WHERE number > 11)
+```
+
+```text title="Response"
+┌─in(1, _subquery1)─┬─in(1, _subquery2)─┐
+│                 1 │                 0 │
+└───────────────────┴───────────────────┘
+```
+
+Use `EXISTS` in a `WHERE` clause with a subquery that returns several rows:
+
+```sql title="Query"
+SELECT count()
+FROM numbers(10)
+WHERE EXISTS(SELECT number FROM numbers(10) WHERE number > 8)
+```
+
+```text title="Response"
+┌─count()─┐
+│      10 │
+└─────────┘
+```
+
+When the subquery result is empty, `EXISTS` returns `0`:
+
+```sql title="Query"
+SELECT count()
+FROM numbers(10)
+WHERE EXISTS(SELECT number FROM numbers(10) WHERE number > 11)
+```
+
+```text title="Response"
+┌─count()─┐
+│       0 │
+└─────────┘
+```
+)DOCS_MD",
+        .syntax = R"(
+EXISTS [TEMPORARY] [TABLE|DICTIONARY|DATABASE] [db.]name [INTO OUTFILE filename] [FORMAT format]
+)",
+        .related = {"SHOW", "DESCRIBE TABLE", "CREATE"},
+    };
+
+    return documentation;
+}
 
 }

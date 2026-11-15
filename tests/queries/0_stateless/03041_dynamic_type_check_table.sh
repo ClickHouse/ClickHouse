@@ -26,7 +26,7 @@ function run()
     $CH_CLIENT -q "select x, y, d, d.String, d.UInt64, d.Date, d.\`Tuple(a UInt64)\`.a from test order by x"
 
     echo "check table"
-    $CH_CLIENT -q "check table test"
+    $CH_CLIENT -q "check table test settings check_query_single_value_result = 1"
 }
 
 $CH_CLIENT -q "drop table if exists test;"

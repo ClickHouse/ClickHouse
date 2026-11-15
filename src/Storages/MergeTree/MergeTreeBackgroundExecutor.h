@@ -1,9 +1,6 @@
 #pragma once
 
-#include <deque>
-#include <functional>
 #include <mutex>
-#include <future>
 #include <condition_variable>
 #include <variant>
 #include <utility>
@@ -18,7 +15,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
 
 namespace DB
@@ -33,6 +29,7 @@ struct TaskProfileEvents
     ProfileEvents::Event wait_ms = ProfileEvents::end();
 };
 using TaskRuntimeDataPtr = std::shared_ptr<TaskRuntimeData>;
+enum class ThreadName : uint8_t;
 
 /**
  * Has RAII class to determine how many tasks are waiting for the execution and executing at the moment.
@@ -41,7 +38,8 @@ using TaskRuntimeDataPtr = std::shared_ptr<TaskRuntimeData>;
 struct TaskRuntimeData
 {
     TaskRuntimeData(ExecutableTaskPtr && task_, CurrentMetrics::Metric metric_, TaskProfileEvents events_)
-        : task(std::move(task_))
+        : storage_id(task_->getStorageID())
+        , task(std::move(task_))
         , metric(metric_)
         , events(events_)
     {
@@ -83,6 +81,9 @@ struct TaskRuntimeData
             task.reset();
     }
 
+    /// Stored separately so that removeTasksCorrespondingToStorage can identify the task
+    /// even after resetTask() has nullified the task pointer.
+    StorageID storage_id;
     ExecutableTaskPtr task;
     CurrentMetrics::Metric metric;
     TaskProfileEvents events;
@@ -123,12 +124,12 @@ public:
         std::vector<TaskRuntimeDataPtr> res;
         for (auto & item : queue)
         {
-            if (item->task->getStorageID() == id)
+            if (item->storage_id == id)
                 res.push_back(item);
         }
 
         auto it = std::remove_if(queue.begin(), queue.end(),
-            [&] (auto && item) -> bool { return item->task->getStorageID() == id; });
+            [&] (auto && item) -> bool { return item->storage_id == id; });
         queue.erase(it, queue.end());
         return res;
     }
@@ -168,11 +169,11 @@ public:
         std::vector<TaskRuntimeDataPtr> res;
         for (auto & item : buffer)
         {
-            if (item->task->getStorageID() == id)
+            if (item->storage_id == id)
                 res.push_back(item);
         }
 
-        std::erase_if(buffer, [&] (auto && item) -> bool { return item->task->getStorageID() == id; });
+        std::erase_if(buffer, [&] (auto && item) -> bool { return item->storage_id == id; });
         std::make_heap(buffer.begin(), buffer.end(), TaskRuntimeData::comparePtrByPriority);
         return res;
     }
@@ -252,7 +253,7 @@ private:
     }
 
     std::variant<Policies...> impl;
-    size_t capacity;
+    size_t capacity{};
 };
 
 // Avoid typedef and alias to facilitate forward declaration
@@ -296,7 +297,7 @@ class MergeTreeBackgroundExecutor final : boost::noncopyable
 {
 public:
     MergeTreeBackgroundExecutor(
-        String name_,
+        ThreadName name_,
         size_t threads_count_,
         size_t max_tasks_count_,
         CurrentMetrics::Metric metric_,
@@ -308,7 +309,7 @@ public:
         std::string_view policy = {});
 
     MergeTreeBackgroundExecutor(
-        String name_,
+        ThreadName name_,
         size_t threads_count_,
         size_t max_tasks_count_,
         CurrentMetrics::Metric metric_,
@@ -330,7 +331,38 @@ public:
     size_t getMaxTasksCount() const;
 
     bool trySchedule(ExecutableTaskPtr task);
+
+    /// Reserve up to `desired` free slots for merges that run outside this executor (e.g. the
+    /// synchronous merges of OPTIMIZE FINAL). Returns the number of slots actually reserved, which
+    /// may be fewer than requested (down to zero if the pool is already busy). The reservation is
+    /// accounted in the same task metric and taken under the same lock as `trySchedule`, so the two
+    /// never race and the metric never exceeds the configured maximum. The number of reservations
+    /// is bounded by the number of worker threads, not the (larger) task-slot count, because the
+    /// reserved slots run on dedicated threads that cannot be postponed. That bound is checked
+    /// against other reservations only - not against in-flight background tasks, whose steady
+    /// churn would otherwise starve foreground merges. Release with `releaseTaskSlots`.
+    size_t tryReserveTaskSlots(size_t desired);
+
+    /// Like `tryReserveTaskSlots`, but waits until at least one slot becomes available. This is
+    /// intended for foreground operations that must not execute an unaccounted task when the
+    /// executor is saturated. Returns zero only when the executor is shutting down.
+    /// Thread-safety analysis does not understand `std::unique_lock` used with
+    /// `std::condition_variable::wait` in this method.
+    size_t reserveTaskSlots(size_t desired) TSA_NO_THREAD_SAFETY_ANALYSIS;
+    void releaseTaskSlots(size_t count) noexcept;
+
     void removeTasksCorrespondingToStorage(StorageID id);
+
+    /// Flip the executor into shutdown mode without joining the worker threads:
+    /// new tasks are rejected by `trySchedule` and pending tasks are not started
+    /// (worker threads exit at the next step boundary). Used on server shutdown to
+    /// stop scheduling before the in-flight tasks are cancelled, so that no freshly
+    /// scheduled task can slip in after the cancellation and block `wait`.
+    void requestShutdown();
+
+    /// Implies `requestShutdown`, then joins the worker threads. Running tasks are
+    /// not interrupted: each finishes its current step. Tasks still waiting in
+    /// `pending` are cancelled and destroyed.
     void wait();
 
     /// Update scheduling policy for pending tasks. It does nothing if `new_policy` is the same or unknown.
@@ -341,13 +373,24 @@ public:
     }
 
 private:
-    String name;
+    ThreadName name;
     size_t threads_count TSA_GUARDED_BY(mutex) = 0;
     std::atomic<size_t> max_tasks_count = 0;
     CurrentMetrics::Metric metric;
     CurrentMetrics::Increment max_tasks_metric;
 
+    /// The number of slots currently reserved via `tryReserveTaskSlots`/`reserveTaskSlots` for
+    /// merges that run outside this executor. Kept separately from the shared task metric: the
+    /// foreground bound (the worker-thread budget) is checked against other reservations only,
+    /// because the metric also counts in-flight background tasks whose steady churn on a busy
+    /// server would otherwise starve a waiting foreground reservation indefinitely.
+    std::atomic<Int64> reserved_task_slots = 0;
+
     void routine(TaskRuntimeDataPtr item);
+
+    /// Cancel and destroy every task still waiting in `pending`. Only complete once no worker can
+    /// push there any more, i.e. after `pool->wait()` in `wait()`.
+    void drainPendingTasks();
 
     /// libc++ does not provide TSA support for std::unique_lock -> TSA_NO_THREAD_SAFETY_ANALYSIS
     void threadFunction() TSA_NO_THREAD_SAFETY_ANALYSIS;
@@ -357,6 +400,7 @@ private:
     boost::circular_buffer<TaskRuntimeDataPtr> active TSA_GUARDED_BY(mutex);
     mutable std::mutex mutex;
     std::condition_variable has_tasks TSA_GUARDED_BY(mutex);
+    std::condition_variable task_slots_available;
     bool shutdown TSA_GUARDED_BY(mutex) = false;
     std::unique_ptr<ThreadPool> pool;
     LoggerPtr log = getLogger("MergeTreeBackgroundExecutor");

@@ -1,0 +1,10 @@
+Case 1: Map column with text index on mapValues (original reproduction case)
+1
+Case 2: Simple String column with text index
+1
+3
+1
+Case 3: Text index with preprocessor (e.g. lower) triggers the same code path
+1
+3
+1

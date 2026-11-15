@@ -13,7 +13,7 @@ bool ParserShowGrantsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!ParserKeyword{Keyword::SHOW_GRANTS}.ignore(pos, expected))
         return false;
 
-    std::shared_ptr<ASTRolesOrUsersSet> for_roles;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> for_roles;
 
     if (ParserKeyword{Keyword::FOR}.ignore(pos, expected))
     {
@@ -23,11 +23,11 @@ bool ParserShowGrantsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!for_roles_p.parse(pos, for_roles_ast, expected))
             return false;
 
-        for_roles = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(for_roles_ast);
+        for_roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(for_roles_ast);
     }
     else
     {
-        for_roles = std::make_shared<ASTRolesOrUsersSet>();
+        for_roles = make_intrusive<ASTRolesOrUsersSet>();
         for_roles->current_user = true;
     }
 
@@ -51,7 +51,7 @@ bool ParserShowGrantsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         break;
     }
 
-    auto query = std::make_shared<ASTShowGrantsQuery>();
+    auto query = make_intrusive<ASTShowGrantsQuery>();
     query->for_roles = std::move(for_roles);
     query->with_implicit = with_implicit;
     query->final = final;

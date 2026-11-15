@@ -3,7 +3,7 @@ SET session_timezone = 'UTC';
 
 CREATE TABLE users (uid Int16, d DateTime('UTC'))
 ENGINE = MergeTree ORDER BY uid TTL d + INTERVAL 1 MONTH WHERE uid = 1
-SETTINGS merge_with_ttl_timeout = 0, min_bytes_for_wide_part = 0, vertical_merge_algorithm_min_rows_to_activate = 0, vertical_merge_algorithm_min_columns_to_activate = 0;
+SETTINGS merge_with_ttl_timeout = 0, min_bytes_for_wide_part = 0, vertical_merge_algorithm_min_rows_to_activate = 0, vertical_merge_algorithm_min_columns_to_activate = 0, min_bytes_for_full_part_storage = 0;
 
 SYSTEM STOP TTL MERGES users;
 
@@ -44,6 +44,6 @@ ATTACH TABLE users;
 -- Check that expired TTL doesn't affect the vertical merge algorithm
 OPTIMIZE TABLE users FINAL;
 SYSTEM FLUSH LOGS part_log;
-SELECT merge_algorithm FROM system.part_log WHERE database = currentDatabase() AND table = 'users' AND event_type = 'MergeParts' ORDER BY event_time_microseconds DESC LIMIT 1;
+SELECT merge_algorithm FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 'users' AND event_type = 'MergeParts' ORDER BY event_time_microseconds DESC LIMIT 1;
 
 DROP TABLE IF EXISTS users;

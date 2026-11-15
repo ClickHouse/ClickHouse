@@ -1,12 +1,29 @@
 #include <Processors/QueryPlan/BlocksMarshallingStep.h>
 
+#include <Core/ProtocolDefines.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Processors/ISimpleTransform.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/SortChunksBySequenceNumber.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool enable_parallel_blocks_marshalling;
+}
+
+bool contextAllowsBlocksMarshalling(const Context & context)
+{
+    const auto & client_info = context.getClientInfo();
+    return context.getSettingsRef()[Setting::enable_parallel_blocks_marshalling]
+        && client_info.distributed_depth <= 1 // Makes sense for higher depths too, just not supported
+        && !client_info.is_replicated_database_internal;
+}
 
 static ITransformingStep::Traits getTraits()
 {
@@ -59,13 +76,19 @@ void BlocksMarshallingStep::transformPipeline(QueryPipelineBuilder & pipeline, c
         pipeline.addTransform(std::make_shared<AddSequenceNumber>(pipeline.getSharedHeader()));
     const size_t num_threads = pipeline.getNumThreads();
     pipeline.resize(num_threads);
-    pipeline.addSimpleTransform([&](const SharedHeader & header)
-                                { return std::make_shared<MarshallBlocksTransform>(header, settings.block_marshalling_callback); });
+    pipeline.addSimpleTransform([&](const SharedHeader & header, Pipe::StreamType stream_type) -> ProcessorPtr
+    {
+        /// Skip marshalling for totals and extremes streams because `IOutputFormat::prepareTotals`
+        /// may call `cut` on columns, which `ColumnBLOB` does not support.
+        if (stream_type != Pipe::StreamType::Main)
+            return nullptr;
+        return std::make_shared<MarshallBlocksTransform>(header, settings.block_marshalling_callback);
+    });
     if (single_stream)
         pipeline.addTransform(std::make_shared<SortChunksBySequenceNumber>(pipeline.getHeader(), num_threads));
 }
 
-std::unique_ptr<IQueryPlanStep> BlocksMarshallingStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr BlocksMarshallingStep::deserialize(Deserialization & ctx)
 {
     chassert(ctx.input_headers.size() == 1);
     return std::make_unique<BlocksMarshallingStep>(ctx.input_headers.front());
@@ -73,6 +96,19 @@ std::unique_ptr<IQueryPlanStep> BlocksMarshallingStep::deserialize(Deserializati
 
 void BlocksMarshallingStep::updateOutputHeader()
 {
+}
+
+void registerBlocksMarshallingStep(QueryPlanStepRegistry & registry);
+void registerBlocksMarshallingStep(QueryPlanStepRegistry & registry)
+{
+    /// Declared with the version that introduced it, not the default "since version 0": unlike the
+    /// steps that only `make_distributed_plan` ships, this one is put on an ordinary shard plan by
+    /// the planner, so without an introduction version it could be written into a stream an older
+    /// peer accepts and then fails to parse.
+    registry.registerStep(
+        "BlocksMarshalling",
+        BlocksMarshallingStep::deserialize,
+        {{0, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCKS_MARSHALLING_STEP}});
 }
 
 }

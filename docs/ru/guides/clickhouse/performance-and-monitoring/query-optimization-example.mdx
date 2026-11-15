@@ -1,0 +1,414 @@
+---
+slug: /optimize/query-optimization-example
+sidebarTitle: 'Практический пример оптимизации'
+title: 'Практический пример оптимизации запроса'
+description: 'Практический пример повышения производительности запроса к ClickHouse за счёт изменения схемы и ключа сортировки'
+doc_type: 'guide'
+keywords: ['оптимизация запросов', 'производительность', 'NYC Taxi', 'типы данных', 'ключ сортировки']
+---
+
+import NYCTaxiExampleDataset from '/snippets/ru/_nyc_taxi_example_dataset.mdx';
+
+В этом руководстве рассматриваются два подхода к оптимизации набора данных NYC Taxi. Сначала объём хранимых и обрабатываемых данных сокращается за счёт выбора более точных типов столбцов. Затем добавляется ключ сортировки, позволяющий ClickHouse пропускать данные при выполнении выборочных запросов. Результат каждого изменения сравнивается с одним и тем же базовым уровнем. Общий рабочий процесс, которому следует этот пример, описан в [обзоре оптимизации запросов](/ru/guides/clickhouse/performance-and-monitoring/query-optimization).
+
+<div id="before-you-begin">
+  ## Перед началом работы
+</div>
+
+В примерах используется таблица `nyc_taxi.trips_small_inferred`. Создайте и загрузите её, если ещё этого не сделали:
+
+<Accordion title="Настройка демонстрационного набора данных">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+Исходный файл Parquet содержит примерно 329 миллионов строк. Замеры времени в этом руководстве выполнены на одном развертывании и будут отличаться в зависимости от доступных вычислительных ресурсов. Сравнивайте относительные изменения между стадиями, не ожидая идентичных значений времени выполнения.
+
+Применяя этот метод к собственной рабочей нагрузке, воспользуйтесь руководством [Диагностика медленных запросов](/ru/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries), чтобы выявить повторяющийся шаблон запроса и выбрать репрезентативный запуск, прежде чем изменять запрос или схему.
+
+<div id="process-overview">
+  ## Обзор процесса
+</div>
+
+В примере используются следующие три стадии:
+
+1. Выполните три независимых запроса рабочей нагрузки к выведенной схеме, чтобы определить базовый уровень.
+2. Создайте таблицу с более точными типами столбцов, загрузите те же данные и повторно выполните запросы.
+3. Создайте ещё одну таблицу с той же оптимизированной схемой и ключом сортировки, затем снова выполните запросы.
+
+Изменение схемы и ключа сортировки на отдельных стадиях позволяет проще оценить влияние каждого из них. В разделе [Подходы к оптимизации](/ru/guides/clickhouse/performance-and-monitoring/optimization-approaches) объясняется, когда следует вносить эти изменения и как проверять их результат. Дополнительные рекомендации по сбору сопоставимых измерений см. в разделе [Изоляция узких мест запросов](/ru/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks).
+
+<div id="define-the-baseline-workload">
+  ## Задайте базовую рабочую нагрузку
+</div>
+
+В том же сеансе клиента, в котором запускается рабочая нагрузка, отключите файловый кэш для удалённых данных, кэш запросов и кэш условий запросов:
+
+```sql
+SET enable_filesystem_cache = 0;
+SET use_query_cache = 0;
+SET use_query_condition_cache = 0;
+```
+
+<Note>
+  Эти настройки позволяют обеспечить сопоставимость повторных запусков при тестировании. После завершения измерений восстановите прежние значения.
+</Note>
+
+Следующие три независимых запроса составляют базовую рабочую нагрузку. Выполните все три запроса для каждой таблицы, созданной на следующих этапах. Выполните каждый запрос несколько раз в сопоставимых условиях и зафиксируйте репрезентативную длительность, например медианную, а также количество прочитанных строк и пиковое потребление памяти. Полное описание процесса измерений, включая получение этих значений из `system.query_log`, см. в разделе [Создание воспроизводимой базовой линии](/ru/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks#establish-a-repeatable-baseline).
+
+<div id="calculated-speed-filter">
+  ### Фильтрация по вычисленной скорости поездки
+</div>
+
+Этот запрос вычисляет продолжительность и скорость поездки, а затем определяет распределение расстояний для поездок со скоростью более 30 миль в час:
+
+```sql
+WITH
+    dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+    (trip_distance / trip_time) * 3600 AS speed_mph
+SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM nyc_taxi.trips_small_inferred
+WHERE speed_mph > 30
+FORMAT JSON;
+```
+
+<div id="date-range-aggregation">
+  ### Агрегация поездок за период
+</div>
+
+Этот запрос вычисляет количество поездок, расстояние и среднюю сумму оплаты за первый квартал 2009 года:
+
+```sql
+SELECT
+    payment_type,
+    count() AS trip_count,
+    formatReadableQuantity(sum(trip_distance)) AS total_distance,
+    avg(total_amount) AS total_amount_avg,
+    avg(tip_amount) AS tip_amount_avg
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+GROUP BY payment_type
+ORDER BY trip_count DESC;
+```
+
+<div id="passenger-count-filter">
+  ### Фильтрация по числу пассажиров
+</div>
+
+Этот запрос вычисляет среднюю продолжительность поездок с одним или двумя пассажирами:
+
+```sql
+SELECT avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+FROM nyc_taxi.trips_small_inferred
+WHERE passenger_count = 1 OR passenger_count = 2
+FORMAT JSON;
+```
+
+Исходные измерения:
+
+| Рабочая нагрузка                | Длительность | Прочитано строк | Пиковое потребление памяти |
+| ------------------------------- | -----------: | --------------: | -------------------------: |
+| Фильтр по вычисленной скорости  |    1.699 сек |      329.04 млн |                 440.24 MiB |
+| Агрегация по диапазону дат      |    1.419 сек |      329.04 млн |                 546.75 MiB |
+| Фильтр по количеству пассажиров |    1.414 сек |      329.04 млн |                 451.53 MiB |
+
+Все три запроса считывают примерно 329 млн строк — почти столько же, сколько строк в таблице. Это позволяет оптимизировать два аспекта рабочей нагрузки: снизить затраты на обработку выбранных столбцов, а затем, когда это позволяют фильтры, сократить число выбираемых строк.
+
+<div id="optimize-the-schema">
+  ## Оптимизируйте схему
+</div>
+
+Вывод схемы — удобный способ начать изучение набора данных, но выведенные типы могут быть шире или менее строгими, чем требуется для рабочей нагрузки. Прежде чем изменять схему, изучите данные и не делайте вывод, что выведенный тип не нужен.
+
+<div id="nullable">
+  ### Избегайте ненужных столбцов с типом Nullable
+</div>
+
+Столбец [`Nullable`](/ru/reference/data-types/nullable) помимо значений хранит маску NULL. Используйте `Nullable`, когда важно различать NULL и значение типа по умолчанию, но избегайте его для столбцов, которые гарантированно содержат значение.
+
+Подсчитайте значения NULL в столбцах, используемых в примере схемы:
+
+```sql
+SELECT
+    countIf(vendor_id IS NULL) AS vendor_id_nulls,
+    countIf(pickup_datetime IS NULL) AS pickup_datetime_nulls,
+    countIf(dropoff_datetime IS NULL) AS dropoff_datetime_nulls,
+    countIf(passenger_count IS NULL) AS passenger_count_nulls,
+    countIf(trip_distance IS NULL) AS trip_distance_nulls,
+    countIf(ratecode_id IS NULL) AS ratecode_id_nulls,
+    countIf(fare_amount IS NULL) AS fare_amount_nulls,
+    countIf(extra IS NULL) AS extra_nulls,
+    countIf(mta_tax IS NULL) AS mta_tax_nulls,
+    countIf(tip_amount IS NULL) AS tip_amount_nulls,
+    countIf(tolls_amount IS NULL) AS tolls_amount_nulls,
+    countIf(total_amount IS NULL) AS total_amount_nulls,
+    countIf(payment_type IS NULL) AS payment_type_nulls,
+    countIf(pickup_location_id IS NULL) AS pickup_location_id_nulls,
+    countIf(dropoff_location_id IS NULL) AS dropoff_location_id_nulls
+FROM nyc_taxi.trips_small_inferred
+FORMAT VERTICAL;
+```
+
+```response
+Row 1:
+──────
+vendor_id_nulls:           0
+pickup_datetime_nulls:     0
+dropoff_datetime_nulls:    0
+passenger_count_nulls:     0
+trip_distance_nulls:       0
+ratecode_id_nulls:          167200929
+fare_amount_nulls:         0
+extra_nulls:               0
+mta_tax_nulls:             137946731
+tip_amount_nulls:          0
+tolls_amount_nulls:        0
+total_amount_nulls:        0
+payment_type_nulls:        69305
+pickup_location_id_nulls:  0
+dropoff_location_id_nulls: 0
+```
+
+Только в столбцах `ratecode_id`, `mta_tax` и `payment_type` этого набора данных есть значения NULL. В оптимизированной схеме `Nullable` сохраняется для этих столбцов и удаляется из остальных.
+
+<div id="low-cardinality">
+  ### Используйте LowCardinality для повторяющихся значений
+</div>
+
+[`LowCardinality`](/ru/reference/data-types/lowcardinality) использует кодирование с использованием словаря и позволяет сократить затраты на хранение и обработку данных в столбцах с большим количеством повторяющихся значений. Перед применением проверьте количество уникальных значений:
+
+```sql
+SELECT
+    uniq(ratecode_id),
+    uniq(pickup_location_id),
+    uniq(dropoff_location_id),
+    uniq(vendor_id)
+FROM nyc_taxi.trips_small_inferred
+FORMAT VERTICAL;
+```
+
+```response
+Row 1:
+──────
+uniq(ratecode_id):         6
+uniq(pickup_location_id):  260
+uniq(dropoff_location_id): 260
+uniq(vendor_id):           3
+```
+
+Эти четыре столбца содержат значительно меньше уникальных значений, чем строк. Они подходят для `LowCardinality`, хотя влияние на рабочую нагрузку всё равно следует измерить. Около 10 000 уникальных значений — полезная отправная точка для выявления кандидатов, а не фиксированный предел.
+
+<div id="optimize-data-type">
+  ### Выбирайте более точные типы данных
+</div>
+
+Используйте наиболее узкий тип, который обеспечивает требуемые диапазон и точность. Например, прежде чем заменять выведенный `Int64` или `Float64`, проверьте минимальные и максимальные значения числовых столбцов:
+
+```sql
+SELECT
+    min(payment_type),
+    max(payment_type),
+    min(passenger_count),
+    max(passenger_count)
+FROM nyc_taxi.trips_small_inferred;
+```
+
+```response
+   ┌─min(payment_type)─┬─max(payment_type)─┬─min(passenger_count)─┬─max(passenger_count)─┐
+1. │                 1 │                 4 │                    0 │                  255 │
+   └───────────────────┴───────────────────┴──────────────────────┴──────────────────────┘
+```
+
+Оба целочисленных столбца помещаются в [`UInt8`](/ru/reference/data-types/int-uint), хотя `passenger_count` достигает максимального значения 255. В примере также используется [`Float32`](/ru/reference/data-types/float) для `trip_distance` и [`Decimal32`](/ru/reference/data-types/decimal) для денежных значений. Все значения в этом наборе данных укладываются в целевые диапазоны, а для сравнения агрегированных результатов в рабочей нагрузке примера достаточно сниженной точности с плавающей запятой и точности денежных значений до центов. Сохраняйте более широкие исходные типы, если требуются точные исходные значения. В примере выведенные столбцы [`DateTime64`](/ru/reference/data-types/datetime64) заменяются на [`DateTime`](/ru/reference/data-types/datetime) в том же часовом поясе `UTC`, поскольку запросам из примера не требуется точность до долей секунды.
+
+Этот выбор применим только к данному набору данных. Прежде чем применять те же изменения, проверьте требования к диапазону, точности и допустимости NULL-значений для данных в продакшне.
+
+<div id="apply-the-optimizations">
+  ### Примените изменения схемы
+</div>
+
+Создайте таблицу без ключа сортировки, чтобы на этом этапе оценить изменения схемы отдельно:
+
+```sql
+CREATE TABLE nyc_taxi.trips_small_no_pk
+(
+    vendor_id LowCardinality(String),
+    pickup_datetime DateTime('UTC'),
+    dropoff_datetime DateTime('UTC'),
+    passenger_count UInt8,
+    trip_distance Float32,
+    ratecode_id LowCardinality(Nullable(String)),
+    pickup_location_id LowCardinality(String),
+    dropoff_location_id LowCardinality(String),
+    payment_type Nullable(UInt8),
+    fare_amount Decimal32(2),
+    extra Decimal32(2),
+    mta_tax Nullable(Decimal32(2)),
+    tip_amount Decimal32(2),
+    tolls_amount Decimal32(2),
+    total_amount Decimal32(2)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO nyc_taxi.trips_small_no_pk
+SELECT *
+FROM nyc_taxi.trips_small_inferred;
+```
+
+В каждом запросе рабочей нагрузки замените `nyc_taxi.trips_small_inferred` на `nyc_taxi.trips_small_no_pk`, затем повторно выполните все три запроса. В исходном примере были получены следующие характерные результаты:
+
+| Рабочая нагрузка                | Выведенная схема | Оптимизированная схема | Прочитано строк | Оптимизированное пиковое потребление памяти |
+| ------------------------------- | ---------------: | ---------------------: | --------------: | ------------------------------------------: |
+| Фильтр по вычисленной скорости  |        1.699 сек |              1.353 сек |      329.04 млн |                                  337.12 MiB |
+| Агрегация по диапазону дат      |        1.419 сек |              1.171 сек |      329.04 млн |                                  531.09 MiB |
+| Фильтр по количеству пассажиров |        1.414 сек |              1.188 сек |      329.04 млн |                                  265.05 MiB |
+
+Запросы по-прежнему читают одинаковое число строк, но оптимизированная схема уменьшает объём данных, приходящийся на эти строки. Поэтому длительность запросов и пиковое потребление памяти сокращаются без изменения выборки данных.
+
+Сравните размер двух таблиц на диске:
+
+```sql
+SELECT
+    table,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed,
+    sum(rows) AS rows
+FROM system.parts
+WHERE active = 1
+  AND database = 'nyc_taxi'
+  AND table IN ('trips_small_inferred', 'trips_small_no_pk')
+GROUP BY database, table
+ORDER BY sum(data_compressed_bytes) DESC;
+```
+
+```response
+   ┌─table────────────────┬─compressed─┬─uncompressed─┬──────rows─┐
+1. │ trips_small_inferred │ 7.38 GiB   │ 37.41 GiB    │ 329044175 │
+2. │ trips_small_no_pk    │ 4.89 GiB   │ 15.31 GiB    │ 329044175 │
+   └──────────────────────┴────────────┴──────────────┴───────────┘
+```
+
+Для этого набора данных оптимизированная схема сокращает объём сжатых данных примерно на 34% — с 7,38 GiB до 4,89 GiB.
+
+<div id="optimize-the-ordering-key">
+  ## Оптимизация ключа сортировки
+</div>
+
+В семействе [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree) ключ сортировки определяет, как строки располагаются на диске. ClickHouse строит по этому порядку разреженный первичный индекс, позволяющий пропускать гранулы, не соответствующие фильтрам запроса. В отличие от первичного ключа во многих транзакционных базах данных, он не обеспечивает уникальность.
+
+Ключ сортировки должен соответствовать фильтрам, используемым в важных регулярно выполняемых запросах. Порядок столбцов имеет значение: ключ наиболее эффективен, когда запрос фильтрует по его полезному префиксу. Столбцы с небольшой мощностью могут быть эффективными первыми элементами ключа, если по ним часто выполняется фильтрация; для рабочих нагрузок, связанных со временем, также часто полезен компонент времени. Подробные рекомендации см. в разделе [Выбор первичного ключа](/ru/best-practices/choosing-a-primary-key).
+
+В этом примере используйте `(passenger_count, pickup_datetime, dropoff_datetime)`. `passenger_count` имеет мало уникальных значений и используется в фильтре по количеству пассажиров, а `pickup_datetime` — в агрегации по диапазону дат. Хотя `pickup_datetime` не является первым столбцом, ClickHouse всё равно может использовать значения из последующих столбцов ключа для исключения данных, когда по ведущему столбцу нет ограничений. Фильтрация по полезному префиксу ключа сортировки обычно обеспечивает более эффективное отсечение данных.
+
+<div id="apply-the-ordering-key-change">
+  ### Примените изменение ключа сортировки
+</div>
+
+Создайте таблицу с той же оптимизированной схемой, что и на предыдущей стадии. Измените только ключ сортировки:
+
+```sql
+CREATE TABLE nyc_taxi.trips_small_pk
+(
+    vendor_id LowCardinality(String),
+    pickup_datetime DateTime('UTC'),
+    dropoff_datetime DateTime('UTC'),
+    passenger_count UInt8,
+    trip_distance Float32,
+    ratecode_id LowCardinality(Nullable(String)),
+    pickup_location_id LowCardinality(String),
+    dropoff_location_id LowCardinality(String),
+    payment_type Nullable(UInt8),
+    fare_amount Decimal32(2),
+    extra Decimal32(2),
+    mta_tax Nullable(Decimal32(2)),
+    tip_amount Decimal32(2),
+    tolls_amount Decimal32(2),
+    total_amount Decimal32(2)
+)
+ENGINE = MergeTree
+ORDER BY (passenger_count, pickup_datetime, dropoff_datetime);
+
+INSERT INTO nyc_taxi.trips_small_pk
+SELECT *
+FROM nyc_taxi.trips_small_no_pk;
+```
+
+В каждом запросе рабочей нагрузки замените имя таблицы на `nyc_taxi.trips_small_pk`, затем повторно выполните все три запроса.
+
+<div id="compare-the-results">
+  ## Сравните результаты
+</div>
+
+В исходном руководстве приведены следующие показатели для трёх этапов:
+
+| Рабочая нагрузка                | Показатель                 | Выведенная схема | Оптимизированная схема | Оптимизированная схема и ключ сортировки |
+| ------------------------------- | -------------------------- | -----------------: | ---------------------: | ---------------------------------------: |
+| Фильтр по вычисленной скорости  | Длительность               |          1.699 сек |              1.353 сек |                                0.765 сек |
+|                                 | Прочитано строк            |    329.04 миллиона |        329.04 миллиона |                          329.04 миллиона |
+|                                 | Пиковое потребление памяти |         440.24 MiB |             337.12 MiB |                               444.19 MiB |
+| Агрегация по диапазону дат      | Длительность               |          1.419 сек |              1.171 сек |                                0.248 сек |
+|                                 | Прочитано строк            |    329.04 миллиона |        329.04 миллиона |                           41.46 миллиона |
+|                                 | Пиковое потребление памяти |         546.75 MiB |             531.09 MiB |                               173.50 MiB |
+| Фильтр по количеству пассажиров | Длительность               |          1.414 сек |              1.188 сек |                                0.431 сек |
+|                                 | Прочитано строк            |    329.04 миллиона |        329.04 миллиона |                          276.99 миллиона |
+|                                 | Пиковое потребление памяти |         451.53 MiB |             265.05 MiB |                               197.38 MiB |
+
+Оптимизация схемы сокращает объём хранимых данных и снижает затраты на обработку выбранных значений. Ключ сортировки обеспечивает наибольшее дополнительное ускорение агрегации по диапазону дат, поскольку ClickHouse может пропускать гранулы за пределами этого диапазона. Фильтр по количеству пассажиров также считывает меньше строк, так как фильтрация выполняется по первому ключевому столбцу. Фильтр по вычисленной скорости по-прежнему считывает всю таблицу, поскольку условие фильтрации вычисляется на основе `pickup_datetime`, `dropoff_datetime` и `trip_distance`, а не по полезному префиксу ключа сортировки.
+
+Проверьте агрегацию по диапазону дат с помощью `EXPLAIN indexes = 1`:
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    payment_type,
+    count() AS trip_count,
+    formatReadableQuantity(sum(trip_distance)) AS total_distance,
+    avg(total_amount) AS total_amount_avg,
+    avg(tip_amount) AS tip_amount_avg
+FROM nyc_taxi.trips_small_pk
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+GROUP BY payment_type
+ORDER BY trip_count DESC
+SETTINGS
+    use_query_condition_cache = 0,
+    use_skip_indexes_on_data_read = 0;
+```
+
+<Note>
+  В ClickHouse 25.9 и более поздних версиях эти настройки обеспечивают, что `EXPLAIN` показывает используемые индексы, а также исключаемые ими части и гранулы.
+</Note>
+
+```response
+ReadFromMergeTree (nyc_taxi.trips_small_pk)
+Indexes:
+  PrimaryKey
+    Keys:
+      pickup_datetime
+    Condition: and((pickup_datetime in (-Inf, 1238543999]), (pickup_datetime in [1230768000, +Inf)))
+    Parts: 9/9
+    Granules: 5061/40167
+```
+
+Первичный индекс отбирает 5 061 из 40 167 гранул. За счёт этого при агрегации по диапазону дат обрабатывается 41,46 миллиона строк вместо всех 329,04 миллиона.
+
+<div id="apply-the-method-to-your-workload">
+  ## Примените метод к своей рабочей нагрузке
+</div>
+
+Используйте ту же последовательность действий для своей рабочей нагрузки:
+
+1. Зафиксируйте базовые значения длительности, числа прочитанных строк и байтов, а также пикового потребления памяти.
+2. Проверьте, не используют ли выбранные столбцы неоправданно широкие или излишне универсальные типы.
+3. Внесите изменения в схему и оцените их эффект, не меняя структуру данных.
+4. Проверьте ключ сортировки, основанный на фильтрах, используемых в важных регулярно выполняемых запросах.
+5. Сравните объём выбираемых данных с помощью `EXPLAIN indexes = 1`, затем повторно выполните базовые запросы в сопоставимых условиях.
+
+Не следует считать, что типы или ключ сортировки из этого примера подойдут для другого набора данных. Принимайте эти решения на основе наблюдаемых значений и фильтров запросов.
+
+<div id="next-steps">
+  ## Следующие шаги
+</div>
+
+Вернитесь к разделу [Подходы к оптимизации](/ru/guides/clickhouse/performance-and-monitoring/optimization-approaches), чтобы рассмотреть проекции, materialized views, индексы пропуска данных или предварительные вычисления, если изменение схемы и ключа сортировки не устраняет выявленное узкое место.

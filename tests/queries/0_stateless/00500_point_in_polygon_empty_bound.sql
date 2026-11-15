@@ -68,3 +68,11 @@ DROP TABLE IF EXISTS points_test;
 SELECT 'MultiPolygon: All Empty Bound Polygon';
 SELECT pointInPolygon((0., 0.), [[(0, 0)]]);
 SELECT pointInPolygon((5., 5.), [[(0, 0)], [(1, 5), (5, 5), (10, 5)]]);
+
+SELECT 'Polygon: Empty Ring';
+SELECT pointInPolygon((-1.7976931348623157e308, 1.), CAST([], 'Array(Tuple(Float64, Float64))'));
+SELECT pointInPolygon((1., 1.), CAST([], 'Array(Tuple(Float64, Float64))'));
+
+SELECT 'MultiPolygon: Empty Ring';
+SELECT pointInPolygon((1., 1.), CAST([[[]]], 'Array(Array(Array(Tuple(Float64, Float64))))'));
+SELECT pointInPolygon((1.7976931348623157e308, 1.), CAST([[[]]], 'Array(Array(Array(Tuple(Float64, Float64))))'));

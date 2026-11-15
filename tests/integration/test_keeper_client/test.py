@@ -151,40 +151,46 @@ def test_four_letter_word_commands(client: KeeperClient):
 
 def test_rm_with_version(client: KeeperClient):
     node_path = "/test_rm_with_version_node"
-    client.create(node_path, "value")
-    assert client.get(node_path) == "value"
+    try:
+        client.create(node_path, "value")
+        assert client.get(node_path) == "value"
 
-    with pytest.raises(KeeperException) as ex:
-        client.rm(node_path, 1)
+        with pytest.raises(KeeperException) as ex:
+            client.rm(node_path, 1)
 
-    ex_as_str = str(ex)
-    assert "Coordination error: Bad version" in ex_as_str
-    assert node_path in ex_as_str
-    assert client.get(node_path) == "value"
+        ex_as_str = str(ex)
+        assert "Coordination error: Bad version" in ex_as_str
+        assert node_path in ex_as_str
+        assert client.get(node_path) == "value"
 
-    client.rm(node_path, 0)
+        client.rm(node_path, 0)
 
-    with pytest.raises(KeeperException) as ex:
-        client.get(node_path)
+        with pytest.raises(KeeperException) as ex:
+            client.get(node_path)
 
-    ex_as_str = str(ex)
-    assert "node doesn't exist" in ex_as_str
-    assert node_path in ex_as_str
+        ex_as_str = str(ex)
+        assert "node doesn't exist" in ex_as_str
+        assert node_path in ex_as_str
+    finally:
+        drop_node_if_exists(client, node_path)
 
 
 def test_rm_without_version(client: KeeperClient):
-    node_path = "/test_rm_with_version_node"
-    client.create(node_path, "value")
-    assert client.get(node_path) == "value"
+    node_path = "/test_rm_without_version_node"
+    try:
+        client.create(node_path, "value")
+        assert client.get(node_path) == "value"
 
-    client.rm(node_path)
+        client.rm(node_path)
 
-    with pytest.raises(KeeperException) as ex:
-        client.get(node_path)
+        with pytest.raises(KeeperException) as ex:
+            client.get(node_path)
 
-    ex_as_str = str(ex)
-    assert "node doesn't exist" in ex_as_str
-    assert node_path in ex_as_str
+        ex_as_str = str(ex)
+        assert "node doesn't exist" in ex_as_str
+        assert node_path in ex_as_str
+    finally:
+        drop_node_if_exists(client, node_path)
 
 
 def test_set_with_version(client: KeeperClient):

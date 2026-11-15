@@ -1,0 +1,9 @@
+text skip on 	1
+text skip off	1
+bf skip on 	1
+bf skip off	1
+proj rows	2
+proj use 	a	90
+proj use 	b	10
+proj skip	a	90
+proj skip	b	10

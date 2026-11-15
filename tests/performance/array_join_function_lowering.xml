@@ -1,0 +1,33 @@
+<test>
+    <!-- #112241: the arrayJoin() FUNCTION form (unlike the ARRAY JOIN clause) expands inside the projection
+         Expression, building the whole |A|*|B|*|C| cross product before anything filters it.
+         query_plan_lower_array_join_function lowers each arrayJoin function into a real ArrayJoinStep, so the
+         expansion streams through the ArrayJoin pipeline and a filter on an element can fuse and prune before
+         expansion. Queries use no PR-specific setting, so the comparison is PR (lowering on by default) vs
+         master (no lowering). -->
+
+    <create_query>
+        CREATE TABLE array_join_function_cross (A Array(UInt32), B Array(UInt32), C Array(UInt32))
+        ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+    <!-- row-dependent arrays so the cross product is not constant-folded away -->
+    <fill_query>
+        INSERT INTO array_join_function_cross
+        SELECT arrayMap(x -> x + (number % 7),  range(50)),
+               arrayMap(x -> x + (number % 11), range(50)),
+               arrayMap(x -> x + (number % 13), range(50))
+        FROM numbers(600)
+    </fill_query>
+
+    <!-- the whole cross product is materialized (sum forces every row through); lowering streams it instead -->
+    <query>SELECT sum(a + b + c) FROM (SELECT arrayJoin(A) AS a, arrayJoin(B) AS b, arrayJoin(C) AS c FROM array_join_function_cross)</query>
+    <!-- a cross-column predicate cannot be pushed into a single array, so the cross product is built either way
+         unless it is lowered into streaming ArrayJoin steps -->
+    <query>SELECT sum(a + b + c) FROM (SELECT arrayJoin(A) AS a, arrayJoin(B) AS b, arrayJoin(C) AS c FROM array_join_function_cross WHERE a + b + c > 100)</query>
+
+    <!-- regression guard: a single arrayJoin with nothing to prune and no passenger to spare gains nothing
+         from the lowering, so it must not get slower from routing through the extra step -->
+    <query>SELECT sum(a) FROM (SELECT arrayJoin(A) AS a FROM array_join_function_cross)</query>
+
+    <drop_query>DROP TABLE IF EXISTS array_join_function_cross</drop_query>
+</test>

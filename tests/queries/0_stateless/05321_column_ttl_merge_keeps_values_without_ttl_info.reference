@@ -1,0 +1,12 @@
+attach	dflt	100
+attach	keep	100
+modify	dflt	100
+modify	keep	100
+stopped, parts before TTL merge	1
+stopped, before TTL merge	keep	100
+stopped, before TTL merge	old	100
+stopped	dflt	100
+stopped	keep	100
+t_column_ttl_attach	Wide	1
+t_column_ttl_modify	Wide	1
+t_column_ttl_stopped	Wide	1

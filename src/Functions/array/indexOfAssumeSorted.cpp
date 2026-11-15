@@ -17,10 +17,10 @@ REGISTER_FUNCTION(IndexOfAssumeSorted)
 Returns the index of the first element with value 'x' (starting from `1`) if it is in the array.
 If the array does not contain the searched-for value, the function returns `0`.
 
-:::note
+<Note>
 Unlike the `indexOf` function, this function assumes that the array is sorted in
 ascending order. If the array is not sorted, results are undefined.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "indexOfAssumeSorted(arr, x)";
     FunctionDocumentation::Arguments arguments = {
@@ -31,7 +31,7 @@ ascending order. If the array is not sorted, results are undefined.
     FunctionDocumentation::Examples example = {{"Basic example", "SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)", "5"}};
     FunctionDocumentation::IntroducedIn introduced_in = {24, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
 
     factory.registerFunction<FunctionIndexOfAssumeSorted>(documentation);
 }

@@ -7,6 +7,7 @@
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <IO/Operators.h>
 
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -74,12 +75,12 @@ public:
         {
             if (!elem.from.database)
             {
-                elem.from.database = std::make_shared<ASTIdentifier>(database_name);
+                elem.from.database = make_intrusive<ASTIdentifier>(database_name);
                 children.push_back(elem.from.database);
             }
             if (!elem.to.database)
             {
-                elem.to.database = std::make_shared<ASTIdentifier>(database_name);
+                elem.to.database = make_intrusive<ASTIdentifier>(database_name);
                 children.push_back(elem.to.database);
             }
         }
@@ -90,9 +91,12 @@ public:
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Rename"; }
 
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
+
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTRenameQuery>(*this);
+        auto res = make_intrusive<ASTRenameQuery>(*this);
         res->children.clear();
 
         auto clone_child = [&res](ASTPtr & node)
@@ -125,12 +129,12 @@ public:
         {
             if (!elem.from.database)
             {
-                elem.from.database = std::make_shared<ASTIdentifier>(params.default_database);
+                elem.from.database = make_intrusive<ASTIdentifier>(params.default_database);
                 query.children.push_back(elem.from.database);
             }
             if (!elem.to.database)
             {
-                elem.to.database = std::make_shared<ASTIdentifier>(params.default_database);
+                elem.to.database = make_intrusive<ASTIdentifier>(params.default_database);
                 query.children.push_back(elem.to.database);
             }
         }
@@ -146,7 +150,7 @@ public:
         {
             if (name.empty())
                 return nullptr;
-            ASTPtr ast = std::make_shared<ASTIdentifier>(name);
+            ASTPtr ast = make_intrusive<ASTIdentifier>(name);
             children.push_back(ast);
             return ast;
         };
@@ -163,8 +167,12 @@ protected:
             if (elements.at(0).if_exists)
                 ostr << "IF EXISTS ";
 
+            /// RENAME DATABASE always carries both database names (the parser requires them and
+            /// getRewrittenASTWithoutOnCluster fills any missing one), so these are never null.
+            chassert(elements.at(0).from.database);
             elements.at(0).from.database->format(ostr, settings, state, frame);
             ostr << " TO ";
+            chassert(elements.at(0).to.database);
             elements.at(0).to.database->format(ostr, settings, state, frame);
             formatOnCluster(ostr, settings);
             return;

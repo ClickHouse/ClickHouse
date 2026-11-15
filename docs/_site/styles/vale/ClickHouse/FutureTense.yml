@@ -1,0 +1,15 @@
+---
+name: gitlab_base.FutureTense
+description: |
+  Checks for use of future tense in sentences.
+  Present tense is strongly preferred.
+extends: existence
+message: "Instead of future tense '%s', use present tense."
+ignorecase: true
+nonword: true
+vocab: false
+level: suggestion
+link: https://docs.gitlab.com/development/documentation/styleguide/word_list/#future-tense
+tokens:
+  - (going to|will|won't)[ \n:]\w*
+  - (It?|we|you|they)'ll[ \n:]\w*
