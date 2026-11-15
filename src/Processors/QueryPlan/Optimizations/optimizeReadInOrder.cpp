@@ -77,6 +77,10 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step, bool allow_existi
 
     if (auto * merge = typeid_cast<ReadFromMerge *>(step))
     {
+        /// The children of a STREAM read return their rows in commit order, see above.
+        if (merge->getQueryInfo().isStream())
+            return nullptr;
+
         if (const auto & order = merge->getInputOrder();
             !allow_existing_order && order && order->used_prefix_of_sorting_key_size)
             return nullptr;
