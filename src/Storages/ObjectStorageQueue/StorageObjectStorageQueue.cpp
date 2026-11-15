@@ -486,6 +486,12 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         keeper_path_database_name = table_id_.database_name;
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
 
+    if (strict_metadata_check && source.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot identify the source of the queue: the URL has a user name or password, or the Azure endpoint is not an "
+            "`http://` or `https://` URL. Remove the user name and password from the URL, or check the `AzureQueue` arguments");
+
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
         zookeeper_name,
         zk_path,

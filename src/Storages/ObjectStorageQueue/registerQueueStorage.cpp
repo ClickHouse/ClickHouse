@@ -209,11 +209,6 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         source.path_pattern.clear();
     const bool strict_metadata_check = (args.is_restore_from_backup && !isSecondaryDDLReplay(args.getLocalContext()))
         || !isReplayedTableDefinition(args.mode, args.query, args.getLocalContext());
-    if (strict_metadata_check && source.empty())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Cannot identify the source of the queue: the URL has a user name or password, or the Azure endpoint is not an "
-            "`http://` or `https://` URL. Remove the user name and password from the URL, or check the `AzureQueue` arguments");
 
     return std::make_shared<StorageObjectStorageQueue>(
         std::move(queue_settings),
