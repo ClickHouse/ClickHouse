@@ -20,12 +20,24 @@ function upload()
     "
 }
 
+# Many files at once, so that background inserts are still running when the next `ALTER` re-creates the streaming tasks.
+function upload_backlog()
+{
+    local from=$1
+    $CLICKHOUSE_CLIENT -q "
+        INSERT INTO FUNCTION s3(s3_conn, url = 'http://localhost:11111/${S3_PATH}/backlog_{_partition_id}.csv', format = CSV)
+        PARTITION BY x SELECT number AS x FROM numbers(${from}, 300) SETTINGS s3_truncate_on_insert = 1
+    "
+}
+
 function wait_rows()
 {
     local rows=$1
-    until [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM dst")" -eq "$rows" ]; do
+    until [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM dst")" -ge "$rows" ]; do
         sleep 0.5
     done
+    # Every file is inserted exactly once, also the ones processed while the streaming tasks were re-created.
+    $CLICKHOUSE_CLIENT -q "SELECT count() = ${rows} AND uniqExact(x) = ${rows} FROM dst"
 }
 
 $CLICKHOUSE_CLIENT --send_logs_level=error -q "
@@ -61,7 +73,14 @@ upload 3
 upload 4
 wait_rows 4
 
-# Changes the number of streaming tasks
+$CLICKHOUSE_CLIENT -q "
+    ALTER TABLE queue MODIFY SETTING processing_threads_num = 0; -- { serverError BAD_ARGUMENTS }
+    SELECT value FROM system.s3_queue_settings
+    WHERE database = currentDatabase() AND table = 'queue' AND name = 'processing_threads_num';
+"
+
+# Changes the number of streaming tasks while the backlog is being processed
+upload_backlog 1000
 $CLICKHOUSE_CLIENT -q "
     ALTER TABLE queue MODIFY SETTING processing_threads_num = 8;
     SELECT value FROM system.s3_queue_settings
@@ -70,9 +89,10 @@ $CLICKHOUSE_CLIENT -q "
 
 upload 5
 upload 6
-wait_rows 6
+wait_rows 306
 
-# Back to a single streaming task
+# Back to a single streaming task while the backlog is being processed
+upload_backlog 2000
 $CLICKHOUSE_CLIENT -q "
     ALTER TABLE queue MODIFY SETTING parallel_inserts = 0;
     SELECT value FROM system.s3_queue_settings
@@ -81,7 +101,7 @@ $CLICKHOUSE_CLIENT -q "
 
 upload 7
 upload 8
-wait_rows 8
+wait_rows 608
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE mv SYNC;
