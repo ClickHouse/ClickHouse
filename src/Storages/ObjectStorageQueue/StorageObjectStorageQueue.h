@@ -8,6 +8,7 @@
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/UUID.h>
 #include <Storages/IStorage.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueBatchSizeOverride.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -187,7 +188,7 @@ private:
     std::vector<std::unique_ptr<StreamingTask>> streaming_tasks TSA_GUARDED_BY(streaming_tasks_mutex);
     /// Set while `ALTER` waits for the streaming tasks to stop before re-creating them.
     std::atomic<bool> restarting_streaming_tasks{false};
-    std::atomic<size_t> max_files_override{0};
+    ObjectStorageQueueBatchSizeOverride max_files_override;
 
     LoggerPtr log;
 
