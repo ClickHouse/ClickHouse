@@ -356,7 +356,8 @@ public:
         bool is_parallel_reading_from_replicas_,
         bool allow_query_condition_cache_,
         bool supports_skip_indexes_on_data_read,
-        bool check_row_limits);
+        bool check_row_limits,
+        bool skip_ranges_analysis);
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
@@ -385,6 +386,9 @@ public:
     /// see filters whose value can change while that key stays the same: non-deterministic virtual
     /// columns (query-wide part numbering, catalog names, disk placement).
     static bool filterDependsOnNonDeterministicVirtuals(const VirtualColumnsDescription & virtuals, const SelectQueryInfo & query_info_);
+
+    /// The query takes no row from this read, so `selectRangesToRead` does not analyze its ranges.
+    void setNoRowsNeeded() { no_rows_needed = true; }
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
@@ -767,6 +771,7 @@ private:
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
     bool allow_query_condition_cache = true;
+    bool no_rows_needed = false;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
 

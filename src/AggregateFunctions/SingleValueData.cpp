@@ -1382,6 +1382,14 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
         }
         else
         {
+            /// The buffer was allocated for `size - 1` bytes above, so it may have no room for the appended byte.
+            if (capacity < size)
+            {
+                /// Arena allocations remain valid until the Arena is destroyed.
+                const char * old_data = large_data;
+                allocateLargeDataIfNeeded(size, arena);
+                memcpy(large_data, old_data, size - 1);
+            }
             large_data[size - 1] = last_char;
         }
         ++size;
