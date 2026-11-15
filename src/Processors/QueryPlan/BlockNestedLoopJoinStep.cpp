@@ -261,7 +261,8 @@ QueryPipelineBuilderPtr BlockNestedLoopJoinStep::updatePipeline(QueryPipelineBui
                 {
                     if (stream_type != QueryPipelineBuilder::StreamType::Main)
                         return nullptr;
-                    return std::make_shared<SimpleSquashingChunksTransform>(header, min_input_block_size, min_input_block_bytes);
+                    return std::make_shared<SimpleSquashingChunksTransform>(
+                        header, min_input_block_size, min_input_block_bytes, 0, 0, limit_above);
                 });
         }
 

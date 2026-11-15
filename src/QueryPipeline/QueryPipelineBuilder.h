@@ -165,6 +165,7 @@ public:
         size_t max_block_size,
         size_t min_block_size_rows,
         size_t min_block_size_bytes,
+        bool grow_left_squashing,
         size_t max_streams,
         IQueryPlanStep * join_step,
         bool keep_left_pipeline_layout,

@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <limits>
 #include <utility>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Columns/IColumn.h>
@@ -80,11 +82,13 @@ size_t squashedBytes(const Chunk & chunk)
 
 SimpleSquashingChunksTransform::SimpleSquashingChunksTransform(
     SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes,
-    size_t max_block_size_rows_, size_t max_block_size_bytes_)
+    size_t max_block_size_rows_, size_t max_block_size_bytes_, bool grow_min_block_size_rows_)
     : IInflatingTransform(header, header)
-    , squashing(header, min_block_size_rows, min_block_size_bytes)
+    , squashing(header, grow_min_block_size_rows_ ? 1 : min_block_size_rows, min_block_size_bytes)
     , max_block_size_rows(max_block_size_rows_)
     , max_block_size_bytes(max_block_size_bytes_)
+    , target_min_block_size_rows(min_block_size_rows ? min_block_size_rows : std::numeric_limits<size_t>::max())
+    , growing_min_block_size_rows(grow_min_block_size_rows_)
 {
 }
 
@@ -112,6 +116,7 @@ Chunk SimpleSquashingChunksTransform::generate()
     {
         Chunk result;
         result.swap(flushed_chunk);
+        growMinBlockSizeRows(result.getNumRows());
         return result;
     }
 
@@ -122,6 +127,7 @@ Chunk SimpleSquashingChunksTransform::generate()
 
     Chunk result;
     result.swap(squashed_chunk);
+    growMinBlockSizeRows(result.getNumRows());
     return result;
 }
 
@@ -134,6 +140,21 @@ Chunk SimpleSquashingChunksTransform::getRemaining()
 {
     chassert(!flushed_chunk);
     return Squashing::squash(squashing.flush(), getOutputPort().getSharedHeader());
+}
+
+void SimpleSquashingChunksTransform::growMinBlockSizeRows(size_t released)
+{
+    if (!growing_min_block_size_rows)
+        return;
+
+    released_rows += released;
+    /// Only while `squashing` is empty: `consume` relies on a generation round emptying it.
+    if (squashing.getRows())
+        return;
+
+    const size_t next = std::min(target_min_block_size_rows, std::max<size_t>(released_rows, 1));
+    squashing.setMinBlockSizeRows(next);
+    growing_min_block_size_rows = next < target_min_block_size_rows;
 }
 
 }
