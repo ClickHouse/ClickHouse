@@ -325,36 +325,26 @@ void MergeTreeReaderWide::setSelectedRows(const PaddedPODArray<UInt64> & rows)
 
     const auto & metadata = *storage_snapshot->metadata;
 
-    /// A column of the table that the part does not have completely is filled after the read, and its default expression
-    /// is evaluated before the filter that keeps the selected rows, so it could use the placeholder values of the rows that
-    /// are not selected. Whether a default uses a column is not checked: a column can be named in many ways in an
-    /// expression. Virtual columns, such as `_part_offset`, are not in the part either, but are not computed from defaults.
-    if (!data_part_info_for_read->getSerializationInfos().getMissingColumns().empty())
+    /// A column that the part does not have is filled after the read, before the filter that keeps the selected rows, from
+    /// its default expression, which could use the placeholder values of the rows that are not selected. A column without
+    /// a default expression is filled with the default value of its type, which does not depend on other columns.
+    if (hasDefaultExpressionWithIdentifiers(metadata))
         return;
-    auto requested_column = getColumns().begin();
-    for (size_t pos = 0; pos < columns_to_read.size(); ++pos, ++requested_column)
-    {
-        const bool is_virtual = !metadata.getColumns().has(requested_column->name) && metadata.virtuals.has(requested_column->name);
-        if (!is_virtual && (isColumnSkipped(pos) || isColumnAbsentFromPart(pos)
-            || partially_read_columns.contains(columns_to_read[pos].name)))
-            return;
-    }
 
     /// The layouts of the columns that can be read only for the selected rows. These checks read nothing from disk.
     std::vector<std::optional<OneRowPerBlockLayout>> layouts(columns_to_read.size());
     bool has_layouts = false;
-    requested_column = getColumns().begin();
+    auto requested_column = getColumns().begin();
     for (size_t pos = 0; pos < columns_to_read.size(); ++pos, ++requested_column)
     {
         const auto & column = columns_to_read[pos];
-        if (column.isSubcolumn())
+        /// A skipped column, e.g. during a pending `CLEAR COLUMN`, is filled from its default instead of being read.
+        if (column.isSubcolumn() || isColumnSkipped(pos))
             continue;
 
-        /// A column with another type in the part than requested, during a pending `MODIFY COLUMN`, is converted
-        /// before the filter, and the conversion could fail on the placeholder values. A column with another name in
-        /// the part, during a pending rename, would be checked below against the metadata of another column, which can
-        /// have its old name.
-        if (!column.type->equals(*requested_column->type) || column.getNameInStorage() != requested_column->getNameInStorage())
+        /// A column with another name in the part, during a pending rename, would be checked below against the metadata of
+        /// another column, which can have its old name.
+        if (column.getNameInStorage() != requested_column->getNameInStorage())
             continue;
 
         layouts[pos] = tryGetOneRowPerBlockLayout(*part, column, metadata);

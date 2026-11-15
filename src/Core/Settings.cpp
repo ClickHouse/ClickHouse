@@ -10256,16 +10256,11 @@ This applies when a query reads known rows of a part. This happens in the second
 It also happens for the candidates of a vector similarity index with `vector_search_with_rescoring`.
 Only the blocks of these rows are read and checksummed. Their elements are copied directly into the result.
 
-The column must meet these conditions:
-- Its type is `Array(BFloat16)`, `Array(Float32)`, `Array(Float64)` or `Array(Int8)`.
-- Its codec is `NONE` or `Quantized`.
-- Its column-level settings `min_compress_block_size` and `max_compress_block_size` both equal the size of one row.
-- All its rows have the same number of elements.
-
-The part must be a Wide part. When a part is written, ClickHouse checks that every row of the column is exactly one block and
-records it in the part. Only such parts are read this way. Other parts are read as usual, for example parts written before the
-column-level settings were set, or with rows of different sizes. The setting has no effect when the uncompressed cache or the
-columns cache is used.
+The column must have the column-level setting `uncompressed_fixed_array_size`, which declares the number of elements of every
+row and makes every row be stored as one uncompressed block, and the part must be a Wide part. Other columns and Compact parts
+are read as usual. The setting has no effect when the uncompressed cache or the columns cache is used, or when a column of the
+table has a default expression (`DEFAULT`, `MATERIALIZED`, `ALIAS` or `EPHEMERAL`) with an identifier: such an expression could
+use the values of the rows that are not read. Expressions without identifiers, such as `now()`, are allowed.
 )", EXPERIMENTAL, \
         {"26.11", false, false, "New setting."}) \
     DECLARE(Bool, vector_search_with_rescoring, false, R"(

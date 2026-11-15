@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Core/NamesAndTypes.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <base/types.h>
 
 #include <optional>
@@ -11,7 +11,9 @@
 namespace DB
 {
 
+class Block;
 class IMergeTreeDataPart;
+struct ColumnDescription;
 struct StorageInMemoryMetadata;
 
 /// The layout of an `Array` column in a part where every row has the same number of elements and is
@@ -39,51 +41,39 @@ UInt64 getOneRowPerBlockHeaderBytes();
 bool canHaveOneRowPerBlockLayout(const DataTypePtr & type);
 
 /// Whether every codec of the declared codec of a column stores the data verbatim: `NONE`, or `Quantized`, which only adds
-/// another stream. A column without a declared codec uses the default codec, which compresses.
+/// another stream. Returns false for a column without a declared codec.
 bool declaredCodecStoresDataVerbatim(const ASTPtr & codec_desc);
 
-/// The layout is recorded when a part is written, not inferred from the column settings when it is read: the settings
-/// describe the parts written from now on, and a part written before they were changed, or with other buffers, can have
-/// other blocks whose sizes add up to the same totals, so a computed position would land in the middle of another row.
-///
-/// The writer of a Wide part checks the blocks it wrote to the file of the array elements of a column: exactly one block
-/// per row, every block of `row_bytes` stored without compression, and every row of `array_size` elements. Only then it
-/// writes a marker file, which is in the checksums of the part. The marker holds `row_bytes`, `array_size`, and the sizes and
-/// the hashes of the two files that define the layout: the file of the elements and the file of the array sizes, which
-/// define where the rows begin.
-///
-/// The name of the marker is a hash of the name of the stream and of these two checksums, e.g. `<hash>.one_row_per_block`,
-/// so its length does not depend on the name of the column. A marker is valid exactly for the bytes it was written for,
-/// which is what makes it safe to carry over as is: a mutation that keeps both files keeps their marker, and one that
-/// rewrites either of them changes the expected name, so the old marker is not used, and a new marker is never written
-/// into one hardlinked from the source part.
-constexpr auto ONE_ROW_PER_BLOCK_MARKER_EXTENSION = ".one_row_per_block";
+/// The column-level setting that declares the number of elements of every row of a column and makes the elements of every
+/// row be written as one uncompressed block. It can be specified only in `CREATE TABLE`, so every part of the table is
+/// written with it, and the writer of a Wide part enforces it, see `MergeTreeDataPartWriterWide`.
+constexpr auto UNCOMPRESSED_FIXED_ARRAY_SIZE_SETTING = "uncompressed_fixed_array_size";
 
-/// The name of the marker of the file of array elements of `stream_name` with checksum `data_checksum`, and with the file of
-/// array sizes with checksum `sizes_checksum`.
-String getOneRowPerBlockMarkerName(
-    const String & stream_name, const MergeTreeDataPartChecksum & data_checksum, const MergeTreeDataPartChecksum & sizes_checksum);
+/// The value of the setting `uncompressed_fixed_array_size` of `column`, or 0 if it does not have it.
+UInt64 getUncompressedFixedArraySize(const ColumnDescription & column);
 
-/// The content of the marker of these files.
-String makeOneRowPerBlockMarker(
-    UInt64 row_bytes, UInt64 array_size, const MergeTreeDataPartChecksum & data_checksum, const MergeTreeDataPartChecksum & sizes_checksum);
+/// Checks that a column declared in `CREATE TABLE` can have the setting `uncompressed_fixed_array_size`, if it has it.
+void validateUncompressedFixedArraySize(const ColumnDescription & column);
 
-/// The checksum of a marker file with `content`, as recorded in the checksums of the part.
-MergeTreeDataPartChecksum getOneRowPerBlockMarkerChecksum(const String & content);
+/// Throws an exception if a row of a column of `block` with the setting `uncompressed_fixed_array_size` in `metadata` does not
+/// have the declared number of elements. Called by the writers of all part types, so that a part of any type has only such
+/// rows, and merges and mutations can always write them as one block per row.
+void checkUncompressedFixedArraySizes(const Block & block, const StorageInMemoryMetadata & metadata);
 
-/// The markers in the checksums of `part` that are not named after its current files of array elements and array sizes.
-/// A mutation that hardlinks files from the source part removes them, so that which markers a part has depends only on its
-/// files, not on the history of mutations that produced them: replicas that execute the same mutations in other batches
-/// must get the same checksums.
-Names getStaleOneRowPerBlockMarkers(const IMergeTreeDataPart & part);
+/// Whether `path` is the path of the stream of the elements of a top-level `Array` of numbers: `ArrayElements`, `Regular`.
+bool isTopLevelArrayElementsStream(const ISerialization::SubstreamPath & path);
+
+/// Whether a column of `metadata`, or a virtual column, has a default expression of any kind, `DEFAULT`, `MATERIALIZED`,
+/// `ALIAS` or `EPHEMERAL`, with an identifier, which could name another column. Any identifier counts, without resolving
+/// what it names, e.g. `vec`, `dummy.vec`, `n.d` or the parameter of a lambda. Expressions such as `now()` or literals do
+/// not count. A reader fills a column that a part does not have from its default expression, see
+/// `IMergeTreeReader::evaluateMissingDefaults`, which follows the columns that an expression names, of every kind.
+bool hasDefaultExpressionWithIdentifiers(const StorageInMemoryMetadata & metadata);
 
 /// Returns the layout of `column` in `part`, or `std::nullopt`, in which case the column must be read with the usual
-/// readers.
-///
-/// The column must have the column-level settings `min_compress_block_size` and `max_compress_block_size` both equal to
-/// the size of a row in `metadata`, which gives the number of elements of a row, and the part must have the marker written
-/// for exactly this layout and this file of elements. The marker is checked against its checksum in the checksums of the
-/// part, so nothing is read from disk.
+/// readers: if the column does not have the setting `uncompressed_fixed_array_size` in `metadata`, or the part is not a
+/// Wide part, or the part does not have the column. Throws an exception if the sizes of the file of the elements in the
+/// checksums of the part contradict the setting. Nothing is read from disk.
 std::optional<OneRowPerBlockLayout> tryGetOneRowPerBlockLayout(
     const IMergeTreeDataPart & part,
     const NameAndTypePair & column,

@@ -109,14 +109,11 @@ void MergeTreeOneRowPerBlockReader::readRow(MergeTreeReaderStream & stream, UInt
 {
     const UInt64 offset = row * layout.block_bytes;
 
-    /// A part written with other block sizes than the column has now has no block at the position of a row, which looks
-    /// like corrupted data here. The exception says so, as nothing before the read can tell.
     auto explanation = [&]
     {
         return fmt::format(
             "While reading row {} from {} at offset {}, as one row per block (setting `merge_tree_use_one_row_per_block_layout`). "
-            "Either the part is corrupted, or it was written with other values of `min_compress_block_size` and "
-            "`max_compress_block_size` than the column has now. In the second case, merge the part or disable the setting",
+            "The part is corrupted, or was not written with the setting `uncompressed_fixed_array_size` of the column",
             row, path_for_logs, offset);
     };
 

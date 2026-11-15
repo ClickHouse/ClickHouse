@@ -48,7 +48,6 @@
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
-#include <Storages/MergeTree/MergeTreeOneRowPerBlockLayout.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -4487,14 +4486,6 @@ private:
                 hardlinked_index_names,
                 ctx->new_data_part->getColumnsDescription(),
                 ctx->source_part->getSecondaryIndexColumnTypes()));
-        }
-
-        /// The markers of the one-row-per-block layout of the files that were rewritten were hardlinked from the source part
-        /// with the other files. Only the markers of the current files are kept, see `getStaleOneRowPerBlockMarkers`.
-        for (const auto & marker : getStaleOneRowPerBlockMarkers(*ctx->new_data_part))
-        {
-            files.erase(marker);
-            ctx->new_data_part->getDataPartStorage().removeFileIfExists(marker);
         }
 
         MutationHelpers::finalizeMutatedPart(

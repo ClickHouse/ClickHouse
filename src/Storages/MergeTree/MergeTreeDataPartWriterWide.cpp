@@ -2,7 +2,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnSparse.h>
 #include <Compression/CompressedReadBufferFromFile.h>
-#include <Compression/CompressionCodecQuantized.h>
 #include <Compression/CompressionFactory.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/Serializations/ISerialization.h>
@@ -195,9 +194,6 @@ void MergeTreeDataPartWriterWide::initStreamsToOpenCount()
 
 void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_type)
 {
-    /// The stream of the array sizes of a top-level `Array`, enumerated before the stream of its elements.
-    String array_sizes_stream_name;
-
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         chassert(!substream_path.empty());
@@ -209,9 +205,6 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
         auto full_stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
         String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, *storage_settings, data_part_storage.get());
-
-        if (substream_path.size() == 1 && substream_path[0].type == ISerialization::Substream::ArraySizes)
-            array_sizes_stream_name = stream_name;
 
         /// Shared offsets for Nested type.
         if (column_streams.contains(stream_name))
@@ -242,14 +235,6 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
         if (column_desc)
             if (const auto * value = column_desc->settings.tryGet("max_compress_block_size"))
                 max_compress_block_size = value->safeGet<UInt64>();
-
-        /// Of a `Quantized` column, the column-level `max_compress_block_size` applies only to the stream of the array
-        /// elements, where it is set to the size of one vector for `OneRowPerBlockLayout`. The other streams, the array
-        /// sizes and the quantized codes, would only get many small blocks, so they get the default.
-        if (max_compress_block_size && tryExtractQuantizedCodecParams(column_desc->codec)
-            && std::ranges::none_of(substream_path, [](const auto & substream) { return substream.type == ISerialization::Substream::ArrayElements; }))
-            max_compress_block_size = 0;
-
         if (!max_compress_block_size)
             max_compress_block_size = settings.max_compress_block_size;
         /// Clamp to prevent absurd memory allocations from fuzzed or misconfigured column settings.
@@ -271,6 +256,28 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
             max_compress_block_size = roundCompressBlockSizeToWholeValues(max_compress_block_size, *type);
             query_write_settings.adaptive_write_buffer_initial_size
                 = roundCompressBlockSizeToWholeValues(query_write_settings.adaptive_write_buffer_initial_size, *type);
+        }
+
+        /// The elements of every row of a column with the setting `uncompressed_fixed_array_size` are one block stored
+        /// without compression: the buffer holds exactly one row, and is flushed when it is full, see `getCurrentMarksForColumn`.
+        const UInt64 fixed_array_size = column_desc && !name_and_type.isSubcolumn() ? getUncompressedFixedArraySize(*column_desc) : 0;
+        if (fixed_array_size && isTopLevelArrayElementsStream(substream_path))
+        {
+            FixedArrayColumn fixed_array_column;
+            fixed_array_column.stream_name = stream_name;
+            fixed_array_column.array_size = fixed_array_size;
+            fixed_array_column.row_bytes
+                = fixed_array_size * assert_cast<const DataTypeArray &>(*name_and_type.type).getNestedType()->getSizeOfValueInMemory();
+            if (fixed_array_column.row_bytes > MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "A row of column {} has {} bytes, more than the maximum size of a block",
+                    backQuoteIfNeed(name_and_type.name), fixed_array_column.row_bytes);
+
+            max_compress_block_size = fixed_array_column.row_bytes;
+            query_write_settings.use_adaptive_write_buffer = false;
+            /// The declared codec is `NONE` or `Quantized`, see `validateUncompressedFixedArraySize`.
+            if (!column_desc->codec)
+                compression_codec = CompressionCodecFactory::instance().get("NONE", {});
+            fixed_array_columns.emplace(name_and_type.name, std::move(fixed_array_column));
         }
 
         fiu_do_on(FailPoints::wide_part_writer_fail_in_add_streams,
@@ -300,18 +307,6 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
 
         full_name_to_stream_name.emplace(full_stream_name, stream_name);
         stream_name_to_full_name.emplace(stream_name, full_stream_name);
-
-        /// The elements of a top-level `Array` of numbers: the path is `ArrayElements`, `Regular`.
-        if (substream_path.size() == 2 && substream_path[0].type == ISerialization::Substream::ArrayElements
-            && substream_path[1].type == ISerialization::Substream::Regular && !name_and_type.isSubcolumn() && canHaveOneRowPerBlockLayout(name_and_type.type)
-            && column_desc && declaredCodecStoresDataVerbatim(column_desc->codec))
-        {
-            OneRowPerBlockCandidate candidate;
-            candidate.stream_name = stream_name;
-            candidate.sizes_stream_name = array_sizes_stream_name;
-            candidate.element_bytes = assert_cast<const DataTypeArray &>(*name_and_type.type).getNestedType()->getSizeOfValueInMemory();
-            one_row_per_block_candidates.emplace(name_and_type.name, std::move(candidate));
-        }
     };
 
     auto serialization = getSerialization(name_and_type.name);
@@ -397,6 +392,8 @@ void MergeTreeDataPartWriterWide::shiftCurrentMark(const Granules & granules_wri
 
 void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache)
 {
+    checkUncompressedFixedArraySizes(block, *metadata_snapshot);
+
     Block block_to_write = block;
 
     /// For some columns the set of streams may depend on the actual column data.
@@ -545,8 +542,11 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(const Nam
 
         auto & stream = *column_streams.at(stream_name);
 
-        /// There could already be enough data to compress into the new block.
-        if (stream.compressed_hashing.offset() >= min_compress_block_size)
+        /// There could already be enough data to compress into the new block. The buffer of the elements of a column with
+        /// the setting `uncompressed_fixed_array_size` holds exactly one row, so it is full or empty, and is always flushed,
+        /// so that a mark is at the start of a block.
+        const bool is_fixed_array_elements = isTopLevelArrayElementsStream(substream_path) && fixed_array_columns.contains(name_and_type.name);
+        if (is_fixed_array_elements || stream.compressed_hashing.offset() >= min_compress_block_size)
             stream.compressed_hashing.next();
 
         StreamNameAndMark stream_with_mark;
@@ -683,7 +683,8 @@ void MergeTreeDataPartWriterWide::writeColumn(
 
     auto serialize_settings = getSerializationSettingsForColumn(name_and_type, offset_substreams);
 
-    updateOneRowPerBlockCandidate(name, column);
+    if (auto fixed_array_it = fixed_array_columns.find(name); fixed_array_it != fixed_array_columns.end())
+        fixed_array_it->second.rows += column.size();
 
     /// Some vector codecs (e.g., SZ3) used for compressing arrays like Array<Float> require the array
     /// dimension to be set before compression starts (for 1D arrays it's simply the length). The dimension
@@ -953,74 +954,33 @@ void MergeTreeDataPartWriterWide::fillDataChecksums(MergeTreeDataPartChecksums &
         stream->addToChecksums(checksums, true);
     }
 
-    fillOneRowPerBlockMarkers(checksums);
+    checkFixedArrayBlocks(checksums);
 }
 
-void MergeTreeDataPartWriterWide::updateOneRowPerBlockCandidate(const String & column_name, const IColumn & column)
+void MergeTreeDataPartWriterWide::checkFixedArrayBlocks(const MergeTreeDataPartChecksums & checksums) const
 {
-    auto it = one_row_per_block_candidates.find(column_name);
-    if (it == one_row_per_block_candidates.end() || !it->second.all_rows_have_array_size)
-        return;
-
-    auto & candidate = it->second;
-    const auto * column_array = typeid_cast<const ColumnArray *>(&column);
-    if (!column_array)
+    for (const auto & [column_name, fixed_array_column] : fixed_array_columns)
     {
-        candidate.all_rows_have_array_size = false;
-        return;
-    }
-
-    const auto & offsets = column_array->getOffsets();
-    for (size_t row = 0; row < offsets.size(); ++row)
-    {
-        const UInt64 size = offsets[row] - offsets[ssize_t(row) - 1];
-        if (!candidate.array_size)
-            candidate.array_size = size;
-        if (size != *candidate.array_size)
-        {
-            candidate.all_rows_have_array_size = false;
-            return;
-        }
-    }
-    candidate.rows += offsets.size();
-}
-
-void MergeTreeDataPartWriterWide::fillOneRowPerBlockMarkers(MergeTreeDataPartChecksums & checksums)
-{
-    for (const auto & [column_name, candidate] : one_row_per_block_candidates)
-    {
-        if (!candidate.all_rows_have_array_size || !candidate.array_size || *candidate.array_size == 0 || candidate.rows == 0)
+        if (fixed_array_column.rows == 0)
             continue;
 
-        auto stream_it = column_streams.find(candidate.stream_name);
-        if (stream_it == column_streams.end())
-            continue;
+        const auto stream_it = column_streams.find(fixed_array_column.stream_name);
+        const auto checksum_it = checksums.files.find(fixed_array_column.stream_name + DATA_FILE_EXTENSION);
+        if (stream_it == column_streams.end() || checksum_it == checksums.files.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The stream {} of the elements of column {} is not written",
+                fixed_array_column.stream_name, backQuoteIfNeed(column_name));
 
-        /// Exactly one block per row, every block of the elements of one row. With all rows of `array_size` elements,
-        /// the block of row `i` then holds exactly the elements of row `i`.
-        const UInt64 row_bytes = *candidate.array_size * candidate.element_bytes;
+        /// Exactly one block per row, every block of one row stored without compression.
         const auto statistics = stream_it->second->compressor.getBlockStatistics();
-        if (statistics.blocks != candidate.rows || statistics.min_uncompressed_bytes != row_bytes || statistics.max_uncompressed_bytes != row_bytes)
-            continue;
-
-        /// And every block stored without compression.
-        const auto data_checksum_it = checksums.files.find(candidate.stream_name + DATA_FILE_EXTENSION);
-        if (data_checksum_it == checksums.files.end()
-            || data_checksum_it->second.file_size != candidate.rows * (getOneRowPerBlockHeaderBytes() + row_bytes))
-            continue;
-
-        /// The marker is valid only together with these array sizes. They are written by this writer, except shared
-        /// offsets of `Nested` written separately, in which case there is no marker.
-        if (candidate.sizes_stream_name.empty())
-            continue;
-        const auto sizes_checksum_it = checksums.files.find(candidate.sizes_stream_name + DATA_FILE_EXTENSION);
-        if (sizes_checksum_it == checksums.files.end())
-            continue;
-
-        String marker = makeOneRowPerBlockMarker(row_bytes, *candidate.array_size, data_checksum_it->second, sizes_checksum_it->second);
-        String marker_name = getOneRowPerBlockMarkerName(candidate.stream_name, data_checksum_it->second, sizes_checksum_it->second);
-        checksums.files[marker_name] = getOneRowPerBlockMarkerChecksum(marker);
-        one_row_per_block_markers.emplace_back(std::move(marker_name), std::move(marker));
+        const UInt64 expected_file_size = fixed_array_column.rows * (getOneRowPerBlockHeaderBytes() + fixed_array_column.row_bytes);
+        if (statistics.blocks != fixed_array_column.rows || statistics.min_uncompressed_bytes != fixed_array_column.row_bytes
+            || statistics.max_uncompressed_bytes != fixed_array_column.row_bytes || checksum_it->second.file_size != expected_file_size)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "The elements of column {} with the setting `{}` are not written as one uncompressed block per row: {} rows of {} "
+                "bytes, {} blocks of {} to {} bytes, {} bytes in the file, expected {}",
+                backQuoteIfNeed(column_name), UNCOMPRESSED_FIXED_ARRAY_SIZE_SETTING, fixed_array_column.rows,
+                fixed_array_column.row_bytes, statistics.blocks, statistics.min_uncompressed_bytes, statistics.max_uncompressed_bytes,
+                checksum_it->second.file_size, expected_file_size);
     }
 }
 
@@ -1028,19 +988,6 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(bool sync)
 {
     for (auto & stream : column_streams)
         stream.second->finalize();
-
-    for (const auto & [marker_name, marker] : one_row_per_block_markers)
-    {
-        /// A file of this name can only be hardlinked from another part with the same content, see
-        /// `getOneRowPerBlockMarkerName`. It is removed anyway, so that the file of the other part is never written.
-        data_part_storage->removeFileIfExists(marker_name);
-        auto out = data_part_storage->writeFile(marker_name, marker.size(), settings.query_write_settings);
-        out->write(marker.data(), marker.size());
-        out->finalize();
-        if (sync)
-            out->sync();
-    }
-    one_row_per_block_markers.clear();
 
     if (sync)
     {
@@ -1102,7 +1049,6 @@ void MergeTreeDataPartWriterWide::cancel() noexcept
 
     column_streams.clear();
     serialization_states.clear();
-    one_row_per_block_markers.clear();
 
     Base::cancel();
 }

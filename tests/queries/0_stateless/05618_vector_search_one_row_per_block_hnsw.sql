@@ -3,8 +3,8 @@
 -- no-parallel-replicas: the vector search optimization, and with it the candidate rows, is disabled under parallel replicas.
 
 -- With `merge_tree_use_one_row_per_block_layout` and `vector_search_with_rescoring`, only the candidate rows of the vector
--- similarity index are read from the vector column, not whole granules. This needs one row per block, stored without
--- compression. The results must be the same as with the usual readers.
+-- similarity index are read from a vector column with the setting `uncompressed_fixed_array_size`, not whole granules.
+-- The results must be the same as with the usual readers.
 
 SET vector_search_with_rescoring = 1;
 SET use_skip_indexes = 1;
@@ -18,21 +18,15 @@ SET vector_search_index_fetch_multiplier = 100;
 SET hnsw_candidate_list_size_for_search = 2048;
 
 DROP TABLE IF EXISTS tab;
-DROP TABLE IF EXISTS tab_readded;
-DROP TABLE IF EXISTS tab_renamed;
 DROP TABLE IF EXISTS tab_prefetch;
-DROP TABLE IF EXISTS tab_conversion;
-DROP TABLE IF EXISTS tab_rename_reuse;
-DROP TABLE IF EXISTS tab_other_default;
-DROP TABLE IF EXISTS tab_qualified;
 DROP TABLE IF EXISTS tab_dotted;
 
--- 64 `Float32` elements are 256 bytes, so every row is one block. The tables are small, because the thread fuzzer of CI
+-- Every row of 64 `Float32` elements is one block. The tables are small, because the thread fuzzer of CI
 -- makes every lock taken while building the indexes slow.
 CREATE TABLE tab
 (
     id UInt32,
-    vec Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256),
+    vec Array(Float32) SETTINGS (uncompressed_fixed_array_size = 64),
     INDEX idx vec TYPE vector_similarity('hnsw', 'cosineDistance', 64, 'b1', 64, 128)
 )
 ENGINE = MergeTree ORDER BY id
@@ -56,111 +50,43 @@ WITH (SELECT vec FROM tab WHERE id = 123) AS ref
 SELECT id FROM tab ORDER BY cosineDistance(vec, ref) LIMIT 10
 SETTINGS merge_tree_use_one_row_per_block_layout = 0, log_comment = '05618_off';
 
--- A column added later is computed from its default expression before the candidates are filtered. The expression could
--- use the placeholder values of the other rows, so the vectors are read as usual then.
-ALTER TABLE tab ADD COLUMN d UInt64 DEFAULT intDiv(64, length(vec));
+-- Columns that the part does not have are filled after the read, before the candidates are filtered. Without a default
+-- expression, or with one that names no column, they do not depend on the placeholder values of the other rows, so only
+-- the candidates are read.
+ALTER TABLE tab ADD COLUMN e UInt64;
+ALTER TABLE tab ADD COLUMN ts DateTime DEFAULT now();
 
-SELECT 'default from the vector, setting on';
+SELECT 'defaults without columns, setting on';
+WITH (SELECT vec FROM tab WHERE id = 123) AS ref
+SELECT id, e, ts > 0 FROM tab ORDER BY cosineDistance(vec, ref) LIMIT 10
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_no_column_defaults_on';
+
+-- A default expression with an identifier, which could name the vector column in many ways, e.g. `dummy.vec`, could use
+-- the placeholder values, so from the next query on, the vectors are read as usual. This holds for a default expression
+-- of any column, in any part, whether or not the query reads the column.
+ALTER TABLE tab ADD COLUMN d UInt64 DEFAULT intDiv(64, length(dummy.vec));
+
+SELECT 'default with an identifier, setting on';
 WITH (SELECT vec FROM tab WHERE id = 123) AS ref
 SELECT id, d FROM tab ORDER BY cosineDistance(vec, ref) LIMIT 10
 SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_default_on';
 
-SELECT 'default from the vector, setting off';
+SELECT 'default with an identifier, setting off';
 WITH (SELECT vec FROM tab WHERE id = 123) AS ref
 SELECT id, d FROM tab ORDER BY cosineDistance(vec, ref) LIMIT 10
 SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
 
--- A column dropped by a pending mutation and added again is still in the part, but it is computed from its default
--- expression as well, so the vectors are read as usual then.
-CREATE TABLE tab_readded
-(
-    id UInt32,
-    d UInt64,
-    vec Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256),
-    INDEX idx vec TYPE vector_similarity('hnsw', 'cosineDistance', 64, 'b1', 64, 128)
-)
-ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, index_granularity = 128;
-
-SYSTEM STOP MERGES tab_readded;
-INSERT INTO tab_readded SELECT id, 999, vec FROM tab;
-ALTER TABLE tab_readded DROP COLUMN d SETTINGS mutations_sync = 0, alter_sync = 0;
-ALTER TABLE tab_readded ADD COLUMN d UInt64 DEFAULT intDiv(64, length(vec)) SETTINGS mutations_sync = 0, alter_sync = 0;
-
-SELECT 'added again, setting on';
-WITH (SELECT vec FROM tab_readded WHERE id = 123) AS ref
-SELECT id, d FROM tab_readded ORDER BY cosineDistance(vec, ref) LIMIT 10
-SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_readded_on';
-
-SELECT 'added again, setting off';
-WITH (SELECT vec FROM tab_readded WHERE id = 123) AS ref
-SELECT id, d FROM tab_readded ORDER BY cosineDistance(vec, ref) LIMIT 10
-SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
-
--- A column with a default expression renamed by a pending mutation has its old name in the part. It is computed from
--- its default expression as well, so the vectors are read as usual then.
-CREATE TABLE tab_renamed
-(
-    id UInt32,
-    vec Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256),
-    INDEX idx vec TYPE vector_similarity('hnsw', 'cosineDistance', 64, 'b1', 64, 128)
-)
-ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, index_granularity = 128;
-
-SYSTEM STOP MERGES tab_renamed;
-INSERT INTO tab_renamed SELECT id, vec FROM tab;
-ALTER TABLE tab_renamed ADD COLUMN d UInt64 DEFAULT intDiv(64, length(vec));
-ALTER TABLE tab_renamed RENAME COLUMN d TO e SETTINGS mutations_sync = 0, alter_sync = 0;
-
-SELECT 'renamed, setting on';
-WITH (SELECT vec FROM tab_renamed WHERE id = 123) AS ref
-SELECT id, e FROM tab_renamed ORDER BY cosineDistance(vec, ref) LIMIT 10
-SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_renamed_on';
-
-SELECT 'renamed, setting off';
-WITH (SELECT vec FROM tab_renamed WHERE id = 123) AS ref
-SELECT id, e FROM tab_renamed ORDER BY cosineDistance(vec, ref) LIMIT 10
-SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
-
--- A column that a part does not have is filled from its default expression before the candidates are filtered, so the
--- vectors are read whole, even if the default does not use them. Once the column is materialized, only the candidates
--- are read.
-CREATE TABLE tab_other_default
-(
-    id UInt32,
-    vec Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256),
-    INDEX idx vec TYPE vector_similarity('hnsw', 'cosineDistance', 64, 'b1', 64, 128)
-)
-ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, index_granularity = 128;
-
-INSERT INTO tab_other_default SELECT id, vec FROM tab;
-ALTER TABLE tab_other_default ADD COLUMN f UInt64 DEFAULT id * 2;
-
-SELECT 'other default, setting on';
-WITH (SELECT vec FROM tab_other_default WHERE id = 123) AS ref
-SELECT id, f FROM tab_other_default ORDER BY cosineDistance(vec, ref) LIMIT 10
-SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_other_default_on';
-
-SELECT 'other default, setting off';
-WITH (SELECT vec FROM tab_other_default WHERE id = 123) AS ref
-SELECT id, f FROM tab_other_default ORDER BY cosineDistance(vec, ref) LIMIT 10
-SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
-
-ALTER TABLE tab_other_default MATERIALIZE COLUMN f SETTINGS mutations_sync = 2;
-
-SELECT 'other default materialized, setting on';
-WITH (SELECT vec FROM tab_other_default WHERE id = 123) AS ref
-SELECT id, f FROM tab_other_default ORDER BY cosineDistance(vec, ref) LIMIT 10
-SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_other_default_materialized_on';
+SELECT 'default with an identifier, column not read, setting on';
+WITH (SELECT vec FROM tab WHERE id = 123) AS ref
+SELECT id FROM tab ORDER BY cosineDistance(vec, ref) LIMIT 10
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_default_not_read_on';
 
 -- With few prefetches allowed, a reader prefetched for one task is reused for the next tasks, and must read past the end
 -- of the range of the first task. The query must not fail; which rows the approximate index returns is not checked.
 CREATE TABLE tab_prefetch
 (
     id UInt32,
-    vec Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256),
+    vec Array(Float32) SETTINGS (uncompressed_fixed_array_size = 64),
     INDEX idx vec TYPE vector_similarity('hnsw', 'cosineDistance', 64, 'b1', 64, 128)
 )
 ENGINE = MergeTree ORDER BY id
@@ -177,120 +103,12 @@ SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_m
     filesystem_prefetch_step_marks = 1, filesystem_prefetches_limit = 2, merge_tree_min_rows_for_concurrent_read = 1,
     merge_tree_min_bytes_for_concurrent_read = 0, use_reader_executor = 1;
 
--- A column with a pending conversion to another type is converted before the candidates are filtered, and the
--- conversion would fail on the placeholder values, so it is read as usual.
-CREATE TABLE tab_conversion
-(
-    id UInt32,
-    vec Array(Float32) CODEC(NONE),
-    payload Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256),
-    INDEX idx vec TYPE vector_similarity('hnsw', 'cosineDistance', 64, 'b1', 64, 128)
-)
-ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, index_granularity = 128;
-
-SYSTEM STOP MERGES tab_conversion;
-INSERT INTO tab_conversion SELECT id, vec, arrayMap(j -> toFloat32(id + j), range(64)) FROM tab;
-ALTER TABLE tab_conversion MODIFY COLUMN payload QBit(Float32, 64) SETTINGS mutations_sync = 0, alter_sync = 0;
-
-SELECT 'pending conversion, setting on';
-WITH (SELECT vec FROM tab_conversion WHERE id = 123) AS ref
-SELECT id, toString(payload) FROM tab_conversion ORDER BY cosineDistance(vec, ref) LIMIT 3
-SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_conversion_on';
-
-SELECT 'pending conversion, setting off';
-WITH (SELECT vec FROM tab_conversion WHERE id = 123) AS ref
-SELECT id, toString(payload) FROM tab_conversion ORDER BY cosineDistance(vec, ref) LIMIT 3
-SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
-
--- A column renamed by a pending mutation, with its old name reused by a new column and a default expression using its
--- new name. The column in the part has the old name, so it is read as usual.
-CREATE TABLE tab_rename_reuse
-(
-    id UInt32,
-    vec Array(Float32) CODEC(NONE),
-    payload Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256),
-    INDEX idx vec TYPE vector_similarity('hnsw', 'cosineDistance', 64, 'b1', 64, 128)
-)
-ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, index_granularity = 128;
-
-SYSTEM STOP MERGES tab_rename_reuse;
-INSERT INTO tab_rename_reuse SELECT id, vec, arrayMap(j -> toFloat32(id + j), range(64)) FROM tab;
-ALTER TABLE tab_rename_reuse
-    RENAME COLUMN payload TO renamed_payload,
-    ADD COLUMN payload Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256),
-    ADD COLUMN d UInt64 DEFAULT intDiv(64, length(renamed_payload))
-SETTINGS mutations_sync = 0, alter_sync = 0;
-
-SELECT 'renamed and reused, setting on';
-WITH (SELECT vec FROM tab_rename_reuse WHERE id = 123) AS ref
-SELECT id, d FROM tab_rename_reuse ORDER BY cosineDistance(vec, ref) LIMIT 10
-SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_rename_reuse_on';
-
-SELECT 'renamed and reused, setting off';
-WITH (SELECT vec FROM tab_rename_reuse WHERE id = 123) AS ref
-SELECT id, d FROM tab_rename_reuse ORDER BY cosineDistance(vec, ref) LIMIT 10
-SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
-
--- A member of `Nested` added later, with a default expression using the vector column. It is requested as a subcolumn
--- of `n`, but its default is its own, so the vectors are read as usual.
-ALTER TABLE tab ADD COLUMN `n.d` Array(UInt64) DEFAULT [intDiv(64, length(vec))];
-
-SELECT 'nested default, setting on';
-WITH (SELECT vec FROM tab WHERE id = 123) AS ref
-SELECT id, n.d FROM tab ORDER BY cosineDistance(vec, ref) LIMIT 10
-SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_nested_default_on';
-
-SELECT 'nested default, setting off';
-WITH (SELECT vec FROM tab WHERE id = 123) AS ref
-SELECT id, n.d FROM tab ORDER BY cosineDistance(vec, ref) LIMIT 10
-SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
-
--- A part of a member of `Nested` whose type is a tuple, with a default expression using the vector column.
-ALTER TABLE tab ADD COLUMN `m.d` Array(Tuple(x UInt64)) DEFAULT [tuple(intDiv(64, length(vec)))];
-
-SELECT 'nested tuple default, setting on';
-WITH (SELECT vec FROM tab WHERE id = 123) AS ref
-SELECT id, m.d.x FROM tab ORDER BY cosineDistance(vec, ref) LIMIT 10
-SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_nested_tuple_default_on';
-
-SELECT 'nested tuple default, setting off';
-WITH (SELECT vec FROM tab WHERE id = 123) AS ref
-SELECT id, m.d.x FROM tab ORDER BY cosineDistance(vec, ref) LIMIT 10
-SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
-
--- A default expression naming the vector column with a qualifier. A default expression is checked against a table named
--- `dummy`, so `dummy.vec` is accepted and resolves to the column.
-CREATE TABLE tab_qualified
-(
-    id UInt32,
-    vec Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256),
-    INDEX idx vec TYPE vector_similarity('hnsw', 'cosineDistance', 64, 'b1', 64, 128)
-)
-ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, index_granularity = 128;
-
-INSERT INTO tab_qualified SELECT id, vec FROM tab;
-ALTER TABLE tab_qualified ADD COLUMN d UInt64 DEFAULT intDiv(64, length(dummy.vec));
-
-SELECT 'qualified default, setting on';
-WITH (SELECT vec FROM tab_qualified WHERE id = 123) AS ref
-SELECT id, d FROM tab_qualified ORDER BY cosineDistance(vec, ref) LIMIT 10
-SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_qualified_default_on';
-
-SELECT 'qualified default, setting off';
-WITH (SELECT vec FROM tab_qualified WHERE id = 123) AS ref
-SELECT id, d FROM tab_qualified ORDER BY cosineDistance(vec, ref) LIMIT 10
-SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
-
--- A column with a dot in its name, and later a default expression naming it with a qualifier. The indexed column is read
--- as usual, and the column `a.b` only for the candidates until the default is added.
+-- A column with a dot in its name. The indexed column is read as usual, and the column `a.b` only for the candidates.
 CREATE TABLE tab_dotted
 (
     id UInt32,
     vec Array(Float32),
-    `a.b` Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256),
+    `a.b` Array(Float32) SETTINGS (uncompressed_fixed_array_size = 64),
     INDEX idx vec TYPE vector_similarity('hnsw', 'cosineDistance', 64, 'b1', 64, 128)
 )
 ENGINE = MergeTree ORDER BY id
@@ -303,33 +121,16 @@ WITH (SELECT vec FROM tab_dotted WHERE id = 123) AS ref
 SELECT id, `a.b`[1] FROM tab_dotted ORDER BY cosineDistance(vec, ref) LIMIT 10
 SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_dotted_on';
 
-ALTER TABLE tab_dotted ADD COLUMN d UInt64 DEFAULT intDiv(64, length(dummy.a.b));
-
-SELECT 'dotted default, setting on';
-WITH (SELECT vec FROM tab_dotted WHERE id = 123) AS ref
-SELECT id, d, `a.b`[1] FROM tab_dotted ORDER BY cosineDistance(vec, ref) LIMIT 10
-SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_dotted_default_on';
-
-SELECT 'dotted default, setting off';
-WITH (SELECT vec FROM tab_dotted WHERE id = 123) AS ref
-SELECT id, d, `a.b`[1] FROM tab_dotted ORDER BY cosineDistance(vec, ref) LIMIT 10
-SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
-
 SYSTEM FLUSH LOGS query_log;
 
--- Only the candidates of the index are read this way, and none with the setting off.
+-- Only the candidates of the index are read this way, and none with the setting off or a default expression with an
+-- identifier.
 SELECT log_comment, ProfileEvents['MergeTreeOneRowPerBlockReadRows'] > 0 AS read_by_blocks
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05618_on', '05618_off', '05618_default_on', '05618_readded_on', '05618_renamed_on', '05618_other_default_on', '05618_conversion_on', '05618_rename_reuse_on', '05618_nested_default_on',
-        '05618_nested_tuple_default_on', '05618_qualified_default_on', '05618_other_default_materialized_on', '05618_dotted_on', '05618_dotted_default_on')
+WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+    AND log_comment IN ('05618_on', '05618_off', '05618_no_column_defaults_on', '05618_default_on', '05618_default_not_read_on', '05618_dotted_on')
 ORDER BY log_comment;
 
 DROP TABLE tab;
-DROP TABLE tab_readded;
-DROP TABLE tab_renamed;
 DROP TABLE tab_prefetch;
-DROP TABLE tab_conversion;
-DROP TABLE tab_rename_reuse;
-DROP TABLE tab_other_default;
-DROP TABLE tab_qualified;
 DROP TABLE tab_dotted;

@@ -1,38 +1,36 @@
 #include <Storages/MergeTree/MergeTreeOneRowPerBlockLayout.h>
 
+#include <Columns/ColumnArray.h>
 #include <Compression/CompressionInfo.h>
+#include <Core/Block.h>
 #include <DataTypes/DataTypeArray.h>
-#include <IO/HashingWriteBuffer.h>
-#include <IO/NullWriteBuffer.h>
-#include <IO/WriteHelpers.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Common/Hex.h>
-#include <Common/SipHash.h>
 #include <Common/StringUtils.h>
+#include <Common/quoteString.h>
 
 #include <city.h>
-#include <fmt/format.h>
 
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int CORRUPTED_DATA;
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
 
 constexpr auto DATA_FILE_EXTENSION = ".bin";
-
-std::optional<UInt64> getUInt64ColumnSetting(const ColumnDescription & column_description, const String & name)
-{
-    const Field * setting = column_description.settings.tryGet(name);
-    if (!setting)
-        return std::nullopt;
-    return setting->safeGet<UInt64>();
-}
 
 std::optional<String> getStreamFileName(const IMergeTreeDataPart & part, const NameAndTypePair & column, ISerialization::Substream::Type substream)
 {
@@ -49,68 +47,6 @@ std::optional<String> getStreamFileName(const IMergeTreeDataPart & part, const N
 UInt64 getOneRowPerBlockHeaderBytes()
 {
     return sizeof(CityHash_v1_0_2::uint128) + COMPRESSED_BLOCK_HEADER_SIZE;
-}
-
-String getOneRowPerBlockMarkerName(
-    const String & stream_name, const MergeTreeDataPartChecksum & data_checksum, const MergeTreeDataPartChecksum & sizes_checksum)
-{
-    SipHash hash;
-    hash.update(stream_name);
-    for (const auto * checksum : {&data_checksum, &sizes_checksum})
-    {
-        hash.update(checksum->file_size);
-        hash.update(checksum->file_hash.low64);
-        hash.update(checksum->file_hash.high64);
-    }
-    return getHexUIntLowercase(hash.get128()) + ONE_ROW_PER_BLOCK_MARKER_EXTENSION;
-}
-
-String makeOneRowPerBlockMarker(
-    UInt64 row_bytes, UInt64 array_size, const MergeTreeDataPartChecksum & data_checksum, const MergeTreeDataPartChecksum & sizes_checksum)
-{
-    return fmt::format(
-        "one row per block, version 1\nrow_bytes: {}\narray_size: {}\nfile_size: {}\nfile_hash: {}_{}\nsizes_file_size: {}\nsizes_file_hash: {}_{}\n",
-        row_bytes, array_size, data_checksum.file_size, data_checksum.file_hash.low64, data_checksum.file_hash.high64,
-        sizes_checksum.file_size, sizes_checksum.file_hash.low64, sizes_checksum.file_hash.high64);
-}
-
-MergeTreeDataPartChecksum getOneRowPerBlockMarkerChecksum(const String & content)
-{
-    /// The same hash as the writer records for the file, see `MergeTreeDataPartWriterWide::fillDataChecksums`.
-    NullWriteBuffer null_out;
-    HashingWriteBuffer hashing(null_out);
-    hashing.write(content.data(), content.size());
-    hashing.finalize();
-    return MergeTreeDataPartChecksum(hashing.count(), hashing.getHash());
-}
-
-Names getStaleOneRowPerBlockMarkers(const IMergeTreeDataPart & part)
-{
-    NameSet current_markers;
-    for (const auto & column : part.getColumns())
-    {
-        if (!canHaveOneRowPerBlockLayout(column.type))
-            continue;
-
-        const auto data_file_name = getStreamFileName(part, column, ISerialization::Substream::ArrayElements);
-        const auto sizes_file_name = getStreamFileName(part, column, ISerialization::Substream::ArraySizes);
-        if (!data_file_name || !sizes_file_name)
-            continue;
-
-        const auto data_it = part.checksums.files.find(*data_file_name);
-        const auto sizes_it = part.checksums.files.find(*sizes_file_name);
-        if (data_it == part.checksums.files.end() || sizes_it == part.checksums.files.end())
-            continue;
-
-        const String stream_name = data_file_name->substr(0, data_file_name->size() - strlen(DATA_FILE_EXTENSION));
-        current_markers.insert(getOneRowPerBlockMarkerName(stream_name, data_it->second, sizes_it->second));
-    }
-
-    Names stale_markers;
-    for (const auto & [file_name, _] : part.checksums.files)
-        if (file_name.ends_with(ONE_ROW_PER_BLOCK_MARKER_EXTENSION) && !current_markers.contains(file_name))
-            stale_markers.push_back(file_name);
-    return stale_markers;
 }
 
 bool declaredCodecStoresDataVerbatim(const ASTPtr & codec_desc)
@@ -142,6 +78,116 @@ bool canHaveOneRowPerBlockLayout(const DataTypePtr & type)
     return which.isBFloat16() || which.isFloat32() || which.isFloat64() || which.isInt8();
 }
 
+UInt64 getUncompressedFixedArraySize(const ColumnDescription & column)
+{
+    const Field * setting = column.settings.tryGet(UNCOMPRESSED_FIXED_ARRAY_SIZE_SETTING);
+    return setting ? setting->safeGet<UInt64>() : 0;
+}
+
+void validateUncompressedFixedArraySize(const ColumnDescription & column)
+{
+    if (!column.settings.tryGet(UNCOMPRESSED_FIXED_ARRAY_SIZE_SETTING))
+        return;
+
+    auto error = [&](std::string_view reason)
+    {
+        return Exception(ErrorCodes::BAD_ARGUMENTS, "Column {} cannot have the setting `{}`: {}",
+            backQuote(column.name), UNCOMPRESSED_FIXED_ARRAY_SIZE_SETTING, reason);
+    };
+
+    const UInt64 array_size = getUncompressedFixedArraySize(column);
+    if (array_size == 0)
+        throw error("the value must be greater than 0");
+
+    if (!canHaveOneRowPerBlockLayout(column.type))
+        throw error(fmt::format(
+            "its type is {}, expected `Array(Float32)`, `Array(Float64)`, `Array(BFloat16)` or `Array(Int8)`", column.type->getName()));
+
+    if (column.default_desc.kind == ColumnDefaultKind::Alias || column.default_desc.kind == ColumnDefaultKind::Ephemeral)
+        throw error("the column is not stored");
+
+    if (column.codec && !declaredCodecStoresDataVerbatim(column.codec))
+        throw error("it has a codec that compresses the data, only `NONE` and `Quantized` are allowed");
+
+    if (!column.subcolumn_codecs.empty())
+        throw error("it has codecs of subcolumns");
+
+    /// An expired TTL replaces the values with the default, which can have another number of elements.
+    if (column.ttl)
+        throw error("it has a TTL");
+
+    for (const auto & setting : {"min_compress_block_size", "max_compress_block_size"})
+        if (column.settings.tryGet(setting))
+            throw error(fmt::format("it also has the setting `{}`, while the size of the blocks is defined by `{}`",
+                setting, UNCOMPRESSED_FIXED_ARRAY_SIZE_SETTING));
+
+    const size_t element_bytes = assert_cast<const DataTypeArray &>(*column.type).getNestedType()->getSizeOfValueInMemory();
+    if (array_size > MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE / element_bytes)
+        throw error(fmt::format("a row of {} elements is larger than the maximum size of a block, {} bytes",
+            array_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE));
+}
+
+namespace
+{
+
+bool hasIdentifier(const IAST & ast)
+{
+    if (ast.as<ASTIdentifier>())
+        return true;
+    for (const auto & child : ast.children)
+        if (hasIdentifier(*child))
+            return true;
+    return false;
+}
+
+}
+
+bool hasDefaultExpressionWithIdentifiers(const StorageInMemoryMetadata & metadata)
+{
+    for (const auto & column : metadata.getColumns())
+        if (column.default_desc.expression && hasIdentifier(*column.default_desc.expression))
+            return true;
+    for (const auto & column : metadata.virtuals)
+        if (column.default_desc.expression && hasIdentifier(*column.default_desc.expression))
+            return true;
+    return false;
+}
+
+void checkUncompressedFixedArraySizes(const Block & block, const StorageInMemoryMetadata & metadata)
+{
+    for (const auto & column : block)
+    {
+        const ColumnDescription * column_description = metadata.getColumns().tryGet(column.name);
+        if (!column_description)
+            continue;
+        const UInt64 array_size = getUncompressedFixedArraySize(*column_description);
+        if (!array_size)
+            continue;
+
+        const auto full_column = column.column->convertToFullColumnIfConst();
+        const auto * column_array = typeid_cast<const ColumnArray *>(full_column.get());
+        if (!column_array)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} with the setting `{}` is written as {}",
+                backQuote(column.name), UNCOMPRESSED_FIXED_ARRAY_SIZE_SETTING, full_column->getName());
+
+        const auto & offsets = column_array->getOffsets();
+        for (size_t row = 0; row < offsets.size(); ++row)
+        {
+            const UInt64 size = offsets[row] - offsets[ssize_t(row) - 1];
+            if (size != array_size)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "A row of column {} has {} elements, while the setting `{}` of the column requires exactly {}",
+                    backQuote(column.name), size, UNCOMPRESSED_FIXED_ARRAY_SIZE_SETTING, array_size);
+        }
+    }
+}
+
+bool isTopLevelArrayElementsStream(const ISerialization::SubstreamPath & path)
+{
+    return path.size() == 2 && path[0].type == ISerialization::Substream::ArrayElements
+        && path[1].type == ISerialization::Substream::Regular;
+}
+
 std::optional<OneRowPerBlockLayout> tryGetOneRowPerBlockLayout(
     const IMergeTreeDataPart & part,
     const NameAndTypePair & column,
@@ -158,20 +204,10 @@ std::optional<OneRowPerBlockLayout> tryGetOneRowPerBlockLayout(
     if (!column_description)
         return std::nullopt;
 
-    /// The sizes of the file below match those of blocks stored without compression also for a codec that compresses
-    /// to exactly the same size, so the codec is checked first.
-    if (!declaredCodecStoresDataVerbatim(column_description->codec))
-        return std::nullopt;
-
-    /// The writer reads these column-level settings for every stream of the column, see `MergeTreeDataPartWriterWide`.
-    /// They describe the parts written from now on, not necessarily this part, so the marker of the part is checked below.
-    const auto min_compress_block_size = getUInt64ColumnSetting(*column_description, "min_compress_block_size");
-    const auto max_compress_block_size = getUInt64ColumnSetting(*column_description, "max_compress_block_size");
-    if (!min_compress_block_size || !max_compress_block_size || *min_compress_block_size != *max_compress_block_size)
-        return std::nullopt;
-
-    const size_t element_bytes = assert_cast<const DataTypeArray &>(*column.type).getNestedType()->getSizeOfValueInMemory();
-    if (*max_compress_block_size == 0 || *max_compress_block_size % element_bytes != 0)
+    /// The setting can be specified only in `CREATE TABLE`, and `ALTER` can change neither it, nor the type, nor the codec of
+    /// the column, so every part of the table is written with it, see `validateUncompressedFixedArraySize`.
+    const UInt64 array_size = getUncompressedFixedArraySize(*column_description);
+    if (array_size == 0)
         return std::nullopt;
 
     const auto file_name = getStreamFileName(part, column, ISerialization::Substream::ArrayElements);
@@ -179,43 +215,28 @@ std::optional<OneRowPerBlockLayout> tryGetOneRowPerBlockLayout(
         return std::nullopt;
 
     const auto checksum_it = part.checksums.files.find(*file_name);
-    if (checksum_it == part.checksums.files.end() || !checksum_it->second.is_compressed)
+    if (checksum_it == part.checksums.files.end())
         return std::nullopt;
 
     OneRowPerBlockLayout layout;
     layout.file_name = *file_name;
-    layout.row_bytes = *max_compress_block_size;
-    layout.array_size = layout.row_bytes / element_bytes;
+    layout.array_size = array_size;
+    layout.row_bytes = array_size * assert_cast<const DataTypeArray &>(*column.type).getNestedType()->getSizeOfValueInMemory();
     layout.header_bytes = getOneRowPerBlockHeaderBytes();
     layout.block_bytes = layout.header_bytes + layout.row_bytes;
 
-    /// Every block has a header and is not empty, so both sizes match only if the file has exactly `rows_count`
-    /// blocks, all stored without compression. This is necessary, but not sufficient: blocks of other sizes can add up
-    /// to the same totals, and rows of other lengths can fill blocks of the same size. So the part must also have the
-    /// marker of the writer for exactly this layout and this file, see `ONE_ROW_PER_BLOCK_MARKER_EXTENSION`.
+    /// The writer checks the blocks of every part it writes, and parts cannot be attached from the detached directory, so
+    /// this is only a check against a part that was not written for this table, e.g. put into its directory by hand. Every
+    /// block is also checked when it is read.
     const auto & data_checksum = checksum_it->second;
-    if (data_checksum.uncompressed_size != part.rows_count * layout.row_bytes
+    if (!data_checksum.is_compressed || data_checksum.uncompressed_size != part.rows_count * layout.row_bytes
         || data_checksum.file_size != part.rows_count * layout.block_bytes)
-        return std::nullopt;
-
-    /// The file of the array sizes defines where the rows begin, so the marker is valid only for these sizes as well.
-    const auto sizes_file_name = getStreamFileName(part, column, ISerialization::Substream::ArraySizes);
-    if (!sizes_file_name)
-        return std::nullopt;
-    const auto sizes_checksum_it = part.checksums.files.find(*sizes_file_name);
-    if (sizes_checksum_it == part.checksums.files.end())
-        return std::nullopt;
-    const auto & sizes_checksum = sizes_checksum_it->second;
-
-    const String stream_name = layout.file_name.substr(0, layout.file_name.size() - strlen(DATA_FILE_EXTENSION));
-    const auto marker_it = part.checksums.files.find(getOneRowPerBlockMarkerName(stream_name, data_checksum, sizes_checksum));
-    if (marker_it == part.checksums.files.end())
-        return std::nullopt;
-
-    const auto expected_marker = getOneRowPerBlockMarkerChecksum(
-        makeOneRowPerBlockMarker(layout.row_bytes, layout.array_size, data_checksum, sizes_checksum));
-    if (marker_it->second.file_size != expected_marker.file_size || marker_it->second.file_hash != expected_marker.file_hash)
-        return std::nullopt;
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "The file {} of part {} has {} bytes, {} uncompressed, while the column {} with the setting `{}` = {} must have "
+            "{} bytes, {} uncompressed, for {} rows",
+            layout.file_name, part.name, data_checksum.file_size, data_checksum.uncompressed_size, backQuote(column.name),
+            UNCOMPRESSED_FIXED_ARRAY_SIZE_SETTING, array_size, part.rows_count * layout.block_bytes,
+            part.rows_count * layout.row_bytes, part.rows_count);
 
     return layout;
 }

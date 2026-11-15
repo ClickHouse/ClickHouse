@@ -105,13 +105,9 @@ private:
     /// errors.
     void validateColumnOfFixedSize(const NameAndTypePair & name_type);
 
-    /// Checks whether every row of the written block of a column has the same number of elements, see
-    /// `one_row_per_block_candidates`.
-    void updateOneRowPerBlockCandidate(const String & column_name, const IColumn & column);
-
-    /// Adds the markers of the files of array elements written with one row per block to `checksums`, see
-    /// `ONE_ROW_PER_BLOCK_MARKER_EXTENSION`. Called after the streams are prefinalized.
-    void fillOneRowPerBlockMarkers(MergeTreeDataPartChecksums & checksums);
+    /// Checks that every block of the file of the elements of a column with the setting `uncompressed_fixed_array_size`
+    /// holds exactly one row stored without compression. Called after the streams are prefinalized.
+    void checkFixedArrayBlocks(const MergeTreeDataPartChecksums & checksums) const;
 
     void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
 
@@ -154,24 +150,18 @@ private:
     std::unordered_map<String, String> full_name_to_stream_name;
     std::unordered_map<String, String> stream_name_to_full_name;
 
-    /// The columns whose file of array elements can turn out to have one row per block: a top-level `Array` of a type of
-    /// `canHaveOneRowPerBlockLayout`, with a declared codec that stores the data verbatim. Whether it does is known only
-    /// after the part is written, from the rows and the blocks, see `fillOneRowPerBlockMarkers`.
-    struct OneRowPerBlockCandidate
+    /// The columns with the setting `uncompressed_fixed_array_size`. The elements of every row of such a column are written
+    /// as one block stored without compression, so that a row can be read at a computed position, see
+    /// `tryGetOneRowPerBlockLayout`.
+    struct FixedArrayColumn
     {
+        /// The stream of the array elements.
         String stream_name;
-        /// The stream of the array sizes, which define where the rows begin.
-        String sizes_stream_name;
-        size_t element_bytes = 0;
+        UInt64 array_size = 0;
+        UInt64 row_bytes = 0;
         size_t rows = 0;
-        /// The number of elements of the first row, and whether all the rows written so far have it.
-        std::optional<UInt64> array_size;
-        bool all_rows_have_array_size = true;
     };
-    std::unordered_map<String, OneRowPerBlockCandidate> one_row_per_block_candidates;
-
-    /// The name and the content of the markers to write, see `fillOneRowPerBlockMarkers`.
-    std::vector<std::pair<String, String>> one_row_per_block_markers;
+    std::unordered_map<String, FixedArrayColumn> fixed_array_columns;
 
     /// Non written marks to disk (for each column). Waiting until all rows for
     /// this marks will be written to disk.

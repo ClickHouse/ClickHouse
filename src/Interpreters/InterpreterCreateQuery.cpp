@@ -55,6 +55,7 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/MergeTree/MergeTreeOneRowPerBlockLayout.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
@@ -929,7 +930,6 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             column.settings = settings->as<ASTSetQuery &>().changes;
             MergeTreeColumnSettings::validate(column.settings);
         }
-
         res.add(std::move(column));
     }
 
@@ -945,6 +945,10 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
     if (columns_list.codec_declarations)
         applyCodecDeclarations(*columns_list.codec_declarations, res, context_, mode, is_restore_from_backup);
+
+    /// After the codec declarations, which can add codecs to the columns.
+    for (const auto & column : res)
+        validateUncompressedFixedArraySize(column);
 
     return res;
 }

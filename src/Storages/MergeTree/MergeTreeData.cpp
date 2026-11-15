@@ -140,6 +140,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <Storages/MergeTree/MergeTreeOneRowPerBlockLayout.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
@@ -12421,6 +12422,15 @@ void MergeTreeData::removeTemporaryPart(const MutableDataPartPtr & part) const
 
 MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const PartitionCommand & command, ContextPtr local_context, PartsTemporaryRename & renamed_parts)
 {
+    /// A detached part can be written by another table, with rows of other numbers of elements that still have the file sizes
+    /// of one block per row, so it would be read at wrong positions, see `tryGetOneRowPerBlockLayout`.
+    const auto metadata_for_attach = getInMemoryMetadataPtr(local_context, false);
+    for (const auto & column : metadata_for_attach->getColumns())
+        if (getUncompressedFixedArraySize(column))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot attach parts from the detached directory to a table with a column with the setting `{}`: column {}",
+                UNCOMPRESSED_FIXED_ARRAY_SIZE_SETTING, backQuote(column.name));
+
     const fs::path source_dir = DETACHED_DIR_NAME;
 
     /// Let's compose a list of parts that should be added.
@@ -13733,6 +13743,18 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
     if (my_snapshot->getColumns().getAllPhysical().sizeOfDifference(src_snapshot->getColumns().getAllPhysical()))
         throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Tables have different structure");
+
+    /// The parts of a table with the setting `uncompressed_fixed_array_size` of a column are read at positions computed from
+    /// it, see `tryGetOneRowPerBlockLayout`.
+    for (const auto & column : my_snapshot->getColumns().getAllPhysical())
+    {
+        const UInt64 my_array_size = getUncompressedFixedArraySize(my_snapshot->getColumns().get(column.name));
+        const UInt64 src_array_size = getUncompressedFixedArraySize(src_snapshot->getColumns().get(column.name));
+        if (my_array_size != src_array_size)
+            throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
+                "Tables have different structure: the setting `{}` of column {} is {} and {}",
+                UNCOMPRESSED_FIXED_ARRAY_SIZE_SETTING, backQuote(column.name), my_array_size, src_array_size);
+    }
 
     /// The definitions are compared as text, so the text must not depend on whether the user has
     /// written redundant parentheses: `PARTITION BY (a)` and `PARTITION BY a` are the same key.
