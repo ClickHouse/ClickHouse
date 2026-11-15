@@ -270,8 +270,9 @@ Chunk PulsarSource::generateImpl()
     auto result_block = non_virtual_header.cloneWithColumns(executor.getResultColumns());
     auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
 
+    /// A physical column may shadow a virtual column with the same name; the physical one takes precedence.
     for (const auto & column : virtual_block.getColumnsWithTypeAndName())
-        result_block.insert(column);
+        result_block.insertUnique(column);
 
     auto converting_dag = ActionsDAG::makeConvertingActions(
         result_block.cloneEmpty().getColumnsWithTypeAndName(),

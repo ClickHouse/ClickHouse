@@ -1880,3 +1880,45 @@ def test_lazy_load_database_reload_keeps_streaming(pulsar_cluster):
         )
     finally:
         instance.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+
+
+def test_physical_columns_shadow_virtual_columns(pulsar_cluster):
+    # Physical columns named like the virtual columns `_topic` and `_timestamp`
+    # but with other types must take precedence over the virtual columns
+    # instead of making every read fail with a column name conflict.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    for name, group in (
+        ("test.pulsar_reader", "shadow_group"),
+        ("test.pulsar_writer", "shadow_writer_group"),
+    ):
+        instance.query(
+            f"""
+            CREATE TABLE {name} (key UInt64, _topic String, _timestamp DateTime)
+            ENGINE = Pulsar
+            SETTINGS pulsar_service_url = 'pulsar://pulsar1:6650',
+                     pulsar_topic_list = 'shadow_topic',
+                     pulsar_group_name = '{group}',
+                     pulsar_format = 'JSONEachRow'
+            """
+        )
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, topic String, ts DateTime)
+        ENGINE = MergeTree ORDER BY key
+        """
+    )
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+        SELECT key, _topic AS topic, _timestamp AS ts FROM test.pulsar_reader
+        """
+    )
+    instance.query(
+        "INSERT INTO test.pulsar_writer SELECT 1, 'payload', toDateTime(1690000000)"
+    )
+
+    # Delivery is at-least-once, so tolerate duplicate rows.
+    wait_query_result(
+        "1\tpayload\t1690000000",
+        "SELECT DISTINCT key, topic, toUnixTimestamp(ts) FROM test.view ORDER BY key",
+    )
