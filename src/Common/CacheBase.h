@@ -30,7 +30,7 @@ namespace ErrorCodes
 /// of that value.
 /// Cache starts to evict entries when their total weight exceeds max_size_in_bytes.
 /// Value weight should not change after insertion.
-template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = EqualWeightFunction<TMapped>>
+template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = EqualWeightFunction<TMapped>, typename TLocker = std::mutex>
 class CacheBase
 {
 private:
@@ -174,6 +174,19 @@ public:
         cache_policy->set(key, mapped);
     }
 
+    /// `set`, and whether `mapped` is in the cache right after it: the policy can refuse it or evict it at once.
+    /// If it is, calls `on_resident` under the same lock, so nothing else can replace it before the call returns.
+    template <typename OnResident>
+    bool setAndContains(const Key & key, const MappedPtr & mapped, OnResident && on_resident)
+    {
+        std::lock_guard lock(mutex);
+        cache_policy->set(key, mapped);
+        if (!cache_policy->contains(key))
+            return false;
+        on_resident();
+        return true;
+    }
+
     /// If the value for the key is in the cache, returns it. If it is not, calls load_func() to
     /// produce it, saves the result in the cache and returns it.
     /// Only one of several concurrent threads calling getOrSet() will call load_func(),
@@ -289,6 +302,31 @@ public:
         return true;
     }
 
+    /// "Compare and set" by key: replaces the resident under `key` with `mapped` only when the
+    /// resident is `expected` (the same object). Returns whether it was replaced. Atomic like
+    /// removeIfMatches, and like it bumps the LRU position of the resident.
+    bool replaceIfMatches(const Key & key, const MappedPtr & expected, const MappedPtr & mapped)
+    {
+        std::lock_guard lock(mutex);
+        auto value = cache_policy->get(key);
+        if (!value || value != expected)
+            return false;
+        cache_policy->set(key, mapped);
+        return true;
+    }
+
+    /// Like `removeIfMatches`, but if `update(resident)` returns true, sets the resident again to recompute its weight.
+    /// `update` runs under the cache lock, so no eviction sees a changed resident with its old weight.
+    bool updateIfMatches(const Key & key, std::function<bool(const MappedPtr &)> update)
+    {
+        std::lock_guard lock(mutex);
+        auto value = cache_policy->get(key);
+        if (!value || !update(value))
+            return false;
+        cache_policy->set(key, value);
+        return true;
+    }
+
     size_t sizeInBytes() const
     {
         std::lock_guard lock(mutex);
@@ -342,7 +380,7 @@ public:
     virtual ~CacheBase() = default;
 
 protected:
-    mutable std::mutex mutex;
+    mutable TLocker mutex;
 
 private:
     std::unique_ptr<CachePolicy> cache_policy TSA_GUARDED_BY(mutex);
@@ -363,7 +401,7 @@ private:
     {
         explicit InsertToken(CacheBase & cache_) : cache(cache_) {}
 
-        std::mutex mutex;
+        TLocker mutex;
         bool cleaned_up TSA_GUARDED_BY(mutex) = false;
         MappedPtr value TSA_GUARDED_BY(mutex);
 
@@ -384,7 +422,7 @@ private:
 
         InsertTokenHolder() = default;
 
-        void acquire(const Key * key_, const std::shared_ptr<InsertToken> & token_, std::lock_guard<std::mutex> & /* cache_lock */)
+        void acquire(const Key * key_, const std::shared_ptr<InsertToken> & token_, std::lock_guard<TLocker> & /* cache_lock */)
             TSA_NO_THREAD_SAFETY_ANALYSIS // disabled only because we can't reference the parent-level cache mutex from here
         {
             key = key_;
@@ -392,7 +430,7 @@ private:
             ++token->refcount;
         }
 
-        void cleanup(std::lock_guard<std::mutex> & /* token_lock */, std::lock_guard<std::mutex> & /* cache_lock */)
+        void cleanup(std::lock_guard<TLocker> & /* token_lock */, std::lock_guard<TLocker> & /* cache_lock */)
             TSA_NO_THREAD_SAFETY_ANALYSIS // disabled only because we can't reference the parent-level cache mutex from here
         {
             token->cache.insert_tokens.erase(*key);

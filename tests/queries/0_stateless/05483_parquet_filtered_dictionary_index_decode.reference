@@ -1,0 +1,10 @@
+x	1
+y	1
+s	1
+r	1
+id % 3 = 0	1	1
+id % 64 < 5	1	1
+intHash32(id) % 100 < 2	1	1
+id % 1000 < 999	1	1
+id BETWEEN 12345 AND 12399	1	1
+toUInt8(id % 5)	1	1

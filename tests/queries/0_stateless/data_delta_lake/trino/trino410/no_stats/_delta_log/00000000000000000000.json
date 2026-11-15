@@ -1,0 +1,4 @@
+{"commitInfo":{"version":0,"timestamp":1679908455798,"userId":"user","userName":"user","operation":"CREATE TABLE AS SELECT","operationParameters":{"queryId":"20230327_091401_00001_uve6g"},"clusterId":"trino-testversion-1a06e982-46d8-4376-a944-64994496bd1c","readVersion":0,"isolationLevel":"WriteSerializable","isBlindAppend":true}}
+{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}
+{"metaData":{"id":"1f2b445d-9f7e-495c-8af9-5d232b1d2e90","format":{"provider":"parquet","options":{}},"schemaString":"{\"fields\":[{\"metadata\":{},\"name\":\"c_int\",\"nullable\":true,\"type\":\"integer\"},{\"metadata\":{},\"name\":\"c_str\",\"nullable\":true,\"type\":\"string\"}],\"type\":\"struct\"}","partitionColumns":[],"configuration":{},"createdTime":1679908455798}}
+{"add":{"path":"20230327_091401_00001_uve6g-cb7936ce-81f3-42fd-86bb-2b1b015f0357","partitionValues":{},"size":316,"modificationTime":1679908451068,"dataChange":true}}

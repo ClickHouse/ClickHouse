@@ -28,6 +28,8 @@ void StatisticsTDigest::merge(const StatisticsPtr & other_stats)
 {
     const StatisticsTDigest * other = typeid_cast<const StatisticsTDigest*>(other_stats.get());
     t_digest.merge(other->t_digest);
+    /// `getCountLessThan` reads the centroids in order, and merging appends them unsorted.
+    t_digest.compress();
 }
 
 size_t StatisticsTDigest::allocatedBytes() const

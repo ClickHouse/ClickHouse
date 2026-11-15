@@ -1,7 +1,6 @@
 -- A buffered JOIN LATERAL (correlated_subqueries_use_in_memory_buffer = 1) must not let
 -- join_overflow_mode = 'break' stop the build side early: the size limit is enforced with THROW.
 
-SET enable_analyzer = 1;
 SET allow_experimental_lateral_join = 1;
 SET correlated_subqueries_use_in_memory_buffer = 1;
 

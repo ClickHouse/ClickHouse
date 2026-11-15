@@ -73,6 +73,8 @@ public:
 
     bool isSpatialPredicate() const override { return function_overload_resolver->isSpatialPredicate(); }
 
+    bool isExpensive() const override { return function_overload_resolver->isExpensive(); }
+
 private:
     /// We remember the original IFunctionOverloadResolver to be able to build function for types inside Dynamic column.
     std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver;

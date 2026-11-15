@@ -132,13 +132,13 @@ ClickHouse также поддерживает чтение [векторов у
 ### Базовое использование {#basic-usage}
 
 ```sql
- SELECT * FROM example_table ORDER BY 1 
- SETTINGS iceberg_timestamp_ms = 1714636800000
+SELECT * FROM example_table ORDER BY 1 
+SETTINGS iceberg_timestamp_ms = 1714636800000
 ```
 
 ```sql
- SELECT * FROM example_table ORDER BY 1 
- SETTINGS iceberg_snapshot_id = 3547395809148285433
+SELECT * FROM example_table ORDER BY 1 
+SETTINGS iceberg_snapshot_id = 3547395809148285433
 ```
 
 Примечание: В одном запросе нельзя одновременно указывать параметры `iceberg_timestamp_ms` и `iceberg_snapshot_id`.
@@ -162,47 +162,47 @@ ClickHouse также поддерживает чтение [векторов у
 Рассмотрим следующую последовательность операций:
 
 ```sql
- -- Создать таблицу с двумя столбцами
-  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
-  order_number bigint, 
-  product_code string
-  ) 
-  USING iceberg 
-  OPTIONS ('format-version'='2')
+-- Create a table with two columns
+ CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
+ order_number bigint, 
+ product_code string
+ ) 
+ USING iceberg 
+ OPTIONS ('format-version'='2')
 
-- - Вставить данные в таблицу
-  INSERT INTO spark_catalog.db.time_travel_example VALUES 
-    (1, 'Mars')
+- - Insert data into the table
+ INSERT INTO spark_catalog.db.time_travel_example VALUES 
+   (1, 'Mars')
 
-  ts1 = now() // Фрагмент псевдокода
+ ts1 = now() // A piece of pseudo code
 
-- - Изменить таблицу, добавив новый столбец
-  ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
- 
-  ts2 = now()
+- - Alter table to add a new column
+ ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
 
-- - Вставить данные в таблицу
-  INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
+ ts2 = now()
 
-   ts3 = now()
+- - Insert data into the table
+ INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
 
-- - Запросить таблицу на каждой временной метке
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
+  ts3 = now()
 
-+------------+------------+
-|order_number|product_code|
-+------------+------------+
-|           1|        Mars|
-+------------+------------+
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
+- - Query the table at each timestamp
+ SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
 
 +------------+------------+
 |order_number|product_code|
 +------------+------------+
 |           1|        Mars|
 +------------+------------+
+ SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
 
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
++------------+------------+
+|order_number|product_code|
++------------+------------+
+|           1|        Mars|
++------------+------------+
+
+ SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
 
 +------------+------------+-----+
 |order_number|product_code|price|
@@ -297,7 +297,9 @@ ClickHouse также поддерживает чтение [векторов у
    *Отбирает файлы, содержащие поле `table-uuid`, которое соответствует указанному UUID (регистронезависимо)
 
 3. **Поиск по умолчанию**:
-   *Если ни один из указанных выше параметров не задан, кандидатами считаются все файлы `.metadata.json` в каталоге `metadata`
+
+* Если ни один из указанных выше параметров не задан, кандидатами считаются все файлы `.metadata.json` в каталоге `metadata`
+* В S3 и Azure, если включена настройка на уровне запроса `iceberg_list_only_v_prefixed_metadata_files` и отключена `iceberg_use_version_hint`, а имена некоторых из этих файлов начинаются с `v` (так их называют каталоги ClickHouse и Hadoop), кандидатами считаются только эти файлы и только они попадают в список при листинге (по префиксу ключа `metadata/v`, поэтому манифесты, хранящиеся в том же каталоге, в него не включаются). Включайте эту настройку только для таблиц, у которых все файлы метаданных названы именно так: если в каталоге есть файлы с обеими схемами именования, файлы `<N>-<uuid>.metadata.json` никогда не становятся кандидатами
 
 ### Выбор самого нового файла {#most-recent-file}
 
@@ -313,7 +315,7 @@ ClickHouse также поддерживает чтение [векторов у
 
 * (Версия обозначается как `V` в именах файлов формата `V.metadata.json` или `V-uuid.metadata.json`)
 
-**Примечание**: Все упомянутые настройки относятся к настройкам табличной функции (а не к глобальным настройкам или настройкам уровня запроса) и должны быть указаны, как показано ниже:
+**Примечание**: Все упомянутые настройки, кроме `iceberg_list_only_v_prefixed_metadata_files`, относятся к настройкам табличной функции (а не к глобальным настройкам или настройкам уровня запроса) и должны быть указаны, как показано ниже:
 
 ```sql
 SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table', 
@@ -415,7 +417,7 @@ y: 993
 
 ### `DROP PARTITION` {#iceberg-writes-drop-partition}
 
-`ALTER TABLE ... DROP PARTITION <value>` удаляет все файлы данных указанной партиции и создаёт новый снимок, в котором больше нет ссылок на эти файлы. Сейчас операция поддерживается для таблиц Iceberg в локальном и объектном хранилищах, но не для таблиц, управляемых каталогом.
+`ALTER TABLE ... DROP PARTITION <value>` удаляет все файлы данных указанной партиции и создаёт новый снимок, в котором больше нет ссылок на эти файлы. Операция поддерживается для таблиц Iceberg в локальном и объектном хранилищах, а также для таблиц в базе данных `DataLakeCatalog` с типом каталога `rest`, `onelake`, `biglake`, `delta_sharing`, `horizon`, `s3tables` или `unity` (при `use_unity_catalog_v2 = 1`).
 
 Чтобы использовать эту операцию, включите `allow_insert_into_iceberg`.
 
@@ -608,15 +610,16 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 
 Команда возвращает таблицу с двумя столбцами (`metric_name String`, `metric_value Int64`); для каждой метрики выводится одна строка. Имена метрик соответствуют [спецификации Iceberg](https://iceberg.apache.org/docs/latest/spark-procedures/#output):
 
-| metric&#95;name                       | Описание                                                            |
-| ------------------------------------- | ------------------------------------------------------------------- |
-| `deleted_data_files_count`            | Количество удалённых файлов данных                                  |
-| `deleted_position_delete_files_count` | Количество удалённых удалённых файлов позиционного удаления         |
-| `deleted_equality_delete_files_count` | Количество удалённых файлов удаления по равенству                   |
-| `deleted_manifest_files_count`        | Количество удалённых файлов манифестов                              |
-| `deleted_manifest_lists_count`        | Количество удалённых файлов списков манифестов                      |
-| `deleted_statistics_files_count`      | Количество удалённых файлов статистики (в настоящее время всегда 0) |
-| `dry_run`                             | `1` для режима dry-run, `0` для обычного выполнения                 |
+| metric&#95;name                       | Описание                                                                                                                                                |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deleted_data_files_count`            | Количество удалённых файлов данных                                                                                                                      |
+| `deleted_position_delete_files_count` | Количество удалённых удалённых файлов позиционного удаления                                                                                             |
+| `deleted_equality_delete_files_count` | Количество удалённых файлов удаления по равенству                                                                                                       |
+| `deleted_manifest_files_count`        | Количество удалённых файлов манифестов                                                                                                                  |
+| `deleted_manifest_lists_count`        | Количество удалённых файлов списков манифестов                                                                                                          |
+| `deleted_statistics_files_count`      | Количество удалённых файлов статистики (в настоящее время всегда 0)                                                                                     |
+| `dry_run`                             | `1` для режима пробного запуска, `0` для обычного выполнения                                                                                                     |
+| `failed_deletions_count`              | Количество файлов, при удалении которых возникла ошибка. Такой файл может остаться в хранилище; позже его можно удалить с помощью `remove_orphan_files` |
 
 Команда выполняет следующие шаги:
 
@@ -625,7 +628,7 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 3. Удаляет снимки, которые не сохраняются политикой и не защищены временной меткой
 4. Определяет, какие файлы связаны исключительно с удалёнными снимками
 5. В обычном режиме: создаёт новые метаданные без удалённых снимков
-6. В обычном режиме: физически удаляет недостижимые списки манифестов, файлы манифестов и файлы данных
+6. В обычном режиме: физически удаляет недостижимые списки манифестов, файлы манифестов и файлы данных; если при удалении файла возникает ошибка, файл не удаляется, а учитывается в `failed_deletions_count`
 7. В режиме `dry_run = 1`: пропускает шаги 5 и 6 и возвращает только вычисленные метрики
 
 #### Политика хранения снимков {#iceberg-snapshot-retention-policy}
@@ -642,7 +645,7 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 
 **Оценка хранения:**
 
-* **Для каждой ветки** (включая `main`): обход цепочки предков начинается с вершины ветки. Снимки сохраняются, пока выполняется хотя бы одно из следующих условий:
+* **Для каждой ветки** (включая `main`): вершина ветки сохраняется всегда. Обход цепочки предков начинается с вершины ветки, и снимки сохраняются, пока выполняется хотя бы одно из следующих условий:
   * Снимок входит в число первых `min-snapshots-to-keep` в цепочке
   * Возраст снимка не превышает `max-snapshot-age-ms` (то есть `now - timestamp-ms <= max-snapshot-age-ms`)
 * **Для тегов**: помеченный снимок сохраняется, если только возраст тега не превысил `max-ref-age-ms`; в этом случае ссылка на тег удаляется
@@ -655,10 +658,10 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 Требуется привилегия `ALTER TABLE EXECUTE`, которая является дочерней по отношению к `ALTER TABLE` в иерархии управления доступом ClickHouse. Её можно выдать отдельно или через родительскую привилегию:
 
 ```sql
--- Предоставить только разрешение EXECUTE
+-- Grant only EXECUTE permission
 GRANT ALTER TABLE EXECUTE ON my_iceberg_table TO my_user;
 
--- Или предоставить все разрешения ALTER TABLE (включает ALTER TABLE EXECUTE)
+-- Or grant all ALTER TABLE permissions (includes ALTER TABLE EXECUTE)
 GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 ```
 
@@ -677,44 +680,44 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 **Синтаксис:**
 
 ```sql
--- Позиционная форма: единственный безымянный аргумент older_than
+-- Positional form: single unnamed older_than argument
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files('timestamp')
 
--- Именованная форма
+-- Named form
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
     older_than = 'timestamp',
     location = 'path',
     dry_run = 0|1
 )
 
--- Без аргументов: используются все значения по умолчанию (older_than = 3 дня назад)
+-- No arguments: use all defaults (older_than = 3 days ago)
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files()
 ```
 
 **Параметры:**
 
-| Parameter    | Type                       | Default                                                                     | Description                                                                                                                                                                                            |
-| ------------ | -------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `older_than` | `String` (временная метка) | 3 дня назад (настраивается через `iceberg_orphan_files_older_than_seconds`) | Рассматривать как потенциально осиротевшие только файлы, время последнего изменения которых старше этой временной метки. Это позволяет избежать удаления файлов из ещё не завершённых операций записи. |
-| `location`   | `String`                   | Расположение таблицы                                                        | Ограничить сканирование конкретным подкаталогом в каталоге таблицы (например, `'data/'` или `'metadata/'`).                                                                                            |
-| `dry_run`    | `UInt64`                   | `0`                                                                         | Если указано `1`, определить осиротевшие файлы и вернуть сводку результатов, ничего не удаляя.                                                                                                         |
+| Parameter    | Type                       | Default                                                                     | Description                                                                                                                                                                                                                                                                                                              |
+| ------------ | -------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `older_than` | `String` (временная метка) | 3 дня назад (настраивается через `iceberg_orphan_files_older_than_seconds`) | Рассматривать как потенциально осиротевшие только файлы, время последнего изменения которых старше этой временной метки. Это позволяет избежать удаления файлов из ещё не завершённых операций записи. Значение должно быть не позднее чем за `iceberg_orphan_files_min_retention_seconds` (1 день) до текущего момента. |
+| `location`   | `String`                   | Расположение таблицы                                                        | Ограничить сканирование конкретным подкаталогом в каталоге таблицы (например, `'data/'` или `'metadata/'`).                                                                                                                                                                                                              |
+| `dry_run`    | `UInt64`                   | `0`                                                                         | Если указано `1`, определить осиротевшие файлы и вернуть сводку результатов, ничего не удаляя.                                                                                                                                                                                                                           |
 
 **Примеры:**
 
 ```sql
--- Удалить осиротевшие файлы старше указанной временной метки
+-- Remove orphan files older than a specific timestamp
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files('2026-03-01 00:00:00');
 
--- Пробный запуск: просмотр файлов, которые будут удалены
+-- Dry run: preview which files would be deleted
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files(dry_run = 1);
 
--- Сканировать только каталог данных
+-- Scan only the data directory
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
     older_than = '2026-03-01 00:00:00',
     location = 'data/'
 );
 
--- Совместное использование позиционного аргумента older_than с именованными аргументами
+-- Combine positional older_than with named arguments
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
     '2026-03-01 00:00:00',
     dry_run = 1
@@ -739,17 +742,18 @@ ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
 
 **Настройки:**
 
-| Настройка                                 | Тип      | По умолчанию     | Описание                                                             |
-| ----------------------------------------- | -------- | ---------------- | -------------------------------------------------------------------- |
-| `allow_iceberg_remove_orphan_files`       | `Bool`   | `false`          | Настройка-флаг, включающая эту возможность (экспериментальную).      |
-| `iceberg_orphan_files_older_than_seconds` | `UInt64` | `259200` (3 дня) | Порог `older_than` по умолчанию в секундах, если аргумент не указан. |
+| Настройка                                    | Тип      | По умолчанию     | Описание                                                                                                                                                     |
+| -------------------------------------------- | -------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `allow_iceberg_remove_orphan_files`          | `Bool`   | `false`          | Настройка-флаг, включающая эту возможность (экспериментальную).                                                                                              |
+| `iceberg_orphan_files_older_than_seconds`    | `UInt64` | `259200` (3 дня) | Порог `older_than` по умолчанию в секундах, если аргумент не указан.                                                                                         |
+| `iceberg_orphan_files_min_retention_seconds` | `UInt64` | `86400` (1 день) | Минимальный интервал в секундах между `older_than` и текущим моментом; более позднее значение `older_than` отклоняется. Значение `0` отключает эту проверку. |
 
 <Note>
   * **Требуется формат Iceberg версии 2 (или выше).** Таблицы версии 1 отклоняются, поскольку в их снимках отсутствуют указатели `manifest-list`, необходимые для безопасного определения набора достижимых файлов. Выполнение команды для таблицы v1 возвращает ошибку `BAD_ARGUMENTS`.
   * Обе настройки `allow_insert_into_iceberg` и `allow_iceberg_remove_orphan_files` должны быть включены
   * Рекомендуется запускать `expire_snapshots` перед `remove_orphan_files`, чтобы сначала очищались файлы, на которые ссылаются только истёкшие снимки
   * Используйте `dry_run = 1`, чтобы предварительно просмотреть осиротевшие файлы перед удалением
-  * Порог `older_than` защищает от удаления файлов из ещё не завершённых операций записи — значение по умолчанию, равное 3 дням, обеспечивает достаточный запас безопасности
+  * Значение `older_than`, отстоящее от текущего момента менее чем на `iceberg_orphan_files_min_retention_seconds`, отклоняется: на файлы ещё не закоммиченной операции записи нет ссылок в метаданных таблицы, и они выглядят как осиротевшие. Задавайте значение этой настройки больше максимального времени, которое может потребоваться для коммита записи в таблицу
 </Note>
 
 ## См. также {#see-also}

@@ -1,0 +1,14 @@
+create has_schema=1 has_partition_spec=1 schema_in_sync=1 spec_in_sync=1 schema_id=0 fields=id,s,n spec_fields=0
+insert has_schema=1 has_partition_spec=1 schema_in_sync=1 spec_in_sync=1 schema_id=0 fields=id,s,n spec_fields=0
+add_column has_schema=1 has_partition_spec=1 schema_in_sync=1 spec_in_sync=1 schema_id=1 fields=id,s,n,x spec_fields=0
+modify_column has_schema=1 has_partition_spec=1 schema_in_sync=1 spec_in_sync=1 schema_id=2 fields=id,s,n,x spec_fields=0
+rename_column has_schema=1 has_partition_spec=1 schema_in_sync=1 spec_in_sync=1 schema_id=3 fields=id,s2,n,x spec_fields=0
+drop_column has_schema=1 has_partition_spec=1 schema_in_sync=1 spec_in_sync=1 schema_id=4 fields=id,s2,n spec_fields=0
+insert_after_alter has_schema=1 has_partition_spec=1 schema_in_sync=1 spec_in_sync=1 schema_id=4 fields=id,s2,n spec_fields=0
+1	a	10
+2	b	20
+partitioned_create has_schema=1 has_partition_spec=1 schema_in_sync=1 spec_in_sync=1 schema_id=0 fields=id,p spec_fields=1
+partitioned_insert has_schema=1 has_partition_spec=1 schema_in_sync=1 spec_in_sync=1 schema_id=0 fields=id,p spec_fields=1
+1	100
+2	200
+v2_create has_schema=0 has_partition_spec=0 schema_in_sync=0 spec_in_sync=0 schema_id=none fields=none spec_fields=none

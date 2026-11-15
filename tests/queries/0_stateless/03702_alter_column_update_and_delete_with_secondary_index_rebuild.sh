@@ -10,7 +10,7 @@ CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_table;"
 
 wait_for_mutations() {
-    while : ;
+    while clickhouse_test_time_left ;
     do
         count=$(${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'test_table' and is_done = 0")
         [[ $count != 0 ]] || break
@@ -19,9 +19,8 @@ wait_for_mutations() {
 }
 
 client() {
-    # SET enable_analyzer=1; -- Different EXPLAIN output
     # SET use_query_condition_cache = 0; -- Need it because we rerun some queries (with different settings) and we want to execute the full analysis
-    $CLICKHOUSE_CLIENT --echo --enable-analyzer=1 --use_query_condition_cache=0 --mutations_sync=2 --alter_sync=2 -q "$1"
+    $CLICKHOUSE_CLIENT --echo --use_query_condition_cache=0 --mutations_sync=2 --alter_sync=2 -q "$1"
 }
 
 declare -a table_settings=("min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage=0" "min_bytes_for_full_part_storage ='1G'")

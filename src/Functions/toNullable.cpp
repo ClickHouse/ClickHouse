@@ -36,6 +36,8 @@ public:
     bool isNullPropagating(const DataTypePtr & result_type) const override { return isNullableOrLowCardinalityNullable(result_type); }
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// Wrapping a value in `Nullable` cannot fail.
+    std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// Disable the default LowCardinality handling to preserve nested LowCardinality in compound types

@@ -39,7 +39,6 @@ class ReadBuffer;
 class WriteBuffer;
 class IColumn;
 class IDataType;
-class IWindowFunction;
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = VectorWithMemoryTracking<DataTypePtr>;
@@ -180,6 +179,42 @@ public:
     /// Delete data for aggregation.
     virtual void destroy(AggregateDataPtr __restrict place) const noexcept = 0;
 
+    /// Create `count` states at `place + i * stride`; on exception, destroy the ones already created.
+    /// Zero-sized states (`stride == 0`) are not bounded by memory, so their number is limited per `NestedStatesScope`.
+    void createNestedStates(AggregateDataPtr __restrict place, size_t count, size_t stride) const;
+
+    /// While alive, the zero-sized states created on this thread count against one limit. A `create` that creates
+    /// states of several nested functions (`-Tuple`) opens one around them and counts the zero-sized ones itself.
+    class NestedStatesScope
+    {
+    public:
+        NestedStatesScope() : outermost(!active)
+        {
+            if (outermost)
+            {
+                active = true;
+                zero_sized_states = 0;
+            }
+        }
+
+        ~NestedStatesScope()
+        {
+            if (outermost)
+                active = false;
+        }
+
+        NestedStatesScope(const NestedStatesScope &) = delete;
+        NestedStatesScope & operator=(const NestedStatesScope &) = delete;
+
+        void addZeroSizedStates(size_t count, const IAggregateFunction & function);
+
+    private:
+        static thread_local constinit bool active;
+        static thread_local constinit size_t zero_sized_states;
+
+        const bool outermost;
+    };
+
     /// Delete all combinator states that were used after combinator -State.
     /// For example for uniqArrayStateForEachMap(...) it will destroy
     /// states that were created by combinators Map and ForEach.
@@ -225,7 +260,7 @@ public:
     /// All overrides must be done on `mergeImpl` below.
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const
     {
-        chassert(place != rhs, "IAggregateFunction::merge called with the same source and destination state");
+        chassert(!isSelfMerge(place, rhs), "IAggregateFunction::merge called with the same source and destination state");
         mergeImpl(place, rhs, arena);
     }
 
@@ -236,9 +271,29 @@ public:
     /// Tells if merge() with thread pool parameter could be used.
     virtual bool isAbleToParallelizeMerge() const { return false; }
 
+    /// Estimates merge work in independently mergeable state elements, or returns zero without an estimate.
+    /// Callers compare states in these units to decide which merges warrant additional parallelism.
+    virtual size_t getEstimatedMergeWork(ConstAggregateDataPtr /*place*/) const { return 0; }
+
+    /// Estimates state growth in bytes per distinct argument tuple, excluding the fixed storage from
+    /// `sizeOfData`. Returns zero when a linear model of distinct inputs does not describe the state.
+    virtual size_t getStateBytesPerDistinctInput() const { return 0; }
+    /// Whether merging `rhs` into `place` is expensive enough to be deferred by `mergeBatchOrDefer` /
+    /// `mergeAndDestroyBatchOrDefer` and merged later in parallel via `parallelizeMergeMulti`.
+    /// Overridden by functions whose merge cost grows with the state size (e.g. `uniqExact`);
+    /// combinators forward it to the nested function so that wrapped states are deferred too.
+    virtual bool isLargeMergePair(ConstAggregateDataPtr __restrict /*place*/, ConstAggregateDataPtr __restrict /*rhs*/) const
+    {
+        return false;
+    }
+
     /// Return true if it is allowed to replace call of `addBatch`
     /// to `addBatchSinglePlace` for ranges of consecutive equal keys.
     virtual bool canOptimizeEqualKeysRanges() const { return true; }
+
+    /// Return true if adding a value that the state has already received leaves the state unchanged,
+    /// so that a caller may skip repeated values.
+    virtual bool ignoresRepeatedValues() const { return false; }
 
     /// Should be used only if isAbleToParallelizeMerge() returned true.
     /// Non-virtual public entry point that asserts the source and destination states do not alias.
@@ -250,7 +305,7 @@ public:
         std::atomic<bool> & is_cancelled,
         Arena * arena) const
     {
-        chassert(place != rhs, "IAggregateFunction::merge called with the same source and destination state");
+        chassert(!isSelfMerge(place, rhs), "IAggregateFunction::merge called with the same source and destination state");
         mergeImpl(place, rhs, thread_pool, is_cancelled, arena);
     }
 
@@ -276,6 +331,40 @@ public:
     /// then destroy states (on which src places points to).
     virtual void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * src_places, size_t size, size_t offset, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const = 0;
 
+    /// Same as `mergeAndDestroyBatch`, but pairs of states that are too large to merge serially on this
+    /// thread are skipped and appended (with `offset` already applied) to `deferred_dst`/`deferred_src`.
+    /// The caller must later merge each deferred destination with all its deferred sources — e.g. via
+    /// `parallelizeMergeMulti` — and destroy the deferred source states.
+    /// Functions that cannot parallelize their merge (see `isAbleToParallelizeMerge`) defer nothing.
+    /// If it throws, every source state of the batch has been destroyed or recorded in `deferred_src`.
+    /// Should be used only if `isAbleToParallelizeMerge` returned true. It is not a member of `IAggregateFunctionHelper`
+    /// on purpose: the merges of such functions are expensive anyway, so the virtual calls cost nothing, while a
+    /// devirtualized copy for every aggregate function and combinator would only bloat the binary.
+    void mergeAndDestroyBatchOrDefer(
+        AggregateDataPtr * dst_places,
+        AggregateDataPtr * src_places,
+        size_t size,
+        size_t offset,
+        PaddedPODArray<AggregateDataPtr> & deferred_dst,
+        PaddedPODArray<AggregateDataPtr> & deferred_src,
+        Arena * arena) const;
+
+    /// Same as `mergeBatch`, but pairs of states that are too large to merge serially on this thread are
+    /// skipped and appended (with `place_offset` already applied to the destination) to `deferred_dst`/`deferred_src`.
+    /// The caller must later merge each deferred destination with all its deferred sources — e.g. via
+    /// `parallelizeMergeMulti`. The sources stay owned by the caller (they live in an aggregate column)
+    /// and are not destroyed. Functions that cannot parallelize their merge defer nothing.
+    /// Should be used only if `isAbleToParallelizeMerge` returned true (see `mergeAndDestroyBatchOrDefer`).
+    void mergeBatchOrDefer(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const AggregateDataPtr * rhs,
+        PaddedPODArray<AggregateDataPtr> & deferred_dst,
+        PaddedPODArray<AggregateDataPtr> & deferred_src,
+        Arena * arena) const;
+
     /// Serializes state (to transmit it over the network, for example).
     virtual void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const = 0; /// NOLINT
 
@@ -297,6 +386,11 @@ public:
 
     /// Devirtualize create and deserialize calls. Used in deserialization of ColumnAggregateFunction.
     virtual void createAndDeserializeBatch(PaddedPODArray<AggregateDataPtr> & data, AggregateDataPtr __restrict place, size_t total_size_of_state, size_t limit, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const = 0;
+
+    /// Sets a just-created state to what it would be after aggregating `count` rows whose values add up to `sum`, for
+    /// callers that already know both (e.g. the aggregation from column statistics). Implemented by `sum`, `avg` and
+    /// `sumCount`; `sum` is a `Field` of the result type of `sum` over the argument. Other functions throw.
+    virtual void setSumAndCount(AggregateDataPtr __restrict place, const Field & sum, UInt64 count) const;
 
     /// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
     virtual bool allocatesMemoryInArena() const = 0;
@@ -339,6 +433,14 @@ public:
       * Also returns true when the final value of this aggregate function contains State of other aggregate function inside.
       */
     virtual bool isState() const { return false; }
+
+    /** How the finalized value of a merged state relates to the finalized values of the states
+      * being merged; see the `MergedValueBound` enum. A function may declare a bound only if the
+      * relation holds exactly for any set of states and any data, and its `insertResultInto` does
+      * not modify the state (the values of partial states are peeked before they are merged).
+      * The safe default is `Unknown`, which excludes the function from the threshold merge.
+      */
+    virtual MergedValueBound getMergedValueBound() const { return MergedValueBound::Unknown; }
 
     /** The inner loop that uses the function pointer is better than using the virtual function.
       * The reason is that in the case of virtual functions GCC 5.1.2 generates code,
@@ -411,7 +513,7 @@ public:
         size_t row_end,
         AggregateDataPtr __restrict place,
         const IColumn ** columns,
-        Arena * arena) const = 0;
+        Arena * arena) const;
 
     /** The same for single place when need to aggregate only filtered data.
       * Instead of using an if-column, the condition is combined inside the null_map
@@ -471,6 +573,18 @@ public:
         size_t row_begin,
         size_t row_end,
         AggregateDataPtr * places,
+        size_t place_offset,
+        IColumn & to,
+        Arena * arena) const = 0;
+
+    /** The same devirtualized loop, but the states stay usable afterwards (`insertResultInto`
+      * guarantees it) - for peeking the values of live states, e.g. by the top-K threshold
+      * merge, which ranks partial states by value before deciding which ones to merge.
+      */
+    virtual void insertResultIntoBatchWithoutDestroying(
+        size_t row_begin,
+        size_t row_end,
+        const AggregateDataPtr * places,
         size_t place_offset,
         IColumn & to,
         Arena * arena) const = 0;
@@ -561,6 +675,9 @@ public:
     virtual llvm::Value * compileGetResult(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const;
 
 protected:
+    /// Distinct zero-size states can share an address: a zero-byte arena allocation does not advance the arena.
+    bool isSelfMerge(ConstAggregateDataPtr place, ConstAggregateDataPtr rhs) const { return place == rhs && sizeOfData() != 0; }
+
     DataTypes argument_types;
     Array parameters;
     DataTypePtr result_type;
@@ -772,7 +889,7 @@ public:
                 /// Devirtualized call to `mergeImpl`; the public non-virtual `merge` performs
                 /// the same self-aliasing check, but we add it here to keep the assertion
                 /// when calling `mergeImpl` directly bypasses the wrapper.
-                chassert(places[i] + place_offset != rhs[i],
+                chassert(!this->isSelfMerge(places[i] + place_offset, rhs[i]),
                          "IAggregateFunction::mergeBatch called with the same source and destination state");
                 if constexpr (Derived::parallelizeMergeWithKey())
                     static_cast<const Derived *>(this)->mergeImpl(places[i] + place_offset, rhs[i], thread_pool, is_cancelled, arena);
@@ -786,7 +903,7 @@ public:
     {
         for (size_t i = 0; i < size; ++i)
         {
-            chassert(dst_places[i] + offset != rhs_places[i] + offset,
+            chassert(!this->isSelfMerge(dst_places[i] + offset, rhs_places[i] + offset),
                      "IAggregateFunction::mergeAndDestroyBatch called with the same source and destination state");
             if constexpr (Derived::parallelizeMergeWithKey())
                 static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, thread_pool, is_cancelled, arena);
@@ -820,27 +937,6 @@ public:
             for (size_t i = row_begin; i < row_end; ++i)
                 static_cast<const Derived *>(this)->add(place, columns, i, arena);
         }
-    }
-
-    void addBatchSparseSinglePlace(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        Arena * arena) const override
-    {
-        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
-        const auto * values = &column_sparse.getValuesColumn();
-        const auto & offsets = column_sparse.getOffsetsData();
-
-        auto from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin() + 1;
-        auto to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin() + 1;
-
-        size_t num_defaults = (row_end - row_begin) - (to - from);
-        if (from < to)
-            static_cast<const Derived *>(this)->addBatchSinglePlace(from, to, place, &values, arena, -1);
-        if (num_defaults > 0)
-            static_cast<const Derived *>(this)->addManyDefaults(place, &values, num_defaults, arena);
     }
 
     void addBatchSinglePlaceNotNull( /// NOLINT
@@ -938,6 +1034,18 @@ public:
                 init(place);
             static_cast<const Derived *>(this)->add(place + place_offset, columns, i, arena);
         }
+    }
+
+    void insertResultIntoBatchWithoutDestroying(
+        size_t row_begin,
+        size_t row_end,
+        const AggregateDataPtr * places,
+        size_t place_offset,
+        IColumn & to,
+        Arena * arena) const override
+    {
+        for (size_t i = row_begin; i < row_end; ++i)
+            static_cast<const Derived *>(this)->insertResultInto(places[i] + place_offset, to, arena);
     }
 
     void insertResultIntoBatch(
@@ -1113,6 +1221,19 @@ public:
 };
 
 
+/// Which arguments of `Variant` type an aggregate function cannot process natively.
+/// `AggregateFunctionFactory` converts such arguments to `Nullable` of the least common supertype
+/// of the alternatives with `AggregateFunctionVariantAdapter`.
+enum class VariantArgumentsConversion : UInt8
+{
+    /// The function processes `Variant` arguments natively (example: any, count, groupArray), or does not accept them at all.
+    None,
+    /// The function does not support `Variant` arguments (example: sum, avg, quantile).
+    All,
+    /// The first argument is processed natively, and the other arguments are not supported (example: argMin, topKWeighted).
+    AllExceptFirst,
+};
+
 /// Properties of aggregate function that are independent of argument types and parameters.
 struct AggregateFunctionProperties
 {
@@ -1127,8 +1248,16 @@ struct AggregateFunctionProperties
       */
     bool is_order_dependent = false;
 
+    /** The result is correct only if each state receives its rows in order, while `merge` puts the states in order by
+      * itself (example: `deltaSumTimestamp`, which compares each row with the previous one and orders the states it
+      * merges by their timestamps). An aggregation that adds the rows of several streams to one state cannot honor it.
+      */
+    bool requires_ordered_rows_per_state = false;
+
     /// Indicates if it's actually window function.
     bool is_window_function = false;
+
+    VariantArgumentsConversion variant_arguments_conversion = VariantArgumentsConversion::None;
 };
 
 

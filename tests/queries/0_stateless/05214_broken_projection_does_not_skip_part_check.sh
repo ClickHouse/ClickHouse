@@ -147,7 +147,7 @@ truncate_last_block()
     local file_size
     file_size=$(wc -c < "${file}" | tr -d " ")
     local offset=0
-    while true
+    while clickhouse_test_time_left
     do
         local compressed_size
         compressed_size=$(od -An -t u4 -j $((offset + 17)) -N 4 "${file}" | tr -d ' ')

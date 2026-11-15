@@ -18,6 +18,7 @@
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/MemoryTracker.h>
+#include <Common/Silk/FiberScheduler.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
@@ -233,7 +234,7 @@ static void injectionImpl(
     double sleep_time_us_max)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
-    if (!ThreadFuzzer::isStarted())
+    if (!ThreadFuzzer::isStarted() || Silk::isInsideFiber())
         return;
 
     if (yield_probability > 0
@@ -423,12 +424,12 @@ void ThreadFuzzer::setup() const
 #endif
 
 /// The loongarch64's glibc_version is 2.36
-#if defined(ADDRESS_SANITIZER) || defined(__loongarch64)
+/// musl always uses the internal symbols: __pthread_mutex_lock is an ordinary
+/// strong symbol there (not versioned, not intercepted by ASan), while dlsym
+/// cannot look up symbols in a statically linked binary.
+#if (defined(ADDRESS_SANITIZER) && !defined(USE_MUSL)) || defined(__loongarch64)
 #if USE_JEMALLOC
 #error "ASan cannot be used with jemalloc"
-#endif
-#if defined(USE_MUSL)
-#error "ASan cannot be used with musl"
 #endif
 #include <dlfcn.h>
 

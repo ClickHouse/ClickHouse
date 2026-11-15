@@ -79,17 +79,14 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be MultiPoint", getName());
             else
             {
-                auto first = LeftConverter::convert(arguments[0].column->convertToFullColumnIfConst());
-                auto second = RightConverter::convert(arguments[1].column->convertToFullColumnIfConst());
+                CorrectedGeometries<LeftConverter> first(arguments[0].column);
+                CorrectedGeometries<RightConverter> second(arguments[1].column);
 
                 /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    boost::geometry::correct(first[i]);
-                    boost::geometry::correct(second[i]);
-
                     MultiPolygon<Point> sym_difference{};
-                    boost::geometry::sym_difference(first[i], second[i], sym_difference);
+                    boost::geometry::sym_difference(first.get(i), second.get(i), sym_difference);
 
                     serializer.add(sym_difference);
                 }
@@ -156,10 +153,10 @@ Calculates the spatial set theoretic symmetric difference (XOR) between two poly
     {
         "Usage example",
         R"(
-SELECT wkt(arraySort(polygonsSymDifferenceSpherical([[(50., 50.), (50., -50.), (-50., -50.), (-50., 50.), (50., 50.)], [(10., 10.), (10., 40.), (40., 40.), (40., 10.), (10., 10.)], [(-10., -10.), (-10., -40.), (-40., -40.), (-40., -10.), (-10., -10.)]], [[(-20., -20.), (-20., 20.), (20., 20.), (20., -20.), (-20., -20.)]])));
+SELECT wkt(arrayMap(a -> arrayMap(b -> arrayMap(c -> (round(c.1, 6), round(c.2, 6)), b), a), arraySort(polygonsSymDifferenceSpherical([[(50., 50.), (50., -50.), (-50., -50.), (-50., 50.), (50., 50.)], [(10., 10.), (10., 40.), (40., 40.), (40., 10.), (10., 10.)], [(-10., -10.), (-10., -40.), (-40., -40.), (-40., -10.), (-10., -10.)]], [[(-20., -20.), (-20., 20.), (20., 20.), (20., -20.), (-20., -20.)]]))));
         )",
         R"(
-MULTIPOLYGON(((-20 -10.3067,-10 -10,-10 -20.8791,-20 -20,-20 -10.3067)),((10 20.8791,20 20,20 10.3067,10 10,10 20.8791)),((50 50,50 -50,-50 -50,-50 50,50 50),(10 20.8791,-20 20,-20 -10.3067,-40 -10,-40 -40,-10 -40,-10 -20.8791,20 -20,20 10.3067,40 10,40 40,10 40,10 20.8791)))
+MULTIPOLYGON(((-20 -10.306749,-10 -10,-10 -20.879084,-20 -20,-20 -10.306749)),((10 20.879084,20 20,20 10.306749,10 10,10 20.879084)),((50 50,50 -50,-50 -50,-50 50,50 50),(10 20.879084,-20 20,-20 -10.306749,-40 -10,-40 -40,-10 -40,-10 -20.879084,20 -20,20 10.306749,40 10,40 40,10 40,10 20.879084)))
         )"
     }
     };

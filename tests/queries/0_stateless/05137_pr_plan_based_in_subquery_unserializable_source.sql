@@ -12,7 +12,6 @@ DROP TABLE IF EXISTS t_gen_in;
 CREATE TABLE t_gen_in (k Int64, s String) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_gen_in SELECT number, if(number = 0, '', toString(number)) FROM numbers(100);
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;
