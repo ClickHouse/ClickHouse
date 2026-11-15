@@ -1,4 +1,5 @@
-<test>
+<test iceberg="0">
+    <!-- Not on Iceberg tables: they cannot store an `AggregateFunction` column. -->
     <!-- Reading stored `uniqCombined` states, and merging medium sets into medium sets. K = 17: medium sets hold up to 8192 values. -->
     <create_query>CREATE TABLE uniq_combined_states_40 (k UInt32, s AggregateFunction(uniqCombined, UInt64)) ENGINE = MergeTree ORDER BY k</create_query>
     <create_query>CREATE TABLE uniq_combined_states_3000 (k UInt32, s AggregateFunction(uniqCombined, UInt64)) ENGINE = MergeTree ORDER BY k</create_query>
