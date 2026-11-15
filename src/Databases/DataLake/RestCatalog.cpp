@@ -258,6 +258,9 @@ std::string RestCatalog::Config::toString() const
     if (!default_base_location.empty())
         wb << "default_base_location: " << default_base_location << ", ";
 
+    if (!storage_endpoint.empty())
+        wb << "storage_endpoint: " << storage_endpoint << ", ";
+
     return wb.str();
 }
 
@@ -372,6 +375,10 @@ void RestCatalog::parseCatalogConfigurationSettings(
 
     if (object->has("default-base-location"))
         result.default_base_location = object->get("default-base-location").extract<String>();
+
+    /// An empty or `null` value in `overrides` unsets the endpoint from `defaults`.
+    if (object->has("s3.endpoint"))
+        result.storage_endpoint = object->optValue<std::string>("s3.endpoint", "");
 
     snapshot_loading_mode = Poco::toLower(object->optValue<std::string>("snapshot-loading-mode", ""));
 }
@@ -1270,6 +1277,11 @@ std::optional<StorageType> RestCatalog::getStorageType() const
     if (state_snapshot->config.default_base_location.empty())
         return std::nullopt;
     return parseStorageTypeFromLocation(state_snapshot->config.default_base_location);
+}
+
+std::string RestCatalog::getStorageEndpoint() const
+{
+    return state.get()->config.storage_endpoint;
 }
 
 DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
