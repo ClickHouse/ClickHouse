@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- The implicit count/minmax projection counts rows from part metadata. A distributed read buckets the
 -- part across workers; if the projection is left enabled it is replicated to every bucket and counts
 -- the whole part each time, so the result is multiplied by the bucket count. These distributed counts
@@ -24,11 +21,11 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_ex
     optimize_use_implicit_projections = 1;
 
 -- Trivial count over a distributed read (counted from part metadata).
-SELECT count() FROM (SELECT x FROM t_one);
+SELECT count() FROM (SELECT x FROM t_one) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 -- Primary-key range: full granules counted from the index, only the boundary granule scanned.
-SELECT count() FROM t_cnt WHERE k > 100000;
+SELECT count() FROM t_cnt WHERE k > 100000 SETTINGS distributed_plan_fallback_to_local_execution = 0;
 -- Non-index filter: a real per-row scan (always correct; guards against regression the other way).
-SELECT count() FROM t_cnt WHERE v > 100000;
+SELECT count() FROM t_cnt WHERE v > 100000 SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_one;
 DROP TABLE t_cnt;

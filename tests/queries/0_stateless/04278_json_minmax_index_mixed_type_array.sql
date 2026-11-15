@@ -1,3 +1,8 @@
+-- Tags: no-replicated-database
+-- Tag no-replicated-database: one assertion drops the index and resets the escape-hatch
+-- setting in a single ALTER, which a Replicated database refuses (InterpreterAlterQuery
+-- rejects ALTERs mixing replicated and non-replicated actions, QUERY_IS_PROHIBITED).
+
 -- Test for https://github.com/ClickHouse/ClickHouse/issues/106088
 -- JSON (Object) column should be forbidden in minmax skip index by default.
 -- The MergeTree setting or query-level setting allow_minmax_index_for_json can suppress

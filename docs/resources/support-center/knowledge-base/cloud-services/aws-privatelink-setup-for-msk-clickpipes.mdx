@@ -9,10 +9,16 @@ keywords: ['AWS PrivateLink', 'MSK', 'ClickPipes']
 ## Overview {#overview}
 This guide will get you started with setting up a **MSK multi-VPC** to be used with [ClickPipes reverse private endpoint](/integrations/clickpipes/networking/aws-privatelink#msk-multi-vpc).
 
+ClickPipes owns the client VPC and creates the managed VPC connection. To establish the network connection, enable multi-VPC private connectivity on your MSK cluster and authorize the ClickPipes AWS account in the cluster policy.
+
 ## Requirements {#requirements}
 Your MSK cluster VPC must be located in one of our ClickPipes regions. See [ClickPipes regions](/integrations/clickpipes/networking/aws-privatelink#aws-privatelink-regions) for the list of supported regions.
 
 ## Enabling multi-VPC connectivity {#enabling-multi-vpc-connectivity}
+
+<Tabs>
+<Tab title="AWS console" id="aws-console">
+
 1. Navigate to the MSK cluster.
     - Choose "Clusters" from the left navigation pane in the Amazon MSK console.
     - Select the specific MSK cluster you want to configure for multi-VPC connectivity.
@@ -41,11 +47,72 @@ Your MSK cluster VPC must be located in one of our ClickPipes regions. See [Clic
                         "kafka:GetBootstrapBrokers",
                         "kafka:DescribeCluster",
                         "kafka:DescribeClusterV2"
-                    ]
+                    ],
+                    "Resource": "<MSK_CLUSTER_ARN>"
                 }
             ]
         }
         ```
+
+</Tab>
+<Tab title="Terraform" id="terraform-msk">
+
+Enable your MSK authentication method for both the cluster and multi-VPC connectivity. The following example uses SASL/IAM; set `scram = true` instead to use SASL/SCRAM.
+
+```hcl
+resource "aws_msk_cluster" "this" {
+  # ... existing configuration ...
+
+  client_authentication {
+    sasl {
+      iam = true
+    }
+  }
+
+  broker_node_group_info {
+    # ... existing configuration ...
+
+    connectivity_info {
+      vpc_connectivity {
+        client_authentication {
+          sasl {
+            iam = true
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Authorize the ClickPipes AWS account in the MSK cluster policy:
+
+```hcl
+resource "aws_msk_cluster_policy" "clickpipes" {
+  cluster_arn = aws_msk_cluster.this.arn
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "ClickPipesMultiVpc"
+      Effect    = "Allow"
+      Principal = { AWS = "arn:aws:iam::072088201116:root" }
+      Action = [
+        "kafka:CreateVpcConnection",
+        "kafka:GetBootstrapBrokers",
+        "kafka:DescribeCluster",
+        "kafka:DescribeClusterV2",
+      ]
+      Resource = aws_msk_cluster.this.arn
+    }]
+  })
+}
+```
+
+If the cluster already has a policy, preserve its existing statements when adding the ClickPipes permissions.
+
+</Tab>
+</Tabs>
 
 <Tip>
 Cluster IAM policy enables ClickPipes to initiate the connection from ClickPipes to your MSK cluster.
@@ -53,4 +120,30 @@ If you want to configure IAM authentication for your MSK cluster, please refer t
 </Tip>
 
 ## Creating reverse private endpoint {#creating-reverse-private-endpoint}
+
+<Tabs>
+<Tab title="ClickPipes UI" id="clickpipes-ui">
+
 Follow reverse private endpoint creation steps in the [ClickPipes documentation](/integrations/clickpipes/networking/aws-privatelink#creating-clickpipe).
+
+</Tab>
+<Tab title="Terraform" id="terraform-rpe">
+
+Create the reverse private endpoint with the [ClickHouse Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint):
+
+```hcl
+resource "clickhouse_clickpipes_reverse_private_endpoint" "msk" {
+  service_id         = var.clickhouse_service_id
+  description        = "MSK multi-VPC reverse private endpoint"
+  type               = "MSK_MULTI_VPC"
+  msk_cluster_arn    = aws_msk_cluster.this.arn
+  msk_authentication = "SASL_IAM" # Or "SASL_SCRAM"
+
+  depends_on = [aws_msk_cluster_policy.clickpipes]
+}
+```
+
+The resource fields are immutable. Changing a field destroys and recreates the reverse private endpoint.
+
+</Tab>
+</Tabs>

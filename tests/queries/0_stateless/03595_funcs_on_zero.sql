@@ -1,6 +1,10 @@
--- Tags: no-fasttest, no-openssl-fips
+-- Tags: no-fasttest, no-openssl-fips, no-flaky-check
 -- ^ certain functions are disabled in the fast test build.
 -- ^ MD5 function is not available in FIPS build
+-- ^ this test evaluates a few hundred functions on a constant zero; its
+--   result is deterministic, so the flaky check has nothing to detect by re-running
+--   it, while a single run exceeds the flaky check's per-run time budget under the
+--   heaviest sanitizer configuration.
 
 SET session_timezone = 'UTC';
 
@@ -80,7 +84,7 @@ SELECT entropy(0) FROM system.one;
 SELECT erf(0) FROM system.one;
 SELECT erfc(0) FROM system.one;
 SELECT errorCodeToName(0) FROM system.one;
-SELECT estimateCompressionRatio(0) FROM system.one;
+SELECT estimateCompressionRatio('LZ4')(0) FROM system.one; -- pin the codec so the ratio does not depend on the server's default compression codec
 SELECT exp(0) FROM system.one;
 SELECT exp10(0) FROM system.one;
 SELECT exp2(0) FROM system.one;

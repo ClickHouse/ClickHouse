@@ -1,2 +1,7 @@
 key	Int64
 value	Nullable(String)
+key	Int64
+value	Nullable(String)
+added	Nullable(Int32)
+added_not_null	Int32
+Nullable(Int64)

@@ -22,21 +22,29 @@ import { AgentPrompt } from '/snippets/ar/components/AgentPrompt/AgentPrompt.jsx
 npx skills add clickhouse/agent-skills
 ```
 
+إذا كانت أداة [`clickhousectl`](/ar/concepts/features/interfaces/cli) مثبّتة لديك بالفعل، فيمكنك بدلًا من ذلك تثبيت المهارات نفسها في وكلاء البرمجة التي تكتشفها:
+
+```bash
+clickhousectl skills --detected-only
+```
+
+لاستهداف وكيل واحد، مرّر `--agent` (على سبيل المثال، `--agent claude`). أضف `--global` للتثبيت في الدليل الرئيسي لديك بدلًا من المشروع الحالي.
+
 <AgentPrompt
   prompt="استخدم مهارة clickstack-otel-collector لربط OpenTelemetry Collector بخدمة Managed ClickStack الخاصة بي."
-  description="سيتولى وكيل لديك إعداد ClickStack OpenTelemetry Collector نيابةً عنك. يعمل مع Claude Code وCursor وCodex وغير ذلك من الوكلاء البرمجية."
+  description="سيتولى وكيل لديك إعداد ClickStack OpenTelemetry Collector نيابةً عنك. يعمل مع Claude Code وCursor وCodex وغير ذلك من وكلاء البرمجة."
   repositoryUrl="https://github.com/ClickHouse/agent-skills"
   outline={[
-"ثبّت clickhousectl إذا لم يكن مثبتًا، ثم قم بمصادقته (سيطلب منك مفتاح ClickHouse Cloud API — الصقه في الدردشة أو نفّذ أمر تسجيل الدخول بنفسك).",
+"ثبّت clickhousectl إذا لم يكن مثبتًا، وتحقّق من أنه مُصادَق عليه باستخدام مفتاح API (تسجيل الدخول عبر المتصفح يمنح صلاحية القراءة فقط ولا يمكنه إنشاء مستخدم الإدخال). وإن لم يكن كذلك، فسيطلب منك تشغيل clickhousectl cloud auth login --interactive بنفسك في طرفية منفصلة، من دليل المشروع نفسه (يُحفظ المفتاح هناك في .clickhouse/credentials.json). لا تلصق أبدًا سر مفتاح API في الدردشة.",
 "سيطلب منك معرّف خدمة ClickHouse Cloud المستهدفة أو اسمها، ثم يجلب endpoint ‏HTTPS الخاص بها.",
 "أنشئ مستخدم SQL باسم hyperdx_ingest على الخدمة (مع إنشاء password قوية، أو استخدام واحدة توفّرها أنت).",
 "شغّل ClickStack OpenTelemetry Collector محليًا في Docker، مع توجيهه إلى خدمتك.",
-"أرسل دفعة قصيرة من logs وtraces وmetrics الاصطناعية عبر الـ مجمّع لإثبات أن مسار المعالجة يعمل.",
+"أرسل دفعة قصيرة من سجلات وtraces ومقاييس الاصطناعية عبر الـ مجمّع لإثبات أن مسار المعالجة يعمل.",
 "تحقّق من وصول البيانات إلى قاعدة بيانات otel، ثم يزوّدك بعنوان URL الخاص بـ ClickStack UI حيث يمكنك عرضها."
 ]}
 />
 
-يعمل الـ مجمّع هنا بدور **بوابة**: OTLP endpoint واحد ترسل إليه تطبيقاتك وSDKs ووكلاء المجمّعات. تتولى الـ بوابة تجميع الأحداث في batches، وتطبيق أي processing أعددته، ثم كتابتها إلى ClickHouse عبر [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). يتيح لك هذا النمط إبقاء منطق collection خارج application code، كما يسمح لك بتوسيع نطاق ingestion بشكل مستقل عن workloads التي تُنتج البيانات. وللاطلاع على خلفية حول أدوار البوابة والوكيل، راجع [Collector roles](/ar/clickstack/ingesting-data/collector#collector-roles).
+يعمل الـ مجمّع هنا بدور **بوابة**: نقطة نهاية OTLP واحدة ترسل إليها تطبيقاتك وSDKs ووكلاء المجمّعات. تتولى الـ بوابة تجميع الأحداث في batches، وتطبيق أي processing أعددته، ثم كتابتها إلى ClickHouse عبر [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). يتيح لك هذا النمط إبقاء منطق collection خارج شفرة التطبيق، كما يسمح لك بتوسيع نطاق الإدخال بشكل مستقل عن workloads التي تُنتج البيانات. وللاطلاع على خلفية حول أدوار البوابة والوكيل، راجع [Collector roles](/ar/clickstack/ingesting-data/collector#collector-roles).
 
 <Info>
   **مجمّع حالي**
@@ -403,9 +411,7 @@ npx skills add clickhouse/agent-skills
   </Tab>
 </Tabs>
 
-<div id="next-steps">
-  ## الخطوات التالية: أرسل بياناتك الخاصة
-</div>
+## الخطوات التالية: أرسل بياناتك الخاصة {#next-steps}
 
 لا تُثبت الدفعة الاصطناعية أعلاه سوى أن مسار المعالجة يعمل. لبدء إرسال بيانات القياس عن بُعد الحقيقية، زوّد خدماتك الخاصة بأدوات القياس باستخدام [ClickStack SDKs](/ar/clickstack/ingesting-data/sdks/index)، إذ توفّر أدوات قياس لـ Node.js وبايثون وGo وJava ولغات أخرى تُصدِّر OTLP إلى نقطة نهاية الـ مجمّع التي تحققت منها للتو. وللاطلاع على مثال عملي متكامل، اتبع [إضافة أدوات القياس إلى تطبيق](/ar/clickstack/managed-onboarding/instrument-application).
 
@@ -414,9 +420,7 @@ npx skills add clickhouse/agent-skills
 * [مراقبة Kubernetes](/ar/clickstack/managed-onboarding/monitoring-kubernetes): اجمع السجلات ومقاييس البنية التحتية وأحداث Kubernetes من عنقود.
 * [مراقبة سجلات AWS CloudWatch](/ar/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): مرّر سجلات CloudWatch عبر مستقبِل CloudWatch من OpenTelemetry.
 
-<div id="further-reading">
-  ## قراءة إضافية
-</div>
+## قراءة إضافية {#further-reading}
 
 يغطي هذا الدليل مثيلاً واحدًا من المجمّع في أبسط صورة. ويوضّح [مرجع OpenTelemetry Collector](/ar/clickstack/ingesting-data/collector) ما ينبغي فعله بعد ذلك:
 

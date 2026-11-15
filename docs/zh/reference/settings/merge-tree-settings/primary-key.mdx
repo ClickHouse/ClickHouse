@@ -12,25 +12,19 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置可在 [system.merge&#95;tree&#95;settings](/zh/reference/system-tables/merge_tree_settings) 中查看，且由 ClickHouse 源代码自动生成。
 
-<div id="primary_key_compress_block_size">
-  ## primary_key_compress_block_size
-</div>
+## primary_key_compress_block_size {#primary_key_compress_block_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="65536" />
 
-主键压缩块大小，即压缩块的实际大小。
+为新写入或重写的数据分区片段写入压缩主键索引时所用块的大小 (按未压缩字节数计) 。仅在启用 `compress_primary_key` 时生效。此设置控制压缩的帧信息和缓冲方式，不会改变主键或索引粒度。
 
-<div id="primary_key_compression_codec">
-  ## primary_key_compression_codec
-</div>
+## primary_key_compression_codec {#primary_key_compression_codec}
 
 <SettingsInfoBlock type="String" default_value="ZSTD(3)" />
 
 用于主键的压缩编码。由于主键足够小且已缓存，因此默认压缩方式为 ZSTD(3)。
 
-<div id="primary_key_lazy_load">
-  ## primary_key_lazy_load
-</div>
+## primary_key_lazy_load {#primary_key_lazy_load}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -38,9 +32,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 而不是在表初始化时加载。如果表的数量很多，
 这样可以节省内存。
 
-<div id="primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns">
-  ## primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns
-</div>
+## primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns {#primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns}
 
 <SettingsInfoBlock type="Float" default_value="0.9" />
 

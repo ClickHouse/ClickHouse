@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 다음과 같은 이유로 로그와 트레이스에는 항상 자체 스키마를 생성하는 것을 권장합니다:
 
 * **프라이머리 키(primary key) 선택** - 기본 스키마는 특정 액세스 패턴에 최적화된 `ORDER BY`를 사용합니다. 대부분의 경우 실제 액세스 패턴은 여기에 맞지 않습니다.
@@ -256,7 +254,15 @@ Peak memory usage: 3.16 MiB.
 
 Materialized Views를 사용하면 계산 비용을 쿼리 시점에서 삽입 시점으로 옮길 수 있습니다. ClickHouse materialized view는 테이블에 데이터 블록이 삽입될 때 해당 블록에 대해 쿼리를 실행하는 트리거일 뿐입니다. 이 쿼리의 결과는 두 번째 &quot;대상&quot; 테이블에 삽입됩니다.
 
-<Image img="/images/use-cases/observability/observability-10.webp" alt="materialized view" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![materialized view](/images/use-cases/observability/observability-10.webp)
+
+</Frame>
+
+</div>
 
 <Info>
   **실시간 업데이트**
@@ -411,7 +417,15 @@ FROM otel_logs
 
 위 내용은 아래와 같이 시각화됩니다:
 
-<Image img="/images/use-cases/observability/observability-11.webp" alt="Otel MV" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Otel MV](/images/use-cases/observability/observability-11.webp)
+
+</Frame>
+
+</div>
 
 이제 [&quot;Exporting to ClickHouse&quot;](/ko/guides/use-cases/observability/build-your-own/integrating-opentelemetry#exporting-to-clickhouse)에서 사용한 collector 구성을 다시 시작하면 데이터가 원하는 포맷으로 `otel_logs_v2`에 표시됩니다. typed JSON extract 함수를 사용한다는 점에 유의하십시오.
 
@@ -474,7 +488,7 @@ FROM otel_logs
   ### 타입에 주의하세요
 </div>
 
-위의 materialized view는 암시적 형변환에 의존합니다. 특히 `LogAttributes` 맵을 사용할 때 그렇습니다. ClickHouse는 추출된 값을 대상 테이블의 타입으로 자동 형변환하는 경우가 많아 필요한 구문을 줄여 줍니다. 그러나 동일한 스키마(schema)를 사용하는 대상 테이블에 대해 뷰의 `SELECT` SQL 문을 [`INSERT INTO`](/ko/reference/statements/insert-into) SQL 문과 함께 사용해 항상 테스트하는 것을 권장합니다. 이렇게 하면 타입이 올바르게 처리되는지 확인할 수 있습니다. 특히 다음 경우에 유의하십시오.
+위의 materialized view는 암시적 형변환에 의존합니다. 특히 `LogAttributes` 맵을 사용할 때 그렇습니다. ClickHouse는 추출된 값을 대상 테이블의 타입으로 자동 형변환하는 경우가 많아 필요한 구문을 줄여 줍니다. 그러나 동일한 스키마를 사용하는 대상 테이블에 대해 뷰의 `SELECT` SQL 문을 [`INSERT INTO`](/ko/reference/statements/insert-into) SQL 문과 함께 사용해 항상 테스트하는 것을 권장합니다. 이렇게 하면 타입이 올바르게 처리되는지 확인할 수 있습니다. 특히 다음 경우에 유의하십시오.
 
 * 맵에 키가 없으면 빈 문자열이 반환됩니다. 숫자값의 경우 이를 적절한 값으로 매핑해야 합니다. 이는 [조건식](/ko/reference/functions/regular-functions/conditional-functions) 예: `if(LogAttributes['status'] = ", 200, LogAttributes['status'])` 또는 기본값을 허용할 수 있다면 [형변환 함수](/ko/reference/functions/regular-functions/type-conversion-functions) 예: `toUInt8OrDefault(LogAttributes['status'] )`로 처리할 수 있습니다.
 * 일부 타입은 항상 형변환되지 않습니다. 예를 들어 숫자의 문자열 표현은 enum 값으로 형변환되지 않습니다.
@@ -483,7 +497,7 @@ FROM otel_logs
 <Info>
   **Nullable 사용 피하기**
 
-  관측성 데이터에는 ClickHouse에서 [Nullable](/ko/reference/data-types/nullable) 사용을 피하십시오. logs 및 traces에서는 빈 값과 null을 구분해야 할 필요가 거의 없습니다. 이 기능은 추가 저장소 오버헤드를 유발하며 쿼리 성능에도 부정적인 영향을 줍니다. 자세한 내용은 [여기](/ko/guides/clickhouse/data-modelling/schema-design#optimizing-types)를 참조하십시오.
+  관측성 데이터에는 ClickHouse에서 [Nullable](/ko/reference/data-types/nullable) 사용을 피하십시오. 로그 및 트레이스에서는 빈 값과 null을 구분해야 할 필요가 거의 없습니다. 이 기능은 추가 저장소 오버헤드를 유발하며 쿼리 성능에도 부정적인 영향을 줍니다. 자세한 내용은 [여기](/ko/guides/clickhouse/data-modelling/schema-design#optimizing-types)를 참조하십시오.
 </Info>
 
 <div id="choosing-a-primary-ordering-key">
@@ -645,7 +659,15 @@ LIMIT 5
 
 [딕셔너리](/ko/reference/statements/create/dictionary)은 ClickHouse의 [핵심 기능](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)으로, 다양한 내부 및 외부 [소스](/ko/reference/statements/create/dictionary/sources/overview#dictionary-sources)의 데이터를 인메모리 [키-값](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) 형태로 표현하며, 초저지연 조회 쿼리에 최적화되어 있습니다.
 
-<Image img="/images/use-cases/observability/observability-12.webp" alt="관측성과 딕셔너리" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![관측성과 딕셔너리](/images/use-cases/observability/observability-12.webp)
+
+</Frame>
+
+</div>
 
 이 기능은 다양한 시나리오에서 유용합니다. 예를 들어 수집 성능 저하 없이 수집된 데이터를 실시간으로 보강할 수 있고, 전반적인 쿼리 성능도 향상할 수 있으며, 특히 JOIN에서 큰 이점을 얻을 수 있습니다.
 관측성 사용 사례에서는 조인이 필요한 경우는 드물지만, 딕셔너리는 여전히 보강 용도로 유용하며 삽입 시점과 쿼리 시점 모두에서 활용할 수 있습니다. 아래에서 두 경우의 예시를 제공합니다.
@@ -915,7 +937,7 @@ ORDER BY (ServiceName, Timestamp)
 
 [user agent 문자열](https://en.wikipedia.org/wiki/User_agent) 파싱은 정규식을 사용하는 대표적인 문제이며, 로그 및 trace 기반 데이터셋에서 흔히 필요한 작업입니다. ClickHouse는 정규 표현식 트리 딕셔너리를 사용하여 user agent를 효율적으로 파싱할 수 있습니다.
 
-정규식 트리 딕셔너리는 ClickHouse 오픈소스에서 정규식 트리가 포함된 YAML 파일의 경로를 제공하는 YAMLRegExpTree 딕셔너리 소스 유형으로 정의합니다. 자체 정규식 딕셔너리를 제공하려는 경우, 필요한 구조에 대한 자세한 내용은 [여기](/ko/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source)에서 확인할 수 있습니다. 아래에서는 [uap-core](https://github.com/ua-parser/uap-core)를 사용한 user-agent 파싱에 초점을 맞추고, 지원되는 CSV 형식에 맞게 딕셔너리를 로드합니다. 이 방식은 OSS와 ClickHouse Cloud 모두에서 호환됩니다.
+정규 표현식 트리 딕셔너리는 ClickHouse 오픈소스에서 정규식 트리가 포함된 YAML 파일의 경로를 제공하는 YAMLRegExpTree 딕셔너리 소스 유형으로 정의합니다. 자체 정규식 딕셔너리를 제공하려는 경우, 필요한 구조에 대한 자세한 내용은 [여기](/ko/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source)에서 확인할 수 있습니다. 아래에서는 [uap-core](https://github.com/ua-parser/uap-core)를 사용한 user-agent 파싱에 초점을 맞추고, 지원되는 CSV 형식에 맞게 딕셔너리를 로드합니다. 이 방식은 OSS와 ClickHouse Cloud 모두에서 호환됩니다.
 
 <Note>
   아래 예시에서는 user-agent 파싱을 위해 2024년 06월 기준 최신 uap-core 정규식 스냅샷을 사용합니다. 최신 파일은 수시로 업데이트되며 [여기](https://raw.githubusercontent.com/ua-parser/uap-core/master/regexes.yaml)에서 확인할 수 있습니다. 아래에서 사용하는 CSV file에 로드하려면 [여기](/ko/reference/statements/create/dictionary/layouts/regexp-tree#collecting-attribute-values)의 단계를 따르십시오.
@@ -955,11 +977,11 @@ CREATE TABLE regexp_device
 이 테이블은 `url` 테이블 함수를 사용해 다음과 같이 공개적으로 호스팅된 CSV 파일에서 데이터를 채울 수 있습니다:
 
 ```sql
-INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 
-INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 
-INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 ```
 
 메모리 테이블이 채워졌으므로 이제 정규식 딕셔너리를 로드할 수 있습니다. 키 값은 컬럼으로 지정해야 하며, 이 컬럼들이 user agent에서 추출할 수 있는 속성이 됩니다.
@@ -1473,7 +1495,15 @@ ClickHouse 프로젝션을 사용하면 하나의 테이블에 여러 `ORDER BY`
   프로젝션은 materialized view와 비슷한 기능을 많이 제공하지만, 대개는 후자가 더 적합하므로 제한적으로 사용하는 것이 좋습니다. 어떤 단점이 있는지, 그리고 언제 적절한지 이해해야 합니다. 예를 들어 프로젝션을 사용해 집계를 사전 계산할 수는 있지만, 이 용도에는 Materialized views를 사용할 것을 권장합니다.
 </Info>
 
-<Image img="/images/use-cases/observability/observability-13.webp" alt="관측성과 프로젝션" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![관측성과 프로젝션](/images/use-cases/observability/observability-13.webp)
+
+</Frame>
+
+</div>
 
 다음 쿼리를 살펴보겠습니다. 이 쿼리는 `otel_logs_v2` 테이블에서 500 오류 코드를 기준으로 필터링합니다. 사용자가 오류 코드로 필터링하려는 경우가 많기 때문에, 이는 로깅에서 흔한 액세스 패턴일 가능성이 높습니다:
 

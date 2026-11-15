@@ -85,7 +85,7 @@ namespace DB
 class KeeperRequestDispatcher
 {
 public:
-    explicit KeeperRequestDispatcher(KeeperServer * server_);
+    KeeperRequestDispatcher(KeeperServer * server_, KeeperSpecialResponseRouter special_response_router_);
 
     /// Start response draining before Raft startup. NuRaft can commit catch-up
     /// entries during `KeeperServer::startup`, before request dispatch is safe.
@@ -95,9 +95,16 @@ public:
     /// uses `raft_instance` to open a client append stream.
     void startupDispatchThread();
 
+    /// Shutdown is split in two because responses are produced by nuraft's commit thread, which
+    /// only `KeeperServer::shutdown` joins. Call order must be:
+    ///   shutdownRequests() -> KeeperServer::shutdown() -> drainAndCheckQueues(...)
+    /// shutdownRequests must run first because it needs a live `raft_instance` to send the
+    /// session Close requests, and `KeeperServer::shutdown` destroys it.
+    void shutdownRequests();
+
     /// closed_all_connections is used just for an assert: if true, we expect that all
     /// onResponseDeallocated calls were made, so the tracked response queue size should be zero.
-    void shutdown(bool closed_all_connections);
+    void drainAndCheckQueues(bool closed_all_connections);
 
     /// May block for up to operation_timeout_ms if queue is full.
     bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64);
@@ -108,7 +115,9 @@ public:
     /// May block for a short time if queue is full.
     void onResponse(KeeperResponseForSession response) noexcept;
 
-    void onCommit(const KeeperRequestForSession & request_for_session);
+    /// Called for every committed request, on every server. dispatcher_server_id is the server whose
+    /// dispatcher produced the request's batch, or -1 if unknown (legacy log entry).
+    void onCommit(const KeeperRequestForSession & request_for_session, int32_t dispatcher_server_id = -1);
 
     /// KeeperRequestDispatcher is in charge of preventing response queue(s) from growing very big and OOMing.
     /// This covers KeeperRequestDispatcher's own responses_queue, and `responses` queues from all KeeperTCPHandler-s.
@@ -117,6 +126,12 @@ public:
     void onResponseDeallocated(const Coordination::ZooKeeperResponse & response);
 
 private:
+    friend class KeeperRequestDispatcherTestAccessor;
+
+    static void initializeWaitForWriteSpan(
+        const KeeperRequestForSession & read_request, UInt64 wait_start_us = ZooKeeperOpentelemetrySpans::now());
+    static void finalizeWaitForWriteSpans(const KeeperRequestsForSessions & reads);
+
     /// Suppose we get a write request from some session and put it in batch B and send that
     /// batch to leader. While B is still in flight, we get a read request from the same session.
     /// We'd like to execute that read as soon as B is committed. So we want a list of such
@@ -129,8 +144,14 @@ private:
         /// do the read right there.
         bool add(KeeperRequestForSession & request_for_session)
         {
+            /// The wait starts when the read arrives, not when the lock is acquired, so read the
+            /// clock here - it also keeps it out of a critical section that `dispatchThread` and
+            /// `onCommit` contend for.
+            const UInt64 wait_start_us = ZooKeeperOpentelemetrySpans::now();
+
             if (!lock())
                 return false;
+            initializeWaitForWriteSpan(request_for_session, wait_start_us);
             reads.push_back(std::move(request_for_session));
             unlock(Status::Available);
             return true;
@@ -245,6 +266,7 @@ private:
         {
             committed_requests = 0;
             intermediate_reads_idx = 0;
+
             late_reads.activate(std::move(initial_late_reads));
             active.store(true);
         }
@@ -272,6 +294,8 @@ private:
 
     KeeperServer * server;
     KeeperContextPtr keeper_context;
+    /// Consulted before responses_queue; see KeeperSpecialResponseRouter.
+    KeeperSpecialResponseRouter special_response_router;
     LoggerPtr log;
 
     ThreadFromGlobalPool dispatch_thread;
@@ -302,11 +326,6 @@ private:
     NonblockingBoundedQueue<KeeperRequestForSession> requests_queue;
     std::atomic<int64_t> requests_queue_bytes {};
 
-    /// TODO: Currently responses to all requests are formed on all nodes, and go through this queue
-    ///       and through responseThread and session id lookup on all nodes, and all except one node
-    ///       discard the response. Consider adding server id to the request so that we can tell
-    ///       early that response is not needed. It would also save time in
-    ///       KeeperRequestDispatcher::onCommit, we won't have to check most requests against the queue.
     /// TODO: Maybe we should remove this and pass responses directly to KeeperTCPHandler queues.
     ///       But this intermediate queue may in theory improve performance: it's much cheaper to
     ///       push a batch of responses to this queue than to push individual responses to the
@@ -334,6 +353,11 @@ private:
 
     void popBatch(size_t batch_idx);
     bool tryPopRequest(KeeperRequestForSession & request); // call instead of requests_queue.tryPop
+
+    /// Pop everything from requests_queue and responses_queue, discarding it.
+    /// Returns the number of response bytes released, i.e. how much response_bytes_in_all_queues
+    /// was decremented by.
+    size_t drainQueues();
 
     void recreateStreamWithBackoff();
     void dropInFlightRequests();

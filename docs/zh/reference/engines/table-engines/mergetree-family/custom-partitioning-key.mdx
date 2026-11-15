@@ -40,7 +40,7 @@ ORDER BY (CounterID, StartDate, intHash32(UserID));
 
 在此示例中，我们按当前周内发生的事件类型进行分区。
 
-默认情况下，不支持浮点型分区键。若要使用它，请启用设置 [allow&#95;floating&#95;point&#95;partition&#95;key](/zh/reference/settings/merge-tree-settings#allow_floating_point_partition_key)。
+默认情况下，不支持浮点型分区键。若要使用它，请启用设置 [allow&#95;floating&#95;point&#95;partition&#95;key](/zh/reference/settings/merge-tree-settings/allow#allow_floating_point_partition_key)。
 
 向表中插入新数据时，这些数据会作为单独的 part (chunk) 存储，并按主键排序。插入后的 10–15 分钟内，同一分区中的 parts 会合并为一个完整的 part。
 

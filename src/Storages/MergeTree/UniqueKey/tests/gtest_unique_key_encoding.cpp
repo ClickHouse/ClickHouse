@@ -116,7 +116,7 @@ bool agrees(const Columns & cols, size_t ra, size_t rb, size_t max_size = 4096)
 TEST(UniqueKeyEncoding, UInt64Ordering)
 {
     // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
-    std::mt19937_64 rng(0xDEADBEEF);
+    std::mt19937_64 rng(0xDEADBEEF); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
 
     auto col = ColumnUInt64::create();
     /// Boundary values first.
@@ -155,7 +155,7 @@ TEST(UniqueKeyEncoding, AllUnsignedWidths)
 TEST(UniqueKeyEncoding, SignedIntOrdering)
 {
     // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
-    std::mt19937_64 rng(0xCAFEBABE);
+    std::mt19937_64 rng(0xCAFEBABE); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
 
     auto col = ColumnInt64::create();
     for (Int64 v : {std::numeric_limits<Int64>::min(), Int64(-1), Int64(0), Int64(1), std::numeric_limits<Int64>::max()})
@@ -506,7 +506,7 @@ TEST(UniqueKeyEncoding, StringEncoderByteEquivalent)
     /// No-NUL widths spanning cache-line boundaries — fast path.
     {
         // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
-        std::mt19937_64 rng(0xA5A5A5A5);
+        std::mt19937_64 rng(0xA5A5A5A5); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
         for (size_t width : {size_t(0), size_t(1), size_t(7), size_t(8), size_t(15),
                               size_t(16), size_t(17), size_t(31), size_t(32),
                               size_t(33), size_t(63), size_t(64), size_t(65),
@@ -535,7 +535,7 @@ TEST(UniqueKeyEncoding, StringEncoderByteEquivalent)
 
     /// Fuzz — 500 random widths, ~25% '\0' density.
     // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
-    std::mt19937_64 rng(0x1234567890ABCDEFULL);
+    std::mt19937_64 rng(0x1234567890ABCDEFULL); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     for (size_t trial = 0; trial < 500; ++trial)
     {
         String s(rng() % 257, 0);
@@ -553,7 +553,7 @@ TEST(UniqueKeyEncoding, StringBlockEncoderByteEquivalent)
     /// Block-level path: `encodeBlock` → `appendStringColumn`. Mix of edge
     /// cases and varying widths in a single block.
     // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
-    std::mt19937_64 rng(0xB10C);
+    std::mt19937_64 rng(0xB10C); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     std::vector<String> rows = {
         String(),
         String("hello", 5),
@@ -620,7 +620,7 @@ TEST(UniqueKeyEncoding, FixedStringEncoderByteEquivalent)
     /// bytes (no escape — width-prefixed). Verify direct memcpy for widths
     /// 8 / 16 / 24 / 32 / 64.
     // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
-    std::mt19937_64 rng(0xFEEDFACE);
+    std::mt19937_64 rng(0xFEEDFACE); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     for (size_t width : {size_t(8), size_t(16), size_t(24), size_t(32), size_t(64)})
     {
         auto col = ColumnFixedString::create(width);
@@ -940,7 +940,7 @@ TEST(UniqueKeyEncoding, NullableBatchPermutationAlignsFlagAndNested)
 TEST(UniqueKeyEncoding, CompoundKeyShuffleSort)
 {
     // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
-    std::mt19937_64 rng(0x12345678);
+    std::mt19937_64 rng(0x12345678); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
 
     auto col_u = ColumnUInt32::create();
     auto col_s = ColumnString::create();
@@ -1109,7 +1109,7 @@ TEST(UniqueKeyEncoding, DISABLED_MicrobenchUInt641M)
     constexpr size_t N = 1'000'000;
     auto col = ColumnUInt64::create();
     // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
-    std::mt19937_64 rng(42);
+    std::mt19937_64 rng(42); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     for (size_t i = 0; i < N; ++i)
         col->insert(Field(rng()));
     Columns cols{std::move(col)};
@@ -1128,7 +1128,7 @@ TEST(UniqueKeyEncoding, DISABLED_MicrobenchString321M)
     constexpr size_t N = 1'000'000;
     auto col = ColumnString::create();
     // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
-    std::mt19937_64 rng(43);
+    std::mt19937_64 rng(43); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     for (size_t i = 0; i < N; ++i)
     {
         String s(32, 0);
@@ -1153,7 +1153,7 @@ TEST(UniqueKeyEncoding, DISABLED_MicrobenchCompoundUInt64String1M)
     auto col_u = ColumnUInt64::create();
     auto col_s = ColumnString::create();
     // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
-    std::mt19937_64 rng(44);
+    std::mt19937_64 rng(44); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     for (size_t i = 0; i < N; ++i)
     {
         col_u->insert(Field(rng()));
@@ -1174,8 +1174,8 @@ TEST(UniqueKeyEncoding, DISABLED_MicrobenchCompoundUInt64String1M)
 }
 
 /// ---------- unsupported-type rejection ----------
-/// `UniqueKeyEncoding` does not yet implement Array / Tuple /
-/// LowCardinality. The DDL surface accepts bare column identifiers
+/// `UniqueKeyEncoding` does not yet implement Array / Tuple.
+/// The DDL surface accepts bare column identifiers
 /// without filtering by data type, so the encoder is the contract that
 /// rejects these — `encodeBlock` throws `NOT_IMPLEMENTED`. Pin the
 /// specific error code here so a future encoder addition is forced to
@@ -1229,15 +1229,61 @@ TEST(UniqueKeyEncoding, TupleThrowsNotImplemented)
     expectEncodeRowThrowsNotImplemented(cols, "Tuple(UInt64,UInt64)");
 }
 
-TEST(UniqueKeyEncoding, LowCardinalityThrowsNotImplemented)
+TEST(UniqueKeyEncoding, LowCardinalityMatchesFullColumn)
 {
     auto type_lc = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     auto col = type_lc->createColumn();
-    col->insertDefault();
+    col->insert(Field(String("banana")));
+    col->insert(Field(String("apple")));
+    col->insert(Field(String("banana")));
+    col->insert(Field(String("")));
 
-    Columns cols;
-    cols.push_back(std::move(col));
-    expectEncodeRowThrowsNotImplemented(cols, "LowCardinality(String)");
+    auto full = col->convertToFullColumnIfLowCardinality();
+
+    Columns lc_cols{std::move(col)};
+    Columns full_cols{std::move(full)};
+
+    VectorWithMemoryTracking<String> lc_out;
+    VectorWithMemoryTracking<String> full_out;
+    UniqueKeyEncoding::encodeBlock(lc_cols, /*permutation=*/nullptr, 4096, lc_out);
+    UniqueKeyEncoding::encodeBlock(full_cols, /*permutation=*/nullptr, 4096, full_out);
+
+    ASSERT_EQ(lc_out.size(), 4u);
+    ASSERT_EQ(full_out.size(), 4u);
+    for (size_t r = 0; r < 4u; ++r)
+        EXPECT_EQ(lc_out[r], full_out[r]) << "LC row " << r << " must match full-column encoding";
+}
+
+TEST(UniqueKeyEncoding, LowCardinalityNullableMatchesFullColumn)
+{
+    auto type_lc = std::make_shared<DataTypeLowCardinality>(
+        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
+    auto col = type_lc->createColumn();
+    col->insert(Field(String("x")));
+    col->insert(Field(String("y")));
+    col->insert(Field());   /// NULL
+    col->insert(Field(String("x")));
+    col->insert(Field());   /// NULL
+
+    auto full = col->convertToFullColumnIfLowCardinality();
+
+    Columns lc_cols{std::move(col)};
+    Columns full_cols{std::move(full)};
+
+    VectorWithMemoryTracking<String> lc_out;
+    VectorWithMemoryTracking<String> full_out;
+    UniqueKeyEncoding::encodeBlock(lc_cols, /*permutation=*/nullptr, 4096, lc_out);
+    UniqueKeyEncoding::encodeBlock(full_cols, /*permutation=*/nullptr, 4096, full_out);
+
+    ASSERT_EQ(lc_out.size(), 5u);
+    ASSERT_EQ(full_out.size(), 5u);
+    for (size_t r = 0; r < 5u; ++r)
+        EXPECT_EQ(lc_out[r], full_out[r]) << "LC(Nullable) row " << r << " must match full-column encoding";
+
+    EXPECT_EQ(lc_out[2], String("\x01", 1));
+    EXPECT_EQ(lc_out[2], lc_out[4]);
+    EXPECT_TRUE(agrees(lc_cols, 0, 2));
+    EXPECT_TRUE(agrees(lc_cols, 1, 2));
 }
 
 /// ---------------------------------------------------------------------------

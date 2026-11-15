@@ -2,18 +2,16 @@
 #include <cstring>
 #include <thread>
 #include <vector>
-#include <Compression/CompressedSizeCalculator.h>
-#include <Compression/CompressionCodecAdaptive.h>
+#include <Compression/Adaptive/CompressionCodecAdaptive.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/Defines.h>
-#include <Core/TypeId.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/IDataType.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/IAST_fwd.h>
+#include <Parsers/IAST.h>
 #include <Parsers/parseQuery.h>
 #include <base/defines.h>
 #include <base/unaligned.h>
@@ -25,62 +23,15 @@ using namespace DB;
 namespace
 {
 
-constexpr auto LZ4 = static_cast<uint8_t>(CompressionMethodByte::LZ4);
 constexpr auto T64 = static_cast<uint8_t>(CompressionMethodByte::T64);
 constexpr auto NONE = static_cast<uint8_t>(CompressionMethodByte::NONE);
+constexpr auto MULTIPLE = static_cast<uint8_t>(CompressionMethodByte::Multiple);
 
-DataTypePtr type(const String & name)
-{
-    return DataTypeFactory::instance().get(name);
-}
+DataTypePtr type(const String & name) { return DataTypeFactory::instance().get(name); }
+CompressionCodecPtr defaultCodec() { return CompressionCodecFactory::instance().getDefaultCodec(); }
 
-CompressionCodecPtr defaultCodec()
-{
-    return CompressionCodecFactory::instance().getDefaultCodec();
-}
-
-/// A constructible representative IDataType per scalar (codec-leaf) TypeIndex. Deliberately covers more than today's candidates.
-/// If someone makes one of these a candidate for a codec that rejects it, the drift guard builds it and the rejection is caught at once.
-/// Composite and wrapper types (Array, Tuple, Map, Nullable, ...) are never codec leaves, so they return nullptr.
-DataTypePtr representativeType(TypeIndex idx)
-{
-    switch (idx)
-    {
-        case TypeIndex::Int8: return type("Int8");
-        case TypeIndex::Int16: return type("Int16");
-        case TypeIndex::Int32: return type("Int32");
-        case TypeIndex::Int64: return type("Int64");
-        case TypeIndex::Int128: return type("Int128");
-        case TypeIndex::Int256: return type("Int256");
-        case TypeIndex::UInt8: return type("UInt8");
-        case TypeIndex::UInt16: return type("UInt16");
-        case TypeIndex::UInt32: return type("UInt32");
-        case TypeIndex::UInt64: return type("UInt64");
-        case TypeIndex::UInt128: return type("UInt128");
-        case TypeIndex::UInt256: return type("UInt256");
-        case TypeIndex::BFloat16: return type("BFloat16");
-        case TypeIndex::Float32: return type("Float32");
-        case TypeIndex::Float64: return type("Float64");
-        case TypeIndex::Decimal32: return type("Decimal(9, 2)");
-        case TypeIndex::Decimal64: return type("Decimal(18, 2)");
-        case TypeIndex::Decimal128: return type("Decimal(38, 2)");
-        case TypeIndex::Decimal256: return type("Decimal(76, 2)");
-        case TypeIndex::Date: return type("Date");
-        case TypeIndex::Date32: return type("Date32");
-        case TypeIndex::DateTime: return type("DateTime");
-        case TypeIndex::DateTime64: return type("DateTime64(3)");
-        case TypeIndex::Time: return type("Time");
-        case TypeIndex::Time64: return type("Time64(3)");
-        case TypeIndex::Enum8: return type("Enum8('a' = 1)");
-        case TypeIndex::Enum16: return type("Enum16('a' = 1)");
-        case TypeIndex::String: return type("String");
-        case TypeIndex::FixedString: return type("FixedString(16)");
-        case TypeIndex::UUID: return type("UUID");
-        case TypeIndex::IPv4: return type("IPv4");
-        case TypeIndex::IPv6: return type("IPv6");
-        default: return nullptr;
-    }
-}
+/// Period 1 prices every block, so the smallest output always wins.
+constexpr UInt64 PRICE_EVERY_BLOCK = 1;
 
 /// Serialize values to a little-endian byte buffer, the way the codecs read them back.
 template <typename T>
@@ -96,44 +47,86 @@ std::vector<char> bytesOf(const std::vector<T> & values)
     return bytes;
 }
 
-}
-
-TEST(AdaptiveCodecPool, EachCandidateTypeBuildsWithDefaultAnchor)
+/// Asserts order of codecs in the pool: [0] the default, then `extras` in order, each with its chain with the default.
+void expectPool(const char * name, std::initializer_list<std::string_view> extras)
 {
-    /// Drift guard. Every candidate must build for its type (naming a codec the type cannot take would otherwise throw at write time).
-    for (const TypeIndex idx : AdaptiveCodec::candidateTypeIndexes())
-    {
-        const DataTypePtr t = representativeType(idx);
-        ASSERT_NE(t, nullptr) << "no representative type for candidate TypeIndex " << static_cast<int>(idx)
-                              << " -- add a case to representativeType()";
+    AdaptiveCodec::Pool pool;
+    ASSERT_NO_THROW(pool = AdaptiveCodec::poolForType(type(name), defaultCodec())) << "type " << name;
+    ASSERT_EQ(pool.size(), 1 + extras.size()) << "type " << name;
+    EXPECT_EQ(pool[0].codec.get(), defaultCodec().get()) << "type " << name;
+    EXPECT_EQ(pool[0].chain, nullptr) << "type " << name;
 
-        Codecs pool;
-        ASSERT_NO_THROW(pool = AdaptiveCodec::poolForType(*t, defaultCodec())) << "TypeIndex " << static_cast<int>(idx);
-        EXPECT_EQ(pool[0]->getMethodByte(), NONE) << "TypeIndex " << static_cast<int>(idx); /// NONE is always [0]
-        EXPECT_EQ(pool[1].get(), defaultCodec().get()) << "TypeIndex " << static_cast<int>(idx); /// default is always [1]
-        EXPECT_GE(pool.size(), 3u) << "TypeIndex " << static_cast<int>(idx);
+    size_t i = 1;
+    for (const auto extra : extras)
+    {
+        const auto & entry = pool[i++];
+        EXPECT_EQ(entry.codec->getCodecDescription()->formatForLogging(), extra) << "type " << name;
+        ASSERT_NE(entry.chain, nullptr) << "type " << name;
+        const auto stages = entry.chain->getCodecs();
+        ASSERT_EQ(stages.size(), 2u) << "type " << name;
+        EXPECT_EQ(stages[0], entry.codec) << "type " << name;
+        EXPECT_EQ(stages[1], defaultCodec()) << "type " << name;
     }
 }
 
-TEST(AdaptiveCodecPool, RepresentativeTypesMatchTheirIndex)
+/// Compress `bytes` with the adaptive codec for `type_name` and return the winner's on-disk method byte.
+/// Round-trips the compressed block through the method-byte codec, as a normal reader would do.
+uint8_t adaptiveWinnerByte(const String & type_name, const std::vector<char> & bytes)
 {
-    for (int i = 0; i < 256; ++i)
-    {
-        const auto idx = static_cast<TypeIndex>(i);
-        if (const DataTypePtr t = representativeType(idx))
-            EXPECT_EQ(t->getTypeId(), idx) << "representativeType built the wrong type for TypeIndex " << i;
-    }
+    const UInt32 size = static_cast<UInt32>(bytes.size());
+    CompressionCodecAdaptive adaptive(type(type_name), defaultCodec(), PRICE_EVERY_BLOCK);
+
+    PODArray<char> encoded(adaptive.getCompressedReserveSize(size));
+    const UInt32 encoded_size = adaptive.compress(bytes.data(), size, encoded.data(), adaptive.createCompressionState().get());
+
+    const uint8_t method = ICompressionCodec::readMethod(encoded.data());
+    auto decoder = CompressionCodecFactory::instance().get(method);
+
+    /// Fast decompressors read and write in wide blocks past the logical end of both buffers.
+    encoded.resize(encoded_size + decoder->getAdditionalSizeAtTheEndOfBuffer());
+    PODArray<char> decoded(size + decoder->getAdditionalSizeAtTheEndOfBuffer());
+    EXPECT_EQ(decoder->decompress(encoded.data(), encoded_size, decoded.data()), size);
+    EXPECT_EQ(0, memcmp(decoded.data(), bytes.data(), size));
+    return method;
 }
 
-TEST(AdaptiveCodecPool, NonCandidateTypesGetNoneAndDefaultOnly)
+}
+
+TEST(AdaptiveCodecPool, CandidateTypesGetT64)
 {
-    for (const auto * name : {"Int128", "UInt256", "Decimal(38, 2)", "String", "Float32", "Float64", "UUID"})
-    {
-        auto pool = AdaptiveCodec::poolForType(*type(name), defaultCodec());
-        EXPECT_EQ(pool.size(), 2u) << "type " << name;
-        EXPECT_EQ(pool[0]->getMethodByte(), NONE) << "type " << name;
-        EXPECT_EQ(pool[1].get(), defaultCodec().get()) << "type " << name;
-    }
+    for (const auto * name :
+         {"Int8",
+          "Int16",
+          "Int32",
+          "Int64",
+          "UInt8",
+          "UInt16",
+          "UInt32",
+          "UInt64",
+          "Enum8('a' = 1)",
+          "Enum16('a' = 1)",
+          "Date",
+          "Date32",
+          "DateTime",
+          "DateTime64(3)",
+          "Time",
+          "Time64(3)",
+          "Decimal(9, 2)",
+          "Decimal(18, 2)",
+          "IPv4"})
+        expectPool(name, {"T64"});
+}
+
+TEST(AdaptiveCodecPool, FloatTypesGetALPAuto)
+{
+    for (const auto * name : {"Float32", "Float64"})
+        expectPool(name, {"ALP(AUTO)"});
+}
+
+TEST(AdaptiveCodecPool, NonCandidateTypesGetDefaultOnly)
+{
+    for (const auto * name : {"Int128", "UInt256", "Decimal(38, 2)", "String", "UUID", "BFloat16"})
+        expectPool(name, {});
 }
 
 TEST(AdaptiveCodecPool, MultipleCodecAggregatesEncryption)
@@ -149,11 +142,12 @@ TEST(CompressionCodecFactory, IsDefaultCodec)
 {
     const auto codec = [](const String & expr)
     {
+        static const Settings settings;
         ParserCodec parser;
         const String query = "(" + expr + ")";
         ASTPtr parsed = parseQuery(parser, query, /*max_query_size=*/0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
         return CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-            parsed, /*column_type=*/nullptr, /*sanity_check=*/true, /*allow_experimental_codecs=*/false);
+            parsed, /*column_type=*/nullptr, CodecValidationSettings(settings));
     };
 
     /// No CODEC clause resolves to the default codec.
@@ -166,82 +160,34 @@ TEST(CompressionCodecFactory, IsDefaultCodec)
     EXPECT_FALSE(CompressionCodecFactory::isDefaultCodec(codec("Delta, Default")));
 }
 
-TEST(AdaptiveCodecSelector, MonotonicNarrowIntegersPickT64)
+TEST(CompressionCodecAdaptive, MonotonicNarrowIntegersPickT64Chain)
 {
+    /// `T64` keeps only the varying bits, and the default codec then squeezes the regular pattern they form.
     std::vector<UInt32> values(100000);
     for (size_t i = 0; i < values.size(); ++i)
         values[i] = static_cast<UInt32>(i);
-    auto bytes = bytesOf(values);
 
-    auto pool = AdaptiveCodec::poolForType(*type("UInt32"), defaultCodec());
-    auto winner = AdaptiveCodec::select(pool, bytes.data(), static_cast<UInt32>(bytes.size()));
-    EXPECT_EQ(winner->getMethodByte(), T64);
+    EXPECT_EQ(adaptiveWinnerByte("UInt32", bytesOf(values)), MULTIPLE);
 }
 
-TEST(AdaptiveCodecSelector, RepeatingWideValuesPickDefault)
+TEST(CompressionCodecAdaptive, RepeatingWideValuesPickDefault)
 {
-    /// A short pattern of full-range values, repeated: LZ4 crushes the repetition, but T64 sees a wide min/max cannot shrink it.
+    /// A short pattern of full-range values, repeated: a general-purpose codec crushes the repetition,
+    /// but T64 sees a wide min/max and cannot shrink it. The winner must be the default anchor, whatever
+    /// the built-in default codec is (`ZSTD(3)` today).
     const std::vector<UInt32> pattern = {0u, 0xFFFFFFFFu, 0x0F0F0F0Fu, 0xF0F0F0F0u, 0x12345678u, 0x9ABCDEF0u, 0xDEADBEEFu, 0xCAFEBABEu};
     std::vector<UInt32> values(100000);
     for (size_t i = 0; i < values.size(); ++i)
         values[i] = pattern[i % pattern.size()];
-    auto bytes = bytesOf(values);
 
-    auto pool = AdaptiveCodec::poolForType(*type("UInt32"), defaultCodec());
-    auto winner = AdaptiveCodec::select(pool, bytes.data(), static_cast<UInt32>(bytes.size()));
-    EXPECT_EQ(winner->getMethodByte(), LZ4);
+    EXPECT_EQ(adaptiveWinnerByte("UInt32", bytesOf(values)), defaultCodec()->getMethodByte());
 }
 
-TEST(AdaptiveCodecSelector, ConstantColumnPicksT64)
+TEST(CompressionCodecAdaptive, ConstantColumnPicksT64)
 {
     std::vector<UInt32> values(100000, 42u);
-    auto bytes = bytesOf(values);
 
-    auto pool = AdaptiveCodec::poolForType(*type("UInt32"), defaultCodec());
-    auto winner = AdaptiveCodec::select(pool, bytes.data(), static_cast<UInt32>(bytes.size()));
-    EXPECT_EQ(winner->getMethodByte(), T64);
-}
-
-TEST(AdaptiveCodecSelector, TieGoesToEarliestCandidate)
-{
-    /// Two distinct but identical codecs produce the same size, the earliest must win (strict <).
-    auto lz4a = CompressionCodecFactory::instance().get("LZ4", {});
-    auto lz4b = CompressionCodecFactory::instance().get("LZ4", {});
-    ASSERT_NE(lz4a.get(), lz4b.get());
-    Codecs pool = {lz4a, lz4b};
-
-    std::vector<UInt32> values(1000);
-    for (size_t i = 0; i < values.size(); ++i)
-        values[i] = static_cast<UInt32>(i * 7);
-    auto bytes = bytesOf(values);
-
-    auto winner = AdaptiveCodec::select(pool, bytes.data(), static_cast<UInt32>(bytes.size()));
-    EXPECT_EQ(winner.get(), lz4a.get());
-    EXPECT_NE(winner.get(), lz4b.get());
-}
-
-TEST(CompressionCodecAdaptive, CompressRoundTripsViaWinnerByte)
-{
-    std::vector<UInt32> values(100000);
-    for (size_t i = 0; i < values.size(); ++i)
-        values[i] = static_cast<UInt32>(i);
-    auto bytes = bytesOf(values);
-    const UInt32 size = static_cast<UInt32>(bytes.size());
-
-    CompressionCodecAdaptive adaptive(*type("UInt32"), defaultCodec());
-
-    PODArray<char> encoded(adaptive.getCompressedReserveSize(size));
-    const UInt32 encoded_size = adaptive.compress(bytes.data(), size, encoded.data());
-
-    const uint8_t method = ICompressionCodec::readMethod(encoded.data());
-    EXPECT_EQ(method, T64); /// monotonic integers -> T64 wins
-
-    /// Decode exactly as a normal reader would: look the codec up by the on-disk method byte.
-    auto decoder = CompressionCodecFactory::instance().get(method);
-    PODArray<char> decoded(size);
-    const UInt32 decoded_size = decoder->decompress(encoded.data(), encoded_size, decoded.data());
-    ASSERT_EQ(decoded_size, size);
-    EXPECT_EQ(0, memcmp(decoded.data(), bytes.data(), size));
+    EXPECT_EQ(adaptiveWinnerByte("UInt32", bytesOf(values)), T64);
 }
 
 TEST(CompressionCodecAdaptive, TinyBlockStoredRaw)
@@ -250,30 +196,25 @@ TEST(CompressionCodecAdaptive, TinyBlockStoredRaw)
     std::vector<UInt32> values(4);
     for (size_t i = 0; i < values.size(); ++i)
         values[i] = static_cast<UInt32>(i);
-    auto bytes = bytesOf(values);
-    const UInt32 size = static_cast<UInt32>(bytes.size());
 
-    CompressionCodecAdaptive adaptive(*type("UInt32"), defaultCodec());
-
-    PODArray<char> encoded(adaptive.getCompressedReserveSize(size));
-    adaptive.compress(bytes.data(), size, encoded.data());
-    EXPECT_EQ(ICompressionCodec::readMethod(encoded.data()), NONE);
+    EXPECT_EQ(adaptiveWinnerByte("UInt32", bytesOf(values)), NONE);
 }
 
 TEST(CompressionCodecAdaptive, HashHasOwnNamespace)
 {
     /// getHash() identifies the codec when the Compact writer groups column streams. CompressionCodecAdaptive and CompressionCodecMultiple
     /// fold their children's hashes the same way, so the leading "Adaptive" descriptor is what keeps the two distinct.
-    CompressionCodecAdaptive adaptive(*type("UInt32"), defaultCodec());
-    auto pool = AdaptiveCodec::poolForType(*type("UInt32"), defaultCodec());
-    ASSERT_EQ(pool.size(), 3u);
-    CompressionCodecMultiple multiple(pool);
+    CompressionCodecAdaptive adaptive(type("UInt32"), defaultCodec(), PRICE_EVERY_BLOCK);
+    Codecs codecs;
+    for (const auto & entry : AdaptiveCodec::poolForType(type("UInt32"), defaultCodec()))
+        codecs.push_back(entry.codec);
+    CompressionCodecMultiple multiple(codecs);
     EXPECT_NE(adaptive.getHash(), multiple.getHash());
 
-    CompressionCodecAdaptive adaptive_string(*type("String"), defaultCodec());
+    CompressionCodecAdaptive adaptive_string(type("String"), defaultCodec(), PRICE_EVERY_BLOCK);
     EXPECT_NE(adaptive_string.getHash(), defaultCodec()->getHash());
 
-    CompressionCodecAdaptive adaptive_int64(*type("Int64"), defaultCodec());
+    CompressionCodecAdaptive adaptive_int64(type("Int64"), defaultCodec(), PRICE_EVERY_BLOCK);
     EXPECT_NE(adaptive.getHash(), adaptive_int64.getHash());
 }
 
@@ -282,7 +223,7 @@ TEST(CompressionCodecAdaptive, DirectInvocationThrows)
 #ifdef DEBUG_OR_SANITIZER_BUILD
     GTEST_SKIP() << "this test triggers LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
 #else
-    CompressionCodecAdaptive adaptive(*type("UInt32"), defaultCodec());
+    CompressionCodecAdaptive adaptive(type("UInt32"), defaultCodec(), PRICE_EVERY_BLOCK);
     /// Adaptive never appears on disk, so the public method byte accessor must reject direct use.
     EXPECT_ANY_THROW(adaptive.getMethodByte());
 #endif
@@ -290,7 +231,8 @@ TEST(CompressionCodecAdaptive, DirectInvocationThrows)
 
 TEST(CompressionCodecAdaptive, ConcurrentCompressIsThreadSafe)
 {
-    CompressionCodecAdaptive adaptive(*type("UInt32"), defaultCodec());
+    /// Stream state lives in `CompressionState` objects the caller owns, so one codec instance serves any number of threads.
+    CompressionCodecAdaptive adaptive(type("UInt32"), defaultCodec(), PRICE_EVERY_BLOCK);
 
     constexpr size_t num_threads = 8;
     std::vector<std::thread> threads;
@@ -307,7 +249,7 @@ TEST(CompressionCodecAdaptive, ConcurrentCompressIsThreadSafe)
                 const UInt32 size = static_cast<UInt32>(bytes.size());
 
                 PODArray<char> encoded(adaptive.getCompressedReserveSize(size));
-                const UInt32 encoded_size = adaptive.compress(bytes.data(), size, encoded.data());
+                const UInt32 encoded_size = adaptive.compress(bytes.data(), size, encoded.data(), adaptive.createCompressionState().get());
 
                 auto decoder = CompressionCodecFactory::instance().get(ICompressionCodec::readMethod(encoded.data()));
                 PODArray<char> decoded(size);
@@ -319,26 +261,4 @@ TEST(CompressionCodecAdaptive, ConcurrentCompressIsThreadSafe)
     for (auto & th : threads)
         th.join();
     EXPECT_TRUE(ok);
-}
-
-TEST(GetCompressedBlockSize, CalculateMatchesCompressForT64)
-{
-    std::vector<UInt32> values(50000);
-    for (size_t i = 0; i < values.size(); ++i)
-        values[i] = static_cast<UInt32>(i);
-    auto bytes = bytesOf(values);
-    const UInt32 size = static_cast<UInt32>(bytes.size());
-
-    auto pool = AdaptiveCodec::poolForType(*type("UInt32"), defaultCodec());
-    ASSERT_EQ(pool.size(), 3u);
-    const auto & t64 = pool[2];
-    ASSERT_EQ(t64->getMethodByte(), T64);
-
-    PODArray<char> scratch;
-    const UInt32 calculated = CompressedSizeCalculator::getCompressedBlockSize(*t64, bytes.data(), size, scratch);
-
-    /// Re-derive size from a real compress: calculation must match exactly
-    PODArray<char> encoded(t64->getCompressedReserveSize(size));
-    const UInt32 actual = t64->compress(bytes.data(), size, encoded.data());
-    EXPECT_EQ(calculated, actual);
 }

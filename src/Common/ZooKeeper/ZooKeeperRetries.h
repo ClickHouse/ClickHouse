@@ -165,6 +165,7 @@ public:
     bool isRetry() const { return current_iteration > 0; }
 
     const std::string & getLastKeeperErrorMessage() const { return keeper_error.message; }
+    Coordination::Error getLastKeeperErrorCode() const { return keeper_error.code; }
 
     /// Finalizer for give-up paths: retry limit, explicit stop, query cancel/timeout (when
     /// `checkTimeLimit` throws), and non-Keeper exceptions from the loop body. Not invoked on

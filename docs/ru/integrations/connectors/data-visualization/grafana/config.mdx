@@ -10,8 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -22,13 +20,19 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
 Краткий обзор всех параметров и полный список опций конфигурации можно найти [здесь](#all-yaml-options).
 
-<div id="common-settings">
-  ## Общие настройки
-</div>
+## Общие настройки {#common-settings}
 
 Экран с примером конфигурации:
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_common.webp" alt="Пример безопасной конфигурации для native-протокола" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Пример безопасной конфигурации для native-протокола](/images/integrations/data-visualization/grafana/config_common.webp)
+
+</Frame>
+
+</div>
 
 Пример YAML-конфигурации для общих настроек:
 
@@ -56,13 +60,19 @@ secureJsonData:
 
 Обратите внимание, что при сохранении конфигурации из интерфейса добавляется свойство `version`. Оно показывает версию плагина, с которой была сохранена конфигурация.
 
-<div id="http-protocol">
-  ### HTTP-протокол
-</div>
+### HTTP-протокол {#http-protocol}
 
 Если выбрать подключение по HTTP-протоколу, отобразятся дополнительные настройки.
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/config_http.webp" alt="Дополнительные параметры конфигурации HTTP" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Дополнительные параметры конфигурации HTTP](/images/integrations/data-visualization/grafana/config_http.webp)
+
+</Frame>
+
+</div>
 
 <div id="http-path">
   #### HTTP-путь
@@ -106,13 +116,19 @@ secureJsonData:
   secureHttpHeaders.X-Example-Secure-Header: secure header value
 ```
 
-<div id="additional-settings">
-  ## Дополнительные настройки
-</div>
+## Дополнительные настройки {#additional-settings}
 
 Эти настройки необязательны.
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_additional.webp" alt="Пример дополнительных настроек" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Пример дополнительных настроек](/images/integrations/data-visualization/grafana/config_additional.webp)
+
+</Frame>
+
+</div>
 
 Пример YAML:
 
@@ -136,9 +152,7 @@ OpenTelemetry (OTel) тесно интегрирован в плагин.
 
 Также необходимо настроить эти значения по умолчанию, чтобы включить [ссылки на данные](/ru/integrations/connectors/data-visualization/grafana/query-builder#data-links) — функцию, которая обеспечивает мощные сценарии обсервабилити.
 
-<div id="logs">
-  ### Журналы
-</div>
+### Журналы {#logs}
 
 Чтобы ускорить [построение запросов к журналам](/ru/integrations/connectors/data-visualization/grafana/query-builder#logs), можно задать базу данных и таблицу по умолчанию, а также столбцы для запроса к журналам. Это позволит заранее загрузить в конструктор запросов готовый к выполнению запрос к журналам, что ускорит просмотр на странице Explore в сценариях обсервабилити.
 
@@ -149,7 +163,15 @@ OpenTelemetry (OTel) тесно интегрирован в плагин.
 
 Пример экрана конфигурации журналов:
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_logs.webp" alt="Конфигурация журналов" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Конфигурация журналов](/images/integrations/data-visualization/grafana/config_logs.webp)
+
+</Frame>
+
+</div>
 
 Пример YAML-конфигурации журналов:
 
@@ -162,15 +184,22 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
+    showLogLinks: true # set to false to hide the "View logs" data links on trace ID fields.
+
     # Default columns to be selected when opening a new log query. Will be ignored if OTel is enabled.
     timeColumn:       <string> # the primary time column for the log.
     levelColumn:   <string> # the log level/severity of the log. Values typically look like "INFO", "error", or "Debug".
     messageColumn: <string> # the log's message/content.
 ```
 
-<div id="traces">
-  ### Трассировка
-</div>
+#### Отключение ссылок «View logs» {#disabling-view-logs-links}
+
+В разделе **Корреляция Trace ID** конфигурации журналов находится переключатель **Показывать ссылки «View logs»**.
+Этот переключатель определяет, добавляет ли плагин ссылки «View logs» [ссылки на данные](/ru/integrations/connectors/data-visualization/grafana/query-builder#data-links) к полям Trace ID в результатах запросов.
+По умолчанию переключатель включен. Для ссылки «View logs» в запросе того же типа не требуется настраивать параметры журналов по умолчанию, однако для межсигнальной ссылки «View logs» из результатов запросов трассировок это необходимо.
+Чтобы скрыть эти ссылки, выключите переключатель или укажите в YAML `showLogLinks: false`.
+
+### Трассировка {#traces}
 
 Чтобы ускорить [построение запросов для трассировки](/ru/integrations/connectors/data-visualization/grafana/query-builder#traces), можно задать базу данных и таблицу по умолчанию, а также столбцы для запроса трассировки. Это позволит заранее загрузить в конструктор запросов готовый к выполнению поисковый запрос по трассировке, что ускорит просмотр данных на странице Explore для задач обсервабилити.
 
@@ -180,7 +209,15 @@ jsonData:
 
 Пример экрана конфигурации трассировки:
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_traces.webp" alt="Конфигурация трассировки" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Конфигурация трассировки](/images/integrations/data-visualization/grafana/config_traces.webp)
+
+</Frame>
+
+</div>
 
 Пример YAML-конфигурации трассировки:
 
@@ -192,6 +229,8 @@ jsonData:
 
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
+
+    showTraceLinks: true # set to false to hide the "View trace" data links on trace ID fields.
 
     # Default columns to be selected when opening a new trace query. Will be ignored if OTel is enabled.
     traceIdColumn:       <string>    # trace ID column.
@@ -205,6 +244,13 @@ jsonData:
     tagsColumn:          <string>    # tags column. This is expected to be a map type.
     serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
 ```
+
+#### Отключение ссылок «View trace» {#disabling-view-trace-links}
+
+В разделе **Корреляция Trace ID** конфигурации трассировок находится переключатель **Показывать ссылки «View trace»**.
+Он определяет, добавляет ли плагин ссылки «View trace» [ссылки на данные](/ru/integrations/connectors/data-visualization/grafana/query-builder#data-links) к полям Trace ID в результатах запросов.
+По умолчанию переключатель включен. Для ссылки «View trace» в результатах запроса того же типа не требуются настроенные значения трассировки по умолчанию, а для межсигнальной ссылки «View trace» из результатов запросов журналов они необходимы.
+Чтобы скрыть эти ссылки, выключите переключатель или задайте в YAML `showTraceLinks: false`.
 
 <div id="column-aliases">
   ### Псевдонимы столбцов
@@ -240,9 +286,7 @@ CREATE TABLE alias_example (
 
 Подробнее см. в документации по типу столбца [ALIAS](/ru/reference/statements/create/table#alias).
 
-<div id="column-alias-tables">
-  #### Таблицы псевдонимов столбцов
-</div>
+#### Таблицы псевдонимов столбцов {#column-alias-tables}
 
 По умолчанию Grafana предлагает столбцы на основе ответа на `DESC table`.
 В некоторых случаях может потребоваться полностью переопределить столбцы, которые видит Grafana.
@@ -276,17 +320,31 @@ INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
 
 Затем эту таблицу можно настроить для использования в Grafana. Обратите внимание, что имя может быть любым и даже может быть задано в отдельной базе данных:
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_config_example.webp" alt="Пример конфигурации таблицы псевдонимов" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Пример конфигурации таблицы псевдонимов](/images/integrations/data-visualization/grafana/alias_table_config_example.webp)
+
+</Frame>
+
+</div>
 
 Теперь Grafana будет видеть результаты таблицы псевдонимов вместо результатов `DESC example_table`:
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_select_example.webp" alt="Пример выборки из таблицы псевдонимов" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Пример выборки из таблицы псевдонимов](/images/integrations/data-visualization/grafana/alias_table_select_example.webp)
+
+</Frame>
+
+</div>
 
 Оба типа использования псевдонимов можно применять для сложных преобразований типов или извлечения полей JSON.
 
-<div id="all-yaml-options">
-  ## Все параметры YAML
-</div>
+## Все параметры YAML {#all-yaml-options}
 
 Ниже приведены все параметры конфигурации YAML, доступные в этом плагине.
 Для некоторых полей указаны примеры значений, а для других — только тип поля.
@@ -323,6 +381,7 @@ datasources:
         defaultTable: otel_logs
         otelEnabled: false
         otelVersion: latest
+        showLogLinks: <boolean>
         timeColumn: <string>
         levelColumn: <string>
         messageColumn: <string>
@@ -331,6 +390,7 @@ datasources:
         defaultTable: otel_traces
         otelEnabled: false
         otelVersion: latest
+        showTraceLinks: <boolean>
         traceIdColumn: <string>
         spanIdColumn: <string>
         operationNameColumn: <string>

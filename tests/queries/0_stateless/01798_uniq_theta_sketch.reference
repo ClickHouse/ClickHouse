@@ -31,82 +31,18 @@ uniqTheta decimals
 (0,0,0)
 (101,101,101)
 uniqTheta remove injective
-SELECT uniqTheta(x)
-FROM
-(
-    SELECT modulo(number, 2) AS x
-    FROM numbers(10)
-)
-SELECT uniqTheta(plus(x, y))
-FROM
-(
-    SELECT
-        modulo(number, 2) AS x,
-        modulo(number, 3) AS y
-    FROM numbers(10)
-)
-SELECT uniqTheta(negate(x))
-FROM
-(
-    SELECT modulo(number, 2) AS x
-    FROM numbers(10)
-)
-SELECT uniqTheta(bitNot(x))
-FROM
-(
-    SELECT modulo(number, 2) AS x
-    FROM numbers(10)
-)
-SELECT uniqTheta(bitNot(negate(x)))
-FROM
-(
-    SELECT modulo(number, 2) AS x
-    FROM numbers(10)
-)
-SELECT uniqTheta(negate(bitNot(negate(x))))
-FROM
-(
-    SELECT modulo(number, 2) AS x
-    FROM numbers(10)
-)
-SELECT uniqTheta(x)
-FROM
-(
-    SELECT modulo(number, 2) AS x
-    FROM numbers(10)
-)
-SELECT uniqTheta(plus(x, y))
-FROM
-(
-    SELECT
-        modulo(number, 2) AS x,
-        modulo(number, 3) AS y
-    FROM numbers(10)
-)
-SELECT uniqTheta(negate(x))
-FROM
-(
-    SELECT modulo(number, 2) AS x
-    FROM numbers(10)
-)
-SELECT uniqTheta(bitNot(x))
-FROM
-(
-    SELECT modulo(number, 2) AS x
-    FROM numbers(10)
-)
-SELECT uniqTheta(bitNot(negate(x)))
-FROM
-(
-    SELECT modulo(number, 2) AS x
-    FROM numbers(10)
-)
-SELECT uniqTheta(negate(bitNot(negate(x))))
-FROM
-(
-    SELECT modulo(number, 2) AS x
-    FROM numbers(10)
-)
+SELECT uniqTheta(x)\nFROM\n(\n    SELECT modulo(number, 2) AS x\n    FROM numbers(10)\n)
+SELECT uniqTheta(plus(x, y))\nFROM\n(\n    SELECT\n        modulo(number, 2) AS x,\n        modulo(number, 3) AS y\n    FROM numbers(10)\n)
+SELECT uniqTheta(negate(x))\nFROM\n(\n    SELECT modulo(number, 2) AS x\n    FROM numbers(10)\n)
+SELECT uniqTheta(bitNot(x))\nFROM\n(\n    SELECT modulo(number, 2) AS x\n    FROM numbers(10)\n)
+SELECT uniqTheta(bitNot(negate(x)))\nFROM\n(\n    SELECT modulo(number, 2) AS x\n    FROM numbers(10)\n)
+SELECT uniqTheta(negate(bitNot(negate(x))))\nFROM\n(\n    SELECT modulo(number, 2) AS x\n    FROM numbers(10)\n)
+SELECT uniqTheta(x)\nFROM\n(\n    SELECT modulo(number, 2) AS x\n    FROM numbers(10)\n)
+SELECT uniqTheta(plus(x, y))\nFROM\n(\n    SELECT\n        modulo(number, 2) AS x,\n        modulo(number, 3) AS y\n    FROM numbers(10)\n)
+SELECT uniqTheta(negate(x))\nFROM\n(\n    SELECT modulo(number, 2) AS x\n    FROM numbers(10)\n)
+SELECT uniqTheta(bitNot(x))\nFROM\n(\n    SELECT modulo(number, 2) AS x\n    FROM numbers(10)\n)
+SELECT uniqTheta(bitNot(negate(x)))\nFROM\n(\n    SELECT modulo(number, 2) AS x\n    FROM numbers(10)\n)
+SELECT uniqTheta(negate(bitNot(negate(x))))\nFROM\n(\n    SELECT modulo(number, 2) AS x\n    FROM numbers(10)\n)
 1000	1000
 2014-06-01	1000	1000
 1000	1000

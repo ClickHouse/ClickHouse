@@ -1,0 +1,48 @@
+-- the resolution list, side by side with the plain type
+0	0	0	0	\N	0	0	0	\N	\N	{}	{}	{}
+1	10	10	1	\N	1	\N	\N	\N	\N	{}	{}	{}
+2	20	20	2	\N	2	2	2	\N	\N	{}	{}	{}
+3	30	30	3	\N	3	\N	\N	\N	\N	{}	{}	{}
+4	40	40	4	\N	0	4	4	\N	\N	{}	{}	{}
+5	50	50	5	\N	1	\N	\N	\N	\N	{}	{}	{}
+6	60	60	6	\N	2	6	6	\N	\N	{}	{}	{}
+7	70	70	0	\N	3	\N	\N	\N	\N	{}	{}	{}
+UInt64	UInt64	UInt64	Dynamic	UInt64	Dynamic	Nullable(Int64)	Dynamic	JSON
+equal to the plain type	1	1
+-- a mismatching hint on a typed path, the same on both types
+-- a typed path under a typed path resolves to the declared one, whatever is SHARED and wherever the JSON sits
+5	5	5	5	5	5	5	[5]	[5]
+6	6	6	6	6	6	6	[6]	[6]
+Int64	Int64	Int64	Int64	Int64	Array(Int64)	Array(Int64)
+{}	{"b":5,"c":"x"}	\N	Dynamic	('')
+{}	{"b":6,"c":"x"}	\N	Dynamic	('')
+in memory	5	Int64
+in memory	5	Int64	('')
+-- deeper chains under a shared path, equal to the plain type
+0	0	(0)	\N	[0,1]	2	[0]	0	\N	d0	0
+1	1	(1)	\N	[1,2]	2	[2]	\N	s1	\N	0
+2	2	(2)	\N	[2,3]	2	[4]	2	\N	d2	0
+3	3	(3)	\N	[3,4]	2	[6]	\N	s3	\N	0
+4	4	(4)	\N	[4,5]	2	[8]	4	\N	d4	0
+5	5	(5)	\N	[5,6]	2	[10]	\N	s5	\N	0
+6	6	(6)	\N	[6,7]	2	[12]	6	\N	d6	0
+7	7	(7)	\N	[7,8]	2	[14]	\N	s7	\N	0
+UInt64	Tuple(\n    c UInt64)	Dynamic	Array(UInt64)	UInt64	Array(UInt64)	Nullable(UInt64)	Nullable(String)	UInt64
+equal to the plain type	1
+-- keys of the readers: a sub-subcolumn named like another path, a path named like the whole-column range key
+103	0	(0)	203	{"^":{"":203},"a":{"b":0},"a":{"b":103}}
+0	103
+203	{"^":{"":203},"a":{"b":0},"a":{"b":103}}
+103	0	(0)	203	{"^":{"":203},"a":{"b":0},"a":{"b":103}}
+0	103
+103	0	(0)	203	{"^":{"":203},"a":{"b":0},"a":{"b":103}}
+0	103
+-- a subcolumn of a path named like another path: the path wins, the subcolumn is reached through the hint
+	2	[1,2]
+s	0	[]
+-- bracket access is the combined subcolumn of a SHARED path
+0	0	[]	0	{"p":7,"q":"q"}	(0,0)	1
+1	10	[0]	1	{"p":8,"q":"q"}	(10,10)	11
+2	20	[0,1]	2	{"p":9,"q":"q"}	(20,20)	21
+equal across layouts	1	1	1	1
+{"a":50,"b":"b5","c":[0,1],"d":5,"j":{"p":12,"q":"q"}}	b5

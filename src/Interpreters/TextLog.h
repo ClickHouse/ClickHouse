@@ -53,11 +53,9 @@ public:
 
     explicit TextLog(ContextPtr context_, const SystemLogSettings & settings);
 
-    static std::shared_ptr<Queue> getLogQueue(const SystemLogQueueSettings & settings)
-    {
-        static std::shared_ptr<Queue> queue = std::make_shared<Queue>(settings);
-        return queue;
-    }
+    /// Defined out of line: a static local in a header-defined function gives every shared
+    /// object its own copy.
+    static std::shared_ptr<Queue> getLogQueue(const SystemLogQueueSettings & settings);
 
     static consteval bool shouldTurnOffLogger() { return true; }
 };

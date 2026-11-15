@@ -4,7 +4,7 @@
 -- Tag no-parallel-replicas: profile events are not available on the second replica
 -- Tag no-random-settings: we need to test specific cache setting combinations
 
-SET allow_experimental_paimon_storage_engine = 1;
+SET enable_paimon_storage_engine = 1;
 SET log_queries = 1;
 
 DROP TABLE IF EXISTS paimon_cache_off;
