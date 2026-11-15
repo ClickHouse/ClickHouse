@@ -44,7 +44,7 @@ struct DecimalOpHelpers
 
         VectorWithMemoryTracking<UInt8> result(len1 + len2, 0);
         UInt16 i_n1 = 0;
-        UInt16 i_n2;
+        UInt16 i_n2 = 0;
 
         for (Int32 i = len1 - 1; i >= 0; --i)
         {
@@ -93,7 +93,7 @@ struct DecimalOpHelpers
         UInt16 idx = 0;
         Int256 temp = 0;
 
-        while (temp < divisor && max_index > idx)
+        while (temp < divisor && max_index >= idx)
         {
             temp = temp * 10 + number[idx];
             ++idx;
@@ -247,6 +247,15 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return Transform::suitable_for_short_circuit; }
 
+    /// Documentation-only — arithmetic on two `Decimal` operands; the optional
+    /// third argument is a const-`UInt8` scale for the result. The output is
+    /// a `Decimal256` with that scale; the legacy `getReturnTypeImpl` below
+    /// stays authoritative.
+    String getSignatureString() const override
+    {
+        return "(Decimal, Decimal, [const UInt8]) -> Decimal256";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2 && arguments.size() != 3)
@@ -287,6 +296,16 @@ public:
                             "must be integer in range [0, 76]", this->getName());
 
         return std::make_shared<DataTypeDecimal256>(DecimalUtils::max_precision<Decimal256>, scale);
+    }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+
+        return getReturnTypeImpl(columns);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

@@ -106,7 +106,10 @@ void ZooKeeperOpentelemetrySpans::maybeFinalizeImpl(
 
     maybe_span.span->attributes = std::move(attributes);
 
-    span_log->add(OpenTelemetrySpanLogElement(std::move(*maybe_span.span)));
+    span_log->add([&](OpenTelemetrySpanLogElement & element)
+    {
+        element.span = *maybe_span.span;
+    });
     maybe_span.span.reset();
 }
 

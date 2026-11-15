@@ -4,11 +4,12 @@
 #include <snappy.h>
 
 #include <IO/ReadBufferFromString.h>
-#include <IO/SnappyReadBuffer.h>
+#include <IO/SnappyBasicReadBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
+#include <Examples/clickhouse_examples.h>
 
 
 int mainEntryExampleSnappyReadBuffer(int, char **)
@@ -23,13 +24,13 @@ int mainEntryExampleSnappyReadBuffer(int, char **)
     snappy::Compress(input.data(), input.size(), &input1);
 
     std::unique_ptr<ReadBuffer> in1 = std::make_unique<ReadBufferFromString>(input1);
-    SnappyReadBuffer in2(std::move(in1));
+    SnappyBasicReadBuffer in2(std::move(in1));
 
     String output;
     WriteBufferFromString out(output);
     copyData(in2, out);
 
     output.resize(out.count());
-    assert(input == output);
+    chassert(input == output);
     return 0;
 }

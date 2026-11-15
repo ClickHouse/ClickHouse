@@ -1,0 +1,3 @@
+Test chinese tokenizer.
+Test chinese tokenizer granularity argument.
+-- invalid granularity is rejected.

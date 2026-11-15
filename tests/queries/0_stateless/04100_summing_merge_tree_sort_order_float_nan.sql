@@ -29,8 +29,9 @@ INSERT INTO TABLE t_float_nan_sort (c1, c0)
 INSERT INTO TABLE t_float_nan_sort (c1, c0)
     SELECT c1, c0 FROM generateRandom('c1 Float32, c0 Int32', 14156128262908154975, 2463, 2) LIMIT 10;
 
--- This OPTIMIZE triggers a merge. Before the fix, debug builds crashed here with:
--- "Logical error: Sort order of blocks violated for column number ..."
+-- This OPTIMIZE triggers the merge. Before the fix, debug builds aborted here
+-- when CheckSortedTransform saw the merge output regress on the hash sort key;
+-- release builds silently wrote a part with a corrupt primary-key index.
 OPTIMIZE TABLE t_float_nan_sort FINAL;
 
 SELECT count() > 0 FROM t_float_nan_sort;

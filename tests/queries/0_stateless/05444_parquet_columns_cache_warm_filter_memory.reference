@@ -1,0 +1,9 @@
+1	65536
+--- without the cache
+61440	31457280
+--- warm the cache
+65536	2147450880	33554432
+id	1	65536
+s	1	65536
+--- the filtered rows of the cached chunk are copied in the blocks the settings ask for
+61440	31457280

@@ -1,0 +1,11 @@
+<clickhouse>
+    <quotas>
+        <myQuota>
+            <keyed_by_normalized_query_hash/>
+            <interval>
+                <duration>3600</duration>
+                <queries>100</queries>
+            </interval>
+        </myQuota>
+    </quotas>
+</clickhouse>

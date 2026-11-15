@@ -10,6 +10,8 @@
 #include <unicode/ustring.h>
 #include <unicode/utypes.h>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace DB
 {
@@ -89,7 +91,7 @@ struct RemoveDiacriticsImpl
         int32_t read_pos = 0;
         while (read_pos < len)
         {
-            UChar32 code_point;
+            UChar32 code_point = 0;
             int32_t prev = read_pos;
             U16_NEXT(buf_in.data(), read_pos, len, code_point); /// advances read_pos to next code point boundary
 
@@ -229,8 +231,8 @@ Applies standard Unicode case folding. Preserves compatibility characters that a
         "SELECT caseFoldUTF8('Straße')",
         R"(
 ┌─caseFoldUTF8('Straße')─┐
-│ strasse                 │
-└─────────────────────────┘
+│ strasse                │
+└────────────────────────┘
 )"
     }};
     factory.registerFunction<FunctionCaseFoldUTF8>({case_desc, case_syntax, case_args, {}, case_ret, case_examples, intro, cat});
@@ -250,13 +252,15 @@ stripping combining marks (Unicode category Mn), then recomposing via NFC.
         "SELECT removeDiacriticsUTF8('café résumé naïve')",
         R"(
 ┌─removeDiacriticsUTF8('café résumé naïve')─┐
-│ cafe resume naive                          │
-└────────────────────────────────────────────┘
+│ cafe resume naive                         │
+└───────────────────────────────────────────┘
 )"
     }};
     factory.registerFunction<FunctionRemoveDiacriticsUTF8>({accent_desc, accent_syntax, accent_args, {}, accent_ret, accent_examples, intro, cat});
     factory.registerAlias("removeAccentsUTF8", "removeDiacriticsUTF8");
 }
+
+#pragma clang diagnostic pop
 
 }
 

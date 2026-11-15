@@ -1,0 +1,10 @@
+shared IN node
+2
+control: transform_null_in collapses the sharing
+2
+control: a not-Nullable left operand collapses the sharing
+2
+control: an unshared IN is still promoted
+16
+0	1
+the server is still alive

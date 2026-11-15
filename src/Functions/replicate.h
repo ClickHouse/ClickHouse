@@ -28,6 +28,8 @@ public:
         return 0;
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     bool isVariadic() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -36,7 +38,10 @@ public:
 
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
+    String getSignatureString() const override
+    {
+        return "(T, Array, ...) -> Array(T)";
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override;
 };

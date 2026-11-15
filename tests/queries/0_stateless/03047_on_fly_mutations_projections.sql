@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas, no-shared-catalog
+-- no-parallel-replicas: projections don't work with parallel replicas.
+-- no-shared-catalog: SYSTEM STOP MERGES commands stops merges only on one replica, but test depends on it.
 
 DROP TABLE IF EXISTS t_update_projections;
 
