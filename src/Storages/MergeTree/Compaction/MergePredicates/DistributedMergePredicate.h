@@ -1,7 +1,10 @@
 #pragma once
 
 #include <Storages/MergeTree/Compaction/MergePredicates/IMergePredicate.h>
+#include <Storages/MergeTree/MergeTreeCommittingBlock.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 #include <base/defines.h>
 
@@ -11,9 +14,9 @@ namespace DB
 {
 
 using PartitionIdsHint = std::unordered_set<String>;
-using CommittingBlocks = std::unordered_map<String, std::set<Int64>>;
+using CommittingBlocks = std::unordered_map<String, CommittingBlocksSet>;
 
-CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, std::optional<PartitionIdsHint> & partition_ids_hint);
+CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, std::optional<PartitionIdsHint> & partition_ids_hint, bool with_data);
 
 template<typename VirtualPartsT, typename MutationsStateT>
 class DistributedMergePredicate : public IMergePredicate
@@ -76,20 +79,26 @@ public:
         if (left.info.getPartitionId() != right.info.getPartitionId())
             return std::unexpected(PreformattedMessage::create("Parts {} and {} belong to different partitions", left.name, right.name));
 
+        if (left.info.isPatch() != right.info.isPatch())
+            return std::unexpected(PreformattedMessage::create("One of parts ({}, {}) is patch part and another is regular part", left.name, right.name));
+
+        if (left.is_in_volume_where_merges_avoid || right.is_in_volume_where_merges_avoid)
+            return std::unexpected(PreformattedMessage::create("One of parts ({}, {}) lies on volume where merges should be avoided", left.name, right.name));
+
         int64_t left_max_block = left.info.max_block;
         int64_t right_min_block = right.info.min_block;
         chassert(left_max_block < right_min_block);
 
         if (committing_blocks_ptr && left_max_block + 1 < right_min_block)
         {
-            auto committing_blocks_ptrin_partition = committing_blocks_ptr->find(left.info.getPartitionId());
-            if (committing_blocks_ptrin_partition != committing_blocks_ptr->end())
+            auto committing_blocks_ptr_in_partition = committing_blocks_ptr->find(left.info.getPartitionId());
+            if (committing_blocks_ptr_in_partition != committing_blocks_ptr->end())
             {
-                const std::set<Int64> & block_numbers = committing_blocks_ptrin_partition->second;
+                const auto & block_numbers = committing_blocks_ptr_in_partition->second;
 
                 auto block_it = block_numbers.upper_bound(left_max_block);
-                if (block_it != block_numbers.end() && *block_it < right_min_block)
-                    return std::unexpected(PreformattedMessage::create("Block number {} is still being inserted between parts {} and {}", *block_it, left.name, right.name));
+                if (block_it != block_numbers.end() && block_it->number < right_min_block)
+                    return std::unexpected(PreformattedMessage::create("Block number {} is still being inserted between parts {} and {}", block_it->number, left.name, right.name));
             }
         }
 
@@ -112,10 +121,10 @@ public:
         if (mutations_state_ptr)
         {
             Int64 left_mutation_version = mutations_state_ptr->getCurrentMutationVersion(
-                left.info.getPartitionId(), left.info.getDataVersion());
+                left.info.getOriginalPartitionId(), left.info.getDataVersion());
 
             Int64 right_mutation_version = mutations_state_ptr->getCurrentMutationVersion(
-                left.info.getPartitionId(), right.info.getDataVersion());
+                left.info.getOriginalPartitionId(), right.info.getDataVersion());
 
             if (left_mutation_version != right_mutation_version)
                 return std::unexpected(PreformattedMessage::create(
@@ -123,10 +132,27 @@ public:
                             left.name, right.name, left_mutation_version, right_mutation_version));
         }
 
+        if (left.info.isPatch())
+        {
+            /// The check above only sees the mutations that are still known. A mutation that is already
+            /// finished (or was killed) leaves no entry in 'mutations_by_partition', while the data version
+            /// it gave to the parts stays. Merging patch parts across such a version produces a patch that
+            /// neither wholly applies nor wholly does not apply to those parts, which is a logical error.
+            auto original_partition_id = left.info.getOriginalPartitionId();
+
+            auto spanned_version = findDataVersionInRange(
+                data_versions_by_partition, original_partition_id, left.info.getDataVersion(), right.info.getDataVersion());
+
+            if (spanned_version.has_value())
+                return std::unexpected(PreformattedMessage::create(
+                            "Merge of patch parts {} and {} would span data version {} of a part in partition {}",
+                            left.name, right.name, *spanned_version, original_partition_id));
+        }
+
         if (left.projection_names != right.projection_names)
             return std::unexpected(PreformattedMessage::create(
-                    "Parts have different projection sets: {{}} in '{}' and {{}} in '{}'",
-                    fmt::join(left.projection_names, ", "), left.name, fmt::join(right.projection_names, ", "), right.name));
+                    "Parts have different projection sets: {} in '{}' and {} in '{}'",
+                    left.projection_names, left.name, right.projection_names, right.name));
 
         return {};
     }
@@ -141,7 +167,39 @@ public:
         if (String containing_part = virtual_parts_ptr->getContainingPart(info); containing_part != name)
             return std::unexpected(PreformattedMessage::create("Part {} has already been assigned a merge into {}", name, containing_part));
 
+        if (info.isPatch() && committing_blocks_ptr)
+        {
+            auto data_version = info.getDataVersion();
+            auto it = committing_blocks_ptr->find(info.getOriginalPartitionId());
+
+            if (it != committing_blocks_ptr->end() && !it->second.empty() && data_version > it->second.begin()->number)
+            {
+                return std::unexpected(PreformattedMessage::create(
+                    "Patch part {} with data version {} cannot be used in merges because patches with lower data version are still being processed",
+                    name, data_version));
+            }
+        }
+
         return {};
+    }
+
+    PartsRange getPatchesToApplyOnMerge(const PartsRange & range) const override
+    {
+        if (range.empty())
+            return {};
+
+        const auto & first_part = range.front().info;
+        if (first_part.isPatch())
+            return {};
+
+        const auto & partition_id = first_part.getPartitionId();
+        auto it = patches_by_partition.find(partition_id);
+
+        if (it == patches_by_partition.end() || it->second.empty())
+            return {};
+
+        Int64 next_version = mutations_state_ptr->getNextMutationVersion(partition_id, first_part.getDataVersion());
+        return DB::getPatchesToApplyOnMerge(it->second, range, next_version);
     }
 
 protected:
@@ -158,6 +216,13 @@ protected:
 
     /// An object that provides current mutation version for a part
     const MutationsStateT * mutations_state_ptr = nullptr;
+
+    /// Patch parts that should be applied at merges if apply_patches_on_merge is enabled.
+    PatchInfosByPartition patches_by_partition;
+
+    /// Data versions of the regular parts. Filled only if there are patch parts in the table.
+    /// Used to check that a merge of patch parts does not span the data version of an existing part.
+    DataVersionsByPartition data_versions_by_partition;
 };
 
 }

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <memory>
-#include "RegionsHierarchies.h"
-#include "RegionsNames.h"
+#include <Dictionaries/Embedded/RegionsHierarchies.h>
+#include <Dictionaries/Embedded/RegionsNames.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 

@@ -19,7 +19,7 @@ class JSONObjectEachRowInputFormat final : public JSONEachRowRowInputFormat
 public:
     JSONObjectEachRowInputFormat(
         ReadBuffer & in_,
-        const Block & header_,
+        SharedHeader header_,
         Params params_,
         const FormatSettings & format_settings_);
 
@@ -36,7 +36,7 @@ private:
 };
 
 
-class JSONObjectEachRowSchemaReader : public IRowWithNamesSchemaReader
+class JSONObjectEachRowSchemaReader final : public IRowWithNamesSchemaReader
 {
 public:
     JSONObjectEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);

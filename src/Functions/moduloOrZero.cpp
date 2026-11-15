@@ -13,6 +13,11 @@ struct ModuloOrZeroImpl
     using ResultType = typename NumberTraits::ResultOfModulo<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
+    /// See the comment in ModuloImpl.
+    static constexpr bool no_vectorize = !is_floating_point<ResultType>;
+
+    /// Documentation-only — see `PlusImpl::signature_documentation`.
+    static constexpr auto signature_documentation = "(Any, Any) -> Any";
 
     template <typename Result = ResultType>
     static Result apply(A a, B b)
@@ -44,20 +49,28 @@ using FunctionModuloOrZero = BinaryArithmeticOverloadResolver<ModuloOrZeroImpl, 
 REGISTER_FUNCTION(ModuloOrZero)
 {
     FunctionDocumentation::Description description = R"(
-Like modulo but returns zero when the divisor is zero, as opposed to an
-exception with the modulo function.
+Like modulo but returns zero instead of an exception for integer results when the operation would otherwise raise an
+exception. For floating-point results, a zero divisor produces `NaN`.
     )";
     FunctionDocumentation::Syntax syntax = "moduloOrZero(a, b)";
-    FunctionDocumentation::Argument argument1 = {"a", "The dividend"};
-    FunctionDocumentation::Argument argument2 = {"b", "The divisor (modulus)"};
-    FunctionDocumentation::Arguments arguments = {argument1, argument2};
-    FunctionDocumentation::ReturnedValue returned_value = "The remainder of a % b, or `0` when the divisor is `0`.";
-    FunctionDocumentation::Examples examples = {{"", "SELECT moduloOrZero(5, 0)", "0"}};
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"a", "The dividend.", {"(U)Int*", "Float*"}},
+        {"b", "The divisor (modulus).", {"(U)Int*", "Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {R"(
+Returns the remainder of `a % b`. For integer results, returns `0` when the operation would otherwise raise an exception.
+For floating-point results, a zero divisor produces `NaN`.
+    )"};
+    FunctionDocumentation::Examples examples = {
+        {"Integer zero divisor", "SELECT moduloOrZero(5, 0)", "0"},
+        {"Floating-point zero divisor", "SELECT moduloOrZero(toFloat64(5), toFloat64(0))", "nan"}
+    };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
-    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionModuloOrZero>();
+    factory.registerFunction<FunctionModuloOrZero>(documentation);
 }
 
 }

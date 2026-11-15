@@ -9,7 +9,6 @@ namespace DB
 {
     void ParallelFormattingOutputFormat::finalizeImpl()
     {
-        need_flush = true;
         /// Don't throw any background_exception here, because we want to finalize the execution.
         /// Exception will be checked after main thread is finished.
         addChunk(Chunk{}, ProcessingUnitType::FINALIZE, /*can_throw_exception*/ false);
@@ -77,7 +76,7 @@ namespace DB
         if (emergency_stop)
             return;
 
-        assert(unit.status == READY_TO_INSERT);
+        chassert(unit.status == READY_TO_INSERT);
         unit.chunk = std::move(chunk);
         /// Resize memory without deallocation.
         unit.segment.resize(0);
@@ -96,7 +95,18 @@ namespace DB
             unit.rows_num = unit.chunk.getNumRows();
         }
 
-        scheduleFormatterThreadForUnitWithNumber(current_unit_number, first_row_num);
+        try
+        {
+            scheduleFormatterThreadForUnitWithNumber(current_unit_number, first_row_num);
+        }
+        catch (...)
+        {
+            /// Properly terminate in case of exception during scheduling, i.e. CANNOT_SCHEDULE_TASK
+            onBackgroundException();
+            if (can_throw_exception)
+                throw;
+            return;
+        }
         ++writer_unit_number;
     }
 
@@ -130,7 +140,7 @@ namespace DB
 
     void ParallelFormattingOutputFormat::collectorThreadFunction(const ThreadGroupPtr & thread_group)
     {
-        ThreadGroupSwitcher switcher(thread_group, "Collector");
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::PARALLEL_FORMATER_COLLECTOR);
 
         try
         {
@@ -148,7 +158,7 @@ namespace DB
                 if (emergency_stop)
                     break;
 
-                assert(unit.status == READY_TO_READ);
+                chassert(unit.status == READY_TO_READ);
 
                 /// Use this copy to after notification to stop the execution.
                 auto copy_of_unit_type = unit.type;
@@ -156,7 +166,7 @@ namespace DB
                 /// Do main work here.
                 out.write(unit.segment.data(), unit.actual_memory_size);
 
-                if (need_flush.exchange(false) || auto_flush)
+                if (auto_flush || need_flush.exchange(false) || unit.type == ProcessingUnitType::FINALIZE)
                     out.next();
 
                 ++collector_unit_number;
@@ -195,12 +205,12 @@ namespace DB
 
     void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupPtr & thread_group)
     {
-        ThreadGroupSwitcher switcher(thread_group, "Formatter");
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::PARALLEL_FORMATER);
 
         try
         {
             auto & unit = processing_units[current_unit_number];
-            assert(unit.status == READY_TO_FORMAT);
+            chassert(unit.status == READY_TO_FORMAT);
 
             /// We want to preallocate memory buffer (increase capacity)
             /// and put the pointer at the beginning of the buffer

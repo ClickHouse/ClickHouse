@@ -12,6 +12,7 @@ BUILD_TYPE_TO_STATIC_LOCATION = {
     BuildTypes.ARM_DARWIN: "macos-aarch64",
     BuildTypes.ARM_V80COMPAT: "aarch64v80compat",
     BuildTypes.AMD_FREEBSD: "freebsd",
+    BuildTypes.AMD_ILLUMOS: "illumos",
     BuildTypes.PPC64LE: "powerpc64le",
     BuildTypes.AMD_COMPAT: "amd64compat",
     BuildTypes.AMD_MUSL: "amd64musl",
@@ -39,6 +40,8 @@ def check():
                         s3_path=f"{S3_BUCKET_NAME}/{info.git_branch}/{BUILD_TYPE_TO_STATIC_LOCATION[build_type]}/clickhouse",
                         with_rename=True,
                     )
+                except AssertionError:
+                    raise
                 except Exception as e:
                     traceback.print_exc()
                 return

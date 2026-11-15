@@ -8,6 +8,8 @@
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
+#include <boost/range/adaptor/map.hpp>
+
 namespace DB
 {
 
@@ -18,6 +20,8 @@ namespace ErrorCodes
 
 #define NATS_RELATED_SETTINGS(DECLARE, ALIAS) \
     DECLARE(String, nats_url, "", "A host-port to connect to NATS server.", 0) \
+    DECLARE(String, nats_stream, "", "Stream name for NATS JetStream", 0) \
+    DECLARE(String, nats_consumer_name, "", "Name of a durable pull consumer for NATS JetStream.", 0) \
     DECLARE(String, nats_subjects, "", "List of subject for NATS table to subscribe/publish to.", 0) \
     DECLARE(String, nats_format, "", "The message format.", 0) \
     DECLARE(String, nats_schema, "", "Schema identifier (used by schema-based formats) for NATS engine", 0) \
@@ -29,10 +33,16 @@ namespace ErrorCodes
     DECLARE(UInt64, nats_skip_broken_messages, 0, "Skip at least this number of broken messages from NATS per block", 0) \
     DECLARE(UInt64, nats_max_block_size, 0, "Number of row collected before flushing data from NATS.", 0) \
     DECLARE(Milliseconds, nats_flush_interval_ms, 0, "Timeout for flushing data from NATS.", 0) \
+    DECLARE(Bool, nats_wait_for_flush_interval, false, "If true, a streaming cycle stays open for the whole flush interval instead of finishing as soon as the consumer queue drains, batching more messages per block at the cost of latency.", 0) \
+    DECLARE(Bool, nats_commit_on_select, false, "Commit messages when query is made. Applies to JetStream only; core NATS has no acknowledgements.", 0) \
     DECLARE(String, nats_username, "", "NATS username", 0) \
     DECLARE(String, nats_password, "", "NATS password", 0) \
     DECLARE(String, nats_token, "", "NATS token", 0) \
-    DECLARE(String, nats_credential_file, "", "Path to a NATS credentials file", 0) \
+    DECLARE(String, nats_credential_file, "", "Path to a NATS credentials file. Accepted only from a named collection defined in the server configuration file whose destination is not overridden by the query", 0) \
+    DECLARE(String, nats_credentials, "", "NATS credentials content with user JWT and seed", 0) \
+    DECLARE(String, nats_ca_file, "", "Path to a file with the trusted CA certificates used to verify the NATS server certificate. Requires nats_secure. Accepted only from a named collection defined in the server configuration file whose destination is not overridden by the query", 0) \
+    DECLARE(String, nats_client_cert_file, "", "Path to the client certificate presented to the NATS server. Requires nats_secure and nats_client_key_file. Accepted only from a named collection defined in the server configuration file whose destination is not overridden by the query", 0) \
+    DECLARE(String, nats_client_key_file, "", "Path to the private key of nats_client_cert_file. Accepted only from a named collection defined in the server configuration file whose destination is not overridden by the query", 0) \
     DECLARE(UInt64, nats_startup_connect_tries, 5, "Number of connect tries at startup", 0) \
     DECLARE(UInt64, nats_max_rows_per_message, 1, "The maximum number of rows produced in one message for row-based formats.", 0) \
     DECLARE(StreamingHandleErrorMode, nats_handle_error_mode, StreamingHandleErrorMode::DEFAULT, "How to handle errors for NATS engine. Possible values: default (throw an exception after nats_skip_broken_messages broken messages), stream (save broken messages and errors in virtual columns _raw_message, _error).", 0) \
@@ -46,21 +56,8 @@ namespace ErrorCodes
     OBSOLETE_NATS_SETTINGS(M, ALIAS)      \
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS) \
 
-DECLARE_SETTINGS_TRAITS(NATSSettingsTraits, LIST_OF_NATS_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(NATSSettingsTraits, LIST_OF_NATS_SETTINGS)
-
-struct NATSSettingsImpl : public BaseSettings<NATSSettingsTraits>
-{
-};
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) NATSSettings##TYPE NAME = &NATSSettingsImpl ::NAME;
-
-namespace NATSSetting
-{
-LIST_OF_NATS_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+DECLARE_SETTINGS_TRAITS(NATSSettingsTraits, LIST_OF_NATS_SETTINGS, NATS_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(NATSSettingsTraits, LIST_OF_NATS_SETTINGS, NATSSettings, NATSSetting)
 
 NATSSettings::NATSSettings() : impl(std::make_unique<NATSSettingsImpl>())
 {
@@ -70,9 +67,7 @@ NATSSettings::NATSSettings(const NATSSettings & settings) : impl(std::make_uniqu
 {
 }
 
-NATSSettings::NATSSettings(NATSSettings && settings) noexcept : impl(std::make_unique<NATSSettingsImpl>(std::move(*settings.impl)))
-{
-}
+NATSSettings::NATSSettings(NATSSettings && settings) noexcept = default;
 
 NATSSettings::~NATSSettings() = default;
 
@@ -95,7 +90,7 @@ void NATSSettings::loadFromQuery(ASTStorage & storage_def)
     }
     else
     {
-        auto settings_ast = std::make_shared<ASTSetQuery>();
+        auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }

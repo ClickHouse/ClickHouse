@@ -1,0 +1,67 @@
+---
+slug: '/examples/aggregate-function-combinators/argMaxIf'
+title: 'argMaxIf'
+description: 'Ejemplo de uso del combinador argMaxIf'
+keywords: ['argMax', 'if', 'combinador', 'ejemplos', 'argMaxIf']
+sidebarTitle: 'argMaxIf'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Descripción
+</div>
+
+El combinador [`If`](/es/reference/functions/aggregate-functions/combinators#-if) puede aplicarse a la función [`argMax`](/es/reference/functions/aggregate-functions/argMax)
+para encontrar el valor de `arg` que corresponde al valor máximo de `val` en las filas donde la condición es verdadera,
+mediante la función de combinador agregado `argMaxIf`.
+
+La función `argMaxIf` es útil cuando necesitas encontrar el valor asociado al
+valor máximo de un conjunto de datos, pero solo para las filas que cumplen una condición
+específica.
+
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
+
+En este ejemplo, usaremos un conjunto de datos de muestra sobre ventas de productos para mostrar cómo
+funciona `argMaxIf`. Encontraremos el nombre del producto con el precio más alto, pero
+solo entre los productos que se hayan vendido al menos 10 veces.
+
+```sql title="Query"
+CREATE TABLE product_sales
+(
+    product_name String,
+    price Decimal32(2),
+    sales_count UInt32
+) ENGINE = Memory;
+
+INSERT INTO product_sales VALUES
+    ('Laptop', 999.99, 10),
+    ('Phone', 499.99, 15),
+    ('Tablet', 299.99, 0),
+    ('Watch', 1199.99, 5),
+    ('Headphones', 79.99, 20);
+
+SELECT argMaxIf(product_name, price, sales_count >= 10) AS most_expensive_popular_product
+FROM product_sales;
+```
+
+La función `argMaxIf` devolverá el nombre del producto que tenga el precio más alto
+entre todos los productos vendidos al menos 10 veces (sales&#95;count &gt;= 10).
+En este caso, devolverá &#39;Laptop&#39;, ya que tiene el precio más alto (999.99)
+entre los productos populares.
+
+```response title="Response"
+   ┌─most_expensi⋯lar_product─┐
+1. │ Laptop                   │
+   └──────────────────────────┘
+```
+
+<div id="see-also">
+  ## Véase también
+</div>
+
+* [`argMax`](/es/reference/functions/aggregate-functions/argMax)
+* [`argMin`](/es/reference/functions/aggregate-functions/argMin)
+* [`argMinIf`](/es/guides/clickhouse/examples/aggregate-function-combinators/argMinIf)
+* [`Combinador If`](/es/reference/functions/aggregate-functions/combinators#-if)

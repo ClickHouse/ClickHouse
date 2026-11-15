@@ -1,3 +1,4 @@
+SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS checks SYNC;
 
 CREATE TABLE checks
@@ -32,9 +33,11 @@ FROM
         check_start_time DESC,
         check_name ASC,
         test_name ASC
-    SETTINGS query_plan_read_in_order = 1, optimize_read_in_order = 1, max_parallel_replicas = 1
+    SETTINGS optimize_read_in_order = 1, max_parallel_replicas = 1
 )
 WHERE explain LIKE '%InReverseOrder%';
+
+SET automatic_parallel_replicas_mode = 0;
 
 SELECT check_start_time, check_name, test_name, test_status, check_status
 FROM checks
@@ -44,6 +47,6 @@ WHERE 1
     AND check_status != 'success'
     AND test_name ilike '%parallel_replicas%'
 ORDER BY check_start_time desc, check_name, test_name
-SETTINGS query_plan_read_in_order = 1, optimize_read_in_order = 1, allow_experimental_parallel_reading_from_replicas = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', max_parallel_replicas = 3;
+SETTINGS optimize_read_in_order = 1, allow_experimental_parallel_reading_from_replicas = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', max_parallel_replicas = 3;
 
 DROP TABLE checks SYNC;

@@ -18,31 +18,31 @@
 namespace Poco {
 
 
-CountingStreamBuf::CountingStreamBuf(): 
-	_pIstr(0), 
-	_pOstr(0), 
-	_chars(0), 
-	_lines(0), 
+CountingStreamBuf::CountingStreamBuf():
+	_pIstr(0),
+	_pOstr(0),
+	_chars(0),
+	_lines(0),
 	_pos(0)
 {
 }
 
 
-CountingStreamBuf::CountingStreamBuf(std::istream& istr): 
-	_pIstr(&istr), 
-	_pOstr(0), 
-	_chars(0), 
-	_lines(0), 
+CountingStreamBuf::CountingStreamBuf(std::istream& istr):
+	_pIstr(&istr),
+	_pOstr(0),
+	_chars(0),
+	_lines(0),
 	_pos(0)
 {
 }
 
 
-CountingStreamBuf::CountingStreamBuf(std::ostream& ostr): 
-	_pIstr(0), 
-	_pOstr(&ostr), 
-	_chars(0), 
-	_lines(0), 
+CountingStreamBuf::CountingStreamBuf(std::ostream& ostr):
+	_pIstr(0),
+	_pOstr(&ostr),
+	_chars(0),
+	_lines(0),
 	_pos(0)
 {
 }
@@ -99,13 +99,13 @@ void CountingStreamBuf::addChars(int chars)
 	_chars += chars;
 }
 
-		
+
 void CountingStreamBuf::addLines(int lines)
 {
 	_lines += lines;
 }
 
-		
+
 void CountingStreamBuf::addPos(int pos)
 {
 	_pos += pos;
@@ -152,13 +152,13 @@ void CountingIOS::addChars(int chars)
 	_buf.addChars(chars);
 }
 
-		
+
 void CountingIOS::addLines(int lines)
 {
 	_buf.addLines(lines);
 }
 
-		
+
 void CountingIOS::addPos(int pos)
 {
 	_buf.addPos(pos);
@@ -173,6 +173,7 @@ CountingStreamBuf* CountingIOS::rdbuf()
 
 CountingInputStream::CountingInputStream(std::istream& istr): CountingIOS(istr), std::istream(&_buf)
 {
+	poco_ios_init(&_buf);
 }
 
 
@@ -183,6 +184,7 @@ CountingInputStream::~CountingInputStream()
 
 CountingOutputStream::CountingOutputStream(): std::ostream(&_buf)
 {
+	poco_ios_init(&_buf);
 }
 
 

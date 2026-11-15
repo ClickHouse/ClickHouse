@@ -1,0 +1,58 @@
+-- the structure has the decoded parts of the token next to it
+part_name	String					
+token	String					
+token_key	String					
+token_value	String					
+dictionary_compression	Enum8(\'raw\' = 0, \'front_coded\' = 1)					
+cardinality	UInt64					
+num_posting_blocks	UInt64					
+has_embedded_postings	UInt8					
+has_raw_postings	UInt8					
+has_compressed_postings	UInt8					
+-- every token decodes back to its pair; the duplicate key gives the same pair as its first occurrence
+k	first	6B666972737402	1
+k	second	6B7365636F6E6402	1
+k	second	6B7365636F6E6403	1
+level	error	6C6576656C6572726F720A	1
+level	warn	6C6576656C7761726E0A	1
+service	api	736572766963656170690E	2
+-- the condition shows pairs instead of the encoded tokens
+Condition: (mode: All; tokens: [{"level": "error"}])
+Condition: (mode: All; tokens: [{"level": "warn"}, {"service": "api"}])
+Condition: (mode: Any; tokens: [{"k": "second"}, {"level": "error"}])
+-- so does the trivial count from the index
+ReadFromTextIndexCount (Trivial count from text index (idx, token = {"level": "error"}))
+1
+-- keys around the varint boundary (63 bytes: one trailer byte, 64 and 65 bytes: two), arbitrary bytes, empty key and value
+0			1
+3	610062	780079	7
+3	612262	635C64	7
+63	616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161	763633	67
+1	61	6263	4
+2	6162	63	4
+64	62626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262	763634	69
+65	6363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363	763635	70
+0		656B	3
+1	6B		2
+1	FF	FF	3
+-- the decoded parts and the original pairs are the same sets
+1
+-- filtering on the decoded parts
+64	v64
+
+6B
+-- quotes, backslashes and control bytes in a pair are escaped in the descriptions
+Condition: (mode: All; tokens: [{"a\\"b": "c\\\\d"}])
+Condition: (mode: All; tokens: [{"tab\\tkey": "new\\nline"}])
+ReadFromTextIndexCount (Trivial count from text index (idx, token = {"a\\"b": "c\\\\d"}))
+-- other tokenizers do not have the columns
+part_name	String					
+token	String					
+dictionary_compression	Enum8(\'raw\' = 0, \'front_coded\' = 1)					
+cardinality	UInt64					
+num_posting_blocks	UInt64					
+has_embedded_postings	UInt8					
+has_raw_postings	UInt8					
+has_compressed_postings	UInt8					
+Condition: (mode: All; tokens: ["apple"])
+ReadFromTextIndexCount (Trivial count from text index (idx, token = "apple"))

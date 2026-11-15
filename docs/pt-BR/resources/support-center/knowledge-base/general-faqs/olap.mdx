@@ -1,0 +1,45 @@
+---
+slug: /faq/general/olap
+title: 'O que é OLAP?'
+toc_hidden: true
+toc_priority: 100
+description: 'Uma explicação do que é Online Analytical Processing'
+keywords: ['OLAP']
+doc_type: 'reference'
+---
+
+[OLAP](https://en.wikipedia.org/wiki/Online_analytical_processing) significa Online Analytical Processing. É um termo amplo que pode ser visto sob duas perspectivas: técnica e de negócios. Mas, de forma bem simplificada, você pode ler essas palavras de trás para frente:
+
+Processing
+:   Alguns dados são processados...
+
+Analytical
+:   ...para produzir relatórios analíticos e insights...
+
+Online
+:   ...em tempo real.
+
+<div id="olap-from-the-business-perspective">
+  ## OLAP sob a perspectiva de negócios
+</div>
+
+Nos últimos anos, profissionais de negócios passaram a perceber o valor dos dados. Empresas que tomam decisões às cegas, na maioria das vezes, não conseguem acompanhar a concorrência. A abordagem orientada por dados das empresas bem-sucedidas as leva a coletar todos os dados que possam ser minimamente úteis para a tomada de decisões de negócios e exige mecanismos para analisá-los em tempo hábil. É aí que entram os sistemas de gerenciamento de banco de dados OLAP (DBMS).
+
+Em termos de negócios, o OLAP permite que as empresas planejem, analisem e reportem continuamente as atividades operacionais, maximizando a eficiência, reduzindo despesas e, em última instância, conquistando participação de mercado. Isso pode ser feito tanto em um sistema interno quanto terceirizado para provedores de SaaS, como serviços de analytics web/mobile, serviços de CRM etc. OLAP é a tecnologia por trás de muitas aplicações de inteligência de negócios (Business Intelligence).
+
+ClickHouse é um sistema de gerenciamento de banco de dados OLAP frequentemente usado como backend dessas soluções de SaaS para analisar dados específicos de domínio. No entanto, algumas empresas ainda relutam em compartilhar seus dados com provedores terceirizados, e um cenário interno de warehouse de dados também é viável.
+
+<div id="olap-from-the-technical-perspective">
+  ## OLAP sob a perspectiva técnica
+</div>
+
+Todos os sistemas de gerenciamento de banco de dados podem ser classificados em dois grupos: OLAP (Online **Analytical** Processing) e OLTP (Online **Transactional** Processing). O primeiro se concentra na geração de relatórios, cada um baseado em grandes volumes de dados históricos, mas sem fazer isso com tanta frequência. Já o segundo normalmente lida com um fluxo contínuo de transações, modificando constantemente o estado atual dos dados.
+
+Na prática, OLAP e OLTP não são categorias; é mais um espectro. A maioria dos sistemas reais costuma se concentrar em um deles, mas oferece algumas soluções ou contornos caso o tipo oposto de carga de trabalho também seja necessário. Essa situação muitas vezes obriga as empresas a operar vários sistemas de armazenamento integrados, o que talvez não seja um grande problema, mas ter mais sistemas torna a manutenção mais cara. Por isso, a tendência dos últimos anos é o HTAP (**Hybrid Transactional/Analytical Processing**), em que ambos os tipos de carga de trabalho são tratados igualmente bem por um único sistema de gerenciamento de banco de dados.
+
+Mesmo que um SGBD tenha começado como um OLAP puro ou um OLTP puro, ele acaba sendo forçado a seguir na direção do HTAP para acompanhar a concorrência. E o ClickHouse não é exceção: inicialmente, ele foi projetado como um [sistema OLAP o mais rápido possível](/pt-BR/get-started/about/why-clickhouse-is-so-fast) e ainda não tem suporte completo a transações, mas alguns recursos, como leituras/gravações consistentes e mutações para atualizar/excluir dados, precisaram ser adicionados.
+
+O trade-off fundamental entre sistemas OLAP e OLTP permanece:
+
+* Para gerar relatórios analíticos com eficiência, é crucial conseguir ler colunas separadamente; por isso, a maioria dos bancos de dados OLAP é [colunar](/pt-BR/resources/support-center/knowledge-base/general-faqs/columnar-database),
+* Já armazenar colunas separadamente aumenta o custo das operações em linhas, como inserção ou modificação no local, proporcionalmente ao número de colunas (que pode ser enorme se os sistemas tentarem coletar todos os detalhes de um evento por precaução). Assim, a maioria dos sistemas OLTP armazena os dados organizados por linhas.

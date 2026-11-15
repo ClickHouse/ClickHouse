@@ -17,11 +17,12 @@ INSERT INTO t_compact_vertical_merge SELECT number, toString(number), range(numb
 OPTIMIZE TABLE t_compact_vertical_merge FINAL;
 SYSTEM FLUSH LOGS part_log;
 
+-- part_log is shared; OrZero so foreign non-numeric part_names don't throw before the table filter runs
 WITH splitByChar('_', part_name) AS name_parts,
-    name_parts[2]::UInt64 AS min_block,
-    name_parts[3]::UInt64 AS max_block
+    toUInt64OrZero(name_parts[2]) AS min_block,
+    toUInt64OrZero(name_parts[3]) AS max_block
 SELECT min_block, max_block, event_type, merge_algorithm, part_type FROM system.part_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     database = currentDatabase() AND
     table = 't_compact_vertical_merge' AND
     min_block = 1 AND max_block = 2
@@ -32,11 +33,12 @@ INSERT INTO t_compact_vertical_merge SELECT number, toString(number), range(numb
 OPTIMIZE TABLE t_compact_vertical_merge FINAL;
 SYSTEM FLUSH LOGS part_log;
 
+-- part_log is shared; OrZero so foreign non-numeric part_names don't throw before the table filter runs
 WITH splitByChar('_', part_name) AS name_parts,
-    name_parts[2]::UInt64 AS min_block,
-    name_parts[3]::UInt64 AS max_block
+    toUInt64OrZero(name_parts[2]) AS min_block,
+    toUInt64OrZero(name_parts[3]) AS max_block
 SELECT min_block, max_block, event_type, merge_algorithm, part_type FROM system.part_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     database = currentDatabase() AND
     table = 't_compact_vertical_merge' AND
     min_block = 1 AND max_block = 3

@@ -8,20 +8,20 @@
 namespace DB
 {
 
-bool parseUserName(IParser::Pos & pos, Expected & expected, String & user_name)
+bool parseUserName(IParser::Pos & pos, Expected & expected, String & user_name, bool allow_query_parameter)
 {
     ASTPtr ast;
-    if (!ParserUserNameWithHost{}.parse(pos, ast, expected))
+    if (!ParserUserNameWithHost(allow_query_parameter).parse(pos, ast, expected))
         return false;
     user_name = ast->as<const ASTUserNameWithHost &>().toString();
     return true;
 }
 
 
-bool parseUserNames(IParser::Pos & pos, Expected & expected, Strings & user_names)
+bool parseUserNames(IParser::Pos & pos, Expected & expected, Strings & user_names, bool allow_query_parameter)
 {
     ASTPtr ast;
-    if (!ParserUserNamesWithHost{}.parse(pos, ast, expected))
+    if (!ParserUserNamesWithHost(allow_query_parameter).parse(pos, ast, expected))
         return false;
     user_names = ast->as<const ASTUserNamesWithHost &>().toStrings();
     return true;

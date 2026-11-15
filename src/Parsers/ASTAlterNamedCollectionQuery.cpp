@@ -1,5 +1,6 @@
 #include <Common/quoteString.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/HiddenSecret.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/formatSettingName.h>
@@ -9,19 +10,19 @@ namespace DB
 
 ASTPtr ASTAlterNamedCollectionQuery::clone() const
 {
-    return std::make_shared<ASTAlterNamedCollectionQuery>(*this);
+    return make_intrusive<ASTAlterNamedCollectionQuery>(*this);
 }
 
 void ASTAlterNamedCollectionQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "ALTER NAMED COLLECTION ";
+    ostr << "ALTER NAMED COLLECTION ";
     if (if_exists)
         ostr << "IF EXISTS ";
-    ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(collection_name) << (settings.hilite ? hilite_none : "");
+    ostr << backQuoteIfNeed(collection_name);
     formatOnCluster(ostr, settings);
     if (!changes.empty())
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << " SET " << (settings.hilite ? hilite_none : "");
+        ostr << " SET ";
         bool first = true;
         for (const auto & change : changes)
         {
@@ -34,7 +35,7 @@ void ASTAlterNamedCollectionQuery::formatImpl(WriteBuffer & ostr, const IAST::Fo
             if (settings.show_secrets)
                 ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
             else
-                ostr << " = '[HIDDEN]'";
+                ostr << " = " << HIDDEN_SECRET_LITERAL;
             auto override_value = overridability.find(change.name);
             if (override_value != overridability.end())
                 ostr << " " << (override_value->second ? "" : "NOT ") << "OVERRIDABLE";
@@ -42,7 +43,7 @@ void ASTAlterNamedCollectionQuery::formatImpl(WriteBuffer & ostr, const IAST::Fo
     }
     if (!delete_keys.empty())
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << " DELETE " << (settings.hilite ? hilite_none : "");
+        ostr << " DELETE ";
         bool first = true;
         for (const auto & key : delete_keys)
         {

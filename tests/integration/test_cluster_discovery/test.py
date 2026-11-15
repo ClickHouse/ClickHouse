@@ -1,4 +1,5 @@
 import functools
+import time
 
 import pytest
 
@@ -20,7 +21,7 @@ shard_configs = {
 nodes = {
     node_name: cluster.add_instance(
         node_name,
-        main_configs=[shard_config, "config/config_discovery_path.xml"],
+        main_configs=[shard_config, "config/config_discovery_path.xml", "config/macros.xml"],
         stay_alive=True,
         with_zookeeper=True,
     )
@@ -81,10 +82,10 @@ def test_cluster_discovery_startup_and_stop(start_cluster):
         == 3
     )
 
-    # Query SYSTEM DROP DNS CACHE may reload cluster configuration
+    # Query SYSTEM CLEAR DNS CACHE may reload cluster configuration
     # check that it does not affect cluster discovery
-    nodes["node1"].query("SYSTEM DROP DNS CACHE")
-    nodes["node0"].query("SYSTEM DROP DNS CACHE")
+    nodes["node1"].query("SYSTEM CLEAR DNS CACHE")
+    nodes["node0"].query("SYSTEM CLEAR DNS CACHE")
 
     check_shard_num(
         [nodes["node0"], nodes["node2"], nodes["node_observer"]], total_shards
@@ -122,3 +123,85 @@ def test_cluster_discovery_startup_and_stop(start_cluster):
 
     # cleanup
     nodes["node0"].query("DROP TABLE tbl ON CLUSTER 'test_auto_cluster' SYNC")
+
+
+def test_cluster_discovery_no_crash_on_empty_static_cluster(start_cluster):
+    """
+    Regression test: server must not crash when a static cluster temporarily has no nodes.
+
+    Crash path (without fix):
+    1. All member nodes stop → ZK ephemeral nodes deleted → observer detects empty cluster.
+    2. upsertCluster sees nodes_info.empty() → calls removeCluster() → erases watch callback
+       from get_nodes_callbacks.
+    3. A member node restarts → old ZK watch fires → cluster re-queued for update.
+    4. upsertCluster is called again → on_exit calls getNodeNames(set_callback=True).
+    5. Callback not found, zk_root_index==0 → multicluster_discovery_paths[0-1] OOB → crash.
+    """
+    import time
+
+    observer = nodes["node_observer"]
+    member_nodes = [nodes[n] for n in ("node0", "node1", "node2", "node3", "node4")]
+
+    # Wait for cluster to be fully up before the test
+    check_on_cluster(
+        [observer], len(member_nodes), what="count()", msg="Pre-test cluster count wrong"
+    )
+
+    # Stop all member nodes gracefully — closes ZK sessions immediately,
+    # deleting their ephemeral registration nodes in ZK.
+    for node in member_nodes:
+        node.stop_clickhouse()
+
+    # Wait for the observer to detect the now-empty cluster.
+    # This triggers upsertCluster → nodes_info.empty() → removeCluster() erasing the
+    # watch callback (the step that sets up the crash on the subsequent call).
+    check_on_cluster(
+        [observer], 0, what="count()", msg="Cluster should appear empty to observer"
+    )
+
+    assert observer.query("SELECT 1").strip() == "1", "Observer crashed after cluster became empty"
+
+    # Restart one member node. It registers in ZK, which triggers the old watch callback
+    # that was stored in the ZK client (independently of get_nodes_callbacks).
+    # On unfixed code this triggers the second upsertCluster call that crashes.
+    nodes["node0"].start_clickhouse()
+    time.sleep(10)
+
+    assert observer.query("SELECT 1").strip() == "1", "Observer crashed after member node restarted"
+
+    # Restore all nodes for subsequent tests
+    for node in member_nodes[1:]:
+        node.start_clickhouse()
+
+    check_on_cluster(
+        [observer], len(member_nodes), what="count()", msg="Cluster should recover after restart"
+    )
+
+
+def test_cluster_discovery_macros(start_cluster):
+    # wait for all nodes to be started
+    check_nodes_count = functools.partial(
+        check_on_cluster, what="count()", msg="Wrong nodes count in cluster"
+    )
+    total_nodes = len(nodes) - 1
+    check_nodes_count([nodes["node_observer"]], total_nodes, retries=6)
+
+    # Poll the distributed query instead of asserting once: it needs every replica
+    # reachable, and the cluster may still be settling when this test starts, so a
+    # single read can flake. Retry (tolerating transient errors) until it converges.
+    expected = str(total_nodes)
+    res = None
+    last_exception = None
+    for _ in range(30):
+        try:
+            res = nodes["node_observer"].query(
+                "SELECT sum(number) FROM clusterAllReplicas('{autocluster}', system.numbers) WHERE number=1"
+            ).strip()
+            if res == expected:
+                break
+        except Exception as e:
+            last_exception = e
+        time.sleep(2)
+    assert res == expected, (
+        f"Wrong macro result: {res}, expected {expected}, last exception: {last_exception!r}"
+    )

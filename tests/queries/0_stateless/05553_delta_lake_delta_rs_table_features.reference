@@ -1,0 +1,41 @@
+-- table_with_deletion_logs: 100 rows, a deletion vector removes ids 12 and 89, checkpoints at 10 and 20
+address	Nullable(String)					
+age	Nullable(Float64)					
+company	Nullable(String)					
+id	Nullable(Int64)					
+name	Nullable(String)					
+nbr	Nullable(Int64)					
+phone_number	Nullable(String)					
+98	10	109	5849
+0
+10	Holly Wade	1111
+11	Jeffery Jackson	1112
+13	Amanda Burton	1114
+14	Cheryl Gonzalez	1115
+87	Danielle Adams PhD	1188
+88	Samantha Patrick	1189
+90	Melissa Stafford	1191
+91	Jeremy Peterson	1192
+100
+-- table_with_ict: in-commit timestamps
+1
+2
+3
+[1,2]
+-- table_with_liquid_clustering: liquid clustering, row tracking, deletion vectors and domain metadata enabled
+id	Nullable(Int64)					
+[0,1,2,3,4,5,6,7,8,9]
+5
+-- table_with_edge_timestamps: columns inside the DateTime64 range
+BIG_DATE	Nullable(DateTime64(6))					
+NORMAL_DATE	Nullable(DateTime64(6))					
+SOME_VALUE	Nullable(Int32)					
+2022-01-01 00:00:00.000000	1
+2022-02-01 00:00:00.000000	2
+-- table_with_edge_timestamps: INT96 timestamps beyond the nanosecond range read into DateTime64(6)
+9999-12-31 00:00:00.000000
+9999-12-30 00:00:00.000000
+-- simple_table_features: unknown reader feature
+DELTA_KERNEL_ERROR
+-- spark-variant-checkpoint: Variant column
+NOT_IMPLEMENTED
