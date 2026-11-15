@@ -39,6 +39,16 @@ import { CloudOnlyBadge } from "/snippets/ja/components/CloudOnlyBadge/CloudOnly
 
 HTTP CORS ヘッダーを追加して書き込みます。
 
+## analyze_index_with_multiple_key_columns_per_condition {#analyze_index_with_multiple_key_columns_per_condition}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "索引解析時に、単一の条件で複数のキーカラムを絞り込めるようにする新しい設定。"}]}]} />
+
+索引解析時に、`WHERE`/`PREWHERE` 式に含まれる1つの原子的な条件 (単一の比較、`IN`、`has` など) で、複数のキーカラムを絞り込めるようにします。
+
+例えば、テーブルに `ORDER BY (toDate(ts), ts)` が指定されていて、クエリに `WHERE ts = '2026-01-10 00:00:00' AND user_id = 42` が含まれている場合、2つの条件のうち1つ目の条件で両方のキーカラムが絞り込まれます。つまり、`toDate(ts) = '2026-01-10' AND ts = '2026-01-10 00:00:00'` と記述した場合と同様に解析されます。この設定が無効の場合、この述語で絞り込まれるのは `ts` のみです。なお、`(a, b) IN ((1, 2), (3, 4))` のようなタプルのメンバーシップ述語では、この設定が無効であっても複数のキーカラムを絞り込めます。
+
 ## analyze_index_with_space_filling_curves {#analyze_index_with_space_filling_curves}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -137,6 +147,14 @@ Arrow Flight リクエストで使用するディスクリプタの種類です�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "300"},{"label": "個々の Arrow Flight リクエストの所要時間に上限を設ける新しい設定。以前はタイムアウトが設定されていなかったため、Flight サーバーがリクエストを受け付けたまま応答しない場合、クエリが無期限にブロックされていました。0 を指定すると以前の動作に戻ります。"}]}]} />
 
 個々の Arrow Flight リクエストのタイムアウト (秒) です。この上限はリクエスト全体に適用されます。読み取りの場合は、最初のレコードバッチを受信するまでの待機時間だけでなく、結果ストリーム全体が対象となります。0 を指定するとタイムアウトは無効になります。この場合、Flight サーバーがリクエストを受け付けたまま応答しないと、接続が閉じられるまでクエリがブロックされます。
+
+## backup_s3_expired_token_retry_timeout_ms {#backup_s3_expired_token_retry_timeout_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="120000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "トークンの期限切れが発生した場合に、S3 のバックアップおよび復元リクエストを再試行します。0 を指定すると以前の動作に戻ります。"}]}]} />
+
+バックアップまたは復元中に、応答で `ExpiredToken` が返された S3 リクエストを再試行する最大時間 (ミリ秒) です。再試行回数が `backup_restore_s3_retry_attempts` に達した場合も、再試行は停止します。0 を指定すると、この再試行は無効になります。AWS S3 の `HEAD` 応答は汎用的な HTTP ステータスしか返さないため、`HEAD` によるメタデータリクエストはこの再試行の対象外です。
 
 ## backup_slow_all_threads_after_retryable_s3_error {#backup_slow_all_threads_after_retryable_s3_error}
 
@@ -305,6 +323,7 @@ WHERE 句に結合条件となる式がある場合、comma/cross join の代わ
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 カラム定義で明示的な修飾子 [NULL or NOT NULL](/ja/reference/statements/create/table#null-or-not-null-modifiers) を指定しないデータ型を、[Nullable](/ja/reference/data-types/nullable) として扱うかどうかを指定します。
+この設定は `CREATE TABLE`、`ALTER TABLE ... ADD COLUMN`、`ALTER TABLE ... MODIFY COLUMN` に適用されます。
 
 設定可能な値:
 
@@ -377,13 +396,13 @@ true の場合、DESCRIBE クエリの結果にはカラム名と型のみが含
 サポートされる値:
 
 * `clickhouse` (デフォルト) — 標準のClickHouse SQL。
-* `kusto` — Kusto Query Language。実験的設定の`allow_experimental_kusto_dialect`が必要です。
+* `kusto` — Kusto Query Language。ベータ設定の`allow_experimental_kusto_dialect`が必要です。
 * `prql` — PRQL。実験的設定の`allow_experimental_prql_dialect`が必要です。
 * `polyglot` — 他のdialect (MySQL、PostgreSQLなど) のSQLをClickHouse SQLにトランスパイルします。実験的設定の`allow_experimental_polyglot_dialect`が必要です。
 * `promql` — `promql_database`、`promql_table`、`promql_evaluation_time`設定で構成されたTimeSeriesテーブルに対して評価されるPromQL (Prometheus Query Language) 。
 * `clickhouse_json` — SQLテキストの代わりに、クエリをJSON AST (`parseQueryToJSON`の出力) として解釈します。dialectを元に戻せるよう、`SET`クエリは引き続き通常の形式で認識されます。実験的設定の`enable_json_ast_dialect`が必要です。
 * `logsql` — VictoriaLogsのログクエリ言語であるLogsQL。`logsql_database`および`logsql_table`設定で指定されたログテーブルに対する`SELECT`クエリに変換されます。実験的設定の`enable_logsql_dialect`が必要です。
-* `trino` — Trino SQL: Trinoの構文 (`ARRAY[...]`、`TRY_CAST`、`UNNEST`など) を変換し、Trinoの関数名をClickHouseの同等のものにマッピングします。実験的設定の`enable_trino_dialect`が必要です。
+* `trino` — Trino SQL: Trinoの構文 (`ARRAY[...]`、`TRY_CAST`、`UNNEST`など) を変換し、Trinoの関数名をClickHouseの同等のものにマッピングします。ベータ設定の`enable_trino_dialect`が必要です。
 
 ## discard_query_data {#discard_query_data}
 
@@ -803,10 +822,10 @@ Function &#39;geoToH3&#39; は、&#39;lon&#95;lat&#39; に設定すると (lon, 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "新しい設定"}]}]} />
 
-Keeper クライアントが対応する `Context` のミューテックスの取得を待機する時間(ミリ秒)を定義します。この時間を超えると取得は失敗します。
+クエリが Keeper クライアントを待機する時間(ミリ秒)を定義します。対象となるのは、クライアントの `Context` のミューテックスの取得と、別のスレッドがそのクライアントのために行っている接続試行の完了です。この時間を超えると、クエリは `TIMEOUT_EXCEEDED` で失敗します。また、クエリがキャンセルされた場合も待機を終了します。
 
-この値は、取得を実行する `Context` から読み取られます。クエリ単位のオーバーライドが適用されるのは、操作がクエリコンテキストを使用する場合に限られます。たとえば、`system.zookeeper` からの読み取り、`zookeeperSessionUptime`、`SYSTEM RECONNECT ZOOKEEPER`、クエリコンテキストからの補助 Keeper へのアクセスなどが該当します。
-`BACKUP` および `RESTORE` の協調処理や `Replicated` データベースの処理など、グローバルコンテキストまたはバックグラウンドコンテキストを使用する操作では、そのコンテキストの値が使用され、タイムアウトは Keeper エラー(`ZOPERATIONTIMEOUT`)として返されます。これらの操作は、このエラーを他の Keeper エラーと同様に処理します。
+この値はクエリコンテキストから読み取られるため、クエリコンテキストを使用する操作に適用されます。たとえば、`system.zookeeper` からの読み取り、`zookeeperSessionUptime`、`SYSTEM RECONNECT ZOOKEEPER`、クエリコンテキストからの補助 Keeper へのアクセスなどが該当します。
+`BACKUP` および `RESTORE` の協調処理や `Replicated` データベースの処理など、グローバルコンテキストまたはバックグラウンドコンテキストを使用する操作では、接続試行が終了するまで待機し、その試行で得られたクライアント、または Keeper エラーを受け取ります。
 `SYSTEM RELOAD CONFIG` および `SYSTEM RELOAD ASYNCHRONOUS METRICS` は、それぞれ独立してシリアル化されたリロードパスを使用するため、この設定の対象外です。
 
 設定可能な値:
@@ -909,15 +928,27 @@ ORDER BY がないとクエリ結果が非決定論的になるため、主に�
 
 INTERSECTクエリのデフォルトモードを設定します。設定可能な値: 空文字列、&#39;ALL&#39;、&#39;DISTINCT&#39;。空の場合、モードを指定しないクエリでは例外がスローされます。
 
-## kill_throw_if_noop {#kill_throw_if_noop}
+## json_extract_named_tuples_as_objects {#json_extract_named_tuples_as_objects}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`JSONExtract` ファミリーの関数が、従来の配列からの位置依存の補完ではなく、JSON オブジェクトからのみ名前付きタプルを補完するようにする新しい設定です。名前なしタプルは常に位置依存で補完されます。また、`JSON` データ型のカラムからの抽出には影響しません。"}]}]} />
+
+`JSONExtract` ファミリーの関数において、名前付きタプルを JSON オブジェクトからのみ補完します。無効の場合は、従来どおり JSON配列から名前付きタプルが位置依存で補完されます。そのため、どの配列要素がどの名前付きフィールドに入るかは、タプルの宣言順序によって決まります。名前なしタプルは、この設定にかかわらず常に配列から位置依存で補完されます。
+
+この設定は、文字列として渡される JSON に適用されます。`JSON` データ型のカラムからの抽出は、型指定されたパスか型指定されていないパスかを問わず影響を受けません。この抽出は JSON ドキュメントをパースせずにカラムのサブカラムを読み取るため、この設定が制御するコードを通らないからです。JSON入力形式における名前付きタプルの*カラム*は、別の設定である [input&#95;format&#95;json&#95;named&#95;tuples&#95;as&#95;objects](/ja/reference/settings/formats/input-format#input_format_json_named_tuples_as_objects) で制御されます。この設定の対象は抽出関数のみです。
+
+デフォルトでは無効です。
+
+## kill_throw_if_noop {#kill_throw_if_noop}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "`KILL QUERY` および `KILL MUTATION` で一致する行がない場合にそれを報告するよう、`kill_throw_if_noop` をデフォルトで有効化しました。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
 [`KILL QUERY`](/ja/reference/statements/kill#kill-query) および [`KILL MUTATION`](/ja/reference/statements/kill#kill-mutation) の `WHERE` 句に一致する行が 1 件もない場合に、例外をスローするかどうかを制御します。
 
-true に設定すると、`KILL QUERY` は、実行中の `KILL` ステートメント自体を除いて `system.processes` に対象となる行がない場合に例外をスローします。同様に、`KILL MUTATION` は `system.mutations` に一致する行がない場合に例外をスローします。デフォルトでは、一致する行がなくても例外は発生せず、そのまま終了します。`ON CLUSTER` で実行した場合は、一致結果がホスト間で集計されないため、一致する行がなくても例外はスローされません。
+デフォルトで有効です。`KILL QUERY` は、実行中の `KILL` ステートメント自体を除いて `system.processes` に対象となる行がない場合に例外をスローします。同様に、`KILL MUTATION` は `system.mutations` に一致する行がない場合に例外をスローします。`false` に設定すると、一致する行がなくても例外は発生しません。`TEST` によるドライランでは、例外をスローせずに空のプレビューを返します。`ON CLUSTER` で実行した場合は、一致結果がホスト間で集計されないため、一致する行がなくても例外はスローされません。
 
 設定可能な値:
 
@@ -992,7 +1023,7 @@ MergeTree の marks をバックグラウンドの thread pool (server setting `
 
 ロックのリクエストが失敗するまでに待機する秒数を定義します。
 
-このロックタイムアウトは、table に対する読み取り/書き込み操作の実行中にデッドロックを防ぐために使用されます。タイムアウトに達してロックのリクエストが失敗すると、ClickHouse server は例外 `"Locking attempt timed out! Possible deadlock avoided. Client should retry."` をスローし、エラーコード `DEADLOCK_AVOIDED` を返します。
+このロックタイムアウトは、テーブル に対する読み取り/書き込み操作の実行中にデッドロックを防ぐために使用されます。タイムアウトに達してロックのリクエストが失敗すると、ClickHouse サーバー は例外 `"Locking attempt timed out. Possible deadlock avoided. Client should retry."` をスローし、エラーコード `DEADLOCK_AVOIDED` を返します。
 
 設定可能な値:
 
@@ -1056,6 +1087,14 @@ MergeTree の marks をバックグラウンドの thread pool (server setting `
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.3"},{"label": "1"},{"label": "関数名を標準名に正規化します。これはプロジェクションのクエリルーティングに必要でした"}]}]} />
 
 関数名を標準名に正規化します
+
+## obfuscate_seed {#obfuscate_seed}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "新しい設定: obfuscate テーブル関数用の seed 文字列。"}]}]} />
+
+`obfuscate` テーブル関数で使用する seed です。任意の文字列を指定でき、各カラムの seed はこの値とカラム名から導出されます。そのため、同じ seed からは常に同じ難読化結果が得られます。空文字列を指定すると、クエリごとに乱数シードが生成されます。
+
+この seed は通常の設定であり、シークレットではありません。値は他の設定と同様に平文で保存・表示されます (`system.query_log` や `system.settings` など)。パスワードなどのシークレットを seed として使用しないでください。異なるクエリの難読化された出力同士を関連付けられないようにする必要がある場合は、固定の seed を設定せず、デフォルトの空の値 (クエリごとに新しい乱数シードを生成) のままにしてください。
 
 ## offset {#offset}
 
@@ -1259,6 +1298,16 @@ a   Tuple(
 
 デフォルトでは、精度 1 の場合でも参照ベクトルは元の精度を保持し、格納されたベクトルのみが符号に縮約されます (非対称距離)。対称距離は数倍高速ですが、参照ベクトルの要素の大きさは考慮されません。つまり、参照ベクトルの値が大きい次元も、ゼロに近い次元も同じ重みで扱われます。
 
+## query_condition_cache_time_condition_grid_factor {#query_condition_cache_time_condition_grid_factor}
+
+<SettingsInfoBlock type="Float" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新しい設定: クエリ条件キャッシュにおいて、現在時刻を含む条件から決定論的な条件を導出する際に使用するグリッドのステップ。時刻定数と現在時刻との距離に対する割合で指定します。"}]}]} />
+
+`MergeTree` テーブルの[クエリ条件キャッシュ](/ja/concepts/features/performance/caches/query-condition-cache)で現在時刻を含む条件を扱う場合([`use_query_condition_cache_for_time_conditions`](/ja/reference/settings/session-settings/use-query#use_query_condition_cache_for_time_conditions) を参照)に、時刻定数を丸める際のグリッドのサイズを、定数と現在時刻との距離に対する割合で指定します。例えば、デフォルトの係数 1.0 では、`WHERE time >= now() - INTERVAL 10 DAY` の定数は 1 日単位のグリッドに丸められ(上限は 1 日)、`WHERE time >= now() - INTERVAL 1 HOUR` の定数は 1 時間単位のグリッドに丸められます。
+
+値を小さくすると、導出される条件が元の条件に近づき、境界付近での over-read が減りますが、その分キャッシュキーが切り替わる頻度が高くなります。グリッドのステップは最小 1 秒に制限されるため、係数を小さくしても導出が無効化されることはなく、導出される条件が元の条件に収束していきます。0 以下の値を指定すると、導出は完全に無効化されます。
+
 ## query_metric_log_interval {#query_metric_log_interval}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
@@ -1448,7 +1497,7 @@ FORMAT Null;
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "クエリを送信した接続から切り離し、結果を破棄してバックグラウンドで実行するための新しい設定。"}]}]} />
 
-有効にすると、サーバーはクエリをバックグラウンドでスケジュールし、ただちに空の成功結果を返します。接続の状態にかかわらず、クエリは完了まで実行されます。
+有効にすると、サーバーはクエリをバックグラウンドでスケジュールし、クエリがチェック (たとえば、テーブルが存在するか、ユーザーが必要な権限を持っているかなど) を通過して主要な処理に取りかかる直前まで待機したうえで、空の成功結果を返します。接続の状態にかかわらず、クエリは完了まで実行されます。その時点より前に送出されたエラーはクライアントに返されますが、それ以降のエラーは `system.query_log` にのみ記録されます。
 
 バックグラウンドクエリはサーバーの再起動後には存続しません。シャットダウン時にはフォアグラウンドクエリと同じサーバー設定が適用されます。`shutdown_wait_unfinished_queries` は、クエリをキャンセルするか完了を待つかを選択します (キュー内のエントリは、いずれの場合も `system.query_log` にエントリを記録せず破棄されます) 。`shutdown_wait_unfinished` はサーバーの待機時間を制限します。
 
@@ -1717,6 +1766,22 @@ TCPHandler でクエリを受信した後のスリープ時間
 
 * `0` - 残りの文字列は、結果配列の最後の要素に含まれません。
 * `1` - 残りの文字列は、結果配列の最後の要素に含まれます。これは、Spark の [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) 関数および Python の [`string.split()`](https://docs.python.org/3/library/stdtypes.html#str.split) メソッドと同じ動作です。
+
+## sql_compatible_division_for_integers {#sql_compatible_division_for_integers}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "整数除算の設定に SQL 互換の名前を使用します。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "`\/` および `divide` で正確な整数除算を有効にする新しい設定。"}]}]} />
+
+両方のオペランドが整数型 (`Int128`、`UInt128`、`Int256`、`UInt256` を含む) の場合、`/` および `divide` が整数を返すようにします。
+商はゼロ方向に切り詰められます。結果の幅は第 1 オペランドと同じになり、いずれかのオペランドが符号付きであれば結果も符号付きになります。
+ゼロ除算の場合、または商が結果の型の範囲を超える場合は例外をスローします。`Nullable` オペランドの場合は `NULL` が伝播されます。
+
+デフォルトでは、整数同士の除算は `Float64` を返します。この設定は、`Decimal` オペランドや floating-point オペランドを含む除算、
+および明示的な関数 `intDiv`、`divideDecimal`、`divideOrNull` には影響しません。
+
+この設定の値は、新たに送信された SQL の式がテーブルのメタデータ、ビュー、SQL関数、またはミューテーションに保存される前に、その式に記録されます。
+既存の定義および `ATTACH` クエリは、この設定に関係なく、元の除算のセマンティクスを維持します。
 
 ## statistics_max_set_size_for_exact_selectivity_estimation {#statistics_max_set_size_for_exact_selectivity_estimation}
 

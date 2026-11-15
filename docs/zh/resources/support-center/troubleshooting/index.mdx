@@ -22,13 +22,12 @@ description: '查找 ClickHouse 常见问题的解决方案，包括查询缓慢
 
 遇到 ClickHouse 问题？请在这里查找常见问题的解决方案。
 
-<div id="performance-and-errors">
-  ## 性能和错误
-</div>
+## 性能和错误 {#performance-and-errors}
 
 查询运行缓慢、发生超时，或出现诸如“Memory limit exceeded”或“Connection refused”之类的特定错误信息。
 
 <Accordion title="查看性能和错误解决方案">
+  <a id="query-performance" />
   ### 查询性能
 
   * [找出哪些查询占用了最多资源](/zh/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries)
@@ -38,6 +37,7 @@ description: '查找 ClickHouse 常见问题的解决方案，包括查询缓慢
 
   <br />
 
+  <a id="data-insertion-performance" />
   ### 数据插入性能
 
   * [提高数据插入速度](/zh/concepts/features/operations/insert/bulkinserts)
@@ -45,6 +45,7 @@ description: '查找 ClickHouse 常见问题的解决方案，包括查询缓慢
 
   <br />
 
+  <a id="advanced-analysis-tools" />
   ### 高级分析工具
 
   {/* - [Profile with LLVM XRay](/resources/support-center/knowledge-base/monitoring-debugging/profiling-clickhouse-with-llvm-xray) */}
@@ -54,6 +55,7 @@ description: '查找 ClickHouse 常见问题的解决方案，包括查询缓慢
 
   <br />
 
+  <a id="error-messages" />
   ### 错误信息
 
   * **“Memory limit exceeded”** → [调试内存限制错误](/zh/concepts/features/performance/troubleshoot/debugging-memory-issues)
@@ -65,13 +67,12 @@ description: '查找 ClickHouse 常见问题的解决方案，包括查询缓慢
   * **其他问题** → [跟踪整个集群中的错误](/zh/reference/system-tables/errors)
 </Accordion>
 
-<div id="memory-and-resources">
-  ## 内存与资源
-</div>
+## 内存与资源 {#memory-and-resources}
 
 如果内存占用过高、发生内存不足崩溃，或者需要帮助确定 ClickHouse 部署规模。
 
 <Accordion title="显示内存解决方案">
+  <a id="memory-debugging-and-monitoring" />
   ### 内存调试与监控：
 
   * [找出内存占用来源](/zh/concepts/features/performance/troubleshoot/debugging-memory-issues)
@@ -81,6 +82,7 @@ description: '查找 ClickHouse 常见问题的解决方案，包括查询缓慢
 
   <br />
 
+  <a id="memory-configuration" />
   ### 内存配置：
 
   * [配置内存限制](/zh/concepts/features/configuration/settings/memory-overcommit)
@@ -89,19 +91,19 @@ description: '查找 ClickHouse 常见问题的解决方案，包括查询缓慢
 
   <br />
 
+  <a id="scaling-and-sizing" />
   ### 扩缩容与规格规划：
 
   * [为你的服务选择合适规格](/zh/guides/oss/best-practices/tips)
   * [配置自动扩缩容](/zh/products/cloud/features/autoscaling/overview)
 </Accordion>
 
-<div id="connections-and-authentication">
-  ## 连接和身份验证
-</div>
+## 连接和身份验证 {#connections-and-authentication}
 
 无法连接到 ClickHouse、身份验证失败、SSL 证书错误或客户端配置问题。
 
 <Accordion title="查看连接问题解决方案">
+  <a id="basic-connection-issues" />
   ### 基本连接问题
 
   * [修复 HTTP 接口问题](/zh/concepts/features/interfaces/http)
@@ -110,6 +112,7 @@ description: '查找 ClickHouse 常见问题的解决方案，包括查询缓慢
 
   <br />
 
+  <a id="client-interfaces" />
   ### 客户端接口
 
   * [ClickHouse 原生客户端](/zh/concepts/features/interfaces/native-clients-interfaces-index)
@@ -120,19 +123,19 @@ description: '查找 ClickHouse 常见问题的解决方案，包括查询缓慢
 
   <br />
 
+  <a id="network-and-data" />
   ### 网络和数据
 
   * [网络安全设置](/zh/reference/settings/server-settings/settings)
   * [数据格式解析问题](/zh/reference/formats/index)
 </Accordion>
 
-<div id="setup-and-configuration">
-  ## 设置与配置
-</div>
+## 设置与配置 {#setup-and-configuration}
 
 有关初始安装、服务器配置、数据库创建、数据摄取问题或复制设置。
 
 <Accordion title="显示设置与配置相关解决方案">
+  <a id="initial-setup" />
   ### 初始设置
 
   * [配置服务器设置](/zh/reference/settings/server-settings/settings)
@@ -141,6 +144,7 @@ description: '查找 ClickHouse 常见问题的解决方案，包括查询缓慢
 
   <br />
 
+  <a id="database-management" />
   ### 数据库管理
 
   * [创建和管理数据库](/zh/reference/statements/create/database)
@@ -150,6 +154,7 @@ description: '查找 ClickHouse 常见问题的解决方案，包括查询缓慢
 
   <br />
 
+  <a id="data-operations" />
   ### 数据操作
 
   * [优化批量数据插入](/zh/concepts/features/operations/insert/bulkinserts)
@@ -159,6 +164,7 @@ description: '查找 ClickHouse 常见问题的解决方案，包括查询缓慢
 
   <br />
 
+  <a id="advanced-configuration" />
   ### 高级配置
 
   * [设置数据复制](/zh/reference/engines/table-engines/mergetree-family/replication)
@@ -170,9 +176,7 @@ description: '查找 ClickHouse 常见问题的解决方案，包括查询缓慢
   * [配置监控](/zh/reference/system-tables/overview)
 </Accordion>
 
-<div id="still-need-help">
-  ## 还需要帮助？
-</div>
+## 还需要帮助？ {#still-need-help}
 
 如果你仍然找不到解决方案：
 

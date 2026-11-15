@@ -22,6 +22,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/BaseSettings.h>
 #include <Core/Settings.h>
+#include <Disks/DiskFromAST.h>
 #include <Interpreters/JoinUtils.h>
 #include <Formats/NativeWriter.h>
 
@@ -495,7 +496,10 @@ void registerStorageJoin(StorageFactory & factory)
                 else if (setting.name == "any_join_distinct_right_table_keys")
                     old_any_join = setting.value;
                 else if (setting.name == "disk")
+                {
+                    DiskFromAST::ensureDiskIsNotInline(setting.value);
                     disk_name = setting.value.safeGet<String>();
+                }
                 else if (setting.name == "persistent")
                 {
                     persistent = setting.value.safeGet<bool>();
