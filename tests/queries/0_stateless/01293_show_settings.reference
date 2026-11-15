@@ -3,6 +3,7 @@ azure_connect_timeout_ms	UInt64	1000
 connect_timeout	Seconds	10
 connect_timeout_with_failover_ms	Milliseconds	2000
 connect_timeout_with_failover_secure_ms	Milliseconds	3000
+distributed_cache_connect_timeout_ms	UInt64	50
 external_storage_connect_timeout_sec	UInt64	10
 parallel_replicas_connect_timeout_ms	Milliseconds	300
 s3_connect_timeout_ms	UInt64	1000

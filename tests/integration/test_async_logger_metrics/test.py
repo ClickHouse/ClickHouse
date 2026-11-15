@@ -2,6 +2,7 @@ import json
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from concurrent.futures import ThreadPoolExecutor
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -17,6 +18,8 @@ node = cluster.add_instance(
 def start_cluster():
     try:
         cluster.start()
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            list(executor.submit(node.query, "select 1") for _ in range(100))
         yield cluster
     finally:
         cluster.shutdown()
@@ -68,40 +71,21 @@ def test_async_logger_profile_events(start_cluster):
 
 
 def test_async_logger_asynchronous_metrics(start_cluster):
-    metrics = json.loads(
+    # The per-channel queue sizes are published as a single key-value metric,
+    # keyed by the logging channel name.
+    channels = json.loads(
         node.query(
             """
-       SELECT metric, value
+       SELECT mapKeys(key_values) AS channels
        FROM system.asynchronous_metrics
-       WHERE name ILIKE '%asynclog%'
+       WHERE metric = 'AsyncLoggingQueueSize'
        FORMAT JSON
        """
         )
-    )["data"]
+    )["data"][0]["channels"]
 
-    # Check that the metric exists
-    assert (
-        next(
-            (x for x in metrics if x["metric"] == "AsyncLoggingErrorFileLogQueueSize"),
-            None,
-        )
-        is not None
-    ), metrics
-    assert (
-        next(
-            (x for x in metrics if x["metric"] == "AsyncLoggingFileLogQueueSize"), None
-        )
-        is not None
-    ), metrics
-    assert (
-        next(
-            (x for x in metrics if x["metric"] == "AsyncLoggingConsoleQueueSize"), None
-        )
-        is not None
-    ), metrics
-    assert (
-        next(
-            (x for x in metrics if x["metric"] == "AsyncLoggingTextLogQueueSize"), None
-        )
-        is not None
-    ), metrics
+    # Check that all the channels are reported
+    assert "ErrorFileLog" in channels, channels
+    assert "FileLog" in channels, channels
+    assert "Console" in channels, channels
+    assert "TextLog" in channels, channels

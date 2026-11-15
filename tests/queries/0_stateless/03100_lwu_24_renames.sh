@@ -31,7 +31,7 @@ function wait_for_mutation_to_start()
 
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_lwu_renames SYNC;
-    SET allow_experimental_lightweight_update = 1;
+    SET enable_lightweight_update = 1;
 
     CREATE TABLE t_lwu_renames (a UInt64, b UInt64)
     ENGINE = ReplicatedMergeTree('/zookeeper/{database}/t_lwu_on_fly/', '1')

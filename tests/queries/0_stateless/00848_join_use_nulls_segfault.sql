@@ -1,5 +1,4 @@
 SET any_join_distinct_right_table_keys = 1;
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t1_00848;
 DROP TABLE IF EXISTS t2_00848;

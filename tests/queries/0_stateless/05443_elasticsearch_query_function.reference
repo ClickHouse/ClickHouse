@@ -1,0 +1,16 @@
+Elasticsearch(\'http://localhost:1\', \'idx\', \'u\', \'[HIDDEN]\', query(\'{"term": {"level": "error"}}\'))
+CREATE TABLE default.es_query_persisted_function
+(
+    `document` JSON
+) AS elasticsearch('http://localhost:1', 'idx', query('{"term": {"id": 2}}'))
+CREATE TABLE default.es_query_persisted_engine
+(
+    `document` JSON
+)
+ENGINE = Elasticsearch('http://localhost:1', 'idx', query('{"term": {"id": 2}}'))
+CREATE TABLE default.es_query_persisted_collection
+(
+    `document` JSON
+)
+ENGINE = Elasticsearch(nc_05443_default, query('{"term": {"id": 2}}'))
+SELECT * FROM elasticsearch('http://localhost:1', 'idx', 'u', '[HIDDEN]', '[HIDDEN]')

@@ -3,7 +3,7 @@
 DROP TABLE IF EXISTS t_lwu_sequential_1 SYNC;
 DROP TABLE IF EXISTS t_lwu_sequential_2 SYNC;
 
-SET allow_experimental_lightweight_update = 1;
+SET enable_lightweight_update = 1;
 
 CREATE TABLE t_lwu_sequential_1 (id UInt64, s FixedString(3))
 ENGINE = ReplicatedMergeTree('/zookeeper/{database}/t_lwu_sequential/', '1')

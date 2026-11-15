@@ -4,17 +4,8 @@
 #include <typeinfo>
 #include <memory>
 
-#include <Common/Exception.h>
-#include <base/demangle.h>
 
-
-namespace DB
-{
-    namespace ErrorCodes
-    {
-        extern const int LOGICAL_ERROR;
-    }
-}
+[[noreturn]] void throwBadTypeidCast(const std::type_info & from, const std::type_info & to);
 
 
 /** Checks type by comparing typeid.
@@ -28,8 +19,7 @@ To typeid_cast(From & from) noexcept(false)
     if ((typeid(From) == typeid(To)) || (typeid(from) == typeid(To)))
         return static_cast<To>(from);
 
-    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Bad cast from type {} to {}",
-                        demangle(typeid(from).name()), demangle(typeid(To).name()));
+    throwBadTypeidCast(typeid(from), typeid(To));
 }
 
 

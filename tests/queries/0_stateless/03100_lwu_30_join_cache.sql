@@ -1,4 +1,6 @@
--- Tags: no-tsan, no-asan, no-msan, no-parallel, no-debug
+-- Tags: no-tsan, no-asan, no-msan, no-ubsan, no-debug, no-parallel, no-fasttest
+-- Random settings limits: index_granularity=(8192, None); index_granularity_bytes=(10485760, None)
+-- `OPTIMIZE` can be slow under parallel load, causing flaky timeouts.
 
 DROP TABLE IF EXISTS t_patch_join_cache;
 
@@ -6,7 +8,7 @@ CREATE TABLE t_patch_join_cache (a UInt64, s String)
 ENGINE = ReplicatedMergeTree('/zookeeper/{database}/t_patch_join_cache/', '1') ORDER BY a
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
 
-SET allow_experimental_lightweight_update = 1;
+SET enable_lightweight_update = 1;
 
 INSERT INTO t_patch_join_cache SELECT number, '' FROM numbers(3000000);
 

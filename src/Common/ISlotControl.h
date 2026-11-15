@@ -62,7 +62,7 @@ public:
 
     /// This method is for CPU consumption only.
     /// It should be called from a thread that started using the slot.
-    /// Required for obtainting CPU time for the thread, because ctor is called in another thread.
+    /// Required for obtaining CPU time for the thread, because ctor is called in another thread.
     virtual void startConsumption() = 0;
 
     /// Renew the slot. This method should be called periodically.
@@ -70,6 +70,16 @@ public:
     /// Returns true if the slot is still acquired (possibly after a preemption period).
     /// Returns false if the slot is released and holder should stop using it (e.g. thread should be stopped).
     virtual bool renew() = 0;
+
+    /// Park the slot during a non-CPU wait, so it does not count against the CPU concurrency limit.
+    /// Never blocks. Returns true if parked; then `unpark` must be called once.
+    [[nodiscard]] virtual bool park() { return false; }
+
+    /// Take the slot back after a successful `park`. Borrows a slot and never blocks.
+    virtual void unpark() {}
+
+    /// Whether parking is enabled (`cpu_slot_parking` server setting)
+    virtual bool isParkingEnabled() const { return false; }
 };
 
 using SlotLeasePtr = std::shared_ptr<ISlotLease>;
@@ -81,11 +91,33 @@ class ISlotAllocation : public std::enable_shared_from_this<ISlotAllocation>, bo
 public:
     virtual ~ISlotAllocation() = default;
 
+    /// Free the allocated slots, cancel slot requests and wake up preempted threads.
+    virtual void free() {}
+
     /// Take one already granted slot if available.
     [[nodiscard]] virtual AcquiredSlotPtr tryAcquire() = 0;
 
     /// Take one granted slot or wait until it is available.
     [[nodiscard]] virtual AcquiredSlotPtr acquire() = 0;
+
+    /// Adjust the maximum number of slots the allocation wants.
+    ///
+    /// The allocation's `max` (set initially by allocate(min, max)) becomes mutable: the
+    /// consumer can raise or lower it to express "I want up to N slots" at runtime.
+    ///
+    /// Contract for implementations:
+    ///  - `new_max` MUST be > 0. Implementations may chassert this. A request for zero slots
+    ///    has no sensible behavior here (use allocation destruction to release the work).
+    ///  - Growing `max`: if the allocation was previously saturated (had received its full
+    ///    max and was no longer a waiter), it MUST be re-added to the scheduler's waiter
+    ///    list so it may receive further grants.
+    ///  - Shrinking `max`: does NOT reclaim already-granted slots; the scheduler simply
+    ///    stops issuing new grants beyond `new_max`. Already-acquired slots remain valid.
+    ///  - Idempotent: setMax(current) is a no-op.
+    ///  - Must NOT be called while holding the implementation's internal scheduler lock —
+    ///    implementations may take that lock internally.
+    /// Default implementation is a no-op (for allocations that don't need dynamic sizing).
+    virtual void setMax(SlotCount /*new_max*/) {}
 
     /// For tests. Returns true iff resource request is currently enqueued into the scheduler.
     virtual bool isRequesting() const { return false; }

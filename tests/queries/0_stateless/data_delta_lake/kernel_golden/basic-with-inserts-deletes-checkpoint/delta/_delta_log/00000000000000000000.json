@@ -1,0 +1,4 @@
+{"commitInfo":{"timestamp":1691426732135,"operation":"WRITE","operationParameters":{"mode":"Append","partitionBy":"[]"},"isolationLevel":"Serializable","isBlindAppend":true,"operationMetrics":{"numFiles":"1","numOutputRows":"10","numOutputBytes":"539"},"engineInfo":"Apache-Spark/3.4.0 Delta-Lake/3.0.0-SNAPSHOT","txnId":"8c9f4d2d-645f-4f02-b13b-aa6da098716c"}}
+{"metaData":{"id":"testId","format":{"provider":"parquet","options":{}},"schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"long\",\"nullable\":true,\"metadata\":{}}]}","partitionColumns":[],"configuration":{},"createdTime":1691426730560}}
+{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}
+{"add":{"path":"part-00000-b09fdf65-0ae3-44d0-96d0-1d85a121b76a-c000.snappy.parquet","partitionValues":{},"size":539,"modificationTime":1691426732072,"dataChange":true,"stats":"{\"numRecords\":10,\"minValues\":{\"id\":0},\"maxValues\":{\"id\":9},\"nullCount\":{\"id\":0}}"}}

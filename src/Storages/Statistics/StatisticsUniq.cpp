@@ -4,14 +4,12 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
+#include <IO/NullWriteBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_STATISTICS;
-}
 
 StatisticsUniq::StatisticsUniq(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
     : IStatistics(description)
@@ -47,7 +45,7 @@ void StatisticsUniq::build(const ColumnPtr & column)
         raw_column_ptr = column.get();
     }
 
-    collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, &(raw_column_ptr), nullptr);
+    collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, &raw_column_ptr, nullptr);
 }
 
 void StatisticsUniq::merge(const StatisticsPtr & other_stats)
@@ -56,29 +54,71 @@ void StatisticsUniq::merge(const StatisticsPtr & other_stats)
     collector->merge(data, other->data, arena.get());
 }
 
+size_t StatisticsUniq::allocatedBytes() const
+{
+    /// The aggregate function state keeps its hash table or HyperLogLog counters on the heap, outside of the arena,
+    /// and there is no interface to get their size. A hash table is kept between a quarter and a half full, so its
+    /// buffer is up to four times larger than the serialized elements; the HyperLogLog counters take about as much
+    /// memory as their serialized form. Take the upper bound, so the cache does not grow over its limit.
+    NullWriteBuffer serialized;
+    collector->serialize(data, serialized);
+    serialized.finalize();
+    return sizeof(*this) + sizeof(Arena) + arena->allocatedBytes() + 4 * serialized.count();
+}
+
+bool StatisticsUniq::isCompatibleWith(const IStatistics & other) const
+{
+    const auto * other_uniq = typeid_cast<const StatisticsUniq *>(&other);
+    if (!other_uniq)
+        return false;
+    return StatisticsUtils::isSame(*collector, *other_uniq->collector);
+}
+
 void StatisticsUniq::serialize(WriteBuffer & buf)
 {
+    if (collector->getNestedFunction())
+        writeBinary(true, buf);
+    else
+        writeBinary(false, buf);
     collector->serialize(data, buf);
 }
 
-void StatisticsUniq::deserialize(ReadBuffer & buf)
+void StatisticsUniq::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
 {
+    bool is_null = false;
+    readBinary(is_null, buf);
+    auto nested_func = collector->getNestedFunction();
+    /// when serialize is nullable, but we removed the nullable
+    if (is_null && !nested_func)
+    {
+        bool serialize_flag = false;
+        readBinary(serialize_flag, buf);
+        if (!serialize_flag)
+            return;
+    }
+
+    /// when serialize is not nullable, but we changed it to nullable
+    if (!is_null && nested_func)
+    {
+        nested_func->deserialize(data, buf);
+        return;
+    }
+
     collector->deserialize(data, buf);
 }
 
 UInt64 StatisticsUniq::estimateCardinality() const
 {
-    auto column = DataTypeUInt64().createColumn();
+    auto column = collector->getResultType()->createColumn();
     collector->insertResultInto(data, *column, nullptr);
     return column->getUInt(0);
 }
 
-void uniqStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
+bool uniqStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
     DataTypePtr inner_data_type = removeNullable(data_type);
     inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
-    if (!inner_data_type->isValueRepresentedByNumber() && !isStringOrFixedString(inner_data_type))
-        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'uniq' do not support type {}", data_type->getName());
+    return inner_data_type->isValueRepresentedByNumber() || isStringOrFixedString(inner_data_type) || isUUID(inner_data_type);
 }
 
 StatisticsPtr uniqStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)

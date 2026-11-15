@@ -2,7 +2,9 @@
 #include <Columns/ColumnsDateTime.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Interpreters/Context.h>
@@ -15,19 +17,13 @@ namespace Setting
     extern const SettingsBool allow_nonconst_timezone_arguments;
 }
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-}
-
 namespace
 {
 
 /** Returns current time at calculation of every block.
   * In contrast to 'now' function, it's not a constant expression and is not a subject of constant folding.
   */
-class FunctionNowInBlock : public IFunction
+class FunctionNowInBlock final : public IFunction
 {
 public:
     static constexpr auto name = "nowInBlock";
@@ -46,18 +42,15 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.size() > 1)
-            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Function {} should have 0 or 1 arguments", getName());
-
-        if (arguments.size() == 1 && !isStringOrFixedString(arguments[0].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "1st argument of function {} should be String or FixedString", getName());
-
-        if (arguments.size() == 1)
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, allow_nonconst_timezone_arguments));
-
-        return std::make_shared<DataTypeDateTime>();
+        if (allow_nonconst_timezone_arguments)
+            return
+                "(const tz StringOrFixedString) -> DateTime(tz)"
+                " OR ([StringOrFixedString]) -> DateTime";
+        return
+            "(const tz StringOrFixedString) -> DateTime(tz)"
+            " OR () -> DateTime";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
@@ -105,7 +98,7 @@ FORMAT PrettyCompactMonoBlock
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionNowInBlock>(documentation);
 }

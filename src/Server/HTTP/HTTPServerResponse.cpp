@@ -35,7 +35,7 @@ std::shared_ptr<WriteBuffer> HTTPServerResponse::send()
     if (request && request->getMethod() == HTTPRequest::HTTP_HEAD)
     {
         // HTTP_HEAD is a special case
-        // client usually reads nothing from socket after headers even when 'Contex-Lenght' is sent
+        // client usually reads nothing from socket after headers even when 'Content-Length' is sent
         // if server wrote a message to the connection with enabled 'Connection: Keep-Alive'
         // the connection would be poisoned.
         // Next request over that connection reads previously unreaded message as a HTTP status line
@@ -146,7 +146,7 @@ void HTTPServerResponse::allowKeepAliveIFFRequestIsFullyRead()
     /// Connection can only be reused if we've fully read the previous request and all its POST data.
     /// Otherwise we'd misinterpret the leftover data as part of the next request's header.
     /// HTTPServerRequest::canKeepAlive() checks that request stream is bounded and is fully read.
-    if (!request || !request->canKeepAlive())
+    if (!request || (request->getExpectContinue() && getStatus() != Poco::Net::HTTPResponse::HTTP_CONTINUE) || !request->canKeepAlive())
         setKeepAlive(false);
 }
 }

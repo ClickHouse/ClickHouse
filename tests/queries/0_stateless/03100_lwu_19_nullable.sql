@@ -1,5 +1,5 @@
 DROP TABLE IF EXISTS mutation_table;
-SET allow_experimental_lightweight_update = 1;
+SET enable_lightweight_update = 1;
 
 CREATE TABLE mutation_table
 (

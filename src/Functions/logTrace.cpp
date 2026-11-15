@@ -17,7 +17,7 @@ namespace ErrorCodes
 
 namespace
 {
-    class FunctionLogTrace : public IFunction
+    class FunctionLogTrace final : public IFunction
     {
     public:
         static constexpr auto name = "logTrace";
@@ -29,19 +29,16 @@ namespace
 
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        String getSignatureString() const override
         {
-            if (!isString(arguments[0]))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                    arguments[0]->getName(), getName());
-            return std::make_shared<DataTypeUInt8>();
+            return "(const String) -> UInt8";
         }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             String message;
             if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
-                message = col->getDataAt(0).data;
+                message = col->getDataAt(0);
             else
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be Constant string",
                     getName());
@@ -58,7 +55,12 @@ namespace
 REGISTER_FUNCTION(LogTrace)
 {
     FunctionDocumentation::Description description = R"(
-Emits a trace log message to the server log for each [Block](/development/architecture/#block).
+Emits a trace log message to the server log.
+
+The function accepts a constant argument only, so the call is evaluated during query analysis and replaced
+by its result. The message is therefore emitted once while the query is analyzed, and not once per processed
+[Block](/resources/develop-contribute/introduction/architecture#block): the number of rows and the setting `max_block_size` have no effect
+on how many messages appear in the log.
     )";
     FunctionDocumentation::Syntax syntax = "logTrace(message)";
     FunctionDocumentation::Arguments arguments = {
@@ -80,7 +82,7 @@ SELECT logTrace('logTrace message');
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Introspection;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionLogTrace>(documentation);
 }

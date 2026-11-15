@@ -1,16 +1,30 @@
 set mutations_sync=1;
 
+-- Bracket each part's modification_time between client-side now() timestamps
+-- captured immediately before and after that table's own DETACH.
+drop table if exists detach_started;
+drop table if exists detach_finished;
+create table detach_started (tbl String, started_at DateTime) engine = Memory;
+create table detach_finished (tbl String, finished_at DateTime) engine = Memory;
+
 {% for id, settings in [
     ("wide",    "min_bytes_for_wide_part=0, min_rows_for_wide_part=0"),
     ("compact", "min_bytes_for_wide_part=1000, min_rows_for_wide_part=100"),
 ]
 %}
-
 drop table if exists data_{{ id }};
 create table data_{{ id }} (key Int) engine=MergeTree() order by tuple() settings {{ settings }};
 insert into data_{{ id }} values (1);
-select 'before detach', now()-modification_time < 10 from system.detached_parts where database = currentDatabase() and table = 'data_{{ id }}';
+insert into detach_started values ('data_{{ id }}', now());
 alter table data_{{ id }} detach partition all;
-select 'after detach', now()-modification_time < 10 from system.detached_parts where database = currentDatabase() and table = 'data_{{ id }}';
-
+insert into detach_finished values ('data_{{ id }}', now());
 {% endfor %}
+
+select
+  parts.table,
+  parts.modification_time between (started.started_at - 1) and (finished.finished_at + 1)
+from system.detached_parts parts
+inner join detach_started started on started.tbl = parts.table
+inner join detach_finished finished on finished.tbl = parts.table
+where parts.database = currentDatabase()
+order by parts.table;

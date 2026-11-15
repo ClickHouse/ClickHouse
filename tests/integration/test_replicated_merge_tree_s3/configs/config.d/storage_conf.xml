@@ -12,6 +12,8 @@
                 <disk>s3</disk>
                 <path>./s3_cache/</path>
                 <max_size>1000000</max_size>
+                <max_file_segment_size>262144</max_file_segment_size>
+                <boundary_alignment>262144</boundary_alignment>
             </s3_cache>
         </disks>
         <policies>
@@ -35,6 +37,7 @@
     <merge_tree>
         <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
         <ratio_of_defaults_for_sparse_serialization>1.0</ratio_of_defaults_for_sparse_serialization>
+        <serialization_info_version>basic</serialization_info_version>
     </merge_tree>
 
     <remote_servers>

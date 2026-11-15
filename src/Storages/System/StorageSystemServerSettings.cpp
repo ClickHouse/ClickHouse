@@ -1,11 +1,11 @@
 #include <Core/ServerSettings.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Storages/System/ServerSettingColumnsParams.h>
 #include <Storages/System/StorageSystemServerSettings.h>
-
 
 namespace DB
 {
@@ -40,8 +40,13 @@ void StorageSystemServerSettings::fillData(MutableColumns & res_columns, Context
     ServerSettings settings;
     settings.loadSettingsFromConfig(config);
 
+    /// Runtime-changeable and dynamically-derived values (such as `keeper_hosts`) are filled in by
+    /// `dumpToSystemServerSettingsColumns` via the shared `collectChangeableServerSettings` helper.
     ServerSettingColumnsParams params{res_columns, context};
     settings.dumpToSystemServerSettingsColumns(params);
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemServerSettings) }

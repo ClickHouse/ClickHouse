@@ -1,7 +1,11 @@
 #pragma once
 #include <Processors/ISimpleTransform.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
 #include <Core/Block_fwd.h>
+#include <Interpreters/SetSpillable.h>
+
+#include <vector>
 
 namespace DB
 {
@@ -11,6 +15,9 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class ActionsDAG;
 
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+
 /** Executes a certain expression over the block.
   * The expression consists of column identifiers from the block, constants, common functions.
   * For example: hits * 2 + 3, url LIKE '%clickhouse%'
@@ -19,17 +26,37 @@ class ActionsDAG;
 class ExpressionTransform final : public ISimpleTransform
 {
 public:
-    ExpressionTransform(SharedHeader header_, ExpressionActionsPtr expression_);
+    ExpressionTransform(
+        SharedHeader header_, ExpressionActionsPtr expression_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
+
+    /// Use this overload when the transformed header is already known (computed once per step)
+    /// to avoid recomputing it in every instance: the computation is linear in the size of the
+    /// expression's DAG, and a step creates one transform per stream.
+    ExpressionTransform(
+        SharedHeader input_header_,
+        SharedHeader transformed_header_,
+        ExpressionActionsPtr expression_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
 
     String getName() const override { return "ExpressionTransform"; }
+    std::span<ISpillable * const> getSpillables() override { return set_spillables.get(); }
 
     static Block transformHeader(const Block & header, const ActionsDAG & expression);
 
 protected:
+    void onCancel() noexcept override;
+
     void transform(Chunk & chunk) override;
 
 private:
     ExpressionActionsPtr expression;
+    SetSpillables set_spillables;
+
+    /// Mapping from required input slot to input-header position, precomputed once (the input header is fixed).
+    /// Lets transform() run the expression positionally without rebuilding a Block name index per chunk.
+    VectorWithMemoryTracking<ssize_t> input_positions;
+
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 };
 
 class ConvertingTransform final : public ExceptionKeepingTransform
@@ -40,8 +67,11 @@ public:
         ExpressionActionsPtr expression_);
 
     String getName() const override { return "ConvertingTransform"; }
+    std::span<ISpillable * const> getSpillables() override { return set_spillables.get(); }
 
 protected:
+    void onCancel() noexcept override;
+
     void onConsume(Chunk chunk) override;
     GenerateResult onGenerate() override
     {
@@ -52,6 +82,7 @@ protected:
 
 private:
     ExpressionActionsPtr expression;
+    SetSpillables set_spillables;
     Chunk cur_chunk;
 };
 

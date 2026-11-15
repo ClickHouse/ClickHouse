@@ -1,0 +1,12 @@
+<clickhouse>
+    <!-- A `TEST-NET-1` address (RFC 5737): it is not assigned to any interface, so binding it always
+         fails. It is the only listen host, so nothing is left to listen to. -->
+    <listen_host>192.0.2.1</listen_host>
+
+    <listen_try>1</listen_try>
+
+    <tcp_port remove="remove"/>
+    <http_port remove="remove"/>
+    <interserver_http_port remove="remove"/>
+    <grpc_port>9100</grpc_port>
+</clickhouse>

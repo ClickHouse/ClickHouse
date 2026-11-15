@@ -10,7 +10,9 @@
 #include <Common/CurrentThreadHelpers.h>
 #include <Common/Logger.h>
 #include <Common/LoggingFormatStringHelpers.h>
-#include <Common/ProfileEvents.h>
+#include <Common/LoggingHelpers.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ProfileEventsLogger.h>
 #include <Common/Stopwatch.h>
 
 
@@ -26,7 +28,7 @@ namespace impl
     [[maybe_unused]] inline LoggerPtr getLoggerHelper(const DB::AtomicLogger & logger) { return logger.load(); }
     [[maybe_unused]] inline LogToStrImpl getLoggerHelper(LogToStrImpl && logger) { return logger; }
     [[maybe_unused]] inline LogFrequencyLimiterImpl getLoggerHelper(LogFrequencyLimiterImpl && logger) { return logger; }
-    [[maybe_unused]] inline LogSeriesLimiterPtr getLoggerHelper(LogSeriesLimiterPtr & logger) { return logger; }
+    [[maybe_unused]] inline LogSeriesLimiterPtr getLoggerHelper(const LogSeriesLimiterPtr & logger) { return logger; }
     [[maybe_unused]] inline LogSeriesLimiter * getLoggerHelper(LogSeriesLimiter & logger) { return &logger; }
 }
 
@@ -66,13 +68,14 @@ namespace impl
 
 constexpr bool constexprContains(std::string_view haystack, std::string_view needle)
 {
-    return haystack.find(needle) != std::string_view::npos;
+    return haystack.contains(needle);
 }
 
 #define LOG_IMPL(logger, priority, PRIORITY, ...) do                                                                \
 {                                                                                                                   \
     static_assert(!constexprContains(#__VA_ARGS__, "formatWithSecretsOneLine"), "Think twice!");                    \
     static_assert(!constexprContains(#__VA_ARGS__, "formatWithSecretsMultiLine"), "Think twice!");                  \
+                                                                                                                    \
     auto _logger = ::impl::getLoggerHelper(logger);                                                                 \
     const bool _is_clients_log = DB::currentThreadHasGroup() && DB::currentThreadLogsLevel() >= (priority);         \
     if (!_is_clients_log && !_logger->is((PRIORITY)))                                                               \
@@ -86,6 +89,11 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
                                                                                                                     \
     constexpr size_t _nargs = CH_VA_ARGS_NARGS(__VA_ARGS__);                                                        \
     using LogTypeInfo = FormatStringTypeInfo<std::decay_t<decltype(LOG_IMPL_FIRST_ARG(__VA_ARGS__))>>;              \
+                                                                                                                    \
+    /* Note, we need to block memory tracking to avoid taking into account this memory in the query context */      \
+    /* Since this memory will be freed either in OwnAsyncSplitChannel::runChannel() (in case of async logging) */   \
+    /* Or in a system thread for flushing system.text_log (in case of sync logging) */                              \
+    MemoryTrackerBlockerInThread block_memory_tracker(VariableContext::Global);                                     \
                                                                                                                     \
     std::string_view _format_string;                                                                                \
     std::string _formatted_message;                                                                                 \
@@ -116,8 +124,8 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
     catch (const std::bad_alloc & logger_exception)                                                                 \
     {                                                                                                               \
         (void)::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
-        const char * logger_exception_message = logger_exception.what();                                            \
-        (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message), strlen(logger_exception_message)); \
+        std::string_view logger_exception_message = logger_exception.what();                                        \
+        (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message.data()), logger_exception_message.size()); \
     }                                                                                                               \
                                                                                                                     \
     try                                                                                                             \
@@ -137,8 +145,8 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
     catch (const std::exception & logger_exception)                                                                 \
     {                                                                                                               \
         (void)::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
-        const char * logger_exception_message = logger_exception.what();                                            \
-        (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message), strlen(logger_exception_message)); \
+        std::string_view logger_exception_message = logger_exception.what();                                        \
+        (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message.data()), logger_exception_message.size()); \
     }                                                                                                               \
     catch (...)                                                                                                     \
     {                                                                                                               \

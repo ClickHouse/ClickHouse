@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-shared-catalog, no-parallel
+# Tags: no-shared-catalog
 # no-shared-catalog: STOP MERGES will only stop them only on one replica
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -13,7 +13,7 @@ set -e
 
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_lwu_on_fly SYNC;
-    SET allow_experimental_lightweight_update = 1;
+    SET enable_lightweight_update = 1;
 
     CREATE TABLE t_lwu_on_fly (id UInt64, v String, s String)
     ENGINE = ReplicatedMergeTree('/zookeeper/{database}/t_lwu_on_fly/', '1') ORDER BY id

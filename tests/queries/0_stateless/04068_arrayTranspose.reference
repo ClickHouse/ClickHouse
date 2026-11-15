@@ -1,0 +1,73 @@
+-- { echo }
+
+SELECT arrayTranspose([[1, 2, 3], [4, 5, 6]]);
+[[1,4],[2,5],[3,6]]
+SELECT arrayTranspose([[1, 2], [3, 4], [5, 6]]);
+[[1,3,5],[2,4,6]]
+SELECT arrayTranspose([[1, 2], [3, 4]]);
+[[1,3],[2,4]]
+-- Single row or column
+SELECT arrayTranspose([[1, 2, 3]]);
+[[1],[2],[3]]
+SELECT arrayTranspose([[1], [2], [3]]);
+[[1,2,3]]
+SELECT arrayTranspose([[42]]);
+[[42]]
+-- Empty arrays
+SELECT arrayTranspose([]::Array(Array(Int64)));
+[]
+SELECT arrayTranspose([[]]);
+[]
+SELECT arrayTranspose([[], []]);
+[]
+-- Floating point
+SELECT arrayTranspose([[1.5, 2.5], [3.5, 4.5]]);
+[[1.5,3.5],[2.5,4.5]]
+-- Large integer types
+SELECT arrayTranspose([[toUInt128(1), toUInt128(2)], [toUInt128(3), toUInt128(4)]]);
+[[1,3],[2,4]]
+-- UUID
+SELECT arrayTranspose([[toUUID('00000000-0000-0000-0000-000000000001'), toUUID('00000000-0000-0000-0000-000000000002')], [toUUID('00000000-0000-0000-0000-000000000003'), toUUID('00000000-0000-0000-0000-000000000004')]]);
+[['00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000003'],['00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000004']]
+-- Decimal
+SELECT arrayTranspose([[toDecimal32(1.5, 1), toDecimal32(2.5, 1)], [toDecimal32(3.5, 1), toDecimal32(4.5, 1)]]);
+[[1.5,3.5],[2.5,4.5]]
+-- FixedString
+SELECT arrayTranspose([[toFixedString('ab', 2), toFixedString('cd', 2)], [toFixedString('ef', 2), toFixedString('gh', 2)]]);
+[['ab','ef'],['cd','gh']]
+-- Strings
+SELECT arrayTranspose([['a', 'b', 'c'], ['d', 'e', 'f']]);
+[['a','d'],['b','e'],['c','f']]
+-- Nullable elements
+SELECT arrayTranspose([[1, NULL, 3], [4, 5, NULL]]);
+[[1,4],[NULL,5],[3,NULL]]
+SELECT arrayTranspose([[toNullable('a'), NULL], [toNullable('b'), toNullable('c')]]);
+[['a','b'],[NULL,'c']]
+-- Multiple rows
+SELECT arrayTranspose(a) FROM (
+    SELECT [[1, 2], [3, 4]] AS a
+    UNION ALL
+    SELECT [[5, 6, 7], [8, 9, 10], [11, 12, 13]] AS a
+) ORDER BY a;
+[[1,3],[2,4]]
+[[5,8,11],[6,9,12],[7,10,13]]
+-- Matrix of arrays
+SELECT arrayTranspose([[[1, 2], []], [[3], [4, 5, 6]]]);
+[[[1,2],[3]],[[],[4,5,6]]]
+-- Tuple elements
+SELECT arrayTranspose([[tuple(1, 'a'), tuple(2, 'b')], [tuple(3, 'c'), tuple(4, 'd')]]);
+[[(1,'a'),(3,'c')],[(2,'b'),(4,'d')]]
+-- Double transpose returns the initial input
+SELECT arrayTranspose(arrayTranspose([[1, 2, 3], [4, 5, 6]]));
+[[1,2,3],[4,5,6]]
+-- Large matrices to check cache-oblivious recursion (both row-split and column-split branches)
+WITH arrayMap(i -> arrayMap(j -> toUInt64(i * 100 + j), range(128)), range(128)) AS mat
+SELECT arrayTranspose(mat) = arrayMap(j -> arrayMap(i -> toUInt64(i * 100 + j), range(128)), range(128));
+1
+WITH arrayMap(i -> arrayMap(j -> toFixedString(concat('a_', toString(i), '_', toString(j)), 9), range(128)), range(128)) AS mat
+SELECT arrayTranspose(mat) = arrayMap(j -> arrayMap(i -> toFixedString(concat('a_', toString(i), '_', toString(j)), 9), range(128)), range(128));
+1
+-- Error: inner arrays of different sizes
+SELECT arrayTranspose([[1, 2], [3]]); -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+-- Error: not a 2D array
+SELECT arrayTranspose([1, 2, 3]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

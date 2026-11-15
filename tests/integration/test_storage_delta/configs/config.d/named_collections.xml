@@ -1,7 +1,7 @@
 <clickhouse>
   <named_collections>
     <s3>
-        <url>http://minio1:9001/root/</url>
+        <url>http://minio1:9001/root/var/lib/clickhouse/user_files</url>
         <access_key_id>minio</access_key_id>
         <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
     </s3>

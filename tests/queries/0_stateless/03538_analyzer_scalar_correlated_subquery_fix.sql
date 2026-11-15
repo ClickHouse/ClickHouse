@@ -1,6 +1,4 @@
-set enable_analyzer = 1;
-set allow_experimental_correlated_subqueries = 1;
-SET enable_parallel_replicas = 0;
+set allow_correlated_subqueries = 1;
 
 CREATE TABLE partsupp (
     ps_partkey     Int32,

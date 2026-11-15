@@ -1,0 +1,14 @@
+-- the cache is only for MergeTree
+0
+-- MergeTree: an entry per distinct column list of the alive parts
+0
+1
+1
+2
+2
+-- the entry of the old structure must be evicted once both its parts are gone
+1
+-- and after a detach/attach round trip of the table
+1
+-- system.metrics
+1

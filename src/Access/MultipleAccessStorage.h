@@ -27,6 +27,9 @@ public:
     bool isReadOnly() const override;
     bool isReadOnly(const UUID & id) const override;
 
+    bool isEphemeral() const override;
+    bool isEphemeral(const UUID & id) const override;
+
     void startPeriodicReloading() override;
     void stopPeriodicReloading() override;
     void reload(ReloadMode reload_mode) override;
@@ -61,6 +64,9 @@ public:
     void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const override;
     void restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup) override;
     bool containsStorage(std::string_view storage_type) const;
+
+    /// The storage an insertion without a named storage goes to.
+    StoragePtr getStorageForInsertion(const AccessEntityPtr & entity) const;
 
 protected:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;

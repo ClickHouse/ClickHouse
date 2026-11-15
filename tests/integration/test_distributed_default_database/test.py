@@ -8,16 +8,15 @@ default database deduction.
 
 from contextlib import contextmanager
 
-import pytest
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 
 def bootstrap(cluster):
     for i, node in enumerate(list(cluster.instances.values())):
-        node.query(f"CREATE DATABASE IF NOT EXISTS r{i}")
+        node.query(f"DROP DATABASE IF EXISTS r{i}")
+        node.query(f"CREATE DATABASE r{i}")
         node.query(f"CREATE TABLE r{i}.test_data(v UInt64) ENGINE = Memory()")
         node.query(f"INSERT INTO r{i}.test_data SELECT * FROM numbers(10)")
         node.query(

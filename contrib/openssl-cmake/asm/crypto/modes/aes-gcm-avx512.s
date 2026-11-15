@@ -135982,7 +135982,7 @@ ossl_gcm_gmult_avx512:
 	.byte	0xf3,0xc3
 .cfi_endproc	
 .size	ossl_gcm_gmult_avx512, .-ossl_gcm_gmult_avx512
-.data	
+.section	.rodata
 .align	16
 POLY:.quad	0x0000000000000001, 0xC200000000000000
 

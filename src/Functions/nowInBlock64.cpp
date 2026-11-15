@@ -13,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 namespace
@@ -22,7 +21,7 @@ namespace
 /** Returns current time at calculation of every block.
 * In contrast to 'now64' function, it's not a constant expression and is not a subject of constant folding.
 */
-class FunctionNowInBlock64 : public IFunction
+class FunctionNowInBlock64 final : public IFunction
 {
 public:
     static constexpr auto name = "nowInBlock64";
@@ -35,26 +34,14 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.empty())
-            return std::make_shared<DataTypeDateTime64>(DataTypeDateTime64::default_scale);
-
-        if (arguments.size() > 2)
-            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Function {} should have 0, 1 or 2 arguments", getName());
-
-        if (!isInteger(arguments[0].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "1st argument of function {} should be (U)Int*", getName());
-
-        auto scale = static_cast<UInt32>(arguments[0].column->get64(0));
-
-        if (arguments.size() == 1)
-            return std::make_shared<DataTypeDateTime64>(scale);
-
-        if (!isStringOrFixedString(arguments[1].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "2nd argument of function {} should be String or FixedString", getName());
-
-        return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 1, 1, false));
+        /// Note: when scale is provided as a constant argument, the DSL uses the
+        /// runtime value of the constant column to construct DateTime64(scale).
+        return
+            "() -> DateTime64(3)"
+            " OR (const scale Integer) -> DateTime64(scale)"
+            " OR (const scale Integer, const tz StringOrFixedString) -> DateTime64(scale, tz)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & type, size_t input_rows_count) const override
@@ -85,7 +72,7 @@ Returns the current date and time at the moment of processing of each block of d
 It makes sense to use this function to generate the current time in long-running INSERT SELECT queries.
     )";
     FunctionDocumentation::Syntax syntax = R"(
-nowInBlock([scale[, timezone]])
+nowInBlock64([scale[, timezone]])
     )";
     FunctionDocumentation::Arguments arguments = {
         {"scale", "Optional. Tick size (precision): 10^-precision seconds. Valid range: [0 : 9]. Typically, are used - 3 (default) (milliseconds), 6 (microseconds), 9 (nanoseconds).", {"UInt8"}},
@@ -112,7 +99,7 @@ FORMAT PrettyCompactMonoBlock
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionNowInBlock64>(documentation);
 }

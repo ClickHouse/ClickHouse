@@ -1,7 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 
-#include <numeric>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/StatCommon.h>
 #include <Columns/ColumnArray.h>
@@ -9,17 +8,15 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsDateTime.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <Common/assert_cast.h>
+#include <Common/NaNUtils.h>
 #include <Common/PODArray.h>
 #include <Common/iota.h>
 #include <base/types.h>
 
-#include <boost/math/distributions/normal.hpp>
 
 namespace DB
 {
@@ -30,6 +27,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int INCORRECT_DATA;
 }
 
 struct Settings;
@@ -106,7 +104,7 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
         for (size_t i = 0; i < total_buckets - 2; ++i) // Skip the first and last bucket
         {
             // the end index of next bucket
-            size_t end_index = 1 + static_cast<int>(floor(single_bucket_size * (i + 2)));
+            size_t end_index = 1 + static_cast<int>(floor(single_bucket_size * static_cast<Float64>(i + 2)));
             // current bucket is the last bucket
             end_index = std::min(end_index, size);
 
@@ -247,13 +245,13 @@ public:
             case TypeIndex::DateTime:
                 return static_cast<const ColumnDateTime &>(*column).getData()[row_num];
             case TypeIndex::DateTime64:
-                return static_cast<const ColumnDateTime64 &>(*column).getData()[row_num];
+                return static_cast<Float64>(static_cast<const ColumnDateTime64 &>(*column).getData()[row_num]);
             default:
                 return column->getFloat64(row_num);
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & a = data(place);
         const auto & b = data(rhs);
@@ -268,7 +266,55 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        data(place).read(buf, arena);
+        auto & sample = data(place);
+        sample.read(buf, arena);
+        if (sample.x.size() != sample.y.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Sizes of x and y do not match in the state of {}", getName());
+        checkStateValues(sample.x, x_type, 0);
+        checkStateValues(sample.y, y_type, 1);
+    }
+
+    template <typename T>
+    static std::pair<Float64, Float64> getFloat64Range()
+    {
+        return {static_cast<Float64>(std::numeric_limits<T>::lowest()), static_cast<Float64>(std::numeric_limits<T>::max())};
+    }
+
+    /// A state read from outside can hold any Float64, but the result column of a date or time
+    /// argument can only take the values that `add` produces from that type.
+    template <typename Sample>
+    void checkStateValues(const Sample & values, TypeIndex type_index, size_t argument_index) const
+    {
+        std::pair<Float64, Float64> range;
+        switch (type_index)
+        {
+            case TypeIndex::Date:
+                range = getFloat64Range<UInt16>();
+                break;
+            case TypeIndex::Date32:
+                range = getFloat64Range<Int32>();
+                break;
+            case TypeIndex::DateTime:
+                range = getFloat64Range<UInt32>();
+                break;
+            case TypeIndex::DateTime64:
+                /// The upper bound is 2^63, to which the largest ticks round.
+                range = getFloat64Range<Int64>();
+                break;
+            default:
+                return;
+        }
+
+        for (Float64 value : values)
+        {
+            if (!(value >= range.first && value <= range.second) || value != std::trunc(value))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Value {} is not a valid value of type {} in the state of {}",
+                    value,
+                    argument_types[argument_index]->getName(),
+                    getName());
+        }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -305,7 +351,7 @@ public:
                 return [](IColumn & column, Float64 value)
                 {
                     auto & col = assert_cast<ColumnDate32 &>(column);
-                    col.getData().push_back(static_cast<UInt32>(value));
+                    col.getData().push_back(static_cast<Int32>(value));
                 };
             case TypeIndex::DateTime:
                 return [](IColumn & column, Float64 value)
@@ -317,7 +363,13 @@ public:
                 return [](IColumn & column, Float64 value)
                 {
                     auto & col = assert_cast<ColumnDateTime64 &>(column);
-                    col.getData().push_back(static_cast<Int64>(value));
+                    /// The state keeps the tick as Float64, and a tick near Int64's bounds rounds outside them,
+                    /// where narrowing back is undefined; saturate instead. Date, Date32 and DateTime ticks are
+                    /// exactly representable in Float64, so those arms need no check.
+                    Int64 converted = canConvertTo<Int64>(value)
+                        ? static_cast<Int64>(value)
+                        : (value < 0 ? std::numeric_limits<Int64>::lowest() : std::numeric_limits<Int64>::max());
+                    col.getData().push_back(converted);
                 };
             default:
                 return [](IColumn & column, Float64 value)
@@ -355,9 +407,54 @@ createAggregateFunctionLargestTriangleThreeBuckets(const std::string & name, con
 }
 
 
+void registerAggregateFunctionLargestTriangleThreeBuckets(AggregateFunctionFactory & factory);
 void registerAggregateFunctionLargestTriangleThreeBuckets(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction(AggregateFunctionLargestTriangleThreeBuckets::name, createAggregateFunctionLargestTriangleThreeBuckets);
+    FunctionDocumentation::Description description = R"(
+Applies the [Largest-Triangle-Three-Buckets](https://skemman.is/bitstream/1946/15343/3/SS_MSthesis.pdf) algorithm to the input data.
+The algorithm is used for downsampling time series data for visualization.
+It is designed to operate on series sorted by x coordinate.
+It works by dividing the sorted series into buckets and then finding the largest triangle in each bucket.
+The number of buckets is equal to the number of points in the resulting series.
+The function will sort data by `x` and then apply the downsampling algorithm to the sorted data.
+
+NaNs are ignored in the provided series, meaning that any NaN values will be excluded from the analysis.
+This ensures that the function operates only on valid numerical data.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+largestTriangleThreeBuckets(n)(x, y)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "x coordinate.", {"(U)Int*", "Float*", "Decimal", "Date", "Date32", "DateTime", "DateTime64"}},
+        {"y", "y coordinate.", {"(U)Int*", "Float*", "Decimal", "Date", "Date32", "DateTime", "DateTime64"}}
+    };
+    FunctionDocumentation::Parameters parameters = {
+        {"n", "Number of points in the resulting series.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of tuples with two elements..", {"Array(Tuple(Float64, Float64))"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Downsampling time series data",
+        R"(
+CREATE TABLE largestTriangleThreeBuckets_test (x Float64, y Float64) ENGINE = Memory;
+INSERT INTO largestTriangleThreeBuckets_test VALUES
+    (1.0, 10.0), (2.0, 20.0), (3.0, 15.0), (8.0, 60.0), (9.0, 55.0),
+    (10.0, 70.0), (4.0, 30.0), (5.0, 40.0), (6.0, 35.0), (7.0, 50.0);
+
+SELECT largestTriangleThreeBuckets(4)(x, y) FROM largestTriangleThreeBuckets_test;
+        )",
+        R"(
+┌─largestTriangleThreeBuckets(4)(x, y)─┐
+│ [(1,10),(3,15),(9,55),(10,70)]       │
+└──────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 10};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction(AggregateFunctionLargestTriangleThreeBuckets::name, {createAggregateFunctionLargestTriangleThreeBuckets, documentation});
     factory.registerAlias("lttb", AggregateFunctionLargestTriangleThreeBuckets::name);
 }
 

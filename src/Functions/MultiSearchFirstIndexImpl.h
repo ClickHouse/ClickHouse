@@ -3,6 +3,7 @@
 #include <vector>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -42,7 +43,7 @@ struct MultiSearchFirstIndexImpl
                 "Number of arguments for function {} doesn't match: passed {}, should be at most {}",
                 name, std::to_string(needles_arr.size()), std::to_string(std::numeric_limits<UInt8>::max()));
 
-        std::vector<std::string_view> needles;
+        VectorWithMemoryTracking<std::string_view> needles;
         needles.reserve(needles_arr.size());
         for (const auto & needle : needles_arr)
             needles.emplace_back(needle.safeGet<String>());
@@ -58,7 +59,7 @@ struct MultiSearchFirstIndexImpl
             for (size_t j = 0; j < input_rows_count; ++j)
             {
                 const auto * haystack = &haystack_data[prev_haystack_offset];
-                const auto * haystack_end = haystack + haystack_offsets[j] - prev_haystack_offset - 1;
+                const auto * haystack_end = haystack + haystack_offsets[j] - prev_haystack_offset;
                 /// hasMoreToSearch traverse needles in increasing order
                 if (iteration == 0 || res[j] == 0)
                     res[j] = searcher.searchOneFirstIndex(haystack, haystack_end);
@@ -90,7 +91,7 @@ struct MultiSearchFirstIndexImpl
 
         const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(needles_data);
 
-        std::vector<std::string_view> needles;
+        VectorWithMemoryTracking<std::string_view> needles;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -98,13 +99,13 @@ struct MultiSearchFirstIndexImpl
 
             for (size_t j = prev_needles_offset; j < needles_offsets[i]; ++j)
             {
-                needles.emplace_back(needles_data_string.getDataAt(j).toView());
+                needles.emplace_back(needles_data_string.getDataAt(j));
             }
 
             auto searcher = Impl::createMultiSearcherInBigHaystack(needles); // sub-optimal
 
             const auto * const haystack = &haystack_data[prev_haystack_offset];
-            const auto * haystack_end = haystack + haystack_offsets[i] - prev_haystack_offset - 1;
+            const auto * haystack_end = haystack + haystack_offsets[i] - prev_haystack_offset;
 
             size_t iteration = 0;
             while (searcher.hasMoreToSearch())

@@ -1,0 +1,485 @@
+---
+title: 'Funções de agregação do DataStore'
+sidebarTitle: 'Agregação'
+slug: /chdb/datastore/aggregation
+description: 'Funções de agregação, funções de janela e o espaço de nomes F no DataStore'
+keywords: ['chdb', 'datastore', 'agregação', 'janela', 'groupby', 'sum', 'mean', 'avg']
+doc_type: 'reference'
+---
+
+O DataStore oferece suporte abrangente a agregações e funções de janela, aproveitando os poderosos recursos de agregação SQL do ClickHouse.
+
+<div id="basic">
+  ## Agregações básicas
+</div>
+
+<div id="builtin">
+  ### Métodos nativos
+</div>
+
+| Método      | Equivalente em SQL | Descrição                     |
+| ----------- | ------------------ | ----------------------------- |
+| `sum()`     | `SUM()`            | Soma dos valores              |
+| `mean()`    | `AVG()`            | Média                         |
+| `count()`   | `COUNT()`          | Contagem de valores não nulos |
+| `min()`     | `MIN()`            | Valor mínimo                  |
+| `max()`     | `MAX()`            | Valor máximo                  |
+| `median()`  | `MEDIAN()`         | Valor mediano                 |
+| `std()`     | `stddevPop()`      | Desvio padrão                 |
+| `var()`     | `varPop()`         | Variância                     |
+| `nunique()` | `COUNT(DISTINCT)`  | Contagem de valores únicos    |
+
+**Exemplos:**
+
+```python
+from pathlib import Path
+Path("sales.csv").write_text("""\
+region,product,category,amount,quantity,price,date,order_id
+East,Widget,Electronics,5200,10,120,2024-01-15,1001
+West,Gadget,Electronics,800,5,160,2024-02-20,1002
+East,Gizmo,Home,6500,3,100,2024-03-10,1003
+North,Widget,Electronics,4500,6,150,2024-06-18,1004
+West,Gadget,Electronics,2000,8,250,2024-09-14,1005
+""")
+
+from chdb import datastore as pd
+
+ds = pd.read_csv("sales.csv")
+
+# Agregação de coluna única
+total = ds['amount'].sum()
+average = ds['amount'].mean()
+count = ds['amount'].count()
+
+# Todas as agregações
+print(ds['amount'].sum())    # Total
+print(ds['amount'].mean())   # Média
+print(ds['amount'].std())    # Desvio padrão
+print(ds['amount'].median()) # Mediana
+print(ds['amount'].nunique()) # Contagem de valores únicos
+```
+
+***
+
+<div id="groupby">
+  ## Agregações com GroupBy
+</div>
+
+<div id="single-agg">
+  ### Agregação única
+</div>
+
+```python
+# Agrupar e agregar
+result = ds.groupby('category')['amount'].sum()
+result = ds.groupby('region')['sales'].mean()
+```
+
+<div id="multi-agg">
+  ### Múltiplas agregações
+</div>
+
+```python
+# Sintaxe de dicionário
+result = ds.groupby('category').agg({
+    'amount': 'sum',
+    'quantity': 'mean',
+    'order_id': 'count'
+})
+
+# Lista de agregações por coluna
+result = ds.groupby('category').agg({
+    'amount': ['sum', 'mean', 'max'],
+    'quantity': ['sum', 'count']
+})
+```
+
+<div id="named-agg">
+  ### Agregações nomeadas
+</div>
+
+```python
+# Agregação nomeada (estilo pandas)
+result = ds.groupby('region').agg(
+    total_amount=('amount', 'sum'),
+    avg_quantity=('quantity', 'mean'),
+    order_count=('order_id', 'count'),
+    max_price=('price', 'max')
+)
+```
+
+<div id="multi-groupby">
+  ### Múltiplas chaves de agrupamento
+</div>
+
+```python
+# Agrupar por múltiplas colunas
+result = ds.groupby(['region', 'category']).agg({
+    'amount': 'sum',
+    'quantity': 'sum'
+})
+```
+
+***
+
+<div id="statistical">
+  ## Agregações estatísticas
+</div>
+
+| Método        | Equivalente em SQL | Descrição             |
+| ------------- | ------------------ | --------------------- |
+| `quantile(q)` | `quantile(q)`      | q-ésimo quantil (0-1) |
+| `skew()`      | `skewPop()`        | Assimetria            |
+| `kurt()`      | `kurtPop()`        | Curtose               |
+| `corr()`      | `corr()`           | Correlação            |
+| `cov()`       | `covar()`          | Covariância           |
+| `sem()`       | -                  | Erro padrão da média  |
+
+**Exemplos:**
+
+```python
+# Quantis
+q50 = ds['amount'].quantile(0.5)  # Mediana
+q95 = ds['amount'].quantile(0.95) # Percentil 95
+
+# Múltiplos quantis
+quantiles = ds['amount'].quantile([0.25, 0.5, 0.75])
+
+# Correlação entre colunas
+correlation = ds[['sales', 'marketing_spend']].corr()
+```
+
+***
+
+<div id="conditional">
+  ## Agregações condicionais
+</div>
+
+Funções de agregação condicional específicas do ClickHouse.
+
+| Função           | ClickHouse  | Descrição                               |
+| ---------------- | ----------- | --------------------------------------- |
+| `sum_if(cond)`   | `sumIf()`   | Soma quando a condição é verdadeira     |
+| `count_if(cond)` | `countIf()` | Contagem quando a condição é verdadeira |
+| `avg_if(cond)`   | `avgIf()`   | Média quando a condição é verdadeira    |
+| `min_if(cond)`   | `minIf()`   | Mínimo quando a condição é verdadeira   |
+| `max_if(cond)`   | `maxIf()`   | Máximo quando a condição é verdadeira   |
+
+**Exemplos:**
+
+```python
+from chdb.datastore import F, Field
+
+# Soma apenas pedidos de alto valor
+high_value_sum = F.sum_if(Field('amount'), Field('amount') > 1000)
+
+# Conta usuários ativos
+active_count = F.count_if(Field('status') == 'active')
+
+# No contexto de groupby
+result = ds.groupby('region').agg({
+    'total': ('amount', 'sum'),
+    'high_value': ('amount', F.sum_if(Field('amount') > 1000)),
+})
+```
+
+***
+
+<div id="collection">
+  ## Agregações de coleção
+</div>
+
+Funções específicas do ClickHouse que coletam valores.
+
+| Função               | ClickHouse         | Descrição                        |
+| -------------------- | ------------------ | -------------------------------- |
+| `group_array()`      | `groupArray()`     | Reúne em um array                |
+| `group_uniq_array()` | `groupUniqArray()` | Reúne valores únicos em um array |
+| `group_concat(sep)`  | `groupConcat()`    | Concatena strings                |
+| `top_k(n)`           | `topK(n)`          | K valores mais frequentes        |
+| `any()`              | `any()`            | Um valor qualquer                |
+| `any_last()`         | `anyLast()`        | Último valor                     |
+| `first_value()`      | `first_value()`    | Primeiro valor na ordem          |
+| `last_value()`       | `last_value()`     | Último valor na ordem            |
+
+**Exemplos:**
+
+```python
+from chdb.datastore import F, Field
+
+# Coletar todas as tags por categoria
+result = ds.groupby('category').agg({
+    'all_tags': ('tag', F.group_array()),
+    'unique_tags': ('tag', F.group_uniq_array())
+})
+
+# Obter os 5 principais produtos por região
+result = ds.groupby('region').agg({
+    'top_products': ('product_id', F.top_k(5))
+})
+```
+
+***
+
+<div id="window">
+  ## Funções de janela
+</div>
+
+<div id="ranking">
+  ### Funções de Classificação
+</div>
+
+| Função           | SQL              | Descrição                      |
+| ---------------- | ---------------- | ------------------------------ |
+| `row_number()`   | `ROW_NUMBER()`   | Número sequencial da linha     |
+| `rank()`         | `RANK()`         | Classificação com lacunas      |
+| `dense_rank()`   | `DENSE_RANK()`   | Classificação sem lacunas      |
+| `ntile(n)`       | `NTILE(n)`       | Divide em n grupos             |
+| `percent_rank()` | `PERCENT_RANK()` | Classificação percentual (0-1) |
+| `cume_dist()`    | `CUME_DIST()`    | Distribuição cumulativa        |
+
+**Exemplos:**
+
+```python
+from chdb.datastore import F, Field
+
+# Adicionar número de linha
+ds['row_num'] = F.row_number().over(order_by='date')
+
+# Classificar dentro dos grupos
+ds['rank'] = F.rank().over(
+    partition_by='category',
+    order_by='sales'
+)
+
+# Classificação densa (sem lacunas)
+ds['dense_rank'] = F.dense_rank().over(
+    partition_by='region',
+    order_by=('revenue', 'desc')
+)
+
+# Dividir em quartis
+ds['quartile'] = F.ntile(4).over(order_by='score')
+```
+
+<div id="value-functions">
+  ### Funções de valor
+</div>
+
+| Função          | SQL                 | Descrição                |
+| --------------- | ------------------- | ------------------------ |
+| `lag(n)`        | `LAG(col, n)`       | Valor da linha anterior  |
+| `lead(n)`       | `LEAD(col, n)`      | Valor da próxima linha   |
+| `first_value()` | `FIRST_VALUE()`     | Primeiro valor na janela |
+| `last_value()`  | `LAST_VALUE()`      | Último valor na janela   |
+| `nth_value(n)`  | `NTH_VALUE(col, n)` | Enésimo valor na janela  |
+
+**Exemplos:**
+
+```python
+# Valor anterior e próximo
+ds['prev_price'] = F.lag('price', 1).over(order_by='date')
+ds['next_price'] = F.lead('price', 1).over(order_by='date')
+
+# Primeiro e último na partição
+ds['first_order'] = F.first_value('amount').over(
+    partition_by='customer_id',
+    order_by='date'
+)
+```
+
+<div id="cumulative">
+  ### Funções cumulativas
+</div>
+
+| Método          | Descrição                                            |
+| --------------- | ---------------------------------------------------- |
+| `cumsum()`      | Soma cumulativa                                      |
+| `cummax()`      | Máximo cumulativo                                    |
+| `cummin()`      | Mínimo cumulativo                                    |
+| `cumprod()`     | Produto cumulativo                                   |
+| `diff(n)`       | Diferença em relação a n linhas anteriores           |
+| `pct_change(n)` | Variação percentual em relação a n linhas anteriores |
+
+**Exemplos:**
+
+```python
+# Cálculos cumulativos
+ds['running_total'] = ds['amount'].cumsum()
+ds['running_max'] = ds['amount'].cummax()
+
+# Com agrupamento
+ds['group_cumsum'] = ds.groupby('category')['amount'].cumsum()
+
+# Período a período
+ds['daily_diff'] = ds['sales'].diff(1)
+ds['pct_change'] = ds['sales'].pct_change(1)
+```
+
+<div id="rolling">
+  ### Janelas móveis
+</div>
+
+```python
+# Agregações de janela deslizante
+ds['rolling_avg'] = ds['price'].rolling(window=7).mean()
+ds['rolling_sum'] = ds['amount'].rolling(window=30).sum()
+ds['rolling_std'] = ds['value'].rolling(window=10).std()
+
+# Janelas expansivas
+ds['expanding_max'] = ds['price'].expanding().max()
+ds['expanding_sum'] = ds['amount'].expanding().sum()
+```
+
+***
+
+<div id="f-namespace">
+  ## Espaço de nomes F
+</div>
+
+O espaço de nomes `F` permite acessar as funções do ClickHouse.
+
+<div id="f-import">
+  ### Import
+</div>
+
+```python
+from chdb.datastore import F, Field
+```
+
+<div id="f-usage">
+  ### Usando as funções F
+</div>
+
+```python
+# Agregações
+F.sum(Field('amount'))
+F.avg(Field('price'))
+F.count(Field('id'))
+
+# Estatísticas
+F.quantile(Field('value'), 0.95)
+F.stddev_pop(Field('score'))
+F.corr(Field('x'), Field('y'))
+
+# Condicionais
+F.sum_if(Field('amount'), Field('status') == 'completed')
+F.count_if(Field('is_active'))
+
+# String
+F.length(Field('name'))
+F.upper(Field('text'))
+
+# Data/Hora
+F.to_year(Field('date'))
+F.date_diff('day', Field('start'), Field('end'))
+
+# Array
+F.array_sum(Field('values'))
+F.array_avg(Field('scores'))
+
+# Matemática
+F.abs(Field('delta'))
+F.round(Field('price'), 2)
+F.floor(Field('value'))
+F.ceil(Field('value'))
+```
+
+<div id="f-window">
+  ### F com funções de janela
+</div>
+
+```python
+# Definir frame da janela
+window = F.window(
+    partition_by='category',
+    order_by='date',
+    rows_between=(-7, 0)  # Linha atual e as 7 anteriores
+)
+
+ds['rolling_avg'] = F.avg(Field('price')).over(window)
+```
+
+***
+
+<div id="patterns">
+  ## Padrões comuns de agregação
+</div>
+
+<div id="top-n">
+  ### Top N por grupo
+</div>
+
+```python
+# Top 3 produtos por categoria por vendas
+result = (ds
+    .assign(rank=F.row_number().over(
+        partition_by='category',
+        order_by=('sales', 'desc')
+    ))
+    .filter(ds['rank'] <= 3)
+)
+```
+
+<div id="running-total">
+  ### Total acumulado
+</div>
+
+```python
+# Total acumulado de vendas
+ds['running_total'] = F.sum('amount').over(
+    order_by='date',
+    rows_between=(None, 0)  # Todas as linhas até a atual
+)
+```
+
+<div id="moving-avg">
+  ### Média móvel
+</div>
+
+```python
+# Média móvel de 7 dias
+ds['ma_7'] = F.avg('price').over(
+    order_by='date',
+    rows_between=(-6, 0)
+)
+```
+
+<div id="yoy">
+  ### Comparação ano a ano
+</div>
+
+```python
+# Comparação ano a ano (YoY)
+ds['prev_year_sales'] = F.lag('sales', 12).over(
+    partition_by='product_id',
+    order_by='month'
+)
+ds['yoy_growth'] = (ds['sales'] - ds['prev_year_sales']) / ds['prev_year_sales']
+```
+
+<div id="percentile">
+  ### Ranking por percentil
+</div>
+
+```python
+# Classificar clientes por gasto total
+ds['spend_percentile'] = F.percent_rank().over(order_by='total_spend')
+```
+
+***
+
+<div id="summary">
+  ## Resumo dos métodos de agregação
+</div>
+
+| Categoria        | Métodos                                                       |
+| ---------------- | ------------------------------------------------------------- |
+| **Básicos**      | `sum`, `mean`, `count`, `min`, `max`, `median`                |
+| **Estatísticos** | `std`, `var`, `quantile`, `skew`, `kurt`, `corr`, `cov`       |
+| **Condicionais** | `sum_if`, `count_if`, `avg_if`, `min_if`, `max_if`            |
+| **Coleção**      | `group_array`, `group_uniq_array`, `group_concat`, `top_k`    |
+| **Ranking**      | `row_number`, `rank`, `dense_rank`, `ntile`, `percent_rank`   |
+| **Valor**        | `lag`, `lead`, `first_value`, `last_value`, `nth_value`       |
+| **Acumulados**   | `cumsum`, `cummax`, `cummin`, `cumprod`, `diff`, `pct_change` |
+| **Deslizantes**  | `rolling().mean/sum/std/...`, `expanding().mean/sum/...`      |

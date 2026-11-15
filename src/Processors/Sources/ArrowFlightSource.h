@@ -1,45 +1,53 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include "config.h"
 
 #if USE_ARROWFLIGHT
-#include <DataTypes/DataTypeFactory.h>
 #include <Processors/ISource.h>
-#include <arrow/flight/api.h>
-#include <arrow/table.h>
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/StorageID.h>
+#include <arrow/flight/types.h>
+
 
 namespace DB
 {
+class ArrowFlightConnection;
 
-class ArrowFlightSource : public ISource
+class ArrowFlightSource final : public ISource
 {
+    void initializeEndpoints(const String & dataset_name_);
+    bool nextEndpoint();
+    void initializeSchema();
+    Block fillVirtualColumns(Block result_block);
+
 public:
-    using FlightClientPtr = std::shared_ptr<arrow::flight::FlightClient>;
-
-    ArrowFlightSource(
-        const FlightClientPtr & client_,
-        const std::string & query_,
-        const Block & sample_block_,
-        const std::vector<std::string> & column_names_,
-        UInt64 max_block_size_);
-
-    ~ArrowFlightSource() override = default;
-
-    String getName() const override { return "ArrowFlightSource"; }
+    ArrowFlightSource(std::shared_ptr<ArrowFlightConnection> connection_, const String & dataset_name_, const Block & sample_block_, const Block & virtual_header_, ContextPtr context_);
+    ArrowFlightSource(std::shared_ptr<ArrowFlightConnection> connection_, VectorWithMemoryTracking<arrow::flight::FlightEndpoint> endpoints_, const Block & sample_block_, ContextPtr context_);
+    ArrowFlightSource(std::unique_ptr<arrow::flight::MetadataRecordBatchReader> stream_reader_, const Block & sample_block_, ContextPtr context_);
 
 protected:
+    String getName() const override { return "ArrowFlightSource"; }
     Chunk generate() override;
+    void onCancel() noexcept override;
 
 private:
-    FlightClientPtr client;
-    std::string query;
+    std::shared_ptr<ArrowFlightConnection> connection;
 
     Block sample_block;
-    std::unique_ptr<arrow::flight::FlightStreamReader> stream_reader;
+    Block virtual_header;
+    ContextPtr context;
+    UInt64 request_timeout_sec = 0;
+    VectorWithMemoryTracking<arrow::flight::FlightEndpoint> endpoints;
+    size_t current_endpoint = 0;
+    std::shared_ptr<arrow::flight::MetadataRecordBatchReader> stream_reader;
     std::shared_ptr<arrow::Schema> schema;
-    std::vector<std::string> column_names;
 
-    void initializeStream();
+    std::mutex flight_reader_mutex;
+    /// Non-null only while a DoGet stream is open. Held separately from `stream_reader` because
+    /// only a DoGet stream can be cancelled, and because onCancel runs on another thread while
+    /// generate is blocked reading from it.
+    std::shared_ptr<arrow::flight::FlightStreamReader> flight_reader TSA_GUARDED_BY(flight_reader_mutex);
 };
 
 }

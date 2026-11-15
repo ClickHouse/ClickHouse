@@ -3,6 +3,7 @@
 #include "config.h"
 
 #if USE_PROTOBUF
+#include <Common/VectorWithMemoryTracking.h>
 #   include <Processors/Formats/IRowInputFormat.h>
 #   include <Processors/Formats/ISchemaReader.h>
 #   include <Formats/FormatSchemaInfo.h>
@@ -36,6 +37,7 @@ public:
         const ProtobufSchemaInfo & schema_info_,
         bool with_length_delimiter_,
         bool flatten_google_wrappers_,
+        bool oneof_presence_,
         const String & google_protos_path);
 
     String getName() const override { return "ProtobufRowInputFormat"; }
@@ -54,15 +56,16 @@ private:
     void destroyReaderAndSerializer();
 
     std::unique_ptr<ProtobufReader> reader;
-    std::vector<size_t> missing_column_indices;
+    VectorWithMemoryTracking<size_t> missing_column_indices;
     const ProtobufSchemas::DescriptorHolder descriptor;
     std::unique_ptr<ProtobufSerializer> serializer;
 
     bool with_length_delimiter;
     bool flatten_google_wrappers;
+    bool oneof_presence;
 };
 
-class ProtobufSchemaReader : public IExternalSchemaReader
+class ProtobufSchemaReader final : public IExternalSchemaReader
 {
 public:
     explicit ProtobufSchemaReader(const FormatSettings & format_settings);
@@ -72,6 +75,7 @@ public:
 private:
     const FormatSchemaInfo schema_info;
     bool skip_unsupported_fields;
+    bool oneof_presence;
     String google_protos_path;
 };
 

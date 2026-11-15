@@ -1,44 +1,8 @@
 option (ENABLE_ROCKSDB "Enable RocksDB" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_ROCKSDB OR NO_SSE3_OR_HIGHER) # assumes SSE4.2 and PCLMUL
+if (NOT ENABLE_ROCKSDB OR (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_LESS 2)) # assumes SSE4.2 and PCLMUL
   message (STATUS "Not using RocksDB")
   return()
-endif()
-
-# ClickHouse cannot be compiled without snappy, lz4, zlib, zstd
-option(WITH_SNAPPY "build with SNAPPY" ON)
-option(WITH_LZ4 "build with lz4" ON)
-option(WITH_ZLIB "build with zlib" ON)
-option(WITH_ZSTD "build with zstd" ON)
-
-if (ENABLE_JEMALLOC AND OS_LINUX) # gives compile errors with jemalloc enabled for rocksdb on non-Linux
-  add_definitions(-DROCKSDB_JEMALLOC -DJEMALLOC_NO_DEMANGLE)
-  list (APPEND THIRDPARTY_LIBS ch_contrib::jemalloc)
-endif ()
-
-if (ENABLE_LIBURING)
-  add_definitions(-DROCKSDB_IOURING_PRESENT)
-  list (APPEND THIRDPARTY_LIBS ch_contrib::liburing)
-endif ()
-
-if (WITH_SNAPPY)
-  add_definitions(-DSNAPPY)
-  list(APPEND THIRDPARTY_LIBS ch_contrib::snappy)
-endif()
-
-if (WITH_ZLIB)
-  add_definitions(-DZLIB)
-  list(APPEND THIRDPARTY_LIBS ch_contrib::zlib)
-endif()
-
-if (WITH_LZ4)
-  add_definitions(-DLZ4)
-  list(APPEND THIRDPARTY_LIBS ch_contrib::lz4)
-endif()
-
-if (WITH_ZSTD)
-  add_definitions(-DZSTD)
-  list(APPEND THIRDPARTY_LIBS ch_contrib::zstd)
 endif()
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|AARCH64")
@@ -47,27 +11,6 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|AARCH64")
   # ARM flags, see cmake/cpu_features.cmake
   # set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv8-a+crc+crypto -Wno-unused-function")
   # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv8-a+crc+crypto -Wno-unused-function")
-endif()
-
-if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
-  add_definitions(-DOS_MACOSX)
-elseif(CMAKE_SYSTEM_NAME MATCHES "Linux")
-  add_definitions(-DOS_LINUX)
-elseif(CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
-  add_definitions(-DOS_FREEBSD)
-elseif(CMAKE_SYSTEM_NAME MATCHES "Android")
-  add_definitions(-DOS_ANDROID)
-endif()
-
-add_definitions(-DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX)
-
-if ((OS_LINUX OR OS_FREEBSD) AND NOT USE_MUSL)
-  add_definitions(-DROCKSDB_PTHREAD_ADAPTIVE_MUTEX)
-endif()
-
-if (OS_LINUX)
-  add_definitions(-DROCKSDB_SCHED_GETCPU_PRESENT)
-  add_definitions(-DROCKSDB_AUXV_GETAUXVAL_PRESENT)
 endif()
 
 set(ROCKSDB_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/rocksdb")
@@ -90,8 +33,12 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/cache/sharded_cache.cc
     ${ROCKSDB_SOURCE_DIR}/cache/tiered_secondary_cache.cc
     ${ROCKSDB_SOURCE_DIR}/db/arena_wrapped_db_iter.cc
+    ${ROCKSDB_SOURCE_DIR}/db/version_util.cc
     ${ROCKSDB_SOURCE_DIR}/db/attribute_group_iterator_impl.cc
     ${ROCKSDB_SOURCE_DIR}/db/blob/blob_contents.cc
+    ${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_partition_manager.cc
+    ${ROCKSDB_SOURCE_DIR}/db/blob/blob_gen2_format.cc
+    ${ROCKSDB_SOURCE_DIR}/db/blob/blob_write_batch_transformer.cc
     ${ROCKSDB_SOURCE_DIR}/db/blob/blob_fetcher.cc
     ${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_addition.cc
     ${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_builder.cc
@@ -130,6 +77,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_files.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_follower.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_open.cc
+    ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_debug.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_experimental.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_readonly.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_secondary.cc
@@ -149,10 +97,12 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/db/log_reader.cc
     ${ROCKSDB_SOURCE_DIR}/db/log_writer.cc
     ${ROCKSDB_SOURCE_DIR}/db/malloc_stats.cc
+    ${ROCKSDB_SOURCE_DIR}/db/manifest_ops.cc
     ${ROCKSDB_SOURCE_DIR}/db/memtable.cc
     ${ROCKSDB_SOURCE_DIR}/db/memtable_list.cc
     ${ROCKSDB_SOURCE_DIR}/db/merge_helper.cc
     ${ROCKSDB_SOURCE_DIR}/db/merge_operator.cc
+    ${ROCKSDB_SOURCE_DIR}/db/multi_scan.cc
     ${ROCKSDB_SOURCE_DIR}/db/output_validator.cc
     ${ROCKSDB_SOURCE_DIR}/db/periodic_task_scheduler.cc
     ${ROCKSDB_SOURCE_DIR}/db/range_del_aggregator.cc
@@ -171,6 +121,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/db/wal_edit.cc
     ${ROCKSDB_SOURCE_DIR}/db/wal_manager.cc
     ${ROCKSDB_SOURCE_DIR}/db/wide/wide_column_serialization.cc
+    ${ROCKSDB_SOURCE_DIR}/db/wide/read_path_blob_resolver.cc
     ${ROCKSDB_SOURCE_DIR}/db/wide/wide_columns.cc
     ${ROCKSDB_SOURCE_DIR}/db/wide/wide_columns_helper.cc
     ${ROCKSDB_SOURCE_DIR}/db/write_batch.cc
@@ -212,6 +163,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/memtable/hash_skiplist_rep.cc
     ${ROCKSDB_SOURCE_DIR}/memtable/skiplistrep.cc
     ${ROCKSDB_SOURCE_DIR}/memtable/vectorrep.cc
+    ${ROCKSDB_SOURCE_DIR}/memtable/wbwi_memtable.cc
     ${ROCKSDB_SOURCE_DIR}/memtable/write_buffer_manager.cc
     ${ROCKSDB_SOURCE_DIR}/monitoring/histogram.cc
     ${ROCKSDB_SOURCE_DIR}/monitoring/histogram_windowing.cc
@@ -238,6 +190,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/port/stack_trace.cc
     ${ROCKSDB_SOURCE_DIR}/table/adaptive/adaptive_table_factory.cc
     ${ROCKSDB_SOURCE_DIR}/table/block_based/binary_search_index_reader.cc
+    ${ROCKSDB_SOURCE_DIR}/table/block_based/multi_scan_index_iterator.cc
     ${ROCKSDB_SOURCE_DIR}/table/block_based/block.cc
     ${ROCKSDB_SOURCE_DIR}/table/block_based/block_based_table_builder.cc
     ${ROCKSDB_SOURCE_DIR}/table/block_based/block_based_table_factory.cc
@@ -296,6 +249,8 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/trace_replay/trace_record.cc
     ${ROCKSDB_SOURCE_DIR}/trace_replay/trace_replay.cc
     ${ROCKSDB_SOURCE_DIR}/util/async_file_reader.cc
+    ${ROCKSDB_SOURCE_DIR}/util/coro_stats_util.cc
+    ${ROCKSDB_SOURCE_DIR}/util/io_dispatcher_imp.cc
     ${ROCKSDB_SOURCE_DIR}/util/cleanable.cc
     ${ROCKSDB_SOURCE_DIR}/util/coding.cc
     ${ROCKSDB_SOURCE_DIR}/util/compaction_job_stats_impl.cc
@@ -322,6 +277,11 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/util/write_batch_util.cc
     ${ROCKSDB_SOURCE_DIR}/util/xxhash.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/agg_merge/agg_merge.cc
+    ${ROCKSDB_SOURCE_DIR}/utilities/copy_engine/copy_engine.cc
+    ${ROCKSDB_SOURCE_DIR}/utilities/sorted_run_builder/sorted_run_builder.cc
+    ${ROCKSDB_SOURCE_DIR}/utilities/trie_index/bitvector.cc
+    ${ROCKSDB_SOURCE_DIR}/utilities/trie_index/louds_trie.cc
+    ${ROCKSDB_SOURCE_DIR}/utilities/trie_index/trie_index_factory.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/backup/backup_engine.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/checkpoint/checkpoint_impl.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/compaction_filters.cc
@@ -406,11 +366,69 @@ list(APPEND SOURCES
 
 add_library(_rocksdb ${SOURCES})
 add_library(ch_contrib::rocksdb ALIAS _rocksdb)
-target_link_libraries(_rocksdb PRIVATE ${THIRDPARTY_LIBS} ${SYSTEM_LIBS})
-
-# Not in the native build system but useful anyways:
-# Make all functions in xxHash.h inline. Beneficial for performance: https://github.com/Cyan4973/xxHash/tree/v0.8.2#build-modifiers
-target_compile_definitions (_rocksdb PRIVATE XXH_INLINE_ALL)
 
 # SYSTEM is required to overcome some issues
 target_include_directories(_rocksdb SYSTEM BEFORE INTERFACE "${ROCKSDB_SOURCE_DIR}/include")
+
+# Not in the native build system but useful anyways:
+# Make all functions in xxHash.h inline. Beneficial for performance: https://github.com/Cyan4973/xxHash/tree/v0.8.2#build-modifiers
+target_compile_definitions(_rocksdb PRIVATE XXH_INLINE_ALL)
+
+# ClickHouse cannot be compiled without snappy, lz4, zlib, zstd
+option(WITH_SNAPPY "build with SNAPPY" ON)
+option(WITH_LZ4 "build with lz4" ON)
+option(WITH_ZLIB "build with zlib" ON)
+option(WITH_ZSTD "build with zstd" ON)
+
+if (ENABLE_JEMALLOC AND OS_LINUX) # gives compile errors with jemalloc enabled for rocksdb on non-Linux
+  target_compile_definitions(_rocksdb PRIVATE -DROCKSDB_JEMALLOC -DJEMALLOC_NO_DEMANGLE)
+  list (APPEND THIRDPARTY_LIBS ch_contrib::jemalloc)
+endif ()
+
+if (ENABLE_LIBURING)
+  target_compile_definitions(_rocksdb PRIVATE -DROCKSDB_IOURING_PRESENT)
+  list (APPEND THIRDPARTY_LIBS ch_contrib::liburing)
+endif ()
+
+if (WITH_SNAPPY)
+  target_compile_definitions(_rocksdb PRIVATE -DSNAPPY)
+  list(APPEND THIRDPARTY_LIBS ch_contrib::snappy)
+endif()
+
+if (WITH_ZLIB)
+  target_compile_definitions(_rocksdb PRIVATE -DZLIB)
+  list(APPEND THIRDPARTY_LIBS ch_contrib::zlib)
+endif()
+
+if (WITH_LZ4)
+  target_compile_definitions(_rocksdb PRIVATE -DLZ4)
+  list(APPEND THIRDPARTY_LIBS ch_contrib::lz4)
+endif()
+
+if (WITH_ZSTD)
+  target_compile_definitions(_rocksdb PRIVATE -DZSTD)
+  list(APPEND THIRDPARTY_LIBS ch_contrib::zstd)
+endif()
+
+if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
+  target_compile_definitions(_rocksdb PRIVATE -DOS_MACOSX)
+elseif(CMAKE_SYSTEM_NAME MATCHES "Linux")
+  target_compile_definitions(_rocksdb PRIVATE -DOS_LINUX)
+elseif(CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
+  target_compile_definitions(_rocksdb PRIVATE -DOS_FREEBSD)
+elseif(CMAKE_SYSTEM_NAME MATCHES "Android")
+  target_compile_definitions(_rocksdb PRIVATE -DOS_ANDROID)
+endif()
+
+target_compile_definitions(_rocksdb PRIVATE -DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX)
+
+if ((OS_LINUX OR OS_FREEBSD) AND NOT USE_MUSL)
+  target_compile_definitions(_rocksdb PRIVATE -DROCKSDB_PTHREAD_ADAPTIVE_MUTEX)
+endif()
+
+if (OS_LINUX)
+  target_compile_definitions(_rocksdb PRIVATE -DROCKSDB_SCHED_GETCPU_PRESENT)
+  target_compile_definitions(_rocksdb PRIVATE -DROCKSDB_AUXV_GETAUXVAL_PRESENT)
+endif()
+
+target_link_libraries(_rocksdb PRIVATE ${THIRDPARTY_LIBS} ${SYSTEM_LIBS})

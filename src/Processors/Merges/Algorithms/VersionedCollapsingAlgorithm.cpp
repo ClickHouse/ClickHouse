@@ -15,9 +15,10 @@ VersionedCollapsingAlgorithm::VersionedCollapsingAlgorithm(
     const String & sign_column_,
     size_t max_block_size_rows_,
     size_t max_block_size_bytes_,
+    std::optional<size_t> max_dynamic_subcolumns_,
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes)
-    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, MAX_ROWS_IN_MULTIVERSION_QUEUE, std::make_unique<MergedData>(use_average_block_sizes, max_block_size_rows_, max_block_size_bytes_))
+    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, MAX_ROWS_IN_MULTIVERSION_QUEUE, std::make_unique<MergedData>(use_average_block_sizes, max_block_size_rows_, max_block_size_bytes_, max_dynamic_subcolumns_))
     /// -1 for +1 in FixedSizeDequeWithGaps's internal buffer. 3 is a reasonable minimum size to collapse anything.
     , max_rows_in_queue(std::min(std::max<size_t>(3, max_block_size_rows_), MAX_ROWS_IN_MULTIVERSION_QUEUE) - 1)
     , current_keys(max_rows_in_queue)
@@ -47,13 +48,17 @@ void VersionedCollapsingAlgorithm::insertGap(size_t gap_size)
 
 void VersionedCollapsingAlgorithm::insertRow(size_t skip_rows, const RowRef & row)
 {
-    merged_data->insertRow(*row.all_columns, row.row_num, row.owned_chunk->getNumRows());
+    const bool filtered = isRowFiltered(row);
+
+    if (!filtered)
+        merged_data->insertRow(*row.all_columns, row.row_num, row.owned_chunk->getNumRows());
 
     insertGap(skip_rows);
 
     if (out_row_sources_buf)
     {
-        current_row_sources.front().setSkipFlag(false);
+        if (!filtered)
+            current_row_sources.front().setSkipFlag(false);
         writeRowSourcePart(*out_row_sources_buf, current_row_sources.front());
         current_row_sources.pop();
     }
@@ -64,7 +69,7 @@ IMergingAlgorithm::Status VersionedCollapsingAlgorithm::merge()
     /// Take rows in correct order and put them into `merged_columns` until the rows no more than `max_block_size`
     while (queue.isValid())
     {
-        SortCursor current = queue.current();
+        SortCursor current = *queue.current().first;
 
         if (current->isLast() && skipLastRowFor(current->order))
         {
@@ -129,7 +134,7 @@ IMergingAlgorithm::Status VersionedCollapsingAlgorithm::merge()
 
         if (!current->isLast())
         {
-            queue.next();
+            queue.next(1);
         }
         else
         {
