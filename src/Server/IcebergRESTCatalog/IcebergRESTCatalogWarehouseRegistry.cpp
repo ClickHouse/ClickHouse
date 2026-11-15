@@ -75,7 +75,9 @@ std::optional<IcebergRESTCatalogWarehouseDefinition> IcebergRESTCatalogWarehouse
     auto component_guard = Coordination::setCurrentComponent("IcebergRESTCatalogWarehouseRegistry::tryGetDefinition");
     const auto path = keeper_config.warehousePath(name);
     String data;
-    if (!keeper_config.getZooKeeper(*context)->tryGet(path, data))
+    auto zookeeper = keeper_config.getZooKeeper(*context);
+    zookeeper->sync(path);
+    if (!zookeeper->tryGet(path, data))
         return std::nullopt;
     return IcebergRESTCatalogWarehouseDefinition::fromKeeperData(data, path);
 }
@@ -84,6 +86,8 @@ std::map<String, IcebergRESTCatalogWarehouseDefinition> IcebergRESTCatalogWareho
 {
     auto component_guard = Coordination::setCurrentComponent("IcebergRESTCatalogWarehouseRegistry::list");
     auto zookeeper = keeper_config.getZooKeeper(*context);
+
+    zookeeper->sync(keeper_config.zookeeper_path);
 
     /// The parent node is created with the first warehouse.
     Strings children;
@@ -97,9 +101,11 @@ std::map<String, IcebergRESTCatalogWarehouseDefinition> IcebergRESTCatalogWareho
     for (const auto & child : children)
     {
         const auto name = unescapeForFileName(child);
+        const auto path = keeper_config.warehousePath(name);
+        String data;
         /// A warehouse dropped after the listing is skipped.
-        if (auto definition = tryGetDefinition(name))
-            result.emplace(name, std::move(*definition));
+        if (zookeeper->tryGet(path, data))
+            result.emplace(name, IcebergRESTCatalogWarehouseDefinition::fromKeeperData(data, path));
     }
     return result;
 }
@@ -157,6 +163,7 @@ IcebergRESTCatalogWarehouseRegistry::replaceCredential(const String & name, cons
 
     String data;
     Coordination::Stat stat;
+    zookeeper->sync(path);
     if (!zookeeper->tryGet(path, data, &stat))
         return ReplaceCredentialResult::NotFound;
 

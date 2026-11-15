@@ -56,7 +56,7 @@ public:
     UpdateTableResult updateTable(
         const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & expected, const IcebergTablePointer & new_pointer) const;
 
-    /// Lists one key under `base_location`. This proves that the role was assumed and can read the location.
+    /// Checks that the role was assumed, then lists one key under `base_location`. This proves that the role can read the location.
     void checkStorageAccess() const;
 
 private:
