@@ -11,6 +11,7 @@
 #include <Core/MergeTreeSerializationEnums.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsChangesHistory.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
