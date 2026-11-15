@@ -1,0 +1,11 @@
+-- two parts, local disk, REMOTE should skip all
+all_1_1_0	1	Skipped: not on remote disk.
+all_2_2_0	1	Skipped: not on remote disk.
+-- REMOTE with PARTITION
+all_1_1_0	1	Skipped: not on remote disk.
+all_2_2_0	1	Skipped: not on remote disk.
+-- normal CHECK TABLE still works
+all_1_1_0	1	
+all_2_2_0	1	
+-- single value result with REMOTE
+1

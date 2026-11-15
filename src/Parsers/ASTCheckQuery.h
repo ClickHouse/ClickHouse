@@ -13,6 +13,7 @@ struct ASTCheckTableQuery : public ASTQueryWithTableAndOutput
 {
     ASTPtr partition;
     String part_name;
+    bool remote = false;
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "CheckQuery" + (delim + getDatabase()) + delim + getTable(); }
@@ -44,6 +45,7 @@ struct ASTCheckTableQuery : public ASTQueryWithTableAndOutput
         hash_state.update(partition != nullptr);
         if (partition)
             partition->updateTreeHash(hash_state, ignore_aliases);
+        hash_state.update(remote);
         ASTQueryWithTableAndOutput::updateTreeHashImpl(hash_state, ignore_aliases);
     }
 
@@ -88,6 +90,9 @@ protected:
             ostr << indent_str << " PART "
                 << quoteString(part_name);
         }
+
+        if (remote)
+            ostr << " REMOTE";
     }
 };
 

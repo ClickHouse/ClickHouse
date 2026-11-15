@@ -20,6 +20,8 @@ void ASTCheckTableQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("partition", partition);
     if (!part_name.empty())
         w.writeString("part_name", part_name);
+    if (remote)
+        w.writeBool("remote", remote);
     writeOutputOptionsJSON(w);
 }
 
@@ -53,6 +55,7 @@ void ASTCheckTableQuery::readJSON(const Poco::JSON::Object & json)
     if (partition && !part_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`CheckTableQuery` cannot carry both 'partition' and 'part_name' during AST JSON deserialization");
+    remote = r.getBool("remote");
     readOutputOptionsJSON(r);
 }
 
