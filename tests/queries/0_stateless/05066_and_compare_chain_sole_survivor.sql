@@ -23,6 +23,7 @@ SELECT (materialize(7::UInt8) = 7) AND (materialize(7::UInt8) < 300);
 SELECT (materialize(7::UInt8) IN (7)) AND (materialize(7::UInt8) < 300);
 SELECT isNull(materialize(7::UInt8)) AND (materialize(7::UInt8) < 300);
 SELECT not(materialize(true)) AND (materialize(7::UInt8) < 300) AS v, toTypeName(v);
+-- A `GROUP BY` key that holds no `AND`.
 SELECT count() FROM (SELECT 1::Bool AS c0, 7::UInt8 AS u) t0 GROUP BY (c0 = 1) = 1 WITH ROLLUP;
 -- A query at a guarded level whose `or` and `equals` sites are untouched still returns correct
 -- values. It holds no `AND`, so it has no sole survivor of its own.
@@ -50,7 +51,7 @@ SELECT count() FROM t_05066 WHERE hasToken(msg, 'needle') AND (severity < 300);
 DROP TABLE t_05066;
 
 -- Reducing such a key to one of its operands makes it disagree with the copies the analyzer typed
--- against it, which under group_by_use_nulls are wrapped in `Nullable`.
+-- against it, which under `group_by_use_nulls` are wrapped in `Nullable`.
 SELECT c0 AND (u < 300) AS k, count() FROM (SELECT 1::Bool AS c0, 7::UInt8 AS u) t0
 GROUP BY c0 AND (u < 300) WITH ROLLUP ORDER BY k SETTINGS group_by_use_nulls = 1;
 
@@ -146,7 +147,7 @@ WITH (c0 AND (u < 300)) AS e
 SELECT e, count() FROM (SELECT 1::Bool AS c0, 7::UInt8 AS u) t0
 WHERE e GROUP BY e WITH ROLLUP ORDER BY e SETTINGS group_by_use_nulls = 1;
 -- Their own chains are not optimized either, because a query level is what is left alone. Each row
--- has a group_by_use_nulls = 0 sibling, so the absence is attributable to the setting and not to the
+-- has a `group_by_use_nulls = 0` sibling, so the absence is attributable to the setting and not to the
 -- chain being uninformative.
 SELECT count() > 0 FROM (EXPLAIN SYNTAX run_query_tree_passes = 1
 SELECT count() FROM (SELECT number AS x, number * 2 AS y FROM numbers(10))
