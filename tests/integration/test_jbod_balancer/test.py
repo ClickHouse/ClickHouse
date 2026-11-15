@@ -1,15 +1,9 @@
-import json
-import random
-import re
-import string
-import threading
-import time
 from multiprocessing.dummy import Pool
 
 import pytest
 
-from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, assert_eq_with_retry
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -113,17 +107,24 @@ def test_jbod_balanced_merge(start_cluster):
 
         p = Pool(20)
 
+        # async_insert = 0: the destinations are MergeTree, so these inserts would otherwise take the
+        # async insert queue route, which coalesces concurrent single-block INSERT ... SELECTs into
+        # fewer and larger parts. This test balances parts across JBOD disks, so it needs one part per
+        # insert.
         def task(i):
             print("Processing insert {}/{}".format(i, 200))
             # around 1k per block
             node1.query(
-                "insert into tbl select number % 2, randomPrintableASCII(16) from numbers(50)"
+                "insert into tbl select number % 2, randomPrintableASCII(16) from numbers(50)",
+                settings={"async_insert": 0},
             )
             node1.query(
-                "insert into tmp1 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
+                "insert into tmp1 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)",
+                settings={"async_insert": 0},
             )
             node1.query(
-                "insert into tmp2 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
+                "insert into tmp2 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)",
+                settings={"async_insert": 0},
             )
 
         p.map(task, range(200))
@@ -133,9 +134,9 @@ def test_jbod_balanced_merge(start_cluster):
         check_balance(node1, "tbl")
 
     finally:
-        node1.query(f"DROP TABLE IF EXISTS tbl SYNC")
-        node1.query(f"DROP TABLE IF EXISTS tmp1 SYNC")
-        node1.query(f"DROP TABLE IF EXISTS tmp2 SYNC")
+        node1.query("DROP TABLE IF EXISTS tbl SYNC")
+        node1.query("DROP TABLE IF EXISTS tmp1 SYNC")
+        node1.query("DROP TABLE IF EXISTS tmp2 SYNC")
 
 
 def test_replicated_balanced_merge_fetch(start_cluster):
@@ -178,25 +179,32 @@ def test_replicated_balanced_merge_fetch(start_cluster):
         node2.query("alter table tbl modify setting always_fetch_merged_part = 1")
         p = Pool(5)
 
+        # async_insert = 0: see test_jbod_balanced_merge above, one part per insert is what gets
+        # balanced across the disks here.
         def task(i):
             print("Processing insert {}/{}".format(i, 200))
             # around 1k per block
             node1.query(
-                "insert into tbl select number % 2, randomPrintableASCII(16) from numbers(50)"
+                "insert into tbl select number % 2, randomPrintableASCII(16) from numbers(50)",
+                settings={"async_insert": 0},
             )
 
             # Fill jbod disks with garbage data
             node1.query(
-                "insert into tmp1 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
+                "insert into tmp1 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)",
+                settings={"async_insert": 0},
             )
             node1.query(
-                "insert into tmp2 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
+                "insert into tmp2 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)",
+                settings={"async_insert": 0},
             )
             node2.query(
-                "insert into tmp1 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
+                "insert into tmp1 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)",
+                settings={"async_insert": 0},
             )
             node2.query(
-                "insert into tmp2 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
+                "insert into tmp2 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)",
+                settings={"async_insert": 0},
             )
 
         p.map(task, range(200))

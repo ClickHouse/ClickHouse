@@ -122,12 +122,17 @@ void SortNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) const
 
 QueryTreeNodePtr SortNode::cloneImpl() const
 {
-    return std::make_shared<SortNode>(nullptr /*expression*/, sort_direction, nulls_sort_direction, collator, with_fill);
+    auto result = std::make_shared<SortNode>(nullptr /*expression*/, sort_direction, nulls_sort_direction, collator, with_fill);
+    /// `column_name` is derived from the original AST identifier, not from a child node, so the base
+    /// clone machinery does not reproduce it. The planner reads it (`PlannerSorting`) and it appears
+    /// in `EXPLAIN`, so a clone must carry it explicitly.
+    result->column_name = column_name;
+    return result;
 }
 
 ASTPtr SortNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto result = std::make_shared<ASTOrderByElement>();
+    auto result = make_intrusive<ASTOrderByElement>();
     result->direction = sort_direction == SortDirection::ASCENDING ? 1 : -1;
     result->nulls_direction = result->direction;
     if (nulls_sort_direction)
@@ -138,7 +143,7 @@ ASTPtr SortNode::toASTImpl(const ConvertToASTOptions & options) const
     result->children.push_back(getExpression()->toAST(options));
 
     if (collator)
-        result->setCollation(std::make_shared<ASTLiteral>(Field(collator->getLocale())));
+        result->setCollation(make_intrusive<ASTLiteral>(Field(collator->getLocale())));
 
     result->with_fill = with_fill;
     if (hasFillFrom())

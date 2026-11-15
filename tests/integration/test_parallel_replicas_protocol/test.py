@@ -1,6 +1,5 @@
 import re
 import uuid
-from random import randint
 
 import pytest
 
@@ -72,6 +71,7 @@ def test_mark_segment_size_communicated_correctly(
             "parallel_replicas_local_plan": local_plan,
             "query_id": query_id,
             "parallel_replicas_index_analysis_only_on_coordinator": index_analysis_only_on_coordinator,
+            "use_statistics_for_sum_avg_aggregation": 0,
         },
     )
 
@@ -84,7 +84,6 @@ def test_final_on_parallel_replicas(start_cluster):
     nodes[0].query("DROP TABLE IF EXISTS t0")
     nodes[0].query(
         "CREATE TABLE t0 (c0 Int) ENGINE = SummingMergeTree() ORDER BY tuple()",
-        settings={"allow_suspicious_primary_key": 1},
     )
     nodes[0].query("INSERT INTO t0 VALUES (1)")
     nodes[0].query("OPTIMIZE TABLE t0 FINAL")

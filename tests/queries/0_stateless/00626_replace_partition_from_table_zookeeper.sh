@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-object-storage, long
+# Tags: zookeeper, no-object-storage, long, no-msan
 
 # Because REPLACE PARTITION does not forces immediate removal of replaced data parts from local filesystem
 # (it tries to do it as quick as possible, but it still performed in separate thread asynchronously)
@@ -51,7 +51,10 @@ $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM dst_r2;"
 
 $CLICKHOUSE_CLIENT --query="SELECT 'REPLACE empty';"
 query_with_retry "ALTER TABLE src DROP PARTITION 1;"
-query_with_retry "ALTER TABLE dst_r1 REPLACE PARTITION 1 FROM src;"
+# The setting opt-in preserves the legacy `REPLACE PARTITION` from empty source behavior
+# (silently drop the destination partition). Issue #23727 made this a per-query opt-in to
+# prevent accidental data loss; this test continues to exercise the intentional-clear case.
+query_with_retry "ALTER TABLE dst_r1 REPLACE PARTITION 1 FROM src SETTINGS allow_replace_partition_from_empty_source = 1;"
 
 $CLICKHOUSE_CLIENT --query="SYSTEM SYNC REPLICA dst_r2;"
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM dst_r1;"

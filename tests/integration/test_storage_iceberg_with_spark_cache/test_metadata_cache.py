@@ -3,8 +3,6 @@ import pytest
 
 from helpers.iceberg_utils import (
     generate_data,
-    get_uuid_str,
-    get_creation_expression,
     get_creation_expression,
     get_uuid_str,
     write_iceberg_from_df,
@@ -69,7 +67,7 @@ def test_metadata_cache(started_cluster_iceberg_with_spark, storage_type):
         )
     )
 
-    instance.query("SYSTEM DROP ICEBERG METADATA CACHE")
+    instance.query("SYSTEM CLEAR ICEBERG METADATA CACHE")
 
     query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
     instance.query(

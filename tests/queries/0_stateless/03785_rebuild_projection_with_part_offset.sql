@@ -15,14 +15,14 @@ CREATE TABLE test
 )
 ENGINE = ReplacingMergeTree
 ORDER BY a
-SETTINGS index_granularity_bytes = 10485760, index_granularity = 8192, deduplicate_merge_projection_mode = 'rebuild';
+SETTINGS index_granularity_bytes = 10485760, index_granularity = 8192, merge_max_block_size = 8192, deduplicate_merge_projection_mode = 'rebuild';
 
 INSERT INTO test SELECT number * 3, rand() FROM numbers(100000);
 INSERT INTO test SELECT number * 3 + 1, rand() FROM numbers(100000);
-SELECT sum(l._part_offset = r._parent_part_offset) FROM test l JOIN mergeTreeProjection(currentDatabase(), test, p) r USING (a) SETTINGS enable_analyzer = 1;
+SELECT sum(l._part_offset = r._parent_part_offset) FROM test l JOIN mergeTreeProjection(currentDatabase(), test, p) r USING (a);
 
 OPTIMIZE TABLE test FINAL;
 
-SELECT sum(l._part_offset = r._parent_part_offset) FROM test l JOIN mergeTreeProjection(currentDatabase(), test, p) r USING (a) SETTINGS enable_analyzer = 1;
+SELECT sum(l._part_offset = r._parent_part_offset) FROM test l JOIN mergeTreeProjection(currentDatabase(), test, p) r USING (a);
 
 DROP TABLE test;

@@ -1,8 +1,8 @@
+#include <Common/StringUtils.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTObjectTypeArgument.h>
 #include <Parsers/CommonParsers.h>
 #include <Common/quoteString.h>
-#include <boost/algorithm/string.hpp>
 
 
 namespace DB
@@ -10,7 +10,7 @@ namespace DB
 
 ASTPtr ASTObjectTypedPathArgument::clone() const
 {
-    auto res = std::make_shared<ASTObjectTypedPathArgument>(*this);
+    auto res = make_intrusive<ASTObjectTypedPathArgument>(*this);
     res->children.clear();
 
     if (type)
@@ -25,8 +25,11 @@ ASTPtr ASTObjectTypedPathArgument::clone() const
 void ASTObjectTypedPathArgument::formatImpl(
     WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    /// We must quote path "SKIP" to avoid its confusion with SKIP keyword in Object arguments.
-    if (boost::to_upper_copy(path) == "SKIP")
+    if (shared)
+        ostr << "SHARED ";
+
+    /// A path that reads as a keyword of the Object arguments must be quoted to stay a path.
+    if (equalsCaseInsensitive(path, "SKIP") || equalsCaseInsensitive(path, "SHARED"))
         ostr << backQuote(path) << ' ';
     else
         ostr << backQuoteIfNeed(path) << ' ';
@@ -36,7 +39,7 @@ void ASTObjectTypedPathArgument::formatImpl(
 
 ASTPtr ASTObjectTypeArgument::clone() const
 {
-    auto res = std::make_shared<ASTObjectTypeArgument>(*this);
+    auto res = make_intrusive<ASTObjectTypeArgument>(*this);
     res->children.clear();
 
     if (path_with_type)

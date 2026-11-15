@@ -22,6 +22,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_min_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_number_of_mutations_for_replica;
+    extern const MergeTreeSettingsUInt64 min_unreserved_disk_space_for_merge;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_execute_mutation;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_lower_max_size_of_merge;
 }
@@ -38,10 +39,12 @@ constexpr static double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.1;
 namespace CompactionStatistics
 {
 
-UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, const bool & account_for_deleted)
+UInt64 estimateNeededDiskSpace(
+    const MergeTreeDataPartsVector & source_parts, const bool & account_for_deleted, time_t current_time)
 {
     size_t bytes_size = 0;
-    time_t current_time = std::time(nullptr);
+    if (!current_time)
+        current_time = std::time(nullptr);
 
     for (const MergeTreeData::DataPartPtr & part : source_parts)
     {
@@ -56,7 +59,7 @@ UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, co
             bytes_size += part->getBytesOnDisk();
     }
 
-    return static_cast<UInt64>(bytes_size * DISK_USAGE_COEFFICIENT_TO_RESERVE);
+    return static_cast<UInt64>(static_cast<double>(bytes_size) * DISK_USAGE_COEFFICIENT_TO_RESERVE);
 }
 
 UInt64 estimateAtLeastAvailableSpace(const PartsRange & range)
@@ -66,24 +69,34 @@ UInt64 estimateAtLeastAvailableSpace(const PartsRange & range)
     for (const auto & part : range)
         bytes_size += part.size;
 
-    return static_cast<UInt64>(bytes_size * DISK_USAGE_COEFFICIENT_TO_SELECT);
+    return static_cast<UInt64>(static_cast<double>(bytes_size) * DISK_USAGE_COEFFICIENT_TO_SELECT);
 }
 
-UInt64 getMaxSourcePartsBytesForMerge(const MergeTreeData & data)
+UInt64 getMaxSourcePartsBytesForMerge(const MergeTreeData & data, bool respect_min_unreserved_space)
 {
     size_t scheduled_tasks_count = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
 
     auto max_tasks_count = data.getContext()->getMergeMutateExecutor()->getMaxTasksCount();
-    return getMaxSourcePartsBytesForMerge(data, max_tasks_count, scheduled_tasks_count);
+    return getMaxSourcePartsBytesForMerge(data, max_tasks_count, scheduled_tasks_count, respect_min_unreserved_space);
 }
 
-UInt64 getMaxSourcePartsBytesForMerge(const MergeTreeData & data, size_t max_count, size_t scheduled_tasks_count)
+UInt64 getMaxSourcePartsBytesForMerge(
+    const MergeTreeData & data, size_t max_count, size_t scheduled_tasks_count, bool respect_min_unreserved_space)
 {
     const auto data_settings = data.getSettings();
+
+    /// Keep some unreserved space out of merges' reach, so that they cannot starve inserts (see #80006).
+    size_t max_unreserved_free_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
+    if (respect_min_unreserved_space)
+    {
+        size_t space_to_protect = (*data_settings)[MergeTreeSetting::min_unreserved_disk_space_for_merge];
+        max_unreserved_free_space -= std::min(max_unreserved_free_space, space_to_protect);
+    }
+
     return getMaxSourcePartsBytesForMerge(
         /*max_count=*/max_count,
         /*scheduled_tasks_count=*/scheduled_tasks_count,
-        /*max_unreserved_free_space*/data.getStoragePolicy()->getMaxUnreservedFreeSpace(),
+        /*max_unreserved_free_space*/max_unreserved_free_space,
         /*size_lowering_threshold=*/(*data_settings)[MergeTreeSetting::number_of_free_entries_in_pool_to_lower_max_size_of_merge],
         /*size_limit_at_min_pool_space=*/(*data_settings)[MergeTreeSetting::max_bytes_to_merge_at_min_space_in_pool],
         /*size_limit_at_max_pool_space=*/(*data_settings)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool]);
@@ -124,45 +137,46 @@ UInt64 getMaxSourcePartsBytesForMerge(
         size_limit_at_min_pool_space = std::max<size_t>(1, size_limit_at_min_pool_space);
 
         max_size = static_cast<UInt64>(interpolateExponential(
-            size_limit_at_min_pool_space,
-            size_limit_at_max_pool_space,
-            static_cast<double>(free_entries) / size_lowering_threshold));
+            static_cast<double>(size_limit_at_min_pool_space),
+            static_cast<double>(size_limit_at_max_pool_space),
+            static_cast<double>(free_entries) / static_cast<double>(size_lowering_threshold)));
     }
 
-    return std::min(max_size, static_cast<UInt64>(max_unreserved_free_space / DISK_USAGE_COEFFICIENT_TO_SELECT));
+    return std::min(max_size, static_cast<UInt64>(static_cast<double>(max_unreserved_free_space) / DISK_USAGE_COEFFICIENT_TO_SELECT));
 }
 
 UInt64 getMaxSourcePartBytesForMutation(const MergeTreeData & data, String * out_log_comment)
 {
     const auto data_settings = data.getSettings();
-    size_t occupied = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
+    Int64 occupied = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
 
-    size_t max_number_of_mutations_for_replica = (*data_settings)[MergeTreeSetting::max_number_of_mutations_for_replica];
+    Int64 max_number_of_mutations_for_replica = (*data_settings)[MergeTreeSetting::max_number_of_mutations_for_replica];
     if (max_number_of_mutations_for_replica > 0 && occupied >= max_number_of_mutations_for_replica)
     {
         if (out_log_comment)
             *out_log_comment = fmt::format("occupied ({}) >= max_number_of_mutations_for_replica ({})", occupied, max_number_of_mutations_for_replica);
+
         return 0;
     }
 
     /// A DataPart can be stored only at a single disk. Get the maximum reservable free space at all disks.
     UInt64 disk_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
-    auto max_tasks_count = data.getContext()->getMergeMutateExecutor()->getMaxTasksCount();
+    Int64 max_tasks_count = data.getContext()->getMergeMutateExecutor()->getMaxTasksCount();
 
     /// Allow mutations only if there are enough threads, otherwise, leave free threads for merges.
-    size_t number_of_free_entries_in_pool_to_execute_mutation = (*data_settings)[MergeTreeSetting::number_of_free_entries_in_pool_to_execute_mutation];
-    if (occupied <= 1
-        || max_tasks_count - occupied >= number_of_free_entries_in_pool_to_execute_mutation)
-        return static_cast<UInt64>(disk_space / DISK_USAGE_COEFFICIENT_TO_RESERVE);
+    Int64 number_of_free_entries_in_pool_to_execute_mutation = (*data_settings)[MergeTreeSetting::number_of_free_entries_in_pool_to_execute_mutation];
+    if (occupied <= 1 || max_tasks_count - occupied >= number_of_free_entries_in_pool_to_execute_mutation)
+        return static_cast<UInt64>(static_cast<double>(disk_space) / DISK_USAGE_COEFFICIENT_TO_RESERVE);
 
     if (out_log_comment)
-        *out_log_comment = fmt::format("max_tasks_count ({}) - occupied ({}) >= number_of_free_entries_in_pool_to_execute_mutation ({})", max_tasks_count, occupied, number_of_free_entries_in_pool_to_execute_mutation);
+        *out_log_comment = fmt::format("max_tasks_count ({}) - occupied ({}) < number_of_free_entries_in_pool_to_execute_mutation ({})", max_tasks_count, occupied, number_of_free_entries_in_pool_to_execute_mutation);
+
     return 0;
 }
 
 UInt64 getMaxResultPartRowsCount(const MergeTreeData & data)
 {
-    auto metadata_snapshot = data.getInMemoryMetadataPtr();
+    auto metadata_snapshot = data.getInMemoryMetadataPtr(data.getContext(), false);
     const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
     /// Text index and vector similarity indexes don't support UInt64 indexes of rows.
     bool has_index_with_limit_on_rows = secondary_indices.hasType("text") || secondary_indices.hasType("vector_similarity");

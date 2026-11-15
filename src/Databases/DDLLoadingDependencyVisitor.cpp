@@ -1,3 +1,4 @@
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
@@ -24,7 +25,7 @@ using TableLoadingDependenciesVisitor = DDLLoadingDependencyVisitor::Visitor;
 
 TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, bool can_throw)
 {
-    assert(global_context == global_context->getGlobalContext());
+    chassert(global_context == global_context->getGlobalContext());
     TableLoadingDependenciesVisitor::Data data;
     data.default_database = global_context->getCurrentDatabase();
     data.create_query = ast;
@@ -85,7 +86,8 @@ ssize_t DDLMatcherBase::getPositionOfTableNameArgumentToVisit(const ASTFunction 
         if (!args || args->children.size() != 2)
             return -1;
 
-        if (args->children[1]->as<ASTFunction>())
+        /// A literal, as in x IN ('db.table'), is a set of values, not a table name.
+        if (args->children[1]->as<ASTFunction>() || args->children[1]->as<ASTLiteral>())
             return -1;
 
         return 1;
@@ -135,7 +137,7 @@ void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
 {
     if (storage.ttl_table)
     {
-        auto ttl_dependencies = getDependenciesFromCreateQuery(data.global_context, data.table_name, storage.getChild(*storage.ttl_table), data.default_database);
+        auto ttl_dependencies = getDependenciesFromCreateQuery(data.global_context, data.table_name, storage.ttl_table->ptr(), data.default_database);
         data.dependencies.merge(ttl_dependencies.dependencies);
     }
 

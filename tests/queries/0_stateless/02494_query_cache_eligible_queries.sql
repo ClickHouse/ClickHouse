@@ -1,7 +1,7 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;
 DROP TABLE IF EXISTS eligible_test;
 DROP TABLE IF EXISTS eligible_test2;
 
@@ -13,7 +13,7 @@ SET query_cache_system_table_handling = 'save';
 SELECT 1 SETTINGS use_query_cache = true;
 SELECT COUNT(*) FROM system.query_cache;
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;
 
 -- ... and all other statements also should not create entries:
 
@@ -48,7 +48,7 @@ EXISTS TABLE eligible_test SETTINGS use_query_cache = true;
 SELECT COUNT(*) FROM system.query_cache;
 
 -- KILL
-KILL QUERY WHERE query_id='3-857d-4a57-9ee0-3c7da5d60a90' SETTINGS use_query_cache = true;
+KILL QUERY WHERE query_id='3-857d-4a57-9ee0-3c7da5d60a90' SETTINGS use_query_cache = true, kill_throw_if_noop = false;
 SELECT COUNT(*) FROM system.query_cache;
 
 -- OPTIMIZE
@@ -63,5 +63,5 @@ SELECT COUNT(*) FROM system.query_cache;
 RENAME TABLE eligible_test TO eligible_test2 SETTINGS use_query_cache = true;
 SELECT COUNT(*) FROM system.query_cache;
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;
 DROP TABLE eligible_test2;

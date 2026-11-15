@@ -5,6 +5,7 @@
 
 #include <Common/formatReadable.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <base/getPageSize.h>
 #include <IO/MMappedFileDescriptor.h>
 
@@ -83,6 +84,9 @@ void MMappedFileDescriptor::finish()
 {
     if (!length)
         return;
+
+    /// Concurrent `munmap` calls tear down the page tables one at a time, `MADV_DONTNEED` in parallel.
+    ::madvise(data, length, MADV_DONTNEED);
 
     if (0 != munmap(data, length))
         throw ErrnoException(ErrorCodes::CANNOT_MUNMAP, "MMappedFileDescriptor: Cannot munmap {}", ReadableSize(length));

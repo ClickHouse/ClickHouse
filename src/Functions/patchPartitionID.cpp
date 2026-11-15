@@ -13,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -22,7 +21,7 @@ namespace
 
 /// A special internal function that calculates the partition id of patch part.
 /// Arguments: string column with the part name; const string column with hash of column names in the patch part.
-class FunctionPatchPartitionID : public IFunction
+class FunctionPatchPartitionID final : public IFunction
 {
 public:
     static constexpr auto name = "__patchPartitionID";
@@ -34,12 +33,9 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isString(arguments[0]) || !isString(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The arguments of function {} must be 2 strings", name);
-
-        return std::make_shared<DataTypeString>();
+        return "(String, const String) -> String";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -96,14 +92,7 @@ public:
 
 REGISTER_FUNCTION(PatchPartitionID)
 {
-    factory.registerFunction<FunctionPatchPartitionID>(FunctionDocumentation
-    {
-        .description = R"(
-Internal function. Receives the name of a part and a hash of patch part's column names. Returns the name of partition of patch part. The argument must be a correct name of part, the behaviour is undefined otherwise.
-        )",
-        .introduced_in = {25, 5},
-        .category = FunctionDocumentation::Category::Other,
-    });
+    factory.registerFunction<FunctionPatchPartitionID>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 }
 
 }

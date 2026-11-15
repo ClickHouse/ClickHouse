@@ -1,6 +1,10 @@
 #pragma once
-#include <boost/noncopyable.hpp>
+
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
+#include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
+
+#include <boost/noncopyable.hpp>
 
 namespace DB
 {
@@ -12,7 +16,9 @@ public:
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        ObjectStoragePtr object_storage)>;
+        const ClusterConfigurationPtr & cluster,
+        const ObjectStorageRouterPtr & object_storages,
+        bool run_local_paths_check)>;
 
     static MetadataStorageFactory & instance();
 
@@ -22,15 +28,19 @@ public:
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        ObjectStoragePtr object_storage,
-        const std::string & compatibility_type_hint) const;
+        const ClusterConfigurationPtr & cluster,
+        const ObjectStorageRouterPtr & object_storages,
+        const std::string & compatibility_type_hint,
+        bool run_local_paths_check) const;
 
     static std::string getMetadataType(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const std::string & compatibility_type_hint = "");
 
-    static std::string getCompatibilityMetadataTypeHint(const ObjectStorageType & type);
+    static std::string getCompatibilityMetadataTypeHint(
+        const ClusterConfigurationPtr & cluster,
+        const ObjectStorageRouterPtr & object_storages);
 
     void clearRegistry();
 

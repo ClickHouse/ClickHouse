@@ -1,4 +1,5 @@
 import re
+
 from ci.praktika.info import Info
 
 if __name__ == "__main__":

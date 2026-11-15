@@ -84,8 +84,7 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
-    std::unique_ptr<ReadBufferFromFileBase>
-    readFile(const String &, const ReadSettings &, std::optional<size_t>) const override
+    void prepareRead(const String &, const ReadSettings &, std::optional<size_t>, ReadPipeline &) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
@@ -158,6 +157,10 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
     ReservationPtr reserve(UInt64 /* bytes */) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+    }
+    ReservationPtr reserve(UInt64 /* bytes */, const ReservationConstraints & /* constraints */) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }

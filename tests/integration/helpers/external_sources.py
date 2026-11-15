@@ -127,7 +127,9 @@ class SourceMySQL(ExternalSource):
         self.execute_mysql_query(
             "create database if not exists test default character set 'utf8'"
         )
-        self.execute_mysql_query("drop table if exists test.{}".format(table_name))
+        self.execute_mysql_query(
+            "drop table if exists test.{}".format(table_name)
+        )
         fields_strs = []
         for field in (
             structure.keys + structure.ordinary_fields + structure.range_fields
@@ -251,7 +253,7 @@ class SourceMongo(ExternalSource):
                 row_dict[cell_name] = self.converters[cell_name](cell_value)
             to_insert.append(row_dict)
 
-        result = tbl.insert_many(to_insert)
+        tbl.insert_many(to_insert)
 
 
 class SourceMongoURI(SourceMongo):
@@ -302,6 +304,7 @@ class SourceClickHouse(ExternalSource):
     def prepare(self, structure, table_name, cluster):
         self.node = cluster.instances[self.docker_hostname]
         self.node.query("CREATE DATABASE IF NOT EXISTS test")
+        self.node.query("DROP TABLE IF EXISTS test.{}".format(table_name))
         fields_strs = []
         for field in (
             structure.keys + structure.ordinary_fields + structure.range_fields
@@ -703,9 +706,11 @@ class SourceRedis(ExternalSource):
                 self.client.hset(*values)
 
     def compatible_with_layout(self, layout):
-        return (
-            layout.is_simple
-            and self.storage_type == "simple"
-            or layout.is_complex
-            and self.storage_type == "hash_map"
-        )
+        if self.storage_type == "simple":
+            # 'simple' storage is a flat key-value map: it supports simple-key layouts
+            # and complex-key layouts with a single key column.
+            return layout.is_simple or layout.is_complex
+        if self.storage_type == "hash_map":
+            # 'hash_map' storage is a two-level map, used for complex (composite) keys.
+            return layout.is_complex
+        return False

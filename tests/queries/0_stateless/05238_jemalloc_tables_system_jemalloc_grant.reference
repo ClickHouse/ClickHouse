@@ -1,0 +1,18 @@
+no grants
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+SELECT only
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+SYSTEM JEMALLOC only
+jemalloc_bins	1
+jemalloc_arena_bins	1
+jemalloc_stats	1
+jemalloc_profile_text	1
+jemalloc_sampled_allocations	1

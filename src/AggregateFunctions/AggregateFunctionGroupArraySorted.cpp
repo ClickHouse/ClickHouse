@@ -1,4 +1,5 @@
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Formats/FormatSettings.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
@@ -8,9 +9,10 @@
 #include <type_traits>
 #include <utility>
 
-#include <Common/RadixSort.h>
-#include <Common/Exception.h>
 #include <Common/ArenaAllocator.h>
+#include <Common/Exception.h>
+#include <Common/NaNUtils.h>
+#include <Common/RadixSort.h>
 #include <Common/assert_cast.h>
 
 #include <IO/ReadHelpers.h>
@@ -23,6 +25,7 @@
 #include <Columns/ColumnVector.h>
 
 #include <Columns/IColumn.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -54,7 +57,7 @@ struct GroupArraySortedData
     static constexpr bool is_value_generic_field = std::is_same_v<T, Field>;
 
     using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
-    using Array = typename std::conditional_t<is_value_generic_field, std::vector<T>, PODArray<T, 32, Allocator>>;
+    using Array = typename std::conditional_t<is_value_generic_field, VectorWithMemoryTracking<T>, PODArray<T, 32, Allocator>>;
 
     static constexpr size_t partial_sort_max_elements_factor = 2;
 
@@ -68,7 +71,7 @@ struct GroupArraySortedData
         }
         else
         {
-            return CompareHelper<T>::less(lhs, rhs, -1);
+            return CompareHelper<T>::less(lhs, rhs, 1);
         }
     }
 
@@ -132,7 +135,13 @@ struct GroupArraySortedData
         {
             bool try_sort = trySort(values.begin(), values.end(), Comparator());
             if (!try_sort)
-                RadixSort<RadixSortNumTraits<T>>::executeLSD(values.data(), values.size());
+            {
+                auto * sort_end = values.end();
+                /// RadixSort puts NaNs with the sign bit set first, so move all NaNs to the end and sort the rest.
+                if constexpr (is_floating_point<T>)
+                    sort_end = std::partition(values.begin(), values.end(), [](T value) { return !isNaN(value); });
+                RadixSort<RadixSortNumTraits<T>>::executeLSD(values.data(), static_cast<size_t>(sort_end - values.begin()));
+            }
         }
 
         if (values.size() > max_elements)
@@ -262,7 +271,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & rhs_values = this->data(rhs).values;
         for (auto rhs_element : rhs_values)
@@ -413,6 +422,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
 
 }
 
+void registerAggregateFunctionGroupArraySorted(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupArraySorted(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -458,7 +468,7 @@ SELECT groupArraySorted(5)(str) FROM (SELECT toString(number) AS str FROM number
 
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = false };
 
-    factory.registerFunction("groupArraySorted", { createAggregateFunctionGroupArray, properties, documentation });
+    factory.registerFunction("groupArraySorted", { createAggregateFunctionGroupArray, documentation, properties });
 }
 
 }

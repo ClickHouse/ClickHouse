@@ -41,7 +41,7 @@ ManifestStoragePtr ManifestStorageRocksDB::create(const String & dir)
 {
     rocksdb::Options options;
     rocksdb::BlockBasedTableOptions table_options;
-    rocksdb::DB * db;
+    std::unique_ptr<rocksdb::DB> db;
 
     options.create_if_missing = true;
     // Avoid having too many WAL files (*.log) on the disk
@@ -71,8 +71,7 @@ ManifestStoragePtr ManifestStorageRocksDB::create(const String & dir)
     if (cf_handles.empty())
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "No column family handles returned from RocksDB");
 
-    std::unique_ptr<rocksdb::DB> db_ptr(db);
-    return std::shared_ptr<ManifestStorageRocksDB>(new ManifestStorageRocksDB(std::move(db_ptr), cf_handles[0], dir));
+    return std::shared_ptr<ManifestStorageRocksDB>(new ManifestStorageRocksDB(std::move(db), cf_handles[0], dir));
 }
 
 ManifestStorageRocksDB::ManifestStorageRocksDB(

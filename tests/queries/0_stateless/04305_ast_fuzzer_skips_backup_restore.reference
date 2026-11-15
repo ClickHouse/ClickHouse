@@ -1,0 +1,5 @@
+backup_restore_skipped	1
+backup_restore_not_executed	1
+plain_query_executed	1
+plain_query_not_skipped	1
+alive	[1,2,3]

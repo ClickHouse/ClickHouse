@@ -10,8 +10,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
@@ -24,6 +22,11 @@ class FunctionRandomString : public IFunction
 public:
     static constexpr auto name = "randomString";
 
+    static FunctionPtr create(ContextPtr)
+    {
+        return std::make_shared<FunctionRandomString>();
+    }
+
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
@@ -32,21 +35,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires at least one argument: the size of resulting string", getName());
-
-        if (arguments.size() > 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires at most two arguments: the size of resulting string and optional disambiguation tag", getName());
-
-        const IDataType & length_type = *arguments[0];
-        if (!isNumber(length_type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must have numeric type", getName());
-
-        return std::make_shared<DataTypeString>();
+        return "(Number, [Any]) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -86,8 +77,6 @@ public:
         RandImpl::execute(reinterpret_cast<char *>(data_to.data()), data_to.size());
         return col_to;
     }
-
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRandomString>(); }
 };
 
 }
@@ -101,7 +90,7 @@ The returned characters are not necessarily ASCII characters, i.e. they may not 
     FunctionDocumentation::Syntax syntax = "randomString(length[, x])";
     FunctionDocumentation::Arguments arguments = {
         {"length", "Length of the string in bytes.", {"(U)Int*"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a string filled with random bytes.", {"String"}};
     FunctionDocumentation::Examples examples = {

@@ -23,9 +23,9 @@ $CLICKHOUSE_CLIENT --query "
         min_bytes_to_prewarm_caches = 30000,
         add_minmax_index_for_numeric_columns=0;
 
-    SYSTEM DROP MARK CACHE;
-    SYSTEM DROP INDEX MARK CACHE;
-    SYSTEM DROP PRIMARY INDEX CACHE;
+    SYSTEM CLEAR MARK CACHE;
+    SYSTEM CLEAR INDEX MARK CACHE;
+    SYSTEM CLEAR PRIMARY INDEX CACHE;
 
     INSERT INTO t_prewarm_cache_rmt_1 SELECT number, rand(), rand() FROM numbers(100, 100);
     INSERT INTO t_prewarm_cache_rmt_1 SELECT number, rand(), rand() FROM numbers(1000, 2000);
@@ -36,9 +36,9 @@ $CLICKHOUSE_CLIENT --query "
 
     SELECT metric, value FROM system.metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'MarkCacheFiles') ORDER BY metric;
 
-    SYSTEM DROP MARK CACHE;
-    SYSTEM DROP INDEX MARK CACHE;
-    SYSTEM DROP PRIMARY INDEX CACHE;
+    SYSTEM CLEAR MARK CACHE;
+    SYSTEM CLEAR INDEX MARK CACHE;
+    SYSTEM CLEAR PRIMARY INDEX CACHE;
 
     OPTIMIZE TABLE t_prewarm_cache_rmt_1 FINAL;
 
@@ -64,12 +64,18 @@ $CLICKHOUSE_CLIENT --query "
 
     SYSTEM FLUSH LOGS query_log;
 
+    -- With parallel replicas the local replica may read nothing; rows of remote replicas have current_database = 'default'.
     SELECT
-        ProfileEvents['LoadedMarksFiles'],
-        ProfileEvents['LoadedPrimaryIndexFiles']
+        sum(ProfileEvents['LoadedMarksFiles']),
+        sum(ProfileEvents['LoadedPrimaryIndexFiles'])
     FROM system.query_log
-    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE 'SELECT count() FROM t_prewarm_cache_rmt_1%'
-    ORDER BY event_time_microseconds;
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND initial_query_id IN
+    (
+        SELECT query_id FROM system.query_log
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query AND query LIKE 'SELECT count() FROM t_prewarm_cache_rmt_1%'
+    )
+    GROUP BY initial_query_id
+    ORDER BY min(event_time_microseconds);
 
     DROP TABLE IF EXISTS t_prewarm_cache_rmt_1;
 "

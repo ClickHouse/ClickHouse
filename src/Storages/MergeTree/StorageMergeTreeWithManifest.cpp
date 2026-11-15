@@ -57,7 +57,7 @@ StorageMergeTreeWithManifest::StorageMergeTreeWithManifest(
     loadMutations();
     loadDeduplicationLog();
 
-    prewarmCaches(getActivePartsLoadingThreadPool().get(), getMarkCacheToPrewarm(0), getPrimaryIndexCacheToPrewarm(0));
+    prewarmCaches(getActivePartsLoadingThreadPool().get(), getCachesToPrewarm(0));
 }
 
 void StorageMergeTreeWithManifest::initializeManifestIfNeeded()
@@ -156,7 +156,8 @@ MergeTreeData::LoadPartResult StorageMergeTreeWithManifest::loadDataPart(
     const String & part_name,
     const DiskPtr & part_disk,
     MergeTreeDataPartState to_state,
-    DB::SharedMutex & part_loading_mutex)
+    DB::SharedMutex & part_loading_mutex,
+    bool is_last_attempt)
 {
     if (part_disk != manifest_disk)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -249,7 +250,7 @@ MergeTreeData::LoadPartResult StorageMergeTreeWithManifest::loadDataPart(
         }
     }
 
-    return MergeTreeData::loadDataPart(part_info, part_name, actual_disk, to_state, part_loading_mutex);
+    return MergeTreeData::loadDataPart(part_info, part_name, actual_disk, to_state, part_loading_mutex, is_last_attempt);
 }
 
 BaseManifestEntry StorageMergeTreeWithManifest::serialize(const DataPartPtr & part, ManifestOpType op_type) const

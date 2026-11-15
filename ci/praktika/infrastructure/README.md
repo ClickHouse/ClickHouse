@@ -1,81 +1,66 @@
-# Praktika Infrastructure Module
+# praktika.infrastructure
 
-**Status**: Under development
+Declarative AWS infrastructure for praktika CI: VPCs, S3, runner / orchestrator
+pools, and the HTML report page — all defined in `ci/infrastructure/projects.py` and
+brought up with one command.
 
-This module provides classes for configuring and deploying cloud infrastructure components for Praktika CI/CD workflows.
-
-## Module Structure
-
-### Core Configuration Classes
-
-#### [cloud.py](cloud.py)
-Top-level infrastructure configuration class `CloudInfrastructure.Config`:
-- Aggregates all cloud resources (Lambda functions, S3 buckets, etc.)
-- Entry point for infrastructure definition
-- Handles deployment orchestration
-
-#### [lambda_function.py](lambda_function.py)
-Lambda function configuration class `Lambda.Config`:
-- Defines AWS Lambda function settings (handler, timeout, memory, environment)
-- Manages Lambda deployment package bundling
-- Handles secret injection from AWS Parameter Store
-- Supports CloudWatch logs retrieval
-
-### Native Components
-
-See [native/README.md](native/README.md) for pre-built cloud components provided by Praktika (e.g., Slack app integration).
-
-## Usage
-
-### Define Infrastructure
-
-Create a cloud configuration file (e.g., `ci/infra/cloud.py`):
-
-```python
-from praktika import CloudInfrastructure
-
-CLOUD = CloudInfrastructure.Config(
-    name="my_cloud_infra",
-    lambda_functions=[
-        # Add your Lambda.Config instances here
-        *CloudInfrastructure.SLACK_APP_LAMBDAS  # Optional: include native components
-    ]
-)
-```
-
-### Configure Settings
-
-Set the cloud configuration path in your Praktika settings:
-
-```python
-from praktika import Settings
-
-Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH = "./ci/infra/cloud.py"
-Settings.AWS_REGION = "us-east-1"
-Settings.EVENTS_S3_PATH = "my-bucket/events"  # For Slack feed storage
-```
-
-### Deploy
-
-Deploy your infrastructure to AWS:
+## Typical commands
 
 ```bash
-praktika deploy
+# Deploy (or update) all components defined in ci/infrastructure/projects.py
+python3 -m praktika infrastructure --deploy
+
+# Deploy only specific component types
+python3 -m praktika infrastructure --deploy --only ImageBuilder LaunchTemplate
+python3 -m praktika infrastructure --deploy --only AutoScalingGroup
+
+# Roll EC2 instances on every ASG (replace with the latest launch template version)
+python3 -m praktika infrastructure --restart-instances
+
+# Destroy project-prefixed execution-plane resources while keeping S3, VPC,
+# CIDB, Dedicated Hosts, EC2 instances, and the GitHub webhook wiring intact.
+# Destroy commands require --project to match a name in ci/infrastructure/projects.py.
+python3 -m praktika infrastructure --destroy-runtime --project praktika
+
+# Destroy every project-prefixed managed resource, including stateful resources.
+python3 -m praktika infrastructure --destroy-all --project praktika
 ```
 
-This command:
-1. Loads configuration from `Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH`
-2. Deploys all Lambda functions defined in `CLOUD.lambda_functions`
-3. Fetches secrets from AWS Parameter Store
-4. Updates function code and configuration
+## Config components (used in `ci/infrastructure/projects.py`)
 
-## Roadmap
+- **`CloudInfrastructure.Config`** — top-level container; aggregates all
+  components below into a single deployable unit. Set
+  `min_praktika_version` when the config uses infrastructure features that
+  require a newer Praktika runtime.
+- **`VPC.Config`** — a VPC + subnets in declared availability zones. Runner
+  and orchestrator pools attach to a VPC by name.
+- **`Storage.Config`** — an S3 bucket for artifacts and the HTML report,
+  with retention policy and public/private access.
+- **`Components.OrchestratorPool`** — ASG of EC2 VMs that polls SQS,
+  resolves workflow DAGs, and dispatches jobs to runner pools. Supports
+  `Scaling.Disabled` and `Scaling.Auto`.
+- **`Components.RunnerPool`** — ASG of EC2 VMs that pull job tasks
+  from per-pool SQS queues and execute them. Pools are referenced by jobs
+  via the `runs_on` label and support `Scaling.Disabled` / `Scaling.Auto`.
+- **Implicit pool autoscaler** — when any pool uses `Scaling.Auto`,
+  `CloudInfrastructure.Config` synthesizes a scheduled Lambda that watches
+  the corresponding SQS queues and scales ASG desired capacity up. Idle
+  runner/orchestrator instances then scale themselves back in by
+  decrementing ASG desired capacity and terminating the instance. Set
+  `capacity_reserve=N` on an auto-scaled pool to keep `N` extra idle
+  instances above queue demand, capped by `max_size`.
+- **`Components.report_page_config`** — the static HTML page +
+  bucket policy that renders a workflow's `result_*.json` files.
+- **`ImageBuilder.Config`** — AMI build pipelines. Supports ordinary
+  Image Builder components plus `prebuilt_venvs`, which bake named Python
+  virtualenvs under `/opt/praktika/base-venvs/<name>` for later selection
+  via `Settings.PRAKTIKA_BASE_VENV`. Use `ami_launch_permission`, for
+  example `{"userGroups": ["all"]}`, to publish built AMIs publicly.
 
-The long-term goal is to provide functionality for configuring and deploying complete cloud CI/CD infrastructure from scratch, enabling teams to provision their entire workflow environment declaratively.
+## TODO
 
-### Future Configuration Classes
-
-- **S3Bucket.Config**: S3 bucket creation and lifecycle management
-- **Policy.Config**: IAM policies attachable to Lambdas, roles, etc.
-- **AutoScalingGroup.Config**: EC2 Auto Scaling groups for runners
-- **Image.Config / ImageBuilder.Config**: Container image or AMI configuration
+- Pools of dedicated VMs / bare metal (e.g. EC2 Dedicated Hosts, baremetal
+  instance types) as a first-class `RunnerPool` mode
+- CI DB (ClickHouse) deployment as a managed component
+- Private-access gateway (VPN / bastion) deployment for reaching the report
+  page and CI DB on private endpoints, and optionally for SSH into runners

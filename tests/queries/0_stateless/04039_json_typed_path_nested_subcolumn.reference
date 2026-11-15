@@ -1,0 +1,26 @@
+Case 1: basic nested subcolumn on Array(JSON) typed path
+{"a":[{"b":42}]}	[42]
+Case 2: table with typed Array(JSON), access nested subcolumn without []
+[]
+[]
+[1,2]
+[3]
+[]
+[]
+['hello','world']
+[NULL]
+Case 3: deeper typed path prefix (a.b is typed, access a.b.c)
+[10,20]
+Case 4: nested subcolumn with type hint downstream
+[1,2]
+Case 5: nested subcolumn on typed JSON (not Array)
+42
+hello
+Case 6: MergeTree with nested subcolumn on typed path
+1	[1,2]
+2	[3]
+Case 7: typed path exact match takes priority over prefix match
+42
+Case 8: nested subcolumn compared to [] sugar
+[1,2]	[1,2]
+[3]	[3]

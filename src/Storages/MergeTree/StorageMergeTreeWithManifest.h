@@ -49,7 +49,8 @@ private:
         const String & part_name,
         const DiskPtr & part_disk,
         MergeTreeDataPartState to_state,
-        DB::SharedMutex & part_loading_mutex) override;
+        DB::SharedMutex & part_loading_mutex,
+        bool is_last_attempt) override;
 
     String manifest_storage_type;
     ManifestStoragePtr manifest_storage;

@@ -13,7 +13,6 @@ SELECT * FROM unsorted;
 
 DROP TABLE unsorted;
 
-SET allow_suspicious_primary_key = 1;
 SELECT '*** ReplacingMergeTree ***';
 
 DROP TABLE IF EXISTS unsorted_replacing;

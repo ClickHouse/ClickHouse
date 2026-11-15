@@ -8,7 +8,7 @@ WITH (
           FROM system.query_log
           WHERE current_database = currentDatabase()
             AND query like 'SELECT \'01461_query%'
-            AND event_date >= yesterday()
+            AND event_date >= yesterday() AND event_time >= now() - 600
           ORDER BY query_start_time DESC
           LIMIT 1
       ) AS time_with_microseconds,
@@ -33,7 +33,7 @@ WITH (
           FROM system.query_thread_log
           WHERE current_database = currentDatabase()
             AND query like 'SELECT \'01461_query%'
-            AND event_date >= yesterday()
+            AND event_date >= yesterday() AND event_time >= now() - 600
           ORDER BY query_start_time DESC
           LIMIT 1
       ) AS time_with_microseconds,

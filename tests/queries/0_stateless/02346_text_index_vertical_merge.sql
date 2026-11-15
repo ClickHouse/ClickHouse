@@ -2,7 +2,6 @@ DROP TABLE IF EXISTS tab;
 
 -- Tests vertical merges for columns with text index
 
-SET enable_full_text_index = 1;
 SET mutations_sync = 2;
 SET use_skip_indexes_on_data_read = 1;
 

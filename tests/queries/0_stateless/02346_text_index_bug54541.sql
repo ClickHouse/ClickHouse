@@ -1,7 +1,5 @@
 -- Test for AST Fuzzer crash #54541
 
-SET enable_full_text_index = 1;
-
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab
