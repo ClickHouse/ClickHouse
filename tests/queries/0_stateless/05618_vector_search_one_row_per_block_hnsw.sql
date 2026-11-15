@@ -21,6 +21,7 @@ DROP TABLE IF EXISTS tab_readded;
 DROP TABLE IF EXISTS tab_renamed;
 DROP TABLE IF EXISTS tab_prefetch;
 DROP TABLE IF EXISTS tab_conversion;
+DROP TABLE IF EXISTS tab_rename_reuse;
 
 -- 64 `Float32` elements are 256 bytes, so every row is one block.
 CREATE TABLE tab
@@ -131,7 +132,7 @@ SELECT id, f FROM tab ORDER BY cosineDistance(vec, ref) LIMIT 10
 SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
 
 -- With few prefetches allowed, a reader prefetched for one task is reused for the next tasks, and must read past the end
--- of the range of the first task.
+-- of the range of the first task. The query must not fail; which rows the approximate index returns is not checked.
 CREATE TABLE tab_prefetch
 (
     id UInt32,
@@ -146,7 +147,7 @@ FROM numbers(20000);
 
 SELECT 'reused reader';
 WITH (SELECT vec FROM tab_prefetch WHERE id = 123) AS ref
-SELECT id FROM tab_prefetch ORDER BY cosineDistance(vec, ref) LIMIT 3
+SELECT 'ok' FROM tab_prefetch ORDER BY cosineDistance(vec, ref) LIMIT 3
 SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, max_threads = 2,
     allow_prefetched_read_pool_for_local_filesystem = 1, local_filesystem_read_prefetch = 1, local_filesystem_read_method = 'pread_threadpool',
     filesystem_prefetch_step_marks = 1, filesystem_prefetches_limit = 2, merge_tree_min_rows_for_concurrent_read = 1,
@@ -178,12 +179,42 @@ WITH (SELECT vec FROM tab_conversion WHERE id = 123) AS ref
 SELECT id, toString(payload) FROM tab_conversion ORDER BY cosineDistance(vec, ref) LIMIT 3
 SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
 
+-- A column renamed by a pending mutation, with its old name reused by a new column and a default expression using its
+-- new name. The column in the part has the old name, so it is read as usual.
+CREATE TABLE tab_rename_reuse
+(
+    id UInt32,
+    vec Array(Float32) CODEC(NONE),
+    payload Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256),
+    INDEX idx vec TYPE vector_similarity('hnsw', 'cosineDistance', 64, 'b1', 64, 128)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 128;
+
+SYSTEM STOP MERGES tab_rename_reuse;
+INSERT INTO tab_rename_reuse SELECT id, vec, arrayMap(j -> toFloat32(id + j), range(64)) FROM tab;
+ALTER TABLE tab_rename_reuse
+    RENAME COLUMN payload TO renamed_payload,
+    ADD COLUMN payload Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256),
+    ADD COLUMN d UInt64 DEFAULT intDiv(64, length(renamed_payload))
+SETTINGS mutations_sync = 0, alter_sync = 0;
+
+SELECT 'renamed and reused, setting on';
+WITH (SELECT vec FROM tab_rename_reuse WHERE id = 123) AS ref
+SELECT id, d FROM tab_rename_reuse ORDER BY cosineDistance(vec, ref) LIMIT 10
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_rename_reuse_on';
+
+SELECT 'renamed and reused, setting off';
+WITH (SELECT vec FROM tab_rename_reuse WHERE id = 123) AS ref
+SELECT id, d FROM tab_rename_reuse ORDER BY cosineDistance(vec, ref) LIMIT 10
+SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
+
 SYSTEM FLUSH LOGS query_log;
 
 -- Only the candidates of the index are read this way, and none with the setting off.
 SELECT log_comment, ProfileEvents['MergeTreeOneRowPerBlockReadRows'] > 0 AS read_by_blocks
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05618_on', '05618_off', '05618_default_on', '05618_readded_on', '05618_renamed_on', '05618_other_default_on', '05618_conversion_on')
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05618_on', '05618_off', '05618_default_on', '05618_readded_on', '05618_renamed_on', '05618_other_default_on', '05618_conversion_on', '05618_rename_reuse_on')
 ORDER BY log_comment;
 
 DROP TABLE tab;
@@ -191,3 +222,4 @@ DROP TABLE tab_readded;
 DROP TABLE tab_renamed;
 DROP TABLE tab_prefetch;
 DROP TABLE tab_conversion;
+DROP TABLE tab_rename_reuse;

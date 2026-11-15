@@ -394,8 +394,10 @@ void MergeTreeReaderWide::setSelectedRows(const PaddedPODArray<UInt64> & rows)
             continue;
 
         /// A column with another type in the part than requested, during a pending `MODIFY COLUMN`, is converted
-        /// before the filter, and the conversion could fail on the placeholder values.
-        if (!column.type->equals(*requested_column->type))
+        /// before the filter, and the conversion could fail on the placeholder values. A column with another name in
+        /// the part, during a pending rename, would be checked below against the metadata and the default expressions
+        /// of another column, which can have its old name.
+        if (!column.type->equals(*requested_column->type) || column.getNameInStorage() != requested_column->getNameInStorage())
             continue;
 
         layouts[pos] = tryGetOneRowPerBlockLayout(*part, column, metadata);
