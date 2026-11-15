@@ -32,8 +32,7 @@ public:
 
         gamma = (1 + relative_accuracy) / (1 - relative_accuracy);
         multiplier = 1 / std::log(gamma);
-        min_possible = std::numeric_limits<Float64>::min() * gamma;
-        max_possible = std::numeric_limits<Float64>::max() / gamma;
+        updateBounds();
     }
 
     ~DDSketchLogarithmicMapping() = default;
@@ -44,7 +43,12 @@ public:
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value {} is out of range [{}, {}]", value, min_possible, max_possible);
         }
-        return static_cast<int>(logGamma(value) + offset);
+        /// floor, not truncation: bin `k` is [γ^k, γ^(k+1)) for negative `k` too, else values below 1 land one bin
+        /// too high, and `changeMapping` drops counts
+        /// Values of the partial bin below `min_key` go one bin up: `validKeyRange` rejects that bin, and released
+        /// versions check the same range, so they must be able to read the states we write. That bin is outside the
+        /// relative accuracy guarantee
+        return static_cast<int>(std::max(std::floor(logGamma(value) + offset), min_key));
     }
 
     Float64 value(int key) const { return lowerBound(key) * (1 + relative_accuracy); }
@@ -78,7 +82,7 @@ public:
 
     Float64 getMinPossible() const { return min_possible; }
 
-    [[maybe_unused]] Float64 getMaxPossible() const { return max_possible; }
+    Float64 getMaxPossible() const { return max_possible; }
 
     bool operator==(const DDSketchLogarithmicMapping & other) const
     {
@@ -134,15 +138,24 @@ public:
                 relative_accuracy,
                 gamma);
         }
-        min_possible = std::numeric_limits<Float64>::min() * gamma;
-        max_possible = std::numeric_limits<Float64>::max() / gamma;
+        updateBounds();
     }
 
 protected:
+    void updateBounds()
+    {
+        min_possible = std::numeric_limits<Float64>::min() * gamma;
+        max_possible = std::numeric_limits<Float64>::max() / gamma;
+        /// the same truncation as in `validKeyRange`
+        min_key = std::trunc(logGamma(min_possible) + offset);
+    }
+
     Float64 relative_accuracy;
     Float64 gamma;
     Float64 min_possible;
     Float64 max_possible;
+    /// The lowest key `key` returns
+    Float64 min_key;
     Float64 multiplier;
     Float64 offset;
 };

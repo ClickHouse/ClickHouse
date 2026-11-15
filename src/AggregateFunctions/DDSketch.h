@@ -223,6 +223,7 @@ private:
     DDSketchEncoding enc;
 
 
+    /// Only remaps onto a coarser mapping (`merge` remaps the finer sketch), so an old bin overlaps at most two new bins
     DDSketchDenseLogarithmic changeMapping(Float64 new_gamma) const
     {
         auto new_mapping = std::make_unique<DDSketchLogarithmicMapping>((new_gamma - 1) / (new_gamma + 1));
@@ -230,7 +231,18 @@ private:
         auto new_positive_store = std::make_unique<DDSketchDenseStore>();
         auto new_negative_store = std::make_unique<DDSketchDenseStore>();
 
-        auto remap_store = [this, &new_mapping](DDSketchDenseStore & old_store, std::unique_ptr<DDSketchDenseStore> & target_store)
+        /// Pieces below this share of an old bin are rounding slivers at coinciding bin boundaries: `lowerBound` is off by
+        /// up to ~2e-13 relative (`exp` of an argument up to ~709), and an old bin is `gamma - 1` wide relative to its lower
+        /// bound. Skip them, otherwise `keyAtRank` can return the neighbouring bin. The cap is not reached for the accepted
+        /// relative accuracies (above 1e-6)
+        const Float64 min_remap_proportion = std::min(1e-9 / (mapping->getGamma() - 1), 0.25);
+
+        /// The highest old bins can end above the highest new bin, and a key above it would make the state unreadable.
+        /// Their pieces above it go to the last kept piece, as the values below the lowest new bin go one bin up in `key`
+        const int max_new_key = static_cast<int>(new_mapping->validKeyRange().second);
+
+        auto remap_store = [this, &new_mapping, min_remap_proportion, max_new_key](
+                               DDSketchDenseStore & old_store, std::unique_ptr<DDSketchDenseStore> & target_store)
         {
             for (int i = 0; i < old_store.length(); ++i)
             {
@@ -242,16 +254,29 @@ private:
 
                 Float64 in_lower_bound = this->mapping->lowerBound(old_index);
                 Float64 in_upper_bound = this->mapping->lowerBound(old_index + 1);
-                Float64 in_size = in_upper_bound - in_lower_bound;
 
-                if (!std::isfinite(in_lower_bound) || !std::isfinite(in_upper_bound) || in_size <= 0)
+                /// The lowest and highest old bins can start outside the range of the coarser mapping
+                int new_index = new_mapping->key(std::clamp(in_lower_bound, new_mapping->getMinPossible(), new_mapping->getMaxPossible()));
+
+                /// `exp` overflows for the upper bound of the highest old bin with some gammas, and bins of a gamma very close to 1
+                /// can have no width in floating point. There is nothing to split by, so the whole bin goes where `key` puts it
+                if (!std::isfinite(in_upper_bound) || !(in_upper_bound > in_lower_bound))
+                {
+                    target_store->add(new_index, old_bin_count);
                     continue;
-
-                int new_index = new_mapping->key(in_lower_bound);
+                }
+                Float64 in_size = in_upper_bound - in_lower_bound;
                 // Distribute counts to new bins
                 static constexpr int max_remap_iterations = 100000;
+                /// The last kept piece gets the rest of the count, including skipped slivers, so the pieces sum exactly
+                /// to the old count, otherwise `get` can compute a negative rank
+                Float64 remaining_count = old_bin_count;
+                bool has_last = false;
+                /// An old bin below the lowest new bin overlaps none, it goes where `key` puts its values
+                int last_index = new_index;
+                Float64 last_count = 0;
                 int iterations = 0;
-                for (; new_mapping->lowerBound(new_index) < in_upper_bound; ++new_index)
+                for (; new_index <= max_new_key && new_mapping->lowerBound(new_index) < in_upper_bound; ++new_index)
                 {
                     if (++iterations > max_remap_iterations)
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Too many iterations in DDSketch changeMapping");
@@ -262,8 +287,18 @@ private:
                     Float64 higher_intersection_bound = std::min(out_upper_bound, in_upper_bound);
                     Float64 intersection_size = higher_intersection_bound - lower_intersection_bound;
                     Float64 proportion = intersection_size / in_size;
-                    target_store->add(new_index, proportion * old_bin_count);
+                    if (proportion < min_remap_proportion)
+                        continue;
+                    if (has_last)
+                    {
+                        target_store->add(last_index, last_count);
+                        remaining_count -= last_count;
+                    }
+                    has_last = true;
+                    last_index = new_index;
+                    last_count = proportion * old_bin_count;
                 }
+                target_store->add(last_index, remaining_count);
             }
         };
 
