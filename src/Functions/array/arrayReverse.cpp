@@ -155,8 +155,10 @@ bool FunctionArrayReverse::executeArray(const IColumn & src_data, const ColumnAr
     auto & res_nested_offsets = res_array.getOffsets();
     auto & res_nested = res_array.getData();
 
+    /// Not `reserve`: for nested arrays it reserves as many values as there are arrays, even if they are empty.
+    /// `prepareForSquashing` reserves every descendant by the size of the corresponding source column.
     res_nested_offsets.reserve(src_nested_offsets.size());
-    res_nested.reserve(src_nested.size());
+    res_nested.prepareForSquashing({src_array->getDataPtr()}, 1);
 
     ColumnArray::Offset src_prev_offset = 0;
     for (const auto src_offset : src_offsets)
