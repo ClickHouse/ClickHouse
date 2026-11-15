@@ -31,6 +31,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
+    extern const int CANNOT_PARSE_DATETIME;
     extern const int INCORRECT_DATA;
     extern const int SQLITE_ENGINE_ERROR;
 }
@@ -41,6 +42,51 @@ static constexpr UInt64 sqlite_busy_retry_ms = 10;
 
 namespace
 {
+
+/// A SQLite value arrives as a complete, already isolated string, so nothing may be left unread after
+/// parsing it as a date and time, otherwise garbage after the value would be silently dropped.
+///
+/// The tolerated leftovers are the fractional seconds and the time zone indicator that SQLite allows
+/// in its date and time formats (https://www.sqlite.org/lang_datefunc.html#time_values): `Z` or
+/// `[+-]HH:MM`, optionally preceded by spaces. A plain `DateTime` has no place for subsecond precision,
+/// so the fraction is dropped; the time zone indicator is not applied either - the value is interpreted
+/// in the time zone of the ClickHouse column, as before - but neither may be treated as garbage.
+void assertSQLiteDateTimeFullyParsed(ReadBuffer & in)
+{
+    skipDateTimeFractionalSeconds(in);
+
+    while (!in.eof() && *in.position() == ' ')
+        ++in.position();
+
+    if (!in.eof() && *in.position() == 'Z')
+    {
+        ++in.position();
+    }
+    else if (!in.eof() && (*in.position() == '+' || *in.position() == '-'))
+    {
+        ++in.position();
+
+        auto read_two_digit_group = [&in]
+        {
+            UInt8 group_value = 0;
+            for (size_t i = 0; i < 2; ++i)
+            {
+                if (in.eof() || !isNumericASCII(*in.position()))
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse the time zone indicator of a date and time value");
+                group_value = static_cast<UInt8>(group_value * 10 + (*in.position() - '0'));
+                ++in.position();
+            }
+            return group_value;
+        };
+
+        read_two_digit_group();
+        assertChar(':', in);
+        if (read_two_digit_group() >= 60)
+            throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid minutes in the time zone indicator of a date and time value");
+    }
+
+    assertEOF(in);
+}
 
 const char * storageClassName(int storage_class)
 {
@@ -571,6 +617,9 @@ void SQLiteStatementReader::insertValue(IColumn & column, const ColumnReadInfo &
             ReadBufferFromString in(value);
             time_t time = 0;
             readDateTimeText(time, in, assert_cast<const DataTypeDateTime &>(*info.data_type).getTimeZone());
+            /// SQLite may store fractional seconds and a time zone indicator; tolerate them, but reject
+            /// any other trailing characters instead of silently dropping them.
+            assertSQLiteDateTimeFullyParsed(in);
             time = std::max<time_t>(time, 0);
             assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
             break;
