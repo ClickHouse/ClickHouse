@@ -14,9 +14,7 @@ ClickHouse は、位置や土地などの地理的オブジェクトを表現す
 
 * [シンプルな地理的地物の表現](https://en.wikipedia.org/wiki/GeoJSON).
 
-<div id="point">
-  ## Point
-</div>
+## Point {#point}
 
 `Point` は X 座標と Y 座標で表され、[Tuple](/ja/reference/data-types/tuple)([Float64](/ja/reference/data-types/float), [Float64](/ja/reference/data-types/float)) として格納されます。
 
@@ -34,11 +32,10 @@ SELECT p, toTypeName(p) FROM geo_point;
 └─────────┴───────────────┘
 ```
 
-<div id="multipoint">
-  ## MultiPoint
-</div>
+## MultiPoint {#multipoint}
 
-`MultiPoint` は、点 の Array として格納される 点 の集合です: [Array](/ja/reference/data-types/array)([Point](#point))。
+`MultiPoint` は、点 の 配列 として格納される 点 の集合です: [配列](/ja/reference/data-types/array)([Point](#point))。
+`Point` は `MultiPoint` に CAST できます。その結果は、元の点を唯一の要素として含む `MultiPoint` になります。
 
 **例**
 
@@ -54,9 +51,7 @@ SELECT mp, toTypeName(mp) FROM geo_multipoint;
 └───────────────────────────────┴────────────────┘
 ```
 
-<div id="ring">
-  ## Ring
-</div>
+## Ring {#ring}
 
 `Ring` は、穴のない単純な多角形を点の配列として格納したものです: [Array](/ja/reference/data-types/array)([Point](#point)).
 
@@ -74,9 +69,7 @@ SELECT r, toTypeName(r) FROM geo_ring;
 └───────────────────────────────┴───────────────┘
 ```
 
-<div id="linestring">
-  ## LineString
-</div>
+## LineString {#linestring}
 
 `LineString` は、点の配列として格納される線です: [Array](/ja/reference/data-types/array)([Point](#point))。
 
@@ -94,11 +87,10 @@ SELECT l, toTypeName(l) FROM geo_linestring;
 └───────────────────────────────┴───────────────┘
 ```
 
-<div id="multilinestring">
-  ## MultiLineString
-</div>
+## MultiLineString {#multilinestring}
 
 `MultiLineString` は、複数の線を `LineString` の配列として格納する型です: [Array](/ja/reference/data-types/array)([LineString](#linestring))。
+`LineString` は `MultiLineString` にCASTできます。その場合、結果にはその線が唯一の要素として含まれます。
 
 **例**
 
@@ -114,9 +106,7 @@ SELECT l, toTypeName(l) FROM geo_multilinestring;
 └─────────────────────────────────────────────────────┴─────────────────┘
 ```
 
-<div id="polygon">
-  ## Polygon
-</div>
+## Polygon {#polygon}
 
 `Polygon` は、リングの配列 [Array](/ja/reference/data-types/array)([Ring](#ring)) として格納される、穴を含む多角形です。外側の配列の最初の要素が多角形の外周を表し、それ以降のすべての要素が穴を表します。
 
@@ -136,15 +126,14 @@ SELECT pg, toTypeName(pg) FROM geo_polygon;
 └───────────────────────────────────────────────────────────────┴────────────────┘
 ```
 
-<div id="multipolygon">
-  ## MultiPolygon
-</div>
+## MultiPolygon {#multipolygon}
 
-`MultiPolygon` は複数のポリゴンで構成され、ポリゴンの配列として格納されます: [Array](/ja/reference/data-types/array)([Polygon](#polygon))。
+`MultiPolygon` は複数のPolygonで構成され、Polygonの配列として格納されます: [Array](/ja/reference/data-types/array)([Polygon](#polygon))。
+`Polygon` は `MultiPolygon` にCASTできます。その結果は、元のPolygonを唯一の要素として含む `MultiPolygon` になります。
 
 **例**
 
-このマルチポリゴンは 2 つの独立したポリゴンで構成されており、1 つ目には穴がなく、2 つ目には 1 つの穴があります:
+このマルチポリゴンは 2 つの独立したPolygonで構成されており、1 つ目には穴がなく、2 つ目には 1 つの穴があります:
 
 ```sql title="Query"
 CREATE TABLE geo_multipolygon (mpg MultiPolygon) ENGINE = Memory();
@@ -158,9 +147,7 @@ SELECT mpg, toTypeName(mpg) FROM geo_multipolygon;
 └─────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────┘
 ```
 
-<div id="geometry">
-  ## Geometry
-</div>
+## Geometry {#geometry}
 
 `Geometry` は、上記すべての型に共通する型です。これらの型からなる Variant 型と同等です。
 
@@ -204,9 +191,7 @@ SELECT * FROM geo_dst;
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="related-content">
-  ## 関連コンテンツ
-</div>
+## 関連コンテンツ {#related-content}
 
 * [大規模な実世界データセットを探る：ClickHouseで見る100年以上の気象記録](https://clickhouse.com/blog/real-world-data-noaa-climate-data)
 

@@ -40,7 +40,6 @@ import dataclasses
 import json
 import os
 import re
-import shlex
 import shutil
 import sys
 import tempfile
@@ -96,28 +95,12 @@ class Labels:
     RELEASE_LTS = "release-lts"
 
 
-def is_latest_release_branch(branch: str, repo: str = GITHUB_REPOSITORY) -> bool:
-    """Whether `branch` is the latest release branch — i.e. the head branch of
-    the most recently created `release`-labeled PR. Release-domain logic (knows
-    the `release` label / branch convention), so it lives here rather than in
-    the generic praktika GH helper.
-
-    The `gh pr list` read is retried and a persistent failure raises: mistaking
-    a transient GitHub error for "not the latest branch" would silently skip the
-    floating `latest` docker tag for an otherwise successful release. A
-    successful `--json` read always prints at least `[]`, so an empty result
-    means the command failed; genuinely no release PR is an empty JSON array."""
-    raw = GH.get_output_with_retries(
-        f'gh pr list --label release --repo {shlex.quote(repo)} --search "sort:created"'
-        f" -L1 --json headRefName"
-    )
-    if not raw:
-        raise RuntimeError(
-            f"gh pr list failed for release PRs in repo [{repo}] after retries; "
-            f"refusing to treat a failed lookup as 'not the latest release branch'"
-        )
-    prs = json.loads(raw)
-    latest_branch = prs[0]["headRefName"] if prs else ""
+def is_latest_release_branch(branch: str) -> bool:
+    """Whether `branch` has the highest major.minor among the release branches of `origin`."""
+    # A glob cannot say "digits only": one or two digits for each of major and minor
+    patterns = " ".join(f"'refs/remotes/origin/{major}.{minor}'" for major in ("[1-9]", "[1-9][0-9]") for minor in ("[1-9]", "[1-9][0-9]"))
+    latest_branch = Shell.get_output(f"git for-each-ref --sort=-version:refname --count=1 --format='%(refname:lstrip=3)' {patterns}", strict=True)
+    assert latest_branch, "no release branches among the origin branches"
     print(
         f"Latest release branch [{latest_branch}], checking [{branch}]:"
         f" is_latest={latest_branch == branch}"
@@ -163,16 +146,18 @@ class ReleaseProgress:
 
 
 class ReleaseContextManager:
-    def __init__(self, release_progress):
+    def __init__(self, release_progress, commit_sha=None):
         self.release_progress = release_progress
         self.release_info = None
+        # Only STARTED reads it; passed in because the module-global `args` is unset in-process.
+        self.commit_sha = commit_sha
 
     def __enter__(self):
         if self.release_progress == ReleaseProgress.STARTED:
             self.release_info = ReleaseInfo(
                 release_branch="NA",
                 release_type="NA",
-                commit_sha=args.ref,
+                commit_sha=self.commit_sha,
                 release_tag="NA",
                 version="NA",
                 codename="NA",
@@ -298,7 +283,7 @@ class ReleaseInfo:
                 branch_version = CHVersion.get_current_version()
             self.is_bump_landed = version.is_older(branch_version)
 
-            if is_latest_release_branch(release_branch, repo=GITHUB_REPOSITORY):
+            if is_latest_release_branch(release_branch):
                 print("This is going to be the latest release!")
                 latest_release = True
 
@@ -903,16 +888,6 @@ def parse_args() -> argparse.Namespace:
         help="Recovery run that only rebuilds docker images for an already-created release",
     )
     parser.add_argument(
-        "--download-packages",
-        action="store_true",
-        help="Downloads all required packages from s3",
-    )
-    parser.add_argument(
-        "--create-gh-release",
-        action="store_true",
-        help="Create GH Release object and attach all packages",
-    )
-    parser.add_argument(
         "--post-status",
         action="store_true",
         help="Post release status (prints summary; Slack integration removed)",
@@ -947,7 +922,9 @@ if __name__ == "__main__":
         _ssh_agent.print_keys()
 
     if args.prepare_release_info:
-        with ReleaseContextManager(release_progress=ReleaseProgress.STARTED) as release_info:
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.STARTED, commit_sha=args.ref
+        ) as release_info:
             assert (
                 args.ref and args.release_type
             ), "--ref and --release-type must be provided with --prepare-release-info"
@@ -957,30 +934,6 @@ if __name__ == "__main__":
                 dry_run=args.dry_run,
                 skip_repo=args.skip_repo,
                 skip_docker=args.skip_docker,
-            )
-
-    if args.download_packages:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.DOWNLOAD_PACKAGES
-        ) as release_info:
-            p = PackageDownloader(
-                release=release_info.release_branch,
-                commit_sha=release_info.commit_sha,
-                version=release_info.version,
-            )
-            p.run()
-
-    if args.create_gh_release:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.CREATE_GH_RELEASE
-        ) as release_info:
-            p = PackageDownloader(
-                release=release_info.release_branch,
-                commit_sha=release_info.commit_sha,
-                version=release_info.version,
-            )
-            release_info.create_gh_release(
-                packages_files=p.get_all_packages_files(), dry_run=args.dry_run
             )
 
     if args.post_status:
