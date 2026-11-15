@@ -1,4 +1,6 @@
 <clickhouse>
+    <!-- Exercise complete privilege groups; default-off coverage overrides this setting. -->
+    <experimental_self_service_password_change>true</experimental_self_service_password_change>
     <timezone>Etc/UTC</timezone>
     <listen_host>0.0.0.0</listen_host>
     <custom_settings_prefixes>custom_</custom_settings_prefixes>

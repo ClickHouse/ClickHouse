@@ -21,6 +21,7 @@ DataTypePtr getSettingsTypeEnum()
         {
             {"Session", 0},
             {"MergeTree", 1},
+            {"Server", 2},
         });
 }
 }
@@ -31,7 +32,7 @@ ColumnsDescription StorageSystemSettingsChanges::getColumnsDescription()
     /// TODO: Fill in all the comments
     return ColumnsDescription
     {
-        {"type", getSettingsTypeEnum(), "The group of settings (Session, MergeTree...)"},
+        {"type", getSettingsTypeEnum(), "The group of settings (Session, MergeTree, Server)."},
         {"version", std::make_shared<DataTypeString>(), "The ClickHouse server version."},
         {"changes",
          std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
@@ -62,6 +63,17 @@ void StorageSystemSettingsChanges::fillData(MutableColumns & res_columns, Contex
     for (auto it = mergetree_settings_changes_history.rbegin(); it != mergetree_settings_changes_history.rend(); ++it)
     {
         res_columns[0]->insert(1);
+        res_columns[1]->insert(it->first.toString());
+        Array changes;
+        for (const auto & change : it->second)
+            changes.push_back(Tuple{change.name, fieldToString(change.previous_value), fieldToString(change.new_value), change.reason, magic_enum::enum_name(change.compatibility_mode)});
+        res_columns[2]->insert(changes);
+    }
+
+    const auto & server_settings_changes_history = getServerSettingsChangesHistory();
+    for (auto it = server_settings_changes_history.rbegin(); it != server_settings_changes_history.rend(); ++it)
+    {
+        res_columns[0]->insert(2);
         res_columns[1]->insert(it->first.toString());
         Array changes;
         for (const auto & change : it->second)
