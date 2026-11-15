@@ -204,6 +204,39 @@ using String = std::string;
 
 namespace
 {
+/// A transform applied to the rows the input format has read (filling in default values,
+/// extracting subcolumns), which records that it threw. Its errors come from the query - for
+/// example, from a default expression - rather than from the file, whatever their error codes,
+/// so `engine_file_skip_failed_data_files` must not skip the file because of them.
+template <typename Transform>
+class RowTransformTrackingErrors final : public Transform
+{
+public:
+    template <typename... Args>
+    explicit RowTransformTrackingErrors(std::shared_ptr<std::atomic<bool>> failed_, Args &&... args)
+        : Transform(std::forward<Args>(args)...)
+        , failed(std::move(failed_))
+    {
+    }
+
+protected:
+    void transform(Chunk & chunk) override
+    {
+        try
+        {
+            Transform::transform(chunk);
+        }
+        catch (...)
+        {
+            failed->store(true);
+            throw;
+        }
+    }
+
+private:
+    std::shared_ptr<std::atomic<bool>> failed;
+};
+
 /// Bound on the recursion depth of `listFilesWithRegexpMatchingImpl`.
 constexpr size_t MAX_LIST_FILES_RECURSION_DEPTH = 1000;
 
@@ -1973,7 +2006,7 @@ bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
     builder.init(Pipe(const_chunk_generator));
     builder.addSimpleTransform([&](const SharedHeader & header)
     {
-        return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
+        return std::make_shared<RowTransformTrackingErrors<ExtractColumnsTransform>>(row_transform_failed, header, requested_columns);
     });
     pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     pipeline->disableProfileEventUpdate();
@@ -2607,7 +2640,8 @@ Chunk StorageFileSource::generate()
                 {
                     builder.addSimpleTransform([&](const SharedHeader & header)
                     {
-                        return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, getContext());
+                        return std::make_shared<RowTransformTrackingErrors<AddingDefaultsTransform>>(
+                            row_transform_failed, header, columns_description, *input_format, getContext());
                     });
                 }
 
@@ -2615,7 +2649,7 @@ Chunk StorageFileSource::generate()
                 /// from chunk read by IInputFormat.
                 builder.addSimpleTransform([&](const SharedHeader & header)
                 {
-                    return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
+                    return std::make_shared<RowTransformTrackingErrors<ExtractColumnsTransform>>(row_transform_failed, header, requested_columns);
                 });
 
                 pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
@@ -2639,6 +2673,11 @@ Chunk StorageFileSource::generate()
         }
         catch (const Exception & e)
         {
+            /// The pipeline also runs the transforms of the rows read from the file. Their errors
+            /// belong to the query, not to the file, even when their codes are those of a broken
+            /// file - e.g. `CANNOT_PARSE_TEXT` from a conversion in a default expression.
+            if (row_transform_failed->load())
+                throw;
             skip_or_rethrow(e.code());
             continue;
         }

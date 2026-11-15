@@ -15,7 +15,7 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 /// Adds defaults to columns using BlockDelayedDefaults bitmask attached to Block by child InputStream.
-class AddingDefaultsTransform final : public ISimpleTransform
+class AddingDefaultsTransform : public ISimpleTransform
 {
 public:
     AddingDefaultsTransform(

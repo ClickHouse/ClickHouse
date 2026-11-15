@@ -7720,7 +7720,7 @@ Possible values:
 - 1 — `SELECT` skips files that cannot be read and returns results only from files that were read successfully.
 
 Notes:
-- Only errors caused by a broken or missing file are skipped: open and stat failures, files that no longer exist, truncated input, decompression errors, format parse errors, and unreadable archives. All other errors (e.g. memory limits, timeouts, quota violations, query cancellation, exceptions in default expressions, invalid settings, logical errors) always propagate.
+- Only errors caused by a broken or missing file are skipped: open and stat failures, files that no longer exist, truncated input, decompression errors, format parse errors, and unreadable archives. All other errors (e.g. memory limits, timeouts, quota violations, query cancellation, exceptions in default expressions, invalid settings, logical errors) always propagate. An exception in a default expression propagates even if its error code is one of a broken file, e.g. a parse error from a type conversion.
 - If a file fails in the middle of reading, the rows already read from it are kept in the result; only the rest of the file is skipped.
 - A corrupted archive container (e.g. an unreadable `tar` or `zip`) is skipped as a whole.
 - With the setting enabled, a single file is not split between several reading streams, and lazy materialization (`query_plan_optimize_lazy_materialization_for_file`) is not used.
