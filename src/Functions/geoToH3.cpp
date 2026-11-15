@@ -53,7 +53,8 @@ public:
 
     size_t getNumberOfArguments() const override { return 3; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     String getSignatureString() const override
     {
@@ -136,6 +137,13 @@ public:
                     static_cast<uint8_t>(res),
                     getName(),
                     MAX_H3_RES);
+
+            if (lat < -90.0 || lat > 90.0)
+                throw Exception(
+                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "The argument 'latitude' ({}) of function {} is out of bounds because the latitude must be in the range [-90, 90]",
+                    lat,
+                    getName());
 
             LatLng coord;
             coord.lng = degsToRads(lon);

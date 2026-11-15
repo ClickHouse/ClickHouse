@@ -229,9 +229,11 @@ struct DistributedQueryTaskDescription
 /// while `object_storage_path` locates this node's persisted temporary files.
 /// `execute_locally` is true only when the whole query runs in-process on the initiator, false on a
 /// worker. It selects the exchange transport, so the caller must pass it (see `createExchangeLookup`).
+/// `on_failure` is called while the task's exception is handled and before the task frees its resources.
 void doExecuteTask(const DistributedQueryTaskDescription & task, ObjectStoragePtr object_storage,
     const String & object_storage_path, const String & distributed_query_id, ContextMutablePtr context,
-    bool execute_locally, std::function<bool()> is_cancelled = nullptr, ProgressCallback progress_callback = nullptr);
+    bool execute_locally, std::function<bool()> is_cancelled = nullptr, ProgressCallback progress_callback = nullptr,
+    std::function<void()> on_failure = nullptr);
 
 /// Returns object storage and path for temporary files
 std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const String & unique_temp_file_path, ContextPtr context);

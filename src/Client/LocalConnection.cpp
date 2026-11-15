@@ -5,6 +5,7 @@
 #include <Client/ClientApplicationBase.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
@@ -16,10 +17,19 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Parsers/ASTLiteral.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageFile.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <IO/CompressionMethod.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage.h>
+#include <base/getThreadId.h>
 #include <Common/config_version.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentThread.h>
@@ -52,6 +62,7 @@ namespace Setting
     extern const SettingsString format;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
@@ -192,6 +203,63 @@ void LocalConnection::captureCurrentException()
     }
 }
 
+/// Reads the data of `INSERT ... FROM INFILE` from the file, with globs and compression, the same way as `ClientBase::sendData` does.
+static QueryPipeline createPipeFromInsertInfile(
+    const ASTInsertQuery & insert, const String & format, const ColumnsDescription & columns_description, const Block & sample, ContextPtr context)
+{
+    const auto in_file = insert.infile->as<ASTLiteral &>().value.safeGet<String>();
+
+    String compression_method;
+    if (insert.compression)
+        compression_method = insert.compression->as<ASTLiteral &>().value.safeGet<String>();
+
+    /// `StorageFile` doesn't support ephemeral, materialized and alias columns, so the columns of the block are read as ordinary ones.
+    ColumnsDescription columns_for_storage_file;
+    for (const auto & column_in_sample : sample)
+    {
+        ColumnDescription column = columns_description.has(column_in_sample.name)
+            ? columns_description.get(column_in_sample.name)
+            : ColumnDescription(column_in_sample.name, column_in_sample.type);
+        column.type = column_in_sample.type;
+        column.default_desc.kind = ColumnDefaultKind::Default;
+        columns_for_storage_file.add(std::move(column));
+    }
+
+    StorageFile::CommonArguments args{
+        WithContext(context),
+        insert.table_id,
+        format,
+        getFormatSettings(context),
+        compression_method,
+        columns_for_storage_file,
+        ConstraintsDescription{},
+        String{},
+        {},
+    };
+    StoragePtr storage = std::make_shared<StorageFile>(StorageFile::FileSource::parse(in_file, context), args);
+    storage->startup();
+
+    auto metadata = storage->getInMemoryMetadataPtr(context, false);
+    SelectQueryInfo query_info;
+    QueryPlan plan;
+    storage->read(
+        plan,
+        sample.getNames(),
+        storage->getStorageSnapshot(metadata, context),
+        query_info,
+        context,
+        {},
+        context->getSettingsRef()[Setting::max_block_size],
+        getNumberOfCPUCoresToUse());
+
+    auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+    QueryPlanResourceHolder resources;
+    QueryPipeline pipeline(QueryPipelineBuilder::getPipe(std::move(*builder), resources));
+    pipeline.addResources(std::move(resources));
+    pipeline.addStorageHolder(storage);
+    return pipeline;
+}
+
 void LocalConnection::sendQuery(
     const ConnectionTimeouts &,
     const String & query,
@@ -264,10 +332,14 @@ void LocalConnection::sendQuery(
     if (is_cancelled_callback)
     {
         query_context->setInteractiveCancelCallback(
-            [this, check_cancelled = is_cancelled_callback, progress_callback = process_progress_callback]() -> bool
+            [this,
+             check_cancelled = is_cancelled_callback,
+             progress_callback = process_progress_callback,
+             client_thread_id = getThreadId()]() -> bool
         {
             /// Send accumulated progress to the client so the progress bar updates during analysis.
-            if (progress_callback)
+            /// Only from the client's thread: the client is not thread-safe, and this callback also runs on pipeline threads.
+            if (progress_callback && getThreadId() == client_thread_id)
             {
                 auto progress = state->progress.fetchAndResetPiecewiseAtomically();
                 if (progress.read_rows || progress.read_bytes)
@@ -362,13 +434,10 @@ void LocalConnection::sendQuery(
     next_packet_type.reset();
 
     /// Prepare input() function
-    query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
+    query_context->setInputInitializer([this] (ContextPtr context, const ColumnsDescription & columns_description, const Block & sample)
     {
         if (context != query_context)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
-
-        auto metadata_snapshot = input_storage->getInMemoryMetadataPtr(context, false);
-        Block sample = metadata_snapshot->getSampleBlock();
 
         next_packet_type = Protocol::Server::Data;
         state->block = sample;
@@ -475,26 +544,11 @@ void LocalConnection::sendQuery(
                     state->max_parser_backtracks);
         }
 
-        chassert(in, "ReadBuffer should be initialized");
-
-        /// `COMPRESSION` next to a bare `FORMAT` means the `input()` data is compressed, mirroring
-        /// ClientBase::sendDataFrom on the networked-client path.
-        ReadBuffer * in_to_read = in;
-        if (const auto * insert = parsed_query->as<ASTInsertQuery>())
-        {
-            if (!insert->format.empty())
-                current_format = insert->format;
-
-            if (!insert->infile && insert->compression)
-            {
-                /// 'auto' falls back to the client's already-detected stdin method (see resolveCompressionMethod).
-                CompressionMethod compression_method = insert->resolveCompressionMethod(default_input_compression_method);
-                compressed_in = wrapReadBufferWithCompressionMethod(
-                    wrapReadBufferReference(*in), compression_method,
-                    /*zstd_window_log_max=*/ 0, settings[Setting::snappy_mode]);
-                in_to_read = compressed_in.get();
-            }
-        }
+        const auto * insert = parsed_query->as<ASTInsertQuery>();
+        if (insert && !insert->format.empty())
+            current_format = insert->format;
+        else if (insert && insert->infile)
+            current_format = FormatFactory::instance().getFormatFromFileName(insert->infile->as<ASTLiteral &>().value.safeGet<String>());
 
         /// `input_format` / `format` settings override the query FORMAT, mirroring
         /// `getSourceFromASTInsertQuery` on the server.
@@ -502,6 +556,30 @@ void LocalConnection::sendQuery(
             current_format = settings[Setting::input_format];
         else if (!settings[Setting::format].value.empty())
             current_format = settings[Setting::format];
+
+        if (insert && insert->infile)
+        {
+            /// The data of `INSERT ... RETURNING ... FROM INFILE` is read from the file, the same way as `ClientBase::sendData` does.
+            state->input_pipeline = std::make_unique<QueryPipeline>(
+                createPipeFromInsertInfile(*insert, current_format, columns_description, sample, context));
+            state->input_pipeline_executor = std::make_unique<PullingAsyncPipelineExecutor>(*state->input_pipeline);
+            return;
+        }
+
+        chassert(in, "ReadBuffer should be initialized");
+
+        /// `COMPRESSION` next to a bare `FORMAT` means the `input()` data is compressed, mirroring
+        /// ClientBase::sendDataFrom on the networked-client path.
+        ReadBuffer * in_to_read = in;
+        if (insert && !insert->infile && insert->compression)
+        {
+            /// 'auto' falls back to the client's already-detected stdin method (see resolveCompressionMethod).
+            CompressionMethod compression_method = insert->resolveCompressionMethod(default_input_compression_method);
+            compressed_in = wrapReadBufferWithCompressionMethod(
+                wrapReadBufferReference(*in), compression_method,
+                /*zstd_window_log_max=*/ 0, settings[Setting::snappy_mode]);
+            in_to_read = compressed_in.get();
+        }
 
         auto source = context->getInputFormat(
             current_format,
@@ -514,7 +592,6 @@ void LocalConnection::sendQuery(
             settings[Setting::min_insert_block_size_bytes]);
         Pipe pipe(source);
 
-        auto columns_description = metadata_snapshot->getColumns();
         if (columns_description.hasDefaults())
         {
             pipe.addSimpleTransform([&](const SharedHeader & header)
@@ -643,6 +720,10 @@ bool LocalConnection::isSendDataNeeded() const
 
 void LocalConnection::sendCancel()
 {
+    /// No query is in flight: like the TCP server, ignore the cancel.
+    if (!state)
+        return;
+
     state->is_cancelled = true;
     if (state->executor)
         state->executor->cancel();
@@ -654,6 +735,8 @@ void LocalConnection::sendCancel()
 
 bool LocalConnection::pullBlock(Block & block)
 {
+    chassert(state);
+
     if (state->executor)
         return state->executor->pull(block, query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
 
@@ -662,6 +745,8 @@ bool LocalConnection::pullBlock(Block & block)
 
 void LocalConnection::finishQuery()
 {
+    chassert(state);
+
     next_packet_type = Protocol::Server::EndOfStream;
 
     if (state->executor)
@@ -987,6 +1072,9 @@ Packet LocalConnection::receivePacket()
         {
             packet.exception.reset(state->exception->clone());
             next_packet_type.reset();
+            /// An exception is the last packet of the query, as `EndOfStream` is.
+            state.reset();
+            last_sent_snapshots.clear();
             break;
         }
         case Protocol::Server::Progress:

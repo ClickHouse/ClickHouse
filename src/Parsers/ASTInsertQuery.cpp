@@ -1,5 +1,7 @@
 #include <iomanip>
 
+#include <Poco/String.h>
+
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Parsers/ASTIdentifier.h>
@@ -86,6 +88,7 @@ void ASTInsertQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("partition_by", partition_by);
     w.writeChild("settings_ast", settings_ast);
     w.writeChild("select", select);
+    w.writeChild("returning", returning);
     w.writeChild("infile", infile);
     w.writeChild("compression", compression);
 }
@@ -133,6 +136,7 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     child = r.readScreenedChildOfType<ASTFunction>("table_function");
     if (child)
     {
+        child->as<ASTFunction &>().setKind(ASTFunction::Kind::TABLE_FUNCTION);
         table_function = child;
         children.push_back(table_function);
     }
@@ -165,9 +169,18 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
         children.push_back(select);
     }
 
-    /// `infile`/`compression` are string `ASTLiteral`s that later call sites downcast with
-    /// `as<ASTLiteral &>()`, so reject a wrong node type or non-string literal from malformed
-    /// `clickhouse_json` here at the boundary.
+    child = r.readScreenedChildOfType<ASTSelectWithUnionQuery>("returning");
+    if (child)
+    {
+        returning = child;
+        children.push_back(returning);
+    }
+
+    /// `FROM INFILE`/`COMPRESSION` are both string `ASTLiteral`s in the SQL grammar, and
+    /// `COMPRESSION` is only valid when `INFILE` is present. `formatImpl`, `ClientBase`,
+    /// `AsynchronousInsertQueue` and `getReadBufferFromASTInsertQuery` later downcast these
+    /// with `as<ASTLiteral &>()` and read them as strings, so a wrong node type or a
+    /// non-string literal from malformed `clickhouse_json` must be rejected at the boundary.
     child = r.readChildOfType<ASTLiteral>("infile");
     if (child)
     {
@@ -238,24 +251,41 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     }
     else if (table_id)
     {
-        ostr << (!table_id.database_name.empty() ? backQuoteIfNeed(table_id.database_name) + "." : "") << backQuoteIfNeed(table_id.table_name);
+        /// A leading `function` must stay quoted, otherwise it parses as INSERT INTO FUNCTION.
+        auto quote_first = [](const String & name) { return Poco::toUpper(name) == "FUNCTION" ? backQuote(name) : backQuoteIfNeed(name); };
+        if (!table_id.database_name.empty())
+            ostr << quote_first(table_id.database_name) << "." << backQuoteIfNeed(table_id.table_name);
+        else
+            ostr << quote_first(table_id.table_name);
     }
     else
     {
+        chassert(table);
+        const auto & first = database ? database : table;
+        String first_name;
+        if (tryGetIdentifierNameInto(first, first_name) && Poco::toUpper(first_name) == "FUNCTION")
+            settings.writeIdentifier(ostr, first_name, /*ambiguous=*/true);
+        else
+            first->format(ostr, settings, state, frame);
+
         if (database)
         {
-            database->format(ostr, settings, state, frame);
             ostr << '.';
+            table->format(ostr, settings, state, frame);
         }
-
-        chassert(table);
-        table->format(ostr, settings, state, frame);
     }
 
     if (columns)
     {
         ostr << " (";
         columns->format(ostr, settings, state, frame);
+        ostr << ")";
+    }
+
+    if (returning)
+    {
+        ostr << " RETURNING (";
+        returning->format(ostr, settings, state, frame);
         ostr << ")";
     }
 

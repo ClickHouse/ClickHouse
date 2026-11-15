@@ -859,7 +859,7 @@ SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
 currentDatabase()
 ```
 
-**别名**: `current_database`, `DATABASE`, `SCHEMA`
+**别名**: `current_schema`, `current_database`, `DATABASE`, `SCHEMA`
 
 **参数**
 
@@ -871,7 +871,7 @@ currentDatabase()
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 SELECT currentDatabase()
@@ -897,7 +897,7 @@ SELECT CURRENT_DATABASE
 
 ## currentHandler {#currentHandler}
 
-引入版本：v26.6.0
+引入版本：v26.8.0
 
 返回调用该查询的 SQL 定义 HTTP 处理程序 (通过 `CREATE HANDLER` 创建) 的名称。
 如果查询不是通过此类 处理程序 调用的，则返回空字符串。
@@ -905,7 +905,7 @@ SELECT CURRENT_DATABASE
 可用于根据调用的 处理程序 自定义查询行为。
 
 <Note>
-  此函数是非确定性的：对于相同的 arguments，可能返回不同的结果。
+  此函数是非确定性的：对于相同的 参数，可能返回不同的结果。
 </Note>
 
 **语法**
@@ -924,7 +924,7 @@ currentHandler()
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 SELECT currentHandler()
@@ -1008,7 +1008,7 @@ SELECT currentQueryID();
 
 ## currentRequestURL {#currentRequestURL}
 
-引入版本：v26.6.0
+引入版本：v26.8.0
 
 返回调用该查询的 HTTP 请求 URL (路径和查询字符串) 。
 如果该查询不是通过 HTTP 调用的，则返回空字符串。
@@ -1036,7 +1036,7 @@ currentRequestURL()
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 SELECT currentRequestURL()
@@ -1179,6 +1179,43 @@ SELECT CURRENT_USER
 ┌─CURRENT_USER─┐
 │ default      │
 └──────────────┘
+```
+
+## current_setting {#current_setting}
+
+引入版本：v26.8.0
+
+PostgreSQL 兼容性函数。返回运行时配置参数的值。目前仅模拟了少量供客户端获取内部信息使用的只读参数。
+
+<Note>
+  此函数具有非确定性：使用相同参数调用时，可能返回不同的结果。
+</Note>
+
+**语法**
+
+```sql
+current_setting(name [, missing_ok])
+```
+
+**参数**
+
+* `name` — 配置参数的名称。[`String`](/zh/reference/data-types/string)
+* `missing_ok` — 遇到未知参数时返回 `NULL`，而不是抛出异常。[`UInt8`](/zh/reference/data-types/int-uint)
+
+**返回值**
+
+返回配置参数的值；当 `missing_ok` 为 true 时，未知参数返回 `NULL`。[`Nullable(String)`](/zh/reference/data-types/nullable)
+
+**示例**
+
+**示例**
+
+```sql title=Query
+SELECT current_setting('server_version_num')
+```
+
+```response title=Response
+120000
 ```
 
 ## defaultProfiles {#defaultProfiles}
@@ -2348,6 +2385,39 @@ SELECT formatReadableTimeDelta(INTERVAL 12345 SECOND) AS time_delta
 ┌─time_delta─────────────────────────┐
 │ 3 hours, 25 minutes and 45 seconds │
 └────────────────────────────────────┘
+```
+
+## format_type {#format_type}
+
+引入版本：v26.8.0
+
+PostgreSQL 兼容性函数。根据给定的 OID 返回对应类型的 SQL 名称。对于 `numeric` 类型，类型修饰符会被解码为 precision 和标度 (`numeric(p, s)`) ；对于其他所有类型，则忽略修饰符。`NULL` 类型修饰符与 `-1` 相同，均表示修饰符未知；若类型 OID 为 `NULL`，则返回 `NULL`。
+
+**语法**
+
+```sql
+format_type(type_oid, typemod)
+```
+
+**参数**
+
+* `type_oid` — 类型 OID。[`(U)Int*`](/zh/reference/data-types/int-uint)
+* `typemod` — 类型修饰符，或 `NULL`。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`NULL`](/zh/reference/syntax#null)
+
+**返回值**
+
+该类型的 SQL 名称。[`String`](/zh/reference/data-types/string)
+
+**示例**
+
+**示例**
+
+```sql title=Query
+SELECT format_type(23, -1)
+```
+
+```response title=Response
+integer
 ```
 
 ## fuzzQuery {#fuzzQuery}
@@ -4162,7 +4232,7 @@ SELECT minSampleSizeContinuous(112.25, 21.1, 0.03, 0.80, 0.05) AS sample_size
 
 计算在 A/B 测试中比较两个样本的转化率 (比例) 时所需的最小样本量。
 
-使用[这篇文章](https://towardsdatascience.com/required-sample-size-for-a-b-testing-6f6608dd330a)中描述的公式。假设 treatment 组和 control 组的规模相同。返回单个组所需的样本量 (即整个实验所需的样本量是返回值的两倍) 。
+使用[这篇文章](https://towardsdatascience.com/required-sample-size-for-a-b-testing-6f6608dd330a)中描述的公式。假设实验组和对照组的规模相同。返回单个组所需的样本量 (即整个实验所需的样本量是返回值的两倍) 。
 
 **语法**
 
@@ -4172,8 +4242,8 @@ minSampleSizeConversion(baseline, mde, power, alpha)
 
 **参数**
 
-* `baseline` — 基准转化率。[`Float*`](/zh/reference/data-types/float)
-* `mde` — 以百分点表示的最小可检测效应 (MDE)  (例如，基准转化率为 0.25 时，MDE 为 0.03 表示预期变化为 0.25 ± 0.03) 。[`Float*`](/zh/reference/data-types/float)
+* `baseline` — 基线转化率。[`Float*`](/zh/reference/data-types/float)
+* `mde` — 以百分点表示的最小可检测效应 (MDE)  (例如，基线转化率为 0.25 时，MDE 为 0.03 表示预期变化为 0.25 ± 0.03) 。[`Float*`](/zh/reference/data-types/float)
 * `power` — 测试所需的检验功效 (1 - II 类错误的概率) 。[`Float*`](/zh/reference/data-types/float)
 * `alpha` — 测试所需的显著性水平 (I 类错误的概率) 。[`Float*`](/zh/reference/data-types/float)
 
@@ -4190,7 +4260,7 @@ SELECT minSampleSizeConversion(0.25, 0.03, 0.80, 0.05) AS sample_size
 ```
 
 ```response title=Response
-(3396.077603219163,0.22,0.28)
+(3396.077603219162,0.22,0.28)
 ```
 
 ## neighbor {#neighbor}
@@ -4996,9 +5066,10 @@ SELECT pg_get_userbyid(10)
 
 引入版本：v26.8.0
 
-用于 PostgreSQL wire protocol 的兼容函数，对应于 `pg_catalog.pg_table_is_visible`。
+用于 PostgreSQL 线协议 的兼容函数，对应于 `pg_catalog.pg_table_is_visible`。
 PostgreSQL 客户端 (例如 `psql` 中的 `\d` 命令) 使用该函数过滤搜索路径中可见的表。
-ClickHouse 模拟的 `pg_class` 视图仅暴露当前数据库中的表，且这些表均可见，因此该函数始终返回 `1`。
+在 PostgreSQL 线协议会话之外，没有可用于解析该 oid 的模拟目录，因此该函数返回 `1`。
+在此类会话中，由于模拟目录将每个数据库作为一个 schema 暴露，PostgreSQL 处理器会将该调用重写为针对模拟目录的搜索路径检查。
 
 **语法**
 
@@ -6087,6 +6158,10 @@ ROLLBACK;
   更多信息请参见页面 [事务 (ACID) 支持](/zh/concepts/features/operations/insert/transactions#transactions-commit-and-rollback)。
 </Note>
 
+<Note>
+  此函数具有非确定性：即使参数相同，也可能返回不同的结果。
+</Note>
+
 **语法**
 
 ```sql
@@ -6139,6 +6214,10 @@ ROLLBACK;
   更多信息请参见[事务 (ACID) 支持](/zh/concepts/features/operations/insert/transactions#transactions-commit-and-rollback)页面。
 </Note>
 
+<Note>
+  此函数具有非确定性：即使参数相同，也可能返回不同的结果。
+</Note>
+
 **语法**
 
 ```sql
@@ -6155,7 +6234,7 @@ transactionOldestSnapshot()
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 BEGIN TRANSACTION;

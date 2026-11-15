@@ -8,9 +8,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Subset-of-columns reads with the native Arrow IPC reader must keep working when an *unrequested* column has a
 # type with its own buffer layout (`ListView`, `LargeListView`, `RunEndEncoded`): the reader advances the
 # node/buffer cursors past such a column. The column `b` is placed between two readable columns `a` and `c`, so
-# an inexact skip would corrupt `c`. Requesting `b` reads `RunEndEncoded` as its values; the list views, which
-# the reader cannot decode, still fail with a clear error. The files are built with pyarrow because ClickHouse
-# cannot write these Arrow types.
+# an inexact skip would corrupt `c`. Requesting `b` reads the list views as `Array` and `RunEndEncoded` as its
+# values. The files are built with pyarrow because ClickHouse cannot write these Arrow types.
 
 DATA_FILE="${CLICKHOUSE_TMP}/04345_skip_unsupported"
 
@@ -41,14 +40,10 @@ for NAME in list_view large_list_view run_end_encoded; do
 
         if [ "${NAME}" = "run_end_encoded" ]; then
             echo "--- ${NAME} / ${FMT}: SELECT b (requested) -> read as its values ---"
-            ${CLICKHOUSE_LOCAL} --query "SELECT b FROM file('${DATA_FILE}.${NAME}.${FMT}', '${FMT}')"
         else
-            echo "--- ${NAME} / ${FMT}: SELECT b (requested) -> the reader rejects the type ---"
-            ${CLICKHOUSE_LOCAL} --query "
-                SELECT b FROM file('${DATA_FILE}.${NAME}.${FMT}', '${FMT}')
-                SETTINGS input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference = 0
-            " 2>&1 | grep -o "UNKNOWN_TYPE" | head -1
+            echo "--- ${NAME} / ${FMT}: SELECT b (requested) -> read as Array ---"
         fi
+        ${CLICKHOUSE_LOCAL} --query "SELECT b FROM file('${DATA_FILE}.${NAME}.${FMT}', '${FMT}')"
 
         rm -f "${DATA_FILE}.${NAME}.${FMT}"
     done

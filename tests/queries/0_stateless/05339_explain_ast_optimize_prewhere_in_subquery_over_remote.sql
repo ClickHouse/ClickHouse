@@ -1,5 +1,5 @@
--- `EXPLAIN AST optimize = 1` analyses the query with the interpreter that preceded the analyzer, which builds the
--- set of an `IN` subquery in `PREWHERE`. Building it over `remote` used to dereference a null query tree.
+-- `EXPLAIN AST optimize = 1` analyses the query, including an `IN` subquery in `PREWHERE` that reads
+-- from `remote`.
 
 DROP TABLE IF EXISTS t_explain_prewhere_in_remote;
 CREATE TABLE t_explain_prewhere_in_remote (x UInt64) ENGINE = MergeTree ORDER BY x;

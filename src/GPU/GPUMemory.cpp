@@ -123,13 +123,13 @@ void appendHostBytes(PinnedBuffer & buffer, std::string_view bytes)
     buffer.insert(bytes.data(), bytes.data() + bytes.size());
 }
 
-void appendFromDevice(PinnedBuffer & buffer, const char * device_bytes, size_t bytes, rmm::cuda_stream_view stream)
+void appendFromDevice(PinnedBuffer & buffer, const char * device_bytes, size_t bytes, cuda::stream_ref stream)
 {
     if (bytes == 0)
         return;
 
     checkCuda(
-        cudaMemcpyAsync(growBy(buffer, bytes), device_bytes, bytes, cudaMemcpyDeviceToHost, stream),
+        cudaMemcpyAsync(growBy(buffer, bytes), device_bytes, bytes, cudaMemcpyDeviceToHost, stream.get()),
         "Cannot copy bytes back from the device");
 }
 
@@ -137,7 +137,7 @@ void appendFromDevice(PinnedBuffer & buffer, const char * device_bytes, size_t b
 DeviceBuffer::~DeviceBuffer()
 {
     if (memory != nullptr)
-        cudaFreeAsync(memory, stream);
+        cudaFreeAsync(memory, stream.get());
 }
 
 DeviceBuffer::DeviceBuffer(DeviceBuffer && other) noexcept
@@ -153,7 +153,7 @@ DeviceBuffer & DeviceBuffer::operator=(DeviceBuffer && other) noexcept
     if (this != &other)
     {
         if (memory != nullptr)
-            cudaFreeAsync(memory, stream);
+            cudaFreeAsync(memory, stream.get());
         stream = other.stream;
         memory = std::exchange(other.memory, nullptr);
         capacity = std::exchange(other.capacity, 0);
@@ -172,13 +172,13 @@ void DeviceBuffer::reserve(size_t bytes)
 
     void * fresh = nullptr;
     checkCuda(
-        cudaMallocFromPoolAsync(&fresh, grown.capacity, GPUResources::get().memory_pool, stream),
+        cudaMallocFromPoolAsync(&fresh, grown.capacity, GPUResources::get().memory_pool, stream.get()),
         "Cannot allocate device memory");
     grown.memory = static_cast<char *>(fresh);
 
     if (used != 0)
         checkCuda(
-            cudaMemcpyAsync(grown.memory, memory, used, cudaMemcpyDeviceToDevice, stream),
+            cudaMemcpyAsync(grown.memory, memory, used, cudaMemcpyDeviceToDevice, stream.get()),
             "Cannot move bytes within the device");
     grown.used = used;
 
@@ -191,7 +191,7 @@ void DeviceBuffer::append(std::string_view host_bytes)
         return;
 
     checkCuda(
-        cudaMemcpyAsync(grow(host_bytes.size()), host_bytes.data(), host_bytes.size(), cudaMemcpyHostToDevice, stream),
+        cudaMemcpyAsync(grow(host_bytes.size()), host_bytes.data(), host_bytes.size(), cudaMemcpyHostToDevice, stream.get()),
         "Cannot send bytes to the device");
 }
 

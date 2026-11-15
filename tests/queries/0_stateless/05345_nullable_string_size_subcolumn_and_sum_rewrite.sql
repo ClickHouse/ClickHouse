@@ -3,7 +3,6 @@
 -- and `sum(x + c)` is rewritten to `sum(x) + c * count(x)` for Nullable `x`.
 -- The results must be the same as without the optimizations.
 
-SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1, optimize_empty_string_comparisons = 1, optimize_arithmetic_operations_in_aggregate_functions = 1;
 
 DROP TABLE IF EXISTS t_nullable_string;

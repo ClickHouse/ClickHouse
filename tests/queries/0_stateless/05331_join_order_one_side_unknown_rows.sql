@@ -5,7 +5,6 @@
 -- sub-join cheap, and that sub-join is built first.
 -- https://github.com/ClickHouse/ClickHouse/issues/120921
 
-SET allow_experimental_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_optimize_join_order_algorithm = 'greedy';

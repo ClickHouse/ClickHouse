@@ -124,6 +124,28 @@ ReturnType parseDateTimeBestEffortImpl(
     bool zero_year_was_read = false;
     auto note_year_was_read = [&] { zero_year_was_read |= !year; };
 
+    /// Year after a date delimiter: four digits, or two digits meaning 1970..2069. `year` must still be zero.
+    auto read_year_after_date_delimiter = [&](const char * year_digits, size_t num_year_digits)
+    {
+        if (num_year_digits == 4)
+        {
+            readDecimalNumber<4>(year, year_digits);
+            note_year_was_read();
+        }
+        else if (num_year_digits == 2)
+        {
+            readDecimalNumber<2>(year, year_digits);
+
+            if (year >= 70)
+                year += 1900;
+            else
+                year += 2000;
+        }
+        else
+            return false;
+        return true;
+    };
+
     UInt8 month = 0;
     UInt8 day_of_month = 0;
     UInt8 hour = 0;
@@ -653,21 +675,7 @@ ReturnType parseDateTimeBestEffortImpl(
 
                         num_digits = readDigits(digits, sizeof(digits), in);
 
-                        if (num_digits == 4)
-                        {
-                            readDecimalNumber<4>(year, digits);
-                            note_year_was_read();
-                        }
-                        else if (num_digits == 2)
-                        {
-                            readDecimalNumber<2>(year, digits);
-
-                            if (year >= 70)
-                                year += 1900;
-                            else
-                                year += 2000;
-                        }
-                        else
+                        if (!read_year_after_date_delimiter(digits, num_digits))
                             return on_error(
                                 ErrorCodes::CANNOT_PARSE_DATETIME,
                                 "Cannot read DateTime: unexpected number of decimal digits after day of month and month: {}",
@@ -840,8 +848,9 @@ ReturnType parseDateTimeBestEffortImpl(
                 else if (num_alpha == 3)
                 {
                     bool has_day_of_week = false;
+                    const bool is_month_name = read_alpha_month(alpha);
 
-                    if (read_alpha_month(alpha))
+                    if (is_month_name)
                     {
                     }
                     else if (0 == strncasecmp(alpha, "UTC", 3))
@@ -904,6 +913,49 @@ ReturnType parseDateTimeBestEffortImpl(
                     /// For RFC 2822
                     if (has_day_of_week)
                         checkChar(',', in);
+
+                    /// Mmm-DD-YYYY, Mmm/DD/YYYY, Mmm-YYYY: read the date here, otherwise "-DD" is taken for a time zone offset.
+                    if (is_month_name && !day_of_month && !in.eof() && (*in.position() == '-' || *in.position() == '/')
+                        && isSymbolIn(*in.position(), allowed_date_delimiters))
+                    {
+                        const char delimiter_after_month = *in.position();
+                        ++in.position();
+
+                        num_digits = readDigits(digits, sizeof(digits), in);
+                        if (num_digits == 4)
+                        {
+                            /// Mmm-YYYY, like 'Mmm YYYY': the day of month is not specified.
+                            if (year)
+                                return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: year component is duplicated");
+
+                            read_year_after_date_delimiter(digits, num_digits);
+                        }
+                        else if (num_digits == 2 || num_digits == 1)
+                        {
+                            if (num_digits == 2)
+                                readDecimalNumber<2>(day_of_month, digits);
+                            else
+                                readDecimalNumber<1>(day_of_month, digits);
+
+                            if (checkChar(delimiter_after_month, in))
+                            {
+                                if (year)
+                                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: year component is duplicated");
+
+                                num_digits = readDigits(digits, sizeof(digits), in);
+                                if (!read_year_after_date_delimiter(digits, num_digits))
+                                    return on_error(
+                                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                                        "Cannot read DateTime: unexpected number of decimal digits after month and day of month: {}",
+                                        num_digits);
+                            }
+                        }
+                        else
+                            return on_error(
+                                ErrorCodes::CANNOT_PARSE_DATETIME,
+                                "Cannot read DateTime: unexpected number of decimal digits after month: {}",
+                                num_digits);
+                    }
                 }
                 else
                     return on_error(ErrorCodes::LOGICAL_ERROR, "Cannot read DateTime: logical error, unexpected branch in code");
