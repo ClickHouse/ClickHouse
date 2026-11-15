@@ -38,6 +38,11 @@
 #include <skim.h>
 #endif
 
+#if defined(OS_WINDOWS)
+#include <Poco/UnWindows.h>
+#include <io.h>
+#endif
+
 namespace
 {
 
@@ -352,6 +357,17 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
 
 namespace DB
 {
+
+bool ReplxxLineReader::canRenderTo([[maybe_unused]] int out_fd)
+{
+#if defined(OS_WINDOWS)
+    const auto handle = reinterpret_cast<HANDLE>(_get_osfhandle(out_fd));
+    DWORD mode = 0;
+    return handle != INVALID_HANDLE_VALUE && GetConsoleMode(handle, &mode);
+#else
+    return true;
+#endif
+}
 
 ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     : LineReader

@@ -279,8 +279,13 @@ void DisksApp::runInteractiveReplxx()
         .word_break_characters = word_break_characters,
         .highlighter = {},
     };
-    ReplxxLineReader lr(std::move(reader_options));
-    lr.enableBracketedPaste();
+    /// See `ReplxxLineReader::canRenderTo`.
+    std::unique_ptr<LineReader> lr;
+    if (ReplxxLineReader::canRenderTo(STDOUT_FILENO))
+        lr = std::make_unique<ReplxxLineReader>(std::move(reader_options));
+    else
+        lr = std::make_unique<LineReader>(history_file, /* multiline */ false, query_extenders, query_delimiters);
+    lr->enableBracketedPaste();
 
     while (true)
     {
@@ -288,7 +293,7 @@ void DisksApp::runInteractiveReplxx()
         String prompt = "\x1b[1;34m" + disk_with_path.getDisk()->getName() + "\x1b[0m:" + "\x1b[1;31m" + disk_with_path.getCurrentPath()
             + "\x1b[0m$ ";
 
-        auto input = lr.readLine(prompt, "\x1b[1;31m:-] \x1b[0m");
+        auto input = lr->readLine(prompt, "\x1b[1;31m:-] \x1b[0m");
         if (input.empty())
             break;
 

@@ -5314,15 +5314,7 @@ void ClientBase::runInteractive()
 
 
 #if USE_REPLXX
-    bool use_replxx = true;
-#if defined(OS_WINDOWS)
-    /// The Windows backend of replxx renders through the console screen buffer of the output
-    /// handle and does not check that it is one, so with the output redirected to a file or a pipe
-    /// it would work with garbage geometry. Read the queries with the basic reader then.
-    use_replxx = isTerminal(stdout_fd);
-#endif
-
-    if (use_replxx)
+    if (ReplxxLineReader::canRenderTo(stdout_fd))
     {
         ReplxxLineReader::Highlighter highlight_callback{};
 

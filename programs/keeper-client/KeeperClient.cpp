@@ -577,8 +577,13 @@ void KeeperClient::runInteractiveReplxx()
         .word_break_characters = WORD_BREAK_CHARACTERS,
         .highlighter = {},
     };
-    ReplxxLineReader lr(std::move(reader_options));
-    lr.enableBracketedPaste();
+    /// See `ReplxxLineReader::canRenderTo`.
+    std::unique_ptr<LineReader> lr;
+    if (ReplxxLineReader::canRenderTo(STDOUT_FILENO))
+        lr = std::make_unique<ReplxxLineReader>(std::move(reader_options));
+    else
+        lr = std::make_unique<LineReader>(history_file, /* multiline */ false, query_extenders, query_delimiters);
+    lr->enableBracketedPaste();
 
     while (true)
     {
@@ -588,7 +593,7 @@ void KeeperClient::runInteractiveReplxx()
         else
             prompt = cwd + " :) ";
 
-        auto input = lr.readLine(prompt, ":-] ");
+        auto input = lr->readLine(prompt, ":-] ");
         if (input.empty())
             break;
 
