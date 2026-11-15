@@ -47,6 +47,12 @@ struct ObjectInfo
 
     virtual std::string getFileName() const { return relative_path_with_metadata.getFileName(); }
     virtual std::string getPath() const { return relative_path_with_metadata.relative_path; }
+    /// Optional stable user-facing path when the scheduling identity is synthetic.
+    virtual std::optional<std::string> getPathForVirtualColumns() const { return std::nullopt; }
+    virtual std::optional<std::string> getFileNameForVirtualColumns() const { return std::nullopt; }
+    /// Snapshot version carried by the object itself (e.g. a task of a `Lance` dataset), which takes
+    /// precedence over the iterator's one: on cluster workers the iterator does not know the snapshot.
+    virtual std::optional<UInt64> getSnapshotVersionForVirtualColumns() const { return std::nullopt; }
     virtual bool isArchive() const { return false; }
     virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
     virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }

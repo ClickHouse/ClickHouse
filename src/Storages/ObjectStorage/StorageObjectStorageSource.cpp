@@ -407,6 +407,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     FormatFilterInfoPtr format_filter_info_,
     bool need_only_count_,
     LazyObjectStorageFileRegistryPtr lazy_row_index_registry_,
+    std::optional<size_t> limit_,
     ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_,
     std::shared_ptr<ThreadPool> shared_create_reader_pool_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
@@ -419,6 +420,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , format_settings(format_settings_)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
+    , limit(limit_)
     , parser_shared_resources(std::move(parser_shared_resources_))
     , format_filter_info(std::move(format_filter_info_))
     , top_k_query_condition_cache_key(std::move(top_k_query_condition_cache_key_))
@@ -603,6 +605,12 @@ void ObjectIteratorListingAllForTopKQueryConditionCache::listObjects(size_t proc
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info)
 {
+    if (!include_connection_info)
+    {
+        if (auto virtual_path = object_info.getPathForVirtualColumns())
+            return *virtual_path;
+    }
+
     std::string result = formatObjectPath(configuration, object_info.getPath(), include_connection_info);
 
     /// For web URL shards the same relative path can be produced by different expanded URL options
@@ -1073,7 +1081,7 @@ Chunk StorageObjectStorageSource::generate()
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
             const auto & object_info = reader.getObjectInfo();
-            const auto & filename = object_info->getFileName();
+            const auto filename = object_info->getFileNameForVirtualColumns().value_or(object_info->getFileName());
 
             auto object_metadata = object_info->getObjectMetadata();
 
@@ -1140,6 +1148,11 @@ Chunk StorageObjectStorageSource::generate()
 
             FailPointInjection::pauseFailPoint(FailPoints::object_storage_source_pause_before_virtual_columns);
 
+            /// A task of a cluster read carries its snapshot, while the worker's `ReadTaskIterator` does not know it.
+            auto data_lake_snapshot_version = object_info->getSnapshotVersionForVirtualColumns();
+            if (!data_lake_snapshot_version)
+                data_lake_snapshot_version = file_iterator->getSnapshotVersion();
+
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
                 read_from_format_info.requested_virtual_columns,
@@ -1155,7 +1168,7 @@ Chunk StorageObjectStorageSource::generate()
                         : std::nullopt,
                     .etag = &(object_metadata->etag),
                     .tags = &(object_metadata->tags),
-                    .data_lake_snapshot_version = file_iterator->getSnapshotVersion(),
+                    .data_lake_snapshot_version = data_lake_snapshot_version,
                     .iceberg_metadata_file_path = iceberg_metadata_file_path,
                     .last_updated_sequence_number = last_updated_sequence_number,
                     .first_row_id = first_row_id,
@@ -1428,6 +1441,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         parser_shared_resources,
         format_filter_info,
         need_only_count,
+        limit,
         top_k_query_condition_cache_key,
         prefetch_input_format);
 }
@@ -1448,6 +1462,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     FormatParserSharedResourcesPtr parser_shared_resources,
     FormatFilterInfoPtr format_filter_info,
     bool need_only_count,
+    std::optional<size_t> limit,
     ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key,
     bool prefetch_input_format)
 {
@@ -1715,7 +1730,20 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
         ? try_get_num_rows_from_cache() : std::nullopt;
 
-    if (num_rows_from_cache)
+    if (auto custom_pipe = configuration->read(
+            object_info,
+            read_from_format_info,
+            format_settings,
+            context_,
+            max_block_size,
+            parser_shared_resources,
+            format_filter_info,
+            need_only_count,
+            limit))
+    {
+        builder.init(std::move(*custom_pipe));
+    }
+    else if (num_rows_from_cache)
     {
         /// We should not return single chunk with all number of rows,
         /// because there is a chance that this chunk will be materialized later

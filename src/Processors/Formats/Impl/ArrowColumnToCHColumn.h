@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 #include "config.h"
 
@@ -8,6 +9,7 @@
 
 #include <Formats/ColumnNameMaps.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Block.h>
 #include <arrow/table.h>
@@ -41,6 +43,13 @@ public:
         size_t num_rows,
         std::shared_ptr<const arrow::KeyValueMetadata> metadata,
         BlockMissingValues * block_missing_values = nullptr);
+
+    Chunk arrowRecordBatchToCHChunk(
+        const arrow::RecordBatch & batch,
+        std::shared_ptr<const arrow::KeyValueMetadata> metadata,
+        BlockMissingValues * block_missing_values = nullptr);
+
+    bool hasRecordBatchFieldMapping() const { return record_batch_schema != nullptr; }
 
     /// Validate that every validity bitmap in the record batch (recursively, including nested
     /// children and dictionaries) covers its declared rows.  Must be called before building an
@@ -78,7 +87,19 @@ private:
         std::shared_ptr<arrow::Field> field;
     };
 
+    struct RecordBatchFieldMapping
+    {
+        size_t field_index;
+        std::string column_name;
+    };
+
+    using RecordBatchFieldMappings = VectorWithMemoryTracking<RecordBatchFieldMapping>;
     using NameToArrowColumn = UnorderedMapWithMemoryTracking<std::string, ArrowColumn>;
+
+    RecordBatchFieldMappings buildRecordBatchFieldMapping(const arrow::Schema & schema) const;
+    NameToArrowColumn mapRecordBatchColumns(
+        const arrow::RecordBatch & batch,
+        const RecordBatchFieldMappings & field_mapping) const;
 
     Chunk arrowColumnsToCHChunk(
         const NameToArrowColumn & name_to_arrow_column,
@@ -103,6 +124,10 @@ private:
     /// To avoid converting dictionary from Arrow Dictionary
     /// to LowCardinality every chunk we save it and reuse.
     UnorderedMapWithMemoryTracking<std::string, DictionaryInfo> dictionary_infos;
+
+    std::shared_ptr<arrow::Schema> record_batch_schema;
+    RecordBatchFieldMappings record_batch_field_mapping;
+    NamesAndTypesList record_batch_header;
 
     std::optional<ColumnNameMap> parquet_columns_to_clickhouse;
     std::optional<ColumnNameMap> clickhouse_columns_to_parquet;

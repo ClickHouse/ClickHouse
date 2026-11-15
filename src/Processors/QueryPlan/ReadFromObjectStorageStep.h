@@ -105,8 +105,9 @@ private:
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationPtr configuration;
     std::shared_ptr<IObjectIterator> iterator_wrapper;
-    /// The metadata `iterator_wrapper` was created with: for a data lake, it always has the table state
-    /// (see `StorageObjectStorageSource::ensureDataLakeTableState`).
+    /// The metadata `iterator_wrapper` was created with: for a data lake, it has the table state
+    /// (see `StorageObjectStorageSource::ensureDataLakeTableState`), except for a distributed read
+    /// of a format whose snapshot arrives in the task objects (see `createIterator`).
     StorageMetadataPtr iterator_metadata;
 
     RuntimeFilterIndexAnalysisDescriptors join_runtime_filters_for_file_pruning;

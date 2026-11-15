@@ -146,6 +146,20 @@ if (CMAKE_OSX_DEPLOYMENT_TARGET)
     set(RUST_CFLAGS "${RUST_CFLAGS} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
 endif()
 
+# `-fwhole-program-vtables` only matters for C++ and is only accepted together with `-flto`. Some crates
+# (e.g. `blake3`) append `-fno-lto` to `CFLAGS` in their build scripts, which makes clang reject it.
+# It also implies `-fsplit-lto-unit`, and `lld` rejects a ThinLTO link that mixes split and non-split
+# bitcode ("inconsistent LTO Unit splitting"), so keep `-fsplit-lto-unit`, which is accepted with `-fno-lto`.
+string(REPLACE "-fwhole-program-vtables" "-fsplit-lto-unit" RUST_CFLAGS "${RUST_CFLAGS}")
+
+# Some crates (e.g. `lance-linalg`) compile their SIMD kernels with `-march=native`, which picks the build
+# host's CPU and fails when cross-compiling. For the baseline x86-64 level no `-march` is passed above,
+# so pin it explicitly (`CFLAGS` go after the flags set by the build scripts and take precedence).
+if (ARCH_AMD64 AND X86_ARCH_LEVEL EQUAL 1)
+    set(RUST_CFLAGS "${RUST_CFLAGS} -march=x86-64")
+    set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -march=x86-64")
+endif()
+
 get_target_property(CXX_PUBLIC_DEFS cxx INTERFACE_COMPILE_DEFINITIONS)
 if (CXX_PUBLIC_DEFS)
     list(TRANSFORM CXX_PUBLIC_DEFS PREPEND "-D")
@@ -643,13 +657,15 @@ endfunction()
 # workspace, `_ch_rust_workspace` (imported by `contrib/rust-contrib-workspace` after every member), and enables the
 # feature of the root package that re-exports the member.
 #
-#     clickhouse_add_rust_member(<crate> FEATURE <feature> [BUILD_DEPENDS <target> ...])
+#     clickhouse_add_rust_member(<crate> FEATURE <feature> [BUILD_DEPENDS <target> ...] [ENV <name>=<value> ...])
 #
 # BUILD_DEPENDS are targets the cargo run needs to be built first, such as libraries a build script looks for.
+# ENV are environment variables of the cargo run that the build scripts of the member read.
 function(clickhouse_add_rust_member crate)
-    cmake_parse_arguments(ARG "" "FEATURE" "BUILD_DEPENDS" ${ARGN})
+    cmake_parse_arguments(ARG "" "FEATURE" "BUILD_DEPENDS;ENV" ${ARGN})
     add_library(${crate} INTERFACE)
     target_link_libraries(${crate} INTERFACE _ch_rust_workspace)
     set_property(GLOBAL APPEND PROPERTY CLICKHOUSE_RUST_FEATURES ${ARG_FEATURE})
     set_property(GLOBAL APPEND PROPERTY CLICKHOUSE_RUST_BUILD_DEPENDS ${ARG_BUILD_DEPENDS})
+    set_property(GLOBAL APPEND PROPERTY CLICKHOUSE_RUST_ENV ${ARG_ENV})
 endfunction()

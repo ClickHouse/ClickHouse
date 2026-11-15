@@ -1,0 +1,36 @@
+{
+	"meta":
+	[
+		{
+			"name": "greater(id, 0)",
+			"type": "Nullable(UInt8)"
+		}
+	],
+
+	"data":
+	[
+		[1]
+	],
+
+	"rows": 1,
+
+	"rows_before_limit_at_least": 8
+}
+{
+	"meta":
+	[
+		{
+			"name": "greater(id, 0)",
+			"type": "Nullable(UInt8)"
+		}
+	],
+
+	"data":
+	[
+		[1]
+	],
+
+	"rows": 1,
+
+	"rows_before_limit_at_least": 8
+}

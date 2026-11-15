@@ -1,6 +1,7 @@
 <clickhouse>
     <profiles>
         <default>
+            <enable_lance>1</enable_lance>
             <s3_retry_attempts>5</s3_retry_attempts>
         </default>
     </profiles>

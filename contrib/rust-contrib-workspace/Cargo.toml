@@ -6,6 +6,7 @@ members = [
     "../polyglot-cmake",
     "../vortex-cmake",
     "../pcodec-cmake",
+    "../lance-cmake",
     "../wasmtime-cmake",
     "../delta-kernel-rs-cmake",
     "../chdig-cmake",
@@ -28,6 +29,7 @@ prql = ["dep:_ch_rust_prql"]
 polyglot = ["dep:_ch_rust_polyglot"]
 vortex = ["dep:_ch_rust_vortex"]
 pco = ["dep:_ch_rust_pco"]
+lance = ["dep:_ch_rust_lance"]
 wasmtime = ["dep:_ch_rust_wasmtime"]
 delta_kernel = ["dep:_ch_rust_delta_kernel"]
 chdig = ["dep:_ch_rust_chdig"]
@@ -38,6 +40,10 @@ _ch_rust_prql = { path = "../prql-cmake", optional = true }
 _ch_rust_polyglot = { path = "../polyglot-cmake", optional = true }
 _ch_rust_vortex = { path = "../vortex-cmake", optional = true }
 _ch_rust_pco = { path = "../pcodec-cmake", optional = true }
+_ch_rust_lance = { path = "../lance-cmake", optional = true }
 _ch_rust_wasmtime = { path = "../wasmtime-cmake", optional = true }
 _ch_rust_delta_kernel = { path = "../delta-kernel-rs-cmake", optional = true }
 _ch_rust_chdig = { path = "../chdig-cmake", optional = true }
+
+[profile.release]
+panic = "unwind"

@@ -1,35 +1,38 @@
-#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
-#include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Processors/Sources/NullSource.h>
-#include <Processors/QueryPlan/Serialization.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <IO/Operators.h>
-#include <Storages/ObjectStorage/S3/Configuration.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
-#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
-#include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatParserSharedResources.h>
+#include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
-#include <IO/WriteBufferFromString.h>
-#include <Storages/prepareReadingFromFormat.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/Serialization.h>
+#include <Processors/Sources/NullSource.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/prepareReadingFromFormat.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Common/CurrentMetrics.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <boost/algorithm/string/predicate.hpp>
+#include <Common/FailPoint.h>
 #include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -71,6 +74,16 @@ namespace Setting
 namespace DataLakeStorageSetting
 {
     extern const DataLakeStorageSettingsBool paimon_incremental_read;
+}
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char datalake_distributed_worker_latest_snapshot[];
 }
 
 
@@ -230,6 +243,7 @@ Pipe ReadFromObjectStorageStep::buildInOrderPipe(
             format_filter_info,
             need_only_count,
             /*lazy_row_index_registry_=*/ nullptr,
+            /*limit_=*/ std::nullopt,
             top_k_query_condition_cache_key,
             shared_reader_pool));
     }
@@ -304,13 +318,51 @@ Pipe ReadFromObjectStorageStep::buildInOrderPipe(
 
 void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
+    auto context = getContext();
+    auto make_format_filter_info = [&](std::shared_ptr<const ActionsDAG> filter, ColumnMapperPtr column_mapper)
+    {
+        auto result = std::make_shared<FormatFilterInfo>(
+            std::move(filter),
+            context,
+            std::move(column_mapper),
+            query_info.row_level_filter,
+            query_info.prewhere_info);
+        result->top_k_filter = top_k_filter;
+        return result;
+    };
+
+    /// A dataset reader gets the whole filter, including the conjuncts on virtual columns: it pushes
+    /// down `LIMIT` and `count` only when it can evaluate the whole filter itself.
+    /// It maps the columns itself, so it gets no column mapper: the column mapper of the current
+    /// schema must not be requested before `createIterator`, which pins the data lake snapshot
+    /// (e.g. for a storage object of a catalog table that was built again for the read).
+    if (auto dataset_pipe = configuration->readDataset(
+            storage_snapshot,
+            info,
+            format_settings,
+            context,
+            max_block_size,
+            num_streams,
+            make_format_filter_info(info.formatReadsHivePartitionColumns() ? nullptr : filter_actions_dag, /*column_mapper=*/ nullptr),
+            need_only_count,
+            limit,
+            distributed_processing))
+    {
+        auto pipe = std::move(*dataset_pipe);
+        if (pipe.empty())
+            pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
+        for (const auto & processor : pipe.getProcessors())
+            processors.emplace_back(processor);
+        pipeline.init(std::move(pipe));
+        return;
+    }
+
     createIterator();
     if (read_in_order && read_in_order_files.empty())
         while (auto object_info = iterator_wrapper->next(0))
             read_in_order_files.push_back(object_info);
 
     Pipes pipes;
-    auto context = getContext();
     size_t estimated_keys_count = iterator_wrapper->estimatedKeysCount();
 
     if (estimated_keys_count > 1)
@@ -321,19 +373,22 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         /// We will keep one stream for this particular case.
         num_streams = 1;
     }
+    if (auto custom_read_cap = configuration->getMaxCustomReadThreads(distributed_processing))
+        num_streams = std::min(num_streams, std::max<size_t>(1, *custom_read_cap));
 
     // here create for node -> query -> level thread pool
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
 
     auto format_filter_actions_dag = info.getFormatFilter(filter_actions_dag);
-    auto make_format_filter_info = [&]
+    /// A reader may apply the limit as a hard cap when it evaluates the whole filter it gets. The format filter
+    /// has no conjuncts on the columns added after the format (virtual and Hive partition columns), so if any
+    /// conjunct was removed, the rows the reader stops at could all be filtered out later.
+    const std::optional<size_t> reader_limit = format_filter_actions_dag == filter_actions_dag ? limit : std::nullopt;
+    auto make_object_format_filter_info = [&]
     {
-        auto result = std::make_shared<FormatFilterInfo>(
+        auto result = make_format_filter_info(
             format_filter_actions_dag,
-            context,
-            configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
-            query_info.row_level_filter,
-            query_info.prewhere_info);
+            configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context));
         result->current_schema_column_mapper
             = configuration->getCurrentSchemaColumnMapperForFilters(storage_snapshot->metadata, context);
         /// The delete transforms of a data lake need row numbers only for files with attached deletes;
@@ -342,8 +397,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
             || VirtualColumnUtils::hasRowDependentVirtualColumns(info.requested_virtual_columns);
         return result;
     };
-    auto format_filter_info = make_format_filter_info();
-    format_filter_info->top_k_filter = top_k_filter;
+    auto format_filter_info = make_object_format_filter_info();
     auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey();
     if (top_k_query_condition_cache_key)
     {
@@ -353,7 +407,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         /// object storage, the key may turn out not to be made, see `createReader`).
         auto top_k_filter_tracking_best_values = std::make_shared<FormatTopKFilterInfo>(*top_k_filter);
         top_k_filter_tracking_best_values->track_row_group_best_values = true;
-        auto format_filter_info_tracking_best_values = make_format_filter_info();
+        auto format_filter_info_tracking_best_values = make_object_format_filter_info();
         format_filter_info_tracking_best_values->top_k_filter = std::move(top_k_filter_tracking_best_values);
         top_k_query_condition_cache_key->format_filter_info_tracking_best_values = std::move(format_filter_info_tracking_best_values);
     }
@@ -400,6 +454,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
             format_filter_info,
             need_only_count,
             lazy_row_index_registry,
+            reader_limit,
             top_k_query_condition_cache_key);
 
         pipes.emplace_back(std::move(source));
@@ -445,8 +500,25 @@ void ReadFromObjectStorageStep::createIterator()
     auto context = getContext();
 
     /// The TopK query condition cache key is made from the same table state the files are read from.
+    /// A distributed worker of a format whose exact snapshot arrives in every task object must not pin
+    /// its local latest snapshot: the iterator of a distributed read does not use the table state, and
+    /// pinning a newer version than the one of the tasks would break reading those tasks.
     if (!iterator_metadata)
-        iterator_metadata = StorageObjectStorageSource::ensureDataLakeTableState(*configuration, storage_snapshot->metadata, context);
+    {
+        if (distributed_processing && configuration->supportsDistributedReadWithExplicitSchema())
+            iterator_metadata = storage_snapshot->metadata;
+        else
+        {
+            fiu_do_on(FailPoints::datalake_distributed_worker_latest_snapshot,
+            {
+                if (distributed_processing && configuration->isDataLakeConfiguration()
+                    && !(storage_snapshot->metadata && storage_snapshot->metadata->datalake_table_state.has_value()))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed data lake worker attempted to fetch its local latest snapshot");
+            });
+
+            iterator_metadata = StorageObjectStorageSource::ensureDataLakeTableState(*configuration, storage_snapshot->metadata, context);
+        }
+    }
 
     iterator_wrapper = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(context), object_storage, iterator_metadata, distributed_processing,
