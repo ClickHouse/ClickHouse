@@ -1,0 +1,85 @@
+t1	a	12917804110809363939	1
+t1	b	11795596070477164822	2
+t2	a	12917804110809363939	3
+-- expression of a key
+a	A	50
+b	B	20
+bb	BB	30
+A	50
+B	20
+BB	30
+-- ALIAS column referencing other ALIAS columns
+a	A!	A	50
+b	B!	B	20
+bb	BB!	BB	30
+A!	50
+B!	20
+BB!	30
+-- declared type differs from the type of the expression
+a	2	UInt8	50
+b	2	UInt8	20
+bb	3	UInt8	30
+-- constant ALIAS expression
+42	4
+a	1
+b	1
+bb	1
+-- HAVING, ORDER BY, LIMIT BY
+bb	30
+a	50
+a	50
+bb	30
+-- window function over the aggregated result
+a	70
+b	70
+bb	30
+-- INTERPOLATE
+1	10	1
+2	20	2
+3	30	0
+4	40	1
+5	0	11
+6	0	21
+1	10	1
+2	20	2
+3	30	0
+4	40	1
+5	41	0
+6	41	0
+-- ALIAS column is a key or is under an aggregate function
+A	2
+B	1
+BB	1
+a	A	2
+b	B	2
+bb	BB	0
+-- ROLLUP and GROUPING SETS
+		100
+a	A	50
+b	B	20
+bb	BB	30
+		1	10
+		2	20
+		3	30
+		4	40
+a	A	0	50
+b	B	0	20
+bb	BB	0	30
+a	A	50
+b	B	20
+bb	BB	30
+
+		100
+-- remote
+a	A	100
+b	B	40
+bb	BB	60
+1	4
+2	4
+a	2
+b	2
+bb	2
+-- errors
+-- aliases inside ALIAS definitions
+2	3	4	2
+3	4	5	2
