@@ -3396,6 +3396,23 @@ def main():
             Result.from_commands_run(name="Install ClickHouse", command=commands)
         )
         res = results[-1].is_ok()
+        # PR builds of `amd_release`/`arm_release` that no performance comparison needs are
+        # built without ThinLTO (`record_thinlto_choice`), and a re-run of failed jobs of a
+        # run can download such a build when a later run on the same commit overwrote the
+        # artifacts. Comparing it with the ThinLTO reference would report bogus changes, so
+        # refuse it: re-run the whole workflow instead.
+        if res and not info.is_local_run:
+            link_flags = Shell.get_output_or_raise(
+                f"{ch_path}/clickhouse local --query \"SELECT value FROM system.build_options WHERE name = 'LINK_FLAGS'\""
+            )
+            results.append(
+                Result(
+                    name="Tested binary is a ThinLTO build",
+                    status=Result.Status.OK if "-flto=thin" in link_flags else Result.Status.FAIL,
+                    info=f"LINK_FLAGS: {link_flags}",
+                )
+            )
+            res = results[-1].is_ok()
 
     if not nightly:
         reference_sha = ""

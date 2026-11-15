@@ -1,3 +1,4 @@
+import hashlib
 import os
 from concurrent.futures import ThreadPoolExecutor
 
@@ -36,9 +37,8 @@ class CacheRunnerHooks:
         # docker images, job config) do not show - e.g. build a binary with
         # different compiler options depending on PR labels. It records a salt
         # for the job in this kv entry ({job name: salt}), so that the result is
-        # cached and reused separately from the regular one, and its artifacts are
-        # stored separately (`Cache.artifact_dir`). Jobs requiring it inherit the
-        # salted digest.
+        # cached and reused separately from the regular one. Jobs requiring it
+        # inherit the salted digest.
         digest_salts = (
             _Environment.get().JOB_KV_DATA.get(Cache.DIGEST_SALTS_KV_KEY) or {}
         )
@@ -46,7 +46,9 @@ class CacheRunnerHooks:
             assert (
                 job_name in job_digest_map
             ), f"Digest salt for unknown job [{job_name}]"
-            salt_token = Cache.salt_token(salt)
+            salt_token = hashlib.md5(salt.encode()).hexdigest()[
+                : Settings.CACHE_DIGEST_LEN
+            ]
             print(f"Job [{job_name}] digest salted with [{salt}]")
             job_digest_map[job_name] = f"{job_digest_map[job_name]}-{salt_token}"
 

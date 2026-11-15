@@ -796,14 +796,18 @@ def record_thinlto_choice(info, without_thinlto, with_thinlto):
     The digests of both kinds are salted, so that a cached build of one kind never
     stands for the other. A non-LTO build gets a fixed salt and is reused as usual. A
     ThinLTO build gets a salt unique to the run attempt, so it is not reused from the
-    cache at all, and neither are the jobs that require it. A salted build stores its
-    artifacts in a directory of its own (`Cache.artifact_dir`), so no run on the same
-    commit overwrites the ThinLTO binary that a re-run of failed jobs downloads. But
-    other things that a build feeds are keyed by the PR only - e.g. the private `pr-<N>`
-    docker image tags - so a run that needs the ThinLTO binary, e.g. for a performance
-    comparison after adding the `pr-performance` label, rebuilds it and everything
-    that requires it rather than reusing a run whose outputs could have been replaced
-    since."""
+    cache at all, and neither are the jobs that require it: a cache record points to the
+    artifacts of its run by PR number and commit SHA only (as do the private `pr-<N>`
+    docker image tags), and a later non-LTO run on the same commit overwrites them. So a
+    run that needs the ThinLTO binary, e.g. for a performance comparison after adding
+    the `pr-performance` label, always rebuilds it, and the only overwrite left within
+    such a run is of a non-LTO build by a ThinLTO one, which its consumers accept.
+
+    The artifacts keep their usual location, which tools outside CI rely on. The one
+    case left is a re-run of failed jobs of a run after a later non-LTO run on the same
+    commit: it downloads the non-LTO binary. The performance comparison refuses that
+    binary (`performance_tests.py` checks the `LINK_FLAGS` build option), so the
+    re-run fails instead of reporting wrong results."""
     from ci.praktika.cache import Cache
 
     assert info.pr_number > 0, "only PR builds may skip ThinLTO"
