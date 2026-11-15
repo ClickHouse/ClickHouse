@@ -160,13 +160,17 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
             ++objects_being_split;
         }
 
-        ObjectInfoPtr object_info;
-        ObjectInfos buckets;
         try
         {
-            object_info = iterator->next(id);
-            if (object_info)
-                buckets = splitToBuckets(object_info);
+            auto object_info = iterator->next(id);
+            auto buckets = object_info ? splitToBuckets(object_info) : ObjectInfos{};
+
+            std::lock_guard lock(mutex);
+            if (!object_info)
+                iterator_exhausted = true;
+            for (auto & bucket : buckets)
+                pending_objects_info.push(std::move(bucket));
+            --objects_being_split;
         }
         catch (...)
         {
@@ -175,13 +179,6 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
             objects_split_cv.notify_all();
             throw;
         }
-
-        std::lock_guard lock(mutex);
-        --objects_being_split;
-        if (!object_info)
-            iterator_exhausted = true;
-        for (auto & bucket : buckets)
-            pending_objects_info.push(std::move(bucket));
         objects_split_cv.notify_all();
     }
 }
