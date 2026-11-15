@@ -4,8 +4,9 @@
 
 # A server with `filesystem_isolation` keeps the CA certificates of the system readable when `/etc/ssl/certs` is a link
 # to a directory of hashed links elsewhere, which point to certificates in yet another directory: the directory reached
-# through the link is scanned for links as well. `/etc/ssl` is replaced in a private mount namespace, which disappears
-# with the server.
+# through the link is scanned for links as well. `/etc/ssl/certs` is replaced in a private mount namespace, which
+# disappears with the server. The rest of `/etc/ssl` stays: OpenSSL can load its configuration and providers from
+# there at startup, before the isolation.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -58,7 +59,7 @@ cat > "$DIR/start.sh" <<EOF
 set -e
 mount --make-rprivate /
 mkdir -p /etc/ssl
-mount --bind "$DIR/ssl" /etc/ssl
+mount -t overlay overlay -o "lowerdir=$DIR/ssl:/etc/ssl" /etc/ssl
 exec $CLICKHOUSE_BINARY server --config-file "$DIR/conf/config.xml"
 EOF
 
