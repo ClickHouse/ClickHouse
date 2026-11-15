@@ -24,7 +24,7 @@ protected:
     void SetUp() override
     {
         access_control = std::make_unique<AccessControl>();
-        storage = std::make_unique<UsersConfigAccessStorage>("users_config_test", *access_control, false);
+        storage = std::make_unique<UsersConfigAccessStorage>("users_config_test", *access_control, false, 0);
     }
 
     std::unique_ptr<AccessControl> access_control;

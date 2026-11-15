@@ -61,7 +61,7 @@ TEST(DiskAccessStorageRecovery, RebuildRemovesTempFiles)
     writeNeedRebuildMarker(dir);
 
     AccessChangesNotifier notifier;
-    DiskAccessStorage storage("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false);
+    DiskAccessStorage storage("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false, /*access_entities_num_limit_=*/0);
 
     EXPECT_FALSE(std::filesystem::exists(stranded_tmp));
 }
@@ -92,7 +92,7 @@ TEST(DiskAccessStorageRecovery, RebuildRemovesOlderDuplicates)
     writeNeedRebuildMarker(dir);
 
     AccessChangesNotifier notifier;
-    DiskAccessStorage storage("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false);
+    DiskAccessStorage storage("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false, /*access_entities_num_limit_=*/0);
 
     EXPECT_FALSE(std::filesystem::exists(path_a));
     EXPECT_TRUE(std::filesystem::exists(path_b));
@@ -111,14 +111,14 @@ TEST(DiskAccessStorageRecovery, KeepsUserCreatedAfterReloadOnCrash)
 
     AccessChangesNotifier notifier;
     {
-        DiskAccessStorage storage("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false);
+        DiskAccessStorage storage("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false, /*access_entities_num_limit_=*/0);
         storage.insert(makeUser("alice")); /// Starts the lists-writing thread, which waits a minute.
         storage.reload(IAccessStorage::ReloadMode::ALL); /// Writes the lists and removes need_rebuild_lists.mark.
         storage.insert(makeUser("bob"));
         std::filesystem::copy(dir, crashed_dir.path(), std::filesystem::copy_options::recursive);
     }
 
-    DiskAccessStorage restarted("test_disk", crashed_dir.path() + "/", notifier, /*readonly_=*/false, /*allow_backup_=*/false);
+    DiskAccessStorage restarted("test_disk", crashed_dir.path() + "/", notifier, /*readonly_=*/false, /*allow_backup_=*/false, /*access_entities_num_limit_=*/0);
     EXPECT_TRUE(restarted.find<User>("alice").has_value());
     EXPECT_TRUE(restarted.find<User>("bob").has_value());
 }
@@ -133,7 +133,7 @@ TEST(DiskAccessStorageRecovery, KeepsUserCreatedAfterFailedListWrite)
 
     AccessChangesNotifier notifier;
     {
-        DiskAccessStorage storage("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false);
+        DiskAccessStorage storage("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false, /*access_entities_num_limit_=*/0);
         std::filesystem::rename(users_list, saved_users_list);
         std::filesystem::create_directory(users_list);
         storage.reload(IAccessStorage::ReloadMode::ALL); /// Fails to write `users.list`.
@@ -142,7 +142,7 @@ TEST(DiskAccessStorageRecovery, KeepsUserCreatedAfterFailedListWrite)
     std::filesystem::remove(users_list);
     std::filesystem::rename(saved_users_list, users_list);
 
-    DiskAccessStorage restarted("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false);
+    DiskAccessStorage restarted("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false, /*access_entities_num_limit_=*/0);
     EXPECT_TRUE(restarted.find<User>("bob").has_value());
 }
 
@@ -156,7 +156,7 @@ TEST(DiskAccessStorageRecovery, KeepsReloadedUserAfterFailedListWrite)
 
     AccessChangesNotifier notifier;
     {
-        DiskAccessStorage storage("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false);
+        DiskAccessStorage storage("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false, /*access_entities_num_limit_=*/0);
         writeEntityToFile(std::filesystem::path(dir) / (toString(UUIDHelpers::generateV4()) + ".sql"), *makeUser("carol"));
         std::filesystem::rename(users_list, saved_users_list);
         std::filesystem::create_directory(users_list);
@@ -166,7 +166,7 @@ TEST(DiskAccessStorageRecovery, KeepsReloadedUserAfterFailedListWrite)
     std::filesystem::remove(users_list);
     std::filesystem::rename(saved_users_list, users_list);
 
-    DiskAccessStorage restarted("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false);
+    DiskAccessStorage restarted("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false, /*access_entities_num_limit_=*/0);
     EXPECT_TRUE(restarted.find<User>("carol").has_value());
 }
 
@@ -180,7 +180,7 @@ TEST(DiskAccessStorageRecovery, KeepsUserWhenMarkCannotBeCreated)
     writeEntityToFile(path, *makeUser("alice"));
 
     AccessChangesNotifier notifier;
-    DiskAccessStorage storage("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false);
+    DiskAccessStorage storage("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false, /*access_entities_num_limit_=*/0);
     std::filesystem::create_directory(dir + "need_rebuild_lists.mark"); /// The mark cannot be created as a file.
 
     EXPECT_THROW(storage.remove(id), Exception);
@@ -204,7 +204,7 @@ TEST(DiskAccessStorageShutdown, DoesNotWaitOutTheListsWritingTimeout)
         temp_dir.createDirectories();
         String dir = temp_dir.path() + "/";
 
-        DiskAccessStorage storage("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false);
+        DiskAccessStorage storage("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false, /*access_entities_num_limit_=*/0);
         storage.insert(makeUser("alice"));
 
         auto started = std::chrono::steady_clock::now();
@@ -216,7 +216,7 @@ TEST(DiskAccessStorageShutdown, DoesNotWaitOutTheListsWritingTimeout)
         /// With the marker absent the reopened storage reads the `.list` files instead of rebuilding
         /// from the `<id>.sql` files, so it resolves `alice` only if `users.list` really names her.
         EXPECT_FALSE(std::filesystem::exists(std::filesystem::path(dir) / "need_rebuild_lists.mark"));
-        DiskAccessStorage reopened("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false);
+        DiskAccessStorage reopened("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false, /*access_entities_num_limit_=*/0);
         ASSERT_TRUE(reopened.find<User>("alice").has_value()) << "iteration " << iteration;
     }
 }
