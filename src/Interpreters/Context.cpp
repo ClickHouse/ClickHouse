@@ -6372,6 +6372,10 @@ void Context::clearQueryResultCache(const std::optional<String> & tag) const
 
 void Context::clearCaches() const
 {
+    /// These take the context mutex themselves.
+    clearPageCache();
+    clearColumnsCache();
+
     std::lock_guard lock(shared->mutex);
 
     /// Each cache is null-checked because some `Context` users intentionally do
