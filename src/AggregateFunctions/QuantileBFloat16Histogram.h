@@ -86,11 +86,16 @@ struct QuantileBFloat16Histogram
 
     void deserialize(ReadBuffer & buf)
     {
-        data.read(buf);
-        /// `add` skips NaNs, and the finalization relies on that (a NaN does not convert to an integer result).
-        for (const auto & pair : data)
-            if ((pair.getKey() & 0x7FFF) > 0x7F80)
+        /// Entry by entry, so that a malformed count does not allocate the table before any entry arrives.
+        typename Data::Reader reader(buf);
+        while (reader.next())
+        {
+            const auto & pair = reader.get();
+            /// `add` skips NaNs, and the finalization relies on that (a NaN does not convert to an integer result).
+            if ((pair.first & 0x7FFF) > 0x7F80)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "NaN in the state of quantileBFloat16");
+            data[pair.first] = pair.second;
+        }
     }
 
     Value get(Float64 level) const

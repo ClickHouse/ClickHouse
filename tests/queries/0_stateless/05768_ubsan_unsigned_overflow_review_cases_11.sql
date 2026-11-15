@@ -30,3 +30,6 @@ SELECT finalizeAggregation(CAST(
 -- A NaN bin of `quantileBFloat16` with an integer result.
 SELECT quantileBFloat16(0.5)(toDate(number)) FROM numbers(100);
 SELECT finalizeAggregation(CAST(unhex('01c07f0100000000000000') AS AggregateFunction(quantileBFloat16, Date))); -- { serverError INCORRECT_DATA }
+-- A `quantileBFloat16` state that claims 2^32 entries and has none fails on the missing data without allocating for them.
+SELECT finalizeAggregation(CAST(unhex('8080808010') AS AggregateFunction(quantileBFloat16(0.5), Float64)))
+SETTINGS max_memory_usage = 10000000; -- { serverError CANNOT_READ_ALL_DATA }
