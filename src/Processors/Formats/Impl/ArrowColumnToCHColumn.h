@@ -5,8 +5,9 @@
 
 #include "config.h"
 
-#if USE_ARROW || USE_ORC || USE_PARQUET
+#if USE_ARROW || USE_PARQUET
 
+#include <DataTypes/IDataType.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Block.h>
 #include <arrow/table.h>
@@ -66,7 +67,7 @@ public:
     {
         std::shared_ptr<ColumnWithTypeAndName> values;
         Int64 default_value_index = -1;
-        UInt64 dictionary_size{};
+        UInt64 dictionary_size;
     };
 
 private:

@@ -18,7 +18,7 @@ namespace ErrorCodes
 /// Has several inputs and single output.
 /// Read from inputs merged buckets with aggregated data, sort them by bucket number and block number.
 /// Presumption: inputs return chunks with increasing bucket and block number, there is at most one chunk with the given bucket and block number.
-class SortingAggregatedForMemoryBoundMergingTransform final : public IProcessor
+class SortingAggregatedForMemoryBoundMergingTransform : public IProcessor
 {
 public:
     explicit SortingAggregatedForMemoryBoundMergingTransform(const Block & header_, size_t num_inputs_)

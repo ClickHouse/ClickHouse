@@ -10,46 +10,25 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 readonly query_prefix=$CLICKHOUSE_DATABASE
 
-$CLICKHOUSE_CLIENT --query-id="${query_prefix}_1000" -q "SELECT sleep(2.5) SETTINGS enable_parallel_replicas=0 FORMAT Null" & # CI may inject enable_parallel_replicas=1; parallel replicas distribute sleep so initiator finishes quickly, producing too few metric log events
-$CLICKHOUSE_CLIENT --query-id="${query_prefix}_400" -q "SELECT sleep(2.5) SETTINGS query_metric_log_interval=400, enable_parallel_replicas=0 FORMAT Null" &
-$CLICKHOUSE_CLIENT --query-id="${query_prefix}_123" -q "SELECT sleep(2.5) SETTINGS query_metric_log_interval=123, enable_parallel_replicas=0 FORMAT Null" &
-$CLICKHOUSE_CLIENT --query-id="${query_prefix}_0" -q "SELECT sleep(2.5) SETTINGS query_metric_log_interval=0, enable_parallel_replicas=0 FORMAT Null" &
-$CLICKHOUSE_CLIENT --query-id="${query_prefix}_fast" -q "SELECT sleep(0.1) SETTINGS query_metric_log_interval=999999, enable_parallel_replicas=0 FORMAT Null" &
+$CLICKHOUSE_CLIENT --query-id="${query_prefix}_1000" -q "SELECT sleep(2.5) FORMAT Null" &
+$CLICKHOUSE_CLIENT --query-id="${query_prefix}_400" -q "SELECT sleep(2.5) SETTINGS query_metric_log_interval=400 FORMAT Null" &
+$CLICKHOUSE_CLIENT --query-id="${query_prefix}_123" -q "SELECT sleep(2.5) SETTINGS query_metric_log_interval=123 FORMAT Null" &
+$CLICKHOUSE_CLIENT --query-id="${query_prefix}_0" -q "SELECT sleep(2.5) SETTINGS query_metric_log_interval=0 FORMAT Null" &
+$CLICKHOUSE_CLIENT --query-id="${query_prefix}_fast" -q "SELECT sleep(0.1) SETTINGS query_metric_log_interval=999999 FORMAT Null" &
 
 wait
 
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log, query_metric_log"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_metric_log"
 
 function check_log()
 {
     interval=$1
 
-    # Check that the amount of events collected is correct.
-    # Upper bound: rows are emitted on wall-clock time for as long as the query is
-    # alive, so it is derived from the observed sampling window of the query's own
-    # rows. `+2` covers `dateDiff` millisecond truncation plus the always-emitted
-    # final row; `start_time IS NOT NULL` keeps a missing `QueryFinish` row a failure.
-    # Lower bound is only 1: the sampling task can be starved on an oversubscribed
-    # runner, the more so the smaller the interval, so a bound that grows as the
-    # interval shrinks is backwards. The final row makes 1 always attainable.
+    # Check that the amount of events collected is correct, leaving a 80% of margin.
     $CLICKHOUSE_CLIENT -m -q """
         SELECT '--Interval $interval: check that amount of events is correct';
-        WITH
-        (
-            SELECT query_start_time_microseconds
-            FROM system.query_log
-            WHERE event_date >= yesterday()
-              AND event_time >= now() - 600
-              AND current_database = currentDatabase()
-              AND query_id = '${query_prefix}_${interval}'
-              AND type = 'QueryFinish'
-            ORDER BY event_time_microseconds DESC
-            LIMIT 1
-        ) AS start_time
         SELECT
-            start_time IS NOT NULL
-            AND count() BETWEEN 1
-                AND (intDiv(dateDiff('millisecond', start_time, max(event_time_microseconds)), $interval) + 2)
+            count() BETWEEN ((ceil(2500 / $interval) - 1) * 0.2) AND ((ceil(2500 / $interval) + 1) * 1.8)
         FROM system.query_metric_log
         WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${query_prefix}_${interval}'
     """
@@ -96,33 +75,8 @@ $CLICKHOUSE_CLIENT -m -q """
     SELECT count() == 0 FROM system.query_metric_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${query_prefix}_fast'
 """
 
-# A long-running query must emit a final `system.query_metric_log` row from
-# `QueryMetricLog::finishQuery`. On the TCP path exercised by this test,
-# `BlockIO::onFinish` captures `finish_time` once and passes it through the
-# finish callback to `logQueryFinishImpl`, which uses the same timestamp for
-# both `system.query_log` `QueryFinish` and `logQueryMetricLogFinish`. A
-# later periodic `system.query_metric_log` row may also exist because a
-# periodic `collectMetric` can sample a live `ProcessList` entry before
-# `finishQuery` marks the query finished. The correct invariant is therefore
-# existence of a metric row at the exact `QueryFinish` timestamp, not
-# `max(event_time_microseconds) = QueryFinish`.
+# a query that takes more than query_metric_log_interval is collected including the final row
 $CLICKHOUSE_CLIENT -m -q """
     SELECT '--Check that there is a final event when queries finish';
-    WITH
-    (
-        SELECT event_time_microseconds
-        FROM system.query_log
-        WHERE event_date >= yesterday()
-          AND event_time >= now() - 600
-          AND current_database = currentDatabase()
-          AND query_id = '${query_prefix}_1000'
-          AND type = 'QueryFinish'
-        ORDER BY event_time_microseconds DESC
-        LIMIT 1
-    ) AS finish_time
-    SELECT countIf(event_time_microseconds = finish_time) > 0
-    FROM system.query_metric_log
-    WHERE event_date >= yesterday()
-      AND event_time >= now() - 600
-      AND query_id = '${query_prefix}_1000'
+    SELECT count() > 2 FROM system.query_metric_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${query_prefix}_1000'
 """

@@ -11,22 +11,6 @@
         </argument>
         <format>TabSeparated</format>
         <command>awk -F'\t' '{print $1 + $2}'</command>
-        <command_read_timeout>60000</command_read_timeout>
         <execute_direct>0</execute_direct>
-    </function>
-    <function>
-        <type>executable</type>
-        <name>test_function_with_parameter</name>
-        <return_type>UInt64</return_type>
-        <argument>
-            <type>UInt64</type>
-        </argument>
-        <format>TabSeparated</format>
-        <command>awk</command>
-        <command_argument>-F\t</command_argument>
-        <command_argument>-v</command_argument>
-        <command_argument>p={param:UInt64}</command_argument>
-        <command_argument>{ print $1 + p }</command_argument>
-        <execute_direct>1</execute_direct>
     </function>
 </functions>

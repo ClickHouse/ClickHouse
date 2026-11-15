@@ -1,0 +1,8 @@
+Inferred format and structure replace a stored auto value without the secrets privilege
+1
+3
+3
+3
+3
+A stored auto value that is not overridable stays locked
+BAD_ARGUMENTS

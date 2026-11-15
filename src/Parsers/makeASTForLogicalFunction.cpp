@@ -14,7 +14,7 @@ ASTPtr makeASTForLogicalAnd(ASTs && arguments)
     bool partial_result = true;
     std::erase_if(arguments, [&](const ASTPtr & argument)
     {
-        bool b = false;
+        bool b;
         if (!tryGetLiteralBool(argument.get(), b))
             return false;
         partial_result &= b;
@@ -43,7 +43,7 @@ ASTPtr makeASTForLogicalOr(ASTs && arguments)
     bool partial_result = false;
     std::erase_if(arguments, [&](const ASTPtr & argument)
     {
-        bool b = false;
+        bool b;
         if (!tryGetLiteralBool(argument.get(), b))
             return false;
         partial_result |= b;
@@ -72,29 +72,18 @@ bool tryGetLiteralBool(const IAST * ast, bool & value)
     if (!ast)
         return false;
 
-    const ASTLiteral * literal = ast->as<ASTLiteral>();
-    if (!literal)
-        return false;
-
-    /// `FieldVisitorConvertToNumber` throws for anything that is not a number, and a throw is the
-    /// wrong way to ask whether this literal happens to be one - so ask the field directly.
-    switch (literal->value.getType())
+    try
     {
-        case Field::Types::Null:
-            value = false;
+        if (const ASTLiteral * literal = ast->as<ASTLiteral>())
+        {
+            value = !literal->value.isNull() && applyVisitor(FieldVisitorConvertToNumber<bool>(), literal->value);
             return true;
-        case Field::Types::Bool:
-        case Field::Types::UInt64:
-        case Field::Types::Int64:
-        case Field::Types::Float64:
-        case Field::Types::UInt128:
-        case Field::Types::Int128:
-        case Field::Types::UInt256:
-        case Field::Types::Int256:
-            value = applyVisitor(FieldVisitorConvertToNumber<bool>(), literal->value);
-            return true;
-        default:
-            return false;
+        }
+        return false;
+    }
+    catch (const Exception &)
+    {
+        return false;
     }
 }
 

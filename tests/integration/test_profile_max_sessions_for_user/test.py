@@ -1,7 +1,6 @@
 import os
 import sys
 import threading
-import time
 
 import grpc
 import psycopg2 as py_psql
@@ -93,20 +92,10 @@ def threaded_run_test(sessions):
             instance, "overflown session count", retry_count=120
         )
 
-    # A single KILL snapshots system.processes once. An accepted session whose
-    # query has not registered yet (slow under sanitizers) survives and its
-    # thread blocks forever. Re-issue KILL until every worker thread has exited.
-    deadline = time.monotonic() + 60
-    while time.monotonic() < deadline:
-        instance.query(f"KILL QUERY WHERE user='{TEST_USER}' SYNC")
-        for thread in thread_list:
-            thread.join(timeout=1)
-        if not any(thread.is_alive() for thread in thread_list):
-            break
+    instance.query(f"KILL QUERY WHERE user='{TEST_USER}' SYNC")
 
-    # Bounded: never fall through to an unbounded join (would hang to the pytest timeout).
-    if any(thread.is_alive() for thread in thread_list):
-        pytest.fail("Timed out waiting for session threads to finish after KILL QUERY")
+    for thread in thread_list:
+        thread.join()
 
 
 @pytest.fixture(scope="module")

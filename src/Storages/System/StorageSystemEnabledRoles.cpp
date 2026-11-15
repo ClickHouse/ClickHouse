@@ -1,12 +1,10 @@
 #include <Storages/System/StorageSystemEnabledRoles.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Access/ContextAccess.h>
-#include <Access/EnabledRolesInfo.h>
 #include <Access/User.h>
+#include <Access/EnabledRolesInfo.h>
 #include <Interpreters/Context.h>
 
 
@@ -27,10 +25,8 @@ ColumnsDescription StorageSystemEnabledRoles::getColumnsDescription()
 
 void StorageSystemEnabledRoles::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    auto access = context->getAccess();
-    auto roles_info = access->getRolesInfo();
-    /// `tryGetUser` can return nullptr if no user is attached.
-    auto user = access->tryGetUser();
+    auto roles_info = context->getRolesInfo();
+    auto user = context->getUser();
 
     size_t column_index = 0;
     auto & column_role_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
@@ -51,12 +47,9 @@ void StorageSystemEnabledRoles::fillData(MutableColumns & res_columns, ContextPt
         const String & role_name = roles_info->names_of_roles.at(role_id);
         bool admin_option = roles_info->enabled_roles_with_admin_option.count(role_id);
         bool is_current = roles_info->current_roles.count(role_id);
-        bool is_default = user && user->default_roles.match(role_id);
+        bool is_default = user->default_roles.match(role_id);
         add_row(role_name, admin_option, is_current, is_default);
     }
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemEnabledRoles) }

@@ -1,5 +1,4 @@
 #include <cstddef>
-#include <random>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeArray.h>
@@ -21,14 +20,8 @@ static ColumnPtr mockColumn(const DataTypePtr & type, size_t rows)
         auto data_col = mockColumn(type_array->getNestedType(), rows);
         auto offset_col = ColumnArray::ColumnOffsets::create(rows);
         auto & offsets = offset_col->getData();
-        std::mt19937_64 random_engine(std::random_device{}());
-        std::uniform_int_distribution<size_t> random_length(0, 9);
-        size_t offset = 0;
-        for (auto & current_offset : offsets)
-        {
-            offset += random_length(random_engine);
-            current_offset = offset;
-        }
+        for (size_t i = 0; i < data_col->size(); ++i)
+            offsets[i] = offsets[i - 1] + (rand() % 10);
         auto new_data_col = data_col->replicate(offsets);
 
         return ColumnArray::create(new_data_col, std::move(offset_col));
@@ -44,7 +37,7 @@ static ColumnPtr mockColumn(const DataTypePtr & type, size_t rows)
             column->insert(i);
         else if (isFloat(type_not_nullable))
         {
-            double d = static_cast<double>(i);
+            double d = i * 1.0;
             column->insert(d);
         }
         else if (isString(type_not_nullable))
@@ -72,7 +65,7 @@ static void BM_insertManyFrom(benchmark::State & state)
     auto type = DataTypeFactory::instance().get(str_type);
     auto src = mockColumn(type, ROWS);
 
-    for (auto _ [[maybe_unused]] : state)
+    for (auto _ : state)
     {
         state.PauseTiming();
         auto dst = type->createColumn();

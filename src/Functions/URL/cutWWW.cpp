@@ -22,15 +22,15 @@ struct ExtractWWW
         {
             if (pos != data)
             {
-                Pos tmp = nullptr;
-                size_t protocol_length = 0;
+                Pos tmp;
+                size_t protocol_length;
                 ExtractProtocol::execute(data, size, tmp, protocol_length);
 
                 if (pos != data + protocol_length + 1)
                     return;
             }
 
-            if (end - pos < 2 || *pos != '/' || *(pos + 1) != '/')
+            if (end - pos < 2 || *(pos) != '/' || *(pos + 1) != '/')
                 return;
 
             const char *start_of_host = (pos += 2);

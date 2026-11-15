@@ -16,8 +16,6 @@
 import argparse
 import logging
 import os
-import re
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from pprint import pformat
@@ -27,7 +25,6 @@ from typing import Any
 
 from ci_buddy import CIBuddy
 from env_helper import IS_CI, TEMP_PATH
-from slack_ids import CI_TEAM, FELIXOID
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, git_runner, is_shallow
 from github_helper import GitHub, Repository
@@ -35,10 +32,6 @@ from official_docker import MAINTAINERS_HEADER, path_is_changed
 from ssh import SSHKey
 
 LIBRARY_BRANCH = "ClickHouse-docker-library"
-
-BROKEN_PACKAGE_RE = re.compile(
-    r"Version '.+' for 'clickhouse-\S+' was not found"
-)
 
 temp_path = Path(TEMP_PATH)
 
@@ -159,10 +152,8 @@ def update_docs(repos: LibraryRepos, dry_run: bool = True) -> None:
         dry_run,
         cwd=docs_dir,
     )
-    # --force-with-lease is safe: either the branch existed for docs_pr,
-    # or it was just created, so no one else could have changed it
     run(
-        f"{GIT_PREFIX} push --set-upstream --force-with-lease origin {LIBRARY_BRANCH}",
+        f"{GIT_PREFIX} push --set-upstream origin {LIBRARY_BRANCH}",
         dry_run,
         cwd=docs_dir,
     )
@@ -309,10 +300,7 @@ def update_ldf_repo(repos: LibraryRepos, dry_run: bool = True) -> None:
         "Run command to check if the tree for LDF is changed: %s",
         f"{generate_tree_cmd} -vvv",
     )
-    try:
-        run(f"{generate_tree_cmd} -vvv", stderr=subprocess.STDOUT)
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"generate-tree failed:\n{e.output}") from e
+    run(f"{generate_tree_cmd} -vvv")
 
     if dry_run:
         logging.info(
@@ -372,16 +360,6 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument("--dry-run", action="store_true", help="do not create anything")
-    parser.add_argument(
-        "--skip-images",
-        action="store_true",
-        help="skip the update_library_images stage",
-    )
-    parser.add_argument(
-        "--skip-docs",
-        action="store_true",
-        help="skip the update_docs stage",
-    )
     return parser.parse_args()
 
 
@@ -396,45 +374,20 @@ def main() -> None:
 
     gh = GitHub(token, create_cache_dir=False)
     repos = LibraryRepos.get_repos(gh, args)
-    errors = []
-    if args.skip_images:
-        logging.info("Skipping update_library_images stage")
-    else:
-        try:
-            update_library_images(repos, args.dry_run)
-        except Exception as e:
-            logging.error("update_library_images failed: %s", e)
-            errors.append(e)
-
-    if args.skip_docs:
-        logging.info("Skipping update_docs stage")
-    else:
-        try:
-            update_docs(repos, args.dry_run)
-        except Exception as e:
-            logging.error("update_docs failed: %s", e)
-            errors.append(e)
-
-    if errors:
+    try:
+        update_library_images(repos, args.dry_run)
+        update_docs(repos, args.dry_run)
+    except Exception as e:
+        logging.error("The process has finished with error: %s", e)
         if IS_CI:
-            has_broken_packages = any(
-                BROKEN_PACKAGE_RE.search(str(e)) for e in errors
-            )
-            mentions = f"<@{FELIXOID}>"
-            if has_broken_packages:
-                mentions += f" <!subteam^{CI_TEAM}|@ci-team>"
-            # Truncate to the tail: failures appear at the end of the output.
-            errors_text = "\n".join(
-                (s if len(s) <= 200 else f"...{s[-200:]}")
-                for s in (str(e) for e in errors)
-            )
-            CIBuddy().post_job_error(
-                f"{mentions} Official docker update failed:\n{errors_text}",
+            ci_buddy = CIBuddy()
+            ci_buddy.post_job_error(
+                f"The cherry-pick finished with errors: {e}",
                 with_instance_info=True,
                 with_wf_link=True,
                 critical=True,
             )
-        raise errors[0]
+        raise
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ std::optional<size_t> getMaxFileDescriptorCount()
     /// We want to calculate it only once.
     static auto result = []() -> std::optional<size_t>
     {
-        rlimit rlim{};
+        rlimit rlim;
         if (0 != getrlimit(RLIMIT_NOFILE, &rlim))
             return std::nullopt;
         return rlim.rlim_max;

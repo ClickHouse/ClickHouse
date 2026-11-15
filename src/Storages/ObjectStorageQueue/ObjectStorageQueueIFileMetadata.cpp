@@ -22,7 +22,6 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueueTrySetProcessingRequests;
     extern const Event ObjectStorageQueueTrySetProcessingSucceeded;
     extern const Event ObjectStorageQueueTrySetProcessingFailed;
-    extern const Event ObjectStorageQueueExclusiveModeProcessingErrors;
 };
 
 namespace DB
@@ -169,35 +168,25 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
                 current_exception = getCurrentExceptionMessage(true);
                 file_status->onFailed(current_exception);
             }
-            else if (!processing_node_path.empty())
+            else
                 file_status->onFailed("Unprocessed exception");
-            else if (file_status->state.load() != FileStatus::State::Failed)
-            {
-                LOG_WARNING(log, "File {} will NOT be marked as 'Failed' and will remain in '{}' state.",
-                            path, file_status->state.load());
-                ProfileEvents::increment(ProfileEvents::ObjectStorageQueueExclusiveModeProcessingErrors);
-            }
         }
         else
         {
             chassert(file_status->state == FileStatus::State::Failed);
         }
 
-        /// Empty in case of exclusive mode only, where we do not store state in keeper.
-        if (processing_node_path.empty())
-            return;
-
         LOG_TEST(log, "Removing processing node in destructor for file: {} "
                  "(state: {}, exception: {})",
                  path, file_status->state.load(), current_exception);
         try
         {
-            Coordination::Error code = {};
+            Coordination::Error code;
             auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
             zk_retry.retryLoop([&]
             {
                 auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
-                if (zk_retry.isRetry() || uncertain_commit)
+                if (zk_retry.isRetry())
                 {
                     /// It is possible that we fail "after operation",
                     /// e.g. we successfully removed the node, but did not get confirmation,
@@ -416,7 +405,7 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
     prepareResetProcessingRequests(requests);
 
     Coordination::Responses responses;
-    Coordination::Error code = {};
+    Coordination::Error code;
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     zk_retry.retryLoop([&]
     {
@@ -534,12 +523,6 @@ void ObjectStorageQueueIFileMetadata::finalizeProcessed()
     });
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
-    debugFinalizeProcessed();
-#endif
-}
-
-void ObjectStorageQueueIFileMetadata::debugFinalizeProcessed()
-{
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
     {
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
@@ -554,6 +537,7 @@ void ObjectStorageQueueIFileMetadata::debugFinalizeProcessed()
         /// NOTE: we don't check that processed_node_path exists here because the cleanup thread
         /// may have already removed it (e.g. when `s3queue_tracked_files_limit` is reached).
     });
+#endif
 }
 
 void ObjectStorageQueueIFileMetadata::finalizeResetProcessing()
@@ -566,12 +550,6 @@ void ObjectStorageQueueIFileMetadata::finalizeResetProcessing()
     LOG_TRACE(log, "File {} processing was reset for retry (rows: {})", path, file_status->processed_rows.load());
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
-    debugFinalizeResetProcessing();
-#endif
-}
-
-void ObjectStorageQueueIFileMetadata::debugFinalizeResetProcessing()
-{
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
     {
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
@@ -579,6 +557,7 @@ void ObjectStorageQueueIFileMetadata::debugFinalizeResetProcessing()
             !zk_client->exists(processing_node_path),
             fmt::format("Expected path {} not to exist after reset for {}", processing_node_path, path));
     });
+#endif
 }
 
 void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & exception_message)
@@ -591,14 +570,7 @@ void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & excepti
 
         LOG_TRACE(log, "Set file {} as failed (rows: {})", path, file_status->processed_rows.load());
     });
-
 #ifdef DEBUG_OR_SANITIZER_BUILD
-    debugFinalizeFailed();
-#endif
-}
-
-void ObjectStorageQueueIFileMetadata::debugFinalizeFailed()
-{
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
     {
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
@@ -611,6 +583,7 @@ void ObjectStorageQueueIFileMetadata::debugFinalizeFailed()
             fmt::format("Expected path {} to exist while finalizing {}", failed_node_path, path));
 
     });
+#endif
 }
 
 void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
@@ -621,11 +594,9 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
     {
         LOG_TEST(log, "File {} failed to process and will not be retried. ({})", path, failed_node_path);
 
-        permanently_failed = true;
-
         /// Remove Processing node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
-        /// Create Failed node.
+        /// Created Failed node.
         requests.push_back(zkutil::makeCreateRequest(failed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
         return;
     }
@@ -660,8 +631,6 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
     if (node_metadata.retries >= max_loading_retries)
     {
         LOG_TEST(log, "File {} failed to process and will not be retried. ({})", path, failed_node_path);
-
-        permanently_failed = true;
 
         /// Remove Processing node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));

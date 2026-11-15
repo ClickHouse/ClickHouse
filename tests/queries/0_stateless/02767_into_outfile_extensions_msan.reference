@@ -1,2 +1,2 @@
-Expression ((Project names + (Projection + Change column names to column identifiers)))
+Expression ((Projection + Before ORDER BY))
   ReadFromSystemNumbers

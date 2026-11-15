@@ -18,7 +18,7 @@ namespace
 {
 
 /// Returns global default value for type name (example: 0 for numeric types, '' for String).
-class FunctionDefaultValueOfTypeName final : public IFunction
+class FunctionDefaultValueOfTypeName : public IFunction
 {
 public:
     static constexpr auto name = "defaultValueOfTypeName";

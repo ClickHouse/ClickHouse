@@ -2,8 +2,8 @@
 
 select (1, 2).-1, (1, 2).-2;
 2	1
-select ().-1; -- { serverError ARGUMENT_OUT_OF_BOUND }
-select (1, 2, 3).-4; -- { serverError ARGUMENT_OUT_OF_BOUND }
+select ().-1; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
+select (1, 2, 3).-4; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
 select (1, 2).-1000000000000000000000000000000000000000000; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tupleElement((1, 'hello'), -10, 2);
 2
@@ -23,5 +23,6 @@ set optimize_functions_to_subcolumns = 1;
 drop table if exists test;
 create table test (tuple Tuple(b UInt32, c Int32)) engine=Memory;
 explain syntax run_query_tree_passes=1 select tupleElement(tuple, -1) from test;
-SELECT __table1.`tuple.c` AS `tupleElement(tuple, -1)`\nFROM default.test AS __table1
+SELECT __table1.`tuple.c` AS `tupleElement(tuple, -1)`
+FROM default.test AS __table1
 drop table test;

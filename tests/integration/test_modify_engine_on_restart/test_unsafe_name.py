@@ -70,17 +70,15 @@ def plant_txn_version_files(table):
     """Write a valid non-transactional `txn_version.txt` onto every active part of `table`.
 
     Transactions are off by default, so parts carry no such file and a bare count of them cannot
-    tell whether the conversion removed anything. The content is the form `VersionInfo` itself
-    emits, so a surviving file still loads.
+    tell whether the conversion removed anything. The content is exactly what
+    `VersionMetadata::write` emits for a prehistoric part that was never removed, so a surviving
+    file still loads: no `removal_*` fields, which that function writes only under a removal lock.
     """
     nil = "00000000-0000-0000-0000-000000000000"
     content = (
         "version: 1\\n"
-        "storing_version: 1\\n"
         f"creation_tid: (1, 1, {nil})\\n"
-        "creation_csn: 1\\n"
-        f"removal_tid: (0, 0, {nil})\\n"
-        "removal_csn: 0"
+        "creation_csn: 1"
     )
     for part_path in active_part_paths(table):
         ch1.exec_in_container(

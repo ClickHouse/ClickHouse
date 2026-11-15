@@ -1,17 +1,12 @@
 #pragma once
 
 #include <Core/Block_fwd.h>
-#include <Processors/StepWallClock.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <Interpreters/Context_fwd.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <functional>
-
-#include <list>
-#include <memory>
 
 namespace DB
 {
@@ -21,10 +16,7 @@ class OutputPort;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::list<ProcessorPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-
-class StepWallClockRegistry;
-using StepWallClockRegistryPtr = std::unique_ptr<StepWallClockRegistry>;
+using Processors = std::vector<ProcessorPtr>;
 
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
@@ -45,7 +37,7 @@ class ISink;
 class ReadProgressCallback;
 
 struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = VectorWithMemoryTracking<ColumnWithTypeAndName>;
+using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 class QueryResultCacheWriter;
 
@@ -58,9 +50,7 @@ public:
     QueryPipeline(QueryPipeline &&) noexcept;
     QueryPipeline(const QueryPipeline &) = delete;
 
-    /// Not noexcept: move-assignment appends QueryPlanResourceHolder resources, which allocates
-    /// through memory-tracking containers and can throw MEMORY_LIMIT_EXCEEDED.
-    QueryPipeline & operator=(QueryPipeline &&); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
+    QueryPipeline & operator=(QueryPipeline &&) noexcept;
     QueryPipeline & operator=(const QueryPipeline &) = delete;
 
     ~QueryPipeline();
@@ -99,7 +89,7 @@ public:
     bool pulling() const { return output != nullptr; }
     /// Use PushingPipelineExecutor or PushingAsyncPipelineExecutor.
     bool pushing() const { return input != nullptr; }
-    /// Use CompletedPipelineExecutor.
+    /// Use PipelineExecutor. Call execute() to build one.
     bool completed() const { return initialized() && !pulling() && !pushing(); }
 
     /// Only for pushing.
@@ -121,13 +111,9 @@ public:
     void setConcurrencyControl(bool concurrency_control_) { concurrency_control = concurrency_control_; }
 
     void setProcessListElement(QueryStatusPtr elem);
-    QueryStatusPtr getProcessListElement() const { return process_list_element; }
     void setProgressCallback(const ProgressCallback & callback);
     void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota_);
     bool tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const;
-
-    void setStepWallClockRegistry(StepWallClockRegistryPtr step_wall_clock_registry_);
-    StepWallClockRegistry * getStepClocks() const { return step_wall_clock_registry.get(); }
 
     void writeResultIntoQueryResultCache(std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer);
     void finalizeWriteInQueryResultCache();
@@ -138,10 +124,6 @@ public:
 
     void setQuota(std::shared_ptr<const EnabledQuota> quota_);
 
-    /// Normalized query hash, propagated to the quota accounting callbacks so that
-    /// `NORMALIZED_QUERY_HASH` quotas bucket their resources per query pattern.
-    void setNormalizedQueryHash(UInt64 normalized_query_hash_) { normalized_query_hash = normalized_query_hash_; }
-
     void addStorageHolder(StoragePtr storage);
 
     /// Existing resources are not released here, see move ctor for QueryPlanResourceHolder.
@@ -150,8 +132,6 @@ public:
     /// Skip updating profile events.
     /// For merges in mutations it may need special logic, it's done inside ProgressCallback.
     void disableProfileEventUpdate() { update_profile_events = false; }
-    /// Do not account rows read by this pipeline in the query progress and read limits.
-    void disableReadProgress() { report_read_progress = false; }
 
     /// Create progress callback from limits and quotas.
     std::unique_ptr<ReadProgressCallback> getReadProgressCallback() const;
@@ -174,10 +154,7 @@ private:
 
     ProgressCallback progress_callback;
     std::shared_ptr<const EnabledQuota> quota;
-    UInt64 normalized_query_hash = 0;
     bool update_profile_events = true;
-    bool report_read_progress = true;
-    StepWallClockRegistryPtr step_wall_clock_registry;
 
     std::shared_ptr<Processors> processors;
 
@@ -199,6 +176,7 @@ private:
     friend class PushingAsyncPipelineExecutor;
     friend class PullingAsyncPipelineExecutor;
     friend class CompletedPipelineExecutor;
+    friend class RefreshTask;
     friend class QueryPipelineBuilder;
 };
 

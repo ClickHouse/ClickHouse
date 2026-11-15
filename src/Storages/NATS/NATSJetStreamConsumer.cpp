@@ -30,8 +30,11 @@ NATSJetStreamConsumer::NATSJetStreamConsumer(
 {
 }
 
-void NATSJetStreamConsumer::subscribeImpl()
+void NATSJetStreamConsumer::subscribe()
 {
+    if (isSubscribed())
+        return;
+
     auto er = jsOptions_Init(&jet_stream_options);
     if (er != NATS_OK)
         throw Exception(
@@ -54,7 +57,6 @@ void NATSJetStreamConsumer::subscribeImpl()
 
     subscribe_options.Stream = stream_name.c_str();
     subscribe_options.Consumer = consumer_name.c_str();
-    subscribe_options.ManualAck = true;
 
     if (!getQueueName().empty())
         subscribe_options.Queue = getQueueName().c_str();
@@ -77,7 +79,7 @@ NATSSubscriptionPtr NATSJetStreamConsumer::subscribeToSubject(const String & sub
     if (consumer_name.empty())
         throw Exception(ErrorCodes::INVALID_STATE, "To use NATS jet stream consumers, you must specify `nats_consumer_name` setting");
 
-    natsSubscription * subscription = nullptr;
+    natsSubscription * subscription;
     auto status = js_PullSubscribeAsync(
         &subscription,
         jet_stream_ctx.get(),
@@ -91,7 +93,7 @@ NATSSubscriptionPtr NATSJetStreamConsumer::subscribeToSubject(const String & sub
     if (status != NATS_OK)
         throw Exception(
             ErrorCodes::CANNOT_CONNECT_NATS,
-            "Failed to subscribe consumer {} to subject {}. Error: {} {}", static_cast<void*>(this), subject, natsStatus_GetText(status), getNATSLastError());
+            "Failed to subscribe consumer {} to subject {}. Error: {} {}", static_cast<void*>(this), subject, natsStatus_GetText(status), nats_GetLastError(nullptr));
 
     NATSSubscriptionPtr result(subscription, &natsSubscription_Destroy);
     natsSubscription_SetPendingLimits(result.get(), -1, -1);

@@ -126,9 +126,7 @@ def test_write_failover(
         ) ENGINE=MergeTree()
         ORDER BY id
         PARTITION BY dt
-        -- auto_statistics_types='': otherwise the new materialize_statistics_on_insert default writes an
-        -- extra statistics.packed object per part, shifting the S3 request numbering this test injects into.
-        SETTINGS storage_policy='s3', min_bytes_for_wide_part={}, write_marks_for_substreams_in_compact_parts=1, auto_statistics_types=''
+        SETTINGS storage_policy='s3', min_bytes_for_wide_part={}, write_marks_for_substreams_in_compact_parts=1
         """.format(
             min_bytes_for_wide_part
         )
@@ -315,12 +313,7 @@ def test_retry_loading_parts(cluster):
     node.query("INSERT INTO s3_retry_loading_parts VALUES (42)")
     node.query("DETACH TABLE s3_retry_loading_parts")
 
-    # Fail the 5th GET request to S3 to break the first part-loading attempt.
-    # Use GET method filter to avoid counting background PUT/DELETE requests
-    # (e.g. cleanup, or metadata writes on the shared cluster) that could
-    # consume the fail counter and either land on a non-retryable write or
-    # miss the part-loading read entirely, making the test flaky.
-    fail_request(cluster, 5, "GET")
+    fail_request(cluster, 5)
     node.query("ATTACH TABLE s3_retry_loading_parts")
 
     assert node.contains_in_log(

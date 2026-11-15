@@ -26,9 +26,7 @@ void SaveSubqueryResultToBufferTransform::transform(Chunk & chunk)
     for (size_t index : columns_to_save_indices)
         columns_to_save.push_back(chunk.getColumns()[index]);
 
-    Chunk chunk_to_save(std::move(columns_to_save), chunk.getNumRows());
-    compactReplicatedColumns(chunk_to_save);
-    chunk_buffer->append(std::move(chunk_to_save));
+    chunk_buffer->append(Chunk(std::move(columns_to_save), chunk.getNumRows()));
 }
 
 void SaveSubqueryResultToBufferTransform::onFinish()

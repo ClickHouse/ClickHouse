@@ -38,7 +38,7 @@ using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransac
 struct HostID
 {
     String host_name;
-    UInt16 port{};
+    UInt16 port;
 
     HostID() = default;
 
@@ -275,7 +275,7 @@ public:
     void commit();
 
     /// (It would be nice to assert something like the following:
-    ///    chassert(isExecuted() || std::uncaught_exceptions() || ops.empty());
+    ///    assert(isExecuted() || std::uncaught_exceptions() || ops.empty());
     ///  But we can't do it because it would cause rare false positives because
     ///  ZooKeeperMetadataTransaction can be inside a weak_ptr
     ///  (in QueryStatus -> WithContext -> Context -> ContextData), enabling the following

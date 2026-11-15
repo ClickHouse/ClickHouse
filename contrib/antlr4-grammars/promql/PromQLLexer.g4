@@ -77,7 +77,6 @@ POW  : '^';
 AND    : 'and';
 OR     : 'or';
 UNLESS : 'unless';
-ATAN2  : 'atan2';
 
 // Comparison operators
 
@@ -107,9 +106,6 @@ OFFSET: 'offset';
 
 BOOL: 'bool';
 
-START: 'start';
-END: 'end';
-
 AGGREGATION_OPERATOR:
     'sum'
     | 'min'
@@ -123,7 +119,6 @@ AGGREGATION_OPERATOR:
     | 'bottomk'
     | 'topk'
     | 'quantile'
-    | 'limitk'
 ;
 
 FUNCTION options {
@@ -184,8 +179,6 @@ FUNCTION options {
     | 'stdvar_over_time'
     | 'last_over_time'
     | 'present_over_time'
-    | 'ts_of_min_over_time'
-    | 'ts_of_max_over_time'
     | 'acos'
     | 'acosh'
     | 'asin'

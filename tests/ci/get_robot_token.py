@@ -26,7 +26,9 @@ def get_parameter_from_ssm(
 ) -> str:
     if not client:
         client = boto3.client("ssm", region_name="us-east-1")
-    return client.get_parameter(Name=name, WithDecryption=decrypt)[  # type: ignore
+    return client.get_parameter(  # type:ignore
+        Name=name, WithDecryption=decrypt
+    )[
         "Parameter"
     ]["Value"]
 
@@ -58,11 +60,9 @@ def get_parameters_from_ssm(
 ROBOT_TOKEN = None  # type: Optional[Token]
 
 
-def get_best_robot_token(
-    tokens_path: str = "/github-tokens", *, refresh: bool = False
-) -> str:
+def get_best_robot_token(tokens_path: str = "/github-tokens") -> str:
     global ROBOT_TOKEN  # pylint:disable=global-statement
-    if ROBOT_TOKEN is not None and not refresh:
+    if ROBOT_TOKEN is not None:
         return ROBOT_TOKEN.value
     client = boto3.client("ssm", region_name="us-east-1")
     tokens = {

@@ -55,28 +55,36 @@ void ITableFunction::checkEngineAccess(ContextPtr context) const
         context->checkAccess(AccessType::TABLE_ENGINE, engine);
 }
 
+void ITableFunction::checkCreateTemporaryTableAccess(ContextPtr context, bool is_insert_query) const
+{
+    auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());
+    if (is_insert_query || !(table_function_properties && table_function_properties->allow_readonly))
+        context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE);
+}
+
 ColumnsDescription ITableFunction::getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const
 {
     /// Resolving table structure is always a read operation.
     checkSourceAccess(context, /*is_insert_query*/ false);
     checkEngineAccess(context);
+    /// Resolving the structure may access the source (e.g. schema inference fetches a URL), so it must be
+    /// gated in the same way as `execute`: otherwise `DESCRIBE TABLE url(...)` would let a user who cannot
+    /// run the table function (e.g. under `readonly = 1`) make the server request an endpoint.
+    checkCreateTemporaryTableAccess(context, /*is_insert_query*/ false);
     return getActualTableStructure(context, is_insert_query);
 }
 
 StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name,
-                                   ColumnsDescription cached_columns, bool use_global_context, bool is_insert_query, bool check_create_temporary_table, bool check_source_access) const
+                                   ColumnsDescription cached_columns, bool use_global_context, bool is_insert_query) const
 {
     ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
 
-    if (check_source_access)
-        checkSourceAccess(context, is_insert_query);
+    checkSourceAccess(context, is_insert_query);
 
     /// Deliberately not under `check_source_access`: no caller takes over the engine check.
     checkEngineAccess(context);
 
-    auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());
-    if (check_create_temporary_table && (is_insert_query || !(table_function_properties && table_function_properties->allow_readonly)))
-        context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE);
+    checkCreateTemporaryTableAccess(context, is_insert_query);
 
     auto context_to_use = use_global_context ? context->getGlobalContext() : context;
 

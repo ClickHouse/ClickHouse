@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
-#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
@@ -27,7 +26,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3HexRing final : public IFunction
+class FunctionH3HexRing : public IFunction
 {
 public:
     static constexpr auto name = "h3HexRing";
@@ -94,10 +93,10 @@ public:
 
         const auto & data_k = col_k->getData();
 
-        auto dst_data_column = ColumnUInt64::create();
-        auto dst_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
-        auto & dst_data = *dst_data_column;
-        auto & dst_offsets = dst_offsets_column->getData();
+        auto dst = ColumnArray::create(ColumnUInt64::create());
+        auto & dst_data = typeid_cast<ColumnUInt64 &>(dst->getData());
+        auto & dst_offsets = dst->getOffsets();
+        dst_offsets.resize(input_rows_count);
 
         /// First calculate array sizes for all rows and save them in Offsets
         UInt64 current_offset = 0;
@@ -129,13 +128,7 @@ public:
         /// Allocate based on total size of arrays for all rows
         dst_data.getData().resize(current_offset);
 
-        /// Fill the array for each row with known size. The whole block is expanded inside this one call and
-        /// the size of each row's result is driven by `k` rather than by the input size, so the executor's
-        /// between-blocks cancellation check cannot bound it. The sizing loop above is `6 * k` arithmetic plus a
-        /// cell validation, which is not worth a checkpoint.
-        const std::function<void()> check_cancellation = makeCancellationCheck(name);
-        CancellationBudget budget(check_cancellation);
-
+        /// Fill the array for each row with known size
         auto* ptr = dst_data.getData().data();
         current_offset = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
@@ -146,8 +139,6 @@ public:
             if (size == 0)
                 continue;
 
-            budget.charge(size * sizeof(H3Index));
-
             H3Error err = gridRingUnsafe(origin_hindex, k, ptr + current_offset);
 
             if (err)
@@ -155,7 +146,7 @@ public:
             current_offset += size;
         }
 
-        return ColumnArray::create(std::move(dst_data_column), std::move(dst_offsets_column));
+        return dst;
     }
 };
 

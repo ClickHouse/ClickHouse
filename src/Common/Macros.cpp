@@ -5,7 +5,6 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Core/ServerUUID.h>
-#include <Core/UUID.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -52,7 +51,7 @@ String Macros::expand(const String & s,
                       MacroExpansionInfo & info) const
 {
     /// Do not allow recursion if we expand only special macros, because it will be infinite recursion
-    chassert(info.level == 0 || !info.expand_special_macros_only);
+    assert(info.level == 0 || !info.expand_special_macros_only);
 
     if (!s.contains('{'))
         return s;

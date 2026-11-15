@@ -1,5 +1,3 @@
-SET optimize_skip_unused_shards_rewrite_in = 1;
-
 drop table if exists t1;
 
 create table t1 (Col LowCardinality(String)) engine = MergeTree;

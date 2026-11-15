@@ -9,7 +9,6 @@
 
 #include <DataTypes/IDataType.h>
 #include <Core/Names.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -41,7 +40,7 @@ decltype(auto) get(const NameAndAliasPair & name_and_alias)
         return name_and_alias.expression;
 }
 
-using NamesAndAliases = VectorWithMemoryTracking<NameAndAliasPair>;
+using NamesAndAliases = std::vector<NameAndAliasPair>;
 
 }
 

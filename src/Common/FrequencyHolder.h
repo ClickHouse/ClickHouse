@@ -14,6 +14,7 @@
 #include <Common/StringUtils.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/readFloatText.h>
 #include <IO/ZstdInflatingReadBuffer.h>
 

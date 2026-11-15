@@ -53,7 +53,7 @@ private:
 
 String KerberosInit::fmtError(krb5_error_code code) const
 {
-    const char *msg = nullptr;
+    const char *msg;
     msg = krb5_get_error_message(k5.ctx, code);
     String fmt_error = fmt::format(" ({}, {})", code, msg);
     krb5_free_error_message(k5.ctx, msg);
@@ -65,7 +65,7 @@ void KerberosInit::init(const String & keytab_file, const String & principal, co
     auto log = getLogger("KerberosInit");
     LOG_TRACE(log,"Trying to authenticate with Kerberos v5");
 
-    krb5_error_code ret = 0;
+    krb5_error_code ret;
 
     const char *deftype = nullptr;
 

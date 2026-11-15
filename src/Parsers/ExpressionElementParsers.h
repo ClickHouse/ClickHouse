@@ -4,9 +4,6 @@
 #include <Core/MultiEnum.h>
 #include <Parsers/IParserBase.h>
 
-#include <optional>
-#include <string_view>
-
 
 namespace DB
 {
@@ -64,7 +61,7 @@ protected:
 
 /** An identifier, possibly containing a dot, for example, x_yz123 or `something special` or Hits.EventTime,
  *  possibly with UUID clause like `db name`.`table name` UUID 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'.
- *  There is also special delimiters `.:`, `.^` and `.@` for JSON type subcolumns. In case of special delimiter
+ *  There is also special delimiters `.:` and `.^` for JSON type subcolumns. In case of special delimiter
  *  the next identifier part after it will include special delimiter and be back quoted always: json.a.b.:UInt32 -> ['json', 'a', 'b', ':`UInt32`'].
  *  It's needed to distinguish identifiers json.a.b.:UInt32 and json.a.b.`:UInt32`.
  *  There is also a special syntax sugar for reading JSON subcolumns of type Array(JSON): json.a.b[][].c -> json.a.b.:Array(Array(JSON)).c
@@ -81,7 +78,7 @@ public:
     }
 
     /// Checks if the identirier is actually a pair of a special delimiter and the identifier in back quotes.
-    /// For example: :`UInt64`, ^`path` or @`path` from special JSON subcolumns.
+    /// For example: :`UInt64` or ^`path` from special JSON subcolumns.
     static std::optional<std::pair<char, String>> splitSpecialDelimiterAndIdentifierIfAny(const String & name);
 
 protected:
@@ -90,7 +87,6 @@ protected:
         NONE = '\0',
         JSON_PATH_DYNAMIC_TYPE = ':',
         JSON_PATH_PREFIX = '^',
-        JSON_PATH_COMBINED = '@',
     };
 
     const char * getName() const override { return "compound identifier"; }
@@ -560,13 +556,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/** Parses a data type and returns its text - see `astText` - or nothing if there is no data type at
-  * `pos`. The parsed AST is thrown away: every place that parses a type inside an expression needs
-  * only the text, because that is how `CAST` and `defaultValueOfTypeName` carry a type.
-  */
-std::optional<String> parseDataTypeAsText(IParser::Pos & pos, Expected & expected);
-
-/// `CAST(expr, 'type')`, the canonical form of every way of writing a cast.
-ASTPtr createFunctionCast(const ASTPtr & expr_ast, String type_text);
+ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast);
 
 }

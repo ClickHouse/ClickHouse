@@ -1,0 +1,11 @@
+--- first run: create the database over an existing directory ---
+fsdb
+--- second run: the directory is gone; the database still loads and serves no tables ---
+fsdb
+0
+--- a user replay of that same definition is rejected (1 = the expected BAD_ARGUMENTS) ---
+1
+1
+--- the database is still reachable through a replay on start, and drops ---
+fsdb
+0

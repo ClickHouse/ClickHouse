@@ -100,28 +100,17 @@ namespace
 
 String withOrdinalEnding(size_t i)
 {
-    /// `i` is a zero-based argument index; produce the ordinal for the human-facing position `n = i + 1`
-    /// (1st, 2nd, 3rd, 4th, ...). The teens 11, 12, 13 use "th" despite ending in 1, 2, 3.
-    const size_t n = i + 1;
-    const char * suffix = "th";
-    if (n % 100 < 11 || n % 100 > 13)
+    switch (i)
     {
-        switch (n % 10)
-        {
-            case 1:
-                suffix = "st";
-                break;
-            case 2:
-                suffix = "nd";
-                break;
-            case 3:
-                suffix = "rd";
-                break;
-            default:
-                break;
-        }
+        case 0:
+            return "1st";
+        case 1:
+            return "2nd";
+        case 2:
+            return "3rd";
+        default:
+            return std::to_string(i) + "th";
     }
-    return std::to_string(n) + suffix;
 }
 
 void validateArgumentsImpl(
@@ -163,7 +152,7 @@ void validateVariadicArgumentsImpl(
             throw Exception(
                 error_code,
                 "A value of illegal type was provided as {} argument '{}' to function '{}'. Expected: {}, got: {}",
-                withOrdinalEnding(i),
+                withOrdinalEnding(argument_offset + i),
                 variadic_descriptor.name,
                 function_name,
                 variadic_descriptor.type_name,
@@ -288,11 +277,11 @@ void validateNumberOfFunctionArguments(
         }
 }
 
-std::pair<VectorWithMemoryTracking<const IColumn *>, const ColumnArray::Offset *>
+std::pair<std::vector<const IColumn *>, const ColumnArray::Offset *>
 checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments)
 {
-    chassert(num_arguments > 0);
-    VectorWithMemoryTracking<const IColumn *> nested_columns(num_arguments);
+    assert(num_arguments > 0);
+    std::vector<const IColumn *> nested_columns(num_arguments);
     const ColumnArray::Offsets * offsets = nullptr;
     for (size_t i = 0; i < num_arguments; ++i)
     {
@@ -336,7 +325,7 @@ wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const
         /// Const Nullable that are NULL.
         if (elem.column->onlyNull())
         {
-            chassert(result_type->isNullable());
+            assert(result_type->isNullable());
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
         }
 
@@ -399,54 +388,23 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, ColumnPtr null_map)
 
         return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), null_map);
     }
-    if (const auto * const_src = checkAndGetColumn<ColumnConst>(src.get()))
+    else if (const auto * const_src = checkAndGetColumn<ColumnConst>(src.get()))
     {
-        /// Only collapse the result to a single ColumnConst when the input null map is
-        /// uniform (or absent). Per-row null maps cannot be folded onto a constant value
-        /// without losing the not-null rows.
-        bool uniform_null_map = true;
         UInt8 is_null = 0;
         if (null_map)
         {
             const NullMap & null_map_data = assert_cast<const ColumnUInt8 &>(*null_map).getData();
-            is_null = null_map_data.empty() ? 0 : null_map_data[0];
-            for (size_t i = 1, size = null_map_data.size(); i < size; ++i)
-            {
-                if (null_map_data[i] != is_null)
-                {
-                    uniform_null_map = false;
-                    break;
-                }
-            }
+            is_null = null_map_data[0];
         }
-
-        if (uniform_null_map)
-        {
-            ColumnPtr result_null_map_column = ColumnUInt8::create(1, is_null || const_src->isNullAt(0));
-            const auto * nullable_data = checkAndGetColumn<ColumnNullable>(&const_src->getDataColumn());
-            auto data_not_nullable = nullable_data ? nullable_data->getNestedColumnPtr() : const_src->getDataColumnPtr();
-            return ColumnConst::create(ColumnNullable::create(data_not_nullable, result_null_map_column), const_src->size());
-        }
-
-        /// Heterogeneous null map: expand the constant and merge the inner null map (if any)
-        /// into the caller's per-row null_map.
+        ColumnPtr result_null_map_column = ColumnUInt8::create(1, is_null || const_src->isNullAt(0));
         const auto * nullable_data = checkAndGetColumn<ColumnNullable>(&const_src->getDataColumn());
-        if (nullable_data && nullable_data->isNullAt(0))
-        {
-            auto result_null_map_column = IColumn::mutate(std::move(null_map));
-            auto & result_null_map = assert_cast<ColumnUInt8 &>(*result_null_map_column).getData();
-            std::fill(result_null_map.begin(), result_null_map.end(), UInt8(1));
-            null_map = std::move(result_null_map_column);
-        }
-        ColumnPtr inner = nullable_data
-            ? ColumnConst::create(nullable_data->getNestedColumnPtr(), const_src->size())
-            : src;
-        return ColumnNullable::create(inner->convertToFullColumnIfConst(), null_map);
+        auto data_not_nullable = nullable_data ? nullable_data->getNestedColumnPtr() : const_src->getDataColumnPtr();
+        return ColumnConst::create(ColumnNullable::create(data_not_nullable, result_null_map_column), const_src->size());
     }
-
-    if (null_map)
+    else if (null_map)
         return ColumnNullable::create(src->convertToFullColumnIfConst(), null_map);
-    return ColumnNullable::create(src->convertToFullColumnIfConst(), ColumnUInt8::create(src->size(), UInt8(0)));
+    else
+        return ColumnNullable::create(src->convertToFullColumnIfConst(), ColumnUInt8::create(src->size(), UInt8(0)));
 }
 
 NullPresence getNullPresense(const ColumnsWithTypeAndName & args)
@@ -475,43 +433,6 @@ bool isDecimalOrNullableDecimal(const DataTypePtr & type)
 bool isLowCardinalityType(const IDataType & type)
 {
     return typeid_cast<const DataTypeLowCardinality *>(&type) != nullptr;
-}
-
-bool hasLowCardinalityTypes(const ColumnsWithTypeAndName & args)
-{
-    for (const auto & column : args)
-    {
-        /// recursiveRemoveLowCardinality returns the very same type object when nothing was removed.
-        if (column.type && recursiveRemoveLowCardinality(column.type).get() != column.type.get())
-            return true;
-    }
-    return false;
-}
-
-bool allArgumentColumnsAreConstant(const ColumnsWithTypeAndName & args)
-{
-    for (const auto & column : args)
-    {
-        if (!column.column || !isColumnConst(*column.column))
-            return false;
-    }
-    return true;
-}
-
-bool convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args)
-{
-    bool converted = false;
-    for (auto & column : args)
-    {
-        auto column_without_low_cardinality = recursiveRemoveLowCardinality(column.column);
-        auto type_without_low_cardinality = recursiveRemoveLowCardinality(column.type);
-
-        converted |= type_without_low_cardinality.get() != column.type.get();
-
-        column.column = std::move(column_without_low_cardinality);
-        column.type = std::move(type_without_low_cardinality);
-    }
-    return converted;
 }
 
 /// Note that, for historical reasons, most of the functions use the first argument size to determine which is the

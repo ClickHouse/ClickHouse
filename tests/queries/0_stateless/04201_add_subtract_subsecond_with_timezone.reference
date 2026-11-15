@@ -1,6 +1,0 @@
-2024-01-01 08:00:00.010	DateTime64(3, \'Asia/Shanghai\')
-2024-01-01 08:00:00.000010	DateTime64(6, \'Asia/Shanghai\')
-2024-01-01 08:00:00.000000010	DateTime64(9, \'Asia/Shanghai\')
-2024-01-01 07:59:59.990	DateTime64(3, \'Asia/Shanghai\')
-2024-01-01 07:59:59.999990	DateTime64(6, \'Asia/Shanghai\')
-2024-01-01 07:59:59.999999990	DateTime64(9, \'Asia/Shanghai\')

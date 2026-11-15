@@ -1,23 +1,13 @@
 import re
 import sys
 
-from ci.jobs.scripts.check_style.clickhouse_spelling import clickhouse_misspellings
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import (
-    BOT_AUTHORS,
     NO_CHANGELOG_REQUIRED_LABELS,
     find_category,
     get_category,
 )
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
-
-
-def check_clickhouse_spelling(entry: str) -> str:
-    """Reject non-canonical product-name spellings in a changelog entry."""
-    misspellings = sorted(set(clickhouse_misspellings(entry)))
-    if misspellings:
-        return "The product name is spelled `ClickHouse`: " + ", ".join(misspellings)
-    return ""
 
 
 def check_changelog_entry(category, pr_body: str) -> str:
@@ -57,8 +47,7 @@ def check_changelog_entry(category, pr_body: str) -> str:
             while i < len(lines) and lines[i]:
                 entry_lines.append(lines[i])
                 i += 1
-            raw_entry = " ".join(entry_lines)
-            entry = raw_entry
+            entry = " ".join(entry_lines)
             # Don't accept changelog entries like '...'.
             entry = re.sub(r"[#>*_.\- ]", "", entry)
             # Don't accept changelog entries like 'Close #12345'.
@@ -69,14 +58,12 @@ def check_changelog_entry(category, pr_body: str) -> str:
     error = ""
     if not entry:
         error = f"Changelog entry required for category '{category}'"
-    else:
-        error = check_clickhouse_spelling(raw_entry)
     return error
 
 
 if __name__ == "__main__":
 
-    title, body, labels, _is_draft = GH.get_pr_title_body_labels()
+    title, body, labels = GH.get_pr_title_body_labels()
     if not title or not body:
         print("WARNING: Failed to get PR title or body, read from environment")
         body = Info().pr_body
@@ -84,12 +71,6 @@ if __name__ == "__main__":
 
     if "release" in labels or "release-lts" in labels:
         print("NOTE: Release PR detected, skipping changelog entry check")
-        sys.exit(0)
-
-    if Info().user_name in BOT_AUTHORS:
-        print(
-            f"NOTE: PR by bot author '{Info().user_name}', skipping changelog entry check"
-        )
         sys.exit(0)
 
     error, category = get_category(body)

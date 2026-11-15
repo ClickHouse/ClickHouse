@@ -2,8 +2,6 @@
 #include <IO/WriteBufferValidUTF8.h>
 #include <base/types.h>
 #include <base/simd.h>
-#include <Common/Exception.h>
-#include <Common/FailPoint.h>
 
 #ifdef __SSE2__
     #include <emmintrin.h>
@@ -16,16 +14,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int FAULT_INJECTED;
-}
-
-namespace FailPoints
-{
-    extern const char write_buffer_valid_utf8_finalize_throw[];
-}
 
 const size_t WriteBufferValidUTF8::DEFAULT_SIZE = 4096;
 
@@ -168,15 +156,6 @@ WriteBufferValidUTF8::~WriteBufferValidUTF8()
 
 void WriteBufferValidUTF8::finalizeImpl()
 {
-    /// Test-only: emulate the destination buffer failing while the last buffered bytes of a string are
-    /// being flushed. The destructor of this class suppresses such a failure, so callers that write
-    /// into a live response stream have to flush explicitly - see
-    /// `IFramingFormat::writeJSONStringValidUTF8`.
-    fiu_do_on(FailPoints::write_buffer_valid_utf8_finalize_throw,
-    {
-        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while flushing a UTF-8 validating buffer");
-    });
-
     /// Write all complete sequences from buffer.
     nextImpl();
 
@@ -184,12 +163,11 @@ void WriteBufferValidUTF8::finalizeImpl()
     if (working_buffer.begin() != memory.data())
     {
         const char * p = memory.data();
-        const char * end = working_buffer.begin();
 
-        while (p < end)
+        while (p < pos)
         {
             UInt8 len = length_of_utf8_sequence[static_cast<const unsigned char>(*p)];
-            if (p + len > end)
+            if (p + len > pos)
             {
                 /// Incomplete sequence. Skip one byte.
                 putReplacement();

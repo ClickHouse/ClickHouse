@@ -9,7 +9,7 @@ namespace DB
 /** Read data from ChunkBuffer filled by SaveSubqueryResultToBufferTransform's.
   * Used to implement result buffering for common subplan.
   */
-class ReadFromCommonBufferSource final : public ISource
+class ReadFromCommonBufferSource : public ISource
 {
 public:
     explicit ReadFromCommonBufferSource(SharedHeader header, ChunkBufferPtr chunk_buffer_)

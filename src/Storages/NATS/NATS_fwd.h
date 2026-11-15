@@ -16,8 +16,6 @@ static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
     {"nats_password", DEFAULT_MASKING_RULE},
     {"nats_token", DEFAULT_MASKING_RULE},
     {"nats_credential_file", DEFAULT_MASKING_RULE},
-    {"nats_credentials", DEFAULT_MASKING_RULE},
-    {"nats_server_list", DEFAULT_MASKING_RULE},
     {"nats_url", [](const DB::Field & value) -> std::optional<std::string>
     {
         /// A masking rule must not throw: it runs before the setting is validated, so the value

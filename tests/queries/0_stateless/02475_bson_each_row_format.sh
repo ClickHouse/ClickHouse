@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-debug, long, no-flaky-check
-# long - under sanitizers this test can run for more than 180 seconds
+# Tags: no-debug
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

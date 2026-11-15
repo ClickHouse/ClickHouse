@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemSettingsProfiles.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/SettingsProfile.h>
@@ -109,6 +108,3 @@ void StorageSystemSettingsProfiles::restoreDataFromBackup(
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemSettingsProfiles) }

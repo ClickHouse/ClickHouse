@@ -81,7 +81,6 @@ ASTs InterpreterShowAccessQuery::getCreateAndGrantQueries() const
     return result;
 }
 
-void registerInterpreterShowAccessQuery(InterpreterFactory & factory);
 void registerInterpreterShowAccessQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

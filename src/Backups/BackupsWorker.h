@@ -99,13 +99,11 @@ private:
         bool on_cluster,
         const ClusterPtr & cluster);
 
-    enum class ThreadPoolId : uint8_t;
-
     /// Builds file infos for specified backup entries.
-    void buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element);
+    void buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, QueryStatusPtr process_list_element);
 
     /// Write backup entries to an opened backup.
-    void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, const BackupOperationID & backup_id, std::shared_ptr<IBackupCoordination> backup_coordination, bool is_internal_backup, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element);
+    void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, const BackupOperationID & backup_id, std::shared_ptr<IBackupCoordination> backup_coordination, bool is_internal_backup, QueryStatusPtr process_list_element);
 
     std::pair<BackupOperationID, BackupStatus> startRestoring(const ASTPtr & query, ContextMutablePtr context);
     struct RestoreStarter;
@@ -123,6 +121,7 @@ private:
         RestoreSettings restore_settings,
         std::shared_ptr<IRestoreCoordination> restore_coordination,
         ContextMutablePtr context,
+        const ContextPtr & query_context,
         bool on_cluster,
         const ClusterPtr & cluster);
 
@@ -135,17 +134,18 @@ private:
         size_t only_shard_num, size_t only_replica_num, ContextMutablePtr context, const AccessRightsElements & access_to_check,
         const ZooKeeperRetriesInfo & retries_info) const;
 
-    std::pair<bool, BackupStatus> addInfo(const BackupOperationID & id, const String & name, const String & base_backup_name, const String & query_id,
-                                          bool internal, QueryStatusPtr process_list_element, BackupStatus status, std::map<String, String> settings);
+    /// Run data restoring tasks which insert data to tables.
+    void restoreTablesData(const BackupOperationID & restore_id, BackupPtr backup, DataRestoreTasks && tasks, ThreadPool & thread_pool, QueryStatusPtr process_list_element);
 
-    /// Stores the settings effectively used by the backup engine's reader/writer for the given operation.
-    void setEngineSettings(const BackupOperationID & id, std::map<String, String> engine_settings);
+    std::pair<bool, BackupStatus> addInfo(const BackupOperationID & id, const String & name, const String & base_backup_name, const String & query_id,
+                                          bool internal, QueryStatusPtr process_list_element, BackupStatus status);
 
     void setStatus(const BackupOperationID & id, BackupStatus status, bool throw_if_error = true);
     void setStatusSafe(const String & id, BackupStatus status) { setStatus(id, status, false); }
     void setNumFilesAndSize(const BackupOperationID & id, size_t num_files, UInt64 total_size, size_t num_entries,
                             UInt64 uncompressed_size, UInt64 compressed_size, size_t num_read_files, UInt64 num_read_bytes);
 
+    enum class ThreadPoolId : uint8_t;
     ThreadPool & getThreadPool(ThreadPoolId thread_pool_id);
 
     /// Waits for some time if `test_inject_sleep` is true.

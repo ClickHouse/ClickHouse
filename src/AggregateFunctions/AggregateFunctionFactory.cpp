@@ -9,7 +9,6 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 
 static constexpr size_t MAX_AGGREGATE_FUNCTION_NAME_LENGTH = 1000;
 
@@ -88,8 +87,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     NullsAction action,
     const DataTypes & argument_types,
     const Array & parameters,
-    AggregateFunctionProperties & out_properties,
-    AggregateFunctionStateVariant state_variant) const
+    AggregateFunctionProperties & out_properties) const
 {
     /// This to prevent costly string manipulation in parsing the aggregate function combinators.
     /// Example: avgArrayArrayArrayArray...(1000 times)...Array
@@ -118,7 +116,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         bool has_null_arguments = std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
             [](const auto & type) { return type->onlyNull(); });
 
-        AggregateFunctionPtr nested_function = getImpl(name, action, nested_types, nested_parameters, out_properties, has_null_arguments, state_variant);
+        AggregateFunctionPtr nested_function = getImpl(name, action, nested_types, nested_parameters, out_properties, has_null_arguments);
 
         // Pure window functions are not real aggregate functions. Applying
         // combinators doesn't make sense for them, they must handle the
@@ -129,7 +127,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
             return combinator->transformAggregateFunction(nested_function, out_properties, types_without_low_cardinality, parameters);
     }
 
-    auto with_original_arguments = getImpl(name, action, types_without_low_cardinality, parameters, out_properties, false, state_variant);
+    auto with_original_arguments = getImpl(name, action, types_without_low_cardinality, parameters, out_properties, false);
 
     if (!with_original_arguments)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory returned nullptr");
@@ -164,66 +162,6 @@ AggregateFunctionFactory::getAssociatedFunctionByNullsAction(const String & name
     return {};
 }
 
-String AggregateFunctionFactory::getAssociatedNameByNullsAction(const String & name, NullsAction action) const
-{
-    /// Name-only counterpart of getAssociatedFunctionByNullsAction: it returns the registered name of
-    /// the function `name` resolves to under `action`, reading the same maps. It exists so the -Tuple
-    /// combinator can name the shared tuple state after the action-adjusted base aggregate without
-    /// instantiating a specific element. `name` is expected to be already alias-resolved by the caller;
-    /// the lowercase fallbacks mirror how getImpl() looks up case-insensitive functions.
-    ///
-    /// The maps hold only base aggregate names, but the -Tuple combinator's nested name can itself
-    /// carry further combinator suffixes (e.g. anyRespectNullsStateTuple nests anyRespectNullsState).
-    /// getImpl() applies `action` at the base of that chain when it instantiates the elements, so the
-    /// shared name must be adjusted at the base of the chain too: strip combinator suffixes, adjust,
-    /// and re-append. Otherwise the name would identify a different state than the elements actually
-    /// hold, and a -State type-name round-trip (e.g. via a distributed query) would reconstruct a
-    /// mismatched function.
-    if (action == NullsAction::RESPECT_NULLS)
-    {
-        if (auto it = respect_nulls.find(name); it != respect_nulls.end())
-            return it->second;
-        if (auto it = respect_nulls.find(Poco::toLower(name)); it != respect_nulls.end())
-            return it->second;
-        if (auto adjusted = getAssociatedNameUnderCombinatorSuffix(name, action))
-            return *adjusted;
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} does not support RESPECT NULLS", name);
-    }
-
-    if (action == NullsAction::IGNORE_NULLS)
-    {
-        if (auto it = ignore_nulls.find(name); it != ignore_nulls.end())
-            return it->second;
-        if (auto it = ignore_nulls.find(Poco::toLower(name)); it != ignore_nulls.end())
-            return it->second;
-        if (auto adjusted = getAssociatedNameUnderCombinatorSuffix(name, action))
-            return *adjusted;
-        /// IGNORE NULLS is the default for functions without an explicit transform.
-    }
-
-    return name;
-}
-
-std::optional<String> AggregateFunctionFactory::getAssociatedNameUnderCombinatorSuffix(const String & name, NullsAction action) const
-{
-    /// A name that is a registered function (or alias) is a base name: `action` applies to it directly,
-    /// so its combinator-looking tail (e.g. sumMap) must not be stripped.
-    const String resolved = getAliasToOrName(name);
-    if (aggregate_functions.contains(resolved) || case_insensitive_aggregate_functions.contains(Poco::toLower(resolved)))
-        return {};
-
-    AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name);
-    if (!combinator)
-        return {};
-
-    const String & suffix = combinator->getName();
-    String nested_name = name.substr(0, name.size() - suffix.size());
-    if (nested_name.empty())
-        return {};
-
-    return getAssociatedNameByNullsAction(getAliasToOrName(nested_name), action) + suffix;
-}
-
 
 AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     const String & name_param,
@@ -231,8 +169,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     const DataTypes & argument_types,
     const Array & parameters,
     AggregateFunctionProperties & out_properties,
-    bool has_null_arguments,
-    AggregateFunctionStateVariant state_variant) const
+    bool has_null_arguments) const
 {
     String name = getAliasToOrName(name_param);
     String case_insensitive_name;
@@ -275,28 +212,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             return nullptr;
 
         const Settings * settings = query_context ? &query_context->getSettingsRef() : nullptr;
-
-        AggregateFunctionPtr function;
-        if (state_variant == AggregateFunctionStateVariant::Window && found.window_creator)
-            function = found.window_creator(name, argument_types, parameters, settings);
-        else
-            function = found.creator(name, argument_types, parameters, settings);
-
-        /// Invariant: For any aggregation function IAggregateFunction::getParameters() should return exactly
-        /// the parameters used to create the aggregation function. Aggregation functions are not allowed to change
-        /// or normalize these parameters.
-        /// (Otherwise it would become a different DataTypeAggregateFunction (see DataTypeAggregateFunction::strictEquals),
-        /// and could fail to reattach a table because decodeDataType() would reconstruct a type different from the one
-        /// recorded in the column metadata; or fail on parallel replicas under serialize_query_plan=1 because the replica's
-        /// decodeDataType() would reconstruct a type different from the one the coordinator sent in the plan.)
-        ///
-        /// TODO: Some aggregation functions (at least `kolmogorovSmirnovTest`, `mannWhitneyUTest`, `groupArrayMovingSum`, `groupArrayMovingAvg`)
-        /// drop their parameters completely, so the check below has to tolerate `function->getParameters().empty()`.
-        /// They should be fixed to preserve their parameters like every other aggregation function.
-        chassert(function && (function->getParameters().empty() || function->getParameters() == parameters),
-            "function->getParameters() must equal the parameters passed to the factory");
-
-        return function;
+        return found.creator(name, argument_types, parameters, settings);
     }
 
     /// Combinators of aggregate functions.
@@ -331,39 +247,17 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
                 combinator_name);
         }
 
+        DataTypes nested_types = combinator->transformArguments(argument_types);
         Array nested_parameters = combinator->transformParameters(parameters);
 
-        AggregateFunctionPtr combined_function;
-        if (combinator->transformsMultipleNestedFunctions())
-        {
-            /// A combinator that wraps one nested function per argument list (e.g. -Tuple: one per
-            /// tuple element).
-            auto nested_arguments_list = combinator->transformArgumentsForMultipleNestedFunctions(argument_types);
+        AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties);
+        /// Aggregate function nothing does not support parameters
+        if (std::dynamic_pointer_cast<const AggregateFunctionNothing>(nested_function) ||
+            std::dynamic_pointer_cast<const AggregateFunctionNothingNull>(nested_function) ||
+            std::dynamic_pointer_cast<const AggregateFunctionNothingUInt64>(nested_function))
+                return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, Array());
 
-            VectorWithMemoryTracking<AggregateFunctionPtr> nested_functions;
-            nested_functions.reserve(nested_arguments_list.size());
-            for (const auto & nested_arguments : nested_arguments_list)
-                nested_functions.push_back(get(nested_name, action, nested_arguments, nested_parameters, out_properties, state_variant));
-
-            /// A `-State` round-trip reconstructs every element from this one shared name, so it must be
-            /// the action-adjusted base aggregate name, not one element's instantiation (which can collapse
-            /// to a placeholder for only-null elements and drop the other elements' state).
-            String adjusted_nested_name = getAssociatedNameByNullsAction(getAliasToOrName(nested_name), action);
-            combined_function = combinator->transformAggregateFunctionFromMultipleNestedFunctions(
-                adjusted_nested_name, std::move(nested_functions), out_properties, argument_types, parameters);
-        }
-        else
-        {
-            DataTypes nested_types = combinator->transformArguments(argument_types);
-
-            AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant);
-            combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
-        }
-
-        /// Same invariant as above.
-        chassert(combined_function && (combined_function->getParameters().empty() || combined_function->getParameters() == parameters),
-            "function->getParameters() must equal the parameters passed to the factory");
-        return combined_function;
+        return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
     }
 
 

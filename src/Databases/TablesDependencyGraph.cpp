@@ -93,7 +93,12 @@ size_t TablesDependencyGraph::getNumberOfTables() const
 void TablesDependencyGraph::addDependency(const StorageID & table_id, const StorageID & dependency)
 {
     auto * table_node = addOrUpdateNode(table_id);
+
+    /// Adding `dependency` removes `table_node` from the graph if it gives the name of `table_node` to another node.
+    NodeSharedPtr table_node_holder = *nodes.find(table_node);
     auto * dependency_node = addOrUpdateNode(dependency);
+    if (!nodes.contains(table_node))
+        table_node = dependency_node; /// It has the name `table_node` had, so it's the node of `table_id` now.
 
     bool inserted = table_node->dependencies.insert(dependency_node).second;
     if (!inserted)
@@ -240,15 +245,11 @@ std::vector<StorageID> TablesDependencyGraph::removeDependencies(const StorageID
         }
     }
 
-    /// `table_node` was its own dependency if it was removed above, and is dangling from then on.
-    if (!table_node_removed)
+    chassert(table_node->dependencies.empty());
+    if (remove_isolated_tables && !table_node_removed && table_node->dependents.empty())
     {
-        chassert(table_node->dependencies.empty());
-        if (remove_isolated_tables && table_node->dependents.empty())
-        {
-            /// The table `table_id` has no dependencies and no dependents now, so we will remove it from the graph.
-            removeNode(table_node);
-        }
+        /// The table `table_id` has no dependencies and no dependents now, so we will remove it from the graph.
+        removeNode(table_node);
     }
 
     setNeedRecalculateLevels();

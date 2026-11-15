@@ -1,6 +1,0 @@
-syntax = "proto3";
-
-  message ProtoKeyValue {
-   uint64 key = 1;
-   string value = 2;
- }

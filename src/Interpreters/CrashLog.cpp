@@ -31,8 +31,6 @@ ColumnsDescription CrashLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "The hostname where the crash occurred."},
-        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
-        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
         {"event_date", std::make_shared<DataTypeDate>(), "The date of the crash."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "The time of the crash."},
         {"timestamp_ns", std::make_shared<DataTypeUInt64>(), "Timestamp of the event with nanoseconds."},
@@ -60,8 +58,6 @@ void CrashLogElement::appendToBlock(MutableColumns & columns) const
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
-    columns[i++]->insert(VERSION_STRING);
-    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(timestamp_ns);
@@ -140,24 +136,22 @@ void collectCrashLog(
                 [&current_exception_trace_full](std::string_view line) { current_exception_trace_full.push_back(line); });
         }
 
-        crash_log_owned->add([&](CrashLogElement & element)
-        {
-            element = CrashLogElement{
-                static_cast<time_t>(time / 1000000000),
-                time,
-                signal,
-                signal_code,
-                thread_id,
-                query_id,
-                query,
-                trace,
-                trace_full,
-                fault_address,
-                fault_access_type,
-                signal_description,
-                current_exception_trace_full,
-                GIT_HASH,
-                Poco::Environment::osArchitecture()};
-        });
+        CrashLogElement element{
+            static_cast<time_t>(time / 1000000000),
+            time,
+            signal,
+            signal_code,
+            thread_id,
+            query_id,
+            query,
+            trace,
+            trace_full,
+            fault_address,
+            fault_access_type,
+            signal_description,
+            current_exception_trace_full,
+            GIT_HASH,
+            Poco::Environment::osArchitecture()};
+        crash_log_owned->add(std::move(element));
     }
 }

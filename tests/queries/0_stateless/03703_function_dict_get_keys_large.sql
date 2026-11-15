@@ -1,5 +1,3 @@
-SET max_block_size = 10000;
-
 DROP DICTIONARY IF EXISTS dict_big;
 DROP TABLE IF EXISTS dict_src_big;
 

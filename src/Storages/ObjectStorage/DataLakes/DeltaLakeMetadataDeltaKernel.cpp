@@ -37,7 +37,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace FailPoints
@@ -55,7 +54,6 @@ namespace Setting
     extern const SettingsInt64 delta_lake_snapshot_version;
 }
 
-void tracingCallback(struct ffi::Event event);
 void tracingCallback(struct ffi::Event event)
 {
     /// Do not pollute logs with very long messages
@@ -368,13 +366,13 @@ void DeltaLakeMetadataDeltaKernel::modifyFormatSettings(FormatSettings & format_
 /// Returns non virtual column names, and virtual columns names and types.
 static std::pair<Names, NamesAndTypesList> splitVirtualColumns(
     const Names & columns,
-    const VirtualColumnsDescription & virtual_columns_description)
+    VirtualsDescriptionPtr virtual_columns_description)
 {
     Names non_virtual_columns;
     NamesAndTypesList virtual_columns;
     for (const auto & column_name : columns)
     {
-        if (auto virtual_column = virtual_columns_description.tryGet(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
+        if (auto virtual_column = virtual_columns_description->tryGet(column_name))
             virtual_columns.emplace_back(std::move(*virtual_column));
         else
             non_virtual_columns.push_back(column_name);
@@ -527,7 +525,7 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
 
     Names columns_to_read;
     std::tie(columns_to_read, info.requested_virtual_columns) =
-        splitVirtualColumns(requested_columns, storage_snapshot->metadata->virtuals);
+        splitVirtualColumns(requested_columns, storage_snapshot->virtual_columns);
 
     /// Create header for Source with non virtual columns
     /// and add virtual columns at the end of the header.
@@ -626,25 +624,15 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     {
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "Delta Lake writes are a Beta feature disabled by default. "
-            "To enable them, set allow_delta_lake_writes = 1");
+            "To enable delta lake writes, use allow_experimental_delta_lake_writes = 1");
     }
 
     const auto snapshot_version = getSnapshotVersion(context->getSettingsRef());
     auto snapshot = getTableSnapshot(snapshot_version);
     Names partition_columns = snapshot->getPartitionColumns();
 
-    /// Reject column-mapped tables (snapshot exposes physical names): the writer emits logical
-    /// names, not the required physical field names/ids. TODO: support it (delta-kernel-rs#1124).
-    if (!snapshot->getPhysicalNamesMap().empty())
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Writing to DeltaLake tables with column mapping enabled is not supported");
-    }
-
     auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper);
-    delta_transaction->create(partition_columns, snapshot->getTableSchema());
+    delta_transaction->create();
 
     if (partition_columns.empty())
     {

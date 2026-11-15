@@ -89,7 +89,7 @@ namespace ErrorCodes
   */
 
 template <typename Name>
-class FunctionBitmapBuildImpl final : public IFunction
+class FunctionBitmapBuildImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -220,7 +220,7 @@ private:
 };
 
 template <typename Name>
-class FunctionBitmapToArrayImpl final : public IFunction
+class FunctionBitmapToArrayImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -312,7 +312,7 @@ private:
 };
 
 template <typename Impl>
-class FunctionBitmapSubset final : public IFunction
+class FunctionBitmapSubset : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -384,10 +384,10 @@ private:
     {
         const IColumn * column_ptrs[3];
         bool is_column_const[3];
-        const ColumnAggregateFunction * col_agg_func = nullptr;
-        const PaddedPODArray<AggregateDataPtr> * container0 = nullptr;
-        const PaddedPODArray<UInt64> * container1 = nullptr;
-        const PaddedPODArray<UInt64> * container2 = nullptr;
+        const ColumnAggregateFunction * col_agg_func;
+        const PaddedPODArray<AggregateDataPtr> * container0;
+        const PaddedPODArray<UInt64> * container1;
+        const PaddedPODArray<UInt64> * container2;
 
         ColumnPtr column_holder[2];
         for (size_t i = 0; i < 3; ++i)
@@ -488,7 +488,7 @@ using FunctionBitmapSubsetInRange = FunctionBitmapSubset<BitmapSubsetInRangeImpl
 using FunctionBitmapSubsetLimit = FunctionBitmapSubset<BitmapSubsetLimitImpl>;
 using FunctionBitmapSubsetOffsetLimit = FunctionBitmapSubset<BitmapSubsetOffsetLimitImpl>;
 
-class FunctionBitmapTransform final : public IFunction
+class FunctionBitmapTransform : public IFunction
 {
 public:
     static constexpr auto name = "bitmapTransform";
@@ -571,11 +571,11 @@ private:
     {
         const IColumn * column_ptrs[3];
         bool is_column_const[3];
-        const ColumnAggregateFunction * col_agg_func = nullptr;
-        const PaddedPODArray<AggregateDataPtr> * container0 = nullptr;
+        const ColumnAggregateFunction * col_agg_func;
+        const PaddedPODArray<AggregateDataPtr> * container0;
 
-        const ColumnArray * array1 = nullptr;
-        const ColumnArray * array2 = nullptr;
+        const ColumnArray * array1;
+        const ColumnArray * array2;
 
         ColumnPtr column_holder[2];
         for (size_t i = 0; i < 3; ++i)
@@ -621,10 +621,10 @@ private:
         auto col_to = ColumnAggregateFunction::create(col_agg_func->getAggregateFunction());
         col_to->reserve(input_rows_count);
 
-        size_t from_start = 0;
-        size_t from_end = 0;
-        size_t to_start = 0;
-        size_t to_end = 0;
+        size_t from_start;
+        size_t from_end;
+        size_t to_start;
+        size_t to_end;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             AggregateDataPtr data_ptr_0 = is_column_const[0] ? (*container0)[0] : (*container0)[i];
@@ -665,7 +665,7 @@ private:
 };
 
 template <typename Impl>
-class FunctionBitmapSelfCardinalityImpl final : public IFunction
+class FunctionBitmapSelfCardinalityImpl : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -839,7 +839,7 @@ struct BitmapHasAnyImpl
     }
 };
 
-class FunctionBitmapContains final : public IFunction
+class FunctionBitmapContains : public IFunction
 {
 public:
     static constexpr auto name = "bitmapContains";
@@ -920,8 +920,8 @@ private:
         const IColumn * column_ptrs[2];
         bool is_column_const[2];
 
-        const PaddedPODArray<AggregateDataPtr> * container0 = nullptr;
-        const PaddedPODArray<UInt64> * container1 = nullptr;
+        const PaddedPODArray<AggregateDataPtr> * container0;
+        const PaddedPODArray<UInt64> * container1;
 
         column_ptrs[0] = arguments[0].column.get();
         is_column_const[0] = isColumnConst(*column_ptrs[0]);
@@ -953,7 +953,7 @@ private:
 };
 
 template <template <typename> class Impl, typename Name, typename ToType>
-class FunctionBitmapCardinality final : public IFunction
+class FunctionBitmapCardinality : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -1103,7 +1103,7 @@ struct NameBitmapAnd
 };
 
 template <template <typename> class Impl, typename Name>
-class FunctionBitmap final : public IFunction
+class FunctionBitmap : public IFunction
 {
 public:
     static constexpr auto name = Name::name;

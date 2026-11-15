@@ -66,34 +66,35 @@ std::optional<UInt64> parseHexAddress(std::string_view & src)
     return address;
 }
 
-}
-
-std::vector<UInt64> parseJemallocStackAddresses(std::string_view line, bool * fully_parsed)
+/// Parse stack addresses from a jemalloc profile line starting with '@'.
+/// Returns empty vector if the line doesn't start with '@'.
+/// The first address is kept as-is; subsequent ones are decremented by 1
+/// (they are return addresses, so we subtract 1 to point inside the call instruction).
+std::vector<UInt64> parseStackAddresses(std::string_view line)
 {
     std::vector<UInt64> result;
-    std::string_view sv = line;
-    if (!sv.empty() && sv[0] == '@')
+    if (line.empty() || line[0] != '@')
+        return result;
+
+    std::string_view sv(line.data() + 1, line.size() - 1);
+    bool first = true;
+    while (!sv.empty())
     {
-        sv.remove_prefix(1);
-        bool first = true;
-        while (!sv.empty())
-        {
-            trimLeft(sv);
-            if (sv.empty())
-                break;
-            auto address = parseHexAddress(sv);
-            if (!address.has_value())
-                break;
-            result.push_back(first ? *address : *address - 1);
-            first = false;
-        }
+        trimLeft(sv);
+        if (sv.empty())
+            break;
+        auto address = parseHexAddress(sv);
+        if (!address.has_value())
+            break;
+        result.push_back(first ? *address : *address - 1);
+        first = false;
     }
-    if (fully_parsed)
-        *fully_parsed = sv.empty();
     return result;
 }
 
-UInt64 parseJemallocSamplingInterval(std::string_view header)
+/// Parse the sampling interval from a jemalloc heap_v2 header line ("heap_v2/N").
+/// Returns 0 if the header doesn't match heap_v2 format or the value is not a valid integer.
+UInt64 parseSamplingInterval(std::string_view header)
 {
     static constexpr std::string_view prefix = "heap_v2/";
     if (!header.starts_with(prefix))
@@ -108,9 +109,6 @@ UInt64 parseJemallocSamplingInterval(std::string_view header)
         return 0;
     return result;
 }
-
-namespace
-{
 
 /// Apply Poisson sampling correction as jeprof does for heap_v2 profiles.
 /// Each allocation is sampled with probability 1-exp(-size/interval), so the correction
@@ -464,7 +462,7 @@ void JemallocProfileSource::collectAddresses()
         readStringUntilNewlineInto(line, in);
         in.tryIgnore(1);
 
-        for (UInt64 addr : parseJemallocStackAddresses(line))
+        for (UInt64 addr : parseStackAddresses(line))
             unique_addresses.insert(addr);
     }
 
@@ -504,20 +502,13 @@ Chunk JemallocProfileSource::generateCollapsed()
             /// Parse sampling interval from heap_v2/N header (first non-empty line)
             if (sampling_interval == 0 && line.starts_with("heap_v2/"))
             {
-                sampling_interval = parseJemallocSamplingInterval(line);
+                sampling_interval = parseSamplingInterval(line);
                 continue;
             }
 
-            /// Fragmentation profiling records are not allocation counters;
-            /// skip them without touching the pending stack.
-            std::string_view trimmed(line);
-            trimLeft(trimmed);
-            if (trimmed.starts_with("f:") || trimmed.starts_with("frag_util:"))
-                continue;
-
             if (line[0] == '@')
             {
-                current_stack = parseJemallocStackAddresses(line);
+                current_stack = parseStackAddresses(line);
             }
             else if (!current_stack.empty() && line.contains(':'))
             {

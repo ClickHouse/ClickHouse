@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -25,7 +26,7 @@ $CLICKHOUSE_CLIENT -q "
     SELECT sum(length(entries.bytes)) FROM system.asynchronous_inserts
     WHERE database = '$CLICKHOUSE_DATABASE' AND table = 't_async_insert_native_1';
 
-    SYSTEM FLUSH ASYNC INSERT QUEUE t_async_insert_native_1;
+    SYSTEM FLUSH ASYNC INSERT QUEUE;
 
     SELECT * FROM t_async_insert_native_1 ORDER BY id;
 

@@ -20,7 +20,7 @@ private:
     bool done = false;
 };
 
-class OneSchemaReader final : public IExternalSchemaReader
+class OneSchemaReader: public IExternalSchemaReader
 {
 public:
     NamesAndTypesList readSchema() override

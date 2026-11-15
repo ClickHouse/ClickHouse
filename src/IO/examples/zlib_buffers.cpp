@@ -10,10 +10,9 @@
 #include <IO/ZlibInflatingReadBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <Examples/clickhouse_examples.h>
 
 
-int mainEntryExampleZlibBuffers(int, char **)
+int main(int, char **)
 try
 {
     std::cout << std::fixed << std::setprecision(2);
@@ -46,7 +45,7 @@ try
         stopwatch.restart();
         for (size_t i = 0; i < n; ++i)
         {
-            size_t x = {};
+            size_t x;
             DB::readIntText(x, inflating_buf);
             inflating_buf.ignore();
 

@@ -16,7 +16,7 @@ public:
 
     KeyValuePairExtractorBuilder & withKeyValueDelimiter(char key_value_delimiter_);
 
-    KeyValuePairExtractorBuilder & withItemDelimiters(VectorWithMemoryTracking<char> item_delimiters_);
+    KeyValuePairExtractorBuilder & withItemDelimiters(std::vector<char> item_delimiters_);
 
     KeyValuePairExtractorBuilder & withQuotingCharacter(char quoting_character_);
 
@@ -48,7 +48,7 @@ public:
 private:
     char key_value_delimiter = ':';
     char quoting_character = '"';
-    VectorWithMemoryTracking<char> item_delimiters = {' ', ',', ';'};
+    std::vector<char> item_delimiters = {' ', ',', ';'};
     uint64_t max_number_of_pairs = std::numeric_limits<uint64_t>::max();
 
     /// The ideal default behavior should be `UnexpectedQuotingCharacterStrategy::INVALID`, but to make it backwards compatible, we are leaving it as `PROMOTE`
