@@ -25,8 +25,12 @@ const std::string lock_file_name{"lock"};
 const std::string commit_file_name{"committed"};
 const std::string intent_file_name{"intention"};
 /// Rounds to keep free partitions reserved (up to a lockless replica's permanent quota)
-/// for a possibly restarting replica; past this window only a changing demand keeps them reserved.
+/// for a possibly restarting replica; past this window a published demand keeps them reserved.
 constexpr size_t MAX_ROUNDS_TO_YIELD_TO_LOCKLESS_REPLICA = 8;
+/// Rounds a published demand keeps the reservation after its value last changed: a replica
+/// still trying refreshes the value on every attempt, so an unchanged demand means nobody
+/// is requesting the partitions anymore.
+constexpr size_t MAX_ROUNDS_WITH_UNCHANGED_DEMAND = 8;
 
 std::optional<int64_t> getNumber(zkutil::ZooKeeper & keeper, const fs::path & path)
 {
@@ -148,6 +152,19 @@ KeeperHandlingConsumer::KeeperHandlingConsumer(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperHandlingConsumer requires a valid ZooKeeper instance");
 }
 
+KeeperHandlingConsumer::~KeeperHandlingConsumer()
+{
+    /// The demand node must not outlive the consumer that published it.
+    try
+    {
+        removeDemandInKeeper();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to remove the demand node");
+    }
+}
+
 bool KeeperHandlingConsumer::needsNewKeeper() const
 {
     return keeper->expired();
@@ -162,6 +179,7 @@ void KeeperHandlingConsumer::setKeeper(const std::shared_ptr<zkutil::ZooKeeper> 
         permanent_locks.clear();
         tmp_locks.clear();
         lockless_rounds_by_replica.clear();
+        demand_state_by_replica.clear();
     }
     keeper = keeper_;
     tmp_locks_quota = 0;
@@ -240,7 +258,7 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
             // These operations are expected to be fast, because they only modify in-memory data and read/write to Keeper. For huge number of topic partitions
             const size_t node_quota = std::max<size_t>(all_topic_partitions.size() / active_replicas_info.active_replica_count, 1);
             updatePermanentLocksLocked(available_topic_partitions, all_topic_partitions.size(), active_replicas_info.active_replica_count);
-            lockTemporaryLocksLocked(available_topic_partitions, node_quota, active_replicas_info.lockless_active_replicas, active_replicas_info.demanding_lockless_replicas);
+            lockTemporaryLocksLocked(available_topic_partitions, node_quota, active_replicas_info.lockless_active_replicas, active_replicas_info.demand_of_lockless);
             poll_count = 0;
 
             assigned_topic_partitions.reserve(permanent_locks.size() + tmp_locks.size());
@@ -407,16 +425,19 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
     std::vector<String> lockless_active_replicas;
     for (size_t i = 0; i < candidates.size(); ++i)
     {
-        if (is_active_responses[i].error != Coordination::Error::ZOK)
+        const auto & response = is_active_responses[i];
+        if (response.error == Coordination::Error::ZNONODE)
             continue;
+        if (response.error != Coordination::Error::ZOK)
+            throw Coordination::Exception::fromPath(response.error, is_active_paths[i]);
 
         ++active_replica_count;
         if (!replicas_with_lock.contains(candidates[i]))
             lockless_active_replicas.push_back(std::move(candidates[i]));
     }
 
-    /// Read which lockless replicas have published a demand (tried and not yet satisfied).
-    std::unordered_set<String> demanding_lockless_replicas;
+    /// Read the demand published by lockless replicas (value refreshed on every attempt).
+    std::unordered_map<String, String> demand_of_lockless;
     if (!lockless_active_replicas.empty())
     {
         Strings demand_paths;
@@ -429,7 +450,7 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
         {
             const auto & response = demand_responses[i];
             if (response.error == Coordination::Error::ZOK)
-                demanding_lockless_replicas.insert(lockless_active_replicas[i]);
+                demand_of_lockless.emplace(lockless_active_replicas[i], response.data);
             else if (response.error != Coordination::Error::ZNONODE)
                 throw Coordination::Exception::fromPath(response.error, demand_paths[i]);
         }
@@ -440,7 +461,7 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
     active_replica_count = std::max<size_t>(active_replica_count, 1);
     LOG_TEST(log, "There are {} active replicas, {} of them without locks, out of {} total replicas (shard_count={})",
              active_replica_count, lockless_active_replicas.size(), replica_names.size(), shard_count);
-    return ActiveReplicasInfo{active_replica_count, std::move(lockless_active_replicas), std::move(demanding_lockless_replicas)};
+    return ActiveReplicasInfo{active_replica_count, std::move(lockless_active_replicas), std::move(demand_of_lockless)};
 }
 
 std::pair<KeeperHandlingConsumer::TopicPartitions, KeeperHandlingConsumer::ActiveReplicasInfo>
@@ -509,7 +530,7 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
     const TopicPartitions & available_topic_partitions,
     size_t node_quota,
     const std::vector<String> & lockless_active_replicas,
-    const std::unordered_set<String> & demanding_lockless_replicas) TSA_REQUIRES(topic_partition_locks_mutex)
+    const std::unordered_map<String, String> & demand_of_lockless) TSA_REQUIRES(topic_partition_locks_mutex)
 {
     /// Track how long each still-active replica has been lockless; streaks reset when the
     /// replica takes locks or disappears.
@@ -522,16 +543,32 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
     });
 
     /// Reserve free partitions for the lockless replicas that may still take some: those in
-    /// their initial rounds, and those with a published demand (they tried, got nothing, and
-    /// keep the demand until satisfied); the rest keeps being covered with temporary locks.
+    /// their initial rounds, and those whose published demand is still being refreshed (a
+    /// still-trying replica changes its value every attempt); the rest stays covered.
     size_t lockless_replicas_to_reserve_for = 0;
     for (const auto & entry : lockless_rounds_by_replica)
     {
-        const bool initial_window = entry.second <= MAX_ROUNDS_TO_YIELD_TO_LOCKLESS_REPLICA;
-        const bool demanding = demanding_lockless_replicas.contains(entry.first);
+        bool initial_window = entry.second <= MAX_ROUNDS_TO_YIELD_TO_LOCKLESS_REPLICA;
+        bool demanding = false;
+        if (const auto demand_it = demand_of_lockless.find(entry.first); demand_it != demand_of_lockless.end())
+        {
+            auto & [last_value, rounds_unchanged] = demand_state_by_replica[entry.first];
+            if (last_value != demand_it->second)
+            {
+                last_value = demand_it->second;
+                rounds_unchanged = 0;
+            }
+            else
+                ++rounds_unchanged;
+            demanding = rounds_unchanged < MAX_ROUNDS_WITH_UNCHANGED_DEMAND;
+        }
         if (initial_window || demanding)
             ++lockless_replicas_to_reserve_for;
     }
+    std::erase_if(demand_state_by_replica, [&](const auto & entry)
+    {
+        return !demand_of_lockless.contains(entry.first);
+    });
     const size_t reserved_for_lockless = lockless_replicas_to_reserve_for
         ? std::min(available_topic_partitions.size(), lockless_replicas_to_reserve_for * node_quota)
         : 0;
