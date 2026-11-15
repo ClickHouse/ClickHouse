@@ -734,7 +734,7 @@ TEST(TransformQueryForExternalDatabase, Limit)
         "SELECT DISTINCT column FROM table LIMIT 10",
         R"(SELECT "column" FROM "test"."table")");
 
-    /// SHUFFLE is supported only by the analyzer and must sample before applying LIMIT.
+    /// SHUFFLE must sample before applying LIMIT.
     checkNewAnalyzer(state, {"column"},
         "SELECT column FROM table SHUFFLE LIMIT 10 SETTINGS allow_experimental_shuffle_query = 1",
         R"(SELECT "column" FROM "test"."table")");
