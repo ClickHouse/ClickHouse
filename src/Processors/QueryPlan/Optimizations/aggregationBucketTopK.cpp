@@ -49,14 +49,17 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
     const size_t n = top_k->limit;
     const bool ascending = top_k->ascending;
 
-    /// The selection reads the count from the aggregate state and handles no null-key cell, so
-    /// nullable and low-cardinality keys stay on the ordinary conversion.
+    /// The selection handles no null-key cell, so nullable keys stay on the ordinary conversion. `LowCardinality` keys get
+    /// the selection only: the threshold merge below does not serve them.
     const auto & header = top_k->aggregating_node->step->getOutputHeader();
+    bool has_low_cardinality_key = false;
     for (const auto & key : params.keys)
     {
         const auto & type = header->getByName(key).type;
-        if (type->isNullable() || type->isLowCardinalityNullable() || typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        if (type->isNullable() || type->isLowCardinalityNullable())
             return 0;
+        if (typeid_cast<const DataTypeLowCardinality *>(type.get()))
+            has_low_cardinality_key = true;
     }
 
     const size_t i = top_k->rank_index;
@@ -69,7 +72,7 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
     /// collection).
     /// The in-order aggregation never runs the threshold merge (see `AggregatingStep::applyOrder`,
     /// which also drops it when the order is applied after this pass).
-    if (!top_k->has_collator && !aggregating->inOrder())
+    if (!top_k->has_collator && !aggregating->inOrder() && !has_low_cardinality_key)
     {
         const auto bound = aggregate.function->getMergedValueBound();
         /// The `Subadditive` bound serves only the descending order. It is one-sided (see
@@ -111,10 +114,12 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
     /// split across the per-thread tables), the bucket is merged as usual and the selection
     /// still trims its conversion.
     ///
-    /// `AggregatingStep::serialize` does not write the bucket top-K fields, so a serialized or
-    /// distributed plan would show the selection without executing it. The threshold merge above
-    /// stays: the side that runs the aggregation derives it again from its own plan.
-    if (settings.make_distributed_plan || settings.serialize_query_plan)
+    /// The distributed planner ships fragments of the optimized plan, and `AggregatingStep::serialize`
+    /// does not write the bucket top-K fields, so a worker would run without the selection that the
+    /// initiator's plan shows. `serialize_query_plan` is fine: a shard or a replica receives the plan
+    /// before the optimization and optimizes it itself in `executeQuery`, which derives the selection,
+    /// like the threshold merge above.
+    if (settings.make_distributed_plan)
         return 0;
 
     aggregating->enableBucketTopK(n, ascending, i);

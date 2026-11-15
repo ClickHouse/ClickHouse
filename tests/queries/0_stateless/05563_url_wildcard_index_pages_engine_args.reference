@@ -1,0 +1,6 @@
+webargs_collection_auto	URL(nc_05563_auto, format = \'TSV\')
+webargs_collection_csv	URL(nc_05563_csv)
+webargs_headers	URL(\'http://127.0.0.1:1/w/sub/p*.tsv\', \'TSV\', \'none\', headers(\'X-Covgap\' = \'[HIDDEN]\'))
+webargs_positional_auto	URL(\'http://127.0.0.1:1/w/sub/p*.tsv\', \'TSV\')
+webargs_positional_csv	URL(\'http://127.0.0.1:1/w/sub/p*.tsv\', \'CSV\')
+webargs_positional_url	URL(\'http://127.0.0.1:1/w/sub/p*.tsv\', \'TSV\')

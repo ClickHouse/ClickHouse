@@ -56,11 +56,11 @@ How many threads stopped probing their frozen local table in the adaptive aggreg
 
 ### AdaptiveAggregationPrunedRecords {#adaptiveaggregationprunedrecords}
 
-How many staged records the adaptive aggregation's merge skipped, because their group could not reach the descending top-K by `count`, `uniqExact` or `uniqExactIf`.
+How many staged records the adaptive aggregation's merge skipped, because the top-K by `count`, `uniqExact` or `uniqExactIf` needed none of their groups.
 
 ### AdaptiveAggregationPrunedUnits {#adaptiveaggregationprunedunits}
 
-How many merge units the adaptive aggregation skipped without draining them, because no group in them could reach the descending top-K by `count`, `uniqExact` or `uniqExactIf`.
+How many merge units the adaptive aggregation skipped without draining them, because the top-K by `count`, `uniqExact` or `uniqExactIf` needed none of their groups: their count bins were bounded below the threshold of a descending top-K, or an ascending top-K had already found enough groups with the smallest possible rank.
 
 ### AdaptiveAggregationSpilledBytes {#adaptiveaggregationspilledbytes}
 
@@ -85,6 +85,26 @@ How many delayed records the adaptive aggregation staged into its partition buff
 ### AdaptiveAggregationThaws {#adaptiveaggregationthaws}
 
 How many times the adaptive aggregation thawed the local tables because the staged stream proved repeat-dominated.
+
+### AdaptiveCodecBlocksPriced {#adaptivecodecblockspriced}
+
+Number of blocks that adaptive codec selection priced from the start, compressing them with every candidate codec and keeping the smallest output.
+
+### AdaptiveCodecBlocksRepriced {#adaptivecodecblocksrepriced}
+
+Number of blocks that adaptive codec selection priced after the remembered winner had lost ground on them.
+
+### AdaptiveCodecBlocksReused {#adaptivecodecblocksreused}
+
+Number of blocks that adaptive codec selection compressed with the remembered winner alone.
+
+### AdaptiveCodecBytesDefault {#adaptivecodecbytesdefault}
+
+Compressed bytes the default codec produced on the sample blocks of adaptive codec selection, one per window of `adaptive_codec_selection_period` blocks.
+
+### AdaptiveCodecBytesWritten {#adaptivecodecbyteswritten}
+
+Compressed bytes adaptive codec selection wrote on its sample blocks. The ratio to `AdaptiveCodecBytesDefault` is the saving against the default codec.
 
 ### AddressesDiscovered {#addressesdiscovered}
 
@@ -132,7 +152,7 @@ Number of aggregation streams that rebuilt their hash table to the shared set of
 
 ### AggregationSharedKeptKeysSpillReseeds {#aggregationsharedkeptkeysspillreseeds}
 
-Number of times a hash table restricted to the shared set of kept keys of the trivial GROUP BY LIMIT cutoff was re-seeded with those keys after being flushed to a temporary file by external aggregation (see the `optimize_trivial_group_by_limit_query` setting).
+Number of times a hash table that stopped admitting new keys under `group_by_overflow_mode = any` was re-seeded with the keys it kept after being flushed to a temporary file by external aggregation, so that their remaining rows keep being aggregated. Covers both the shared set of the trivial GROUP BY LIMIT cutoff (see the `optimize_trivial_group_by_limit_query` setting) and the per-stream set of a plain `max_rows_to_group_by` cap.
 
 ### AggregationThresholdTopKMergedGroups {#aggregationthresholdtopkmergedgroups}
 
@@ -858,6 +878,18 @@ Total time spent detecting bit-flips due to compressed block checksum mismatches
 
 Number of times a compressed block checksum mismatch was caused by a single-bit difference.
 
+### CompressedWriteBufferBlocks {#compressedwritebufferblocks}
+
+Number of compressed blocks (the blocks of data that are compressed independent of each other) written by `CompressedWriteBuffer` (files, network, temporary data).
+
+### CompressedWriteBufferBytes {#compressedwritebufferbytes}
+
+Number of uncompressed bytes (the number of bytes before compression) passed to compression codecs by `CompressedWriteBuffer`.
+
+### CompressedWriteBufferCompressMicroseconds {#compressedwritebuffercompressmicroseconds}
+
+Total time spent inside compression codecs in `CompressedWriteBuffer`.
+
 ### ConcurrencyControlDownscales {#concurrencycontroldownscales}
 
 Total number of CPU downscaling events
@@ -1464,6 +1496,14 @@ Distributed Cache client event. Number of failures to connect to a distributed c
 
 Distributed Cache connection event. The time spent to connect to distributed cache
 
+### DistrCacheEndRequestMicroseconds {#distrcacheendrequestmicroseconds}
+
+Distributed Cache client event. Time spent sending EndRequest packets to distributed cache
+
+### DistrCacheEndRequestNotSentSocketNotWritable {#distrcacheendrequestnotsentsocketnotwritable}
+
+Distributed Cache client event. Number of EndRequest packets which were not sent because the socket was not writable (the server stopped draining it): the connection is dropped instead and the server notices the EOF
+
 ### DistrCacheEstimatedInflightBytesOnSeek {#distrcacheestimatedinflightbytesonseek}
 
 Distributed Cache read buffer event. The estimated in-flight bytes at the seeks which considered discarding the connection (compare with DistrCacheUnusedDataPacketsBytesReadRangeIdChanged)
@@ -1564,6 +1604,10 @@ Distributed Cache client event. Number of non-retriable distributed cache errors
 
 Distributed Cache client event. Number of retriable distributed cache errors during read requests (counted on each occurrence, including the ones recovered by a retry)
 
+### DistrCacheReadFinalAckFailed {#distrcachereadfinalackfailed}
+
+Distributed Cache event. Number of reads whose connection was lost before the final acknowledgement; the fully received range was accepted
+
 ### DistrCacheReadMicroseconds {#distrcachereadmicroseconds}
 
 Distributed Cache read buffer event. Time spent reading from distributed cache
@@ -1632,6 +1676,10 @@ Distributed Cache registry event. The number of registry entries ignored because
 
 Distributed Cache connection event. The time spent removing outdated connections from the pool
 
+### DistrCacheRequestsEndedOnRelease {#distrcacherequestsendedonrelease}
+
+Distributed Cache client event. Number of open requests which the client had to end while releasing them (a retry which reconnected, a new request over an unfinished one, or the client going away) instead of the reader ending them explicitly
+
 ### DistrCacheReusedConnections {#distrcachereusedconnections}
 
 Distributed Cache connection event. The number of reused connections to distributed cache
@@ -1696,6 +1744,10 @@ Distributed Cache server event. The number of bytes written to cache in distribu
 
 Distributed Cache server event. The number of bytes read from object storage in distributed cache while reading from filesystem cache
 
+### DistrCacheServerCommittedTemporaryFilesLockWaitMicroseconds {#distrcacheservercommittedtemporaryfileslockwaitmicroseconds}
+
+Distributed Cache server event. Time spent waiting for the committed temporary-files mutex on contention.
+
 ### DistrCacheServerConnectionRegistryClientLockWaitMicroseconds {#distrcacheserverconnectionregistryclientlockwaitmicroseconds}
 
 Distributed Cache server event. Time spent waiting for a per-client connection bucket mutex on contention (register/unregister/identify/eviction)
@@ -1736,6 +1788,10 @@ Distributed Cache server event. Time spent processing request on DistributedCach
 
 Distributed Cache server event. Number of RefreshCredentials client packets in DistributedCacheServer
 
+### DistrCacheServerRequestsClosedWithoutEndRequest {#distrcacheserverrequestsclosedwithoutendrequest}
+
+Distributed Cache server event. Number of requests whose client closed the connection without sending EndRequest (a killed client, a client whose socket was not writable, or an old client), so the server stopped serving them on EOF. Closes driven by this server (shutdown or connection eviction) are not counted
+
 ### DistrCacheServerReusedS3CachedClients {#distrcacheserverreuseds3cachedclients}
 
 Distributed Cache server event. The number of reused cached s3 clients
@@ -1755,6 +1811,38 @@ Distributed Cache server event. Number of StartRequest packets in DistributedCac
 ### DistrCacheServerSwitches {#distrcacheserverswitches}
 
 Distributed Cache read buffer event. Number of server switches between distributed cache servers in read/write-through cache
+
+### DistrCacheServerTemporaryCleanupScheduleFailures {#distrcacheservertemporarycleanupschedulefailures}
+
+Distributed Cache server event. Number of committed temporary cleanup schedule failures
+
+### DistrCacheServerTemporaryDataControlMicroseconds {#distrcacheservertemporarydatacontrolmicroseconds}
+
+Distributed Cache server event. Time spent processing committed temporary-data controls
+
+### DistrCacheServerTemporaryFilesExpired {#distrcacheservertemporaryfilesexpired}
+
+Distributed Cache server event. Number of committed temporary files expired
+
+### DistrCacheServerTemporaryFilesExtended {#distrcacheservertemporaryfilesextended}
+
+Distributed Cache server event. Number of committed temporary file TTL extensions
+
+### DistrCacheServerTemporaryFilesPublished {#distrcacheservertemporaryfilespublished}
+
+Distributed Cache server event. Number of committed temporary files published
+
+### DistrCacheServerTemporaryFilesPublishRejected {#distrcacheservertemporaryfilespublishrejected}
+
+Distributed Cache server event. Number of rejected committed temporary publications
+
+### DistrCacheServerTemporaryFilesReleased {#distrcacheservertemporaryfilesreleased}
+
+Distributed Cache server event. Number of committed temporary files released
+
+### DistrCacheServerTemporaryReadRejected {#distrcacheservertemporaryreadrejected}
+
+Distributed Cache server event. Number of rejected committed temporary reads
 
 ### DistrCacheServerUpdates {#distrcacheserverupdates}
 
@@ -1784,13 +1872,65 @@ Distributed Cache registry event. The number of successful server registry updat
 
 Distributed Cache client event. Number of distributed cache errors during introspection system table requests (system.distributed_cache, system.distributed_cache_metrics, system.distributed_cache_events). These requests are not retried, so retriable and non-retriable errors are counted together
 
+### DistrCacheTemporaryDataRegistryCallbackFailures {#distrcachetemporarydataregistrycallbackfailures}
+
+Distributed Cache committed temporary-data event. Number of contained temporary-data registry callback failures
+
+### DistrCacheTemporaryDataRegistryLockWaitMicroseconds {#distrcachetemporarydataregistrylockwaitmicroseconds}
+
+Distributed Cache committed temporary-data event. Time spent waiting for the temporary-data registry mutex on contention
+
+### DistrCacheTemporaryDataRegistryScheduleFailures {#distrcachetemporarydataregistryschedulefailures}
+
+Distributed Cache committed temporary-data event. Number of temporary-data registry task schedule failures
+
+### DistrCacheTemporaryDataReleaseBatches {#distrcachetemporarydatareleasebatches}
+
+Distributed Cache committed temporary-data event. Number of release batches
+
+### DistrCacheTemporaryDataReleaseBatchFailures {#distrcachetemporarydatareleasebatchfailures}
+
+Distributed Cache committed temporary-data event. Number of failed release batches
+
+### DistrCacheTemporaryDataReleasesDropped {#distrcachetemporarydatareleasesdropped}
+
+Distributed Cache committed temporary-data event. Number of releases given up after a terminal failure or after the server-side TTL passed while retrying, left to TTL cleanup
+
+### DistrCacheTemporaryDataRenewBatches {#distrcachetemporarydatarenewbatches}
+
+Distributed Cache committed temporary-data event. Number of renewal batches
+
+### DistrCacheTemporaryDataRenewBatchFailures {#distrcachetemporarydatarenewbatchfailures}
+
+Distributed Cache committed temporary-data event. Number of failed renewal batches
+
 ### DistrCacheTemporaryFilesBytesWritten {#distrcachetemporaryfilesbyteswritten}
 
 Distributed Cache connection event. Number of bytes written to temporary files created in distributed cache
 
+### DistrCacheTemporaryFilesConfirmationFailed {#distrcachetemporaryfilesconfirmationfailed}
+
+Distributed Cache committed temporary-data event. Number of failed publication confirmations
+
+### DistrCacheTemporaryFilesConfirmed {#distrcachetemporaryfilesconfirmed}
+
+Distributed Cache committed temporary-data event. Number of publications confirmed on the original server
+
 ### DistrCacheTemporaryFilesCreated {#distrcachetemporaryfilescreated}
 
 Distributed Cache connection event. Number of temporary files created in distributed cache
+
+### DistrCacheTemporaryFilesHandoffFailed {#distrcachetemporaryfileshandofffailed}
+
+Distributed Cache committed temporary-data event. Number of failed owner handoffs
+
+### DistrCacheTemporaryFilesPublicationAmbiguous {#distrcachetemporaryfilespublicationambiguous}
+
+Distributed Cache committed temporary-data event. Number of ambiguous publication replies
+
+### DistrCacheTemporaryFilesPublished {#distrcachetemporaryfilespublished}
+
+Distributed Cache committed temporary-data event. Number of files published by a client
 
 ### DistrCacheUnexpectedServerCertificate {#distrcacheunexpectedservercertificate}
 
@@ -2304,6 +2444,14 @@ Wait on DOWNLOADING state
 
 Number of times waiting on a DOWNLOADING file segment timed out (see `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`)
 
+### FileSegmentWaitWithoutData {#filesegmentwaitwithoutdata}
+
+Number of times waiting on a DOWNLOADING file segment ended because the downloader released the segment before it downloaded the awaited offset
+
+### FileSegmentWaitWithoutDataMicroseconds {#filesegmentwaitwithoutdatamicroseconds}
+
+Time spent in the waits counted by `FileSegmentWaitWithoutData`
+
 ### FileSegmentWriteMicroseconds {#filesegmentwritemicroseconds}
 
 File segment write() time
@@ -2460,6 +2608,10 @@ Lock filesystem cache time for read in priority queue
 
 Lock filesystem cache time for write to priority queue
 
+### FilesystemCachePromotedFileSegments {#filesystemcachepromotedfilesegments}
+
+Number of file segments promoted (moved) from the probationary to the protected queue in SLRU cache policy.
+
 ### FilesystemCacheReserveAheadRetries {#filesystemcachereserveaheadretries}
 
 Number of times a filesystem cache reservation with reserve-ahead did not fit and was retried with exactly the requested size
@@ -2543,6 +2695,14 @@ Counts the total number of times the global thread pool has shrunk by removing t
 ### GlobalThreadPoolThreadCreationMicroseconds {#globalthreadpoolthreadcreationmicroseconds}
 
 Total time spent waiting for new threads to start.
+
+### GranulesReadByPrewhereReaders {#granulesreadbyprewherereaders}
+
+Number of granules read by the prewhere readers (the granules on which PREWHERE was evaluated). Each granule is counted once even when it is split across several read blocks.
+
+### GranulesSkippedByPrewhereReaders {#granulesskippedbyprewherereaders}
+
+Number of granules fully rejected by PREWHERE: every row of the granule was filtered out. A granule with at least one surviving row is not counted. Each granule is counted once even when it is split across several read blocks. This is a logical filter count and does not imply the main reader read nothing from the granule.
 
 ### HardPageFaults {#hardpagefaults}
 
@@ -2696,6 +2856,10 @@ Total time spent reading Iceberg `metadata.json` files from storage, including d
 
 Number of Iceberg `metadata.json` files read from storage (not served from the Iceberg metadata cache).
 
+### IcebergMetadataJSONValidations {#icebergmetadatajsonvalidations}
+
+Number of times an Iceberg `metadata.json` was checked for the fields the Iceberg specification requires. A file served from the Iceberg metadata cache is checked once.
+
 ### IcebergMetadataReadWaitTimeMicroseconds {#icebergmetadatareadwaittimemicroseconds}
 
 Total time data readers spend waiting for iceberg metadata files to be read and parsed, summed across all reader threads.
@@ -2727,6 +2891,10 @@ Number of skipped files during Iceberg partition pruning
 ### IcebergPartitionPrunedManifestFiles {#icebergpartitionprunedmanifestfiles}
 
 Number of Iceberg manifest files skipped without being read, using the partition summaries of the manifest list
+
+### IcebergRuntimeFilterPrunedFiles {#icebergruntimefilterprunedfiles}
+
+Number of Iceberg data files skipped because their manifest bounds cannot contain a key of a JOIN runtime filter
 
 ### IcebergTrivialCountOptimizationApplied {#icebergtrivialcountoptimizationapplied}
 
@@ -2919,6 +3087,14 @@ Number of non-joined rows emitted by NonJoinedBlocksTransform.
 ### JoinOptimizeMicroseconds {#joinoptimizemicroseconds}
 
 Total time spent executing JOIN plan optimizations.
+
+### JoinPackedStringKeysHashed {#joinpackedstringkeyshashed}
+
+Number of single `String` join keys of 16 bytes or more that hash joins inserted into their hash tables as their 128-bit `SipHash` (see `enable_packed_string_keys_in_hash_join`). A join with `OR` inserts a key for each condition. A row is counted again when it is inserted again: after a `grace_hash` join splits its buckets, or after a spilling join switches to `grace_hash`.
+
+### JoinPackedStringKeysInline {#joinpackedstringkeysinline}
+
+Number of single `String` join keys of up to 15 bytes that hash joins inserted inline into their hash tables (see `enable_packed_string_keys_in_hash_join`). A join with `OR` inserts a key for each condition. A row is counted again when it is inserted again: after a `grace_hash` join splits its buckets, or after a spilling join switches to `grace_hash`.
 
 ### JoinProbeTableRowCount {#joinprobetablerowcount}
 
@@ -3380,6 +3556,10 @@ Number of times a streaming snapshot transfer repositioned its reader because Nu
 
 Number of reconfig requests
 
+### KeeperRejectedCommittedLogRollback {#keeperrejectedcommittedlogrollback}
+
+Number of times Keeper refused a request that would have rolled back already-committed log entries
+
 ### KeeperRemoveRequest {#keeperremoverequest}
 
 Number of remove requests
@@ -3728,6 +3908,30 @@ Total time spent by MemoryWorker for background work
 
 Number of launched background merges.
 
+### MergeCheckpointable {#mergecheckpointable}
+
+Number of launched background merges with `enable_merge_checkpoints` that are checkpointed.
+
+### MergeCheckpointSaveMicroseconds {#mergecheckpointsavemicroseconds}
+
+Total time spent saving merge checkpoints, including their commits.
+
+### MergeCheckpointsDiscarded {#mergecheckpointsdiscarded}
+
+Number of merge checkpoints removed because the merge could not resume from them.
+
+### MergeCheckpointsRemoved {#mergecheckpointsremoved}
+
+Number of merge checkpoints removed by their cleanup or by a drop of the table.
+
+### MergeCheckpointsResumed {#mergecheckpointsresumed}
+
+Number of merges resumed from a merge checkpoint.
+
+### MergeCheckpointsSaved {#mergecheckpointssaved}
+
+Number of merge checkpoints saved.
+
 ### MergeCommitMilliseconds {#mergecommitmilliseconds}
 
 Total time spent for committing merge results (part renaming, checksum verification, ZooKeeper updates)
@@ -3783,6 +3987,10 @@ Time spent resetting task for MergeMutate executor.
 ### MergeMutateBackgroundExecutorWaitMicroseconds {#mergemutatebackgroundexecutorwaitmicroseconds}
 
 Time spent waiting for completion in MergeMutate executor.
+
+### MergeNonCheckpointable {#mergenoncheckpointable}
+
+Number of launched background merges with `enable_merge_checkpoints` that cannot be checkpointed, for example horizontal merges.
 
 ### MergePrewarmStageExecuteMilliseconds {#mergeprewarmstageexecutemilliseconds}
 
@@ -4163,6 +4371,10 @@ Number of expired lease objects and condemned markers removed from object storag
 ### ObjectStorageGlobFilteredObjects {#objectstorageglobfilteredobjects}
 
 Objects that did not match the glob or regex pattern and were skipped during listing.
+
+### ObjectStorageHiddenFilteredObjects {#objectstoragehiddenfilteredobjects}
+
+Objects with a hidden path segment (starting with '_' or '.') below the non-glob prefix that were skipped during listing.
 
 ### ObjectStorageListedObjects {#objectstoragelistedobjects}
 
@@ -4611,6 +4823,14 @@ Number of rows of Parquet PREWHERE input columns read as dictionary indexes, so 
 ### ParquetRowsFilterExpression {#parquetrowsfilterexpression}
 
 The total number of rows that were passed through filter
+
+### ParquetRuntimeFilterPrunedRowGroups {#parquetruntimefilterprunedrowgroups}
+
+Number of Parquet row groups skipped because their column statistics cannot contain a key of a JOIN runtime filter
+
+### ParquetTopKRowGroupsBoundedByDictionary {#parquettopkrowgroupsboundedbydictionary}
+
+The number of parquet row groups whose `ORDER BY ... LIMIT` sort column range was taken from the values of its dictionary that can pass the filter, because its min/max statistics could not bound it (see `use_top_k_dynamic_filtering`)
 
 ### ParquetTopKSkippedRowGroups {#parquettopkskippedrowgroups}
 
@@ -5319,6 +5539,10 @@ Number of rows read from MergeTree tables by the main reader (after PREWHERE ste
 ### RowsReadByPrewhereReaders {#rowsreadbyprewherereaders}
 
 Number of rows read from MergeTree tables (in total) by prewhere readers.
+
+### RowsSkippedByPrewhereReaders {#rowsskippedbyprewherereaders}
+
+Number of rows rejected by PREWHERE: rows whose PREWHERE condition evaluated to false. This is a logical filter count and does not imply the main reader avoided reading these rows.
 
 ### RuntimeDataflowStatisticsInputBytes {#runtimedataflowstatisticsinputbytes}
 

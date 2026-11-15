@@ -956,9 +956,9 @@ age('unit', startdate, enddate[, timezone])
 
 | Unidade     | Valores possíveis                        |
 | ----------- | ---------------------------------------- |
-| nanosecond  | `nanosecond`, `nanoseconds`, `ns`        |
-| microsecond | `microsecond`, `microseconds`, `us`, `u` |
-| millisecond | `millisecond`, `milliseconds`, `ms`      |
+| nanossegundo  | `nanosecond`, `nanoseconds`, `ns`        |
+| microssegundo | `microsecond`, `microseconds`, `us`, `u` |
+| milissegundo | `millisecond`, `milliseconds`, `ms`      |
 | second      | `second`, `seconds`, `ss`, `s`           |
 | minute      | `minute`, `minutes`, `mi`, `n`           |
 | hour        | `hour`, `hours`, `hh`, `h`               |
@@ -1225,7 +1225,7 @@ Para ver uma alternativa a `dateDiff`, consulte a função [`age`](#age).
 dateDiff(unit, startdate, enddate[, timezone])
 ```
 
-**Aliases**: `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `date_diff`, `timestamp_diff`
+**aliases**: `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `timestamp_diff`, `date_diff`
 
 **Argumentos**
 
@@ -1569,6 +1569,8 @@ Usando campos de substituição, você pode definir um padrão para a string res
 ```sql
 formatDateTimeInJodaSyntax(datetime, format[, timezone])
 ```
+
+**aliases**: `FORMAT_DATETIME`
 
 **Argumentos**
 
@@ -2158,7 +2160,7 @@ Retorna a data e hora atuais no momento da análise da consulta. A função é u
 now([timezone])
 ```
 
-**Aliases**: `current_timestamp`, `localtimestamp`
+**Aliases**: `localtimestamp`, `current_timestamp`
 
 **Argumentos**
 
@@ -3307,7 +3309,7 @@ ou nome de fuso horário em um nome canônico de fuso horário.
 timezone()
 ```
 
-**Aliases**: `timeZone`
+**aliases**: `current_timezone`, `timeZone`
 
 **Argumentos**
 
@@ -3420,7 +3422,7 @@ Retorna o dia do mês (1-31) de um `Date` ou `DateTime`.
 toDayOfMonth(datetime)
 ```
 
-**Aliases**: `DAYOFMONTH`, `DAY`
+**aliases**: `DAYOFMONTH`, `DAY`, `DAY_OF_MONTH`
 
 **Argumentos**
 
@@ -3466,11 +3468,11 @@ e se o valor de retorno deve estar no intervalo de 0 a 6 ou de 1 a 7.
 toDayOfWeek(datetime[, mode[, timezone]])
 ```
 
-**Aliases**: `DAYOFWEEK`
+**aliases**: `DAYOFWEEK`, `DAY_OF_WEEK`
 
 **Argumentos**
 
-* `datetime` — Data ou data e hora da qual se obtém o dia da semana. [`Date`](/pt-BR/reference/data-types/date) ou [`Date32`](/pt-BR/reference/data-types/date32) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+* `datetime` — Data ou data com hora da qual se obtém o dia da semana. [`Date`](/pt-BR/reference/data-types/date) ou [`Date32`](/pt-BR/reference/data-types/date32) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 * `mode` — Opcional. Inteiro que especifica o modo da semana (0–3). O padrão é 0 se for omitido. [`UInt8`](/pt-BR/reference/data-types/int-uint)
 * `timezone` — Opcional. Fuso horário a ser usado na conversão. [`String`](/pt-BR/reference/data-types/string)
 
@@ -3483,7 +3485,7 @@ Retorna o dia da semana para o `Date` ou `DateTime` informado [`UInt8`](/pt-BR/r
 **Exemplo de uso**
 
 ```sql title=Query
--- A data a seguir é 21 de abril de 2023, que foi uma sexta-feira:
+-- The following date is April 21, 2023, which was a Friday:
 SELECT
     toDayOfWeek(toDateTime('2023-04-21')),
     toDayOfWeek(toDateTime('2023-04-21'), 1)
@@ -3507,11 +3509,11 @@ Retorna o número do dia no ano (1-366) de um valor `Date` ou `DateTime`.
 toDayOfYear(datetime)
 ```
 
-**Aliases**: `DAYOFYEAR`
+**aliases**: `DAYOFYEAR`, `DAY_OF_YEAR`
 
 **Argumentos**
 
-* `datetime` — Data ou data e hora da qual será obtido o dia do ano. [`Date`](/pt-BR/reference/data-types/date) ou [`Date32`](/pt-BR/reference/data-types/date32) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+* `datetime` — Data ou data com hora da qual será obtido o dia do ano. [`Date`](/pt-BR/reference/data-types/date) ou [`Date32`](/pt-BR/reference/data-types/date32) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Valor retornado**
 
@@ -3647,7 +3649,7 @@ SELECT toHour(toDateTime('2023-04-21 10:20:30'))
 
 Introduzido em: v20.1.0
 
-Retorna o número da semana ISO de uma data ou de uma data e hora.
+Retorna o número da semana ISO de uma data ou de uma data com hora.
 
 Esta é uma função de compatibilidade equivalente a `toWeek(date, 3)`.
 As semanas ISO começam na segunda-feira, e a primeira semana do ano contém o dia 4 de janeiro.
@@ -3662,9 +3664,11 @@ Observe que datas próximas ao início ou ao fim de um ano podem retornar um nú
 toISOWeek(datetime[, timezone])
 ```
 
+**aliases**: `WEEK_OF_YEAR`
+
 **Argumentos**
 
-* `datetime` — Data ou data e hora a partir da qual obter o número da semana ISO. [`Date`](/pt-BR/reference/data-types/date) or [`DateTime`](/pt-BR/reference/data-types/datetime) or [`Date32`](/pt-BR/reference/data-types/date32) or [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+* `datetime` — Data ou data com hora a partir da qual obter o número da semana ISO. [`Date`](/pt-BR/reference/data-types/date) or [`DateTime`](/pt-BR/reference/data-types/datetime) or [`Date32`](/pt-BR/reference/data-types/date32) or [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 * `timezone` — Opcional. Fuso horário. [`String`](/pt-BR/reference/data-types/string)
 
 **Valor retornado**
@@ -3701,7 +3705,7 @@ SELECT toDate('2025-12-29') AS date, toISOWeek(date) AS isoWeek, toYear(date) AS
 
 Introduzido em: v18.4.0
 
-Converte uma data ou uma data e hora no número do ano ISO.
+Converte uma data ou uma data com hora no número do ano ISO.
 
 **Sintaxe**
 
@@ -3709,9 +3713,11 @@ Converte uma data ou uma data e hora no número do ano ISO.
 toISOYear(datetime)
 ```
 
+**aliases**: `YEAR_OF_WEEK`
+
 **Argumentos**
 
-* `datetime` — O valor com data ou com data e hora. [`Date`](/pt-BR/reference/data-types/date) ou [`Date32`](/pt-BR/reference/data-types/date32) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+* `datetime` — O valor com data ou com data com hora. [`Date`](/pt-BR/reference/data-types/date) ou [`Date32`](/pt-BR/reference/data-types/date32) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Valor retornado**
 
@@ -3735,9 +3741,9 @@ toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 
 ## toLastDayOfMonth {#toLastDayOfMonth}
 
-Introduzido na versão: v1.1.0
+Introduzido em: v1.1.0
 
-Arredonda uma data ou data e hora para o último dia do mês.
+Arredonda uma data ou data com hora para o último dia do mês.
 
 <Note>
   O tipo de retorno pode ser configurado pela configuração [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
@@ -3749,15 +3755,15 @@ Arredonda uma data ou data e hora para o último dia do mês.
 toLastDayOfMonth(value)
 ```
 
-**Aliases**: `LAST_DAY`
+**aliases**: `LAST_DAY_OF_MONTH`, `LAST_DAY`
 
 **Argumentos**
 
-* `value` — A data ou data e hora a ser arredondada para o último dia do mês. [`Date`](/pt-BR/reference/data-types/date) ou [`Date32`](/pt-BR/reference/data-types/date32) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+* `value` — A data ou data com hora a ser arredondada para o último dia do mês. [`Date`](/pt-BR/reference/data-types/date) ou [`Date32`](/pt-BR/reference/data-types/date32) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Valor retornado**
 
-Retorna a data do último dia do mês para a data ou data e hora fornecida. [`Date`](/pt-BR/reference/data-types/date)
+Retorna a data do último dia do mês para a data ou data com hora fornecida. [`Date`](/pt-BR/reference/data-types/date)
 
 **Exemplos**
 
@@ -5750,7 +5756,7 @@ Retorna a data atual no momento da análise da consulta. O mesmo que `toDate(now
 today()
 ```
 
-**Aliases**: `current_date`, `curdate`
+**Aliases**: `curdate`, `current_date`
 
 **Argumentos**
 

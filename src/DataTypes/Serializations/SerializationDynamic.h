@@ -120,6 +120,9 @@ public:
     void serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     static void serializeVariantForHashCalculation(const IColumn & column, const SerializationPtr & serialization, const DataTypePtr & type, size_t row_num, WriteBuffer & ostr);
 
+    /// Serialize as JSON a value in the binary format of Dynamic (encoded type and value), e.g. a value of a path in the shared data of JSON.
+    static void serializeBinaryEncodedValueTextJSON(std::string_view value, WriteBuffer & ostr, const FormatSettings & settings, bool pretty, size_t indent);
+
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     bool tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;

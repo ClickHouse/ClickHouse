@@ -5,6 +5,8 @@
 #include <lz4.h>
 #include <snappy.h>
 #include <zlib.h>
+/// For `ZSTD_decompressBound`, which is not in the stable ABI of zstd. It is safe, as zstd is linked statically from contrib.
+#define ZSTD_STATIC_LINKING_ONLY
 #include <zstd.h>
 
 
@@ -192,7 +194,7 @@ size_t decompressZlib(const char * src, size_t src_size, char * dst, size_t dst_
     {
         if (ret == Z_BUF_ERROR && stream.avail_out == 0)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "A zlib-compressed chunk of ORC file decompresses to more than the compression block size {}", dst_capacity);
+                "A zlib-compressed chunk of ORC file decompresses to more than the {} bytes allowed for the chunk", dst_capacity);
         throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed zlib-compressed data in ORC file (zlib error {})", ret);
     }
     return result;
@@ -205,7 +207,7 @@ size_t decompressSnappy(const char * src, size_t src_size, char * dst, size_t ds
         throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed snappy-compressed data in ORC file");
     if (uncompressed_size > dst_capacity)
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "A snappy-compressed chunk of ORC file decompresses to {} bytes, more than the compression block size {}",
+            "A snappy-compressed chunk of ORC file decompresses to {} bytes, more than the {} bytes allowed for the chunk",
             uncompressed_size, dst_capacity);
     if (!snappy::RawUncompress(src, src_size, dst))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed snappy-compressed data in ORC file");
@@ -219,7 +221,7 @@ size_t decompressLz4(const char * src, size_t src_size, char * dst, size_t dst_c
     int res = LZ4_decompress_safe(src, dst, static_cast<int>(src_size), static_cast<int>(dst_capacity));
     if (res < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Malformed LZ4-compressed data in ORC file, or it decompresses to more than the compression block size {}", dst_capacity);
+            "Malformed LZ4-compressed data in ORC file, or it decompresses to more than the {} bytes allowed for the chunk", dst_capacity);
     return static_cast<size_t>(res);
 }
 
@@ -228,7 +230,7 @@ size_t decompressZstd(const char * src, size_t src_size, char * dst, size_t dst_
     size_t res = ZSTD_decompress(dst, dst_capacity, src, src_size);
     if (ZSTD_isError(res))
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Malformed zstd-compressed data in ORC file, or it decompresses to more than the compression block size {}: {}",
+            "Malformed zstd-compressed data in ORC file, or it decompresses to more than the {} bytes allowed for the chunk: {}",
             dst_capacity, ZSTD_getErrorName(res));
     return res;
 }
@@ -345,6 +347,45 @@ private:
 
 }
 
+
+size_t maxDecompressedSize(CompressionKind kind, const char * src, size_t src_size)
+{
+    /// The ratios are the theoretical maximums of the formats, rounded up, so that valid chunks are never rejected.
+    /// The sizes stored in the chunks are only trusted below these bounds.
+    static constexpr size_t SLACK = 1024;
+    switch (kind)
+    {
+        case CompressionKind::NONE:
+            return src_size;
+        case CompressionKind::SNAPPY:
+        {
+            size_t uncompressed_size = 0;
+            if (!snappy::GetUncompressedLength(src, src_size, &uncompressed_size))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed snappy-compressed data in ORC file");
+            /// A copy of 64 bytes takes at least 3 bytes.
+            return std::min(uncompressed_size, src_size * 22 + SLACK);
+        }
+        case CompressionKind::ZSTD:
+        {
+            /// Sums the content sizes of all frames, or 128 KiB per block when a frame omits its size, as in `ArrowIPC/BufferCompression.cpp`.
+            UInt64 bound = ZSTD_decompressBound(src, src_size);
+            if (bound == ZSTD_CONTENTSIZE_ERROR)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed zstd-compressed data in ORC file");
+            /// A block of at most 128 KiB takes at least 4 bytes (an RLE block).
+            return std::min<UInt64>(bound, src_size * 32768 + SLACK);
+        }
+        /// A deflate match of 258 bytes takes at least 2 bits.
+        case CompressionKind::ZLIB:
+            return src_size * 1032 + SLACK;
+        /// Every byte of a match length extension adds at most 255 bytes.
+        case CompressionKind::LZ4:
+        case CompressionKind::LZO:
+            return src_size * 256 + SLACK;
+        default:
+            break;
+    }
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ORC compression {} is not supported", compressionKindToString(kind));
+}
 
 size_t decompressChunk(CompressionKind kind, const char * src, size_t src_size, char * dst, size_t dst_capacity)
 {

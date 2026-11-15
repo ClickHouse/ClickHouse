@@ -59,9 +59,9 @@ namespace DB
     DECLARE(Bool, enable_producing_buckets_out_of_order_in_aggregation, true, "Allow aggregation to produce buckets out of order.", 0) \
     DECLARE(Bool, enable_parallel_single_level_merge, false, "Parallelize the final merge of the single-level aggregation hash tables by splitting the key space into disjoint hash partitions that the threads merge independently.", 0) \
     DECLARE(Bool, enable_packed_string_keys_in_aggregation, true, "Use the PackedStringRef-based hash table for single-String-key aggregation.", 0) \
-    DECLARE(Bool, enable_adaptive_aggregator, false, "Enable the adaptive GROUP BY algorithm: each thread's local hash table freezes once it reaches adaptive_aggregator_freeze_threshold keys or adaptive_aggregator_freeze_threshold_bytes of memory, and new keys are aggregated exactly once, inside the bucket-parallel merge.", 0) \
+    DECLARE(Bool, enable_adaptive_aggregator, false, "Enable the adaptive GROUP BY algorithm: each thread's local hash table freezes once it reaches adaptive_aggregator_freeze_threshold keys or its hash-table buffer reaches adaptive_aggregator_freeze_threshold_bytes, and new keys are aggregated exactly once, inside the bucket-parallel merge.", 0) \
     DECLARE(UInt64, adaptive_aggregator_freeze_threshold, 0, "The number of keys at which the adaptive aggregator freezes a thread's local hash table.", 0) \
-    DECLARE(UInt64, adaptive_aggregator_freeze_threshold_bytes, 0, "The memory size at which the adaptive aggregator freezes a thread's local hash table, whichever of this and the key-count threshold is reached first; 0 disables the byte bound.", 0) \
+    DECLARE(UInt64, adaptive_aggregator_freeze_threshold_bytes, 0, "The size of its hash-table buffer at which the adaptive aggregator freezes a thread's local hash table, whichever of this and the key-count threshold is reached first; 0 disables the byte bound.", 0) \
     DECLARE(Bool, adaptive_aggregator_disable_thaw, false, "Keep the adaptive aggregator's local tables frozen whatever the repeats of the staged keys, ignoring a thaw verdict remembered in the hash-table statistics.", 0) \
     DECLARE(Bool, distributed_aggregation_memory_efficient, true, "Is the memory-saving mode of distributed aggregation enabled", 0) \
     \
@@ -128,9 +128,13 @@ namespace DB
     DECLARE(Bool, use_hash_table_stats_for_join_reordering, false, "Enable using collected hash table statistics for cardinality estimation during join reordering", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range)", 0) \
     DECLARE(Bool, enable_join_key_only_hash_tables, true, R"(Use hash tables that store the join keys alone, without a reference to a right row, for joins whose result can never contain a value taken from a right row: `LEFT ANTI`, and `LEFT SEMI` when no right column is selected. Such a table has a smaller cell and lets the right blocks be dropped instead of stored.)", 0) \
+    DECLARE(Bool, enable_robin_hood_hash_for_joins, false, R"(Allow the hash tables of a hash join that splits its hash table into parts to switch to the Robin Hood mode when they become large.)", 0) \
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.)", 0) \
+    DECLARE(Bool, enable_packed_string_keys_in_hash_join, false, "Store the single `String` key of a hash join in 16 bytes: inline up to 15 bytes, as a 127-bit `SipHash` for longer keys. Off by default, so a plan without the name compares the keys exactly.", 0) \
+    DECLARE(UInt64, min_rows_for_packed_string_keys_in_hash_join, 0, "The minimum estimated number of rows in the right side of a join for `enable_packed_string_keys_in_hash_join` to apply. 0 means no minimum.", 0) \
     DECLARE(Bool, enable_hash_join_row_store, true, "Enable transforming the payload of a hash join into a row-major layout.", 0) \
     DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 3.0, "Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.", 0) \
+    DECLARE(UInt64, min_string_column_bytes_for_hash_join_row_store, 8_MiB, "Minimum estimated size of a build-side `String` column, the estimated number of rows multiplied by the average value size from statistics, to store it in the hash join row store. 0 means `String` columns are not stored in the row store.", 0) \
 
 
 // clang-format on
@@ -149,13 +153,14 @@ QueryPlanSerializationSettings::QueryPlanSerializationSettings(const QueryPlanSe
 
 QueryPlanSerializationSettings::~QueryPlanSerializationSettings() = default;
 
-void QueryPlanSerializationSettings::writeChangedBinary(WriteBuffer & out) const
+void QueryPlanSerializationSettings::write(WriteBuffer & out) const
 {
-    impl->writeChangedBinary(out);
+    impl->write(out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
 }
-void QueryPlanSerializationSettings::readBinary(ReadBuffer & in)
+
+void QueryPlanSerializationSettings::read(ReadBuffer & in)
 {
-    impl->readBinary(in);
+    impl->read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
 }
 
 QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)

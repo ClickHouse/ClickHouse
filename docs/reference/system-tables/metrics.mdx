@@ -606,6 +606,14 @@ Number of distributed cache registered servers
 
 Number of distributed cache registered servers in current az
 
+### DistrCacheServerCommittedTemporaryFiles {#distrcacheservercommittedtemporaryfiles}
+
+Number of committed temporary files owned by this distributed cache server process
+
+### DistrCacheServerCommittedTemporaryFilesBytes {#distrcacheservercommittedtemporaryfilesbytes}
+
+Total size in bytes of committed temporary files owned by this distributed cache server process
+
 ### DistrCacheServerConnections {#distrcacheserverconnections}
 
 Number of open connections to ClickHouse server from Distributed Cache
@@ -621,6 +629,18 @@ Number of distributed cache S3 cached clients
 ### DistrCacheSharedLimitCount {#distrcachesharedlimitcount}
 
 Number of opened connections according to DistributedCache::ConnectionPool::SharedLimit
+
+### DistrCacheTemporaryDataActiveIds {#distrcachetemporarydataactiveids}
+
+Number of active committed temporary-data IDs
+
+### DistrCacheTemporaryDataConnectionsBypassingPool {#distrcachetemporarydataconnectionsbypassingpool}
+
+Distributed Cache client metric. Number of connections opened by temporary data bypassing the connection pool
+
+### DistrCacheTemporaryDataServers {#distrcachetemporarydataservers}
+
+Number of servers with committed temporary data
 
 ### DistrCacheUsedConnections {#distrcacheusedconnections}
 
@@ -854,13 +874,13 @@ Number of threads in global thread pool running a task.
 
 Number of queued or active jobs in global thread pool.
 
-### GlueCatalogSchemaCacheBytes {#gluecatalogschemacachebytes}
+### GPUExpressionKernelCacheBytes {#gpuexpressionkernelcachebytes}
 
-Size of the cache of current Iceberg schema field types in Glue catalogs in bytes
+Bytes of the PTX of the kernels that the GPU engine compiled for expressions and keeps loaded on the device.
 
-### GlueCatalogSchemaCacheEntries {#gluecatalogschemacacheentries}
+### GPUExpressionKernelCacheCount {#gpuexpressionkernelcachecount}
 
-Number of entries in the cache of current Iceberg schema field types in Glue catalogs
+Kernels that the GPU engine compiled for expressions and keeps loaded on the device.
 
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 

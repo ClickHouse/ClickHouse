@@ -1,6 +1,7 @@
 #include <Storages/StorageBuffer.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <Columns/ColumnConst.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
@@ -19,6 +20,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Planner/PlannerContext.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -58,6 +60,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace ProfileEvents
@@ -342,13 +345,25 @@ void StorageBuffer::read(
 
     if (auto destination = getDestinationTable())
     {
-        local_context->checkAccess(AccessType::SELECT, destination->getStorageID(), column_names);
-        auto destination_lock
-            = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+        /// Any grant on the destination implies `SHOW_TABLES` on it, so this denies a user with no access to the
+        /// destination before the refresh below, which could otherwise cost them remote I/O or show them its errors.
+        /// The column-level check needs the destination's metadata, so it is done once the snapshot is taken.
+        local_context->checkAccess(AccessType::SHOW_TABLES, destination->getStorageID());
 
         /// The analyzer refreshes only the `Buffer`, so a data lake destination would keep the snapshot of its last direct query.
         resolveStorageProxy(destination)->updateExternalDynamicMetadataIfExists(local_context);
+
+        /// Resolve subcolumns against the destination's metadata snapshot, which the read below uses too.
+        /// It may differ from the Buffer table's layout, so the same dotted identifier can resolve differently there.
         auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr(local_context, false);
+        local_context->checkAccess(
+            AccessType::SELECT,
+            destination->getStorageID(),
+            destination_metadata_snapshot->getColumns().getColumnNamesForSelectAccessCheck(
+                column_names, local_context, destination->getStorageID()));
+        auto destination_lock
+            = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
         auto destination_snapshot = destination->getStorageSnapshot(destination_metadata_snapshot, local_context);
         const auto get_columns_options = GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
         auto destination_columns = destination_snapshot->getColumns(get_columns_options);
@@ -619,10 +634,13 @@ void StorageBuffer::read(
         /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
         auto buffers_select_query_options = SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved();
         buffers_select_query_options.is_local_plan_for_distributed_query = true;
+        buffers_select_query_options.view_source_in_subqueries
+            = query_info.planner_context && query_info.planner_context->isViewSourceInSubqueries();
 
+        /// Column kinds must match this table, so the query below requests only the columns the buffers provide.
         auto storage = std::make_shared<StorageValues>(
                 getStorageID(),
-                storage_snapshot->getAllColumnsDescription(),
+                storage_snapshot->metadata->getColumns(),
                 std::move(pipe_from_buffers),
                 storage_snapshot->metadata->virtuals);
 
@@ -732,7 +750,7 @@ void StorageBuffer::read(
     input_headers.emplace_back(query_plan.getCurrentHeader());
     input_headers.emplace_back(buffers_plan.getCurrentHeader());
 
-    std::vector<std::unique_ptr<QueryPlan>> plans;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(buffers_plan)));
     query_plan = QueryPlan();
@@ -1136,6 +1154,13 @@ bool StorageBuffer::supportsOptimizationToTupleElementSubcolumns() const
     return false;
 }
 
+bool StorageBuffer::hasBucketedMapSerialization() const
+{
+    if (auto destination = getDestinationTable())
+        return destination->hasBucketedMapSerialization();
+    return false;
+}
+
 bool StorageBuffer::checkThresholds(const Buffer & buffer, bool direct, time_t current_time, size_t additional_rows, size_t additional_bytes) const
 {
     time_t time_passed = 0;
@@ -1333,17 +1358,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     {
         const auto & dst_col = structure_of_destination_table.getByPosition(i);
         if (block.has(dst_col.name))
-        {
-            auto column = block.getByName(dst_col.name);
-            if (!column.type->equals(*dst_col.type))
-            {
-                LOG_WARNING(log, "Destination table {} have different type of column {} ({} != {}). Block of data is converted.", destination_id.getNameForLogs(), backQuoteIfNeed(column.name), dst_col.type->getName(), column.type->getName());
-                column.column = castColumn(column, dst_col.type);
-                column.type = dst_col.type;
-            }
-
-            block_to_write.insert(column);
-        }
+            block_to_write.insert(block.getByName(dst_col.name));
     }
 
     if (block_to_write.columns() == 0)
@@ -1374,8 +1389,23 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     auto block_io = interpreter.execute();
     PushingPipelineExecutor executor(block_io.pipeline);
+
+    /// The interpreter takes its own (possibly refreshed) snapshot of the destination, so convert to its header.
+    Block block_to_push;
+    for (const auto & header_column : executor.getHeader())
+    {
+        auto column = block_to_write.getByName(header_column.name);
+        if (!column.type->equals(*header_column.type))
+        {
+            LOG_WARNING(log, "Destination table {} have different type of column {} ({} != {}). Block of data is converted.", destination_id.getNameForLogs(), backQuoteIfNeed(column.name), header_column.type->getName(), column.type->getName());
+            column.column = castColumn(column, header_column.type);
+            column.type = header_column.type;
+        }
+        block_to_push.insert(std::move(column));
+    }
+
     executor.start();
-    executor.push(std::move(block_to_write));
+    executor.push(std::move(block_to_push));
     executor.finish();
 }
 
@@ -1488,8 +1518,13 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, Context
 std::optional<UInt64> StorageBuffer::totalRows(ContextPtr query_context) const
 {
     std::optional<UInt64> underlying_rows;
-    if (auto destination = getDestinationTable())
-        underlying_rows = destination->totalRows(query_context);
+    /// A destination the user cannot see contributes nothing, as a missing one does.
+    if (destination_id && query_context
+        && query_context->getAccess()->isGranted(AccessType::SHOW_TABLES, destination_id.database_name, destination_id.table_name))
+    {
+        if (auto destination = getDestinationTable())
+            underlying_rows = destination->totalRows(query_context);
+    }
 
     return total_writes.rows + underlying_rows.value_or(0);
 }
@@ -1743,10 +1778,6 @@ If the set of columns in the Buffer table does not match the set of columns in a
 
 If the types do not match for one of the columns in the Buffer table and a subordinate table, an error message is entered in the server log, and the buffer is cleared.
 The same happens if the subordinate table does not exist when the buffer is flushed.
-
-<Note>
-Running ALTER on the Buffer table in releases made before 26 Oct 2021 will cause a `Block structure mismatch` error (see [#15117](https://github.com/ClickHouse/ClickHouse/issues/15117) and [#30565](https://github.com/ClickHouse/ClickHouse/pull/30565)), so deleting the Buffer table and then recreating is the only option. Check that this error is fixed in your release before trying to run ALTER on the Buffer table.
-</Note>
 
 If the server is restarted abnormally, the data in the buffer is lost.
 
