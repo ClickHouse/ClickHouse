@@ -54,6 +54,8 @@ public:
         std::unique_ptr<MergeTreeSettings> settings_);
 
     void startup() override;
+    /// Recover before publishing a loaded writable table in the database catalog.
+    void prepareForStartup();
     void flushAndPrepareForShutdown() override;
     void shutdown(bool is_drop) override;
 
@@ -235,7 +237,7 @@ private:
     /// regardless of `remove_empty_parts` and `empty_parts_lifetime`. Must run while merges are stopped.
     void dropEmptyPartsCoveringDetachedParts(const Strings & empty_part_names);
 
-    /// Outdate the active empty parts that cover a part in `detached/`, before the background workers of a writable table are enabled.
+    /// Outdate active empty parts covering detached parts while background workers are stopped.
     void outdateEmptyPartsCoveringDetachedParts();
 
     /// Make part state outdated and queue it to remove without timeout
