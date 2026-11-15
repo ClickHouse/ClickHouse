@@ -15,6 +15,7 @@
 #include <Common/assert_cast.h>
 #include <Common/HashTable/Hash.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <algorithm>
 #include <cstring> // memcpy
 #include <limits>
@@ -636,9 +637,12 @@ void ColumnArray::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> 
     source_data_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
-        const auto & source_array_column = assert_cast<const ColumnArray &>(*source_column);
-        new_size += source_array_column.size();
-        source_data_columns.push_back(source_array_column.getDataPtr());
+        const auto * source_array_column = typeid_cast<const ColumnArray *>(source_column.get());
+        if (!source_array_column)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for squashing of {} is not Array, but {}", getName(), source_column->getName());
+
+        new_size += source_array_column->size();
+        source_data_columns.push_back(source_array_column->getDataPtr());
     }
 
     getOffsets().reserve_exact(new_size * factor);
@@ -1077,17 +1081,17 @@ ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hi
             memset(&nested_filt[offsetAt(i)], 0, sizeAt(i));
     }
 
-    auto res = ColumnArray::create(data->cloneEmpty());
-
     ssize_t nested_result_size_hint = 0;
     if (result_size_hint < 0)
         nested_result_size_hint = result_size_hint;
     else if (result_size_hint && result_size_hint < 1000000000 && data->size() < 1000000000)    /// Avoid overflow.
          nested_result_size_hint = result_size_hint * data->size() / size;
 
-    res->data = data->filter(nested_filt, nested_result_size_hint);
+    /// See the comment in `indexImpl` about building the nested result first.
+    ColumnPtr res_data = data->filter(nested_filt, nested_result_size_hint);
 
-    Offsets & res_offsets = res->getOffsets();
+    auto res_offsets_column = ColumnOffsets::create();
+    Offsets & res_offsets = res_offsets_column->getData();
     if (result_size_hint)
         res_offsets.reserve_exact(result_size_hint > 0 ? result_size_hint : size);
 
@@ -1101,7 +1105,7 @@ ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hi
         }
     }
 
-    return res;
+    return ColumnArray::create(res_data, std::move(res_offsets_column));
 }
 
 ColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result_size_hint) const
@@ -1335,10 +1339,8 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
     PaddedPODArray<UInt64> & nested_indexes = nested_indexes_column->getData();
     nested_indexes.reserve_exact(getOffsets().back());
 
-    auto res = ColumnArray::create(data->cloneEmpty());
-
-    Offsets & res_offsets = res->getOffsets();
-    res_offsets.resize_exact(limit);
+    auto res_offsets_column = ColumnOffsets::create(limit);
+    Offsets & res_offsets = res_offsets_column->getData();
     size_t current_offset = 0;
 
     for (size_t i = 0; i < limit; ++i)
@@ -1349,10 +1351,10 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
         res_offsets[i] = current_offset;
     }
 
-    if (current_offset != 0)
-        res->data = data->index(*nested_indexes_column, current_offset);
-
-    return res;
+    /// Build the nested result first: an empty clone of `data` copies its whole nested structure, which for
+    /// `Dynamic` is as deep as the data, and every level of this recursion would hold one.
+    ColumnPtr res_data = current_offset != 0 ? data->index(*nested_indexes_column, current_offset) : data->cloneEmpty();
+    return ColumnArray::create(res_data, std::move(res_offsets_column));
 }
 
 INSTANTIATE_INDEX_IMPL(ColumnArray)
@@ -1738,14 +1740,24 @@ void ColumnArray::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<
     VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
-        nested_source_columns.push_back(assert_cast<const ColumnArray &>(*source_column).getDataPtr());
+    {
+        const auto * source_array = typeid_cast<const ColumnArray *>(source_column.get());
+        if (!source_array)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for merge of {} is not Array, but {}", getName(), source_column->getName());
+
+        nested_source_columns.push_back(source_array->getDataPtr());
+    }
 
     data->chooseDynamicStructureForMerge(nested_source_columns, max_dynamic_subcolumns);
 }
 
 void ColumnArray::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    data->takeExactDynamicStructureFrom(assert_cast<const ColumnArray &>(source).getData());
+    const auto * source_array = typeid_cast<const ColumnArray *>(&source);
+    if (!source_array)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot take dynamic structure for {} from {}: it is not Array", getName(), source.getName());
+
+    data->takeExactDynamicStructureFrom(source_array->getData());
 }
 
 void ColumnArray::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)

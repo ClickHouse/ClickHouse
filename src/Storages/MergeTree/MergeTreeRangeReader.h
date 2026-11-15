@@ -55,6 +55,22 @@ struct PrewhereExprStep
 
     /// The last step of the PREWHERE part covered by `PrewhereInfo::query_condition_cache_attribution`.
     bool query_condition_cache_attribution_boundary = false;
+
+    /// True only for a step that evaluates the query's `PREWHERE` predicate. A `Filter` step may instead
+    /// be a row-level-security filter, a lightweight-delete `_row_exists` mask, or an on-fly mutation
+    /// (`UPDATE`/`DELETE`) filter, all of which look identical here. The PREWHERE effect ProfileEvents
+    /// count only these steps, so that a query without `PREWHERE` reports nothing and filtering by
+    /// mutations/policies is not attributed to `PREWHERE`.
+    bool is_query_prewhere = false;
+
+    /// True for a step that carries a synthesized dynamic filter of the query predicate -- a top-K
+    /// threshold filter (`__topKFilter` of `ORDER BY ... LIMIT`) or a join runtime filter (`__applyFilter`),
+    /// possibly fused with a user predicate. Mutually exclusive with `is_query_prewhere`. The PREWHERE
+    /// granule stats treat such a step as a contaminant: a granule it thins can no longer be shown to be
+    /// emptied by the user predicate alone, so it is not attributed to `PREWHERE`. Unlike row-level
+    /// policies and mutations (which run before `PREWHERE` and are excluded via the entering snapshot),
+    /// a dynamic filter may run anywhere in the query-predicate chain, including before the first user step.
+    bool is_synthesized_dynamic_filter = false;
 };
 
 using PrewhereExprStepPtr = std::shared_ptr<PrewhereExprStep>;
@@ -373,6 +389,50 @@ public:
         /// Applies the filter to the columns and updates num_rows.
         void applyFilter(const FilterWithCachedCount & filter);
 
+        /// The number of rows that survived all filtering steps applied so far, per granule, parallel to
+        /// `rows_per_granule`. Unlike `rows_per_granule`, which holds the raw rows read for a granule whose
+        /// filtering is still deferred (an incomplete trailing granule, or a block not yet shrunk), this is
+        /// always the post-filter survivor count, taken from `final_filter`. A granule is fully dropped by
+        /// PREWHERE iff its entry here is 0.
+        NumRows survivingRowsPerGranule() const;
+
+        /// Calls `callback(mark, granule_index)` once for every granule the caller gates in, in non-decreasing
+        /// mark order, where `mark` is the granule's mark number in the part and `granule_index` indexes the
+        /// per-granule vectors (`rows_per_granule`, `survivingRowsPerGranule()`, ...). `visit[i] == 0` omits
+        /// granule `i`. The caller decides what to visit -- granules PREWHERE read and, for contamination
+        /// tracking, granules a dynamic filter emptied before the user step -- and reads whatever per-granule
+        /// state it needs by `granule_index`. Uses the same mark mapping as `computeUnmatchedMarkRanges`. A
+        /// granule split across read blocks appears in each block it spans, so the caller must combine the
+        /// pieces (see `MergeTreeReadersChain` PREWHERE granule stats).
+        template <typename Callback>
+        void forEachGranuleMark(const NumRows & visit, Callback && callback) const
+        {
+            if (rows_per_granule.empty())
+                return;
+
+            /// The first i_start entries come from the in-progress range carried over from the previous
+            /// read; their marks start at in_progress_start_mark. The rest belong to started_ranges.
+            const size_t i_start = started_ranges.empty() ? rows_per_granule.size() : started_ranges[0].num_granules_read_before_start;
+
+            if (in_progress_start_mark.has_value())
+                for (size_t i = 0; i < i_start; ++i)
+                    if (visit[i] != 0)
+                        callback(*in_progress_start_mark + i, i);
+
+            size_t range_idx = 0;
+            for (size_t i = i_start; i < rows_per_granule.size(); ++i)
+            {
+                while (range_idx + 1 < started_ranges.size() && started_ranges[range_idx + 1].num_granules_read_before_start <= i)
+                    ++range_idx;
+
+                if (visit[i] == 0)
+                    continue;
+
+                const size_t offset = i - started_ranges[range_idx].num_granules_read_before_start;
+                callback(started_ranges[range_idx].range.begin + offset, i);
+            }
+        }
+
         /// Verifies that columns and filter sizes match.
         /// The checks might be non-trivial so it make sense to have the only in debug builds.
         void checkInternalConsistency() const;
@@ -413,6 +473,11 @@ public:
         /// Granule i+2     8192                      3000       3000                   1000
         /// Granule i+3     1000 (last incomplete)    1000       1000                   1000
         NumRows rows_per_granule;
+        /// Rows physically read per granule by the reader, parallel to `rows_per_granule`, as passed to
+        /// `addGranule` and never reduced by filtering. It is 0 only for a mark that was skipped before
+        /// PREWHERE evaluated it (pruned by a skip index or the query condition cache via `canSkipMark`),
+        /// which `rows_per_granule` cannot distinguish from a granule PREWHERE read and fully dropped.
+        NumRows raw_rows_per_granule;
         /// Stores starting row offset and granule index for each granule.
         /// Used to generate _part_offset and _part_granule_offset columns.
         GranuleOffsets granule_offsets;
@@ -474,7 +539,7 @@ public:
     const Block & getSampleBlock() const { return result_sample_block; }
     const Block & getReadSampleBlock() const { return read_sample_block; }
 
-    void executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header, bool is_last_reader) const;
+    void executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header, bool keep_additional_columns) const;
 
     IMergeTreeReader * getReader() const { return merge_tree_reader; }
     const PrewhereExprStep * getPrewhereInfo() const { return prewhere_info; }

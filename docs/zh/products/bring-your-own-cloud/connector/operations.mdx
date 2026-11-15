@@ -16,24 +16,35 @@ import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge
 
 ### Kubernetes {#upgrades-kubernetes}
 
-<Note>
-  日常 Kubernetes 运维操作需在工作站上使用 `helm` 命令行客户端。只有 `init` 内置 Helm 客户端，因此请在首次升级前安装 `helm`。
-</Note>
+`connector upgrade` 需要 v0.50.0 或更高版本的命令行客户端，且该客户端内置 Helm 客户端，因此无需另行安装 `helm` 二进制文件：
 
-使用 `init` 暂存的配置值覆盖层，从公网 chart 仓库升级 release：
+```bash
+clicklink clctl context add <name> --kube-context <kubectl context> --use
+clicklink clctl connector upgrade --version <X.Y.Z>
+```
+
+`context add` 在每个集群上只需运行一次，用于记录连接器所在的 kubeconfig 上下文；`--use` 会将其设为当前上下文，之后可通过 `context use <name>` 切换。`connector upgrade` 在做出任何更改前都会先提示确认；其标志详见 [CLI 参考](/zh/products/bring-your-own-cloud/connector/reference/cli#connector-upgrade)。
+
+Chart 版本即去掉开头 `v` 的发行版标签：例如标签 `v0.50.0` 对应 chart `0.50.0`。executor 以单副本运行，并采用 `Recreate` 策略，因此升级期间会短暂断开连接。关于在此时间窗口内命令会如何处理，请参阅[连接器离线时](/zh/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline)。
+
+如需改用 `helm` 命令行客户端升级，请使用 `init` 暂存的配置值覆盖层：
 
 ```bash
 CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
 helm upgrade --install clicklink-connector clicklink-connector \
   --repo https://releases.clicklink.clickhouse.com/charts \
-  --version <version> \
+  --version <X.Y.Z> \
   -n "${CONNECTOR_NAMESPACE}" \
   -f clicklink-values.yaml
 ```
 
-Chart 版本即不含前导 `v` 的发布标签 (chart `X.Y.Z` 对应标签 `vX.Y.Z`) 。已发布的 chart 已指向公网容器镜像，因此常规安装和升级无需指定镜像配置值。如需查看 chart 的默认配置，请运行 `helm show values clicklink-connector --repo https://releases.clicklink.clickhouse.com/charts`。executor 以单个副本运行，并采用 `Recreate` strategy，因此升级会导致其短暂断开连接。有关该时间窗口内命令的处理方式，请参阅[连接器离线时](/zh/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline)。
+已发布的 chart 默认指向公共容器镜像，因此常规安装和升级无需设置任何镜像配置值。要查看 chart 的默认值，请运行 `helm show values clicklink-connector --repo https://releases.clicklink.clickhouse.com/charts`。
 
-通过直接 chart 引用 (`oci://`、URL、本地归档文件或目录) 安装时，没有可用于解析的 repository。请在新版本中改为重新运行 `helm upgrade clicklink-connector <same-chart-reference>`。使用较新版本的命令行客户端重新运行 `init` 也能达到一致状态，但需要一个入口点：如果保留了支持包，则使用 `--handoff`；或者在按文档完成清理后，使用新的注册标记并添加 `--force`。上述 `helm upgrade` 是常规做法 (请参阅[重新运行和恢复](#re-runs-and-recovery)) 。
+<Note>
+  v0.50.0 之前发行版中的 `init` 会将 `image.tag` 写入 `clicklink-values.yaml`，并将其固定为暂存该文件时的发行版。在下一次使用该文件执行 `helm upgrade` 之前，请先运行 `yq -i 'del(.image.tag)' clicklink-values.yaml` 删除该键 (只需执行一次) ；否则 chart 版本虽已更新，Pod (容器组) 却仍在使用旧镜像。`connector upgrade` 不会读取覆盖文件，而是直接在发行版中清空过时的标签。
+</Note>
+
+如果某个发行版的镜像来自[私有 mirror](/zh/products/bring-your-own-cloud/connector/configuration#private-mirrors)，`connector upgrade` 会拒绝升级；此时请使用上文的 `helm upgrade`，它会保留覆盖文件中配置的 mirror。如果是通过直接 chart 引用 (`oci://`、URL，或本地归档文件或目录) 安装的，则没有可供解析的代码仓库：请针对新版本重新运行 `helm upgrade clicklink-connector <same-chart-reference>`。使用更新版本的命令行客户端重新运行 `init` 同样能收敛到目标状态，但需要提供入口点：如果保留了支持包，请使用 `--handoff`；否则请使用新的注册标记并加上 `--force` (参见[重新运行与恢复](#re-runs-and-recovery)) 。
 
 ### Linux VM {#upgrades-linux-vm}
 

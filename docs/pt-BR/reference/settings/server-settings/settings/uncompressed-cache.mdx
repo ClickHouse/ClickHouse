@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Essas configurações configuram o servidor ClickHouse e são geradas automaticamente a partir do código-fonte do ClickHouse.
 
-<div id="uncompressed_cache_policy">
-  ## uncompressed_cache_policy
-</div>
+## uncompressed_cache_policy {#uncompressed_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="Não" />Nome da política do cache não comprimido.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nome da política de evicção do cache não comprimido. Valores possíveis: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="uncompressed_cache_size">
-  ## uncompressed_cache_size
-</div>
+## uncompressed_cache_size {#uncompressed_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Sim" />
 
@@ -36,9 +32,7 @@ O cache não comprimido é vantajoso para consultas muito curtas em casos isolad
   Essa configuração pode ser modificada em tempo de execução e entra em vigor imediatamente.
 </Note>
 
-<div id="uncompressed_cache_size_ratio">
-  ## uncompressed_cache_size_ratio
-</div>
+## uncompressed_cache_size_ratio {#uncompressed_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="Não" />A proporção entre o tamanho da fila protegida (no caso da política SLRU) no cache não comprimido e o tamanho total do cache.
 

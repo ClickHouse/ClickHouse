@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <cmath>
+#include <Common/NaNUtils.h>
 
 
 namespace ErrorCodes
@@ -124,8 +125,9 @@ public:
         auto [z_stat, p_value] = this->data(place).getResult(pop_var_x, pop_var_y);
         auto [ci_low, ci_high] = this->data(place).getConfidenceIntervals(pop_var_x, pop_var_y, confidence_level);
 
-        /// Because p-value is a probability.
-        p_value = std::min(1.0, std::max(0.0, p_value));
+        /// Because p-value is a probability. A NaN p-value is kept, as `std::max` would turn it into zero.
+        if (!isNaN(p_value))
+            p_value = std::min(1.0, std::max(0.0, p_value));
 
         auto & column_tuple = assert_cast<ColumnTuple &>(to);
         auto & column_stat = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(0));

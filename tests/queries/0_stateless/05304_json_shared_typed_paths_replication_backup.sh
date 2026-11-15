@@ -54,6 +54,7 @@ ALTER TABLE p1 MODIFY COLUMN json $SHARED SETTINGS enable_json_lazy_type_hints =
 SELECT 'p type on both replicas', (SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'p1' AND name = 'json'), (SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'p2' AND name = 'json');
 INSERT INTO p2 SELECT number, $ROW FROM numbers(20, 20);
 SYSTEM SYNC REPLICA p1;
+SYSTEM SYNC REPLICA p2;
 SELECT 'p1 layout', rows, arrayExists(s -> s LIKE '%object_typed_shared_data%', substreams) FROM system.parts_columns WHERE database = currentDatabase() AND table = 'p1' AND column = 'json' AND active ORDER BY name;
 "
 reads p1 "p1"

@@ -14,7 +14,7 @@ SET use_query_condition_cache = 0;
 SELECT '{{ predicate | replace("\\", "\\\\") | replace("'", "\\'") }}', (SELECT count() FROM {{ table }} WHERE {{ predicate }}),
     (SELECT count() FROM {{ table }} WHERE {{ predicate }} SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0),
     (SELECT sum(marks) FROM (EXPLAIN ESTIMATE SELECT 1 FROM {{ table }} WHERE {{ predicate }})),
-    (SELECT arrayStringConcat(groupArray(trimLeft(explain)), ' | ') FROM (EXPLAIN indexes = 1 SELECT 1 FROM {{ table }} WHERE {{ predicate }}) WHERE trimLeft(explain) LIKE 'Condition:%')
+    (SELECT arrayStringConcat(groupArray(trimLeft(explain)), ' | ') FROM (EXPLAIN indexes = 1 SELECT 1 FROM {{ table }} WHERE {{ predicate }} SETTINGS enable_parallel_replicas = 0) WHERE trimLeft(explain) LIKE 'Condition:%')
 FORMAT TSVRaw;
 {%- endmacro %}
 
