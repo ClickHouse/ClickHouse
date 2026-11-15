@@ -320,6 +320,19 @@ def main():
     is_private = (
         "PRIVATE_BUILDS_TO_CMAKE" in vars() or "PRIVATE_BUILDS_TO_CMAKE" in globals()
     )
+    # A PR build may skip ThinLTO, PGO and BOLT when it is not used for a performance
+    # comparison, see `record_thinlto_choice`. The compile commands of a release build are
+    # then those of the `*_binary` build, so the compiler cache that master fills for that
+    # build serves it.
+    from ci.jobs.scripts.workflow_hooks.filter_job import BUILDS_WITHOUT_THINLTO_KV
+
+    without_thinlto = build_type in (info.get_kv_data(BUILDS_WITHOUT_THINLTO_KV) or [])
+    if without_thinlto:
+        assert info.pr_number > 0, "only PR builds may skip ThinLTO"
+        print("NOTE: no performance comparison on this build - build without ThinLTO, PGO and BOLT")
+        assert "-DENABLE_THINLTO=1" in cmake_cmd
+        cmake_cmd = cmake_cmd.replace("-DENABLE_THINLTO=1", "-DENABLE_THINLTO=0")
+
     cmake_cmd += flavor_cmake_options(
         cmake_cmd,
         official=info.pr_number == 0 and not reference_build,
@@ -330,8 +343,8 @@ def main():
     pgo_profile = "/opt/clickhouse-profiles/clickhouse-pgo.profdata"
     bolt_profile = "/opt/clickhouse-profiles/clickhouse-bolt.fdata"
     release_type = PERFORMANCE_REFERENCE_TO_RELEASE.get(build_type, build_type)
-    use_pgo = release_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(pgo_profile)
-    use_bolt = release_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(bolt_profile) and os.path.getsize(bolt_profile) > 0
+    use_pgo = not without_thinlto and release_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(pgo_profile)
+    use_bolt = not without_thinlto and release_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(bolt_profile) and os.path.getsize(bolt_profile) > 0
 
     # PGO is best-effort: keep a PGO-free command ready so we can retry without
     # profile-guided optimization if cmake/build fails with a stale/incompatible
