@@ -1,0 +1,50 @@
+optimize_if_transform_const_strings_to_lowcardinality = 1
+if_plain	LowCardinality(String)	10000	5562286503148407333
+if_nullable_condition	LowCardinality(String)	10000	5562286503148407333
+if_low_cardinality_condition	LowCardinality(String)	10000	11593478333060883309
+if_null_branch	LowCardinality(Nullable(String))	10000	9852575378558219983
+if_default_value_branch	LowCardinality(String)	10000	694674339226039730
+multiif_plain	LowCardinality(String)	10000	9426594787894395657
+multiif_nullable	LowCardinality(Nullable(String))	10000	10755924988695506825
+multiif_duplicate_branches	LowCardinality(String)	10000	13793912239156743589
+transform_number	LowCardinality(String)	10000	14223216781902828552
+transform_string	LowCardinality(String)	10000	15605737342951146367
+transform_fixed_string	LowCardinality(String)	10000	15605737342951146367
+transform_nullable_input	LowCardinality(String)	10000	13332512901292909886
+transform_low_cardinality_input	LowCardinality(String)	10000	15605737342951146367
+transform_decimal_input	LowCardinality(String)	10000	5894946975663707163
+transform_null_value	LowCardinality(Nullable(String))	10000	9753692202178316001
+transform_null_default	LowCardinality(Nullable(String))	10000	18184323596543548425
+transform_duplicate_values	LowCardinality(String)	10000	8574020849414952559
+transform_large_mapping	LowCardinality(String)	10000	16092813143539745182
+optimize_if_transform_const_strings_to_lowcardinality = 0
+if_plain	String	10000	5562286503148407333
+if_nullable_condition	String	10000	5562286503148407333
+if_low_cardinality_condition	String	10000	11593478333060883309
+if_null_branch	Nullable(String)	10000	9852575378558219983
+if_default_value_branch	String	10000	694674339226039730
+multiif_plain	String	10000	9426594787894395657
+multiif_nullable	Nullable(String)	10000	10755924988695506825
+multiif_duplicate_branches	String	10000	13793912239156743589
+transform_number	String	10000	14223216781902828552
+transform_string	String	10000	15605737342951146367
+transform_fixed_string	String	10000	15605737342951146367
+transform_nullable_input	String	10000	13332512901292909886
+transform_low_cardinality_input	LowCardinality(String)	10000	15605737342951146367
+transform_decimal_input	String	10000	5894946975663707163
+transform_null_value	Nullable(String)	10000	9753692202178316001
+transform_null_default	Nullable(String)	10000	18184323596543548425
+transform_duplicate_values	String	10000	8574020849414952559
+transform_large_mapping	String	10000	16092813143539745182
+a	7000
+b	2000
+c	6000
+d	5000
+x	8334
+y	3333
+\N	8333
+a	2000
+b	2000
+c	6000
+a	1429
+b	8571

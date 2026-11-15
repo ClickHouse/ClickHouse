@@ -1,0 +1,16 @@
+<test>
+    <!--
+        With `optimize_if_transform_const_strings_to_lowcardinality`, `if`, `multiIf` and `transform` with constant
+        string branches return `LowCardinality(String)`. The result must be built as indexes into a dictionary of the
+        branches, not by inserting every row into a new dictionary, so it is not slower than a plain `String` result.
+    -->
+    <settings>
+        <optimize_if_transform_const_strings_to_lowcardinality>1</optimize_if_transform_const_strings_to_lowcardinality>
+    </settings>
+
+    <query>SELECT count() FROM zeros(100000000) WHERE NOT ignore(rand() % 2 ? 'hello' : 'world')</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(multiIf(number % 5 = 0, 'five', number % 3 = 0, 'three', 'other'))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(transform(number % 10, [2, 4, 6], ['google', 'yandex', 'yahoo'], 'other'))</query>
+    <query>SELECT number % 1000 = 0 ? 'a' : 'b' AS x, count() FROM numbers(100000000) GROUP BY x FORMAT Null</query>
+    <query>SELECT transform(number % 10, [2, 4, 6], ['google', 'yandex', 'yahoo'], 'other') AS x, count() FROM numbers(100000000) GROUP BY x FORMAT Null</query>
+</test>
