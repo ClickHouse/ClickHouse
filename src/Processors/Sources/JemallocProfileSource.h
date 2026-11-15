@@ -19,8 +19,9 @@ namespace DB
 /// Source that reads a jemalloc heap profile file and outputs lines according to the requested format.
 ///
 /// Supported formats:
-/// - Raw:        streams lines directly from the heap profile file.
-/// - Symbolized: produces a "jeprof --raw" compatible output with embedded symbols (jeprof format).
+/// - Raw:        streams lines from the heap profile file, with stack addresses converted by
+///               `sanitizeJemallocStackLine` and without the memory map. `jeprof` reads it with the binary.
+/// - Symbolized: produces a "jeprof --raw" compatible output with embedded symbols (jeprof format), over the Raw lines.
 /// - Collapsed:  produces FlameGraph-compatible collapsed stacks.
 ///
 /// The Symbolized and Collapsed formats support a symbolize_with_inline flag: when true, inline
@@ -71,7 +72,8 @@ private:
 
     /// For Symbolized mode streaming
     SymbolizedPhase symbolized_phase = SymbolizedPhase::CollectingAddresses;
-    VectorWithMemoryTracking<UInt64> addresses;        /// Collected addresses to symbolize
+    /// Collected addresses to symbolize: the published address and the runtime address to resolve
+    VectorWithMemoryTracking<std::pair<UInt64, UInt64>> addresses;
     size_t current_address_index = 0;
 
     /// Track what we've output in header phases
@@ -103,6 +105,10 @@ private:
 /// on a malformed token the parsed prefix is still returned - strict callers
 /// must check the flag, best-effort callers may ignore it.
 VectorWithMemoryTracking<UInt64> parseJemallocStackAddresses(std::string_view line, bool * fully_parsed = nullptr);
+
+/// Rewrite a stack line of a heap profile for publishing: addresses in the main binary become offsets in it,
+/// and the others become 0, as in `system.trace_log.trace`. Runtime addresses must not leave the server.
+std::string sanitizeJemallocStackLine(std::string_view line);
 
 /// Parse the sampling interval from a jemalloc heap_v2 header line ("heap_v2/N").
 /// Returns 0 if the header doesn't match heap_v2 format or the value is not a valid integer.

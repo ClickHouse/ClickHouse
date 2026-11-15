@@ -1,6 +1,7 @@
 #include <Functions/AI/AIRequestExecutor.h>
 
 #include <Functions/AI/AIQuotaTracker.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/ProfileEvents.h>
@@ -16,11 +17,16 @@
 
 #include <chrono>
 #include <thread>
+#include <type_traits>
 
 namespace ProfileEvents
 {
     extern const Event AIInputTokens;
     extern const Event AIOutputTokens;
+    extern const Event AICacheReadTokens;
+    extern const Event AICacheWriteTokens;
+    extern const Event AIRequestMicroseconds;
+    extern const Event AIRetryBackoffMicroseconds;
     extern const Event AIAPICalls;
     extern const Event AIAPICallsRetried;
     extern const Event AIAPICallsFailed;
@@ -163,6 +169,7 @@ std::optional<Response> runRequest(const AIRequestPolicy & policy, AIQuotaTracke
             if (attempt < policy.max_retries && isRetriableProviderError(std::current_exception()))
             {
                 ProfileEvents::increment(ProfileEvents::AIAPICallsRetried);
+                ProfileEventTimeIncrement<Microseconds> backoff_time(ProfileEvents::AIRetryBackoffMicroseconds);
                 /// Exponential backoff. `makeRequestPolicy` bounds both settings, so the longest sleep is 160 seconds.
                 /// Sleep in short steps, so the retry of a cancelled query does not hold the worker.
                 using Clock = std::chrono::steady_clock;
@@ -219,8 +226,14 @@ std::future<std::optional<Response>> submit(
                 my_quota->recordTokens(response.input_tokens, response.output_tokens);
                 ProfileEvents::increment(ProfileEvents::AIInputTokens, response.input_tokens);
                 ProfileEvents::increment(ProfileEvents::AIOutputTokens, response.output_tokens);
+                if constexpr (std::is_same_v<Response, AIResponse>)
+                {
+                    ProfileEvents::increment(ProfileEvents::AICacheReadTokens, response.cache_read_tokens);
+                    ProfileEvents::increment(ProfileEvents::AICacheWriteTokens, response.cache_write_tokens);
+                }
             });
 
+            ProfileEventTimeIncrement<Microseconds> request_time(ProfileEvents::AIRequestMicroseconds);
             runAttempt(*my_provider, my_request, my_policy.timeouts, response);
             return response;
         });

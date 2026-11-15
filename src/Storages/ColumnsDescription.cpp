@@ -24,7 +24,10 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Access/AccessRights.h>
+#include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/StorageID.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/FunctionNameNormalizer.h>
@@ -871,6 +874,74 @@ Names ColumnsDescription::getNamesOfPhysical() const
     return ret;
 }
 
+Names ColumnsDescription::getColumnNamesForSelectAccessCheck(
+    const Names & column_names, const ContextPtr & context, const StorageID & table_id) const
+{
+    Names result;
+    result.reserve(column_names.size());
+    NameSet seen;
+    std::shared_ptr<const AccessRights> access_rights;
+    String database;
+    for (const auto & name : column_names)
+    {
+        /// Map `name` to the storage column that identifier resolution actually reads from, so the
+        /// access check authorizes that column and nothing else. `tryGetColumnOrSubcolumn` enables
+        /// dynamic subcolumns (via `GetColumnsOptions::withSubcolumns`), so besides regular
+        /// subcolumns it also resolves `Dynamic` / `JSON` / dynamic `Map` paths (e.g. `json.a.b` or
+        /// `d.\`Tuple(a UInt64)\`.a`): they are resolved by the same type-aware, first-matching-prefix
+        /// logic as `ColumnsDescription::tryGetDynamicSubcolumn` and the analyzer's
+        /// `TableExpressionData::tryGetSubcolumnInfo`, and `getNameInStorage` returns their parent
+        /// column. A real column (including one whose name legitimately contains a dot) resolves to
+        /// itself.
+        ///
+        /// We must NOT fall back to the longest *existing* dotted prefix here: it is not type-aware
+        /// and can disagree with identifier resolution. When a shorter dynamic column and a longer
+        /// dotted real column coexist (e.g. `json JSON` and `\`json.a\` JSON`), `json.a.b` resolves
+        /// through `json`, so authorizing `json.a` instead would let a grant on `json.a` alone read
+        /// `json`. Names that resolve to nothing (virtual or unknown columns) are left unchanged,
+        /// which fails closed for the access check.
+        String name_to_check = name;
+        if (auto column = tryGetColumnOrSubcolumn(GetColumnsOptions::All, name); column && column->isSubcolumn())
+        {
+            /// A subcolumn inherits the grants of its column, like a column inherits the grants of its table. A grant or
+            /// revoke that names the subcolumn itself (e.g. ``GRANT SELECT(`json.a`)`` or ``REVOKE SELECT(`t.a`)``) takes
+            /// precedence, so the subcolumn name is checked as is when such an entry changes what the name inherits.
+            if (!access_rights)
+            {
+                access_rights = context->getAccess()->getAccessRightsWithImplicit();
+                database = table_id.hasDatabase() ? table_id.getDatabaseName() : context->getCurrentDatabase();
+            }
+            const auto & table = table_id.getTableName();
+            const bool has_explicit_entry = access_rights->isGranted(AccessType::SELECT, database, table, name)
+                != access_rights->isGrantedInherited(AccessType::SELECT, database, table, name);
+            if (!has_explicit_entry)
+                name_to_check = column->getNameInStorage();
+        }
+
+        if (seen.insert(name_to_check).second)
+            result.push_back(std::move(name_to_check));
+    }
+
+    return result;
+}
+
+Names ColumnsDescription::getSubcolumnsWithExplicitGrant(
+    const AccessRights & access_rights,
+    const AccessFlags & flags,
+    const String & database,
+    const String & table,
+    const String & column_name) const
+{
+    Names result;
+    for (auto & name : access_rights.getColumnsWithExplicitGrantAndPrefix(flags, database, table, column_name + '.'))
+    {
+        auto subcolumn = tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+        if (subcolumn && subcolumn->isSubcolumn() && subcolumn->getNameInStorage() == column_name)
+            result.push_back(std::move(name));
+    }
+    return result;
+}
+
 std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumnsOptions & options, const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
@@ -1651,6 +1722,24 @@ bool prewhereSupportedColumnsContain(
 
     auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
     return column && column->isSubcolumn() && supported_columns.contains(column->getNameInStorage());
+}
+
+bool canPushDownRowPolicyFilter(const IStorage & storage, const ColumnsDescription & columns, const Names & required_columns)
+{
+    if (!storage.supportsPrewhere() || storage.isRemote())
+        return false;
+
+    if (const auto supported_prewhere_columns = storage.supportedPrewhereColumns())
+    {
+        const bool include_subcolumns = storage.supportedPrewhereColumnsIncludeSubcolumns();
+        for (const auto & column_name : required_columns)
+        {
+            if (!prewhereSupportedColumnsContain(*supported_prewhere_columns, include_subcolumns, columns, column_name))
+                return false;
+        }
+    }
+
+    return true;
 }
 
 }

@@ -1,0 +1,58 @@
+---
+title: 'ClickPipes 的 AWS IAM role身份验证'
+sidebarTitle: 'AWS IAM role'
+slug: /integrations/clickpipes/security/aws-iam-role
+description: '使用 AWS IAM role授予 ClickPipes 访问数据源的权限，无需存储 AWS 访问密钥。'
+doc_type: 'guide'
+keywords: ['clickpipes', 'aws', 'iam role', 'role-based access', 'authentication']
+---
+
+借助 AWS IAM role身份验证，ClickPipes 无需存储 AWS 访问密钥即可访问受支持的 AWS 数据源。您需要在 AWS 账户中创建一个角色，允许 ClickHouse Cloud 服务代入该角色，并为其授予访问数据源所需的权限。
+
+## 开始之前 {#before-you-begin}
+
+* 您的 ClickHouse Cloud 服务必须运行在 AWS 上，才能使用 IAM role 身份验证。
+* 您需要在拥有该数据源的 AWS 账户中具备创建和配置 IAM role的权限。
+* 如需使用 RDS 或 Aurora 数据库身份验证，您还需要具备启用 IAM 数据库身份验证以及配置数据库用户的权限。
+
+## 工作原理 {#how-it-works}
+
+1. 在 **Settings → Network security information** 下找到您的 ClickHouse Cloud 服务的 **Service role ID (IAM)**。该 ARN 用于标识 ClickPipes 在请求访问时所使用的角色。
+2. 在您的 AWS 账户中创建一个角色，并将 ClickHouse 服务角色设为受信任实体，允许其代入该角色。
+3. 按照下方对应数据源的设置指南，为该角色授予所需的权限。
+4. 将 ClickPipe 配置为使用您所创建角色的 ARN。ClickPipes 在连接数据源时会代入该角色。
+
+## 配置信任策略 {#configure-trust-policy}
+
+在您的 AWS 账户中创建角色时，请使用以下信任策略。将 `{ClickHouse_IAM_ARN}` 替换为您的 ClickHouse Cloud 服务的 **Service role ID (IAM)** ARN：
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "{ClickHouse_IAM_ARN}"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+
+对于 **RDS 和 Aurora IAM 数据库身份验证**，请在 `Action` 字段中同时允许 `sts:AssumeRole` 和 `sts:TagSession`。完整的设置步骤 (包括创建启用 IAM 的数据库用户) 请参阅[对应数据库的 IAM 身份验证指南](/zh/integrations/clickpipes/postgres/auth)。
+
+该角色的**权限策略**以及所有角色命名要求均因数据源而异。请参阅下方对应数据源的指南进行配置。
+
+## 选择数据源 {#choose-your-source}
+
+| 数据源或集成                                                          | 设置指南                                                                                                                                                                                                                               |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 亚马逊 S3                                                          | [S3 IAM role 身份验证](/zh/integrations/clickpipes/object-storage/amazon-s3/overview#iam-role)。如需借助 SQS 通知实现持续摄取，请参照 [unordered 模式下的 IAM role 配置步骤](/zh/integrations/clickpipes/object-storage/amazon-s3/unordered-mode#configure-iam-role)。 |
+| Amazon Kinesis                                                  | [Kinesis 基于角色的访问](/zh/integrations/clickpipes/kinesis/auth#setup)。                                                                                                                                                                    |
+| 亚马逊 MSK                                                         | [MSK IAM 权限与信任关系](/zh/integrations/clickpipes/kafka/best-practices#iam)。                                                                                                                                                              |
+| 亚马逊 RDS (PostgreSQL、MySQL、MariaDB) 和 Aurora (PostgreSQL、MySQL)  | 请选择[对应数据库的 IAM 身份验证指南](/zh/integrations/clickpipes/postgres/auth)。此类数据源还需要一个启用了 IAM 的数据库用户，并授予 `rds-db:connect` 权限。                                                                                                                   |
+| AWS Glue Schema Registry                                        | [复用 MSK IAM role，或配置专用的 registry 角色](/zh/integrations/clickpipes/kafka/schema-registries#glue-iam-setup)。                                                                                                                             |
+
+IAM role 身份验证仅用于控制对数据源的访问。如果数据源位于私网中，还需另行配置[网络连接](/zh/integrations/clickpipes/networking/index)。

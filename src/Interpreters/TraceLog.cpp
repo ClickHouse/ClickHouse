@@ -147,7 +147,7 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
         {"thread_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Thread name."},
         {"query_id", std::make_shared<DataTypeString>(), "Query identifier that can be used to get details about a query that was running from the query_log system table."},
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Stack trace at the moment of sampling. "
-            "On ELF platforms except FreeBSD, addresses inside the main ClickHouse binary are stored as physical file offsets, "
+            "Except on FreeBSD, addresses inside the main ClickHouse binary are stored as physical file offsets, "
             "and frames outside it (shared libraries, JIT code) are stored as 0."},
         {"size", std::make_shared<DataTypeInt64>(), "For the memory trace types is a size in bytes: the allocated size for Memory and MemoryAllocatedWithoutCheck; "
             "the allocated size, negated on a deallocation, for MemorySample and JemallocSample; the new peak of the tracker for MemoryPeak; "
@@ -253,13 +253,20 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
             /// `symbolizeTrace` and `StackTrace::forEachFrame`: DWARF line resolution does not depend
             /// on the symbol table, so each column defaults to an empty string only when its own
             /// lookup fails.
-            if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(trace[frame])))
+            if (const auto * symbol = symbol_index.findSymbolByAddress(reinterpret_cast<const void *>(trace[frame])))
             {
-                auto demangled = tryDemangle(symbol->name);
-                if (demangled)
+                const char * symbol_name = symbol_index.getSymbolNameCString(*symbol);
+                DemangleResult demangled = *symbol_name ? tryDemangle(symbol_name) : DemangleResult{};
+                if (*symbol_name && demangled)
                     column_symbols_inner.insertData(demangled.get(), strlen(demangled.get()));
+                else if (*symbol_name)
+                {
+                    /// The cached entry supplies its length without decoding the compact granule again.
+                    std::string_view symbol_name_view = symbol_index.getSymbolName(*symbol);
+                    column_symbols_inner.insertData(symbol_name_view.data(), symbol_name_view.size());
+                }
                 else
-                    column_symbols_inner.insertData(symbol->name, strlen(symbol->name));
+                    column_symbols_inner.insertDefault();
             }
             else
             {

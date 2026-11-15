@@ -1,4 +1,7 @@
 #include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <Analyzer/TableFunctionNode.h>
@@ -130,11 +133,10 @@ bool sameByteLayout(const Block & lhs, const Block & rhs)
     return true;
 }
 
-/// A step is transparent for the cache key - it contributes nothing - when it changes neither the row
-/// count nor the byte layout. This is the loose, header-only test, and it stays that way: it decides
-/// only whether a step adds anything of its own to a key, where being wrong costs a slightly-off
-/// estimate. Deciding that a step can be *skipped over* is a stricter question, answered by
-/// `isPassthroughExpressionWithRenames` below.
+/// A step that changes neither the row count nor the byte layout adds to the key at most what an `ExpressionStep`
+/// computes or permutes, never its serialized form. This is the loose, header-only test, and it stays that way:
+/// being wrong costs a slightly-off estimate. Deciding that a step can be *skipped over* is a stricter question,
+/// answered by `isPassthroughExpressionWithRenames` below.
 bool isByteTransparentTransform(const ITransformingStep & transform)
 {
     return transform.getTransformTraits().preserves_number_of_rows
@@ -149,14 +151,14 @@ bool isByteTransparentTransform(const ITransformingStep & transform)
 /// `outputsAreRenamedInputs` below asks a neighbouring yes/no question - may this wrapper be skipped
 /// over entirely - and is stricter: it also rejects forwarding one input twice. This one answers what
 /// the permutation IS, which is what a key needs to tell two orderings of the same columns apart.
-std::optional<std::vector<size_t>> pureColumnPermutation(const ActionsDAG & dag)
+std::optional<VectorWithMemoryTracking<size_t>> pureColumnPermutation(const ActionsDAG & dag)
 {
-    std::unordered_map<const ActionsDAG::Node *, size_t> input_index;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> input_index;
     const auto & inputs = dag.getInputs();
     for (size_t i = 0; i < inputs.size(); ++i)
         input_index.emplace(inputs[i], i);
 
-    std::vector<size_t> result;
+    VectorWithMemoryTracking<size_t> result;
     result.reserve(dag.getOutputs().size());
     for (const auto * output : dag.getOutputs())
     {
@@ -206,14 +208,22 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
                     return permutation_hash.get64();
                 }
             }
+            else
+            {
+                /// A computing step: hash what it computes, which is the same whether or not a rename was merged into it.
+                SipHash computed_hash;
+                computed_hash.update("computed columns");
+                computed_hash.update(expression->getExpression().getComputedOutputsHash(*transform.getInputHeaders().front()));
+                return computed_hash.get64();
+            }
         }
         return 0;
     }
 
     /// This serialized form is only ever hash input - nothing reads the bytes back - so it is
     /// hashed as it is produced rather than accumulated. With `for_cache_key` the actions DAGs are
-    /// written without their variable-size constant values, which can be arbitrarily large (a folded
-    /// scalar subquery); see `ActionsDAG::updateHash` for what that lets collide. The DAGs of a read
+    /// written without the values of constants that can be arbitrarily large (a folded scalar
+    /// subquery); see `ActionsDAG::updateHash` for what that lets collide. The DAGs of a read
     /// step and of a join are hashed with `updateHash` under the same contract.
     SipHash hash;
     SipHashingWriteBuffer wbuf(hash);
@@ -375,14 +385,14 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
 /// best-effort goal, not a guarantee: a few result-affecting inputs are deliberately not mixed in
 /// (e.g. the column-blind read hash on the input side, the join output column names - see the
 /// `JoinStep` case below for why hashing them would be strictly worse - or the values of
-/// variable-size constants, see `ActionsDAG::updateHash`). A resulting key
+/// large constants, see `ActionsDAG::updateHash`). A resulting key
 /// collision can only make Auto-PR reuse a slightly-off estimate and so enable/disable parallel
 /// replicas sub-optimally - it never changes query results. We trade that small estimation
 /// imprecision for a simpler, cheaper key.
 void calculateHashTableCacheKeys(
     const QueryPlan::Node & root,
-    std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys,
-    std::unordered_map<const QueryPlan::Node *, UInt64> & raw_hashes)
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> & cache_keys,
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> & raw_hashes)
 {
     struct Frame
     {
@@ -393,7 +403,7 @@ void calculateHashTableCacheKeys(
     };
 
     // We use addresses of `left` and `right`, so they should be stable
-    std::list<Frame> stack;
+    ListWithMemoryTracking<Frame> stack;
     stack.push_back({.node = &root});
 
     while (!stack.empty())
@@ -403,10 +413,10 @@ void calculateHashTableCacheKeys(
 
         if (auto * join_step = dynamic_cast<JoinStepLogical *>(node.step.get()))
         {
-            // `HashTablesStatistics` is used currently only for `parallel_hash_join`, i.e. the following calculation doesn't make sense for other join algorithms.
+            /// `HashTablesStatistics` only feeds the hash join family, so the key is not worth computing elsewhere.
             const auto & join_expression = join_step->getJoinOperator().expression;
             bool single_disjunct = join_expression.size() > 1 || (join_expression.size() == 1 && !join_expression.front().isFunction(JoinConditionOperator::Or));
-            const bool calculate = allowParallelHashJoin(
+            const bool calculate = allowHashJoinCacheKeys(
                 join_step->getJoinSettings().join_algorithms,
                 join_step->getJoinOperator().kind,
                 typeid_cast<JoinStepLogicalLookup *>(node.children.back()->step.get()),
@@ -663,15 +673,15 @@ void calculateHashTableCacheKeys(
     }
 }
 
-static void calculateHashTableCacheKeys(const QueryPlan::Node & root, std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys)
+static void calculateHashTableCacheKeys(const QueryPlan::Node & root, UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> & cache_keys)
 {
-    std::unordered_map<const QueryPlan::Node *, UInt64> raw_hashes;
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> raw_hashes;
     calculateHashTableCacheKeys(root, cache_keys, raw_hashes);
 }
 
-std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root)
+UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root)
 {
-    std::unordered_map<const QueryPlan::Node *, UInt64> cache_keys;
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> cache_keys;
     calculateHashTableCacheKeys(root, cache_keys);
     return cache_keys;
 }
@@ -680,9 +690,9 @@ std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(
 /// So is the cutoff of each cap: the kept-keys one trims the tables to the cap, the per-stream one keeps whole blocks.
 static UInt64 mixGroupByCapsIntoKey(const QueryPlan::Node & aggregating_node, UInt64 key)
 {
-    std::vector<std::tuple<UInt64, UInt8, bool>> caps;
+    VectorWithMemoryTracking<std::tuple<UInt64, UInt8, bool>> caps;
     bool has_cap = false;
-    std::vector<const QueryPlan::Node *> stack{&aggregating_node};
+    VectorWithMemoryTracking<const QueryPlan::Node *> stack{&aggregating_node};
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -719,6 +729,24 @@ static UInt64 mixGroupByCapsIntoKey(const QueryPlan::Node & aggregating_node, UI
     return hash.get64();
 }
 
+/// Mixes the limit of the top-K pruning into the key of a step whose adaptive aggregation prunes its merge by
+/// it. The pruning changes when the frozen tables thaw (see `Aggregator::adaptiveTopKPruningFreesStaging`),
+/// and with it the verdict that a run stores in the statistics (see `Aggregator::adaptiveStagingVerdict`).
+/// The limit sets the count that the pruning compares with, so both depend on it. Such a step then keeps
+/// statistics of its own: the same aggregation without the pruning, or with another limit, neither follows
+/// its verdict nor overwrites it.
+static UInt64 mixAdaptiveTopKPruningIntoKey(const AggregatingStep & aggregating, UInt64 key)
+{
+    const auto & params = aggregating.getParams();
+    if (!params.adaptiveTopKPrunes())
+        return key;
+
+    SipHash hash;
+    hash.update(key);
+    hash.update(params.bucket_top_k);
+    return hash.get64();
+}
+
 void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root)
 {
     if (!optimization_settings.collect_hash_table_stats_during_aggregation)
@@ -728,9 +756,9 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
     /// NOT hash the plan: hashing serializes plan steps, and some steps that may appear in arbitrary
     /// queries are not serializable (e.g. `ORDER BY ... WITH FILL`, or `INSERT ... FROM INFILE`
     /// plans) and would throw. Only aggregating queries need a key.
-    std::vector<QueryPlan::Node *> aggregating_nodes;
+    VectorWithMemoryTracking<QueryPlan::Node *> aggregating_nodes;
     {
-        std::vector<QueryPlan::Node *> stack;
+        VectorWithMemoryTracking<QueryPlan::Node *> stack;
         stack.push_back(&root);
         while (!stack.empty())
         {
@@ -759,18 +787,22 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
 
     /// Compute every key before stamping any of them, so a key never depends on whether another
     /// (e.g. a nested) aggregation has already been stamped.
-    std::vector<std::pair<AggregatingStep *, UInt64>> keys_to_set;
+    VectorWithMemoryTracking<std::pair<AggregatingStep *, UInt64>> keys_to_set;
     for (auto * aggregating_node : aggregating_nodes)
     {
         /// Hash only the aggregation's own input subtree (this node as the root). This excludes the
         /// steps ABOVE the aggregation (LIMIT, `ORDER BY ... WITH FILL`, ...): they may not be
-        /// serializable, and a LIMIT affects the number of groups only through the step's own cap.
+        /// serializable, and a LIMIT affects the statistics only through what it sets in the step: the
+        /// step's own cap, and the top-K pruning of the adaptive aggregation.
         try
         {
             const auto cache_keys = calculateHashTableCacheKeys(*aggregating_node);
             if (auto it = cache_keys.find(aggregating_node); it != cache_keys.end())
-                keys_to_set.emplace_back(
-                    typeid_cast<AggregatingStep *>(aggregating_node->step.get()), mixGroupByCapsIntoKey(*aggregating_node, it->second));
+            {
+                auto * aggregating = typeid_cast<AggregatingStep *>(aggregating_node->step.get());
+                const UInt64 key = mixGroupByCapsIntoKey(*aggregating_node, it->second);
+                keys_to_set.emplace_back(aggregating, mixAdaptiveTopKPruningIntoKey(*aggregating, key));
+            }
         }
         catch (...)
         {

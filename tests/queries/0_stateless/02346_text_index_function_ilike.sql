@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-msan
 -- Tests if a text index ILIKE evaluation by scanning the inverted index dictionary is properly applied.
 SET explain_query_plan_default = 'legacy';
 

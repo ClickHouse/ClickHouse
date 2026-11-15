@@ -7,7 +7,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/zh/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -21,7 +20,15 @@ ClickHouse 连接器运行三个守护进程，它们均内置于 `clicklink` �
 
 在 Kubernetes 上，`clicklink-connector` Helm 图表会将这些守护进程部署到你指定的命名空间中 (默认为 `clicklink`) 。执行器是一个单副本 Deployment，其命令状态保存在持久卷上。在 Linux VM 上，这些守护进程以 `clicklink-scraper`、`clicklink-troubleshooter` 和 `clicklink-executor` 三个 systemd 单元的形式，在无特权的 `clicklink` 系统用户下运行。
 
-<Image img="/images/cloud/reference/byoc-connector-architecture.svg" size="lg" alt="ClickHouse Connector architecture" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse Connector architecture](/images/cloud/reference/byoc-connector-architecture.svg)
+
+</Frame>
+
+</div>
 
 ## 连接 {#connections}
 
@@ -57,7 +64,15 @@ ClickHouse 连接器运行三个守护进程，它们均内置于 `clicklink` �
 
 ## 数据流 {#data-flow}
 
-<Image img="/images/cloud/reference/byoc-connector-data-flow.svg" size="lg" alt="ClickHouse 连接器数据流" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse 连接器数据流](/images/cloud/reference/byoc-connector-data-flow.svg)
+
+</Frame>
+
+</div>
 
 ### 哪些内容会离开您的环境 {#what-leaves}
 

@@ -6,6 +6,7 @@
 #include <Interpreters/ArrayJoin.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -32,11 +33,10 @@ static bool unpadArrayJoinArgument(ActionsDAG & before, const String & name)
     return false;
 }
 
-/// Lower an `arrayJoin` function into a real ArrayJoinStep so it gets lazy replication and filter fusion.
-/// Peels one join per call; the driver repeats for the rest (independent joins are a cross product).
+/// Peels one join per call
 size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
-    if (!settings.lower_array_join_function || parent_node->children.size() != 1)
+    if (parent_node->children.size() != 1)
         return 0;
 
     auto & parent = parent_node->step;
@@ -79,8 +79,12 @@ size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes
     const auto & array_join_output = array_join_node.step->getOutputHeader();
     QueryPlanStepPtr after_step;
     if (filter_step)
-        after_step = std::make_unique<FilterStep>(
+    {
+        auto after_filter_step = std::make_unique<FilterStep>(
             array_join_output, std::move(extracted->after), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
+        after_filter_step->setOptimizeConstantColumnsAfterFilter(filter_step->getOptimizeConstantColumnsAfterFilter());
+        after_step = std::move(after_filter_step);
+    }
     else
         after_step = std::make_unique<ExpressionStep>(array_join_output, std::move(extracted->after));
     after_step->setStepDescription(*parent);
@@ -88,6 +92,24 @@ size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes
     parent = std::move(after_step);
     parent_node->children = {&array_join_node};
     return 3;
+}
+
+void lowerArrayJoinFunctions(QueryPlan::Node & root, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
+{
+    if (!settings.lower_array_join_function)
+        return;
+
+    VectorWithMemoryTracking<QueryPlan::Node *> stack{&root};
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        /// the rest of the actions can have another `arrayJoin`, independent joins are a cross product
+        if (tryLowerArrayJoinFunction(node, nodes, settings))
+            stack.push_back(node);
+        else
+            stack.insert(stack.end(), node->children.begin(), node->children.end());
+    }
 }
 
 }

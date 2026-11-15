@@ -356,7 +356,7 @@ SELECT extractAll('test@example.com, user@domain.org', '([a-zA-Z0-9]+)@')
 
 ## extractAllGroupsHorizontal {#extractAllGroupsHorizontal}
 
-Introduit dans : v20.5.0
+Introduit dans : v20.5.0
 
 Met en correspondance tous les groupes d’une chaîne à l’aide de l’expression régulière fournie et renvoie un tableau de tableaux, chaque tableau contenant toutes les captures d’un même groupe de capture, classées par numéro de groupe.
 
@@ -369,7 +369,7 @@ extractAllGroupsHorizontal(s, regexp)
 **Arguments**
 
 * `s` — Chaîne d&#39;entrée à partir de laquelle extraire. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring)
-* `regexp` — Expression régulière à faire correspondre. [`const String`](/fr/reference/data-types/string) ou [`const FixedString`](/fr/reference/data-types/fixedstring)
+* `regexp` — Expression régulière à faire correspondre. Doit contenir entre 1 et 127 groupes de capture. [`const String`](/fr/reference/data-types/string) ou [`const FixedString`](/fr/reference/data-types/fixedstring)
 
 **Valeur renvoyée**
 
@@ -394,7 +394,7 @@ SELECT extractAllGroupsHorizontal(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 ## extractGroups {#extractGroups}
 
-Introduit dans : v20.5.0
+Introduit dans : v20.5.0
 
 Extrait les groupes de capture de la première sous-chaîne correspondant à une expression régulière. Pour extraire les groupes de toutes les correspondances, utilisez [`extractAllGroupsHorizontal`](#extractAllGroupsHorizontal) ou [`extractAllGroupsVertical`](/fr/reference/functions/regular-functions/splitting-merging-functions#extractAllGroupsVertical).
 
@@ -407,7 +407,7 @@ extractGroups(s, regexp)
 **Arguments**
 
 * `s` — Chaîne d’entrée dans laquelle extraire. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring)
-* `regexp` — Expression régulière. Doit contenir au moins un groupe de capture. Constante. [`const String`](/fr/reference/data-types/string) ou [`const FixedString`](/fr/reference/data-types/fixedstring)
+* `regexp` — Expression régulière. Doit contenir entre 1 et 127 groupes de capture. Constante. [`const String`](/fr/reference/data-types/string) ou [`const FixedString`](/fr/reference/data-types/fixedstring)
 
 **Valeur renvoyée**
 
@@ -432,9 +432,9 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 ## hasAllTokens {#hasAllTokens}
 
-Introduit dans : v25.10.0
+Introduit dans : v25.10.0
 
-Comme [`hasAnyTokens`](#hasAnyTokens), mais renvoie 1 si tous les tokens de la chaîne ou du tableau `needle` correspondent à la chaîne `input`, et 0 sinon. Si `input` est une colonne, renvoie toutes les lignes qui satisfont cette condition.
+Comme [`hasAnyTokens`](#hasAnyTokens), mais renvoie 1 si tous les jetons de la chaîne ou du tableau `needle` correspondent à la chaîne `input`, et 0 sinon. Si `input` est une colonne, renvoie toutes les lignes qui satisfont cette condition.
 
 <Note>
   La colonne `input` doit avoir un [index de texte](/fr/reference/engines/table-engines/mergetree-family/textindexes) défini pour des performances optimales.
@@ -447,17 +447,16 @@ Avant la recherche, la fonction tokenise
 * l&#39;argument `needle` (s&#39;il est fourni sous forme de [String](/fr/reference/data-types/string))
   à l&#39;aide du tokenizer spécifié pour l&#39;index de texte.
   Si aucun index de texte n&#39;est défini pour la colonne, le tokenizer `splitByNonAlpha` est utilisé à la place.
-  Si l&#39;argument `needle` est de type [Array(String)](/fr/reference/data-types/array), chaque élément du tableau est traité comme un token — aucune tokenisation supplémentaire n&#39;a lieu.
+  Si l&#39;argument `needle` est de type [Array(String)](/fr/reference/data-types/array), chaque élément du tableau est traité comme un jeton — aucune tokenisation supplémentaire n&#39;a lieu.
   Si l&#39;index de texte a une expression de [preprocessor](/fr/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) configurée, le preprocessor est appliqué à `needle` (s&#39;il est fourni en tant que `String`) avant la tokenisation.
-  Si l&#39;index de texte a une expression de [postprocessor](/fr/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) configurée, le postprocessor est appliqué aux tokens de `needle` et à ceux de `input` (c&#39;est-à-dire aux deux après la tokenisation).
+  Si l&#39;index de texte a une expression de [postprocessor](/fr/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) configurée, le postprocessor est appliqué aux jetons de `needle` et à ceux de `input` (c&#39;est-à-dire aux deux après la tokenisation).
 
-Les tokens dupliqués sont ignorés.
+Les jetons dupliqués sont ignorés.
 Par exemple, needles = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] est traité de la même manière que [&#39;ClickHouse&#39;].
 
 <Note>
   Lorsqu&#39;un index de texte définit un [preprocessor](/fr/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (par exemple `lowerUTF8`), `hasAllTokens` l&#39;applique à `input` et, lorsque `needles` est un [String](/fr/reference/data-types/string), à `needles` avant la tokenisation. Lorsque `needles` est un [Array(String)](/fr/reference/data-types/array), ses éléments sont transmis tels quels et le preprocessor ne leur est pas appliqué.
-  Le preprocessor n&#39;est appliqué que lors de l’utilisation de l’index de texte, de sorte que les résultats peuvent différer entre les requêtes qui utilisent l&#39;index de texte et celles qui ne l&#39;utilisent pas (par ex. `SETTINGS use_skip_indexes = 0`).
-  Cette incohérence est tolérée afin d&#39;améliorer la facilité d&#39;utilisation de la recherche en texte intégral.
+  Le preprocessor fait partie de la définition de l&#39;index ; il est donc appliqué partout où la fonction est évaluée : dans le filtre `WHERE`/`PREWHERE`, dans la liste `SELECT`, et que l&#39;index soit lu ou non (par ex. `SETTINGS use_skip_indexes = 0`).
 </Note>
 
 **Syntaxe**
@@ -466,21 +465,21 @@ Par exemple, needles = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] est traité 
 hasAllTokens(input, needles[, tokenizer])
 ```
 
-**Alias** : `hasAllToken`
+**Alias** : `hasAllToken`
 
 **Arguments**
 
 * `input` — La colonne d’entrée. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`Nullable(String)`](/fr/reference/data-types/nullable) ou [`Nullable(FixedString)`](/fr/reference/data-types/nullable) ou [`Array(String)`](/fr/reference/data-types/array) ou [`Array(FixedString)`](/fr/reference/data-types/array) ou [`Array(Nullable(String))`](/fr/reference/data-types/array) ou [`Array(Nullable(FixedString))`](/fr/reference/data-types/array)
-* `needles` — Les tokens à rechercher. [`String`](/fr/reference/data-types/string) ou [`Array(String)`](/fr/reference/data-types/array)
-* `tokenizer` — Le tokenizer à utiliser. Les arguments valides sont `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` et `array`. Facultatif ; s’il n’est pas défini explicitement, la valeur par défaut est `splitByNonAlpha`. [`const String`](/fr/reference/data-types/string)
+* `needles` — Les jetons à rechercher. [`String`](/fr/reference/data-types/string) ou [`Array(String)`](/fr/reference/data-types/array)
+* `tokenizer` — Le tokenizer à utiliser. Les arguments valides sont `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` et `array`. Facultatif ; s’il n’est pas défini explicitement, la valeur par défaut est `splitByNonAlpha`. [`const String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
-Renvoie 1 si toutes les aiguilles correspondent. 0 sinon. [`UInt8`](/fr/reference/data-types/int-uint)
+Renvoie 1 si toutes les sous-chaînes recherchées correspondent. 0 sinon. [`UInt8`](/fr/reference/data-types/int-uint)
 
 **Exemples**
 
-**Utilisation de base avec une chaîne comme aiguille**
+**Utilisation de base avec une chaîne comme sous-chaîne recherchée**
 
 ```sql title=Query
 DROP TABLE IF EXISTS doc;
@@ -689,17 +688,16 @@ Avant la recherche, la fonction tokenise
 * l&#39;argument `needle` (s&#39;il est fourni sous forme de [String](/fr/reference/data-types/string))
   à l&#39;aide du tokenizer spécifié pour l&#39;index de texte.
   Si aucun index de texte n&#39;est défini pour la colonne, le tokenizer `splitByNonAlpha` est utilisé à la place.
-  Si l&#39;argument `needle` est de type [Array(String)](/fr/reference/data-types/array), chaque élément du tableau est traité comme un token — aucune tokenisation supplémentaire n&#39;est effectuée.
+  Si l&#39;argument `needle` est de type [Array(String)](/fr/reference/data-types/array), chaque élément du tableau est traité comme un jeton — aucune tokenisation supplémentaire n&#39;est effectuée.
   Si l&#39;index de texte a une expression [preprocessor](/fr/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) configurée, le preprocessor est appliqué à `needle` (s&#39;il est fourni sous forme de `String`) avant la tokenisation.
-  Si l&#39;index de texte a une expression [postprocessor](/fr/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) configurée, le postprocessor est appliqué aux tokens de `needle` et aux tokens de `input` (c&#39;est-à-dire aux deux après la tokenisation).
+  Si l&#39;index de texte a une expression [postprocessor](/fr/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) configurée, le postprocessor est appliqué aux jetons de `needle` et aux jetons de `input` (c&#39;est-à-dire aux deux après la tokenisation).
 
-Les tokens dupliqués sont ignorés.
+Les jetons dupliqués sont ignorés.
 Par exemple, [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] est traité de la même manière que [&#39;ClickHouse&#39;].
 
 <Note>
   Lorsqu&#39;un index de texte définit un [preprocessor](/fr/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (par exemple `lowerUTF8`), `hasAnyTokens` l&#39;applique à `input` et, lorsque `needles` est une [String](/fr/reference/data-types/string), à `needles` avant la tokenisation. Lorsque `needles` est un [Array(String)](/fr/reference/data-types/array), ses éléments sont transmis tels quels et le preprocessor ne leur est pas appliqué.
-  Le preprocessor n&#39;est appliqué que lors de l’utilisation de l’index de texte. Les résultats peuvent donc différer entre les requêtes qui utilisent l&#39;index de texte et celles qui ne l&#39;utilisent pas (par ex. `SETTINGS use_skip_indexes = 0`).
-  Cette incohérence est tolérée afin d&#39;améliorer la facilité d&#39;utilisation de la recherche en texte intégral.
+  Le preprocessor fait partie de la définition de l&#39;index ; il est donc appliqué partout où la fonction est évaluée : dans le filtre `WHERE`/`PREWHERE`, dans la liste `SELECT`, et que l&#39;index soit lu ou non (par ex. `SETTINGS use_skip_indexes = 0`).
 </Note>
 
 **Syntaxe**
@@ -708,13 +706,13 @@ Par exemple, [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] est traité de la mêm
 hasAnyTokens(input, needles[, tokenizer])
 ```
 
-**Alias** : `hasAnyToken`
+**Alias** : `hasAnyToken`
 
 **Arguments**
 
 * `input` — La colonne d’entrée. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`Nullable(String)`](/fr/reference/data-types/nullable) ou [`Nullable(FixedString)`](/fr/reference/data-types/nullable) ou [`Array(String)`](/fr/reference/data-types/array) ou [`Array(FixedString)`](/fr/reference/data-types/array) ou [`Array(Nullable(String))`](/fr/reference/data-types/array) ou [`Array(Nullable(FixedString))`](/fr/reference/data-types/array)
-* `needles` — Les tokens à rechercher. [`String`](/fr/reference/data-types/string) ou [`Array(String)`](/fr/reference/data-types/array)
-* `tokenizer` — Le tokenizer à utiliser. Les arguments valides sont `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` et `array`. Ce paramètre est facultatif ; s’il n’est pas défini explicitement, la valeur par défaut est `splitByNonAlpha`. [`const String`](/fr/reference/data-types/string)
+* `needles` — Les jetons à rechercher. [`String`](/fr/reference/data-types/string) ou [`Array(String)`](/fr/reference/data-types/array)
+* `tokenizer` — Le tokenizer à utiliser. Les arguments valides sont `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` et `array`. Ce paramètre est facultatif ; s’il n’est pas défini explicitement, la valeur par défaut est `splitByNonAlpha`. [`const String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
@@ -746,7 +744,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**Spécifier les &#39;needles&#39; à rechercher tels quels (sans tokenisation) dans un tableau**
+**Spécifier dans un tableau des sous-chaînes recherchées à rechercher AS-IS (sans tokenisation)**
 
 ```sql title=Query
 DROP TABLE IF EXISTS doc;
@@ -770,7 +768,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, ['a', 'd']);
 └─────────┘
 ```
 
-**Générer des needles avec la fonction `tokens`**
+**Générer des sous-chaînes recherchées avec la fonction `tokens`**
 
 ```sql title=Query
 DROP TABLE IF EXISTS doc;
@@ -904,7 +902,7 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
 
 ## hasPhrase {#hasPhrase}
 
-Introduit dans : v26.4.0
+Introduit dans : v26.4.0
 
 Vérifie si `input` contient tous les jetons de `phrase` dans un ordre consécutif.
 
@@ -923,8 +921,7 @@ en conservant les doublons. Les éléments vides de `phrase` sont ignorés, car 
 
 <Note>
   Lorsqu&#39;un index de texte définit un [preprocessor](/fr/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (par exemple `lowerUTF8`), `hasPhrase` l&#39;applique à la fois à `input` et à `phrase` avant la tokenisation.
-  Le preprocessor n&#39;est appliqué que lors de l&#39;utilisation de l&#39;index de texte ; les résultats peuvent donc différer entre les requêtes qui utilisent l&#39;index de texte et celles qui ne l&#39;utilisent pas (par ex. `SETTINGS use_skip_indexes = 0`).
-  Cette incohérence est tolérée afin d&#39;améliorer la facilité d&#39;utilisation de la recherche en texte intégral.
+  Le preprocessor fait partie de la définition de l’index ; il est donc appliqué partout où la fonction est évaluée : dans le filtre `WHERE`/`PREWHERE`, dans la liste `SELECT`, que l’index soit lu ou non (par ex. `SETTINGS use_skip_indexes = 0`).
 </Note>
 
 Contrairement à [`hasToken`](#hasToken), [`hasAnyTokens`](#hasAnyTokens) et [`hasAllTokens`](#hasAllTokens), `hasPhrase` exige que les jetons apparaissent dans le même ordre
@@ -1525,13 +1522,13 @@ SELECT locate('ca', 'abcabc')
 
 ## match {#match}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Vérifie si une chaîne donnée correspond au motif d’expression régulière fourni.
 
 Cette fonction utilise la bibliothèque d’expressions régulières RE2. Veuillez consulter [re2](https://github.com/google/re2/wiki/Syntax) pour connaître la syntaxe prise en charge.
 
-La correspondance repose sur l’hypothèse UTF-8 : par exemple, `¥` utilise deux octets en interne, mais est traité comme un seul point de code lors de la correspondance.
+La correspondance repose sur l’hypothèse UTF-8 : par exemple, `¥` utilise deux octets en interne, mais est traité comme un seul point de code lors de la correspondance.
 L’expression régulière ne doit pas contenir d’octets NULL.
 Si la chaîne d’entrée ou le motif ne sont pas en UTF-8 valide, le comportement est indéfini.
 
@@ -1541,7 +1538,7 @@ Le motif n’est pas ancré. Pour faire correspondre la chaîne entière, ancrez
 
 Si vous souhaitez simplement rechercher des sous-chaînes, vous pouvez utiliser à la place les fonctions [`like`](#like) ou [`position`](#position), qui sont bien plus rapides que cette fonction.
 
-Syntaxe d’opérateur alternative : `haystack REGEXP pattern` ou `haystack ~ pattern` (style PostgreSQL).
+Syntaxe d’opérateur alternative : `haystack REGEXP pattern` ou `haystack ~ pattern` (style PostgreSQL).
 
 **Syntaxe**
 
@@ -1549,7 +1546,7 @@ Syntaxe d’opérateur alternative : `haystack REGEXP pattern` ou `haystack ~ p
 match(haystack, pattern)
 ```
 
-**Alias** : `REGEXP_MATCHES`
+**Alias** : `REGEXP_MATCHES`, `REGEXP_LIKE`
 
 **Arguments**
 
