@@ -27,8 +27,8 @@ MergingSortedTransform::MergingSortedTransform(
     const std::optional<String> & filter_column_name_,
     bool use_average_block_sizes,
     bool apply_virtual_row_conversions,
-    size_t virtual_row_prefetch_window,
-    bool have_all_inputs_)
+    bool have_all_inputs_,
+    bool input_read_ahead_)
     : IMergingTransform(
         num_inputs,
         header,
@@ -47,9 +47,10 @@ MergingSortedTransform::MergingSortedTransform(
         out_row_sources_buf_,
         filter_column_name_,
         use_average_block_sizes,
-        apply_virtual_row_conversions,
-        virtual_row_prefetch_window)
+        apply_virtual_row_conversions)
 {
+    if (!input_read_ahead_)
+        disableInputReadAhead();
 }
 
 void MergingSortedTransform::setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker_, const String & sort_column_name, UInt64 limit_)

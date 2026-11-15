@@ -4,6 +4,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# This test pins the reading thread per part; the setting is randomized by the test runner.
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --read_in_order_use_sliced_pool=0"
+
 set -e
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS s1"

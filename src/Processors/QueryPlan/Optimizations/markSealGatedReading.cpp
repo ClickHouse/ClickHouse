@@ -92,6 +92,10 @@ void tryMarkJoin(QueryPlan::Node & node)
     if (reading->isQueryWithFinal() || reading->isParallelReadingEnabled())
         return;
 
+    /// The sliced pool's sources are not gated; its reads keep the read-time index analysis of the filter.
+    if (reading->usesSlicedPool())
+        return;
+
     /// Cover the longest primary-key PREFIX with the matched filters, in the key order: only
     /// a prefix condition can cut mark ranges (a filter on a non-leading key column selects
     /// rows scattered over the whole part), so gating on anything else would only delay the

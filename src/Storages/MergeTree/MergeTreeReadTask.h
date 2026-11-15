@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
+#include <Storages/MergeTree/MergeTreeSliceInfo.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/StorageSnapshot.h>
@@ -236,7 +237,7 @@ public:
     const IMergeTreeReader & getMainReader() const { return *readers.main; }
 
     void addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_);
-    const MarkRanges & getPrewhereUnmatchedMarks() { return prewhere_unmatched_marks; }
+    const MarkRanges & getPrewhereUnmatchedMarks() const { return prewhere_unmatched_marks; }
 
     void addQueryConditionCacheAttributableMarks(const MarkRanges & mark_ranges_);
     const MarkRanges & getQueryConditionCacheAttributableMarks() const { return query_condition_cache_attributable_marks; }
@@ -259,6 +260,11 @@ public:
     Readers releaseReaders() { return std::move(readers); }
 
     size_t getNumMarksToRead() const { return mark_ranges.getNumberOfMarks(); }
+    /// Bytes of column data read so far, before any filtering: what the task cost its reader.
+    size_t getNumReadBytes() const { return total_read_bytes; }
+    /// The slice of MergeTreeReadPoolInOrderSliced the task reads; its chunks are tagged with it.
+    void setSlice(MergeTreeSliceTag slice_) { slice = slice_; }
+    const std::optional<MergeTreeSliceTag> & getSlice() const { return slice; }
 
     /// `read_request_map` narrows the part's map; `patch_read_request_maps` then holds the matching patch maps.
     static Readers createReaders(
@@ -296,6 +302,8 @@ private:
 
     /// Ranges to read from data_part.
     MarkRanges mark_ranges;
+    size_t total_read_bytes = 0;
+    std::optional<MergeTreeSliceTag> slice;
 
     /// Ranges to read from patch parts.
     std::vector<MarkRanges> patches_mark_ranges;

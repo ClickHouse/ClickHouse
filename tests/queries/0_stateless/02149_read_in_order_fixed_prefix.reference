@@ -11,35 +11,14 @@ ExpressionTransform
     FinishSortingTransform
       PartialSortingTransform
         MergingSortedTransform 2 → 1
-          (Expression)
-          ExpressionTransform × 2
-            (ReadFromMergeTree)
-            VirtualRowTransform
-              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-                VirtualRowTransform
-                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-2020-10-01	9
-2020-10-01	9
-2020-10-01	9
-2020-10-01	9
-2020-10-01	9
-(Expression)
-ExpressionTransform
-  (Limit)
-  Limit
-    (Sorting)
-    FinishSortingTransform
-      PartialSortingTransform
-        MergingSortedTransform 2 → 1
-          (Expression)
-          ExpressionTransform × 2
-            (ReadFromMergeTree)
-            ReverseTransform
+          VirtualRowReadAhead 2 → 2
+            (Expression)
+            ExpressionTransform × 2
+              (ReadFromMergeTree)
               VirtualRowTransform
-                MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InReverseOrder) 0 → 1
-                  ReverseTransform
-                    VirtualRowTransform
-                      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InReverseOrder) 0 → 1
+                MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+                  VirtualRowTransform
+                    MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
 2020-10-01	9
 2020-10-01	9
 2020-10-01	9
@@ -53,13 +32,37 @@ ExpressionTransform
     FinishSortingTransform
       PartialSortingTransform
         MergingSortedTransform 2 → 1
-          (Expression)
-          ExpressionTransform × 2
-            (ReadFromMergeTree)
-            VirtualRowTransform
-              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+          VirtualRowReadAhead 2 → 2
+            (Expression)
+            ExpressionTransform × 2
+              (ReadFromMergeTree)
+              ReverseTransform
                 VirtualRowTransform
-                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InReverseOrder) 0 → 1
+                    ReverseTransform
+                      VirtualRowTransform
+                        MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InReverseOrder) 0 → 1
+2020-10-01	9
+2020-10-01	9
+2020-10-01	9
+2020-10-01	9
+2020-10-01	9
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+    FinishSortingTransform
+      PartialSortingTransform
+        MergingSortedTransform 2 → 1
+          VirtualRowReadAhead 2 → 2
+            (Expression)
+            ExpressionTransform × 2
+              (ReadFromMergeTree)
+              VirtualRowTransform
+                MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+                  VirtualRowTransform
+                    MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
 2020-10-11	0
 2020-10-11	0
 2020-10-11	0
