@@ -11360,13 +11360,15 @@ An empty string lets the catalog choose the codec when it writes the first metad
 )", EXPERIMENTAL, \
         {"25.8", "", "", "New setting"}) \
     DECLARE(Bool, make_distributed_plan, false, R"(
-Make distributed query plan.
+Make distributed query plan. Enabled for the query when `distributed_plan_workers_num` or `distributed_plan_worker_cluster` asks for Stateless Workers, unless set explicitly. In a query's top-level `SETTINGS`, `= DEFAULT` counts as an explicit 0.
 
 Enabling it automatically adjusts settings that control features not supported by distributed query plans yet:
 - `enable_parallel_replicas = 0` and `automatic_parallel_replicas_mode = 0` — the distributed plan does its own work distribution;
 - `correlated_subqueries_use_in_memory_buffer = 0`;
+- `use_skip_indexes_on_data_read = 0`;
 - `compile_expressions = 0`;
-- `query_plan_direct_read_from_text_index = 0`.
+- `query_plan_direct_read_from_text_index = 0`;
+- `use_concurrency_control = 0` — exchange waits can starve under concurrency control.
 )", PRIVATE_PREVIEW, \
         {"25.5", 0, 0, "New experimental setting."}) \
     DECLARE(Bool, distributed_plan_fallback_to_local_execution, true, R"(
@@ -11403,7 +11405,7 @@ Removes unnecessary exchanges in distributed query plan. Disable it for debuggin
 )", 0, \
         {"25.5", true, true, "New experimental setting."}) \
     DECLARE(UInt64, distributed_plan_workers_num, 0, R"(
-How many stateless workers will be used to execute this query. Zero disables stateless-worker leasing for distributed plans.
+How many Stateless Workers to lease for this query's distributed plan. A non-zero value enables `make_distributed_plan`; `0` set explicitly refuses the plan.
 )", PRIVATE_PREVIEW, \
         {"26.6", 0, 0, "New experimental setting for how many stateless workers to lease for a distributed query. Zero disables leasing."}) \
     DECLARE(UInt64, distributed_plan_workers_provisioning_timeout_ms, 10000, R"(
@@ -11459,7 +11461,7 @@ Serialize the distributed query plan for execution at replicas.
 )", PRIVATE_PREVIEW, \
         {"26.4", false, false, "New setting to serialize distributed plan for replicas"}) \
     DECLARE(String, distributed_plan_worker_cluster, "", R"(
-Name of the stateless-worker cluster to execute this query's distributed plan on. The empty default selects the pre-configured default cluster; other clusters are configured under `stateless_worker_client.clusters`.
+Name of the stateless-worker cluster to execute this query's distributed plan on. The empty default selects the pre-configured default cluster; other clusters are configured under `stateless_worker_client.clusters`. A non-empty value enables `make_distributed_plan`; not allowed with `distributed_plan_execute_locally`.
 )", PRIVATE_PREVIEW, \
         {"26.11", "", "", "New setting to select the stateless worker cluster for distributed plan execution."}) \
     DECLARE(Bool, distributed_plan_join_runtime_filters, false, R"(

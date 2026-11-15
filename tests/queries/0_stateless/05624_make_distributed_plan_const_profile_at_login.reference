@@ -1,0 +1,6 @@
+still derived in a readonly session
+OK
+pinned on by a const constraint runs queries fine
+OK
+vetoed by the const constraint
+OK

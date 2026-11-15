@@ -1,4 +1,6 @@
--- Local execution must not resolve a worker provider (the named cluster does not exist).
+-- Local execution must not resolve a worker provider at all - distributed_plan_worker_cluster is
+-- not set, since it now conflicts with distributed_plan_execute_locally, which runs the plan
+-- in-process and could not serve a named cluster of remote workers anyway.
 -- Zero requested workers leaves the count uncapped: 10 read tasks + one merge task.
 
 SET enable_analyzer = 1;
@@ -13,8 +15,8 @@ CREATE TABLE t_local_no_provider (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_local_no_provider SELECT number FROM numbers(1000000);
 
 SELECT sum(k) FROM t_local_no_provider
-SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_workers_num = 0,
-    distributed_plan_worker_cluster = 'nonexistent_05428', distributed_plan_default_reader_bucket_count = 0,
+SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
+    distributed_plan_default_reader_bucket_count = 0,
     distributed_plan_min_rows_per_reader = 100000, log_comment = '05428_local_no_provider';
 
 SYSTEM FLUSH LOGS query_log;

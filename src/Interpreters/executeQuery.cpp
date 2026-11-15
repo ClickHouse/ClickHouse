@@ -31,6 +31,7 @@
 
 #include <Processors/ProcessorsProfileLogInfo.h>
 #include <QueryPipeline/BlockIO.h>
+#include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Formats/Impl/NullFormat.h>
 
@@ -3037,6 +3038,11 @@ static BlockIO executeQueryImpl(
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
             /// to allow settings to take effect.
             InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
+
+            /// Not on a bare `SET`, which only changes the session and must be able to clear a conflict;
+            /// not on secondary queries, which carry the initiator's already-resolved settings.
+            if (!out_ast->as<ASTSetQuery>() && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+                applyDistributedPlanSettings(context);
 
             /// The `database` setting is documented as equivalent to `USE`. To behave that way it must
             /// change the database that unqualified names resolve to, not just be stored as a string.

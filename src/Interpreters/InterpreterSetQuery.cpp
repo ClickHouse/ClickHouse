@@ -23,6 +23,7 @@
 #include <Storages/StorageFactory.h>
 #include <Common/SettingsChanges.h>
 
+#include <algorithm>
 #include <utility>
 
 namespace DB
@@ -116,6 +117,11 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
     }
     getContext()->applySettingsChanges(changes);
     getContext()->resetSettingsToDefaultValue(ast.default_settings);
+
+    /// `make_distributed_plan` may be inferred from `distributed_plan_workers_num`/`distributed_plan_worker_cluster`,
+    /// and this clause is applied again later, so an in-query reset counts as an explicit 0, not "unset".
+    if (std::ranges::contains(ast.default_settings, "make_distributed_plan"))
+        getContext()->setSetting("make_distributed_plan", Field(false));
 }
 
 static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & select_with_union, ContextMutablePtr context)

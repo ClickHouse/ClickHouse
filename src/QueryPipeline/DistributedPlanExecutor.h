@@ -26,8 +26,13 @@ namespace DB
 
 /// Node count Cascades should plan for, matching the executor's worker source:
 /// `distributed_plan_workers_num` for local/Cloud-discovery execution, else the static worker
-/// cluster size. Returns 0 when no source is available, so the caller can reject distributed planning.
+/// cluster size. Throws if the stateless worker client is disabled and execution is not local.
 size_t getCascadesPlanningNodeCount(ContextPtr context);
+
+/// Rejects explicit settings that both want and refuse a distributed query plan, and derives
+/// `make_distributed_plan` on the query context when a worker setting wants it and nothing set it
+/// explicitly.
+void applyDistributedPlanSettings(ContextMutablePtr context);
 
 /// Network endpoint of a worker, resolved on the initiator from the cluster config (and
 /// server-level defaults). Both ports may differ per node so several workers can share a host.

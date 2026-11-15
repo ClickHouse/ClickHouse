@@ -7598,7 +7598,10 @@ ORDER BY (test_name, callee_offset)
         # cloud_mode=1 restricts index_granularity=0
         "table cannot have index granularity (bytes) equals zero",
         # make_distributed_plan add to constraints because it doesn't work yet
-        "Setting make_distributed_plan should not be changed"
+        "Setting make_distributed_plan should not be changed",
+        # same constraint, hit when a test wants the plan via distributed_plan_workers_num or
+        # distributed_plan_worker_cluster instead of setting make_distributed_plan itself
+        "A settings constraint forbids enabling `make_distributed_plan`"
     ]
 
     if not args.shared_catalog:
