@@ -39,6 +39,7 @@
 #include <Parsers/ASTFromJSON.h>
 #include <Parsers/Trino/ParserTrinoQuery.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
+#include <Parsers/Q/parseQQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 #include <Parsers/LogsQL/ParserLogsQLQuery.h>
@@ -489,6 +490,17 @@ void LocalConnection::sendQuery(
                 parsed_query->checkDepth(state->json_ast_max_depth);
             if (state->json_ast_max_elements)
                 parsed_query->checkSize(state->json_ast_max_elements);
+        }
+        else if (dialect == Dialect::q)
+        {
+            const char * q_pos = begin;
+            parsed_query = parseQQuery(
+                q_pos,
+                end,
+                /*allow_multi_statements=*/false,
+                state->max_query_size,
+                state->max_parser_depth,
+                state->max_parser_backtracks);
         }
         else if (dialect == Dialect::kusto)
         {
