@@ -2,6 +2,7 @@
 #include <Common/setThreadName.h>
 
 #if USE_AZURE_BLOB_STORAGE
+#include <Common/maskURIPassword.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
 #include <IO/SharedThreadPools.h>
@@ -13,8 +14,11 @@
 #include <Disks/DiskType.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <boost/algorithm/string.hpp>
 #include <azure/storage/blobs/blob_options.hpp>
 #include <azure/core/context.hpp>
+#include <azure/core/url.hpp>
+#include <azure/storage/common/storage_credential.hpp>
 
 #include <filesystem>
 
@@ -26,6 +30,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -61,7 +66,89 @@ namespace
             {"sdk_retry_max_backoff_ms", std::to_string(settings.sdk_retry_max_backoff_ms)},
         };
     }
+
+    /// An Azure disk configured with `connection_string` is described by that whole string.
+    String maskedDescription(const DataSourceDescription & description)
+    {
+        String result = description.description;
+        maskAzureConnectionStringSecrets(result);
+        return result;
+    }
+
+#if CLICKHOUSE_CLOUD
+    /// The recorded endpoint of a snapshot's source disk as a service URL: scheme, host, port and path, without
+    /// query parameters and trailing slashes. A source disk that authenticates with a SAS records it in the
+    /// query, and one configured with a connection string records the connection string itself; the snapshot
+    /// is read with the backup's credential in any case, so only the service URL is kept.
+    String snapshotServiceURL(const String & endpoint)
+    {
+        Azure::Core::Url parsed;
+        try
+        {
+            parsed = endpoint.starts_with("http") ? Azure::Core::Url(endpoint)
+                                                  : Azure::Storage::_internal::ParseConnectionString(endpoint).BlobServiceUrl;
+        }
+        catch (const std::exception & e)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse the endpoint of a lightweight snapshot: {}", e.what());
+        }
+        if (parsed.GetScheme().empty() || parsed.GetHost().empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The endpoint of a lightweight snapshot is not a service URL");
+
+        String url = parsed.GetScheme() + "://" + parsed.GetHost();
+        if (parsed.GetPort() != 0)
+            url += ":" + std::to_string(parsed.GetPort());
+        if (!parsed.GetPath().empty())
+            url += "/" + parsed.GetPath();
+        while (url.ends_with('/'))
+            url.pop_back();
+        return url;
+    }
+
+    /// The connection string with its blob endpoint replaced by `service_url`. `CreateFromConnectionString()`
+    /// takes the endpoint from the connection string alone, so this is how a connection string is pointed at
+    /// the recorded endpoint of a snapshot; the account key or SAS it carries then authorises the reads there,
+    /// or Azure refuses them if it belongs to another account.
+    String withBlobEndpoint(const String & connection_string, const String & service_url)
+    {
+        std::vector<String> parts;
+        boost::split(parts, connection_string, boost::is_any_of(";"));
+        String result;
+        for (const auto & part : parts)
+            if (!part.empty() && !part.starts_with("BlobEndpoint="))
+                result += part + ";";
+        return result + "BlobEndpoint=" + service_url;
+    }
+#endif
 }
+
+#if CLICKHOUSE_CLOUD
+AzureBlobStorage::ConnectionParams makeSnapshotSourceConnectionParams(
+    const AzureBlobStorage::ConnectionParams & backup_connection_params, const String & endpoint, const String & blob_namespace)
+{
+    auto connection_params = backup_connection_params;
+
+    /// The objects are read from the recorded endpoint with the backup's credential, as the S3 reader does.
+    const String service_url = snapshotServiceURL(endpoint);
+    if (const auto * connection_string = std::get_if<AzureBlobStorage::ConnectionString>(&connection_params.auth_method))
+    {
+        const String repointed = withBlobEndpoint(connection_string->toUnderType(), service_url);
+        connection_params.auth_method = AzureBlobStorage::ConnectionString{repointed};
+        connection_params.endpoint.storage_account_url = repointed;
+    }
+    else
+        connection_params.endpoint.storage_account_url = service_url;
+
+    const auto slash_pos = blob_namespace.find('/');
+    connection_params.endpoint.container_name = blob_namespace.substr(0, slash_pos);
+    connection_params.endpoint.prefix = (slash_pos == String::npos) ? "" : blob_namespace.substr(slash_pos + 1);
+
+    /// The snapshot was taken from this container, so it exists; the existence check is also a
+    /// container-level request.
+    connection_params.endpoint.container_already_exists = true;
+    return connection_params;
+}
+#endif
 
 BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
     const AzureBlobStorage::ConnectionParams & connection_params_,
@@ -71,7 +158,7 @@ BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
     const WriteSettings & write_settings_,
     const ContextPtr & context_)
     : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderAzureBlobStorage"))
-    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, connection_params_.getConnectionURL(), false, false, ""}
+    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, connection_params_.getConnectionURLWithoutQuery(), false, false, ""}
     , connection_params(connection_params_)
     , blob_path(blob_path_)
 {
@@ -123,7 +210,7 @@ void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup,
                                     DiskPtr destination_disk, const String & destination_path, WriteMode write_mode)
 {
     auto destination_data_source_description = destination_disk->getDataSourceDescription();
-    LOG_TRACE(log, "Source description {}, destination description {}", data_source_description.description, destination_data_source_description.description);
+    LOG_TRACE(log, "Source description {}, destination description {}", data_source_description.description, maskedDescription(destination_data_source_description));
     if (destination_data_source_description.object_storage_type == ObjectStorageType::Azure
         && destination_data_source_description.is_encrypted == encrypted_in_backup)
     {
@@ -175,7 +262,7 @@ BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
     const ContextPtr & context_,
     bool attempt_to_create_container)
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterAzureBlobStorage"))
-    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, connection_params_.getConnectionURL(), false, false, ""}
+    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, connection_params_.getConnectionURLWithoutQuery(), false, false, ""}
     , connection_params(connection_params_)
     , blob_path(blob_path_)
 {
@@ -206,12 +293,12 @@ BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
     }
 }
 
-void BackupWriterAzureBlobStorage::copyFileFromDisk(
+bool BackupWriterAzureBlobStorage::copyFileFromDiskNatively(
     const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
     /// Use the native copy as a more optimal way to copy a file from AzureBlobStorage to AzureBlobStorage if it's possible.
     auto source_data_source_description = src_disk->getDataSourceDescription();
-    LOG_TRACE(log, "Source description {}, destination description {}", source_data_source_description.description, data_source_description.description);
+    LOG_TRACE(log, "Source description {}, destination description {}", maskedDescription(source_data_source_description), data_source_description.description);
     if (source_data_source_description.object_storage_type == ObjectStorageType::Azure
         && source_data_source_description.is_encrypted == copy_encrypted)
     {
@@ -229,7 +316,7 @@ void BackupWriterAzureBlobStorage::copyFileFromDisk(
             if ((start_pos == 0) && (length == source_size))
             {
                 LOG_TRACE(log, "Copying file {} from disk {} to AzureBlobStorage", src_path, src_disk->getName());
-                copyAzureBlobStorageFile(
+                return copyAzureBlobStorageFile(
                     src_disk->getObjectStorage()->getAzureBlobStorageClient(),
                     client,
                     /* src_container */ src_blob_path[1],
@@ -241,8 +328,8 @@ void BackupWriterAzureBlobStorage::copyFileFromDisk(
                     read_settings,
                     std::optional<ObjectAttributes>(),
                     threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::AZURE_BACKUP_WRITER),
-                    blob_storage_log);
-                return; /// copied!
+                    blob_storage_log,
+                    /* allow_copy_through_buffers= */ false);
             }
 
             LOG_TRACE(
@@ -253,8 +340,63 @@ void BackupWriterAzureBlobStorage::copyFileFromDisk(
         }
     }
 
-    /// Fallback to copy through buffers.
-    BackupWriterDefault::copyFileFromDisk(path_in_backup, src_disk, src_path, copy_encrypted, start_pos, length);
+    return false;
+}
+
+bool BackupWriterAzureBlobStorage::copyFileFromBlobPath(
+    const String & path_in_backup,
+    DiskPtr src_disk,
+    const String & src_blob_key,
+    const String & src_blob_namespace,
+    bool copy_encrypted,
+    UInt64 start_pos,
+    UInt64 length,
+    UInt64 src_object_size,
+    const CreateReadBufferFunction & /* create_fallback_read_buffer */)
+{
+    /// Check if we can use native Azure copy
+    auto source_data_source_description = src_disk->getDataSourceDescription();
+    if (source_data_source_description.object_storage_type != ObjectStorageType::Azure
+        || source_data_source_description.is_encrypted != copy_encrypted)
+        return false;
+
+    /// The client of the disk reads from the container the disk is CURRENTLY pointed to
+    /// (`src_blob_namespace` is passed to `copyAzureBlobStorageFile` only for logging). If the disk
+    /// has been repointed to a different container since `src_blob_key` was recorded, the copy would
+    /// silently read the wrong objects, so fall back to the buffer copy through the caller's reader.
+    if (src_disk->getObjectStorage()->getObjectsNamespace() != src_blob_namespace)
+        return false;
+
+    /// The Azure-to-Azure copy transfers the whole source blob and cannot copy a byte range, so it is
+    /// usable only when the request covers the entire source. `start_pos != 0` is not a sound test,
+    /// because a prefix [0, length) of a bigger blob is a range too. Anything else must go through
+    /// buffers, which the caller does when we return false.
+    if ((start_pos != 0) || (length != src_object_size))
+    {
+        LOG_TRACE(
+            log,
+            "Cannot copy the range [{}, {}) of blob {} of size {} from disk {} with the Azure-to-Azure copy, "
+            "which cannot copy a part of a blob",
+            start_pos, start_pos + length, src_blob_key, src_object_size, src_disk->getName());
+        return false;
+    }
+
+    LOG_TRACE(log, "Copying blob {} from disk {} to AzureBlobStorage", src_blob_key, src_disk->getName());
+
+    return copyAzureBlobStorageFile(
+        src_disk->getObjectStorage()->getAzureBlobStorageClient(),
+        client,
+        /* src_container */ src_blob_namespace,
+        /* src_path */ src_blob_key,
+        length,
+        connection_params.getContainer(),
+        fs::path(blob_path) / path_in_backup,
+        settings,
+        read_settings,
+        std::optional<ObjectAttributes>(),
+        threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::AZURE_BACKUP_WRITER),
+        blob_storage_log,
+        /* allow_copy_through_buffers= */ false);
 }
 
 void BackupWriterAzureBlobStorage::copyFile(const String & destination, const String & source, size_t size)

@@ -5,15 +5,21 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Common/SipHash.h>
+#include <Formats/FormatSettings.h>
 #include <boost/functional/hash.hpp>
 
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/IColumn.h>
 #include <Core/TypeId.h>
+#include <Common/assert_cast.h>
 
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
 namespace DB
 {
@@ -22,14 +28,107 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
+    extern const int INCORRECT_DATA;
 }
 
 namespace Setting
 {
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool input_format_parquet_filter_push_down;
+    extern const SettingsBool input_format_parquet_bloom_filter_push_down;
+    extern const SettingsUInt64 input_format_parquet_dictionary_filter_push_down;
+    extern const SettingsBool input_format_parquet_page_filter_push_down;
+    extern const SettingsBool input_format_parquet_spatial_filter_push_down;
+    extern const SettingsBool input_format_orc_filter_push_down;
+    extern const SettingsBool input_format_parquet_case_insensitive_column_matching;
+    extern const SettingsBool input_format_orc_case_insensitive_column_matching;
+    extern const SettingsBool input_format_arrow_case_insensitive_column_matching;
+    extern const SettingsBool input_format_parquet_allow_missing_columns;
+    extern const SettingsBool input_format_orc_allow_missing_columns;
+    extern const SettingsBool input_format_arrow_allow_missing_columns;
+    extern const SettingsBool input_format_parquet_use_offset_index;
+    extern const SettingsBool input_format_parquet_local_time_as_utc;
+    extern const SettingsBool input_format_null_as_default;
+    extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
+    extern const SettingsBool input_format_parquet_allow_geoparquet_parser;
+    extern const SettingsBool input_format_parquet_enable_json_parsing;
+    extern const SettingsBool input_format_parquet_detect_variant_by_structure;
+    extern const SettingsBool type_json_use_partial_match_to_skip_paths_by_regexp;
+    extern const SettingsBool precise_float_parsing;
 }
 
-void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_)
+/// The entries for files are written from the row groups the reader pruned, not from evaluating the
+/// condition. With a condition that is not a filter of rows (e.g. `indexHint`), a pruned row group
+/// still has rows the query returns when it is not pruned, so a read with another set of enabled
+/// pruning methods must not consult the entries of this one. The column matching settings decide
+/// which physical column a predicate is evaluated against, so they are part of the key as well. So are
+/// the settings allowing missing columns: a read that fills a missing column with defaults may cache
+/// a verdict, and a read that must throw for that column would otherwise skip the file instead.
+/// `input_format_parquet_use_offset_index` enables page pruning, and `input_format_parquet_local_time_as_utc`
+/// decides the time zone in which the timestamp statistics are decoded. `input_format_null_as_default`
+/// decides whether a `NULL` read into a non-`Nullable` column becomes the default, or throws: a read that
+/// fills defaults may cache a verdict, and a read that must throw would otherwise skip the file instead.
+/// `date_time_overflow_behavior` decides whether an out-of-range date is saturated or throws, for the same reason.
+/// The rest change the values decoded from a file without changing their types, as in the identity of the
+/// columns cache (see `ParquetV3BlockInputFormat`): e.g. `type_json_use_partial_match_to_skip_paths_by_regexp`
+/// decides which paths of a `JSON` column decoded from a variant are skipped.
+/// `queryConditionCacheSettingsSalt` covers it for the session, but a table may pin another value at `CREATE`.
+UInt64 fileFormatPruningSettingsSalt(const Settings & settings)
+{
+    SipHash hash;
+    hash.update(settings[Setting::input_format_parquet_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_bloom_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_dictionary_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_page_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_spatial_filter_push_down].value);
+    hash.update(settings[Setting::input_format_orc_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_case_insensitive_column_matching].value);
+    hash.update(settings[Setting::input_format_orc_case_insensitive_column_matching].value);
+    hash.update(settings[Setting::input_format_arrow_case_insensitive_column_matching].value);
+    hash.update(settings[Setting::input_format_parquet_allow_missing_columns].value);
+    hash.update(settings[Setting::input_format_orc_allow_missing_columns].value);
+    hash.update(settings[Setting::input_format_arrow_allow_missing_columns].value);
+    hash.update(settings[Setting::input_format_parquet_use_offset_index].value);
+    hash.update(settings[Setting::input_format_parquet_local_time_as_utc].value);
+    hash.update(settings[Setting::input_format_null_as_default].value);
+    hash.update(static_cast<UInt64>(settings[Setting::date_time_overflow_behavior].value));
+    hash.update(settings[Setting::input_format_parquet_allow_geoparquet_parser].value);
+    hash.update(settings[Setting::input_format_parquet_enable_json_parsing].value);
+    hash.update(settings[Setting::input_format_parquet_detect_variant_by_structure].value);
+    hash.update(settings[Setting::type_json_use_partial_match_to_skip_paths_by_regexp].value);
+    hash.update(settings[Setting::precise_float_parsing].value);
+    return hash.get64();
+}
+
+/// The same settings as above, taken from the format settings a reader actually uses. Keep them in sync.
+UInt64 fileFormatPruningSettingsSalt(const FormatSettings & format_settings)
+{
+    SipHash hash;
+    hash.update(format_settings.parquet.filter_push_down);
+    hash.update(format_settings.parquet.bloom_filter_push_down);
+    hash.update(static_cast<UInt64>(format_settings.parquet.dictionary_filter_push_down));
+    hash.update(format_settings.parquet.page_filter_push_down);
+    hash.update(format_settings.parquet.spatial_filter_push_down);
+    hash.update(format_settings.orc.filter_push_down);
+    hash.update(format_settings.parquet.case_insensitive_column_matching);
+    hash.update(format_settings.orc.case_insensitive_column_matching);
+    hash.update(format_settings.arrow.case_insensitive_column_matching);
+    hash.update(format_settings.parquet.allow_missing_columns);
+    hash.update(format_settings.orc.allow_missing_columns);
+    hash.update(format_settings.arrow.allow_missing_columns);
+    hash.update(format_settings.parquet.use_offset_index);
+    hash.update(format_settings.parquet.local_time_as_utc);
+    hash.update(format_settings.null_as_default);
+    hash.update(static_cast<UInt64>(format_settings.date_time_overflow_behavior));
+    hash.update(format_settings.parquet.allow_geoparquet_parser);
+    hash.update(format_settings.parquet.enable_json_parsing);
+    hash.update(format_settings.parquet.detect_variant_by_structure);
+    hash.update(format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp);
+    hash.update(format_settings.precise_float_parsing);
+    return hash.get64();
+}
+
+void ColumnMapper::setStorageColumnEncoding(ColumnNameToFieldId && storage_encoding_)
 {
     chassert(storage_encoding.empty());
     storage_encoding = std::move(storage_encoding_);
@@ -38,11 +137,11 @@ void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> &&
             throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Duplicate field id {}", field_id);
 }
 
-std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> ColumnMapper::makeMapping(
-    const std::unordered_map<Int64, String> & format_encoding) const
+std::pair<ColumnNameMap, ColumnNameMap> ColumnMapper::makeMapping(
+    const FieldIdToColumnName & format_encoding) const
 {
-    std::unordered_map<String, String> clickhouse_to_parquet_names;
-    std::unordered_map<String, String> parquet_names_to_clickhouse;
+    ColumnNameMap clickhouse_to_parquet_names;
+    ColumnNameMap parquet_names_to_clickhouse;
     for (const auto & [column_name, field_id] : storage_encoding)
     {
         if (auto it = format_encoding.find(field_id); it != format_encoding.end())
@@ -59,6 +158,54 @@ std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>
     return {clickhouse_to_parquet_names, parquet_names_to_clickhouse};
 }
 
+void validateIcebergFieldIds(
+    const DataTypePtr & type, const String & path, const ColumnNameToFieldId & field_ids)
+{
+    /// Nullable/LowCardinality are transparent in Iceberg field naming: the field id is on the inner type, under the same path.
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Nullable:
+            validateIcebergFieldIds(assert_cast<const DataTypeNullable &>(*type).getNestedType(), path, field_ids);
+            return;
+        case TypeIndex::LowCardinality:
+            validateIcebergFieldIds(assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType(), path, field_ids);
+            return;
+        default:
+            break;
+    }
+
+    if (!field_ids.contains(path))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Column '{}' has no field id in the Iceberg schema being written. The table schema "
+            "likely changed concurrently (e.g. a column was renamed); retry the INSERT.",
+            path);
+
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Tuple:
+        {
+            const auto & tuple = assert_cast<const DataTypeTuple &>(*type);
+            size_t num_elements = tuple.getElements().size();
+            for (size_t i = 0; i < num_elements; ++i)
+                validateIcebergFieldIds(tuple.getElement(i), path + "." + tuple.getNameByPosition(i + 1), field_ids);
+            break;
+        }
+        case TypeIndex::Array:
+            validateIcebergFieldIds(assert_cast<const DataTypeArray &>(*type).getNestedType(), path + ".element", field_ids);
+            break;
+        case TypeIndex::Map:
+        {
+            const auto & map = assert_cast<const DataTypeMap &>(*type);
+            validateIcebergFieldIds(map.getKeyType(), path + ".key", field_ids);
+            validateIcebergFieldIds(map.getValueType(), path + ".value", field_ids);
+            break;
+        }
+        default:
+            break;
+    }
+}
+
 FormatFilterInfo::FormatFilterInfo(
     std::shared_ptr<const ActionsDAG> filter_actions_dag_,
     const ContextPtr & context_,
@@ -71,26 +218,33 @@ FormatFilterInfo::FormatFilterInfo(
     , prewhere_info(std::move(prewhere_info_))
     , column_mapper(column_mapper_)
 {
-    bool use_query_condition_cache = context_->getSettingsRef()[Setting::use_query_condition_cache];
-    if (use_query_condition_cache && filter_actions_dag)
-    {
-        /// PREWHERE runs before the row count this hash describes, so a row group PREWHERE empties looks
-        /// like one the hashed condition rejected. A PREWHERE collected with the read's filters is inside
-        /// `filter_actions_dag`, so the hash covers it; a join runtime filter is moved in afterwards.
-        bool prewhere_covered = true;
-        if (prewhere_info)
-        {
-            const auto * prewhere_node = prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name);
-            prewhere_covered = prewhere_node && VirtualColumnUtils::isDeterministic(prewhere_node);
-        }
+    if (filter_actions_dag && context_->getSettingsRef()[Setting::use_query_condition_cache])
+        condition_hash = computeConditionHash(*filter_actions_dag, prewhere_info, context_);
+}
 
-        const auto & outputs = filter_actions_dag->getOutputs();
-        if (prewhere_covered && outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs[0]))
-        {
-            condition_hash = queryConditionCacheHash(
-                filter_actions_dag->getHash(), queryConditionCacheSettingsSalt(context_->getSettingsRef()));
-        }
+std::optional<size_t> FormatFilterInfo::computeConditionHash(
+    const ActionsDAG & filter_actions_dag,
+    const PrewhereInfoPtr & prewhere_info,
+    const ContextPtr & context)
+{
+    /// PREWHERE runs before the row count this hash describes, so a row group PREWHERE empties looks
+    /// like one the hashed condition rejected. A PREWHERE collected with the read's filters is inside
+    /// `filter_actions_dag`, so the hash covers it; a join runtime filter is moved in afterwards.
+    if (prewhere_info)
+    {
+        const auto * prewhere_node = prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name);
+        if (!prewhere_node || !VirtualColumnUtils::isDeterministic(prewhere_node))
+            return {};
     }
+
+    const auto & outputs = filter_actions_dag.getOutputs();
+    if (outputs.size() != 1 || !VirtualColumnUtils::isDeterministic(outputs[0]))
+        return {};
+
+    const auto & settings = context->getSettingsRef();
+    return queryConditionCacheHash(
+        filter_actions_dag.getHash(),
+        queryConditionCacheSettingsSalt(settings) ^ fileFormatPruningSettingsSalt(settings));
 }
 
 FormatFilterInfo::FormatFilterInfo() = default;
@@ -98,7 +252,7 @@ FormatFilterInfo::FormatFilterInfo() = default;
 
 bool FormatFilterInfo::hasFilter() const
 {
-    return filter_actions_dag != nullptr;
+    return filter_actions_dag || row_level_filter || prewhere_info || top_k_filter;
 }
 
 namespace
@@ -189,6 +343,47 @@ void FormatFilterInfo::initKeyConditionOnce(const Block & keys)
                 std::rethrow_exception(copyMutableException(init_exception));
             }
         });
+}
+
+std::optional<std::shared_ptr<const KeyCondition>> FormatFilterInfo::tryGetJoinRuntimeFilterKeyCondition(const Block & keys)
+{
+    std::lock_guard lock(join_runtime_filter_mutex);
+    if (join_runtime_filter_key_condition_built)
+        return join_runtime_filter_key_condition;
+    if (!join_runtime_filter_predicate)
+        return nullptr;
+
+    auto predicate = join_runtime_filter_predicate->tryGet();
+    if (!predicate)
+        return std::nullopt;
+
+    join_runtime_filter_key_condition_built = true;
+    auto ctx = context.lock();
+    if (!*predicate || !ctx)
+        return nullptr;
+
+    ColumnsWithTypeAndName columns = keys.getColumnsWithTypeAndName();
+    for (const auto & column : additional_columns)
+        columns.push_back(column);
+
+    /// The predicate reads each key as the type of the read step's output; KeyCondition would compare the statistics of
+    /// a column of another type wrongly. Renamed, the column is unknown to the predicate, which then ignores that key.
+    for (const auto & descriptor : join_runtime_filter_predicate->getDescriptors())
+    {
+        auto it = std::ranges::find(columns, descriptor.key_column_name, &ColumnWithTypeAndName::name);
+        if (it != columns.end() && !it->type->equals(*descriptor.key_column_type))
+            it->name = "__join_runtime_filter_key_of_another_type_" + it->name;
+    }
+
+    Names names;
+    names.reserve(columns.size());
+    for (const auto & column : columns)
+        names.push_back(column.name);
+
+    ActionsDAGWithInversionPushDown inverted_dag((*predicate)->getOutputs().front(), ctx, /* boolean_context */ true);
+    join_runtime_filter_key_condition = std::make_shared<const KeyCondition>(
+        inverted_dag, ctx, names, std::make_shared<ExpressionActions>(ActionsDAG(columns)));
+    return join_runtime_filter_key_condition;
 }
 
 }

@@ -22,9 +22,9 @@ set (RMM_DIR "${ClickHouse_SOURCE_DIR}/contrib/rmm/cpp")
 set (RMM_SOURCES
     "${RMM_DIR}/src/aligned.cpp"
     "${RMM_DIR}/src/cuda_device.cpp"
+    "${RMM_DIR}/src/cuda_memcpy.cpp"
     "${RMM_DIR}/src/cuda_stream.cpp"
     "${RMM_DIR}/src/cuda_stream_pool.cpp"
-    "${RMM_DIR}/src/cuda_stream_view.cpp"
     "${RMM_DIR}/src/device_buffer.cpp"
     "${RMM_DIR}/src/error.cpp"
     "${RMM_DIR}/src/exec_policy.cpp"

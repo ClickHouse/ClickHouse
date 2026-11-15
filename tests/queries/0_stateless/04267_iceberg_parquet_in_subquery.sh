@@ -15,7 +15,7 @@ trap "rm -rf '${TABLE_PATH}'" EXIT
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
 ${CLICKHOUSE_CLIENT} --query "
-    CREATE TABLE ${TABLE} (id UInt64, payload String)
+    CREATE TABLE ${TABLE} (id Int64, payload String)
     ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet')
 "
 

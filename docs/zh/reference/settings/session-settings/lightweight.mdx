@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并根据 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## lightweight_delete_mode
+## lightweight_delete_mode {#lightweight_delete_mode}
 
 <SettingsInfoBlock type="LightweightDeleteMode" default_value="alter_update" />
 
@@ -27,7 +27,13 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * `lightweight_update` - 如果可以，则运行轻量级更新；否则运行 `ALTER UPDATE`。
 * `lightweight_update_force` - 如果可以，则运行轻量级更新；否则抛出异常。
 
-## lightweight_deletes_sync
+对于 `DELETE FROM ... ON CLUSTER`，每个执行主机都会依据自身的设置确定模式，因此
+如果各主机的 profile 设置了不同的默认值，它们就可能以不同的模式执行删除。对于带副本的
+分片，删除只在其中一个副本上执行，因此由该副本的设置决定模式。在发起查询的会话中设置此项可覆盖上述行为，
+因为当 `distributed_ddl_entry_format_version` 为 2 及以上时 (默认值即满足此条件) ，分布式 DDL 条目会携带会话中的设置变更。
+如果某主机对该设置施加了约束，则会将该值限制回允许的范围内。
+
+## lightweight_deletes_sync {#lightweight_deletes_sync}
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 

@@ -14,7 +14,7 @@
 #include <Interpreters/Context.h>
 
 #include <Poco/Net/HTTPRequest.h>
-#include <Poco/StreamCopier.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace ProfileEvents
@@ -118,7 +118,7 @@ std::string API::requestNonce() const
 
     auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, uri, connection_timeout_settings, proxy_configuration);
     session->setKeepAlive(false);
-    session->sendRequest(r);
+    sendHTTPRequest(*session, r)->finalize();
 
     auto response = Poco::Net::HTTPResponse();
     receiveResponse(*session, r, response, /* allow_redirects */ false);
@@ -175,16 +175,17 @@ std::string API::doJWSRequest(
 
     ProfileEvents::increment(ProfileEvents::ACMEAPIRequests);
 
-    auto & ostream = session->sendRequest(r);
-    ostream << request_data;
+    auto request_body = sendHTTPRequest(*session, r);
+    writeString(request_data, *request_body);
+    request_body->finalize();
 
     if (!response)
         response = std::make_shared<Poco::Net::HTTPResponse>();
 
-    auto * rstream = receiveResponse(*session, r, *response, /* allow_redirects */ false);
+    auto response_body = receiveResponse(*session, r, *response, /* allow_redirects */ false);
 
     std::string response_data;
-    Poco::StreamCopier::copyToString(*rstream, response_data);
+    readStringUntilEOF(response_data, *response_body);
 
     return response_data;
 }

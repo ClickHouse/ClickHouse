@@ -1,0 +1,222 @@
+-- w: shape A, the plain type to SHARED and back, lazily
+a_w mutations	0
+a_w layout	all_1_1_0	0	1
+a_w layout	all_2_2_0	1	0
+a_w [json]	1
+a_w [json.a]	1
+a_w [json.c.size0]	1
+a_w [json.d]	1
+a_w [(json, json.a)]	1
+a_w [(json.c.size0, json)]	1
+a_w [json] max_block_size = 5	1
+a_w [(json.a, json)] max_block_size = 5	1
+a_w [json] max_threads = 4, max_block_size = 5	1
+a_w [(json.a, json)] max_threads = 4, max_block_size = 5	1
+a_w paths over the old part	['d']	[]	['a','b','c','d']
+a_w layout	all_1_2_1	1	0
+a_w [json]	1
+a_w [(json.c.size0, json.b)] max_block_size = 7	1
+1
+a_w mutations	0
+a_w layout	all_1_2_1	1	0
+a_w layout	all_3_3_0	0	1
+a_w [json] WHERE x < 40	1
+a_w [(json.a, json.c.size0)] max_block_size = 5 WHERE x < 40	1
+a_w back	44	7860
+a_w layout	all_1_3_2	0	1
+a_w [json] WHERE x < 40	1
+1
+-- w: shape A on a nested type, with the sub-object
+n_w [json]	1
+n_w [json] max_block_size = 7	1
+n_w [json.^a]	1
+n_w [json.^a] max_block_size = 7	1
+n_w [json.a.x]	1
+n_w [json.a.x] max_block_size = 7	1
+n_w [json.b]	1
+n_w [json.b] max_block_size = 7	1
+n_w [(json.^a, json.b)]	1
+n_w [(json.^a, json.b)] max_block_size = 7	1
+n_w [(json.a.y, json.^a, json.e)]	1
+n_w [(json.a.y, json.^a, json.e)] max_block_size = 7	1
+n_w [json.^a]	1
+n_w [(json, json.^a)] max_block_size = 5	1
+1
+-- w: shape B, a dynamic path and a path of the dynamic shared data become SHARED
+b_w paths before	['a','b']	['c','d']
+b_w mutations	0
+b_w [json]	1
+b_w [json] max_block_size = 7	1
+b_w [json.a]	1
+b_w [json.a] max_block_size = 7	1
+b_w [json.c]	1
+b_w [json.c] max_block_size = 7	1
+b_w [json.d]	1
+b_w [json.d] max_block_size = 7	1
+b_w [json.b]	1
+b_w [json.b] max_block_size = 7	1
+b_w [(json.a, json)]	1
+b_w [(json.a, json)] max_block_size = 7	1
+b_w [(json.c, json.a, json.b)]	1
+b_w [(json.c, json.a, json.b)] max_block_size = 7	1
+b_w paths after	['b','d']	[]	['a','b','c','d']
+b_w [json]	1
+b_w [(json.c.size0, json.a)] max_block_size = 5	1
+1
+-- w: shape C, the same ALTER as a mutation, every part rewritten
+c_w mutations	1
+c_w layout	all_1_1_0_3	1	0
+c_w layout	all_2_2_0_3	1	0
+c_w [json] max_block_size = 5	1
+c_w [json.a] max_block_size = 5	1
+c_w [json.c.size0] max_block_size = 5	1
+c_w [(json.b, json)] max_block_size = 5	1
+c_w mutations	2
+c_w layout	all_1_1_0_4	0	1
+c_w layout	all_2_2_0_4	0	1
+c_w [json]	1
+1
+-- cn: shape A, the plain type to SHARED and back, lazily
+a_cn mutations	0
+a_cn layout	all_1_1_0	0	1
+a_cn layout	all_2_2_0	1	0
+a_cn [json]	1
+a_cn [json.a]	1
+a_cn [json.c.size0]	1
+a_cn [json.d]	1
+a_cn [(json, json.a)]	1
+a_cn [(json.c.size0, json)]	1
+a_cn [json] max_block_size = 5	1
+a_cn [(json.a, json)] max_block_size = 5	1
+a_cn [json] max_threads = 4, max_block_size = 5	1
+a_cn [(json.a, json)] max_threads = 4, max_block_size = 5	1
+a_cn paths over the old part	['d']	[]	['a','b','c','d']
+a_cn layout	all_1_2_1	1	0
+a_cn [json]	1
+a_cn [(json.c.size0, json.b)] max_block_size = 7	1
+1
+a_cn mutations	0
+a_cn layout	all_1_2_1	1	0
+a_cn layout	all_3_3_0	0	1
+a_cn [json] WHERE x < 40	1
+a_cn [(json.a, json.c.size0)] max_block_size = 5 WHERE x < 40	1
+a_cn back	44	7860
+a_cn layout	all_1_3_2	0	1
+a_cn [json] WHERE x < 40	1
+1
+-- cn: shape A on a nested type, with the sub-object
+n_cn [json]	1
+n_cn [json] max_block_size = 7	1
+n_cn [json.^a]	1
+n_cn [json.^a] max_block_size = 7	1
+n_cn [json.a.x]	1
+n_cn [json.a.x] max_block_size = 7	1
+n_cn [json.b]	1
+n_cn [json.b] max_block_size = 7	1
+n_cn [(json.^a, json.b)]	1
+n_cn [(json.^a, json.b)] max_block_size = 7	1
+n_cn [(json.a.y, json.^a, json.e)]	1
+n_cn [(json.a.y, json.^a, json.e)] max_block_size = 7	1
+n_cn [json.^a]	1
+n_cn [(json, json.^a)] max_block_size = 5	1
+1
+-- cn: shape B, a dynamic path and a path of the dynamic shared data become SHARED
+b_cn paths before	['a','b']	['c','d']
+b_cn mutations	0
+b_cn [json]	1
+b_cn [json] max_block_size = 7	1
+b_cn [json.a]	1
+b_cn [json.a] max_block_size = 7	1
+b_cn [json.c]	1
+b_cn [json.c] max_block_size = 7	1
+b_cn [json.d]	1
+b_cn [json.d] max_block_size = 7	1
+b_cn [json.b]	1
+b_cn [json.b] max_block_size = 7	1
+b_cn [(json.a, json)]	1
+b_cn [(json.a, json)] max_block_size = 7	1
+b_cn [(json.c, json.a, json.b)]	1
+b_cn [(json.c, json.a, json.b)] max_block_size = 7	1
+b_cn paths after	['b','d']	[]	['a','b','c','d']
+b_cn [json]	1
+b_cn [(json.c.size0, json.a)] max_block_size = 5	1
+1
+-- cn: shape C, the same ALTER as a mutation, every part rewritten
+c_cn mutations	1
+c_cn layout	all_1_1_0_3	1	0
+c_cn layout	all_2_2_0_3	1	0
+c_cn [json] max_block_size = 5	1
+c_cn [json.a] max_block_size = 5	1
+c_cn [json.c.size0] max_block_size = 5	1
+c_cn [(json.b, json)] max_block_size = 5	1
+c_cn mutations	2
+c_cn layout	all_1_1_0_4	0	1
+c_cn layout	all_2_2_0_4	0	1
+c_cn [json]	1
+1
+-- Array(JSON) to Array(JSON(SHARED)) lazily
+arr mutations	0
+arr [arr]	1
+arr [arr] max_block_size = 5	1
+arr [arr.a]	1
+arr [arr.a] max_block_size = 5	1
+arr [arr.b]	1
+arr [arr.b] max_block_size = 5	1
+arr [arr.size0]	1
+arr [arr.size0] max_block_size = 5	1
+arr [(arr.a, arr)]	1
+arr [(arr.a, arr)] max_block_size = 5	1
+arr [(arr, arr.a)] max_block_size = 7	1
+1
+-- containers: Map and Tuple to the SHARED form are mutations
+cont mutations	2
+cont	190	380	20
+1
+-- path type changes and SHARED paths added or removed one at a time
+p_w mutations	0
+p_w added	20	190	380	c0	UInt64
+p_w two layouts	40	780	1560	c0
+p_w nested path added	40	40	{"r":"r3"}	{"r":"r23"}
+p_w merged	40	780	1560	40	1
+-- the removed path is a dynamic path again; its typed subcolumn over the old Wide part reads as NULL, a pre-existing limitation of lazy type hints that the plain type shares (Compact parts give the values)
+p_w removed	40	780	c0	Dynamic	\N	1560
+p_w mutations	1
+p_w a to String	String	780	0
+p_w hints dropped	44	Dynamic	40	4
+p_w layout	all_1_2_1_3	1	1
+p_w layout	all_4_4_0	0	1
+p_w to String	44	44	{"a":"0","b":0,"c":"c0","q":{"r":"r0"}}
+1
+p_cn mutations	0
+p_cn added	20	190	380	c0	UInt64
+p_cn two layouts	40	780	1560	c0
+p_cn nested path added	40	40	{"r":"r3"}	{"r":"r23"}
+p_cn merged	40	780	1560	40	1
+-- the removed path is a dynamic path again; its typed subcolumn over the old Wide part reads as NULL, a pre-existing limitation of lazy type hints that the plain type shares (Compact parts give the values)
+p_cn removed	40	780	c0	Dynamic	1560	1560
+p_cn mutations	1
+p_cn a to String	String	780	0
+p_cn hints dropped	44	Dynamic	40	4
+p_cn layout	all_1_2_1_3	1	0
+p_cn layout	all_4_4_0	0	0
+p_cn to String	44	44	{"a":"0","b":0,"c":"c0","q":{"r":"r0"}}
+1
+-- a column absent from the part: added by ALTER or cleared, its SHARED paths read as defaults
+ab_w added column over the old part	{"a":0,"c":[],"p":{"x":""}}	0	0	{"x":""}	0		[]
+ab_w old and new parts together	16	92	8	8	92
+ab_w [(json2, json2.a, json2.^p, json2.c.size0)] max_block_size = 5	1
+ab_w [(json, json2)] max_block_size = 5	1
+ab_w [json2.p.x] max_block_size = 5	1
+ab_w cleared column	16	0	0	16	1
+1
+ab_cn added column over the old part	{"a":0,"c":[],"p":{"x":""}}	0	0	{"x":""}	0		[]
+ab_cn old and new parts together	16	92	8	8	92
+ab_cn [(json2, json2.a, json2.^p, json2.c.size0)] max_block_size = 5	1
+ab_cn [(json, json2)] max_block_size = 5	1
+ab_cn [json2.p.x] max_block_size = 5	1
+ab_cn cleared column	16	0	0	16	1
+1
+-- ATTACH PARTITION FROM a table of the same SHARED type
+at2 [json]	1
+at2 [(json.a, json.c.size0)] max_block_size = 7	1
+1

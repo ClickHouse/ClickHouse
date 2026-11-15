@@ -47,6 +47,22 @@ struct BackupSettings
     /// Whether the BACKUP will omit similar files (within one backup only).
     bool deduplicate_files = true;
 
+    /// Whether to fsync the backup's files, the `.backup` manifest and the containing
+    /// directories to local storage before the backup is reported as created, so that an
+    /// acknowledged backup survives power loss. Applies to `File` destinations and to `Disk`
+    /// destinations whose disk stores plain local files. On an object-storage disk the uploaded
+    /// objects are already durable, and the local metadata files a `metadata_type = local` disk
+    /// reaches them through are fsynced the same way.
+    /// For `BACKUP ON CLUSTER` the guarantee only holds for a cluster whose hosts all know this
+    /// setting: a value left at the default is not forwarded to the other hosts, so a host running
+    /// a version that predates the setting writes its share on the pre-fsync path. Naming the
+    /// setting in the query forwards it, which makes such a host refuse the backup instead.
+    bool fsync_backup_files = true;
+
+    /// Whether `fsync_backup_files` was named in the query's SETTINGS clause. A value equal to the
+    /// default is indistinguishable from an unset one, so this is what tells the two apart.
+    bool fsync_backup_files_specified = false;
+
     /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
     bool allow_s3_native_copy = true;
 
@@ -113,6 +129,24 @@ struct BackupSettings
     /// transient data that can be recomputed. Targets with APPEND or regular
     /// materialized views are always backed up because they may store history.
     bool backup_data_from_refreshable_materialized_view_targets = false;
+
+    /// Whether to export the SQL-created named collections (the `system.named_collections` table).
+    /// Exporting them writes their values into the backup, so it requires the rights to read the
+    /// values back: `SHOW NAMED COLLECTIONS`, `SHOW NAMED COLLECTIONS SECRETS` and
+    /// `displaySecretsInShowAndSelect`.
+    /// - unset (the default): a backup selecting the table through an `ALL` or `DATABASE system`
+    ///   element exports the collections if the user holds those rights and skips them with a
+    ///   warning otherwise; naming the table explicitly requires the rights.
+    /// - true: the backup exports the collections and requires the rights, however the table is
+    ///   selected.
+    /// - false: the backup never exports the collections and does not require the rights.
+    /// For `BACKUP ON CLUSTER` the initiating host takes the unset-default decision against its
+    /// user's rights before dispatching the query, because the other hosts may execute it with full
+    /// access; a refusal is dispatched as an `EXCEPT TABLES` clause of the wildcard elements, not
+    /// as a resolved value of this setting (see `BackupsWorker`). The hosts verify through the
+    /// backup coordination version that the initiating host takes this decision, and never export
+    /// the collections for an initiator too old to take it (see `backupNamedCollections`).
+    std::optional<bool> backup_named_collections;
 
 #if CLICKHOUSE_CLOUD
     /// Maximum number of logical backup files processed between Keeper checkpoints. Each checkpoint is a

@@ -54,20 +54,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"center1", &isUInt64, nullptr, "UInt64"},
-            {"radius1", &isFloat, nullptr, "Float64"},
-            {"center2", &isUInt64, nullptr, "UInt64"},
-            {"radius2", &isFloat, nullptr, "Float64"}
-        };
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
-        DataTypePtr center = std::make_shared<DataTypeUInt64>();
-        DataTypePtr radius = std::make_shared<DataTypeFloat64>();
-
-        return std::make_shared<DataTypeTuple>(DataTypes{center, radius});
+        return "(UInt64, Float, UInt64, Float) -> Tuple(UInt64, Float64)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

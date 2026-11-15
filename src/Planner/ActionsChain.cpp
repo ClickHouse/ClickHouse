@@ -1,4 +1,5 @@
 #include <Planner/ActionsChain.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <boost/algorithm/string/join.hpp>
 
@@ -155,7 +156,7 @@ void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input
     /// Keep source-constant INPUTs (named in source_const_inputs) that folding would re-create as
     /// free-standing COLUMN outputs and orphan: they must keep flowing as required inputs so the
     /// column stays in the stream. Literals/aliases are excluded, so they stay foldable.
-    std::unordered_set<const ActionsDAG::Node *> used_inputs;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> used_inputs;
     if (!source_const_inputs.empty())
         for (const auto * input : actions->dag.getInputs())
             if (input->column && source_const_inputs.contains(input->result_name))
@@ -232,7 +233,7 @@ void ActionsChain::finalize(const NameSet & source_const_inputs)
 
     /// For last chain step there are no columns required in child nodes
     NameSet empty_child_input_columns;
-    steps.back().get()->finalizeInputAndOutputColumns(empty_child_input_columns, source_const_inputs);
+    steps.back()->finalizeInputAndOutputColumns(empty_child_input_columns, source_const_inputs);
 
     Int64 steps_last_index = steps.size() - 1;
     for (Int64 i = steps_last_index; i >= 1; --i)

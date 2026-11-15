@@ -8,8 +8,6 @@
 -- builds). The query must simply complete. `query_plan_merge_filters` is pinned because the
 -- offending `and(Nullable(Nothing), ...)` node only forms when the adjacent filters are merged.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_jit_nothing;
 CREATE TABLE t_jit_nothing (uid Int16, age Int16) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_jit_nothing VALUES (1, 10), (2, 20);
