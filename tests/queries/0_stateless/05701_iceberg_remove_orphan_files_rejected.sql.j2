@@ -1,0 +1,29 @@
+-- Tags: no-fasttest, no-replicated-database, need-query-parameters
+-- Tag no-fasttest: Iceberg needs Avro.
+-- Tag no-replicated-database: `ALTER TABLE ... EXECUTE` runs as replicated DDL there.
+
+-- `remove_orphan_files` is refused without `allow_iceberg_remove_orphan_files`, and an `older_than`
+-- in the future is refused because it would bypass the safety window for in-progress writes.
+
+SET allow_insert_into_iceberg = 1, iceberg_orphan_files_min_retention_seconds = 0;
+
+{% macro engine(storage, table) -%}
+{% if storage == 'local' -%}
+IcebergLocal({CLICKHOUSE_DATABASE:String} || '/{{ table }}/', 'Parquet')
+{%- else -%}
+IcebergS3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/{{ table }}/', format = Parquet)
+{%- endif %}
+{%- endmacro %}
+
+{% for storage in ['local', 's3'] -%}
+DROP TABLE IF EXISTS t_{{ storage }};
+CREATE TABLE t_{{ storage }} (x Int) ENGINE = {{ engine(storage, 't_' ~ storage) }} SETTINGS iceberg_format_version = 2;
+INSERT INTO t_{{ storage }} VALUES (1);
+
+ALTER TABLE t_{{ storage }} EXECUTE remove_orphan_files() SETTINGS allow_iceberg_remove_orphan_files = 0; -- { serverError SUPPORT_IS_DISABLED }
+ALTER TABLE t_{{ storage }} EXECUTE remove_orphan_files('2099-01-01 00:00:00') SETTINGS allow_iceberg_remove_orphan_files = 1; -- { serverError BAD_ARGUMENTS }
+
+SELECT * FROM t_{{ storage }};
+DROP TABLE t_{{ storage }};
+
+{% endfor -%}

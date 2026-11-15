@@ -445,7 +445,7 @@ resource "clickhouse_udf_attachment" "production" {
 }
 ```
 
-Além dos atributos obrigatórios mostrados acima, o recurso `clickhouse_udf` aceita `format`, `pool_size`, `max_command_execution_time`, `command_read_timeout`, `command_write_timeout`, `send_chunk_header`, `sandbox_type`, `sandbox_version`, `return_name` e `fail_on_build_error`; consulte a [documentação do recurso](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) para ver o schema completo.
+Além dos atributos obrigatórios mostrados acima, o recurso `clickhouse_udf` aceita `format`, `pool_size`, `max_command_execution_time`, `command_read_timeout`, `command_write_timeout`, `send_chunk_header`, `sandbox_type`, `return_name` e `fail_on_build_error`; consulte a [documentação do recurso](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) para ver o schema completo.
 
 Para testar uma nova versão em um serviço de desenvolvimento antes que ela chegue à produção, configure uma anexação para acompanhar a versão mais recente e fixe a outra em uma variável. A anexação de desenvolvimento acompanha automaticamente cada nova compilação, enquanto a anexação de produção só é atualizada quando você altera `var.prod_udf_version`:
 

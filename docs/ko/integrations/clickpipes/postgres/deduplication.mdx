@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 Postgres에서 ClickHouse로 복제된 업데이트 및 삭제 작업은 ClickHouse의 데이터 저장 구조와 복제 과정으로 인해 ClickHouse에 중복된 행이 생길 수 있습니다. 이 페이지에서는 그 이유와 ClickHouse에서 중복을 처리하기 위한 전략을 설명합니다.
 
 <div id="how-does-data-get-replicated">
@@ -64,7 +62,15 @@ ORDER BY id;
 
 아래 그림은 ClickPipes를 사용해 PostgreSQL과 ClickHouse 사이에서 테이블 `users`가 동기화되는 기본 예시를 보여줍니다.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp" alt="ClickPipes 초기 적재" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickPipes 초기 적재](/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp)
+
+</Frame>
+
+</div>
 
 **1단계**에서는 PostgreSQL의 2개 행에 대한 초기 스냅샷과, ClickPipes가 이 2개 행을 ClickHouse로 초기 적재하는 과정을 보여줍니다. 보시다시피 두 행 모두 변경 없이 그대로 ClickHouse에 복사됩니다.
 

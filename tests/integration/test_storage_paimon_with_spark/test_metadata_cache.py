@@ -120,7 +120,7 @@ def test_metadata_cache_engine_latched(started_cluster_paimon_with_spark, storag
     instance.query(
         create_query,
         settings={
-            "allow_experimental_paimon_storage_engine": 1,
+            "enable_paimon_storage_engine": 1,
             "use_paimon_metadata_files_cache": 0,
         },
     )
@@ -139,7 +139,7 @@ def test_metadata_cache_engine_latched(started_cluster_paimon_with_spark, storag
     instance.query(
         create_query,
         settings={
-            "allow_experimental_paimon_storage_engine": 1,
+            "enable_paimon_storage_engine": 1,
             "use_paimon_metadata_files_cache": 1,
         },
     )

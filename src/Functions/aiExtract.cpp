@@ -1,3 +1,4 @@
+#include <Access/Common/AccessFlags.h>
 #include <Functions/FunctionBaseAI.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -26,7 +27,11 @@ public:
 
     explicit FunctionAiExtract(ContextPtr context_) : FunctionBaseAI(context_) {}
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionAiExtract>(context_); }
+    static FunctionPtr create(ContextPtr context_)
+    {
+        context_->checkAccess(AccessType::aiExtract);
+        return std::make_shared<FunctionAiExtract>(context_);
+    }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }

@@ -95,6 +95,10 @@ before writing a single byte, and every concurrent merge reserves it again. That
 server but a significant share of the budget on a small one, where it can make an `INSERT` fail with
 `MEMORY_LIMIT_EXCEEDED`.
 
+It applies to inserts and to merges and mutations of non-replicated tables. Merges and mutations of replicated
+tables ignore it: adaptive write buffers change the offsets stored in the marks, and replicas compare the checksums
+of the parts they merge, so the buffers must not depend on the memory limit of a replica.
+
 Set to `0` to disable this trigger and select adaptive write buffers by column count only.
 
 ## max_partitions_to_read {#max_partitions_to_read}

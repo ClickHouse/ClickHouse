@@ -1,10 +1,12 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+
+#include <Common/VectorWithMemoryTracking.h>
+
 #include <base/types.h>
 
 #include <span>
-#include <vector>
 
 namespace DB
 {
@@ -28,29 +30,36 @@ private:
     size_t row;
 };
 
+struct ArgumentsSegment
+{
+    std::span<const IColumn * const> columns;
+    size_t row_begin = 0;
+    size_t row_end = 0;
+};
+
 class WindowArguments
 {
-    size_t findBlock(size_t argument, Int64 position) const;
-
 public:
     struct Block
     {
-        std::span<const ColumnPtr> columns;
-        Int64 first_position = 0;
+        ColumnRawPtrs columns;
+        Int64 begin_position = 0;
         Int64 end_position = 0;
     };
 
-    explicit WindowArguments(std::vector<size_t> column_indices_);
+    explicit WindowArguments(Int64 num_arguments_);
 
-    void setBlocks(const std::vector<Block> & blocks_);
+    void setBlocks(std::span<const Block> blocks_, Int64 first_row_position_);
 
-    size_t size() const;
-    ArgumentValue at(size_t argument, Int64 position) const;
+    Int64 size() const;
+    ArgumentValue at(size_t argument, Int64 row) const;
+    ArgumentsSegment segment(Int64 begin_row, Int64 end_row) const;
 
 private:
-    std::vector<size_t> column_indices;
-    std::vector<Block> blocks;
-    mutable std::vector<size_t> last_used_block_for_arg;
+    std::span<const Block> blocks;
+    Int64 first_row_position = 0;
+    const Int64 num_arguments;
+    mutable VectorWithMemoryTracking<size_t> last_used_block;
 };
 
 }
