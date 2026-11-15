@@ -1,7 +1,6 @@
 -- Trivial count from a text index with five compressed posting lists (N-way leapfrog) whose matches span several count windows.
 
 DROP TABLE IF EXISTS tab_five_tokens;
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET optimize_trivial_count_query = 1;

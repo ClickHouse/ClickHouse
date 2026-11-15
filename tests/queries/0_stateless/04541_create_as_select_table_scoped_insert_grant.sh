@@ -33,8 +33,8 @@ GRANT SELECT ON ${CLICKHOUSE_DATABASE}.src TO ${granted}, ${nogrant};
 GRANT INSERT ON ${CLICKHOUSE_DATABASE}.dst TO ${granted};
 "
 
-granted_client=(${CLICKHOUSE_CLIENT} --enable_analyzer 1 --user "${granted}" --password "${granted}")
-nogrant_client=(${CLICKHOUSE_CLIENT} --enable_analyzer 1 --user "${nogrant}" --password "${nogrant}")
+granted_client=(${CLICKHOUSE_CLIENT} --user "${granted}" --password "${granted}")
+nogrant_client=(${CLICKHOUSE_CLIENT} --user "${nogrant}" --password "${nogrant}")
 
 echo "-- [table-scoped INSERT grant] CREATE ... AS SELECT into the granted table must succeed:"
 create_output=$("${granted_client[@]}" --query "CREATE TABLE dst ENGINE = Memory AS SELECT x FROM src ORDER BY x" 2>&1)

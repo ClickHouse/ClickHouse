@@ -1,7 +1,6 @@
 -- Tags: no-fasttest, no-ordinary-database, no-parallel-replicas
 -- no-parallel-replicas: vector-search read hints are produced during local index analysis.
 
-SET enable_analyzer = 1;
 SET mutations_sync = 2;
 SET lightweight_deletes_sync = 2;
 SET parallel_replicas_local_plan = 1;

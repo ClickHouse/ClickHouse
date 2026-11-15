@@ -31,6 +31,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 역텍스트 인덱스 딕셔너리를 스캔하여 LIKE/ILIKE 쿼리를 평가할 수 있도록 설정합니다.
 
 가속되는 패턴은 `%value%`, `value%`, `%value`이며, `optimize_rewrite_like_perfect_affix`가 `value%` 및 `%value`로 재작성하는 `startsWith` 및 `endsWith` 호출도 포함됩니다.
+검색 패턴이 하나뿐인 `multiSearchAny`, `multiSearchAnyUTF8`, `multiSearchAnyCaseInsensitive` 또는 `multiSearchAnyCaseInsensitiveUTF8` 호출은 `%value%` 패턴으로 검색됩니다.
 
 ## use_text_index_negative_tokens_cache {#use_text_index_negative_tokens_cache}
 

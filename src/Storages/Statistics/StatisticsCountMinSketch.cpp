@@ -90,9 +90,23 @@ void StatisticsCountMinSketch::merge(const StatisticsPtr & other_stats)
 
 void StatisticsCountMinSketch::serialize(WriteBuffer & buf)
 {
-    Sketch::vector_bytes bytes = sketch.serialize();
-    writeIntBinary(static_cast<UInt64>(bytes.size()), buf);
-    buf.write(reinterpret_cast<const char *>(bytes.data()), bytes.size());
+    const size_t sketch_size = sketch.get_serialized_size_bytes();
+    writeIntBinary(static_cast<UInt64>(sketch_size), buf);
+
+    /// Stream the sketch directly into the destination buffer, avoiding an intermediate copy.
+    const size_t written = sketch.serialize_to(
+        [&buf](const void * data, size_t size) { buf.write(static_cast<const char *>(data), size); });
+
+    if (written != sketch_size)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Statistics 'countmin' serialization wrote {} bytes but declared {} bytes",
+            written, sketch_size);
+}
+
+std::optional<UInt64> StatisticsCountMinSketch::getSerializedSize() const
+{
+    return sizeof(UInt64) + sketch.get_serialized_size_bytes();
 }
 
 void StatisticsCountMinSketch::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)

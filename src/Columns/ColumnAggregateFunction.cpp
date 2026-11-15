@@ -66,19 +66,32 @@ static String getTypeString(const AggregateFunctionPtr & func, std::optional<siz
 }
 
 
+/// A window function may keep its state in a faster layout that the type name does not show
+/// (see `AggregateFunctionStateVariant`). Such a state must not get into a column: other code can
+/// make the column's type again from its name, and would then read the state with the wrong layout.
+static void checkOrdinaryStateLayout(const IAggregateFunction & func)
+{
+    if (func.getStateVariant() != AggregateFunctionStateVariant::Aggregation)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "A column of `{}` states cannot hold states in the window function layout", func.getName());
+}
+
+
 ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_, std::optional<size_t> version_)
     : func(func_), type_string(getTypeString(func, version_)), version(version_)
 {
+    checkOrdinaryStateLayout(*func);
 }
 
 ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_)
     : foreign_arenas(arenas_), func(func_), type_string(getTypeString(func))
 {
-
+    checkOrdinaryStateLayout(*func);
 }
 
 void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_, std::optional<size_t> version_)
 {
+    checkOrdinaryStateLayout(*func_);
     func = func_;
     version = version_;
     type_string = getTypeString(func, version);

@@ -401,14 +401,14 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
         return stats.at(StatisticsType::CountMinSketch)->estimateEqual(val);
     }
 #endif
-    if (uniq_stats != nullptr)
+    if (hasCardinality())
     {
-        UInt64 cardinality = uniq_stats->estimateCardinality();
-        if (cardinality == 0 || rows == 0)
+        UInt64 distinct_values = estimateCardinality();
+        if (distinct_values == 0 || rows == 0)
             return 0;
         /// Uniq ignores NULLs, so divide non-NULL row count by distinct values.
         /// `getNonNullRowCount` returns `rows` when null-count tracking is absent.
-        return static_cast<Float64>(getNonNullRowCount()) / static_cast<Float64>(cardinality);
+        return static_cast<Float64>(getNonNullRowCount()) / static_cast<Float64>(distinct_values);
     }
 
     return std::nullopt;
@@ -440,11 +440,13 @@ std::optional<Float64> ColumnStatistics::estimateRange(const Range & range) cons
 
 bool ColumnStatistics::hasCardinality() const
 {
-    return findUniqStats(stats) != nullptr;
+    return external_cardinality || findUniqStats(stats) != nullptr;
 }
 
 UInt64 ColumnStatistics::estimateCardinality() const
 {
+    if (external_cardinality)
+        return *external_cardinality;
     if (const IStatistics * uniq_stats = findUniqStats(stats))
     {
         return uniq_stats->estimateCardinality();
@@ -469,6 +471,12 @@ bool ColumnStatistics::hasMinMax() const
     return false;
 }
 
+bool ColumnStatistics::hasSum() const
+{
+    auto it = stats.find(StatisticsType::Basic);
+    return it != stats.end() && assert_cast<const StatisticsBasic &>(*it->second).hasSum();
+}
+
 UInt64 ColumnStatistics::getNullCount() const
 {
     if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
@@ -478,6 +486,17 @@ UInt64 ColumnStatistics::getNullCount() const
             return basic.getNullCount();
     }
     return 0;
+}
+
+std::optional<Float64> ColumnStatistics::getAvgStringBytes() const
+{
+    if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
+    {
+        const auto & basic = assert_cast<const StatisticsBasic &>(*it->second);
+        if (basic.hasStringLengthAvg())
+            return static_cast<Float64>(basic.getStringLengthAvg());
+    }
+    return std::nullopt;
 }
 
 UInt64 ColumnStatistics::getNonNullRowCount() const
@@ -544,6 +563,8 @@ Estimate ColumnStatistics::getEstimate() const
             info.estimated_null_count = basic_stats.getNullCount();
         if (basic_stats.hasDefaultCount())
             info.estimated_default_count = basic_stats.getDefaultCount();
+        if (basic_stats.hasSum())
+            info.estimated_sum = basic_stats.getSum();
     }
     else if (auto minmax_it = stats.find(StatisticsType::MinMax); minmax_it != stats.end())
     {
@@ -580,9 +601,27 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
     /// As the column row count is always useful, save it in any case
     writeIntBinary(rows, buf);
 
-    /// Write each statistics blob with a length prefix, by serializing into a temp buffer first.
+    /// Write each statistics blob with a length prefix. Statistics that can compute their exact
+    /// serialized size can stream directly to the destination; the others keep the temp-buffer
+    /// fallback needed for the V4 prefix.
     for (const auto & [type, stat_ptr] : stats)
     {
+        if (std::optional<UInt64> serialized_size = stat_ptr->getSerializedSize())
+        {
+            writeIntBinary(*serialized_size, buf);
+
+            const auto count_before = buf.count();
+            stat_ptr->serialize(buf);
+            const auto written = static_cast<UInt64>(buf.count() - count_before);
+            if (written != *serialized_size)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Statistics serialization for type {} wrote {} bytes but declared {} bytes",
+                    statisticsTypeToString(type), written, *serialized_size);
+
+            continue;
+        }
+
         String temp_data;
         WriteBufferFromString temp_buf(temp_data);
         stat_ptr->serialize(temp_buf);
@@ -591,6 +630,23 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
         writeIntBinary(static_cast<UInt64>(temp_data.size()), buf);
         buf.write(temp_data.data(), temp_data.size());
     }
+}
+
+std::shared_ptr<ColumnStatistics> ColumnStatistics::createBasicFromSummary(
+    const DataTypePtr & data_type, UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count)
+{
+    SingleStatisticsDescription basic_desc(StatisticsType::Basic, nullptr, /*is_implicit_=*/ true);
+    ColumnStatisticsDescription stats_desc;
+    stats_desc.data_type = data_type;
+    stats_desc.types_to_desc.emplace(StatisticsType::Basic, basic_desc);
+
+    auto basic = std::make_shared<StatisticsBasic>(basic_desc, data_type);
+    basic->build(rows, min_value, max_value, null_count);
+
+    auto column_stats = std::make_shared<ColumnStatistics>(stats_desc);
+    column_stats->stats.emplace(StatisticsType::Basic, std::move(basic));
+    column_stats->rows = rows;
+    return column_stats;
 }
 
 std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf, const DataTypePtr & data_type)
@@ -1048,6 +1104,11 @@ void addImplicitStatistics(ColumnsDescription & columns, const String & statisti
 bool canStatisticsTrackMinMax(const DataTypePtr & data_type)
 {
     return removeLowCardinalityAndNullable(removeNullable(data_type))->isValueRepresentedByNumber();
+}
+
+bool canStatisticsTrackSum(const DataTypePtr & data_type)
+{
+    return WhichDataType(data_type).isIntegerOrDecimal();
 }
 
 }
