@@ -12,6 +12,7 @@
 #include <zlib.h>
 #include <zstd.h>
 
+#include <algorithm>
 #include <cstring>
 #include <initializer_list>
 #include <memory>
@@ -252,7 +253,8 @@ TEST(DwarfCompressedSections, UnreadableSections)
         const Int64 hard_limit = total_memory_tracker.getHardLimit();
         {
             SCOPE_EXIT(total_memory_tracker.setHardLimit(hard_limit));
-            total_memory_tracker.setHardLimit(total_memory_tracker.get() + 1024);
+            /// Earlier tests in the same process can leave the tracked amount negative.
+            total_memory_tracker.setHardLimit(std::max(total_memory_tracker.get(), total_memory_tracker.getRSS()) + 1024);
             /// As while an exception is formatted: the memory tracker does not throw.
             LockMemoryExceptionInThread lock(VariableContext::Global);
             EXPECT_FALSE(elf.getSectionsData(names));
