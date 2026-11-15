@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="allow_suspicious_codecs">
-  ## allow_suspicious_codecs
-</div>
+## allow_suspicious_codecs {#allow_suspicious_codecs}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,27 +21,23 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 Se estiver definido como true, permite especificar codecs de compressão inválidos.
 
-<div id="allow_suspicious_fixed_string_types">
-  ## allow_suspicious_fixed_string_types
-</div>
+## allow_suspicious_fixed_string_types {#allow_suspicious_fixed_string_types}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Na instrução CREATE TABLE, permite a criação de colunas do tipo FixedString(n) com n &gt; 256. FixedString com comprimento &gt;= 256 é suspeito e muito provavelmente indica uso incorreto.
 
-<div id="allow_suspicious_indices">
-  ## allow_suspicious_indices
-</div>
+## allow_suspicious_indexes {#allow_suspicious_indexes}
+
+**Aliases**: `allow_suspicious_indices`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "0"},{"label": "Se true, um índice pode ser definido com expressões idênticas"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Adicionado um alias para a configuração `allow_suspicious_indices`."}]}, {"id": "row-2","items": [{"label": "23.4"},{"label": "0"},{"label": "Se true, um índice pode ser definido com expressões idênticas"}]}]} />
 
 Rejeitar índices primários/secundários e chaves de ordenação com expressões idênticas
 
-<div id="allow_suspicious_low_cardinality_types">
-  ## allow_suspicious_low_cardinality_types
-</div>
+## allow_suspicious_low_cardinality_types {#allow_suspicious_low_cardinality_types}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -62,9 +56,7 @@ Valores possíveis:
 * 1 — O uso de `LowCardinality` não é restrito.
 * 0 — O uso de `LowCardinality` é restrito.
 
-<div id="allow_suspicious_primary_key">
-  ## allow_suspicious_primary_key
-</div>
+## allow_suspicious_primary_key {#allow_suspicious_primary_key}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -72,9 +64,7 @@ Valores possíveis:
 
 Permite `PRIMARY KEY`/`ORDER BY` suspeitos para MergeTree (isto é, SimpleAggregateFunction).
 
-<div id="allow_suspicious_ttl_expressions">
-  ## allow_suspicious_ttl_expressions
-</div>
+## allow_suspicious_ttl_expressions {#allow_suspicious_ttl_expressions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -82,9 +72,7 @@ Permite `PRIMARY KEY`/`ORDER BY` suspeitos para MergeTree (isto é, SimpleAggreg
 
 Rejeita expressões TTL que não dependem de nenhuma coluna da tabela. Na maioria das vezes, isso indica erro do usuário.
 
-<div id="allow_suspicious_types_in_group_by">
-  ## allow_suspicious_types_in_group_by
-</div>
+## allow_suspicious_types_in_group_by {#allow_suspicious_types_in_group_by}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -92,9 +80,7 @@ Rejeita expressões TTL que não dependem de nenhuma coluna da tabela. Na maiori
 
 Permite ou restringe o uso dos tipos [Variant](/pt-BR/reference/data-types/variant) e [Dynamic](/pt-BR/reference/data-types/dynamic) nas chaves de GROUP BY.
 
-<div id="allow_suspicious_types_in_order_by">
-  ## allow_suspicious_types_in_order_by
-</div>
+## allow_suspicious_types_in_order_by {#allow_suspicious_types_in_order_by}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -102,9 +88,7 @@ Permite ou restringe o uso dos tipos [Variant](/pt-BR/reference/data-types/varia
 
 Permite ou restringe o uso dos tipos [Variant](/pt-BR/reference/data-types/variant) e [Dynamic](/pt-BR/reference/data-types/dynamic) em chaves `ORDER BY`.
 
-<div id="allow_suspicious_variant_types">
-  ## allow_suspicious_variant_types
-</div>
+## allow_suspicious_variant_types {#allow_suspicious_variant_types}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

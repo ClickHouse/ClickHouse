@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 > Esta guía explica cómo configurar LibreChat con un servidor MCP de ClickHouse mediante Docker
 > y conectarlo a los datos de ejemplo de ClickHouse.
 
@@ -109,7 +107,7 @@ import { Image } from "/snippets/es/components/Image.jsx";
     usando el [host, nombre de usuario y contraseña](/es/get-started/setup/cloud#connect-with-your-app)
     de tu propio servicio de ClickHouse Cloud.
 
-    <Card title="Empieza con ClickHouse Cloud" href="https://cloud.clickhouse.com/" icon="cloud">
+    <Card title="Empieza con ClickHouse Cloud" href="https://clickhouse.cloud/signUp?loc=docs-guides-use-cases-ai-ml-mcp-librechat" icon="cloud">
       Si aún no tienes una cuenta de Cloud, empieza hoy mismo con ClickHouse Cloud y recibe $300 en créditos. Al finalizar tu prueba gratuita de 30 días, puedes continuar con un plan Pay-As-You-Go o contactarnos para obtener más información sobre nuestros descuentos por volumen. Visita nuestra página de precios para conocer más detalles.
     </Card>
   </Step>
@@ -140,7 +138,7 @@ import { Image } from "/snippets/es/components/Image.jsx";
   </Step>
 
   <Step title="Añade un LLM local con Ollama (opcional)" id="add-local-llm-using-ollama">
-    ### Instala Ollama
+### Instala Ollama {#install-ollama}
 
     Ve al [sitio web de Ollama](https://ollama.com/download) e instala Ollama en tu sistema.
 
@@ -154,7 +152,7 @@ import { Image } from "/snippets/es/components/Image.jsx";
 
     Para ver una lista de modelos, consulta la [biblioteca de Ollama](https://ollama.com/library)
 
-    ### Configura Ollama en librechat.yaml
+### Configura Ollama en librechat.yaml {#configure-ollama-in-librechat-yaml}
 
     Una vez que el modelo se haya descargado, configúralo en `librechat.yaml`:
 
@@ -197,7 +195,15 @@ import { Image } from "/snippets/es/components/Image.jsx";
 
     En la interfaz de chat, selecciona `clickhouse-playground` como tu servidor MCP:
 
-    <Image img="/images/use-cases/AI_ML/MCP/librechat.webp" alt="Selecciona tu servidor MCP" size="md" />
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![Selecciona tu servidor MCP](/images/use-cases/AI_ML/MCP/librechat.webp)
+
+    </Frame>
+
+    </div>
 
     Ahora puedes pedirle al LLM que explore los conjuntos de datos de ejemplo de ClickHouse. Pruébalo:
 

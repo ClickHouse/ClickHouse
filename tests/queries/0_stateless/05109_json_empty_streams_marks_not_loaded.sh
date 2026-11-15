@@ -13,6 +13,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Two identical tables: one for the synchronous marks loading path, one for the asynchronous one.
 # Separate tables let both queries start with none of their marks in the cache without clearing the
 # (server-wide) mark cache in between.
+# The rows are inline instead of `SELECT ... FROM numbers(5)`: the AST fuzzer of the stress test can grow the
+# row count to ~1M, and with `index_granularity = 1` every row is a granule that writes all streams of the `JSON`
+# column. Under sanitizers that takes tens of minutes, and the writing of a block cannot be cancelled midway.
 for suffix in sync async
 do
     ${CLICKHOUSE_CLIENT} -q "
@@ -24,7 +27,7 @@ do
 
         SYSTEM STOP MERGES t_json_empty_streams_${suffix};
 
-        INSERT INTO t_json_empty_streams_${suffix} SELECT number, concat('{\"a\":', toString(number), ',\"b\":\"s', toString(number), '\",\"c\":[', toString(number), '],\"d\":', toString(number / 2), ',\"e\":true}')::JSON FROM numbers(5);
+        INSERT INTO t_json_empty_streams_${suffix} VALUES (0, '{\"a\":0,\"b\":\"s0\",\"c\":[0],\"d\":0,\"e\":true}'), (1, '{\"a\":1,\"b\":\"s1\",\"c\":[1],\"d\":0.5,\"e\":true}'), (2, '{\"a\":2,\"b\":\"s2\",\"c\":[2],\"d\":1,\"e\":true}'), (3, '{\"a\":3,\"b\":\"s3\",\"c\":[3],\"d\":1.5,\"e\":true}'), (4, '{\"a\":4,\"b\":\"s4\",\"c\":[4],\"d\":2,\"e\":true}');
     "
 done
 

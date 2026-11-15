@@ -1,0 +1,54 @@
+startsWith
+sharp s to capital	1	1	1	1	1
+capital to sharp s	1	1	1	1	1
+capital at end	0	0	0	0	0
+capital at start	1	1	1	1	1
+A-bar to a-bar	1	1	1	1	1
+a-bar to A-bar	1	1	1	1	1
+a-bar at end	0	0	0	0	0
+a-bar at start	1	1	1	1	1
+STRASSE	1	1	1	1	1
+sharp s vs ss	0	0	0	0	0
+kelvin vs k	0	0	0	0	0
+k vs kelvin	0	0	0	0	0
+kelvin to kelvin	1	1	1	1	1
+ascii prefix	1	1	1	1	1
+ascii suffix	0	0	0	0	0
+empty needle	1	1	1	1	1
+both empty	1	1	1	1	1
+empty haystack	0	0	0	0	0
+needle longer	0	0	0	0	0
+endsWith
+sharp s to capital	1	1	1	1
+capital to sharp s	1	1	1	1
+capital at end	1	1	1	1
+capital at start	0	0	0	0
+A-bar to a-bar	1	1	1	1
+a-bar to A-bar	1	1	1	1
+a-bar at end	1	1	1	1
+a-bar at start	0	0	0	0
+STRASSE	1	1	1	1
+sharp s vs ss	0	0	0	0
+kelvin vs k	0	0	0	0
+k vs kelvin	0	0	0	0
+kelvin to kelvin	1	1	1	1
+ascii prefix	0	0	0	0
+ascii suffix	1	1	1	1
+empty needle	1	1	1	1
+both empty	1	1	1	1
+empty haystack	0	0	0	0
+needle longer	0	0	0	0
+rows of different lengths
+ß	ẞ	1	1
+xß	ẞ	0	1
+ẞx	ß	1	0
+Ⱥ	ⱥ	1	1
+xⱥ	Ⱥ	0	1
+abc		1	1
+	a	0	0
+AbC	abc	1	1
+ß	1	1
+xß	0	1
+ßx	1	0
+	0	0
+ẞ	1	1

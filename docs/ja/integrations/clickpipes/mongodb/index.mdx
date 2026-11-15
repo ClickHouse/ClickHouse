@@ -12,7 +12,6 @@ integration:
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/ja/clickpipes/_changing_tls_settings.mdx';
 
 <BetaBadge />
@@ -29,9 +28,7 @@ ClickPipes を使用すると、MongoDB データベースから ClickHouse Clou
 
 MongoDB ClickPipes は、ClickPipes UI を使用して手動でデプロイおよび管理できるほか、[OpenAPI](/ja/integrations/clickpipes/programmatic-access/openapi) や [Terraform](/ja/integrations/clickpipes/programmatic-access/terraform) を使用してプログラムでデプロイおよび管理することもできます。
 
-<div id="prerequisites">
-  ## 前提条件
-</div>
+## 前提条件 {#prerequisites}
 
 開始するには、まず MongoDB データベースがレプリケーション用に正しく構成されていることを確認する必要があります。構成手順は MongoDB のデプロイ方法によって異なるため、以下の該当するガイドに従ってください。
 
@@ -43,27 +40,47 @@ MongoDB ClickPipes は、ClickPipes UI を使用して手動でデプロイお�
 
 ソースの MongoDB データベースの設定が完了したら、ClickPipe の作成に進むことができます。
 
-<div id="create-your-clickpipe">
-  ## ClickPipe を作成する
-</div>
+## ClickPipe を作成する {#create-your-clickpipe}
 
-ClickHouse Cloud アカウントにログインしていることを確認してください。まだアカウントをお持ちでない場合は、[こちら](https://cloud.clickhouse.com/)から登録できます。
+ClickHouse Cloud アカウントにログインしていることを確認してください。まだアカウントをお持ちでない場合は、[こちら](https://clickhouse.cloud/signUp?loc=docs-integrations-clickpipes-mongodb)から登録できます。
 
 1. ClickHouse Cloud コンソールで、ClickHouse Cloud サービスに移動します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes サービス" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickPipes サービス](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</Frame>
+
+</div>
 
 2. 左側のメニューで `Data Sources` を選択し、「Set up a ClickPipe」をクリックします。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="インポートを選択" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![インポートを選択](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</Frame>
+
+</div>
 
 3. `MongoDB CDC` タイルを選択します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-tile.webp" alt="MongoDB を選択" size="lg" border />
+<div className="ch-image-lg">
 
-<div id="add-your-source-mongodb-database-connection">
-  ### ソースの MongoDB データベース接続を追加する
+<Frame>
+
+![MongoDB を選択](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-tile.webp)
+
+</Frame>
+
 </div>
+
+### ソースの MongoDB データベース接続を追加する {#add-your-source-mongodb-database-connection}
 
 4. 前提条件の手順で設定したソースの MongoDB データベースの接続情報を入力します。
 
@@ -72,17 +89,21 @@ ClickHouse Cloud アカウントにログインしていることを確認して
   詳しくは、[このページ上部](#prerequisites)にリンクされているソース MongoDB のセットアップガイドを参照してください。
 </Info>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp" alt="接続情報を入力" size="lg" border />
+<div className="ch-image-lg">
 
-<div id="optional-changing-tls-settings">
-  #### &#x20;(任意) TLS設定の変更
+<Frame>
+
+![接続情報を入力](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp)
+
+</Frame>
+
 </div>
+
+#### &#x20;(任意) TLS設定の変更 {#optional-changing-tls-settings}
 
 <ChangingTLSSettings />
 
-<div id="optional-set-up-ssh-tunneling">
-  #### &#x20;(任意) SSHトンネリングを設定する
-</div>
+#### &#x20;(任意) SSHトンネリングを設定する {#optional-set-up-ssh-tunneling}
 
 ソースのMongoDBデータベースにパブリックアクセスできない場合は、SSHトンネリングの詳細を指定できます。
 
@@ -90,7 +111,15 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 
 2. SSH接続の詳細を入力します。
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="SSHトンネリング" size="lg" border />
+   <div className="ch-image-lg">
+
+   <Frame>
+
+   ![SSHトンネリング](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
+
+   </Frame>
+
+   </div>
 
 3. 鍵ベースの認証を使用するには、「Revoke and generate key pair」をクリックして新しいキーペアを生成し、生成された公開鍵をSSHサーバーの`~/.ssh/authorized_keys`にコピーします。
 
@@ -102,9 +131,7 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 
 接続の詳細を入力したら、`Next`をクリックします。
 
-<div id="advanced-settings">
-  #### 詳細設定を行う
-</div>
+#### 詳細設定を行う {#advanced-settings}
 
 必要に応じて詳細設定を行えます。各設定の概要は以下のとおりです。
 
@@ -112,33 +139,41 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 * **Pull batch size**: 1 回のバッチで取得する行数です。これはベストエフォートの設定であり、常に適用されるとは限りません。
 * **Snapshot number of tables in parallel**: 初回スナップショット時に並列に取得するテーブル数です。テーブル数が多い場合に、並列に取得するテーブル数を制御するのに役立ちます。
 
-<div id="configure-the-tables">
-  ### テーブルを設定する
-</div>
+### テーブルを設定する {#configure-the-tables}
 
 5. ここでは、ClickPipe の宛先データベースを選択できます。既存のデータベースを選ぶことも、新しく作成することもできます。
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/mongodb/select-destination-db.webp" alt="宛先データベースを選択" size="lg" border />
+   <div className="ch-image-lg">
+
+   <Frame>
+
+   ![宛先データベースを選択](/images/integrations/data-ingestion/clickpipes/mongodb/select-destination-db.webp)
+
+   </Frame>
+
+   </div>
 
 6. コピー元の MongoDB データベースからレプリケートするテーブルを選択できます。テーブルの選択時には、宛先の ClickHouse データベースでテーブル名を変更することもできます。
 
-<div id="review-permissions-and-start-the-clickpipe">
-  ### 権限を確認して ClickPipe を開始する
-</div>
+### 権限を確認して ClickPipe を開始する {#review-permissions-and-start-the-clickpipe}
 
 7. 権限のドロップダウンで「Full access」ロールを選択し、「Complete Setup」をクリックします。
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="権限の確認" size="lg" border />
+   <div className="ch-image-lg">
 
-<div id="whats-next">
-  ## 次のステップ
-</div>
+   <Frame>
+
+   ![権限の確認](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
+
+   </Frame>
+
+   </div>
+
+## 次のステップ {#whats-next}
 
 MongoDB から ClickHouse Cloud にデータをレプリケートする ClickPipe の設定が完了したら、次は最適なパフォーマンスを得るために、データのクエリ方法やモデリングに注力できます。
 
-<div id="caveats">
-  ## 注意事項
-</div>
+## 注意事項 {#caveats}
 
 このコネクタを使用する際は、以下の点にご注意ください。
 

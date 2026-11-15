@@ -1,10 +1,24 @@
 #include <Functions/indexHint.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <DataTypes/DataTypesNumber.h>
 
 
 namespace DB
 {
+
+FunctionOverloadResolverPtr FunctionIndexHint::createImplied()
+{
+    auto function = std::make_shared<FunctionIndexHint>();
+    function->setImplied(true);
+    return std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(function));
+}
+
+FunctionIndexHint * FunctionIndexHint::tryGet(const FunctionBasePtr & function_base)
+{
+    const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(function_base.get());
+    return adaptor ? typeid_cast<FunctionIndexHint *>(adaptor->getFunction().get()) : nullptr;
+}
 
 REGISTER_FUNCTION(IndexHint)
 {

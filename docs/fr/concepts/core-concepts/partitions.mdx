@@ -6,7 +6,6 @@ keywords: ['partitions', 'partition by']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
 import { RunnableCode } from "/snippets/fr/components/RunnableCode/RunnableCode.jsx";
 
 <div id="what-are-table-partitions-in-clickhouse">
@@ -46,7 +45,15 @@ Vous pouvez [interroger cette table](https://sql.clickhouse.com/?query=U0VMRUNUI
 
 Chaque fois qu’un ensemble de lignes est inséré dans la table, au lieu de créer une seule partie de données contenant toutes les lignes insérées (au [moins](/fr/reference/settings/session-settings/max-insert#max_insert_block_size)), comme décrit [ici](/fr/concepts/core-concepts/parts), ClickHouse crée une nouvelle partie de données pour chaque valeur unique de clé de partition parmi les lignes insérées :
 
-<Image img="/images/managing-data/core-concepts/partitions.webp" size="lg" alt="TRAITEMENT DE L’INSERTION" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![TRAITEMENT DE L’INSERTION](/images/managing-data/core-concepts/partitions.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -61,7 +68,15 @@ Notez que lorsque le partitionnement est activé, ClickHouse crée automatiqueme
 
 Lorsque le partitionnement est activé, ClickHouse ne [fusionne](/fr/concepts/core-concepts/merges) les parts de données qu&#39;au sein d&#39;une même partition, jamais entre partitions. Nous le schématisons pour notre table d&#39;exemple ci-dessus :
 
-<Image img="/images/managing-data/core-concepts/merges_with_partitions.webp" size="lg" alt="FUSIONS DE PARTIES" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![FUSIONS DE PARTIES](/images/managing-data/core-concepts/merges_with_partitions.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -158,7 +173,15 @@ Cette requête s’exécute sur notre table d’exemple ci-dessus et [calcule](h
 
 ClickHouse traite cette requête en appliquant une série de techniques d’exclusion pour éviter d’évaluer des données non pertinentes :
 
-<Image img="/images/managing-data/core-concepts/partition-pruning.webp" size="lg" alt="PART MERGES 2" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![PART MERGES 2](/images/managing-data/core-concepts/partition-pruning.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

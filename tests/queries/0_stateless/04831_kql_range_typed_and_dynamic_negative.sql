@@ -2,7 +2,7 @@
 -- and for negative constants inside a `dynamic([...])` literal (`-1` parses as `negate`
 -- over a literal, which used to be rejected as a non-constant).
 
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 print '-- a negative constant is a constant of a dynamic literal --';
