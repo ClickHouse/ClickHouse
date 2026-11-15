@@ -353,9 +353,9 @@ void QueryPlan::serializeReadySets(SerializedSetsRegistry & registry, WriteBuffe
     serializeSets(registry, out, flags);
 }
 
-void QueryPlan::deserializeAndMakeSets(DeserializedSetsRegistry & registry, ReadBuffer & in, const ContextPtr & context)
+void QueryPlan::deserializeAndMakeSets(DeserializedSetsRegistry & registry, ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity)
 {
-    makeSets(deserializeSets(QueryPlan{}, registry, in, SerializationFlags{}, context, 0), context);
+    makeSets(deserializeSets(QueryPlan{}, registry, in, SerializationFlags{}, context, max_type_complexity), context);
 }
 
 QueryPlan QueryPlan::makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context)

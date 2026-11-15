@@ -140,11 +140,13 @@ void addFilterPushedDownByInitiator(QueryPlan & query_plan, const ContextPtr & c
     if (serialized.empty())
         return;
 
+    /// A client can send this setting with a query that reaches a replica, so decode it within the same type budget as a client's query plan.
+    const size_t max_type_complexity = getBinaryTypeDecodingComplexityLimit(context);
     const String decoded = base64Decode(serialized);
     ReadBufferFromString in(decoded);
     DeserializedSetsRegistry registry;
-    auto filter = ActionsDAG::deserialize(in, registry, context);
-    QueryPlan::deserializeAndMakeSets(registry, in, context);
+    auto filter = ActionsDAG::deserialize(in, registry, context, max_type_complexity);
+    QueryPlan::deserializeAndMakeSets(registry, in, context, max_type_complexity);
 
     const auto header = query_plan.getCurrentHeader();
     std::unordered_map<String, const ActionsDAG::Node *> inputs;
