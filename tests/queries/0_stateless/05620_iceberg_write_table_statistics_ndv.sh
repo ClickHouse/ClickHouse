@@ -172,8 +172,8 @@ stats t_insert "${NAMES}"
 echo "expire_snapshots keeps a statistics file that holds the deletion vectors of a retained snapshot, deletes one of an expired snapshot once"
 cp -r "${CUR_DIR}/data_lake_corpus/iceberg/v3_deletion_vectors" "${WORK_DIR}/t_dv"
 # Expired snapshots have statistics in a deletion vector file of the current snapshot (00000-72) and in one that
-# only expired snapshots use (00000-66).
-sed -i -E 's#"location":"([^"]*)"(.*)"statistics":\[\]#"location":"\1"\2"statistics":[{"snapshot-id":2372400231275045333,"statistics-path":"\1/data/00000-72-873ac898-d3c7-4528-9355-2cbed87bfd56-00001-deletes.puffin","file-size-in-bytes":1,"file-footer-size-in-bytes":1,"blob-metadata":[]},{"snapshot-id":4475287003289568582,"statistics-path":"\1/data/00000-66-796d5805-503b-4859-a495-3962d805056e-00001-deletes.puffin","file-size-in-bytes":1,"file-footer-size-in-bytes":1,"blob-metadata":[]}]#' \
+# only expired snapshots use (00000-66). The statistics paths spell the files differently from the manifests.
+sed -i -E 's#"location":"([^"]*)"(.*)"statistics":\[\]#"location":"\1"\2"statistics":[{"snapshot-id":2372400231275045333,"statistics-path":"file://'"${WORK_DIR}"'/t_dv/data/00000-72-873ac898-d3c7-4528-9355-2cbed87bfd56-00001-deletes.puffin","file-size-in-bytes":1,"file-footer-size-in-bytes":1,"blob-metadata":[]},{"snapshot-id":4475287003289568582,"statistics-path":"file://'"${WORK_DIR}"'/t_dv/data/00000-66-796d5805-503b-4859-a495-3962d805056e-00001-deletes.puffin","file-size-in-bytes":1,"file-footer-size-in-bytes":1,"blob-metadata":[]}]#' \
     "${WORK_DIR}/t_dv/metadata/v5.metadata.json"
 echo "injected statistics entries: $(grep -o '"statistics-path"' "${WORK_DIR}/t_dv/metadata/v5.metadata.json" | wc -l)"
 run t_dv "ALTER TABLE t_dv EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1);" | grep -E 'position_delete|statistics|failed'
@@ -181,8 +181,9 @@ local_query "SELECT count() FROM icebergLocal('${WORK_DIR}/t_dv/')"
 
 echo "expire_snapshots keeps a deletion vector file of an expired snapshot that holds the statistics of a retained snapshot"
 cp -r "${CUR_DIR}/data_lake_corpus/iceberg/v3_deletion_vectors" "${WORK_DIR}/t_dv_stats"
-# The current snapshot has statistics in the deletion vector file that only expired snapshots use (00000-66).
-sed -i -E 's#"location":"([^"]*)"(.*)"statistics":\[\]#"location":"\1"\2"statistics":[{"snapshot-id":4919572450537363904,"statistics-path":"\1/data/00000-66-796d5805-503b-4859-a495-3962d805056e-00001-deletes.puffin","file-size-in-bytes":1,"file-footer-size-in-bytes":1,"blob-metadata":[]}]#' \
+# The current snapshot has statistics in the deletion vector file that only expired snapshots use (00000-66), spelled
+# differently from the manifests.
+sed -i -E 's#"location":"([^"]*)"(.*)"statistics":\[\]#"location":"\1"\2"statistics":[{"snapshot-id":4919572450537363904,"statistics-path":"file://'"${WORK_DIR}"'/t_dv_stats/data/00000-66-796d5805-503b-4859-a495-3962d805056e-00001-deletes.puffin","file-size-in-bytes":1,"file-footer-size-in-bytes":1,"blob-metadata":[]}]#' \
     "${WORK_DIR}/t_dv_stats/metadata/v5.metadata.json"
 for dry_run in 1 0; do
     run t_dv_stats "ALTER TABLE t_dv_stats EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1, dry_run = ${dry_run});" \
