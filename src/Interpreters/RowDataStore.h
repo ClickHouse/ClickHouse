@@ -1,10 +1,11 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+#include <Core/Names.h>
 #include <DataTypes/IDataType_fwd.h>
 #include <Common/PODArray.h>
+#include <base/types.h>
 
-#include <optional>
 #include <vector>
 
 
@@ -13,16 +14,20 @@ namespace DB
 
 /// Stores multiple columns in row-major format.
 /// Each row is a tuple of values from several source columns.
-/// Both plain fixed-width columns and `Nullable(T)` wrappers over such columns are supported.
+/// Plain fixed-width columns, `String` columns and `Nullable(T)` wrappers over such columns are supported.
 ///
 /// Row Layout:
 ///   [field_0 | field_1 | ... | field_n ]
 ///
 /// A nullable field is laid out as [null_byte | value_bytes]
 /// where `null_byte` is 1 if the value is NULL and 0 otherwise.
+/// A string field is a 16-byte `UnhashedPackedStringRef`: a value of up to 15 bytes is stored inline,
+/// a longer one points to the overflow buffer.
 ///
 /// The order of fields matches the order of source columns.
 class RowDataStore;
+class Block;
+class TableJoin;
 using RowDataStorePtr = std::shared_ptr<RowDataStore>;
 
 class RowDataStore
@@ -34,6 +39,7 @@ public:
         size_t offset;
         size_t size;
         bool is_nullable;
+        bool is_string = false;
     };
 
     using RowLayout = std::vector<FieldLayout>;
@@ -61,7 +67,8 @@ public:
 
     const char * getRowAt(size_t index) const { return chars.data() + index * row_length; }
     size_t size() const { return row_length != 0 ? chars.size() / row_length : 0; }
-    size_t allocatedBytes() const { return chars.empty() ? 0 : chars.allocated_bytes(); }
+    size_t allocatedBytes() const;
+    size_t byteSizeAt(size_t index) const;
 
 private:
     using Chars = PaddedPODArray<char>;
@@ -70,13 +77,16 @@ private:
     Chars chars;
     RowLayoutPtr layout;
     size_t row_length;
+    Chars overflow;
 
     /// Read `length` consecutive rows from `columns` starting at `start` and pack them into the row-major buffer.
     /// For nullable fields the null flag is written at the field's first byte followed by the value.
     void gatherRows(const Columns & columns, size_t start, size_t length);
 };
 
-bool isRowStorageUseful(const ColumnPtr & column);
+/// Right-side columns that qualify for the row store.
+NameSet computeRowStoreCandidateColumns(
+    const TableJoin & table_join, const Block & right_sample_block, UInt64 right_rows, UInt64 min_string_column_bytes);
 
 /// Derives optimal batch size for reading and writing into the row store based on L2 cache size.
 size_t rowStoreBatchSize(size_t row_length);

@@ -1,0 +1,10 @@
+Numeric key	1	1	0
+Packed keys	1	1	0
+String key	1	1	0
+Serialized key	1	1	0
+Spilled arguments	1	1	1
+Fixed record width 4	1	1	0
+Fixed record width 5	1	1	0
+Fixed record width 6	1	1	0
+Fixed record width 7	1	1	0
+Contiguous row store

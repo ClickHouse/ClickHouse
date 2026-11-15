@@ -1,0 +1,15 @@
+Before merge
+[10,507]
+[10,507]
+1
+1
+After merge
+[10,507]
+[10,507]
+[30]
+[30]
+1
+1
+Positions read from .pos
+05367_embedded	1	0
+05367_in_pos	1	1

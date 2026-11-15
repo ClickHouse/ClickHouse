@@ -39,4 +39,5 @@ EXPLAIN SELECT * FROM visits_order_dst WHERE user_name='another_user2';
 SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas=1, parallel_replicas_local_plan=1, parallel_replicas_support_projection=1, optimize_aggregation_in_order = 0;
 
-SELECT trimLeft(*) FROM (EXPLAIN SELECT * FROM visits_order_dst WHERE user_name='another_user2') where explain like '%ReadFromPreparedSource%' or explain like '%ReadFromMergeTree%';
+-- Plan-based parallel replicas also print the shipped fragment, which reads the table before the replica applies the projection.
+SELECT countIf(explain LIKE '%ReadFromMergeTree (user_name_projection)%') > 0 AS reads_projection FROM (EXPLAIN SELECT * FROM visits_order_dst WHERE user_name='another_user2');

@@ -1,5 +1,4 @@
 {
-  "icon": "/images/icons/icon-reference.svg",
   "item": "Reference",
   "pages": [
     "reference/home",
@@ -26,6 +25,7 @@
                 "reference/statements/alter/comment",
                 "reference/statements/alter/constraint",
                 "reference/statements/alter/database-comment",
+                "reference/statements/alter/database-setting",
                 "reference/statements/alter/delete",
                 "reference/statements/alter/named-collection",
                 "reference/statements/alter/order-by",
@@ -177,6 +177,7 @@
                 "reference/statements/select/qualify",
                 "reference/statements/select/replace_modifier",
                 "reference/statements/select/sample",
+                "reference/statements/select/shuffle",
                 "reference/statements/select/union",
                 "reference/statements/select/where",
                 "reference/statements/select/with"
@@ -1004,6 +1005,7 @@
         },
         "reference/formats/Values",
         "reference/formats/Vertical",
+        "reference/formats/Vortex",
         "reference/formats/XML"
       ]
     },

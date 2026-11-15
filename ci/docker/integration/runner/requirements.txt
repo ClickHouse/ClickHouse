@@ -66,7 +66,7 @@ psycopg-binary==3.3.3
 psycopg2-binary==2.9.11
 psycopg==3.3.3
 py4j==0.10.9.9
-pyarrow==23.0.1
+pyarrow==26.0.1
 pycparser==2.22
 pycryptodome==3.23.0
 pydantic==2.12.5

@@ -1,0 +1,94 @@
+---
+title: Аутентификация IAM в Cloud SQL
+---
+
+export const CloudSQLIAMAuthentication = ({ engine }) => {
+  const engines = {
+    postgres: {
+      docsPath: 'postgres',
+      flag: 'cloudsql.iam_authentication',
+      port: '5432',
+      createUserName: '<name>@<project>.iam',
+      userNameHint: <>Для Postgres имя пользователя — это email служебной учётной записи <strong>без</strong> суффикса <code>.gserviceaccount.com</code>:</>,
+      grantsStep: <>Подключитесь под пользователем-администратором и выполните шаги из раздела <a href="/ru/integrations/clickpipes/postgres/source/google-cloudsql#creating-clickpipes-user-and-granting-permissions">Создание пользователя ClickPipes и выдача разрешений</a>, пропустив шаг 1, так как пользователь уже существует. Используйте <code>{'"<name>@<project>.iam"'}</code> вместо <code>clickpipes_user</code> и сохраните двойные кавычки: имя содержит специальные символы.</>,
+      firewallAnchor: '/integrations/clickpipes/postgres/source/google-cloudsql#add-clickpipes-ips-to-firewall',
+    },
+    mysql: {
+      docsPath: 'mysql',
+      flag: 'cloudsql_iam_authentication',
+      port: '3306',
+      createUserName: 'SERVICE_ACCOUNT_EMAIL',
+      userNameHint: <>Для MySQL укажите полный email служебной учётной записи. Cloud SQL создаёт пользователя MySQL из части email <strong>до</strong> символа <code>@</code>, и именно это короткое имя (<code>{'<name>'}</code>) используется в привилегиях ниже:</>,
+      grantsStep: <>Подключитесь под пользователем root и выполните шаги из раздела <a href="/ru/integrations/clickpipes/mysql/source/gcp#configure-database-user-gcp">Настройка пользователя базы данных</a>, пропустив шаг 1, так как пользователь уже существует. Используйте <code>{"'<name>'@'%'"}</code> вместо <code>'clickpipes_user'@'host'</code> и <code>'clickpipes_user'@'%'</code>.</>,
+      firewallAnchor: '/integrations/clickpipes/mysql/source/gcp#configure-network-access-gcp-mysql',
+      tlsSuffix: <> Шаг с <a href="/ru/integrations/clickpipes/mysql/source/gcp#download-root-ca-certificate-gcp-mysql">сертификатом</a> можно пропустить.</>,
+    },
+  };
+  const cfg = engines[String(engine).toLowerCase()];
+
+  if (!cfg)
+    throw new Error(`Unsupported Cloud SQL IAM authentication engine: ${engine}`);
+
+  const addBindingSql = (role) => `gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \\
+  --member="serviceAccount:SERVICE_ACCOUNT_EMAIL" \\
+  --role="${role}"`;
+
+  const createUserSql = `gcloud sql users create "${cfg.createUserName}" \\
+  --instance=YOUR_INSTANCE \\
+  --type=cloud_iam_service_account`;
+
+  return (
+    <>
+      <p>
+        Вместо пароля ClickPipes может проходить аутентификацию с помощью служебной учётной записи Google, принадлежащей вашему сервису ClickHouse Cloud (см. <a href="/ru/integrations/clickpipes/security/gcp-workload-identity">GCP workload identity для ClickPipes</a>), используя <a href={`https://docs.cloud.google.com/sql/docs/${cfg.docsPath}/iam-authentication#auto-iam-auth`}>автоматическую аутентификацию в базе данных через IAM</a>. В этом случае ClickPipes подключается к вашему инстансу Cloud SQL, не храня никаких учётных данных базы данных.
+      </p>
+
+      <Note>
+        Аутентификация в базе данных через IAM находится в статусе <strong>Beta</strong>.
+      </Note>
+
+      <h3 id="get-the-clickhouse-service-account">Получение служебной учётной записи ClickHouse</h3>
+
+      <p>
+        Чтобы получить служебную учётную запись вашего сервиса ClickHouse из контекста сервиса ClickPipes, выполните инструкции из раздела <a href="/ru/integrations/clickpipes/security/gcp-workload-identity#retrieve-service-account">Получение служебной учётной записи ClickPipes</a>. Email возвращается в поле <code>principal</code> и имеет вид <code>{'<name>@<project>.iam.gserviceaccount.com'}</code>. Далее он обозначается как <code>SERVICE_ACCOUNT_EMAIL</code>.
+      </p>
+
+      <h3 id="configure-cloud-sql-for-iam">Настройка Cloud SQL</h3>
+
+      <ol>
+        <li>
+          <a href="https://console.cloud.google.com/apis/library/sqladmin.googleapis.com">Включите Cloud SQL Admin API</a> в проекте, в котором размещён ваш инстанс. ClickPipes использует его для поиска инстанса и получения краткосрочного клиентского сертификата.
+        </li>
+        <li>
+          Включите флаг <code>{cfg.flag}</code> на вашем инстансе. Изменение этого флага приводит к перезапуску инстанса.
+        </li>
+        <li>
+          <a href="/ru/integrations/clickpipes/security/gcp-workload-identity#grant-source-access">Предоставьте доступ к источнику</a>: назначьте служебной учётной записи IAM-роли <code>roles/cloudsql.client</code> и <code>roles/cloudsql.instanceUser</code> в проекте, в котором размещён ваш инстанс. Выдайте эти привилегии до создания ClickPipe.
+
+          <CodeBlock language="bash">{`${addBindingSql('roles/cloudsql.client')}
+
+${addBindingSql('roles/cloudsql.instanceUser')}`}</CodeBlock>
+        </li>
+        <li>
+          Создайте пользователя базы данных для служебной учётной записи. {cfg.userNameHint}
+
+          <CodeBlock language="bash">{createUserSql}</CodeBlock>
+        </li>
+        <li>{cfg.grantsStep}</li>
+      </ol>
+
+      <h3 id="create-the-clickpipe-with-iam">Создание ClickPipe</h3>
+
+      <p>
+        При создании ClickPipe выберите аутентификацию через служебную учётную запись Google Cloud (IAM). Вводить имя пользователя или пароль не требуется.
+      </p>
+
+      <ul>
+        <li>В поле <strong>Host</strong> укажите имя подключения инстанса в формате <code>PROJECT:REGION:INSTANCE</code>. IP-адрес не принимается.</li>
+        <li>ClickPipes подключается к серверному прокси-порту инстанса <strong>3307</strong>, а не к порту {cfg.port}. Убедитесь, что этот порт доступен. Для публичного IP <a href={cfg.firewallAnchor}>добавьте IP-адреса ClickPipes в список авторизованных сетей</a>.</li>
+        <li>ClickPipes использует Private Service Connect, если у вашего сервиса есть <a href="/ru/integrations/clickpipes/networking/gcp-psc">обратная частная конечная точка</a>, которая разрешает DNS-имя PSC инстанса. В противном случае подключение выполняется к публичному IP инстанса или к его частному IP, если публичного нет.</li>
+        <li>Настройки TLS, например корневой CA, не используются. Соединение шифруется, а подлинность сервера проверяется автоматически.{cfg.tlsSuffix}</li>
+      </ul>
+    </>
+  );
+};

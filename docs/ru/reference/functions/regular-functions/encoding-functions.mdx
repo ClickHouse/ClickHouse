@@ -404,6 +404,84 @@ SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x
 └────────┘
 ```
 
+## decodeQuotedPrintable {#decodeQuotedPrintable}
+
+Добавлено в: v26.10.0
+
+Декодирует строку, закодированную в формате [Quoted-Printable](https://en.wikipedia.org/wiki/Quoted-printable), в соответствии с [RFC 2045](https://www.rfc-editor.org/rfc/rfc2045#section-6.7).
+
+Последовательность `=XX` (шестнадцатеричные цифры в любом регистре) заменяется байтом, который она кодирует.
+Символ `=`, за которым следует `\r` или `\n`, обозначает мягкий перенос строки: он удаляется вместе с остатком строки вплоть до следующего `\n` включительно.
+Прочие некорректные экранирующие последовательности (например, `=ZZ` или `=4` в конце строки) остаются без изменений; исключение составляет одиночный `=` в самом конце строки — он удаляется.
+Поведение функции совпадает с `quopri.decodestring` в Python.
+
+**Синтаксис**
+
+```sql
+decodeQuotedPrintable(s)
+```
+
+**Аргументы**
+
+* `s` — строка в кодировке Quoted-Printable. [`String`](/ru/reference/data-types/string)
+
+**Возвращаемое значение**
+
+Возвращает декодированную строку. [`String`](/ru/reference/data-types/string)
+
+**Примеры**
+
+**Пример использования**
+
+```sql title=Query
+SELECT decodeQuotedPrintable('Caf=C3=A9 =3D 3 =E2=82=AC') AS decoded
+```
+
+```response title=Response
+┌─decoded────┐
+│ Café = 3 € │
+└────────────┘
+```
+
+## encodeQuotedPrintable {#encodeQuotedPrintable}
+
+Добавлено в: v26.10.0
+
+Кодирует строку в кодировке [Quoted-Printable](https://en.wikipedia.org/wiki/Quoted-printable), используемой в электронной почте, в соответствии с [RFC 2045](https://www.rfc-editor.org/rfc/rfc2045#section-6.7).
+
+Печатаемые символы ASCII, кроме `=`, сохраняются как есть, а остальные байты записываются в виде `=XX` с шестнадцатеричными цифрами в верхнем регистре.
+Перевод строки `\r\n` сохраняется, а одиночный `\r` или `\n` кодируется. Пробел или символ табуляции кодируется, если он оказывается в конце строки.
+Длина строк не превышает 76 символов: для этого используются мягкие переносы строки (`=\r\n`).
+`decodeQuotedPrintable(encodeQuotedPrintable(s))` возвращает исходную строку `s` для любого значения `s`.
+
+**Синтаксис**
+
+```sql
+encodeQuotedPrintable(s)
+```
+
+**Аргументы**
+
+* `s` — строка для кодирования. [`String`](/ru/reference/data-types/string)
+
+**Возвращаемое значение**
+
+Возвращает строку, закодированную в формате Quoted-Printable. [`String`](/ru/reference/data-types/string)
+
+**Примеры**
+
+**Пример использования**
+
+```sql title=Query
+SELECT encodeQuotedPrintable('Café = 3 €') AS encoded
+```
+
+```response title=Response
+┌─encoded───────────────────┐
+│ Caf=C3=A9 =3D 3 =E2=82=AC │
+└───────────────────────────┘
+```
+
 ## hex {#hex}
 
 Добавленный в: v1.1.0
@@ -426,6 +504,8 @@ SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x
 ```sql
 hex(arg)
 ```
+
+**Псевдонимы**: `to_hex`
 
 **Аргументы**
 
@@ -1073,6 +1153,8 @@ SELECT reinterpretAsUInt64(reverse(unbin('1110'))) AS num
 ```sql
 unhex(arg)
 ```
+
+**Псевдонимы**: `from_hex`
 
 **Аргументы**
 
