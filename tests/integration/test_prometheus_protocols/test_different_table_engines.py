@@ -323,7 +323,7 @@ def test_inner_engines():
 # Checks that the `samples_index_granularity` and `tags_index_granularity` settings
 # set `index_granularity` of the samples and tags inner tables.
 def test_index_granularity():
-    # The default value of `samples_index_granularity` is 256, the default value of `samples_index_granularity_bytes` is 524288,
+    # The default value of `samples_index_granularity` is 256, the default value of `samples_index_granularity_bytes` is 262144,
     # the default value of `tags_index_granularity` is 8192.
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
     check()
@@ -333,7 +333,7 @@ def test_index_granularity():
         "AND name = (SELECT _table FROM timeSeriesSamples(prometheus) LIMIT 1)"
     )
     assert "index_granularity = 256" in samples_engine
-    assert "index_granularity_bytes = 524288" in samples_engine
+    assert "index_granularity_bytes = 262144" in samples_engine
     assert "index_granularity = 8192" in node.query(
         "SELECT engine_full FROM system.tables WHERE database = currentDatabase() "
         "AND name = (SELECT _table FROM timeSeriesTags(prometheus) LIMIT 1)"

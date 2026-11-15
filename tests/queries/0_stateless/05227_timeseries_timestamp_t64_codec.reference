@@ -15,4 +15,4 @@ SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp UInt32, valu
 130	0
 recent_samples	{'timestamp':'CODEC(Delta(8), LZ4)'}
 samples	{'timestamp':'CODEC(DoubleDelta, ZSTD(1))'}
-SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6), value Float64)))	{'timestamp':'CODEC(Delta(8), T64, ZSTD(3))','value':'CODEC(ALP, ZSTD(3))'}	2
+SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6), value Float64)))	{'timestamp':'CODEC(Delta(8), T64, ZSTD(3))','value':'CODEC(ALP, ZSTD(4))'}	2

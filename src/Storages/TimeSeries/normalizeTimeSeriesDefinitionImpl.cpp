@@ -608,8 +608,8 @@ namespace
     }
 
     /// The codecs of the generated columns of the samples tables: `Delta`, `T64`, `ZSTD(3)` for the timestamps (the columns `bucket`,
-    /// `min_time` and `max_time` of a table with buckets of samples get it too), `ALP`, `ZSTD(3)` for the values.
-    /// Near-monotonic timestamps barely compress under generic codecs.
+    /// `min_time` and `max_time` of a table with buckets of samples get it too), `ALP`, `ZSTD(3)` for the values (`ALP`, `ZSTD(4)`
+    /// with buckets of samples). Near-monotonic timestamps barely compress under generic codecs.
     ASTPtr getDefaultTimestampCodec()
     {
         return makeASTFunction(
@@ -622,6 +622,13 @@ namespace
     ASTPtr getDefaultValueCodec()
     {
         return makeASTFunction("CODEC", make_intrusive<ASTIdentifier>("ALP"), makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{3})));
+    }
+
+    /// A granule of a table with buckets of samples gives ZSTD less than 128 KiB of ALP output. At that size level 3 matches at least
+    /// 5 bytes and leaves values with random decimal digits in Huffman-coded literals, which decode much slower; level 4 matches 4 bytes.
+    ASTPtr getDefaultBucketedValueCodec()
+    {
+        return makeASTFunction("CODEC", make_intrusive<ASTIdentifier>("ALP"), makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{4})));
     }
 
     /// The value of `index_granularity` of an inner samples table generated for `settings`: the `*_index_granularity` setting if set,
@@ -985,7 +992,7 @@ namespace
                             return true;
 
                         return timestamp_codec && value_codec
-                            && same_ast(*timestamp_codec, *getDefaultTimestampCodec()) && same_ast(*value_codec, *getDefaultValueCodec());
+                            && same_ast(*timestamp_codec, *getDefaultTimestampCodec()) && same_ast(*value_codec, *getDefaultBucketedValueCodec());
                     }
 
                     /// The generated `bucket`, `min_time` and `max_time` columns have the codec of the timestamps (see `normalizeInnerColumns`).
@@ -1451,13 +1458,13 @@ namespace
 
                 if (time_series_settings.hasBucketedSamples())
                 {
-                    /// The generated `samples` column gets the codecs of the `timestamp` and `value` columns of the earlier versions, declared
-                    /// for the elements of its tuples; a declared column keeps the user's codecs.
+                    /// The generated `samples` column gets the codec of the `timestamp` column of the earlier versions and `ALP`, `ZSTD(4)`
+                    /// for the values, declared for the elements of its tuples; a declared column keeps the user's codecs.
                     auto samples_type = makeSamplesType(resolved_types.timestamp_type, resolved_types.value_type);
                     if (add_column_if_missing(TimeSeriesColumnNames::Samples, makeSimpleAggregate("timeSeriesGroupArray", samples_type)))
                     {
                         add_codec_declaration(String{TimeSeriesColumnNames::Samples} + "." + TimeSeriesColumnNames::Timestamp, getDefaultTimestampCodec());
-                        add_codec_declaration(String{TimeSeriesColumnNames::Samples} + "." + TimeSeriesColumnNames::Value, getDefaultValueCodec());
+                        add_codec_declaration(String{TimeSeriesColumnNames::Samples} + "." + TimeSeriesColumnNames::Value, getDefaultBucketedValueCodec());
                     }
 
                     /// `bucket` is computed on insertion from the `*_bucket_step_seconds` setting of the table. The three columns get the codec
