@@ -476,16 +476,17 @@ struct DefaultHash<UInt128> : public UInt128Hash {};
 template <>
 struct DefaultHash<UInt256> : public UInt256Hash {};
 
+/// Do not use `HashCRC32` here: without CRC32 instructions, it folds the words with XOR.
 template <>
 struct DefaultHash<Int128>
 {
-    size_t operator()(Int128 key) const { return UInt128Hash{}(std::bit_cast<UInt128>(key)); }
+    size_t operator()(Int128 key) const { return UInt128HashCRC32{}(std::bit_cast<UInt128>(key)); }
 };
 
 template <>
 struct DefaultHash<Int256>
 {
-    size_t operator()(Int256 key) const { return UInt256Hash{}(std::bit_cast<UInt256>(key)); }
+    size_t operator()(Int256 key) const { return UInt256HashCRC32{}(std::bit_cast<UInt256>(key)); }
 };
 
 template <DB::is_decimal T>

@@ -905,4 +905,18 @@ TEST(DefaultHash, WideIntegersAndDecimalsMixAllWords)
     EXPECT_EQ(countDistinctDefaultHashes(keys256), keys256.size());
     EXPECT_EQ(countDistinctDefaultHashes(std::vector<Decimal128>(keys128.begin(), keys128.end())), keys128.size());
     EXPECT_EQ(countDistinctDefaultHashes(std::vector<Decimal256>(keys256.begin(), keys256.end())), keys256.size());
+
+    /// With XOR folding, `v` collides with `-v - 1`.
+    std::vector<Int128> small128;
+    std::vector<Int256> small256;
+    for (Int64 k = -100; k <= 100; ++k)
+    {
+        small128.push_back(k);
+        small256.push_back(k);
+    }
+
+    EXPECT_EQ(countDistinctDefaultHashes(small128), small128.size());
+    EXPECT_EQ(countDistinctDefaultHashes(small256), small256.size());
+    EXPECT_EQ(countDistinctDefaultHashes(std::vector<Decimal128>(small128.begin(), small128.end())), small128.size());
+    EXPECT_EQ(countDistinctDefaultHashes(std::vector<Decimal256>(small256.begin(), small256.end())), small256.size());
 }
