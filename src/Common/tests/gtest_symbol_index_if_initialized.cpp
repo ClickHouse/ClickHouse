@@ -34,18 +34,16 @@ void require(bool condition, const std::string & what)
 [[noreturn]] void checkNothingBuildsTheIndex()
 {
     require(DB::SymbolIndex::instanceIfInitialized() == nullptr, "the index is not built at startup");
-    /// The fallback for the bare dump must report that nothing can be resolved instead of building the
-    /// index to find out. Where the index is not used for resolution at all, the answer is the same
-    /// `Unsupported` one as from `resolveAddress`, and the point of the check is only that asking did
-    /// not build anything.
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-    require(!StackTrace::tryResolveAddress(testAddress()).has_value(), "nothing is resolved before the index is built");
-#else
-    const auto resolved = StackTrace::tryResolveAddress(testAddress());
-    require(resolved.has_value() && resolved->kind == StackTrace::AddressKind::Unsupported,
-        "resolution is unsupported on this platform");
-#endif
+    /// Without the index, an address in the main executable must still resolve, to the same offset the
+    /// index gives once it is built, so the bare dump never prints a runtime address.
+    const auto before = StackTrace::tryResolveAddress(testAddress());
     require(DB::SymbolIndex::instanceIfInitialized() == nullptr, "asking did not build the index as a side effect");
+
+    const auto after = StackTrace::resolveAddress(testAddress());
+    require(before.kind == after.kind && before.address == after.address, "the fallback resolves like the index");
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    require(before.kind == StackTrace::AddressKind::MainObject, "the address is in the main executable");
+#endif
     std::_Exit(0);
 }
 
@@ -68,7 +66,5 @@ TEST(SymbolIndex, InstanceIsPublishedOnceBuilt)
     const DB::SymbolIndex & index = DB::SymbolIndex::instance();
     EXPECT_EQ(DB::SymbolIndex::instanceIfInitialized(), &index);
 
-    const auto resolved = StackTrace::tryResolveAddress(testAddress());
-    ASSERT_TRUE(resolved.has_value());
-    EXPECT_EQ(resolved->address, StackTrace::resolveAddress(testAddress()).address);
+    EXPECT_EQ(StackTrace::tryResolveAddress(testAddress()).address, StackTrace::resolveAddress(testAddress()).address);
 }

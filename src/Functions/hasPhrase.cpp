@@ -6,7 +6,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -212,26 +211,6 @@ FunctionHasPhraseOverloadResolver::FunctionHasPhraseOverloadResolver(ContextPtr)
 {
 }
 
-DataTypePtr FunctionHasPhraseOverloadResolver::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
-{
-    FunctionArgumentDescriptors mandatory_args{
-        {"input",
-         static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedStringOrArrayOfStringOrFixedString),
-         nullptr,
-         "String, FixedString, Array(String) or Array(FixedString)"},
-        {"phrase",
-         static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrArrayOfStringType),
-         isColumnConst,
-         "const String or const Array(String)"}};
-
-    FunctionArgumentDescriptors optional_args{
-        {"tokenizer", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}};
-
-    validateFunctionArguments(name, arguments, mandatory_args, optional_args);
-
-    return std::make_shared<DataTypeNumber<UInt8>>();
-}
-
 FunctionBasePtr
 FunctionHasPhraseOverloadResolver::buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const
 {
@@ -276,19 +255,6 @@ FunctionHasPhraseOverloadResolver::buildImpl(const ColumnsWithTypeAndName & argu
 
     if (!supported_types.contains(tokenizer->getType()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' does not support the '{}' tokenizer.", name, tokenizer_name);
-
-    /// Such a tokenizer keeps the zero padding of a `FixedString` inside a token, which no needle holds.
-    auto input_type = removeNullable(recursiveRemoveLowCardinality(arguments[arg_input].type));
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(input_type.get()))
-        input_type = removeNullable(array_type->getNestedType());
-
-    if (isFixedString(input_type) && !ITokenizer::splitsAtZeroByte(tokenizer->getType()))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Function '{}' does not support a FixedString input with the '{}' tokenizer, because the zero byte "
-            "padding of the input would become part of a token.",
-            name,
-            tokenizer_name);
 
     auto phrase_tokens = initializePhraseTokens(arguments, *tokenizer, getName());
     return std::make_shared<FunctionBaseHasPhrase>(std::move(tokenizer), std::move(phrase_tokens), std::move(argument_types), return_type);
@@ -373,8 +339,7 @@ including duplicates. Empty phrase elements are ignored, because no tokenizer pr
 
 <Note>
 When a text index defines a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasPhrase` applies it to both `input` and `phrase` before tokenization.
-The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
-This inconsistency is tolerated to improve the usability of full-text search.
+The preprocessor is part of the index definition, so it is applied wherever the function is evaluated: in the `WHERE`/`PREWHERE` filter, in the `SELECT` list, and independently of whether the index is read (e.g. `SETTINGS use_skip_indexes = 0`).
 </Note>
 
 Unlike [`hasToken`](#hasToken), [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllTokens), `hasPhrase` requires the tokens to appear in the same order

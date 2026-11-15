@@ -1,4 +1,4 @@
--- Tags: long, no-fasttest
+-- Tags: long, no-fasttest, no-msan
 
 SET allow_metadata_only_named_tuple_alter = 1;
 

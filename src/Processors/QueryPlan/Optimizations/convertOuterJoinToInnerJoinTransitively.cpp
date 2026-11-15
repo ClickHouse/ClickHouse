@@ -23,9 +23,14 @@
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <vector>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -33,40 +38,55 @@ namespace DB::QueryPlanOptimizations
 namespace
 {
 
-using NodeSet = std::unordered_set<const ActionsDAG::Node *>;
+using NodeSet = UnorderedSetWithMemoryTracking<const ActionsDAG::Node *>;
+using NullRejectedCache = UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, NodeSet>;
 
-NodeSet collectNullPropagatingInputs(const ActionsDAG::Node * node)
+NodeSet collectNullPropagatingInputs(const ActionsDAG::Node * root)
 {
-    switch (node->type)
+    NodeSet result;
+    NodeSet visited;
+    VectorWithMemoryTracking<const ActionsDAG::Node *> stack{root};
+
+    while (!stack.empty())
     {
-        case ActionsDAG::ActionType::INPUT:
-        case ActionsDAG::ActionType::PLACEHOLDER:
-            /// A column that is not `Nullable` here holds no NULL, so it rejects nothing.
-            return isNullableOrLowCardinalityNullable(node->result_type) ? NodeSet{node} : NodeSet{};
-        case ActionsDAG::ActionType::ALIAS:
-            return !node->children.empty() ? collectNullPropagatingInputs(node->children.front()) : NodeSet{};
-        case ActionsDAG::ActionType::FUNCTION:
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (!visited.insert(node).second)
+            continue;
+
+        switch (node->type)
         {
-            if (!node->function || !node->function->isNullPropagating(node->result_type))
-                return {};
-            NodeSet result;
-            for (const auto * child : node->children)
-                result.merge(collectNullPropagatingInputs(child));
-            return result;
+            case ActionsDAG::ActionType::INPUT:
+            case ActionsDAG::ActionType::PLACEHOLDER:
+                /// A column that is not `Nullable` here holds no NULL, so it rejects nothing.
+                if (isNullableOrLowCardinalityNullable(node->result_type))
+                    result.insert(node);
+                break;
+            case ActionsDAG::ActionType::ALIAS:
+                if (!node->children.empty())
+                    stack.push_back(node->children.front());
+                break;
+            case ActionsDAG::ActionType::FUNCTION:
+                if (node->function && node->function->isNullPropagating(node->result_type))
+                    stack.insert(stack.end(), node->children.begin(), node->children.end());
+                break;
+            case ActionsDAG::ActionType::COLUMN:
+            case ActionsDAG::ActionType::ARRAY_JOIN:
+                break;
         }
-        case ActionsDAG::ActionType::COLUMN:
-        case ActionsDAG::ActionType::ARRAY_JOIN:
-            return {};
     }
 
-    return {};
+    return result;
 }
 
+const NodeSet & collectNullRejectedInputs(const ActionsDAG::Node * predicate, NullRejectedCache & cache);
+
 /// Inputs that cannot be NULL in a row that passes `predicate`, because a NULL there would make the predicate NULL.
-NodeSet collectNullRejectedInputs(const ActionsDAG::Node * predicate)
+NodeSet doCollectNullRejectedInputs(const ActionsDAG::Node * predicate, NullRejectedCache & cache)
 {
     if (predicate->type == ActionsDAG::ActionType::ALIAS && !predicate->children.empty())
-        return collectNullRejectedInputs(predicate->children.front());
+        return collectNullRejectedInputs(predicate->children.front(), cache);
 
     if (predicate->type == ActionsDAG::ActionType::FUNCTION && predicate->function_base)
     {
@@ -76,16 +96,19 @@ NodeSet collectNullRejectedInputs(const ActionsDAG::Node * predicate)
         {
             NodeSet result;
             for (const auto * child : predicate->children)
-                result.merge(collectNullRejectedInputs(child));
+            {
+                const auto & child_result = collectNullRejectedInputs(child, cache);
+                result.insert(child_result.begin(), child_result.end());
+            }
             return result;
         }
 
         if (name == "or" && !predicate->children.empty())
         {
-            NodeSet result = collectNullRejectedInputs(predicate->children.front());
+            NodeSet result = collectNullRejectedInputs(predicate->children.front(), cache);
             for (size_t i = 1; i < predicate->children.size() && !result.empty(); ++i)
             {
-                auto other = collectNullRejectedInputs(predicate->children[i]);
+                const auto & other = collectNullRejectedInputs(predicate->children[i], cache);
                 std::erase_if(result, [&](const auto * input) { return !other.contains(input); });
             }
             return result;
@@ -97,6 +120,21 @@ NodeSet collectNullRejectedInputs(const ActionsDAG::Node * predicate)
 
     /// The predicate is rejecting wherever it becomes NULL.
     return collectNullPropagatingInputs(predicate);
+}
+
+const NodeSet & collectNullRejectedInputs(const ActionsDAG::Node * predicate, NullRejectedCache & cache)
+{
+    if (auto it = cache.find(predicate); it != cache.end())
+        return it->second;
+
+    return cache.emplace(predicate, doCollectNullRejectedInputs(predicate, cache)).first->second;
+}
+
+
+NodeSet collectNullRejectedInputs(const ActionsDAG::Node * predicate)
+{
+    NullRejectedCache cache;
+    return collectNullRejectedInputs(predicate, cache);
 }
 
 
@@ -249,7 +287,87 @@ std::pair<NameSet, NameSet> splitNullRejectedColumnsOnJoin(const JoinStepLogical
     return {std::move(left), std::move(right)};
 }
 
-void convertJoinKind(JoinStepLogical & join, QueryPlan::Node & node, const NameSet & left_null_rejected_columns, const NameSet & right_null_rejected_columns)
+/// Inputs a `!isDeterministic()` function of `dag` reads: their constness may change its result.
+NodeSet collectRepresentationReadInputs(const ActionsDAG & dag)
+{
+    ActionsDAG::NodeRawConstPtrs roots;
+    for (const auto & node : dag.getNodes())
+        roots.push_back(&node);
+    return ActionsDAG::getInputsReadByRepresentation(roots);
+}
+
+/// Every input below `roots`: the constness of a result follows that of its arguments.
+NodeSet collectInputs(ActionsDAG::NodeRawConstPtrs roots)
+{
+    NodeSet result;
+    NodeSet visited;
+    while (!roots.empty())
+    {
+        const auto * node = roots.back();
+        roots.pop_back();
+
+        if (!visited.insert(node).second)
+            continue;
+
+        if (node->type == ActionsDAG::ActionType::INPUT)
+            result.insert(node);
+
+        roots.insert(roots.end(), node->children.begin(), node->children.end());
+    }
+    return result;
+}
+
+ActionsDAG::NodeRawConstPtrs outputsNamedIn(const ActionsDAG & dag, const NameSet & names)
+{
+    ActionsDAG::NodeRawConstPtrs result;
+    for (const auto * output : dag.getOutputs())
+        if (names.contains(output->result_name))
+            result.push_back(output);
+    return result;
+}
+
+/// Translate representation reads of the outputs of `dag` to its inputs and add the reads of `dag` itself.
+NameSet remapRepresentationReadColumnsThroughActions(const ActionsDAG & dag, const NameSet & columns)
+{
+    NameSet result;
+    for (const auto * input : collectRepresentationReadInputs(dag))
+        result.insert(input->result_name);
+    for (const auto * input : collectInputs(outputsNamedIn(dag, columns)))
+        result.insert(input->result_name);
+
+    /// A name the DAG neither produces nor consumes is forwarded by `ActionsDAG::updateHeader`.
+    NameSet known_columns;
+    for (const auto * output : dag.getOutputs())
+        known_columns.insert(output->result_name);
+    for (const auto * input : dag.getInputs())
+        known_columns.insert(input->result_name);
+
+    for (const auto & name : columns)
+        if (!known_columns.contains(name))
+            result.insert(name);
+
+    return result;
+}
+
+void splitInputsBySide(const JoinStepLogical & join, const NodeSet & inputs, NameSet & left, NameSet & right)
+{
+    for (const auto * input : inputs)
+    {
+        JoinActionRef ref(input, join.getExpressionActions());
+        if (ref.fromLeft())
+            left.insert(input->result_name);
+        else if (ref.fromRight())
+            right.insert(input->result_name);
+    }
+}
+
+void convertJoinKind(
+    JoinStepLogical & join,
+    QueryPlan::Node & node,
+    const NameSet & left_null_rejected_columns,
+    const NameSet & right_null_rejected_columns,
+    bool left_reads_constant,
+    bool right_reads_constant)
 {
     auto & join_operator = join.getJoinOperator();
     const auto kind = join_operator.kind;
@@ -259,8 +377,9 @@ void convertJoinKind(JoinStepLogical & join, QueryPlan::Node & node, const NameS
     if (join_operator.strictness != JoinStrictness::All)
         return;
 
-    /// A `JoinStepLogicalLookup` source expects a particular join kind.
-    auto is_storage_join = [&]()
+    /// A `Join` engine source expects its declared join kind, and only an outer join on a key-value
+    /// source must not be converted to prevent the optimizer from reordering it.
+    auto is_prepared_join_storage = [&]()
     {
         for (const auto * child : node.children)
         {
@@ -268,17 +387,18 @@ void convertJoinKind(JoinStepLogical & join, QueryPlan::Node & node, const NameS
                 child = child->children.front();
 
             if (auto * lookup_step = typeid_cast<JoinStepLogicalLookup *>(child->step.get()))
-                if (lookup_step->getPreparedJoinStorage().storage_join != nullptr)
+                if (lookup_step->getPreparedJoinStorage())
                     return true;
         }
         return false;
     }();
-    if (is_storage_join)
+    if (is_prepared_join_storage)
         return;
 
-    /// A side is "safe" when the rows this join would null-extend on it cannot survive above.
-    const bool left_stream_safe = !left_null_rejected_columns.empty();
-    const bool right_stream_safe = !right_null_rejected_columns.empty();
+    /// A side is "safe" when the rows this join would null-extend on it cannot survive above,
+    /// and no function above reads a constant of the side, which stays a constant once the side is not padded.
+    const bool left_stream_safe = !left_null_rejected_columns.empty() && !left_reads_constant;
+    const bool right_stream_safe = !right_null_rejected_columns.empty() && !right_reads_constant;
 
     if (kind == JoinKind::Full)
     {
@@ -297,14 +417,27 @@ void convertJoinKind(JoinStepLogical & join, QueryPlan::Node & node, const NameS
 
 void visit(QueryPlan::Node & root)
 {
+    std::optional<ConstantColumns> constant_columns;
+    auto reads_constant = [&](const QueryPlan::Node * child, const NameSet & reads)
+    {
+        if (reads.empty())
+            return false;
+        if (!constant_columns)
+            constant_columns = collectConstantColumns(root);
+        auto it = constant_columns->find(child);
+        return it != constant_columns->end() && std::ranges::any_of(reads, [&](const auto & name) { return it->second.contains(name); });
+    };
+
     struct Frame
     {
         QueryPlan::Node * node;
         NameSet null_rejected_columns;
+        /// Columns whose representation a `!isDeterministic()` function above reads.
+        NameSet representation_read_columns;
     };
 
-    std::vector<Frame> stack;
-    stack.push_back({&root, {}});
+    VectorWithMemoryTracking<Frame> stack;
+    stack.push_back({&root, {}, {}});
 
     while (!stack.empty())
     {
@@ -313,6 +446,7 @@ void visit(QueryPlan::Node & root)
 
         auto & node = *frame.node;
         auto & null_rejected_columns = frame.null_rejected_columns;
+        auto & representation_read_columns = frame.representation_read_columns;
 
         if (!node.step || node.children.empty())
             continue;
@@ -320,12 +454,12 @@ void visit(QueryPlan::Node & root)
         if (!node.step->hasOutputHeader())
         {
             for (auto * child : node.children)
-                stack.push_back({child, {}});
+                stack.push_back({child, {}, {}});
             continue;
         }
 
         /// Keep only the names this header carries exactly once.
-        std::unordered_map<String, size_t> occurrences;
+        UnorderedMapWithMemoryTracking<String, size_t> occurrences;
         for (const auto & column : *node.step->getOutputHeader())
             ++occurrences[column.name];
         std::erase_if(null_rejected_columns, [&](const auto & name) { return occurrences[name] != 1; });
@@ -334,10 +468,14 @@ void visit(QueryPlan::Node & root)
 
         if (auto * join = typeid_cast<JoinStepLogical *>(node.step.get()); join && node.children.size() == 2)
         {
+            NameSet left_reads;
+            NameSet right_reads;
+            splitInputsBySide(*join, collectInputs(outputsNamedIn(join->getActionsDAG(), representation_read_columns)), left_reads, right_reads);
+
             if (isPaste(join->getJoinOperator().kind))
             {
-                stack.push_back({node.children[0], {}});
-                stack.push_back({node.children[1], {}});
+                stack.push_back({node.children[0], {}, std::move(left_reads)});
+                stack.push_back({node.children[1], {}, std::move(right_reads)});
                 continue;
             }
 
@@ -346,46 +484,59 @@ void visit(QueryPlan::Node & root)
             if (join->getJoinOperator().strictness == JoinStrictness::Asof)
                 right.clear();
 
-            convertJoinKind(*join, node, left, right);
+            convertJoinKind(
+                *join, node, left, right, reads_constant(node.children[0], left_reads), reads_constant(node.children[1], right_reads));
 
             /// NULLs on a side this join can still null-extend may be introduced here, so a constraint
-            /// observed above it is not guaranteed below it.
+            /// observed above it is not guaranteed below it. Its padded columns are full above it.
             const auto kind = join->getJoinOperator().kind;
             if (kind == JoinKind::Left || kind == JoinKind::Full)
+            {
                 right.clear();
+                right_reads.clear();
+            }
             if (kind == JoinKind::Right || kind == JoinKind::Full)
+            {
                 left.clear();
+                left_reads.clear();
+            }
 
             collectNullRejectedColumnsFromJoinConditions(*join, left, right);
+            splitInputsBySide(*join, collectRepresentationReadInputs(join->getActionsDAG()), left_reads, right_reads);
 
-            stack.push_back({node.children[0], std::move(left)});
-            stack.push_back({node.children[1], std::move(right)});
+            stack.push_back({node.children[0], std::move(left), std::move(left_reads)});
+            stack.push_back({node.children[1], std::move(right), std::move(right_reads)});
             continue;
         }
 
         if (const auto * filter = typeid_cast<const FilterStep *>(&step))
         {
+            auto child_reads = remapRepresentationReadColumnsThroughActions(filter->getExpression(), representation_read_columns);
             if (filter->getExpression().hasStatefulFunctions() || dagContainsNonDeterministicFunction(filter->getExpression()))
             {
-                stack.push_back({node.children.front(), {}});
+                stack.push_back({node.children.front(), {}, std::move(child_reads)});
                 continue;
             }
 
             auto child_null_rejected_columns = remapNullRejectedColumnsThroughActions(filter->getExpression(), null_rejected_columns);
             collectNullRejectedColumnsFromFilter(*filter, child_null_rejected_columns);
-            stack.push_back({node.children.front(), std::move(child_null_rejected_columns)});
+            stack.push_back({node.children.front(), std::move(child_null_rejected_columns), std::move(child_reads)});
             continue;
         }
 
         if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
         {
+            auto child_reads = remapRepresentationReadColumnsThroughActions(expression->getExpression(), representation_read_columns);
             if (expression->getExpression().hasStatefulFunctions() || dagContainsNonDeterministicFunction(expression->getExpression()))
             {
-                stack.push_back({node.children.front(), {}});
+                stack.push_back({node.children.front(), {}, std::move(child_reads)});
                 continue;
             }
 
-            stack.push_back({node.children.front(), remapNullRejectedColumnsThroughActions(expression->getExpression(), null_rejected_columns)});
+            stack.push_back(
+                {node.children.front(),
+                 remapNullRejectedColumnsThroughActions(expression->getExpression(), null_rejected_columns),
+                 std::move(child_reads)});
             continue;
         }
 
@@ -414,13 +565,16 @@ void visit(QueryPlan::Node & root)
         if (const auto * aggregating = typeid_cast<const AggregatingStep *>(&step))
         {
             auto keys = aggregating->isGroupByUseNulls() ? NameSet{} : groupingKeys(aggregating->getParams().keys, aggregating->getGroupingSetsParamsList());
-            stack.push_back({node.children.front(), std::move(keys)});
+            stack.push_back({node.children.front(), std::move(keys), std::move(representation_read_columns)});
             continue;
         }
 
         if (const auto * merging_aggregated = typeid_cast<const MergingAggregatedStep *>(&step))
         {
-            stack.push_back({node.children.front(), groupingKeys(merging_aggregated->getParams().keys, merging_aggregated->getGroupingSetsParamsList())});
+            stack.push_back(
+                {node.children.front(),
+                 groupingKeys(merging_aggregated->getParams().keys, merging_aggregated->getGroupingSetsParamsList()),
+                 std::move(representation_read_columns)});
             continue;
         }
 
@@ -430,7 +584,7 @@ void visit(QueryPlan::Node & root)
             Names partition_keys;
             for (const auto & sort_column : window->getWindowDescription().partition_by)
                 partition_keys.push_back(sort_column.column_name);
-            stack.push_back({node.children.front(), filterNullRejectedColumnsBy(partition_keys)});
+            stack.push_back({node.children.front(), filterNullRejectedColumnsBy(partition_keys), std::move(representation_read_columns)});
             continue;
         }
 
@@ -438,15 +592,18 @@ void visit(QueryPlan::Node & root)
         if (const auto * limit_by = typeid_cast<const LimitByStep *>(&step))
         {
             bool can_empty_group = limit_by->getGroupOffset() != 0 || limit_by->getGroupLength() == 0;
-            stack.push_back({node.children.front(), can_empty_group ? NameSet{} : filterNullRejectedColumnsBy(limit_by->getColumns())});
+            stack.push_back(
+                {node.children.front(),
+                 can_empty_group ? NameSet{} : filterNullRejectedColumnsBy(limit_by->getColumns()),
+                 std::move(representation_read_columns)});
             continue;
         }
 
         if (typeid_cast<const CreatingSetsStep *>(&step))
         {
-            stack.push_back({node.children.front(), std::move(null_rejected_columns)});
+            stack.push_back({node.children.front(), std::move(null_rejected_columns), std::move(representation_read_columns)});
             for (size_t i = 1; i < node.children.size(); ++i)
-                stack.push_back({node.children[i], {}});
+                stack.push_back({node.children[i], {}, {}});
             continue;
         }
 
@@ -455,19 +612,21 @@ void visit(QueryPlan::Node & root)
         {
             for (const auto & name : array_join->getColumns())
                 null_rejected_columns.erase(name);
-            stack.push_back({node.children.front(), std::move(null_rejected_columns)});
+            stack.push_back({node.children.front(), std::move(null_rejected_columns), std::move(representation_read_columns)});
             continue;
         }
 
         if (const auto * sorting = typeid_cast<const SortingStep *>(&step))
         {
-            stack.push_back({node.children.front(), sorting->getLimit() ? NameSet{} : std::move(null_rejected_columns)});
+            stack.push_back(
+                {node.children.front(), sorting->getLimit() ? NameSet{} : std::move(null_rejected_columns), std::move(representation_read_columns)});
             continue;
         }
 
         if (const auto * distinct = typeid_cast<const DistinctStep *>(&step))
         {
-            stack.push_back({node.children.front(), distinct->getLimitHint() ? NameSet{} : std::move(null_rejected_columns)});
+            stack.push_back(
+                {node.children.front(), distinct->getLimitHint() ? NameSet{} : std::move(null_rejected_columns), std::move(representation_read_columns)});
             continue;
         }
 
@@ -476,7 +635,7 @@ void visit(QueryPlan::Node & root)
             || typeid_cast<const BuildRuntimeFilterStep *>(&step)
             || typeid_cast<const CreateSetAndFilterOnTheFlyStep *>(&step))
         {
-            stack.push_back({node.children.front(), std::move(null_rejected_columns)});
+            stack.push_back({node.children.front(), std::move(null_rejected_columns), std::move(representation_read_columns)});
             continue;
         }
 
@@ -490,13 +649,13 @@ void visit(QueryPlan::Node & root)
                 [&](const auto & input_header) { return blocksHaveEqualStructure(*input_header, union_output); });
 
             for (auto * child : node.children)
-                stack.push_back({child, all_branches_match ? null_rejected_columns : NameSet{}});
+                stack.push_back({child, all_branches_match ? null_rejected_columns : NameSet{}, representation_read_columns});
             continue;
         }
 
         /// Unrecognized step.
         for (auto * child : node.children)
-            stack.push_back({child, {}});
+            stack.push_back({child, {}, representation_read_columns});
     }
 }
 

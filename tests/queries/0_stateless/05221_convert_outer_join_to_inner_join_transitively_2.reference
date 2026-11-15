@@ -54,6 +54,10 @@ Type: INNER
 -- A `Join` engine source does not allow converting.
 Type: INNER
 Type: LEFT
+-- A dictionary source does not allow converting.
+10	420
+Type: INNER
+Type: LEFT
 -- A distributed plan fragment allows converting.
 10	420
 Type: INNER

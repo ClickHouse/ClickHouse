@@ -1,0 +1,7 @@
+retries-not-a-number	CANNOT_PARSE_TEXT	6
+retries-without-until-while	CANNOT_PARSE_TEXT	6
+retry-without-one-server-error	CANNOT_PARSE_TEXT	6
+error-code-not-an-integer	CANNOT_PARSE_TEXT	6
+error-code-wrong-token	CANNOT_PARSE_TEXT	6
+error-codes-without-comma	CANNOT_PARSE_TEXT	6
+well-formed-hint	ok	0

@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET use_variant_as_common_type = 1;
 
 -- Reproducer: empty tuple vs non-empty tuple in INTERSECT ALL
