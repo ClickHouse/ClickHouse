@@ -6,6 +6,9 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Common/VectorWithMemoryTracking.h>
+
+#include <set>
 
 
 namespace DB
@@ -18,6 +21,8 @@ class QueryPlan;
 
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
+
+struct NestedSizesCheck;
 
 struct IsStorageTouched
 {
@@ -157,6 +162,9 @@ public:
     /// Only changed columns.
     Block getUpdatedHeader() const;
 
+    /// Size checks for the `Nested` members among `written` that have none of their own; `header` is the writer's input.
+    VectorWithMemoryTracking<NestedSizesCheck> getNestedSizesChecks(const Names & written, const Block & header) const;
+
     const ColumnDependencies & getColumnDependencies() const;
 
     /// Latest mutation stage affects all columns in storage
@@ -249,6 +257,15 @@ private:
 
     ASTPtr getPartitionAndPredicateExpressionForMutationCommand(const ASTAlterCommand * alter) const;
 
+    /// Whether the source part stores the column as an array, as its reader decides: only then are the column's array
+    /// sizes the stored ones (converting an array to another array type keeps them).
+    bool isStoredAsArrayInSourcePart(const String & name) const;
+    bool checksNestedSizesOnWrite() const;
+    /// The members of `group` stored as arrays in the source part, in metadata order, minus `excluded`.
+    Names getStoredNestedMembers(const String & group, const NameSet & excluded) const;
+    /// The `Nested` groups of the members among `written` that have no size check of their own.
+    std::set<String> getNestedGroupsToCheck(const NameSet & written) const;
+
     Source source;
     StorageMetadataPtr metadata_snapshot;
     MutationCommands commands;
@@ -325,6 +342,9 @@ private:
     NameSet materialized_projections;
     NameSet materialized_statistics;
     NameSet dropped_indices; /// Indices dropped by mutation due to alter_column_secondary_index_mode
+
+    /// `Nested` members written by `MATERIALIZE COLUMN`, a `MATERIALIZED` recalculation or a patch, with no size check.
+    NameSet nested_written_without_size_check;
 
     MutationKind mutation_kind; /// Do we meet any index or projection mutation.
 

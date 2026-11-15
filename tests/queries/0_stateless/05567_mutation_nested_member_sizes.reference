@@ -1,0 +1,75 @@
+materialize a default of other sizes
+1
+0	[1,2]	['p','q']
+1	[3]	['r']
+compact part
+1
+0	[1,2]	['p','q']
+1	[3]	['r']
+stored MATERIALIZED member
+1
+0	[1,2]	['p','q']	[101,102]
+1	[3]	['r']	[103]
+update a member the part does not store
+1
+0	[1,2]	['p','q']
+1	[3]	['r']
+update a member the part does not store with the right sizes
+0	[1,2]	['p','q']	[10,20]
+1	[3]	['r']	[30]
+update every member of some rows
+1
+0	[1,2]	['p','q']
+1	[3]	['r']
+delete rewriting the whole part
+1
+0	[1,2]	['p','q']	[7,7,7]
+1	[3]	['r']	[7,7,7]
+2	[4,5,6]	['s','t','u']	[7,7,7]
+consistent mutations
+0	[1,2]	['p','q']	[2,3]
+1	[3]	['r']	[4]
+2	[4,5,6]	['s','t','u']	[5,6,7]
+0	[1,2]	['p','q']	[2,3]
+2	[4,5,6]	['s','t','u']	[5,6,7]
+0	[1]	['z']	[1]	[2]
+2	[1]	['z']	[1]	[2]
+apply patches
+1
+0	[1,2]	['p','q']
+1	[3]	['r']
+group the part does not store
+1
+0	[1]	[1,2]
+1	[1]	[1,2]
+2	[1]	[1,2]
+whole-part rewrite of consistent members
+0	[1,2]	['p','q']	[0,0]	[2,3]
+2	[4,5,6]	['s','t','u']	[0,0,0]	[5,6,7]
+0	[1,2]	['p','q']	[0,0]	[2,3]	[10,20]
+0
+recompute a MATERIALIZED member to other sizes
+1
+0	2	[1,2]	['p','q']	[0,1]
+1	1	[3]	['r']	[0]
+patch carrying a recomputed MATERIALIZED member
+0	2	[1,2]	['p','q']	[0,1]
+1	1	[4]	['r']	[0]
+1
+0	[1,2]	['p','q']
+1	[4]	['r']
+convert a stored column to an array of other sizes
+0	[1,2]	['p','q']	[5,6]
+1	[3]	['r']	[7]
+1
+0	[1,2]	['p','q']	[5,6]
+1	[3]	['r']	[7]
+rewrite after the conversion is killed
+1
+1
+0	[1,2]	['p','q']	[5,6]	[10,20]
+convert a stored column of a compact part to an array of other sizes
+1
+1
+0	[1,2]	['p','q']
+1	[3]	['r']

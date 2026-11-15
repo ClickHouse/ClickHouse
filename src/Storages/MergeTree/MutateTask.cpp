@@ -42,6 +42,7 @@
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/Transforms/NestedElementsValidationTransform.h>
 #include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/TTLTransform.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
@@ -3586,6 +3587,22 @@ static void addIndicesRecalculationTransform(QueryPipelineBuilder & builder, con
     builder.addTransform(std::make_shared<MaterializingTransform>(builder.getSharedHeader()));
 }
 
+/// Must be the last transform before the writer, so that the check sees the block that is written.
+static void addNestedSizesValidationTransform(QueryPipelineBuilder & builder, const MutationContextPtr & ctx, const Names & written)
+{
+    if (!ctx->interpreter)
+        return;
+
+    auto checks = ctx->interpreter->getNestedSizesChecks(written, builder.getHeader());
+    if (checks.empty())
+        return;
+
+    builder.addSimpleTransform([&](const SharedHeader & header)
+    {
+        return std::make_shared<NestedSizesValidationTransform>(header, checks);
+    });
+}
+
 class MutateAllPartColumnsTask : public IExecutableTask
 {
 public:
@@ -3935,6 +3952,8 @@ private:
             ctx->metadata_snapshot);
 
         ctx->statistics_to_build = ctx->all_gathered_data.statistics;
+
+        addNestedSizesValidationTransform(*builder, ctx, ctx->new_data_part->getColumns().getNames());
 
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
@@ -4336,6 +4355,8 @@ private:
                     if (new_part_columns_set.contains(col.name))
                         columns_for_writer.push_back(col);
             }
+
+            addNestedSizesValidationTransform(*builder, ctx, columns_for_writer.getNames());
 
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,
