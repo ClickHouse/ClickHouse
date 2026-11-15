@@ -6,6 +6,7 @@ DROP TABLE IF EXISTS t_part;
 DROP TABLE IF EXISTS t_pk;
 DROP TABLE IF EXISTS t_hash;
 DROP TABLE IF EXISTS t_hex;
+DROP TABLE IF EXISTS t_tuple;
 DROP TABLE IF EXISTS t_d32;
 
 CREATE TABLE t_part (dt DateTime('America/New_York')) ENGINE = MergeTree PARTITION BY toDate(dt) ORDER BY tuple() SETTINGS auto_statistics_types = '';
@@ -31,15 +32,23 @@ SELECT 'hash <=>', count() FROM t_hash WHERE dt <=> toDate32('2024-01-02') SETTI
 CREATE TABLE t_hex (dt DateTime('Europe/Moscow')) ENGINE = MergeTree PARTITION BY hex(dt) ORDER BY tuple() SETTINGS auto_statistics_types = '';
 INSERT INTO t_hex SELECT toDateTime('2024-01-01 19:00:00', 'UTC') + number * 3600 FROM numbers(4);
 SELECT 'hex !=', count() FROM t_hex WHERE dt != toDate32('2024-01-02');
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT dt FROM t_hex WHERE dt != toDate32('2024-01-02')
+    SETTINGS optimize_use_implicit_projections = 0) WHERE explain ILIKE '%Condition: %hex(dt)%';
+CREATE TABLE t_tuple (t Tuple(DateTime('Europe/Moscow'), UInt8)) ENGINE = MergeTree ORDER BY cityHash64(t) SETTINGS index_granularity = 1, auto_statistics_types = '';
+INSERT INTO t_tuple SELECT (toDateTime('2024-01-02 00:00:00', 'UTC'), 1);
+SELECT 'tuple =', count() FROM t_tuple WHERE t = (toDate32('2024-01-02'), 1) SETTINGS force_primary_key = 1;
 
 -- The other direction: a `DateTime` constant against a `Date32` key reads the date in the session time zone.
 CREATE TABLE t_d32 (d Date32) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY cityHash64(d) SETTINGS index_granularity = 1, auto_statistics_types = '';
 INSERT INTO t_d32 SELECT toDate32('2024-01-30') + number FROM numbers(4);
 SELECT 'd32 part =', count() FROM t_d32 WHERE d = toDateTime('2024-01-31 19:00:00', 'America/New_York') SETTINGS use_primary_key = 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT d FROM t_d32 WHERE d = toDateTime('2024-01-31 19:00:00', 'America/New_York')
+    SETTINGS optimize_use_implicit_projections = 0, use_primary_key = 0) WHERE explain ILIKE '%Condition: %toYYYYMM(d)%';
 SELECT 'd32 hash =', count() FROM t_d32 WHERE d = toDateTime('2024-01-31 19:00:00', 'America/New_York') SETTINGS use_partition_pruning = 0, force_primary_key = 1;
 
 DROP TABLE t_part;
 DROP TABLE t_pk;
 DROP TABLE t_hash;
 DROP TABLE t_hex;
+DROP TABLE t_tuple;
 DROP TABLE t_d32;
