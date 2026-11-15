@@ -32,6 +32,7 @@
 #include <Core/Settings.h>
 
 #include <stack>
+#include <Common/StackWithMemoryTracking.h>
 
 namespace DB
 {
@@ -327,7 +328,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
 
 void QueryPlan::resolveStorages(const ContextPtr & context)
 {
-    std::stack<QueryPlan::Node *> stack;
+    StackWithMemoryTracking<QueryPlan::Node *> stack;
     stack.push(getRootNode());
     while (!stack.empty())
     {

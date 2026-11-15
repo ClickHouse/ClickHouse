@@ -200,7 +200,11 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
         auto delete_commands = commands;
         delete_commands[0].type = MutationCommand::DELETE;
 
-        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata, delete_commands, context, settings);
+        /// Delete positions are written in the order of this read and must be increasing.
+        auto read_context = Context::createCopy(context);
+        read_context->setSetting("input_format_parquet_preserve_order", Field(true));
+
+        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata, delete_commands, read_context, settings);
         auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
 
