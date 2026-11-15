@@ -23,6 +23,7 @@
 05237_parallel_replicas_input_table_function
 
     A read with Top-K dynamic filtering stays local (`__topKFilter` cannot be shipped), so the query does not use parallel replicas
+    https://github.com/ClickHouse/ClickHouse/issues/131858
 04717_parallel_replicas_min_rows_per_replica_right_join
 
     A read with direct read from a text index stays local (`__text_index_*` columns cannot be shipped), so the query does not use parallel replicas
