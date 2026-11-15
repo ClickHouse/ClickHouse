@@ -1114,6 +1114,11 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
     /// Updates currently don't work with parallel replicas.
     context_copy->setSetting("max_parallel_replicas", Field(1));
 
+    /// A snapshot cached by `enable_shared_storage_snapshot_in_query` before the wait for committing
+    /// inserts above (e.g. by the validation of `IN` operands in `InterpreterUpdateQuery`) would hide
+    /// the parts committed during the wait from the update. See `StorageReplicatedMergeTree::updateLightweight`.
+    discardSharedStorageSnapshot(context_copy);
+
     auto pipeline = updateLightweightImpl(commands, context_copy);
     auto patch_metadata = DB::getPatchPartMetadata(pipeline.getHeader(), context_copy);
     auto sink = std::make_shared<MergeTreeSinkPatch>(*this, std::move(patch_metadata), std::move(update_holder), context_copy);
@@ -2800,24 +2805,23 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
     String partition_id;
 
+    /// The merges_blocker must live until the end of the function to prevent background mutations
+    /// from starting on parts in the target partition between when we stop waiting and when we
+    /// actually remove old parts via removePartsInRangeFromWorkingSet. Without this, a mutation
+    /// could "resurrect" old data by completing on an already-removed part and adding a new version
+    /// of it back to the working set.
+    ActionLock merges_blocker;
     if (is_all)
     {
         if (replace)
             throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support DROP/DETACH/ATTACH PARTITION ALL currently");
+        merges_blocker = stopMergesAndWait();
     }
     else
     {
         partition_id = getPartitionIDFromQuery(partition, local_context);
+        merges_blocker = stopMergesAndWaitForPartition(partition_id);
     }
-
-    /// We use the global `stopMergesAndWait` (not the per-partition variant) because the
-    /// per-partition blocker check in `scheduleDataProcessingJob` happens outside
-    /// `currently_processing_in_background_mutex`, creating a race window where a mutation
-    /// can be selected inside the mutex, pass the per-partition check outside the mutex,
-    /// and get scheduled after the blocker was set but before we call
-    /// `removePartsInRangeFromWorkingSet`, "resurrecting" old data.
-    /// The global blocker is checked inside the mutex, eliminating this race.
-    ActionLock merges_blocker = stopMergesAndWait();
 
     auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr();
     auto my_metadata_snapshot = getInMemoryMetadataPtr();

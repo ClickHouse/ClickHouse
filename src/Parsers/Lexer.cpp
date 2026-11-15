@@ -116,7 +116,7 @@ Token quotedHexOrBinString(const char *& pos, const char * const token_begin, co
 Token Lexer::nextToken()
 {
     Token res = nextTokenImpl();
-    if (max_query_size && res.end > begin + max_query_size)
+    if (begin && max_query_size && res.end > begin + max_query_size)
         res.type = TokenType::ErrorMaxQuerySizeExceeded;
     if (res.isSignificant())
         prev_significant_token_type = res.type;

@@ -359,6 +359,10 @@ if (USE_PARQUET)
     add_object_library(clickhouse_processors_formats_impl_parquet Processors/Formats/Impl/Parquet)
 endif()
 
+if (USE_ORC)
+    add_object_library(clickhouse_processors_formats_impl_orc Processors/Formats/Impl/ORC)
+endif()
+
 if (TARGET ch_contrib::nuraft)
     add_object_library(clickhouse_coordination Coordination)
 endif()
@@ -642,11 +646,6 @@ endif()
 
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::fast_float)
 
-if (USE_ORC)
-    target_link_libraries(dbms PUBLIC ${ORC_LIBRARIES})
-    target_include_directories(dbms SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} "${PROJECT_BINARY_DIR}/contrib/orc/c++/include")
-endif ()
-
 if (TARGET ch_contrib::rocksdb)
     target_link_libraries(dbms PUBLIC ch_contrib::rocksdb)
 endif()
@@ -772,6 +771,10 @@ if (ENABLE_TESTS)
         clickhouse_common_zookeeper_base
         clickhouse_common_config
         clickhouse_common_zookeeper)
+
+    if (TARGET ch_contrib::brotli)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::brotli)
+    endif()
 
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)

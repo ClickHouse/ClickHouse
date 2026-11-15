@@ -3,6 +3,7 @@
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Backups/BackupsWorker.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
@@ -24,12 +25,17 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTSetQuery.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/IndicesDescription.h>
 #include <Storages/IStorage.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/StorageKeeperMap.h>
 #include <Storages/StorageProxy.h>
@@ -62,6 +68,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
     extern const int NOT_IMPLEMENTED;
@@ -71,6 +78,83 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
     extern const int QUERY_IS_PROHIBITED;
     extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace
+{
+
+/// A setting that sends the table's data elsewhere copies the data as it is stored, so nothing can filter the rows
+/// that a row policy hides. It reads only the query and the access entities,
+/// not the table, so it runs on the initiator. The database is resolved only for such a setting, so that other queries
+/// do not need a current database.
+void checkNoRowPolicyForExport(const ASTAlterQuery & alter, const ContextPtr & context)
+{
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        if (command.type != ASTAlterCommand::MODIFY_SETTING || !command.settings_changes)
+            continue;
+
+        const auto & changes = command.settings_changes->as<ASTSetQuery &>().changes;
+        if (StorageFactory::instance().getExportAccessOfAnyEngine(changes).empty())
+            continue;
+
+        const String database = context->resolveDatabase(alter.getDatabase());
+        auto row_policy_filter = context->getRowPolicyFilter(database, alter.getTable(), RowPolicyFilterType::SELECT_FILTER);
+        if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "Cannot change the settings of table {}.{} that send its data elsewhere because a row policy applies to it. "
+                "The data is copied as it is stored, so its rows cannot be filtered",
+                backQuoteIfNeed(database), backQuoteIfNeed(alter.getTable()));
+    }
+}
+
+/// A `Replicated`-database host applies the statement without the submitting user. `ON CLUSTER` does
+/// not reach this: it is refused unless its hosts run as the initiating user.
+void checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context)
+{
+    if (!table)
+        return;
+
+    bool adds_transform = false;
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        if (command.type != ASTAlterCommand::ADD_INDEX || !command.index_decl)
+            continue;
+
+        if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
+            if (hasTextIndexPreOrPostProcessor(*declaration))
+                adds_transform = true;
+    }
+
+    /// Against the schema the whole statement produces: a command of the same statement can change what
+    /// an alias in a transform expands to. Transforms only, so other statements get no extra analysis.
+    if (!adds_transform)
+        return;
+
+    AlterCommands commands;
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto * command_ast = child->as<ASTAlterCommand>();
+        if (command_ast->type == ASTAlterCommand::EXECUTE_COMMAND)
+            continue;
+        if (auto command = AlterCommand::parse(command_ast))
+            commands.emplace_back(std::move(*command));
+    }
+
+    /// The same sequence as `executeToTable`: `apply` relies on the checks before it, and it authorizes
+    /// the added indices as the user.
+    StorageInMemoryMetadata metadata = table->getInMemoryMetadata();
+    commands.validate(table, context);
+    commands.prepare(metadata);
+    table->checkAlterIsPossible(commands, context);
+    /// As the storages do before `apply`: an explicit `ADD STATISTICS` replaces an implicit one.
+    removeImplicitStatistics(metadata.columns);
+    commands.apply(metadata, context);
+}
+
 }
 
 InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_)
@@ -130,15 +214,37 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess();
+        params.additional_access_check = [captured_query_ptr = query_ptr](bool throw_if_unresolved)
+        {
+            /// `throw_if_unresolved` means the hosts do not run the query as this user.
+            if (!throw_if_unresolved)
+                return;
+
+            const auto & captured_alter = captured_query_ptr->as<const ASTAlterQuery &>();
+            for (const auto & child : captured_alter.command_list->children)
+            {
+                const auto & command = child->as<const ASTAlterCommand &>();
+                if (command.type != ASTAlterCommand::ADD_INDEX || !command.index_decl)
+                    continue;
+                if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
+                    rejectTextIndexTransformWithoutInitiatorUser(*declaration);
+            }
+        };
+        /// The hosts run the entry without the user, so the row policy is checked here before the entry is enqueued.
+        checkNoRowPolicyForExport(alter, getContext());
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
     getContext()->checkAccess(getRequiredAccess());
+    checkNoRowPolicyForExport(alter, getContext());
 
     if (!table_id)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(alter.getDatabase()));
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+
+    checkAddedIndexPermissions(alter, table, getContext());
+
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
@@ -624,6 +730,20 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::MODIFY_SETTING:
         {
             required_access.emplace_back(AccessType::ALTER_SETTINGS, database, table);
+
+            /// A setting that sends the table's data elsewhere, e.g. the move destination of a queue, is the same data flow as
+            /// `INSERT INTO FUNCTION s3(...) SELECT * FROM <table>`. The creator of the table supplied its source and credentials,
+            /// so the reading part is `SELECT` on the table. The grants do not depend on the engine of the table, so the initiator
+            /// of `ON CLUSTER` can check them without the table.
+            if (command.type == ASTAlterCommand::MODIFY_SETTING && command.settings_changes)
+            {
+                auto export_access = StorageFactory::instance().getExportAccessOfAnyEngine(command.settings_changes->as<ASTSetQuery &>().changes);
+                if (!export_access.empty())
+                {
+                    required_access.append_range(std::move(export_access));
+                    required_access.emplace_back(AccessType::SELECT, database, table);
+                }
+            }
             break;
         }
         case ASTAlterCommand::ATTACH_PARTITION:

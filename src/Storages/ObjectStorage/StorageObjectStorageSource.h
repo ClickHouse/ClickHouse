@@ -136,9 +136,10 @@ protected:
         size_t max_block_size,
         FormatParserSharedResourcesPtr parser_shared_resources,
         FormatFilterInfoPtr format_filter_info,
-        bool need_only_count);
+        bool need_only_count,
+        bool prefetch_input_format = false);
 
-    ReaderHolder createReader();
+    ReaderHolder createReader(bool prefetch_input_format = false);
 
     std::future<ReaderHolder> createReaderAsync();
 
