@@ -1,5 +1,5 @@
 -- { echo }
--- Random settings limits: compile_expressions=(0, 0); ratio_of_defaults_for_sparse_serialization=(1.0, 1.0); optimize_multiif_to_if=(1, 1)
+-- Random settings limits: compile_expressions=(0, 0); ratio_of_defaults_for_sparse_serialization=(1.0, 1.0); optimize_multiif_to_if=(1, 1); optimize_if_transform_const_strings_to_lowcardinality=(0, 0)
 -- A null-map byte is a predicate, not a value: any non-zero byte means NULL. `if` writes 0 and 1, but
 -- Native input keeps the bytes a sender wrote, so `t_bytes` carries them: `s` and `c` hold `id % 3`
 -- (0, 1 and 2), `s2` and `u` twice that, `s3` the bytes 2, 4 and 6. Byte 0 marks the rows holding a
@@ -39,6 +39,10 @@ SELECT DISTINCT tuple(s) FROM t_bytes ORDER BY 1;
 -- again (#114784, covered by 04927), so the elimination stays off here. Second column: the control.
 SELECT uniqExact(tuple(s)), uniqExact(tuple(if(id % 2, NULL, 'x'))) FROM t_bytes SETTINGS optimize_injective_functions_inside_uniq = 0;
 2	2
+-- An aggregate that keeps its keys in an arena writes the null byte into each key, so the bytes 1 and 2
+-- must give one `(NULL)` key.
+SELECT length(groupUniqArray(tuple(s))) FROM t_bytes;
+2
 -- Negating a null map must negate its nullness, not its bits: `1 ^ 2` is truthy, which turned rows
 -- holding 'x' into NULLs. Only the group whose condition byte is 2 was affected.
 SELECT number % 3 AS c, countIf(v IS NULL) FROM (SELECT number, if(number % 3, toNullable('x'), NULL) AS v FROM numbers(30)) GROUP BY c ORDER BY c;
@@ -68,6 +72,14 @@ SELECT countIf(v IS NULL) FROM (SELECT if(number % 3, if(number % 2, 'x', toUInt
 -- tuple. The target element type must differ from the source, or the result map IS the source map.
 SELECT countIf(tp IS NULL) FROM (SELECT accurateCastOrNull(tuple(w), 'Tuple(Nullable(UInt8))') AS tp FROM t_bytes);
 10
+-- A hash JOIN on a key that is not fixed-width can build its keys many rows at a time, and each of them
+-- must equal the hash of its row. The 20 NULL rows of `s` match each other.
+SELECT count() FROM t_bytes l JOIN t_bytes r ON l.s <=> r.s;
+500
+-- A set of IN that spills to disk packs NULL into one bit of its key, so a byte 2 must not set the bit
+-- of the column before it: `(0, NULL)` is not `(1, 0)`.
+SELECT countIf((toUInt8(0), c) IN (SELECT toUInt8(1), toNullable(toUInt8(0)))) FROM t_bytes SETTINGS transform_null_in = 1, max_bytes_before_external_set = 1;
+0
 -- Such a null map survives a write and read back, so it is not confined to expression results.
 CREATE TABLE t_null_map_bytes (e Nullable(String)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_null_map_bytes SELECT s FROM t_bytes;

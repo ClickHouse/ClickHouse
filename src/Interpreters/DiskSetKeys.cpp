@@ -107,7 +107,7 @@ ColumnPtr encodeFixedSizeKeys(const ColumnRawPtrs & key_columns, const Sizes & k
         /// With `transform_null_in`, `NULL` is a value that sorts after the other values of its column, as in
         /// `ORDER BY`: a nullable column starts with a bit that is set for `NULL`, whose value bits are zero.
         if (column_null_map)
-            add_part(1, [&](size_t row) { return Key((*column_null_map)[row]); });
+            add_part(1, [&](size_t row) { return Key((*column_null_map)[row] != 0); });
 
         callWithOrderedBits<Key>(*value_columns[i], size, [&](auto get_bits)
         {
