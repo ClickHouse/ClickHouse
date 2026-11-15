@@ -37,3 +37,8 @@ INPUT : 1 -> __text_index_arr_idx_hasAll_f043b7a64c5345481039a7a1fc760c43 UInt8 
 Granules: 4/4
 Name: arr_idx
 Granules: 1/4
+-- needles with an empty-string or a NULL element
+[1]
+[1]
+[2,3]
+[2,3]

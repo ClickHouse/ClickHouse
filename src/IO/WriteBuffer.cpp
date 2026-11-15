@@ -28,20 +28,30 @@ WriteBuffer::~WriteBuffer()
             log,
             "WriteBuffer is neither finalized nor canceled when destructor is called. "
             "No exceptions in flight are detected. "
-            "The file might not be written at all or might be truncated."
+            "The file might not be written at all or might be truncated. "
             "Stack trace: {}",
             StackTrace().toString());
         chassert(false && "WriteBuffer is neither finalized nor canceled in destructor.");
     }
 }
 
-void WriteBuffer::write(const char * from, size_t n)
+NO_INLINE void WriteBuffer::throwWriteToFinalizedBuffer()
+{
+    throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to finalized buffer"};
+}
+
+NO_INLINE void WriteBuffer::throwWriteToCanceledBuffer(int code)
+{
+    throw Exception{code, "Cannot write to canceled buffer"};
+}
+
+void WriteBuffer::writeSlow(const char * from, size_t n)
 {
     if (finalized)
-        throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to finalized buffer"};
+        throwWriteToFinalizedBuffer();
 
     if (canceled)
-        throw Exception{ErrorCodes::CANNOT_WRITE_AFTER_BUFFER_CANCELED, "Cannot write to canceled buffer"};
+        throwWriteToCanceledBuffer(ErrorCodes::CANNOT_WRITE_AFTER_BUFFER_CANCELED);
 
     size_t bytes_copied = 0;
 
@@ -58,13 +68,14 @@ void WriteBuffer::write(const char * from, size_t n)
     }
 }
 
-void WriteBuffer::write(char x)
+void WriteBuffer::writeSlow(char x)
 {
     if (finalized)
-        throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to finalized buffer"};
+        throwWriteToFinalizedBuffer();
 
+    /// `write(const char *, size_t)` reports `CANNOT_WRITE_AFTER_BUFFER_CANCELED` for the same condition.
     if (canceled)
-        throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to canceled buffer"};
+        throwWriteToCanceledBuffer(ErrorCodes::LOGICAL_ERROR);
 
     nextIfAtEnd();
     *pos = x;
@@ -79,6 +90,7 @@ void WriteBuffer::cancel() noexcept
     LockMemoryExceptionInThread lock(VariableContext::Global);
     cancelImpl();
     canceled = true;
+    closed = true;
 }
 
 void WriteBuffer::finalize()
@@ -94,6 +106,7 @@ void WriteBuffer::finalize()
     {
         finalizeImpl();
         finalized = true;
+        closed = true;
     }
     catch (...)
     {

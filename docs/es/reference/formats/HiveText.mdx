@@ -3,31 +3,33 @@ alias: []
 description: 'Documentación sobre el formato HiveText'
 input_format: true
 keywords: ['HiveText']
-output_format: false
+output_format: true
 slug: /interfaces/formats/HiveText
 title: 'HiveText'
 doc_type: 'reference'
 ---
 
+{/*INICIO_AUTOGENERADO*/}
+
 | Entrada | Salida | Alias |
 | ------- | ------ | ----- |
-| ✔       | ✗      |       |
+| ✔       | ✔      |       |
 
 <div id="description">
   ## Descripción
 </div>
 
-`HiveText` lee el formato de serialización de texto utilizado por las tablas de
+`HiveText` lee y escribe el formato de serialización de texto utilizado por las tablas de
 [Apache Hive](https://hive.apache.org/) (el formato generado por `LazySimpleSerDe` de Hive). Es un
 formato de texto delimitado, similar a [`CSV`](/es/reference/formats/CSV/CSV), en el que los campos
 están separados por el delimitador predeterminado de Hive `\x01` (Ctrl-A). El delimitador de campos se
 puede configurar mediante [`input_format_hive_text_fields_delimiter`](#format-settings).
 
-`HiveText` es un formato solo de entrada. Los datos no tienen fila de encabezado: los valores se
+Cuando se utiliza como formato de entrada, los datos no tienen fila de encabezado: los valores se
 asignan por posición a las columnas de la tabla de destino, por lo que los nombres y tipos de
 las columnas se toman de la tabla (o de una estructura proporcionada
 explícitamente) en lugar de inferirse a partir de los datos. Durante la lectura, ClickHouse analiza
-fechas y horas en modo de máximo esfuerzo (consulte [`date_time_input_format`](/es/reference/settings/formats#date_time_input_format)),
+fechas y horas en modo de máximo esfuerzo (consulte [`date_time_input_format`](/es/reference/settings/formats/date-time#date_time_input_format)),
 completa los campos finales omitidos con los valores predeterminados de las columnas y omite los campos que no
 reconoce.
 
@@ -38,17 +40,18 @@ entre corchetes (por ejemplo, `"['a','b','c']"`), no a partir de valores separad
 el delimitador de colección de Hive `\x02`.
 
 <Info>
-  **La configuración de delimitadores anidados no tiene efecto**
+  **La configuración de delimitadores anidados no tiene efecto en la entrada**
 
   La configuración [`input_format_hive_text_collection_items_delimiter`](#format-settings) y
   [`input_format_hive_text_map_keys_delimiter`](#format-settings) se aceptan por
-  compatibilidad, pero actualmente no se usan durante el análisis.
+  compatibilidad, pero actualmente no se usan durante el análisis. Sin embargo,
+  se usan al escribir valores anidados en la salida.
 </Info>
 
 De forma predeterminada, se permite que las filas tengan un número variable de campos (consulte
 [`input_format_hive_text_allow_variable_number_of_columns`](#format-settings)):
 las filas con menos campos que la tabla completan las columnas faltantes con
-valores predeterminados, y en las filas con campos finales adicionales, esos campos extra se omiten.
+valores predeterminados, y en las filas con campos adicionales al final, esos campos extra se omiten.
 
 <div id="example-usage">
   ## Ejemplo de uso
@@ -126,6 +129,108 @@ En cambio, establecer `input_format_hive_text_allow_variable_number_of_columns =
 impone un número estricto de campos, y una fila con menos campos que la tabla provoca
 una excepción de análisis sintáctico.
 
+<div id="output">
+  ## Salida
+</div>
+
+Cuando se utiliza como formato de salida, `HiveText` escribe cada fila sin comillas:
+los campos de nivel superior se separan mediante el delimitador de campos (`\x01` de forma predeterminada) y
+las filas se separan mediante el delimitador de filas (`\n` de forma predeterminada, configurable mediante
+[`format_hive_text_rows_delimiter`](#format-settings)). Los valores de tipos anidados
+([`Array`](/es/reference/data-types/array), [`Map`](/es/reference/data-types/map)
+y [`Tuple`](/es/reference/data-types/tuple)) se escriben sin corchetes y
+se separan mediante el separador de Hive correspondiente a su nivel de anidamiento, tal como lo hace
+`LazySimpleSerDe` de Hive. Los tres primeros separadores son el delimitador de campos configurable,
+[`input_format_hive_text_collection_items_delimiter`](#format-settings)
+(`\x02` de forma predeterminada, utilizado para elementos de arrays, entradas de maps y elementos de tuplas) y
+[`input_format_hive_text_map_keys_delimiter`](#format-settings) (`\x03` de forma predeterminada,
+utilizado entre una clave de map y su valor); para niveles más profundos se utilizan de forma predeterminada caracteres de control
+consecutivos (`\x04`, `\x05`, y así sucesivamente, hasta ocho niveles). Un árbol de tipos anidado
+con la profundidad suficiente para requerir un separador más allá de esos ocho niveles se rechaza con una
+excepción `NOT_IMPLEMENTED`, ya que `LazySimpleSerDe` de Hive tampoco dispone de un separador para
+ello. Los tipos de datos que no tienen una representación textual natural en
+Hive no son compatibles con la salida y generan una
+excepción `NOT_IMPLEMENTED`. Esto incluye `AggregateFunction`, `Dynamic`,
+`Variant`, `LowCardinality` y `Object`, así como los tipos
+basados en números `Enum`, `Time`, `Time64` e `Interval` — Hive no dispone de un tipo equivalente para estos
+últimos, por lo que se rechazan en lugar de escribirse como sus valores numéricos subyacentes
+sin procesar. Los tipos numéricos de gran tamaño `Int128`, `UInt128`, `Int256` y `UInt256`
+se rechazan por la misma razón: el entero de mayor tamaño de Hive es `BIGINT` (64 bits),
+e incluso `DECIMAL` de Hive, con una precisión máxima de 38, no puede contener su
+rango de valores. Del mismo modo, los valores `Decimal` con una precisión superior a 38 (es decir,
+`Decimal256`) superan la precisión máxima de `DECIMAL` de Hive y se rechazan.
+Asimismo, las claves de `Map` deben ser de tipo primitivo: Hive declara los maps
+como `MAP<primitive_type, data_type>`, por lo que un `Map` cuyo tipo de clave sea `Array`,
+`Map` o `Tuple` (algo que ClickHouse permite) se rechaza con una
+excepción `NOT_IMPLEMENTED`, porque ningún esquema de Hive podría volver a leer esos valores.
+El literal de map vacío `map()` se rechaza por la misma razón: su tipo
+es `Map(Nothing, Nothing)`, y `Nothing` no es un tipo que pueda figurar en una declaración
+`MAP<key_type, data_type>` de Hive. Todas estas comprobaciones se aplican de antemano a los tipos de columna declarados, antes de
+que se escriba cualquier fila: una consulta cuyo encabezado contenga un tipo no compatible en cualquier parte
+de su árbol de tipos se rechaza incluso cuando los valores reales nunca llegarían a la
+serialización no compatible (por ejemplo, un `Nullable` de un tipo no compatible
+que contenga únicamente valores `NULL`, o un `Array`/`Map` vacío con un tipo de elemento no compatible),
+porque el esquema declarado del archivo seguiría sin poder corresponder a ninguna tabla de Hive.
+
+`Date`, `Date32`, `DateTime` y `DateTime64` siempre se escriben en el formato de texto simple de
+fecha y timestamp de Hive (`yyyy-MM-dd` y `yyyy-MM-dd HH:mm:ss[.fffffffff]`),
+independientemente de la configuración [`date_time_output_format`](/es/reference/settings/formats/date-time#date_time_output_format),
+para que Hive pueda analizar la salida incluso cuando esa configuración sea
+`unix_timestamp` o `iso`.
+
+Por la misma razón, los valores `Bool` siempre se escriben como `true`/`false`,
+independientemente de las configuraciones [`bool_true_representation`](/es/reference/settings/formats/bool#bool_true_representation)
+y [`bool_false_representation`](/es/reference/settings/formats/bool#bool_false_representation),
+y los valores `NULL` siempre se escriben como la secuencia nula predeterminada de Hive,
+`\N`, independientemente de la configuración [`format_csv_null_representation`](/es/reference/settings/formats/format-csv#format_csv_null_representation).
+Esto permite que `LazySimpleSerDe` de Hive lea la salida independientemente de
+estas configuraciones de texto genéricas. De forma análoga, el formato de entrada `HiveText` siempre
+interpreta `\N` como `NULL`, también independientemente de la
+configuración [`format_csv_null_representation`](/es/reference/settings/formats/format-csv#format_csv_null_representation),
+por lo que la conversión de ida y vuelta de escalares de nivel superior no depende de ella.
+
+Los valores no finitos de `Float32` y `Float64` se escriben con las grafías de Java que usa Hive:
+`NaN`, `Infinity` y `-Infinity`, en lugar de los tokens habituales de ClickHouse `nan`/`inf`/`-inf`,
+para que el analizador de `FLOAT`/`DOUBLE` de Hive los vuelva a leer como los mismos valores
+en lugar de `NULL`.
+
+<Info>
+  **Salida compatible con Hive, no una conversión completa de ida y vuelta mediante el formato de entrada**
+
+  La salida está dirigida al `LazySimpleSerDe` predeterminado de Hive y no es simétrica con
+  la entrada `HiveText` de ClickHouse:
+
+  * Los valores anidados [`Array`](/es/reference/data-types/array), [`Map`](/es/reference/data-types/map)
+    y [`Tuple`](/es/reference/data-types/tuple) se escriben con los separadores anidados de Hive
+    (sin corchetes), pero el formato de entrada analiza cada campo según las reglas de
+    `CSV`/corchetes e ignora
+    [`input_format_hive_text_collection_items_delimiter`](#format-settings) /
+    [`input_format_hive_text_map_keys_delimiter`](#format-settings). Por tanto, las salidas anidadas como
+    `SELECT [1, 2] FORMAT HiveText` **no** se vuelven a leer mediante
+    `INSERT ... FORMAT HiveText`: solo los campos escalares de nivel superior permiten una conversión de ida y vuelta, y únicamente con
+    el delimitador de filas predeterminado `\n` (consulte el punto siguiente).
+  * La conversión de ida y vuelta también requiere el delimitador de filas predeterminado `\n`. Si se
+    cambia [`format_hive_text_rows_delimiter`](#format-settings), la salida separa
+    las filas con el byte configurado, pero la entrada sigue usando el
+    `CSVRowInputFormat` basado en saltos de línea y no existe un `input_format_hive_text_rows_delimiter` correspondiente. Por tanto,
+    las salidas escalares de varias filas como
+    `SELECT number FROM numbers(3) FORMAT HiveText SETTINGS format_hive_text_rows_delimiter=';'`
+    (que produce `0;1;2;`) **no** se vuelven a leer mediante `INSERT ... FORMAT HiveText` como tres filas.
+  * Solo se implementa el subconjunto predeterminado de `LazySimpleSerDe` sin escape. Los campos se escriben
+    sin escapar (no existe equivalente al opcional `ROW FORMAT DELIMITED ...
+    ESCAPED BY` de Hive), y `NULL` siempre se escribe como `\N` (no existe equivalente a
+    `NULL DEFINED AS`). Por tanto, un `String` que contenga un separador activo de campo, fila o anidado
+    se escribe literalmente y se interpretará incorrectamente al volver a analizarse; esto
+    coincide con el comportamiento de Hive con un serde sin escape. Por la misma razón, un
+    `String` cuyo valor sea literalmente `\N` (por ejemplo,
+    `SELECT '\\N'::String FORMAT HiveText`) se escribe con los mismos dos bytes que un
+    `NULL` real, por lo que ambos son indistinguibles del lado de Hive.
+</Info>
+
+```sql title="Query"
+SELECT '20240305', tuple(123567, 'e01001', map('action1', 33333, 'act2', 5555)) FORMAT HiveText;
+```
+
 <div id="format-settings">
   ## Configuración de formato
 </div>
@@ -133,6 +238,9 @@ una excepción de análisis sintáctico.
 | Configuración                                             | Descripción                                                                                                                                                             | Predeterminado |
 | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
 | `input_format_hive_text_fields_delimiter`                 | Delimitador entre campos en Hive Text File                                                                                                                              | `\x01`         |
-| `input_format_hive_text_collection_items_delimiter`       | Delimitador entre los elementos de una colección (array o map) en Hive Text File. Se acepta, pero actualmente no se usa al analizar.                                    | `\x02`         |
-| `input_format_hive_text_map_keys_delimiter`               | Delimitador entre una clave y su valor en map en Hive Text File. Se acepta, pero actualmente no se usa al analizar.                                                     | `\x03`         |
+| `input_format_hive_text_collection_items_delimiter`       | Delimitador entre los elementos de una colección (array o map) en Hive Text File. Lo usa el formato de salida; se acepta, pero actualmente no se usa al analizar.       | `\x02`         |
+| `input_format_hive_text_map_keys_delimiter`               | Delimitador entre una clave y su valor en map en Hive Text File. Lo usa el formato de salida; se acepta, pero actualmente no se usa al analizar.                        | `\x03`         |
 | `input_format_hive_text_allow_variable_number_of_columns` | Ignora las columnas adicionales en la entrada de Hive Text (si el archivo tiene más columnas de las esperadas) y trata los campos ausentes como valores predeterminados | `1`            |
+| `format_hive_text_rows_delimiter`                         | Delimitador al final de cada fila en la salida de Hive Text                                                                                                             | `\n`           |
+
+{/*AUTOGENERATED_END*/}

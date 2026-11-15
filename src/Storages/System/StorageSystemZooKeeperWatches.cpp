@@ -49,6 +49,7 @@ static Int8 watchTypeFromOpNum(Coordination::OpNum op_num)
         case Coordination::OpNum::SimpleList:
         case Coordination::OpNum::FilteredList:
         case Coordination::OpNum::FilteredListWithStatsAndData:
+        case Coordination::OpNum::ListWithOptions:
             return 1; /// Children
         case Coordination::OpNum::Exists:
             return 2; /// Exists

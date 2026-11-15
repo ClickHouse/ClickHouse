@@ -9,8 +9,8 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import GatherCredentials from '/snippets/pt-BR/clickstack/_gather_credentials.mdx';
+
 import CreateIngestionUser from '/snippets/pt-BR/clickstack/_create_ingestion_user.mdx';
 
 Este guia leva você de um serviço Managed ClickStack vazio até logs, métricas, traces e replays de sessão fluindo de uma aplicação real. Você implantará um novo collector do OpenTelemetry (ou adaptará um existente, se já tiver um) para o seu serviço, instrumentará uma aplicação Node.js de exemplo sem alterar a lógica de negócio e, em seguida, explorará a telemetry na UI do ClickStack.
@@ -30,21 +30,15 @@ A aplicação que instrumentaremos é o [HackerNews Analyzer](https://github.com
 * **Docker**, caso você ainda não tenha um collector e queira seguir a opção de novo collector abaixo.
 
 <Steps>
-  <Step>
-    ## Tenha suas credenciais em mãos
-
+  <Step title="Tenha suas credenciais em mãos" id="gather-credentials">
     <GatherCredentials />
   </Step>
 
-  <Step>
-    ## Criar um usuário para ingestão
-
+  <Step title="Criar um usuário para ingestão" id="create-ingestion-user">
     <CreateIngestionUser />
   </Step>
 
-  <Step>
-    ## Implantar o collector
-
+  <Step title="Implantar o collector" id="deploy-collector">
     Escolha a opção que melhor se aplica à sua situação.
 
     <Info>
@@ -199,9 +193,7 @@ A aplicação que instrumentaremos é o [HackerNews Analyzer](https://github.com
     </Tabs>
   </Step>
 
-  <Step>
-    ## Clone e execute o aplicativo
-
+  <Step title="Clone e execute o aplicativo" id="clone-and-run-the-application">
     Clone o repositório, instale as dependências e crie seu arquivo `.env`:
 
     ```bash
@@ -219,14 +211,20 @@ A aplicação que instrumentaremos é o [HackerNews Analyzer](https://github.com
 
     Abra [http://localhost:5001](http://localhost:5001). Você verá um seletor de ano, estatísticas resumidas, um gráfico de atividade, tabelas com os principais usuários e domínios e um campo de busca. Explore a interface: alterne entre os anos e abra as histórias para ver mais detalhes.
 
-    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="O aplicativo HackerNews Analyzer em execução localmente" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![O aplicativo HackerNews Analyzer em execução localmente](/images/clickstack/getting-started/hackernews_main.webp)
+
+    </Frame>
+
+    </div>
 
     Neste ponto, o aplicativo está em execução, mas sem instrumentação. O ClickStack não mostra nenhum dado: ele está aguardando telemetria. Este é o estado &quot;antes&quot;.
   </Step>
 
-  <Step>
-    ## Conecte a aplicação ao seu collector
-
+  <Step title="Conecte a aplicação ao seu collector" id="connect-the-application">
     A aplicação precisa de dois valores para se conectar ao collector implantado acima:
 
     * `OTEL_EXPORTER_OTLP_ENDPOINT`: o endpoint OTLP exposto pelo seu collector (geralmente a porta `4318` para OTLP via HTTPS).
@@ -243,9 +241,7 @@ A aplicação que instrumentaremos é o [HackerNews Analyzer](https://github.com
     O SDK usa `OTEL_EXPORTER_OTLP_HEADERS` para definir o cabeçalho de autorização para os três sinais: traces, métricas e logs. Se o seu collector estiver em execução localmente e não exigir autenticação, você pode deixar o valor vazio (`OTEL_EXPORTER_OTLP_HEADERS=authorization=`), mas a variável deve estar presente; o SDK ignora totalmente a inicialização se ela não estiver definida ou se estiver completamente vazia. Por fim, ao executar o collector sem TLS, certifique-se de usar o protocolo HTTP correto (ex.: `http://localhost:4318`).
   </Step>
 
-  <Step>
-    ## Instrumente a aplicação
-
+  <Step title="Instrumente a aplicação" id="instrument-the-application">
     A instrumentação tem três partes: instalar os SDKs, alterar o comando de inicialização e habilitar o SDK do navegador. Nada disso muda a lógica de negócio da aplicação.
 
     ### Instale os SDKs
@@ -298,9 +294,7 @@ A aplicação que instrumentaremos é o [HackerNews Analyzer](https://github.com
     </Warning>
   </Step>
 
-  <Step>
-    ## Gerar tráfego
-
+  <Step title="Gerar tráfego" id="generate-traffic">
     Reinicie a aplicação para que o novo comando de inicialização e o bundle do navegador recém-compilado entrem em vigor:
 
     ```bash
@@ -311,36 +305,82 @@ A aplicação que instrumentaremos é o [HackerNews Analyzer](https://github.com
     Recarregue a aba do navegador para que o Vite passe a servir o pacote atualizado, depois atualize o app algumas vezes, mude de ano e clique nas histórias para gerar tráfego. Cada interação envia logs, métricas, traces e eventos de session replay pelo seu coletor para o ClickStack.
   </Step>
 
-  <Step>
-    ## Inicie o ClickStack e explore sua telemetria
-
+  <Step title="Inicie o ClickStack e explore sua telemetria" id="launch-clickstack">
     Abra seu serviço no [ClickHouse Cloud console](https://console.clickhouse.cloud) e selecione **ClickStack** no menu à esquerda; em seguida, **Start Ingestion**.
 
-    <Image img="/images/use-cases/observability/clickstack-cloud-first-time.webp" size="lg" alt="Iniciar o ClickStack" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Iniciar o ClickStack](/images/use-cases/observability/clickstack-cloud-first-time.webp)
+
+    </Frame>
+
+    </div>
 
     A próxima etapa pode ser ignorada, pois você já configurou seu coletor. Clique em **Launch ClickStack** para continuar.
 
     O ClickStack será aberto em uma nova guia, e você deverá ser direcionado automaticamente para a página **Getting Started**. Caso isso não aconteça, selecione **Getting Started** no menu à esquerda e clique em **Start Ingestion**; depois, em **Next**.
 
-    <Image img="/images/use-cases/observability/clickstack-start-ingestion.webp" size="lg" alt="ClickStack Start Ingestion" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![ClickStack Start Ingestion](/images/use-cases/observability/clickstack-start-ingestion.webp)
+
+    </Frame>
+
+    </div>
 
     O ClickStack deve detectar automaticamente suas tabelas e seus dados de telemetria, permitindo que você prossiga. Selecione **Start Exploring** para começar a explorar seus dados.
 
-    <Image img="/images/use-cases/observability/clickstack-start-exploring.webp" size="lg" alt="ClickStack Start Exploring" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![ClickStack Start Exploring](/images/use-cases/observability/clickstack-start-exploring.webp)
+
+    </Frame>
+
+    </div>
 
     Agora, visualize os dados que a aplicação está produzindo:
 
     1. Vá para **Busca** e filtre pelos últimos 5 minutos. Os logs de `hn-analyzer-api` começarão a aparecer.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="Logs do ClickStack" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Logs do ClickStack](/images/clickstack/getting-started/instrument_app_clickstack_logs.webp)
+
+    </Frame>
+
+    </div>
 
     2. Clique em uma requisição e suba pelo trace. Você verá o span do handler do Express, um span HTTP filho apontando para o ClickHouse cluster com a duração real da rede e registros `console.log` correlacionados no mesmo trace.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="Traces do ClickStack" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Traces do ClickStack](/images/clickstack/getting-started/instrument_app_clickstack_traces.webp)
+
+    </Frame>
+
+    </div>
 
     3. Abra **Session Replay** para reproduzir um vídeo navegável de uma sessão do navegador, sincronizado com a linha do tempo do trace.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="Sessões do ClickStack" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Sessões do ClickStack](/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp)
+
+    </Frame>
+
+    </div>
 
     Logs, métricas, traces e session replays ficam todos na mesma UI, compartilham a mesma linguagem de consulta e são correlacionados automaticamente.
 
@@ -356,7 +396,8 @@ A aplicação que instrumentaremos é o [HackerNews Analyzer](https://github.com
   ## Leitura adicional
 </div>
 
-* [Monitoramento do Kubernetes](/pt-BR/clickstack/managed-onboarding/monitoring-kubernetes): colete logs, métricas de infraestrutura e eventos do Kubernetes de um cluster.
-* [Monitoramento dos logs do AWS CloudWatch](/pt-BR/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): encaminhe logs do CloudWatch por meio do receiver CloudWatch do OpenTelemetry.
-* [Protegendo o collector](/pt-BR/clickstack/ingesting-data/collector#securing-the-collector) com TLS no endpoint OTLP e usuários de ingestão com o menor privilégio necessário.
-* [Entrando em produção](/pt-BR/clickstack/managing/production) com recomendações para entrada em produção.
+* [Monitorando o Kubernetes](/pt-BR/clickstack/managed-onboarding/monitoring-kubernetes): colete logs, métricas de infraestrutura e eventos do Kubernetes em um cluster.
+* [Monitorando logs do AWS CloudWatch](/pt-BR/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): encaminhe logs do CloudWatch pelo receiver do CloudWatch do OpenTelemetry.
+* [Ajustando o Managed ClickStack](/pt-BR/clickstack/managed-onboarding/tuning-clickstack-schema): refine seu schema para melhorar o desempenho de consultas e a eficiência de armazenamento.
+* [Protegendo o collector](/pt-BR/clickstack/ingesting-data/collector#securing-the-collector) com TLS no endpoint OTLP e usuários de ingestão com privilégio mínimo.
+* [Indo para produção](/pt-BR/clickstack/managing/production) para ver recomendações para ambientes de produção.

@@ -20,9 +20,7 @@ Utilisez ce modèle lorsque :
 * Vous voulez des **temps de lecture systématiquement inférieurs à une seconde** sans réanalyser toutes les lignes brutes.
 
 <Steps>
-  <Step>
-    ## Créer la table d’événements bruts
-
+  <Step title="Créer la table d’événements bruts" id="create-raw-events-table">
     ```sql
     CREATE TABLE events_raw
     (
@@ -46,9 +44,7 @@ Utilisez ce modèle lorsque :
     * `TTL` supprime les données brutes après 90 jours (à ajuster selon vos exigences de rétention).
   </Step>
 
-  <Step>
-    ## Concevoir la table de rollup (agrégée)
-
+  <Step title="Concevoir la table de rollup (agrégée)" id="design-rollup">
     Nous effectuerons une préagrégation à une granularité **horaire**.
     Choisissez la granularité en fonction de la période d’analyse la plus courante.
 
@@ -71,9 +67,7 @@ Utilisez ce modèle lorsque :
     Nous stockons des **états d’agrégation** (par exemple, `AggregateFunction(sum, ...)`) qui représentent de façon compacte des agrégats partiels et peuvent être fusionnés ou finalisés ultérieurement.
   </Step>
 
-  <Step>
-    ## Créer une vue matérialisée qui alimente le rollup
-
+  <Step title="Créer une vue matérialisée qui alimente le rollup" id="create-materialized-view-to-populate-rollup">
     Cette vue matérialisée se déclenche automatiquement lors des insertions dans `events_raw` et écrit des **états d’agrégation** dans le rollup.
 
     ```sql
@@ -93,9 +87,7 @@ Utilisez ce modèle lorsque :
     ```
   </Step>
 
-  <Step>
-    ## Insérer quelques données d’exemple
-
+  <Step title="Insérer quelques données d’exemple" id="insert-some-sample-data">
     Insérez quelques données d’exemple :
 
     ```sql
@@ -107,9 +99,7 @@ Utilisez ce modèle lorsque :
     ```
   </Step>
 
-  <Step>
-    ## Interroger le rollup
-
+  <Step title="Interroger le rollup" id="querying-the-rollup">
     Vous pouvez soit **fusionner** les états à la lecture, soit les **finaliser** :
 
     <Tabs>
@@ -157,9 +147,7 @@ Utilisez ce modèle lorsque :
     </Tip>
   </Step>
 
-  <Step>
-    ## Filtrez sur les champs de la clé primaire pour des performances optimales
-
+  <Step title="Filtrez sur les champs de la clé primaire pour des performances optimales" id="filtering-performance">
     Vous pouvez utiliser la commande `EXPLAIN` pour voir comment l’index est utilisé pour écarter des données :
 
     ```sql title="Query"
@@ -204,9 +192,7 @@ Utilisez ce modèle lorsque :
     Pour obtenir les meilleures performances de filtrage, assurez-vous que vos requêtes utilisent les champs de la clé primaire afin d’écarter les données inutiles.
   </Step>
 
-  <Step>
-    ## Variantes courantes
-
+  <Step title="Variantes courantes" id="common-variations">
     * **Granularités différentes** : ajoutez un rollup quotidien :
 
     ```sql
@@ -248,16 +234,12 @@ Utilisez ce modèle lorsque :
     * **Backfilling** : lors du chargement de données historiques, insérez dans `events_raw` et laissez la vue matérialisée créer automatiquement les roll-ups. Pour les lignes existantes, utilisez `POPULATE` lors de la création de la vue matérialisée si cela s’y prête, ou `INSERT SELECT`.
   </Step>
 
-  <Step>
-    ## Nettoyage et rétention
-
+  <Step title="Nettoyage et rétention" id="clean-up-and-retention">
     * Augmentez le TTL des données brutes (par ex., 30/90 jours), mais conservez les agrégats plus longtemps (par ex., 1 an).
     * Vous pouvez également utiliser **TTL pour déplacer** les anciennes parts vers un stockage moins coûteux si la hiérarchisation par niveaux est activée.
   </Step>
 
-  <Step>
-    ## Dépannage
-
+  <Step title="Dépannage" id="troubleshooting">
     * La vue matérialisée ne se met pas à jour ? Vérifiez que les insertions arrivent bien dans **events&#95;raw** (et non dans la table de rollup) et que la cible de la vue matérialisée est correcte (`TO events_rollup_1h`).
     * Requêtes lentes ? Vérifiez qu&#39;elles utilisent bien le rollup (interrogez directement la table de rollup) et que les filtres temporels correspondent à sa granularité.
     * Écarts après backfill ? Utilisez `SYSTEM FLUSH LOGS` et vérifiez `system.query_log` / `system.parts` pour confirmer les insertions et les fusions.

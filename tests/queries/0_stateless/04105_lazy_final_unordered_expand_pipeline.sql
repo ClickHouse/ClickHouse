@@ -30,21 +30,21 @@ INSERT INTO t_lazy_log SELECT number * 10, 2, 2, 'x' FROM numbers(300);
 -- Without the fix, one of these runs would hit the `Port is already connected`
 -- exception in `LazyUnorderedReadFromMergeTreeSource::expandPipeline`.
 SELECT count() FROM t_lazy_log FINAL WHERE category = 1
-SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000, min_filtered_ratio_for_lazy_final = 0.5, enable_analyzer = 1, max_threads = 1;
+SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000, min_filtered_ratio_for_lazy_final = 0.5, max_threads = 1;
 
 SELECT count() FROM t_lazy_log FINAL WHERE category = 1
-SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000, min_filtered_ratio_for_lazy_final = 0.5, enable_analyzer = 1, max_threads = 2;
+SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000, min_filtered_ratio_for_lazy_final = 0.5, max_threads = 2;
 
 SELECT count() FROM t_lazy_log FINAL WHERE category = 1
-SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000, min_filtered_ratio_for_lazy_final = 0.5, enable_analyzer = 1, max_threads = 4;
+SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000, min_filtered_ratio_for_lazy_final = 0.5, max_threads = 4;
 
 SELECT count() FROM t_lazy_log FINAL WHERE category = 1
-SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000, min_filtered_ratio_for_lazy_final = 0.5, enable_analyzer = 1, max_threads = 8;
+SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000, min_filtered_ratio_for_lazy_final = 0.5, max_threads = 8;
 
 SELECT count() FROM t_lazy_log FINAL WHERE category = 1
-SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000, min_filtered_ratio_for_lazy_final = 0.5, enable_analyzer = 1, max_threads = 16;
+SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000, min_filtered_ratio_for_lazy_final = 0.5, max_threads = 16;
 
 SELECT count() FROM t_lazy_log FINAL WHERE category = 1
-SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000, min_filtered_ratio_for_lazy_final = 0.5, enable_analyzer = 1, max_threads = 32;
+SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000, min_filtered_ratio_for_lazy_final = 0.5, max_threads = 32;
 
 DROP TABLE t_lazy_log;

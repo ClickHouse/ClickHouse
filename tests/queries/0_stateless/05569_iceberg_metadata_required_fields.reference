@@ -1,0 +1,59 @@
+--- valid
+valid_v2 0
+valid_v1 0
+valid_v3_without_next_row_id 0
+valid_v2_null_optionals 0
+valid_v3_source_ids 0
+negative_last_updated_ms_by_field 0
+shared 0
+--- unsupported
+format_version_4 (NOT_IMPLEMENTED)
+--- invalid
+missing_format_version ICEBERG_SPECIFICATION_VIOLATION 'format-version'
+format_version_0 ICEBERG_SPECIFICATION_VIOLATION 'format-version'
+format_version_string ICEBERG_SPECIFICATION_VIOLATION 'format-version'
+missing_location ICEBERG_SPECIFICATION_VIOLATION 'location'
+location_not_string ICEBERG_SPECIFICATION_VIOLATION 'location'
+missing_last_updated_ms ICEBERG_SPECIFICATION_VIOLATION 'last-updated-ms'
+last_column_id_float ICEBERG_SPECIFICATION_VIOLATION 'last-column-id'
+last_partition_id_out_of_int32 ICEBERG_SPECIFICATION_VIOLATION 'last-partition-id'
+v2_missing_table_uuid ICEBERG_SPECIFICATION_VIOLATION 'table-uuid'
+v2_missing_last_sequence_number ICEBERG_SPECIFICATION_VIOLATION 'last-sequence-number'
+v2_missing_partition_specs ICEBERG_SPECIFICATION_VIOLATION 'partition-specs'
+v2_missing_last_partition_id ICEBERG_SPECIFICATION_VIOLATION 'last-partition-id'
+v2_missing_sort_orders ICEBERG_SPECIFICATION_VIOLATION 'sort-orders'
+missing_default_spec_id ICEBERG_SPECIFICATION_VIOLATION 'default-spec-id'
+missing_default_sort_order_id ICEBERG_SPECIFICATION_VIOLATION 'default-sort-order-id'
+v1_missing_partition_spec ICEBERG_SPECIFICATION_VIOLATION 'partition-spec'
+missing_spec_id ICEBERG_SPECIFICATION_VIOLATION 'partition-specs[0].spec-id'
+sort_order_missing_order_id ICEBERG_SPECIFICATION_VIOLATION 'sort-orders[0].order-id'
+partition_field_missing_transform ICEBERG_SPECIFICATION_VIOLATION 'partition-specs[0].fields[0].transform'
+partition_field_missing_name ICEBERG_SPECIFICATION_VIOLATION 'partition-specs[0].fields[0].name'
+partition_field_missing_source_id ICEBERG_SPECIFICATION_VIOLATION 'partition-specs[0].fields[0].source-id'
+partition_field_not_object ICEBERG_SPECIFICATION_VIOLATION 'partition-specs[0].fields[0]'
+sort_field_missing_null_order ICEBERG_SPECIFICATION_VIOLATION 'sort-orders[0].fields[0].null-order'
+sort_field_missing_source_id ICEBERG_SPECIFICATION_VIOLATION 'sort-orders[0].fields[0].source-id'
+v1_partition_spec_field_missing_name ICEBERG_SPECIFICATION_VIOLATION 'partition-spec[0].name'
+v2_partition_field_source_ids_only ICEBERG_SPECIFICATION_VIOLATION 'partition-specs[0].fields[0].source-id'
+v1_sort_field_source_ids_only ICEBERG_SPECIFICATION_VIOLATION 'sort-orders[0].fields[0].source-id'
+current_snapshot_id_out_of_range ICEBERG_SPECIFICATION_VIOLATION 'current-snapshot-id'
+snapshot_id_out_of_range ICEBERG_SPECIFICATION_VIOLATION 'snapshots[0].snapshot-id'
+current_snapshot_id_below_long ICEBERG_SPECIFICATION_VIOLATION ?
+current_snapshot_id_above_unsigned_long ICEBERG_SPECIFICATION_VIOLATION ?
+snapshot_missing_timestamp ICEBERG_SPECIFICATION_VIOLATION 'snapshots[0].timestamp-ms'
+snapshot_not_object ICEBERG_SPECIFICATION_VIOLATION 'snapshots[0]'
+snapshots_not_array ICEBERG_SPECIFICATION_VIOLATION 'snapshots'
+snapshot_log_missing_snapshot_id ICEBERG_SPECIFICATION_VIOLATION 'snapshot-log[0].snapshot-id'
+metadata_log_missing_file ICEBERG_SPECIFICATION_VIOLATION 'metadata-log[0].metadata-file'
+ref_missing_type ICEBERG_SPECIFICATION_VIOLATION 'refs.main.type'
+refs_not_object ICEBERG_SPECIFICATION_VIOLATION 'refs'
+missing_last_updated_ms_by_field ICEBERG_SPECIFICATION_VIOLATION 'last-updated-ms'
+shared ICEBERG_SPECIFICATION_VIOLATION 'location'
+--- a table whose next metadata file is invalid, with and without the metadata cache
+cache_1 0
+cache_1 ICEBERG_SPECIFICATION_VIOLATION 'location'
+cache_0 0
+cache_0 ICEBERG_SPECIFICATION_VIOLATION 'location'
+--- a metadata file is validated after it is parsed, and not again when it is served from the metadata cache
+cache_1	1	1
+cache_0	1	1

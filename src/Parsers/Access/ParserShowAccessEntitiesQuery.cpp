@@ -30,8 +30,14 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{Keyword::ON}.ignore(pos, expected)
-                && parseDatabaseAndTableNameOrAsterisks(pos, expected, database, table, wildcard, default_database);
+            if (!ParserKeyword{Keyword::ON}.ignore(pos, expected)
+                || !parseDatabaseAndTableNameOrAsterisks(pos, expected, database, table, wildcard, default_database))
+                return false;
+
+            /// A prefix wildcard like `db*.*` or `table*` cannot be represented by the
+            /// (database, table) pair this query type carries; reject it explicitly
+            /// instead of silently narrowing it to the non-wildcard form.
+            return !wildcard;
         });
     }
 }

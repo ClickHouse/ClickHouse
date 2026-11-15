@@ -2,35 +2,36 @@
 ```sql
 CREATE TABLE IF NOT EXISTS ${DATABASE}.otel_metrics_summary
 (
-    `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-    `ResourceSchemaUrl` String CODEC(ZSTD(1)),
-    `ScopeName` String CODEC(ZSTD(1)),
-    `ScopeVersion` String CODEC(ZSTD(1)),
-    `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-    `ScopeDroppedAttrCount` UInt32 CODEC(ZSTD(1)),
-    `ScopeSchemaUrl` String CODEC(ZSTD(1)),
-    `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
-    `MetricName` String CODEC(ZSTD(1)),
-    `MetricDescription` String CODEC(ZSTD(1)),
-    `MetricUnit` String CODEC(ZSTD(1)),
-    `Attributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-    `StartTimeUnix` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-    `TimeUnix` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-    `Count` UInt64 CODEC(Delta(8), ZSTD(1)),
-    `Sum` Float64 CODEC(ZSTD(1)),
-    `ValueAtQuantiles.Quantile` Array(Float64) CODEC(ZSTD(1)),
-    `ValueAtQuantiles.Value` Array(Float64) CODEC(ZSTD(1)),
-    `Flags` UInt32 CODEC(ZSTD(1)),
+    `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(3)),
+    `ResourceSchemaUrl` String CODEC(ZSTD(3)),
+    `ScopeName` String CODEC(ZSTD(3)),
+    `ScopeVersion` String CODEC(ZSTD(3)),
+    `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(3)),
+    `ScopeDroppedAttrCount` UInt32 CODEC(ZSTD(3)),
+    `ScopeSchemaUrl` String CODEC(ZSTD(3)),
+    `ServiceName` LowCardinality(String) CODEC(ZSTD(3)),
+    `MetricName` LowCardinality(String) CODEC(ZSTD(3)),
+    `MetricDescription` String CODEC(ZSTD(3)),
+    `MetricUnit` String CODEC(ZSTD(3)),
+    `Attributes` Map(LowCardinality(String), String) CODEC(ZSTD(3)),
+    `StartTimeUnix` DateTime CODEC(Delta, ZSTD(3)),
+    `TimeUnix` DateTime CODEC(Delta, ZSTD(3)),
+    `Count` UInt64 CODEC(Delta, ZSTD(3)),
+    `Sum` Float64 CODEC(ZSTD(3)),
+    `ValueAtQuantiles.Quantile` Array(Float64) CODEC(ZSTD(3)),
+    `ValueAtQuantiles.Value` Array(Float64) CODEC(ZSTD(3)),
+    `Flags` UInt32 CODEC(ZSTD(3)),
     INDEX idx_res_attr_key mapKeys(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
     INDEX idx_res_attr_value mapValues(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
     INDEX idx_scope_attr_key mapKeys(ScopeAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
     INDEX idx_scope_attr_value mapValues(ScopeAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
     INDEX idx_attr_key mapKeys(Attributes) TYPE bloom_filter(0.01) GRANULARITY 1,
-    INDEX idx_attr_value mapValues(Attributes) TYPE bloom_filter(0.01) GRANULARITY 1
+    INDEX idx_attr_value mapValues(Attributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+    INDEX idx_time_minmax TimeUnix TYPE minmax GRANULARITY 1
 )
 ENGINE = MergeTree
 PARTITION BY toDate(TimeUnix)
-ORDER BY (ServiceName, MetricName, Attributes, toUnixTimestamp64Nano(TimeUnix))
-TTL toDateTime(TimeUnix) + ${TABLES_TTL}
+ORDER BY (ServiceName, MetricName, toStartOfHour(TimeUnix), cityHash64(Attributes), TimeUnix)
+TTL toDateTime(TimeUnix) + ${METRICS_TTL}
 SETTINGS ttl_only_drop_parts = 1;
 ```

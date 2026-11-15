@@ -9,8 +9,6 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Это руководство поможет вам настроить сбор журналов, метрик инфраструктуры и событий Kubernetes из кластера в Управляемый ClickStack, а затем просматривать их во встроенной панели мониторинга Kubernetes.
 
 Здесь используется стандартная для OpenTelemetry схема: два коллектора, развернутые через [Helm-чарт OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector), каждый из которых пересылает данные в ваш коллектор-шлюз ClickStack по OTLP. **ДемонСет** запускается на каждом узле для сбора журналов контейнеров и метрик Кубелета. **Развертывание** с одной репликой собирает события Kubernetes и метрики всего кластера. Подробнее о роли шлюза см. в разделе [Роли коллектора](/ru/clickstack/ingesting-data/collector#collector-roles).
@@ -20,9 +18,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Для рабочей нагрузки, размещенной в Kubernetes, сам коллектор-шлюз должен быть развернут **внутри того же кластера с использованием upstream Helm-чарта OpenTelemetry и образа коллектора ClickStack**. Чтобы установить его, выполните шаги для Helm из раздела [Развертывание коллектора](/ru/clickstack/ingesting-data/collector#configuring-the-collector). **Обязательно сохраните эту конечную точку OTLP**.
 
 <Steps>
-  <Step>
-    ## Подготовьте всё необходимое
-
+  <Step title="Подготовьте всё необходимое" id="gather-prerequisites">
     Вам потребуется:
 
     * **кластер Kubernetes** (рекомендуется v1.20+) с настроенным `kubectl`.
@@ -37,9 +33,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     </Info>
   </Step>
 
-  <Step>
-    ## Создайте secret для аутентификации и ConfigMap
-
+  <Step title="Создайте secret для аутентификации и ConfigMap" id="create-secret-and-configmap">
     Выберите пространство имен, в котором должны находиться collectors, затем создайте secret с `OTLP_AUTH_TOKEN` и ConfigMap, указывающий на ваш шлюз:
 
     ```shell
@@ -61,18 +55,14 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     Оба коллектора ниже считывают эти значения через `extraEnvs`, поэтому для обоих повторно используются один и тот же секрет и ConfigMap.
   </Step>
 
-  <Step>
-    ## Добавьте Helm-репозиторий OpenTelemetry
-
+  <Step title="Добавьте Helm-репозиторий OpenTelemetry" id="add-otel-helm-repo">
     ```shell
     helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
     helm repo update
     ```
   </Step>
 
-  <Step>
-    ## Разверните коллектор кластера
-
+  <Step title="Разверните коллектор кластера" id="deploy-cluster-collector">
     Это Развертывание с одной репликой, которое собирает **события Kubernetes** и **метрики всего кластера** (количество узлов, фазы подов, статус развертываний и т. д.). Если запустить больше одной реплики, появятся дубликаты.
 
     Сохраните следующее в файл `k8s_deployment.yaml`:
@@ -141,9 +131,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## Разверните коллектор узла
-
+  <Step title="Разверните коллектор узла" id="deploy-node-collector">
     Это ДемонСет, который запускается на каждом узле и собирает **журналы контейнеров**, **метрики хоста** и **метрики Кубелета** (использование CPU и памяти для каждого пода и контейнера по отношению к requests и limits).
 
     Сохраните следующий файл как `k8s_daemonset.yaml`:
@@ -260,9 +248,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     Вы должны увидеть один под Развертывания и по одному поду ДемонСета на каждом узле — все в состоянии `Running`.
   </Step>
 
-  <Step>
-    ## Передавайте атрибуты Kubernetes в приложения (рекомендуется)
-
+  <Step title="Передавайте атрибуты Kubernetes в приложения (рекомендуется)" id="forward-k8s-attributes">
     Чтобы коррелировать журналы, метрики и трассировки вашего приложения с метаданными Kubernetes (имя пода, пространство имен, узел, развертывание), передавайте эти метаданные в приложение через `OTEL_RESOURCE_ATTRIBUTES`. Затем процессор `k8sattributes` в ДемонСете будет обогащать входящую телеметрию соответствующими атрибутами пода и узла.
 
     ```yaml
@@ -311,20 +297,42 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## Проверьте в интерфейсе ClickStack
-
+  <Step title="Проверьте в интерфейсе ClickStack" id="confirm-in-ui">
     Откройте свой сервис в [консоли ClickHouse Cloud](https://console.clickhouse.cloud) и выберите **ClickStack** в левом меню.
 
-    <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="Запуск ClickStack" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Запуск ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
+
+    </Frame>
+
+    </div>
 
     В представлении **Search** переключите источник на `Logs` и установите временной диапазон **Последние 15 минут**. Журналы контейнеров со всего кластера должны появиться в течение нескольких секунд с такими атрибутами, как `k8s.namespace.name`, `k8s.pod.name` и `k8s.node.name`.
 
-    <Image img="/images/use-cases/observability/clickstack-search-with-k8-logs.webp" size="lg" alt="Представление ClickStack Search с журналами Kubernetes" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Представление ClickStack Search с журналами Kubernetes](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
+
+    </Frame>
+
+    </div>
 
     Чтобы увидеть метрики и события инфраструктуры в контексте, откройте встроенную панель мониторинга **Kubernetes**, перейдя в **Dashboards** -&gt; **Kubernetes**. Данные должны появиться на всех вкладках: `Pods`, `Nodes` и `Namespaces`.
 
-    <Image img="/images/use-cases/observability/clickstack-dashboard-kubernetes.webp" size="lg" alt="Панель мониторинга Kubernetes в ClickStack" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Панель мониторинга Kubernetes в ClickStack](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
+
+    </Frame>
+
+    </div>
 
     Если ничего не отображается:
 
@@ -333,9 +341,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     * Проверьте, что `OTLP_AUTH_TOKEN` в секрете совпадает со значением, заданным в коллекторе-шлюзе.
   </Step>
 
-  <Step>
-    ## Дополнительные материалы
-
+  <Step title="Дополнительные материалы" id="further-reading">
     * [Справочник по интеграции с Kubernetes](/ru/clickstack/integration-examples/kubernetes) с полным набором приёмников, процессоров и параметров настройки.
     * [Передача тегов resource в поды](/ru/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods) с более подробной информацией об обогащении на стороне приложения.
     * [Защита коллектора](/ru/clickstack/ingesting-data/collector#securing-the-collector) с помощью TLS на конечной точке OTLP и пользователей ингестии с минимально необходимыми привилегиями.

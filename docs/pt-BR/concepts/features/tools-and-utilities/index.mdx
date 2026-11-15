@@ -5,17 +5,51 @@ sidebarTitle: 'Lista de ferramentas e utilitários'
 slug: /operations/utilities/
 title: 'Lista de ferramentas e utilitários'
 doc_type: 'landing-page'
+mode: wide
 ---
 
-| Ferramenta/Utilitário                                                                       | Descrição                                                                                                   |
-| ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| [clickhouse-local](/pt-BR/concepts/features/tools-and-utilities/clickhouse-local)                 | Permite executar consultas SQL em dados sem iniciar o ClickHouse server, de forma semelhante ao `awk`.      |
-| [clickhouse-benchmark](/pt-BR/concepts/features/tools-and-utilities/clickhouse-benchmark)         | Carrega o servidor com consultas e configurações personalizadas.                                            |
-| [clickhouse-format](/pt-BR/concepts/features/tools-and-utilities/clickhouse-format)               | Permite formatar consultas de entrada.                                                                      |
-| [ClickHouse obfuscator](/pt-BR/concepts/features/tools-and-utilities/clickhouse-obfuscator)       | Ofusca dados.                                                                                               |
-| [ClickHouse compressor](/pt-BR/concepts/features/tools-and-utilities/clickhouse-compressor)       | Comprime e descomprime dados.                                                                               |
-| [clickhouse-disks](/pt-BR/concepts/features/tools-and-utilities/clickhouse-disks)                 | Fornece operações semelhantes às de um sistema de arquivos com arquivos em diferentes discos do ClickHouse. |
-| [clickhouse-odbc-bridge](/pt-BR/concepts/features/tools-and-utilities/odbc-bridge)                | Um servidor proxy para ODBC Driver.                                                                         |
-| [clickhouse&#95;backupview](/pt-BR/concepts/features/tools-and-utilities/backupview)              | Um módulo Python para analisar backups do ClickHouse.                                                       |
-| [clickhouse-keeper-client](/pt-BR/concepts/features/tools-and-utilities/clickhouse-keeper-client) | Um aplicativo cliente para interagir com o ClickHouse Keeper.                                               |
-| [Keeper HTTP API](/pt-BR/concepts/features/tools-and-utilities/clickhouse-keeper-http-api)        | API HTTP e dashboard integrado para o ClickHouse Keeper.                                                    |
+<CardGroup cols={2}>
+  <Card title="clickhouse_backupview" href="/pt-BR/concepts/features/tools-and-utilities/backupview">
+    Um módulo Python para analisar backups do ClickHouse.
+  </Card>
+
+  <Card title="clickhouse-benchmark" href="/pt-BR/concepts/features/tools-and-utilities/clickhouse-benchmark">
+    Carrega o servidor com queries e configurações personalizadas.
+  </Card>
+
+  <Card title="clickhouse-compressor" href="/pt-BR/concepts/features/tools-and-utilities/clickhouse-compressor">
+    Comprime e descomprime dados.
+  </Card>
+
+  <Card title="clickhouse-disks" href="/pt-BR/concepts/features/tools-and-utilities/clickhouse-disks">
+    Fornece operações semelhantes às de um sistema de arquivos em arquivos entre diferentes disks do ClickHouse.
+  </Card>
+
+  <Card title="clickhouse-format" href="/pt-BR/concepts/features/tools-and-utilities/clickhouse-format">
+    Permite a formatação de consultas de entrada.
+  </Card>
+
+  <Card title="clickhouse-keeper-client" href="/pt-BR/concepts/features/tools-and-utilities/clickhouse-keeper-client">
+    Um aplicativo cliente para interagir com o ClickHouse Keeper.
+  </Card>
+
+  <Card title="Keeper HTTP API" href="/pt-BR/concepts/features/tools-and-utilities/clickhouse-keeper-http-api">
+    API HTTP e dashboard embutido para o ClickHouse Keeper.
+  </Card>
+
+  <Card title="clickhouse-local" href="/pt-BR/concepts/features/tools-and-utilities/clickhouse-local">
+    Permite executar consultas SQL em dados sem iniciar o servidor ClickHouse, de forma semelhante ao `awk`.
+  </Card>
+
+  <Card title="clickhouse-obfuscator" href="/pt-BR/concepts/features/tools-and-utilities/clickhouse-obfuscator">
+    Ofusca dados.
+  </Card>
+
+  <Card title="clickhouse-odbc-bridge" href="/pt-BR/concepts/features/tools-and-utilities/odbc-bridge">
+    Um servidor proxy para o ODBC Driver.
+  </Card>
+
+  <Card title="clickhouse-static-files-disk-uploader" href="/pt-BR/concepts/features/tools-and-utilities/static-files-disk-uploader">
+    Prepara um diretório de dados para uma tabela armazenada no disk `web`.
+  </Card>
+</CardGroup>

@@ -11,13 +11,18 @@ integration:
 keywords: ['Apache Airflow', 'orchestration', 'DAG', 'clickhouse-connect', 'SQLExecuteQueryOperator', 'ClickHouseHook', 'workflow', 'scheduler']
 ---
 
-import ClickHouseSupportedBadge from "/snippets/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import { ClickHouseSupportedBadge } from "/snippets/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge/>
 
 [Apache Airflow](https://airflow.apache.org/) is an open-source platform for authoring, scheduling, and monitoring workflows as code. Workflows are defined as directed acyclic graphs (DAGs) of tasks written in Python.
 
 The `apache-airflow-providers-clickhousedb` provider connects Airflow to ClickHouse, letting you run queries, create tables, and load data as part of a DAG. It connects over the [HTTP interface](/concepts/features/interfaces/http) using the [`clickhouse-connect`](/integrations/language-clients/python/index) client, and exposes ClickHouse through Airflow's common SQL framework, so the standard `SQLExecuteQueryOperator` handles DDL, DML, and analytical queries with no ClickHouse-specific operator required.
+
+<Note>
+Already using the community `airflow-clickhouse-plugin`? It uses a different driver, protocol and port. Follow the
+[migration guide](/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin) to move existing DAGs and connections to the provider.
+</Note>
 
 ## Install the provider {#install-the-provider}
 
@@ -60,7 +65,7 @@ The provider exposes additional options as dedicated fields in the connection fo
 | `connect_timeout`      | Connection Timeout (seconds) | `10`    | HTTP connection timeout in seconds.                                                          |
 | `send_receive_timeout` | Query Timeout (seconds)      | `300`   | Query read/write timeout in seconds. Increase this for long-running analytical queries.      |
 | `compress`             | Enable LZ4 Compression       | `true`  | Enable LZ4 result compression.                                                               |
-| `client_name`          | Client Name                  | (empty) | A label appended to the Airflow version identifier in the ClickHouse `User-Agent` and the `client_name` column of [`system.query_log`](/reference/system-tables/query_log). |
+| `client_name`          | Client Name                  | (empty) | A label appended to the Airflow version identifier in the HTTP `User-Agent` header, recorded in the `http_user_agent` column of [`system.query_log`](/reference/system-tables/query_log). |
 | `session_settings`     | Session Settings (JSON)      | (empty) | [ClickHouse session settings](/reference/settings/session-settings) applied to every query on the connection, for example `{"max_execution_time": 300, "max_threads": 8}`. |
 | `client_kwargs`        | Client kwargs (JSON)         | (empty) | Additional keyword arguments forwarded to `clickhouse_connect.get_client()`, for example an `http_proxy`. |
 
@@ -102,7 +107,7 @@ Set the operator's `conn_id` to your ClickHouse connection. The following DAG cr
 from datetime import datetime
 
 from airflow import DAG
-from airflow.providers.common.sql.hooks.sql import fetch_all_handler
+from airflow.providers.common.sql.hooks.handlers import fetch_all_handler
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 
 CLICKHOUSE_CONN_ID = "clickhouse_default"
@@ -205,6 +210,7 @@ hook = ClickHouseHook(
 
 ## Related content {#related-content}
 
+- [Migrate from airflow-clickhouse-plugin](/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin)
 - [`clickhouse-connect` Python client](/integrations/language-clients/python/index)
 - [ClickHouse HTTP interface](/concepts/features/interfaces/http)
 - [ClickHouse session settings reference](/reference/settings/session-settings)

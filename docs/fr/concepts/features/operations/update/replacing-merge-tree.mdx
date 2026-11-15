@@ -7,8 +7,6 @@ doc_type: 'guide'
 sidebarTitle: 'Travailler avec le moteur ReplacingMergeTree'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Alors que les bases de données transactionnelles sont optimisées pour les charges de travail transactionnelles de mise à jour et de suppression, les bases de données OLAP offrent des garanties plus limitées pour ce type d’opérations. Elles privilégient plutôt des données immuables, insérées par lots, afin de permettre des requêtes analytiques nettement plus rapides. Bien que ClickHouse propose des opérations de mise à jour via des mutations, ainsi qu’un mécanisme léger pour supprimer des lignes, sa structure orientée colonnes implique que ces opérations doivent être planifiées avec soin, comme décrit ci-dessus. Ces opérations sont gérées de manière asynchrone, traitées par un seul thread et nécessitent (dans le cas des mises à jour) que les données soient réécrites sur disque. Elles ne doivent donc pas être utilisées pour un grand nombre de petites modifications.
 Afin de traiter un flux de lignes de mise à jour et de suppression tout en évitant les schémas d’utilisation ci-dessus, nous pouvons utiliser le moteur de table ReplacingMergeTree de ClickHouse.
 
@@ -17,10 +15,10 @@ Afin de traiter un flux de lignes de mise à jour et de suppression tout en évi
 </div>
 
 Le [moteur de table ReplacingMergeTree](/fr/reference/engines/table-engines/mergetree-family/replacingmergetree) permet d’appliquer des opérations de mise à jour aux lignes sans avoir à recourir à des instructions `ALTER` ou `DELETE` peu efficaces, en vous permettant d’insérer plusieurs copies d’une même ligne et d’en désigner une comme version la plus récente. Un processus d’arrière-plan supprime ensuite de manière asynchrone les anciennes versions de cette ligne, reproduisant ainsi efficacement une opération de mise à jour à l’aide d’insertions immuables.
-Cela repose sur la capacité du moteur de table à identifier les lignes en double. Pour cela, la clause `ORDER BY` est utilisée pour déterminer l’unicité : si deux lignes ont les mêmes valeurs pour les colonnes spécifiées dans `ORDER BY`, elles sont considérées comme des doublons. Une colonne `version`, spécifiée lors de la définition de la table, permet de conserver la version la plus récente d’une ligne lorsque deux lignes sont identifiées comme des doublons, c’est-à-dire que la ligne ayant la valeur de version la plus élevée est conservée.
-Nous illustrons ce processus dans l’exemple ci-dessous. Ici, les lignes sont identifiées de manière unique par la colonne A (le `ORDER BY` de la table). Nous supposons que ces lignes ont été insérées en deux lots, ce qui entraîne la création de deux data parts sur disque. Plus tard, lors d’un processus d’arrière-plan asynchrone, ces parts sont fusionnées.
+Cela repose sur la capacité du moteur de table à identifier les lignes dupliquées. Pour cela, la clause `ORDER BY` est utilisée pour déterminer l’unicité : si deux lignes ont les mêmes valeurs pour les colonnes spécifiées dans `ORDER BY`, elles sont considérées comme des lignes dupliquées. Une colonne `version`, spécifiée lors de la définition de la table, permet de conserver la version la plus récente d’une ligne lorsque deux lignes sont identifiées comme des lignes dupliquées, c’est-à-dire que la ligne ayant la valeur de version la plus élevée est conservée.
+Nous illustrons ce processus dans l’exemple ci-dessous. Ici, les lignes sont identifiées de manière unique par la colonne A (le `ORDER BY` de la table). Nous supposons que ces lignes ont été insérées en deux lots, ce qui entraîne la création de deux parts de données sur disque. Plus tard, lors d’un processus d’arrière-plan asynchrone, ces parts sont fusionnées.
 
-ReplacingMergeTree permet également de spécifier une colonne deleted. Celle-ci peut contenir 0 ou 1, où une valeur de 1 indique que la ligne (et ses doublons) a été supprimée, tandis que 0 est utilisé dans le cas contraire. **Remarque : les lignes supprimées ne seront pas retirées au moment de la fusion.**
+ReplacingMergeTree permet également de spécifier une colonne deleted. Celle-ci peut contenir 0 ou 1, où une valeur de 1 indique que la ligne (et ses lignes dupliquées) a été supprimée, tandis que 0 est utilisé dans le cas contraire. **Remarque : les lignes supprimées ne seront pas retirées au moment de la fusion.**
 
 Pendant ce processus, voici ce qui se produit lors de la fusion des parts :
 
@@ -32,7 +30,15 @@ Pendant ce processus, voici ce qui se produit lors de la fusion des parts :
 
 <br />
 
-<Image img="/images/migrations/postgres-replacingmergetree.webp" size="md" alt="Processus ReplacingMergeTree" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Processus ReplacingMergeTree](/images/migrations/postgres-replacingmergetree.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

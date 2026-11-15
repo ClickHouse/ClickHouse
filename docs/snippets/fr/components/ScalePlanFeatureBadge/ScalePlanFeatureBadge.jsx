@@ -10,3 +10,4 @@ export const ScalePlanFeatureBadge = ({feature='Cette fonctionnalité', linking_
         </div>
     )
 }
+export default ScalePlanFeatureBadge;

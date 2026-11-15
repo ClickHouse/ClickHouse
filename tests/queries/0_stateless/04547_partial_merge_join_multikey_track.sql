@@ -1,13 +1,13 @@
--- Test compareTrackAt multi-row skipping in partial_merge join with multi-key sort.
--- MergeJoin.cpp:327 uses compareTrackAt on the first sort key to skip N rows at once
--- (via nextN(-cmp) at MergeJoin.cpp:340), then falls back to regular compareAt for
--- secondary keys when the first key is equal. Exercises the interaction between
--- first-key track skipping and secondary-key matching.
+-- Test first-key multi-row skipping in partial_merge join with multi-key sort.
+-- MergeJoin skips the run of rows whose first sort key is less than the other side's
+-- current row at once (see nullableCompareTrackAt and IColumn::compareTrackAt), then falls
+-- back to regular compareAt for secondary keys when the first key is equal. Exercises
+-- the interaction between first-key run skipping and secondary-key matching.
 
 SET join_algorithm = 'partial_merge';
 -- Pin max_block_size so the whole sorted left input is one block. CI randomizes
 -- max_block_size; a small value would split the key1 runs across blocks and
--- compareTrackAt would never return track > 1, silently voiding the coverage.
+-- the first-key skip would never cover more than one row, silently voiding the coverage.
 SET max_block_size = 65505;
 
 DROP TABLE IF EXISTS t_04547_left;
@@ -18,7 +18,7 @@ CREATE TABLE t_04547_left  (key1 UInt32, key2 UInt32, val String) ENGINE = Merge
 CREATE TABLE t_04547_right (key1 UInt32, key2 UInt32, val String) ENGINE = MergeTree() ORDER BY (key1, key2);
 
 -- Left key1:  1,1,2,2,3,5,5,5,10,10 — runs of key1 values less than right's key1
--- force compareTrackAt to return track > 1 on the first key, then test secondary key
+-- force the first-key skip to cover several rows at once, then test secondary key
 INSERT INTO t_04547_left  VALUES (1,10,'L1a'), (1,20,'L1b'), (2,10,'L2a'), (2,20,'L2b'), (3,10,'L3a'), (5,10,'L5a'), (5,20,'L5b'), (5,30,'L5c'), (10,10,'L10a'), (10,20,'L10b');
 INSERT INTO t_04547_right VALUES (3,10,'R3a'), (5,20,'R5b'), (5,30,'R5c'), (10,10,'R10a');
 

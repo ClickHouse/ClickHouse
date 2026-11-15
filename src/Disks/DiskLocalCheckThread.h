@@ -2,6 +2,8 @@
 
 #include <Interpreters/Context_fwd.h>
 
+#include <base/types.h>
+
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 
 #include <Common/AggregatedMetrics.h>
@@ -25,6 +27,8 @@ public:
 
 private:
     DiskLocal * disk;
+    /// Unique per thread: one disk can have two DiskLocal objects, which must not probe one file.
+    const String check_file_path;
     DynamicDelay check_period;
     const LoggerPtr log;
 
