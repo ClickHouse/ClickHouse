@@ -35,8 +35,8 @@ namespace
 {
 
 // This is adapted from
-// https://github.com/scylladb/seastar/blob/master/core/exception_hacks.hh
-// https://github.com/scylladb/seastar/blob/master/core/exception_hacks.cc
+// https://github.com/scylladb/seastar/blob/master/include/seastar/core/exception_hacks.hh
+// https://github.com/scylladb/seastar/blob/master/src/core/exception_hacks.cc
 
 using DLIterateFunction = int (*) (int (*callback) (dl_phdr_info * info, size_t size, void * data), void * data);
 
@@ -108,20 +108,27 @@ void updatePHDRCache()
 }
 
 
-bool hasPHDRCache()
+namespace
 {
-    return phdr_cache.load() != nullptr;
+    /// The lock-free dl_iterate_phdr override above is active once the cache is populated.
+    bool hasPHDRCache() { return phdr_cache.load() != nullptr; }
+}
+
+bool hasAsyncSignalSafeUnwind()
+{
+    return hasPHDRCache();
 }
 
 #else
 
 void updatePHDRCache() {}
 
-#if defined(USE_MUSL)
-    /// With statically linked with musl, dl_iterate_phdr is immutable.
-    bool hasPHDRCache() { return true; }
+#if defined(USE_MUSL) || defined(OS_DARWIN)
+    /// musl: dl_iterate_phdr is inherently lock-free.
+    /// macOS: unwinding uses frame-pointer backtrace() which never calls dl_iterate_phdr.
+    bool hasAsyncSignalSafeUnwind() { return true; }
 #else
-    bool hasPHDRCache() { return false; }
+    bool hasAsyncSignalSafeUnwind() { return false; }
 #endif
 
 #endif

@@ -1,0 +1,19 @@
+SELECT like(__table1.s, \'%_\\\\a-\') AS `like(s, \'%_\\\\\\\\a-\')`\nFROM default.t_like_suffix_escape AS __table1
+_a-	0
+fooa%	0
+fooa-	0
+q\\a-	1
+_a-	1
+fooa%	1
+fooa-	1
+q\\a-	0
+SELECT endsWith(__table1.s, \'a-\') AS `like(s, \'%a-\')`\nFROM default.t_like_suffix_escape AS __table1
+_a-	1
+fooa%	0
+fooa-	1
+q\\a-	1
+SELECT endsWith(__table1.s, \'a%\') AS `like(s, \'%a\\\\\\\\%\')`\nFROM default.t_like_suffix_escape AS __table1
+_a-	0
+fooa%	1
+fooa-	0
+q\\a-	0

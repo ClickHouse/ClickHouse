@@ -15,12 +15,16 @@ option (ENABLE_EMBEDDED_COMPILER "Enable JIT compilation" ${ENABLE_EMBEDDED_COMP
 option (ENABLE_DWARF_PARSER "Enable DWARF input format" ${ENABLE_DWARF_PARSER_DEFAULT})
 option (ENABLE_BLAKE3 "Enable BLAKE3 function" ${ENABLE_LIBRARIES})
 
+if (ENABLE_GPU AND NOT ENABLE_EMBEDDED_COMPILER)
+    message(FATAL_ERROR "ENABLE_GPU requires ENABLE_EMBEDDED_COMPILER: the GPU engine compiles its expressions with LLVM")
+endif()
+
 if (NOT ENABLE_EMBEDDED_COMPILER AND NOT ENABLE_DWARF_PARSER AND NOT ENABLE_BLAKE3)
     message(STATUS "Not using LLVM")
     return()
 endif()
 
-set (LLVM_VERSION "22.1.1bundled")
+set (LLVM_VERSION "23.1.0bundled")
 
 # Directories
 set (LLVM_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/llvm")
@@ -39,25 +43,48 @@ endif()
 # Target architecture
 if (ARCH_AMD64)
     set (LLVM_TARGET_ARCH "X86")
-    set (LLVM_HOST_TRIPLE_DEFAULT "x86_64-unknown-linux-gnu")
+    set (LLVM_HOST_TRIPLE_ARCH "x86_64")
 elseif (ARCH_AARCH64)
     set (LLVM_TARGET_ARCH "AArch64")
-    set (LLVM_HOST_TRIPLE_DEFAULT "aarch64-unknown-linux-gnu")
+    set (LLVM_HOST_TRIPLE_ARCH "aarch64")
 elseif (ARCH_PPC64LE)
     set (LLVM_TARGET_ARCH "PowerPC")
-    set (LLVM_HOST_TRIPLE_DEFAULT "powerpc64le-unknown-linux-gnu")
+    set (LLVM_HOST_TRIPLE_ARCH "powerpc64le")
 elseif (ARCH_S390X)
     set (LLVM_TARGET_ARCH "SystemZ")
-    set (LLVM_HOST_TRIPLE_DEFAULT "s390x-unknown-linux-gnu")
+    set (LLVM_HOST_TRIPLE_ARCH "s390x")
 elseif (ARCH_RISCV64)
     set (LLVM_TARGET_ARCH "RISCV")
-    set (LLVM_HOST_TRIPLE_DEFAULT "riscv64-unknown-linux-gnu")
+    set (LLVM_HOST_TRIPLE_ARCH "riscv64")
 elseif (ARCH_LOONGARCH64)
     set (LLVM_TARGET_ARCH "LoongArch")
-    set (LLVM_HOST_TRIPLE_DEFAULT "loongarch64-unknown-linux-gnu")
+    set (LLVM_HOST_TRIPLE_ARCH "loongarch64")
 else()
     message(FATAL_ERROR "Unsupported architecture for LLVM")
 endif()
+
+# The host triple must reflect the host OS, not just the architecture: the target ABI depends
+# on it. For example the AArch64 backend reserves x18 only for Darwin/Windows/Android, so a
+# native macOS build that reports a Linux triple lets JIT-compiled code use the OS-reserved x18
+# register and crash. Cross-builds set CMAKE_C_COMPILER_TARGET (handled below); for native builds
+# derive the OS component from the host, and only for host OSes with a verified JIT target triple.
+if (OS_LINUX)
+    set (LLVM_HOST_TRIPLE_OS "unknown-linux-gnu")
+elseif (OS_DARWIN)
+    set (LLVM_HOST_TRIPLE_OS "apple-darwin")
+elseif (OS_FREEBSD)
+    set (LLVM_HOST_TRIPLE_OS "unknown-freebsd")
+else()
+    # Unrecognized host OS for JIT (e.g. SunOS). Do not fall back to a Linux triple: CHJIT would
+    # then compile against the wrong ABI on a non-Linux host. Disable the embedded compiler here
+    # instead; the placeholder triple below is inert metadata for the DWARF/BLAKE3 LLVM build.
+    if (ENABLE_EMBEDDED_COMPILER)
+        message (STATUS "Disabling the embedded compiler: no verified LLVM JIT host triple for ${CMAKE_SYSTEM_NAME}")
+        set (ENABLE_EMBEDDED_COMPILER OFF CACHE INTERNAL "" FORCE)
+    endif()
+    set (LLVM_HOST_TRIPLE_OS "unknown-linux-gnu")
+endif()
+set (LLVM_HOST_TRIPLE_DEFAULT "${LLVM_HOST_TRIPLE_ARCH}-${LLVM_HOST_TRIPLE_OS}")
 
 # Use the compiler target triple when cross-compiling (handles musl, macOS, FreeBSD, etc.)
 if (CMAKE_CROSSCOMPILING AND CMAKE_C_COMPILER_TARGET)
@@ -159,6 +186,14 @@ if (ENABLE_XRAY)
     include(${LLVM_CMAKE_DIR}/sources/LLVMXRay.cmake)
 endif()
 
+# The GPU engine compiles expressions into PTX at run time, see `src/GPU/GPUJIT.h`.
+if (ENABLE_GPU AND ENABLE_EMBEDDED_COMPILER)
+    set (LLVM_ENABLE_NVPTX 1)
+    include(${LLVM_CMAKE_DIR}/sources/LLVMNVPTX.cmake)
+else()
+    set (LLVM_ENABLE_NVPTX 0)
+endif()
+
 #
 # Generate config headers
 #
@@ -252,21 +287,32 @@ configure_file(
     @ONLY
 )
 
+# The Instrumentor pass embeds its runtime helper header as a string
+# (mirrors contrib/llvm-project/llvm/include/llvm/CMakeLists.txt)
+file(READ
+    "${LLVM_SOURCE_DIR}/include/llvm/Transforms/IPO/InstrumentorRuntimeHelper.h"
+    LLVM_INSTRUMENTOR_RUNTIME_HELPER)
+configure_file(
+    "${LLVM_SOURCE_DIR}/include/llvm/Transforms/IPO/InstrumentorVariables.inc.in"
+    "${LLVM_BINARY_DIR}/include/llvm/Transforms/IPO/InstrumentorVariables.inc"
+    @ONLY
+)
+
 # Target definition files
-file(WRITE "${LLVM_BINARY_DIR}/include/llvm/Config/Targets.def"
+write_file_if_changed("${LLVM_BINARY_DIR}/include/llvm/Config/Targets.def"
     "LLVM_TARGET(${LLVM_TARGET_ARCH})\n")
-file(WRITE "${LLVM_BINARY_DIR}/include/llvm/Config/AsmPrinters.def"
+write_file_if_changed("${LLVM_BINARY_DIR}/include/llvm/Config/AsmPrinters.def"
     "LLVM_ASM_PRINTER(${LLVM_TARGET_ARCH})\n")
-file(WRITE "${LLVM_BINARY_DIR}/include/llvm/Config/AsmParsers.def"
+write_file_if_changed("${LLVM_BINARY_DIR}/include/llvm/Config/AsmParsers.def"
     "LLVM_ASM_PARSER(${LLVM_TARGET_ARCH})\n")
-file(WRITE "${LLVM_BINARY_DIR}/include/llvm/Config/Disassemblers.def"
+write_file_if_changed("${LLVM_BINARY_DIR}/include/llvm/Config/Disassemblers.def"
     "LLVM_DISASSEMBLER(${LLVM_TARGET_ARCH})\n")
-file(WRITE "${LLVM_BINARY_DIR}/include/llvm/Config/TargetMCAs.def" "")
-file(WRITE "${LLVM_BINARY_DIR}/include/llvm/Config/TargetExegesis.def" "")
+write_file_if_changed("${LLVM_BINARY_DIR}/include/llvm/Config/TargetMCAs.def" "")
+write_file_if_changed("${LLVM_BINARY_DIR}/include/llvm/Config/TargetExegesis.def" "")
 
 # VCSRevision.h - LLVM version control info (normally generated by LLVM CMake)
 file(MAKE_DIRECTORY "${LLVM_BINARY_DIR}/include/llvm/Support")
-file(WRITE "${LLVM_BINARY_DIR}/include/llvm/Support/VCSRevision.h"
+write_file_if_changed("${LLVM_BINARY_DIR}/include/llvm/Support/VCSRevision.h"
     "#define LLVM_REVISION \"\"\n#define LLVM_REPOSITORY \"\"\n")
 
 #
@@ -351,9 +397,9 @@ endif()
 #
 if (NOT USE_NATIVE_TABLEGEN)
 
-add_executable(llvm-min-tblgen
-    # Main entry point
-    ${LLVM_SOURCE_DIR}/utils/TableGen/llvm-min-tblgen.cpp
+# Shared by both TableGen tools. An object library, not an archive: the backends register themselves
+# through static initializers.
+add_library(llvm-tblgen-shared OBJECT
     # TableGen Basic backends (minimal set, no CodeGenTypes dependency)
     ${LLVM_SOURCE_DIR}/utils/TableGen/Basic/ARMTargetDefEmitter.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/Basic/Attributes.cpp
@@ -369,25 +415,24 @@ add_executable(llvm-min-tblgen
     ${LLVM_SOURCE_DIR}/utils/TableGen/Basic/TargetLibraryInfoEmitter.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/Basic/VTEmitter.cpp
     # TableGen library
-    ${LLVM_SOURCE_DIR}/lib/TableGen/DetailedRecordsBackend.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/Error.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/JSONBackend.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/Main.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/Parser.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/Record.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/SetTheory.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/StringMatcher.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/StringToOffsetTable.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/TableGenBackend.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/TableGenBackendSkeleton.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/TGLexer.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/TGParser.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/TGTimer.cpp
-    # Support library
-    ${LLVMSUPPORT_SOURCES}
-    ${LLVM_BLAKE3_ASM_SOURCES}
-    ${LLVMDEMANGLE_SOURCES}
+    ${LLVMTABLEGEN_SOURCES}
 )
+
+target_include_directories(llvm-tblgen-shared PRIVATE
+    ${LLVM_SOURCE_DIR}/include
+    ${LLVM_BINARY_DIR}/include
+    ${LLVM_SOURCE_DIR}/utils/TableGen
+    "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/third-party/siphash/include"
+)
+
+target_compile_definitions(llvm-tblgen-shared PRIVATE ${LLVM_COMPILE_DEFINITIONS})
+
+add_executable(llvm-min-tblgen
+    # Main entry point
+    ${LLVM_SOURCE_DIR}/utils/TableGen/llvm-min-tblgen.cpp
+)
+
+target_link_libraries(llvm-min-tblgen PRIVATE llvm-tblgen-shared LLVMSupport)
 
 target_include_directories(llvm-min-tblgen PRIVATE
     ${LLVM_SOURCE_DIR}/include
@@ -402,8 +447,6 @@ target_compile_definitions(llvm-min-tblgen PRIVATE ${LLVM_COMPILE_DEFINITIONS})
 # musl has these in libc, so no separate libraries needed
 if (UNIX AND NOT APPLE AND NOT USE_MUSL)
     target_link_libraries(llvm-min-tblgen PRIVATE pthread dl)
-elseif (UNIX AND NOT APPLE)
-    target_link_libraries(llvm-min-tblgen PRIVATE pthread)
 endif()
 
 #
@@ -430,25 +473,13 @@ add_custom_target(llvm_gen_vt DEPENDS "${LLVM_BINARY_DIR}/include/llvm/CodeGen/G
 add_executable(llvm-tblgen
     # Main entry point
     ${LLVM_SOURCE_DIR}/utils/TableGen/llvm-tblgen.cpp
-    # TableGen Basic backends
-    ${LLVM_SOURCE_DIR}/utils/TableGen/Basic/ARMTargetDefEmitter.cpp
-    ${LLVM_SOURCE_DIR}/utils/TableGen/Basic/Attributes.cpp
-    ${LLVM_SOURCE_DIR}/utils/TableGen/Basic/CodeGenIntrinsics.cpp
-    ${LLVM_SOURCE_DIR}/utils/TableGen/Basic/DirectiveEmitter.cpp
-    ${LLVM_SOURCE_DIR}/utils/TableGen/Basic/IntrinsicEmitter.cpp
-    ${LLVM_SOURCE_DIR}/utils/TableGen/Basic/RISCVTargetDefEmitter.cpp
-    ${LLVM_SOURCE_DIR}/utils/TableGen/Basic/RuntimeLibcalls.cpp
-    ${LLVM_SOURCE_DIR}/utils/TableGen/Basic/RuntimeLibcallsEmitter.cpp
-    ${LLVM_SOURCE_DIR}/utils/TableGen/Basic/SDNodeProperties.cpp
-    ${LLVM_SOURCE_DIR}/utils/TableGen/Basic/TableGen.cpp
-    ${LLVM_SOURCE_DIR}/utils/TableGen/Basic/TargetFeaturesEmitter.cpp
-    ${LLVM_SOURCE_DIR}/utils/TableGen/Basic/TargetLibraryInfoEmitter.cpp
-    ${LLVM_SOURCE_DIR}/utils/TableGen/Basic/VTEmitter.cpp
     # TableGen Common backends
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/CodeExpander.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/CombinerUtils.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/CXXPredicates.cpp
-    ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/GlobalISelMatchTable.cpp
+    ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/MatchTable/MatchTable.cpp
+    ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/MatchTable/Matchers.cpp
+    ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/MatchTable/Types.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/GlobalISelMatchTableExecutorEmitter.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/PatternParser.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/Patterns.cpp
@@ -510,28 +541,11 @@ add_executable(llvm-tblgen
     ${LLVM_SOURCE_DIR}/utils/TableGen/X86MnemonicTables.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/X86ModRMFilters.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/X86RecognizableInstr.cpp
-    # TableGen library
-    ${LLVM_SOURCE_DIR}/lib/TableGen/DetailedRecordsBackend.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/Error.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/JSONBackend.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/Main.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/Parser.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/Record.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/SetTheory.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/StringMatcher.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/StringToOffsetTable.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/TableGenBackend.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/TableGenBackendSkeleton.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/TGLexer.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/TGParser.cpp
-    ${LLVM_SOURCE_DIR}/lib/TableGen/TGTimer.cpp
     # CodeGenTypes library (needs GenVT.inc)
     ${LLVMCODEGENTYPES_SOURCES}
-    # Support library
-    ${LLVMSUPPORT_SOURCES}
-    ${LLVM_BLAKE3_ASM_SOURCES}
-    ${LLVMDEMANGLE_SOURCES}
 )
+
+target_link_libraries(llvm-tblgen PRIVATE llvm-tblgen-shared LLVMSupport)
 
 # llvm-tblgen needs GenVT.inc which is generated by llvm-min-tblgen
 add_dependencies(llvm-tblgen llvm_gen_vt)
@@ -550,8 +564,6 @@ target_compile_definitions(llvm-tblgen PRIVATE ${LLVM_COMPILE_DEFINITIONS})
 # musl has these in libc, so no separate libraries needed
 if (UNIX AND NOT APPLE AND NOT USE_MUSL)
     target_link_libraries(llvm-tblgen PRIVATE pthread dl)
-elseif (UNIX AND NOT APPLE)
-    target_link_libraries(llvm-tblgen PRIVATE pthread)
 endif()
 
 # End of native tablegen build block
@@ -658,6 +670,7 @@ set(INTRINSICS_TD "${LLVM_SOURCE_DIR}/include/llvm/IR/Intrinsics.td")
 tablegen_generate(COMMON "${INTRINSICS_TD}" "-gen-intrinsic-enums;-intrinsic-prefix=aarch64" "include/llvm/IR/IntrinsicsAArch64.h")
 tablegen_generate(COMMON "${INTRINSICS_TD}" "-gen-intrinsic-enums;-intrinsic-prefix=amdgcn" "include/llvm/IR/IntrinsicsAMDGPU.h")
 tablegen_generate(COMMON "${INTRINSICS_TD}" "-gen-intrinsic-enums;-intrinsic-prefix=arm" "include/llvm/IR/IntrinsicsARM.h")
+tablegen_generate(COMMON "${INTRINSICS_TD}" "-gen-intrinsic-enums;-intrinsic-prefix=avr" "include/llvm/IR/IntrinsicsAVR.h")
 tablegen_generate(COMMON "${INTRINSICS_TD}" "-gen-intrinsic-enums;-intrinsic-prefix=bpf" "include/llvm/IR/IntrinsicsBPF.h")
 tablegen_generate(COMMON "${INTRINSICS_TD}" "-gen-intrinsic-enums;-intrinsic-prefix=dx" "include/llvm/IR/IntrinsicsDirectX.h")
 tablegen_generate(COMMON "${INTRINSICS_TD}" "-gen-intrinsic-enums;-intrinsic-prefix=hexagon" "include/llvm/IR/IntrinsicsHexagon.h")
@@ -759,6 +772,8 @@ if (ARCH_AMD64)
     tablegen_generate(X86 "${X86_TD}" "-gen-x86-mnemonic-tables;-asmwriternum=1" "lib/Target/X86/X86GenMnemonicTables.inc")
     tablegen_generate(X86 "${X86_TD}" "-gen-x86-instr-mapping" "lib/Target/X86/X86GenInstrMapping.inc")
     tablegen_generate(X86 "${X86_TD}" "-gen-global-isel-combiner;-combiners=X86PreLegalizerCombiner" "lib/Target/X86/X86GenPreLegalizeGICombiner.inc")
+    tablegen_generate(X86 "${X86_TD}" "-gen-global-isel-combiner;-combiners=X86PostLegalizerCombiner" "lib/Target/X86/X86GenPostLegalizeGICombiner.inc")
+    tablegen_generate(X86 "${X86_TD}" "-gen-sd-node-info" "lib/Target/X86/X86GenSDNodeInfo.inc")
 endif()
 
 #
@@ -776,7 +791,7 @@ if (ARCH_AARCH64)
     tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-asm-writer;-asmwriternum=1" "lib/Target/AArch64/AArch64GenAsmWriter1.inc")
     tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-asm-matcher" "lib/Target/AArch64/AArch64GenAsmMatcher.inc")
     tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-fast-isel" "lib/Target/AArch64/AArch64GenFastISel.inc")
-    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-global-isel" "lib/Target/AArch64/AArch64GenGlobalISel.inc")
+    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-global-isel;-gisel-extended-llt" "lib/Target/AArch64/AArch64GenGlobalISel.inc")
     tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-global-isel-combiner;-combiners=AArch64O0PreLegalizerCombiner" "lib/Target/AArch64/AArch64GenO0PreLegalizeGICombiner.inc")
     tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-global-isel-combiner;-combiners=AArch64PreLegalizerCombiner" "lib/Target/AArch64/AArch64GenPreLegalizeGICombiner.inc")
     tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-global-isel-combiner;-combiners=AArch64PostLegalizerCombiner" "lib/Target/AArch64/AArch64GenPostLegalizeGICombiner.inc")
@@ -875,8 +890,25 @@ if (ARCH_LOONGARCH64)
     tablegen_generate(LOONGARCH "${LOONGARCH_TD}" "-gen-sd-node-info" "lib/Target/LoongArch/LoongArchGenSDNodeInfo.inc")
 endif()
 
+#
+# NVPTX-specific TableGen, a target besides the host's
+#
+if (LLVM_ENABLE_NVPTX)
+    set(NVPTX_TD "${LLVM_SOURCE_DIR}/lib/Target/NVPTX/NVPTX.td")
+
+    tablegen_generate_target_parser(NVPTX "${NVPTX_TD}" "-gen-asm-writer" "${LLVM_SOURCE_DIR}/lib/Target/NVPTX" "lib/Target/NVPTX/NVPTXGenAsmWriter.inc")
+    tablegen_generate_target_parser(NVPTX "${NVPTX_TD}" "-gen-dag-isel" "${LLVM_SOURCE_DIR}/lib/Target/NVPTX" "lib/Target/NVPTX/NVPTXGenDAGISel.inc")
+    tablegen_generate_target_parser(NVPTX "${NVPTX_TD}" "-gen-instr-info" "${LLVM_SOURCE_DIR}/lib/Target/NVPTX" "lib/Target/NVPTX/NVPTXGenInstrInfo.inc")
+    tablegen_generate_target_parser(NVPTX "${NVPTX_TD}" "-gen-register-info" "${LLVM_SOURCE_DIR}/lib/Target/NVPTX" "lib/Target/NVPTX/NVPTXGenRegisterInfo.inc")
+    tablegen_generate_target_parser(NVPTX "${NVPTX_TD}" "-gen-sd-node-info" "${LLVM_SOURCE_DIR}/lib/Target/NVPTX" "lib/Target/NVPTX/NVPTXGenSDNodeInfo.inc")
+    tablegen_generate_target_parser(NVPTX "${NVPTX_TD}" "-gen-subtarget" "${LLVM_SOURCE_DIR}/lib/Target/NVPTX" "lib/Target/NVPTX/NVPTXGenSubtargetInfo.inc")
+endif()
+
 # Combine all tablegen outputs
 set(ALL_TABLEGEN_OUTPUTS ${COMMON_TABLEGEN_OUTPUTS})
+if (LLVM_ENABLE_NVPTX)
+    list(APPEND ALL_TABLEGEN_OUTPUTS ${NVPTX_TABLEGEN_OUTPUTS})
+endif()
 if (ARCH_AMD64)
     list(APPEND ALL_TABLEGEN_OUTPUTS ${X86_TABLEGEN_OUTPUTS})
 elseif (ARCH_AARCH64)
@@ -900,7 +932,7 @@ add_dependencies(llvm_tablegen_outputs llvm_gen_vt)
 # Helper function to add LLVM library
 #
 function(add_llvm_library name)
-    cmake_parse_arguments(ARG "" "" "SOURCES;DEPENDS" ${ARGN})
+    cmake_parse_arguments(ARG "NO_TABLEGEN" "" "SOURCES;DEPENDS" ${ARGN})
 
     add_library(${name} STATIC ${ARG_SOURCES})
 
@@ -911,7 +943,9 @@ function(add_llvm_library name)
     target_include_directories(${name} PRIVATE "${LLVM_SOURCE_DIR}/lib/Target/${LLVM_TARGET_ARCH}")
     target_compile_definitions(${name} PRIVATE ${LLVM_COMPILE_DEFINITIONS})
 
-    add_dependencies(${name} llvm_tablegen_outputs)
+    if(NOT ARG_NO_TABLEGEN)
+        add_dependencies(${name} llvm_tablegen_outputs)
+    endif()
 
     if(ARG_DEPENDS)
         target_link_libraries(${name} PUBLIC ${ARG_DEPENDS})
@@ -921,8 +955,9 @@ endfunction()
 #
 # Build LLVM libraries (in dependency order)
 #
-add_llvm_library(LLVMDemangle SOURCES ${LLVMDEMANGLE_SOURCES})
-add_llvm_library(LLVMSupport SOURCES ${LLVMSUPPORT_SOURCES} ${LLVM_BLAKE3_ASM_SOURCES} DEPENDS LLVMDemangle)
+# The TableGen tools link these two, so they must not depend on the TableGen outputs.
+add_llvm_library(LLVMDemangle NO_TABLEGEN SOURCES ${LLVMDEMANGLE_SOURCES})
+add_llvm_library(LLVMSupport NO_TABLEGEN SOURCES ${LLVMSUPPORT_SOURCES} ${LLVM_BLAKE3_ASM_SOURCES} DEPENDS LLVMDemangle)
 add_llvm_library(LLVMBinaryFormat SOURCES ${LLVMBINARYFORMAT_SOURCES} DEPENDS LLVMSupport)
 add_llvm_library(LLVMTargetParser SOURCES ${LLVMTARGETPARSER_SOURCES} DEPENDS LLVMSupport)
 add_llvm_library(LLVMCore SOURCES ${LLVMCORE_SOURCES} DEPENDS LLVMSupport LLVMBinaryFormat LLVMTargetParser LLVMRemarks)
@@ -996,6 +1031,19 @@ elseif (ARCH_LOONGARCH64)
     add_llvm_library(LLVMLoongArchInfo SOURCES ${LLVMLOONGARCHINFO_SOURCES} DEPENDS LLVMMC LLVMSupport)
     add_llvm_library(LLVMLoongArchDesc SOURCES ${LLVMLOONGARCHDESC_SOURCES} DEPENDS LLVMLoongArchInfo LLVMMC LLVMMCDisassembler LLVMSupport)
     add_llvm_library(LLVMLoongArchCodeGen SOURCES ${LLVMLOONGARCHCODEGEN_SOURCES} DEPENDS LLVMLoongArchInfo LLVMLoongArchDesc LLVMCodeGen LLVMSelectionDAG LLVMAsmPrinter LLVMTarget LLVMMC LLVMSupport)
+endif()
+
+if (LLVM_ENABLE_NVPTX)
+    add_llvm_library(LLVMNVPTXInfo SOURCES ${LLVMNVPTXINFO_SOURCES} DEPENDS LLVMMC LLVMSupport)
+    add_llvm_library(LLVMNVPTXDesc SOURCES ${LLVMNVPTXDESC_SOURCES} DEPENDS LLVMNVPTXInfo LLVMMC LLVMSupport LLVMTargetParser)
+    add_llvm_library(LLVMNVPTXCodeGen SOURCES ${LLVMNVPTXCODEGEN_SOURCES}
+        DEPENDS LLVMNVPTXInfo LLVMNVPTXDesc LLVMAnalysis LLVMAsmPrinter LLVMCodeGen LLVMCodeGenTypes LLVMCore LLVMipo LLVMMC
+            LLVMScalarOpts LLVMSelectionDAG LLVMSupport LLVMTarget LLVMTargetParser LLVMTransformUtils LLVMVectorize)
+    foreach (nvptx_library LLVMNVPTXInfo LLVMNVPTXDesc LLVMNVPTXCodeGen)
+        target_include_directories(${nvptx_library} BEFORE PRIVATE
+            "${LLVM_BINARY_DIR}/lib/Target/NVPTX"
+            "${LLVM_SOURCE_DIR}/lib/Target/NVPTX")
+    endforeach()
 endif()
 
 # XRay support
@@ -1077,6 +1125,10 @@ else()
 
     if (ENABLE_XRAY)
         list(APPEND REQUIRED_LLVM_LIBRARIES LLVMXRay)
+    endif()
+
+    if (LLVM_ENABLE_NVPTX)
+        list(APPEND REQUIRED_LLVM_LIBRARIES LLVMNVPTXInfo LLVMNVPTXDesc LLVMNVPTXCodeGen)
     endif()
 endif()
 

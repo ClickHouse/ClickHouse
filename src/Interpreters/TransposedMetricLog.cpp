@@ -1,6 +1,7 @@
 #include <Interpreters/TransposedMetricLog.h>
 
 #include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
 #include <Common/CurrentMetrics.h>
 #include <Interpreters/Context.h>
 #include <Common/DateLUTImpl.h>
@@ -23,6 +24,8 @@ void TransposedMetricLogElement::appendToBlock(MutableColumns & columns) const
     size_t column_idx = 0;
 
     columns[column_idx++]->insert(getFQDNOrHostName());
+    columns[column_idx++]->insert(VERSION_STRING);
+    columns[column_idx++]->insert(SYSTEM_PROCESSOR);
     columns[column_idx++]->insert(event_date);
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(event_time_microseconds);
@@ -41,6 +44,18 @@ ColumnsDescription TransposedMetricLogElement::getColumnsDescription()
             std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
             parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
             "Hostname of the server executing the query."
+        },
+        {
+            "clickhouse_version",
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+            parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+            "Version of the ClickHouse server that produced the row."
+        },
+        {
+            "system_processor",
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+            parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+            "CPU architecture of the ClickHouse server that produced the row."
         },
         {
             "event_date",
@@ -101,7 +116,7 @@ void TransposedMetricLog::stepFunction(TimePoint current_time)
         elem.metric_name += ProfileEvents::getName(ProfileEvents::Event(i));
         elem.value = new_value - old_value;
         old_value = new_value;
-        this->add(elem);
+        this->add([&](TransposedMetricLogElement & element) { element = elem; });
     }
 
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
@@ -109,7 +124,7 @@ void TransposedMetricLog::stepFunction(TimePoint current_time)
         elem.metric_name = "CurrentMetric_";
         elem.metric_name += CurrentMetrics::getName(CurrentMetrics::Metric(i));
         elem.value = CurrentMetrics::values[i];
-        this->add(elem);
+        this->add([&](TransposedMetricLogElement & element) { element = elem; });
     }
 }
 

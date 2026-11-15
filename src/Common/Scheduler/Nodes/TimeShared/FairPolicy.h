@@ -47,11 +47,7 @@ class FairPolicy final : public ITimeSharedNode
     };
 
 public:
-    explicit FairPolicy(EventQueue & event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
-        : ITimeSharedNode(event_queue_, config, config_prefix)
-    {}
-
-    FairPolicy(EventQueue & event_queue_, const SchedulerNodeInfo & info_)
+    explicit FairPolicy(EventQueue & event_queue_, const SchedulerNodeInfo & info_ = {})
         : ITimeSharedNode(event_queue_, info_)
     {}
 
@@ -63,15 +59,6 @@ public:
     }
 
     std::string_view getTypeName() const override { return "fair"; }
-
-    bool equals(ISchedulerNode * other) override
-    {
-        if (!ISchedulerNode::equals(other))
-            return false;
-        if (auto * _ = dynamic_cast<FairPolicy *>(other))
-            return true;
-        return false;
-    }
 
     void attachChild(const SchedulerNodePtr & child_base) override
     {
@@ -124,6 +111,8 @@ public:
                 // Element was removed from inside of heap -- heap must be rebuilt
                 std::make_heap(items.begin(), items.begin() + heap_size);
                 child_idx = heap_size;
+                if (heap_size == 0)
+                    flushThroughputOnDeactivation();
             }
 
             // Now detach inactive child
@@ -155,7 +144,10 @@ public:
         while (true)
         {
             if (heap_size == 0)
+            {
+                flushThroughputOnDeactivation();
                 return {nullptr, false};
+            }
 
             // Recursively pull request from child
             auto [request, child_active] = items.front().child->dequeueRequest();
@@ -205,7 +197,7 @@ public:
 
             if (request)
             {
-                incrementDequeued(request->cost);
+                incrementDequeued(request->cost, heap_size > 0);
                 SCHED_DBG("{} -- dequeue(child={}, cost={}, vruntime={:.2f}, sys_vruntime={:.2f})",
                     getPath(), current.child->basename, request->cost, current.vruntime, system_vruntime);
                 return {request, heap_size > 0};

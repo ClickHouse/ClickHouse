@@ -1,6 +1,8 @@
 #pragma once
 
 #include <optional>
+#include <string_view>
+#include <absl/container/flat_hash_set.h>
 #include <Columns/ColumnArray.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ColumnString.h>
@@ -14,6 +16,17 @@ namespace DB
 {
 
 struct IndexDescription;
+
+/// Drop set extracted from a filter-only `if(token IN/NOT IN (<string literals>), '', token)` postprocessor.
+/// Lets the granule builder decide, once per distinct token, whether it is dropped - so dropped tokens never
+/// build posting lists while each occurrence is still hashed only once.
+struct MergeTreeIndexTextInlineFilter
+{
+    struct Hash { using is_transparent = void; size_t operator()(std::string_view s) const { return std::hash<std::string_view>{}(s); } };
+    struct Eq   { using is_transparent = void; bool operator()(std::string_view a, std::string_view b) const { return a == b; } };
+    absl::flat_hash_set<std::string, Hash, Eq> tokens;
+    bool drop_on_match = true;
+};
 
 /// Postprocessor for text index tokens.
 /// Applies a user-defined expression to each output token after tokenization.
@@ -46,10 +59,15 @@ public:
 
     bool hasActions() const { return actions.has_value(); }
 
+    /// Non-null when the postprocessor is an `if`/`multiIf(token IN/NOT IN (<string literals>), '', token)`
+    /// filter, enabling the fast path (drop decided per distinct token, dropped tokens build no postings).
+    const MergeTreeIndexTextInlineFilter * getInlineFilter() const { return inline_filter ? &*inline_filter : nullptr; }
+
     /// Returns an ActionsDAG rewriting a haystack column into the Array(String) of postprocessed tokens
     /// the index stores: arrayMap(x -> postprocessor(x), tokens(col, '<tokenizer>')). Array(String)
     /// index columns are mapped directly (elements are already tokens). Only call when hasActions().
-    ActionsDAG getOriginalActionsDAG(const String & col_name, const DataTypePtr & col_type, const String & tokenizer_description) const;
+    /// `source_ast`, when set, is tokenized instead of `col_name`, so the caller can splice in the preprocessor expression.
+    ActionsDAG getOriginalActionsDAG(const String & col_name, const DataTypePtr & col_type, const String & tokenizer_description, const ASTPtr & source_ast = nullptr) const;
 
 private:
     std::optional<ExpressionActions> actions;
@@ -57,6 +75,8 @@ private:
     String index_column_name;         ///< name of the index column in the original expression
     /// Cached to avoid repeated make_shared<DataTypeString>() allocations.
     DataTypePtr string_type;
+    /// Set when the filter is an `IN`/`NOT IN` over string literals; enables the drop fast path.
+    std::optional<MergeTreeIndexTextInlineFilter> inline_filter;
 };
 
 }

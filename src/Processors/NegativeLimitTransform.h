@@ -46,6 +46,7 @@ private:
 
     bool with_ties;
     const SortDescription description;
+    bool is_shard_limit = false;
     std::vector<size_t> sort_column_positions;
 
     /// Total rows currently queued across all inputs.
@@ -69,6 +70,9 @@ private:
     UInt64 num_input_ports_finished = 0;
 
     std::vector<PortsData> ports_data;
+
+    /// Inputs are not requested before an output asks for data.
+    bool was_output_needed = false;
 
     /// `Pull` stage: it ends when all input ports are closed.
     /// `Push` stage: it starts immediately after the `Pull` stage and it ends
@@ -117,6 +121,9 @@ public:
 
     InputPort & getInputPort() { return inputs.front(); }
     OutputPort & getOutputPort() { return outputs.front(); }
+
+    void markAsShardLimit() { is_shard_limit = true; }
+    bool isShardLimit() const { return is_shard_limit; }
 
     void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { rows_before_limit_at_least.swap(counter); }
     void setInputPortHasCounter(size_t pos) { ports_data[pos].input_port_has_counter = true; }

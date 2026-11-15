@@ -35,6 +35,7 @@
 #include <QueryPipeline/Pipe.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/checkDataPart.h>
 
 
 namespace DB
@@ -148,6 +149,14 @@ public:
         }
         catch (const Exception & e)
         {
+            /// Rethrow transient errors instead of reporting a false "broken" row. That includes the
+            /// shutdown `ABORTED` this catch was originally added for: nothing was read, so reporting a
+            /// failed check would certify that the data is broken - which is what a monitoring query
+            /// reads out of `check_query_single_value_result = 1` - on a replica that merely lost its
+            /// Keeper session. `isRetryableException` treats `ABORTED` as retryable.
+            if (isRetryableException(std::current_exception()))
+                throw;
+
             is_finished = true;
             CheckResult result{"", false, e.displayText()};
             return result;

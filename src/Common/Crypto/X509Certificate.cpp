@@ -19,6 +19,9 @@ extern const int BAD_ARGUMENTS;
 X509Certificate::X509Certificate(X509 * cert_)
     : certificate(cert_)
 {
+    /// Every accessor dereferences the certificate, so a null pointer here turns into a segfault later.
+    if (!certificate)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create a certificate from a null pointer");
 }
 
 X509Certificate::operator X509 *() const
@@ -64,31 +67,47 @@ static X509Certificate::List readCertificatesFromBIO(const BIO_ptr & bio, const 
 
     while (true)
     {
+        /// Reading past the last certificate is expected to fail with `PEM_R_NO_START_LINE`.
+        /// Mark the error queue so that only the errors raised by this read are dropped
+        /// when that failure is expected, and unrelated queued errors are left alone.
+        /// The return values of the mark functions are ignored: they are 0 when the queue is empty,
+        /// in which case everything queued after this point is ours anyway.
+        ERR_set_mark();
         X509 * cert = PEM_read_bio_X509(bio.get(), nullptr, nullptr, nullptr);
 
-        if (!cert)
+        if (cert)
         {
-            auto err = ERR_peek_last_error();
-            if (err == 0)
-                break;
-
-            /// We read at least one cert, and can't find
-            /// the beginning of a next one.
-            /// This most likely means we reached the end of the file.
-            if (!certs.empty()
-                /// Manually unwrap ERR_GET_REASON(err) due to ossl_unused
-                /// https://github.com/openssl/openssl/issues/16776
-                ///
-                /// To be fixed in OpenSSL 3.4+
-                && ((err & ERR_SYSTEM_FLAG) == 0 && (err & ERR_REASON_MASK) == PEM_R_NO_START_LINE))
-                /// Means we reached the end of the file.
-                break;
-
-            throw Exception(
-                ErrorCodes::OPENSSL_ERROR, "PEM_read_bio_X509 failed: c:{}, f:{}, e:{}", certs.size(), source_description, getOpenSSLErrors());
+            ERR_pop_to_mark();
+            certs.emplace_back(cert);
+            continue;
         }
 
-        certs.emplace_back(cert);
+        auto err = ERR_peek_last_error();
+        if (err == 0)
+        {
+            ERR_pop_to_mark();
+            break;
+        }
+
+        /// We read at least one cert, and can't find
+        /// the beginning of a next one.
+        /// This most likely means we reached the end of the file.
+        if (!certs.empty()
+            /// Manually unwrap ERR_GET_REASON(err) due to ossl_unused
+            /// https://github.com/openssl/openssl/issues/16776
+            ///
+            /// To be fixed in OpenSSL 3.4+
+            && ((err & ERR_SYSTEM_FLAG) == 0 && (err & ERR_REASON_MASK) == PEM_R_NO_START_LINE))
+        {
+            /// Means we reached the end of the file.
+            ERR_pop_to_mark();
+            break;
+        }
+
+        /// A real failure: keep its errors in the queue for the message below.
+        ERR_clear_last_mark();
+        throw Exception(
+            ErrorCodes::OPENSSL_ERROR, "PEM_read_bio_X509 failed: c:{}, f:{}, e:{}", certs.size(), source_description, getOpenSSLErrors());
     }
 
     if (certs.empty())
@@ -170,26 +189,45 @@ std::string X509Certificate::subjectName() const
     return buffer;
 }
 
+/// Extract the value of the first entry with the given NID from an X509 name as a length-delimited
+/// string. We read the ASN1_STRING bytes directly instead of X509_NAME_get_text_by_NID because that
+/// function copies into a fixed C buffer and NUL-terminates: an embedded NUL byte (e.g. a CN of
+/// "admin\0.evil.com") would be silently truncated to "admin", letting a certificate impersonate a
+/// different subject during authentication. Preserving the exact bytes makes such a value compare
+/// unequal to any NUL-free configured subject, and also avoids silent truncation of long names.
+static std::string extractNameEntry(X509_NAME * name, uint nid)
+{
+    if (!name)
+        return {};
+
+    const int index = X509_NAME_get_index_by_NID(name, static_cast<int>(nid), -1);
+    if (index < 0)
+        return {};
+
+    const X509_NAME_ENTRY * entry = X509_NAME_get_entry(name, index);
+    if (!entry)
+        return {};
+
+    const ASN1_STRING * data = X509_NAME_ENTRY_get_data(entry);
+    if (!data)
+        return {};
+
+    const unsigned char * bytes = ASN1_STRING_get0_data(data);
+    const int length = ASN1_STRING_length(data);
+    if (!bytes || length < 0)
+        return {};
+
+    return std::string(reinterpret_cast<const char *>(bytes), static_cast<size_t>(length));
+}
+
 std::string X509Certificate::issuerName(uint nid) const
 {
-    if (X509_NAME * issuer = X509_get_issuer_name(certificate))
-    {
-        char buffer[X509Certificate::NAME_BUFFER_SIZE];
-        if (X509_NAME_get_text_by_NID(issuer, nid, buffer, sizeof(buffer)) >= 0)
-            return std::string(buffer);
-    }
-    return {};
+    return extractNameEntry(X509_get_issuer_name(certificate), nid);
 }
 
 std::string X509Certificate::subjectName(uint nid) const
 {
-    if (X509_NAME * subj = X509_get_subject_name(certificate))
-    {
-        char buffer[X509Certificate::NAME_BUFFER_SIZE];
-        if (X509_NAME_get_text_by_NID(subj, nid, buffer, sizeof(buffer)) >= 0)
-            return std::string(buffer);
-    }
-    return {};
+    return extractNameEntry(X509_get_subject_name(certificate), nid);
 }
 
 std::string X509Certificate::commonName() const

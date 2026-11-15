@@ -61,6 +61,11 @@ public:
     /// More infos can be added via add() method.
     explicit EvictionInfo(QueueID queue_id, QueueEvictionInfoPtr info);
 
+    /// Release hold spaces (in the base map) before the `kept_alive_cache_usage`
+    /// pins (members, destroyed first) drop — otherwise `~HoldSpace` could release
+    /// into a per-user priority a concurrent `cache_usage.snapshot` already erased.
+    ~EvictionInfo() { clear(); }
+
     /// Get eviction info by queue id.
     const QueueEvictionInfo & get(const QueueID & queue_id) const;
     /// Add eviction info under the queue_id.
@@ -86,6 +91,14 @@ public:
     /// `shared_ptr` value dedupes: same user across iterations is stored once.
     void addCacheUsage(CacheUsagePtr usage) { kept_alive_cache_usage.insert(std::move(usage)); }
 
+    /// Take over `other`'s pins. `add`/`addOrUpdate` must call this when merging:
+    /// otherwise the source info's pins die with it while the merged entries
+    /// still hold raw pointers into the pinned per-client priorities.
+    void takeKeptAliveCacheUsage(EvictionInfo & other)
+    {
+        kept_alive_cache_usage.merge(other.kept_alive_cache_usage);
+    }
+
 private:
     /// On existing queue: replace target + merge holds if `replace_if_exists`, else throw.
     void addImpl(const QueueID & queue_id, QueueEvictionInfoPtr info, bool replace_if_exists);
@@ -101,8 +114,8 @@ private:
 class EvictionCandidates : private boost::noncopyable
 {
 public:
-    using AfterEvictWriteFunc = std::function<void(const CachePriorityGuard::WriteLock & lk)>;
-    using AfterEvictStateFunc = std::function<void(const CacheStateGuard::Lock & lk)>;
+    using AfterEvictWriteCallback = std::function<void(const CachePriorityGuard::WriteLock & lk)>;
+    using AfterEvictStateCallback = std::function<void(const CacheStateGuard::Lock & lk)>;
 
     explicit EvictionCandidates(IFileCachePriority::OnEvictCallback on_evict_callback_);
     ~EvictionCandidates();
@@ -121,34 +134,52 @@ public:
     /// priority queue structure; "state" func mutates size/element counters.
     /// Overcommit retries can register multiple callbacks per pass; all run
     /// sequentially under one lock in `afterEvictWrite` / `afterEvictState`.
-    void addAfterEvictWriteFunc(AfterEvictWriteFunc && func) { after_evict_write_funcs.push_back(std::move(func)); }
-    void addAfterEvictStateFunc(AfterEvictStateFunc && func) { after_evict_state_funcs.push_back(std::move(func)); }
+    void addAfterEvictWriteCallback(CachePriorityGuard * guard, AfterEvictWriteCallback && callback);
+    void addAfterEvictStateCallback(AfterEvictStateCallback && callback);
 
-    /// Evict all candidates, which were added before via add().
+    /// Remove the candidates' files from the filesystem and from the cache metadata.
+    /// Takes no priority or state lock, only the per-key and per-file-segment locks.
     void evict();
-    /// Execute "after eviction callbacks".
-    /// "write" callback must be executed before "state" callback.
-    void afterEvictWrite(const CachePriorityGuard::WriteLock & lock);
+
+    /// Run the callbacks registered above. `afterEvictWrite` must run before `afterEvictState`.
+    void afterEvictWrite();
     void afterEvictState(const CacheStateGuard::Lock & lock);
 
     /// Whether calling afterEvictWrite() is required.
     /// (Can be used to avoid taking write lock)
-    bool requiresAfterEvictWrite() const { return !after_evict_write_funcs.empty(); }
+    bool requiresAfterEvictWrite() const { return !after_evict_write_callbacks.empty(); }
     /// Whether calling afterEvictState() is required.
     /// (Can be used to avoid taking state lock)
-    bool requiresAfterEvictState() const { return !after_evict_state_funcs.empty() || !queue_entries_to_invalidate.empty(); }
+    bool requiresAfterEvictState() const { return !after_evict_state_callbacks.empty() || !queue_entries_to_invalidate.empty(); }
 
     /// Used only for dynamic cache resize,
     /// allows to remove queue entries in advance.
-    void removeQueueEntries(const CachePriorityGuard::WriteLock &);
+    void removeQueueEntries();
+
+    /// Undo `removeQueueEntries`, restoring entries to the queue they came from.
+    /// Used by dynamic resize when it cannot go through with the new limits.
+    void restoreQueueEntries(IFileCachePriority & priority, const CacheStateGuard::Lock & state_lock);
+
+    /// Same as `restoreQueueEntries`, but only for the candidates which failed to be evicted in `evict`.
+    void restoreFailedQueueEntries(IFileCachePriority & priority, const CacheStateGuard::Lock & state_lock);
 
     struct KeyCandidates
     {
+        /// Both members are required: the restore paths lock `guard` and then `key_metadata`,
+        /// so there is no valid state in which either is unset.
+        KeyCandidates(KeyMetadataPtr key_metadata_, CachePriorityGuard * guard_)
+            : key_metadata(std::move(key_metadata_)), guard(guard_)
+        {
+            chassert(key_metadata);
+            chassert(guard);
+        }
+
         KeyMetadataPtr key_metadata;
+        /// Guard of the queue holding these entries; all candidates of one key share it.
+        CachePriorityGuard * guard;
         std::vector<FileSegmentMetadataPtr> candidates;
         std::vector<std::string> error_messages;
     };
-    /// Get eviction candidates which failed to be evicted during evict().
     struct FailedCandidates
     {
         std::vector<KeyCandidates> failed_candidates_per_key;
@@ -160,6 +191,7 @@ public:
         std::string getFirstErrorMessage() const;
     };
 
+    /// Get eviction candidates which failed to be evicted during `evict`.
     FailedCandidates getFailedCandidates() const { return failed_candidates; }
 
     /// Get the original queue type of a candidate saved during removeQueueEntries.
@@ -171,25 +203,45 @@ public:
     }
 
 private:
+    /// Restore the queue entries of one key. Never throws: each entry is restored independently,
+    /// because abandoning the rest would leave their files on disk unaccounted in any queue.
+    void restoreKeyCandidates(
+        IFileCachePriority & priority,
+        const CachePriorityGuard::WriteLock & lock,
+        const CacheStateGuard::Lock & state_lock,
+        const KeyMetadataPtr & key_metadata,
+        const std::vector<FileSegmentMetadataPtr> & key_candidates);
+
+    /// Eviction candidates grouped by key.
     absl::flat_hash_map<FileCacheKey, KeyCandidates, std::hash<FileCacheKey>> candidates;
-    size_t candidates_size = 0;
-    size_t candidates_bytes = 0;
-    FailedCandidates failed_candidates;
+    /// Candidate keys grouped by the guard protecting their queue entries;
+    /// `removeQueueEntries` and `afterEvictWrite` take one write lock per group.
+    std::unordered_map<CachePriorityGuard *, std::vector<FileCacheKey>> candidates_by_priority_guard;
 
-    /// Saved original queue type per candidate, populated in removeQueueEntries.
-    std::unordered_map<const FileSegmentMetadata *, IFileCachePriority::QueueEntryType> original_queue_types;
+    size_t candidates_size = 0; /// Total number of candidates
+    size_t candidates_bytes = 0; /// Total eviction size of candidates
 
-    std::vector<AfterEvictWriteFunc> after_evict_write_funcs;
-    std::vector<AfterEvictStateFunc> after_evict_state_funcs;
+    std::unordered_map<CachePriorityGuard *, std::vector<AfterEvictWriteCallback>> after_evict_write_callbacks;
+    std::vector<AfterEvictStateCallback> after_evict_state_callbacks;
 
+    /// Queue entries of file segments which `evict` already removed from filesystem. They are
+    /// invalidated (lock-free) in `afterEvictState` or the destructor; the background cleanup
+    /// later removes the invalidated entries from the queue under the priority write lock.
     std::vector<IFileCachePriority::IteratorPtr> queue_entries_to_invalidate;
+
+    const LoggerPtr log;
+
+    /// Candidates which failed to be evicted in `evict`; used by dynamic resize
+    /// to restore the state in case of logical error.
+    FailedCandidates failed_candidates;
+    /// Saved original queue type per candidate, populated in `removeQueueEntries`.
+    std::unordered_map<const FileSegmentMetadata *, IFileCachePriority::QueueEntryType> original_queue_types;
+    /// Set by `removeQueueEntries`: the candidates' queue entries are already removed. Only
+    /// dynamic resize does this before evicting the files; ordinary eviction keeps the entries
+    /// until the files are gone and invalidates them afterwards.
     bool removed_queue_entries = false;
 
-    IFileCachePriority::HoldSpacePtr hold_space;
-
     IFileCachePriority::OnEvictCallback on_evict_callback;
-
-    LoggerPtr log;
 };
 
 using EvictionCandidatesPtr = std::unique_ptr<EvictionCandidates>;

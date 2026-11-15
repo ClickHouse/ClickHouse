@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database
+# Tags: no-parallel, no-replicated-database, no-fasttest
 # Tag no-parallel: uses fail points which affect the whole server.
 # Tag no-replicated-database: the test uses `DETACH TABLE` + `ATTACH TABLE` to
 # force `loadMutations` to re-run, but `DETACH TABLE` is rejected with

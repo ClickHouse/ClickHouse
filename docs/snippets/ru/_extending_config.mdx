@@ -1,0 +1,94 @@
+---
+title: Расширение конфигурации
+---
+
+<div id="extending-collector-config">
+  ### Расширение конфигурации OTel collector
+</div>
+
+Дистрибутив ClickStack с OTel collector поддерживает расширение базовой конфигурации за счёт монтирования пользовательского файла конфигурации и задания переменной окружения.
+
+Чтобы добавить пользовательские приёмники, процессоры или конвейеры:
+
+1. Создайте пользовательский файл конфигурации с дополнительными настройками
+2. Смонтируйте файл по пути `/etc/otelcol-contrib/custom.config.yaml`
+3. Задайте переменную окружения `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`
+
+**Пример пользовательской конфигурации:**
+
+```yaml
+receivers:
+  # Сбор журналов из локальных файлов
+  filelog:
+    include:
+      - /var/log/**/*.log
+      - /var/log/syslog
+      - /var/log/messages
+    start_at: beginning
+
+  # Сбор метрик хост-системы
+  hostmetrics:
+    collection_interval: 30s
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled: true
+      memory:
+        metrics:
+          system.memory.utilization:
+            enabled: true
+      disk:
+      network:
+      filesystem:
+        metrics:
+          system.filesystem.utilization:
+            enabled: true
+
+service:
+  pipelines:
+    # Конвейер журналов
+    logs/host:
+      receivers: [filelog]
+      processors:
+        - memory_limiter
+        - transform
+        - batch
+      exporters:
+        - clickhouse
+    
+    # Конвейер метрик
+    metrics/hostmetrics:
+      receivers: [hostmetrics]
+      processors:
+        - memory_limiter
+        - batch
+      exporters:
+        - clickhouse
+```
+
+**Разверните автономный коллектор:**
+
+```bash
+docker run -d \
+  -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+  # -e OPAMP_SERVER_URL=${OPAMP_SERVER_URL} \
+  -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
+  -e CLICKHOUSE_USER=default \
+  -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
+  -v "$(pwd)/custom-config.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+  -p 4317:4317 -p 4318:4318 \
+  clickhouse/clickstack-otel-collector:latest
+```
+
+<Note>
+  В пользовательской конфигурации вы определяете только новые приёмники, процессоры и конвейеры. Базовые процессоры (`memory_limiter`, `batch`) и экспортёры (`clickhouse`) уже определены — обращайтесь к ним по имени. Пользовательская конфигурация объединяется с базовой и не может переопределять существующие компоненты.
+</Note>
+
+Для более сложных конфигураций см. [конфигурацию коллектора ClickStack по умолчанию](https://github.com/hyperdxio/hyperdx/blob/main/docker/otel-collector/config.yaml) и [документацию экспортёра ClickHouse](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md#configuration-options).
+
+<div id="configuration-structure">
+  #### Структура конфигурации
+</div>
+
+Подробную информацию о настройке коллекторов OTel, включая [`приёмники`](https://opentelemetry.io/docs/collector/transforming-telemetry/), [`operators`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md) и [`процессоры`](https://opentelemetry.io/docs/collector/configuration/#processors), рекомендуем смотреть в [официальной документации OpenTelemetry Collector](https://opentelemetry.io/docs/collector/configuration).

@@ -4,13 +4,18 @@
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
 #include <Common/Exception.h>
+#include <Common/maskSensitiveQueryParameters.h>
+#include <Common/maskURIPassword.h>
 #include <Common/quoteString.h>
 #include <Common/re2.h>
+#include <Common/RemoteHostFilter.h>
 #include <IO/Archives/ArchiveUtils.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/replace.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <aws/s3/S3EndpointProvider.h>
 
 namespace DB
 {
@@ -32,6 +37,37 @@ namespace ErrorCodes
 namespace S3
 {
 
+namespace
+{
+
+/// `Poco::URI::toString` renders the userinfo (`user:password@`) and the query parameters of a presigned
+/// URL verbatim. Exception messages reach `system.query_log` and the server log, which, unlike the query
+/// text, are not masked, so a URI must not be put into them as is.
+String maskedURIString(const Poco::URI & uri)
+{
+    String result = uri.toString();
+    maskURIUserinfo(result);
+    /// With `compatibility_s3_presigned_url_query_in_path` the constructor folds the query of a presigned URL
+    /// into the path by percent-encoding its '?', which `toString` renders as `%3F`, so `maskPresignedURLParameters`
+    /// would not see the parameters. Put the '?' back: `toString` encodes '%' itself as `%25`, so a `%3F` can only
+    /// come from a '?'. Only then put the '%' back, so a percent-encoded parameter name reads as written. Only the
+    /// path is encoded: `toString` appends a raw query as is, and a folded query leaves none.
+    boost::replace_all(result, "%3F", "?");
+    if (uri.getRawQuery().empty())
+        boost::replace_all(result, "%25", "%");
+    maskPresignedURLParameters(result);
+    return result;
+}
+
+/// With `compatibility_s3_presigned_url_query_in_path` the query of a presigned URL ends up in the bucket or the key.
+String maskedQuotedString(String value)
+{
+    maskPresignedURLParameters(value);
+    return quoteString(value);
+}
+
+}
+
 URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_presigned_query_parameters, S3UriStyle uri_style)
 {
     /// Case when AWS Private Link Interface is being used
@@ -50,15 +86,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
     bool looks_like_presigned = false;
     for (const auto & [qk, qv] : original_uri.getQueryParameters())
     {
-        if (
-            qk == "versionId" ||
-            qk == "AWSAccessKeyId" ||
-            qk == "Signature" ||
-            qk == "Expires" ||
-            qk.starts_with("X-Amz-") ||
-            qk == "GoogleAccessId" ||
-            qk.starts_with("X-Goog-")
-        )
+        if (qk == "versionId" || isPresignedURLParameterName(qk))
         {
             looks_like_presigned = true;
             break;
@@ -87,6 +115,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
         {
             mapper["s3"] = "https://{bucket}.s3.amazonaws.com";
             mapper["gs"] = "https://storage.googleapis.com/{bucket}";
+            mapper["gcs"] = "https://storage.googleapis.com/{bucket}";
             mapper["oss"] = "https://{bucket}.oss.aliyuncs.com";
         }
 
@@ -141,13 +170,13 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
     case S3UriStyle::VIRTUAL_HOSTED:
     {
         if (!tryInitVirtualHostedStyle(is_using_aws_private_link_interface, false))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 virtual-hosted-style uri: {}", !uri.empty() ? uri.toString() : "");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 virtual-hosted-style uri: {}", !uri.empty() ? maskedURIString(uri) : "");
         break;
     }
     case S3UriStyle::PATH:
     {
         if (!tryInitPathStyle())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 path-style uri: {}", !uri.empty() ? uri.toString() : "");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 path-style uri: {}", !uri.empty() ? maskedURIString(uri) : "");
         break;
     }
     }
@@ -185,7 +214,7 @@ bool URI::tryInitVirtualHostedStyle(bool is_using_aws_private_link_interface, bo
     String name;
     String endpoint_authority_from_uri;
 
-    if (!re2::RE2::FullMatch(uri.getAuthority(), (use_strict_pattern) ? virtual_hosted_style_pattern_strict : virtual_hosted_style_pattern_light, &bucket, &name, &endpoint_authority_from_uri))
+    if (!re2::RE2::FullMatch(uri.getAuthority(), use_strict_pattern ? virtual_hosted_style_pattern_strict : virtual_hosted_style_pattern_light, &bucket, &name, &endpoint_authority_from_uri))
         return false;
 
     is_virtual_hosted_style = true;
@@ -213,6 +242,15 @@ bool URI::tryInitVirtualHostedStyle(bool is_using_aws_private_link_interface, bo
     return true;
 }
 
+bool URI::checkRemoteHostFilter(const RemoteHostFilter & filter, bool throw_on_error) const
+{
+    Poco::URI endpoint_uri(endpoint);
+    if (filter.isBucketAllowed(endpoint_uri.getHost(), endpoint_uri.getPort(), bucket))
+        return true;
+
+    return filter.checkURL(uri, throw_on_error);
+}
+
 void URI::addRegionToURI(const std::string &region)
 {
     if (auto pos = endpoint.find(".amazonaws.com"); pos != std::string::npos)
@@ -227,8 +265,8 @@ void URI::validateBucket(const String & bucket, const Poco::URI & uri)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Bucket name length is out of bounds in virtual hosted style S3 URI: {}{}",
-            quoteString(bucket),
-            !uri.empty() ? " (" + uri.toString() + ")" : "");
+            maskedQuotedString(bucket),
+            !uri.empty() ? " (" + maskedURIString(uri) + ")" : "");
 }
 
 void URI::validateKey(const String & key, const Poco::URI & uri)
@@ -238,8 +276,8 @@ void URI::validateKey(const String & key, const Poco::URI & uri)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Invalid S3 key: {}{}",
-            quoteString(key),
-            !uri.empty() ? " (" + uri.toString() + ")" : "");
+            maskedQuotedString(key),
+            !uri.empty() ? " (" + maskedURIString(uri) + ")" : "");
     };
 
 
@@ -260,6 +298,19 @@ void URI::validateKey(const String & key, const Poco::URI & uri)
             onError();
         }
     }
+}
+
+std::string expandRegionToAmazonPath(const std::string & region)
+{
+    Aws::S3::Endpoint::S3EndpointProvider provider;
+    provider.AccessBuiltInParameters().SetStringParameter("Region", Aws::String(region));
+    auto outcome = provider.ResolveEndpoint({});
+    if (outcome.IsSuccess())
+    {
+        auto uri = outcome.GetResult().GetURI();
+        return uri.GetURIString();
+    }
+    return "https://s3." + region + ".amazonaws.com";
 }
 
 }

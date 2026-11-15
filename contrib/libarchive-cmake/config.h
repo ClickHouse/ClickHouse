@@ -1028,6 +1028,9 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if you have the <stdarg.h> header file. */
 #define HAVE_STDARG_H 1
 
+/* Define to 1 if you have the <stdckdint.h> header file. */
+#define HAVE_STDCKDINT_H 1
+
 /* Define to 1 if you have the <stdint.h> header file. */
 #define HAVE_STDINT_H 1
 
@@ -1329,10 +1332,10 @@ typedef uint64_t uintmax_t;
 #define ICONV_CONST
 
 /* Version number of libarchive as a single integer */
-#define LIBARCHIVE_VERSION_NUMBER "3008005"
+#define LIBARCHIVE_VERSION_NUMBER "3008009"
 
 /* Version number of libarchive */
-#define LIBARCHIVE_VERSION_STRING "3.8.5"
+#define LIBARCHIVE_VERSION_STRING "3.8.9"
 
 /* Define to 1 if `lstat' dereferences a symlink specified with a trailing
    slash. */
@@ -1395,7 +1398,7 @@ typedef uint64_t uintmax_t;
 #endif /* SAFE_TO_DEFINE_EXTENSIONS */
 
 /* Version number of package */
-#define VERSION "3.8.5"
+#define VERSION "3.8.9"
 
 /* Number of bits in a file offset, on hosts where this is settable. */
 /* #undef _FILE_OFFSET_BITS */
