@@ -140,7 +140,7 @@ public:
         String to_shard;
         String dst_part_name;
 
-        UInt64 required_number_of_replicas;
+        UInt64 required_number_of_replicas = 0;
         std::vector<String> replicas;
 
         EntryState state;

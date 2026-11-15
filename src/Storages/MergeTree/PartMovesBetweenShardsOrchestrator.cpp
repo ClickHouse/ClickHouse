@@ -563,6 +563,8 @@ void PartMovesBetweenShardsOrchestrator::removePins(Entry & entry, zkutil::ZooKe
 
 CancellationCode PartMovesBetweenShardsOrchestrator::killPartMoveToShard(const UUID & task_uuid)
 {
+    auto component_guard = Coordination::setCurrentComponent("PartMovesBetweenShardsOrchestrator");
+
     while (true)
     {
         auto entry_to_process = getEntryByUUID(task_uuid);
@@ -614,6 +616,8 @@ CancellationCode PartMovesBetweenShardsOrchestrator::killPartMoveToShard(const U
 
 std::vector<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsOrchestrator::getEntries()
 {
+    auto component_guard = Coordination::setCurrentComponent("PartMovesBetweenShardsOrchestrator");
+
     return getEntriesFromZk();
 }
 
