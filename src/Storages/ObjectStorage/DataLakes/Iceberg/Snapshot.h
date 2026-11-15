@@ -2,35 +2,52 @@
 #include "config.h"
 
 #if USE_AVRO
-#    include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
-namespace Iceberg
+
+#include <DataTypes/DataTypeDateTime64.h>
+#include <Poco/JSON/Array.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
+
+namespace DB::Iceberg
 {
 
-class ManifestList
+struct IcebergDataSnapshot
 {
-public:
-    explicit ManifestList(std::vector<ManifestFileEntry> manifest_files_) : manifest_files(std::move(manifest_files_)) { }
-    const std::vector<ManifestFileEntry> & getManifestFiles() const { return manifest_files; }
+    DB::ManifestFileCacheKeys manifest_list_entries;
+    Int64 snapshot_id;
+    Int64 schema_id_on_snapshot_commit;
+    std::optional<size_t> total_rows;
+    std::optional<size_t> total_bytes;
+    std::optional<size_t> total_position_delete_rows;
+    std::optional<size_t> total_equality_delete_rows;
+    /// Opaque incremental refreshable-MV cursor from the snapshot summary (`clickhouse.refresh-cursor`), as stored.
+    std::optional<String> refresh_cursor;
+    Poco::JSON::Array::Ptr partition_specs;
+    /// The `statistics` of `metadata.json`, which hold the statistics files of all snapshots; null when absent.
+    Poco::JSON::Array::Ptr statistics;
 
-private:
-    std::vector<ManifestFileEntry> manifest_files;
+    std::optional<size_t> getTotalRows() const
+    {
+        if (total_rows.has_value() && total_position_delete_rows == 0 && total_equality_delete_rows == 0)
+            return total_rows;
+        return std::nullopt;
+    }
 };
 
-using ManifestListsByName = std::map<String, ManifestList>;
+using IcebergDataSnapshotPtr = std::shared_ptr<IcebergDataSnapshot>;
 
-class IcebergSnapshot
+struct IcebergHistoryRecord
 {
-public:
-    explicit IcebergSnapshot(const ManifestListsByName::const_iterator & reference_) : reference(reference_) { }
-
-    const ManifestList & getManifestList() const { return reference->second; }
-    const String & getName() const { return reference->first; }
-
-
-private:
-    ManifestListsByName::const_iterator reference;
+    Int64 snapshot_id{};
+    DB::DateTime64 made_current_at{};
+    Int64 parent_id{};
+    bool is_current_ancestor{};
+    Iceberg::IcebergPathFromMetadata manifest_list_path;
+    std::optional<Iceberg::SnapshotSummary> snapshot_summary;
 };
 
+using IcebergHistory = std::vector<Iceberg::IcebergHistoryRecord>;
 }
 
 #endif

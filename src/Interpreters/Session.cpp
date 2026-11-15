@@ -4,29 +4,30 @@
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Access/ContextAccess.h>
-#include <Access/SettingsProfilesInfo.h>
 #include <Access/User.h>
 #include <Access/Role.h>
-#include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/SipHash.h>
+#include <Common/Crypto/X509Certificate.h>
+#include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/Cluster.h>
 
-#include <magic_enum.hpp>
 
-#include <atomic>
 #include <condition_variable>
-#include <deque>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
+
+#include <fmt/ranges.h>
+
 
 namespace DB
 {
@@ -42,6 +43,7 @@ namespace ErrorCodes
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
     extern const int USER_EXPIRED;
+    extern const int ACCESS_DENIED;
 }
 
 
@@ -164,7 +166,6 @@ public:
     void releaseAndCloseSession(const UUID & user_id, const String & session_id, std::shared_ptr<NamedSessionData> & session_data)
     {
         std::unique_lock lock(mutex);
-        scheduleCloseSession(*session_data, lock);
         session_data = nullptr;
 
         Key key{user_id, session_id};
@@ -223,18 +224,22 @@ private:
 
     void cleanThread()
     {
-        setThreadName("SessionCleaner");
+        DB::setThreadName(ThreadName::SESSION_CLEANUP);
         std::unique_lock lock{mutex};
         while (!quit)
         {
-            closeSessions(lock);
+            auto closed_sessions = closeSessions(lock);
+            lock.unlock();
+            closed_sessions.clear();
+            lock.lock();
             if (cond.wait_for(lock, close_interval, [this]() -> bool { return quit; }))
                 break;
         }
     }
 
-    void closeSessions(std::unique_lock<std::mutex> & lock)
+    std::vector<std::shared_ptr<NamedSessionData>> closeSessions(std::unique_lock<std::mutex> & lock)
     {
+        std::vector<std::shared_ptr<NamedSessionData>> closed_sessions;
         const auto now = std::chrono::steady_clock::now();
 
         for (auto bucket_it = close_time_buckets.begin(); bucket_it != close_time_buckets.end(); bucket_it = close_time_buckets.erase(bucket_it))
@@ -254,19 +259,29 @@ private:
 
                 if (session.use_count() != 1)
                 {
+                    /// We can get here only if the session is still in use somehow. But since we don't allow concurrent usage
+                    /// of the same session, the only way we can get here is when the session was released, but the pointer
+                    /// wasn't reset yet. And since the pointer is reset without a lock, it's technically possible to get
+                    /// into a situation when refcount > 1. In this case, we want to delay closing the session, but set the
+                    /// timeout to 0 explicitly. This should be a very rare situation, since in order for it to happen, we should
+                    /// have a session timeout less than close_interval, and also be able to reach this code before
+                    /// resetting a pointer.
                     LOG_TEST(log, "Delay closing session with session_id: {}, user_id: {}, refcount: {}",
                         key.second, key.first, session.use_count());
 
                     session->timeout = std::chrono::steady_clock::duration{0};
+                    session->close_time_bucket = std::chrono::steady_clock::time_point{};
                     scheduleCloseSession(*session, lock);
                     continue;
                 }
 
                 LOG_TRACE(log, "Close session with session_id: {}, user_id: {}", key.second, key.first);
-
+                closed_sessions.push_back(session);
                 sessions.erase(session_it);
             }
         }
+
+        return closed_sessions;
     }
 
     std::mutex mutex;
@@ -307,10 +322,10 @@ Session::~Session()
 
     if (notified_session_log_about_login)
     {
-        LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(*user_id));
+        LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(user_id.value_or(UUID{})));
         if (auto session_log = getSessionLog())
         {
-            session_log->addLogOut(auth_id, user, user_authenticated_with, getClientInfo());
+            session_log->addLogOut(auth_id, user, user_authenticated_with, getClientInfo(), certificate_info);
         }
     }
 }
@@ -339,18 +354,18 @@ std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFai
     {
         LOG_ERROR(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
         if (auto session_log = getSessionLog())
-            session_log->addLoginFailure(auth_id, getClientInfo(), user_name, e);
+            session_log->addLoginFailure(auth_id, getClientInfo(), user_name, e, certificate_info);
 
         throw;
     }
 }
 
-void Session::authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address, const Strings & external_roles_)
+void Session::authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address, const std::optional<Poco::Net::SocketAddress> & connection_address, const Strings & external_roles_)
 {
-    authenticate(BasicCredentials{user_name, password}, address, external_roles_);
+    authenticate(BasicCredentials{user_name, password}, address, connection_address, external_roles_);
 }
 
-void Session::authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const Strings & external_roles_)
+void Session::authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const std::optional<Poco::Net::SocketAddress> & connection_address, const Strings & external_roles_)
 {
     if (session_context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "If there is a session context it must be created after authentication");
@@ -365,10 +380,10 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     LOG_DEBUG(log, "Authenticating user '{}' from {}",
             credentials_.getUserName(), address.toString());
 
+    AuthResult auth_result;
     try
     {
-        auto auth_result =
-            global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo().getLastForwardedForHost());
+        auth_result = global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo());
         user_id = auth_result.user_id;
         user_authenticated_with = auth_result.authentication_data;
         settings_from_auth_server = auth_result.settings;
@@ -389,11 +404,14 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
         throw;
     }
 
-    prepared_client_info->current_user = credentials_.getUserName();
-    prepared_client_info->current_address = address;
+    chassert(!auth_result.user_name.empty());
+    prepared_client_info->current_user = auth_result.user_name;
+    prepared_client_info->authenticated_user = auth_result.user_name;
+    prepared_client_info->current_address = Poco::Net::SocketAddress(address);
+    prepared_client_info->connection_address = Poco::Net::SocketAddress(connection_address ? *connection_address : address);
 }
 
-void Session::checkIfUserIsStillValid()
+void Session::checkIfUserIsStillValid() const
 {
     if (const auto valid_until = user_authenticated_with.getValidUntil())
     {
@@ -404,6 +422,19 @@ void Session::checkIfUserIsStillValid()
     }
 }
 
+std::shared_ptr<const AccessRightsElements> Session::getAuthenticationGrants() const
+{
+    const auto & grants = user_authenticated_with.getGrants();
+    if (grants.structurallyEmpty())
+        return nullptr;
+    return std::make_shared<const AccessRightsElements>(grants);
+}
+
+time_t Session::getAuthenticationValidUntil() const
+{
+    return user_authenticated_with.getValidUntil();
+}
+
 void Session::onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e)
 {
     LOG_DEBUG(log, "Authentication failed with error: {}", e.what());
@@ -411,9 +442,30 @@ void Session::onAuthenticationFailure(const std::optional<String> & user_name, c
     {
         /// Add source address to the log
         auto info_for_log = *prepared_client_info;
-        info_for_log.current_address = address_;
-        session_log->addLoginFailure(auth_id, info_for_log, user_name, e);
+        info_for_log.current_address = Poco::Net::SocketAddress(address_);
+        session_log->addLoginFailure(auth_id, info_for_log, user_name, e, certificate_info);
     }
+}
+
+void Session::setClientCertificate(const X509Certificate & certificate)
+{
+#if USE_SSL
+    ClientCertificateInfo info;
+
+    auto subjects = certificate.extractAllSubjects();
+    for (auto type : {X509Certificate::Subjects::Type::CN, X509Certificate::Subjects::Type::SAN})
+        for (const auto & subject : subjects.at(type))
+            info.subjects.push_back(subjects.toString(type) + ":" + subject);
+
+    info.serial = certificate.serialNumber();
+    info.issuer = certificate.issuerName();
+    info.not_before = certificate.notBefore();
+    info.not_after = certificate.notAfter();
+
+    certificate_info = std::move(info);
+#else
+    (void)certificate;
+#endif
 }
 
 const ClientInfo & Session::getClientInfo() const
@@ -544,7 +596,7 @@ ContextMutablePtr Session::makeSessionContext()
     prepared_client_info.reset();
 
     /// Set user information for the new context: current profiles, roles, access rights.
-    new_session_context->setUser(*user_id, external_roles);
+    new_session_context->setUser(*user_id, external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
 
     /// Session context is ready.
     session_context = new_session_context;
@@ -599,11 +651,20 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     /// Set user information for the new context: current profiles, roles, access rights.
     if (!access->tryGetUser())
     {
-        new_session_context->setUser(*user_id, external_roles);
+        new_session_context->setUser(*user_id, external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
         max_sessions_for_user = new_session_context->getSettingsRef()[Setting::max_sessions_for_user];
     }
     else
     {
+        /// The session context is reused, but the current connection could be authenticated with
+        /// a different authentication method than the one which created the session. The access rights
+        /// limit must correspond to the method used by this connection: otherwise reattaching to a named session
+        /// would allow a credential with the GRANTS clause to use the full access rights of the user.
+        new_session_context->setAuthenticationGrants(getAuthenticationGrants());
+        /// The per-method expiry follows the same reasoning: the reused context must fail closed on the
+        /// expiry of the method used by this connection, not the one that originally created the session.
+        new_session_context->setAuthenticationValidUntil(getAuthenticationValidUntil());
+
         // Always get setting from profile
         // profile can be changed by ALTER PROFILE during single session
         auto settings = access->getDefaultSettings();
@@ -638,6 +699,11 @@ ContextMutablePtr Session::makeQueryContext(ClientInfo && query_client_info) con
     return makeQueryContextImpl(nullptr, &query_client_info);
 }
 
+ContextMutablePtr Session::makeDetachedQueryContext(const ClientInfo & query_client_info) const
+{
+    return makeQueryContextImpl(&query_client_info, nullptr, /* detached= */ true);
+}
+
 std::shared_ptr<SessionLog> Session::getSessionLog() const
 {
     // take it from global context, since it outlives the Session and always available.
@@ -645,13 +711,20 @@ std::shared_ptr<SessionLog> Session::getSessionLog() const
     return global_context->getSessionLog();
 }
 
-ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const
+ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move, bool detached) const
 {
     if (!user_id && getClientInfo().interface != ClientInfo::Interface::TCP_INTERSERVER)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query context must be created after authentication");
 
+    /// The authentication method's `VALID UNTIL` must be enforced per query, not only at login:
+    /// stateful protocols (MySQL, PostgreSQL, native TCP, gRPC, Arrow Flight) authenticate once and
+    /// then create a query context per command, so an expired credential must stop working here.
+    /// Interserver connections replay an already-checked initiator identity, so they are exempt.
+    if (getClientInfo().interface != ClientInfo::Interface::TCP_INTERSERVER)
+        checkIfUserIsStillValid();
+
     /// We can create a query context either from a session context or from a global context.
-    const bool from_session_context = static_cast<bool>(session_context);
+    const bool from_session_context = static_cast<bool>(session_context) && !detached;
 
     /// Create a new query context.
     ContextMutablePtr query_context = Context::createCopy(from_session_context ? session_context : global_context);
@@ -671,27 +744,65 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
         query_context->setClientInfo(*client_info_to_move);
     else if (client_info_to_copy && (client_info_to_copy != &getClientInfo()))
         query_context->setClientInfo(*client_info_to_copy);
+    else if (detached && session_context)
+        query_context->setClientInfo(getClientInfo());
 
     /// Copy current user's name and address if it was authenticated after query_client_info was initialized.
     if (prepared_client_info && !prepared_client_info->current_user.empty())
     {
         query_context->setCurrentUserName(prepared_client_info->current_user);
-        query_context->setCurrentAddress(prepared_client_info->current_address);
+        query_context->setCurrentAddress(*prepared_client_info->current_address);
     }
 
     /// Set parameters of initial query.
     if (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::NO_QUERY)
+    {
         query_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
+
+        /// A query initiated at this server through an interface that does not report a client
+        /// version (e.g. a raw HTTP request via `curl`, or a MySQL/PostgreSQL client) leaves the
+        /// version at 0.0.0.
+        query_context->setInitiatorVersionIfUnset();
+    }
 
     if (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
         query_context->setInitialUserName(query_context->getClientInfo().current_user);
-        query_context->setInitialAddress(query_context->getClientInfo().current_address);
+        query_context->setInitialAddress(*query_context->getClientInfo().current_address);
+    }
+
+    /// On a secret interserver query, enable the initiator's current roles (external, bypassing the grant check)
+    /// and drop defaults so row policies match. Gate on the session interface, not the client-controlled per-query one.
+    std::vector<UUID> effective_external_roles = external_roles;
+    const bool apply_initiator_roles = getClientInfo().interface == ClientInfo::Interface::TCP_INTERSERVER
+        && query_context->getClientInfo().current_roles.has_value()
+        && global_context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries];
+    if (apply_initiator_roles)
+    {
+        const auto & role_names = *query_context->getClientInfo().current_roles;
+        effective_external_roles = global_context->getAccessControl().find<Role>(role_names);
+        /// Fail closed: a role unknown here cannot be honored; dropping it could drop a restrictive policy.
+        if (effective_external_roles.size() != role_names.size())
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "Not all of the initiator's current roles are known on this node: [{}]", fmt::join(role_names, ", "));
     }
 
     /// Set user information for the new context: current profiles, roles, access rights.
     if (user_id && !query_context->getAccess()->tryGetUser())
-        query_context->setUser(*user_id, external_roles);
+        query_context->setUser(*user_id, effective_external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
+
+    if (apply_initiator_roles && user_id)
+        query_context->setCurrentRoles(std::vector<UUID>{}, /* check_grants= */ false);
+
+    if (detached && session_context)
+    {
+        query_context->setCurrentRoles(session_context->getCurrentRoles());
+        query_context->setSettingsConstraintsAndCurrentProfiles(session_context->getSettingsConstraintsAndCurrentProfiles());
+        query_context->setSettings(session_context->getSettingsRef());
+        if (const String database = session_context->getCurrentDatabase(); !database.empty())
+            query_context->setCurrentDatabase(database);
+        query_context->addQueryParameters(session_context->getQueryParameters());
+    }
 
     /// Query context is ready.
     query_context_created = true;
@@ -724,7 +835,8 @@ void Session::recordLoginSuccess(ContextPtr login_context) const
                                      access->getAccess(),
                                      getClientInfo(),
                                      user,
-                                     user_authenticated_with);
+                                     user_authenticated_with,
+                                     certificate_info);
     }
 
     notified_session_log_about_login = true;

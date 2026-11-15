@@ -1,10 +1,8 @@
 #pragma once
 
-#include <Interpreters/AsynchronousInsertQueue.h>
+#include <Interpreters/AsynchronousInsertQueueDataKind.h>
 #include <Interpreters/SystemLog.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
-#include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
 
 namespace DB
@@ -32,7 +30,7 @@ struct AsynchronousInsertLogElement
     String exception;
     Status status{};
 
-    using DataKind = AsynchronousInsertQueue::DataKind;
+    using DataKind = AsynchronousInsertQueueDataKind;
     DataKind data_kind{};
 
     time_t flush_time{};
@@ -51,8 +49,10 @@ class AsynchronousInsertLog : public SystemLog<AsynchronousInsertLogElement>
 public:
     using SystemLog<AsynchronousInsertLogElement>::SystemLog;
 
+    static const char * getDefaultPartitionBy() { return "event_date"; }
     /// This table is usually queried for fixed table name.
     static const char * getDefaultOrderBy() { return "database, table, event_date, event_time"; }
+    static const char * getDefaultTTL() { return "event_date + INTERVAL 3 DAY"; }
 };
 
 }

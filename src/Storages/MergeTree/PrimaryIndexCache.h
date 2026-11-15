@@ -2,7 +2,7 @@
 #include <Common/CacheBase.h>
 #include <Common/ProfileEvents.h>
 #include <Common/HashTable/Hash.h>
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 
 namespace ProfileEvents
 {
@@ -21,14 +21,7 @@ struct PrimaryIndexWeightFunction
     /// We spent additional bytes on key in hashmap, linked lists, shared pointers, etc ...
     static constexpr size_t PRIMARY_INDEX_CACHE_OVERHEAD = 128;
 
-    size_t operator()(const PrimaryIndex & index) const
-    {
-        size_t res = PRIMARY_INDEX_CACHE_OVERHEAD;
-        res += index.capacity() * sizeof(PrimaryIndex::value_type);
-        for (const auto & column : index)
-            res += column->allocatedBytes();
-        return res;
-    }
+    size_t operator()(const PrimaryIndex & index) const;
 };
 
 extern template class CacheBase<UInt128, PrimaryIndex, UInt128TrivialHash, PrimaryIndexWeightFunction>;
@@ -43,10 +36,7 @@ private:
     using Base = CacheBase<UInt128, PrimaryIndex, UInt128TrivialHash, PrimaryIndexWeightFunction>;
 
 public:
-    PrimaryIndexCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
-        : Base(cache_policy, max_size_in_bytes, 0, size_ratio)
-    {
-    }
+    PrimaryIndexCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
     /// Calculate key from path to file and offset.
     static UInt128 hash(const String & part_path);

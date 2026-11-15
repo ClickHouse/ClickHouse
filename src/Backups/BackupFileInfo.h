@@ -48,6 +48,9 @@ struct BackupFileInfo
     /// This is used for plain backups.
     Strings data_file_copies;
 
+    /// if this file uses lightwegith backup, we only store object key in the metafile.
+    String object_key;
+
     struct LessByFileName
     {
         bool operator()(const BackupFileInfo & lhs, const BackupFileInfo & rhs) const { return (lhs.file_name < rhs.file_name); }
@@ -75,10 +78,19 @@ struct BackupFileInfo
 
 using BackupFileInfos = std::vector<BackupFileInfo>;
 
-/// Builds a BackupFileInfo for a specified backup entry.
-BackupFileInfo buildFileInfoForBackupEntry(const String & file_name, const BackupEntryPtr & backup_entry, const BackupPtr & base_backup, const ReadSettings & read_settings, LoggerPtr log);
+/// The file infos and the entries they were built for, indexed the same way. The entries come back
+/// without their names: a name lives in the file info it was moved into, and nowhere else. The type
+/// says so, so that a later read of a name is a compile error rather than an empty string.
+struct BackupFileInfosAndEntries
+{
+    BackupFileInfos file_infos;
+    std::vector<BackupEntryPtr> entries;
+};
 
-/// Builds a vector of BackupFileInfos for specified backup entries.
-BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool, QueryStatusPtr process_list_element);
+/// Builds a BackupFileInfo for a specified backup entry.
+BackupFileInfo buildFileInfoForBackupEntry(String file_name, const BackupEntryPtr & backup_entry, const BackupPtr & base_backup, const ReadSettings & read_settings, LoggerPtr log);
+
+/// Builds the file infos for the entries. Consumes `backup_entries`.
+BackupFileInfosAndEntries buildFileInfosForBackupEntries(BackupEntries && backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool, QueryStatusPtr process_list_element);
 
 }

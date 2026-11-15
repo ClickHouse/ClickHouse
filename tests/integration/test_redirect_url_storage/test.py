@@ -86,11 +86,7 @@ def test_url_with_redirect_not_allowed(started_cluster):
     node1.query(
         "create table WebHDFSStorageWithoutRedirect (id UInt32, name String, weight Float64) ENGINE = URL('http://hdfs1:50070/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV')"
     )
-    with pytest.raises(Exception):
-        assert (
-            node1.query("select * from WebHDFSStorageWithoutRedirect")
-            == "1\tMark\t72.53\n"
-        )
+    node1.query_and_get_error("select * from WebHDFSStorageWithoutRedirect")
 
 
 def test_url_with_redirect_allowed(started_cluster):
@@ -139,19 +135,30 @@ result = ""
 
 
 def test_url_reconnect(started_cluster):
-    hdfs_api = started_cluster.hdfs_api
 
     with PartitionManager() as pm:
         node1.query(
             "insert into table function hdfs('hdfs://hdfs1:9000/storage_big', 'TSV', 'id Int32') select number from numbers(500000)"
         )
 
+        # The earlier tests in this module leave keep-alive connections to the
+        # datanode web port in the HTTP connection pool. A silent DROP kills
+        # such an already established connection only by the receive timeout
+        # (`http_receive_timeout`, 30 seconds by default) instead of by the
+        # one-second connect timeout, which is what this test waits for below.
+        # Drop the cache so that the query has to open a fresh connection.
+        node1.query("system drop connections cache")
+
+        # `PartitionManager` executes iptables inside the container now, so block the
+        # outgoing connections to the datanode web port with a silent DROP: the client
+        # then observes connect timeouts (asserted below) and retries.
         pm_rule = {
-            "destination": node1.ip_address,
-            "source_port": 50075,
-            "action": "REJECT",
+            "instance": node1,
+            "protocol": "tcp",
+            "destination_port": 50075,
+            "action": "DROP",
         }
-        pm._add_rule(pm_rule)
+        pm.add_rule(pm_rule)
 
         def select():
             global result
@@ -160,13 +167,30 @@ def test_url_reconnect(started_cluster):
             )
             assert int(result) == 6581218782194912115
 
+        # Snapshot the count before the query starts: an older "connect timed
+        # out" line from a previous query in this module would satisfy a
+        # whole-log scan immediately and heal the network too early.
+        timeouts_before = int(node1.count_in_log("connect timed out"))
+
         thread = threading.Thread(target=select)
         thread.start()
 
-        time.sleep(4)
-        pm._delete_rule(pm_rule)
+        # Heal the network only after the client demonstrably hit a connect
+        # timeout (the retry log line appears after the first timed-out
+        # attempt), then let a retry succeed. A fixed sleep is racy on a
+        # loaded runner: the query may reach its first connect attempt only
+        # after the rule is already deleted, timing out nothing.
+        # The first attempt times out after a second, but a loaded runner can
+        # be slow to even start the query, so keep the budget generous - the
+        # loop exits as soon as the line shows up.
+        for _ in range(120):
+            if int(node1.count_in_log("connect timed out")) > timeouts_before:
+                break
+            time.sleep(0.5)
+        else:
+            assert False, "The client never hit a connect timeout"
+        pm.delete_rule(pm_rule)
 
         thread.join()
 
         assert int(result) == 6581218782194912115
-        assert node1.contains_in_log("Timeout: connect timed out")

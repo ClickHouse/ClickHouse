@@ -1,10 +1,10 @@
-#include "RegionsHierarchy.h"
+#include <Dictionaries/Embedded/RegionsHierarchy.h>
 
 #include <IO/WriteHelpers.h>
 #include <Poco/Exception.h>
 #include <Poco/Util/Application.h>
 #include <Common/logger_useful.h>
-#include "GeodataProviders/IHierarchiesProvider.h"
+#include <Dictionaries/Embedded/GeodataProviders/IHierarchiesProvider.h>
 
 
 namespace DB
@@ -48,7 +48,7 @@ void RegionsHierarchy::reload()
 
     auto regions_reader = data_source->createReader();
 
-    RegionEntry region_entry;
+    RegionEntry region_entry{};
     while (regions_reader->readNext(region_entry))
     {
         if (region_entry.id > max_region_id)

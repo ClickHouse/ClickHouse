@@ -1,8 +1,10 @@
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Core/Field.h>
 #include <Columns/ColumnConst.h>
-#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
@@ -13,11 +15,12 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+
 namespace
 {
 
 /// Returns global default value for type name (example: 0 for numeric types, '' for String).
-class FunctionDefaultValueOfTypeName : public IFunction
+class FunctionDefaultValueOfTypeName final : public IFunction
 {
 public:
     static constexpr auto name = "defaultValueOfTypeName";
@@ -44,10 +47,15 @@ public:
         return 1;
     }
 
+    /// No declarative signature. The result type is the type *named by the argument value*,
+    /// so resolving it through `typeFromString(t)` in the signature would run inside
+    /// `applyFunctionSignature`'s `SuppressQueryFactoriesInfoScope` and hide the user-supplied
+    /// type from `query_log.used_data_type_families`. Resolve it explicitly here so the lookup
+    /// is attributed (see `01656_test_query_log_factories_info`).
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const ColumnConst * col_type_const = typeid_cast<const ColumnConst *>(arguments.front().column.get());
-        if (!col_type_const || !isString(arguments.front().type))
+        if (!col_type_const || !isString(removeLowCardinality(arguments.front().type)))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must be a constant string describing type.",
                 getName());
 
@@ -65,7 +73,43 @@ public:
 
 REGISTER_FUNCTION(DefaultValueOfTypeName)
 {
-    factory.registerFunction<FunctionDefaultValueOfTypeName>();
+    FunctionDocumentation::Description description = R"(
+Returns the default value for the given type name.
+    )";
+    FunctionDocumentation::Syntax syntax = "defaultValueOfTypeName(type)";
+    FunctionDocumentation::Arguments arguments = {
+        {"type", "A string representing a type name.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the default value for the given type name: `0` for numbers, an empty string for strings, or `NULL` for Nullable", {"UInt8", "String", "NULL"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT defaultValueOfTypeName('Int8');
+        )",
+        R"(
+┌─defaultValueOfTypeName('Int8')─┐
+│                              0 │
+└────────────────────────────────┘
+        )"
+    },
+    {
+        "Nullable example",
+        R"(
+SELECT defaultValueOfTypeName('Nullable(Int8)');
+        )",
+        R"(
+┌─defaultValueOfTypeName('Nullable(Int8)')─┐
+│                                     ᴺᵁᴸᴸ │
+└──────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionDefaultValueOfTypeName>(documentation);
 }
 
 }

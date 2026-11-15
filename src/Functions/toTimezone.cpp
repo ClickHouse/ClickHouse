@@ -20,13 +20,13 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
 {
-class ExecutableFunctionToTimeZone : public IExecutableFunction
+class ExecutableFunctionToTimeZone final : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionToTimeZone() = default;
@@ -39,7 +39,7 @@ public:
     }
 };
 
-class FunctionBaseToTimeZone : public IFunctionBase
+class FunctionBaseToTimeZone final : public IFunctionBase
 {
 public:
     FunctionBaseToTimeZone(
@@ -84,7 +84,7 @@ private:
 };
 
 /// Just changes time zone information for data type. The calculation is free.
-class ToTimeZoneOverloadResolver : public IFunctionOverloadResolver
+class ToTimeZoneOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "toTimezone";
@@ -97,6 +97,10 @@ public:
         : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
     {}
 
+    /// Not declarative: the timezone argument's constness requirement is
+    /// gated by the `allow_nonconst_timezone_arguments` setting, which the DSL
+    /// cannot express. With the setting enabled, a non-constant timezone is
+    /// accepted and the result becomes tz-less `DateTime`/`DateTime64`.
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2)
@@ -138,7 +142,50 @@ private:
 
 REGISTER_FUNCTION(ToTimeZone)
 {
-    factory.registerFunction<ToTimeZoneOverloadResolver>();
+    FunctionDocumentation::Description description = R"(
+Converts a `DateTime` or `DateTime64` to the specified time zone.
+The internal value (number of unix seconds) of the data doesn't change.
+Only the value's time zone attribute and the value's string representation changes.
+        )";
+    FunctionDocumentation::Syntax syntax = "toTimezone(datetime, timezone)";
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"date", "The value to convert.", {"DateTime", "DateTime64"}},
+        {"timezone", "The target time zone name.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the same timestamp as the input, but with the specified time zone", {"DateTime", "DateTime64"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", R"(
+SELECT toDateTime('2019-01-01 00:00:00', 'UTC') AS time_utc,
+toTypeName(time_utc) AS type_utc,
+toInt32(time_utc) AS int32utc,
+toTimezone(time_utc, 'Asia/Yekaterinburg') AS time_yekat,
+toTypeName(time_yekat) AS type_yekat,
+toInt32(time_yekat) AS int32yekat,
+toTimezone(time_utc, 'US/Samoa') AS time_samoa,
+toTypeName(time_samoa) AS type_samoa,
+toInt32(time_samoa) AS int32samoa
+FORMAT Vertical;
+        )",
+        R"(
+Row 1:
+──────
+time_utc:   2019-01-01 00:00:00
+type_utc:   DateTime('UTC')
+int32utc:   1546300800
+time_yekat: 2019-01-01 05:00:00
+type_yekat: DateTime('Asia/Yekaterinburg')
+int32yekat: 1546300800
+time_samoa: 2018-12-31 13:00:00
+type_samoa: DateTime('US/Samoa')
+int32samoa: 1546300800
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<ToTimeZoneOverloadResolver>(documentation);
     factory.registerAlias("toTimeZone", "toTimezone");
 }
 

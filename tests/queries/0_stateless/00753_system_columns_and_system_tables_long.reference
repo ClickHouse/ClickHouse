@@ -32,10 +32,10 @@ Check total_bytes/total_rows for Log
 43	1
 Check total_bytes/total_rows for StripeLog
 0	0
-113	1
+135	1
 Check total_bytes/total_rows for Memory
 0	0
-256	1
+130	1
 Check total_bytes/total_rows for Buffer
 0	0
 256	50

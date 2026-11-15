@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <sys/types.h>
 #include <string>
 
 namespace DB {

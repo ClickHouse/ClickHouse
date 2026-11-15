@@ -1,0 +1,10 @@
+exact client address: allowed
+1
+other subnet: denied
+AUTHENTICATION_FAILED
+other host name regexp: denied
+AUTHENTICATION_FAILED
+unresolvable host name: denied
+AUTHENTICATION_FAILED
+unrestricted user: allowed
+2

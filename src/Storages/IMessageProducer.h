@@ -1,10 +1,10 @@
 #pragma once
 
-#pragma once
-
-#include <Processors/Sinks/SinkToStorage.h>
-#include <Interpreters/Context.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Columns/IColumn_fwd.h>
+#include <Common/Logger.h>
+#include <Core/Types.h>
+#include <Interpreters/Context_fwd.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 
 namespace Poco { class Logger; }
 
@@ -69,7 +69,7 @@ private:
     /// It's used to prevent doing finish logic more than once.
     std::atomic<bool> finished = false;
 
-    BackgroundSchedulePool::TaskHolder producing_task;
+    BackgroundSchedulePoolTaskHolder producing_task;
 
     std::atomic<bool> scheduled;
 };

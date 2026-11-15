@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 #include <Common/HashTable/HashMap.h>
@@ -24,7 +24,7 @@ class ReadBuffer;
 class TSKVRowInputFormat final : public IRowInputFormat
 {
 public:
-    TSKVRowInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_);
+    TSKVRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "TSKVRowInputFormat"; }
 
@@ -46,18 +46,18 @@ private:
     String name_buf;
 
     /// Hash table matching `field name -> position in the block`. NOTE You can use perfect hash map.
-    using NameMap = HashMap<StringRef, size_t, StringRefHash>;
+    using NameMap = HashMap<std::string_view, size_t, StringViewHash>;
     NameMap name_map;
 
     /// Set of columns for which the values were read. The rest will be filled with default values.
-    std::vector<UInt8> read_columns;
+    VectorWithMemoryTracking<UInt8> read_columns;
     /// Set of columns which already met in row. Exception is thrown if there are more than one column with the same name.
-    std::vector<UInt8> seen_columns;
+    VectorWithMemoryTracking<UInt8> seen_columns;
     /// These sets may be different, because if null_as_default=1 read_columns[i] will be false and seen_columns[i] will be true
     /// for row like ..., non-nullable column name=\N, ...
 };
 
-class TSKVSchemaReader : public IRowWithNamesSchemaReader
+class TSKVSchemaReader final : public IRowWithNamesSchemaReader
 {
 public:
     TSKVSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);

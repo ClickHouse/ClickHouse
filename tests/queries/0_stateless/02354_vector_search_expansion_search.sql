@@ -1,14 +1,15 @@
--- Tags: no-fasttest, long, no-asan, no-ubsan, no-debug
+-- Tags: no-fasttest, long, no-asan, no-ubsan, no-tsan, no-debug, no-flaky-check
 -- ^^ Disable test for slow builds: generating data takes time but a sufficiently large data set
 -- is necessary for different hnsw_candidate_list_size_for_search settings to make a difference
 
 -- Tests vector search with setting 'hnsw_candidate_list_size_for_search'
 
-SET allow_experimental_vector_similarity_index = 1;
+SET use_skip_indexes_for_top_k = 0;
+SET use_top_k_dynamic_filtering = 0;
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance')) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
+CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
 
 -- Generate random values but with a fixed seed (conceptually), so that the data is deterministic.
 -- Unfortunately, no random functions in ClickHouse accepts a seed. Instead, abuse the numbers table + hash functions to provide

@@ -1,3 +1,4 @@
+SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS t_read_in_order_1;
 
 CREATE TABLE t_read_in_order_1 (id UInt64, v UInt64)
@@ -9,6 +10,8 @@ INSERT INTO t_read_in_order_1 SELECT number, number FROM numbers(1000000);
 SET max_threads = 8;
 SET optimize_read_in_order = 1;
 SET read_in_order_use_buffering = 1;
+SET use_skip_indexes_for_top_k = 0;
+SET use_top_k_dynamic_filtering = 0;
 
 SELECT count() FROM
 (

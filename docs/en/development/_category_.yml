@@ -1,8 +1,0 @@
-position: 101
-label: 'Building ClickHouse'
-collapsible: true
-collapsed: true
-link:
-  type: generated-index
-  title: Building ClickHouse
-  slug: /en/development

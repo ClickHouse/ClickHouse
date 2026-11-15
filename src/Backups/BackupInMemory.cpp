@@ -2,7 +2,8 @@
 
 #include <Backups/BackupsInMemoryHolder.h>
 #include <Common/Exception.h>
-#include <IO/ReadBufferFromString.h>
+#include <Common/logger_useful.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 
 
@@ -16,7 +17,7 @@ namespace ErrorCodes
 }
 
 
-BackupInMemory::BackupInMemory(const String & backup_name_, BackupsInMemoryHolder & holder_)
+BackupInMemory::BackupInMemory(const String & backup_name_, std::weak_ptr<BackupsInMemoryHolder> holder_)
     : backup_name(backup_name_), holder(holder_)
 {
 }
@@ -48,15 +49,15 @@ UInt64 BackupInMemory::getFileSize(const String & file_name) const
 
 void BackupInMemory::removeFile(const String & file_name)
 {
+    /// Best-effort removal (like the S3, Disk and File writers): a partially written backup may lack
+    /// some files, e.g. `.backup` is written only at finalization.
     std::lock_guard lock{mutex};
-    auto it = files.find(file_name);
-    if (it == files.end())
-        throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup entry {} not found in backup {}", file_name, backup_name);
-    files.erase(it);
+    if (!files.erase(file_name))
+        LOG_DEBUG(getLogger("BackupInMemory"), "Backup entry {} not found in backup {}, skipping removal", file_name, backup_name);
 }
 
 
-std::unique_ptr<SeekableReadBuffer> BackupInMemory::readFile(const String & file_name) const
+std::unique_ptr<ReadBufferFromFileBase> BackupInMemory::readFile(const String & file_name) const
 {
     String file_contents;
 
@@ -68,11 +69,11 @@ std::unique_ptr<SeekableReadBuffer> BackupInMemory::readFile(const String & file
         file_contents = it->second;
     }
 
-    return std::make_unique<ReadBufferFromOwnString>(std::move(file_contents));
+    return std::make_unique<ReadBufferFromOwnMemoryFile>(file_name, std::move(file_contents));
 }
 
 
-class BackupInMemory::WriteBufferToBackupInMemory : public WriteBufferFromOwnStringImpl
+class BackupInMemory::WriteBufferToBackupInMemory : public WriteBufferFromOwnString
 {
 public:
     WriteBufferToBackupInMemory(std::shared_ptr<BackupInMemory> backup_, const String & file_name_)
@@ -82,7 +83,7 @@ private:
     void finalizeImpl() override
     {
         String file_contents{stringView()};
-        WriteBufferFromOwnStringImpl::finalizeImpl();
+        WriteBufferFromOwnString::finalizeImpl();
         std::lock_guard lock{backup->mutex};
         auto it = backup->files.find(file_name);
         if (it == backup->files.end())
@@ -124,7 +125,8 @@ void BackupInMemory::copyFile(const String & from, const String & to)
 
 void BackupInMemory::drop()
 {
-    holder.dropBackup(backup_name);
+    if (auto holder_ptr = holder.lock())
+        holder_ptr->dropBackup(backup_name);
 }
 
 }

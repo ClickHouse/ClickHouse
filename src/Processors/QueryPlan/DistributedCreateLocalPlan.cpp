@@ -2,15 +2,14 @@
 
 #include <Common/checkStackSize.h>
 #include <Core/Settings.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/ConvertingActions.h>
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
 }
 
 std::unique_ptr<QueryPlan> createLocalPlan(
@@ -20,16 +19,21 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     QueryProcessingStage::Enum processed_stage,
     size_t shard_num,
     size_t shard_count,
-    bool has_missing_objects)
+    bool build_logical_plan,
+    const std::string & default_database)
 {
     checkStackSize();
 
     auto query_plan = std::make_unique<QueryPlan>();
     auto new_context = Context::createCopy(context);
 
-    /// Do not push down limit to local plan, as it will break `rows_before_limit_at_least` counter.
-    if (processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)
-        processed_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
+    /// The local shard reads the table itself, like the remote shards do: the inserted block
+    /// of a materialized view (whose query contains this `remote` or `Distributed` read) must not
+    /// replace the source table here.
+    new_context->clearViewSource();
+
+    if (build_logical_plan && !default_database.empty())
+        new_context->setCurrentDatabase(default_database);
 
     /// Do not apply AST optimizations, because query
     /// is already optimized and some optimizations
@@ -39,22 +43,19 @@ std::unique_ptr<QueryPlan> createLocalPlan(
         .setShardInfo(static_cast<UInt32>(shard_num), static_cast<UInt32>(shard_count))
         .ignoreASTOptimizations();
 
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-    {
-        /// For Analyzer, identifier in GROUP BY/ORDER BY/LIMIT BY lists has been resolved to
-        /// ConstantNode in QueryTree if it is an alias of a constant, so we should not replace
-        /// ConstantNode with ProjectionNode again(https://github.com/ClickHouse/ClickHouse/issues/62289).
-        new_context->setSetting("enable_positional_arguments", Field(false));
-        auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
-        query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
-    }
-    else
-    {
-        auto interpreter = InterpreterSelectQuery(query_ast, new_context, select_query_options);
-        interpreter.buildQueryPlan(*query_plan);
-    }
+    select_query_options.build_logical_plan = build_logical_plan;
+    select_query_options.is_local_shard_plan
+        = !build_logical_plan && processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+    /// A logical plan is serialized and shipped to a shard, which sends the blocks back over the
+    /// network, so it must keep marshalling. Only the plan executed in this process must skip it.
+    select_query_options.is_local_plan_for_distributed_query = !build_logical_plan;
 
-    addConvertingActions(*query_plan, header, has_missing_objects);
+    /// The query is printed from the initiator's resolved query tree.
+    select_query_options.positional_arguments_already_resolved = true;
+    auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
+    query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
+
+    addConvertingActions(*query_plan, header, new_context);
     return query_plan;
 }
 

@@ -105,9 +105,14 @@ def insert_data(node):
         settings={
             # do not do direct INSERT, always via SYSTEM FLUSH DISTRIBUTED
             "prefer_localhost_replica": 0,
+            # Pin LZ4 for the on-disk distributed batch: the corrupted-send tests zero a fixed byte
+            # range that must land inside one compressed block to trigger the expected checksum error.
+            # The ZSTD(3) network default changes the block layout/size, so the corruption no longer
+            # fails cleanly and FLUSH DISTRIBUTED hangs on a partially-decodable stream.
+            "network_compression_method": "LZ4",
         },
     )
-    path = get_path_to_dist_batch()
+    path = get_path_to_dist_batch(node, "default", "dist")
     size = int(node.exec_in_container(["bash", "-c", f"wc -c < {path}"]))
     assert size > 1 << 16
     return size
@@ -129,13 +134,16 @@ def bootstrap(batch, split=None):
     return insert_data(get_node(batch, split))
 
 
-def get_path_to_dist_batch(file="2.bin"):
+def get_path_to_dist_batch(node, database, table, file="2.bin"):
+    data_path = node.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='{database}' AND name='{table}'"
+    ).strip()
     # There are:
-    # - /var/lib/clickhouse/data/default/dist/shard1_replica1/1.bin
-    # - /var/lib/clickhouse/data/default/dist/shard1_replica2/2.bin
+    # - {data_path}/shard1_replica1/1.bin
+    # - {data_path}/shard1_replica2/2.bin
     #
     # @return the file for the n2 shard
-    return f"/var/lib/clickhouse/data/default/dist/shard1_replica2/{file}"
+    return f"{data_path}/shard1_replica2/{file}"
 
 
 def check_dist_after_corruption(truncate, batch, split=None):
@@ -162,7 +170,7 @@ def check_dist_after_corruption(truncate, batch, split=None):
     node.query("SYSTEM FLUSH DISTRIBUTED dist")
 
     # but there is broken file
-    broken = get_path_to_dist_batch("broken")
+    broken = get_path_to_dist_batch(node, "default", "dist", "broken")
     node.exec_in_container(["bash", "-c", f"ls {broken}/2.bin"])
 
     if split:
@@ -185,8 +193,8 @@ def test_insert_distributed_async_send_success(batch):
 @batch_and_split_params
 def test_insert_distributed_async_send_truncated_1(batch, split):
     size = bootstrap(batch, split)
-    path = get_path_to_dist_batch()
     node = get_node(batch, split)
+    path = get_path_to_dist_batch(node, "default", "dist")
 
     new_size = size - 10
     # we cannot use truncate, due to hardlinks
@@ -200,8 +208,8 @@ def test_insert_distributed_async_send_truncated_1(batch, split):
 @batch_params
 def test_insert_distributed_async_send_truncated_2(batch):
     bootstrap(batch)
-    path = get_path_to_dist_batch()
     node = get_node(batch)
+    path = get_path_to_dist_batch(node, "default", "dist")
 
     # we cannot use truncate, due to hardlinks
     node.exec_in_container(
@@ -216,9 +224,8 @@ def test_insert_distributed_async_send_truncated_2(batch):
 @batch_params
 def test_insert_distributed_async_send_corrupted_big(batch):
     size = bootstrap(batch)
-    path = get_path_to_dist_batch()
-
     node = get_node(batch)
+    path = get_path_to_dist_batch(node, "default", "dist")
 
     from_original_size = size - 8192
     zeros_size = 8192
@@ -236,8 +243,8 @@ def test_insert_distributed_async_send_corrupted_big(batch):
 @batch_params
 def test_insert_distributed_async_send_corrupted_small(batch):
     size = bootstrap(batch)
-    path = get_path_to_dist_batch()
     node = get_node(batch)
+    path = get_path_to_dist_batch(node, "default", "dist")
 
     from_original_size = size - 60
     zeros_size = 60

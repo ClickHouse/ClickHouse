@@ -35,11 +35,15 @@ public:
     String operator() (const Decimal256 & x, UInt32 scale) const;
     String operator() (const AggregateFunctionStateData & x) const;
     String operator() (const CustomType & x) const;
+    String operator() (const NumberLiteral & x) const;
     String operator() (const bool & x) const;
 };
 
 /// Get value from field and convert it to string.
 /// Also remove quotes from strings.
 String convertFieldToString(const Field & field);
+
+/// Convert Object to String without quotes.
+String convertObjectToString(const Object & object);
 
 }

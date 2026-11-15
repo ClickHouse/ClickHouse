@@ -1,0 +1,10 @@
+SET allow_drop_detached = 1;
+
+DROP TABLE IF EXISTS t;
+CREATE TABLE t (x UInt8) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t VALUES (1);
+
+ALTER TABLE t DROP DETACHED PART ''; -- { serverError BAD_DATA_PART_NAME }
+ALTER TABLE t ATTACH PART ''; -- { serverError BAD_DATA_PART_NAME }
+
+DROP TABLE t;

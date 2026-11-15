@@ -1,4 +1,4 @@
-SET allow_experimental_json_type = 1,type_json_skip_duplicated_paths = 1,allow_simdjson = 1;
+SET enable_json_type = 1, type_json_skip_duplicated_paths = 1, allow_simdjson = 1;
 DROP TABLE IF EXISTS t0;
 DROP TABLE IF EXISTS t1;
 CREATE TABLE t0 (c0 JSON, c1 Array(Nullable(Decimal))) ENGINE = Memory();
@@ -30,4 +30,3 @@ INSERT INTO t1 (c0, c1) VALUES ('{"c0":[572]}', [-88.0, 418510.0, 634661.0, -219
 SELECT 1 FROM t1 CROSS JOIN t0 FORMAT Null;
 DROP TABLE t1;
 DROP TABLE t0;
-

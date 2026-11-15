@@ -7,14 +7,18 @@ namespace DB
 class ExtremesStep : public ITransformingStep
 {
 public:
-    explicit ExtremesStep(const Header & input_header_);
+    explicit ExtremesStep(const SharedHeader & input_header_);
 
     String getName() const override { return "Extremes"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void serialize(Serialization & ctx) const override;
-    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
+    bool isSerializable() const override { return true; }
+
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
+
+    QueryPlanStepPtr clone() const override;
 
 private:
     void updateOutputHeader() override

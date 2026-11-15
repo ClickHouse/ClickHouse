@@ -6,4 +6,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-$CLICKHOUSE_FORMAT --hilite <<< "CREATE USER user IDENTIFIED WITH PLAINTEXT_PASSWORD BY 'hello'"
+QUERY="CREATE USER user IDENTIFIED WITH PLAINTEXT_PASSWORD BY 'hello'"
+
+$CLICKHOUSE_FORMAT --hilite --show_secrets <<< "$QUERY"
+
+$CLICKHOUSE_FORMAT --highlight --show_secrets <<< "$QUERY"
+

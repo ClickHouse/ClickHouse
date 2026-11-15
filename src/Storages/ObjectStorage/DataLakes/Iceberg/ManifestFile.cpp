@@ -1,167 +1,247 @@
-#include <unordered_set>
 #include "config.h"
 
 #if USE_AVRO
 
+#include <algorithm>
+#include <compare>
+#include <mutex>
 
-#include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileImpl.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/Utils.h"
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+
+#include <Formats/FormatSettings.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
+
+#include <Poco/String.h>
+
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
+#include <fmt/format.h>
 
 
-#include <Columns/ColumnTuple.h>
-#include "DataTypes/DataTypeTuple.h"
-
+namespace ProfileEvents
+{
+    extern const Event IcebergManifestFilesReadMicroseconds;
+}
 
 namespace DB::ErrorCodes
 {
-extern const int ILLEGAL_COLUMN;
-extern const int BAD_ARGUMENTS;
-extern const int UNSUPPORTED_METHOD;
+    extern const int LOGICAL_ERROR;
 }
 
-namespace Iceberg
+namespace DB::Iceberg
 {
 
-const std::vector<DataFileEntry> & ManifestFileContent::getDataFiles() const
+struct ManifestFileCacheableInfo::State
 {
-    return impl->data_files;
+    State(String bytes_, const IcebergPathFromMetadata & path_, const FormatSettings & format_settings_)
+        : path(path_)
+        , bytes(std::move(bytes_))
+        , format_settings(format_settings_)
+    {
+    }
+
+    const IcebergPathFromMetadata path;
+    /// Released once parsed.
+    String bytes;
+    std::optional<FormatSettings> format_settings;
+
+    std::once_flag parsed;
+    std::shared_ptr<AvroForIcebergDeserializer> deserializer;
+};
+
+ManifestFileCacheableInfo ManifestFileCacheableInfo::fromBytes(
+    String bytes, const IcebergPathFromMetadata & path, const FormatSettings & format_settings)
+{
+    const size_t size = bytes.size();
+    return ManifestFileCacheableInfo{std::make_shared<State>(std::move(bytes), path, format_settings), size};
 }
 
-Int32 ManifestFileContent::getSchemaId() const
+std::shared_ptr<AvroForIcebergDeserializer> ManifestFileCacheableInfo::getDeserializer() const
 {
-    return impl->schema_id;
-}
-
-ManifestFileContent::ManifestFileContent(std::unique_ptr<ManifestFileContentImpl> impl_) : impl(std::move(impl_))
-{
-}
-
-using namespace DB;
-
-
-ManifestFileContentImpl::ManifestFileContentImpl(
-    std::unique_ptr<avro::DataFileReaderBase> manifest_file_reader_,
-    Int32 format_version_,
-    const String & common_path,
-    const DB::FormatSettings & format_settings,
-    Int32 schema_id_)
-{
-    this->schema_id = schema_id_;
-    avro::NodePtr root_node = manifest_file_reader_->dataSchema().root();
-    size_t leaves_num = root_node->leaves();
-    size_t expected_min_num = format_version_ == 1 ? 3 : 2;
-    if (leaves_num < expected_min_num)
-    {
-        throw Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS, "Unexpected number of columns {}. Expected at least {}", root_node->leaves(), expected_min_num);
-    }
-
-    avro::NodePtr status_node = root_node->leafAt(0);
-    if (status_node->type() != avro::Type::AVRO_INT)
-    {
-        throw Exception(
-            DB::ErrorCodes::ILLEGAL_COLUMN,
-            "The parsed column from Avro file of `status` field should be Int type, got {}",
-            magic_enum::enum_name(status_node->type()));
-    }
-
-    avro::NodePtr data_file_node = root_node->leafAt(static_cast<int>(leaves_num) - 1);
-    if (data_file_node->type() != avro::Type::AVRO_RECORD)
-    {
-        throw Exception(
-            DB::ErrorCodes::ILLEGAL_COLUMN,
-            "The parsed column from Avro file of `data_file` field should be Tuple type, got {}",
-            magic_enum::enum_name(data_file_node->type()));
-    }
-
-    auto status_col_data_type = AvroSchemaReader::avroNodeToDataType(status_node);
-    auto data_col_data_type = AvroSchemaReader::avroNodeToDataType(data_file_node);
-    Block manifest_file_header
-        = {{status_col_data_type->createColumn(), status_col_data_type, "status"},
-           {data_col_data_type->createColumn(), data_col_data_type, "data_file"}};
-
-    auto columns = parseAvro(*manifest_file_reader_, manifest_file_header, format_settings);
-    if (columns.size() != 2)
-        throw Exception(DB::ErrorCodes::ILLEGAL_COLUMN, "Unexpected number of columns. Expected 2, got {}", columns.size());
-
-    if (columns.at(0)->getDataType() != TypeIndex::Int32)
-    {
-        throw Exception(
-            DB::ErrorCodes::ILLEGAL_COLUMN,
-            "The parsed column from Avro file of `status` field should be Int32 type, got {}",
-            columns.at(0)->getFamilyName());
-    }
-    if (columns.at(1)->getDataType() != TypeIndex::Tuple)
-    {
-        throw Exception(
-            DB::ErrorCodes::ILLEGAL_COLUMN,
-            "The parsed column from Avro file of `file_path` field should be Tuple type, got {}",
-            columns.at(1)->getFamilyName());
-    }
-
-    const auto * status_int_column = assert_cast<DB::ColumnInt32 *>(columns.at(0).get());
-    const auto & data_file_tuple_type = assert_cast<const DataTypeTuple &>(*data_col_data_type.get());
-    const auto * data_file_tuple_column = assert_cast<DB::ColumnTuple *>(columns.at(1).get());
-
-    if (status_int_column->size() != data_file_tuple_column->size())
-    {
-        throw Exception(
-            DB::ErrorCodes::ILLEGAL_COLUMN,
-            "The parsed column from Avro file of `file_path` and `status` have different rows number: {} and {}",
-            status_int_column->size(),
-            data_file_tuple_column->size());
-    }
-
-    ColumnPtr file_path_column = data_file_tuple_column->getColumnPtr(data_file_tuple_type.getPositionByName("file_path"));
-
-    if (file_path_column->getDataType() != TypeIndex::String)
-    {
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "The parsed column from Avro file of `file_path` field should be String type, got {}",
-            file_path_column->getFamilyName());
-    }
-
-    const auto * file_path_string_column = assert_cast<const ColumnString *>(file_path_column.get());
-
-    ColumnPtr content_column;
-    const ColumnInt32 * content_int_column = nullptr;
-    if (format_version_ == 2)
-    {
-        content_column = data_file_tuple_column->getColumnPtr(data_file_tuple_type.getPositionByName("content"));
-        if (content_column->getDataType() != TypeIndex::Int32)
+    chassert(state);
+    std::call_once(
+        state->parsed,
+        [&parsed_state = *state]
         {
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "The parsed column from Avro file of `content` field should be Int type, got {}",
-                content_column->getFamilyName());
-        }
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergManifestFilesReadMicroseconds);
+            parsed_state.deserializer = std::make_shared<AvroForIcebergDeserializer>(
+                std::make_unique<ReadBufferFromOutsideMemoryFile>(parsed_state.path.serialize(), parsed_state.bytes),
+                parsed_state.path,
+                *parsed_state.format_settings);
+            String().swap(parsed_state.bytes);
+            parsed_state.format_settings.reset();
+        });
+    return state->deserializer;
+}
 
-        content_int_column = assert_cast<const ColumnInt32 *>(content_column.get());
-    }
-
-    for (size_t i = 0; i < data_file_tuple_column->size(); ++i)
+String FileContentTypeToString(FileContentType type)
+{
+    switch (type)
     {
-        DataFileContent content_type = DataFileContent::DATA;
-        if (format_version_ == 2)
+        case FileContentType::DATA:
+            return "data";
+        case FileContentType::POSITION_DELETE:
+            return "position_deletes";
+        case FileContentType::EQUALITY_DELETE:
+            return "equality_deletes";
+    }
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unsupported content type: {}", static_cast<int>(type));
+}
+
+static std::strong_ordering operator<=>(const PartitionSpecsEntry & lhs, const PartitionSpecsEntry & rhs)
+{
+    return std::tie(lhs.source_id, lhs.transform_name, lhs.partition_name)
+        <=> std::tie(rhs.source_id, rhs.transform_name, rhs.partition_name);
+}
+
+template <typename A>
+bool less(const std::vector<A> & lhs, const std::vector<A> & rhs)
+{
+    if (lhs.size() != rhs.size())
+        return lhs.size() < rhs.size();
+    return std::lexicographical_compare(lhs.begin(), lhs.end(), rhs.begin(), rhs.end(), [](const A & a, const A & b) { return a < b; });
+}
+
+bool operator<(const PartitionSpecification & lhs, const PartitionSpecification & rhs)
+{
+    return less(lhs, rhs);
+}
+
+bool operator<(const DB::Row & lhs, const DB::Row & rhs)
+{
+    return less(lhs, rhs);
+}
+
+std::weak_ordering operator<=>(const ProcessedManifestFileEntryPtr & lhs, const ProcessedManifestFileEntryPtr & rhs)
+{
+    return std::tie(*lhs->common_partition_specification, lhs->normalized_partition_key_value, lhs->sequence_number)
+        <=> std::tie(*rhs->common_partition_specification, rhs->normalized_partition_key_value, rhs->sequence_number);
+}
+
+std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
+    ProcessedManifestFileEntryPtr data_object_,
+    const std::vector<ProcessedManifestFileEntryPtr> & deletes_objects,
+    bool is_equality_delete,
+    LoggerPtr logger)
+{
+    if (deletes_objects.empty())
+    {
+        return {};
+    }
+    /// Objects in deletes_objects are sorted by common_partition_specification, partition_key_value and added_sequence_number.
+    /// It is done to have an invariant that position deletes objects which corresponds
+    /// to the data object form a subsegment in a deletes_objects vector.
+    /// We need to take all position deletes objects which has the same partition schema and value and has added_sequence_number
+    /// greater than or equal to the data object added_sequence_number (https://iceberg.apache.org/spec/#scan-planning)
+    /// ManifestFileEntry has comparator by default which helps to do that.
+    auto beg_it = is_equality_delete ?
+        std::upper_bound(deletes_objects.begin(), deletes_objects.end(), data_object_)
+        : std::lower_bound(deletes_objects.begin(), deletes_objects.end(), data_object_);
+    auto end_it = std::upper_bound(
+        deletes_objects.begin(),
+        deletes_objects.end(),
+        data_object_,
+        [](const ProcessedManifestFileEntryPtr & lhs, const ProcessedManifestFileEntryPtr & rhs)
         {
-            content_type = DataFileContent(content_int_column->getElement(i));
-            if (content_type != DataFileContent::DATA)
-                throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: positional and equality deletes are not supported");
+            return std::tie(*lhs->common_partition_specification, lhs->normalized_partition_key_value)
+                < std::tie(*rhs->common_partition_specification, rhs->normalized_partition_key_value);
+        });
+    if (beg_it - deletes_objects.begin() > end_it - deletes_objects.begin())
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::LOGICAL_ERROR,
+            "{} deletes objects are not sorted by common_partition_specification and partition_key_value, "
+            "beginning: {}, end: {}, position_deletes_objects size: {}",
+            is_equality_delete ? "Equality" : "Position",
+            beg_it - deletes_objects.begin(),
+            end_it - deletes_objects.begin(),
+            deletes_objects.size());
+    }
+    if (beg_it != end_it)
+    {
+        auto previous_it = std::prev(end_it);
+        chassert(*beg_it);
+        chassert(*previous_it);
+        LOG_DEBUG(
+            logger,
+            "Preliminary check got {} {} delete elements for data file {}, taken data file object info: {}, first taken delete object info is "
+            "{}, last taken "
+            "delete object info is {}",
+            std::distance(beg_it, end_it),
+            is_equality_delete ? "equality" : "position",
+            data_object_->parsed_entry->file_path_key,
+            data_object_->dumpDeletesMatchingInfo(),
+            (*beg_it)->dumpDeletesMatchingInfo(),
+            (*previous_it)->dumpDeletesMatchingInfo());
+    }
+    else
+    {
+        LOG_DEBUG(
+            logger,
+            "No {} delete elements for data file {}, taken data file object info: {}",
+            is_equality_delete ? "equality" : "position",
+            data_object_->parsed_entry->file_path_key,
+            data_object_->dumpDeletesMatchingInfo());
+    }
+    return {beg_it, end_it};
+}
+
+static String dumpPartitionSpecification(const PartitionSpecification & partition_specification)
+{
+    if (partition_specification.empty())
+        return "[empty]";
+    else
+    {
+        String answer{"["};
+        for (size_t i = 0; i < partition_specification.size(); ++i)
+        {
+            const auto & entry = partition_specification[i];
+            answer += fmt::format(
+                "(source id: {}, transform name: {}, partition name: {})", entry.source_id, entry.transform_name, entry.partition_name);
+            if (i != partition_specification.size() - 1)
+                answer += ", ";
         }
-        const auto status = ManifestEntryStatus(status_int_column->getInt(i));
-
-        const auto data_path = std::string(file_path_string_column->getDataAt(i).toView());
-        const auto pos = data_path.find(common_path);
-        if (pos == std::string::npos)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected to find {} in data path: {}", common_path, data_path);
-
-        const auto file_path = data_path.substr(pos);
-        this->data_files.push_back({file_path, status, content_type});
+        answer += ']';
+        return answer;
     }
 }
 
+static String dumpPartitionKeyValue(const DB::Row & partition_key_value)
+{
+    if (partition_key_value.empty())
+        return "[empty]";
+    else
+    {
+        String answer{"["};
+        for (size_t i = 0; i < partition_key_value.size(); ++i)
+        {
+            const auto & entry = partition_key_value[i];
+            answer += entry.dump();
+            if (i != partition_key_value.size() - 1)
+                answer += ", ";
+        }
+        answer += ']';
+        return answer;
+    }
 }
+
+
+bool ParsedManifestFileEntry::isDeletionVector() const
+{
+    return content_type == FileContentType::POSITION_DELETE && Poco::toLower(file_format) == "puffin";
+}
+
+String ProcessedManifestFileEntry::dumpDeletesMatchingInfo() const
+{
+    return fmt::format(
+        "Partition specification: {}, partition key value: {}, added sequence number: {}",
+        dumpPartitionSpecification(*common_partition_specification),
+        dumpPartitionKeyValue(normalized_partition_key_value),
+        sequence_number);
+}
+}
+
 
 #endif

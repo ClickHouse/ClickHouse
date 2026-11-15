@@ -5,9 +5,62 @@
 
 #include <base/preciseExp10.h>
 
+#include <Common/DateLUTImpl.h>
+
 
 namespace mysqlxx
 {
+
+time_t Value::getDateTimeImpl() const
+{
+    const auto & date_lut = DateLUT::instance();
+
+    if (m_length == 10)
+    {
+        return date_lut.makeDate(
+            (m_data[0] - '0') * 1000 + (m_data[1] - '0') * 100 + (m_data[2] - '0') * 10 + (m_data[3] - '0'),
+            (m_data[5] - '0') * 10 + (m_data[6] - '0'),
+            (m_data[8] - '0') * 10 + (m_data[9] - '0'));
+    }
+    if (m_length == 19)
+    {
+        return date_lut.makeDateTime(
+            (m_data[0] - '0') * 1000 + (m_data[1] - '0') * 100 + (m_data[2] - '0') * 10 + (m_data[3] - '0'),
+            (m_data[5] - '0') * 10 + (m_data[6] - '0'),
+            (m_data[8] - '0') * 10 + (m_data[9] - '0'),
+            (m_data[11] - '0') * 10 + (m_data[12] - '0'),
+            (m_data[14] - '0') * 10 + (m_data[15] - '0'),
+            (m_data[17] - '0') * 10 + (m_data[18] - '0'));
+    }
+    throwException("Cannot parse DateTime");
+}
+
+
+time_t Value::getDateImpl() const
+{
+    const auto & date_lut = DateLUT::instance();
+
+    if (m_length == 10 || m_length == 19)
+    {
+        return date_lut.makeDate(
+            (m_data[0] - '0') * 1000 + (m_data[1] - '0') * 100 + (m_data[2] - '0') * 10 + (m_data[3] - '0'),
+            (m_data[5] - '0') * 10 + (m_data[6] - '0'),
+            (m_data[8] - '0') * 10 + (m_data[9] - '0'));
+    }
+    throwException("Cannot parse Date");
+}
+
+Int64 Value::getIntOrDate() const
+{
+    if (unlikely(isNull()))
+        throwException("Value is NULL");
+
+    if (checkDateTime())
+        return getDateImpl();
+
+    const auto & date_lut = DateLUT::instance();
+    return date_lut.toDate(getIntImpl());
+}
 
 UInt64 Value::readUIntText(const char * buf, size_t length) const
 {

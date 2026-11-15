@@ -1,4 +1,5 @@
 SET send_logs_level = 'fatal';
+SET optimize_on_insert = 1;
 
 DROP TABLE IF EXISTS t_03291_collapsing_invalid_sign;
 
@@ -16,7 +17,11 @@ SET optimize_on_insert = 0;
 
 INSERT INTO t_03291_collapsing_invalid_sign VALUES (1, 1), (1, -1), (1, 2), (1, 1);
 
+-- Invalid sign does not show up in result of SELECT ... FINAL
 SELECT * FROM t_03291_collapsing_invalid_sign FINAL;
+
+-- But it is still there
+SELECT * FROM t_03291_collapsing_invalid_sign WHERE sign = 2;
 
 DROP TABLE t_03291_collapsing_invalid_sign;
 
@@ -31,6 +36,7 @@ INSERT INTO TABLE t0 (c1, c0) VALUES (1, 8937762244024852571), (-1, 895082494593
 INSERT INTO TABLE t0 (c1, c0) VALUES (1, -4892066199024209089), (-1, -5491182770048413687), (-1, -4018923873457626147), (1, 675764533488331690), (-1, 8420772111929760862), (1, -5937640180539735892), (-1, -4626474415721923630), (-1, 6769798025186732866), (-1, 5345456016261312976), (1, 1710841889478637274), (-1, -1266913271723499160), (-1, 1103743554745717673), (-1, NULL), (1, -2597305165640059095), (1, -6912729702612168562), (-1, -7186477069505009142), (1, 821404772064670938), (-1, -5463163374280298685), (1, 1394078067264958090), (-1, 1036875756161173151);
 INSERT INTO TABLE t0 (c1, c0) VALUES (-1, 8482902059126745084), (-1, -7937110385117446797), (1, NULL), (1, -8431229851988407072), (1, 759760791731484731), (1, NULL), (1, -6184256087929051233), (1, -7330483878500565160), (-1, -7087214691055696530), (-1, 1889179400346464951), (-1, 6710360786486282081), (-1, NULL), (1, NULL), (-1, 13275412783444588), (-1, 479269188324861296), (1, -1081506768672197531), (-1, 7649822949489003927), (1, 8565342891848886719), (-1, -2415400797217663574), (1, NULL), (1, 6434701107584272949), (1, -5975572166119718758), (-1, 8053866671492250673), (-1, -1085746824172150211), (1, -1416598885201198302), (-1, 402267973706390353), (1, 6653089490664761997), (-1, 4832610248880324173), (-1, -3273236545927562170), (1, 6947739671971480893), (1, 5807108610187298768), (1, 2036765517915890303), (-1, 1913625072931392084), (1, 5149177015152753379), (-1, NULL), (-1, -217515546249929827), (-1, 1405490038821945609), (1, -4437589030189839929), (-1, 493190889810948579), (1, NULL), (1, -7914077003684076929);
 
+-- Should only show the last inserted row with valid sign
 SELECT * FROM t0 FINAL;
 
 DELETE FROM t0 WHERE TRUE;
@@ -52,3 +58,68 @@ INSERT INTO TABLE t_03291_collapsing_invalid_sign_vertical_merge VALUES (1, 0);
 OPTIMIZE TABLE t_03291_collapsing_invalid_sign_vertical_merge;
 
 DROP TABLE t_03291_collapsing_invalid_sign_vertical_merge;
+
+-- CI found a SEGV, testing for it here: https://github.com/ClickHouse/ClickHouse/issues/74219
+DROP TABLE IF EXISTS t0;
+
+CREATE TABLE t0 (c0 Int8, c1 Int) ENGINE = CollapsingMergeTree(c0) ORDER BY (c1);
+
+INSERT INTO TABLE t0 (c1, c0) VALUES (69938204, 1), (-968049277, 1), (-1302413209, -1), (1059244139, DEFAULT);
+
+SELECT 1 FROM t0 FINAL;
+
+DROP TABLE t0;
+
+-- A merge must emit a key's rows in read order: a vertical merge's gather stage pairs the Nth
+-- unskipped row source with the Nth merged row, so a row out of place gets another row's columns.
+-- Rows with an invalid sign exercise it, interleaving with the rows collapsing selects, and on
+-- a key's first row they were also read from the row the key transition had just displaced, which
+-- reaches a horizontal merge too.
+-- Without the fix the vertical block pairs c1 with the wrong key and the horizontal one repeats a row.
+
+DROP TABLE IF EXISTS t_03291_invalid_sign_read_order_vertical;
+
+CREATE TABLE t_03291_invalid_sign_read_order_vertical (id UInt64, sign Int8, c1 UInt64, c2 UInt64)
+ENGINE = CollapsingMergeTree(sign) ORDER BY id
+SETTINGS enable_vertical_merge_algorithm = 1, vertical_merge_algorithm_min_rows_to_activate = 1,
+         vertical_merge_algorithm_min_bytes_to_activate = 0, vertical_merge_algorithm_min_columns_to_activate = 1,
+         min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+
+-- Key 1 meets the invalid row after the only selected row, key 2 before any and as the key's first
+-- row, key 4 between both selected rows, and key 5 after a lone negative one.
+INSERT INTO t_03291_invalid_sign_read_order_vertical VALUES
+    (1,  1, 101, 201), (1,  0, 111, 211),
+    (2,  0, 102, 202), (2,  1, 112, 212),
+    (4, -1, 104, 204), (4,  0, 114, 214), (4, 1, 124, 224),
+    (5, -1, 105, 205), (5,  0, 115, 215), (5, -1, 125, 225);
+
+OPTIMIZE TABLE t_03291_invalid_sign_read_order_vertical FINAL;
+
+SELECT 'vertical', id, sign, c1, c2 FROM t_03291_invalid_sign_read_order_vertical ORDER BY id, c1;
+
+SYSTEM FLUSH LOGS part_log;
+SELECT 'vertical_algo', merge_algorithm FROM system.part_log
+    WHERE database = currentDatabase() AND table = 't_03291_invalid_sign_read_order_vertical'
+    AND event_type = 'MergeParts' ORDER BY event_time_microseconds LIMIT 1;
+
+DROP TABLE t_03291_invalid_sign_read_order_vertical;
+
+-- merge() is shared by both algorithms, so a horizontal merge over the same data is the oracle
+-- the vertical result above is checked against.
+DROP TABLE IF EXISTS t_03291_invalid_sign_read_order_horizontal;
+
+CREATE TABLE t_03291_invalid_sign_read_order_horizontal (id UInt64, sign Int8, c1 UInt64, c2 UInt64)
+ENGINE = CollapsingMergeTree(sign) ORDER BY id
+SETTINGS enable_vertical_merge_algorithm = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+
+INSERT INTO t_03291_invalid_sign_read_order_horizontal VALUES
+    (1,  1, 101, 201), (1,  0, 111, 211),
+    (2,  0, 102, 202), (2,  1, 112, 212),
+    (4, -1, 104, 204), (4,  0, 114, 214), (4, 1, 124, 224),
+    (5, -1, 105, 205), (5,  0, 115, 215), (5, -1, 125, 225);
+
+OPTIMIZE TABLE t_03291_invalid_sign_read_order_horizontal FINAL;
+
+SELECT 'horizontal', id, sign, c1, c2 FROM t_03291_invalid_sign_read_order_horizontal ORDER BY id, c1;
+
+DROP TABLE t_03291_invalid_sign_read_order_horizontal;

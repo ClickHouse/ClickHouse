@@ -1,6 +1,8 @@
 #include "config.h"
 
 #if USE_PROTOBUF
+
+#include <Common/Exception.h>
 #include <IO/Protobuf/ProtobufZeroCopyOutputStreamFromWriteBuffer.h>
 #include <IO/WriteBuffer.h>
 
@@ -25,6 +27,7 @@ ProtobufZeroCopyOutputStreamFromWriteBuffer::ProtobufZeroCopyOutputStreamFromWri
 
 bool ProtobufZeroCopyOutputStreamFromWriteBuffer::Next(void ** data, int * size)
 {
+    out->nextIfAtEnd();
     *data = out->position();
     *size = static_cast<int>(out->available());
     out->position() += *size;

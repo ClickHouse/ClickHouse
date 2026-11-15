@@ -1,5 +1,7 @@
 <clickhouse>
     <crash_log replace="replace">
+        <database>system</database>
+        <table>crash_log</table>
         <flush_interval_milliseconds>1000000</flush_interval_milliseconds>
         <max_size_rows>1</max_size_rows>
         <reserved_size_rows>1</reserved_size_rows>

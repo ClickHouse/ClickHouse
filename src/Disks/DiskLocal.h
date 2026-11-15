@@ -36,6 +36,11 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override;
 
+    ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override;
+
+    ReservationPtr reserveAndGetUnreservedSpace(
+        UInt64 bytes, const std::optional<ReservationConstraints> & constraints, std::optional<UInt64> & unreserved_space) override;
+
     std::optional<UInt64> getTotalSpace() const override;
     std::optional<UInt64> getAvailableSpace() const override;
     std::optional<UInt64> getUnreservedSpace() const override;
@@ -51,8 +56,6 @@ public:
     void createDirectory(const String & path) override;
 
     void createDirectories(const String & path) override;
-
-    void clearDirectory(const String & path) override;
 
     void moveDirectory(const String & from_path, const String & to_path) override;
 
@@ -78,11 +81,11 @@ public:
 
     void listFiles(const String & path, std::vector<String> & file_names) const override;
 
-    std::unique_ptr<ReadBufferFromFileBase> readFile(
+    void prepareRead(
         const String & path,
         const ReadSettings & settings,
         std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override;
+        ReadPipeline & pipeline) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -91,6 +94,7 @@ public:
         const WriteSettings & settings) override;
 
     Strings getBlobPath(const String & path) const override;
+    bool areBlobPathsRandom() const override { return false; }
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
 
     void removeFile(const String & path) override;
@@ -115,7 +119,7 @@ public:
 
     bool isSymlinkNoThrow(const String & path) const override;
 
-    void createDirectoriesSymlink(const String & target, const String & link) override;
+    void createDirectorySymlink(const String & target, const String & link) override;
 
     String readSymlink(const fs::path & path) const override;
 
@@ -139,15 +143,9 @@ public:
     bool isBroken() const override { return broken; }
     bool isReadOnly() const override { return readonly; }
 
-    void startupImpl(ContextPtr context) override;
+    void startupImpl() override;
 
     void shutdown() override;
-
-    /// Check if the disk is OK to proceed read/write operations. Currently the check is
-    /// rudimentary. The more advanced choice would be using
-    /// https://github.com/smartmontools/smartmontools. However, it's good enough for now.
-    bool canRead() const noexcept;
-    bool canWrite() noexcept;
 
     bool supportsStat() const override { return true; }
     struct stat stat(const String & path) const override;
@@ -155,21 +153,19 @@ public:
     bool supportsChmod() const override { return true; }
     void chmod(const String & path, mode_t mode) override;
 
+    ObjectStoragePtr getObjectStorage() override;
+
 protected:
     void checkAccessImpl(const String & path) override;
 
 private:
-    std::optional<UInt64> tryReserve(UInt64 bytes);
+    bool tryReserve(UInt64 bytes, const std::optional<ReservationConstraints> & constraints, UInt64 & unreserved_space);
 
     /// Setup disk for healthy check.
     /// Throw exception if it's not possible to setup necessary files and directories.
     void setup();
 
-    /// Read magic number from disk checker file. Return std::nullopt if exception happens.
-    std::optional<UInt32> readDiskCheckerMagicNumber() const noexcept;
-
     const String disk_path;
-    const String disk_checker_path = ".disk_checker_file";
     std::atomic<UInt64> keep_free_space_bytes;
     LoggerPtr logger;
     DataSourceDescription data_source_description;
@@ -181,11 +177,7 @@ private:
 
     std::atomic<bool> broken{false};
     std::atomic<bool> readonly{false};
-    std::unique_ptr<DiskLocalCheckThread> disk_checker;
-    /// A magic number to vaguely check if reading operation generates correct result.
-    /// -1 means there is no available disk_checker_file yet.
-    Int64 disk_checker_magic_number = -1;
-    bool disk_checker_can_check_read = true;
+    std::optional<DiskLocalCheckThread> disk_checker;
 };
 
 

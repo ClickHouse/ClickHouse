@@ -1,5 +1,3 @@
-SET enable_analyzer=1;
-
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (a Int64, b Int64, c Int64) Engine=MergeTree ORDER BY a;
 INSERT INTO test(a, b, c) VALUES (0, 5, 10), (7, 8, 15), (14, 10, 20);

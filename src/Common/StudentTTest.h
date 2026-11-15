@@ -36,7 +36,7 @@ private:
 
         double var() const
         {
-            return (squares_sum - (sum * sum / size)) / static_cast<double>(size - 1);
+            return (squares_sum - (sum * sum / static_cast<double>(size))) / static_cast<double>(size - 1);
         }
 
         void clear()

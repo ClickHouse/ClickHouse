@@ -1,9 +1,9 @@
 #pragma once
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <atomic>
-#include <Common/Fiber.h>
+#include <Common/StackfulCoroutine.h>
 #include <Common/TimerDescriptor.h>
 #include <Common/Epoll.h>
 #include <Common/AsyncTaskExecutor.h>
@@ -25,11 +25,26 @@ class RemoteQueryExecutor;
 class RemoteQueryExecutorReadContext : public AsyncTaskExecutor
 {
 public:
-    explicit RemoteQueryExecutorReadContext(RemoteQueryExecutor & executor_, bool suspend_when_query_sent_ = false);
+    /// fragment_trace_context_: the tracing context of the executor's fragment span, which the fiber
+    /// runs inside (the executor owns and finishes that span; empty when the query is not traced).
+    explicit RemoteQueryExecutorReadContext(
+        RemoteQueryExecutor & executor_,
+        bool suspend_when_query_sent_,
+        bool read_packet_type_separately_,
+        OpenTelemetry::TracingContextOnThread fragment_trace_context_);
 
     ~RemoteQueryExecutorReadContext() override;
 
+    /// returns true if packet or packet has been read
+    /// packet type is read separately if read_packet_type_separately is true
+    bool read();
+
     bool isInProgress() const { return is_in_progress.load(std::memory_order_relaxed); }
+
+    /// Cancel without waiting for the packet that is already in flight. Only valid when the
+    /// connection will be disconnected rather than returned to the pool, since it leaves the
+    /// socket part-way through a packet.
+    void skipDrainOnCancel() { skip_drain_on_cancel.store(true, std::memory_order_relaxed); }
 
     bool isCancelled() const { return AsyncTaskExecutor::isCancelled() || is_pipe_alarmed; }
 
@@ -37,9 +52,15 @@ public:
 
     int getFileDescriptor() const { return epoll.getFileDescriptor(); }
 
-    Packet getPacket() { return std::move(packet); }
+    Packet getPacket();
 
-    UInt64 getPacketType() const { return packet.type; }
+    UInt64 getPacketType() const;
+
+    bool hasReadTillPacketType() const { return has_read_packet_part == PacketPart::Type; }
+
+    bool hasReadPacket() const { return has_read_packet_part == PacketPart::Body; }
+
+    bool readPacketTypeSeparately() const { return read_packet_type_separately; }
 
 private:
     bool checkTimeout(bool blocking = false);
@@ -61,7 +82,20 @@ private:
         void run(AsyncCallback async_callback, SuspendCallback suspend_callback) override;
     };
 
+    /// true if no data has been received on the latest attempt to read
     std::atomic_bool is_in_progress = false;
+    std::atomic_bool skip_drain_on_cancel = false;
+
+    enum class PacketPart : uint8_t
+    {
+        None = 0,
+        Type = 1,
+        Body = 2
+    };
+    /// depending on read_packet_type_separately, possible value transitions are
+    /// None -> Type -> Body -> None
+    /// None -> Body -> None
+    std::atomic<PacketPart> has_read_packet_part = PacketPart::None;
     Packet packet;
 
     RemoteQueryExecutor & executor;
@@ -73,17 +107,18 @@ private:
     /// We put those descriptors into our own epoll which is used by external executor.
     TimerDescriptor timer;
     Poco::Timespan timeout;
-    AsyncEventTimeoutType timeout_type;
+    AsyncEventTimeoutType timeout_type{};
     std::atomic_bool is_timer_alarmed = false;
     int connection_fd = -1;
     int pipe_fd[2] = { -1, -1 };
     std::atomic_bool is_pipe_alarmed = false;
 
-    Epoll epoll;
+    Epoll epoll{EpollNesting::AsyncReadContext};
 
     std::string connection_fd_description;
     bool suspend_when_query_sent = false;
     bool is_query_sent = false;
+    const bool read_packet_type_separately = false;
 };
 
 }
@@ -97,6 +132,7 @@ class RemoteQueryExecutorReadContext
 public:
     void cancel() {}
     void setTimer() {}
+    void skipDrainOnCancel() {}
 };
 
 }

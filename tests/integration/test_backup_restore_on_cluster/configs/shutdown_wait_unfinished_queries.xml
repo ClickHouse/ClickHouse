@@ -1,0 +1,3 @@
+<clickhouse>
+    <shutdown_wait_unfinished_queries>true</shutdown_wait_unfinished_queries>
+</clickhouse>

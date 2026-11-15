@@ -15,7 +15,7 @@ class HTTP2ServerConnectionFactory : public TCPServerConnectionFactory {
     public:
         explicit HTTP2ServerConnectionFactory(HTTP2RequestHandlerFactoryPtr factory);
 
-        Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override;
+        Poco::Net::TCPServerConnection * createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override;
 
     private:
         // HTTPContextPtr context;

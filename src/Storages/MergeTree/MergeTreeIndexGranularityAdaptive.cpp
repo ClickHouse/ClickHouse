@@ -1,6 +1,14 @@
+#include <Common/Exception.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 
+#include <fmt/ranges.h>
+
+#include <IO/Operators.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBuffer.h>
+#include <IO/ReadBuffer.h>
 
 namespace DB
 {
@@ -25,6 +33,14 @@ size_t MergeTreeIndexGranularityAdaptive::getMarkRows(size_t mark_index) const
         return marks_rows_partial_sums[0];
 
     return marks_rows_partial_sums[mark_index] - marks_rows_partial_sums[mark_index - 1];
+}
+
+MarkRange MergeTreeIndexGranularityAdaptive::getMarkRangeForRowOffset(size_t row_offset) const
+{
+    auto position = std::lower_bound(marks_rows_partial_sums.begin(), marks_rows_partial_sums.end(), row_offset + 1);
+    size_t begin_mark = position - marks_rows_partial_sums.begin();
+
+    return {begin_mark, begin_mark + 1};
 }
 
 bool MergeTreeIndexGranularityAdaptive::hasFinalMark() const
@@ -148,5 +164,29 @@ std::string MergeTreeIndexGranularityAdaptive::describe() const
 {
     return fmt::format("Adaptive(marks_rows_partial_sums: [{}])", fmt::join(marks_rows_partial_sums, ", "));
 }
+
+void MergeTreeIndexGranularityAdaptive::writeDataImpl(WriteBuffer & out) const
+{
+    out << marks_rows_partial_sums.size() << "\n";
+    for (const auto & mark : marks_rows_partial_sums)
+        out << mark << "\n";
+    out << "\n";
+}
+
+void MergeTreeIndexGranularityAdaptive::readDataImpl(ReadBuffer & in)
+{
+    size_t result_size = 0;
+    in >> result_size >> "\n";
+    marks_rows_partial_sums.reserve(result_size);
+    size_t i = 0;
+    while (i < result_size)
+    {
+        marks_rows_partial_sums.emplace_back();
+        in >> marks_rows_partial_sums.back() >> "\n";
+        ++i;
+    }
+    in >> "\n";
+}
+
 
 }

@@ -6,26 +6,37 @@
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/data/disks/disk_s3/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </disk_s3>
+            <!-- Reached through the `broken_s3` mock, so a test can make its answers fail. It allows no
+                 retries of its own, so an upload into it gets through only when something else retries it. -->
+            <disk_s3_broken>
+                <type>s3</type>
+                <endpoint>http://resolver:8084/root/data/disks/disk_s3_broken/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <skip_access_check>1</skip_access_check>
+                <s3_retry_attempts>0</s3_retry_attempts>
+            </disk_s3_broken>
             <disk_s3_other_bucket>
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root2/data/disks/disk_s3/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </disk_s3_other_bucket>
             <disk_s3_plain>
                 <type>s3_plain</type>
                 <endpoint>http://minio1:9001/root/data/disks/disk_s3_plain/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
+                <readonly>true</readonly>
             </disk_s3_plain>
             <disk_s3_plain_rewritable>
                 <type>s3_plain_rewritable</type>
                 <endpoint>http://minio1:9001/root/data/disks/disk_s3_plain_rewritable/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
             </disk_s3_plain_rewritable>
             <disk_s3_cache>
@@ -35,6 +46,12 @@
                 <max_size>1000000000</max_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
             </disk_s3_cache>
+            <disk_s3_encrypted>
+                <type>encrypted</type>
+                <disk>disk_s3</disk>
+                <key>1234567812345678</key>
+                <path>encrypted/</path>
+            </disk_s3_encrypted>
         </disks>
         <policies>
             <policy_s3>
@@ -44,6 +61,13 @@
                     </main>
                 </volumes>
             </policy_s3>
+            <policy_s3_broken>
+                <volumes>
+                    <main>
+                        <disk>disk_s3_broken</disk>
+                    </main>
+                </volumes>
+            </policy_s3_broken>
             <policy_s3_plain>
                 <volumes>
                     <main>
@@ -51,6 +75,14 @@
                     </main>
                 </volumes>
             </policy_s3_plain>
+            <policy_s3_plain_backup_metadata_only>
+                <volumes>
+                    <main>
+                        <disk>disk_s3_plain</disk>
+                    </main>
+                </volumes>
+                <backup_metadata_only>true</backup_metadata_only>
+            </policy_s3_plain_backup_metadata_only>
             <policy_s3_plain_rewritable>
                 <volumes>
                     <main>
@@ -81,5 +113,6 @@
         <allowed_disk>disk_s3_plain_rewritable</allowed_disk>
         <allowed_disk>disk_s3_cache</allowed_disk>
         <allowed_disk>disk_s3_other_bucket</allowed_disk>
+        <allowed_disk>disk_s3_encrypted</allowed_disk>
     </backups>
 </clickhouse>

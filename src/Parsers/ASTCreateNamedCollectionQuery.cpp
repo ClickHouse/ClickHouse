@@ -3,8 +3,8 @@
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/formatSettingName.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/HiddenSecret.h>
 
 
 namespace DB
@@ -12,19 +12,22 @@ namespace DB
 
 ASTPtr ASTCreateNamedCollectionQuery::clone() const
 {
-    return std::make_shared<ASTCreateNamedCollectionQuery>(*this);
+    return make_intrusive<ASTCreateNamedCollectionQuery>(*this);
 }
 
 void ASTCreateNamedCollectionQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "CREATE NAMED COLLECTION ";
+    ostr << "CREATE ";
+    if (or_replace)
+        ostr << "OR REPLACE ";
+    ostr << "NAMED COLLECTION ";
     if (if_not_exists)
         ostr << "IF NOT EXISTS ";
-    ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(collection_name) << (settings.hilite ? hilite_none : "");
+    ostr << backQuoteIfNeed(collection_name);
 
     formatOnCluster(ostr, settings);
 
-    ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
+    ostr << " AS ";
     bool first = true;
     for (const auto & change : changes)
     {
@@ -38,7 +41,7 @@ void ASTCreateNamedCollectionQuery::formatImpl(WriteBuffer & ostr, const IAST::F
         if (settings.show_secrets)
             ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
         else
-            ostr << " = '[HIDDEN]'";
+            ostr << " = " << HIDDEN_SECRET_LITERAL;
         auto override_value = overridability.find(change.name);
         if (override_value != overridability.end())
             ostr << " " << (override_value->second ? "" : "NOT ") << "OVERRIDABLE";

@@ -20,12 +20,12 @@ INSERT INTO times SELECT now();
 
 SELECT max(t) - min(t) >= 1 FROM times;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['S3CreateMultipartUpload'] == 1,
        ProfileEvents['S3UploadPart'] == 1,
        ProfileEvents['S3CompleteMultipartUpload'] == 1
 FROM system.query_log
-WHERE query LIKE '%request-throttler.csv%'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query LIKE '%request-throttler.csv%'
 AND type = 'QueryFinish'
 AND current_database = currentDatabase()
 ORDER BY query_start_time DESC

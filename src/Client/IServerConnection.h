@@ -7,8 +7,8 @@
 #include <Core/Protocol.h>
 
 #include <QueryPipeline/ProfileInfo.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
-#include <QueryPipeline/Pipe.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/Progress.h>
 
@@ -25,6 +25,7 @@ namespace DB
 {
 
 class ClientInfo;
+struct FormatSettings;
 
 /// Packet that could be received from server.
 struct Packet
@@ -33,10 +34,9 @@ struct Packet
 
     Block block;
     std::unique_ptr<Exception> exception;
-    std::vector<String> multistring_message;
+    String columns_description;
     Progress progress;
     ProfileInfo profile_info;
-    std::vector<UUID> part_uuids;
 
     /// The part of parallel replicas protocol
     std::optional<InitialAllRangesAnnouncement> announcement;
@@ -60,6 +60,7 @@ struct ExternalTableData
 using ExternalTableDataPtr = std::unique_ptr<ExternalTableData>;
 using ExternalTablesData = std::vector<ExternalTableDataPtr>;
 
+class QueryPlan;
 
 class IServerConnection : boost::noncopyable
 {
@@ -103,6 +104,8 @@ public:
         const std::vector<String> & external_roles,
         std::function<void(const Progress &)> process_progress_callback) = 0;
 
+    virtual void sendQueryPlan(const QueryPlan & query_plan) = 0;
+
     virtual void sendCancel() = 0;
 
     /// Send block of data; if name is specified, server will write it to external (temporary) table of that name.
@@ -115,7 +118,12 @@ public:
     /// Send all contents of external (temporary) tables.
     virtual void sendExternalTablesData(ExternalTablesData & data) = 0;
 
+    /// Send all scalars.
+    virtual void sendScalarsData(Scalars & data) = 0;
+
     virtual void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) = 0;
+
+    virtual void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) = 0;
 
     /// Check, if has data to read.
     virtual bool poll(size_t timeout_microseconds) = 0;
@@ -128,14 +136,24 @@ public:
 
     /// Receive packet from server.
     virtual Packet receivePacket() = 0;
+    virtual UInt64 receivePacketType() = 0;
 
-    /// If not connected yet, or if connection is broken - then connect. If cannot connect - throw an exception.
+    /// If not connected yet - then connect. If cannot connect - throw an exception.
+    /// Does not ping an already-established connection: a connection that the server has closed
+    /// while it was idle in the pool is detected and recovered when the query is sent.
     virtual void forceConnected(const ConnectionTimeouts & timeouts) = 0;
 
     virtual bool isConnected() const = 0;
 
-    /// Check if connection is still active with ping request.
+    /// Check if connection is still active with ping request. The round trip also synchronizes the
+    /// client with the server: after it returns, everything the server has already sent (including
+    /// a close) has been observed. Use it to recover from a protocol desynchronization.
     virtual bool checkConnected(const ConnectionTimeouts & /*timeouts*/) = 0;
+
+    /// The same, but without a round trip. It only reports a failure that is already visible on the
+    /// socket, so it must not be used to recover from a desynchronization - only to skip a
+    /// connection that is known to be unusable before sending the next request.
+    virtual bool checkConnectedWithoutRoundTrip() = 0;
 
     /** Disconnect.
       * This may be used, if connection is left in unsynchronised state
@@ -145,6 +163,12 @@ public:
 
     /// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
     virtual void setThrottler(const ThrottlerPtr & throttler_) = 0;
+
+    virtual void setFormatSettings(const FormatSettings &) {}
+
+    /// Set a callback to check for query cancellation (e.g. Ctrl+C).
+    /// Used by LocalConnection to enable cancellation during query analysis.
+    virtual void setCancelCallback(std::function<bool()>) {}
 };
 
 using ServerConnectionPtr = std::unique_ptr<IServerConnection>;

@@ -1,6 +1,8 @@
 #pragma once
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 
+#include <vector>
+
 namespace DB
 {
 
@@ -14,6 +16,8 @@ public:
     MergeTreeIndexGranularityAdaptive() = default;
     explicit MergeTreeIndexGranularityAdaptive(const std::vector<size_t> & marks_rows_partial_sums_);
 
+    MergeTreeIndexGranularityType getType() const override { return MergeTreeIndexGranularityType::ADAPTIVE; }
+
     std::optional<size_t> getConstantGranularity() const override { return {}; }
     size_t getRowsCountInRange(size_t begin, size_t end) const override;
     size_t countMarksForRows(size_t from_mark, size_t number_of_rows) const override;
@@ -23,6 +27,7 @@ public:
     size_t getTotalRows() const override;
 
     size_t getMarkRows(size_t mark_index) const override;
+    MarkRange getMarkRangeForRowOffset(size_t row_offset) const override;
     bool hasFinalMark() const override;
 
     void appendMark(size_t rows_count) override;
@@ -33,9 +38,13 @@ public:
 
     std::shared_ptr<MergeTreeIndexGranularity> optimize() override;
     std::string describe() const override;
+    std::shared_ptr<MergeTreeIndexGranularity> clone() const override { return std::make_shared<MergeTreeIndexGranularityAdaptive>(*this); }
 
 private:
     std::vector<size_t> marks_rows_partial_sums;
+
+    void writeDataImpl(WriteBuffer & out) const override;
+    void readDataImpl(ReadBuffer & in) override;
 };
 
 }

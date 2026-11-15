@@ -1,12 +1,18 @@
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <base/defines.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/NetException.h>
 #include <Client/IConnections.h>
 #include <Common/AsyncTaskExecutor.h>
+
+#include <cerrno>
+#include <fcntl.h>
+#include <unistd.h>
 
 namespace DB
 {
@@ -18,14 +24,39 @@ namespace ErrorCodes
     extern const int SOCKET_TIMEOUT;
 }
 
-RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(RemoteQueryExecutor & executor_, bool suspend_when_query_sent_)
-    : AsyncTaskExecutor(std::make_unique<Task>(*this)), executor(executor_), suspend_when_query_sent(suspend_when_query_sent_)
+RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(
+    RemoteQueryExecutor & executor_,
+    bool suspend_when_query_sent_,
+    bool read_packet_type_separately_,
+    OpenTelemetry::TracingContextOnThread fragment_trace_context_)
+    : AsyncTaskExecutor(std::make_unique<Task>(*this), "RemoteQueryExecutorReadContext", std::move(fragment_trace_context_))
+    , executor(executor_)
+    , suspend_when_query_sent(suspend_when_query_sent_)
+    , read_packet_type_separately(read_packet_type_separately_)
 {
+#if defined(OS_LINUX)
     if (-1 == pipe2(pipe_fd, O_NONBLOCK))
         throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot create pipe");
+#else
+    /// macOS has no pipe2; create the pipe and set O_NONBLOCK on both ends.
+    if (-1 == pipe(pipe_fd))
+        throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot create pipe");
+    for (int pipe_end_fd : pipe_fd)
+    {
+        int flags = fcntl(pipe_end_fd, F_GETFL, 0);
+        if (-1 == flags || -1 == fcntl(pipe_end_fd, F_SETFL, flags | O_NONBLOCK))
+            throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot make pipe non-blocking");
+    }
+#endif
 
     epoll.add(pipe_fd[0]);
     epoll.add(timer.getDescriptor());
+}
+
+bool RemoteQueryExecutorReadContext::read()
+{
+    resume();
+    return !isInProgress();
 }
 
 bool RemoteQueryExecutorReadContext::checkBeforeTaskResume()
@@ -33,8 +64,7 @@ bool RemoteQueryExecutorReadContext::checkBeforeTaskResume()
     return !is_in_progress.load(std::memory_order_relaxed) || checkTimeout();
 }
 
-
-void RemoteQueryExecutorReadContext::Task::run(AsyncCallback async_callback, SuspendCallback suspend_callback)
+void RemoteQueryExecutorReadContext::Task::run(AsyncCallback async_callback, SuspendCallback suspend_callback) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     read_context.executor.sendQueryUnlocked(ClientInfo::QueryKind::SECONDARY_QUERY, async_callback);
     read_context.is_query_sent = true;
@@ -47,12 +77,22 @@ void RemoteQueryExecutorReadContext::Task::run(AsyncCallback async_callback, Sus
 
     while (true)
     {
+        read_context.has_read_packet_part = PacketPart::None;
+
+        if (read_context.read_packet_type_separately)
+        {
+            read_context.packet.type = read_context.executor.getConnections().receivePacketTypeUnlocked(async_callback);
+            read_context.has_read_packet_part = PacketPart::Type;
+            suspend_callback();
+        }
         read_context.packet = read_context.executor.getConnections().receivePacketUnlocked(async_callback);
+        read_context.has_read_packet_part = PacketPart::Body;
         suspend_callback();
     }
 }
 
-void RemoteQueryExecutorReadContext::processAsyncEvent(int fd, Poco::Timespan socket_timeout, AsyncEventTimeoutType type, const std::string & description, uint32_t events)
+void RemoteQueryExecutorReadContext::processAsyncEvent(
+    int fd, Poco::Timespan socket_timeout, AsyncEventTimeoutType type, const std::string & description, uint32_t events)
 {
     connection_fd = fd;
     epoll.add(connection_fd, events);
@@ -117,7 +157,12 @@ void RemoteQueryExecutorReadContext::cancelBefore()
             suspend_when_query_sent = true;
 
         /// Wait for current pending packet, to avoid leaving connection in unsynchronised state.
-        while (is_in_progress.load(std::memory_order_relaxed))
+        /// Unless the caller told us not to: a replica that has not announced yet has nothing to
+        /// send but its announcement, and waiting for it means waiting out that replica's whole
+        /// planning phase for a packet that will be discarded. The connection is disconnected by
+        /// `~RemoteQueryExecutor` in that case rather than reused, so it cannot be left
+        /// unsynchronised for anyone else.
+        while (!skip_drain_on_cancel.load(std::memory_order_relaxed) && is_in_progress.load(std::memory_order_relaxed))
         {
             checkTimeout(/* blocking= */ true);
             resumeUnlocked();
@@ -149,6 +194,21 @@ RemoteQueryExecutorReadContext::~RemoteQueryExecutorReadContext()
         [[maybe_unused]] int err = close(pipe_fd[1]);
         chassert(!err || errno == EINTR);
     }
+}
+
+UInt64 RemoteQueryExecutorReadContext::getPacketType() const
+{
+    chassert(hasReadTillPacketType());
+    return packet.type;
+}
+
+Packet RemoteQueryExecutorReadContext::getPacket()
+{
+    chassert(hasReadPacket());
+
+    Packet p{std::move(packet)};
+    has_read_packet_part = PacketPart::None;
+    return p;
 }
 
 }

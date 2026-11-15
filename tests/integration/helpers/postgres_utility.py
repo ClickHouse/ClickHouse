@@ -2,6 +2,7 @@ import time
 
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+from .config_cluster import pg_pass
 
 postgres_table_template = """
     CREATE TABLE IF NOT EXISTS "{}" (
@@ -38,10 +39,10 @@ def get_postgres_conn(
     replication=False,
 ):
     if database == True:
-        conn_string = f"host={ip} port={port} dbname='{database_name}' user='postgres' password='mysecretpassword'"
+        conn_string = f"host={ip} port={port} dbname='{database_name}' user='postgres' password='{pg_pass}'"
     else:
         conn_string = (
-            f"host={ip} port={port} user='postgres' password='mysecretpassword'"
+            f"host={ip} port={port} user='postgres' password='{pg_pass}'"
         )
 
     if replication:
@@ -218,13 +219,13 @@ class PostgresManager:
             self.instance.query(
                 f"""
                     CREATE DATABASE \"{database_name}\"
-                    ENGINE = PostgreSQL('{self.ip}:{self.port}', '{postgres_database}', 'postgres', 'mysecretpassword')"""
+                    ENGINE = PostgreSQL('{self.ip}:{self.port}', '{postgres_database}', 'postgres', '{pg_pass}')"""
             )
         else:
             self.instance.query(
                 f"""
                 CREATE DATABASE \"{database_name}\"
-                ENGINE = PostgreSQL('{self.ip}:{self.port}', '{postgres_database}', 'postgres', 'mysecretpassword', '{schema_name}')"""
+                ENGINE = PostgreSQL('{self.ip}:{self.port}', '{postgres_database}', 'postgres', '{pg_pass}', '{schema_name}')"""
             )
 
     def drop_clickhouse_postgres_db(self, database_name=""):
@@ -242,7 +243,7 @@ class PostgresManager:
         settings=[],
         table_overrides="",
         user="postgres",
-        password="mysecretpassword",
+        password=pg_pass,
     ):
         postgres_database = self.database_or_default(postgres_database)
         self.created_materialized_postgres_db_list.add(materialized_database)
@@ -346,15 +347,22 @@ def assert_nested_table_is_created(
 
     # Check based on `system.tables` is not enough, because tables appear there before they are loaded.
     # It may lead to error `Unknown table expression identifier...`
-    while True:
+    deadline = time.monotonic() + 120
+    last_error = None
+    while time.monotonic() < deadline:
         try:
             instance.query(
                 f"SELECT * FROM `{materialized_database}`.`{table}` LIMIT 1 FORMAT Null"
             )
             break
-        except Exception:
+        except Exception as e:
+            last_error = e
             time.sleep(0.2)
             continue
+    else:
+        raise Exception(
+            f"Table `{materialized_database}`.`{table}` was not created within 120 seconds. Last error: {last_error}"
+        )
 
     database_tables = instance.query(
         f"SHOW TABLES FROM `{materialized_database}` WHERE name = '{table}'"
@@ -365,10 +373,15 @@ def assert_nested_table_is_created(
 def assert_number_of_columns(
     instance, expected, table_name, database_name="test_database"
 ):
+    deadline = time.monotonic() + 120
     result = instance.query(
         f"select count() from system.columns where table = '{table_name}' and database = '{database_name}' and not startsWith(name, '_')"
     )
     while int(result) != expected:
+        if time.monotonic() > deadline:
+            raise Exception(
+                f"Expected {expected} columns in {database_name}.{table_name}, got {result.strip()} after 120 seconds"
+            )
         time.sleep(1)
         result = instance.query(
             f"select count() from system.columns where table = '{table_name}' and database = '{database_name}' and not startsWith(name, '_')"

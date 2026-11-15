@@ -16,10 +16,10 @@ $CLICKHOUSE_CLIENT -q "insert into data select * from numbers(1e6)"
 query_id=$(random_str 10)
 $CLICKHOUSE_CLIENT --query_id "$query_id" -q "backup table data to Disk('backups', '$CLICKHOUSE_DATABASE/data/backup1') SETTINGS max_backup_bandwidth=1e6" > /dev/null
 $CLICKHOUSE_CLIENT -m -q "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
     SELECT
         query_duration_ms >= 7e3,
         ProfileEvents['ReadBufferFromFileDescriptorReadBytes'] > 8e6
     FROM system.query_log
-    WHERE current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id' AND type != 'QueryStart'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id' AND type != 'QueryStart'
 "

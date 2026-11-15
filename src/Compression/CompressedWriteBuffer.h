@@ -1,13 +1,10 @@
 #pragma once
 
-#include <memory>
-
 #include <Common/PODArray.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/ICompressionCodec.h>
-#include <Compression/CompressionFactory.h>
 
 
 namespace DB
@@ -18,7 +15,7 @@ class CompressedWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
 public:
     explicit CompressedWriteBuffer(
         WriteBuffer & out_,
-        CompressionCodecPtr codec_ = CompressionCodecFactory::instance().getDefaultCodec(),
+        CompressionCodecPtr codec_ = nullptr,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         bool use_adaptive_buffer_size_ = false,
         size_t adaptive_buffer_initial_size = DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE);
@@ -43,6 +40,17 @@ public:
         return offset();
     }
 
+    CompressionCodecPtr getCodec() const { return codec; }
+
+    void setCodec(CompressionCodecPtr codec_);
+
+    /// Blocks that the codec does not compress well are written with codec `NONE`,
+    /// so reading them does not pay for decompression. Must not be used with an encrypting codec.
+    void storeIncompressibleBlocksUncompressed();
+
+    /// Returns the buffer that compressed data is written into.
+    WriteBuffer * getNestedBuffer() const { return &out; }
+
 private:
     void nextImpl() override;
     /// finalize call does not affect the out buffer.
@@ -54,12 +62,9 @@ private:
 
     WriteBuffer & out;
     CompressionCodecPtr codec;
-
-    /// If true, the size of internal buffer will be exponentially increased up to
-    /// adaptive_buffer_max_size after each nextImpl call. It can be used to avoid
-    /// large buffer allocation when actual size of written data is small.
-    bool use_adaptive_buffer_size;
-    size_t adaptive_buffer_max_size;
+    CompressionStatePtr codec_state;
+    /// Codec `NONE` if `storeIncompressibleBlocksUncompressed` was called.
+    CompressionCodecPtr uncompressed_codec;
 
     PODArray<char> compressed_buffer;
 };

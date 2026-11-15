@@ -1,5 +1,4 @@
 -- { echoOn }
-set enable_analyzer=1;
 SYSTEM STOP MERGES tbl;
 
 -- simple test case
@@ -72,6 +71,8 @@ explain syntax select left_table.id,val_left, val_middle, val_right from left_ta
                                                                              inner join middle_table on left_table.id = middle_table.id
                                                                              inner join right_table on middle_table.id = right_table.id
                ORDER BY left_table.id, val_left, val_middle, val_right;
+
+
 
 -- extra: same with subquery
 select left_table.id,val_left, val_middle, val_right from left_table

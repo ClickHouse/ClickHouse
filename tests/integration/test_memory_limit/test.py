@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import logging
 import time
 from multiprocessing.dummy import Pool
 
@@ -13,6 +12,9 @@ node = cluster.add_instance(
     "node",
     main_configs=[
         "configs/async_metrics_no.xml",
+    ],
+    user_configs=[
+        "configs/disable_max_bytes_ratio_before_external_group_by.xml",
     ],
     mem_limit="4g",
 )
@@ -36,6 +38,11 @@ def test_multiple_queries():
     def run_query(node):
         try:
             node.query("SELECT * FROM system.numbers GROUP BY number")
+        except Exception as ex:
+            print("Exception", ex)
+            raise ex
+        try:
+            node.query("SYSTEM FLUSH LOGS")
         except Exception as ex:
             print("Exception", ex)
             raise ex

@@ -1,14 +1,13 @@
 #pragma once
 
-#include <list>
 #include <memory>
 
+#include <Common/ListWithMemoryTracking.h>
 #include <Common/PODArray.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/ICompressionCodec.h>
-#include <Compression/CompressionFactory.h>
 #include <Common/ThreadPool.h>
 
 
@@ -58,9 +57,9 @@ private:
 
     std::mutex mutex;
     std::condition_variable cond;
-    std::list<BufferPair> buffers;
+    ListWithMemoryTracking<BufferPair> buffers;
 
-    using Iterator = std::list<BufferPair>::iterator;
+    using Iterator = ListWithMemoryTracking<BufferPair>::iterator;
     Iterator current_buffer;
     size_t current_sequence_num = 0;
 

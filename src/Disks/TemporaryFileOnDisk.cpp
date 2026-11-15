@@ -1,6 +1,8 @@
 #include <Core/UUID.h>
 #include <Disks/TemporaryFileOnDisk.h>
+#include <IO/WriteHelpers.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 
 #include <filesystem>
@@ -52,6 +54,7 @@ String TemporaryFileOnDisk::getAbsolutePath() const
 
 TemporaryFileOnDisk::~TemporaryFileOnDisk()
 {
+    auto component_guard = Coordination::setCurrentComponent("TemporaryFileOnDisk::~TemporaryFileOnDisk");
     try
     {
         if (!disk || relative_path.empty())

@@ -1,36 +1,48 @@
 #include <Access/AccessControl.h>
+#include <Access/AccessRights.h>
 #include <Access/AuthenticationData.h>
+#include <Access/Common/AuthenticationType.h>
+#include <Common/Base64.h>
 #include <Common/Exception.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Access/getValidUntilFromAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTPublicSSHKey.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+#include <Poco/LRUCache.h>
 
-#include <Common/OpenSSLHelpers.h>
-#include <Poco/SHA1Engine.h>
-#include <base/types.h>
-#include <base/hex.h>
+#include <fmt/format.h>
+
+#include <algorithm>
+
 #include <boost/algorithm/hex.hpp>
+#include <Poco/SHA1Engine.h>
 
-#include <Access/Common/SSLCertificateSubjects.h>
 #include "config.h"
 
 #if USE_SSL
-#     include <openssl/crypto.h>
-#     include <openssl/rand.h>
-#     include <openssl/err.h>
+#    include <openssl/rand.h>
+#    include <openssl/err.h>
+#    include <Common/Crypto/X509Certificate.h>
+#    include <Common/OpenSSLHelpers.h>
 #endif
 
 #if USE_BCRYPT
 #     include <bcrypt.h>
 #endif
 
+namespace CurrentMetrics
+{
+    extern const Metric BcryptCacheBytes;
+    extern const Metric BcryptCacheSize;
+}
+
+
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int AUTHENTICATION_FAILED;
@@ -41,6 +53,7 @@ namespace ErrorCodes
     extern const int OPENSSL_ERROR;
 }
 
+
 AuthenticationData::Digest AuthenticationData::Util::encodeSHA256(std::string_view text [[maybe_unused]])
 {
 #if USE_SSL
@@ -50,6 +63,19 @@ AuthenticationData::Digest AuthenticationData::Util::encodeSHA256(std::string_vi
     return hash;
 #else
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SHA256 passwords support is disabled, because ClickHouse was built without SSL library");
+#endif
+}
+
+AuthenticationData::Digest AuthenticationData::Util::encodeScramSHA256(std::string_view password [[maybe_unused]], std::string_view salt [[maybe_unused]])
+{
+#if USE_SSL
+    std::vector<uint8_t> salt_digest;
+    for (auto elem : base64Decode(String(salt)))
+        salt_digest.push_back(elem);
+    auto salted_password = pbkdf2SHA256(password, salt_digest, 4096);
+    return salted_password;
+#else
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SCRAM SHA256 passwords support is disabled, because ClickHouse was built without SSL library");
 #endif
 }
 
@@ -77,7 +103,7 @@ AuthenticationData::Digest AuthenticationData::Util::encodeBcrypt(std::string_vi
     if (ret != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_gensalt returned {}", ret);
 
-    ret = bcrypt_hashpw(text.data(), salt, reinterpret_cast<char *>(hash.data()));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    ret = bcrypt_hashpw(text.data(), salt, reinterpret_cast<char *>(hash.data())); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     if (ret != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_hashpw returned {}", ret);
 
@@ -92,12 +118,31 @@ AuthenticationData::Digest AuthenticationData::Util::encodeBcrypt(std::string_vi
 bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[maybe_unused]], const Digest & password_bcrypt [[maybe_unused]])
 {
 #if USE_BCRYPT
-    int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
-    /// Before 24.6 we didn't validate hashes on creation, so it could be that the stored hash is invalid
-    /// and it could not be decoded by the library
-    if (ret == -1)
-        throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Internal failure decoding Bcrypt hash");
-    return (ret == 0);
+    /// Bcrypt takes a long time to compute, so we cache the results.
+    /// To avoid storing plaintext passwords in memory we only store SHA256 of the password from the user.
+    /// We store a mapping of the pair of SHA256 of the password and bcrypt hash to the result of the comparison.
+    using SimpleCacheBase = DB::CacheBase<std::string, bool>;
+    static auto bcrypt_cache = SimpleCacheBase("LRU", CurrentMetrics::BcryptCacheBytes, CurrentMetrics::BcryptCacheSize, /*max_size_in_bytes*/ 1024, /*max_count*/ 1024, /*size_ratio*/ 0.5);
+
+    auto password_digest = encodeSHA256(password);
+    /// Both `password_digest` and `password_bcrypt` are fixed length, so we don't need a separator.
+    auto cache_key = fmt::format(
+        "{}{}",
+        std::string_view{reinterpret_cast<const char *>(password_digest.data()), password_digest.size()},
+        std::string_view{reinterpret_cast<const char *>(password_bcrypt.data()), password_bcrypt.size()});
+
+    auto [result, _] = bcrypt_cache.getOrSet(cache_key, [&] -> std::shared_ptr<bool>
+        {
+            int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+            /// Before 24.6 we didn't validate hashes on creation, so it could be that the stored hash is invalid
+            /// and it could not be decoded by the library
+            if (ret == -1)
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Internal failure decoding Bcrypt hash");
+
+            return std::make_shared<bool>(ret == 0);
+        });
+
+    return *result;
 #else
     throw Exception(
         ErrorCodes::SUPPORT_IS_DISABLED,
@@ -107,42 +152,57 @@ bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[m
 
 bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
 {
-    return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash)
+    return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash) && (lhs.otp_secret == rhs.otp_secret)
         && (lhs.ldap_server_name == rhs.ldap_server_name) && (lhs.kerberos_realm == rhs.kerberos_realm)
+#if USE_SSL
         && (lhs.ssl_certificate_subjects == rhs.ssl_certificate_subjects)
+#endif
 #if USE_SSH
         && (lhs.ssh_keys == rhs.ssh_keys)
 #endif
+        && (lhs.salt == rhs.salt)
         && (lhs.http_auth_scheme == rhs.http_auth_scheme)
         && (lhs.http_auth_server_name == rhs.http_auth_server_name)
-        && (lhs.valid_until == rhs.valid_until);
+        && (lhs.valid_until == rhs.valid_until)
+        && (lhs.grants == rhs.grants);
 }
 
 
-void AuthenticationData::setPassword(const String & password_, bool validate)
+void AuthenticationData::setPassword(const String & password_, std::optional<OneTimePasswordSecret> second_factor, bool validate)
 {
     switch (type)
     {
         case AuthenticationType::PLAINTEXT_PASSWORD:
-            setPasswordHashBinary(Util::stringToDigest(password_), validate);
+            setPasswordHashBinary(Util::stringToDigest(password_), std::move(second_factor), validate);
             return;
 
         case AuthenticationType::SHA256_PASSWORD:
-            setPasswordHashBinary(Util::encodeSHA256(password_), validate);
+            setPasswordHashBinary(Util::encodeSHA256(password_), std::move(second_factor), validate);
+            return;
+
+        case AuthenticationType::SCRAM_SHA256_PASSWORD:
+            setPasswordHashBinary(Util::encodeScramSHA256(password_, ""), std::move(second_factor), validate);
             return;
 
         case AuthenticationType::DOUBLE_SHA1_PASSWORD:
-            setPasswordHashBinary(Util::encodeDoubleSHA1(password_), validate);
+            setPasswordHashBinary(Util::encodeDoubleSHA1(password_), std::move(second_factor), validate);
             return;
 
-        case AuthenticationType::BCRYPT_PASSWORD:
         case AuthenticationType::NO_PASSWORD:
+            if (password_.empty())
+            {
+                otp_secret = std::move(second_factor);
+                return;
+            }
+            [[fallthrough]];
+        case AuthenticationType::BCRYPT_PASSWORD:
         case AuthenticationType::LDAP:
         case AuthenticationType::JWT:
         case AuthenticationType::KERBEROS:
         case AuthenticationType::SSL_CERTIFICATE:
         case AuthenticationType::SSH_KEY:
         case AuthenticationType::HTTP:
+        case AuthenticationType::NO_AUTHENTICATION:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify password for authentication type {}", toString(type));
 
         case AuthenticationType::MAX:
@@ -151,23 +211,25 @@ void AuthenticationData::setPassword(const String & password_, bool validate)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setPassword(): authentication type {} not supported", toString(type));
 }
 
-void AuthenticationData::setPasswordBcrypt(const String & password_, int workfactor_, bool validate)
+
+void AuthenticationData::setPasswordBcrypt(const String & password_, int workfactor_, std::optional<OneTimePasswordSecret> second_factor, bool validate)
 {
     if (type != AuthenticationType::BCRYPT_PASSWORD)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify bcrypt password for authentication type {}", toString(type));
 
-    setPasswordHashBinary(Util::encodeBcrypt(password_, workfactor_), validate);
+    setPasswordHashBinary(Util::encodeBcrypt(password_, workfactor_), std::move(second_factor), validate);
 }
 
 String AuthenticationData::getPassword() const
 {
-    if (type != AuthenticationType::PLAINTEXT_PASSWORD)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot decode the password");
-    return String(password_hash.data(), password_hash.data() + password_hash.size());
+    if (type == AuthenticationType::PLAINTEXT_PASSWORD)
+        return String(password_hash.data(), password_hash.data() + password_hash.size());
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot decode the password for authentication type {}", type);
 }
 
 
-void AuthenticationData::setPasswordHashHex(const String & hash, bool validate)
+void AuthenticationData::setPasswordHashHex(const String & hash, std::optional<OneTimePasswordSecret> second_factor, bool validate)
 {
     Digest digest;
     digest.resize(hash.size() / 2);
@@ -181,7 +243,7 @@ void AuthenticationData::setPasswordHashHex(const String & hash, bool validate)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read password hash in hex, check for valid characters [0-9a-fA-F] and length");
     }
 
-    setPasswordHashBinary(digest, validate);
+    setPasswordHashBinary(digest, std::move(second_factor), validate);
 }
 
 
@@ -197,8 +259,9 @@ String AuthenticationData::getPasswordHashHex() const
 }
 
 
-void AuthenticationData::setPasswordHashBinary(const Digest & hash, bool validate)
+void AuthenticationData::setPasswordHashBinary(const Digest & hash, std::optional<OneTimePasswordSecret> second_factor, bool validate)
 {
+    otp_secret = std::move(second_factor);
     switch (type)
     {
         case AuthenticationType::PLAINTEXT_PASSWORD:
@@ -213,6 +276,12 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash, bool validat
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Password hash for the 'SHA256_PASSWORD' authentication type has length {} "
                                 "but must be exactly 32 bytes.", hash.size());
+            password_hash = hash;
+            return;
+        }
+
+        case AuthenticationType::SCRAM_SHA256_PASSWORD:
+        {
             password_hash = hash;
             return;
         }
@@ -263,6 +332,7 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash, bool validat
         case AuthenticationType::SSL_CERTIFICATE:
         case AuthenticationType::SSH_KEY:
         case AuthenticationType::HTTP:
+        case AuthenticationType::NO_AUTHENTICATION:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify password binary hash for authentication type {}", toString(type));
 
         case AuthenticationType::MAX:
@@ -273,7 +343,7 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash, bool validat
 
 void AuthenticationData::setSalt(String salt_)
 {
-    if (type != AuthenticationType::SHA256_PASSWORD)
+    if (type != AuthenticationType::SHA256_PASSWORD && type != AuthenticationType::SCRAM_SHA256_PASSWORD)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setSalt(): authentication type {} not supported", toString(type));
     salt = std::move(salt_);
 }
@@ -283,21 +353,23 @@ String AuthenticationData::getSalt() const
     return salt;
 }
 
-void AuthenticationData::setSSLCertificateSubjects(SSLCertificateSubjects && ssl_certificate_subjects_)
+#if USE_SSL
+void AuthenticationData::setSSLCertificateSubjects(X509Certificate::Subjects && ssl_certificate_subjects_)
 {
     if (ssl_certificate_subjects_.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'SSL CERTIFICATE' authentication type requires a non-empty list of subjects.");
     ssl_certificate_subjects = std::move(ssl_certificate_subjects_);
 }
 
-void AuthenticationData::addSSLCertificateSubject(SSLCertificateSubjects::Type type_, String && subject_)
+void AuthenticationData::addSSLCertificateSubject(X509Certificate::Subjects::Type type_, String && subject_)
 {
     ssl_certificate_subjects.insert(type_, std::move(subject_));
 }
+#endif
 
-std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
+boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST(bool attach_mode) const
 {
-    auto node = std::make_shared<ASTAuthenticationData>();
+    auto node = make_intrusive<ASTAuthenticationData>();
     auto auth_type = getType();
     node->type = auth_type;
 
@@ -306,33 +378,42 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         case AuthenticationType::PLAINTEXT_PASSWORD:
         {
             node->contains_password = true;
-            node->children.push_back(std::make_shared<ASTLiteral>(getPassword()));
+            node->children.push_back(make_intrusive<ASTLiteral>(getPassword()));
             break;
         }
         case AuthenticationType::SHA256_PASSWORD:
         {
             node->contains_hash = true;
-            node->children.push_back(std::make_shared<ASTLiteral>(getPasswordHashHex()));
+            node->children.push_back(make_intrusive<ASTLiteral>(getPasswordHashHex()));
 
             if (!getSalt().empty())
-                node->children.push_back(std::make_shared<ASTLiteral>(getSalt()));
+                node->children.push_back(make_intrusive<ASTLiteral>(getSalt()));
+            break;
+        }
+        case AuthenticationType::SCRAM_SHA256_PASSWORD:
+        {
+            node->contains_hash = true;
+            node->children.push_back(make_intrusive<ASTLiteral>(getPasswordHashHex()));
+
+            if (!getSalt().empty())
+                node->children.push_back(make_intrusive<ASTLiteral>(getSalt()));
             break;
         }
         case AuthenticationType::DOUBLE_SHA1_PASSWORD:
         {
             node->contains_hash = true;
-            node->children.push_back(std::make_shared<ASTLiteral>(getPasswordHashHex()));
+            node->children.push_back(make_intrusive<ASTLiteral>(getPasswordHashHex()));
             break;
         }
         case AuthenticationType::BCRYPT_PASSWORD:
         {
             node->contains_hash = true;
-            node->children.push_back(std::make_shared<ASTLiteral>(AuthenticationData::Util::digestToString(getPasswordHashBinary())));
+            node->children.push_back(make_intrusive<ASTLiteral>(AuthenticationData::Util::digestToString(getPasswordHashBinary())));
             break;
         }
         case AuthenticationType::LDAP:
         {
-            node->children.push_back(std::make_shared<ASTLiteral>(getLDAPServerName()));
+            node->children.push_back(make_intrusive<ASTLiteral>(getLDAPServerName()));
             break;
         }
         case AuthenticationType::JWT:
@@ -344,29 +425,33 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
             const auto & realm = getKerberosRealm();
 
             if (!realm.empty())
-                node->children.push_back(std::make_shared<ASTLiteral>(realm));
+                node->children.push_back(make_intrusive<ASTLiteral>(realm));
 
             break;
         }
         case AuthenticationType::SSL_CERTIFICATE:
         {
-            using SSLCertificateSubjects::Type::CN;
-            using SSLCertificateSubjects::Type::SAN;
+#if USE_SSL
+            using X509Certificate::Subjects::Type::CN;
+            using X509Certificate::Subjects::Type::SAN;
 
             const auto &subjects = getSSLCertificateSubjects();
-            SSLCertificateSubjects::Type cert_subject_type = !subjects.at(SAN).empty() ? SAN : CN;
+            X509Certificate::Subjects::Type cert_subject_type = !subjects.at(SAN).empty() ? SAN : CN;
 
             node->ssl_cert_subject_type = toString(cert_subject_type);
             for (const auto & name : getSSLCertificateSubjects().at(cert_subject_type))
-                node->children.push_back(std::make_shared<ASTLiteral>(name));
+                node->children.push_back(make_intrusive<ASTLiteral>(name));
 
             break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL certificates support is disabled, because ClickHouse was built without SSL library");
+#endif
         }
         case AuthenticationType::SSH_KEY:
         {
 #if USE_SSH
             for (const auto & key : getSSHKeys())
-                node->children.push_back(std::make_shared<ASTPublicSSHKey>(key.getBase64(), key.getKeyType()));
+                node->children.push_back(make_intrusive<ASTPublicSSHKey>(key.getBase64(), key.getKeyType()));
 
             break;
 #else
@@ -375,12 +460,14 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         }
         case AuthenticationType::HTTP:
         {
-            node->children.push_back(std::make_shared<ASTLiteral>(getHTTPAuthenticationServerName()));
-            node->children.push_back(std::make_shared<ASTLiteral>(toString(getHTTPAuthenticationScheme())));
+            node->children.push_back(make_intrusive<ASTLiteral>(getHTTPAuthenticationServerName()));
+            node->children.push_back(make_intrusive<ASTLiteral>(toString(getHTTPAuthenticationScheme())));
             break;
         }
 
         case AuthenticationType::NO_PASSWORD:
+            break;
+        case AuthenticationType::NO_AUTHENTICATION:
             break;
         case AuthenticationType::MAX:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "AST: Unexpected authentication type {}", toString(auth_type));
@@ -389,28 +476,144 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 
     if (valid_until)
     {
-        WriteBufferFromOwnString out;
-        writeDateTimeText(valid_until, out);
+        if (attach_mode)
+        {
+            /// The serialized entity is parsed back by another server (replicated access storage) or
+            /// after a restart (disk access storage), possibly under a different default time zone and
+            /// possibly by an older server version. The deadline is written as a Unix timestamp string,
+            /// which denotes the same instant regardless of the time zone, and which older versions parse
+            /// the same way (their datetime reader treats an all-digit string as a Unix timestamp),
+            /// whereas a datetime string would be reinterpreted in each server's own time zone. The value
+            /// is zero-padded to 10 digits because the datetime reader rejects a timestamp of fewer than
+            /// 5 digits as ambiguous.
+            ///
+            /// A pre-1970 (negative) deadline is normalized to the smallest expired instant (`1`) before
+            /// serialization. Older or downgraded servers cannot represent a pre-1970 instant and resolve
+            /// it to `0`, which is the "no expiration" sentinel, so serializing a negative deadline in a
+            /// datetime form would let an already-expired credential come back as non-expiring - a
+            /// fail-open downgrade. Every deadline in the past is equivalent (the credential is expired),
+            /// so this loses no meaningful information. Symmetrically, a deadline above
+            /// `MAX_VALID_UNTIL_TIME` would be displayed clamped on a positive-offset node (see the
+            /// constant's declaration), so it is clamped down - also fail-closed: the credential expires
+            /// earlier, never later. The query path already normalizes both ends (see
+            /// `getValidUntilFromAST`); these guards also fail-close an `AuthenticationData` object built
+            /// directly via `setValidUntil`, without going through query parsing.
+            node->setValidUntil(
+                make_intrusive<ASTLiteral>(fmt::format("{:010}", std::clamp<time_t>(valid_until, 1, MAX_VALID_UNTIL_TIME))));
+        }
+        else
+        {
+            /// For display (`SHOW CREATE USER`), format the deadline in the server time zone.
+            WriteBufferFromOwnString out;
+            writeDateTimeText(valid_until, out);
 
-        node->valid_until = std::make_shared<ASTLiteral>(out.str());
+            node->setValidUntil(make_intrusive<ASTLiteral>(out.str()));
+        }
     }
+
+    node->grants = grants;
 
     return node;
 }
 
 
-AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate)
+AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate, std::optional<time_t> now)
+{
+    auto auth_data = fromASTImpl(query, context, validate, now);
+
+    if (!query.grants.structurallyEmpty())
+    {
+        /// The GRANTS clause is enforced with a fail-close ambiguity scan at authentication time: when several methods
+        /// accept the same credential, the session is limited to the intersection of their GRANTS (see
+        /// `IAccessStorage::authenticateImpl`). A method verified against an external system (`LDAP`/`KERBEROS`/`HTTP`/`JWT`)
+        /// cannot participate in that scan, because re-checking a credential there would require an extra probe of the
+        /// external system, which is unsafe (it could, for example, trip an account lockout on a different server).
+        /// Without the scan, another method accepting the same credential could shadow this method's GRANTS and the
+        /// session would silently regain the full rights of the user. Reject the combination explicitly (fail-close).
+        ///
+        /// Like the filter check below, this check runs regardless of `validate`: the GRANTS clause is a new feature,
+        /// so no older server could have stored such a method, and the `ATTACH USER` path must not become a bypass.
+        if (!authenticationTypeIsVerifiedLocally(auth_data.getType()))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "The GRANTS clause is not supported for authentication method '{}', which is verified against an external "
+                "system: another authentication method accepting the same credential could bypass the limit",
+                toString(auth_data.getType()));
+
+        AccessRightsElements grants = query.grants;
+        grants.replaceDeprecated();
+
+        /// Elements like `SELECT ON table` (without a database) are bound to the current database once,
+        /// when the query is interpreted, so that the restriction does not depend on the session which
+        /// uses the credential later. There is no context when the user is loaded from a storage, but
+        /// in that case the elements were already bound at the time of CREATE/ALTER.
+        if (context)
+            grants.replaceEmptyDatabase(context->getCurrentDatabase());
+
+        /// Filtered source grants such as `READ ON S3('s3://bucket/.*')` are not supported here yet.
+        /// The session limit is applied as `AccessRights::makeIntersection`, which treats a source filter
+        /// as an opaque string, so it cannot represent the semantic intersection of two different filters.
+        /// A narrowing token like user `READ ON S3('s3://bucket/.*')` limited to `READ ON S3('s3://bucket/private/.*')`
+        /// would silently collapse to no access unless the two filter strings were byte-identical. Reject such
+        /// grants explicitly (fail-close) instead of granting nothing surprisingly.
+        ///
+        /// This check runs regardless of `validate` (i.e. also on the `ATTACH USER` path). Unlike the generic
+        /// `AccessRights` validation below, it is not compatibility-sensitive: the GRANTS clause is a new feature,
+        /// so no older server could have stored a filtered grant that we would now have to accept. Keeping the
+        /// check unconditional prevents `ATTACH USER ... GRANTS (READ ON S3('...'))` from becoming a bypass.
+        for (const auto & element : grants)
+        {
+            if (element.hasFilter())
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Filtered source grants are not supported in the GRANTS clause of an authentication method yet: {}",
+                    element.toStringWithoutOptions());
+        }
+
+        /// Reject elements that the regular `GRANT` statement rejects as not grantable, such as a global-level
+        /// privilege listed on a table or a database (`GRANTS (CREATE TEMPORARY TABLE ON db.t)`,
+        /// `GRANTS (KILL QUERY ON db.*)`). `AccessRights` silently masks such flags out of the tree when the
+        /// limit is applied, so the clause would be displayed by `SHOW CREATE USER` as written while the actual
+        /// session limit silently diverges from it. Fail the DDL up front instead, exactly like the `GRANT`
+        /// parser does.
+        ///
+        /// Like the checks above, this runs regardless of `validate`: the GRANTS clause is a new feature, so no
+        /// older server could have stored a non-grantable element that we would now have to accept, and the
+        /// `ATTACH USER` path must not become a bypass.
+        grants.throwIfNotGrantable();
+
+        if (validate)
+        {
+            /// Check that the elements can form access rights (throws otherwise).
+            [[maybe_unused]] AccessRights access_rights_for_validation{grants};
+        }
+
+        auth_data.setGrants(std::move(grants));
+    }
+
+    return auth_data;
+}
+
+
+AuthenticationData AuthenticationData::fromASTImpl(const ASTAuthenticationData & query, ContextPtr context, bool validate, std::optional<time_t> now)
 {
     time_t valid_until = 0;
 
     if (query.valid_until)
     {
-        valid_until = getValidUntilFromAST(query.valid_until, context);
+        valid_until = getValidUntilFromAST(query.valid_until, context, query.valid_until_is_interval, now);
     }
 
     if (query.type && query.type == AuthenticationType::NO_PASSWORD)
     {
         AuthenticationData auth_data;
+        auth_data.setValidUntil(valid_until);
+        return auth_data;
+    }
+
+    if (query.type && query.type == AuthenticationType::NO_AUTHENTICATION)
+    {
+        AuthenticationData auth_data{AuthenticationType::NO_AUTHENTICATION};
         auth_data.setValidUntil(valid_until);
         return auth_data;
     }
@@ -422,7 +625,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         AuthenticationData auth_data(*query.type);
         std::vector<SSHKey> keys;
 
-        size_t args_size = query.children.size();
+        size_t args_size = query.numPayloadChildren();
         for (size_t i = 0; i < args_size; ++i)
         {
             const auto & ssh_key = query.children[i]->as<ASTPublicSSHKey &>();
@@ -447,7 +650,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 #endif
     }
 
-    size_t args_size = query.children.size();
+    size_t args_size = query.numPayloadChildren();
     ASTs args(args_size);
     for (size_t i = 0; i < args_size; ++i)
         args[i] = evaluateConstantExpressionAsLiteral(query.children[i], context);
@@ -465,7 +668,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 
         String value = checkAndGetLiteralArgument<String>(args[0], "password");
 
-        AuthenticationType current_type;
+        AuthenticationType current_type = {};
 
         if (query.type)
             current_type = *query.type;
@@ -482,30 +685,28 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         if (query.type == AuthenticationType::BCRYPT_PASSWORD)
         {
             int workfactor = context->getAccessControl().getBcryptWorkfactor();
-            auth_data.setPasswordBcrypt(value, workfactor, validate);
+            auth_data.setPasswordBcrypt(value, workfactor, /* second_factor */ {}, validate);
             return auth_data;
         }
 
         if (query.type == AuthenticationType::SHA256_PASSWORD)
         {
 #if USE_SSL
-            ///random generator FIPS complaint
+            /// random generator FIPS compliant
             uint8_t key[32];
             if (RAND_bytes(key, sizeof(key)) != 1)
-            {
-                char buf[512] = {0};
-                ERR_error_string_n(ERR_get_error(), buf, sizeof(buf));
-                throw Exception(ErrorCodes::OPENSSL_ERROR, "Cannot generate salt for password. OpenSSL {}", buf);
-            }
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "RAND_bytes failed: {}", getOpenSSLErrors());
 
             String salt;
             salt.resize(sizeof(key) * 2);
+
             char * buf_pos = salt.data();
             for (uint8_t k : key)
             {
                 writeHexByteUppercase(k, buf_pos);
                 buf_pos += 2;
             }
+
             value.append(salt);
             auth_data.setSalt(salt);
 #else
@@ -514,7 +715,37 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 #endif
         }
 
-        auth_data.setPassword(value, validate);
+        if (query.type == AuthenticationType::SCRAM_SHA256_PASSWORD)
+        {
+#if USE_SSL
+            /// random generator FIPS compliant
+            uint8_t key[32];
+            if (RAND_bytes(key, sizeof(key)) != 1)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "RAND_bytes failed: {}", getOpenSSLErrors());
+
+            String salt;
+            salt.resize(sizeof(key) * 2);
+
+            char * buf_pos = salt.data();
+            for (uint8_t k : key)
+            {
+                writeHexByteUppercase(k, buf_pos);
+                buf_pos += 2;
+            }
+
+            auth_data.setSalt(salt);
+            auto digest = Util::encodeScramSHA256(value, salt);
+            auth_data.setPasswordHashBinary(digest, /* second_factor */ {}, validate);
+
+            return auth_data;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "SHA256 passwords support is disabled, because ClickHouse was built without SSL library");
+#endif
+        }
+
+
+        auth_data.setPassword(value, /* second_factor */ {}, validate);
         return auth_data;
     }
 
@@ -527,17 +758,18 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 
         if (query.type == AuthenticationType::BCRYPT_PASSWORD)
         {
-            auth_data.setPasswordHashBinary(AuthenticationData::Util::stringToDigest(value), validate);
+            auth_data.setPasswordHashBinary(AuthenticationData::Util::stringToDigest(value), /* second_factor */ {}, validate);
             return auth_data;
         }
 
-        auth_data.setPasswordHashHex(value, validate);
+        auth_data.setPasswordHashHex(value, /* second_factor */ {}, validate);
 
-
-        if (query.type == AuthenticationType::SHA256_PASSWORD && args_size == 2)
+        if ((query.type == AuthenticationType::SHA256_PASSWORD || query.type == AuthenticationType::SCRAM_SHA256_PASSWORD)
+            && args_size == 2)
         {
             String parsed_salt = checkAndGetLiteralArgument<String>(args[1], "salt");
             auth_data.setSalt(parsed_salt);
+            return auth_data;
         }
     }
     else if (query.type == AuthenticationType::LDAP)
@@ -555,9 +787,13 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
     }
     else if (query.type == AuthenticationType::SSL_CERTIFICATE)
     {
-        auto ssl_cert_subject_type = parseSSLCertificateSubjectType(*query.ssl_cert_subject_type);
+#if USE_SSL
+        auto ssl_cert_subject_type = X509Certificate::Subjects::parseSubjectType(*query.ssl_cert_subject_type);
         for (const auto & arg : args)
             auth_data.addSSLCertificateSubject(ssl_cert_subject_type, checkAndGetLiteralArgument<String>(arg, "ssl_certificate_subject"));
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL certificates support is disabled, because ClickHouse was built without SSL library");
+#endif
     }
     else if (query.type == AuthenticationType::HTTP)
     {

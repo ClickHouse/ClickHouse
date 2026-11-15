@@ -1,14 +1,13 @@
 #pragma once
 
 #include <Core/BaseSettingsFwdMacros.h>
-#include <Core/FormatFactorySettings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 
 
 namespace DB
 {
-class ASTStorage;
+class ASTSetQuery;
 struct StorageObjectStorageSettingsImpl;
 struct MutableColumnsAndConstraints;
 class StorageObjectStorage;
@@ -17,6 +16,7 @@ class SettingsChanges;
 /// List of available types supported in StorageObjectStorageSettingsSettings object
 #define STORAGE_OBJECT_STORAGE_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, ArrowCompression) \
+    M(CLASS_NAME, ArrowUnsupportedTypes) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, CapnProtoEnumComparingMode) \
     M(CLASS_NAME, Char) \
@@ -26,8 +26,10 @@ class SettingsChanges;
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, EscapingRule) \
     M(CLASS_NAME, Float) \
+    M(CLASS_NAME, GeoJSONUnsupportedGeometryHandling) \
     M(CLASS_NAME, IdentifierQuotingRule) \
     M(CLASS_NAME, IdentifierQuotingStyle) \
+    M(CLASS_NAME, InputFormatColumnMatchingCaseSensitivity) \
     M(CLASS_NAME, Int64) \
     M(CLASS_NAME, IntervalOutputFormat) \
     M(CLASS_NAME, MsgPackUUIDRepresentation) \
@@ -40,6 +42,7 @@ class SettingsChanges;
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt32) \
     M(CLASS_NAME, UInt64) \
+    M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI)
 
@@ -54,7 +57,9 @@ struct StorageObjectStorageSettings
 
     STORAGE_OBJECT_STORAGE_SETTINGS_SUPPORTED_TYPES(StorageObjectStorageSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    void loadFromQuery(ASTStorage & storage_def);
+    void loadFromQuery(ASTSetQuery & settings_ast);
+
+    void loadFromSettingsChanges(const SettingsChanges & changes);
 
     Field get(const std::string & name);
 
@@ -63,5 +68,11 @@ struct StorageObjectStorageSettings
 private:
     std::unique_ptr<StorageObjectStorageSettingsImpl> impl;
 };
+
+using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
+
+/// Expanding this list requires <Core/FormatFactorySettings.h>.
+#define LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS(M, ALIAS) \
+    LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
 }

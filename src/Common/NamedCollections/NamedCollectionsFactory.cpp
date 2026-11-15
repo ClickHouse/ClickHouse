@@ -4,6 +4,16 @@
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
+#include <Common/ZooKeeper/KeeperException.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Core/UUID.h>
+#include <Interpreters/Context.h>
+#include <Common/FailPoint.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric NamedCollection;
+}
 
 namespace DB
 {
@@ -13,7 +23,15 @@ namespace ErrorCodes
     extern const int NAMED_COLLECTION_DOESNT_EXIST;
     extern const int NAMED_COLLECTION_ALREADY_EXISTS;
     extern const int NAMED_COLLECTION_IS_IMMUTABLE;
+    extern const int LOGICAL_ERROR;
+    extern const int TOO_MANY_NAMED_COLLECTIONS;
 }
+
+namespace FailPoints
+{
+    extern const char named_collections_replicated_update_pause[];
+}
+
 
 NamedCollectionFactory & NamedCollectionFactory::instance()
 {
@@ -28,10 +46,22 @@ NamedCollectionFactory::~NamedCollectionFactory()
 
 void NamedCollectionFactory::shutdown()
 {
+    /// Stop the update task without holding `mutex`: the task locks it, and `deactivate` waits for the task.
     shutdown_called = true;
     if (update_task)
         update_task->deactivate();
+
+    /// The factory is a process-wide singleton, but its metadata storage belongs to the global context which is
+    /// being shut down. Return to the initial state, so that the next use loads the collections again (from the
+    /// next global context, if the process creates one) instead of using the destroyed metadata storage.
+    std::lock_guard lock(mutex);
+    update_task = {};
     metadata_storage.reset();
+    loaded_named_collections.clear();
+    CurrentMetrics::set(CurrentMetrics::NamedCollection, 0);
+    dependencies.clear();
+    loaded = false;
+    shutdown_called = false;
 }
 
 bool NamedCollectionFactory::exists(const std::string & collection_name) const
@@ -117,6 +147,7 @@ void NamedCollectionFactory::add(
             "A named collection `{}` already exists",
             collection_name);
     }
+    CurrentMetrics::set(CurrentMetrics::NamedCollection, loaded_named_collections.size());
 }
 
 void NamedCollectionFactory::add(NamedCollectionsMap collections, std::lock_guard<std::mutex> & lock)
@@ -154,6 +185,7 @@ bool NamedCollectionFactory::removeIfExists(
             collection_name);
     }
     loaded_named_collections.erase(collection_name);
+    CurrentMetrics::set(CurrentMetrics::NamedCollection, loaded_named_collections.size());
     return true;
 }
 
@@ -162,6 +194,7 @@ void NamedCollectionFactory::removeById(NamedCollection::SourceId id, std::lock_
     std::erase_if(
         loaded_named_collections,
         [&](const auto & value) { return value.second->getSourceId() == id; });
+    CurrentMetrics::set(CurrentMetrics::NamedCollection, loaded_named_collections.size());
 }
 
 namespace
@@ -198,8 +231,8 @@ namespace
                 keys.emplace(path.substr(collection_prefix.size() + 1));
         }
 
-        return NamedCollection::create(
-            config, collection_name, collection_prefix, keys, NamedCollection::SourceId::CONFIG, /* is_mutable */false);
+        return NamedCollectionFromConfig::create(
+            config, collection_name, collection_prefix, keys);
     }
 
     NamedCollectionsMap getNamedCollections(const Poco::Util::AbstractConfiguration & config)
@@ -239,7 +272,7 @@ bool NamedCollectionFactory::loadIfNot(std::lock_guard<std::mutex> & lock)
 
     if (metadata_storage->isReplicated())
     {
-        update_task = context->getSchedulePool().createTask("NamedCollectionsMetadataStorage", [this]{ updateFunc(); });
+        update_task = context->getSchedulePool()->createTask(StorageID::createEmpty(), "NamedCollectionsMetadataStorage", [this]{ updateFunc(); });
         update_task->activate();
         update_task->schedule();
     }
@@ -285,13 +318,34 @@ void NamedCollectionFactory::createFromSQL(const ASTCreateNamedCollectionQuery &
         if (query.if_not_exists)
             return;
 
-        throw Exception(
-            ErrorCodes::NAMED_COLLECTION_ALREADY_EXISTS,
-            "A named collection `{}` already exists",
-            query.collection_name);
+        if (!query.or_replace)
+            throw Exception(
+                ErrorCodes::NAMED_COLLECTION_ALREADY_EXISTS,
+                "A named collection `{}` already exists",
+                query.collection_name);
+
+        /// Throws NAMED_COLLECTION_IS_IMMUTABLE before the metadata write if the existing collection comes from the server config.
+        getMutable(query.collection_name, lock);
+
+        loaded_named_collections[query.collection_name] = metadata_storage->createOrReplace(query);
+        return;
     }
 
-    add(query.collection_name, metadata_storage->create(query), lock);
+    /// `max_named_collection_num_to_throw` is enforced here, under the mutex, rather than in
+    /// `InterpreterCreateNamedCollectionQuery`, so that every path adding a new collection is
+    /// covered - in particular RESTORE, which calls this function directly. Only this branch adds
+    /// a collection: the skip and the replacement above do not increase the count and stay allowed
+    /// at the limit.
+    if (UInt64 limit = Context::getGlobalContextInstance()->getMaxNamedCollectionNumToThrow();
+        limit > 0 && loaded_named_collections.size() >= limit)
+        throw Exception(ErrorCodes::TOO_MANY_NAMED_COLLECTIONS,
+                        "Too many named collections. The limit (server configuration parameter `max_named_collection_num_to_throw`) "
+                        "is set to {}, the current number is {}", limit, loaded_named_collections.size());
+
+    if (query.or_replace)
+        add(query.collection_name, metadata_storage->createOrReplace(query), lock);
+    else
+        add(query.collection_name, metadata_storage->create(query), lock);
 }
 
 void NamedCollectionFactory::removeFromSQL(const ASTDropNamedCollectionQuery & query)
@@ -319,33 +373,37 @@ void NamedCollectionFactory::updateFromSQL(const ASTAlterNamedCollectionQuery & 
     std::lock_guard lock(mutex);
     loadIfNot(lock);
 
-    if (!exists(query.collection_name, lock))
+    auto collection_name = query.collection_name;
+    if (!exists(collection_name, lock))
     {
         if (query.if_exists)
             return;
 
         throw Exception(
             ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST,
-            "Cannot remove collection `{}`, because it doesn't exist",
-            query.collection_name);
+            "Cannot update collection `{}`, because it doesn't exist",
+            collection_name);
     }
+    auto updated_collection_ptr = metadata_storage->update(query);
 
-    metadata_storage->update(query);
-
-    auto collection = getMutable(query.collection_name, lock);
-    auto collection_lock = collection->lock();
-
-    for (const auto & [name, value] : query.changes)
+    auto it = loaded_named_collections.find(collection_name);
+    if (it == loaded_named_collections.end())
     {
-        auto it_override = query.overridability.find(name);
-        if (it_override != query.overridability.end())
-            collection->setOrUpdate<String, true>(name, convertFieldToString(value), it_override->second);
-        else
-            collection->setOrUpdate<String, true>(name, convertFieldToString(value), {});
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "The named collection {} unexpectedly does not exist.",
+            collection_name);
     }
 
-    for (const auto & key : query.delete_keys)
-        collection->remove<true>(key);
+    if (!it->second->isMutable())
+    {
+        throw Exception(
+            ErrorCodes::NAMED_COLLECTION_IS_IMMUTABLE,
+            "Cannot get collection `{}` for modification, "
+            "because collection was defined as immutable",
+            collection_name);
+    }
+    it->second = updated_collection_ptr;
 }
 
 void NamedCollectionFactory::reloadFromSQL()
@@ -366,44 +424,190 @@ bool NamedCollectionFactory::usesReplicatedStorage()
     return metadata_storage->isReplicated();
 }
 
+NamedCollectionFactory::MetadataStorageProperties NamedCollectionFactory::getMetadataStorageProperties()
+{
+    std::lock_guard lock(mutex);
+    loadIfNot(lock);
+
+    MetadataStorageProperties properties;
+    properties.is_encrypted = metadata_storage->isEncrypted();
+    properties.is_replicated = metadata_storage->isReplicated();
+    if (properties.is_replicated)
+        properties.replication_id = metadata_storage->getReplicationId();
+    return properties;
+}
+
+#if CLICKHOUSE_CLOUD && USE_SSL
+NamedCollectionsEncryptionKeyInfo NamedCollectionFactory::getEncryptionKeyInfo()
+{
+    std::lock_guard lock(mutex);
+    loadIfNot(lock);
+
+    auto key_info = metadata_storage->getEncryptionKeyInfo();
+    if (!key_info)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The metadata storage for named collections is not encrypted");
+    return std::move(*key_info);
+}
+#endif
+
+std::map<std::string, std::string> NamedCollectionFactory::getRawEntriesForBackup()
+{
+    std::lock_guard lock(mutex);
+    loadIfNot(lock);
+
+    /// The metadata storage holds exactly the SQL-created collections; the config-defined ones
+    /// exist only in memory and must be neither backed up nor restored.
+    return metadata_storage->getAllRaw();
+}
+
+std::string NamedCollectionFactory::authenticateStoredEntryForBackup(const std::string & stored)
+{
+    std::lock_guard lock(mutex);
+    loadIfNot(lock);
+    return metadata_storage->authenticateStoredForBackup(stored);
+}
+
+std::string NamedCollectionFactory::decryptStoredEntryFromBackup(const std::string & data)
+{
+    std::lock_guard lock(mutex);
+    loadIfNot(lock);
+    return metadata_storage->decryptStoredFromBackup(data);
+}
+
 void NamedCollectionFactory::updateFunc()
 {
     LOG_TRACE(log, "Named collections background updating thread started");
 
     while (!shutdown_called.load())
     {
-        if (metadata_storage->waitUpdate())
+        try
         {
-            try
+            if (metadata_storage->waitUpdate())
             {
+                /// Lets a test hold this replica's loaded collections stale while another server
+                /// modifies the shared storage.
+                FailPointInjection::pauseFailPoint(FailPoints::named_collections_replicated_update_pause);
                 reloadFromSQL();
             }
-            catch (const Coordination::Exception & e)
+        }
+        catch (const Coordination::Exception & e)
+        {
+            if (Coordination::isHardwareError(e.code))
             {
-                if (Coordination::isHardwareError(e.code))
-                {
-                    LOG_INFO(log, "Lost ZooKeeper connection, will try to connect again: {}",
-                            DB::getCurrentExceptionMessage(true));
+                LOG_INFO(log, "Lost ZooKeeper connection, will try to connect again: {}",
+                        DB::getCurrentExceptionMessage(true));
 
-                    sleepForSeconds(1);
-                }
-                else
-                {
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
-                    chassert(false);
-                }
-                continue;
+                sleepForSeconds(1);
             }
-            catch (...)
+            else
             {
-                DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+                tryLogCurrentException(__PRETTY_FUNCTION__);
                 chassert(false);
-                continue;
             }
+            continue;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            chassert(false);
+            continue;
         }
     }
 
     LOG_TRACE(log, "Named collections background updating thread finished");
+}
+
+void NamedCollectionFactory::addDependency(const String & collection_name, const StorageID & table_id)
+{
+    std::lock_guard lock(mutex);
+    LOG_TRACE(log, "Adding dependency: collection={}, table={}", collection_name, table_id.getNameForLogs());
+    dependencies.emplace(collection_name, table_id);
+}
+
+void NamedCollectionFactory::removeDependencies(const StorageID & table_id)
+{
+    std::lock_guard lock(mutex);
+
+    if (table_id.hasUUID())
+    {
+        /// Remove by UUID - this is the most reliable method for Atomic databases
+        auto & idx = dependencies.get<TableUUID>();
+        idx.erase(table_id.uuid);
+    }
+    else
+    {
+        /// Remove by name for non-Atomic databases (Ordinary, etc.) which don't have UUIDs.
+        /// We only remove entries that have Nil UUIDs - entries with UUIDs belong to Atomic
+        /// databases and must be removed via the UUID index (handled in the if branch above).
+        auto & idx = dependencies.get<TableName>();
+        auto range = idx.equal_range(std::make_tuple(table_id.database_name, table_id.table_name));
+
+        /// Collect entries to erase - only those without UUIDs (non-Atomic database entries)
+        std::vector<decltype(range.first)> to_erase;
+        for (auto it = range.first; it != range.second; ++it)
+        {
+            if (it->table_id.uuid == UUIDHelpers::Nil)
+                to_erase.push_back(it);
+        }
+
+        for (auto it : to_erase)
+            idx.erase(it);
+    }
+}
+
+void NamedCollectionFactory::renameDependencies(const StorageID & from_table_id, const StorageID & to_table_id)
+{
+    std::lock_guard lock(mutex);
+
+    /// The rename interpreter passes StorageIDs without UUIDs.
+    /// If either ID has a UUID, it's not a standard rename operation, so nothing to do.
+    /// For Atomic databases, the dependencies are tracked by UUID which doesn't change on rename.
+    if (from_table_id.hasUUID() || to_table_id.hasUUID())
+        return;
+
+    /// For non-Atomic databases (name-based tracking), we need to update the table name.
+    /// But we should only update entries that don't have UUIDs - entries with UUIDs
+    /// are from Atomic databases and should remain unchanged (UUID-based lookup still works).
+    auto & name_idx = dependencies.get<TableName>();
+    auto name_range = name_idx.equal_range(std::make_tuple(from_table_id.database_name, from_table_id.table_name));
+
+    /// Collect only entries without UUIDs (non-Atomic database entries).
+    /// A single table can depend on several named collections, so we need to save all of them
+    /// to re-insert the dependency with the new name.
+    std::vector<String> collection_names;
+    std::vector<decltype(name_range.first)> to_erase;
+    for (auto it = name_range.first; it != name_range.second; ++it)
+    {
+        if (it->table_id.uuid == UUIDHelpers::Nil)
+        {
+            collection_names.push_back(it->collection_name);
+            to_erase.push_back(it);
+        }
+    }
+
+    if (to_erase.empty())
+        return;
+
+    /// Erase and re-insert with new table name
+    for (auto it : to_erase)
+        name_idx.erase(it);
+
+    for (const auto & name : collection_names)
+        dependencies.emplace(name, to_table_id);
+}
+
+std::vector<StorageID> NamedCollectionFactory::getDependents(const String & collection_name) const
+{
+    std::lock_guard lock(mutex);
+    std::vector<StorageID> result;
+
+    const auto & idx = dependencies.get<Collection>();
+    auto range = idx.equal_range(collection_name);
+
+    for (auto it = range.first; it != range.second; ++it)
+        result.push_back(it->table_id);
+
+    return result;
 }
 
 }

@@ -4,7 +4,7 @@
 #include <Backups/BackupImpl.h>
 #include <Backups/BackupInMemory.h>
 #include <Common/Exception.h>
-#include <IO/SeekableReadBuffer.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBuffer.h>
 #include <Interpreters/Context.h>
 
@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -34,7 +35,7 @@ UInt64 BackupReaderMemory::getFileSize(const String & file_name)
     return backup_in_memory->getFileSize(file_name);
 }
 
-std::unique_ptr<SeekableReadBuffer> BackupReaderMemory::readFile(const String & file_name)
+std::unique_ptr<ReadBufferFromFileBase> BackupReaderMemory::readFile(const String & file_name)
 {
     return backup_in_memory->readFile(file_name);
 }
@@ -83,6 +84,14 @@ void BackupWriterMemory::removeEmptyDirectories()
         backup_in_memory->drop();
 }
 
+void BackupWriterMemory::removeEmptyRootDirectory()
+{
+    if (backup_in_memory->isEmpty())
+        backup_in_memory->drop();
+}
+
+
+void registerBackupEngineMemory(BackupFactory & factory);
 
 void registerBackupEngineMemory(BackupFactory & factory)
 {
@@ -96,42 +105,30 @@ void registerBackupEngineMemory(BackupFactory & factory)
 
         if (params.open_mode == IBackup::OpenMode::READ)
         {
-            const auto & backups_in_memory = params.context->getSessionContext()->getBackupsInMemory();
-            auto backup_in_memory = backups_in_memory.getBackup(backup_name);
+            auto backups_in_memory = params.context->getSessionContext()->getBackupsInMemory();
+            auto backup_in_memory = backups_in_memory->getBackup(backup_name);
             auto reader = std::make_shared<BackupReaderMemory>(backup_in_memory, params.read_settings, params.write_settings);
-
-            return std::make_unique<BackupImpl>(
-                params.backup_info,
-                BackupImpl::ArchiveParams{},
-                params.base_backup_info,
-                reader,
-                params.context,
-                params.is_internal_backup,
-                params.use_same_s3_credentials_for_base_backup,
-                params.use_same_password_for_base_backup);
+            return std::make_unique<BackupImpl>(params, BackupImpl::ArchiveParams{}, reader);
         }
         else
         {
-            auto & backups_in_memory = params.context->getSessionContext()->getBackupsInMemory();
-            auto backup_in_memory = backups_in_memory.createBackup(backup_name);
+            auto backups_in_memory = params.context->getSessionContext()->getBackupsInMemory();
+            auto backup_in_memory = backups_in_memory->createBackup(backup_name);
             auto writer = std::make_shared<BackupWriterMemory>(backup_in_memory, params.read_settings, params.write_settings);
-
-            return std::make_unique<BackupImpl>(
-                params.backup_info,
-                BackupImpl::ArchiveParams{},
-                params.base_backup_info,
-                writer,
-                params.context,
-                params.is_internal_backup,
-                params.backup_coordination,
-                params.backup_uuid,
-                params.deduplicate_files,
-                params.use_same_s3_credentials_for_base_backup,
-                params.use_same_password_for_base_backup);
+            return std::make_unique<BackupImpl>(params, BackupImpl::ArchiveParams{}, writer);
         }
     };
 
-    factory.registerBackupEngine("Memory", creator_fn);
+    auto destination_identity_fn = [](const BackupInfo &, ContextPtr) -> Strings
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Memory backup destinations do not have a persistent identity");
+    };
+
+    /// No external location: nothing to authorize against the SOURCES grant model.
+    auto source_access_fn = [](const BackupInfo &, ContextPtr, IBackup::OpenMode)
+        -> std::optional<BackupFactory::SourceAccessTarget> { return std::nullopt; };
+
+    factory.registerBackupEngine("Memory", creator_fn, destination_identity_fn, source_access_fn, credentialFreeBackupSecretArguments(1));
 }
 
 }

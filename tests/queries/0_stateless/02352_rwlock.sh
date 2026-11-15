@@ -25,11 +25,11 @@ function wait_query_by_id_started()
     while [ "$($CLICKHOUSE_CLIENT "$@" -q "select count() from system.processes where query_id = '$query_id'")" -ne 1 ]; do
         if [ "$(
             $CLICKHOUSE_CLIENT --max_bytes_before_external_group_by 0 --max_bytes_ratio_before_external_group_by 0 -m -q "
-                system flush logs;
+                system flush logs query_log;
 
                 select count() from system.query_log
                 where
-                    event_date >= yesterday() and
+                    event_date >= yesterday() AND event_time >= now() - 600 and
                     current_database = '$CLICKHOUSE_DATABASE' and
                     type = 'QueryFinish' and
                     query_id = '$query_id'
@@ -51,7 +51,7 @@ $CLICKHOUSE_CLIENT -q "CREATE DATABASE ${CLICKHOUSE_DATABASE}_ordinary Engine=Or
 # only after INSERT finished, it is unlikely, but it happens few times in
 # debug build on CI, so if this will happen, then DROP query will be
 # finished instantly, and to avoid flakiness we will retry in this case
-while :; do
+while clickhouse_test_time_left; do
     $CLICKHOUSE_CLIENT -m -q "
         DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}_ordinary.data_02352;
         CREATE TABLE ${CLICKHOUSE_DATABASE}_ordinary.data_02352 (key Int) Engine=Null();

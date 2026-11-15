@@ -1,3 +1,4 @@
+#include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 #include <Access/AccessControl.h>
@@ -7,20 +8,29 @@
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
-#include <Common/quoteString.h>
-#include <Common/StringUtils.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/Context.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
+#include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSQLSecurity.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Storages/IndicesDescription.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/VirtualColumnsDescription.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+}
+
 namespace ErrorCodes
 {
     extern const int COLUMN_QUERIED_MORE_THAN_ONCE;
@@ -31,10 +41,22 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_QUERY;
+    extern const int UNKNOWN_TABLE;
+    extern const int UNKNOWN_DATABASE;
+    extern const int UNKNOWN_FUNCTION;
 }
 
 StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata & other)
     : columns(other.columns)
+    , virtuals(other.virtuals)
+    , add_minmax_index_for_numeric_columns(other.add_minmax_index_for_numeric_columns)
+    , add_minmax_index_for_string_columns(other.add_minmax_index_for_string_columns)
+    , add_minmax_index_for_temporal_columns(other.add_minmax_index_for_temporal_columns)
+    , add_minmax_index_for_block_number_column(other.add_minmax_index_for_block_number_column)
+    , add_minmax_index_for_block_offset_column(other.add_minmax_index_for_block_offset_column)
+    , escape_index_filenames(other.escape_index_filenames)
     , secondary_indices(other.secondary_indices)
     , constraints(other.constraints)
     , projections(other.projections.clone())
@@ -44,6 +66,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , primary_key(other.primary_key)
     , sorting_key(other.sorting_key)
     , sampling_key(other.sampling_key)
+    , unique_key(other.unique_key)
     , column_ttls_by_name(other.column_ttls_by_name)
     , table_ttl(other.table_ttl)
     , settings_changes(other.settings_changes ? other.settings_changes->clone() : nullptr)
@@ -53,6 +76,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , sql_security_type(other.sql_security_type)
     , comment(other.comment)
     , metadata_version(other.metadata_version)
+    , datalake_table_state(other.datalake_table_state)
 {
 }
 
@@ -62,6 +86,13 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
         return *this;
 
     columns = other.columns;
+    virtuals = other.virtuals;
+    add_minmax_index_for_numeric_columns = other.add_minmax_index_for_numeric_columns;
+    add_minmax_index_for_string_columns = other.add_minmax_index_for_string_columns;
+    add_minmax_index_for_temporal_columns = other.add_minmax_index_for_temporal_columns;
+    add_minmax_index_for_block_number_column = other.add_minmax_index_for_block_number_column;
+    add_minmax_index_for_block_offset_column = other.add_minmax_index_for_block_offset_column;
+    escape_index_filenames = other.escape_index_filenames;
     secondary_indices = other.secondary_indices;
     constraints = other.constraints;
     projections = other.projections.clone();
@@ -73,6 +104,7 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     primary_key = other.primary_key;
     sorting_key = other.sorting_key;
     sampling_key = other.sampling_key;
+    unique_key = other.unique_key;
     column_ttls_by_name = other.column_ttls_by_name;
     table_ttl = other.table_ttl;
     if (other.settings_changes)
@@ -85,6 +117,8 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     sql_security_type = other.sql_security_type;
     comment = other.comment;
     metadata_version = other.metadata_version;
+    datalake_table_state = other.datalake_table_state;
+
     return *this;
 }
 
@@ -117,7 +151,19 @@ UUID StorageInMemoryMetadata::getDefinerID(DB::ContextPtr context) const
     return access_control.getID<User>(*definer);
 }
 
-ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(ContextPtr context) const
+namespace
+{
+
+/// Custom-key parallel replicas evaluate a user-supplied expression over the body's columns; turn them off there.
+void dropParallelReplicasCustomKey(Context & body_context)
+{
+    body_context.setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+    body_context.setSetting("parallel_replicas_custom_key", String{});
+}
+
+}
+
+ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(ContextPtr context, const ClientInfo * client_info) const
 {
     if (!sql_security_type)
         return Context::createCopy(context);
@@ -126,16 +172,30 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
         return Context::createCopy(context);
 
     auto new_context = Context::createCopy(context->getGlobalContext());
-    new_context->setClientInfo(context->getClientInfo());
+    if (client_info)
+        new_context->setClientInfo(*client_info);
+    else
+        new_context->setClientInfo(context->getClientInfo());
     new_context->makeQueryContext();
+    new_context->setSQLSecurityOverriddenBody(true);
 
     const auto & database = context->getCurrentDatabase();
-    if (!database.empty())
+    if (!database.empty() && database != new_context->getCurrentDatabase())
         new_context->setCurrentDatabase(database);
 
-    new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames());
+    new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames(), context->getInsertionTableColumnsDescription());
     new_context->setProgressCallback(context->getProgressCallback());
     new_context->setProcessListElement(context->getProcessListElement());
+    /// A part of the outer query: plan it from the same snapshot.
+    new_context->shareQueryMaxThreadsSnapshot(*context);
+    /// Carry the outer query's normalized hash so that `NORMALIZED_QUERY_HASH` quotas keep bucketing
+    /// per query pattern when the pipeline runs under a fresh SQL-security-overridden context (the
+    /// `DEFINER`/`NONE` branch starts from the global context, where the hash would otherwise be 0).
+    new_context->setNormalizedQueryHash(context->getNormalizedQueryHash());
+    /// The analyze mode must reach every join the report walker can reach, including the joins of
+    /// this view's inner query. So must the mark of the automatic mode's plan with parallel replicas.
+    new_context->setJoinAnalyzeMode(context->getJoinAnalyzeMode());
+    new_context->setIsAutomaticParallelReplicasProbe(context->isAutomaticParallelReplicasProbe());
 
     if (context->getCurrentTransaction())
         new_context->setCurrentTransaction(context->getCurrentTransaction());
@@ -143,17 +203,99 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     if (context->getZooKeeperMetadataTransaction())
         new_context->initZooKeeperMetadataTransaction(context->getZooKeeperMetadataTransaction());
 
-    if (sql_security_type == SQLSecurityType::NONE)
+    // parallel replicas related
+    if (context->canUseTaskBasedParallelReplicas() && context->hasMergeTreeAllRangesCallback())
     {
-        new_context->applySettingsChanges(context->getSettingsRef().changes());
-        return new_context;
+        new_context->setMergeTreeAllRangesCallback(context->getMergeTreeAllRangesCallback());
+        new_context->setMergeTreeReadTaskCallback(context->getMergeTreeReadTaskCallback());
+        new_context->setBlockMarshallingCallback(context->getBlockMarshallingCallback());
     }
 
-    new_context->setUser(getDefinerID(context));
+    /// Transport wiring, not invoker identity: a cluster table function inside the view sends its
+    /// read-task request over this callback, and only the initiator can decide whether to serve it.
+    if (context->hasClusterFunctionReadTaskCallback())
+        new_context->setClusterFunctionReadTaskCallback(context->getClusterFunctionReadTaskCallback());
 
     auto changed_settings = context->getSettingsRef().changes();
-    new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
-    new_context->applySettingsChanges(changed_settings);
+    /// Invoker filters must not be injected into a DEFINER/NONE body.
+    changed_settings.removeSetting("additional_table_filters");
+
+    /// Internal initiator-set settings: kept for secondary queries so that followers read their slice of a body's SAMPLE,
+    /// dropped for an initial query where only the invoker could supply them. The query kind is client-declared, not authenticated.
+    if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        changed_settings.removeSetting("parallel_replicas_count");
+        changed_settings.removeSetting("parallel_replica_offset");
+    }
+
+    /// Drop the invoker's key even if only the definer's profile activates it.
+    const bool drop_custom_key = context->canUseParallelReplicasCustomKey() || changed_settings.tryGet("parallel_replicas_custom_key");
+
+    if (sql_security_type == SQLSecurityType::NONE)
+    {
+        new_context->applySettingsChanges(changed_settings);
+        if (drop_custom_key)
+            dropParallelReplicasCustomKey(*new_context);
+    }
+    else
+    {
+        new_context->setUser(getDefinerID(context));
+
+        /// `Context::setUser` only sets the access-control identity (`user_id`); it does not touch the
+        /// user names in `ClientInfo`. That is harmless when there is an invoker whose names were copied
+        /// above, but a scheduled refresh of a refreshable materialized view builds its context from the
+        /// global context, where `current_user`, `initial_user` and `authenticated_user` are empty.
+        /// `RemoteQueryExecutor` sends the names as-is, and a shard that accepts the interserver
+        /// `<secret>` treats an empty `initial_user` as "interserver mode": it skips authentication
+        /// (see `TCPHandler::receiveQuery`) and executes the query with full access
+        /// (see `Context::getAccess`, `full_access = !user_id`). Stamp the definer into the empty fields
+        /// so the remote leg of the query is bounded by the same identity as the local one. Non-empty
+        /// fields are left alone so `currentUser` inside an ordinary `DEFINER` view still returns the
+        /// invoker. `AsynchronousInsertQueue` and `InterpreterExecuteAsQuery` do the same.
+        {
+            const auto & new_client_info = new_context->getClientInfo();
+            const bool current_user_empty = new_client_info.current_user.empty();
+            const bool initial_user_empty = new_client_info.initial_user.empty();
+            const bool authenticated_user_empty = new_client_info.authenticated_user.empty();
+
+            if (current_user_empty || initial_user_empty || authenticated_user_empty)
+            {
+                const auto definer_name = new_context->getUserName();
+                if (current_user_empty)
+                    new_context->setCurrentUserName(definer_name);
+                if (initial_user_empty)
+                {
+                    new_context->setInitialUserName(definer_name);
+                    /// The shard authenticates the definer by `initial_user` and checks `initial_address`
+                    /// against the allowed hosts of that user. Without an invoker, the address is the
+                    /// unspecified `0.0.0.0`, which only matches users with `HOST ANY`. The query is
+                    /// produced by this server itself, so present it as coming from the local host.
+                    if (!new_client_info.initial_address || new_client_info.initial_address->host().isWildcard())
+                        new_context->setInitialAddress(Poco::Net::SocketAddress(Poco::Net::IPAddress("127.0.0.1"), 0));
+                }
+                if (authenticated_user_empty)
+                    new_context->setAuthenticatedUserName(definer_name);
+            }
+        }
+
+        new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
+        new_context->applySettingsChanges(changed_settings);
+        new_context->setSetting("allow_ddl", 1);
+        /// After the constraints: the definer's profile must not be able to keep the invoker's key alive.
+        if (drop_custom_key)
+            dropParallelReplicasCustomKey(*new_context);
+    }
+
+    /// After the definer's profile has been applied: it can enable parallel replicas on its own.
+    new_context->restrictParallelReplicasInSQLSecurityOverriddenBody();
+
+    /// The obsolete `allow_experimental_analyzer` is normalized in `executeQuery`, which this context
+    /// does not go through: it starts from the global context and then takes the definer's profile,
+    /// and a settings profile is applied without consulting the constraints that refuse a `0`. The
+    /// body of this view is analyzed by the analyzer either way, so a `0` left here would only make
+    /// `getSetting` inside the body report an analysis that did not happen.
+    if (!new_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        new_context->setSetting("allow_experimental_analyzer", true);
 
     return new_context;
 }
@@ -163,6 +305,11 @@ void StorageInMemoryMetadata::setColumns(ColumnsDescription columns_)
     if (columns_.getAllPhysical().empty())
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Empty list of columns passed");
     columns = std::move(columns_);
+}
+
+void StorageInMemoryMetadata::setVirtuals(VirtualColumnsDescription virtuals_)
+{
+    virtuals = std::move(virtuals_);
 }
 
 void StorageInMemoryMetadata::setSecondaryIndices(IndicesDescription secondary_indices_)
@@ -213,10 +360,22 @@ void StorageInMemoryMetadata::setMetadataVersion(int32_t metadata_version_)
     metadata_version = metadata_version_;
 }
 
+void StorageInMemoryMetadata::setDataLakeTableState(const DataLakeTableStateSnapshot & datalake_table_state_)
+{
+    datalake_table_state = datalake_table_state_;
+}
+
 StorageInMemoryMetadata StorageInMemoryMetadata::withMetadataVersion(int32_t metadata_version_) const
 {
     StorageInMemoryMetadata copy(*this);
     copy.setMetadataVersion(metadata_version_);
+    return copy;
+}
+
+StorageInMemoryMetadata StorageInMemoryMetadata::withVirtuals(VirtualColumnsDescription virtual_columns_) const
+{
+    StorageInMemoryMetadata copy(*this);
+    copy.setVirtuals(std::move(virtual_columns_));
     return copy;
 }
 
@@ -250,7 +409,7 @@ bool StorageInMemoryMetadata::hasProjections() const
     return !projections.empty();
 }
 
-TTLTableDescription StorageInMemoryMetadata::getTableTTLs() const
+const TTLTableDescription & StorageInMemoryMetadata::getTableTTLs() const
 {
     return table_ttl;
 }
@@ -260,7 +419,13 @@ bool StorageInMemoryMetadata::hasAnyTableTTL() const
     return hasAnyMoveTTL() || hasRowsTTL() || hasAnyRecompressionTTL() || hasAnyGroupByTTL() || hasAnyRowsWhereTTL();
 }
 
-TTLColumnsDescription StorageInMemoryMetadata::getColumnTTLs() const
+bool StorageInMemoryMetadata::hasOnlyRowsTTL() const
+{
+    bool has_any_other_ttl = hasAnyMoveTTL() || hasAnyRecompressionTTL() || hasAnyGroupByTTL() || hasAnyRowsWhereTTL() || hasAnyColumnTTL();
+    return hasRowsTTL() && !has_any_other_ttl;
+}
+
+const TTLColumnsDescription & StorageInMemoryMetadata::getColumnTTLs() const
 {
     return column_ttls_by_name;
 }
@@ -270,7 +435,7 @@ bool StorageInMemoryMetadata::hasAnyColumnTTL() const
     return !column_ttls_by_name.empty();
 }
 
-TTLDescription StorageInMemoryMetadata::getRowsTTL() const
+const TTLDescription & StorageInMemoryMetadata::getRowsTTL() const
 {
     return table_ttl.rows_ttl;
 }
@@ -280,7 +445,7 @@ bool StorageInMemoryMetadata::hasRowsTTL() const
     return table_ttl.rows_ttl.expression_ast != nullptr;
 }
 
-TTLDescriptions StorageInMemoryMetadata::getRowsWhereTTLs() const
+const TTLDescriptions & StorageInMemoryMetadata::getRowsWhereTTLs() const
 {
     return table_ttl.rows_where_ttl;
 }
@@ -290,7 +455,7 @@ bool StorageInMemoryMetadata::hasAnyRowsWhereTTL() const
     return !table_ttl.rows_where_ttl.empty();
 }
 
-TTLDescriptions StorageInMemoryMetadata::getMoveTTLs() const
+const TTLDescriptions & StorageInMemoryMetadata::getMoveTTLs() const
 {
     return table_ttl.move_ttl;
 }
@@ -300,7 +465,7 @@ bool StorageInMemoryMetadata::hasAnyMoveTTL() const
     return !table_ttl.move_ttl.empty();
 }
 
-TTLDescriptions StorageInMemoryMetadata::getRecompressionTTLs() const
+const TTLDescriptions & StorageInMemoryMetadata::getRecompressionTTLs() const
 {
     return table_ttl.recompression_ttl;
 }
@@ -310,7 +475,7 @@ bool StorageInMemoryMetadata::hasAnyRecompressionTTL() const
     return !table_ttl.recompression_ttl.empty();
 }
 
-TTLDescriptions StorageInMemoryMetadata::getGroupByTTLs() const
+const TTLDescriptions & StorageInMemoryMetadata::getGroupByTTLs() const
 {
     return table_ttl.group_by_ttl;
 }
@@ -382,7 +547,10 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
         add_for_rows_ttl(getRowsTTL().expression_columns, required_ttl_columns);
 
     for (const auto & entry : getRowsWhereTTLs())
+    {
         add_for_rows_ttl(entry.expression_columns, required_ttl_columns);
+        add_for_rows_ttl(entry.where_expression_columns, required_ttl_columns);
+    }
 
     for (const auto & entry : getGroupByTTLs())
         add_for_rows_ttl(entry.expression_columns, required_ttl_columns);
@@ -398,8 +566,6 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
 
     for (const auto & entry : getMoveTTLs())
         add_dependent_columns(entry.expression_columns.getNames(), required_ttl_columns);
-
-    //TODO what about rows_where_ttl and group_by_ttl ??
 
     for (const auto & column : indices_columns)
         res.emplace(column, ColumnDependency::SKIP_INDEX);
@@ -433,15 +599,29 @@ Block StorageInMemoryMetadata::getSampleBlockNonMaterialized() const
     return res;
 }
 
-Block StorageInMemoryMetadata::getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const
+bool StorageInMemoryMetadata::isVirtualColumn(const String & column_name) const
+{
+    /// Virtual column may be overridden by real column
+    return !columns.has(column_name) && virtuals.has(column_name);
+}
+
+Block StorageInMemoryMetadata::getSampleBlockWithVirtuals(VirtualsKind kind, VirtualsMaterializationPlace place) const
 {
     auto res = getSampleBlock();
 
-    /// Virtual columns must be appended after ordinary, because user can
-    /// override them.
-    for (const auto & column : virtuals)
+    /// Virtual columns must be appended after ordinary, because user can override them.
+    for (const auto & column : virtuals.getSampleBlock(kind, place).getNamesAndTypesList())
         res.insert({column.type->createColumn(), column.type, column.name});
 
+    return res;
+}
+
+ColumnsDescription StorageInMemoryMetadata::getColumnsWithVirtuals() const
+{
+    ColumnsDescription res = columns;
+    for (const auto & virtual_column : virtuals.toColumnsDescription(VirtualsKind::All, VirtualsMaterializationPlace::All))
+        if (!res.has(virtual_column.name))
+            res.add(virtual_column);
     return res;
 }
 
@@ -575,12 +755,67 @@ Names StorageInMemoryMetadata::getPrimaryKeyColumns() const
     return {};
 }
 
+NameSet StorageInMemoryMetadata::getStorageColumnsRequiredForKeys() const
+{
+    NameSet result;
+    for (const auto & required : {getColumnsRequiredForPartitionKey(), getColumnsRequiredForSortingKey(), getColumnsRequiredForPrimaryKey()})
+    {
+        for (const auto & name : required)
+        {
+            if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+                result.insert(column->getNameInStorage());
+            else
+                result.insert(name);
+        }
+    }
+    return result;
+}
+
+const KeyDescription & StorageInMemoryMetadata::getUniqueKey() const
+{
+    return unique_key;
+}
+
+bool StorageInMemoryMetadata::isUniqueKeyDefined() const
+{
+    return unique_key.definition_ast != nullptr;
+}
+
+bool StorageInMemoryMetadata::hasUniqueKey() const
+{
+    return !unique_key.column_names.empty();
+}
+
+Names StorageInMemoryMetadata::getUniqueKeyColumns() const
+{
+    return unique_key.column_names;
+}
+
 ASTPtr StorageInMemoryMetadata::getSettingsChanges() const
 {
     if (settings_changes)
         return settings_changes->clone();
     return nullptr;
 }
+
+bool StorageInMemoryMetadata::hasSettingChange(const String & setting_name) const
+{
+    if (!settings_changes)
+        return false;
+
+    return settings_changes->as<const ASTSetQuery &>().changes.tryGet(setting_name) != nullptr;
+}
+
+Field StorageInMemoryMetadata::getSettingChange(const String & setting_name) const
+{
+    if (!settings_changes)
+        return Field();
+
+    const auto & changes = settings_changes->as<const ASTSetQuery &>().changes;
+    auto it = std::ranges::find_if(changes, [&setting_name](const SettingChange & change) { return change.name == setting_name; });
+    return it != changes.end() ? it->value : Field();
+}
+
 const SelectQueryDescription & StorageInMemoryMetadata::getSelectQuery() const
 {
     return select;
@@ -591,10 +826,20 @@ bool StorageInMemoryMetadata::hasSelectQuery() const
     return select.select_query != nullptr;
 }
 
+bool StorageInMemoryMetadata::hasStatistics() const
+{
+    for (const auto & column : columns)
+    {
+        if (!column.statistics.empty())
+            return true;
+    }
+    return false;
+}
+
 namespace
 {
-    using NamesAndTypesMap = HashMapWithSavedHash<StringRef, const IDataType *, StringRefHash>;
-    using UniqueStrings = HashSetWithSavedHash<StringRef, StringRefHash>;
+    using NamesAndTypesMap = HashMapWithSavedHash<std::string_view, const IDataType *, StringViewHash>;
+    using UniqueStrings = HashSetWithSavedHash<std::string_view, StringViewHash>;
 
     NamesAndTypesMap getColumnsMap(const NamesAndTypesList & columns)
     {
@@ -655,8 +900,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns) 
 
         const auto * available_type = it->getMapped();
 
-        if (!available_type->hasDynamicSubcolumnsDeprecated()
-            && !column.type->equals(*available_type)
+        if (!column.type->equals(*available_type)
             && !isCompatibleEnumTypes(available_type, column.type.get()))
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
@@ -665,7 +909,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns) 
                 available_type->getName(),
                 column.type->getName());
 
-        if (unique_names.end() != unique_names.find(column.name))
+        if (unique_names.contains(column.name))
             throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE,
                 "Column {} queried more than once",
                 column.name);
@@ -703,8 +947,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns, 
         const auto * provided_column_type = it->getMapped();
         const auto * available_column_type = jt->getMapped();
 
-        if (!provided_column_type->hasDynamicSubcolumnsDeprecated()
-            && !provided_column_type->equals(*available_column_type)
+        if (!provided_column_type->equals(*available_column_type)
             && !isCompatibleEnumTypes(available_column_type, provided_column_type))
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
@@ -713,7 +956,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns, 
                 available_column_type->getName(),
                 provided_column_type->getName());
 
-        if (unique_names.end() != unique_names.find(name))
+        if (unique_names.contains(name))
             throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE,
                 "Column {} queried more than once",
                 name);
@@ -747,8 +990,7 @@ void StorageInMemoryMetadata::check(const Block & block, bool need_all) const
                 listOfColumns(available_columns));
 
         const auto * available_type = it->getMapped();
-        if (!available_type->hasDynamicSubcolumnsDeprecated()
-            && !column.type->equals(*available_type)
+        if (!column.type->equals(*available_type)
             && !isCompatibleEnumTypes(available_type, column.type.get()))
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
@@ -768,5 +1010,177 @@ void StorageInMemoryMetadata::check(const Block & block, bool need_all) const
     }
 }
 
+std::unordered_map<std::string, ColumnSize> StorageInMemoryMetadata::getFakeColumnSizes() const
+{
+    std::unordered_map<std::string, ColumnSize> sizes;
+    for (const auto & col : columns)
+        sizes[col.name] = ColumnSize {.marks = 1000, .data_compressed = 100000000, .data_uncompressed = 1000000000};
+    return sizes;
+}
+
+NameSet StorageInMemoryMetadata::getColumnsWithoutDefaultExpressions(const NamesAndTypesList & exclude) const
+{
+    auto exclude_map = exclude.getNameToTypeMap();
+    NameSet names;
+    for (const auto & col : columns)
+        if (!col.default_desc.expression && !exclude_map.contains(col.name))
+            names.insert(col.name);
+    return names;
+}
+
+void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescription & column, ContextPtr context)
+{
+    // Ephemeral columns are excluded from implicit indices because they are not persisted;
+    // this is a key behavioral change (see PR description) to avoid creating indices for columns
+    // that do not exist in storage and cannot be indexed.
+    if (column.default_desc.kind == ColumnDefaultKind::Ephemeral)
+        return;
+
+    // Skip ALIAS columns that are just aliases to other columns (not expressions).
+    // Only create implicit indices for ALIAS columns with actual expressions.
+    // For example: `a ALIAS b` should be skipped, but `a ALIAS b > 0` should get an index.
+    if (column.default_desc.kind == ColumnDefaultKind::Alias && column.default_desc.expression)
+    {
+        // If the expression is just a simple identifier (column reference), skip creating implicit index
+        // because the underlying column will already have its own implicit index if needed.
+        if (column.default_desc.expression->as<ASTIdentifier>())
+            return;
+    }
+
+    if ((isNumber(column.type) && add_minmax_index_for_numeric_columns) || (isString(column.type) && add_minmax_index_for_string_columns)
+        || (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(column.type) && add_minmax_index_for_temporal_columns))
+    {
+        /// An index of an attached definition may already hold the implicit index name.
+        if (secondary_indices.has(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name))
+            return;
+
+        bool minmax_index_exists = false;
+
+        for (const auto & index : secondary_indices)
+        {
+            if (index.column_names.front() == column.name && index.type == "minmax")
+            {
+                minmax_index_exists = true;
+                break;
+            }
+        }
+
+        if (!minmax_index_exists)
+        {
+            try
+            {
+                /// An index that cannot be built, e.g. over an ALIAS whose dictionary, `Join` table or function is gone, is not generated.
+                auto index = createImplicitMinMaxIndexDescription(column.name, columns, escape_index_filenames, context);
+                static const MergeTreeSettings default_settings;
+                MergeTreeIndexFactory::instance().validate(index, false, default_settings);
+                secondary_indices.push_back(std::move(index));
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() != ErrorCodes::BAD_ARGUMENTS && e.code() != ErrorCodes::INCORRECT_QUERY
+                    && e.code() != ErrorCodes::UNKNOWN_TABLE && e.code() != ErrorCodes::UNKNOWN_DATABASE
+                    && e.code() != ErrorCodes::UNKNOWN_FUNCTION)
+                    throw;
+            }
+        }
+
+    }
+}
+
+void StorageInMemoryMetadata::dropImplicitIndicesForColumn(const String & column_name)
+{
+    for (auto index_it = secondary_indices.begin(); index_it != secondary_indices.end();)
+    {
+        /// We check the index name rather than column_names because for ALIAS columns,
+        /// the column_names contains the resolved underlying expression columns, not the alias name.
+        /// For example, for `alias UInt64 ALIAS value>0`, the implicit index is named
+        /// `auto_minmax_index_alias` but its column_names contains `["value"]`, not `["alias"]`.
+        if (index_it->isImplicitlyCreated() && index_it->name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name)
+            index_it = secondary_indices.erase(index_it);
+        else
+            ++index_it;
+    }
+}
+
+void StorageInMemoryMetadata::addImplicitIndicesForVirtualColumns(ContextPtr context)
+{
+    auto add_for = [&](const String & column_name, bool enabled)
+    {
+        if (!enabled)
+            return;
+
+        if (secondary_indices.has(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name))
+            return;
+
+        for (const auto & index : secondary_indices)
+            if (!index.column_names.empty() && index.column_names.front() == column_name && index.type == "minmax")
+                return;
+
+        const auto columns_to_analyze = virtuals.toColumnsDescription(VirtualsKind::All, VirtualsMaterializationPlace::All);
+        auto index = createImplicitMinMaxIndexDescription(column_name, columns_to_analyze, escape_index_filenames, context);
+        static const MergeTreeSettings default_settings;
+        MergeTreeIndexFactory::instance().validate(index, false, default_settings);
+
+        secondary_indices.push_back(std::move(index));
+    };
+
+    add_for(BlockNumberColumn::name, add_minmax_index_for_block_number_column);
+    add_for(BlockOffsetColumn::name, add_minmax_index_for_block_offset_column);
+}
+
+void StorageInMemoryMetadata::dropImplicitIndicesForVirtualColumns()
+{
+    for (auto index_it = secondary_indices.begin(); index_it != secondary_indices.end();)
+    {
+        if (!index_it->isImplicitlyCreated() || index_it->type != "minmax" || index_it->column_names.size() != 1)
+            ++index_it;
+        else if (isVirtualColumn(index_it->column_names.front()))
+            index_it = secondary_indices.erase(index_it);
+        else
+            ++index_it;
+    }
+}
+
+std::shared_ptr<StorageInMemoryMetadata> StorageInMemoryMetadata::clone(std::shared_ptr<const StorageInMemoryMetadata> from)
+{
+    auto copy = std::make_shared<StorageInMemoryMetadata>(*from);
+    copy->cloned_from = from;
+    return copy;
+}
+
+StorageMetadataHandle::StorageMetadataHandle(std::shared_ptr<StorageInMemoryMetadata> metadata_)
+    : metadata(std::move(metadata_))
+{
+}
+
+StorageMetadataHandle::StorageMetadataHandle(std::shared_ptr<const StorageInMemoryMetadata> metadata_)
+    : metadata(std::move(metadata_))
+{
+}
+
+const StorageInMemoryMetadata * StorageMetadataHandle::operator->() const &
+{
+    return metadata.get();
+}
+
+const StorageInMemoryMetadata & StorageMetadataHandle::operator*() const &
+{
+    return *metadata;
+}
+
+StorageMetadataHandle::operator StorageMetadataPtr() const &
+{
+    return metadata;
+}
+
+StorageMetadataHandle::operator bool() const
+{
+    return metadata != nullptr;
+}
+
+bool StorageMetadataHandle::operator==(std::nullptr_t) const
+{
+    return metadata == nullptr;
+}
 
 }

@@ -1,0 +1,81 @@
+-- { echo ON }
+
+DROP TABLE IF EXISTS test_part_granule_offset;
+CREATE TABLE test_part_granule_offset (n UInt64) ENGINE = MergeTree ORDER BY () SETTINGS index_granularity = 2;
+INSERT INTO test_part_granule_offset SELECT number FROM numbers(101);
+OPTIMIZE TABLE test_part_granule_offset FINAL;
+SELECT _part_granule_offset FROM test_part_granule_offset WHERE n < 10 ORDER BY all;
+0
+0
+1
+1
+2
+2
+3
+3
+4
+4
+SELECT _part_granule_offset, groupArraySorted(200)(n) FROM test_part_granule_offset GROUP BY _part_granule_offset ORDER BY ALL;
+0	[0,1]
+1	[2,3]
+2	[4,5]
+3	[6,7]
+4	[8,9]
+5	[10,11]
+6	[12,13]
+7	[14,15]
+8	[16,17]
+9	[18,19]
+10	[20,21]
+11	[22,23]
+12	[24,25]
+13	[26,27]
+14	[28,29]
+15	[30,31]
+16	[32,33]
+17	[34,35]
+18	[36,37]
+19	[38,39]
+20	[40,41]
+21	[42,43]
+22	[44,45]
+23	[46,47]
+24	[48,49]
+25	[50,51]
+26	[52,53]
+27	[54,55]
+28	[56,57]
+29	[58,59]
+30	[60,61]
+31	[62,63]
+32	[64,65]
+33	[66,67]
+34	[68,69]
+35	[70,71]
+36	[72,73]
+37	[74,75]
+38	[76,77]
+39	[78,79]
+40	[80,81]
+41	[82,83]
+42	[84,85]
+43	[86,87]
+44	[88,89]
+45	[90,91]
+46	[92,93]
+47	[94,95]
+48	[96,97]
+49	[98,99]
+50	[100]
+SELECT * FROM test_part_granule_offset WHERE _part_granule_offset % 10 = 1 ORDER BY ALL;
+2
+3
+22
+23
+42
+43
+62
+63
+82
+83
+DROP TABLE test_part_granule_offset;

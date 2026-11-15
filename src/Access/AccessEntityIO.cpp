@@ -23,16 +23,24 @@
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/ParserAttachAccessEntity.h>
-#include <Parsers/formatAST.h>
+#include <Parsers/QueryParameterVisitor.h>
 #include <Parsers/parseQuery.h>
-#include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
+#include <fmt/ranges.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int INCORRECT_ACCESS_ENTITY_DEFINITION;
+}
+
+void checkAccessEntityHasNoQueryParameters(const ASTPtr & query)
+{
+    if (const auto parameter_names = analyzeReceiveQueryParams(query, /*include_deferred_expressions=*/ false); !parameter_names.empty())
+        throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION,
+            "Query parameters are not allowed in access entity definitions (found {})",
+            fmt::join(parameter_names, ", "));
 }
 
 String serializeAccessEntity(const IAccessEntity & entity)
@@ -45,9 +53,10 @@ String serializeAccessEntity(const IAccessEntity & entity)
 
     /// Serialize the list of ATTACH queries to a string.
     WriteBufferFromOwnString buf;
+    IAST::FormatSettings format_settings(/*one_line=*/true);
     for (const ASTPtr & query : queries)
     {
-        formatAST(*query, buf, false, true);
+        query->format(buf, format_settings);
         buf.write(";\n", 2);
     }
     return buf.str();
@@ -66,6 +75,9 @@ static AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
         while (isWhitespaceASCII(*pos) || *pos == ';')
             ++pos;
     }
+
+    for (const auto & query : queries)
+        checkAccessEntityHasNoQueryParameters(query);
 
     /// Interpret the AST to build an access entity.
     std::shared_ptr<User> user;

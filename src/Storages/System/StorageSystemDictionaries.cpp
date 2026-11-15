@@ -1,8 +1,10 @@
 #include <DataTypes/DataTypeArray.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
@@ -15,7 +17,8 @@
 #include <Columns/ColumnString.h>
 #include <Core/Names.h>
 
-#include <base/map.h>
+
+#include <ranges>
 
 namespace DB
 {
@@ -52,11 +55,12 @@ catch (const DB::Exception &)
 }
 
 StorageSystemDictionaries::StorageSystemDictionaries(const StorageID & storage_id_, ColumnsDescription columns_description_)
-    : IStorageSystemOneBlock(storage_id_, std::move(columns_description_))
+    : IStorageSystemOneBlock(storage_id_, columns_description_)
 {
-    VirtualColumnsDescription virtuals;
-    virtuals.addEphemeral("key", std::make_shared<DataTypeString>(), "");
-    setVirtuals(std::move(virtuals));
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_description_);
+    storage_metadata.setVirtuals(createVirtuals());
+    setInMemoryMetadata(storage_metadata);
 }
 
 ColumnsDescription StorageSystemDictionaries::getColumnsDescription()
@@ -68,13 +72,17 @@ ColumnsDescription StorageSystemDictionaries::getColumnsDescription()
         {"uuid", std::make_shared<DataTypeUUID>(), "Dictionary UUID."},
         {"status", std::make_shared<DataTypeEnum8>(getExternalLoaderStatusEnumAllPossibleValues()),
             "Dictionary status. Possible values: "
-            "NOT_LOADED — Dictionary was not loaded because it was not used, "
+            "NOT_LOADED — Dictionary not currently loaded in memory, "
             "LOADED — Dictionary loaded successfully, "
             "FAILED — Unable to load the dictionary as a result of an error, "
             "LOADING — Dictionary is loading now, "
             "LOADED_AND_RELOADING — Dictionary is loaded successfully, and is being reloaded right now (frequent reasons: SYSTEM RELOAD DICTIONARY query, timeout, dictionary config has changed), "
             "FAILED_AND_RELOADING — Could not load the dictionary as a result of an error and is loading now."
         },
+        {"is_lazy", DataTypeFactory::instance().get("Bool"),
+            "Whether the dictionary is loaded on first use rather than eagerly. "
+            "Reflects the `dictionary_lazy_load` setting of the dictionary, or the `dictionaries_lazy_load` server setting if it is `auto`. "
+            "A lazy dictionary stays in the NOT_LOADED status until it is used for the first time."},
         {"origin", std::make_shared<DataTypeString>(), "Path to the configuration file that describes the dictionary."},
         {"type", std::make_shared<DataTypeString>(), "Type of a dictionary allocation. Storing Dictionaries in Memory."},
         {"key.names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Array of key names provided by the dictionary."},
@@ -93,21 +101,28 @@ ColumnsDescription StorageSystemDictionaries::getColumnsDescription()
         {"lifetime_max", std::make_shared<DataTypeUInt64>(), "Maximum lifetime of the dictionary in memory, after which ClickHouse tries to reload the dictionary (if invalidate_query is set, then only if it has changed). Set in seconds."},
         {"loading_start_time", std::make_shared<DataTypeDateTime>(), "Start time for loading the dictionary."},
         {"last_successful_update_time", std::make_shared<DataTypeDateTime>(), "End time for loading or updating the dictionary. Helps to monitor some troubles with dictionary sources and investigate the causes."},
+        {"error_count", std::make_shared<DataTypeUInt64>(), "Number of errors since last successful loading. Helps to monitor some troubles with dictionary sources and investigate the causes."},
         {"loading_duration", std::make_shared<DataTypeFloat32>(), "Duration of a dictionary loading."},
-        {"last_exception", std::make_shared<DataTypeString>(), "Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn’t be created."},
+        {"last_exception", std::make_shared<DataTypeString>(), "Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn't be created."},
         {"comment", std::make_shared<DataTypeString>(), "Text of the comment to dictionary."}
     };
+}
+
+VirtualColumnsDescription StorageSystemDictionaries::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("key", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
+    return desc;
 }
 
 void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto access = context->getAccess();
-    const bool check_access_for_dictionaries = access->isGranted(AccessType::SHOW_DICTIONARIES);
+    const bool need_to_check_access_for_dictionaries = !access->isGranted(AccessType::SHOW_DICTIONARIES);
 
     const auto & external_dictionaries = context->getExternalDictionariesLoader();
-
-    if (!check_access_for_dictionaries)
-        return;
 
     for (const auto & load_result : external_dictionaries.getLoadResults())
     {
@@ -119,7 +134,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
         StorageID dict_id = getDictionaryID(load_result, dict_ptr);
 
         String db_or_tag = dict_id.database_name.empty() ? IDictionary::NO_DATABASE_TAG : dict_id.database_name;
-        if (!access->isGranted(AccessType::SHOW_DICTIONARIES, db_or_tag, dict_id.table_name))
+        if (need_to_check_access_for_dictionaries && !access->isGranted(AccessType::SHOW_DICTIONARIES, db_or_tag, dict_id.table_name))
             continue;
 
         size_t i = 0;
@@ -127,6 +142,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
         res_columns[i++]->insert(dict_id.table_name);
         res_columns[i++]->insert(dict_id.uuid);
         res_columns[i++]->insert(static_cast<Int8>(load_result.status));
+        res_columns[i++]->insert(external_dictionaries.isObjectLazy(*load_result.config));
         res_columns[i++]->insert(load_result.config ? load_result.config->path : "");
 
         if (dict_ptr)
@@ -136,15 +152,19 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
 
         if (dict_structure)
         {
-            res_columns[i++]->insert(collections::map<Array>(dict_structure->getKeysNames(), [](auto & name) { return name; }));
+            res_columns[i++]->insert(
+                Array{std::from_range_t{}, dict_structure->getKeysNames() | std::views::transform([](auto & name) { return name; })});
 
             if (dict_structure->id)
                 res_columns[i++]->insert(Array({"UInt64"}));
             else
-                res_columns[i++]->insert(collections::map<Array>(*dict_structure->key, [](auto & attr) { return attr.type->getName(); }));
+                res_columns[i++]->insert(Array{
+                    std::from_range_t{}, *dict_structure->key | std::views::transform([](auto & attr) { return attr.type->getName(); })});
 
-            res_columns[i++]->insert(collections::map<Array>(dict_structure->attributes, [](auto & attr) { return attr.name; }));
-            res_columns[i++]->insert(collections::map<Array>(dict_structure->attributes, [](auto & attr) { return attr.type->getName(); }));
+            res_columns[i++]->insert(
+                Array{std::from_range_t{}, dict_structure->attributes | std::views::transform([](auto & attr) { return attr.name; })});
+            res_columns[i++]->insert(Array{
+                std::from_range_t{}, dict_structure->attributes | std::views::transform([](auto & attr) { return attr.type->getName(); })});
         }
         else
         {
@@ -177,6 +197,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
 
         res_columns[i++]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(load_result.loading_start_time)));
         res_columns[i++]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(load_result.last_successful_update_time)));
+        res_columns[i++]->insert(load_result.error_count);
         res_columns[i++]->insert(std::chrono::duration_cast<std::chrono::duration<float>>(load_result.loading_duration).count());
 
         if (last_exception)
@@ -206,3 +227,6 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDictionaries) }

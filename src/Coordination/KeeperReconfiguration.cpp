@@ -1,7 +1,9 @@
-#include "KeeperReconfiguration.h"
+#include <Coordination/KeeperReconfiguration.h>
+#include <IO/ReadHelpers.h>
 #include <unordered_set>
 #include <base/find_symbols.h>
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -50,7 +52,7 @@ ClusterUpdateActions leavingToClusterUpdates(const ClusterConfigPtr & cfg, std::
 
     for (std::string_view leaving_server : leaving_arr)
     {
-        int32_t id;
+        int32_t id = 0;
         if (!tryParse(id, leaving_server))
             return {};
 

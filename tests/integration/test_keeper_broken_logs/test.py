@@ -23,8 +23,6 @@ node3 = cluster.add_instance(
     stay_alive=True,
 )
 
-from kazoo.client import KazooClient, KazooState
-
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -46,11 +44,7 @@ def wait_nodes():
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
-    return _fake_zk_instance
+    return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
 
 
 def start_clickhouse(node):
@@ -83,7 +77,7 @@ def test_single_node_broken_log(started_cluster):
 
         node1_conn.create("/test_broken_log")
         for _ in range(10):
-            node1_conn.create(f"/test_broken_log/node", b"somedata1", sequence=True)
+            node1_conn.create("/test_broken_log/node", b"somedata1", sequence=True)
 
         def verify_nodes(zk_conn):
             children = zk_conn.get_children("/test_broken_log")
@@ -117,7 +111,7 @@ def test_single_node_broken_log(started_cluster):
         keeper_utils.wait_until_connected(cluster, node1)
 
         node1_conn = get_fake_zk("node1")
-        node1_conn.create(f"/test_broken_log_final_node", b"somedata1")
+        node1_conn.create("/test_broken_log_final_node", b"somedata1")
 
         verify_nodes(node1_conn)
         assert node1_conn.get("/test_broken_log_final_node")[0] == b"somedata1"

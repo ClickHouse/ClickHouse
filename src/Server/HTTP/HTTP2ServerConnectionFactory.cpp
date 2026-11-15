@@ -12,7 +12,7 @@ namespace DB
         poco_check_ptr(factory);
     }
 
-    Poco::Net::TCPServerConnection * HTTP2ServerConnectionFactory::createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server)
+    Poco::Net::TCPServerConnection * HTTP2ServerConnectionFactory::createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server)
     {
         UNUSED(tcp_server);
         return new HTTP2ServerConnection(socket, factory);

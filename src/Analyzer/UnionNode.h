@@ -1,17 +1,18 @@
 #pragma once
 
+#include <Common/SettingsChanges.h>
+
 #include <Core/NamesAndTypes.h>
-#include <Core/Field.h>
 
 #include <Parsers/SelectUnionMode.h>
 
-#include <Analyzer/Identifier.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
-#include <Analyzer/TableExpressionModifiers.h>
 #include <Analyzer/RecursiveCTE.h>
 
 #include <Interpreters/Context_fwd.h>
+
+#include <vector>
 
 namespace DB
 {
@@ -37,11 +38,24 @@ namespace DB
 class UnionNode;
 using UnionNodePtr = std::shared_ptr<UnionNode>;
 
-class UnionNode final : public IQueryTreeNode
+class ColumnNode;
+using ColumnNodePtr = std::shared_ptr<ColumnNode>;
+
+class QueryNode;
+using QueryNodePtr = std::shared_ptr<QueryNode>;
+
+class UnionNode final : public ITableExpressionNode
 {
 public:
-    /// Construct union node with context and normalized union mode
-    explicit UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_);
+    /// Construct union node with context and normalized union mode, and with the query-level
+    /// `SETTINGS` clause of the union (changed settings, settings reset to their default value and
+    /// query parameters), see `getSettingsChanges`.
+    explicit UnionNode(
+        ContextMutablePtr context_,
+        SelectUnionMode union_mode_,
+        SettingsChanges settings_changes_ = {},
+        std::vector<String> default_settings_ = {},
+        NameToNameVector query_parameters_ = {});
 
     /// Get context
     ContextPtr getContext() const
@@ -59,6 +73,37 @@ public:
     ContextMutablePtr & getMutableContext()
     {
         return context;
+    }
+
+    /// Returns true if the union has a query-level `SETTINGS` clause of its own, false otherwise.
+    bool hasSettingsChanges() const
+    {
+        return !settings_changes.empty() || !default_settings.empty() || !query_parameters.empty();
+    }
+
+    /// Get the settings changed by the union's own query-level `SETTINGS` clause
+    const SettingsChanges & getSettingsChanges() const
+    {
+        return settings_changes;
+    }
+
+    /// Get the settings reset to their default value by the union's own query-level `SETTINGS` clause
+    const std::vector<String> & getDefaultSettings() const
+    {
+        return default_settings;
+    }
+
+    /// Get the query parameters set in the union's own query-level `SETTINGS` clause
+    const NameToNameVector & getQueryParameters() const
+    {
+        return query_parameters;
+    }
+
+    void clearSettingsChanges()
+    {
+        settings_changes.clear();
+        default_settings.clear();
+        query_parameters.clear();
     }
 
     /// Returns true if union node is subquery, false otherwise
@@ -83,6 +128,18 @@ public:
     void setIsCTE(bool is_cte_value)
     {
         is_cte = is_cte_value;
+    }
+
+    /// Returns true if union node is a MATERIALIZED CTE, false otherwise
+    bool isMaterialized() const noexcept
+    {
+        return is_materialized;
+    }
+
+    /// Set union node is MATERIALIZED CTE value
+    void setIsMaterialized(bool is_materialized_value) noexcept
+    {
+        is_materialized = is_materialized_value;
     }
 
     /// Returns true if union node CTE is specified in WITH RECURSIVE, false otherwise
@@ -170,10 +227,29 @@ public:
     NamesAndTypes computeProjectionColumns() const;
 
     /// Remove unused projection columns
-    void removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns);
-
-    /// Remove unused projection columns
     void removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes);
+
+    bool isCorrelated() const
+    {
+        return !children[correlated_columns_list_index]->as<ListNode>()->getNodes().empty();
+    }
+
+    QueryTreeNodePtr & getCorrelatedColumnsNode()
+    {
+        return children[correlated_columns_list_index];
+    }
+
+    ListNode & getCorrelatedColumns()
+    {
+        return children[correlated_columns_list_index]->as<ListNode &>();
+    }
+
+    const ListNode & getCorrelatedColumns() const
+    {
+        return children[correlated_columns_list_index]->as<ListNode &>();
+    }
+
+    void addCorrelatedColumn(const QueryTreeNodePtr & correlated_column);
 
     QueryTreeNodeType getNodeType() const override
     {
@@ -194,14 +270,19 @@ protected:
 private:
     bool is_subquery = false;
     bool is_cte = false;
+    bool is_materialized = false;
     bool is_recursive_cte = false;
     std::optional<RecursiveCTETable> recursive_cte_table;
     std::string cte_name;
     ContextMutablePtr context;
     SelectUnionMode union_mode;
+    SettingsChanges settings_changes;
+    std::vector<String> default_settings;
+    NameToNameVector query_parameters;
 
     static constexpr size_t queries_child_index = 0;
-    static constexpr size_t children_size = queries_child_index + 1;
+    static constexpr size_t correlated_columns_list_index = 1;
+    static constexpr size_t children_size = correlated_columns_list_index + 1;
 };
 
 }
