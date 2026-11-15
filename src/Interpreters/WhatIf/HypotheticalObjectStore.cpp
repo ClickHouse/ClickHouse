@@ -1,6 +1,7 @@
 #include <Interpreters/WhatIf/HypotheticalObjectStore.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Analyzer/MatcherNode.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -14,6 +15,8 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+
+#include <Poco/String.h>
 
 #include <fmt/ranges.h>
 
@@ -118,6 +121,21 @@ Names expand(const IAST & matcher, const ColumnsDescription & columns)
     return names;
 }
 
+/// as `resolveFunction`, the analyzer removes an unqualified matcher from the arguments of `count` and `countState`,
+/// also with combinators that keep the argument types, so `count(*)` reads no column
+bool removesMatchers(const ASTFunction & function)
+{
+    String name = function.name;
+    while (const auto combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))
+    {
+        if (combinator->transformsArgumentTypes())
+            return false;
+        name.resize(name.size() - combinator->getName().size());
+    }
+    const auto lowercase = Poco::toLower(name);
+    return (lowercase == "count" || lowercase == "countstate") && Poco::toLower(function.name) != "countdistinct";
+}
+
 void bindExpansions(const ASTPtr & ast, const ColumnsDescription & columns, HypotheticalBinding & binding)
 {
     if (ast->as<ASTAsterisk>() || ast->as<ASTColumnsRegexpMatcher>())
@@ -127,8 +145,19 @@ void bindExpansions(const ASTPtr & ast, const ColumnsDescription & columns, Hypo
             bindColumn(name, columns, binding);
         binding.expansions.emplace_back(ast, std::move(names));
     }
+    const auto * function = ast->as<ASTFunction>();
+    const bool skip_matchers = function && function->arguments && removesMatchers(*function);
     for (const auto & child : ast->children)
+    {
+        if (skip_matchers && child == function->arguments)
+        {
+            for (const auto & argument : child->children)
+                if (!argument->as<ASTAsterisk>() && !argument->as<ASTColumnsRegexpMatcher>())
+                    bindExpansions(argument, columns, binding);
+            continue;
+        }
         bindExpansions(child, columns, binding);
+    }
 }
 
 HypotheticalBinding bindDefinition(const ASTPtr & definition, const Names & required_columns, const StorageInMemoryMetadata & metadata)
