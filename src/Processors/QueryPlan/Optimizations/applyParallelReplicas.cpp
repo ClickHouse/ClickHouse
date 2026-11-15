@@ -234,7 +234,9 @@ static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::fu
 ///   different set, and an `IN` is supposed to compare against a single set - wrong rows, no exception.
 ///   `rand()` is the example: unlike `now()`, it is not constant-folded (folding needs a `ColumnConst`
 ///   result), so it reaches the replicas as a live function and each evaluates it itself.
-static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag)
+/// `visited` holds the sets already checked: a set can be referenced from several places, and the sets nested in
+/// a set's plan are checked recursively.
+static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag, std::unordered_set<const FutureSetFromSubquery *> & visited)
 {
     for (const auto & node : dag.getNodes())
     {
@@ -245,7 +247,7 @@ static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag)
             continue;
         const auto future_set = column_set->getData();
         const auto * from_subquery = typeid_cast<const FutureSetFromSubquery *>(future_set.get());
-        if (!from_subquery)
+        if (!from_subquery || !visited.insert(from_subquery).second)
             continue;
 
         const auto * subquery_plan = from_subquery->getQueryPlan();
@@ -283,6 +285,12 @@ static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag)
                 "would build a different one");
             return true;
         }
+
+        /// The sets the plan of this set uses are shipped with it, so they have to pass the same checks.
+        if (checkQueryPlanActionDAGs(
+                subquery_plan->getRootNode(),
+                [&](const ActionsDAG & nested_dag) { return dagReferencesUnshippableSubquerySet(nested_dag, visited); }))
+            return true;
     }
     return false;
 }
@@ -356,7 +364,8 @@ static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::fu
 /// fragment local instead of shipping it.
 static bool fragmentHasUnshippableSubquerySet(const QueryPlan::Node * node)
 {
-    return checkQueryPlanActionDAGs(node, dagReferencesUnshippableSubquerySet);
+    std::unordered_set<const FutureSetFromSubquery *> visited;
+    return checkQueryPlanActionDAGs(node, [&](const ActionsDAG & dag) { return dagReferencesUnshippableSubquerySet(dag, visited); });
 }
 
 class ApplyParallelReplicasVisitor : public QueryPlanVisitor<ApplyParallelReplicasVisitor>

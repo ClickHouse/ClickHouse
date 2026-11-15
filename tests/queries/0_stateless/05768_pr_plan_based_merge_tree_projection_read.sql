@@ -7,6 +7,7 @@
 
 DROP TABLE IF EXISTS t_pr_projection_read;
 DROP TABLE IF EXISTS t_pr_projection_offset;
+DROP VIEW IF EXISTS v_pr_projection_read;
 
 -- The projection keeps a tenth of the rows.
 CREATE TABLE t_pr_projection_read (a UInt32, b UInt32, PROJECTION p (SELECT a, b WHERE a % 10 = 0 ORDER BY b))
@@ -17,6 +18,9 @@ INSERT INTO t_pr_projection_read SELECT number, number % 7 FROM numbers(100000);
 CREATE TABLE t_pr_projection_offset (a Int32, b Int32, PROJECTION p (SELECT a, b, _part_offset ORDER BY b))
 ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 128;
 INSERT INTO t_pr_projection_offset SELECT number, number % 100 FROM numbers(30000);
+
+-- A view hides the table function from the query, but not from its plan.
+CREATE VIEW v_pr_projection_read AS SELECT a, b FROM mergeTreeProjection(currentDatabase(), t_pr_projection_read, p);
 
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_plan_based = 1;
@@ -36,12 +40,21 @@ FROM t_pr_projection_offset AS l JOIN mergeTreeProjection(currentDatabase(), t_p
 
 SELECT '--- an IN set built from the projection';
 -- Every replica builds the set by running its plan, so a read through `mergeTreeProjection` there keeps the fragment local too.
-SELECT count() FROM t_pr_projection_read WHERE a IN (SELECT a FROM mergeTreeProjection(currentDatabase(), t_pr_projection_read, p))
-SETTINGS optimize_use_projections = 0;
-SELECT count() FROM t_pr_projection_read WHERE a NOT IN (SELECT a FROM mergeTreeProjection(currentDatabase(), t_pr_projection_read, p))
-SETTINGS optimize_use_projections = 0;
-SELECT count() FROM t_pr_projection_offset WHERE _part_offset IN (SELECT _parent_part_offset FROM mergeTreeProjection(currentDatabase(), t_pr_projection_offset, p))
-SETTINGS optimize_use_projections = 0;
+SELECT count() FROM t_pr_projection_read WHERE a IN (SELECT a FROM mergeTreeProjection(currentDatabase(), t_pr_projection_read, p));
+SELECT count() FROM t_pr_projection_read WHERE a NOT IN (SELECT a FROM mergeTreeProjection(currentDatabase(), t_pr_projection_read, p));
+SELECT count() FROM t_pr_projection_offset WHERE _part_offset IN (SELECT _parent_part_offset FROM mergeTreeProjection(currentDatabase(), t_pr_projection_offset, p));
+
+SELECT '--- a nested IN set built from the projection';
+SELECT count() FROM t_pr_projection_read
+WHERE a IN (SELECT a FROM t_pr_projection_read WHERE a IN (SELECT a FROM mergeTreeProjection(currentDatabase(), t_pr_projection_read, p)));
+SELECT sum(a IN (SELECT a FROM t_pr_projection_read WHERE a IN (SELECT a FROM mergeTreeProjection(currentDatabase(), t_pr_projection_read, p))))
+FROM t_pr_projection_read;
+
+SELECT '--- a view over the projection';
+SELECT count(), sum(a) FROM v_pr_projection_read;
+SELECT count() FROM t_pr_projection_read WHERE a IN (SELECT a FROM v_pr_projection_read);
+SELECT count() FROM t_pr_projection_read WHERE a IN (SELECT a FROM t_pr_projection_read WHERE a IN (SELECT a FROM v_pr_projection_read));
+SELECT count() FROM t_pr_projection_read AS l JOIN v_pr_projection_read AS r USING (a);
 
 SELECT '--- an IN set built from a table is still shipped';
 SELECT count() FROM t_pr_projection_read WHERE a IN (SELECT toUInt32(a) FROM t_pr_projection_offset);
@@ -50,5 +63,6 @@ SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 FROM (EXPLAIN SELE
 SELECT '--- a read of the table that the optimizer answers from the projection';
 SELECT count(), sum(a) FROM t_pr_projection_read WHERE b = 3 AND a % 10 = 0 SETTINGS optimize_use_projections = 1, parallel_replicas_local_plan = 1;
 
+DROP VIEW v_pr_projection_read;
 DROP TABLE t_pr_projection_read;
 DROP TABLE t_pr_projection_offset;

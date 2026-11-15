@@ -23,5 +23,7 @@ SET parallel_replicas_local_plan = 0;
 
 SELECT count(), sum(v) FROM t_pr_in_tmp WHERE k IN (SELECT k FROM tmp_pr_in);
 SELECT count() FROM t_pr_in_tmp WHERE k NOT IN (SELECT k FROM tmp_pr_in);
+-- The sets nested in the plan of a set are shipped with it.
+SELECT count() FROM t_pr_in_tmp WHERE k IN (SELECT k FROM t_pr_in_tmp WHERE k IN (SELECT k FROM tmp_pr_in));
 
 DROP TABLE t_pr_in_tmp;
