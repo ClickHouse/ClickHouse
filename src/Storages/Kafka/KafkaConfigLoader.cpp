@@ -7,6 +7,7 @@
 #include <Storages/Kafka/StorageKafka2.h>
 #include <Storages/Kafka/StorageKafkaUtils.h>
 #include <Storages/Kafka/parseSyslogLevel.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/System/StorageSystemStackTrace.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -17,6 +18,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/QueryProfiler.h>
 #include <Common/config_version.h>
 #include <Common/setThreadName.h>
@@ -445,6 +447,24 @@ void loadProducerConfig(cppkafka::Configuration & kafka_config, const KafkaConfi
     loadFromConfig(kafka_config, params, producer_path);
 }
 
+/// The current named collection with the overrides from the table definition, so that changes of the collection reach existing tables.
+NamedCollectionPtr getCurrentCollection(const NamedCollectionPtr & table_collection)
+{
+    if (!table_collection)
+        return nullptr;
+
+    const auto current_collection = NamedCollectionFactory::instance().get(table_collection->getName());
+    auto collection = current_collection->duplicate();
+    for (const auto & key : table_collection->getKeys())
+    {
+        if (!table_collection->isQueryOverridden(key))
+            continue;
+        checkNamedCollectionOverrideLock(*current_collection, key);
+        collection->setOrUpdate<String>(key, table_collection->get<String>(key), {});
+    }
+    return collection;
+}
+
 template <typename TKafkaStorage>
 using SpecificConfigUpdaterFunc = void (*)(
     cppkafka::Configuration & kafka_config,
@@ -458,9 +478,11 @@ void updateConfigurationFromConfig(
     const KafkaConfigLoader::LoadConfigParams & params,
     IKafkaExceptionInfoSinkWeakPtr exception_info_sink_ptr = IKafkaExceptionInfoSinkWeakPtr())
 {
-    loadFromConfig(kafka_config, params, KafkaConfigLoader::CONFIG_KAFKA_TAG);
+    const auto collection = getCurrentCollection(params.collection);
+    const KafkaConfigLoader::LoadConfigParams current_params{params.config, collection, params.topics, params.log, params.context};
+    loadFromConfig(kafka_config, current_params, KafkaConfigLoader::CONFIG_KAFKA_TAG);
 
-    specific_config_updater(kafka_config, params);
+    specific_config_updater(kafka_config, current_params);
 
     auto kafka_settings = storage.getKafkaSettings();
     if (!kafka_settings[KafkaSetting::kafka_security_protocol].value.empty())

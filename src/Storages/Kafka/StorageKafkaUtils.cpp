@@ -127,7 +127,7 @@ void registerStorageKafka(StorageFactory & factory)
             args.storage_def->settings))
         {
             kafka_settings->loadFromNamedCollection(collection_with_overrides);
-            /// The extended librdkafka properties are read from the collection with the overrides when a consumer or producer is created.
+            /// The overrides of the extended librdkafka properties are applied to the current collection when a consumer or producer is created.
             named_collection = std::move(collection_with_overrides);
         }
 
