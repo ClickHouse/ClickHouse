@@ -321,7 +321,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
                 check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
                 DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
-                StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(table_id, context_, is_drop_or_detach_database);
             }
 
             context_->onQueryExecutionStarted();
@@ -403,7 +402,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
             bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
-            StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(table_id, context_, is_drop_or_detach_database);
 
             context_->onQueryExecutionStarted();
             table->flushAndShutdown(true);
@@ -553,10 +551,6 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         if (e.code() != ErrorCodes::ASYNC_LOAD_CANCELED)
             tryLogCurrentException("InterpreterDropQuery", "Async loading failed", LogsLevel::warning);
     }
-
-    /// Check before `stopReplication` and `flushAndPrepareForShutdown`, so a rejected drop leaves the tables running.
-    if (database->shouldBeEmptyOnDetach() && (drop || (truncate && !query.has_tables)))
-        StorageMaterializedView::checkDatabaseHasNoIncrementalRefreshSources(*database, database_name, getContext(), /*is_drop_database*/ true);
 
     getContext()->onQueryExecutionStarted();
     if (!truncate && database->hasReplicationThread())
