@@ -38,6 +38,11 @@ public:
 
     bool has(const Key & key) const;
 
+    const std::string & getName() const
+    {
+        return collection_name;
+    }
+
     bool hasAny(const std::initializer_list<Key> & keys) const;
 
     template <typename T> T get(const Key & key) const;

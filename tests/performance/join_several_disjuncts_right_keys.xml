@@ -8,6 +8,7 @@
     <settings>
         <max_threads>8</max_threads>
         <join_algorithm>hash</join_algorithm>
+        <hash_join_layout>serial</hash_join_layout>
     </settings>
 
     <!-- Nothing is taken from the right side, so neither key is added. -->

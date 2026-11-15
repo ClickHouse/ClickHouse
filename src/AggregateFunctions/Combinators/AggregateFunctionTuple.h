@@ -51,6 +51,7 @@ private:
     VectorWithMemoryTracking<size_t> state_offsets;
     size_t total_state_size = 0;
     size_t max_state_align = 1;
+    size_t num_zero_sized_states = 0;
     String nested_func_name;
 
     /// Result type: a Tuple of the nested result types, preserving explicit element names.
@@ -71,6 +72,7 @@ public:
     bool isVersioned() const override;
     size_t getDefaultVersion() const override;
     size_t getVersionFromRevision(size_t revision) const override;
+    DataTypePtr getStateType() const override;
 
     size_t sizeOfData() const override { return total_state_size; }
     size_t alignOfData() const override { return max_state_align; }
@@ -112,10 +114,22 @@ public:
         const UInt8 * null_map,
         Arena * arena,
         ssize_t if_argument_pos = -1) const override;
+    void addBatchLookupTable8(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * map,
+        size_t place_offset,
+        std::function<void(AggregateDataPtr &)> init,
+        const UInt8 * key,
+        const IColumn ** columns,
+        Arena * arena) const override;
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override;
 
     bool isParallelizeMergePrepareNeeded() const override;
     bool isAbleToParallelizeMerge() const override;
+    size_t getEstimatedMergeWork(ConstAggregateDataPtr place) const override;
+    size_t getStateBytesPerDistinctInput() const override;
+    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override;
     bool canOptimizeEqualKeysRanges() const override;
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override;
     void mergeImpl(
@@ -157,7 +171,7 @@ public:
     bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override;
     DataTypePtr getNormalizedStateType() const override;
 
-    bool shouldPrintParametersWithTypes() const override;
+    bool isOnlyWindowFunction() const override;
 
     AggregateFunctionStateVariant getStateVariant() const override;
     bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override;
@@ -224,7 +238,11 @@ private:
     /// Shared implementation of the batch add overrides. Hoists the per-element column pointers, so
     /// no per-row unwrapping work remains in the row loop.
     /// `get_place` returns the aggregation state for a row, or nullptr when the row has none.
-    template <bool has_null_map, bool all_places_are_non_null, typename GetPlace>
+    /// The elements without sparse columns are passed to the nested functions for the whole batch by
+    /// `add_nested_batch(nested_function, state_offset, nested_columns)`, which calls
+    /// the batch method of the nested function corresponding to the caller. This way the nested functions process
+    /// the batch at once (for example, -Distinct over a `Variant` argument passes the new rows to the conversion together).
+    template <bool has_null_map, bool all_places_are_non_null, typename GetPlace, typename AddNestedBatch>
     void addBatchImpl(
         size_t row_begin,
         size_t row_end,
@@ -232,7 +250,8 @@ private:
         const UInt8 * null_map,
         ssize_t if_argument_pos,
         Arena * arena,
-        GetPlace && get_place) const;
+        GetPlace && get_place,
+        AddNestedBatch && add_nested_batch) const;
 };
 
 }

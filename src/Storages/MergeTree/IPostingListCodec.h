@@ -19,6 +19,9 @@ class ReadBuffer;
 class WriteBuffer;
 using PostingList = roaring::Roaring;
 
+/// Shared immutable array of UInt32 values, e.g. sorted row ids of a posting list.
+using PaddedPODArrayPtr = std::shared_ptr<const PaddedPODArray<UInt32>>;
+
 /// Incrementally encodes the posting list of a single token during the text index build.
 /// Sorted row ids arrive in batches via `append`, are split into fixed-size segments and
 /// encoded right away; `finalize` writes the buffered encoded segments to the output.

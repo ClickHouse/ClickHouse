@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- no-fasttest: the Arrow format is not available in fasttest builds
-
 -- The Arrow spec leaves the value bytes of a null slot undefined, so a value hidden under a null
 -- slot must not fail value-level validation on read; it decodes as the type default. ClickHouse
 -- itself produces such files: Date32 arithmetic can push the raw day number past the type's
@@ -8,7 +5,7 @@
 -- new null mask, so the Arrow writer stores an out-of-range day number under a null slot.
 
 SET engine_file_truncate_on_insert = 1;
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 INSERT INTO FUNCTION file(currentDatabase() || '_04512_plain.arrow', 'Arrow')
 SELECT nullIf(x, x) AS d FROM (SELECT toDate32('9999-12-31') + 100 AS x);

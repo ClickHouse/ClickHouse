@@ -4,11 +4,11 @@
 
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromOStream.h>
 #include <Formats/formatBlock.h>
 #include <Core/Block.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Core/Settings.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/JSON/Parser.h>
@@ -17,11 +17,17 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/Pipe.h>
+#include <Common/ProfileEvents.h>
 
 
 #include <memory>
 #include <utility>
 
+
+namespace ProfileEvents
+{
+    extern const Event YTsaurusLookupThrottled;
+}
 
 namespace DB
 {
@@ -37,9 +43,21 @@ namespace Setting
     extern const SettingsUInt64 max_http_get_redirects;
 }
 
+static String authorizationHeaderValue(const String & oauth_token)
+{
+    return fmt::format("OAuth {}", oauth_token);
+}
+
 YTsaurusClient::YTsaurusClient(ContextPtr context_, const ConnectionInfo & connection_info_)
     : context(context_), connection_info(connection_info_), log(getLogger("YTsaurusClient"))
 {
+    checkHeaders(context, connection_info.oauth_token);
+}
+
+void YTsaurusClient::checkHeaders(const ContextPtr & context, const String & oauth_token)
+{
+    HTTPHeaderEntries headers{{"Authorization", authorizationHeaderValue(oauth_token)}};
+    context->getHTTPHeaderFilter().checkHeaders(headers);
 }
 
 YTsaurusClient::YTsaurusClient(const YTsaurusClient & other)
@@ -137,26 +155,26 @@ ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path, const Colu
 }
 
 
-ReadBufferPtr YTsaurusClient::lookupRows(const String & cypress_path, const Block & lookup_block_input)
+ReadBufferPtr YTsaurusClient::lookupRows(const String & cypress_path, const Block & lookup_block_input, ThrottlerPtr lookup_throttler)
 {
     YTsaurusQueryPtr lookup_rows_query(new YTsaurusLookupRows(cypress_path));
-    auto out_callback = [lookup_block_input, this](std::ostream & ostr)
+    auto out_callback = [lookup_block_input, this](WriteBuffer & out)
     {
         FormatSettings format_settings;
         format_settings.json.quote_64bit_integers = false;
-        WriteBufferFromOStream out_buffer(ostr);
-        auto output_format = context->getOutputFormat("JSONEachRow", out_buffer, lookup_block_input.cloneEmpty(), format_settings);
+        auto output_format = context->getOutputFormat("JSONEachRow", out, lookup_block_input.cloneEmpty(), format_settings);
         formatBlock(output_format, lookup_block_input);
-        out_buffer.finalize();
     };
-    return executeQuery(lookup_rows_query, std::move(out_callback));
+    /// The throttler is passed down to `executeQuery` so that every real `lookup_rows` HTTP attempt, including retries
+    /// against other http proxies, consumes its own token; otherwise one logical lookup could exceed the limit on failover.
+    return executeQuery(lookup_rows_query, std::move(out_callback), lookup_throttler);
 }
 
-ReadBufferPtr YTsaurusClient::executeQuery(const YTsaurusQueryPtr query, const ReadWriteBufferFromHTTP::OutStreamCallback&& out_callback)
+ReadBufferPtr YTsaurusClient::executeQuery(const YTsaurusQueryPtr query, const ReadWriteBufferFromHTTP::OutStreamCallback&& out_callback, const ThrottlerPtr & request_throttler)
 {
     for (size_t num_try = 0; num_try < connection_info.http_proxy_urls.size(); ++num_try)
     {
-        size_t url_index = (recently_used_url_index + num_try) % connection_info.http_proxy_urls.size();
+        size_t url_index = (recently_used_url_index.load(std::memory_order_relaxed) + num_try) % connection_info.http_proxy_urls.size();
         URI host_for_request(connection_info.http_proxy_urls[url_index].c_str());
         try
         {
@@ -171,8 +189,13 @@ ReadBufferPtr YTsaurusClient::executeQuery(const YTsaurusQueryPtr query, const R
             }
             LOG_TRACE(log, "URI {} , query type {}", host_for_request.toString(), query->getQueryName());
 
+            /// `throttle` returns true only when the request was actually blocked (slept) to conform to the rate limit,
+            /// so `YTsaurusLookupThrottled` counts requests that were really throttled rather than every request that passed through.
+            if (request_throttler && request_throttler->throttle(1))
+                ProfileEvents::increment(ProfileEvents::YTsaurusLookupThrottled);
+
             auto buf = createQueryRWBuffer(host_for_request, out_callback, query->getHTTPMethod());
-            recently_used_url_index = url_index;
+            recently_used_url_index.store(url_index, std::memory_order_relaxed);
             return buf;
         }
         catch (Exception & e)
@@ -208,14 +231,14 @@ YTsaurusClient::URI YTsaurusClient::getHeavyProxyURI(const URI& uri)
 }
 
 
-ReadBufferPtr YTsaurusClient::createQueryRWBuffer(const URI& uri, const ReadWriteBufferFromHTTP::OutStreamCallback& out_callback, const std::string & http_method)
+ReadBufferPtr YTsaurusClient::createQueryRWBuffer(const URI & uri, const ReadWriteBufferFromHTTP::OutStreamCallback & out_callback, const std::string & http_method)
 {
     std::string output_params = fmt::format("<uuid_mode=text_yql;complex_type_mode=positional;encode_utf8={}>", connection_info.encode_utf8  ?  "true" : "false");
     HTTPHeaderEntries http_headers{
         /// Always use json format for input and output.
         {"Accept", "application/json"},
         {"Content-Type", "application/json"},
-        {"Authorization", fmt::format("OAuth {}", connection_info.oauth_token)},
+        {"Authorization", authorizationHeaderValue(connection_info.oauth_token)},
         {"X-YT-Header-Format", "<format=text>yson"},
         {"X-YT-Output-Format", fmt::format("{}json", output_params)},
     };

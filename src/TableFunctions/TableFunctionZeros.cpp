@@ -108,7 +108,7 @@ void registerTableFunctionZeros(TableFunctionFactory & factory)
 └───────────┘
 )"}},
             .category = FunctionDocumentation::Category::TableFunction
-    });
+    }, SecretArgumentsSpec{});
 
     factory.registerFunction<TableFunctionZeros<false>>(
         {.description = R"DOCS_MD(
@@ -140,7 +140,7 @@ SELECT * FROM system.zeros_mt LIMIT 10;
 │    0 │
 └──────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
 }
 
 }

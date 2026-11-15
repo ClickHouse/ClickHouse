@@ -1,0 +1,3 @@
+{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}
+{"metaData":{"id":"3f1c2a9e-5b7d-4e8a-9c21-6d0f4b8e7a13","format":{"provider":"parquet","options":{}},"schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"integer\",\"nullable\":true,\"metadata\":{}},{\"name\":\"ts\",\"type\":\"timestamp\",\"nullable\":true,\"metadata\":{}}]}","partitionColumns":[],"configuration":{},"createdTime":1598403723000}}
+{"add":{"path":"part-00000.parquet","partitionValues":{},"size":321,"modificationTime":1598403723000,"dataChange":true}}

@@ -7,8 +7,6 @@ sidebarTitle: '如何创建 AWS IAM 用户和 S3 存储桶'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 > 本指南将向你展示如何在 AWS 中创建 IAM 用户和 S3 存储桶，
 > 这是将备份保存到 S3 或将 ClickHouse 配置为
 > 在 S3 上存储数据所需的前置步骤
@@ -23,42 +21,114 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 2. 在 `Users` 选项卡中，选择 `Create user`
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-1.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM 管理控制台 - 添加新用户](/images/_snippets/s3/2025/s3-1.webp)
+
+</Frame>
+
+</div>
 
 3. 输入用户名
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-2.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM 管理控制台 - 添加新用户](/images/_snippets/s3/2025/s3-2.webp)
+
+</Frame>
+
+</div>
 
 4. 选择 `Next`
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-3.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM 管理控制台 - 添加新用户](/images/_snippets/s3/2025/s3-3.webp)
+
+</Frame>
+
+</div>
 
 5. 选择 `Next`
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-4.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM 管理控制台 - 添加新用户](/images/_snippets/s3/2025/s3-4.webp)
+
+</Frame>
+
+</div>
 
 6. 选择 `Create user`
 
 用户现已创建。
 点击新创建的用户。
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-5.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM 管理控制台 - 添加新用户](/images/_snippets/s3/2025/s3-5.webp)
+
+</Frame>
+
+</div>
 
 7. 选择 `Create access key`
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-6.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM 管理控制台 - 添加新用户](/images/_snippets/s3/2025/s3-6.webp)
+
+</Frame>
+
+</div>
 
 8. 选择 `Application running outside AWS`
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-7.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM 管理控制台 - 添加新用户](/images/_snippets/s3/2025/s3-7.webp)
+
+</Frame>
+
+</div>
 
 9. 选择 `Create access key`
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-8.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM 管理控制台 - 添加新用户](/images/_snippets/s3/2025/s3-8.webp)
+
+</Frame>
+
+</div>
 
 10. 将 access key 和 secret 下载为 .csv 文件，以便稍后使用
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-9.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM 管理控制台 - 添加新用户](/images/_snippets/s3/2025/s3-9.webp)
+
+</Frame>
+
+</div>
 
 <div id="create-an-s3-bucket">
   ## 创建 S3 存储桶
@@ -66,11 +136,27 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 1. 在 S3 存储桶 部分，选择 **Create bucket**
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-10.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM 管理控制台 - 添加新用户](/images/_snippets/s3/2025/s3-10.webp)
+
+</Frame>
+
+</div>
 
 2. 输入存储桶 名称，其他选项保持默认即可
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-11.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM 管理控制台 - 添加新用户](/images/_snippets/s3/2025/s3-11.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   存储桶 名称必须在整个 AWS 范围内唯一，而不只是组织内唯一，否则会报错。
@@ -78,37 +164,101 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 3. 保持 `Block all Public Access` 为启用状态；无需开启公共访问。
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-12.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM 管理控制台 - 添加新用户](/images/_snippets/s3/2025/s3-12.webp)
+
+</Frame>
+
+</div>
 
 4. 在页面底部选择 **Create Bucket**
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-13.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM 管理控制台 - 添加新用户](/images/_snippets/s3/2025/s3-13.webp)
+
+</Frame>
+
+</div>
 
 5. 选择该链接，复制 ARN，并保存下来，以便在为存储桶 配置访问策略时使用
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-14.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM 管理控制台 - 添加新用户](/images/_snippets/s3/2025/s3-14.webp)
+
+</Frame>
+
+</div>
 
 6. 存储桶 创建完成后，在 S3 buckets 列表中找到新建的 S3 存储桶，并选择其名称，这会进入如下所示的页面：
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-15.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM 管理控制台 - 添加新用户](/images/_snippets/s3/2025/s3-15.webp)
+
+</Frame>
+
+</div>
 
 7. 选择 `Create folder`
 
 8. 输入一个文件夹名称，作为 ClickHouse S3 disk 或 Backup 的目标位置，然后在页面底部选择 `Create folder`
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-16.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM 管理控制台 - 添加新用户](/images/_snippets/s3/2025/s3-16.webp)
+
+</Frame>
+
+</div>
 
 9. 该文件夹现在应已显示在存储桶 列表中
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-17.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM 管理控制台 - 添加新用户](/images/_snippets/s3/2025/s3-17.webp)
+
+</Frame>
+
+</div>
 
 10. 选中新文件夹对应的复选框，然后点击 `Copy URL`。保存该 URL，以便在下一节的 ClickHouse Storage configuration 中使用。
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-18.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM 管理控制台 - 添加新用户](/images/_snippets/s3/2025/s3-18.webp)
+
+</Frame>
+
+</div>
 
 11. 选择 **Permissions** 选项卡，并点击 **Bucket Policy** 部分中的 **Edit** 按钮
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-19.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM 管理控制台 - 添加新用户](/images/_snippets/s3/2025/s3-19.webp)
+
+</Frame>
+
+</div>
 
 12. 添加存储桶 策略，示例如下
 

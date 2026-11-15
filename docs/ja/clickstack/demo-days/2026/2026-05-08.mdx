@@ -14,7 +14,7 @@ keywords: ['ClickStack', 'デモデイズ']
 *デモ: [@dhable](https://github.com/dhable)*
 
 <Frame>
-  <iframe src="https://www.youtube.com/embed/aD7sT5dc470" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  <iframe src="https://www.youtube.com/embed/aD7sT5dc470" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
 Webhook の URL やヘッダーには、認証情報がそのまま含まれていることが少なくありません。Slack の webhook URL にはシークレットトークンがパスに含まれており、HTTP webhook では通常、認証のために Authorization ヘッダーが必要です。このリリース以前は、webhook の一覧表示や編集に使われる HyperDX の内部 API が、こうした情報を毎回のリクエストでそのまま返していました。そのため、認証済みのチームメンバーであれば、API を呼び出すだけでシークレットを参照できてしまっていました。

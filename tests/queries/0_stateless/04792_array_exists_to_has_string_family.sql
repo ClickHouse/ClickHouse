@@ -2,8 +2,6 @@
 -- The arrayExists -> has rewrite must not change the answer for a String/FixedString pair.
 -- The rewrite is an analyzer pass, so the assertions below are only live with the analyzer on.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_fs;
 CREATE TABLE t_fs (v Array(FixedString(3))) ENGINE = Memory;
 INSERT INTO t_fs SELECT [toFixedString('V0', 3)];

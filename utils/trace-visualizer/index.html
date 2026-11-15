@@ -177,7 +177,7 @@ raw_spans AS (
                 WHERE initial_query_id = my_query_id
             )
         )
-        AND operation_name in ['CPU_LEASE_START', 'CPU_LEASE_STOP', 'CPU_LEASE_PREEMPTION', 'CPU_LEASE_DOWNSCALED']
+        AND operation_name in ['CPU_LEASE_START', 'CPU_LEASE_STOP', 'CPU_LEASE_PREEMPTION', 'CPU_LEASE_DOWNSCALED', 'CPU_LEASE_PARK', 'CPU_LEASE_UNPARK']
         AND attribute['lease_id'] IS NOT NULL
         AND attribute['thread_number'] IS NOT NULL
 ),
@@ -195,6 +195,8 @@ timeline_events AS (
                 WHEN operation_name = 'CPU_LEASE_PREEMPTION' THEN
                     [(start_time_us, 'PREEMPT_START'), (finish_time_us, 'PREEMPT_END')]
                 WHEN operation_name = 'CPU_LEASE_DOWNSCALED' THEN [(start_time_us, 'DOWNSCALE')]
+                WHEN operation_name = 'CPU_LEASE_PARK' THEN [(start_time_us, 'PARK')]
+                WHEN operation_name = 'CPU_LEASE_UNPARK' THEN [(start_time_us, 'UNPARK')]
                 ELSE []
             END
         ) AS event_data
@@ -255,6 +257,7 @@ classified_intervals AS (
         CASE
             WHEN end_event = 'START' THEN NULL -- Do not create intervals when thread is downscaled
             WHEN start_event = 'PREEMPT_START' OR end_event = 'PREEMPT_END' THEN 'PREEMPTED'
+            WHEN start_event = 'PARK' OR end_event = 'UNPARK' THEN 'PARKED'
             ELSE 'RUNNING'
         END AS interval_type,
         start_event,
@@ -310,7 +313,7 @@ raw_spans AS (
             FROM system.opentelemetry_span_log
             WHERE (attribute['clickhouse.query_id']) IN query_ids
         )
-        AND operation_name in ['CPU_LEASE_START', 'CPU_LEASE_STOP', 'CPU_LEASE_PREEMPTION', 'CPU_LEASE_DOWNSCALED'
+        AND operation_name in ['CPU_LEASE_START', 'CPU_LEASE_STOP', 'CPU_LEASE_PREEMPTION', 'CPU_LEASE_DOWNSCALED', 'CPU_LEASE_PARK', 'CPU_LEASE_UNPARK'
             -- , 'CPU_LEASE_REPORT' -- Uncomment if you want to include CPU_LEASE_REPORT (also see step 2)
         ]
         AND attribute['lease_id'] IS NOT NULL
@@ -332,6 +335,8 @@ timeline_events AS (
                 WHEN operation_name = 'CPU_LEASE_PREEMPTION' THEN
                     [(start_time_us, 'PREEMPT_START'), (finish_time_us, 'PREEMPT_END')]
                 WHEN operation_name = 'CPU_LEASE_DOWNSCALED' THEN [(start_time_us, 'DOWNSCALE')]
+                WHEN operation_name = 'CPU_LEASE_PARK' THEN [(start_time_us, 'PARK')]
+                WHEN operation_name = 'CPU_LEASE_UNPARK' THEN [(start_time_us, 'UNPARK')]
                 ELSE []
             END
         ) AS event_data
@@ -396,6 +401,7 @@ classified_intervals AS (
         CASE
             WHEN end_event = 'START' THEN NULL -- Do not create intervals when thread is downscaled
             WHEN start_event = 'PREEMPT_START' OR end_event = 'PREEMPT_END' THEN 'PREEMPTED'
+            WHEN start_event = 'PARK' OR end_event = 'UNPARK' THEN 'PARKED'
             ELSE 'RUNNING'
         END AS interval_type,
         start_event,

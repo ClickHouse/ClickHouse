@@ -34,16 +34,6 @@ Possible values:
 - 0 - The key types `GROUP BY ALL` expands into are not validated.
 - 1 - They are validated, as an explicit `GROUP BY` validates its own keys.
 
-## validate_mutation_query {#validate_mutation_query}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "New setting to validate mutation queries by default."}]}]}/>
-
-Validate mutation queries before accepting them. Mutations are executed in the background, and running an invalid query can cause mutations to get stuck, requiring manual intervention.
-
-Only change this setting if you encounter a backward-incompatible bug.
-
 ## validate_polygons {#validate_polygons}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

@@ -442,8 +442,6 @@ bool WorkloadEntityStorageBase::storeEntity(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' already exists, but it is not a workload", entity_name);
             if (resource && !old_resource)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' already exists, but it is not a resource", entity_name);
-            if (workload && !old_workload->hasParent() && workload->hasParent())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to remove root workload");
             if (other_entities.contains(entity_name))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to replace workload entity '{}' that is stored in read-only {} storage", entity_name, next_storage->getName());
         }
@@ -451,12 +449,6 @@ bool WorkloadEntityStorageBase::storeEntity(
         // Validate workload
         if (workload)
         {
-            if (!workload->hasParent())
-            {
-                if (!root_name.empty() && root_name != workload->getWorkloadName())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second root is not allowed. You should probably add 'PARENT {}' clause.", root_name);
-            }
-
             // Check the settings values and throw if something is wrong
             WorkloadSettings validator;
             validator.initFromChanges(workload->changes);
@@ -759,6 +751,49 @@ void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
                 change.name);
     }
 
+    // Validate new/changed workloads' setting VALUES on the config/Keeper/disk load path (which
+    // bypasses storeEntity) — otherwise a bad value (e.g. scheduler = 'bogus', a negative weight, or
+    // such a value inside a `... FOR <resource>` clause) is accepted here and only surfaces later,
+    // when the scheduler node is built. Pass `throw_on_unknown_setting = false` so this LOAD path
+    // stays forward-compatible and no stricter than the runtime parser in
+    // `WorkloadResourceManager::NodeInfo` (which also uses `false`): an unknown setting NAME written
+    // by a newer node must not make an older node reject the whole entity. Value checks (scheduler
+    // algorithm, non-negative numerics) fire regardless of that flag, so a genuinely bad value is
+    // still rejected. Both the base group and each per-resource group are checked. Only new/changed
+    // entities are checked (like the cost-unit check above), so a pre-existing entity is not
+    // re-validated on every refresh.
+    for (const auto & change : changes)
+    {
+        if (!change.after)
+            continue;
+        if (auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(change.after.get()))
+        {
+            WorkloadSettings validator;
+            validator.initFromChanges(workload->changes, /*resource_name=*/{}, /*throw_on_unknown_setting=*/false);
+            std::unordered_set<String> validated_resources;
+            for (const auto & setting_change : workload->changes)
+            {
+                if (!setting_change.resource.empty() && validated_resources.insert(setting_change.resource).second)
+                {
+                    // A `... FOR <resource>` clause must reference an existing resource (not a
+                    // workload, not a missing entity) — the same contract storeEntity enforces via
+                    // forEachReference.
+                    auto ref = merged_new_entities.find(setting_change.resource);
+                    if (ref == merged_new_entities.end())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Workload entity '{}' references another workload entity '{}' that doesn't exist",
+                            workload->getWorkloadName(), setting_change.resource);
+                    if (typeid_cast<ASTCreateResourceQuery *>(ref->second.get()) == nullptr)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Workload settings should reference resource in FOR clause, not '{}'.",
+                            setting_change.resource);
+                    WorkloadSettings resource_validator;
+                    resource_validator.initFromChanges(workload->changes, setting_change.resource, /*throw_on_unknown_setting=*/false);
+                }
+            }
+        }
+    }
+
     // Update local entities
     local_entities = std::move(local_new_entities);
 
@@ -786,12 +821,7 @@ void WorkloadEntityStorageBase::applyEvent(
     {
         LOG_DEBUG(log, "Create or replace workload entity: {}", event.entity->formatForLogging());
 
-        auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(event.entity.get());
         auto * resource = typeid_cast<ASTCreateResourceQuery *>(event.entity.get());
-
-        // Update root workload
-        if (workload && !workload->hasParent())
-            root_name = workload->getWorkloadName();
 
         // Update resource names. First clear any role-name field that currently points to this
         // resource: `CREATE OR REPLACE RESOURCE r (...)` may change `r`'s operation set, e.g.
@@ -839,9 +869,6 @@ void WorkloadEntityStorageBase::applyEvent(
         chassert(it != entities.end());
 
         LOG_DEBUG(log, "Drop workload entity: {}", event.name);
-
-        if (event.name == root_name)
-            root_name.clear();
 
         if (event.name == master_thread_resource)
             master_thread_resource.clear();

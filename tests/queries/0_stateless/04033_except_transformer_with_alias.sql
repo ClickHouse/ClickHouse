@@ -2,8 +2,6 @@
 -- This used to cause LOGICAL_ERROR "Bad cast from type DB::ASTFunction to DB::ASTIdentifier".
 -- https://github.com/ClickHouse/clickhouse-core-incidents/issues/1433
 
-SET allow_experimental_analyzer = 1;
-
 DROP TABLE IF EXISTS t_except_alias;
 CREATE TABLE t_except_alias (a UInt64, b String, c Float64) ENGINE = Memory;
 INSERT INTO t_except_alias VALUES (1, 'x', 1.5), (2, 'y', 2.5);

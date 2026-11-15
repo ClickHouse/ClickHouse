@@ -21,6 +21,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Expansion is a per-frame property, so the second arm shows it on a small table. It has its
 # own, because temporary_files_buffer_size does reach the buffer here and a large fixture there
 # would cost one write and one filesystem-cache reservation per 21 bytes.
+# test_small is filled with ast_fuzzer_runs = 0: under the Stress test, fuzzed copies of that INSERT would multiply it.
 
 $CLICKHOUSE_CLIENT -m -q "
 DROP TABLE IF EXISTS test;
@@ -28,7 +29,7 @@ DROP TABLE IF EXISTS test_small;
 CREATE TABLE test (x String) ENGINE = Memory SETTINGS compress = 1;
 CREATE TABLE test_small (x String) ENGINE = Memory SETTINGS compress = 1;
 INSERT INTO test SELECT 'Hello, world' FROM numbers(1000000);
-INSERT INTO test_small SELECT 'Hello, world' FROM numbers(10000);
+INSERT INTO test_small SETTINGS ast_fuzzer_runs = 0 SELECT 'Hello, world' FROM numbers(10000);
 "
 
 function check_backup()
