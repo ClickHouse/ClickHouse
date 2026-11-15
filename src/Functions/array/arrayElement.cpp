@@ -3645,7 +3645,7 @@ public:
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionArrayElementOrDefault>(context_); }
 
     explicit FunctionArrayElementOrDefault(ContextPtr context_)
-        : context(context_)
+        : array_element_or_null(context_)
     {
     }
 
@@ -3697,7 +3697,6 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// arrayElementOrNull returns NULL where the index is out of range or the key is missing.
-        const FunctionArrayElement<ArrayElementExceptionMode::Null> array_element_or_null(context);
         const DataTypePtr nullable_type = array_element_or_null.getReturnTypeImpl({arguments[0].type, arguments[1].type});
 
         /// arrayElement doesn't materialize const columns by itself, so do it before calling it directly.
@@ -3729,7 +3728,7 @@ public:
     }
 
 private:
-    ContextPtr context;
+    const FunctionArrayElement<ArrayElementExceptionMode::Null> array_element_or_null;
 };
 }
 
