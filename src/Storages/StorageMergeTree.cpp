@@ -122,6 +122,7 @@ namespace FailPoints
     extern const char mt_throw_after_mutation_commit[];
     extern const char mt_pause_before_register_mutation[];
     extern const char mt_alter_throw_in_durable_rollback[];
+    extern const char mt_alter_throw_after_ttl_metadata_commit[];
     extern const char mt_lightweight_update_pause_after_block_allocation[];
 }
 
