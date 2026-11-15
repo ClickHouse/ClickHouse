@@ -628,7 +628,8 @@ void LocalConnection::sendQuery(
         else if (state->io.pipeline.pulling())
         {
             state->block = state->io.pipeline.getHeader();
-            state->executor = std::make_unique<PullingAsyncPipelineExecutor>(state->io.pipeline);
+            /// The same result path as `TCPHandler`: the client's output materializes what its format does not support.
+            state->executor = std::make_unique<PullingAsyncPipelineExecutor>(state->io.pipeline, /*keep_automatic_low_cardinality_=*/ true);
             state->io.pipeline.setConcurrencyControl(false);
         }
         else if (state->io.pipeline.completed())

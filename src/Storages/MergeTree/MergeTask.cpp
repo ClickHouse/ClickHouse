@@ -2435,7 +2435,8 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
 
     /// Is calculated inside MergeProgressCallback.
     ctx->column_parts_pipeline.disableProfileEventUpdate();
-    ctx->executor = std::make_unique<PullingPipelineExecutor>(ctx->column_parts_pipeline);
+    /// The part writer builds the automatic `LowCardinality` encoding from either representation.
+    ctx->executor = std::make_unique<PullingPipelineExecutor>(ctx->column_parts_pipeline, /*keep_automatic_low_cardinality_=*/ true);
 
     NamesAndTypesList columns_list = {*ctx->it_name_and_type};
 
@@ -3992,7 +3993,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
     /// Is calculated inside MergeProgressCallback.
     global_ctx->merged_pipeline.disableProfileEventUpdate();
-    global_ctx->merging_executor = std::make_unique<PullingPipelineExecutor>(global_ctx->merged_pipeline);
+    /// The part writer builds the automatic `LowCardinality` encoding from either representation.
+    global_ctx->merging_executor = std::make_unique<PullingPipelineExecutor>(global_ctx->merged_pipeline, /*keep_automatic_low_cardinality_=*/ true);
 }
 
 

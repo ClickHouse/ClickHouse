@@ -20,8 +20,6 @@ public:
     ~DictionaryPipelineExecutor();
 
 private:
-    bool pullImpl(Block & block);
-
     std::unique_ptr<PullingAsyncPipelineExecutor> async_executor;
     std::unique_ptr<PullingPipelineExecutor> executor;
 };

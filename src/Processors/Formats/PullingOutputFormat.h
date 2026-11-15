@@ -11,7 +11,7 @@ class NullWriteBuffer;
 class PullingOutputFormat : public IOutputFormat
 {
 public:
-    PullingOutputFormat(SharedHeader header, std::atomic_bool & consume_data_flag_);
+    PullingOutputFormat(SharedHeader header, std::atomic_bool & consume_data_flag_, bool keep_automatic_low_cardinality_);
 
     String getName() const override { return "PullingOutputFormat"; }
 
@@ -28,8 +28,8 @@ public:
 
 protected:
     void consume(Chunk chunk) override;
-    void consumeTotals(Chunk chunk) override { totals = std::move(chunk); }
-    void consumeExtremes(Chunk chunk) override { extremes = std::move(chunk); }
+    void consumeTotals(Chunk chunk) override;
+    void consumeExtremes(Chunk chunk) override;
 
 private:
     Chunk data;
@@ -37,6 +37,9 @@ private:
     Chunk extremes;
 
     std::atomic_bool & has_data_flag;
+
+    /// See `PullingPipelineExecutor`.
+    const bool keep_automatic_low_cardinality;
 
     ProfileInfo info;
 

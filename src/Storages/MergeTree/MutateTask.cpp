@@ -4019,7 +4019,8 @@ private:
         ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
         /// Is calculated inside MergeProgressCallback.
         ctx->mutating_pipeline.disableProfileEventUpdate();
-        ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
+        /// The part writer builds the automatic `LowCardinality` encoding from either representation.
+        ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline, /*keep_automatic_low_cardinality_=*/ true);
 
         part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
     }
@@ -4431,7 +4432,8 @@ private:
             ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
             /// Is calculated inside MergeProgressCallback.
             ctx->mutating_pipeline.disableProfileEventUpdate();
-            ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
+            /// The part writer builds the automatic `LowCardinality` encoding from either representation.
+            ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline, /*keep_automatic_low_cardinality_=*/ true);
 
             ctx->projections_to_build = std::vector<ProjectionDescriptionRawPtr>{ctx->projections_to_recalc.begin(), ctx->projections_to_recalc.end()};
 
