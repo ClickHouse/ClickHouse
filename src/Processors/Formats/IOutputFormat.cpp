@@ -57,11 +57,6 @@ IOutputFormat::Status IOutputFormat::prepare()
         return Status::Ready;
     }
 
-    finished = true;
-
-    if (!finalized)
-        return Status::Ready;
-
     return Status::Finished;
 }
 
@@ -129,17 +124,6 @@ void IOutputFormat::work()
     writeProgressIfNeededUnlocked();
 
     writePrefixIfNeeded();
-
-    if (finished && !finalized)
-    {
-        if (rows_before_limit_counter && rows_before_limit_counter->hasAppliedStep())
-            setRowsBeforeLimit(rows_before_limit_counter->get());
-        if (rows_before_aggregation_counter && rows_before_aggregation_counter->hasAppliedStep())
-            setRowsBeforeAggregation(rows_before_aggregation_counter->get());
-
-        finalizeUnlocked();
-        return;
-    }
 
     switch (current_block_kind)
     {
@@ -291,9 +275,20 @@ void IOutputFormat::finalize()
     finalizeUnlocked();
 }
 
+void IOutputFormat::onPipelineFinished()
+{
+    if (rows_before_limit_counter && rows_before_limit_counter->hasAppliedStep())
+        setRowsBeforeLimit(rows_before_limit_counter->get());
+    if (rows_before_aggregation_counter && rows_before_aggregation_counter->hasAppliedStep())
+        setRowsBeforeAggregation(rows_before_aggregation_counter->get());
+
+    finalize();
+}
+
 void IOutputFormat::setTotals(const Block & totals)
 {
     std::lock_guard lock(writing_mutex);
+    writePrefixIfNeeded();
     writeSuffixIfNeeded();
     if (framing)
     {
@@ -316,6 +311,7 @@ void IOutputFormat::setTotals(const Block & totals)
 void IOutputFormat::setExtremes(const Block & extremes)
 {
     std::lock_guard lock(writing_mutex);
+    writePrefixIfNeeded();
     writeSuffixIfNeeded();
     if (framing)
     {

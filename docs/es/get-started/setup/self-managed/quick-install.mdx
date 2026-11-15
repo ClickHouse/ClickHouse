@@ -18,10 +18,19 @@ Si no necesitas instalar ClickHouse en producción, puedes ejecutar un script de
     curl https://clickhouse.com/ | sh
     ```
 
-    En Linux y macOS, esto también instala [`clickhousectl`](/es/get-started/setup/self-managed/clickhousectl),
-    la CLI de ClickHouse, en `~/.local/bin` (con un alias `chctl`). `clickhousectl`
-    te ayuda a instalar y administrar varias versiones locales de ClickHouse, ejecutar servidores en
-    segundo plano y administrar ClickHouse Cloud. Consulta la [página de instalación de clickhousectl](/es/get-started/setup/self-managed/clickhousectl)
+    En Linux y macOS (x86&#95;64 y ARM64), esto también instala [`clickhousectl`](/es/get-started/setup/self-managed/clickhousectl),
+    la CLI de ClickHouse, en `~/.local/bin` (con un alias `chctl`). Si el script
+    indica que `~/.local/bin` no está en tu `PATH`, agrégalo:
+
+    ```bash
+    export PATH="$HOME/.local/bin:$PATH"
+    ```
+
+    `clickhousectl` te ayuda a instalar y administrar varias versiones locales de ClickHouse,
+    ejecutar servidores de ClickHouse y Postgres en segundo plano y administrar ClickHouse Cloud.
+
+    Si prefieres que `clickhousectl` instale y administre las versiones de ClickHouse por ti,
+    ejecuta `clickhousectl local use latest`. Consulta la [página de instalación de clickhousectl](/es/get-started/setup/self-managed/clickhousectl)
     para conocer el flujo de trabajo basado en la CLI.
 
     Para instalar solo el binario `clickhouse` sin `clickhousectl`, establece
@@ -87,7 +96,7 @@ Si no necesitas instalar ClickHouse en producción, puedes ejecutar un script de
     ¡Ya estás listo para empezar a enviar comandos SQL a ClickHouse!
 
     <Tip>
-      La [Quick Start](/es/get-started/setup/install) te guía por los pasos necesarios para crear tablas e insertar datos.
+      [Creación de tablas en ClickHouse](/es/get-started/quickstarts/creating-tables) te guía paso a paso en la creación de tablas y la inserción de datos.
     </Tip>
   </Step>
 </Steps>

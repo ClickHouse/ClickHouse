@@ -146,8 +146,7 @@ namespace
     void handshakeThenReset(Poco::Net::StreamSocket & socket)
     {
         ExchangeTest::completeSinkHandshake(socket);
-        socket.setLinger(true, 0);
-        socket.close();
+        ExchangeTest::resetAfterDelivery(socket);
     }
 
     std::shared_ptr<StreamingExchangeSource> makeSource(const Peer & peer, DistributedQueryCancellationPtr cancellation)

@@ -12,26 +12,20 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Essas configurações estão disponíveis em [system.merge&#95;tree&#95;settings](/pt-BR/reference/system-tables/merge_tree_settings) e são autogeradas a partir do código-fonte do ClickHouse.
 
-<div id="primary_key_compress_block_size">
-  ## primary_key_compress_block_size
-</div>
+## primary_key_compress_block_size {#primary_key_compress_block_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="65536" />
 
-Tamanho do bloco de compressão da chave primária; é o tamanho real do bloco a ser comprimido.
+Tamanho, em bytes não comprimidos, dos blocos usados na gravação de um índice de chave primária comprimido para partes de dados novas ou reescritas. Aplica-se somente quando `compress_primary_key` está habilitado. Esta configuração controla o enquadramento da compressão e a bufferização, mas não altera a chave primária nem a granularidade do índice.
 
-<div id="primary_key_compression_codec">
-  ## primary_key_compression_codec
-</div>
+## primary_key_compression_codec {#primary_key_compression_codec}
 
 <SettingsInfoBlock type="String" default_value="ZSTD(3)" />
 
 Codec de compressão usado pela chave primária; a chave primária é pequena o suficiente e fica em cache,
 por isso a compressão padrão é ZSTD(3).
 
-<div id="primary_key_lazy_load">
-  ## primary_key_lazy_load
-</div>
+## primary_key_lazy_load {#primary_key_lazy_load}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -39,9 +33,7 @@ Carrega a chave primária na memória no
 primeiro uso, em vez de durante a inicialização da tabela. Isso pode economizar memória quando há
 um grande número de tabelas.
 
-<div id="primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns">
-  ## primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns
-</div>
+## primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns {#primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns}
 
 <SettingsInfoBlock type="Float" default_value="0.9" />
 

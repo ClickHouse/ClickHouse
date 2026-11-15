@@ -80,9 +80,19 @@ public:
         return nested_function->isVersioned();
     }
 
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        return nested_function->getVersionFromRevision(revision);
+    }
+
     size_t getDefaultVersion() const override
     {
         return nested_function->getDefaultVersion();
+    }
+
+    DataTypePtr getStateType() const override
+    {
+        return this->getStateTypeWithVersionOf(*nested_function);
     }
 
     bool isState() const override
@@ -268,6 +278,43 @@ public:
     {
         nested_function->merge(place, rhs, arena);
         place[size_of_data] |= rhs[size_of_data];
+    }
+
+    /// The state is the nested state followed by one presence byte, so the parallel merge is forwarded to the
+    /// nested function (with the same places) and the presence byte is folded separately.
+    bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
+    bool isParallelizeMergePrepareNeeded() const override { return nested_function->isParallelizeMergePrepareNeeded(); }
+    size_t getEstimatedMergeWork(ConstAggregateDataPtr place) const override { return nested_function->getEstimatedMergeWork(place); }
+    size_t getStateBytesPerDistinctInput() const override { return nested_function->getStateBytesPerDistinctInput(); }
+
+    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
+    {
+        return nested_function->isLargeMergePair(place, rhs);
+    }
+    bool canOptimizeEqualKeysRanges() const override { return nested_function->canOptimizeEqualKeysRanges(); }
+
+    void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
+    {
+        nested_function->parallelizeMergePrepare(places, thread_pool, is_cancelled);
+    }
+
+    void mergeImpl(
+        AggregateDataPtr __restrict place,
+        ConstAggregateDataPtr rhs,
+        ThreadPool & thread_pool,
+        std::atomic<bool> & is_cancelled,
+        Arena * arena) const override
+    {
+        nested_function->merge(place, rhs, thread_pool, is_cancelled, arena);
+        place[size_of_data] |= rhs[size_of_data];
+    }
+
+    void parallelizeMergeMulti(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    {
+        for (size_t i = 1; i < places.size(); ++i)
+            places[0][size_of_data] |= places[i][size_of_data];
+
+        nested_function->parallelizeMergeMulti(places, thread_pool, is_cancelled, arena);
     }
 
     void mergeBatch(

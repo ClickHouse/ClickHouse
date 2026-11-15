@@ -11,13 +11,14 @@ user="user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 uniq="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 profile="profile_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
+# 0 (no limit) differs from the default, and limits no query of this test on any replica.
 ${CLICKHOUSE_CLIENT} -m --query "
 DROP USER IF EXISTS $user;
 DROP SETTINGS PROFILE IF EXISTS $profile;
-CREATE SETTINGS PROFILE $profile SETTINGS max_execution_time = 10 CONST;
+CREATE SETTINGS PROFILE $profile SETTINGS max_query_size = 0 CONST;
 CREATE TABLE src (a Int32) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO src SELECT * FROM numbers(10);
-CREATE USER $user IDENTIFIED WITH no_password SETTINGS max_execution_time = 10 CONST;
+CREATE USER $user IDENTIFIED WITH no_password SETTINGS max_query_size = 0 CONST;
 GRANT ALL ON *.* TO $user;
 "
 
@@ -57,26 +58,26 @@ run_over_http() {
 
 echo "-- The reference behavior of the same reset outside BACKUP/RESTORE"
 run_as_constrained_user "SELECT 1 FORMAT Null"
-run_as_constrained_user "SELECT 1 SETTINGS max_execution_time = DEFAULT FORMAT Null"
-run_as_constrained_user "SET max_execution_time = DEFAULT"
+run_as_constrained_user "SELECT 1 SETTINGS max_query_size = DEFAULT FORMAT Null"
+run_as_constrained_user "SET max_query_size = DEFAULT"
 
 echo "-- BACKUP/RESTORE resets a core setting on the same context, so it is checked the same way"
-run_as_constrained_user "BACKUP TABLE src TO Disk('backups', '${uniq}_b1') SETTINGS max_execution_time = DEFAULT FORMAT Null"
-run_as_constrained_user "RESTORE TABLE src AS r1 FROM Disk('backups', '${uniq}_src') SETTINGS max_execution_time = DEFAULT FORMAT Null"
+run_as_constrained_user "BACKUP TABLE src TO Disk('backups', '${uniq}_b1') SETTINGS max_query_size = DEFAULT FORMAT Null"
+run_as_constrained_user "RESTORE TABLE src AS r1 FROM Disk('backups', '${uniq}_src') SETTINGS max_query_size = DEFAULT FORMAT Null"
 
 echo "-- Controls: the check rejects the violation only, not every clause and not every reset"
 run_as_constrained_user "BACKUP TABLE src TO Disk('backups', '${uniq}_b2') SETTINGS id = '${uniq}_b2' FORMAT Null"
 run_as_constrained_user "BACKUP TABLE src TO Disk('backups', '${uniq}_b3') SETTINGS max_threads = DEFAULT FORMAT Null"
-run_as_constrained_user "BACKUP TABLE src TO Disk('backups', '${uniq}_b4') SETTINGS max_execution_time = 10 FORMAT Null"
+run_as_constrained_user "BACKUP TABLE src TO Disk('backups', '${uniq}_b4') SETTINGS max_query_size = 0 FORMAT Null"
 
 echo "-- A BACKUP/RESTORE-specific reset is resolved in the settings layer and never reaches the context"
 run_as_constrained_user "BACKUP TABLE src TO Disk('backups', '${uniq}_b5') SETTINGS compression_method = DEFAULT FORMAT Null"
 run_as_constrained_user "RESTORE TABLE src AS r2 FROM Disk('backups', '${uniq}_src') SETTINGS structure_only = DEFAULT FORMAT Null"
 
 echo "-- A profile set in the clause installs its constraints for the resets after it, as it does in SET"
-run_over_http "SELECT 1 SETTINGS profile = '$profile', max_execution_time = DEFAULT FORMAT Null"
-run_over_http "BACKUP TABLE src TO Disk('backups', '${uniq}_b6') SETTINGS profile = '$profile', max_execution_time = DEFAULT FORMAT Null"
-run_over_http "RESTORE TABLE src AS r3 FROM Disk('backups', '${uniq}_src') SETTINGS profile = '$profile', max_execution_time = DEFAULT FORMAT Null"
+run_over_http "SELECT 1 SETTINGS profile = '$profile', max_query_size = DEFAULT FORMAT Null"
+run_over_http "BACKUP TABLE src TO Disk('backups', '${uniq}_b6') SETTINGS profile = '$profile', max_query_size = DEFAULT FORMAT Null"
+run_over_http "RESTORE TABLE src AS r3 FROM Disk('backups', '${uniq}_src') SETTINGS profile = '$profile', max_query_size = DEFAULT FORMAT Null"
 run_over_http "BACKUP TABLE src TO Disk('backups', '${uniq}_b7') SETTINGS profile = '$profile' FORMAT Null"
 
 echo "-- The last item for a setting wins, also when it restores the value the setting had before the query"

@@ -6,15 +6,11 @@ title: 'Geometry를 다루는 함수'
 doc_type: '참고'
 ---
 
-<div id="geometry">
-  ## Geometry
-</div>
+## Geometry {#geometry}
 
 Geometry 함수는 POLYGON, LINESTRING, MULTIPOLYGON, MULTILINESTRING, RING, POINT와 같은 기하 타입의 둘레와 면적을 계산할 수 있습니다. 기하 객체는 Geometry 타입으로 사용하십시오. 입력 값이 `NULL`이면 아래의 모든 함수는 0을 반환합니다.
 
-<div id="perimetercartesian">
-  ## perimeterCartesian
-</div>
+## perimeterCartesian {#perimetercartesian}
 
 주어진 Geometry 객체의 둘레를 데카르트(평면) 좌표계에서 계산합니다.
 
@@ -46,9 +42,7 @@ SELECT perimeterCartesian(geom) FROM geo_dst;
 └──────────────────────────┘
 ```
 
-<div id="areacartesian">
-  ## areaCartesian
-</div>
+## areaCartesian {#areacartesian}
 
 주어진 Geometry 객체의 면적을 데카르트 좌표계에서 계산합니다.
 
@@ -80,9 +74,7 @@ SELECT areaCartesian(geom) FROM geo_dst;
 └─────────────────────┘
 ```
 
-<div id="perimeterspherical">
-  ## perimeterSpherical
-</div>
+## perimeterSpherical {#perimeterspherical}
 
 구 표면에서 Geometry 객체의 둘레를 계산합니다.
 
@@ -98,7 +90,7 @@ perimeterSpherical(geom)
 
 **반환 값**
 
-* 숫자 — 둘레입니다. [Float64](/ko/reference/data-types/float).
+* 숫자 — 반지름이 1인 구에서의 둘레이며, 단위는 라디안입니다(좌표는 도 단위의 경도와 위도입니다). 길이를 구하려면 구의 반지름을 곱하십시오. 예를 들어 지구에서 킬로미터 단위의 길이를 구하려면 6371을 곱합니다. [Float64](/ko/reference/data-types/float).
 
 **예시**
 
@@ -110,13 +102,11 @@ SELECT perimeterSpherical(geom) FROM geo_dst;
 
 ```response title="Response"
 ┌─perimeterSpherical(geom)─┐
-│ 0                        │
+│      0.06981051179132045 │
 └──────────────────────────┘
 ```
 
-<div id="areaspherical">
-  ## areaSpherical
-</div>
+## areaSpherical {#areaspherical}
 
 구 표면에 있는 Geometry 객체의 면적을 계산합니다.
 
@@ -132,7 +122,7 @@ areaSpherical(geom)
 
 **반환 값**
 
-* Number — 면적. [Float64](/ko/reference/data-types/float).
+* 숫자 — 반지름이 1인 구에서의 면적으로, 단위는 스테라디안(steradian)입니다(좌표는 도 단위의 경도와 위도입니다). 실제 면적을 구하려면 이 값에 구 반지름의 제곱을 곱하십시오. [Float64](/ko/reference/data-types/float).
 
 **예시**
 

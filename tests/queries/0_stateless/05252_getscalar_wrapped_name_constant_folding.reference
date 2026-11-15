@@ -2,3 +2,7 @@ folded_marker	1
 1
 rejected
 alive
+(1,'a')	a	Nullable(String)
+(1,'a')	a	Nullable(String)
+a	ax	LowCardinality(Nullable(String))
+a	ax	LowCardinality(Nullable(String))

@@ -53,9 +53,11 @@
         "ja/products/bring-your-own-cloud/reference/faq",
         {
           "group": "コネクターモード",
+          "hidden": true,
           "pages": [
             "ja/products/bring-your-own-cloud/connector/overview",
             "ja/products/bring-your-own-cloud/connector/onboarding",
+            "ja/products/bring-your-own-cloud/connector/terraform-aws",
             "ja/products/bring-your-own-cloud/connector/architecture",
             "ja/products/bring-your-own-cloud/connector/managed-services",
             "ja/products/bring-your-own-cloud/connector/platform-updates",
