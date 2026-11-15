@@ -135,6 +135,8 @@ private:
             f(UInt128());
         else if (which.isUInt256())
             f(UInt256());
+        else if (which.isUInt512())
+            f(UInt512());
         else if (which.isInt8())
             f(Int8());
         else if (which.isInt16())
@@ -147,6 +149,8 @@ private:
             f(Int128());
         else if (which.isInt256())
             f(Int256());
+        else if (which.isInt512())
+            f(Int512());
         else if (which.isFloat32())
             f(Float32());
         else if (which.isFloat64())

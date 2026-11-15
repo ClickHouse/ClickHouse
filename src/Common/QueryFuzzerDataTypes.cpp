@@ -563,14 +563,16 @@ DataTypePtr QueryFuzzer::getRandomType()
 
     static const std::vector<TypeIndex> random_types = {TypeIndex::UInt8,      TypeIndex::UInt16,         TypeIndex::UInt32,
                                                         TypeIndex::UInt64,     TypeIndex::UInt128,        TypeIndex::UInt256,
-                                                        TypeIndex::Int8,       TypeIndex::Int16,          TypeIndex::Int32,
-                                                        TypeIndex::Int64,      TypeIndex::Int128,         TypeIndex::Int256,
+                                                        TypeIndex::UInt512,    TypeIndex::Int8,           TypeIndex::Int16,
+                                                        TypeIndex::Int32,      TypeIndex::Int64,          TypeIndex::Int128,
+                                                        TypeIndex::Int256,     TypeIndex::Int512,
                                                         TypeIndex::BFloat16,   TypeIndex::Float32,        TypeIndex::Float64,
                                                         TypeIndex::Date,       TypeIndex::Date32,         TypeIndex::DateTime,
                                                         TypeIndex::DateTime64, TypeIndex::String,         TypeIndex::FixedString,
                                                         TypeIndex::Enum8,      TypeIndex::Enum16,         TypeIndex::Decimal32,
                                                         TypeIndex::Decimal64,  TypeIndex::Decimal128,     TypeIndex::Decimal256,
-                                                        TypeIndex::UUID,       TypeIndex::Array,          TypeIndex::Tuple,
+                                                        TypeIndex::Decimal512, TypeIndex::UUID,           TypeIndex::Array,
+                                                        TypeIndex::Tuple,
                                                         TypeIndex::Nullable,   TypeIndex::LowCardinality, TypeIndex::Map,
                                                         TypeIndex::IPv4,       TypeIndex::IPv6,           TypeIndex::Variant,
                                                         TypeIndex::Dynamic,    TypeIndex::Time,           TypeIndex::Time64,
@@ -633,6 +635,7 @@ DataTypePtr QueryFuzzer::getRandomType()
             DISPATCH(Decimal64)
             DISPATCH(Decimal128)
             DISPATCH(Decimal256)
+            DISPATCH(Decimal512)
         case TypeIndex::FixedString: return std::make_shared<DataTypeFixedString>(fuzz_rand() % 20 + 1);
         case TypeIndex::Enum8: {
             DataTypeEnum<Int8>::Values values;

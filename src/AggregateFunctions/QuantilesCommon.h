@@ -91,6 +91,7 @@ template <> struct UnsignedIntOfWidth<64> { using Type = UInt64; };
 template <> struct UnsignedIntOfWidth<128> { using Type = UInt128; };
 template <> struct UnsignedIntOfWidth<256> { using Type = UInt256; };
 template <> struct UnsignedIntOfWidth<512> { using Type = wide::integer<512, unsigned>; };
+template <> struct UnsignedIntOfWidth<1024> { using Type = wide::integer<1024, unsigned>; };
 
 constexpr size_t widthHolding(size_t bits)
 {

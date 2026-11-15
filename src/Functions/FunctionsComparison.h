@@ -150,6 +150,8 @@ static inline bool callOnAtLeastOneDecimalType(TypeIndex type_num1, TypeIndex ty
             return callOnBasicType<Decimal128, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
         case TypeIndex::Decimal256:
             return callOnBasicType<Decimal256, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+        case TypeIndex::Decimal512:
+            return callOnBasicType<Decimal512, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
         default:
             break;
     }
@@ -168,6 +170,8 @@ static inline bool callOnAtLeastOneDecimalType(TypeIndex type_num1, TypeIndex ty
             return callOnBasicTypeSecondArg<Decimal128, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
         case TypeIndex::Decimal256:
             return callOnBasicTypeSecondArg<Decimal256, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
+        case TypeIndex::Decimal512:
+            return callOnBasicTypeSecondArg<Decimal512, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
         default:
             break;
     }
@@ -1093,7 +1097,7 @@ private:
         return nullptr;
     }
 
-    using ComparisonNumberTypes = TypeList<UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256, BFloat16, Float32, Float64>;
+    using ComparisonNumberTypes = TypeList<UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, UInt512, Int8, Int16, Int32, Int64, Int128, Int256, Int512, BFloat16, Float32, Float64>;
 
     template <typename T>
     ColumnPtr executeNumSameType(const IColumn * col_left_untyped, const IColumn * col_right_untyped) const

@@ -41,6 +41,8 @@ struct ArrayCumSumNonNegativeImpl
                 return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt128>());
             if (which.isUInt256())
                 return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt256>());
+            if (which.isUInt512())
+                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt512>());
             UNREACHABLE();
         }
 
@@ -52,6 +54,8 @@ struct ArrayCumSumNonNegativeImpl
                 return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt128>());
             if (which.isInt256())
                 return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt256>());
+            if (which.isInt512())
+                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt512>());
             UNREACHABLE();
         }
 
@@ -62,7 +66,9 @@ struct ArrayCumSumNonNegativeImpl
         {
             UInt32 scale = getDecimalScale(*expression_return);
             DataTypePtr nested;
-            if (which.isDecimal256())
+            if (which.isDecimal512())
+                nested = std::make_shared<DataTypeDecimal<Decimal512>>(DecimalUtils::max_precision<Decimal512>, scale);
+            else if (which.isDecimal256())
                 nested = std::make_shared<DataTypeDecimal<Decimal256>>(DecimalUtils::max_precision<Decimal256>, scale);
             else
                 nested = std::make_shared<DataTypeDecimal<Decimal128>>(DecimalUtils::max_precision<Decimal128>, scale);
@@ -133,7 +139,9 @@ struct ArrayCumSumNonNegativeImpl
             || executeType<Int128, Int128>(mapped, array, res) || executeType<Int256, Int256>(mapped, array, res)
             || executeType<Float32, Float64>(mapped, array, res) || executeType<Float64, Float64>(mapped, array, res)
             || executeType<Decimal32, Decimal128>(mapped, array, res) || executeType<Decimal64, Decimal128>(mapped, array, res)
-            || executeType<Decimal128, Decimal128>(mapped, array, res) || executeType<Decimal256, Decimal256>(mapped, array, res))
+            || executeType<Decimal128, Decimal128>(mapped, array, res) || executeType<Decimal256, Decimal256>(mapped, array, res)
+            || executeType<Decimal512, Decimal512>(mapped, array, res)
+            || executeType<UInt512, UInt512>(mapped, array, res) || executeType<Int512, Int512>(mapped, array, res))
             return res;
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arrayCumSumNonNegativeImpl: {}", mapped->getName());
     }

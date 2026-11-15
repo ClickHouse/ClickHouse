@@ -11,6 +11,7 @@
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <base/extended_types.h>
 #include <fmt/format.h>
 
 namespace DB
@@ -178,6 +179,7 @@ extern template class DecimalField<Decimal32>;
 extern template class DecimalField<Decimal64>;
 extern template class DecimalField<Decimal128>;
 extern template class DecimalField<Decimal256>;
+extern template class DecimalField<Decimal512>;
 extern template class DecimalField<DateTime64>;
 extern template class DecimalField<Time64>;
 
@@ -186,6 +188,7 @@ template <> constexpr inline bool is_decimal_field<DecimalField<Decimal32>> = tr
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal64>> = true;
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal128>> = true;
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal256>> = true;
+template <> constexpr inline bool is_decimal_field<DecimalField<Decimal512>> = true;
 
 template <typename T, typename SFINAE = void>
 struct NearestFieldTypeImpl;
@@ -223,17 +226,21 @@ template <> struct NearestFieldTypeImpl<UInt256> { using Type = UInt256; };
 template <> struct NearestFieldTypeImpl<Int256> { using Type = Int256; };
 template <> struct NearestFieldTypeImpl<UInt128> { using Type = UInt128; };
 template <> struct NearestFieldTypeImpl<Int128> { using Type = Int128; };
+template <> struct NearestFieldTypeImpl<UInt512> { using Type = UInt512; };
+template <> struct NearestFieldTypeImpl<Int512> { using Type = Int512; };
 
 template <> struct NearestFieldTypeImpl<Decimal32> { using Type = DecimalField<Decimal32>; };
 template <> struct NearestFieldTypeImpl<Decimal64> { using Type = DecimalField<Decimal64>; };
 template <> struct NearestFieldTypeImpl<Decimal128> { using Type = DecimalField<Decimal128>; };
 template <> struct NearestFieldTypeImpl<Decimal256> { using Type = DecimalField<Decimal256>; };
+template <> struct NearestFieldTypeImpl<Decimal512> { using Type = DecimalField<Decimal512>; };
 template <> struct NearestFieldTypeImpl<DateTime64> { using Type = DecimalField<DateTime64>; };
 template <> struct NearestFieldTypeImpl<Time64> { using Type = DecimalField<Time64>; };
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal32>> { using Type = DecimalField<Decimal32>; };
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal64>> { using Type = DecimalField<Decimal64>; };
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal128>> { using Type = DecimalField<Decimal128>; };
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal256>> { using Type = DecimalField<Decimal256>; };
+template <> struct NearestFieldTypeImpl<DecimalField<Decimal512>> { using Type = DecimalField<Decimal512>; };
 template <> struct NearestFieldTypeImpl<DecimalField<DateTime64>> { using Type = DecimalField<DateTime64>; };
 template <> struct NearestFieldTypeImpl<DecimalField<Time64>> { using Type = DecimalField<Time64>; };
 template <> struct NearestFieldTypeImpl<BFloat16> { using Type = Float64; };
@@ -326,6 +333,9 @@ public:
             IPv6 = 31,
             CustomType = 32,
             Number = 33,
+            Decimal512 = 34,
+            UInt512 = 35,
+            Int512  = 36,
         };
     };
 
@@ -339,7 +349,8 @@ public:
         return which == Types::Decimal32
             || which == Types::Decimal64
             || which == Types::Decimal128
-            || which == Types::Decimal256;
+            || which == Types::Decimal256
+            || which == Types::Decimal512;
     }
 
     /// Whether values of the type are single scalar values with a plain value comparison, as opposed
@@ -361,8 +372,11 @@ public:
             case Types::Decimal64:
             case Types::Decimal128:
             case Types::Decimal256:
+            case Types::Decimal512:
             case Types::UInt256:
             case Types::Int256:
+            case Types::UInt512:
+            case Types::Int512:
             case Types::UUID:
             case Types::Bool:
             case Types::IPv4:
@@ -553,9 +567,11 @@ public:
             case Types::UInt64:  return f(field.template get<UInt64>());
             case Types::UInt128: return f(field.template get<UInt128>());
             case Types::UInt256: return f(field.template get<UInt256>());
+            case Types::UInt512: return f(field.template get<UInt512>());
             case Types::Int64:   return f(field.template get<Int64>());
             case Types::Int128:  return f(field.template get<Int128>());
             case Types::Int256:  return f(field.template get<Int256>());
+            case Types::Int512:  return f(field.template get<Int512>());
             case Types::UUID:    return f(field.template get<UUID>());
             case Types::IPv4:    return f(field.template get<IPv4>());
             case Types::IPv6:    return f(field.template get<IPv6>());
@@ -574,6 +590,7 @@ public:
             case Types::Decimal64:  return f(field.template get<DecimalField<Decimal64>>());
             case Types::Decimal128: return f(field.template get<DecimalField<Decimal128>>());
             case Types::Decimal256: return f(field.template get<DecimalField<Decimal256>>());
+            case Types::Decimal512: return f(field.template get<DecimalField<Decimal512>>());
             case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
             case Types::CustomType: return f(field.template get<CustomType>());
             case Types::Number: return f(field.template get<NumberLiteral>());
@@ -590,8 +607,8 @@ public:
 
 private:
     AlignedUnionT<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
-        Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
-        DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
+        Null, UInt64, UInt128, UInt256, UInt512, Int64, Int128, Int256, Int512, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
+        DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>, DecimalField<Decimal512>,
         AggregateFunctionStateData, CustomType, NumberLiteral
         > storage; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - raw union storage; the active value is always placement-constructed by `create`/`createConcrete` before any read, and zero-initializing it would clear the whole buffer on every construction of this very hot object
 
@@ -775,9 +792,11 @@ template <> struct Field::TypeToEnum<Null> { static constexpr Types::Which value
 template <> struct Field::TypeToEnum<UInt64>  { static constexpr Types::Which value = Types::UInt64; };
 template <> struct Field::TypeToEnum<UInt128> { static constexpr Types::Which value = Types::UInt128; };
 template <> struct Field::TypeToEnum<UInt256> { static constexpr Types::Which value = Types::UInt256; };
+template <> struct Field::TypeToEnum<UInt512> { static constexpr Types::Which value = Types::UInt512; };
 template <> struct Field::TypeToEnum<Int64>   { static constexpr Types::Which value = Types::Int64; };
 template <> struct Field::TypeToEnum<Int128>  { static constexpr Types::Which value = Types::Int128; };
 template <> struct Field::TypeToEnum<Int256>  { static constexpr Types::Which value = Types::Int256; };
+template <> struct Field::TypeToEnum<Int512>  { static constexpr Types::Which value = Types::Int512; };
 template <> struct Field::TypeToEnum<UUID>    { static constexpr Types::Which value = Types::UUID; };
 template <> struct Field::TypeToEnum<IPv4>    { static constexpr Types::Which value = Types::IPv4; };
 template <> struct Field::TypeToEnum<IPv6>    { static constexpr Types::Which value = Types::IPv6; };
@@ -791,6 +810,7 @@ template <> struct Field::TypeToEnum<DecimalField<Decimal32>>{ static constexpr 
 template <> struct Field::TypeToEnum<DecimalField<Decimal64>>{ static constexpr Types::Which value = Types::Decimal64; };
 template <> struct Field::TypeToEnum<DecimalField<Decimal128>>{ static constexpr Types::Which value = Types::Decimal128; };
 template <> struct Field::TypeToEnum<DecimalField<Decimal256>>{ static constexpr Types::Which value = Types::Decimal256; };
+template <> struct Field::TypeToEnum<DecimalField<Decimal512>>{ static constexpr Types::Which value = Types::Decimal512; };
 template <> struct Field::TypeToEnum<DecimalField<DateTime64>>{ static constexpr Types::Which value = Types::Decimal64; };
 template <> struct Field::TypeToEnum<DecimalField<Time64>>{ static constexpr Types::Which value = Types::Decimal64; };
 template <> struct Field::TypeToEnum<AggregateFunctionStateData>{ static constexpr Types::Which value = Types::AggregateFunctionState; };
@@ -802,9 +822,11 @@ template <> struct Field::EnumToType<Field::Types::Null>    { using Type = Null;
 template <> struct Field::EnumToType<Field::Types::UInt64>  { using Type = UInt64; };
 template <> struct Field::EnumToType<Field::Types::UInt128> { using Type = UInt128; };
 template <> struct Field::EnumToType<Field::Types::UInt256> { using Type = UInt256; };
+template <> struct Field::EnumToType<Field::Types::UInt512> { using Type = UInt512; };
 template <> struct Field::EnumToType<Field::Types::Int64>   { using Type = Int64; };
 template <> struct Field::EnumToType<Field::Types::Int128>  { using Type = Int128; };
 template <> struct Field::EnumToType<Field::Types::Int256>  { using Type = Int256; };
+template <> struct Field::EnumToType<Field::Types::Int512>  { using Type = Int512; };
 template <> struct Field::EnumToType<Field::Types::UUID>    { using Type = UUID; };
 template <> struct Field::EnumToType<Field::Types::IPv4>    { using Type = IPv4; };
 template <> struct Field::EnumToType<Field::Types::IPv6>    { using Type = IPv6; };
@@ -818,6 +840,7 @@ template <> struct Field::EnumToType<Field::Types::Decimal32> { using Type = Dec
 template <> struct Field::EnumToType<Field::Types::Decimal64> { using Type = DecimalField<Decimal64>; };
 template <> struct Field::EnumToType<Field::Types::Decimal128> { using Type = DecimalField<Decimal128>; };
 template <> struct Field::EnumToType<Field::Types::Decimal256> { using Type = DecimalField<Decimal256>; };
+template <> struct Field::EnumToType<Field::Types::Decimal512> { using Type = DecimalField<Decimal512>; };
 template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { using Type = AggregateFunctionStateData; };
 template <> struct Field::EnumToType<Field::Types::CustomType> { using Type = CustomType; };
 template <> struct Field::EnumToType<Field::Types::Number> { using Type = NumberLiteral; };

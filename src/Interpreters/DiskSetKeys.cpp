@@ -37,6 +37,7 @@ void callWithOrderedBits(const IColumn & column, size_t size, F && f)
             case 8: return call.template operator()<UInt64>();
             case 16: return call.template operator()<UInt128>();
             case 32: return call.template operator()<UInt256>();
+            case 64: return call.template operator()<UInt512>();
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size {} of a number in a key of a set on disk", size);
         }
@@ -129,6 +130,7 @@ template ColumnPtr encodeFixedSizeKeys<UInt32>(const ColumnRawPtrs &, const Size
 template ColumnPtr encodeFixedSizeKeys<UInt64>(const ColumnRawPtrs &, const Sizes &, size_t, ConstNullMapPtr);
 template ColumnPtr encodeFixedSizeKeys<UInt128>(const ColumnRawPtrs &, const Sizes &, size_t, ConstNullMapPtr);
 template ColumnPtr encodeFixedSizeKeys<UInt256>(const ColumnRawPtrs &, const Sizes &, size_t, ConstNullMapPtr);
+template ColumnPtr encodeFixedSizeKeys<UInt512>(const ColumnRawPtrs &, const Sizes &, size_t, ConstNullMapPtr);
 
 ColumnPtr computePrefixedHashes(const IColumn & column, size_t rows, ConstNullMapPtr null_map)
 {

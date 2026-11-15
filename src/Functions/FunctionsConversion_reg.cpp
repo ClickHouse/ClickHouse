@@ -341,6 +341,7 @@ toUInt256('256'):   256
     FunctionDocumentation toUInt256_documentation = {toUInt256_description, toUInt256_syntax, toUInt256_arguments, {}, toUInt256_returned_value, toUInt256_examples, toUInt256_introduced_in, toUInt256_category};
 
     factory.registerFunction<detail::FunctionToUInt256>(toUInt256_documentation);
+    factory.registerFunction<detail::FunctionToUInt512>({});
 
     /// toInt8 documentation
     FunctionDocumentation::Description toInt8_description = R"(
@@ -681,6 +682,7 @@ toInt256('-256'):   -256
     FunctionDocumentation toInt256_documentation = {toInt256_description, toInt256_syntax, toInt256_arguments, {}, toInt256_returned_value, toInt256_examples, toInt256_introduced_in, toInt256_category};
 
     factory.registerFunction<detail::FunctionToInt256>(toInt256_documentation);
+    factory.registerFunction<detail::FunctionToInt512>({});
 
     /// toBFloat16 documentation
     FunctionDocumentation::Description toBFloat16_description = R"(
@@ -1049,6 +1051,7 @@ type_c: Decimal(76, 3)
     factory.registerFunction<detail::FunctionToDecimal64>(documentation_toDecimal64);
     factory.registerFunction<detail::FunctionToDecimal128>(documentation_toDecimal128);
     factory.registerFunction<detail::FunctionToDecimal256>(documentation_toDecimal256);
+    factory.registerFunction<detail::FunctionToDecimal512>({});
 
     /// toDate documentation
     FunctionDocumentation::Description description_toDate = R"(
@@ -1932,6 +1935,7 @@ toUInt256OrZero('abc'): 0
     FunctionDocumentation documentation_toUInt256OrZero = {description_toUInt256OrZero, syntax_toUInt256OrZero, arguments_toUInt256OrZero, {}, returned_value_toUInt256OrZero, examples_toUInt256OrZero, introduced_in_toUInt256OrZero, category_toUInt256OrZero};
 
     factory.registerFunction<detail::FunctionToUInt256OrZero>(documentation_toUInt256OrZero);
+    factory.registerFunction<detail::FunctionToUInt512OrZero>({});
 
     /// toInt8OrZero documentation
     FunctionDocumentation::Description description_toInt8OrZero = R"(
@@ -2199,6 +2203,7 @@ SELECT toInt256OrZero('abc')
     FunctionDocumentation documentation_toInt256OrZero = {description_toInt256OrZero, syntax_toInt256OrZero, arguments_toInt256OrZero, {}, returned_value_toInt256OrZero, examples_toInt256OrZero, introduced_in_toInt256OrZero, category_toInt256OrZero};
 
     factory.registerFunction<detail::FunctionToInt256OrZero>(documentation_toInt256OrZero);
+    factory.registerFunction<detail::FunctionToInt512OrZero>({});
 
     /// toBFloat16OrZero documentation
     FunctionDocumentation::Description toBFloat16OrZero_description = R"(
@@ -2696,6 +2701,7 @@ SELECT toDecimal256OrZero('42.7', 2), toDecimal256OrZero('invalid', 2)
     FunctionDocumentation documentation_toDecimal256OrZero = {description_toDecimal256OrZero, syntax_toDecimal256OrZero, arguments_toDecimal256OrZero, {}, returned_value_toDecimal256OrZero, examples_toDecimal256OrZero, introduced_in_toDecimal256OrZero, category_toDecimal256OrZero};
 
     factory.registerFunction<detail::FunctionToDecimal256OrZero>(documentation_toDecimal256OrZero);
+    factory.registerFunction<detail::FunctionToDecimal512OrZero>({});
 
     /// toUUIDOrZero documentation
     FunctionDocumentation::Description description_toUUIDOrZero = R"(
@@ -3119,6 +3125,7 @@ toUInt256OrNull('abc'): ᴺᵁᴸᴸ
     FunctionDocumentation documentation_toUInt256OrNull = {description_toUInt256OrNull, syntax_toUInt256OrNull, arguments_toUInt256OrNull, {}, returned_value_toUInt256OrNull, examples_toUInt256OrNull, introduced_in_toUInt256OrNull, category_toUInt256OrNull};
 
     factory.registerFunction<detail::FunctionToUInt256OrNull>(documentation_toUInt256OrNull);
+    factory.registerFunction<detail::FunctionToUInt512OrNull>({});
 
     /// toInt8OrNull documentation
     FunctionDocumentation::Description description_toInt8OrNull = R"(
@@ -3419,6 +3426,7 @@ toInt256OrNull('abc'):  ᴺᵁᴸᴸ
     FunctionDocumentation documentation_toInt256OrNull = {description_toInt256OrNull, syntax_toInt256OrNull, arguments_toInt256OrNull, {}, returned_value_toInt256OrNull, examples_toInt256OrNull, introduced_in_toInt256OrNull, category_toInt256OrNull};
 
     factory.registerFunction<detail::FunctionToInt256OrNull>(documentation_toInt256OrNull);
+    factory.registerFunction<detail::FunctionToInt512OrNull>({});
 
     /// toBFloat16OrNull documentation
     FunctionDocumentation::Description toBFloat16OrNull_description = R"(
@@ -3951,6 +3959,7 @@ SELECT toDecimal256OrNull('42.7', 2), toDecimal256OrNull('invalid', 2)
     FunctionDocumentation documentation_toDecimal256OrNull = {description_toDecimal256OrNull, syntax_toDecimal256OrNull, arguments_toDecimal256OrNull, {}, returned_value_toDecimal256OrNull, examples_toDecimal256OrNull, introduced_in_toDecimal256OrNull, category_toDecimal256OrNull};
 
     factory.registerFunction<detail::FunctionToDecimal256OrNull>(documentation_toDecimal256OrNull);
+    factory.registerFunction<detail::FunctionToDecimal512OrNull>({});
 
     /// toUUIDOrNull documentation
     FunctionDocumentation::Description description_toUUIDOrNull = R"(

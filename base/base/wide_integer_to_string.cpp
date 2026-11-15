@@ -37,6 +37,8 @@ template std::string to_string(const integer<128, signed> & n);
 template std::string to_string(const integer<128, unsigned> & n);
 template std::string to_string(const integer<256, signed> & n);
 template std::string to_string(const integer<256, unsigned> & n);
+template std::string to_string(const integer<512, signed> & n);
+template std::string to_string(const integer<512, unsigned> & n);
 
 }
 
@@ -50,8 +52,12 @@ std::ostream & operator<<(std::ostream & out, const wide::integer<128, signed> &
 std::ostream & operator<<(std::ostream & out, const wide::integer<128, unsigned> & value);
 std::ostream & operator<<(std::ostream & out, const wide::integer<256, signed> & value);
 std::ostream & operator<<(std::ostream & out, const wide::integer<256, unsigned> & value);
+std::ostream & operator<<(std::ostream & out, const wide::integer<512, signed> & value);
+std::ostream & operator<<(std::ostream & out, const wide::integer<512, unsigned> & value);
 
 template struct fmt::formatter<wide::integer<128, signed>>;
 template struct fmt::formatter<wide::integer<128, unsigned>>;
 template struct fmt::formatter<wide::integer<256, signed>>;
 template struct fmt::formatter<wide::integer<256, unsigned>>;
+template struct fmt::formatter<wide::integer<512, signed>>;
+template struct fmt::formatter<wide::integer<512, unsigned>>;

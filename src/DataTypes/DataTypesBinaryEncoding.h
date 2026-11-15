@@ -74,11 +74,14 @@ enum class BinaryTypeIndex : uint8_t
     /// reserved = 0x35
     QBit = 0x36,
     /// QBit with an explicit stride parameter (stride != dimension). Non-strided QBit keeps using 0x36 for backward compatibility.
-    QBitWithStride = 0x37
+    QBitWithStride = 0x37,
+    UInt512 = 0x38,
+    Int512 = 0x39,
+    Decimal512 = 0x3A
 };
 
 /// Maximum value of BinaryTypeIndex + 1, used for sizing the index array in SimpleDataTypesCache.
-inline constexpr size_t BINARY_TYPE_INDEX_SIZE = 0x38;
+inline constexpr size_t BINARY_TYPE_INDEX_SIZE = 0x3B;
 
 /**
 
@@ -140,6 +143,9 @@ Binary encoding for ClickHouse data types:
 | Time64(P)                                                                                               | 0x34<uint8_precision>                                                                                                                                                                                                                                                                                                                                                    |
 | QBit(T, N)                                                                                              | 0x36<element_type_encoding><var_uint_dimension>                                                                                                                                                                                                                                                                                                                          |
 | QBit(T, N, stride)                                                                                      | 0x37<element_type_encoding><var_uint_dimension><var_uint_stride>                                                                                                                                                                                                                                                                                                         |
+| UInt512                                                                                                 | 0x38                                                                                                                                                                                                                                                                                                                                                                     |
+| Int512                                                                                                  | 0x39                                                                                                                                                                                                                                                                                                                                                                     |
+| Decimal512(P, S)                                                                                        | 0x3A<uint8_precision><uint8_scale>                                                                                                                                                                                                                                                                                                                                       |
 |---------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 
 For type QBit the 0x37 encoding is used only when stride differs from the dimension N. When stride == N (including when the third argument is written explicitly, as in QBit(Float32, 4, 4)) the type is canonicalized to the two-argument QBit(T, N) form and encoded as 0x36 above, so its binary encoding stays byte-identical to a non-strided QBit.
@@ -187,6 +193,9 @@ Aggregate function parameter binary encoding (binary encoding of a Field, see sr
 | Bool                   | 0x13<bool_value>                                                                                                             |
 | Object                 | 0x14<var_uint_size><var_uint_key_size_1><key_data_1><value_encoding_1>...<var_uint_key_size_N><key_data_N><value_encoding_N> |
 | AggregateFunctionState | 0x15<var_uint_name_size><name_data><var_uint_data_size><data>                                                                |
+| Decimal512             | 0x16<var_uint_scale><int512_little_endian_value>                                                                             |
+| UInt512                 | 0x17<uint512_little_endian_value>                                                                                            |
+| Int512                  | 0x18<int512_little_endian_value>                                                                                             |
 | Negative infinity      | 0xFE                                                                                                                         |
 | Positive infinity      | 0xFF                                                                                                                         |
 |------------------------|------------------------------------------------------------------------------------------------------------------------------|

@@ -1610,6 +1610,19 @@ ColumnPtr fillColumnWithRandomData(const DataTypePtr & type, UInt64 limit, const
             fillRandomDecimals<Int256>(reinterpret_cast<char *>(data.data()), limit, range, rng, fuzzy);
             return column;
         }
+        case TypeIndex::Decimal512:
+        {
+            const auto & decimal_type = assert_cast<const DataTypeDecimal<Decimal512> &>(*type);
+            auto column = type->createColumn();
+            auto & column_concrete = typeid_cast<ColumnDecimal<Decimal512> &>(*column);
+            auto & data = column_concrete.getData();
+            data.resize(limit);
+            /// Generate numbers from range [-10^P + 1, 10^P - 1]
+            Int512 range = common::exp10_i512(decimal_type.getPrecision());
+            for (size_t i = 0; i != limit; ++i)
+                data[i] = Int512({rng(), rng(), rng(), rng(), rng(), rng(), rng(), rng()}) % range;
+            return column;
+        }
         case TypeIndex::FixedString:
         {
             size_t n = typeid_cast<const DataTypeFixedString &>(*type).getN();

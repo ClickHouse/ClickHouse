@@ -59,6 +59,7 @@ using AggregatedDataWithStringKeyVoid = HashSetWithSavedHash<std::string_view, D
 
 using AggregatedDataWithKeys128 = HashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256 = HashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
+using AggregatedDataWithKeys512 = HashMap<UInt512, AggregateDataPtr, UInt512HashCRC32>;
 
 using AggregatedDataWithKeys128Void = HashSet<UInt128, UInt128HashCRC32>;
 using AggregatedDataWithKeys256Void = HashSet<UInt256, UInt256HashCRC32>;
@@ -81,6 +82,7 @@ using AggregatedDataWithStringKeyVoidTwoLevel = TwoLevelHashSetWithSavedHash<std
 
 using AggregatedDataWithKeys128TwoLevel = TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256TwoLevel = TwoLevelHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
+using AggregatedDataWithKeys512TwoLevel = TwoLevelHashMap<UInt512, AggregateDataPtr, UInt512HashCRC32>;
 
 using AggregatedDataWithKeys128VoidTwoLevel = TwoLevelHashSet<UInt128, UInt128HashCRC32>;
 using AggregatedDataWithKeys256VoidTwoLevel = TwoLevelHashSet<UInt256, UInt256HashCRC32>;
@@ -96,6 +98,7 @@ using AggregatedDataWithUInt64KeyHash64 = HashMap<UInt64, AggregateDataPtr, Defa
 using AggregatedDataWithStringKeyHash64 = HashMapWithSavedHash<std::string_view, AggregateDataPtr, StringViewHash64>;
 using AggregatedDataWithKeys128Hash64 = HashMap<UInt128, AggregateDataPtr, UInt128Hash>;
 using AggregatedDataWithKeys256Hash64 = HashMap<UInt256, AggregateDataPtr, UInt256Hash>;
+using AggregatedDataWithKeys512Hash64 = HashMap<UInt512, AggregateDataPtr, UInt512Hash>;
 
 /// Void (set) counterparts of the better-hash data above, used as the external-aggregation merge target
 /// for the void `GROUP BY` methods: the merged key count can exceed 4 billion, so - exactly like the regular

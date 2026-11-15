@@ -235,6 +235,9 @@ UInt32 CompressionCodecGCD::doCompressData(const char * source, UInt32 source_si
     case 32:
         compressDataForType<UInt256>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos], is_signed_type);
         break;
+    case 64:
+        compressDataForType<UInt512>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos], is_signed_type);
+        break;
     default:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot compress to GCD-encoded data. Invalid byte size {}", UInt32{gcd_bytes_size});
     }
@@ -251,7 +254,7 @@ UInt32 CompressionCodecGCD::doDecompressData(const char * source, UInt32 source_
 
     UInt8 bytes_size = source[0];
 
-    if (!(bytes_size == 1 || bytes_size == 2 || bytes_size == 4 || bytes_size == 8 || bytes_size == 16 || bytes_size == 32))
+    if (!(bytes_size == 1 || bytes_size == 2 || bytes_size == 4 || bytes_size == 8 || bytes_size == 16 || bytes_size == 32 || bytes_size == 64))
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data. File has wrong header");
 
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
@@ -282,6 +285,8 @@ UInt32 CompressionCodecGCD::doDecompressData(const char * source, UInt32 source_
         return bytes_to_skip + decompressDataForType<UInt128>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
     case 32:
         return bytes_to_skip + decompressDataForType<UInt256>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
+    case 64:
+        return bytes_to_skip + decompressDataForType<UInt512>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
     default:
         /// This should be unreachable due to the check above
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot decompress GCD-encoded data. File has unknown byte size {}", UInt32{bytes_size});
@@ -304,13 +309,13 @@ std::optional<std::pair<UInt8, bool>> getGCDTypeInfo(const IDataType & column_ty
     }
 
     size_t max_size = column_type.getSizeOfValueInMemory();
-    if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8 || max_size == 16 || max_size == 32)
+    if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8 || max_size == 16 || max_size == 32 || max_size == 64)
         return std::pair<UInt8, bool>{static_cast<UInt8>(max_size), !column_type.isValueRepresentedByUnsignedInteger()};
     if (!throw_if_not_applicable)
         return {};
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
-        "Codec GCD is only applicable for data types of size 1, 2, 4, 8, 16, 32 bytes. Given type {}",
+        "Codec GCD is only applicable for data types of size 1, 2, 4, 8, 16, 32, 64 bytes. Given type {}",
         column_type.getName());
 }
 

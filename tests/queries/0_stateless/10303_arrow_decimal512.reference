@@ -1,0 +1,2 @@
+-- arrow decimal512 roundtrip
+Decimal(154, 3)	12345.678

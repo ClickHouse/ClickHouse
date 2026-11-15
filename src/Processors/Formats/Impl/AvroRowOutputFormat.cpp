@@ -241,6 +241,10 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
         {
             return createDecimalSchemaWithSerializeFn<DataTypeDecimal256>(data_type);
         }
+        case TypeIndex::Decimal512:
+        {
+            return createDecimalSchemaWithSerializeFn<DataTypeDecimal512>(data_type);
+        }
         case TypeIndex::String:
         {
             /// Iceberg `string` and `binary` both read as DataTypeString; on the Iceberg path pick

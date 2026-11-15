@@ -163,18 +163,17 @@ DataTypePtr convertPostgreSQLDataType(String & type, std::function<void()> reche
                 scale = parse<UInt32>(scale_str);
             }
 
-            if (precision <= DecimalUtils::max_precision<Decimal256>)
+            if (precision <= DecimalUtils::max_precision<Decimal512>)
                 /// createDecimal validates the precision/scale (in particular it rejects scale > precision,
                 /// e.g. numeric(5, 7)) and dispatches to the smallest Decimal type that fits the precision.
                 res = createDecimal<DataTypeDecimal>(precision, scale);
             else if (scale == 0)
-                /// PostgreSQL numeric with precision higher than Decimal256 supports (76 digits) and no
-                /// fractional part (e.g. numeric(78, 0), used to store 256-bit integers). It cannot be
-                /// represented as a ClickHouse Decimal, so use Int256. Values that do not fit into Int256
-                /// are rejected at insert time (see insertPostgreSQLValue). This mapping is fixed: PostgreSQL
-                /// `numeric` is signed, so a self-connected `UInt256` above the Int256 maximum is rejected
-                /// there (fail-closed) rather than recovered - a distinct `UInt256` mapping would collide with
-                /// this contract for real PostgreSQL sources.
+                /// PostgreSQL numeric with precision higher than Decimal512 supports (153 digits) and no
+                /// fractional part. It cannot be represented as a ClickHouse Decimal, so use Int256. Values
+                /// that do not fit into Int256 are rejected at insert time (see insertPostgreSQLValue). This
+                /// mapping is fixed: PostgreSQL `numeric` is signed, so a self-connected `UInt256` above the
+                /// Int256 maximum is rejected there (fail-closed) rather than recovered - a distinct `UInt256`
+                /// mapping would collide with this contract for real PostgreSQL sources.
                 res = std::make_shared<DataTypeInt256>();
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Precision {} and scale {} are too big and not supported", precision, scale);

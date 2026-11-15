@@ -505,6 +505,8 @@ llvm::Type * toNativeType(llvm::IRBuilderBase & builder)
         return builder.getInt128Ty();
     else if constexpr (std::is_same_v<ToType, Int256> || std::is_same_v<ToType, UInt256> || std::is_same_v<ToType, Decimal256>)
         return builder.getIntNTy(256);
+    else if constexpr (std::is_same_v<ToType, Int512> || std::is_same_v<ToType, UInt512> || std::is_same_v<ToType, Decimal512>)
+        return builder.getIntNTy(512);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid cast to native type");
 }
@@ -528,6 +530,9 @@ template llvm::Type * toNativeType<Decimal32>(llvm::IRBuilderBase &);
 template llvm::Type * toNativeType<Decimal64>(llvm::IRBuilderBase &);
 template llvm::Type * toNativeType<Decimal128>(llvm::IRBuilderBase &);
 template llvm::Type * toNativeType<Decimal256>(llvm::IRBuilderBase &);
+template llvm::Type * toNativeType<Int512>(llvm::IRBuilderBase &);
+template llvm::Type * toNativeType<UInt512>(llvm::IRBuilderBase &);
+template llvm::Type * toNativeType<Decimal512>(llvm::IRBuilderBase &);
 
 }
 

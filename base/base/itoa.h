@@ -203,6 +203,8 @@ char * itoa(Int128 i, char * p);
 /// that alone puts a `-fstack-protector-strong` canary on the function.
 char * itoa(const UInt256 & i, char * p);
 char * itoa(const Int256 & i, char * p);
+char * itoa(const UInt512 & i, char * p);
+char * itoa(const Int512 & i, char * p);
 
 char * writeFixedDigits(UInt64 value, UInt32 width, char * p);
 char * writeFixedDigits(UInt128 value, UInt32 width, char * p);

@@ -105,5 +105,6 @@ template class DiskSetBlockFilters<UInt32>;
 template class DiskSetBlockFilters<UInt64>;
 template class DiskSetBlockFilters<UInt128>;
 template class DiskSetBlockFilters<UInt256>;
+template class DiskSetBlockFilters<UInt512>;
 
 }

@@ -119,8 +119,10 @@ private:
             return intHash64(key);
         else if constexpr (sizeof(Key) == sizeof(UInt128))
             return UInt128Hash{}(key);
-        else
+        else if constexpr (sizeof(Key) == sizeof(UInt256))
             return UInt256Hash{}(key);
+        else
+            return UInt512Hash{}(key);
     }
 
     /// The bits per key, counted per 1024 keys, so that the ranges of the blocks are computed exactly in

@@ -69,6 +69,10 @@ public:
         {
             return x != 0;
         }
+        else if constexpr (std::is_same_v<Decimal512, T>)
+        {
+            return Int512(x);
+        }
         else
         {
             if constexpr (!is_floating_point<T>)
@@ -158,6 +162,8 @@ extern template class FieldVisitorConvertToNumber<Int128>;
 extern template class FieldVisitorConvertToNumber<UInt128>;
 extern template class FieldVisitorConvertToNumber<Int256>;
 extern template class FieldVisitorConvertToNumber<UInt256>;
+extern template class FieldVisitorConvertToNumber<Int512>;
+extern template class FieldVisitorConvertToNumber<UInt512>;
 //extern template class FieldVisitorConvertToNumber<BFloat16>;
 extern template class FieldVisitorConvertToNumber<Float32>;
 extern template class FieldVisitorConvertToNumber<Float64>;

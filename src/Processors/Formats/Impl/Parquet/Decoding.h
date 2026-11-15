@@ -357,7 +357,7 @@ struct TrivialStringConverter : public StringConverter
     std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
 };
 
-/// A thing that byteswaps and sign-extends integers up to 32 bytes long.
+/// A thing that byteswaps and sign-extends integers up to 64 bytes long.
 /// It's a struct (instead of a function) to allow precalculating some values if input size is fixed.
 /// (I didn't test whether this precalculation actually improves performance.)
 template <typename T>
@@ -381,9 +381,10 @@ extern template struct BigEndianHelper<Int32>;
 extern template struct BigEndianHelper<Int64>;
 extern template struct BigEndianHelper<Int128>;
 extern template struct BigEndianHelper<Int256>;
+extern template struct BigEndianHelper<Int512>;
 
 /// Input physical type: FIXED_LEN_BYTE_ARRAY.
-/// Output column type: Decimal<T>, where T = Int{32,64,128,256}.
+/// Output column type: Decimal<T>, where T = Int{32,64,128,256,512}.
 /// Output Field type: Decimal<T>.
 template <typename T>
 struct BigEndianDecimalFixedSizeConverter : public FixedSizeConverter
@@ -408,6 +409,7 @@ extern template struct BigEndianDecimalFixedSizeConverter<Int32>;
 extern template struct BigEndianDecimalFixedSizeConverter<Int64>;
 extern template struct BigEndianDecimalFixedSizeConverter<Int128>;
 extern template struct BigEndianDecimalFixedSizeConverter<Int256>;
+extern template struct BigEndianDecimalFixedSizeConverter<Int512>;
 
 /// Input physical type: a `DECIMAL`-annotated `FIXED_LEN_BYTE_ARRAY`.
 /// Output column and `Field` type: `T`, where `T` is `Int128`, `UInt128`, `Int256`, or `UInt256`.
@@ -446,7 +448,7 @@ extern template struct BigEndianDecimalWideIntegerStringConverter<Int256>;
 extern template struct BigEndianDecimalWideIntegerStringConverter<UInt256>;
 
 /// Input physical type: BYTE_ARRAY.
-/// Output column type: Decimal<T>, where T = Int{32,64,128,256}.
+/// Output column type: Decimal<T>, where T = Int{32,64,128,256,512}.
 /// Output Field type: Decimal<T>.
 template <typename T>
 struct BigEndianDecimalStringConverter : public StringConverter
@@ -463,6 +465,7 @@ extern template struct BigEndianDecimalStringConverter<Int32>;
 extern template struct BigEndianDecimalStringConverter<Int64>;
 extern template struct BigEndianDecimalStringConverter<Int128>;
 extern template struct BigEndianDecimalStringConverter<Int256>;
+extern template struct BigEndianDecimalStringConverter<Int512>;
 
 struct Int96Converter : public FixedSizeConverter
 {

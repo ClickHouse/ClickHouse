@@ -42,6 +42,9 @@ enum class FieldBinaryTypeIndex: uint8_t
     Bool = 0x13,
     Object = 0x14,
     AggregateFunctionState = 0x15,
+    Decimal512 = 0x16,
+    UInt512 = 0x17,
+    Int512 = 0x18,
 
     NegativeInfinity = 0xFE,
     PositiveInfinity = 0xFF,
@@ -54,9 +57,11 @@ public:
     void operator() (const UInt64 & x, WriteBuffer & buf) const;
     void operator() (const UInt128 & x, WriteBuffer & buf) const;
     void operator() (const UInt256 & x, WriteBuffer & buf) const;
+    void operator() (const UInt512 & x, WriteBuffer & buf) const;
     void operator() (const Int64 & x, WriteBuffer & buf) const;
     void operator() (const Int128 & x, WriteBuffer & buf) const;
     void operator() (const Int256 & x, WriteBuffer & buf) const;
+    void operator() (const Int512 & x, WriteBuffer & buf) const;
     void operator() (const UUID & x, WriteBuffer & buf) const;
     void operator() (const IPv4 & x, WriteBuffer & buf) const;
     void operator() (const IPv6 & x, WriteBuffer & buf) const;
@@ -70,6 +75,7 @@ public:
     void operator() (const DecimalField<Decimal64> & x, WriteBuffer & buf) const;
     void operator() (const DecimalField<Decimal128> & x, WriteBuffer & buf) const;
     void operator() (const DecimalField<Decimal256> & x, WriteBuffer & buf) const;
+    void operator() (const DecimalField<Decimal512> & x, WriteBuffer & buf) const;
     void operator() (const AggregateFunctionStateData & x, WriteBuffer & buf) const;
     [[noreturn]] void operator() (const CustomType & x, WriteBuffer & buf) const;
     [[noreturn]] void operator() (const NumberLiteral & x, WriteBuffer & buf) const;
@@ -134,6 +140,18 @@ void FieldVisitorEncodeBinary::operator() (const Int256 & x, WriteBuffer & buf) 
     writeBinaryLittleEndian(x, buf);
 }
 
+void FieldVisitorEncodeBinary::operator() (const UInt512 & x, WriteBuffer & buf) const
+{
+    writeBinary(UInt8(FieldBinaryTypeIndex::UInt512), buf);
+    writeBinaryLittleEndian(x, buf);
+}
+
+void FieldVisitorEncodeBinary::operator() (const Int512 & x, WriteBuffer & buf) const
+{
+    writeBinary(UInt8(FieldBinaryTypeIndex::Int512), buf);
+    writeBinaryLittleEndian(x, buf);
+}
+
 void FieldVisitorEncodeBinary::operator() (const UUID & x, WriteBuffer & buf) const
 {
     writeBinary(UInt8(FieldBinaryTypeIndex::UUID), buf);
@@ -176,6 +194,13 @@ void FieldVisitorEncodeBinary::operator() (const DecimalField<Decimal128> & x, W
 void FieldVisitorEncodeBinary::operator() (const DecimalField<Decimal256> & x, WriteBuffer & buf) const
 {
     writeBinary(UInt8(FieldBinaryTypeIndex::Decimal256), buf);
+    writeVarUInt(x.getScale(), buf);
+    writeBinaryLittleEndian(x.getValue(), buf);
+}
+
+void FieldVisitorEncodeBinary::operator() (const DecimalField<Decimal512> & x, WriteBuffer & buf) const
+{
+    writeBinary(UInt8(FieldBinaryTypeIndex::Decimal512), buf);
     writeVarUInt(x.getScale(), buf);
     writeBinaryLittleEndian(x.getValue(), buf);
 }
@@ -343,6 +368,10 @@ Field decodeFieldImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexi
             return decodeBigInteger<Int256>(buf);
         case FieldBinaryTypeIndex::UInt256:
             return decodeBigInteger<UInt256>(buf);
+        case FieldBinaryTypeIndex::Int512:
+            return decodeBigInteger<Int512>(buf);
+        case FieldBinaryTypeIndex::UInt512:
+            return decodeBigInteger<UInt512>(buf);
         case FieldBinaryTypeIndex::Float64:
             return decodeValueLittleEndian<Float64>(buf);
         case FieldBinaryTypeIndex::Decimal32:
@@ -353,6 +382,8 @@ Field decodeFieldImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexi
             return decodeDecimal<Decimal128>(buf);
         case FieldBinaryTypeIndex::Decimal256:
             return decodeDecimal<Decimal256>(buf);
+        case FieldBinaryTypeIndex::Decimal512:
+            return decodeDecimal<Decimal512>(buf);
         case FieldBinaryTypeIndex::String:
         {
             String value;

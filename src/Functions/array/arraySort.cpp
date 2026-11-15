@@ -240,6 +240,7 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
     DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnDecimal<Decimal64>)
     DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnDecimal<Decimal128>)
     DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnDecimal<Decimal256>)
+    DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnDecimal<Decimal512>)
     DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnString)
     DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnFixedString)
 #undef DISPATCH_FOR_NONNULLABLE_COLUMN
@@ -272,6 +273,7 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
         DISPATCH_FOR_NULLABLE_COLUMN(ColumnDecimal<Decimal64>)
         DISPATCH_FOR_NULLABLE_COLUMN(ColumnDecimal<Decimal128>)
         DISPATCH_FOR_NULLABLE_COLUMN(ColumnDecimal<Decimal256>)
+        DISPATCH_FOR_NULLABLE_COLUMN(ColumnDecimal<Decimal512>)
         DISPATCH_FOR_NULLABLE_COLUMN(ColumnString)
         DISPATCH_FOR_NULLABLE_COLUMN(ColumnFixedString)
         else

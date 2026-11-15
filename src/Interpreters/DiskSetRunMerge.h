@@ -15,7 +15,7 @@
 #include <vector>
 
 /// Merges runs of sorted distinct keys of a set on disk into the distinct keys in ascending order. `Key` is
-/// an unsigned integer of 8 to 256 bits. `makeChains` groups runs that follow each other into chains, and
+/// an unsigned integer of 8 to 512 bits. `makeChains` groups runs that follow each other into chains, and
 /// `merge` reads each chain with a `ChainReader` and passes the keys to `OutputBatches`, which collects them
 /// into batches. A single chain is the source of the keys as it is, and the source of two or more chains is a
 /// `Tournament` of them. Both sources pass their keys with `passTo`.
@@ -321,7 +321,7 @@ private:
 ///     chain 3: 5 --+
 ///
 /// The nodes keep the keys themselves when they fit in a native integer: keys of up to 64 bits as they are,
-/// and 128-bit keys as `unsigned __int128`, which compares and selects as two machine words. A 256-bit key
+/// and 128-bit keys as `unsigned __int128`, which compares and selects as two machine words. A wider key
 /// costs more to copy between nodes than to look up, so the nodes keep one 64-bit word of it: the first word
 /// that differs between the smallest and the largest key of the merge, as all its keys share the words before
 /// it. For hashes, that word decides almost every match, and a match of equal words compares the whole keys.
@@ -465,7 +465,7 @@ private:
         }
     }
 
-    /// Returns the storage index of the word of 256-bit keys that the nodes keep: the first word that differs
+    /// Returns the storage index of the word of 256-bit and 512-bit keys that the nodes keep: the first word that differs
     /// between the smallest first key and the largest last key of the chains, which all keys of the merge
     /// share the words before. For example, keys below 2^64 share their three upper words, which are 0:
     ///
@@ -498,7 +498,7 @@ private:
         else if constexpr (tree_holds_keys)
             return (static_cast<unsigned __int128>(key.items[Key::_impl::big(0)]) << 64) | key.items[Key::_impl::big(1)];
         else
-            return key.items[tree_word]; /// One word of a 256-bit key
+            return key.items[tree_word]; /// One word of a 256-bit or 512-bit key
     }
 
     bool less(TreeKey lhs, UInt32 lhs_chain, TreeKey rhs, UInt32 rhs_chain) const
@@ -516,12 +516,12 @@ private:
     std::vector<ChainReader<Key>> & chains;
 
     /// The current key of each chain, or the largest key for a chain that has ended. The tournament passes it
-    /// on, and a match of equal words of 256-bit keys compares it.
+    /// on, and a match of equal words of 256-bit and 512-bit keys compares it.
     std::vector<Key> current;
     const Key largest_key = std::numeric_limits<Key>::max(); /// What an ended chain holds
     bool largest_key_taken = false; /// Whether a real largest key came out
 
-    /// The storage index of the word of 256-bit keys that the nodes keep.
+    /// The storage index of the word of 256-bit and 512-bit keys that the nodes keep.
     unsigned tree_word = 0;
 
     std::vector<TreeKey> loser_keys; /// The key that lost the match at each inner node

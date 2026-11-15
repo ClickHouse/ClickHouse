@@ -86,6 +86,11 @@ String FieldVisitorToCastedLiteral::operator() (const UInt256 & x) const
     return FieldVisitorToString()(x) + "::UInt256";
 }
 
+String FieldVisitorToCastedLiteral::operator() (const UInt512 & x) const
+{
+    return FieldVisitorToString()(x) + "::UInt512";
+}
+
 String FieldVisitorToCastedLiteral::operator() (const Int128 & x) const
 {
     return FieldVisitorToString()(x) + "::Int128";
@@ -94,6 +99,11 @@ String FieldVisitorToCastedLiteral::operator() (const Int128 & x) const
 String FieldVisitorToCastedLiteral::operator() (const Int256 & x) const
 {
     return FieldVisitorToString()(x) + "::Int256";
+}
+
+String FieldVisitorToCastedLiteral::operator() (const Int512 & x) const
+{
+    return FieldVisitorToString()(x) + "::Int512";
 }
 
 String FieldVisitorToCastedLiteral::operator() (const UUID & x) const
@@ -131,6 +141,11 @@ String FieldVisitorToCastedLiteral::operator() (const DecimalField<Decimal256> &
     return FieldVisitorToString()(x) + "::Decimal256(" + std::to_string(x.getScale()) + ")";
 }
 
+String FieldVisitorToCastedLiteral::operator() (const DecimalField<Decimal512> & x) const
+{
+    return FieldVisitorToString()(x) + "::Decimal512(" + std::to_string(x.getScale()) + ")";
+}
+
 String FieldVisitorToCastedLiteral::operator() (const Decimal32 & x, UInt32 scale) const
 {
     return FieldVisitorToString()(x, scale) + "::Decimal32(" + std::to_string(scale) + ")";
@@ -149,6 +164,11 @@ String FieldVisitorToCastedLiteral::operator() (const Decimal128 & x, UInt32 sca
 String FieldVisitorToCastedLiteral::operator() (const Decimal256 & x, UInt32 scale) const
 {
     return FieldVisitorToString()(x, scale) + "::Decimal256(" + std::to_string(scale) + ")";
+}
+
+String FieldVisitorToCastedLiteral::operator() (const Decimal512 & x, UInt32 scale) const
+{
+    return FieldVisitorToString()(x, scale) + "::Decimal512(" + std::to_string(scale) + ")";
 }
 
 String FieldVisitorToCastedLiteral::operator() (const Array & x) const

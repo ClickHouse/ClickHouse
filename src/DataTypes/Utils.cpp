@@ -55,6 +55,7 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
         case TypeIndex::UInt64:
         case TypeIndex::UInt128:
         case TypeIndex::UInt256:
+        case TypeIndex::UInt512:
         {
             if (to_which_type.isUInt() &&
                 to_type_unwrapped->getSizeOfValueInMemory() >= from_type->getSizeOfValueInMemory())
@@ -71,6 +72,7 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
         case TypeIndex::Int64:
         case TypeIndex::Int128:
         case TypeIndex::Int256:
+        case TypeIndex::Int512:
         {
             if (to_which_type.isInt() &&
                 to_type_unwrapped->getSizeOfValueInMemory() >= from_type->getSizeOfValueInMemory())
@@ -116,6 +118,7 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
         case TypeIndex::Decimal64:
         case TypeIndex::Decimal128:
         case TypeIndex::Decimal256:
+        case TypeIndex::Decimal512:
         {
             if (to_which_type.isDecimal())
             {

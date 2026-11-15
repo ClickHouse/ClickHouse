@@ -899,6 +899,7 @@ private:
         SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<UInt64>>, strategy>,
         SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<UInt128>>, strategy>,
         SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<UInt256>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<UInt512>>, strategy>,
 
         SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<Int8>>, strategy>,
         SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<Int16>>, strategy>,
@@ -906,6 +907,7 @@ private:
         SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<Int64>>, strategy>,
         SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<Int128>>, strategy>,
         SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<Int256>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<Int512>>, strategy>,
 
         SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<BFloat16>>, strategy>,
         SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<Float32>>, strategy>,
@@ -915,6 +917,7 @@ private:
         SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal64>>, strategy>,
         SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal128>>, strategy>,
         SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal256>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal512>>, strategy>,
         SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnDecimal<DateTime64>>, strategy>,
         SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnDecimal<Time64>>, strategy>,
 
@@ -931,12 +934,14 @@ private:
         SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt64>>, strategy>,
         SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt128>>, strategy>,
         SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt256>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt512>>, strategy>,
         SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int8>>, strategy>,
         SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int16>>, strategy>,
         SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int32>>, strategy>,
         SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int64>>, strategy>,
         SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int128>>, strategy>,
         SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int256>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int512>>, strategy>,
 
         SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<BFloat16>>, strategy>,
         SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<Float32>>, strategy>,
@@ -946,6 +951,7 @@ private:
         SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal64>>, strategy>,
         SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal128>>, strategy>,
         SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal256>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal512>>, strategy>,
         SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<DateTime64>>, strategy>,
         SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Time64>>, strategy>,
 

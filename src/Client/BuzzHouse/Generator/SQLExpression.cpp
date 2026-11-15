@@ -218,19 +218,25 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
             huge->set_lower(rg.nextRandomUInt64());
             if (complex && rg.nextSmallNumber() < 9)
             {
-                il->set_integers(rg.nextBool() ? Integers::Int128 : Integers::Int256);
-            }
+            const uint32_t choice = rg.nextRandomUInt32() % 3;
+            if (choice == 0) il->set_integers(Integers::Int128);
+            else if (choice == 1) il->set_integers(Integers::Int256);
+            else il->set_integers(Integers::Int512);
         }
-        break;
-        case LitOp::LitUHugeInt: {
-            IntLiteral * il = lv->mutable_int_lit();
-            UHugeIntLiteral * uhuge = il->mutable_uhuge_lit();
+    }
+    break;
+    case LitOp::LitUHugeInt: {
+        IntLiteral * il = lv->mutable_int_lit();
+        UHugeIntLiteral * uhuge = il->mutable_uhuge_lit();
 
-            uhuge->set_upper(rg.nextRandomUInt64());
-            uhuge->set_lower(rg.nextRandomUInt64());
-            if (complex && rg.nextSmallNumber() < 9)
-            {
-                il->set_integers(rg.nextBool() ? Integers::UInt128 : Integers::UInt256);
+        uhuge->set_upper(rg.nextRandomUInt64());
+        uhuge->set_lower(rg.nextRandomUInt64());
+        if (complex && rg.nextSmallNumber() < 9)
+        {
+            const uint32_t choice = rg.nextRandomUInt32() % 3;
+            if (choice == 0) il->set_integers(Integers::UInt128);
+            else if (choice == 1) il->set_integers(Integers::UInt256);
+            else il->set_integers(Integers::UInt512);
             }
         }
         break;

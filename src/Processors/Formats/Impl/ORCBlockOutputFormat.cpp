@@ -187,7 +187,10 @@ std::unique_ptr<ORC::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
         case TypeIndex::UInt128: [[fallthrough]];
         case TypeIndex::Int256: [[fallthrough]];
         case TypeIndex::UInt256: [[fallthrough]];
+        case TypeIndex::Int512: [[fallthrough]];
+        case TypeIndex::UInt512: [[fallthrough]];
         case TypeIndex::Decimal256:
+        case TypeIndex::Decimal512:
             result = ORC::Type::createPrimitiveType(ORC::TypeKind::BINARY);
             break;
         case TypeIndex::String:

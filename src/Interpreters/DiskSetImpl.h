@@ -14,7 +14,7 @@
 namespace DB
 {
 
-/// Implements `DiskSet` for keys of type `Key`, an unsigned integer of 8 to 256 bits. It stores the distinct
+/// Implements `DiskSet` for keys of type `Key`, an unsigned integer of 8 to 512 bits. It stores the distinct
 /// keys in ascending order, in the blocks of one temporary file that `DiskSetBlockFormat` defines. Each block
 /// is a frame of its own, so a lookup can read a block without reading the others. A directory in memory
 /// keeps the first key and the file offset of each block, so a lookup reads only the blocks that its keys can

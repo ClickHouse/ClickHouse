@@ -79,7 +79,7 @@ using ElementTypesWithFastPath = TypeList<
     UInt8, UInt16, UInt32, UInt64,
     Int8, Int16, Int32, Int64,
     Float32, Float64,
-    Decimal32, Decimal64, Decimal128, Decimal256,
+    Decimal32, Decimal64, Decimal128, Decimal256, Decimal512,
     DateTime64,
     Int128, UInt128, Int256, UInt256>;
 

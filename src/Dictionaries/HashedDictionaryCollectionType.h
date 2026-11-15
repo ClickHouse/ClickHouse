@@ -34,7 +34,7 @@ constexpr bool isPodLayout()
         return false;
     if constexpr (std::is_same_v<V, DateTime64>)
         return false;
-    if constexpr (std::is_same_v<V, Decimal32> || std::is_same_v<V, Decimal64> || std::is_same_v<V, Decimal128> || std::is_same_v<V, Decimal256>)
+    if constexpr (std::is_same_v<V, Decimal32> || std::is_same_v<V, Decimal64> || std::is_same_v<V, Decimal128> || std::is_same_v<V, Decimal256> || std::is_same_v<V, Decimal512>)
         return false;
     if constexpr (std::is_same_v<V, std::string_view>)
         return false;

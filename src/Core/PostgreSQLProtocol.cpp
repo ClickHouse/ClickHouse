@@ -170,6 +170,7 @@ ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_
         case TypeIndex::Decimal64:
         case TypeIndex::Decimal128:
         case TypeIndex::Decimal256:
+        case TypeIndex::Decimal512:
             return {ColumnType::NUMERIC, -1, encodeNumericTypeModifier(getDecimalPrecision(*data_type), getDecimalScale(*data_type))};
 
         case TypeIndex::UUID:

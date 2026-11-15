@@ -54,6 +54,8 @@ public:
     size_t operator() (const Int128 &) const { return sizeof(Int128); }
     size_t operator() (const UInt256 &) const { return sizeof(UInt256); }
     size_t operator() (const Int256 &) const { return sizeof(Int256); }
+    size_t operator() (const UInt512 &) const { return sizeof(UInt512); }
+    size_t operator() (const Int512 &) const { return sizeof(Int512); }
     size_t operator() (const UUID &) const { return sizeof(UUID); }
     size_t operator() (const IPv4 &) const { return sizeof(IPv4); }
     size_t operator() (const IPv6 &) const { return sizeof(IPv6); }
@@ -63,6 +65,7 @@ public:
     size_t operator() (const DecimalField<Decimal64> &) const { return sizeof(Decimal64) + sizeof(UInt32); }
     size_t operator() (const DecimalField<Decimal128> &) const { return sizeof(Decimal128) + sizeof(UInt32); }
     size_t operator() (const DecimalField<Decimal256> &) const { return sizeof(Decimal256) + sizeof(UInt32); }
+    size_t operator() (const DecimalField<Decimal512> &) const { return sizeof(Decimal512) + sizeof(UInt32); }
     size_t operator() (const AggregateFunctionStateData & x) const { return getStringBinarySize(x.name) + getStringBinarySize(x.data); }
     size_t operator() (const Array & x) const { return getIndexedContainerBinarySize(x); }
     size_t operator() (const Tuple & x) const { return getIndexedContainerBinarySize(x); }
@@ -97,7 +100,9 @@ void FieldVisitorWriteBinary::operator() (const String & x, WriteBuffer & buf) c
 void FieldVisitorWriteBinary::operator() (const UInt128 & x, WriteBuffer & buf) const { writeBinary(x, buf); }
 void FieldVisitorWriteBinary::operator() (const Int128 & x, WriteBuffer & buf) const { writeBinary(x, buf); }
 void FieldVisitorWriteBinary::operator() (const UInt256 & x, WriteBuffer & buf) const { writeBinary(x, buf); }
+void FieldVisitorWriteBinary::operator() (const UInt512 & x, WriteBuffer & buf) const { writeBinary(x, buf); }
 void FieldVisitorWriteBinary::operator() (const Int256 & x, WriteBuffer & buf) const { writeBinary(x, buf); }
+void FieldVisitorWriteBinary::operator() (const Int512 & x, WriteBuffer & buf) const { writeBinary(x, buf); }
 void FieldVisitorWriteBinary::operator() (const UUID & x, WriteBuffer & buf) const { writeBinary(x, buf); }
 void FieldVisitorWriteBinary::operator() (const IPv4 & x, WriteBuffer & buf) const { writeBinary(x, buf); }
 void FieldVisitorWriteBinary::operator() (const IPv6 & x, WriteBuffer & buf) const { writeBinary(x, buf); }
@@ -107,6 +112,7 @@ void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal32> & x, Wri
 void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal64> & x, WriteBuffer & buf) const { writeBinary(x.getValue(), buf); writeBinary(x.getScale(), buf); }
 void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal128> & x, WriteBuffer & buf) const { writeBinary(x.getValue(), buf); writeBinary(x.getScale(), buf); }
 void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal256> & x, WriteBuffer & buf) const { writeBinary(x.getValue(), buf); writeBinary(x.getScale(), buf); }
+void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal512> & x, WriteBuffer & buf) const { writeBinary(x.getValue(), buf); writeBinary(x.getScale(), buf); }
 void FieldVisitorWriteBinary::operator() (const AggregateFunctionStateData & x, WriteBuffer & buf) const
 {
     writeStringBinary(x.name, buf);

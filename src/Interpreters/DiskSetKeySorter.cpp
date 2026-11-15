@@ -207,5 +207,6 @@ template class DiskSetKeySorter<UInt32>;
 template class DiskSetKeySorter<UInt64>;
 template class DiskSetKeySorter<UInt128>;
 template class DiskSetKeySorter<UInt256>;
+template class DiskSetKeySorter<UInt512>;
 
 }

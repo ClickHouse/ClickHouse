@@ -28,7 +28,7 @@ struct DiskSetBlockHeader
 };
 
 /// Defines how a set on disk stores its keys in blocks. The keys are distinct and ascending, and `Key` is an
-/// unsigned integer of 8 to 256 bits.
+/// unsigned integer of 8 to 512 bits.
 ///
 /// A block packs the gaps between its keys when that pays off, and holds the keys as they are otherwise.
 /// Sorted keys that are close to each other have small gaps. Examples are identifiers, dates, and the encoded

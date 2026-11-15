@@ -1,0 +1,16 @@
+--- Stage 1: Before adding Decimal512 ---
+1
+2
+CREATE TABLE default.test_alter_add_decimal\n(\n    `id` UInt32\n)\nENGINE = Memory
+--- Stage 2: After adding Decimal512 (no default) ---
+1	0
+2	0
+CREATE TABLE default.test_alter_add_decimal\n(\n    `id` UInt32,\n    `d512` Decimal(154, 10)\n)\nENGINE = Memory
+--- Stage 3: After adding Decimal256 (no default) ---
+1	0	0
+2	0	0
+CREATE TABLE default.test_alter_add_decimal\n(\n    `id` UInt32,\n    `d512` Decimal(154, 10),\n    `d256` Decimal(76, 8)\n)\nENGINE = Memory
+--- Stage 4: After adding Decimal512 with DEFAULT ---
+1	0	0	0
+2	0	0	0
+CREATE TABLE default.test_alter_add_decimal\n(\n    `id` UInt32,\n    `d512` Decimal(154, 10),\n    `d256` Decimal(76, 8),\n    `d512_default` Decimal(154, 10) DEFAULT toDecimal512(\'99.99\', 10)\n)\nENGINE = Memory
