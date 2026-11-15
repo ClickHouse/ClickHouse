@@ -56,6 +56,12 @@ public:
     /// Returns nullptr if not found.
     FunctionOverloadResolverPtr tryGet(const std::string & name, ContextPtr context) const;
 
+    /// Every other method which returns a function checks the `FUNCTION` grant of the user of `context`, see
+    /// `checkFunctionAccess`. This one does not: it is only for looking at the properties of a function which is
+    /// not going to be executed, such as its arity, where an exception about a function the query may not even
+    /// call would be wrong.
+    FunctionOverloadResolverPtr tryGetWithoutAccessCheck(const std::string & name, ContextPtr context) const;
+
     /// The same methods to get developer interface implementation.
     FunctionOverloadResolverPtr getImpl(const std::string & name, ContextPtr context) const;
     FunctionOverloadResolverPtr tryGetImpl(const std::string & name, ContextPtr context) const;
@@ -81,6 +87,8 @@ public:
 
 private:
     using Functions = std::unordered_map<std::string, Value>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+
+    FunctionOverloadResolverPtr tryGetImpl(const std::string & name, ContextPtr context, bool check_access) const;
 
     Functions functions;
     Functions case_insensitive_functions;

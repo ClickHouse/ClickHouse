@@ -34,6 +34,7 @@ namespace
         TABLE_ENGINE,
         DEFINER,
         SOURCE,
+        FUNCTION,
     };
 
     DataTypeEnum8::Values getLevelEnumValues()
@@ -50,6 +51,7 @@ namespace
         enum_values.emplace_back("TABLE_ENGINE", static_cast<Int8>(TABLE_ENGINE));
         enum_values.emplace_back("DEFINER", static_cast<Int8>(DEFINER));
         enum_values.emplace_back("SOURCE", static_cast<Int8>(SOURCE));
+        enum_values.emplace_back("FUNCTION", static_cast<Int8>(FUNCTION));
         return enum_values;
     }
 }

@@ -325,7 +325,7 @@ bool astContainsNonDeterministicFunction(const ASTPtr & ast, const ContextPtr & 
     {
         if (!function->name.empty() && function->name != "lambda")
         {
-            auto builder = FunctionFactory::instance().tryGet(function->name, context);
+            auto builder = FunctionFactory::instance().tryGetWithoutAccessCheck(function->name, context);
             if (!builder || !builder->isDeterministic())
                 return true;
         }
@@ -1091,7 +1091,7 @@ bool astContainsFunctionVolatileInScopeOfQuery(const ASTPtr & ast, const Context
     {
         if (!function->name.empty() && function->name != "lambda")
         {
-            auto builder = FunctionFactory::instance().tryGet(function->name, context);
+            auto builder = FunctionFactory::instance().tryGetWithoutAccessCheck(function->name, context);
             if (!builder || !builder->isDeterministicInScopeOfQuery() || builder->isStateful())
                 return true;
         }

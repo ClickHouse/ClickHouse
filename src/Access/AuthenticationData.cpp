@@ -543,6 +543,11 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         AccessRightsElements grants = query.grants;
         grants.replaceDeprecated();
 
+        /// The limit is intersected with the user's grants, which store `FUNCTION ON <name>` under the
+        /// registered name, so `GRANTS (FUNCTION ON HEX)` must become `hex` here as well. This is also
+        /// the path of loading the user from a storage.
+        AccessControl::canonicalizeFunctionNames(grants);
+
         /// Elements like `SELECT ON table` (without a database) are bound to the current database once,
         /// when the query is interpreted, so that the restriction does not depend on the session which
         /// uses the credential later. There is no context when the user is loaded from a storage, but

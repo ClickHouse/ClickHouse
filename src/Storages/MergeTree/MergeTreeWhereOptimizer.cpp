@@ -1030,7 +1030,7 @@ static bool isFunctionDeterministicInScopeOfQuery(const RPNBuilderFunctionTreeNo
         return create_wasm_function_query && create_wasm_function_query->is_deterministic;
     }
 
-    auto function_resolver = FunctionFactory::instance().tryGet(function_name, context);
+    auto function_resolver = FunctionFactory::instance().tryGetWithoutAccessCheck(function_name, context);
     return function_resolver && function_resolver->isDeterministicInScopeOfQuery();
 }
 

@@ -80,7 +80,7 @@ void ExpressionInfoMatcher::visit(const ASTFunction & ast_function, const ASTPtr
         }
 
         if (!function)
-            function = FunctionFactory::instance().tryGet(ast_function.name, data.getContext());
+            function = FunctionFactory::instance().tryGetWithoutAccessCheck(ast_function.name, data.getContext());
 
         /// Skip lambda, tuple and other special functions
         if (function)

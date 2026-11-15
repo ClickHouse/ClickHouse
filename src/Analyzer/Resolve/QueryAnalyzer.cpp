@@ -67,6 +67,7 @@
 #include <Formats/FormatFactory.h>
 #include <Columns/IColumn.h>
 #include <Interpreters/JoinUtils.h>
+#include <Interpreters/checkFunctionAccess.h>
 #include <Interpreters/convertColumnToType.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -368,7 +369,7 @@ bool hasToHideLambdaArgument(
     /// lambdas as well.
     if (allow_to_resolve_niladic_functions)
     {
-        auto function_resolver = FunctionFactory::instance().tryGet(name, referencing_scope.context);
+        auto function_resolver = FunctionFactory::instance().tryGetWithoutAccessCheck(name, referencing_scope.context);
         if (function_resolver && function_resolver->allowsOmittingParentheses())
             return true;
     }
@@ -1518,9 +1519,12 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
             && alias_identifier_lookup.isExpressionLookup()
             && identifier_resolve_context.allow_to_resolve_niladic_functions)
         {
-            auto function_resolver = FunctionFactory::instance().tryGet(identifier.getFullName(), scope_to_resolve_alias_expression->context);
+            auto function_resolver = FunctionFactory::instance().tryGetWithoutAccessCheck(identifier.getFullName(), scope_to_resolve_alias_expression->context);
             if (function_resolver && function_resolver->allowsOmittingParentheses())
             {
+                /// The identifier has just become a call of the function, so its grant is required here, as in
+                /// `tryResolveIdentifier`.
+                checkFunctionAccess(scope_to_resolve_alias_expression->context, function_resolver->getName());
                 auto function_node = std::make_shared<FunctionNode>(identifier.getFullName());
                 function_node->resolveAsFunction(function_resolver->build({}));
                 lookup_result.resolved_identifier = std::move(function_node);
@@ -1954,10 +1958,14 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         const auto & function_factory = FunctionFactory::instance();
         auto identifier_name = identifier_lookup.identifier.getFullName();
 
-        auto function_resolver = function_factory.tryGet(identifier_name, scope.context);
+        /// Most identifiers which get here are not functions that can be called without parentheses, and such
+        /// an identifier may yet resolve to something else, e.g. to a lambda (`WITH x -> x + 1 AS hex`). So the
+        /// `FUNCTION` grant is not required to look at the function, only once the identifier becomes its call.
+        auto function_resolver = function_factory.tryGetWithoutAccessCheck(identifier_name, scope.context);
 
         if (function_resolver && function_resolver->allowsOmittingParentheses())
         {
+            checkFunctionAccess(scope.context, function_resolver->getName());
             auto function_node = std::make_shared<FunctionNode>(identifier_name);
             function_node->resolveAsFunction(function_resolver->build({}));
             resolve_result.resolved_identifier = std::move(function_node);

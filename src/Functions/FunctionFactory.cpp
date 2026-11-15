@@ -4,6 +4,7 @@
 #include <Functions/DateTimeTransforms.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/checkFunctionAccess.h>
 
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
@@ -130,8 +131,16 @@ bool FunctionFactory::has(const std::string & name) const
 }
 
 FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
-    const std::string & name_param,
+    const std::string & name,
     ContextPtr context) const
+{
+    return tryGetImpl(name, context, /*check_access=*/ true);
+}
+
+FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
+    const std::string & name_param,
+    ContextPtr context,
+    bool check_access) const
 {
     String name = getAliasToOrName(name_param);
     FunctionOverloadResolverPtr res;
@@ -178,9 +187,15 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
             {
                 res = it->second.first(context);
                 canonical_creator = &it->second.first;
+                name = ToTimeWithFixedDateImpl::name;
             }
         }
     }
+
+    /// Every way to obtain a function for a query leads here, so this is the place to check the `FUNCTION` grant.
+    /// It is checked for the function which is returned: after the replacement above it is not the requested one.
+    if (check_access)
+        checkFunctionAccess(context, name);
 
     if (canonical_creator)
         res->setFactoryHandle(canonical_creator);
@@ -194,6 +209,13 @@ FunctionOverloadResolverPtr FunctionFactory::tryGet(
 {
     auto impl = tryGetImpl(name, context);
     return impl ? std::move(impl) : nullptr;
+}
+
+FunctionOverloadResolverPtr FunctionFactory::tryGetWithoutAccessCheck(
+    const std::string & name,
+    ContextPtr context) const
+{
+    return tryGetImpl(name, context, /*check_access=*/ false);
 }
 
 FunctionFactory & FunctionFactory::instance()

@@ -170,7 +170,7 @@ static bool containsNonDeterministicFunctions(const ASTPtr & expr, ContextPtr co
         return false;
     if (const auto * func = expr->as<ASTFunction>())
     {
-        auto resolver = FunctionFactory::instance().tryGet(func->name, context);
+        auto resolver = FunctionFactory::instance().tryGetWithoutAccessCheck(func->name, context);
         if (resolver)
         {
             if (!resolver->isDeterministic() || !resolver->isDeterministicInScopeOfQuery())
