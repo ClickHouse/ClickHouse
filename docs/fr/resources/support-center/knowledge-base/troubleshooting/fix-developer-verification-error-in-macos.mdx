@@ -6,8 +6,6 @@ tags: ['Erreurs et exceptions']
 keywords: ['Vérification du développeur', 'MacOS']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 ## Corriger l&#39;erreur de vérification du développeur sous macOS {#fix-the-developer-verification-error-in-macos}
 
 Par défaut, macOS refuse d&#39;exécuter une application ou un outil téléchargé depuis Internet s&#39;il n&#39;est pas signé par un développeur identifié et notarié par Apple.
@@ -24,7 +22,15 @@ Le binaire installé avec `curl https://clickhouse.com/ | sh` n&#39;est pas sign
 
 Lorsque vous tentez d&#39;exécuter un binaire `clickhouse` placé en quarantaine, l&#39;erreur suivante peut s&#39;afficher :
 
-<Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="md" alt="Boîte de dialogue d'erreur de vérification du développeur sous MacOS" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Boîte de dialogue d'erreur de vérification du développeur sous MacOS](/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp)
+
+</Frame>
+
+</div>
 
 Si vous ne pouvez pas passer à une version compilée signée, retirez le binaire de la quarantaine, soit dans les Réglages système, soit depuis le terminal.
 
@@ -36,13 +42,29 @@ Si vous ne pouvez pas passer à une version compilée signée, retirez le binair
 
 3. Accédez à **Confidentialité et sécurité** :
 
-   <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="Vue par défaut des réglages MacOS Confidentialité et sécurité" border />
+   <div className="ch-image-md">
+
+   <Frame>
+
+   ![Vue par défaut des réglages MacOS Confidentialité et sécurité](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp)
+
+   </Frame>
+
+   </div>
 
 4. Faites défiler jusqu’à la section **Sécurité** pour trouver un message indiquant que *« clickhouse-macos-aarch64 » a été bloqué, car il ne provient pas d’un développeur identifié*.
 
 5. Cliquez sur **Autoriser quand même** (**Ouvrir quand même** dans les versions récentes de macOS).
 
-   <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="Réglages MacOS Confidentialité et sécurité affichant le bouton Autoriser quand même" border />
+   <div className="ch-image-md">
+
+   <Frame>
+
+   ![Réglages MacOS Confidentialité et sécurité affichant le bouton Autoriser quand même](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp)
+
+   </Frame>
+
+   </div>
 
 6. Saisissez le mot de passe de votre compte macOS.
 

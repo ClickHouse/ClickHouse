@@ -1,6 +1,7 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/FormatFactorySettings.h>
+#include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
@@ -95,6 +96,8 @@ void DatabaseDataLakeSettings::loadFromQuery(const ASTStorage & storage_def, boo
             {
                 if (!is_attach && change.name.starts_with("iceberg_") && change.name != "iceberg_timezone_for_timestamptz")
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting {} is used for storage. Please use the setting without `iceberg_` prefix", change.name);
+                if (change.name == "disk")
+                    DiskFromAST::ensureDiskIsNotInline(change.value);
             }
             impl->applyChanges(storage_def.settings->changes);
         }
