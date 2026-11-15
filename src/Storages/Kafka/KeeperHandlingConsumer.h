@@ -219,7 +219,7 @@ private:
 
     LockedTopicPartitionInfo & getTopicPartitionLockLocked(const TopicPartition & topic_partition) TSA_REQUIRES(topic_partition_locks_mutex);
     void updatePermanentLocksLocked(const TopicPartitions & available_topic_partitions, size_t topic_partitions_count, size_t active_replica_count) TSA_REQUIRES(topic_partition_locks_mutex);
-    void lockTemporaryLocksLocked(const TopicPartitions & available_topic_partitions, const std::vector<String> & lockless_active_replicas) TSA_REQUIRES(topic_partition_locks_mutex);
+    void lockTemporaryLocksLocked(const TopicPartitions & available_topic_partitions, size_t node_quota, const std::vector<String> & lockless_active_replicas) TSA_REQUIRES(topic_partition_locks_mutex);
 
     void rollbackToCommittedOffsets();
     /// Callable while an exception is propagating, where a throw would terminate the server.
