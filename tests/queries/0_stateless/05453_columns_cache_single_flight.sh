@@ -31,8 +31,10 @@ $CLICKHOUSE_CLIENT --query "
     INSERT INTO t_cc_flight SELECT number, number * 3, number % 7 FROM numbers(65536);
 "
 
+# The sums are read from the part, not answered from its column statistics.
 QUERY="SELECT sum(a), sum(b) FROM t_cc_flight
-    SETTINGS use_columns_cache = 1, max_threads = 1, use_query_condition_cache = 0, use_uncompressed_cache = 0"
+    SETTINGS use_columns_cache = 1, max_threads = 1, use_query_condition_cache = 0, use_uncompressed_cache = 0,
+    use_statistics_for_sum_avg_aggregation = 0"
 
 # The first read stops right after it claimed the stripe; the second one is started then.
 function start_claimant()
@@ -124,7 +126,8 @@ echo "-- a stripe another read wrote after this read looked its range up is serv
 $CLICKHOUSE_CLIENT --query "INSERT INTO t_cc_flight SELECT number, number * 3, number % 7 FROM numbers(65536, 131072); OPTIMIZE TABLE t_cc_flight FINAL"
 start_claimant "${ID}_9" ", columns_cache_max_bytes_to_write_to_cache = 1"
 $CLICKHOUSE_CLIENT --query "SELECT sum(a), sum(b) FROM t_cc_flight WHERE k >= 65536
-    SETTINGS use_columns_cache = 1, max_threads = 1, use_query_condition_cache = 0, use_uncompressed_cache = 0"
+    SETTINGS use_columns_cache = 1, max_threads = 1, use_query_condition_cache = 0, use_uncompressed_cache = 0,
+    use_statistics_for_sum_avg_aggregation = 0"
 finish_claimant
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT --query "
