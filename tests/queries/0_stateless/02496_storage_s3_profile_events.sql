@@ -3,7 +3,7 @@
 DROP TABLE IF EXISTS t_s3_events_02496;
 
 CREATE TABLE t_s3_events_02496 (a UInt64)
-ENGINE = S3(s3_conn, filename = 'test_02496_{_partition_id}', format = Parquet)
+ENGINE = S3(s3_conn, filename = 'test_02496_{_partition_id}', format = Parquet, partition_strategy = 'wildcard')
 PARTITION BY a;
 
 INSERT INTO t_s3_events_02496 SELECT number FROM numbers(10) SETTINGS s3_truncate_on_insert=1;

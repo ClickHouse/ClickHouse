@@ -4,6 +4,7 @@
 -- with multiple parts. PR #99198 extends the virtual row path to InReverseOrder reads.
 
 SET use_query_condition_cache = 0;
+-- Pin optimize_read_in_order because CI may randomize it to 0.
 
 DROP TABLE IF EXISTS t_04045_rvrow;
 

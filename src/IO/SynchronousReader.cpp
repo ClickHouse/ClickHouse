@@ -39,7 +39,7 @@ namespace ErrorCodes
 std::future<IAsynchronousReader::Result> SynchronousReader::submit(Request request)
 {
     /// If size is zero, then read() cannot be distinguished from EOF
-    assert(request.size);
+    chassert(request.size);
 
 #if defined(POSIX_FADV_WILLNEED)
     int fd = assert_cast<const LocalFileDescriptor &>(*request.descriptor).fd;

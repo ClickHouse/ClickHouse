@@ -1,0 +1,10 @@
+SELECT json.@a
+FROM test
+SELECT json.@a.b.c
+FROM test
+SELECT json.@`s^b`.x.y
+FROM test
+SELECT json.`$a`
+FROM test
+SELECT json.path.@sub
+FROM test

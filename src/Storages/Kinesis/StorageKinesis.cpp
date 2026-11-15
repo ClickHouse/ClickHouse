@@ -6,7 +6,9 @@
 
 #include <Access/Common/AccessType.h>
 #include <Common/Exception.h>
+#include <Common/HiddenSecret.h>
 #include <Common/logger_useful.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
 #include <Common/setThreadName.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -87,10 +89,10 @@ namespace KinesisSetting
 VirtualColumnsDescription StorageKinesis::createVirtuals()
 {
     VirtualColumnsDescription desc;
-    desc.addEphemeral("_sequence_number", std::make_shared<DataTypeString>(), "Kinesis sequence number");
-    desc.addEphemeral("_partition_key", std::make_shared<DataTypeString>(), "Kinesis partition key");
-    desc.addEphemeral("_shard_id", std::make_shared<DataTypeString>(), "Kinesis shard ID");
-    desc.addEphemeral("_approximate_arrival_timestamp", std::make_shared<DataTypeUInt64>(), "Unix timestamp (seconds) when the record arrived in the stream");
+    desc.addEphemeral("_sequence_number", std::make_shared<DataTypeString>(), "Kinesis sequence number", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_partition_key", std::make_shared<DataTypeString>(), "Kinesis partition key", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_shard_id", std::make_shared<DataTypeString>(), "Kinesis shard ID", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_approximate_arrival_timestamp", std::make_shared<DataTypeUInt64>(), "Unix timestamp (seconds) when the record arrived in the stream", VirtualsMaterializationPlace::Reader);
     return desc;
 }
 
@@ -152,8 +154,8 @@ StorageKinesis::StorageKinesis(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 
     if ((*kinesis_settings)[KinesisSetting::kinesis_stream_name].value.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "kinesis_stream_name setting is required for storage Kinesis");
@@ -206,7 +208,7 @@ void StorageKinesis::startup()
             "Kinesis stream is not yet available at startup, consumers will be initialized later");
     }
 
-    streaming_task = getContext()->getMessageBrokerSchedulePool().createTask(
+    streaming_task = getContext()->getMessageBrokerSchedulePool()->createTask(
         getStorageID(), "KinesisStreamingToViews", [this]() { streamingToViewsFunc(); });
     streaming_task->activateAndSchedule();
 }
@@ -482,7 +484,8 @@ bool StorageKinesis::tryStreamToViews()
 
     auto block_io = interpreter.execute();
 
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
+    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
     auto column_names = block_io.pipeline.getHeader().getNames();
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
 
@@ -700,6 +703,7 @@ void StorageKinesis::saveCheckpoints(const std::map<String, KinesisShardState> &
     }
 }
 
+void registerStorageKinesis(StorageFactory & factory);
 void registerStorageKinesis(StorageFactory & factory)
 {
     factory.registerStorage(
@@ -732,7 +736,10 @@ void registerStorageKinesis(StorageFactory & factory)
                 args.comment,
                 std::move(kinesis_settings));
         },
-        {
+        SecretArgumentsSpec{
+            .secret_settings = {{"kinesis_aws_secret_access_key", hideSecretValue}},
+        },
+        StorageFactory::StorageFeatures{
             .supports_settings = true,
             .supports_skipping_indices = false,
             .supports_projections = false,

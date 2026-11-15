@@ -22,7 +22,15 @@ SELECT '= 127.0.0.1', ipv4_ FROM ipv4_test
     WHERE ipv4_ = toIPv4('127.0.0.1')
     ORDER BY ipv4_;
 
--- TODO: Assert that invalid values can't be inserted into IPv4 column.
+-- Assert that invalid values can't be inserted into IPv4 column.
+-- Use `INSERT ... SELECT` so the error is always raised by the server side
+-- conversion. Plain `INSERT ... VALUES` is parsed by the client when
+-- `async_insert=0`, and silently swallowed by the server when
+-- `async_insert=1, wait_for_async_insert=0`; both behaviors flip with the
+-- Fast test's random settings.
+INSERT INTO ipv4_test SELECT 'hello'; -- { serverError CANNOT_PARSE_IPV4 }
+INSERT INTO ipv4_test SELECT '300.0.0.1'; -- { serverError CANNOT_PARSE_IPV4 }
+INSERT INTO ipv4_test SELECT ''; -- { serverError CANNOT_PARSE_IPV4 }
 
 DROP TABLE IF EXISTS ipv4_test;
 
@@ -54,7 +62,11 @@ SELECT '= 127.0.0.1', ipv6_ FROM ipv6_test
     WHERE ipv6_ = IPv4ToIPv6(toIPv4('127.0.0.1'))
     ORDER BY ipv6_;
 
--- TODO: Assert that invalid values can't be inserted into IPv6 column.
+-- Assert that invalid values can't be inserted into IPv6 column.
+-- See the IPv4 block above for why we use `INSERT ... SELECT`.
+INSERT INTO ipv6_test SELECT 'hello:world'; -- { serverError CANNOT_PARSE_IPV6 }
+INSERT INTO ipv6_test SELECT '0:0:0:0:0:0:0:0:0'; -- { serverError CANNOT_PARSE_IPV6 }
+INSERT INTO ipv6_test SELECT ''; -- { serverError CANNOT_PARSE_IPV6 }
 
 DROP TABLE IF EXISTS ipv6_test;
 

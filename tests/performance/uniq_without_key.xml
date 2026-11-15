@@ -1,4 +1,9 @@
 <test>
+    <!-- Measures the parallel merge of the sets, which the radix partitioned `uniqExact` does not use. -->
+    <settings>
+        <optimize_uniq_exact_radix_partitioning>0</optimize_uniq_exact_radix_partitioning>
+    </settings>
+
     <substitutions>
         <substitution>
            <name>uniq_keys</name>
@@ -14,8 +19,17 @@
     </substitutions>
 
     <create_query>create table t_{uniq_keys}(a UInt64) engine=MergeTree order by tuple()</create_query>
+    <create_query>CREATE TABLE t_variadic (k UInt16, u UInt64, s String, s64 String) ENGINE = MergeTree ORDER BY tuple()</create_query>
 
     <fill_query>insert into t_{uniq_keys} select number % {uniq_keys} from numbers_mt(5e7)</fill_query>
+    <fill_query>
+        INSERT INTO t_variadic SELECT
+            number % 10000,
+            intHash64(number % 1000000),
+            substring(hex(intHash64(number % 1000000)), 1, intHash32(number % 1000000) % 16),
+            rightPad(toString(number % 1000000), 16 + intHash32(number % 1000000) % 49, 'x')
+        FROM numbers_mt(1e7)
+    </fill_query>
 
     <query>SELECT count(distinct a) FROM t_{uniq_keys} GROUP BY a FORMAT Null</query>
     <query>SELECT uniqExact(a) FROM t_{uniq_keys} GROUP BY a FORMAT Null</query>
@@ -29,5 +43,13 @@
     <query>SELECT uniqExact(number, number) from numbers_mt(5e6)</query>
     <query>SELECT uniqExact(number, number) from numbers_mt(1e7)</query>
 
+    <!-- `uniqExact` over several arguments, 1M distinct keys; the last query has 1M groups of 10 rows each. -->
+    <query>SELECT uniqExact(u, s) FROM t_variadic FORMAT Null</query>
+    <query>SELECT uniqExact(u, s64) FROM t_variadic FORMAT Null</query>
+    <query>SELECT k, uniqExact(u, s) FROM t_variadic GROUP BY k FORMAT Null</query>
+    <query>SELECT uniqExactIf(u, s, u % 2 = 0) FROM t_variadic FORMAT Null</query>
+    <query>SELECT u, uniqExact(s, k) FROM t_variadic GROUP BY u FORMAT Null</query>
+
     <drop_query>drop table t_{uniq_keys}</drop_query>
+    <drop_query>DROP TABLE t_variadic</drop_query>
 </test>

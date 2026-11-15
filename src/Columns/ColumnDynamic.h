@@ -5,9 +5,9 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
-#include <Common/WeakHash.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/checkStackSize.h>
 
 
 namespace DB
@@ -25,6 +25,10 @@ namespace DB
  * When the limit on number of dynamic types is exceeded, all values
  * with new types are inserted into special shared variant with type String
  * that contains values and their types in binary format.
+ *
+ * Values nest into each other through variants like Array(Dynamic) to a depth that comes
+ * from the data, not from the declared type, so methods that recurse into the Variant
+ * column call checkStackSize.
  */
 class ColumnDynamic final : public COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>
 {
@@ -117,12 +121,14 @@ public:
 
     MutableColumnPtr cloneEmpty() const override
     {
+        checkStackSize();
         /// Keep current dynamic structure
         return Base::create(variant_column->cloneEmpty(), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     MutableColumnPtr cloneResized(size_t size) const override
     {
+        checkStackSize();
         return Base::create(variant_column->cloneResized(size), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
@@ -150,6 +156,11 @@ public:
     std::string_view getDataAt(size_t n) const override
     {
         return variant_column_ptr->getDataAt(n);
+    }
+
+    bool supportsGetDataAt() const override
+    {
+        return variant_column_ptr->supportsGetDataAt();
     }
 
     void insertData(const char * pos, size_t length) override
@@ -182,59 +193,84 @@ public:
 
     void popBack(size_t n) override
     {
+        checkStackSize();
         variant_column_ptr->popBack(n);
     }
 
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
-    void skipSerializedInArena(ReadBuffer & in) const override;
     std::optional<size_t> getSerializedValueSize(size_t, const IColumn::SerializationSettings *) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
-    WeakHash32 getWeakHash32() const override
-    {
-        return variant_column_ptr->getWeakHash32();
-    }
+    /// Used for deduplication: hashes the raw in-memory representation of the variant column.
+    /// The hash is the same for the same INSERT data, but NOT necessarily the same for
+    /// logically equivalent data with different variant layouts (e.g. value stored in a typed
+    /// variant vs the shared variant).
+    void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
+
+    /// Unlike `updateHashWithValueRange`, this is split-invariant (a value hashes the same in a typed
+    /// or the shared variant), so it is safe to scatter join/aggregation keys by.
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
+
+    /// Leaf hashes of `count` values of `values`, a column of values in the Dynamic binary form
+    /// (`[binary encoded type][value]`), written to `hash_out[0 .. count)`. Value `i` of the batch is
+    /// `values[first + i]`, or `values[value_indices[i]]` for the scattered overload. Each hash is the
+    /// one the value would have when stored in a typed variant, which is what makes the shared variant
+    /// invisible to the scatter hash. Reused by `ColumnObject` for `shared_data`.
+    ///
+    /// The batch is grouped by type and deserialized one column per type rather than one per value:
+    /// this runs over whole blocks on the scatter path, so a per-value temporary column would put an
+    /// allocation on every row.
+    static void hashSharedValues(const ColumnString & values, size_t first, size_t count, UInt32 * hash_out);
+    static void hashSharedValues(const ColumnString & values, const UInt64 * value_indices, size_t count, UInt32 * hash_out);
 
     void updateHashFast(SipHash & hash) const override
     {
+        checkStackSize();
         variant_column_ptr->updateHashFast(hash);
     }
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
+        checkStackSize();
         return create(variant_column_ptr->filter(filt, result_size_hint), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     void filter(const Filter & filt) override
     {
+        checkStackSize();
         variant_column_ptr->filter(filt);
         statistics.reset();
     }
 
     void expand(const Filter & mask, bool inverted) override
     {
+        checkStackSize();
         variant_column_ptr->expand(mask, inverted);
     }
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
+        checkStackSize();
         return create(variant_column_ptr->permute(perm, limit), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     ColumnPtr index(const IColumn & indexes, size_t limit) const override
     {
+        checkStackSize();
         return create(variant_column_ptr->index(indexes, limit), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     ColumnPtr replicate(const Offsets & replicate_offsets) const override
     {
+        checkStackSize();
         return create(variant_column_ptr->replicate(replicate_offsets), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override
     {
+        checkStackSize();
         VectorWithMemoryTracking<MutableColumnPtr> scattered_variant_columns = variant_column_ptr->scatter(num_columns, selector);
         VectorWithMemoryTracking<MutableColumnPtr> scattered_columns;
         scattered_columns.reserve(num_columns);
@@ -250,8 +286,15 @@ public:
     int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 #endif
 
+    /// Compare two shared-variant-serialized Dynamic values ([binary encoded type][value], NULL as
+    /// Nothing) without materializing ColumnDynamic: byte-equality, then NULL/type-name order, then a
+    /// concrete-type column for equal type names. Used by doCompareAt's both-shared branch and by
+    /// ColumnObject's both-shared-data path comparison.
+    static int compareSerializedValues(std::string_view lhs, std::string_view rhs, int nan_direction_hint);
+
     bool hasEqualValues() const override
     {
+        checkStackSize();
         return variant_column_ptr->hasEqualValues();
     }
 
@@ -282,31 +325,37 @@ public:
 
     void shrinkToFit() override
     {
+        checkStackSize();
         variant_column_ptr->shrinkToFit();
     }
 
     void ensureOwnership() override
     {
+        checkStackSize();
         variant_column_ptr->ensureOwnership();
     }
 
     size_t byteSize() const override
     {
+        checkStackSize();
         return variant_column_ptr->byteSize();
     }
 
     size_t byteSizeAt(size_t n) const override
     {
+        checkStackSize();
         return variant_column_ptr->byteSizeAt(n);
     }
 
     size_t allocatedBytes() const override
     {
+        checkStackSize();
         return variant_column_ptr->allocatedBytes();
     }
 
     void protect() override
     {
+        checkStackSize();
         variant_column_ptr->protect();
     }
 
@@ -318,20 +367,21 @@ public:
 
     void forEachMutableSubcolumn(MutableColumnCallback callback) override
     {
+        /// Callers like IColumn::mutate recurse into the subcolumns through this method.
+        checkStackSize();
         callback(variant_column);
         variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
     }
 
-    void forEachSubcolumn(ColumnCallback callback) const override { callback(variant_column); }
-
-    /// Dynamic columns manage their own variant_info type metadata.
-    /// The default convertToFullIfNeeded recurses into subcolumns and strips LowCardinality
-    /// from variant columns, but cannot update variant_info, creating column/type mismatches.
-    /// Override to skip recursion — Dynamic is a self-contained typed container.
-    [[nodiscard]] IColumn::Ptr convertToFullIfNeeded() const override { return getPtr(); }
+    void forEachSubcolumn(ColumnCallback callback) const override
+    {
+        checkStackSize();
+        callback(variant_column);
+    }
 
     void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
+        checkStackSize();
         callback(*variant_column);
         variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
         variant_column->forEachMutableSubcolumnRecursively(callback);
@@ -339,6 +389,7 @@ public:
 
     void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
     {
+        checkStackSize();
         callback(*variant_column);
         variant_column->forEachSubcolumnRecursively(callback);
     }
@@ -362,6 +413,11 @@ public:
         return variant_column_ptr->getNumberOfDefaultRows();
     }
 
+    bool hasOnlyTypeDefaults() const override
+    {
+        return variant_column_ptr->hasOnlyTypeDefaults();
+    }
+
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
         variant_column_ptr->getIndicesOfNonDefaultRows(indices, from, limit);
@@ -369,17 +425,21 @@ public:
 
     void finalize() override
     {
+        checkStackSize();
         variant_column_ptr->finalize();
     }
 
     bool isFinalized() const override
     {
+        checkStackSize();
         return variant_column_ptr->isFinalized();
     }
 
     /// Apply null map to a nested Variant column.
     void applyNullMap(const ColumnVector<UInt8>::Container & null_map);
-    void applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map);
+    /// When `offset` is given, `null_map` covers the suffix `[offset, size())`: the affected range must end
+    /// at the last row. Otherwise `null_map` must cover the whole column.
+    void applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map, size_t offset = 0);
 
     const VariantInfo & getVariantInfo() const { return variant_info; }
 
@@ -482,7 +542,7 @@ private:
     /// Store and use pointer to ColumnVariant to avoid virtual calls.
     /// ColumnDynamic is widely used inside ColumnObject for each path and
     /// with hundreds of paths these virtual calls are noticeable.
-    ColumnVariant * variant_column_ptr;
+    ColumnVariant * variant_column_ptr{};
     /// Store the type of current variant with some additional information.
     VariantInfo variant_info;
     /// The maximum number of different types that can be stored in this Dynamic column.

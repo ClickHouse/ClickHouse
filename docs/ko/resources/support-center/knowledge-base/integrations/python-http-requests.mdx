@@ -1,0 +1,106 @@
+---
+title: HTTP requests 모듈을 사용한 Python 빠른 예시
+description: "Python과 requests 모듈을 사용해 ClickHouse에 데이터를 쓰고 읽는 예시"
+date: 2022-07-10
+tags: ['네이티브 클라이언트 및 인터페이스']
+keywords: ['Python']
+---
+
+<div id="question">
+  ## 질문
+</div>
+
+*requests* 모듈을 사용해 ClickHouse 서버에 HTTP 요청만 보내면 됩니까?
+
+<div id="answer">
+  ## 답변
+</div>
+
+예, 다음은 예제 코드입니다.
+
+```py
+import requests
+import datetime
+
+create_replace_stmt = 'CREATE OR REPLACE TABLE test_table (name String, age UInt8) Engine=MergeTree ORDER BY tuple();'
+select_query = 'SELECT count() FROM test_table'
+insert_query = 'INSERT INTO test_table SELECT * FROM  generateRandom(\'name String, age UInt8\',1,1) LIMIT 300000000'
+
+CH_URL = 'https://your_clickhouse_service_fqdn:8443'
+CH_USER = 'default'
+CH_PASSWORD = 'secret_pwd'
+
+headers = {}
+headers["X-ClickHouse-User"] = CH_USER
+headers["X-ClickHouse-Key"] = CH_PASSWORD
+
+now = (datetime.datetime.now())
+print("{} - starting...".format(now))
+
+now = (datetime.datetime.now())
+print("{} - creating/replacing table...".format(now))
+response = requests.post(url=CH_URL,
+                         params={"database": "default",
+                                 "query": create_replace_stmt,
+                                 "session_id": "my-session-id-string"
+                                 },
+                         headers=headers)
+
+# count() 조회
+response = requests.post(url=CH_URL,
+                         params={"database": "default",
+                                 "query": select_query,
+                                 "session_id": "my-session-id-string"
+                                 },
+                         headers=headers)
+
+now = (datetime.datetime.now())
+print("{} - elements in test_table before insert: {}".format(
+    now, response.content.decode('utf-8')))
+
+# 삽입
+now = (datetime.datetime.now())
+print("{} - Inserting data...".format(now))
+response = requests.post(url=CH_URL,
+                         params={"database": "default",
+                                 "query": insert_query,
+                                 "session_id": "my-session-id-string",
+                                 "wait_end_of_query": 1
+                                 },
+                         headers=headers)
+
+now = (datetime.datetime.now())
+print("{} - Done inserting data...".format(now))
+
+response = requests.post(url=CH_URL,
+                         params={"database": "default",
+                                 "query": select_query,
+                                 "session_id": "my-session-id-string",
+                                 },
+                         headers=headers)
+
+now = (datetime.datetime.now())
+print("{} - elements in test_table after insert: {}".format(
+    now, response.content.decode('utf-8')))
+```
+
+예상 출력:
+
+```
+(venv) ➜  venv/bin/python main.py
+2023-07-07 14:54:27.336450 - starting...
+2023-07-07 14:54:27.336476 - creating/replacing table...
+2023-07-07 14:54:28.125270 - elements in test_table before insert: 0
+
+2023-07-07 14:54:28.125352 - Inserting data...
+2023-07-07 14:55:23.788466 - Done inserting data...
+2023-07-07 14:55:23.962134 - elements in test_table after insert: 299115357
+```
+
+requirements.txt
+
+```
+requests==2.31.0
+```
+
+python venv를 설정하는 방법은 이 다른 [KB](/ko/resources/support-center/knowledge-base/integrations/python-clickhouse-connect-example#steps)를 참조하십시오.

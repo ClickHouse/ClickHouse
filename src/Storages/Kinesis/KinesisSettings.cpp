@@ -49,21 +49,8 @@ extern const int UNKNOWN_SETTING;
     KINESIS_RELATED_SETTINGS(M, ALIAS) \
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
-DECLARE_SETTINGS_TRAITS(KinesisSettingsTraits, LIST_OF_KINESIS_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(KinesisSettingsTraits, LIST_OF_KINESIS_SETTINGS)
-
-struct KinesisSettingsImpl : public BaseSettings<KinesisSettingsTraits>
-{
-};
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) KinesisSettings##TYPE NAME = &KinesisSettingsImpl::NAME;
-
-namespace KinesisSetting
-{
-LIST_OF_KINESIS_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+DECLARE_SETTINGS_TRAITS(KinesisSettingsTraits, LIST_OF_KINESIS_SETTINGS, KINESIS_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(KinesisSettingsTraits, LIST_OF_KINESIS_SETTINGS, KinesisSettings, KinesisSetting)
 
 KinesisSettings::KinesisSettings()
     : impl(std::make_unique<KinesisSettingsImpl>())
