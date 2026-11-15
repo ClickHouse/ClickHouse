@@ -156,6 +156,11 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
         num_rows_in_file = total_rows;
     }
 
+    return ArrowIPC::inferColumns(schema, format_settings);
+}
+
+NamesAndTypesList ArrowIPC::inferColumns(const ArrowSchema & schema, const FormatSettings & format_settings)
+{
     /// GeoParquet geometry columns are inferred as their geo type (when the parser is enabled).
     UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> geo_columns;
     if (format_settings.parquet.allow_geoparquet_parser)

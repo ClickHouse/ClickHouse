@@ -15,8 +15,9 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
-#include <arrow/type.h>
 #include <fmt/ranges.h>
+
+#include <algorithm>
 
 #include <Common/UnorderedSetWithMemoryTracking.h>
 
@@ -52,7 +53,7 @@ namespace
 /// the full WHERE afterwards.
 VortexExpressionPtr buildFilter(
     const Block & header,
-    const arrow::Schema & file_schema,
+    const ArrowIPC::ArrowSchema & file_schema,
     const FormatFilterInfo & filter_info,
     const FormatSettings & format_settings,
     VortexScanPlan & plan)
@@ -121,7 +122,7 @@ VortexExpressionPtr buildFilter(
 
 VortexScanPlan planVortexScan(
     const Block & header,
-    const arrow::Schema & file_schema,
+    const ArrowIPC::ArrowSchema & file_schema,
     const FormatFilterInfo * filter_info,
     const FormatSettings & format_settings,
     const LoggerPtr & log)
@@ -131,12 +132,13 @@ VortexScanPlan planVortexScan(
     /// Request the header's columns that the file actually has; the rest are filled with default
     /// values, and if none is left there is no scan at all, only a row count.
     ///
-    /// A header entry can also name a subcolumn, `name.sub`, which `ArrowColumnToCHColumn` can only
+    /// A header entry can also name a subcolumn, `name.sub`, which `ArrowIPC::buildChunk` can only
     /// extract once the whole field `name` has been read - hence the second name per column.
     UnorderedSetWithMemoryTracking<std::string> added_column_names;
     auto add_column_name = [&](const std::string & name)
     {
-        if (file_schema.GetFieldByName(name) && added_column_names.emplace(name).second)
+        const bool in_file = std::ranges::any_of(file_schema.fields, [&](const auto & field) { return field.name == name; });
+        if (in_file && added_column_names.emplace(name).second)
             plan.column_names.push_back(name);
     };
     for (const auto & column : header)
