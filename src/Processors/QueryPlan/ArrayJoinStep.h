@@ -4,6 +4,7 @@
 #include <Interpreters/ArrayJoin.h>
 
 #include <optional>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -55,8 +56,18 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
+    /// Every column of the input is a column of the output at the same position, an array joined column with the type of
+    /// its elements. The step cannot drop a column, and the ones it reads are always needed: the array joined ones decide
+    /// how many rows there are, and the filter of the elements reads row columns as well.
+    bool canRemoveUnusedColumns() const override;
+    UnneededInputPositions getUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions, const VectorWithMemoryTracking<PrunedInput> & inputs) override;
+
 private:
     void updateOutputHeader() override;
+
+    /// The columns of the input the step reads: the array joined ones, and the ones the filter of the elements reads.
+    NameSet getReadColumns() const;
 
     ArrayJoin array_join;
     bool is_unaligned = false;

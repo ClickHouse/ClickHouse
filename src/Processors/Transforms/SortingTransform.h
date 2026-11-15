@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
 #include <Processors/ISource.h>
@@ -118,7 +119,7 @@ protected:
     /// Save original block structure here.
     Block header_without_constants;
     /// Columns which were constant in header and we need to remove from chunks.
-    std::vector<bool> const_columns_to_remove;
+    VectorWithMemoryTracking<bool> const_columns_to_remove;
 
     void removeConstColumns(Chunk & chunk);
     void enrichChunkWithConstants(Chunk & chunk);

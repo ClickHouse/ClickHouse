@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/ShuffleStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/JoinExpressionActions.h>
@@ -23,6 +24,10 @@
 #include <Storages/StorageFile.h>
 #include <Processors/QueryPlan/JoinLazyColumnsStep.h>
 #include <Processors/Transforms/LazyMaterializingTransform.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/StackWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::ErrorCodes
 {
@@ -32,18 +37,18 @@ namespace DB::ErrorCodes
 namespace DB::QueryPlanOptimizations
 {
 
-using StepStack = std::vector<IQueryPlanStep *>;
+using StepStack = VectorWithMemoryTracking<IQueryPlanStep *>;
 
 /// Returns two vectors of total size equal to the number of columns in the header.
 /// The first vector (size of `inputs.size()`) contains positions of the inputs in the header.
 /// The second vector contains other positions (sorted).
-static std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPositions(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header)
+static std::pair<VectorWithMemoryTracking<size_t>, VectorWithMemoryTracking<size_t>> mapInputsToHeaderPositions(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header)
 {
-    std::unordered_map<std::string, std::list<size_t>> name_to_position;
+    UnorderedMapWithMemoryTracking<std::string, ListWithMemoryTracking<size_t>> name_to_position;
     for (size_t i = 0; i < header.columns(); ++i)
         name_to_position[header.getByPosition(i).name].push_back(i);
 
-    std::vector<size_t> positions;
+    VectorWithMemoryTracking<size_t> positions;
     positions.reserve(inputs.size());
     for (const auto * input : inputs)
     {
@@ -55,7 +60,7 @@ static std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPosi
         lst.pop_front();
     }
 
-    std::vector<size_t> non_mapped;
+    VectorWithMemoryTracking<size_t> non_mapped;
     for (size_t i = 0; i < header.columns(); ++i)
         for (auto idx : name_to_position[header.getByPosition(i).name])
             non_mapped.push_back(idx);
@@ -69,16 +74,16 @@ struct PlanStepWithRequiredDAGPositions
     IQueryPlanStep * step = nullptr;
     /// Positions correspond to the outputs of the internal DAG.
     /// For the FilterStep, it is before the removal of filter columns.
-    std::vector<bool> required_positions;
+    VectorWithMemoryTracking<bool> required_positions;
 };
 
 /// Returns a boolean mask which indicate if the header column is required.
 /// The required_output_positions is the same mask for the output header.
 /// The number of DAG outputs may differ from required_output_positions.size().
-static std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, const Block & header, std::vector<bool> required_output_positions)
+static VectorWithMemoryTracking<bool> getRequiredHeaderPositions(const ActionsDAG & dag, const Block & header, VectorWithMemoryTracking<bool> required_output_positions)
 {
-    std::unordered_set<const ActionsDAG::Node *> required_nodes;
-    std::stack<const ActionsDAG::Node *> stack;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> required_nodes;
+    StackWithMemoryTracking<const ActionsDAG::Node *> stack;
 
     size_t num_matched_outputs = std::min(dag.getOutputs().size(), required_output_positions.size());
     for (size_t i = 0; i < num_matched_outputs; ++i)
@@ -87,7 +92,7 @@ static std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, cons
             stack.push(dag.getOutputs()[i]);
     }
 
-    std::vector<bool> required_input_positions(header.columns(), false);
+    VectorWithMemoryTracking<bool> required_input_positions(header.columns(), false);
 
     while (!stack.empty())
     {
@@ -118,7 +123,7 @@ static std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, cons
 }
 
 /// Add filter column to required_output_positions.
-static void updateRequiredColumnsForFilterDAG(std::vector<bool> & required_output_positions, const FilterStep & filter_step)
+static void updateRequiredColumnsForFilterDAG(VectorWithMemoryTracking<bool> & required_output_positions, const FilterStep & filter_step)
 {
     const auto & expression = filter_step.getExpression();
     const auto & name = filter_step.getFilterColumnName();
@@ -153,10 +158,10 @@ static bool dependsOnItsBlock(const ActionsDAG::Node & node)
 
 /// Mark as required the outputs of the DAG that are computed by a function depending on its block,
 /// so that they are calculated in the main half, before the `LIMIT`.
-static void markBlockDependentOutputsAsRequired(const ActionsDAG & dag, std::vector<bool> & required_output_positions)
+static void markBlockDependentOutputsAsRequired(const ActionsDAG & dag, VectorWithMemoryTracking<bool> & required_output_positions)
 {
-    std::unordered_map<const ActionsDAG::Node *, bool> depends;
-    std::stack<std::pair<const ActionsDAG::Node *, size_t>> stack;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, bool> depends;
+    StackWithMemoryTracking<std::pair<const ActionsDAG::Node *, size_t>> stack;
 
     auto calculate = [&](const ActionsDAG::Node * root)
     {
@@ -198,19 +203,19 @@ struct SplitExpressionStepResult
     ActionsDAG lazy_expression_step;
 
     /// Those are available input positions for the next step (main branch).
-    std::vector<bool> available_input_positions;
+    VectorWithMemoryTracking<bool> available_input_positions;
 };
 
 /// Split if ActionsDAG can produce unused pair of input/output which only changes the order.
 /// Remove them from the DAG.
 static void removeDanglingNodes(ActionsDAG & dag)
 {
-    std::unordered_set<const ActionsDAG::Node *> used_nodes;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> used_nodes;
     for (const auto & node : dag.getNodes())
         for (const auto * child : node.children)
             used_nodes.insert(child);
 
-    std::unordered_set<const ActionsDAG::Node *> inputs;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> inputs;
     for (const auto & input : dag.getInputs())
         inputs.insert(input);
 
@@ -230,15 +235,15 @@ static void removeDanglingNodes(ActionsDAG & dag)
 /// It's useful because the main branch of lazy materialization can return more columns than actually required.
 /// As an example, for the query `select a from table prewhere b > 0 order by c limit 1`, only column `c` is required for ORDER BY,
 /// but the column `a` is returned as well (it's needed for PREWHERE).
-static void addRequiredInputDependenciesIntoNodesSet(const ActionsDAG & dag, std::unordered_set<const ActionsDAG::Node *> & nodes)
+static void addRequiredInputDependenciesIntoNodesSet(const ActionsDAG & dag, UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & nodes)
 {
-    std::unordered_set<const ActionsDAG::Node *> visited;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
     struct Frame
     {
         const ActionsDAG::Node * node = nullptr;
         size_t next_child = 0;
     };
-    std::stack<Frame> stack;
+    StackWithMemoryTracking<Frame> stack;
 
     for (const auto & node : dag.getNodes())
     {
@@ -285,7 +290,7 @@ static void addRequiredInputDependenciesIntoNodesSet(const ActionsDAG & dag, std
 }
 
 /// required_outputs are outputs of ActionsDAG, however required_inputs are inputs corresponding to the step input header.
-static SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expression_step, const std::vector<bool> & required_outputs, const std::vector<bool> & required_inputs)
+static SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expression_step, const VectorWithMemoryTracking<bool> & required_outputs, const VectorWithMemoryTracking<bool> & required_inputs)
 {
     const auto & expression = expression_step.getExpression();
     const auto & inputs = expression.getInputs();
@@ -297,7 +302,7 @@ static SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expr
 
     const auto [header_positions, non_mapped] = mapInputsToHeaderPositions(inputs, header);
 
-    std::unordered_set<const ActionsDAG::Node *> split_nodes;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> split_nodes;
     for (size_t i = 0; i < inputs.size(); ++i)
     {
         if (required_inputs[header_positions[i]])
@@ -317,7 +322,7 @@ static SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expr
 
     auto split_result = expression.split(split_nodes, true, true);
 
-    std::vector<bool> new_required_inputs(expression_step.getOutputHeader()->columns(), false);
+    VectorWithMemoryTracking<bool> new_required_inputs(expression_step.getOutputHeader()->columns(), false);
     for (size_t ps = 0; ps < outputs.size(); ++ps)
         if (split_nodes.contains(outputs[ps]))
             new_required_inputs[ps] = true;
@@ -331,16 +336,23 @@ static SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expr
     return { std::move(split_result.first), std::move(split_result.second), std::move(new_required_inputs) };
 }
 
+struct MainFilterStep
+{
+    FilterDAGInfo filter_dag_info;
+    /// See `FilterStep::getOptimizeConstantColumnsAfterFilter`.
+    std::optional<bool> optimize_constant_columns_after_filter;
+};
+
 struct SplitFilterResult
 {
-    FilterDAGInfo main_filter_step;
+    MainFilterStep main_filter_step;
     ActionsDAG lazy_expression_step;
 
     /// Those are available input positions for the next step (main branch).
-    std::vector<bool> available_input_positions;
+    VectorWithMemoryTracking<bool> available_input_positions;
 };
 
-static SplitFilterResult splitFilterStep(const FilterStep & filter_step, const std::vector<bool> & required_outputs, const std::vector<bool> & required_inputs)
+static SplitFilterResult splitFilterStep(const FilterStep & filter_step, const VectorWithMemoryTracking<bool> & required_outputs, const VectorWithMemoryTracking<bool> & required_inputs)
 {
     const auto & expression = filter_step.getExpression();
     const auto & name = filter_step.getFilterColumnName();
@@ -355,7 +367,7 @@ static SplitFilterResult splitFilterStep(const FilterStep & filter_step, const s
 
     const auto [header_positions, non_mapped] = mapInputsToHeaderPositions(inputs, header);
 
-    std::unordered_set<const ActionsDAG::Node *> split_nodes;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> split_nodes;
     for (size_t i = 0; i < inputs.size(); ++i)
         if (required_inputs[header_positions[i]])
             split_nodes.insert(inputs[i]);
@@ -369,7 +381,7 @@ static SplitFilterResult splitFilterStep(const FilterStep & filter_step, const s
 
     auto split_result = expression.split(split_nodes, true, true);
 
-    std::vector<bool> new_required_inputs(filter_step.getOutputHeader()->columns() + (filter_step.removesFilterColumn() ? 1 : 0), false);
+    VectorWithMemoryTracking<bool> new_required_inputs(filter_step.getOutputHeader()->columns() + (filter_step.removesFilterColumn() ? 1 : 0), false);
     for (size_t ps = 0; ps < outputs.size(); ++ps)
         if (split_nodes.contains(outputs[ps]))
             new_required_inputs[ps] = true;
@@ -414,7 +426,8 @@ static SplitFilterResult splitFilterStep(const FilterStep & filter_step, const s
     filter_dag_info.column_name = name;
     filter_dag_info.do_remove_column = filter_step.removesFilterColumn();
 
-    return { std::move(filter_dag_info), std::move(split_result.second), std::move(new_required_inputs) };
+    MainFilterStep main_filter_step{std::move(filter_dag_info), filter_step.getOptimizeConstantColumnsAfterFilter()};
+    return { std::move(main_filter_step), std::move(split_result.second), std::move(new_required_inputs) };
 }
 
 static ActionsDAG calculateGlobalOffset(ReadFromMergeTree & reading_step)
@@ -500,6 +513,8 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         return false;
 
     auto * sorting_step = typeid_cast<SortingStep *>(root.children.front()->step.get());
+    /// `SHUFFLE` works the same way as sorting by its key column.
+    auto * shuffle_step = typeid_cast<ShuffleStep *>(root.children.front()->step.get());
     bool reading_in_order = false;
 
     /// The chain of Expression/Filter steps down to the reading step starts right below
@@ -516,6 +531,10 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
         reading_in_order = sorting_step->getType() == SortingStep::Type::FinishSorting;
 
+        chain_top_node = root.children.front()->children.front();
+    }
+    else if (shuffle_step)
+    {
         chain_top_node = root.children.front()->children.front();
     }
 
@@ -553,15 +572,20 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
     const auto & chain_top_header = *chain_top_node->step->getOutputHeader();
     /// At this moment, required_columns are corresponding to output header columns of every step.
-    std::vector<bool> required_columns(chain_top_header.columns(), false);
+    VectorWithMemoryTracking<bool> required_columns(chain_top_header.columns(), false);
 
     if (sorting_step)
         for (const auto & descr : sorting_step->getSortDescription())
             required_columns[chain_top_header.getPositionByName(descr.column_name)] = true;
 
+    /// `SHUFFLE` needs no columns (the random choices are made just in time). For `ORDER BY rand()` the key column is kept,
+    /// because its values are replaced in place.
+    if (shuffle_step && shuffle_step->getKey() && shuffle_step->getKey()->replace)
+        required_columns[chain_top_header.getPositionByName(shuffle_step->getKey()->column_name)] = true;
+
     bool has_filter = false;
 
-    std::vector<PlanStepWithRequiredDAGPositions> steps_to_split;
+    VectorWithMemoryTracking<PlanStepWithRequiredDAGPositions> steps_to_split;
 
     auto * node = chain_top_node;
     while (!node->children.empty())
@@ -655,7 +679,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     /// this is the only way to avoid reading all columns for every scanned row. For non-FINAL
     /// reads, PREWHERE already covers this shape. Object storage, file and memory reads have no FINAL,
     /// so the no-sorting case never applies to them.
-    if (!sorting_step && (!read_from_merge_tree || !read_from_merge_tree->isQueryWithFinal() || !has_filter))
+    if (!sorting_step && !shuffle_step && (!read_from_merge_tree || !read_from_merge_tree->isQueryWithFinal() || !has_filter))
         return false;
 
     std::unique_ptr<LazilyReadFromMergeTree> merge_tree_lazy_reading;
@@ -721,8 +745,8 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         // std::cerr << ".. Main header " << reading_step->getOutputHeader()->dumpNames() << std::endl;
     }
 
-    std::list<std::variant<ActionsDAG, FilterDAGInfo>> main_steps;
-    std::list<ActionsDAG> lazy_steps;
+    ListWithMemoryTracking<std::variant<ActionsDAG, MainFilterStep>> main_steps;
+    ListWithMemoryTracking<ActionsDAG> lazy_steps;
 
     for (const auto & step_to_split : steps_to_split | std::views::reverse)
     {
@@ -779,14 +803,17 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         }
         else
         {
-            auto filter_dag_info = std::move(std::get<FilterDAGInfo>(step));
-            main_plan.addStep(std::make_unique<FilterStep>(
+            auto main_filter_step = std::move(std::get<MainFilterStep>(step));
+            auto & filter_dag_info = main_filter_step.filter_dag_info;
+            auto new_filter_step = std::make_unique<FilterStep>(
                 main_plan.getCurrentHeader(),
-                std::move(filter_dag_info.actions), filter_dag_info.column_name, filter_dag_info.do_remove_column));
+                std::move(filter_dag_info.actions), filter_dag_info.column_name, filter_dag_info.do_remove_column);
+            new_filter_step->setOptimizeConstantColumnsAfterFilter(main_filter_step.optimize_constant_columns_after_filter);
+            main_plan.addStep(std::move(new_filter_step));
         }
     }
 
-    if (sorting_step)
+    if (sorting_step || shuffle_step)
     {
         auto new_sorting_step = std::move(root.children.front()->step);
         new_sorting_step->updateInputHeader(main_plan.getCurrentHeader());
@@ -848,7 +875,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
     QueryPlan result_plan;
 
-    std::vector<QueryPlanPtr> plans;
+    QueryPlanPtrs plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(main_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(lazy_plan)));
 

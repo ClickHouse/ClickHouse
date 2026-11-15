@@ -78,12 +78,15 @@ FROM (
 -- `enable_parallel_replicas = 0` keeps the plan local: the parallel-replicas
 -- stateless test job otherwise wraps the local plan in a `Union` over a
 -- `ReadFromRemoteParallelReplicas` step, which changes the EXPLAIN output.
+-- `use_top_k_dynamic_filtering = 0` and `use_skip_indexes_for_top_k = 0` keep the
+-- randomized top-K `PREWHERE` off the read below the pushed sort.
 EXPLAIN actions = 0
 SELECT l.id, l.k, r.value
 FROM t_l AS l LEFT JOIN t_r AS r ON r.id = l.id
 ORDER BY l.k DESC
 LIMIT 10
 SETTINGS query_plan_top_k_through_join = 1,
+         use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0,
          enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
          query_plan_optimize_lazy_materialization = 0,
          query_plan_join_swap_table = false,

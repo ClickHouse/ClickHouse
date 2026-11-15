@@ -3,6 +3,7 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Core/ProtocolDefines.h>
 
@@ -189,8 +190,18 @@ bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type,
         return false;
 
     for (size_t i = 0; i < lhs_state->argument_types.size(); ++i)
-        if (!lhs_state->argument_types[i]->equals(*rhs_state->argument_types[i]))
+    {
+        const auto & lhs_argument = lhs_state->argument_types[i];
+        const auto & rhs_argument = rhs_state->argument_types[i];
+        /// An argument can be a state itself (for example the element states of `-Tuple`), whose layout must be ignored too.
+        if (ignore_variant && typeid_cast<const DataTypeAggregateFunction *>(lhs_argument.get()))
+        {
+            if (!strictEquals(lhs_argument, rhs_argument, /*ignore_variant=*/ true))
+                return false;
+        }
+        else if (!lhs_argument->equals(*rhs_argument))
             return false;
+    }
 
     return true;
 }
@@ -582,6 +593,10 @@ ColumnPtr relabelAggregateStateVersions(const ColumnPtr & column, const DataType
 {
     if (const auto * const_column = typeid_cast<const ColumnConst *>(column.get()))
         return ColumnConst::create(relabelAggregateStateVersions(const_column->getDataColumnPtr(), type), column->size());
+
+    if (const auto * replicated_column = typeid_cast<const ColumnReplicated *>(column.get()))
+        return ColumnReplicated::create(
+            relabelAggregateStateVersions(replicated_column->getNestedColumn(), type), replicated_column->getIndexesColumn());
 
     auto relabelled_column = type->createColumn();
     relabelled_column->insertRangeFrom(*recursiveRemoveSparse(column), 0, column->size());

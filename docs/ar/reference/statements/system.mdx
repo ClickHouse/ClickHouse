@@ -99,6 +99,11 @@ SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 يمسح ذاكرة التخزين المؤقت للفهرس الأساسي، التي تحتفظ بالمفاتيح الأساسية لجداول [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) في الذاكرة.
 يُضبط حجمها باستخدام الإعداد [`primary_index_cache_size`](/ar/reference/settings/server-settings/settings/primary-index#primary_index_cache_size) على مستوى الخادم.
 
+## SYSTEM CLEAR|DROP STATISTICS CACHE {#drop-statistics-cache}
+
+يمسح ذاكرة التخزين المؤقت للإحصاءات، وهي التي تحتفظ في الذاكرة بإحصاءات الأعمدة لأجزاء البيانات في جداول [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree)، بواقع إدخال واحد لكل جزء بيانات وعمود.
+ويُهيَّأ حجمها عبر الإعداد على مستوى الخادم `statistics_cache_size`.
+
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 
 يمسح ذاكرة التخزين المؤقت للبيانات الوصفية الخاصة بـ Iceberg.
@@ -183,7 +188,7 @@ SYSTEM DROP DISK METADATA CACHE <disk_name>
 
 ## SYSTEM CLEAR|DROP TIME SERIES CACHES {#drop-time-series-caches}
 
-تمسح ذاكرات التخزين المؤقت لجدول `TimeSeries`، وهي الذاكرات التي تتيح لعمليات الإدراج تخطي الصفوف الموجودة مسبقًا في جداول الهدف التابعة له. وتوجد ذاكرتان من هذا النوع: ذاكرة إزالة التكرار الخاصة بجدول عائلات المقاييس، وذاكرة إزالة التكرار الخاصة بجدول الوسوم (ولا تُستخدم إلا عند تعطيل `store_min_time_and_max_time`)؛ راجع إعدادَي الجدول `metric_families_deduplication_cache_expiration_seconds` و`tags_deduplication_cache_expiration_seconds`. وتكون ذاكرات التخزين المؤقت محلية على الخادم، ولا ترصد التغييرات التي تُجرى مباشرةً على جداول الهدف. ويزول هذا التباين من تلقاء نفسه عند انتهاء صلاحية العناصر؛ لكن يمكنك استخدام هذه العبارة لتكتب عملية الإدراج التالية جميع صفوفها دون انتظار (على سبيل المثال، بعد اقتطاع جدول عائلات المقاييس). ولا يؤدي تنفيذ `TRUNCATE TABLE` على جدول `TimeSeries` إلا إلى مسح ذاكرات التخزين المؤقت على الخادم المنفِّذ، لذا إذا كانت جداول الهدف متماثلة، فنفِّذ العبارة بعد ذلك مع `ON CLUSTER` لمسح ذاكرات التخزين المؤقت على النسخ المتماثلة الأخرى.
+تمسح ذاكرات التخزين المؤقت لجدول `TimeSeries`، وهي الذاكرات التي تتيح لعمليات الإدراج تخطي الصفوف الموجودة مسبقًا في جداول الهدف التابعة له. وتوجد ذاكرتان من هذا النوع: ذاكرة إزالة التكرار الخاصة بجدول عائلات المقاييس، وذاكرة إزالة التكرار الخاصة بجدول الوسوم؛ راجع إعدادَي الجدول `metric_families_deduplication_cache_expiration_seconds` و`tags_deduplication_cache_expiration_seconds`. وتكون ذاكرات التخزين المؤقت محلية على الخادم، ولا ترصد التغييرات التي تُجرى مباشرةً على جداول الهدف. ويزول هذا التباين من تلقاء نفسه عند انتهاء صلاحية العناصر؛ لكن يمكنك استخدام هذه العبارة لتكتب عملية الإدراج التالية جميع صفوفها دون انتظار (على سبيل المثال، بعد اقتطاع جدول عائلات المقاييس). ولا يؤدي تنفيذ `TRUNCATE TABLE` على جدول `TimeSeries` إلا إلى مسح ذاكرات التخزين المؤقت على الخادم المنفِّذ، لذا إذا كانت جداول الهدف متماثلة، فنفِّذ العبارة بعد ذلك مع `ON CLUSTER` لمسح ذاكرات التخزين المؤقت على النسخ المتماثلة الأخرى.
 
 ```sql
 SYSTEM DROP TIME SERIES CACHES [ON CLUSTER cluster_name] [db.]table
