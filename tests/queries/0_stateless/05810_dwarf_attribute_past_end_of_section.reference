@@ -1,3 +1,6 @@
 compile_unit	producer	exprloc
 compile_unit	name	exprloc
 CANNOT_PARSE_DWARF
+variable	location	exprloc
+variable	name	exprloc
+CANNOT_PARSE_DWARF

@@ -137,7 +137,41 @@ static size_t getColumnIdx(const std::string & name)
     return it->second;
 }
 
-DWARFBlockInputFormat::UnitState::UnitState(llvm::DWARFUnit * u)
+/// `tryExtractDIEsIfNeeded` makes LLVM parse the unit DIE. LLVM advances the offset by the length of a block or
+/// a fixed-size form without checking it against the section (see `checkAttributeEnd`), so a malformed length
+/// made it read past the end of the section on the next attribute. Walk the unit DIE the same way with checks first.
+static void checkUnitDie(
+    const llvm::DWARFUnit & unit, const llvm::DWARFAbbreviationDeclarationSet & abbrevs, const llvm::DWARFDataExtractor & data,
+    uint64_t end_offset)
+{
+    const uint64_t end = std::min<uint64_t>(end_offset, data.size());
+    uint64_t offset = unit.getOffset() + unit.getHeaderSize();
+    /// Leave other errors to LLVM, which reports them.
+    if (offset >= end)
+        return;
+    auto err = llvm::Error::success();
+    uint64_t abbrev_code = data.getULEB128(&offset, &err);
+    if (err)
+        throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Failed to parse the unit entry at offset {}: {}", unit.getOffset(), llvm::toString(std::move(err)));
+    if (abbrev_code == 0 || abbrev_code > UINT32_MAX)
+        return;
+    const auto * abbrev = abbrevs.getAbbreviationDeclaration(static_cast<uint32_t>(abbrev_code));
+    if (!abbrev)
+        return;
+    for (const auto & attr : abbrev->attributes())
+    {
+        if (auto size = attr.getByteSize(unit))
+            offset += *size;
+        else if (!llvm::DWARFFormValue::skipValue(attr.Form, data, &offset, unit.getFormParams()))
+            return;
+        if (offset > end)
+            throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
+                "Attribute {} of form {} of the unit entry goes past the end of the unit: offset {}, end of unit {}",
+                llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, offset, end_offset);
+    }
+}
+
+DWARFBlockInputFormat::UnitState::UnitState(llvm::DWARFUnit * u, const llvm::DWARFDataExtractor & data)
     : dwarf_unit(u), end_offset(dwarf_unit->getNextUnitOffset())
     , offset(dwarf_unit->getOffset() + dwarf_unit->getHeaderSize())
 {
@@ -145,6 +179,8 @@ DWARFBlockInputFormat::UnitState::UnitState(llvm::DWARFUnit * u)
     abbrevs = dwarf_unit->getAbbreviations();
     if (abbrevs == nullptr)
         throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Couldn't find abbreviation set for unit at offset {}", dwarf_unit->getOffset());
+
+    checkUnitDie(*u, *abbrevs, data, end_offset);
 
     /// This call initializes some data structures inside DWARFUnit that are needed for parsing attributes.
     auto err = u->tryExtractDIEsIfNeeded(/*CUDieOnly*/ true);
@@ -286,7 +322,7 @@ void DWARFBlockInputFormat::initializeIfNeeded()
     dwarf_context = llvm::DWARFContext::create(sections, /*AddrSize*/ 8);
 
     for (std::unique_ptr<llvm::DWARFUnit> & unit : dwarf_context->info_section_units())
-        units_queue.emplace_back(unit.get());
+        units_queue.emplace_back(unit.get(), *extractor);
 
     LOG_DEBUG(getLogger("DWARF"), "{} units, reading in {} threads", units_queue.size(), num_threads);
 

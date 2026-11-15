@@ -64,7 +64,7 @@ private:
 
         bool eof() const { return offset == end_offset; }
 
-        explicit UnitState(llvm::DWARFUnit * u);
+        UnitState(llvm::DWARFUnit * u, const llvm::DWARFDataExtractor & data);
     };
 
     const FormatSettings format_settings;
