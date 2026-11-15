@@ -89,6 +89,18 @@ Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
 - 1 — `SELECT` returns empty result for empty file.
 
+## azure_skip_hidden_files {#azure_skip_hidden_files}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting: skip blobs with a path segment starting with `_` or `.` below the non-glob prefix when listing files by glob, like other Hive-ecosystem readers do. Tables with `partition_strategy = 'hive'` always skip such paths."}]}]}/>
+
+Enables or disables skipping hidden paths when listing files by glob in [AzureBlobStorage](/reference/engines/table-engines/integrations/azureBlobStorage) engine tables: blobs with a path segment starting with `_` or `.` below the non-glob prefix of the path. A segment containing `=` is a partition directory (such as `_p=1` for a partition column `_p`) and is not hidden. Hive-ecosystem writers (Hive, Spark, Trino) stage in-progress output and write marker objects under such paths (`_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`), and reading them races with the writer's commit. Segments within the non-glob prefix are not checked. Tables with `partition_strategy = 'hive'` always skip hidden paths regardless of this setting.
+
+Possible values:
+- 0 — every blob matched by the glob is read.
+- 1 — blobs with a hidden path segment below the non-glob prefix are skipped.
+
 ## azure_strict_upload_part_size {#azure_strict_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

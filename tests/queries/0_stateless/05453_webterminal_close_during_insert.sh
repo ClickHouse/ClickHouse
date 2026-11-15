@@ -121,10 +121,11 @@ for _ in {1..60}; do
 done
 echo "$running"
 
-# Only the error records count: the text of this very query (and of its parallel runs) is logged as well.
+# Only the `LOGICAL_ERROR` records count: the text of this very query (and of its parallel runs) is logged as well,
+# and a test running in parallel may get the same message as an ordinary `CANNOT_WRITE_AFTER_BUFFER_CANCELED`.
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS text_log"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count() FROM system.text_log
     WHERE event_time >= toDateTime(${START})
         AND level IN ('Fatal', 'Critical', 'Error')
-        AND message LIKE '%Cannot write to canceled buffer%'"
+        AND message LIKE '%Cannot write to canceled buffer%(LOGICAL_ERROR)%'"

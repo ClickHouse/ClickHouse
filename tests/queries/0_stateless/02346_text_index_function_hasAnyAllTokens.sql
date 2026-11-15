@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas, long
+-- Tags: no-parallel-replicas, long, no-msan
 SET explain_query_plan_default = 'legacy';
 
 SET use_query_condition_cache = 0;

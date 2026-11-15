@@ -20,6 +20,29 @@ visible
 --- nor in a distributed query plan, which is built for the view's plan on its own
 visible
 1
+--- nor on parallel replicas, which would run the view's reads as another user
+visible
+visible
+alice
+bob
+alice
+bob
+visible
+visible
+1
+visible
+visible
+42
+42
+visible
+visible
+visible
+05257_ck_direct	1
+05257_ck_view	0
+05257_dist_direct	1
+05257_dist_view	0
+05257_url_direct	1
+05257_url_view	0
 --- an outer predicate does not skip data by the values of the hidden rows
 0
 0
@@ -44,11 +67,14 @@ alice	visible
 visible
 --- a plan fragment that reads the view can be cloned
 visible
+visible
 --- only a view that runs with other privileges and can hide rows is sealed
-definer_view: 1
+definer_view: 0
 none_view: 1
 invoker_view: 0
 projection_view: 0
 policy_view: 1
-param_view: 1
+definer_view for another user: 1
+param_view: 0
+param_view for another user: 1
 view_policy_view for the user with the policy: 1

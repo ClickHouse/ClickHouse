@@ -302,10 +302,11 @@ inline bool maskURIUserinfo(std::string & url)
 }
 
 /// Mask the values of the query parameters that carry credentials in a presigned URL, so that
-/// `...?X-Amz-Signature=abc&foo=1` becomes `...?X-Amz-Signature=[HIDDEN]&foo=1`. Every occurrence
-/// is masked. Returns whether anything was masked.
+/// `...?X-Amz-Signature=abc&foo=1` becomes `...?X-Amz-Signature=[HIDDEN]&foo=1`, and of the
+/// `connection_string` parameter of an ODBC/JDBC bridge request. Every occurrence is masked.
+/// Returns whether anything was masked.
 ///
-/// This used to be the regular expression
+/// Apart from `connection_string`, this used to be the regular expression
 /// `([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|sig|(?i:X-Amz-|X-Goog-)[^=?&]*)=)[^&#]*`
 /// rewritten to `\1[HIDDEN]` globally; `src/Common/tests/gtest_mask_uri_password.cpp` checks this against re2.
 /// A name is also matched percent-decoded, as the storage endpoint reads it: `?%73ig=` is `?sig=`.
@@ -315,7 +316,7 @@ inline bool maskPresignedURLParameters(std::string & url)
     auto is_secret_parameter = [](std::string_view raw_name)
     {
         const std::string name = decodeQueryComponent(raw_name);
-        return name == "sig" || isPresignedURLParameterName(name);
+        return name == "sig" || name == "connection_string" || isPresignedURLParameterName(name);
     };
 
     /// Built in one pass rather than replacing in place: a replacement of a different length shifts

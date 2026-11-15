@@ -15,7 +15,7 @@ SELECT 'plain column pushdown sorting steps:', countIf(explain LIKE '%Sorting (S
 FROM (EXPLAIN SELECT id FROM v_obexpr ORDER BY ts DESC LIMIT 10 SETTINGS query_plan_optimize_lazy_materialization = 0);
 
 SELECT 'expression ORDER BY sorting steps:', countIf(explain LIKE '%Sorting (Sorting for ORDER BY)%')
-FROM (EXPLAIN SELECT id FROM v_obexpr ORDER BY id % 10 DESC LIMIT 10 SETTINGS query_plan_optimize_lazy_materialization = 0);
+FROM (EXPLAIN SELECT id FROM v_obexpr ORDER BY id % 10 DESC LIMIT 10 SETTINGS query_plan_optimize_lazy_materialization = 0, enable_parallel_replicas = 0);
 
 SELECT 'expression ORDER BY result count:', count()
 FROM (SELECT id FROM v_obexpr ORDER BY id % 10 DESC LIMIT 10);

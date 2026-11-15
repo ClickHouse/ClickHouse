@@ -10,6 +10,7 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHistory.jsx";
+import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
@@ -42,16 +43,30 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "JOINランタイムフィルタがProduction tierの機能になりました。"}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "動的な索引解析による結合時のフィルタリングを有効にする新しい設定"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "1"},{"label": "ビルド側（右側）で収集したランタイムフィルタを使い、JOINのプローブ側（左側）のグラニュールを刈り込みます。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "JOINランタイムフィルタがProduction tierの機能になりました。"}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "動的な索引解析による結合時のフィルタリングを有効にする新しい設定"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "1"},{"label": "ビルド側（右側）で収集したランタイムフィルタを使い、JOINのプローブ側（左側）のグラニュールを除外します。"}]}]} />
 
-ビルド側で収集したランタイムフィルタを使い、JOINのプローブ側のグラニュールを刈り込みます。`enable_join_runtime_filters`を参照してください。
+ビルド側で収集したランタイムフィルタを使い、JOINのプローブ側のグラニュールを除外します。`enable_join_runtime_filters`を参照してください。
 `use_skip_indexes_on_data_read = 1`の場合にのみ効果があります。
-刈り込みの対象となるのは、プローブ側の主キー列であるか、`minmax`、`set`、`bloom_filter`のいずれかのスキップ索引でカバーされている結合キーのみです。
-ランタイムフィルタがキーの正確な値を保持している場合、それらの値を含む`IN`集合を刈り込み条件に使用します。それ以外の場合はキーの最小値から最大値までの範囲を使用しますが、刈り込み効果は低くなります。
+除外の対象となるのは、プローブ側の主キー列であるか、`minmax`、`set`、`bloom_filter`のいずれかのスキップ索引でカバーされている結合キーのみです。
+ランタイムフィルタがキーの正確な値を保持している場合、それらの値を含む`IN`集合を除外述語に使用します。それ以外の場合はキーの最小値から最大値までの範囲を使用しますが、除外効果は低くなります。
 
-結合のプローブ側をローカルで読み取る場合にのみ有効です。刈り込みを制御するディスクリプタは、クエリプランの最適化時に読み取りステップに付与されますが、そのステップをリモート実行用に再構築する際には引き継がれません。そのため、並列レプリカ (`enable_parallel_replicas = 1`) または分散クエリプラン (`make_distributed_plan = 1`) では、グラニュールの刈り込みは行われません。これらのモードでは、この設定は効果を持ちません。クエリの結果は変わらず、JOINランタイムフィルタ自体もこの設定を無効にした場合とまったく同じように動作します。行われなくなるのはグラニュールの刈り込みだけです。
+並列レプリカ (`enable_parallel_replicas = 1`) でも動作します。各レプリカは、自身が構築したフィルタを使って、自身が読み取るグラニュールを除外します。このフィルタは部分的なものになる場合があります。`RIGHT`結合ではビルド側がレプリカ間で分割されるため、各レプリカのフィルタはその担当分しかカバーしません。それでも結果は正しく保たれます。結合のいずれか一方の側のみが分割され、一致する行のペアはそれぞれ必ずただ1つのレプリカ上で突き合わされ、各レプリカは結果の互いに重複しない部分を出力するためです。
 
-プローブ側を`FINAL`で読み取る場合も、グラニュールの刈り込みは行われません (`FINAL`を使用した読み取りでは刈り込みが実装されておらず、`optimizeLazyFinal`はディスクリプタなしで読み取りを再構築します) 。処理待ちのデータ、`ALTER`ミューテーション、またはパッチパートがあるテーブルでも同様です。これらの場合も、この設定は効果を持ちません。
+分散クエリプラン (`make_distributed_plan = 1`) では、グラニュールの除外は行われません。この場合、この設定は効果を持ちません。クエリの結果は変わらず、JOINランタイムフィルタ自体もこの設定を無効にした場合とまったく同じように動作します。行われなくなるのはグラニュールの除外だけです。
+
+プローブ側を`FINAL`で読み取る場合も、グラニュールの除外は行われません (`FINAL`を使用した読み取りでは除外が実装されておらず、`optimizeLazyFinal`はディスクリプタなしで読み取りを再構築します) 。処理待ちのデータ、`ALTER`ミューテーション、またはパッチパートがあるテーブルでも同様です。これらの場合も、この設定は効果を持ちません。
+
+## enable_join_seal_gated_reading {#enable_join_seal_gated_reading}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "ハッシュ JOIN のプローブ側の読み取りを、ビルド側のランタイムフィルタの完了を条件としてゲートし、そのフィルタを用いて読み取り範囲を除外する新しい実験的設定。"}]}]} />
+
+ハッシュ JOIN のプローブ側の読み取りを、ビルド側のランタイムフィルタ (`enable_join_runtime_filters` を参照) が完了するまで待機させます (ゲート) 。フィルタが完了するまでプローブ側では一切読み取りが行われず、完了後はそのフィルタを使用して、通常の row-level のフィルタリングに加え、読み取りタスクの作成前に主キーに基づいてマーク範囲単位でデータを除外します。このゲートは、クエリパイプライン内の辺として表現されます。ゲートされた読み取りでは、同じランタイムフィルタに対する読み取り時の索引解析 (`enable_join_runtime_filters_index_analysis` を参照) は冗長となるためスキップされます。
+
+実験的機能です。ローカルの読み取りは、シングルスレッドでの読み取りや順序どおりの読み取りも含めてゲートの対象となります。一方、FINAL を使用した読み取り、並列レプリカでの読み取り、または主キー範囲で分片された結合での読み取りは、ゲートなしの読み取りにフォールバックし、row-level のフィルタリングのみが適用されます。
 
 ## enable_join_transitive_predicates {#enable_join_transitive_predicates}
 
