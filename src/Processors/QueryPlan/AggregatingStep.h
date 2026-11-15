@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
@@ -65,7 +66,7 @@ public:
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    std::vector<size_t> getStepGroups() const override;
+    VectorWithMemoryTracking<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
     StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
@@ -278,7 +279,7 @@ public:
     String getName() const override { return "AggregatingProjection"; }
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
-    std::vector<size_t> getStepGroups() const override;
+    VectorWithMemoryTracking<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
     StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;

@@ -60,6 +60,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace ProfileEvents
@@ -636,9 +637,10 @@ void StorageBuffer::read(
         buffers_select_query_options.view_source_in_subqueries
             = query_info.planner_context && query_info.planner_context->isViewSourceInSubqueries();
 
+        /// Column kinds must match this table, so the query below requests only the columns the buffers provide.
         auto storage = std::make_shared<StorageValues>(
                 getStorageID(),
-                storage_snapshot->getAllColumnsDescription(),
+                storage_snapshot->metadata->getColumns(),
                 std::move(pipe_from_buffers),
                 storage_snapshot->metadata->virtuals);
 
@@ -748,7 +750,7 @@ void StorageBuffer::read(
     input_headers.emplace_back(query_plan.getCurrentHeader());
     input_headers.emplace_back(buffers_plan.getCurrentHeader());
 
-    std::vector<std::unique_ptr<QueryPlan>> plans;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(buffers_plan)));
     query_plan = QueryPlan();

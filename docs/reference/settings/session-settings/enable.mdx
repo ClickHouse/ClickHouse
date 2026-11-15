@@ -668,6 +668,14 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 
+## enable_robin_hood_hash_for_joins {#enable_robin_hood_hash_for_joins}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting. In 26.10 the hash tables of the `parallel_hash` join used the Robin Hood mode when they became large, which saves memory but can make large joins slower."}]}]}/>
+
+Allow the hash tables of a hash join that splits its hash table into parts (see `hash_join_layout`) to switch to the Robin Hood mode when they become large, as the hash tables of aggregation do. A right table with more than about 8 million keys then takes up to two times less memory for its hash table, but the lookups of the join can be slower, depending on the keys.
+
 ## enable_s3_requests_logging {#enable_s3_requests_logging}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
