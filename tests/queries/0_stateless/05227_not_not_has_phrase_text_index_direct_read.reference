@@ -1,0 +1,7 @@
+p	10
+not not p	10
+p and 1	10
+p or 0	10
+prewhere not not p	10
+tokenizer spelled out	10
+index read	1

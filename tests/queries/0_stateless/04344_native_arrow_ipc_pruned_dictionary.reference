@@ -4,7 +4,7 @@
 30
 40
 50
---- Arrow: SELECT b (requested) -> duplicate dictionary values rejected ---
+--- Arrow: SELECT b (requested) -> corrupt dictionary rejected ---
 INCORRECT_DATA
 --- ArrowStream: SELECT a (b unrequested) -> b's corrupt dictionary is skipped ---
 10
@@ -12,5 +12,5 @@ INCORRECT_DATA
 30
 40
 50
---- ArrowStream: SELECT b (requested) -> duplicate dictionary values rejected ---
+--- ArrowStream: SELECT b (requested) -> corrupt dictionary rejected ---
 INCORRECT_DATA

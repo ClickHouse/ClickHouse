@@ -2,13 +2,15 @@
 slug: /guides/developer/deduplicating-inserts-on-retries
 title: 'Deduplicating inserts on retries'
 description: 'Preventing duplicate data when retrying insert operations'
-keywords: ['deduplication', 'deduplicate', 'insert retries', 'inserts']
+keywords: ['deduplication', 'deduplicate', 'insert retries', 'inserts', 'asynchronous inserts']
 doc_type: 'guide'
 ---
 
-Insert operations can sometimes fail due to errors such as timeouts. When inserts fail, data may or may not have been successfully inserted. This guide covers how to enable deduplication on insert retries such that the same data doesn't get inserted more than once.
+Insert operations can sometimes fail due to errors such as timeouts. When inserts fail, data may or may not have been successfully inserted. This guide covers how deduplication on insert retries works, so that the same data doesn't get inserted more than once.
 
 When an insert is retried, ClickHouse tries to determine whether the data has already been successfully inserted. If the inserted data is marked as a duplicate, ClickHouse doesn't insert it into the destination table. However, the user will still receive a successful operation status as if the data had been inserted normally.
+
+Deduplication covers synchronous inserts, asynchronous inserts, and `INSERT ... SELECT` queries. One setting, `deduplicate_insert`, controls synchronous and asynchronous inserts. `INSERT ... SELECT` needs extra care and has a setting of its own. See [Settings that control insert deduplication](#settings-that-control-insert-deduplication).
 
 ## Limitations {#limitations}
 
@@ -20,19 +22,62 @@ The user must retry the insert operation until it succeeds. If all retries fail,
 
 If more than `*_deduplication_window` other insert operations occur during the retry sequence, deduplication may not work as intended. In this case, the same data can be inserted multiple times.
 
-## Enabling insert deduplication on retries {#enabling-insert-deduplication-on-retries}
+## Settings that control insert deduplication {#settings-that-control-insert-deduplication}
 
-### Insert deduplication for tables {#insert-deduplication-for-tables}
+ClickHouse deduplicates an insert only when both of the following hold:
+
+1. The destination table keeps a deduplication log. This is a table-level setting.
+2. Deduplication is enabled for the query. This is a query-level setting.
+
+### Table-level settings {#insert-deduplication-for-tables}
 
 **Only `*MergeTree` engines support deduplication on insertion.**
 
-For `*ReplicatedMergeTree` engines, insert deduplication is enabled by default and is controlled by the [`replicated_deduplication_window`](/reference/settings/merge-tree-settings#replicated_deduplication_window) and [`replicated_deduplication_window_seconds`](/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds) settings. For non-replicated `*MergeTree` engines, deduplication is controlled by the [`non_replicated_deduplication_window`](/reference/settings/merge-tree-settings#non_replicated_deduplication_window) setting.
+For `*ReplicatedMergeTree` engines, the deduplication log is enabled by default and is controlled by the [`replicated_deduplication_window`](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) and [`replicated_deduplication_window_seconds`](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) settings. For non-replicated `*MergeTree` engines, the log is controlled by the [`non_replicated_deduplication_window`](/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window) setting, which is `0` by default. A plain `MergeTree` table therefore deduplicates nothing until you set that window to a positive value.
 
 The settings above determine the parameters of the deduplication log for a table. The deduplication log stores a finite number of `block_id`s, which determine how deduplication works (see below).
 
-### Query-level insert deduplication {#query-level-insert-deduplication}
+<Note>
+[`replicated_deduplication_window_for_async_inserts`](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_for_async_inserts) and [`replicated_deduplication_window_seconds_for_async_inserts`](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds_for_async_inserts) are legacy settings. Synchronous and asynchronous inserts now share one deduplication log, so `replicated_deduplication_window` governs both. The legacy settings only bound the old ClickHouse Keeper directory, which matters during a rolling upgrade.
+</Note>
 
-The setting `insert_deduplicate=1` enables deduplication at the query level. Note that if you insert data with `insert_deduplicate=0`, that data can't be deduplicated even if you retry an insert with `insert_deduplicate=1`. This is because the `block_id`s aren't written for blocks during inserts with `insert_deduplicate=0`.
+### Query-level settings {#query-level-insert-deduplication}
+
+| Setting | Applies to | Default | Purpose |
+|---------|------------|---------|---------|
+| [`deduplicate_insert`](/reference/settings/session-settings/deduplicate-insert#deduplicate_insert) | Every `INSERT`, synchronous or asynchronous | `enable` | Main switch for insert deduplication |
+| [`deduplicate_insert_select`](/reference/settings/session-settings/deduplicate-insert#deduplicate_insert_select) | `INSERT ... SELECT` | `enable_when_possible` | Decides what to do when the `SELECT` result isn't reproducible |
+| [`insert_deduplication_token`](/reference/settings/session-settings/insert#insert_deduplication_token) | Every `INSERT` | `''` | Identifies the insert by a user-supplied string instead of by the data |
+| [`deduplicate_blocks_in_dependent_materialized_views`](/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views) | Tables under materialized views | `1` | Extends deduplication to the destinations of dependent materialized views |
+
+`deduplicate_insert` accepts three values:
+
+- `enable` — deduplication is enabled for the `INSERT` query.
+- `disable` — deduplication is disabled for the `INSERT` query.
+- `backward_compatible_choice` — the decision is delegated to the legacy settings `insert_deduplicate` (synchronous inserts) and `async_insert_deduplicate` (asynchronous inserts).
+
+Note that a query which runs with `deduplicate_insert = disable` writes no `block_id`s for its blocks. Such data can't be deduplicated later, even if you retry the insert with `deduplicate_insert = enable`. The same holds when the destination table keeps no deduplication log: nothing is recorded, so nothing can be matched on a retry.
+
+### Precedence {#precedence}
+
+1. For an `INSERT ... SELECT` query, `deduplicate_insert_select` decides. See [Deduplication for INSERT ... SELECT](#deduplication-for-insert-select).
+2. For every other `INSERT`, `deduplicate_insert` decides.
+3. `insert_deduplicate` and `async_insert_deduplicate` are read only when `deduplicate_insert` is `backward_compatible_choice`.
+
+### Legacy and obsolete settings {#legacy-and-obsolete-settings}
+
+| Setting | Status | Use instead |
+|---------|--------|-------------|
+| [`insert_deduplicate`](/reference/settings/session-settings/insert#insert_deduplicate) | Legacy. Read only when `deduplicate_insert = backward_compatible_choice` | `deduplicate_insert` |
+| [`async_insert_deduplicate`](/reference/settings/session-settings/async-insert#async_insert_deduplicate) | Legacy. Read only when `deduplicate_insert = backward_compatible_choice` | `deduplicate_insert` |
+| `insert_select_deduplicate` | Obsolete. Has no effect | `deduplicate_insert_select` |
+| `update_insert_deduplication_token_in_dependent_materialized_views` | Obsolete. Has no effect | — |
+
+<Warning>
+Since version 26.2, `deduplicate_insert` defaults to `enable`. Setting `insert_deduplicate = 0` therefore no longer turns deduplication off on its own. To disable deduplication, set `deduplicate_insert = disable`.
+</Warning>
+
+Version 26.2 also changed the defaults of `async_insert` and `deduplicate_blocks_in_dependent_materialized_views` to enabled. The [`compatibility`](/reference/settings/session-settings/compatibility#compatibility) setting governs all three. If you set `compatibility` to a version earlier than `26.2`, these settings keep their old defaults: `deduplicate_insert` becomes `backward_compatible_choice`, which hands the decision to `insert_deduplicate` and `async_insert_deduplicate`. A setting you assign explicitly is always honored and is never affected by `compatibility`.
 
 ## How insert deduplication works {#how-insert-deduplication-works}
 
@@ -40,12 +85,71 @@ When data is inserted into ClickHouse, it splits data into blocks based on the n
 
 For tables using `*MergeTree` engines, each block is assigned a unique `block_id`, which is a hash of the data in that block. This `block_id` is used as a unique key for the insert operation. If the same `block_id` is found in the deduplication log, the block is considered a duplicate and isn't inserted into the table.
 
-This approach works well for cases where inserts contain different data. However, if the same data is inserted multiple times intentionally, you need to use the `insert_deduplication_token` setting to control the deduplication process. This setting allows you to specify a unique token for each insert, which ClickHouse uses to determine whether the data is a duplicate.
+This approach works well for cases where inserts contain different data. However, if the same data is inserted multiple times intentionally, you need to use the `insert_deduplication_token` setting to control the deduplication process. This setting allows you to specify a unique token for each insert, which ClickHouse uses to determine whether the data is a duplicate. `insert_deduplication_token` has higher priority: ClickHouse doesn't use the hash sum of the data when the token is provided.
 
 For `INSERT ... VALUES` queries, splitting the inserted data into blocks is deterministic and is determined by settings. Therefore, you should retry insertions with the same settings values as the initial operation.
 
-For `INSERT ... SELECT` queries, it's important that the `SELECT` part of the query returns the same data in the same order for each operation. Note, this is hard to achieve in practice. To ensure stable data order on retries, define a `ORDER BY ALL` section in the `SELECT` part of the query. Right now you have to use exactly `ORDER BY ALL` in the query. Support for `ORDER BY` isn't implemented yet and the `SELECT` part of the query wouldn't be considered as stable. Keep in mind that it is possible that the selected table could be updated between retries - the result data could have changed and deduplication won't occur. Additionally, in situations where you're inserting large amounts of data, it is possible that the number of blocks after inserts can overflow the deduplication log window, and ClickHouse won't know to deduplicate the blocks.
-Right now, the behavior for `INSERT ... SELECT` is controlled by the `insert_select_deduplicate` setting. This setting determines whether deduplication is applied to data inserted using `INSERT ... SELECT` queries. See the linked documentation for details and usage examples.
+## Deduplication for `INSERT ... SELECT` {#deduplication-for-insert-select}
+
+For `INSERT ... SELECT` queries, the `SELECT` part must return the same data in the same order on every attempt. Otherwise the blocks differ, the `block_id`s differ, and the retry isn't recognized as a duplicate.
+
+ClickHouse can't verify that the source data is unchanged, but it can check whether the query itself produces a reproducible result. A `SELECT` is treated as **stable** when both of the following hold:
+
+- The query carries an `ORDER BY ALL` clause. Only the literal `ORDER BY ALL` is recognized. A plain `ORDER BY <expressions>` isn't, and a `UNION` of two or more `SELECT`s is never stable.
+- The reading pipeline ends in a single stream.
+
+A non-empty `insert_deduplication_token` is an equivalent substitute for stability, because the token, and not the data, then identifies the insert.
+
+The setting `deduplicate_insert_select` chooses what to do:
+
+| Value | Behavior |
+|-------|----------|
+| `enable_when_possible` (default) | Deduplicate when the `SELECT` is stable or a token is set. Otherwise skip deduplication and write a message to the server log. |
+| `force_enable` | Always deduplicate. If the `SELECT` isn't stable and no token is set, throw the `DEDUPLICATION_IS_NOT_POSSIBLE` exception. |
+| `enable_even_for_bad_queries` | Deduplicate regardless of stability. Kept for backward compatibility. With an unstable `SELECT`, the retry is usually not recognized as a duplicate, so prefer another value. |
+| `disable` | Never deduplicate `INSERT ... SELECT`. |
+
+`enable_when_possible` and `enable_even_for_bad_queries` also honor `deduplicate_insert`: if it is `disable`, the query isn't deduplicated. `force_enable` overrides `deduplicate_insert`.
+
+Keep in mind that the selected table can be updated between retries. The two paths then behave in opposite ways:
+
+- Without `insert_deduplication_token`, the `block_id`s are computed from the data. The changed result produces different `block_id`s, deduplication doesn't occur, and the retry inserts the new data on top of whatever the first attempt already wrote.
+- With `insert_deduplication_token`, the token alone identifies the insert. The retry is recognized as a duplicate and is dropped, even though it would have inserted different data.
+
+Choose the path that matches what you want a retry to mean. Additionally, when you insert large amounts of data, the number of blocks can overflow the deduplication log window, and ClickHouse won't know to deduplicate the blocks.
+
+## Deduplication for asynchronous inserts {#deduplication-for-asynchronous-inserts}
+
+Asynchronous inserts ([`async_insert`](/reference/settings/session-settings/async-insert#async_insert), enabled by default since version 26.2) are deduplicated on retries in the same way as synchronous inserts. `deduplicate_insert` controls both, so no separate switch is needed.
+
+The two insert types also share one deduplication log and compute `block_id`s the same way. You can therefore switch a client between synchronous and asynchronous inserts without breaking deduplication, and a retry sent in one mode is still recognized as a duplicate of an attempt sent in the other. Moving a workload from synchronous to asynchronous inserts stays safe on a table that relies on deduplication.
+
+<Note>
+Before version 26.2, deduplication of asynchronous inserts was disabled by default and was controlled by `async_insert_deduplicate`. That setting is now read only when `deduplicate_insert` is `backward_compatible_choice`.
+</Note>
+
+### Deduplication granularity {#asynchronous-insert-deduplication-granularity}
+
+The server collects several asynchronous inserts into one batch and writes that batch as one or more parts, at least one per distinct partition key value. Deduplication works per user query, not per batch:
+
+- Each queued query contributes one deduplication token to the batch.
+- A token is either the value of `insert_deduplication_token`, when the query provides one, or a hash of the rows that this query contributed.
+- Batching doesn't influence the tokens, and `insert_deduplication_token` doesn't influence how queries are grouped into batches.
+
+This has two consequences:
+
+- When one query in a batch is a duplicate, ClickHouse removes only the rows of that query. The rest of the batch is inserted normally. A part is skipped entirely only when every row in it is removed.
+- When two queries in the same batch carry the same token, the second one is dropped before the part is written. This applies per partition: if the two queries write rows to different partitions, both survive.
+
+The `DuplicatedAsyncInserts` and `SelfDuplicatedAsyncInserts` events in [`system.events`](/reference/system-tables/events) count these two cases.
+
+### Asynchronous inserts and materialized views {#asynchronous-inserts-and-materialized-views}
+
+Deduplication of asynchronous inserts works together with dependent materialized views. The rule is simple: one block in, one block out. If the inner query of a view turns one input block into one output block, deduplication works. If the view emits a second block, ClickHouse throws a `NOT_IMPLEMENTED` exception.
+
+A view emits a second block when its output no longer fits in one. [`max_block_size`](/reference/settings/session-settings/max#max_block_size) sets how many rows fit. Column transformations, filtering, and aggregation never add rows, so they always stay in one block. A `JOIN` can add rows. It works while the result stays under `max_block_size`, and it fails above that.
+
+To insert through a view that emits more than one block, either set `deduplicate_blocks_in_dependent_materialized_views = 0` or use synchronous inserts.
 
 ## Insert deduplication with materialized views {#insert-deduplication-with-materialized-views}
 
@@ -53,12 +157,11 @@ When a table has one or more materialized views, the inserted data is also inser
 
 You can control this process using the following settings for the source table:
 
-- [`replicated_deduplication_window`](/reference/settings/merge-tree-settings#replicated_deduplication_window)
-- [`replicated_deduplication_window_seconds`](/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)
-- [`non_replicated_deduplication_window`](/reference/settings/merge-tree-settings#non_replicated_deduplication_window)
+- [`replicated_deduplication_window`](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window)
+- [`replicated_deduplication_window_seconds`](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)
+- [`non_replicated_deduplication_window`](/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window)
 
-You have to also enable the user profile setting [`deduplicate_blocks_in_dependent_materialized_views`](/reference/settings/session-settings#deduplicate_blocks_in_dependent_materialized_views).
-With enabled setting `insert_deduplicate=1` an inserted data is deduplicated in source table. The setting `deduplicate_blocks_in_dependent_materialized_views=1` additionally enables deduplication in dependant tables. You have to enable both if full deduplication is desired.
+Deduplication in the tables under materialized views is additionally governed by the user profile setting [`deduplicate_blocks_in_dependent_materialized_views`](/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views), which is enabled by default since version 26.2. Both switches must allow it: `deduplicate_insert` deduplicates the data inserted into the source table, and `deduplicate_blocks_in_dependent_materialized_views` additionally deduplicates the data in the dependent tables. Enable both if you want full deduplication.
 
 When inserting blocks into tables under materialized views, ClickHouse calculates the `block_id` by hashing a string that combines the `block_id`s from the source table and additional identifiers. This ensures accurate deduplication within materialized views, allowing data to be distinguished based on its original insertion, regardless of any transformations applied before reaching the destination table under the materialized view.
 
@@ -102,11 +205,11 @@ SET min_insert_block_size_bytes=0;
 
 The settings above allow us to select from a table with a series of blocks containing only one row. These small blocks aren't squashed and remain the same until they're inserted into a table.
 
+We make deduplication in the materialized view explicit, although it is enabled by default:
+
 ```sql
 SET deduplicate_blocks_in_dependent_materialized_views=1;
 ```
-
-We need to enable deduplication in materialized view:
 
 ```sql
 INSERT INTO dst SELECT

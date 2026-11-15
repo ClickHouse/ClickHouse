@@ -7,9 +7,7 @@ keywords: ['ML', 'Jupyer', 'chDB', 'pandas']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
-Neste guia, você aprenderá a explorar um conjunto de dados no ClickHouse Cloud em um Jupyter notebook com a ajuda do [chDB](/pt-BR/products/chdb/index) — um mecanismo SQL OLAP in-process rápido, baseado em ClickHouse.
+Neste guia, você aprenderá a explorar um conjunto de dados no ClickHouse Cloud em um Jupyter notebook com a ajuda do [chDB](/pt-BR/chdb/index) — um mecanismo SQL OLAP in-process rápido, baseado em ClickHouse.
 
 **Pré-requisitos**:
 
@@ -39,15 +37,39 @@ Para adicionar este conjunto de dados a um serviço existente do ClickHouse Clou
 
 No menu à esquerda, clique em `Data sources`. Em seguida, clique em `Predefined sample data`:
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/1.webp" alt="Adicionar conjunto de dados de exemplo" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Adicionar conjunto de dados de exemplo](/images/use-cases/AI_ML/jupyter/1.webp)
+
+</Frame>
+
+</div>
 
 Selecione `Get started` no cartão de dados de preços pagos de imóveis do Reino Unido (4GB):
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/2.webp" alt="Selecionar conjunto de dados de preços pagos do Reino Unido" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Selecionar conjunto de dados de preços pagos do Reino Unido](/images/use-cases/AI_ML/jupyter/2.webp)
+
+</Frame>
+
+</div>
 
 Em seguida, clique em `Import dataset`:
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/3.webp" alt="Importar conjunto de dados de preços pagos do Reino Unido" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Importar conjunto de dados de preços pagos do Reino Unido](/images/use-cases/AI_ML/jupyter/3.webp)
+
+</Frame>
+
+</div>
 
 O ClickHouse criará automaticamente a tabela `pp_complete` no banco de dados `default` e preencherá a tabela com 28,92 milhões de linhas de dados de preços.
 
@@ -80,12 +102,28 @@ jupyter notebook
 Uma nova janela do navegador deve abrir com a interface do Jupyter em `localhost:8888`.
 Clique em `File` &gt; `New` &gt; `Notebook` para criar um novo notebook.
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/4.webp" alt="Criar um novo notebook" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Criar um novo notebook](/images/use-cases/AI_ML/jupyter/4.webp)
+
+</Frame>
+
+</div>
 
 Você será solicitado a selecionar um kernel.
 Selecione qualquer kernel Python disponível; neste exemplo, vamos selecionar o `ipykernel`:
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/5.webp" alt="Selecionar kernel" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Selecionar kernel](/images/use-cases/AI_ML/jupyter/5.webp)
+
+</Frame>
+
+</div>
 
 Em uma célula em branco, você pode digitar o seguinte comando para instalar o chDB, que usaremos para nos conectar à nossa instância remota do ClickHouse Cloud:
 
@@ -122,7 +160,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
-# Carrega as variáveis de ambiente do arquivo .env
+# Load environment variables from .env file
 load_dotenv()
 
 username = os.environ.get('CLICKHOUSE_USER')
@@ -165,7 +203,15 @@ O resultado é então armazenado como um DataFrame em uma variável chamada `df`
 
 `df.head` exibe apenas as primeiras linhas dos dados retornados:
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/6.webp" alt="pré-visualização do dataframe" />
+<div className="ch-image-md">
+
+<Frame>
+
+![pré-visualização do dataframe](/images/use-cases/AI_ML/jupyter/6.webp)
+
+</Frame>
+
+</div>
 
 Execute o comando a seguir em uma nova célula para verificar os tipos das colunas:
 
@@ -193,8 +239,8 @@ plt.xlabel('Year')
 plt.ylabel('Price (£)')
 plt.title('Price of London property over time')
 
-# Mostrar a cada 2 anos para evitar sobreposição
-years_to_show = df['year'][::2]  # A cada 2 anos
+# Show every 2nd year to avoid crowding
+years_to_show = df['year'][::2]  # Every 2nd year
 plt.xticks(years_to_show, rotation=45)
 
 plt.grid(True, alpha=0.3)
@@ -202,7 +248,15 @@ plt.tight_layout()
 plt.show()
 ```
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/7.webp" alt="prévia do DataFrame" />
+<div className="ch-image-md">
+
+<Frame>
+
+![prévia do DataFrame](/images/use-cases/AI_ML/jupyter/7.webp)
+
+</Frame>
+
+</div>
 
 Como era de se esperar, os preços dos imóveis em Londres aumentaram substancialmente ao longo do tempo.
 
@@ -258,16 +312,24 @@ df_2.head()
   ```
 </Accordion>
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/8.webp" alt="prévia do DataFrame" />
+<div className="ch-image-md">
+
+<Frame>
+
+![prévia do DataFrame](/images/use-cases/AI_ML/jupyter/8.webp)
+
+</Frame>
+
+</div>
 
 Embora faltem dados a partir de 2020, podemos plotar os dois conjuntos de dados um em relação ao outro para os anos de 1995 a 2019.
 Em uma nova célula, execute o seguinte comando:
 
 ```python
-# Criar uma figura com dois eixos y
+# Create a figure with two y-axes
 fig, ax1 = plt.subplots(figsize=(14, 8))
 
-# Plotar casas vendidas no eixo y esquerdo
+# Plot houses sold on the left y-axis
 color = 'tab:blue'
 ax1.set_xlabel('Year')
 ax1.set_ylabel('Houses Sold', color=color)
@@ -275,28 +337,28 @@ ax1.plot(df_2['year'], df_2['houses_sold'], marker='o', color=color, label='Hous
 ax1.tick_params(axis='y', labelcolor=color)
 ax1.grid(True, alpha=0.3)
 
-# Criar um segundo eixo y para dados de preço
+# Create a second y-axis for price data
 ax2 = ax1.twinx()
 color = 'tab:red'
 ax2.set_ylabel('Average Price (£)', color=color)
 
-# Plotar dados de preço até 2019
+# Plot price data up until 2019
 ax2.plot(df[df['year'] <= 2019]['year'], df[df['year'] <= 2019]['avg_price'], marker='s', color=color, label='Average Price', linewidth=2)
 ax2.tick_params(axis='y', labelcolor=color)
 
-# Formatar o eixo de preço com formatação de moeda
+# Format price axis with currency formatting
 ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'£{x:,.0f}'))
 
-# Definir título e exibir a cada 2 anos
+# Set title and show every 2nd year
 plt.title('London Housing Market: Sales Volume vs Prices Over Time', fontsize=14, pad=20)
 
-# Usar apenas anos até 2019 para ambos os conjuntos de dados
+# Use years only up to 2019 for both datasets
 all_years = sorted(list(set(df_2[df_2['year'] <= 2019]['year']).union(set(df[df['year'] <= 2019]['year']))))
-years_to_show = all_years[::2]  # A cada 2 anos
+years_to_show = all_years[::2]  # Every 2nd year
 ax1.set_xticks(years_to_show)
 ax1.set_xticklabels(years_to_show, rotation=45)
 
-# Adicionar legendas
+# Add legends
 ax1.legend(loc='upper left')
 ax2.legend(loc='upper right')
 
@@ -304,7 +366,15 @@ plt.tight_layout()
 plt.show()
 ```
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/9.webp" alt="Gráfico do conjunto de dados remoto e do conjunto de dados local" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Gráfico do conjunto de dados remoto e do conjunto de dados local](/images/use-cases/AI_ML/jupyter/9.webp)
+
+</Frame>
+
+</div>
 
 Pelos dados do gráfico, vemos que as vendas começaram em torno de 160.000 em 1995 e cresceram rapidamente, atingindo um pico de cerca de 540.000 em 1999.
 Depois disso, os volumes caíram acentuadamente ao longo da metade dos anos 2000, despencando durante a crise financeira de 2007-2008 e chegando a cerca de 140.000.

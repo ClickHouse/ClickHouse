@@ -34,7 +34,7 @@ intervalLengthSum(start, end)
 
 **返回值**
 
-返回所有区间并集的总长度 (即数轴上的所有分段) 。根据参数类型，返回值可能为 UInt64 或 Float64。[`UInt64`](/zh/reference/data-types/int-uint) 或 [`Float64`](/zh/reference/data-types/float)
+返回所有区间并集的总长度 (即数轴上线段) 。根据参数类型，返回值可能为 UInt64 或 Float64。[`UInt64`](/zh/reference/data-types/int-uint) 或 [`Float64`](/zh/reference/data-types/float)
 
 **示例**
 
@@ -49,7 +49,7 @@ SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, en
 
 ```response title=Response
 ┌─id─┬─intervalLengthSum(start, end)─┬─toTypeName(intervalLengthSum(start, end))─┐
-│ a  │                           3.1 │ Float64                                   │
+│ a  │            3.0999999046325684 │ Float64                                   │
 └────┴───────────────────────────────┴───────────────────────────────────────────┘
 ```
 

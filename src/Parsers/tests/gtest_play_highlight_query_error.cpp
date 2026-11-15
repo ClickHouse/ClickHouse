@@ -120,7 +120,7 @@ QueryErrorPos computeQueryErrorPos(
     const size_t byte_offset = value - 1;
 
     /// The server writes " (end of query)" for both an unexpected end of stream and a `;`.
-    result.at_end = error_text.find(" (end of query)") != std::string::npos;
+    result.at_end = error_text.contains(" (end of query)");
 
     /// Locate the sent query within the textarea. Prefer the exact captured start offset so
     /// duplicate statements map to the one that failed; otherwise fall back to its first

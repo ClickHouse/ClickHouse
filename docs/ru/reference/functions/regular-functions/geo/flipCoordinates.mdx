@@ -6,9 +6,7 @@ title: 'Перестановка координат'
 doc_type: 'reference'
 ---
 
-<div id="flipcoordinates">
-  ## flipCoordinates
-</div>
+## flipCoordinates {#flipcoordinates}
 
 Функция `flipCoordinates` меняет местами координаты точки, Ring, Polygon или multipolygon. Это полезно, например, при преобразовании между системами координат, где порядок широты и долготы различается.
 
@@ -16,19 +14,18 @@ doc_type: 'reference'
 flipCoordinates(coordinates)
 ```
 
-<div id="input-parameters">
-  ### Входные параметры
-</div>
+### Входные параметры {#input-parameters}
 
 * `coordinates` — кортеж, представляющий точку `(x, y)`, или массив таких кортежей, представляющий Ring, Polygon или Multipolygon. Поддерживаются следующие входные типы:
+
   * [**Point**](/ru/reference/data-types/geo#point): кортеж `(x, y)`, где `x` и `y` — значения [Float64](/ru/reference/data-types/float).
   * [**Ring**](/ru/reference/data-types/geo#ring): массив точек `[(x1, y1), (x2, y2), ...]`.
-  * [**Polygon**](/ru/reference/data-types/geo#polygon): массив колец `[ring1, ring2, ...]`, где каждое кольцо — массив точек.
-  * [**Multipolygon**](/ru/reference/data-types/geo#multipolygon): массив полигонов `[polygon1, polygon2, ...]`.
+  * [**Polygon**](/ru/reference/data-types/geo#polygon): массив Ring `[ring1, ring2, ...]`, где каждый Ring — массив точек.
+  * [**Multipolygon**](/ru/reference/data-types/geo#multipolygon): массив Polygon `[polygon1, polygon2, ...]`.
 
-<div id="returned-value">
-  ### Возвращаемое значение
-</div>
+  Координаты должны иметь тип `Float64`: записывайте целочисленные координаты в виде `10.` (или явно приводите их с помощью CAST), поскольку литерал вида `10` имеет тип `UInt8`.
+
+### Возвращаемое значение {#returned-value}
 
 Функция возвращает входные данные с поменянными местами координатами. Например:
 
@@ -36,16 +33,12 @@ flipCoordinates(coordinates)
 * Ring `[(x1, y1), (x2, y2)]` становится `[(y1, x1), (y2, x2)]`.
 * Вложенные структуры, такие как Polygon и Multipolygon, обрабатываются рекурсивно.
 
-<div id="examples">
-  ### Примеры
-</div>
+### Примеры {#examples}
 
-<div id="example-1">
-  #### Пример 1: Перестановка координат одной точки
-</div>
+#### Пример 1: Перестановка координат одной точки {#example-1}
 
 ```sql
-SELECT flipCoordinates((10, 20)) AS flipped_point
+SELECT flipCoordinates((10., 20.)) AS flipped_point
 ```
 
 ```text
@@ -54,44 +47,38 @@ SELECT flipCoordinates((10, 20)) AS flipped_point
 └───────────────┘
 ```
 
-<div id="example-2">
-  #### Пример 2: Перестановка координат в массиве точек (Ring)
-</div>
+#### Пример 2: Перестановка координат в массиве точек (Ring) {#example-2}
 
 ```sql
-SELECT flipCoordinates([(10, 20), (30, 40)]) AS flipped_ring
+SELECT flipCoordinates([(10., 20.), (30., 40.)]) AS flipped_ring
 ```
 
 ```text
-┌─flipped_ring──────────────┐
-│ [(20,10),(40,30)]         │
-└───────────────────────────┘
+┌─flipped_ring──────┐
+│ [(20,10),(40,30)] │
+└───────────────────┘
 ```
 
-<div id="example-3">
-  #### Пример 3: Переворот Polygon
-</div>
+#### Пример 3: Перестановка координат Polygon {#example-3}
 
 ```sql
-SELECT flipCoordinates([[(10, 20), (30, 40)], [(50, 60), (70, 80)]]) AS flipped_polygon
+SELECT flipCoordinates([[(10., 20.), (30., 40.)], [(50., 60.), (70., 80.)]]) AS flipped_polygon
 ```
 
 ```text
-┌─flipped_polygon──────────────────────────────┐
-│ [[(20,10),(40,30)],[(60,50),(80,70)]]        │
-└──────────────────────────────────────────────┘
+┌─flipped_polygon───────────────────────┐
+│ [[(20,10),(40,30)],[(60,50),(80,70)]] │
+└───────────────────────────────────────┘
 ```
 
-<div id="example-4">
-  #### Пример 4: Инвертирование Multipolygon
-</div>
+#### Пример 4: Перестановка координат Multipolygon {#example-4}
 
 ```sql
-SELECT flipCoordinates([[[10, 20], [30, 40]], [[50, 60], [70, 80]]]) AS flipped_multipolygon
+SELECT flipCoordinates([[[(10., 20.), (30., 40.)]], [[(50., 60.), (70., 80.)]]]) AS flipped_multipolygon
 ```
 
 ```text
-┌─flipped_multipolygon──────────────────────────────┐
-│ [[[20,10],[40,30]],[[60,50],[80,70]]]             │
-└───────────────────────────────────────────────────┘
+┌─flipped_multipolygon──────────────────────┐
+│ [[[(20,10),(40,30)]],[[(60,50),(80,70)]]] │
+└───────────────────────────────────────────┘
 ```

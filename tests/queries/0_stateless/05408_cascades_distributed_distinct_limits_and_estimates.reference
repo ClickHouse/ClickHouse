@@ -1,0 +1,35 @@
+-- the self-join on the DISTINCT column runs the final DISTINCT on every node
+GatherExchange
+  Expression (Project names)
+    Distinct (Shuffle DISTINCT)
+      Distinct (Preliminary DISTINCT)
+        Expression (Projection)
+          Filter (WHERE)
+            JoinLogical (Shuffle HashJoin  swapped)
+              Expression (Change column names to column identifiers)
+                ShuffleExchange
+                  ReadFromMergeTree (ParallelRead default.t_ddl)
+              Expression (Change column names to column identifiers)
+                ShuffleExchange
+                  ReadFromMergeTree (ParallelRead default.t_ddl)
+-- with max_rows_in_distinct the final DISTINCT stays on one node, which checks the limit on all 10000 values
+Expression (Project names)
+  Distinct (Local DISTINCT)
+    Distinct (Preliminary DISTINCT)
+      Expression (Projection)
+        Filter (WHERE)
+          JoinLogical (Local HashJoin  swapped)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.t_ddl)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.t_ddl)
+-- a key without an NDV: the final DISTINCT keeps the 4000 rows the preliminary one takes for its cost, a tenth of the input
+1
+-- the 5 values of w are on all 8 nodes: the gather moves 40 rows, and the final DISTINCT inserts all of them
+Expression (Project names)
+  Distinct (Local DISTINCT)
+    GatherExchange
+      Distinct (Preliminary DISTINCT)
+        Expression ((Projection + Change column names to column identifiers))
+          ReadFromMergeTree (ParallelRead default.t_ddl)
+1

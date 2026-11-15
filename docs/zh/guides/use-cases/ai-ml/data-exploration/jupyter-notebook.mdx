@@ -7,9 +7,7 @@ keywords: ['ML', 'Jupyer', 'chDB', 'pandas']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
-在本指南中，你将了解如何借助 [chDB](/zh/products/chdb/index) (由 ClickHouse 提供支持的高性能进程内 SQL OLAP Engine) ，在 Jupyter 笔记本中探索 ClickHouse Cloud 上的数据集。
+在本指南中，你将了解如何借助 [chDB](/zh/chdb/index) (由 ClickHouse 提供支持的高性能进程内 SQL OLAP Engine) ，在 Jupyter 笔记本中探索 ClickHouse Cloud 上的数据集。
 
 **前置条件**：
 
@@ -39,17 +37,41 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 在左侧菜单中，点击 `Data sources`。然后点击 `Predefined sample data`：
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/1.webp" alt="添加示例数据集" />
+<div className="ch-image-md">
+
+<Frame>
+
+![添加示例数据集](/images/use-cases/AI_ML/jupyter/1.webp)
+
+</Frame>
+
+</div>
 
 在英国房产成交价格数据 (4GB) 卡片中点击 `Get started`：
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/2.webp" alt="选择英国房价成交数据集" />
+<div className="ch-image-md">
+
+<Frame>
+
+![选择英国房价成交数据集](/images/use-cases/AI_ML/jupyter/2.webp)
+
+</Frame>
+
+</div>
 
 然后点击 `Import dataset`：
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/3.webp" alt="导入英国房价成交数据集" />
+<div className="ch-image-md">
 
-ClickHouse 将自动在 `default` 数据库中创建 `pp_complete` 表，并向该表填充 2892 万行价格数据。
+<Frame>
+
+![导入英国房价成交数据集](/images/use-cases/AI_ML/jupyter/3.webp)
+
+</Frame>
+
+</div>
+
+ClickHouse 将自动在 `default` 数据库中创建 `pp_complete` 表，并向该表填充 2892 万行价格点数据。
 
 为降低凭据泄露的风险，我们建议你将 Cloud 用户名和密码添加为本地计算机上的环境变量。
 在终端中运行以下命令，将你的用户名和密码添加为环境变量：
@@ -80,12 +102,28 @@ jupyter notebook
 此时应会打开一个新的浏览器窗口，并显示 `localhost:8888` 上的 Jupyter 界面。
 点击 `File` &gt; `New` &gt; `Notebook`，创建一个新的笔记本。
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/4.webp" alt="创建新笔记本" />
+<div className="ch-image-md">
+
+<Frame>
+
+![创建新笔记本](/images/use-cases/AI_ML/jupyter/4.webp)
+
+</Frame>
+
+</div>
 
 系统会提示你选择一个内核。
 选择任意一个可用的 Python 内核，本示例中我们选择 `ipykernel`：
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/5.webp" alt="选择内核" />
+<div className="ch-image-md">
+
+<Frame>
+
+![选择内核](/images/use-cases/AI_ML/jupyter/5.webp)
+
+</Frame>
+
+</div>
 
 在空白单元格中，输入以下命令安装 chDB，我们将使用它连接到远程 ClickHouse Cloud 实例：
 
@@ -122,7 +160,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
-# 从 .env 文件加载环境变量
+# Load environment variables from .env file
 load_dotenv()
 
 username = os.environ.get('CLICKHOUSE_USER')
@@ -161,11 +199,19 @@ df.head()
 `remoteSecure` 函数会连接到远程 ClickHouse Cloud 服务，运行查询并返回结果。
 具体耗时取决于数据量，可能需要几秒钟。
 在这个示例中，我们返回每年的平均价格，并通过 `town='LONDON'` 进行过滤。
-结果随后会以 DataFrame 的形式存储在名为 `df` 的变量中。
+结果随后会以 Pandas DataFrame 的形式存储在名为 `df` 的变量中。
 
 `df.head` 仅显示返回数据的前几行：
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/6.webp" alt="数据框预览" />
+<div className="ch-image-md">
+
+<Frame>
+
+![数据框预览](/images/use-cases/AI_ML/jupyter/6.webp)
+
+</Frame>
+
+</div>
 
 在新单元格中运行以下命令，以检查各列的数据类型：
 
@@ -179,8 +225,8 @@ avg_price    float64
 dtype: object
 ```
 
-请注意，虽然在 ClickHouse 中 `date` 的类型是 `Date`，但在生成的 DataFrame 中，它的类型是 `uint16`。
-chDB 会在返回 DataFrame 时自动推断出最合适的类型。
+请注意，虽然在 ClickHouse 中 `date` 的类型是 `Date`，但在生成的 Pandas DataFrame 中，它的类型是 `uint16`。
+chDB 会在返回 Pandas DataFrame 时自动推断出最合适的类型。
 
 现在数据已经以一种熟悉的形式呈现出来，让我们看看伦敦房产价格如何随时间变化。
 
@@ -193,8 +239,8 @@ plt.xlabel('Year')
 plt.ylabel('Price (£)')
 plt.title('Price of London property over time')
 
-# 每隔一年显示，避免标签过密
-years_to_show = df['year'][::2]  # 每隔一年
+# Show every 2nd year to avoid crowding
+years_to_show = df['year'][::2]  # Every 2nd year
 plt.xticks(years_to_show, rotation=45)
 
 plt.grid(True, alpha=0.3)
@@ -202,7 +248,15 @@ plt.tight_layout()
 plt.show()
 ```
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/7.webp" alt="数据框预览" />
+<div className="ch-image-md">
+
+<Frame>
+
+![数据框预览](/images/use-cases/AI_ML/jupyter/7.webp)
+
+</Frame>
+
+</div>
 
 不出所料，伦敦的房价随着时间推移已经大幅上涨。
 
@@ -211,7 +265,7 @@ plt.show()
 我们把其中一些变量与房价一起绘制出来，看看能否发现相关性。
 
 你可以使用 `file` File 表引擎直接读取本地机器上的文件。
-在一个新单元中，运行以下命令，根据本地 .csv 文件创建一个新的 DataFrame。
+在一个新单元中，运行以下命令，根据本地 .csv 文件创建一个新的 Pandas DataFrame。
 
 ```python
 query = f"""
@@ -258,16 +312,24 @@ df_2.head()
   ```
 </Accordion>
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/8.webp" alt="数据框预览" />
+<div className="ch-image-md">
+
+<Frame>
+
+![数据框预览](/images/use-cases/AI_ML/jupyter/8.webp)
+
+</Frame>
+
+</div>
 
 虽然缺少 2020 年及之后的数据，但我们仍然可以将这两个数据集在 1995 年到 2019 年期间绘制在同一张图中进行对比。
 在新的单元格中运行以下命令：
 
 ```python
-# 创建一个具有两个 y 轴的图形
+# Create a figure with two y-axes
 fig, ax1 = plt.subplots(figsize=(14, 8))
 
-# 在左侧 y 轴绘制房屋销售量
+# Plot houses sold on the left y-axis
 color = 'tab:blue'
 ax1.set_xlabel('Year')
 ax1.set_ylabel('Houses Sold', color=color)
@@ -275,28 +337,28 @@ ax1.plot(df_2['year'], df_2['houses_sold'], marker='o', color=color, label='Hous
 ax1.tick_params(axis='y', labelcolor=color)
 ax1.grid(True, alpha=0.3)
 
-# 为价格数据创建第二个 y 轴
+# Create a second y-axis for price data
 ax2 = ax1.twinx()
 color = 'tab:red'
 ax2.set_ylabel('Average Price (£)', color=color)
 
-# 绘制截至 2019 年的价格数据
+# Plot price data up until 2019
 ax2.plot(df[df['year'] <= 2019]['year'], df[df['year'] <= 2019]['avg_price'], marker='s', color=color, label='Average Price', linewidth=2)
 ax2.tick_params(axis='y', labelcolor=color)
 
-# 对价格轴应用货币格式
+# Format price axis with currency formatting
 ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'£{x:,.0f}'))
 
-# 设置标题并每隔一年显示一次
+# Set title and show every 2nd year
 plt.title('London Housing Market: Sales Volume vs Prices Over Time', fontsize=14, pad=20)
 
-# 两个数据集均只使用截至 2019 年的数据
+# Use years only up to 2019 for both datasets
 all_years = sorted(list(set(df_2[df_2['year'] <= 2019]['year']).union(set(df[df['year'] <= 2019]['year']))))
-years_to_show = all_years[::2]  # 每隔一年
+years_to_show = all_years[::2]  # Every 2nd year
 ax1.set_xticks(years_to_show)
 ax1.set_xticklabels(years_to_show, rotation=45)
 
-# 添加图例
+# Add legends
 ax1.legend(loc='upper left')
 ax2.legend(loc='upper right')
 
@@ -304,7 +366,15 @@ plt.tight_layout()
 plt.show()
 ```
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/9.webp" alt="远程数据集和本地数据集的图表" />
+<div className="ch-image-md">
+
+<Frame>
+
+![远程数据集和本地数据集的图表](/images/use-cases/AI_ML/jupyter/9.webp)
+
+</Frame>
+
+</div>
 
 从图中可以看出，1995 年的销售量起步于约 160,000，随后快速攀升，并在 1999 年达到约 540,000 的峰值。
 此后，成交量一路大幅下滑，至 2000 年代中期持续走低，在 2007—2008 年金融危机期间更是明显萎缩，降至约 140,000。

@@ -1,3 +1,4 @@
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageMergeTreeIndex.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
@@ -17,7 +18,7 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/Common/AccessFlags.h>
-#include <Common/CurrentThread.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
@@ -42,6 +43,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NOT_IMPLEMENTED;
+    extern const int ACCESS_DENIED;
 }
 
 class MergeTreeIndexSource final : public ISource, WithContext
@@ -112,7 +114,19 @@ protected:
                 /// according to setting 'primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns'.
                 if (index_position < index_ptr->size())
                 {
-                    result_columns[pos] = index_ptr->at(index_position);
+                    auto index_column = index_ptr->at(index_position);
+
+                    /// The index holds the key column in the representation the part was written with, while
+                    /// column_type is the current one. Wrapping or unwrapping LowCardinality on a key column
+                    /// is allowed and does not rewrite parts that already exist.
+                    DataTypePtr index_column_type = removeLowCardinality(column_type);
+                    if (index_column->lowCardinality())
+                        index_column_type = std::make_shared<DataTypeLowCardinality>(index_column_type);
+
+                    if (!index_column_type->equals(*column_type))
+                        index_column = recursiveLowCardinalityTypeConversion(index_column, index_column_type, column_type);
+
+                    result_columns[pos] = std::move(index_column);
                 }
                 else
                 {
@@ -284,6 +298,7 @@ const Block StorageMergeTreeIndex::virtuals_sample_block{part_name_column, mark_
 StorageMergeTreeIndex::StorageMergeTreeIndex(
     const StorageID & table_id_,
     const StoragePtr & source_table_,
+    const StorageMetadataPtr & source_metadata_snapshot_,
     const ColumnsDescription & columns,
     bool with_marks_,
     bool with_minmax_)
@@ -291,22 +306,21 @@ StorageMergeTreeIndex::StorageMergeTreeIndex(
     , source_table(source_table_)
     , with_marks(with_marks_)
     , with_minmax(with_minmax_)
+    , source_metadata_snapshot(source_metadata_snapshot_)
 {
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table.get());
+    const auto * merge_tree = castStorage<MergeTreeData>(source_table, DeferredTable::Load).get();
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeIndex expected MergeTree table, got: {}", source_table->getName());
 
     data_parts = merge_tree->getDataPartsVectorForInternalUsage();
     std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
 
-    auto primary_key_metadata = merge_tree->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    key_sample_block = std::make_shared<const Block>(primary_key_metadata->getPrimaryKey().sample_block);
+    key_sample_block = std::make_shared<const Block>(source_metadata_snapshot->getPrimaryKey().sample_block);
 
     if (with_minmax)
     {
         Block minmax_block;
-        const auto metadata_snapshot = merge_tree->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-        const auto & partition_key = metadata_snapshot->getPartitionKey();
+        const auto & partition_key = source_metadata_snapshot->getPartitionKey();
         for (const auto & column : MergeTreeData::getMinMaxColumns(partition_key, merge_tree->getSettings()))
             minmax_block.insert({nullptr, std::make_shared<DataTypeTuple>(DataTypes{makeNullableSafe(column.type), makeNullableSafe(column.type)}), fmt::format("minmax_{}", column.name)});
         minmax_sample_block = std::make_shared<const Block>(std::move(minmax_block));
@@ -385,12 +399,29 @@ void StorageMergeTreeIndex::readImpl(
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
-    const auto storage_metadata = source_table->getInMemoryMetadataPtr(context, false);
-    const auto & storage_columns = storage_metadata->getColumns();
+    /// Resolve the requested names against the schema the index data was taken from in the constructor, not the current
+    /// one: a concurrent `ALTER` could otherwise change which column a dotted name refers to between the two.
+    const auto & storage_columns = source_metadata_snapshot->getColumns();
     Names columns_from_storage;
 
+    /// Classify each requested name in the same order as `MergeTreeIndexSource::generate`, so the access check authorizes
+    /// the column the output is actually computed from. Otherwise an output name that also happens to be a column or
+    /// subcolumn of the source table (e.g. a column literally named `minmax_t`) would authorize that column instead.
+    static constexpr std::string_view minmax_prefix = "minmax_";
     for (const auto & column_name : column_names)
     {
+        /// `minmax_<name>` holds the range of the partition key column (or subcolumn) `<name>`.
+        if (!key_sample_block->has(column_name) && minmax_sample_block && minmax_sample_block->has(column_name)
+            && column_name.starts_with(minmax_prefix))
+        {
+            auto source_column_name = column_name.substr(minmax_prefix.size());
+            if (storage_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, source_column_name))
+            {
+                columns_from_storage.push_back(std::move(source_column_name));
+                continue;
+            }
+        }
+
         if (storage_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name))
         {
             columns_from_storage.push_back(column_name);
@@ -410,7 +441,21 @@ void StorageMergeTreeIndex::readImpl(
         }
     }
 
-    context->checkAccess(AccessType::SELECT, source_table->getStorageID(), columns_from_storage);
+    auto source_storage_id = source_table->getStorageID();
+
+    /// Column-level grants are tracked against top-level storage columns only, so map any requested
+    /// subcolumns (e.g. `t.a`) to their parent storage column (e.g. `t`).
+    context->checkAccess(
+        AccessType::SELECT,
+        source_storage_id,
+        storage_columns.getColumnNamesForSelectAccessCheck(columns_from_storage, context, source_storage_id));
+
+    /// We cannot apply a row policy to granules, but the index leaks keys of the rows it hides
+    if (getEffectiveRowPolicyFilter(*source_table, context))
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot read from `mergeTreeIndex` because a row policy is applied on table {}. "
+            "Reading the index could violate the row policy",
+            source_storage_id.getNameForLogs());
 
     auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
 

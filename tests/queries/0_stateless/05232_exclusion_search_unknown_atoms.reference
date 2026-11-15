@@ -1,0 +1,78 @@
+-- { echoOn }
+
+SELECT count(), sum(c) FROM t_exclusion_search_unknown_atoms
+WHERE b BETWEEN 2000 AND 7000
+SETTINGS merge_tree_generic_exclusion_search_max_steps = 500, log_comment = '05232_unknown_atoms range budget';
+15003	202555503
+SELECT count(), sum(c) FROM t_exclusion_search_unknown_atoms
+WHERE b BETWEEN 2000 AND 7000
+SETTINGS merge_tree_generic_exclusion_search_max_steps = 0, log_comment = '05232_unknown_atoms range unlimited';
+15003	202555503
+SELECT count(), sum(c) FROM t_exclusion_search_unknown_atoms
+WHERE b BETWEEN 2000 AND 7000 AND c % 7 = 1
+SETTINGS merge_tree_generic_exclusion_search_max_steps = 500, log_comment = '05232_unknown_atoms and_unknown budget';
+2144	28945072
+SELECT count(), sum(c) FROM t_exclusion_search_unknown_atoms
+WHERE b BETWEEN 2000 AND 7000 AND c % 7 = 1
+SETTINGS merge_tree_generic_exclusion_search_max_steps = 0, log_comment = '05232_unknown_atoms and_unknown unlimited';
+2144	28945072
+SELECT count(), sum(c) FROM t_exclusion_search_unknown_atoms
+WHERE b BETWEEN 2000 AND 7000 AND NOT startsWith(s, '1')
+SETTINGS merge_tree_generic_exclusion_search_max_steps = 500, log_comment = '05232_unknown_atoms and_not_unknown budget';
+5003	52560503
+SELECT count(), sum(c) FROM t_exclusion_search_unknown_atoms
+WHERE b BETWEEN 2000 AND 7000 AND NOT startsWith(s, '1')
+SETTINGS merge_tree_generic_exclusion_search_max_steps = 0, log_comment = '05232_unknown_atoms and_not_unknown unlimited';
+5003	52560503
+SELECT count(), sum(c) FROM t_exclusion_search_unknown_atoms
+WHERE (b < 3000 OR c % 7 = 1) AND b BETWEEN 2000 AND 7000
+SETTINGS merge_tree_generic_exclusion_search_max_steps = 500, log_comment = '05232_unknown_atoms or_unknown budget';
+4715	48226930
+SELECT count(), sum(c) FROM t_exclusion_search_unknown_atoms
+WHERE (b < 3000 OR c % 7 = 1) AND b BETWEEN 2000 AND 7000
+SETTINGS merge_tree_generic_exclusion_search_max_steps = 0, log_comment = '05232_unknown_atoms or_unknown unlimited';
+4715	48226930
+SYSTEM FLUSH LOGS query_log;
+WITH (
+    SELECT max(ProfileEvents['SelectedMarks']) FROM system.query_log
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05232_unknown_atoms range unlimited'
+) AS marks_of_range_alone
+SELECT
+    splitByChar(' ', log_comment)[2] AS test_case,
+    maxIf(ProfileEvents['IndexGenericExclusionSearchStepLimitReached'], splitByChar(' ', log_comment)[3] = 'budget') AS step_limit_reached_with_budget,
+    maxIf(ProfileEvents['SelectedMarks'], splitByChar(' ', log_comment)[3] = 'budget')
+        = maxIf(ProfileEvents['SelectedMarks'], splitByChar(' ', log_comment)[3] = 'unlimited') AS same_marks_as_unlimited,
+    maxIf(ProfileEvents['SelectedMarks'], splitByChar(' ', log_comment)[3] = 'unlimited') = marks_of_range_alone AS same_marks_as_range_alone
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05232_unknown_atoms %'
+GROUP BY test_case
+ORDER BY test_case;
+and_not_unknown	0	1	1
+and_unknown	0	1	1
+or_unknown	0	1	1
+range	0	1	1
+-- Atoms assumed true during the search must not make ranges exact for the exact-count optimization.
+SELECT count() FROM t_exclusion_search_unknown_atoms
+WHERE b BETWEEN 2000 AND 7000 AND c % 7 = 1
+SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1, merge_tree_generic_exclusion_search_max_steps = 500;
+2144
+SELECT count() FROM t_exclusion_search_unknown_atoms
+WHERE b BETWEEN 2000 AND 7000 AND c % 7 = 1
+SETTINGS optimize_use_projections = 0, optimize_use_implicit_projections = 0, merge_tree_generic_exclusion_search_max_steps = 500;
+2144
+SELECT count() FROM t_exclusion_search_unknown_atoms
+WHERE b BETWEEN 2000 AND 7000
+SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1, merge_tree_generic_exclusion_search_max_steps = 500;
+15003
+SELECT count() FROM t_exclusion_search_unknown_atoms
+WHERE b BETWEEN 2000 AND 7000
+SETTINGS optimize_use_projections = 0, optimize_use_implicit_projections = 0, merge_tree_generic_exclusion_search_max_steps = 500;
+15003
+-- An atom under `NOT` is assumed false, otherwise the rows with `b < 2000` would be excluded.
+SELECT count(), sum(c) FROM t_exclusion_search_unknown_atoms
+WHERE NOT (b < 2000 AND startsWith(s, '4')) AND b BETWEEN 1000 AND 3000;
+5003	31524503
+SELECT count(), sum(c) FROM t_exclusion_search_unknown_atoms
+WHERE NOT (b < 2000 AND startsWith(s, '4')) AND b BETWEEN 1000 AND 3000
+SETTINGS use_primary_key = 0;
+5003	31524503

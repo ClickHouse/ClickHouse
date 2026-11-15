@@ -1,0 +1,41 @@
+<test>
+    <!-- Reads served from the columns cache where `PREWHERE` leaves gaps: about 3% of the 12-row
+         groups pass, scattered over a part of about 6000 marks, and one thread reads the part as a
+         single long mark range, as `FINAL` and read-in-order queries do. After every gap the reader
+         re-enters its range; looking the rest of the range up in the cache again at every re-entry
+         made such reads quadratic in the number of marks and slower than reading without the cache. -->
+
+    <settings>
+        <use_columns_cache>1</use_columns_cache>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <max_threads>1</max_threads>
+        <do_not_merge_across_partitions_select_final>1</do_not_merge_across_partitions_select_final>
+    </settings>
+
+    <create_query>
+        CREATE TABLE columns_cache_gaps
+        (
+            k UInt64, m UInt16,
+            c1 UInt32, c2 UInt32, c3 UInt32, c4 UInt32, c5 UInt32, c6 UInt32, c7 UInt32, c8 UInt32, c9 UInt32, c10 UInt32,
+            c11 UInt32, c12 UInt32, c13 UInt32, c14 UInt32, c15 UInt32, c16 UInt32, c17 UInt32, c18 UInt32, c19 UInt32, c20 UInt32
+        )
+        ENGINE = ReplacingMergeTree ORDER BY k
+        SETTINGS index_granularity = 512, min_bytes_for_wide_part = 0
+    </create_query>
+
+    <fill_query>
+        INSERT INTO columns_cache_gaps SELECT number, intHash32(intDiv(number, 12)) % 10000,
+            rand(1), rand(2), rand(3), rand(4), rand(5), rand(6), rand(7), rand(8), rand(9), rand(10),
+            rand(11), rand(12), rand(13), rand(14), rand(15), rand(16), rand(17), rand(18), rand(19), rand(20)
+        FROM numbers(3000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE columns_cache_gaps FINAL</fill_query>
+    <!-- Populate the cache. -->
+    <fill_query>SELECT * FROM columns_cache_gaps FORMAT Null</fill_query>
+
+    <query>SELECT sum(c1 + c2 + c3 + c4 + c5 + c6 + c7 + c8 + c9 + c10 + c11 + c12 + c13 + c14 + c15 + c16 + c17 + c18 + c19 + c20) FROM columns_cache_gaps FINAL PREWHERE m &lt; 300</query>
+    <query>SELECT sum(c1 + c2 + c3 + c4 + c5 + c6 + c7 + c8 + c9 + c10 + c11 + c12 + c13 + c14 + c15 + c16 + c17 + c18 + c19 + c20) FROM columns_cache_gaps PREWHERE m &lt; 300</query>
+    <query>SELECT * FROM columns_cache_gaps PREWHERE m &lt; 300 ORDER BY k FORMAT Null SETTINGS optimize_read_in_order = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS columns_cache_gaps</drop_query>
+</test>

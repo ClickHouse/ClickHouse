@@ -1,0 +1,16 @@
+interleaved
+alpha	right
+beta	left
+gamma	left
+alpha	center
+records_first
+alpha	right
+beta	left
+gamma	left
+alpha	center
+reversed_dictionaries
+alpha	right
+beta	left
+gamma	left
+alpha	center
+Duplicate base dictionary rejected

@@ -19,6 +19,7 @@ from pyspark.sql.functions import expr
 
 from helpers.cluster import ClickHouseCluster
 from helpers.s3_tools import (
+    AzureDownloader,
     AzureUploader,
     LocalUploader,
     S3Uploader,
@@ -124,6 +125,10 @@ def started_cluster():
         cluster.container_client = container_client
 
         cluster.default_azure_uploader = AzureUploader(
+            cluster.blob_service_client, cluster.azure_container_name
+        )
+
+        cluster.default_azure_downloader = AzureDownloader(
             cluster.blob_service_client, cluster.azure_container_name
         )
 
@@ -539,6 +544,10 @@ def default_download_directory(
         )
     elif storage_type == "s3":
         return started_cluster.default_s3_downloader.download_directory(
+            local_path, remote_path, **kwargs
+        )
+    elif storage_type == "azure":
+        return started_cluster.default_azure_downloader.download_directory(
             local_path, remote_path, **kwargs
         )
     else:
