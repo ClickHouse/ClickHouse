@@ -62,6 +62,7 @@ echo "--- the materialized view still gets the data"
 $CLICKHOUSE_CLIENT -q "SELECT k, v FROM stored ORDER BY ALL"
 
 echo "--- a subscriber that falls behind fails instead of blocking the inserts"
+$CLICKHOUSE_CLIENT -q "DROP TABLE mv"
 read -r fifo_3 pid_3 < <(spawn $STREAMING_CLIENT -q "SELECT k, sleepEachRow(0.1) FROM n STREAM")
 wait_for_subscription "$fifo_3"
 $CLICKHOUSE_CLIENT --max_block_size=1 --min_insert_block_size_rows=1 --min_insert_block_size_bytes=0 -q "INSERT INTO n SELECT 'x', number FROM numbers(3000)"
