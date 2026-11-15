@@ -1,0 +1,33 @@
+blocks	[20000]
+INSERT small, jlate	1
+INSERT mid, jit	1
+INSERT mid, jit DESC	1
+INSERT mid, jlate	1
+INSERT uid, jit	1
+INSERT cat, uh, jit	1
+INSERT cat, inc DESC, ts	1
+INSERT cat, rev DESC, ts	1
+INSERT uid, rev	1
+INSERT spread, rev	1
+INSERT mid, rjit	1
+INSERT small, tj DESC	1
+INSERT b, inc DESC	1
+INSERT cat, inc DESC	1
+INSERT b, uinc DESC	1
+INSERT cat, asc DESC, ts	1
+INSERT uid, asc DESC, ts	1
+INSERT small, asc DESC, wide	1
+INSERT c5, asc DESC, ts	1
+INSERT cat, rev DESC, wide	1
+INSERT cat, jit DESC, wide	1
+INSERT small, jit, wide	1
+INSERT mid, rjit DESC, wide	1
+INSERT cat, tj DESC, wide	1
+INSERT cat, jlate DESC, wide	1
+INSERT uid, jit DESC, wide	1
+INSERT cat, uh, jit DESC, wide	1
+INSERT cat, jlate DESC	1
+INSERT small, jlate DESC	1
+INSERT cat, tjlate DESC	1
+INSERT cat, late1 DESC	1
+DISTINCT cat, uh	1
