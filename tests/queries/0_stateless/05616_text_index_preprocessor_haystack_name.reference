@@ -1,0 +1,50 @@
+constant lambda in an ALIAS column
+	0
+FOO bar	0
+Hello World	1
+1
+1
+1
+2
+lambda without captures
+	0
+FOO bar	0
+Hello World	1
+1
+nested lambdas
+	0
+FOO bar	0
+Hello World	1
+1
+array index
+	0	0
+FOO bar	0	0
+Hello World	1	1
+1
+comparison with an empty string in a lambda
+	0
+FOO bar	0
+Hello World	1
+1
+comparison with an empty string
+	0
+FOO bar	0
+Hello World	1
+1
+1
+1
+lambda capturing a column
+	0
+FOO bar	0
+Hello World	1
+1
+preprocessor and postprocessor
+	0
+FOO bar	0
+Hello World	1
+1
+hasPhrase
+	0
+FOO bar	0
+Hello World	1
+1

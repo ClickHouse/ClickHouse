@@ -24,7 +24,6 @@ public:
     String processConstant(const String & input) const;
 
     bool hasActions() const { return !original_actions.getActions().empty(); }
-    const ActionsDAG & getOriginalActionsDAG() const { return original_actions.getActionsDAG(); }
 
     /// The preprocessor expression as an AST reading from an identifier named `col_name`, to splice into a larger expression.
     ASTPtr getExpressionAST(const String & col_name) const;
