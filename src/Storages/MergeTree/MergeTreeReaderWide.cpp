@@ -237,10 +237,11 @@ size_t MergeTreeReaderWide::readRows(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} shared columns, got {}", num_columns, shared_columns.size());
 
         /// Result columns created by the data type alone may not match the part's serializations
-        /// (see ISerialization::isColumnCompatible): reading into them would be UB.
-        for (size_t pos = 0; pos < num_columns; ++pos)
+        /// (see ISerialization::isColumnCompatible): reading into them would be UB. A shared column
+        /// is adopted as the destination as-is (see takeColumnForAppending), so check both carriers.
+        auto checkDestination = [&](size_t pos, const IColumn & column)
         {
-            if (res_columns[pos] && !serializations[pos]->isColumnCompatible(*res_columns[pos]))
+            if (!serializations[pos]->isColumnCompatible(column))
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Cannot append to the result column of family {} passed for column {} of part {}: "
@@ -248,10 +249,17 @@ size_t MergeTreeReaderWide::readRows(
                     "of a specific class and casts to it unchecked, so appending to a different one is "
                     "undefined behaviour. Pass result columns created by the part's serializations "
                     "(e.g. IDataType::createColumn(serialization)), not by the data type alone",
-                    res_columns[pos]->getFamilyName(),
+                    column.getFamilyName(),
                     columns_to_read[pos].name,
                     data_part_info_for_read->getPartName(),
                     ISerialization::kindStackToString(serializations[pos]->getKindStack()));
+        };
+        for (size_t pos = 0; pos < num_columns; ++pos)
+        {
+            if (res_columns[pos])
+                checkDestination(pos, *res_columns[pos]);
+            if (pos < shared_columns.size() && shared_columns[pos])
+                checkDestination(pos, *shared_columns[pos]);
         }
 
         if (num_columns == 0)
