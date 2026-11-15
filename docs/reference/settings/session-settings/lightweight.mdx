@@ -26,6 +26,13 @@ Possible values:
 - `lightweight_update` - run lightweight update if possible, run `ALTER UPDATE` otherwise.
 - `lightweight_update_force` - run lightweight update if possible, throw otherwise.
 
+For `DELETE FROM ... ON CLUSTER`, each executing host derives the mode from its own settings, so
+hosts whose profiles set different defaults can run the delete in different modes. A replicated
+shard executes on one replica, so there it is that replica's settings that decide. Setting it in
+the session of the initiating query overrides this, because the distributed DDL entry carries
+session changes at `distributed_ddl_entry_format_version` 2 and above, which the default satisfies.
+A host that constrains the setting clamps the value back.
+
 ## lightweight_deletes_sync {#lightweight_deletes_sync}
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
@@ -41,7 +48,7 @@ Possible values:
 | `0`   | Mutations execute asynchronously.                                                                                                                     |
 | `1`   | The query waits for the lightweight deletes to complete on the current server.                                                                        |
 | `2`   | The query waits for the lightweight deletes to complete on all replicas (if they exist).                                                              |
-| `3`   | The query waits only for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `mutations_sync = 2`.|
+| `3`   | The query waits only for the active replicas. Inactive replicas apply the lightweight deletes when they become active.                                |
 
 **See Also**
 

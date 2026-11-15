@@ -1,6 +1,7 @@
 #include <Columns/ColumnConst.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/normalizeDivision.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
@@ -318,18 +319,21 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     {
         Exception::SuppressErrorCodesScope suppress_error_codes;
         bool read = true;
+        const auto & type = types[column_idx];
         if (checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("DEFAULT", *buf))
         {
-            column.insertDefault();
+            if (type->isDefaultInsertTrivial())
+                column.insertDefault();
+            else
+                type->insertDefaultInto(column);
             read = false;
         }
         else
         {
-            const auto & type = types[column_idx];
             const auto & serialization = serializations[column_idx];
             /// Let Enum conversion functions handle the null value.
             if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type) && !isEnum(type))
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *buf, format_settings, serialization);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *buf, format_settings, serialization, type.get());
             else
                 serialization->deserializeTextQuoted(column, *buf, format_settings);
         }
@@ -343,7 +347,8 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     {
         /// Do not consider decimal overflow as parse error to avoid attempts to parse it as expression with float literal
         bool decimal_overflow = e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND;
-        if (!isParseError(e.code()) || decimal_overflow)
+        /// A throwing read cancels its buffer for good, and the recovery below reads it again.
+        if (!isParseError(e.code()) || decimal_overflow || buf->isCanceled())
         {
             e.recordToSystemErrors();
             throw;
@@ -549,8 +554,8 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 
     if (parser_type_for_column[column_idx] != ParserType::Streaming && dynamic_cast<const ASTLiteral *>(ast.get()))
     {
-        /// It's possible that streaming parsing has failed on some row (e.g. because of '+' sign before integer),
-        /// but it still can parse the following rows
+        /// It's possible that streaming parsing has failed on some row (e.g. because of an exponent
+        /// such as `1e3` in an integer column), but it still can parse the following rows
         /// Check if we can use fast streaming parser instead if using templates
         bool rollback_on_exception = false;
         bool ok = false;
@@ -581,6 +586,8 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         if (rollback_on_exception)
             column.popBack(1);
     }
+
+    normalizeDivision(*ast, context);
 
     parser_type_for_column[column_idx] = ParserType::SingleExpressionEvaluation;
 
@@ -773,20 +780,16 @@ void ValuesBlockInputFormat::readSuffix()
 
 void ValuesBlockInputFormat::resetParser()
 {
-    if (got_exception)
+    for (size_t i = 0; i < num_columns; ++i)
     {
-        /// In case of exception always reset the templates and parser type,
-        /// because they may be in the invalid state.
-        for (size_t i = 0; i < num_columns; ++i)
-        {
-            templates[i].reset();
-            parser_type_for_column[i] = ParserType::Streaming;
-        }
+        templates[i].reset();
+        parser_type_for_column[i] = ParserType::Streaming;
+        attempts_to_deduce_template[i] = 0;
+        attempts_to_deduce_template_cached[i] = 0;
+        rows_parsed_using_template[i] = 0;
     }
 
     IInputFormat::resetParser();
-    // I'm not resetting parser modes here.
-    // There is a good chance that all messages have the same format.
     total_rows = 0;
 }
 
@@ -889,7 +892,7 @@ void registerInputFormatValues(FormatFactory & factory)
         const FormatSettings & settings)
     {
         return std::make_shared<ValuesBlockInputFormat>(buf, std::make_unique<const Block>(header), params, settings);
-    });
+    }, /*supports_reset_parser=*/ true);
 
     factory.setDocumentation("Values", Documentation{
         .description = R"DOCS_MD(

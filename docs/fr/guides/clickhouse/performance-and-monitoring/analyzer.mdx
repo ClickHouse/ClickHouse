@@ -10,15 +10,13 @@ doc_type: 'reference'
 Dans la version `24.3` de ClickHouse, l’analyseur a été activé par défaut.
 Vous trouverez plus de détails sur son fonctionnement [ici](/fr/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer#analyzer).
 
-<div id="known-incompatibilities">
-  ## Incompatibilités connues
-</div>
+Depuis la version `26.9`, l’analyseur est obligatoire : le paramètre `enable_analyzer` est obsolète, toute tentative de le définir à `0` est rejetée, et l’analyse de requêtes utilisée par ClickHouse avant la version `24.3` n’est plus prise en charge. Les incompatibilités répertoriées ci-dessous décrivent en quoi cette ancienne analyse différait, afin de pouvoir mettre à jour une requête écrite pour elle ; pour observer son comportement, exécutez la requête sur une version de ClickHouse antérieure à `26.9`.
+
+## Incompatibilités connues {#known-incompatibilities}
 
 Bien qu’elle corrige un grand nombre de bugs et apporte de nouvelles optimisations, cette version introduit également certains changements incompatibles dans le comportement de ClickHouse. Veuillez prendre connaissance des modifications ci-dessous afin de déterminer comment réécrire vos requêtes pour l’analyseur.
 
-<div id="invalid-queries-are-no-longer-optimized">
-  ### Les requêtes invalides ne sont plus optimisées
-</div>
+### Les requêtes invalides ne sont plus optimisées {#invalid-queries-are-no-longer-optimized}
 
 L’ancienne infrastructure de planification des requêtes appliquait des optimisations au niveau de l’AST avant l’étape de validation des requêtes.
 Les optimisations pouvaient réécrire la requête initiale pour la rendre valide et exécutable.
@@ -27,9 +25,7 @@ Dans l’analyseur, la validation des requêtes a lieu avant l’étape d’opti
 Cela signifie que les requêtes invalides qu’il était auparavant possible d’exécuter ne sont désormais plus prises en charge.
 Dans ce cas, la requête doit être corrigée manuellement.
 
-<div id="example-1">
-  #### Exemple 1
-</div>
+#### Exemple 1 {#example-1}
 
 La requête suivante utilise la colonne `number` dans la liste de projection, alors que seul `toString(number)` est disponible après l’agrégation.
 Dans l’ancien analyseur, `GROUP BY toString(number)` était optimisé en `GROUP BY number,`, ce qui rendait la requête valide.
@@ -40,9 +36,7 @@ FROM numbers(1)
 GROUP BY toString(number)
 ```
 
-<div id="example-2">
-  #### Exemple 2
-</div>
+#### Exemple 2 {#example-2}
 
 Le même problème se pose dans cette requête. La colonne `number` est utilisée après agrégation avec une autre clé.
 L’ancien analyseur de requêtes corrigeait cette requête en déplaçant le filtre `number > 5` de la clause `HAVING` vers la clause `WHERE`.
@@ -69,9 +63,7 @@ GROUP BY n
 
 Pour faciliter la migration, l’analyseur peut reproduire l’ancienne réécriture de `HAVING` vers `WHERE` pour les conjonctions AND non agrégées. Activez `analyzer_compatibility_allow_non_aggregate_in_having = 1` pour adopter ce comportement. Ce paramètre est disponible depuis ClickHouse `26.7`. Le paramètre est ignoré pour `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS` et `GROUPING SETS`. Les conjonctions contenant des fonctions d’agrégation, `grouping` ou des fonctions non déterministes restent dans `HAVING` ; si une conjonction contient une fonction de fenêtre ou une fonction avec état (par exemple `rowNumberInBlock`), la réécriture est désactivée pour l’ensemble de `HAVING`, conformément au comportement legacy.
 
-<div id="create-view-with-invalid-query">
-  ### `CREATE VIEW` avec une requête invalide
-</div>
+### `CREATE VIEW` avec une requête invalide {#create-view-with-invalid-query}
 
 L&#39;analyseur effectue toujours un contrôle de type.
 Auparavant, il était possible de créer une `VIEW` avec une requête `SELECT` invalide.
@@ -79,9 +71,7 @@ Elle échouait ensuite lors du premier `SELECT` ou `INSERT` (dans le cas d&#39;u
 
 Il n&#39;est désormais plus possible de créer une `VIEW` de cette manière.
 
-<div id="example-view">
-  #### Exemple
-</div>
+#### Exemple {#example-view}
 
 ```sql
 CREATE TABLE source (data String)
@@ -93,13 +83,9 @@ AS SELECT JSONExtract(data, 'test', 'DateTime64(3)')
 FROM source;
 ```
 
-<div id="known-incompatibilities-of-the-join-clause">
-  ### Incompatibilités connues de la clause `JOIN`
-</div>
+### Incompatibilités connues de la clause `JOIN` {#known-incompatibilities-of-the-join-clause}
 
-<div id="join-using-column-from-projection">
-  #### `JOIN` avec une colonne issue d’une projection
-</div>
+#### `JOIN` avec une colonne issue d’une projection {#join-using-column-from-projection}
 
 Par défaut, un alias de la liste `SELECT` ne peut pas être utilisé comme clé `JOIN USING`.
 
@@ -119,9 +105,7 @@ Le résultat sera `2, 'two'`.
 Lorsque ce paramètre est défini sur `false`, la condition de jointure devient par défaut `t1.b = t2.b`, et la requête renverra `2, 'one'`.
 Si `b` n&#39;est pas présent dans `t1`, la requête échouera avec une erreur.
 
-<div id="changes-in-behavior-with-join-using-and-aliasmaterialized-columns">
-  #### Changements de comportement avec `JOIN USING` et les colonnes `ALIAS`/`MATERIALIZED`
-</div>
+#### Changements de comportement avec `JOIN USING` et les colonnes `ALIAS`/`MATERIALIZED` {#changes-in-behavior-with-join-using-and-aliasmaterialized-columns}
 
 Dans l’analyseur, l’utilisation de `*` dans une requête `JOIN USING` faisant intervenir des colonnes `ALIAS` ou `MATERIALIZED` inclura ces colonnes dans le jeu de résultats par défaut.
 
@@ -144,9 +128,7 @@ et les colonnes pouvaient apparaître dans un ordre différent.
 
 Pour garantir des résultats cohérents et conformes aux attentes, en particulier lors de la migration d’anciennes requêtes vers l’analyseur, il est conseillé de spécifier explicitement les colonnes dans la clause `SELECT` plutôt que d’utiliser `*`.
 
-<div id="handling-of-type-modifiers-for-columns-in-using-clause">
-  #### Gestion des modificateurs de type pour les colonnes dans la clause `USING`
-</div>
+#### Gestion des modificateurs de type pour les colonnes dans la clause `USING` {#handling-of-type-modifiers-for-columns-in-using-clause}
 
 Dans l’analyseur, les règles de détermination du supertype commun pour les colonnes spécifiées dans la clause `USING` ont été harmonisées afin de produire des résultats plus prévisibles,
 en particulier lors de l’utilisation de modificateurs de type tels que `LowCardinality` et `Nullable`.
@@ -165,9 +147,7 @@ USING (id);
 
 Dans cette requête, le supertype commun de `id` est déterminé comme étant `String`, le modificateur `LowCardinality` de `t1` étant ignoré.
 
-<div id="projection-column-names-changes">
-  ### Modifications des noms de colonnes de projection
-</div>
+### Modifications des noms de colonnes de projection {#projection-column-names-changes}
 
 Lors du calcul des noms de projection, les alias ne sont pas remplacés.
 
@@ -175,27 +155,26 @@ Lors du calcul des noms de projection, les alias ne sont pas remplacés.
 SELECT
     1 + 1 AS x,
     x + 1
-SETTINGS enable_analyzer = 0
 FORMAT PrettyCompact
+```
 
+Avant la version `24.3`, la deuxième colonne était nommée d&#39;après l&#39;alias remplacé :
+
+```text
    ┌─x─┬─plus(plus(1, 1), 1)─┐
 1. │ 2 │                   3 │
    └───┴─────────────────────┘
+```
 
-SELECT
-    1 + 1 AS x,
-    x + 1
-SETTINGS enable_analyzer = 1
-FORMAT PrettyCompact
+L&#39;analyseur conserve l&#39;alias dans le nom :
 
+```text
    ┌─x─┬─plus(x, 1)─┐
 1. │ 2 │          3 │
    └───┴────────────┘
 ```
 
-<div id="incompatible-function-arguments-types">
-  ### Types d&#39;arguments de fonction incompatibles
-</div>
+### Types d&#39;arguments de fonction incompatibles {#incompatible-function-arguments-types}
 
 Dans l&#39;analyseur, l&#39;inférence de type a lieu lors de l&#39;analyse de la requête initiale.
 Ce changement signifie que les vérifications de type sont effectuées avant l&#39;évaluation en court-circuit ; les arguments de la fonction `if` doivent donc toujours avoir un supertype commun.
@@ -206,41 +185,26 @@ Par exemple, la requête suivante échoue avec `There is no supertype for types 
 SELECT toTypeName(if(0, [2, 3, 4], 'String'))
 ```
 
-<div id="heterogeneous-clusters">
-  ### Clusters hétérogènes
-</div>
+### Clusters hétérogènes {#heterogeneous-clusters}
 
-L’analyseur modifie sensiblement le protocole de communication entre les serveurs du cluster. Il est donc impossible d’exécuter des requêtes distribuées sur des serveurs dont les valeurs du paramètre `enable_analyzer` diffèrent.
+L’analyseur modifie sensiblement le protocole de communication entre les serveurs du cluster. Il est donc impossible d’exécuter des requêtes distribuées sur des serveurs qui ne s’accordent pas sur l’utilisation ou non de l’analyseur — ce qui, pour un cluster de serveurs antérieurs à la version `26.9`, signifie des serveurs dont les valeurs du paramètre `enable_analyzer` diffèrent.
 
-<div id="mutations-are-interpreted-by-previous-analyzer">
-  ### Les mutations sont interprétées par l’ancien analyseur
-</div>
+Un serveur de version `26.10` ou ultérieure ne dispose plus d’aucune autre analyse de requêtes : il ignore donc la valeur envoyée par un initiateur plus ancien et analyse la requête avec l’analyseur dans tous les cas. Les deux analyses ne nomment pas les colonnes du résultat de la même façon, et un initiateur met en correspondance le bloc renvoyé par un shard par nom de colonne ; une telle requête peut donc échouer sur l’initiateur avec `NOT_FOUND_COLUMN_IN_BLOCK` — par exemple lorsqu’elle sélectionne une fonction écrite dans une casse non canonique (`hostname()`), que l’analyseur résout vers son nom canonique (`hostName()`). Un cluster fonctionnant encore avec l’ancienne analyse de requêtes doit par conséquent définir `enable_analyzer = 1` sur chaque serveur avant que l’un d’eux ne soit mis à niveau vers `26.10`.
 
-Les mutations utilisent encore l’ancien analyseur.
-Cela signifie que certaines nouvelles fonctionnalités de ClickHouse SQL ne peuvent pas être utilisées dans les mutations. Par exemple, la clause `QUALIFY`.
-Vous pouvez en suivre l’état [ici](https://github.com/ClickHouse/ClickHouse/issues/61563).
-
-<div id="unsupported-features">
-  ### Fonctionnalités non prises en charge
-</div>
+### Fonctionnalités non prises en charge {#unsupported-features}
 
 La liste des fonctionnalités que l&#39;analyseur ne prend pas encore en charge figure ci-dessous :
 
 * Index Annoy.
 * Index Hypothesis. Prise en charge en cours [ici](https://github.com/ClickHouse/ClickHouse/pull/48381).
-* La vue fenêtrée n&#39;est pas prise en charge. Aucune prise en charge n&#39;est prévue à l&#39;avenir.
 
-<div id="cloud-migration">
-  ## Migration vers Cloud
-</div>
+## Migration vers Cloud {#cloud-migration}
 
 Nous activons l’analyseur sur toutes les instances où il est actuellement désactivé, afin de permettre de nouvelles optimisations fonctionnelles et de performance. Cette modification applique des règles de portée SQL plus strictes et oblige les clients à mettre à jour manuellement les requêtes non conformes.
 
-<div id="migration-workflow">
-  ### Workflow de migration
-</div>
+### Workflow de migration {#migration-workflow}
 
-1. Identifiez la requête en filtrant `system.query_log` à l’aide de `normalized_query_hash` :
+1. Identifiez la requête en filtrant `system.query_log` à l’aide de `normalized_query_hash` :
 
 ```sql
 SELECT query 
@@ -250,21 +214,18 @@ LIMIT 1
 SETTINGS skip_unavailable_shards=1
 ```
 
-2. Exécutez la requête avec l’analyseur activé en ajoutant les paramètres suivants.
+2. Exécutez la requête avec l’analyseur, en ajoutant le paramètre de compatibilité qui rétablit la résolution des identifiants de l’ancienne analyse lorsque la requête en dépend.
 
 ```sql
 SETTINGS
-    enable_analyzer=1,
     analyzer_compatibility_join_using_top_level_identifier=1
 ```
 
-3. Refactorisez et vérifiez le résultat de la requête afin de vous assurer qu’il correspond à la sortie générée lorsque l’analyseur est désactivé.
+3. Refactorisez et vérifiez le résultat de la requête afin de vous assurer qu’il correspond à la sortie produite par la requête avant la migration.
 
 Veuillez consulter les incompatibilités les plus fréquentes rencontrées lors des tests internes.
 
-<div id="unknown-expression-identifier">
-  ### Identifiant d’expression inconnu
-</div>
+### Identifiant d’expression inconnu {#unknown-expression-identifier}
 
 Erreur : `Unknown expression identifier ... in scope ... (UNKNOWN_IDENTIFIER)`. Code d’exception : 47
 
@@ -277,9 +238,7 @@ Solution : Mettez à jour vos modèles SQL comme suit :
 * Clés de jointure : utilisez ON avec des expressions complètes plutôt que USING si la clé est un alias.
 * Dans les requêtes externes, référencez l’alias de la sous-requête/CTE elle-même, et non les tables qu’elle contient.
 
-<div id="non-aggregated-columns-in-group-by">
-  ### Colonnes non agrégées dans GROUP BY
-</div>
+### Colonnes non agrégées dans GROUP BY {#non-aggregated-columns-in-group-by}
 
 Erreur : `Column ... is not under aggregate function and not in GROUP BY keys (NOT_AN_AGGREGATE)`. Code d’exception : 215
 
@@ -298,9 +257,7 @@ SELECT user_id, any(device_id) FROM table GROUP BY user_id
 SELECT user_id, device_id FROM table GROUP BY user_id, device_id
 ```
 
-<div id="non-aggregated-columns-in-having">
-  ### Colonnes non agrégées dans HAVING
-</div>
+### Colonnes non agrégées dans HAVING {#non-aggregated-columns-in-having}
 
 Erreur : `Column ... is not under aggregate function and not in GROUP BY keys (NOT_AN_AGGREGATE)`. Code d&#39;exception : 215
 
@@ -316,33 +273,38 @@ SELECT category, sum(value) FROM t GROUP BY category HAVING service = 'svc1';
 SELECT category, sum(value) FROM t WHERE service = 'svc1' GROUP BY category;
 ```
 
-<div id="duplicate-cte-names">
-  ### Noms de CTE en double
-</div>
+### Noms de CTE en double {#duplicate-cte-names}
 
-Erreur : `CTE with name ... already exists (MULTIPLE_EXPRESSIONS_FOR_ALIAS)`. Code d&#39;exception : 179
+Erreur : `CTE with name ... already exists (MULTIPLE_EXPRESSIONS_FOR_ALIAS)`. Code d&#39;exception : 179
 
-Cause : l&#39;ancien analyseur permettait de définir plusieurs expressions de table communes (WITH ...) portant le même nom, en masquant la précédente. L&#39;analyseur interdit cette ambiguïté.
+Cause : l&#39;ancien analyseur permettait de définir plusieurs Common Table Expressions (WITH ...) portant le même nom, chaque nouvelle définition masquant la précédente. Le nouvel analyseur rejette par défaut cette ambiguïté.
 
-Solution : renommez les CTE en double pour leur donner des noms uniques.
+Solution : renommez les CTE en double afin que leurs noms soient uniques. Pour faciliter la migration, activez `analyzer_compatibility_allow_cte_redefinition = 1` (disponible depuis ClickHouse `26.10`) afin de rétablir le comportement legacy : une référence est liée à la dernière définition du nom qui n&#39;est pas en cours de résolution à ce moment-là. Ainsi, une redéfinition peut lire la définition précédente, tandis que le corps de la requête lit la dernière.
+
+Limitations : une CTE déclarée comme `MATERIALIZED` et une CTE figurant dans une clause `WITH RECURSIVE` ne peuvent pas être redéfinies, même lorsque ce paramètre est activé. Un cas de figure diffère de l&#39;ancien analyseur : une CTE déclarée entre deux définitions d&#39;un même nom est elle aussi liée à la dernière définition, alors que l&#39;ancien analyseur la liait à la définition visible à l&#39;endroit de sa déclaration.
 
 ```sql
 /* ORIGINAL QUERY */
-WITH 
-  data AS (SELECT 1 AS id), 
-  data AS (SELECT 2 AS id) -- Redefined
+WITH
+  data AS (SELECT 1 AS id),
+  data AS (SELECT id + 1 AS id FROM data) -- Redefined, reads the previous definition
 SELECT * FROM data;
 
 /* FIXED QUERY */
-WITH 
-  raw_data AS (SELECT 1 AS id), 
-  processed_data AS (SELECT 2 AS id)
+WITH
+  raw_data AS (SELECT 1 AS id),
+  processed_data AS (SELECT id + 1 AS id FROM raw_data)
 SELECT * FROM processed_data;
+
+/* LEGACY BEHAVIOR AS A MIGRATION AID */
+WITH
+  data AS (SELECT 1 AS id),
+  data AS (SELECT id + 1 AS id FROM data)
+SELECT * FROM data
+SETTINGS analyzer_compatibility_allow_cte_redefinition = 1;
 ```
 
-<div id="ambiguous-column-identifiers">
-  ### Identifiants de colonnes ambigus
-</div>
+### Identifiants de colonnes ambigus {#ambiguous-column-identifiers}
 
 Erreur : `JOIN [JOIN TYPE] ambiguous identifier ... (AMBIGUOUS_IDENTIFIER)` Code d&#39;exception : 207
 
@@ -358,9 +320,7 @@ SELECT table1.ID AS ID FROM table1, table2 WHERE ID...
 SELECT table1.ID AS ID_RENAMED FROM table1, table2 WHERE ID_RENAMED...
 ```
 
-<div id="invalid-usage-of-final">
-  ### Utilisation incorrecte de FINAL
-</div>
+### Utilisation incorrecte de FINAL {#invalid-usage-of-final}
 
 Erreur : `Table expression modifiers FINAL are not supported for subquery...` ou `Storage ... doesn't support FINAL` (`UNSUPPORTED_METHOD`). Codes d&#39;exception : 1, 181
 
@@ -379,9 +339,7 @@ SELECT * FROM (SELECT * FROM my_table) AS subquery FINAL ...
 SELECT * FROM (SELECT * FROM my_table FINAL) AS subquery ...
 ```
 
-<div id="countdistinct-case-insensitivity">
-  ### Insensibilité à la casse de la fonction `countDistinct()`
-</div>
+### Insensibilité à la casse de la fonction `countDistinct()` {#countdistinct-case-insensitivity}
 
 Erreur : `Function with name countdistinct does not exist (UNKNOWN_FUNCTION)`. Code d&#39;exception : 46
 

@@ -1,0 +1,14 @@
+join: the condition stays above the fragment, and nothing is ordered
+Read type: Default
+Read type: Default
+1000
+limit by: the same
+Read type: Default
+1
+non-deterministic select list: the same
+Read type: Default
+1000
+untuple: the rewrite takes it, so the condition goes in and orders the read
+Read type: InOrder
+Prewhere filter column:  tenant = 5
+1000

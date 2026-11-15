@@ -2,7 +2,6 @@
 
 -- Regression test for #110697.
 
-SET enable_analyzer = 1;
 SET allow_experimental_full_text_index = 1;
 -- The abort only reproduces with the whole plan built on the local initiator.
 SET prefer_localhost_replica = 1;

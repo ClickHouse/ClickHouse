@@ -10,7 +10,7 @@
 namespace DB
 {
 
-ASTPtr CompressionCodecNone::getCodecDesc() const
+ASTPtr CompressionCodecNone::getCodecDescription() const
 {
     return makeCodecDescription("NONE");
 }
@@ -22,7 +22,7 @@ uint8_t CompressionCodecNone::getMethodByte() const
 
 void CompressionCodecNone::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 UInt32 CompressionCodecNone::doCompressData(const char * source, UInt32 source_size, char * dest) const

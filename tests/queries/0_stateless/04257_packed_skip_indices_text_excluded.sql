@@ -31,12 +31,12 @@ SELECT 'after_merge_count', count() FROM t_text_no_pack;
 SELECT 'after_merge_active_parts', count() FROM system.parts
 WHERE database = currentDatabase() AND table = 't_text_no_pack' AND active;
 SELECT 'after_merge_text_filtered_lookup',
-    count() FROM t_text_no_pack WHERE s = '7919' SETTINGS allow_experimental_analyzer = 1;
+    count() FROM t_text_no_pack WHERE s = '7919';
 SELECT 'after_merge_text_filters_granules', countIf(
     splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
     < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_text_no_pack WHERE s = '7919') AS s
-WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%';
 
 CHECK TABLE t_text_no_pack SETTINGS check_query_single_value_result = 1;
 

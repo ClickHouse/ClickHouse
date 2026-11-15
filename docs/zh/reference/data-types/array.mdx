@@ -10,11 +10,9 @@ doc_type: 'reference'
 
 由 `T` 类型元素构成的数组，数组索引从 1 开始。`T` 可以是任何数据类型，包括数组。
 
-<div id="creating-an-array">
-  ## 创建 Array
-</div>
+## 创建 array {#creating-an-array}
 
-您可以使用函数来创建 Array：
+您可以使用函数来创建 array：
 
 ```sql
 array(T)
@@ -25,6 +23,9 @@ array(T)
 ```sql
 []
 ```
+
+此外，还支持 SQL 标准、PostgreSQL 和 Trino 的数组构造语法：`ARRAY[1, 2]` 等价于 `[1, 2]`。
+该数据类型也可以写作 `ARRAY(T)`。
 
 创建数组的示例：
 
@@ -48,9 +49,7 @@ SELECT [1, 2] AS x, toTypeName(x)
 └───────┴────────────────────┘
 ```
 
-<div id="working-with-data-types">
-  ## 使用数据类型
-</div>
+## 使用数据类型 {#working-with-data-types}
 
 动态创建数组时，ClickHouse 会自动将参数类型确定为能够容纳所有已列出参数的最窄数据类型。如果包含任何 [Nullable](/zh/reference/data-types/nullable) 或字面量 [NULL](/zh/reference/settings/formats/input-format#input_format_null_as_default) 值，数组元素的类型也会变为 [Nullable](/zh/reference/data-types/nullable)。
 
@@ -79,9 +78,7 @@ Received exception from server (version 1.1.54388):
 Code: 386. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString and some of them are not.
 ```
 
-<div id="array-size">
-  ## Array 的大小
-</div>
+## Array 的大小 {#array-size}
 
 可以通过 `size0` 子列获取数组大小，而无需读取整个列。对于多维数组，可以使用 `sizeN-1`，其中 `N` 是所需的维度。
 
@@ -101,9 +98,7 @@ SELECT arr.size0, arr.size1, arr.size2 FROM t_arr;
 └───────────┴───────────┴───────────┘
 ```
 
-<div id="reading-nested-subcolumns-from-array">
-  ## 从 Array 中读取嵌套子列
-</div>
+## 从 Array 中读取嵌套子列 {#reading-nested-subcolumns-from-array}
 
 如果 `Array` 中的嵌套类型 `T` 具有子列 (例如，它是一个[命名元组](/zh/reference/data-types/tuple)) ，则可以通过 `Array(T)` 类型以相同的子列名称读取这些子列。子列的类型将是原始子列类型对应的 `Array`。
 

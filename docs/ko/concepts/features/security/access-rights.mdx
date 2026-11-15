@@ -176,7 +176,16 @@ ClickHouse를 이제 막 사용하기 시작했다면 다음 시나리오를 고
 
 * 최소 1개의 사용자 계정에 대해 SQL 기반 액세스 제어 및 계정 관리를 활성화합니다.
 
-  기본적으로 모든 사용자에 대해 SQL 기반 액세스 제어 및 계정 관리가 비활성화되어 있습니다. `users.xml` 설정 파일에서 최소 1명의 사용자를 구성하고, [`access_management`](/ko/concepts/features/configuration/settings/settings-users#access_management-user-setting), `named_collection_control`, `show_named_collections`, `show_named_collections_secrets` 설정의 값을 1로 지정해야 합니다.
+  ClickHouse에 기본 포함된 `users.xml` 설정 파일은 [`access_management`](/ko/concepts/features/configuration/settings/settings-users#access_management-user-setting)와 [`named_collection_control`](/ko/concepts/features/configuration/settings/settings-users#named_collection_control-user-setting)을 1로 지정하여 `default` 사용자에 대해 SQL 기반 액세스 제어 및 계정 관리를 활성화합니다. 그 외 사용자는 두 설정 모두 기본값이 0이므로 명시적으로 지정해야 합니다.
+
+  [`show_named_collections_secrets`](/ko/concepts/features/configuration/settings/settings-users#show_named_collections_secrets-user-setting)는 `default` 사용자에 대해서도 기본값이 0입니다. 명명된 컬렉션을 관리할 수 있다고 해서 그 안에 이미 저장된 자격 증명까지 읽을 수 있는 것은 아니기 때문입니다. 사용자는 자신이 보유한 권한만 부여할 수 있으므로, 이 설정이 0인 동안에는 해당 사용자가 완전한 권한 집합을 갖지 못하며 `GRANT ALL ON *.* TO clickhouse_admin WITH GRANT OPTION`과 같은 쿼리는 거부됩니다:
+
+  ```text
+  Not enough privileges. To execute this query, it's necessary to have the grant ALL ON *.* WITH GRANT OPTION.
+  (Missing permissions: SHOW NAMED COLLECTIONS SECRETS ON *)
+  ```
+
+  사용자를 완전한 관리자로 만들려면 세 가지 설정을 모두 1로 지정하십시오.
 
 <div id="defining-sql-users-and-roles">
   ## SQL 사용자 및 역할 정의하기
@@ -193,12 +202,16 @@ ClickHouse를 이제 막 사용하기 시작했다면 다음 시나리오를 고
 </div>
 
 1. `users.xml` 파일의 `<default>` 사용자 아래에서 SQL 사용자 모드를 활성화합니다:
+
    ```xml
    <access_management>1</access_management>
    <named_collection_control>1</named_collection_control>
-   <show_named_collections>1</show_named_collections>
+   <!-- 사용자를 완전한 관리자로 만들기 위해 필요합니다.
+        그렇지 않으면 아래의 `GRANT ALL ... WITH GRANT OPTION`이 거부됩니다. -->
    <show_named_collections_secrets>1</show_named_collections_secrets>
    ```
+
+   앞의 두 설정은 ClickHouse에 기본 포함된 `users.xml` 파일에서 `default` 사용자에 대해 이미 활성화되어 있습니다. `show_named_collections_secrets`는 해당 파일에서 주석 처리되어 있으므로 주석을 해제해야 합니다.
 
 <Note>
   `default` 사용자는 새로 설치한 환경에서 생성되는 유일한 사용자이며, 기본적으로 노드 간 통신에도 사용되는 계정입니다.

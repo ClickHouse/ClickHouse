@@ -17,7 +17,7 @@ class PullingAsyncPipelineExecutor;
 enum class PrometheusQueryResultType;
 
 /// Helper class to support the query and metadata endpoints of the Prometheus HTTP API.
-/// Implements /api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata
+/// Implements /api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata, /federate
 class PrometheusHTTPProtocolAPI : public WithMutableContext
 {
 public:
@@ -58,7 +58,7 @@ public:
         UInt64 limit,
         QueryFinishCallback query_finish_callback = {});
 
-    /// Get metric metadata (/api/v1/metadata): the distinct (type, help, unit) entries stored in the Metrics target table,
+    /// Get metric metadata (/api/v1/metadata): the distinct (type, help, unit) entries stored in the metric families target table,
     /// grouped by metric family. `metric` (if not empty) restricts the result to one metric family;
     /// `limit` caps the number of returned metric families (a negative value means no limit, 0 returns an empty result);
     /// `limit_per_metric` caps the number of returned entries per metric family (zero and negative values mean no limit).
@@ -91,6 +91,10 @@ public:
         const String & end_param,
         UInt64 limit,
         QueryFinishCallback query_finish_callback = {});
+
+    /// Federation (/federate): the latest sample of each series matched by the `match[]` selectors within the last 5 minutes,
+    /// in the Prometheus text exposition format.
+    void federate(WriteBuffer & response, const Strings & match_params, QueryFinishCallback query_finish_callback = {});
 
 private:
     /// Parses the `match[]` instant selectors and the optional `start` and `end` bounds of the metadata endpoints

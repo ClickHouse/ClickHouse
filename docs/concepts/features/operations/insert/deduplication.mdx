@@ -7,8 +7,6 @@ keywords: ['deduplication strategies', 'data deduplication', 'upserts', 'updates
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 **Deduplication** refers to the process of ***removing duplicate rows of a dataset***. In an OLTP database, this is done easily because each row has a unique primary key-but at the cost of slower inserts. Every inserted row needs to first be searched for and, if found, needs to be replaced.
 
 ClickHouse is built for speed when it comes to data insertion. The storage files are immutable and ClickHouse doesn't check for an existing primary key before inserting a row-so deduplication involves a bit more effort. This also means that deduplication isn't immediate-it is **eventual**, which has a few side effects:
@@ -21,7 +19,7 @@ ClickHouse is built for speed when it comes to data insertion. The storage files
 
 |||
 |------|----|
-|<Image img="/images/guides/developer/de_duplication.webp"  alt="Deduplication Logo" size="sm"/>|ClickHouse provides free training on deduplication and many other topics.  The [Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse&utm_medium=docs) is a good place to start.|
+|<span className="ch-image-sm"><Frame>![Deduplication Logo](/images/guides/developer/de_duplication.webp)</Frame></span>|ClickHouse provides free training on deduplication and many other topics.  The [Deleting and Updating Data training module](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461) is a good place to start.|
 
 </div>
 
@@ -33,7 +31,7 @@ Deduplication is implemented in ClickHouse using the following table engines:
 
 2. Collapsing rows: the `CollapsingMergeTree` and `VersionedCollapsingMergeTree` table engines use a logic where an existing row is "canceled" and a new row is inserted. They're more complex to implement than `ReplacingMergeTree`, but your queries and aggregations can be simpler to write without worrying about whether or not data has been merged yet. These two table engines are useful when you need to update data frequently.
 
-We walk through both of these techniques below. For more details, check out our free on-demand [Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse&utm_medium=docs).
+We walk through both of these techniques below. For more details, check out our free on-demand [Deleting and Updating Data training module](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461).
 
 ## Using ReplacingMergeTree for Upserts {#using-replacingmergetree-for-upserts}
 
@@ -160,7 +158,7 @@ GROUP BY (id, author, comment)
 
 Grouping as shown in the query above can actually be more efficient (in terms of query performance) than using the `FINAL` keyword.
 
-Our [Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse&utm_medium=docs) expands on this example, including how to use a `version` column with `ReplacingMergeTree`.
+Our [Deleting and Updating Data training module](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461) expands on this example, including how to use a `version` column with `ReplacingMergeTree`.
 
 ## Using CollapsingMergeTree for updating columns frequently {#using-collapsingmergetree-for-updating-columns-frequently}
 
