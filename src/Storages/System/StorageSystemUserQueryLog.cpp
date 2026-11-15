@@ -199,12 +199,12 @@ public:
         setStepDescription("Read the query log records of the current user");
     }
 
-    String getName() const override { return "ReadFromUserQueryLog"; }
+    [[nodiscard]] String getName() const override { return "ReadFromUserQueryLog"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:
-    String buildPushedDownConditions() const;
+    [[nodiscard]] String buildPushedDownConditions() const;
 
     StorageID log_table_id;
 };
