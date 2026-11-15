@@ -39,6 +39,7 @@ set(SRCS
     "${LIBRARY_DIR}/src/handle_timeout.cxx"
     "${LIBRARY_DIR}/src/handle_append_entries.cxx"
     "${LIBRARY_DIR}/src/cluster_config.cxx"
+    "${LIBRARY_DIR}/src/client_req_stream.cxx"
 )
 
 

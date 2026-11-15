@@ -18,10 +18,16 @@ struct BitNotImpl
 {
     using ResultType = typename NumberTraits::ResultOfBitNot<A>::Type;
     static constexpr bool allow_string_or_fixed_string = true;
+    /// `NativeNumber` does not cover the 128- and 256-bit integers, but `bitNot` supports them
+    /// (`~` over the whole value), so they are listed explicitly.
+    static constexpr auto signature =
+        "(A : NativeNumber | UInt128 | Int128 | UInt256 | Int256) -> nativeNumber(maxBits(A), anySigned(A), 0)"
+        " OR (F : FixedString) -> F"
+        " OR (String) -> String";
 
     static ResultType NO_SANITIZE_UNDEFINED apply(A a)
     {
-        return ~static_cast<ResultType>(a);
+        return static_cast<ResultType>(~static_cast<ResultType>(a));
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -52,7 +58,30 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameBitNot>
 
 REGISTER_FUNCTION(BitNot)
 {
-    factory.registerFunction<FunctionBitNot>();
+    FunctionDocumentation::Description description = "Performs the bitwise NOT operation.";
+    FunctionDocumentation::Syntax syntax = "bitNot(a)";
+    FunctionDocumentation::Arguments arguments = {
+        {"a", "Value for which to apply bitwise NOT operation.", {"(U)Int*", "Float*", "String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the result of `~a` i.e `a` with bits flipped."};
+    FunctionDocumentation::Examples examples = {{"Usage example",
+        R"(
+SELECT
+    CAST('5', 'UInt8') AS original,
+    bin(original) AS original_binary,
+    bitNot(original) AS result,
+    bin(bitNot(original)) AS result_binary;
+        )",
+        R"(
+┌─original─┬─original_binary─┬─result─┬─result_binary─┐
+│        5 │ 00000101        │    250 │ 11111010      │
+└──────────┴─────────────────┴────────┴───────────────┘
+        )"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Bit;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionBitNot>(documentation);
 }
 
 }

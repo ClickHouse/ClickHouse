@@ -1,0 +1,34 @@
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_2, constant_value_type: UInt8
+  WHERE
+    FUNCTION id: 6, function_name: isNull, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 7, nodes: 1
+          QUERY id: 8, alias: __table2, is_subquery: 1, is_correlated: 1
+            CORRELATED COLUMNS
+              LIST id: 9, nodes: 1
+                COLUMN id: 10, column_name: number, result_type: UInt64, source_id: 3
+            PROJECTION COLUMNS
+              count() UInt64
+            PROJECTION
+              LIST id: 11, nodes: 1
+                FUNCTION id: 12, function_name: count, function_type: aggregate, result_type: UInt64
+            JOIN TREE
+              TABLE id: 13, alias: __table3, table_name: system.one
+            WHERE
+              FUNCTION id: 14, function_name: equals, function_type: ordinary, result_type: UInt8
+                ARGUMENTS
+                  LIST id: 15, nodes: 2
+                    COLUMN id: 10, column_name: number, result_type: UInt64, source_id: 3
+                    CONSTANT id: 16, constant_value: UInt64_2, constant_value_type: UInt8
+0
+1

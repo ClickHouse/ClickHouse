@@ -1,0 +1,17 @@
+routed	1
+residual	1
+routed right	1
+semi	1
+semi	2
+semi	5
+anti	3
+anti	4
+semi vs oracle	1
+anti vs oracle	1
+semi pair valid	1	1
+semi pair valid	2	1
+semi pair valid	5	1
+right semi count	519
+right semi oracle	519
+right anti count	2481
+right anti oracle	2481

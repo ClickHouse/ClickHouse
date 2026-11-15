@@ -4,7 +4,7 @@
 namespace DB
 {
 
-static std::optional<MergeTreeDataPartsVector> findPartsInMemory(const MergeTreeData & data, const PartsRange & range, MergeTreeData::DataPartStates lookup_statuses)
+static std::expected<MergeTreeDataPartsVector, PreformattedMessage> findPartsInMemory(const MergeTreeData & data, const PartsRange & range, const MergeTreeData::DataPartStates & lookup_statuses)
 {
     MergeTreeDataPartsVector data_parts;
 
@@ -13,21 +13,28 @@ static std::optional<MergeTreeDataPartsVector> findPartsInMemory(const MergeTree
         if (auto part = data.getPartIfExists(properties.info, lookup_statuses))
             data_parts.push_back(std::move(part));
         else
-            return std::nullopt;
+            return std::unexpected(PreformattedMessage::create("Part {} is not found", properties.name));
     }
 
     return data_parts;
 }
 
-FutureMergedMutatedPartPtr constructFuturePart(const MergeTreeData & data, const MergeSelectorChoice & choice, MergeTreeData::DataPartStates lookup_statuses)
+std::expected<FutureMergedMutatedPartPtr, PreformattedMessage> constructFuturePart(
+    const MergeTreeData & data,
+    const MergeSelectorChoice & choice,
+    MergeTreeData::DataPartStates lookup_statuses)
 {
-    auto data_parts = findPartsInMemory(data, choice.range, std::move(lookup_statuses));
-    if (!data_parts.has_value())
-        return nullptr;
+    auto parts = findPartsInMemory(data, choice.range, lookup_statuses);
+    if (!parts)
+        return std::unexpected(std::move(parts.error()));
+
+    auto patch_parts = findPartsInMemory(data, choice.range_patches, lookup_statuses);
+    if (!patch_parts)
+        return std::unexpected(std::move(patch_parts.error()));
 
     auto future_part = std::make_shared<FutureMergedMutatedPart>();
     future_part->merge_type = choice.merge_type;
-    future_part->assign(std::move(data_parts.value()));
+    future_part->assign(std::move(*parts), std::move(*patch_parts), /*projection =*/nullptr);
     future_part->final = choice.final;
 
     return future_part;

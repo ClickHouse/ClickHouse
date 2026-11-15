@@ -1,0 +1,47 @@
+---
+title: Superset 세부 정보 추가
+---
+
+<Accordion title="Docker에서 Apache Superset 실행">
+  Superset은 [Docker Compose를 사용해 로컬에서 Superset을 설치하는 방법](https://superset.apache.org/docs/installation/installing-superset-using-docker-compose/)을 제공합니다. GitHub에서 Apache Superset 리포지토리를 체크아웃한 후 최신 개발 코드를 실행하거나 특정 태그를 지정해 실행할 수 있습니다. `pre-release`로 표시되지 않은 최신 릴리스이므로 2.0.0 릴리스를 권장합니다.
+
+  `docker compose`를 실행하기 전에 몇 가지 작업을 수행해야 합니다:
+
+  1. 공식 ClickHouse Connect 드라이버 추가
+  2. Mapbox API Key를 발급받아 환경 변수로 추가(선택 사항)
+  3. 실행할 Superset 버전 지정
+
+  <Tip>
+    아래 명령은 GitHub 리포지토리 `superset`의 최상위 디렉터리에서 실행해야 합니다.
+  </Tip>
+
+  ## 공식 ClickHouse connect driver
+
+  Superset 배포에서 ClickHouse Connect 드라이버를 사용할 수 있도록 로컬 requirements 파일에 추가합니다:
+
+  ```bash
+  echo "clickhouse-connect" >> ./docker/requirements-local.txt
+  ```
+
+  ## Mapbox
+
+  이는 선택 사항입니다. Mapbox API Key 없이도 Superset에서 위치 데이터를 표시할 수 있지만, 키를 추가해야 한다는 메시지가 표시되고 지도 배경 이미지는 나타나지 않습니다(데이터 포인트만 보이고 지도 배경은 보이지 않습니다). 원하면 Mapbox의 무료 플랜을 사용할 수 있습니다.
+
+  가이드에서 생성하는 일부 예시 시각화는 경도와 위도 같은 위치 데이터를 사용합니다. Superset은 Mapbox 지도도 지원합니다. Mapbox 시각화를 사용하려면 Mapbox API Key가 필요합니다. [Mapbox 무료 플랜](https://account.mapbox.com/auth/signup/)에 가입한 후 API Key를 생성하십시오.
+
+  Superset에서 API Key를 사용할 수 있도록 설정합니다:
+
+  ```bash
+  echo "MAPBOX_API_KEY=pk.SAMPLE-Use-your-key-instead" >> docker/.env-non-dev
+  ```
+
+  ## Superset 버전 2.0.0 배포
+
+  2.0.0 릴리스를 배포하려면 다음을 실행합니다:
+
+  ```bash
+  git checkout 2.0.0
+  TAG=2.0.0 docker-compose -f docker-compose-non-dev.yml pull
+  TAG=2.0.0 docker-compose -f docker-compose-non-dev.yml up
+  ```
+</Accordion>

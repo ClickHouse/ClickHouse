@@ -1,0 +1,33 @@
+-- Assert joinGet table resolved to temporary
+foo
+
+bar
+
+----
+0	
+1	foo
+2	
+3	bar
+4	
+-- Assert joinGet table resolved to regular when explicitly specified
+baz
+
+qux
+
+----
+0	
+1	baz
+2	
+3	qux
+4	
+-- Assert joinGet table resolved to regular
+baz
+
+qux
+
+----
+0	
+1	baz
+2	
+3	qux
+4	

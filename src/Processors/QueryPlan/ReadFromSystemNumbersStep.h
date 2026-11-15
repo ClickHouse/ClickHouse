@@ -28,10 +28,16 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-private:
-    /// Fail fast if estimated number of rows to read exceeds the limit
-    void checkLimits(size_t rows);
+    QueryPlanStepPtr clone() const override;
 
+    /// A replica rebuilds the read from the table's parameters. The source filter and the pushed-down
+    /// LIMIT are not serialized: the replica sets them again when it optimizes the received plan.
+    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
+    void serialize(Serialization & ctx) const override;
+    bool isSerializable() const override { return true; }
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
+
+private:
     Pipe makePipe();
 
     const Names column_names;
@@ -39,8 +45,6 @@ private:
     ExpressionActionsPtr key_expression;
     size_t max_block_size;
     size_t num_streams;
-    UInt64 query_info_limit;
-    std::shared_ptr<const StorageLimitsList> storage_limits;
 };
 
 }

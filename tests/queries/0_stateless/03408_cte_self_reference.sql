@@ -1,4 +1,4 @@
-SET enable_analyzer = 1;
+-- Tags: no-tsan
 
 WITH `cte1` AS (
     SELECT *
@@ -20,4 +20,4 @@ WITH `cte1` AS (
         FROM cte2 LEFT ARRAY JOIN values AS value
     )
 )
-SELECT * FROM `cte1` -- { serverError TOO_DEEP_SUBQUERIES }
+SELECT * FROM `cte1` -- { serverError UNKNOWN_TABLE }

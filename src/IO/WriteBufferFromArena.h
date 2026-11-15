@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/Arena.h>
-#include <base/StringRef.h>
 #include <IO/WriteBuffer.h>
 
 #include <algorithm>
@@ -26,7 +25,7 @@ public:
         pos = working_buffer.begin();
     }
 
-    StringRef complete()
+    std::string_view complete()
     {
         /// Return over-allocated memory back into arena.
         arena.rollback(buffer().end() - position());
@@ -61,7 +60,7 @@ private:
         char * end = continuation + continuation_size;
 
         /// internal buffer points to whole memory segment and working buffer - to free space for writing.
-        internalBuffer() = Buffer(const_cast<char *>(begin), end);
+        setInternalBuffer(Buffer(const_cast<char *>(begin), end));
         buffer() = Buffer(continuation, end);
     }
 

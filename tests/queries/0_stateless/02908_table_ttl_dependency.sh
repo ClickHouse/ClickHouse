@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database
+# Tags: no-ordinary-database, no-replicated-database
 # Tag no-ordinary-database: requires UUID
+# Tag no-replicated-database: in replicated databases with database_replicated_always_detach_permanently, DROP TABLE
+# becomes a local permanent detach bypassing the DDL queue, which breaks the dependency tracking and can leave
+# orphaned table metadata that prevents server restart after stress tests
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

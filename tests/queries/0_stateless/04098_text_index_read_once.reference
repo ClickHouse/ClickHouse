@@ -1,0 +1,10 @@
+2
+2
+322
+777
+322
+777
+use_skip_indexes_on_data_read: 0	ReadSparseIndexBlocks: 1	HeaderCacheHits: 0	HeaderCacheMisses: 1
+use_skip_indexes_on_data_read: 1	ReadSparseIndexBlocks: 1	HeaderCacheHits: 0	HeaderCacheMisses: 1
+use_skip_indexes_on_data_read: 0	ReadSparseIndexBlocks: 1	HeaderCacheHits: 0	HeaderCacheMisses: 1
+use_skip_indexes_on_data_read: 1	ReadSparseIndexBlocks: 1	HeaderCacheHits: 0	HeaderCacheMisses: 1

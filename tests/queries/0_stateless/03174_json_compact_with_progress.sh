@@ -20,6 +20,6 @@ $CLICKHOUSE_CLIENT -q "SELECT 'Check totals';"
 $CLICKHOUSE_CLIENT -q "SELECT name, count() AS c FROM test_table GROUP BY name WITH TOTALS ORDER BY name FORMAT JSONCompactEachRowWithProgress settings max_block_size=2;" | grep -v --text "progress"
 
 $CLICKHOUSE_CLIENT -q "SELECT 'Check exceptions';"
-${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "SELECT throwIf(number = 15), 1::Int64 as a, '\"' from numbers(100) format JSONCompactEachRowWithProgress settings output_format_json_quote_64bit_integers=1, max_block_size=10" | grep "exception" | sed -r -e 's/("exception":"Code: [0-9]+)[^"]+(")/\1\2/'
+${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "SELECT throwIf(number = 15), 1::Int64 as a, '\"' from numbers(100) format JSONCompactEachRowWithProgress settings output_format_json_quote_64bit_integers=1, max_block_size=10, http_write_exception_in_output_format=1" | grep "exception" | sed -r -e 's/("exception":"Code: [0-9]+)[^"]+(")/\1\2/'
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_table;"

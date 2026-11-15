@@ -1,0 +1,3 @@
+SELECT 1
+WINDOW w0 AS (ORDER BY min(1) OVER (w0)); -- { serverError UNSUPPORTED_METHOD }
+

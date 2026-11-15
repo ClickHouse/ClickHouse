@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-shared-merge-tree, no-distributed-cache
+# Tags: no-fasttest, no-shared-merge-tree, no-distributed-cache, no-replicated-database
 # Tag no-fasttest: requires Azure
 # Tag no-shared-merge-tree: does not support replication
 # Tag no-distributed-cache: Not supported auth type
+# Tag no-replicated-database: plain rewritable should not be shared between replicas
 
 set -e
 
@@ -19,10 +20,9 @@ create table test_azure_mt (a Int32, b Int64, c Int64) engine = MergeTree() part
 settings disk = disk(
     type = object_storage,
     metadata_type = plain_rewritable,
+    enable_hard_links = 0,
     object_storage_type = azure_blob_storage,
     name = '${container}',
-    path='/var/lib/clickhouse/disks/${container}/tables',
-    container_name = '${container}',
     endpoint = 'http://localhost:10000/devstoreaccount1/${container}/plain-tables',
     account_name = 'devstoreaccount1',
     account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==');

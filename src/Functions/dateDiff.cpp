@@ -18,6 +18,7 @@
 
 #include <base/find_symbols.h>
 
+#include <tuple>
 #include <type_traits>
 
 
@@ -33,13 +34,22 @@ namespace ErrorCodes
 namespace
 {
 
-template <bool is_diff>
+/// The components of a value below a unit, most significant first: tuples of them compare lexicographically.
+auto belowMicrosecond(const DateTimeComponentsWithFractionalPart & c) { return std::tie(c.nanosecond); }
+auto belowMillisecond(const DateTimeComponentsWithFractionalPart & c) { return std::tie(c.microsecond, c.nanosecond); }
+auto belowSecond(const DateTimeComponentsWithFractionalPart & c) { return std::tie(c.millisecond, c.microsecond, c.nanosecond); }
+auto belowMinute(const DateTimeComponentsWithFractionalPart & c) { return std::tie(c.time.second, c.millisecond, c.microsecond, c.nanosecond); }
+auto belowHour(const DateTimeComponentsWithFractionalPart & c) { return std::tie(c.time.minute, c.time.second, c.millisecond, c.microsecond, c.nanosecond); }
+auto belowDay(const DateTimeComponentsWithFractionalPart & c) { return std::tie(c.time.hour, c.time.minute, c.time.second, c.millisecond, c.microsecond, c.nanosecond); }
+auto belowMonth(const DateTimeComponentsWithFractionalPart & c) { return std::tie(c.date.day, c.time.hour, c.time.minute, c.time.second, c.millisecond, c.microsecond, c.nanosecond); }
+auto belowYear(const DateTimeComponentsWithFractionalPart & c) { return std::tie(c.date.month, c.date.day, c.time.hour, c.time.minute, c.time.second, c.millisecond, c.microsecond, c.nanosecond); }
+
 class DateDiffImpl
 {
 public:
     using ColumnDateTime64 = ColumnDecimal<DateTime64>;
 
-    explicit DateDiffImpl(const String & name_) : name(name_) {}
+    DateDiffImpl(const String & name_, bool is_diff_) : name(name_), is_diff(is_diff_) {}
 
     template <typename Transform>
     void dispatchForColumns(
@@ -165,9 +175,11 @@ public:
     template <typename TransformX, typename TransformY, typename T1, typename T2>
     Int64 calculate(const TransformX & transform_x, const TransformY & transform_y, T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
     {
-        auto res =  static_cast<Int64>(transform_y.execute(y, timezone_y)) - static_cast<Int64>(transform_x.execute(x, timezone_x));
+        auto res = static_cast<Int64>(
+            static_cast<UInt64>(transform_y.execute(y, timezone_y))
+            - static_cast<UInt64>(transform_x.execute(x, timezone_x)));
 
-        if constexpr (is_diff)
+        if (is_diff)
         {
             return res;
         }
@@ -176,11 +188,12 @@ public:
             /// Adjust res:
             DateTimeComponentsWithFractionalPart a_comp;
             DateTimeComponentsWithFractionalPart b_comp;
-            Int64 adjust_value;
-            auto x_nanoseconds = TransformDateTime64<ToRelativeSubsecondNumImpl<nanosecond_multiplier>>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
-            auto y_nanoseconds = TransformDateTime64<ToRelativeSubsecondNumImpl<nanosecond_multiplier>>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
+            Int64 adjust_value = 0;
+            /// Compare the ticks in a common scale. In 128 bits, because nanoseconds overflow 64 bits past 2262.
+            const bool x_is_first = static_cast<__int128>(toTicks(x, timezone_x)) * transform_y.getScaleMultiplier()
+                <= static_cast<__int128>(toTicks(y, timezone_y)) * transform_x.getScaleMultiplier();
 
-            if (x_nanoseconds <= y_nanoseconds)
+            if (x_is_first)
             {
                 a_comp = TransformDateTime64<ToDateTimeComponentsImpl>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
                 b_comp = TransformDateTime64<ToDateTimeComponentsImpl>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
@@ -195,101 +208,72 @@ public:
 
             if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeYearNumImpl<ResultPrecision::Extended>>>)
             {
-                if ((a_comp.date.month > b_comp.date.month)
-                    || ((a_comp.date.month == b_comp.date.month) && ((a_comp.date.day > b_comp.date.day)
-                    || ((a_comp.date.day == b_comp.date.day) && ((a_comp.time.hour > b_comp.time.hour)
-                    || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
-                    || ((a_comp.time.minute == b_comp.time.minute) && ((a_comp.time.second > b_comp.time.second)
-                    || ((a_comp.time.second == b_comp.time.second) && ((a_comp.millisecond > b_comp.millisecond)
-                    || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))))))))))
+                if (belowYear(a_comp) > belowYear(b_comp))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeQuarterNumImpl<ResultPrecision::Extended>>>)
             {
-                auto x_month_in_quarter = (a_comp.date.month - 1) % 3;
-                auto y_month_in_quarter = (b_comp.date.month - 1) % 3;
-                if ((x_month_in_quarter > y_month_in_quarter)
-                    || ((x_month_in_quarter == y_month_in_quarter) && ((a_comp.date.day > b_comp.date.day)
-                    || ((a_comp.date.day == b_comp.date.day) && ((a_comp.time.hour > b_comp.time.hour)
-                    || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
-                    || ((a_comp.time.minute == b_comp.time.minute) && ((a_comp.time.second > b_comp.time.second)
-                    || ((a_comp.time.second == b_comp.time.second) && ((a_comp.millisecond > b_comp.millisecond)
-                    || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))))))))))
+                if (std::tuple_cat(std::tuple((a_comp.date.month - 1) % 3), belowMonth(a_comp))
+                    > std::tuple_cat(std::tuple((b_comp.date.month - 1) % 3), belowMonth(b_comp)))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeMonthNumImpl<ResultPrecision::Extended>>>)
             {
-                if ((a_comp.date.day > b_comp.date.day)
-                    || ((a_comp.date.day == b_comp.date.day) && ((a_comp.time.hour > b_comp.time.hour)
-                    || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
-                    || ((a_comp.time.minute == b_comp.time.minute) && ((a_comp.time.second > b_comp.time.second)
-                    || ((a_comp.time.second == b_comp.time.second) && ((a_comp.millisecond > b_comp.millisecond)
-                    || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))))))))
+                if (belowMonth(a_comp) > belowMonth(b_comp))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeWeekNumImpl<ResultPrecision::Extended>>>)
             {
-                auto x_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_x.getScaleMultiplier()).execute(x, 0, timezone_x);
-                auto y_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_y.getScaleMultiplier()).execute(y, 0, timezone_y);
-                if ((x_day_of_week > y_day_of_week)
-                    || ((x_day_of_week == y_day_of_week) && (a_comp.time.hour > b_comp.time.hour))
-                    || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
-                    || ((a_comp.time.minute == b_comp.time.minute) && ((a_comp.time.second > b_comp.time.second)
-                    || ((a_comp.time.second == b_comp.time.second) && ((a_comp.millisecond > b_comp.millisecond)
-                    || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))))))
+                auto a_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_x.getScaleMultiplier()).execute(x, static_cast<UInt8>(0), timezone_x);
+                auto b_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_y.getScaleMultiplier()).execute(y, static_cast<UInt8>(0), timezone_y);
+                if (!x_is_first)
+                    std::swap(a_day_of_week, b_day_of_week);
+                if (std::tuple_cat(std::tuple(a_day_of_week), belowDay(a_comp))
+                    > std::tuple_cat(std::tuple(b_day_of_week), belowDay(b_comp)))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeDayNumImpl<ResultPrecision::Extended>>>)
             {
-                if ((a_comp.time.hour > b_comp.time.hour)
-                    || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
-                    || ((a_comp.time.minute == b_comp.time.minute) && ((a_comp.time.second > b_comp.time.second)
-                    || ((a_comp.time.second == b_comp.time.second) && ((a_comp.millisecond > b_comp.millisecond)
-                    || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))))))
+                if (belowDay(a_comp) > belowDay(b_comp))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeHourNumImpl<ResultPrecision::Extended>>>)
             {
-                if ((a_comp.time.minute > b_comp.time.minute)
-                    || ((a_comp.time.minute == b_comp.time.minute) && ((a_comp.time.second > b_comp.time.second)
-                    || ((a_comp.time.second == b_comp.time.second) && ((a_comp.millisecond > b_comp.millisecond)
-                    || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))))
+                if (belowHour(a_comp) > belowHour(b_comp))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeMinuteNumImpl<ResultPrecision::Extended>>>)
             {
-                if ((a_comp.time.second > b_comp.time.second)
-                    || ((a_comp.time.second == b_comp.time.second) && ((a_comp.millisecond > b_comp.millisecond)
-                    || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))
+                if (belowMinute(a_comp) > belowMinute(b_comp))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeSecondNumImpl<ResultPrecision::Extended>>>)
             {
-                if ((a_comp.millisecond > b_comp.millisecond)
-                    || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))
+                if (belowSecond(a_comp) > belowSecond(b_comp))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeSubsecondNumImpl<millisecond_multiplier>>>)
             {
-                if ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))
+                if (belowMillisecond(a_comp) > belowMillisecond(b_comp))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeSubsecondNumImpl<microsecond_multiplier>>>)
             {
-                if (a_comp.nanosecond > b_comp.nanosecond)
+                if (belowMicrosecond(a_comp) > belowMicrosecond(b_comp))
                     res += adjust_value;
             }
             return res;
         }
+    }
+
+    /// The value in ticks of its own scale; seconds for the types without a scale.
+    template <typename T>
+    static Int64 toTicks(T v, const DateLUTImpl & time_zone)
+    {
+        if constexpr (std::is_same_v<T, DateTime64>)
+            return v.value;
+        else
+            return ToRelativeSecondNumImpl<ResultPrecision::Extended>::execute(v, time_zone);
     }
 
     template <typename T>
@@ -312,27 +296,32 @@ public:
     }
 private:
     String name;
+    bool is_diff;
 };
 
 
-/** dateDiff('unit', t1, t2, [timezone])
-  * age('unit', t1, t2, [timezone])
+/** dateDiff('unit', t1, t2[, timezone])
+  * age('unit', t1, t2[, timezone])
   * t1 and t2 can be Date, Date32, DateTime or DateTime64
   *
-  * If timezone is specified, it applied to both arguments.
+  * If timezone is specified, it is applied to both arguments.
   * If not, timezones from datatypes t1 and t2 are used.
-  * If that timezones are not the same, the result is unspecified.
+  * If those timezones are not the same, the result is unspecified.
   *
-  * Timezone matters because days can have different length.
+  * The timezone matters because days can have different lengths.
   */
-template <bool is_relative>
-class FunctionDateDiff : public IFunction
+class FunctionDateDiff final : public IFunction
 {
 public:
-    static constexpr auto name = is_relative ? "dateDiff" : "age";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateDiff>(); }
+    FunctionDateDiff(const char * name_, bool is_relative_)
+        : function_name(name_), impl{function_name, is_relative_} {}
 
-    String getName() const override { return name; }
+    static FunctionPtr create(const char * name, bool is_relative)
+    {
+        return std::make_shared<FunctionDateDiff>(name, is_relative);
+    }
+
+    String getName() const override { return function_name; }
 
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -340,21 +329,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 3}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"unit", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
-            {"startdate", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateOrDate32OrDateTimeOrDateTime64), nullptr, "Date[32] or DateTime[64]"},
-            {"enddate", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateOrDate32OrDateTimeOrDateTime64), nullptr, "Date[32] or DateTime[64]"},
-        };
-
-        FunctionArgumentDescriptors optional_args{
-            {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        return std::make_shared<DataTypeInt64>();
+        return "(const String, DateOrDateTime, DateOrDateTime, [const String]) -> Int64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -406,14 +383,15 @@ public:
         return col_res;
     }
 private:
-    DateDiffImpl<is_relative> impl{name};
+    const char * function_name;
+    DateDiffImpl impl;
 };
 
 
 /** timeDiff(t1, t2)
   * t1 and t2 can be Date or DateTime
   */
-class FunctionTimeDiff : public IFunction
+class FunctionTimeDiff final : public IFunction
 {
     using ColumnDateTime64 = ColumnDecimal<DateTime64>;
 public:
@@ -427,16 +405,9 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 2; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{
-            {"first_datetime", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateOrDate32OrDateTimeOrDateTime64), nullptr, "Date[32] or DateTime[64]"},
-            {"second_datetime", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateOrDate32OrDateTimeOrDateTime64), nullptr, "Date[32] or DateTime[64]"},
-        };
-
-        validateFunctionArguments(*this, arguments, args);
-
-        return std::make_shared<DataTypeInt64>();
+        return "(DateOrDateTime, DateOrDateTime) -> Int64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -456,38 +427,211 @@ public:
         return col_res;
     }
 private:
-    DateDiffImpl<true> impl{name};
+    DateDiffImpl impl{name, true};
 };
 
 }
 
 REGISTER_FUNCTION(DateDiff)
 {
-    factory.registerFunction<FunctionDateDiff<true>>({}, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("date_diff", FunctionDateDiff<true>::name);
-    factory.registerAlias("DATE_DIFF", FunctionDateDiff<true>::name);
-    factory.registerAlias("timestampDiff", FunctionDateDiff<true>::name);
-    factory.registerAlias("timestamp_diff", FunctionDateDiff<true>::name);
-    factory.registerAlias("TIMESTAMP_DIFF", FunctionDateDiff<true>::name);
+    FunctionDocumentation::Description description = R"(
+Returns the count of the specified `unit` boundaries crossed between the `startdate` and the `enddate`.
+The difference is calculated using relative units. For example, the difference between 2021-12-29 and 2022-01-01 is 3 days for unit day
+(see [`toRelativeDayNum`](#toRelativeDayNum)), 1 month for unit month (see [`toRelativeMonthNum`](#toRelativeMonthNum)) and 1 year for unit year
+(see [`toRelativeYearNum`](#toRelativeYearNum)).
+
+If the unit `week` was specified, then `dateDiff` assumes that weeks start on Monday.
+Note that this behavior is different from that of function `toWeek()` in which weeks start by default on Sunday.
+
+For an alternative to `dateDiff`, see function [`age`](#age).
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+dateDiff(unit, startdate, enddate[, timezone])
+    )";
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"unit", R"(The type of interval for result.
+
+| Unit        | Possible values                           |
+|-------------|-------------------------------------------|
+| nanosecond  | `nanosecond`, `nanoseconds`, `ns`         |
+| microsecond | `microsecond`, `microseconds`, `us`, `u`  |
+| millisecond | `millisecond`, `milliseconds`, `ms`       |
+| second      | `second`, `seconds`, `ss`, `s`            |
+| minute      | `minute`, `minutes`, `mi`, `n`            |
+| hour        | `hour`, `hours`, `hh`, `h`                |
+| day         | `day`, `days`, `dd`, `d`                  |
+| week        | `week`, `weeks`, `wk`, `ww`               |
+| month       | `month`, `months`, `mm`, `m`              |
+| quarter     | `quarter`, `quarters`, `qq`, `q`          |
+| year        | `year`, `years`, `yyyy`, `yy`             |
+)"},
+        {"startdate", "The first time value to subtract (the subtrahend).", {"Date", "Date32", "DateTime", "DateTime64"}},
+        {"enddate", "The second time value to subtract from (the minuend).", {"Date", "Date32", "DateTime", "DateTime64"}},
+        {"timezone", "Optional. Timezone name. If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the difference between `enddate` and `startdate` expressed in `unit`.", {"Int64"}};
+    FunctionDocumentation::Examples examples =
+    {
+        {"Calculate date difference in hours", R"(
+SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00')) AS res
+        )",
+        R"(
+┌─res─┐
+│  25 │
+└─────┘
+        )"},
+        {"Calculate date difference in different units", R"(
+SELECT
+    toDate('2022-01-01') AS e,
+    toDate('2021-12-29') AS s,
+    dateDiff('day', s, e) AS day_diff,
+    dateDiff('month', s, e) AS month_diff,
+    dateDiff('year', s, e) AS year_diff
+        )",
+        R"(
+┌──────────e─┬──────────s─┬─day_diff─┬─month_diff─┬─year_diff─┐
+│ 2022-01-01 │ 2021-12-29 │        3 │          1 │         1 │
+└────────────┴────────────┴──────────┴────────────┴───────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 4};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction("dateDiff",
+        [](ContextPtr){ return FunctionDateDiff::create("dateDiff", true); },
+        documentation, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("date_diff", "dateDiff");
+    factory.registerAlias("DATE_DIFF", "dateDiff");
+    factory.registerAlias("timestampDiff", "dateDiff");
+    factory.registerAlias("timestamp_diff", "dateDiff");
+    factory.registerAlias("TIMESTAMP_DIFF", "dateDiff");
 }
 
 REGISTER_FUNCTION(TimeDiff)
 {
-    factory.registerFunction<FunctionTimeDiff>(FunctionDocumentation{.description=R"(
-Returns the difference between two dates or dates with time values. The difference is calculated in seconds units (see toRelativeSecondNum).
-It is same as `dateDiff` and was added only for MySQL support. `dateDiff` is preferred.
+    FunctionDocumentation::Description description = R"(
+Returns the difference between two dates or dates with time values in seconds.
+The difference is calculated as `enddate` - `startdate`.
 
-Example:
-[example:typical]
-)",
-    .examples{
-        {"typical", "SELECT timeDiff(UTCTimestamp(), now());", ""}},
-    .category{"Dates and Times"}}, FunctionFactory::Case::Insensitive);
+This function is equivalent to `dateDiff('second', startdate, enddate)`.
+
+For calculating time differences in other units (hours, days, months, etc.), use the [`dateDiff`](#dateDiff) function instead.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+timeDiff(startdate, enddate)
+    )";
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"startdate", "The first time value to subtract (the subtrahend).", {"Date", "Date32", "DateTime", "DateTime64"}},
+        {"enddate", "The second time value to subtract from (the minuend).", {"Date", "Date32", "DateTime", "DateTime64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the difference between `enddate` and `startdate` expressed in seconds.", {"Int64"}};
+    FunctionDocumentation::Examples examples =
+    {
+        {"Calculate time difference in seconds", R"(
+SELECT timeDiff(toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00')) AS res
+        )",
+        R"(
+┌───res─┐
+│ 90000 │
+└───────┘
+        )"},
+        {"Calculate time difference and convert to hours", R"(
+SELECT timeDiff(toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00')) / 3600 AS hours
+        )",
+        R"(
+┌─hours─┐
+│    25 │
+└───────┘
+        )"},
+        {"Equivalent to dateDiff with seconds", R"(
+SELECT
+    timeDiff(toDateTime('2021-12-29'), toDateTime('2022-01-01')) AS time_diff_result,
+    dateDiff('second', toDateTime('2021-12-29'), toDateTime('2022-01-01')) AS date_diff_result
+        )",
+        R"(
+┌─time_diff_result─┬─date_diff_result─┐
+│           259200 │           259200 │
+└──────────────────┴──────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 4};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionTimeDiff>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(Age)
 {
-    factory.registerFunction<FunctionDateDiff<false>>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+Returns the unit component of the difference between `startdate` and `enddate`.
+The difference is calculated using a precision of 1 nanosecond.
+
+For example, the difference between 2021-12-29 and 2022-01-01 is 3 days for the day unit,
+0 months for the month unit, and 0 years for the year unit.
+
+For an alternative to age, see function [`dateDiff`](#dateDiff).
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+age('unit', startdate, enddate[, timezone])
+    )";
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"unit", R"(The type of interval for result.
+
+| Unit        | Possible values                          |
+|-------------|------------------------------------------|
+| nanosecond  | `nanosecond`, `nanoseconds`, `ns`        |
+| microsecond | `microsecond`, `microseconds`, `us`, `u` |
+| millisecond | `millisecond`, `milliseconds`, `ms`      |
+| second      | `second`, `seconds`, `ss`, `s`           |
+| minute      | `minute`, `minutes`, `mi`, `n`           |
+| hour        | `hour`, `hours`, `hh`, `h`               |
+| day         | `day`, `days`, `dd`, `d`                 |
+| week        | `week`, `weeks`, `wk`, `ww`              |
+| month       | `month`, `months`, `mm`, `m`             |
+| quarter     | `quarter`, `quarters`, `qq`, `q`         |
+| year        | `year`, `years`, `yyyy`, `yy`            |
+)"},
+        {"startdate", "The first time value to subtract (the subtrahend).", {"Date", "Date32", "DateTime", "DateTime64"}},
+        {"enddate", "The second time value to subtract from (the minuend).", {"Date", "Date32", "DateTime", "DateTime64"}},
+        {"timezone", "Optional. Timezone name. If specified, it is applied to both startdate and enddate. If not specified, timezones of startdate and enddate are used. If they are not the same, the result is unspecified.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the difference between enddate and startdate expressed in unit.", {"Int32"}};
+    FunctionDocumentation::Examples examples =
+    {
+        {"Calculate age in hours", R"(
+SELECT age('hour', toDateTime('2018-01-01 22:30:00'), toDateTime('2018-01-02 23:00:00'))
+        )",
+        R"(
+┌─age('hour', toDateTime('2018-01-01 22:30:00'), toDateTime('2018-01-02 23:00:00'))─┐
+│                                                                                24 │
+└───────────────────────────────────────────────────────────────────────────────────┘
+        )"},
+        {"Calculate age in different units", R"(
+SELECT
+    toDate('2022-01-01') AS e,
+    toDate('2021-12-29') AS s,
+    age('day', s, e) AS day_age,
+    age('month', s, e) AS month_age,
+    age('year', s, e) AS year_age
+        )",
+        R"(
+┌──────────e─┬──────────s─┬─day_age─┬─month_age─┬─year_age─┐
+│ 2022-01-01 │ 2021-12-29 │       3 │         0 │        0 │
+└────────────┴────────────┴─────────┴───────────┴──────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction("age",
+        [](ContextPtr){ return FunctionDateDiff::create("age", false); },
+        documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

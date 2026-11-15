@@ -1,11 +1,14 @@
 set (SRCS
     AbstractConfigurationComparison.cpp
     ConfigProcessor.cpp
+    ConfigurationWithUsageTracking.cpp
     getClientConfigPath.cpp
+    getConfigPath.cpp
     getLocalConfigPath.cpp
     ConfigReloader.cpp
     YAMLParser.cpp
     ConfigHelper.cpp
+    parseConnectionCredentials.cpp
 )
 
 add_library(clickhouse_common_config ${SRCS})

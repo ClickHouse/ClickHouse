@@ -4,6 +4,7 @@
 #include <Interpreters/Session.h>
 
 #include <Common/logger_useful.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Poco/RandomStream.h>
 #include <Poco/SHA1Engine.h>
@@ -192,11 +193,12 @@ void Sha256Password::authenticate(
         if (EVP_PKEY_decrypt(ctx.get(), nullptr, &plaintext_length, ciphertext, ciphertext_len) <= 0)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to get decrypted length: {}", getOpenSSLErrors());
 
-        std::vector<unsigned char> plaintext(plaintext_length);
+        VectorWithMemoryTracking<unsigned char> plaintext(plaintext_length);
         if (EVP_PKEY_decrypt(ctx.get(), plaintext.data(), &plaintext_length, ciphertext, ciphertext_len) <= 0)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to decrypt auth data: {}", getOpenSSLErrors());
 
         plaintext.resize(plaintext_length);
+        password.resize(plaintext_length);
 
         for (size_t i = 0; i < plaintext_length; ++i)
         {

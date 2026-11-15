@@ -1,4 +1,4 @@
-#include "NamesFormatReader.h"
+#include <Dictionaries/Embedded/GeodataProviders/NamesFormatReader.h>
 
 #include <IO/ReadHelpers.h>
 
@@ -9,7 +9,7 @@ bool LanguageRegionsNamesFormatReader::readNext(RegionNameEntry & entry)
 {
     while (!input->eof())
     {
-        Int32 read_region_id;
+        Int32 read_region_id = 0;
         std::string region_name;
 
         readIntText(read_region_id, *input);

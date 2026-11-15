@@ -18,6 +18,7 @@
 #define JSON_Array_INCLUDED
 
 
+#include <atomic>
 #include <sstream>
 #include <vector>
 #include "Poco/Dynamic/Var.h"
@@ -208,7 +209,7 @@ namespace JSON
         //  The reason we have this flag here (rather than as argument to stringify())
         //  is because Array can be returned stringified from a Dynamic::Var:toString(),
         //  so it must know whether to escape unicode or not.
-        bool _escapeUnicode;
+        std::atomic<bool> _escapeUnicode;
     };
 
 

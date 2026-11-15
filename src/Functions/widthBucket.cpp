@@ -12,6 +12,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/Concepts.h>
 #include <Common/Exception.h>
 #include <Common/NaNUtils.h>
@@ -22,18 +23,19 @@
 #include <iterator>
 #include <memory>
 #include <optional>
+#include <limits>
+#include <type_traits>
 #include <string>
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
-class FunctionWidthBucket : public IFunction
+class FunctionWidthBucket final : public IFunction
 {
     template <typename TDataType>
     void throwIfInvalid(
@@ -101,7 +103,19 @@ class FunctionWidthBucket : public IFunction
         }
         if (operand >= high)
         {
-            return count + 1;
+            /// The result type is deliberately one step wider than the count type so that this fits.
+            /// `UInt64` is the exception - nothing is wider - so reject the one count that would wrap
+            /// to zero, which is the bucket meaning "below the range".
+            if constexpr (std::is_same_v<TCountType, TResultType>)
+            {
+                if (count == std::numeric_limits<TCountType>::max())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Last argument (count) for function {} is too large: the bucket for an operand above the range "
+                        "would be count + 1, which does not fit the result type",
+                        getName());
+            }
+            return static_cast<TResultType>(static_cast<TResultType>(count) + 1);
         }
         return std::nullopt;
     }
@@ -121,7 +135,7 @@ class FunctionWidthBucket : public IFunction
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "The calculation resulted in NaN or Inf which is unexpected in function {}.", getName());
         }
-        return static_cast<TResultType>(count * relative_bucket + 1);
+        return static_cast<TResultType>(static_cast<Float64>(count) * relative_bucket + 1);
     }
 
     template <is_any_of<UInt8, UInt16, UInt32, UInt64> TCountType>
@@ -130,7 +144,7 @@ class FunctionWidthBucket : public IFunction
         using ResultType = typename NumberTraits::Construct<false, false, NumberTraits::nextSize(sizeof(TCountType))>::Type;
         auto common_type = std::make_shared<DataTypeNumber<Float64>>();
 
-        std::vector<ColumnPtr> cast_columns;
+        VectorWithMemoryTracking<ColumnPtr> cast_columns;
         cast_columns.reserve(3);
         for (const auto argument_index : collections::range(0, 3))
         {
@@ -189,42 +203,12 @@ public:
 
     size_t getNumberOfArguments() const override { return 4; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        for (const auto argument_index : collections::range(0, 3))
-        {
-            if (!isNativeNumber(arguments[argument_index]))
-            {
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The first three arguments of function {} must be a Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32 "
-                    "or Float64.",
-                    getName());
-            }
-        }
-        if (!WhichDataType(arguments[3]).isNativeUInt())
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The last argument of function {} must be UInt8, UInt16, UInt32 or UInt64, found {}.",
-                getName(),
-                arguments[3]->getName());
-        }
-        switch (arguments[3]->getTypeId())
-        {
-            case TypeIndex::UInt8:
-                return std::make_shared<DataTypeUInt16>();
-            case TypeIndex::UInt16:
-                return std::make_shared<DataTypeUInt32>();
-            case TypeIndex::UInt32:
-                [[fallthrough]];
-            case TypeIndex::UInt64:
-                return std::make_shared<DataTypeUInt64>();
-            default:
-                break;
-        }
-
-        UNREACHABLE();
+        return
+            "(NativeNumber, NativeNumber, NativeNumber, UInt8) -> UInt16"
+            " OR (NativeNumber, NativeNumber, NativeNumber, UInt16) -> UInt32"
+            " OR (NativeNumber, NativeNumber, NativeNumber, UInt32 | UInt64) -> UInt64";
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -254,38 +238,25 @@ public:
 
 REGISTER_FUNCTION(WidthBucket)
 {
-    factory.registerFunction<FunctionWidthBucket>(FunctionDocumentation{
-        .description=R"(
-Returns the number of the bucket in which `operand` falls in a histogram having `count` equal-width buckets spanning the range `low` to `high`. Returns `0` if `operand < low`, and returns `count+1` if `operand >= high`.
-
-`operand`, `low`, `high` can be any native number type. `count` can only be unsigned native integer and its value cannot be zero.
-
-**Syntax**
-
-```sql
-widthBucket(operand, low, high, count)
-```
-
+    FunctionDocumentation::Description description = R"(
+Returns the number of the bucket in which parameter `operand` falls in a histogram having count equal-width buckets spanning the range `low` to `high`. Returns 0 if `operand` is less than `low`, and returns `count`+1 if `operand` is greater than or equal to `high`.
 There is also a case insensitive alias called `WIDTH_BUCKET` to provide compatibility with other databases.
-
-**Example**
-
-Query:
-[example:simple]
-
-Result:
-
-```text
-┌─widthBucket(10.15, -8.6, 23, 18)─┐
-│                               11 │
-└──────────────────────────────────┘
-```
-)",
-        .examples{
-            {"simple", "SELECT widthBucket(10.15, -8.6, 23, 18)", ""},
-        },
-        .category{"Mathematical"},
-    });
+)";
+FunctionDocumentation::Syntax syntax = "widthBucket(operand, low, high, count)";
+FunctionDocumentation::Arguments arguments = {
+    {"operand", "The value for which to determine the bucket.", {"(U)Int8/16/32/64"}},
+    {"low", "The lower bound of the histogram range.", {"(U)Int8/16/32/64"}},
+    {"high", "The upper bound of the histogram range.", {"(U)Int8/16/32/64"}},
+    {"count", "The number of equal-width buckets. Cannot be zero.", {"UInt8/16/32/64"}}
+};
+FunctionDocumentation::ReturnedValue returned_value = {"Returns the bucket number as an integer. Returns 0 if operand < low, returns count+1 if operand >= high.", {"UInt8/16/32/64"}};
+FunctionDocumentation::Examples examples = {
+    {"Usage example", "SELECT widthBucket(10.15, -8.6, 23, 18)", "11"}
+};
+FunctionDocumentation::IntroducedIn introduced_in = {23, 3};
+FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
+FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionWidthBucket>(documentation);
 
     factory.registerAlias("width_bucket", "widthBucket", FunctionFactory::Case::Insensitive);
 }

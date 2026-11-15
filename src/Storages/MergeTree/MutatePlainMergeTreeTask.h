@@ -48,8 +48,8 @@ public:
     String getQueryId() const override { return getStorageID().getShortName() + "::" + merge_mutate_entry->future_part->name; }
 
 private:
-
     void prepare();
+    void finish();
 
     enum class State : uint8_t
     {

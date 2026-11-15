@@ -1,16 +1,13 @@
 #pragma once
 
-#include <boost/circular_buffer.hpp>
-
 #include <Core/Names.h>
-#include <base/types.h>
 #include <IO/ReadBuffer.h>
-
-#include <cppkafka/cppkafka.h>
-#include <Common/DateLUT.h>
-#include <Common/CurrentMetrics.h>
-
 #include <Storages/Kafka/IKafkaExceptionInfoSink.h>
+#include <Storages/Kafka/StorageKafkaUtils.h>
+#include <boost/circular_buffer.hpp>
+#include <cppkafka/cppkafka.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/DateLUT.h>
 
 namespace CurrentMetrics
 {
@@ -25,45 +22,13 @@ namespace Poco
 namespace DB
 {
 
-class StorageSystemKafkaConsumers;
-
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
 class KafkaConsumer : public IKafkaExceptionInfoSink
 {
 public:
-    struct ExceptionInfo
-    {
-        String text;
-        UInt64 timestamp;
-    };
-    using ExceptionsBuffer = boost::circular_buffer<ExceptionInfo>;
-
-    struct Stat // system.kafka_consumers data
-    {
-        struct Assignment
-        {
-            String topic_str;
-            Int32 partition_id;
-            Int64 current_offset;
-        };
-        using Assignments = std::vector<Assignment>;
-
-        String consumer_id;
-        Assignments assignments;
-        UInt64 last_poll_time;
-        UInt64 num_messages_read;
-        UInt64 last_commit_timestamp;
-        UInt64 last_rebalance_timestamp;
-        UInt64 num_commits;
-        UInt64 num_rebalance_assignments;
-        UInt64 num_rebalance_revocations;
-        KafkaConsumer::ExceptionsBuffer exceptions_buffer;
-        bool in_use;
-        UInt64 last_used_usec;
-        std::string rdkafka_stat;
-    };
+    using Stat = StorageKafkaUtils::ConsumerStatistics;
 
     KafkaConsumer(
         LoggerPtr log_,
@@ -71,7 +36,8 @@ public:
         size_t poll_timeout_,
         bool intermediate_commit_,
         const std::atomic<bool> & stopped_,
-        const Names & _topics
+        const Names & _topics,
+        size_t skip_bytes_ = 0
     );
 
     ~KafkaConsumer() override;
@@ -87,6 +53,14 @@ public:
     // Notes: duplicates can appear if the some data were already flushed
     // it causes rebalance (and is an expensive way of exception handling)
     void markDirty();
+
+    /// Abort an in-flight batch while staying in the consumer group, rewinding to the block start so the
+    /// whole block is redelivered even if `kafka_commit_every_batch` committed part of it mid-block.
+    void rewindToLastCommitted();
+
+    /// Called once the in-flight block has reached its durable boundary (committed after the insert), so
+    /// the next block tracks a fresh start. See `block_start_offsets`.
+    void cleanBlockStartOffsets() { block_start_offsets.clear(); }
 
     auto pollTimeout() const { return poll_timeout; }
 
@@ -117,7 +91,6 @@ public:
     auto currentTimestamp() const { return current[-1].get_timestamp(); }
     const auto & currentHeaderList() const { return current[-1].get_header_list(); }
     const cppkafka::Buffer & currentPayload() const { return current[-1].get_payload(); }
-    void setExceptionInfo(const cppkafka::Error & err, bool with_stacktrace) override;
     void setExceptionInfo(const std::string & text, bool with_stacktrace) override;
     void setRDKafkaStat(const std::string & stat_json_string)
     {
@@ -141,6 +114,7 @@ public:
 
 private:
     using Messages = std::vector<cppkafka::Message>;
+    using ExceptionsBuffer = StorageKafkaUtils::ConsumerStatistics::ExceptionsBuffer;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaConsumers};
 
     enum StalledStatus
@@ -161,6 +135,7 @@ private:
     LoggerPtr log;
     const size_t batch_size = 1;
     const size_t poll_timeout = 0;
+    const size_t skip_bytes = 0;
     size_t offsets_stored = 0;
     bool current_subscription_valid = false;
 
@@ -178,6 +153,9 @@ private:
     // order is important, need to be destructed *before* consumer
     std::optional<cppkafka::TopicPartitionList> assignment;
     const Names topics;
+
+    /// Offset of the first message of the current, not-yet-durably-committed block
+    cppkafka::TopicPartitionList block_start_offsets;
 
     /// system.kafka_consumers data is retrieved asynchronously
     ///  so we have to protect exceptions_buffer
@@ -198,8 +176,10 @@ private:
 
     void doPoll();
     void cleanUnprocessed();
+    void cleanAssignment();
     void resetIfStopped();
     ReadBufferPtr getNextMessage();
+    void trackCurrentBlockStart(const cppkafka::Message & message);
 };
 
 }

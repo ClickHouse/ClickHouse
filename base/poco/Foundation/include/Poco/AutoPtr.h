@@ -232,7 +232,7 @@ public:
             throw NullPointerException();
     }
 
-    C * get() { return _ptr; }
+    C * get() { return _ptr; }  // NOLINT
 
     const C * get() const { return _ptr; }
 

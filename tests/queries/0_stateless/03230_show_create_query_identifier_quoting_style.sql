@@ -29,7 +29,7 @@ CREATE TABLE uk_price_paid
     INDEX county_index county TYPE set(10) GRANULARITY 1,
     PROJECTION town_date_projection
     (
-        SELECT 
+        SELECT
             town,
             date,
             price
@@ -39,7 +39,7 @@ CREATE TABLE uk_price_paid
     ),
     PROJECTION handy_aggs_projection
     (
-        SELECT 
+        SELECT
             avg(price),
             max(price),
             sum(price)

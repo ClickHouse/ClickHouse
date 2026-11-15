@@ -1,6 +1,0 @@
-<clickhouse>
-    <!-- Allow nullable key to avoid errors while fuzzing definitions of tables -->
-    <merge_tree>
-        <allow_nullable_key>1</allow_nullable_key>
-    </merge_tree>
-</clickhouse>

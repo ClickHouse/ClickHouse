@@ -1,0 +1,34 @@
+default	default
+
+--- EXECUTE AS app_user1 ---
+appuser1_default	testuser_default
+0
+
+appuser1_default	testuser_default
+testuser_default	testuser_default
+
+0
+testuser_default	testuser_default
+
+--- EXECUTE AS app_user2 ---
+appuser2_default	testuser_default
+
+OK
+
+appuser2_default	testuser_default
+testuser_default	testuser_default
+
+OK
+
+--- EXECUTE AS other_user ---
+OK
+
+OK
+
+--- Multiple EXECUTE AS ---
+appuser1_default	testuser_default
+appuser2_default	testuser_default
+appuser1_default	testuser_default
+testuser_default	testuser_default
+
+OK

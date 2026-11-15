@@ -1,0 +1,130 @@
+---
+title: 'كفاءة التخزين - السلاسل الزمنية'
+sidebarTitle: 'كفاءة التخزين'
+description: 'تحسين كفاءة تخزين السلاسل الزمنية'
+slug: /use-cases/time-series/storage-efficiency
+keywords: ['السلاسل الزمنية', 'كفاءة التخزين', 'الضغط', 'الاحتفاظ بالبيانات', 'TTL', 'تحسين التخزين', 'استخدام مساحة القرص']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+بعد استكشاف كيفية الاستعلام عن مجموعة بيانات إحصاءات Wikipedia، لنركّز الآن على تحسين كفاءة تخزينها في ClickHouse.
+يوضح هذا القسم تقنيات عملية لتقليل مساحة التخزين المطلوبة مع الحفاظ على أداء الاستعلام.
+
+<div id="time-series-type-optimization">
+  ## تحسين الأنواع
+</div>
+
+النهج العام لتحسين كفاءة التخزين هو استخدام أنواع البيانات المثلى.
+لنأخذ العمودين `project` و`subproject`. هذان العمودان من النوع String، لكن عدد القيم الفريدة فيهما صغير نسبيًا:
+
+```sql
+SELECT
+    uniq(project),
+    uniq(subproject)
+FROM wikistat;
+```
+
+```text
+┌─uniq(project)─┬─uniq(subproject)─┐
+│          1332 │              130 │
+└───────────────┴──────────────────┘
+```
+
+هذا يعني أنه يمكننا استخدام نوع البيانات LowCardinality()، الذي يعتمد على ترميز قائم على القاموس. ونتيجة لذلك، يخزّن ClickHouse معرّف القيمة الداخلي بدلًا من قيمة السلسلة الأصلية، مما يوفّر بدوره قدرًا كبيرًا من المساحة:
+
+```sql
+ALTER TABLE wikistat
+MODIFY COLUMN `project` LowCardinality(String),
+MODIFY COLUMN `subproject` LowCardinality(String)
+```
+
+لقد استخدمنا أيضًا النوع UInt64 للعمود `hits`، الذي يشغل 8 بايتات، لكن قيمته القصوى صغيرة نسبيًا:
+
+```sql
+SELECT max(hits)
+FROM wikistat;
+```
+
+```text
+┌─max(hits)─┐
+│    449017 │
+└───────────┘
+```
+
+استنادًا إلى هذه القيمة، يمكننا استخدام UInt32 بدلًا من ذلك، إذ لا يتطلب سوى 4 بايت، ويتيح لنا تخزين قيمة قصوى تصل إلى نحو ~4 مليارات:
+
+```sql
+ALTER TABLE wikistat
+MODIFY COLUMN `hits` UInt32;
+```
+
+سيؤدي هذا إلى تقليل حجم هذا العمود في الذاكرة إلى النصف على الأقل. لاحظ أن الحجم على القرص سيبقى دون تغيير بسبب الضغط. ولكن انتبه: اختر أنواع بيانات لا تكون صغيرة أكثر من اللازم!
+
+<div id="time-series-specialized-codecs">
+  ## ترميزات ضغط متخصصة
+</div>
+
+عندما نتعامل مع بيانات متسلسلة، مثل السلاسل الزمنية، يمكننا تحسين كفاءة التخزين بدرجة أكبر باستخدام ترميزات ضغط خاصة.
+وتقوم الفكرة العامة على تخزين التغيرات بين القيم بدلًا من القيم المطلقة نفسها، مما يقلل كثيرًا من المساحة المطلوبة عند التعامل مع بيانات تتغير ببطء:
+
+```sql
+ALTER TABLE wikistat
+MODIFY COLUMN `time` CODEC(Delta, ZSTD);
+```
+
+لقد استخدمنا ترميز Delta للعمود `time`، وهو مناسب جدًا لبيانات السلاسل الزمنية.
+
+يمكن أن يوفّر مفتاح الترتيب المناسب أيضًا مساحة على القرص.
+وبما أننا نحتاج عادةً إلى التصفية حسب المسار، فسنضيف `path` إلى مفتاح الفرز.
+ويتطلب ذلك إعادة إنشاء الجدول.
+
+فيما يلي يظهر الأمر `CREATE` لجدولنا الأصلي والجدول المُحسَّن:
+
+```sql
+CREATE TABLE wikistat
+(
+    `time` DateTime,
+    `project` String,
+    `subproject` String,
+    `path` String,
+    `hits` UInt64
+)
+ENGINE = MergeTree
+ORDER BY (time);
+```
+
+```sql
+CREATE TABLE optimized_wikistat
+(
+    `time` DateTime CODEC(Delta(4), ZSTD(1)),
+    `project` LowCardinality(String),
+    `subproject` LowCardinality(String),
+    `path` String,
+    `hits` UInt32
+)
+ENGINE = MergeTree
+ORDER BY (path, time);
+```
+
+ولنلقِ نظرة على حجم المساحة التي تشغلها البيانات في كل جدول:
+
+```sql
+SELECT
+    table,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed,
+    count() AS parts
+FROM system.parts
+WHERE table LIKE '%wikistat%'
+GROUP BY ALL;
+```
+
+```text
+┌─table──────────────┬─uncompressed─┬─compressed─┬─parts─┐
+│ wikistat           │ 35.28 GiB    │ 12.03 GiB  │     1 │
+│ optimized_wikistat │ 30.31 GiB    │ 2.84 GiB   │     1 │
+└────────────────────┴──────────────┴────────────┴───────┘
+```
+
+لا يشغل الجدول المُحسَّن، في صورته المضغوطة، سوى أقل بقليل من ربع المساحة.
