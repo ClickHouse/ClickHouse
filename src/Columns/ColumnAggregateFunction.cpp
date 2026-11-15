@@ -401,32 +401,47 @@ void ColumnAggregateFunction::expand(const Filter & mask, bool inverted)
     if (mask.size() < data.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
-    ssize_t from = data.size() - 1;
-    ssize_t index = mask.size() - 1;
-    data.resize(mask.size());
-    while (index >= 0)
+    const size_t set_bytes = countBytesInFilter(mask);
+    const size_t selected = inverted ? mask.size() - set_bytes : set_bytes;
+    if (selected > data.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
+    if (selected < data.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
+
+    /// The destructor destroys every state in `data`, so `data` must never hold a pointer to a state
+    /// that is not created. Build the expanded array aside and publish it only when it is complete.
+    Container new_data;
+    new_data.resize_exact(mask.size());
+
+    size_t from = 0;
+    size_t index = 0;
+    try
     {
-        if (!!mask[index] ^ inverted)
+        for (; index < mask.size(); ++index)
         {
-            if (from < 0)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
-
-            /// Copy only if it makes sense.
-            if (index != from)
-                data[index] = data[from];
-            --from;
+            if (!!mask[index] ^ inverted)
+            {
+                new_data[index] = data[from];
+                ++from;
+            }
+            else
+            {
+                new_data[index] = arena.alignedAlloc(func->sizeOfData(), func->alignOfData());
+                func->create(new_data[index]);
+            }
         }
-        else
-        {
-            data[index] = arena.alignedAlloc(func->sizeOfData(), func->alignOfData());
-            func->create(data[index]);
-        }
-
-        --index;
+    }
+    catch (...)
+    {
+        /// Destroy the states created so far; the ones taken from `data` stay owned by `data`.
+        if (!func->hasTrivialDestructor())
+            for (size_t i = 0; i < index; ++i)
+                if (!(!!mask[i] ^ inverted))
+                    func->destroy(new_data[i]);
+        throw;
     }
 
-    if (from != -1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
+    data.swap(new_data);
 }
 
 ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const
