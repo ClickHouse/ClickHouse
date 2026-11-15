@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/FunctionFactory.h>
 
 
@@ -31,6 +32,12 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
+
+    /// A String date is parsed by `plus`/`minus`, and its default value, the empty string, is not a valid date.
+    bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return arguments.empty() || !isString(removeLowCardinalityAndNullable(arguments[0].type));
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
