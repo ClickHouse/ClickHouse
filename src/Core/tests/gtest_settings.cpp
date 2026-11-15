@@ -207,11 +207,11 @@ GTEST_TEST(Settings, KnownSettingFlaggedCustomOnTheWireIsReadIntoItsTypedField)
     sent.setCustom("custom_unknown_here", Field(String("kept")));
 
     WriteBufferFromOwnString out;
-    sent.write(out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+    sent.write(out);
 
     Settings settings;
     ReadBufferFromString in(out.str());
-    settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+    settings.read(in);
 
     ASSERT_TRUE(settings.isChanged("log_comment"));
     ASSERT_EQ(settings.get("log_comment"), Field(String("hello")));
@@ -237,46 +237,6 @@ GTEST_TEST(SettingFieldNumber, NonConvertibleFieldIsRejected)
     {
         ASSERT_EQ(e.code(), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
-}
-
-GTEST_TEST(Settings, LegacyBinaryFormatRejectsZeroForANonZeroSetting)
-{
-    /// The legacy binary format decodes each value through the setting's own readBinary. A query
-    /// arriving over TCP is additionally passed through the settings constraints, which re-validate,
-    /// but a persisted distributed batch header and a deserialized query plan read this format with
-    /// nothing after it, so readBinary is where a non-zero setting's restriction has to hold.
-    auto wire = [](UInt64 value)
-    {
-        WriteBufferFromOwnString out;
-        BaseSettingsHelpers::writeString("grace_hash_join_initial_buckets", out);
-        writeVarUInt(value, out);
-        BaseSettingsHelpers::writeString("", out); /// end of settings
-        return out.str();
-    };
-
-    /// Each buffer of wire bytes is named: ReadBufferFromString does not copy, so a temporary would
-    /// leave it reading freed memory, where an empty name reads as the end-of-settings marker.
-    const String zero_bytes = wire(0);
-    Settings rejected;
-    ReadBufferFromString zero(zero_bytes);
-    try
-    {
-        rejected.read(zero, SettingsWriteFormat::BINARY);
-        FAIL() << "zero was accepted for a non-zero setting";
-    }
-    catch (const Exception & e)
-    {
-        /// Pinned, so that a misspelled setting name failing as SETTING_NOT_FOUND cannot pass here.
-        ASSERT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
-    }
-
-    /// A permitted value must still be decoded and applied through the same path.
-    const String two_bytes = wire(2);
-    Settings accepted;
-    ReadBufferFromString two(two_bytes);
-    accepted.read(two, SettingsWriteFormat::BINARY);
-    ASSERT_TRUE(accepted.isChanged("grace_hash_join_initial_buckets"));
-    ASSERT_EQ(accepted.get("grace_hash_join_initial_buckets"), Field(UInt64(2)));
 }
 
 GTEST_TEST(SettingFieldTimespan, ValueAlwaysFitsInt64Microseconds)
@@ -347,7 +307,7 @@ GTEST_TEST(Settings, SecondsOnTheWireRejectNegativeAndOverflowingValues)
         Settings settings;
         try
         {
-            settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+            settings.read(in);
             FAIL() << value << " was accepted";
         }
         catch (const Exception & e)
@@ -359,7 +319,7 @@ GTEST_TEST(Settings, SecondsOnTheWireRejectNegativeAndOverflowingValues)
     const String bytes = wire("60");
     ReadBufferFromString in(bytes);
     Settings settings;
-    settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+    settings.read(in);
     ASSERT_TRUE(settings.isChanged("max_execution_time"));
     ASSERT_EQ(settings.get("max_execution_time"), Field(Float64(60)));
 }
@@ -607,19 +567,9 @@ GTEST_TEST(Settings, ADeclaredLengthOnTheSettingsWireIsNotAnAllocation)
     /// one that sizes its destination from the declared length allocates before it can fail.
     constexpr size_t declared_size = 64 * 1024 * 1024;
 
-    /// `writeBinary(const Map &)` writes a fixed width element count, then one tagged field per
-    /// element, and puts no type constraint on an element.
-    const auto write_map_element_tag = [](WriteBuffer & out, Field::Types::Which field_type)
-    {
-        BaseSettingsHelpers::writeString("additional_table_filters", out);
-        writeBinary(static_cast<size_t>(1), out);
-        writeBinary(static_cast<UInt8>(field_type), out);
-    };
-
     struct Case
     {
         std::string_view covers;
-        SettingsWriteFormat format;
         std::function<void(WriteBuffer &)> write_wire;
         /// A setting name is an identifier, so a name declared longer than `MAX_SETTING_NAME_SIZE` is
         /// refused before it is read at all, instead of running out of buffer.
@@ -627,45 +577,14 @@ GTEST_TEST(Settings, ADeclaredLengthOnTheSettingsWireIsNotAnAllocation)
     };
 
     const std::vector<Case> cases = {
-        {"the setting name, i.e. every BaseSettingsHelpers::readString carrier",
-         SettingsWriteFormat::STRINGS_WITH_FLAGS,
+        {"the setting name",
          [&](WriteBuffer & out) { writeVarUInt(declared_size, out); },
          DB::ErrorCodes::TOO_LARGE_STRING_SIZE},
-        {"SettingFieldString::readBinary",
-         SettingsWriteFormat::BINARY,
+        {"the setting value",
          [&](WriteBuffer & out)
          {
              BaseSettingsHelpers::writeString("log_comment", out);
-             writeVarUInt(declared_size, out);
-         }},
-        {"SettingFieldNumber<Float64>::readBinary",
-         SettingsWriteFormat::BINARY,
-         [&](WriteBuffer & out)
-         {
-             BaseSettingsHelpers::writeString("totals_auto_threshold", out);
-             writeVarUInt(declared_size, out);
-         }},
-        {"a String inside a Map setting",
-         SettingsWriteFormat::BINARY,
-         [&](WriteBuffer & out)
-         {
-             write_map_element_tag(out, Field::Types::String);
-             writeVarUInt(declared_size, out);
-         }},
-        {"an AggregateFunctionState name inside a Map setting",
-         SettingsWriteFormat::BINARY,
-         [&](WriteBuffer & out)
-         {
-             write_map_element_tag(out, Field::Types::AggregateFunctionState);
-             writeVarUInt(declared_size, out);
-         }},
-        {"an Object key inside a Map setting",
-         SettingsWriteFormat::BINARY,
-         [&](WriteBuffer & out)
-         {
-             write_map_element_tag(out, Field::Types::Object);
-             writeBinary(static_cast<size_t>(1), out);
-             writeBinary(static_cast<UInt8>(Field::Types::String), out);
+             BaseSettingsHelpers::writeFlags(BaseSettingsHelpers::Flags{}, out);
              writeVarUInt(declared_size, out);
          }},
     };
@@ -685,7 +604,7 @@ GTEST_TEST(Settings, ADeclaredLengthOnTheSettingsWireIsNotAnAllocation)
         {
             MemoryLimitGuard guard;
             armMemoryLimitOnAllocationsOfAtLeastAMegabyte();
-            settings.read(in, test_case.format);
+            settings.read(in);
             ADD_FAILURE() << "reading a declared length of " << declared_size << " did not throw";
         }
         catch (const DB::Exception & e)
@@ -705,7 +624,7 @@ GTEST_TEST(Settings, WellFormedSettingsStillReadUnderAClampedMemoryLimit)
     sent.set("totals_auto_threshold", 0.25);
 
     WriteBufferFromOwnString out;
-    sent.write(out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+    sent.write(out);
     const std::string wire = out.str();
 
     Settings settings;
@@ -713,7 +632,7 @@ GTEST_TEST(Settings, WellFormedSettingsStillReadUnderAClampedMemoryLimit)
     {
         MemoryLimitGuard guard;
         armMemoryLimitOnAllocationsOfAtLeastAMegabyte();
-        ASSERT_NO_THROW(settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS));
+        ASSERT_NO_THROW(settings.read(in));
     }
 
     ASSERT_EQ(settings.get("log_comment"), Field(String("hello")));
@@ -725,7 +644,7 @@ GTEST_TEST(Settings, WellFormedSettingsStillReadUnderAClampedMemoryLimit)
 
 GTEST_TEST(Settings, CustomFlaggedDecimalWithOutOfRangeScaleRejected)
 {
-    /// With `STRINGS_WITH_FLAGS`, a built-in setting marked `CUSTOM` is parsed via
+    /// A built-in setting marked `CUSTOM` is parsed via
     /// `SettingFieldCustom::parseFromString` -> `Field::restoreFromDump` -> `readQuoted`. An
     /// exponent-form decimal dump builds a `Decimal` scale that, before the fix, bypassed the binary
     /// reader's check and reached the decimal text writer (a fixed-size stack buffer) with an
@@ -741,7 +660,7 @@ GTEST_TEST(Settings, CustomFlaggedDecimalWithOutOfRangeScaleRejected)
     ReadBufferFromString in(wire);
     try
     {
-        settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+        settings.read(in);
         FAIL() << "expected ARGUMENT_OUT_OF_BOUND";
     }
     catch (const Exception & e)
