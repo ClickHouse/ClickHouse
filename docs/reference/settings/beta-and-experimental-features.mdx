@@ -125,8 +125,11 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [allow_remote_fs_zero_copy_replication](/reference/settings/merge-tree-settings/allow#allow_remote_fs_zero_copy_replication) | `0` |
 | [distributed_index_analysis_min_indexes_bytes_to_activate](/reference/settings/merge-tree-settings/distributed-index#distributed_index_analysis_min_indexes_bytes_to_activate) | `1073741824` |
 | [distributed_index_analysis_min_parts_to_activate](/reference/settings/merge-tree-settings/distributed-index#distributed_index_analysis_min_parts_to_activate) | `10` |
+| [enable_merge_checkpoints](/reference/settings/merge-tree-settings/enable#enable_merge_checkpoints) | `0` |
 | [enable_replacing_merge_with_cleanup_for_min_age_to_force_merge](/reference/settings/merge-tree-settings/enable#enable_replacing_merge_with_cleanup_for_min_age_to_force_merge) | `0` |
 | [force_read_through_cache_for_merges](/reference/settings/merge-tree-settings/other#force_read_through_cache_for_merges) | `0` |
+| [merge_checkpoints_min_bytes](/reference/settings/merge-tree-settings/merge#merge_checkpoints_min_bytes) | `10737418240` |
+| [merge_checkpoints_min_interval_seconds](/reference/settings/merge-tree-settings/merge#merge_checkpoints_min_interval_seconds) | `60` |
 | [merge_selector_algorithm](/reference/settings/merge-tree-settings/merge-selector#merge_selector_algorithm) | `Simple` |
 | [merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent](/reference/settings/merge-tree-settings/merge-selector#merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent) | `5` |
 | [notify_newest_block_number](/reference/settings/merge-tree-settings/other#notify_newest_block_number) | `0` |
@@ -183,8 +186,6 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [wait_changes_become_visible_after_commit_mode](/reference/settings/session-settings/other#wait_changes_become_visible_after_commit_mode) | `wait_unknown` |
 | [wait_changes_become_visible_timeout_ms](/reference/settings/session-settings/other#wait_changes_become_visible_timeout_ms) | `10000` |
 | [implicit_transaction](/reference/settings/session-settings/implicit#implicit_transaction) | `0` |
-| [grace_hash_join_initial_buckets](/reference/settings/session-settings/grace-hash#grace_hash_join_initial_buckets) | `1` |
-| [grace_hash_join_max_buckets](/reference/settings/session-settings/grace-hash#grace_hash_join_max_buckets) | `1024` |
 | [join_to_sort_minimum_perkey_rows](/reference/settings/session-settings/join-to#join_to_sort_minimum_perkey_rows) | `40` |
 | [join_to_sort_maximum_table_rows](/reference/settings/session-settings/join-to#join_to_sort_maximum_table_rows) | `10000` |
 | [allow_join_right_table_sorting](/reference/settings/session-settings/allow#allow_join_right_table_sorting) | `0` |

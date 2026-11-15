@@ -41,8 +41,8 @@ void registerInputFormatJSONColumns(FormatFactory & factory)
            const FormatSettings & settings)
         {
             return std::make_shared<JSONColumnsBlockInputFormatBase>(buf, std::make_shared<const Block>(sample), settings, std::make_unique<JSONColumnsReader>(buf, settings));
-        }
-    );
+        },
+        /*supports_reset_parser=*/ true);
     factory.markFormatSupportsSubsetOfColumns("JSONColumns");
     /// Data in this format is commonly stored in `.json` files, but the `json` extension infers as `JSON`.
     factory.registerFileExtension("json", "JSONColumns", /*used_for_format_inference=*/ false);

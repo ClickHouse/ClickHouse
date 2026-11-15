@@ -3,7 +3,7 @@
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context_fwd.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
-#include <Server/IcebergRESTCatalog/IcebergRESTCatalogWarehouse.h>
+#include <Server/IcebergRESTCatalog/IcebergRESTCatalogWarehouseRegistry.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogRouter.h>
 #include <Server/IcebergRESTCatalog/KeeperIcebergRESTCatalogStore.h>
 #include <Common/logger_useful.h>
@@ -25,7 +25,7 @@ class Session;
 class IcebergRESTCatalogHandler : public HTTPRequestHandler
 {
 public:
-    IcebergRESTCatalogHandler(IServer & server_, IcebergRESTCatalogWarehousesPtr warehouses_);
+    IcebergRESTCatalogHandler(IServer & server_, IcebergRESTCatalogWarehouseRegistryPtr warehouses_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
@@ -46,6 +46,8 @@ private:
     void handleTableExists(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
     void handleDropTable(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, const Poco::URI & uri, HTTPServerResponse & response, const Context & context) const;
     void handleUpdateTable(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, const String & body, HTTPServerResponse & response, const Context & context) const;
+    void handleRenameTable(const IcebergRESTCatalogWarehouse & warehouse, const String & body, HTTPServerResponse & response, const Context & context) const;
+    void handleReportMetrics(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
 
     /// Writes the new metadata file and moves the table pointer to it with a version check. Sends the response.
     void commitTableMetadata(
@@ -82,7 +84,7 @@ private:
 
     LoggerPtr log;
     IServer & server;
-    IcebergRESTCatalogWarehousesPtr warehouses;
+    IcebergRESTCatalogWarehouseRegistryPtr warehouses;
 };
 
 }

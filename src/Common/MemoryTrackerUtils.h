@@ -37,8 +37,11 @@ MemoryTracker * getCurrentUserMemoryTracker();
 /// Create a memory tracker under the current query memory tracker.
 std::unique_ptr<MemoryTracker> tryCreateMemoryTrackerUnderCurrentQuery(VariableContext level = VariableContext::Thread);
 
-/// Limit number of threads based on free memory.
-/// If free memory (server limit minus tracked) is less than threads * min_free_per_thread,
+/// The server memory limit minus tracked memory, or `nullopt` if no server memory limit is set.
+std::optional<Int64> getServerFreeMemory();
+
+/// Limit number of threads based on free memory (see `getServerFreeMemory`).
+/// If free memory is less than threads * min_free_per_thread,
 /// returns the number of threads that fit, but at least 1.
-/// Returns max_threads unchanged if min_free_per_thread is 0 or no server memory limit is set.
-size_t getMaxThreadsForAvailableMemory(size_t max_threads, UInt64 min_free_per_thread);
+/// Returns max_threads unchanged if min_free_per_thread is 0 or free_memory is `nullopt`.
+size_t getMaxThreadsForFreeMemory(size_t max_threads, UInt64 min_free_per_thread, std::optional<Int64> free_memory);

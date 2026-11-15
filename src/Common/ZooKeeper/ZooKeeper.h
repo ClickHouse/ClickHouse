@@ -256,7 +256,7 @@ public:
 
     ~ZooKeeper();
 
-    ZooKeeperArgs getArgs() const { return args; }
+    const ZooKeeperArgs & getArgs() const { return args; }
 
     std::vector<ShuffleHost> shuffleHosts() const;
 
@@ -683,6 +683,8 @@ public:
     String getConnectedHostAvailabilityZone() const;
 
     const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return impl->getKeeperFeatureFlags(); }
+
+    Coordination::IKeeper & getImpl() { return *impl; }
 
     /// Checks that our session was not killed, and allows to avoid applying a request from an old lost session.
     /// Imagine a "connection-loss-on-commit" situation like this:

@@ -47,7 +47,7 @@ const ReleaseSchedule = ({ releases = [] }) => {
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
             <a href="/es/products/cloud/features/admin-features/upgrades#slow-release-channel-deferred-upgrades">Canal lento</a>
           </th>
-          <th rowSpan={2} scope="col" style={groupStartStyle}>Fecha de fin de vida (EOL)</th>
+          <th rowSpan={2} scope="col" style={groupStartStyle}>Fecha de fin de vida útil</th>
         </tr>
         <tr>
           <th scope="col" style={groupStartStyle}>Inicio</th>

@@ -1,8 +1,7 @@
 #pragma once
 
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
-
-#include <parquet/encoding.h>
+#include <Common/PODArray.h>
 
 /// The `ALP` (Adaptive Lossless floating-Point) encoding of Parquet `FLOAT` and `DOUBLE` values.
 ///
@@ -35,12 +34,33 @@ namespace DB::Parquet
 std::unique_ptr<PageDecoder> makeALPDecoder(
     parq::Type::type physical_type, std::span<const char> data, std::shared_ptr<FixedSizeConverter> converter);
 
-/// Encoders that buffer the values of a page and encode them with `ALP` in `FlushValues`.
-/// A page for which `ALP` would be bigger than `PLAIN` is written as `PLAIN`: after `FlushValues`,
-/// `encoding` returns the encoding of the page it has just produced, as `parquet::Encoding::type`
-/// (which has no `ALP` enumerator, so `ALP` is the value of `parq::Encoding::ALP` cast to it).
-/// `EstimatedDataEncodedSize` is the size of the values in `PLAIN`, which is thus an upper bound.
-std::unique_ptr<parquet::TypedEncoder<parquet::FloatType>> makeALPFloatEncoder();
-std::unique_ptr<parquet::TypedEncoder<parquet::DoubleType>> makeALPDoubleEncoder();
+/// Buffers the values of a page and encodes them with `ALP` in `flush`, for `T` = `float` or `double`.
+/// A page for which `ALP` would be bigger than `PLAIN` is written as `PLAIN`: after `flush`,
+/// `lastPageEncoding` returns the encoding of the page it has just produced.
+/// `estimatedDataEncodedSize` is the size of the values in `PLAIN`, which is thus an upper bound.
+template <typename T>
+class ALPEncoder
+{
+public:
+    ALPEncoder();
+    ~ALPEncoder();
+
+    void put(const T * src, size_t count) { values.insert(src, src + count); }
+
+    size_t estimatedDataEncodedSize() const { return values.size() * sizeof(T); }
+
+    /// Appends the encoded values to `out` and starts a new page.
+    void flush(PODArray<char> & out);
+
+    parq::Encoding::type lastPageEncoding() const { return last_page_encoding; }
+
+private:
+    struct PageEncoder;
+
+    PODArray<T> values;
+    std::unique_ptr<PageEncoder> page_encoder;
+    PaddedPODArray<char> encoded;
+    parq::Encoding::type last_page_encoding = parq::Encoding::ALP;
+};
 
 }

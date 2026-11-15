@@ -49,6 +49,7 @@ from properties import (
     SERVER_SETTLE_SLEEP_SECONDS,
     SERVER_START_WAIT_SECONDS,
     SERVER_STOP_WAIT_SECONDS,
+    generate_distributed_cache_config,
     modify_server_settings,
     modify_user_settings,
     modify_keeper_settings,
@@ -237,6 +238,11 @@ parser.add_argument(
     "--with-arrowflight", action="store_true", help="With Arrow flight support"
 )
 parser.add_argument("--with-kafka", action="store_true", help="With Kafka integration")
+parser.add_argument(
+    "--with-distributed-cache",
+    action="store_true",
+    help="Host distributed cache servers in each node and use them (private binary with Keeper)",
+)
 parser.add_argument(
     "--mem-limit", type=str, default="", help="Set a memory limit, e.g. '1g'"
 )
@@ -658,8 +664,20 @@ if os.environ.get("CLICKHOUSE_IS_SANITIZED") == "1":
     dolor_main_configs.append("../config/config.d/trace_log_no_symbolize.xml")
 
 
+use_distributed_cache = args.with_distributed_cache and is_private_binary and args.with_zookeeper
+if args.with_distributed_cache and not use_distributed_cache:
+    logger.warning("The distributed cache needs the private binary and Keeper, not adding it")
+    args.with_distributed_cache = False
+
 servers: list[ClickHouseInstance] = []
+# Number of distributed cache servers of each node
+node_distributed_cache_servers: list[int] = []
 for i in range(0, len(args.replica_values)):
+    node_main_configs = list(dolor_main_configs)
+    if use_distributed_cache:
+        dc_config, nservers = generate_distributed_cache_config(args, i)
+        node_main_configs.append(dc_config)
+        node_distributed_cache_servers.append(nservers)
     servers.append(
         cluster.add_instance(
             f"node{i}",
@@ -679,7 +697,7 @@ for i in range(0, len(args.replica_values)):
             with_arrowflight=args.with_arrowflight,
             with_kafka=args.with_kafka,
             mem_limit=None if args.mem_limit == "" else args.mem_limit,
-            main_configs=dolor_main_configs,
+            main_configs=node_main_configs,
             user_configs=[user_settings] if user_settings is not None else [],
             env_variables=test_env_variables,
             macros={"replica": args.replica_values[i], "shard": args.shard_values[i]},
@@ -701,6 +719,25 @@ for i in range(0, len(args.replica_values)):
     )
 servers[len(servers) - 1].wait_start(8)
 servers[0].give_user_files_permissions()
+
+# Without registered cache servers every query silently skips the distributed cache, so fail early
+for i, nservers in enumerate(node_distributed_cache_servers):
+    registered = ""
+    for _ in range(60):
+        try:
+            registered = servers[i].query(
+                "SELECT count() FROM system.distributed_cache_registry"
+            ).strip()
+        except Exception as ex:
+            registered = str(ex)
+        if registered == str(nservers):
+            break
+        time.sleep(1)
+    else:
+        raise Exception(
+            f"Node node{i} has {nservers} distributed cache servers, but its registry shows: {registered}"
+        )
+    logger.info(f"Node node{i} has {nservers} distributed cache servers registered")
 
 # Uploaders for object storage
 if args.with_minio:

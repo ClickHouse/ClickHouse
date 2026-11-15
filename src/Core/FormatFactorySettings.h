@@ -1706,6 +1706,11 @@ Compression method for Arrow output format. Supported codecs: lz4_frame, zstd, n
 Write Date values as plain 16-bit numbers (read back as UInt16), instead of converting to a 32-bit Arrow DATE32 type (read back as Date32).
 )", 0, \
         {"26.2", true, false, "Write Date as Arrow DATE32 instead of plain UInt16 by default."}) \
+    DECLARE(Bool, output_format_arrow_uuid_as_fixed_byte_array, false, R"(
+Write `UUID` values as plain Arrow `FixedSizeBinary(16)`, without the `arrow.uuid` extension type in the field metadata.
+Use it for Arrow readers that do not support the `arrow.uuid` extension type.
+)", 0, \
+        {"26.11", false, false, "New setting to write UUID as plain FixedSizeBinary(16) without the `arrow.uuid` extension type."}) \
     DECLARE(ArrowUnsupportedTypes, output_format_arrow_unsupported_types, "binary", R"(
 What to write for a column whose type has no first-class Arrow mapping (for example `JSON`, `Dynamic`, `QBit` or `AggregateFunction`):
 
