@@ -89,7 +89,8 @@ FINAL, ONLY_MERGE = 1, 128
 
 def aggregating(flags, argument_type):
     # Flags, no keys, then one aggregate `a` = any(x): name, arguments with their types, function, parameters.
-    return bytes([flags]) + vu(0) + vu(1) + sb("a") + vu(1) + sb("x") + argument_type + sb("any") + vu(0)
+    # The final `vu(0)` is the number of sets of the plan.
+    return bytes([flags]) + vu(0) + vu(1) + sb("a") + vu(1) + sb("x") + argument_type + sb("any") + vu(0) + vu(0)
 
 X = [("x", U64)]
 A = [("a", U64)]
