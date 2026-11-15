@@ -283,7 +283,8 @@ struct AggregateFunctionMergedJSONPatchData
         readVarUInt(size, buf);
 
         VectorWithMemoryTracking<Entry> batch;
-        batch.reserve(size);
+        /// Reserving is only an optimization here, so it is derived from payload that already arrived.
+        batch.reserve(std::min(size, buf.available() / sizeof(Entry)));
 
         for (size_t i = 0; i < size; ++i)
         {
