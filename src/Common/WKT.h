@@ -34,8 +34,10 @@ inline std::optional<std::string> normalizeWKTDimensions(std::string_view wkt)
             ++pos;
     };
     skip_separators();
+    const size_t geometry_start = pos;
     while (pos < wkt.size() && !isWKTSeparator(wkt[pos]) && wkt[pos] != '(')
         ++pos;
+    const auto geometry = wkt.substr(geometry_start, pos - geometry_start);
     skip_separators();
     const size_t tag_start = pos;
     while (pos < wkt.size() && !isWKTSeparator(wkt[pos]) && wkt[pos] != '(')
@@ -86,6 +88,10 @@ inline std::optional<std::string> normalizeWKTDimensions(std::string_view wkt)
                 xy_end = pos;
             const size_t number_end = pos;
             skip_separators();
+            /// Preserve the legacy two-ordinate `POINT M` syntax without relaxing other dimension tags or geometries.
+            if (ordinate == 1 && boost::iequals(geometry, "POINT") && boost::iequals(tag, "M")
+                && pos < wkt.size() && wkt[pos] == ')')
+                break;
             if (ordinate + 1 < dimensions && number_end == pos)
                 throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Expected {} WKT ordinates separated by whitespace", dimensions);
         }
