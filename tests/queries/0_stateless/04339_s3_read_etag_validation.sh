@@ -14,10 +14,12 @@ trap on_exit EXIT
 
 csv="http://localhost:11111/test/04339_etag_${CLICKHOUSE_DATABASE}.csv"
 parq="http://localhost:11111/test/04339_etag_${CLICKHOUSE_DATABASE}.parquet"
+null_csv="http://localhost:11111/test/04339_etag_null_${CLICKHOUSE_DATABASE}.csv"
 auth="'test', 'testtest'"
 
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO FUNCTION s3('$csv', $auth, 'CSV', 'n UInt64') SELECT number FROM numbers(100) SETTINGS s3_truncate_on_insert=1"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO FUNCTION s3('$parq', $auth, 'Parquet') SELECT number AS n FROM numbers(100) SETTINGS s3_truncate_on_insert=1"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO FUNCTION s3('$null_csv', $auth, 'CSV', 'n UInt64') SELECT number FROM numbers(100) SETTINGS s3_truncate_on_insert=1"
 
 # Force every GET to report a different ETag than the one captured at read setup, simulating a
 # concurrent in-place overwrite. This exercises the full path: the s3_validate_etag_on_read gate in
@@ -38,3 +40,13 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM s3('$csv', $auth, 'CSV', 'n UInt64'
 # bucket-splitting read (ObjectIteratorSplitByBuckets), not from inference reading the object first.
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM s3Cluster('test_cluster_one_shard_three_replicas_localhost', '$parq', $auth, 'Parquet', 'n UInt64') SETTINGS s3_validate_etag_on_read = 1, cluster_table_function_split_granularity = 'bucket'" 2>&1 \
     | grep -oF "S3_OBJECT_CHANGED_DURING_READ" | head -n 1
+
+# `versionId=null` names the null version, which an upload overwrites in place, so its read is checked too.
+# A separate object, never read before: a cache filled by a successful read could serve it without a GET.
+${CLICKHOUSE_CLIENT} -q "SELECT sum(n) FROM s3('$null_csv?versionId=null', $auth, 'CSV', 'n UInt64') SETTINGS s3_validate_etag_on_read = 1" 2>&1 \
+    | grep -oF "S3_OBJECT_CHANGED_DURING_READ" | head -n 1
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT s3_read_inject_etag_mismatch"
+
+# Without the injected mismatch, the If-Match of the GET of the null version matches.
+${CLICKHOUSE_CLIENT} -q "SELECT sum(n) FROM s3('$null_csv?versionId=null', $auth, 'CSV', 'n UInt64') SETTINGS s3_validate_etag_on_read = 1"
