@@ -1720,6 +1720,103 @@ def test_where_numeric_reader_values(started_cluster, column_type):
         collection.drop()
 
 
+@pytest.mark.parametrize(
+    "column_type, outside, valid, expected",
+    [
+        ("Int32", 3e9, [-2147483648.75, 2147483647.75], "-2147483648\n2147483647\n"),
+        ("Nullable(Int32)", 3e9, [-0.5, 1.9], "0\n1\n"),
+        ("UInt8", 256.0, [-0.5, 255.75], "0\n255\n"),
+        ("Nullable(UInt8)", -1.0, [-0.5, 1.9], "0\n1\n"),
+        ("Int64", float(2**63), [-0.5, 1.9], "0\n1\n"),
+        ("UInt64", float(2**64), [-0.5, 1.9], "0\n1\n"),
+    ],
+)
+def test_integer_reader_double_bounds(
+    started_cluster, column_type, outside, valid, expected
+):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    collection_name = "integer_reader_double_bounds"
+    drop_mongo_collection_if_exists(db, collection_name)
+    collection = db[collection_name]
+    node = started_cluster.instances["node"]
+    arguments = f"'mongo1:27017', 'test', '{collection_name}', 'root', '{mongo_pass}'"
+    structure = f"n {column_type}"
+    node.query(
+        f"CREATE OR REPLACE TABLE {collection_name} ({structure}) "
+        f"ENGINE = MongoDB({arguments})"
+    )
+    try:
+        for value in (float("nan"), float("inf"), -float("inf"), outside):
+            collection.delete_many({})
+            collection.insert_one({"n": value})
+            for source in (collection_name, f"mongodb({arguments}, '{structure}')"):
+                for suffix in ("", " WHERE n = 0"):
+                    error = node.query_and_get_error(f"SELECT n FROM {source}{suffix}")
+                    assert "CANNOT_CONVERT_TYPE" in error, (column_type, value, error)
+        collection.delete_many({})
+        collection.insert_many([{"n": value} for value in valid])
+        assert node.query(f"SELECT n FROM {collection_name} ORDER BY n") == expected
+    finally:
+        node.query(f"DROP TABLE {collection_name}")
+        collection.drop()
+
+
+@pytest.mark.parametrize("membership", ["dense", "sparse", "negative"])
+def test_large_numeric_membership(started_cluster, membership):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    collection_name = "large_numeric_membership"
+    drop_mongo_collection_if_exists(db, collection_name)
+    collection = db[collection_name]
+    collection.insert_many(
+        [
+            {"id": 1, "n": 1},
+            {"id": 2, "n": 2},
+            {"id": 3, "n": 800001},
+            {"id": 4, "n": "2"},
+            {"id": 5, "n": True},
+            {"id": 6},
+        ]
+    )
+    node = started_cluster.instances["node"]
+    arguments = f"'mongo1:27017', 'test', '{collection_name}', 'root', '{mongo_pass}'"
+    structure = "id Int32, n Int64"
+    node.query(
+        f"CREATE OR REPLACE TABLE {collection_name} ({structure}) "
+        f"ENGINE = MongoDB({arguments})"
+    )
+    members = ", ".join(
+        str(i if membership == "dense" else 2 * i) for i in range(400000)
+    )
+    operator = "NOT IN" if membership == "negative" else "IN"
+    expected = {
+        "dense": "1\n2\n4\n5\n6\n",
+        "sparse": "2\n4\n6\n",
+        "negative": "1\n3\n5\n",
+    }[membership]
+    try:
+        for source in (collection_name, f"mongodb({arguments}, '{structure}')"):
+            assert (
+                node.query(
+                    f"SELECT id FROM {source} WHERE n {operator} ({members}) ORDER BY id",
+                    settings={
+                        "max_query_size": 10000000,
+                        "max_ast_elements": 1000000,
+                        "max_expanded_ast_elements": 1000000,
+                    },
+                )
+                == expected
+            )
+    finally:
+        node.query(f"DROP TABLE {collection_name}")
+        collection.drop()
+
+
 @pytest.mark.parametrize("column_type", ["Int64", "Nullable(Int64)", "String"])
 def test_where_noncanonical_bool_constants(started_cluster, column_type):
     mongo_connection = get_mongo_connection(started_cluster)

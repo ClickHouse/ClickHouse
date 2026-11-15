@@ -712,6 +712,7 @@ static std::optional<bsoncxx::document::value> numberColumnFilter(
 {
     const auto type = removeNullable(column_type);
     auto filters = bsoncxx::builder::basic::array{};
+    constexpr size_t max_filter_bytes = 1024 * 1024;
 
     if (func_name == "$ne" || func_name == "$nin")
     {
@@ -726,15 +727,34 @@ static std::optional<bsoncxx::document::value> numberColumnFilter(
                 continue;
             if (auto value = exactNumber(member))
                 excluded.append(value->view());
+            if (excluded.view().length() > max_filter_bytes)
+                return make_document();
         }
         return make_document(kvp(column_name, make_document(kvp("$nin", excluded.extract()))));
     }
 
-    for (const auto & member : (func_name == "$in" ? listMembers(const_value) : Array{const_value}))
+    auto members = func_name == "$in" ? listMembers(const_value) : Array{const_value};
+    const bool merge_integer_ranges = func_name == "$in" && WhichDataType(type).isInteger();
+    if (merge_integer_ranges)
+        std::sort(members.begin(), members.end(), [](const Field & lhs, const Field & rhs) { return accurateLess(lhs, rhs); });
+
+    for (size_t i = 0; i < members.size(); ++i)
     {
-        auto neighbours = numberNeighbours(member, type);
+        auto neighbours = numberNeighbours(members[i], type);
         if (!neighbours)
             return {};
+        if (merge_integer_ranges)
+        {
+            auto as_integer = [](const Field & value) -> Int128
+            {
+                return value.getType() == Field::Types::UInt64
+                    ? Int128(value.safeGet<UInt64>()) : Int128(value.safeGet<Int64>());
+            };
+            Int128 last = as_integer(members[i]);
+            while (i + 1 < members.size() && as_integer(members[i + 1]) <= last + 1)
+                last = as_integer(members[++i]);
+            neighbours->above = numberNeighbours(members[i], type)->above;
+        }
         if (func_name == "$eq" || func_name == "$in")
             filters.append(numberRange(column_name, neighbours->below, neighbours->above));
         else if (func_name == "$lt")
@@ -747,6 +767,14 @@ static std::optional<bsoncxx::document::value> numberColumnFilter(
             filters.append(numberRange(column_name, neighbours->below, {}));
         else
             return {};
+
+        if (filters.view().length() > max_filter_bytes)
+        {
+            /// Keep the numeric superset bounded even when the membership ranges cannot be combined.
+            filters.clear();
+            filters.append(numberRange(column_name, {}, {}));
+            break;
+        }
     }
 
     if (WhichDataType(type).isInteger())
@@ -1247,6 +1275,12 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
         /// The limit must not discard rows before the `WHERE` drops the extra ones.
         if (is_superset)
             options.limit(0);
+
+        if (filter->view().length() > 1024 * 1024)
+        {
+            options.limit(0);
+            return make_document();
+        }
 
         LOG_DEBUG(log, "MongoDB query has built: '{}'.", bsoncxx::to_json(*filter));
         return std::move(*filter);
