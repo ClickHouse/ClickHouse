@@ -21,6 +21,8 @@
 #include <Common/TargetSpecific.h>
 #include <Common/logger_useful.h>
 
+#include <algorithm>
+
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 
@@ -37,6 +39,7 @@ namespace ProfileEvents
 {
     extern const Event RowsReadByMainReader;
     extern const Event RowsReadByPrewhereReaders;
+    extern const Event RowsSkippedByPrewhereReaders;
 }
 
 namespace DB
@@ -373,6 +376,7 @@ size_t MergeTreeRangeReader::Stream::finalize(MutableColumns & columns, Columns 
 void MergeTreeRangeReader::ReadResult::addGranule(size_t num_rows_, GranuleOffset granule_offset)
 {
     rows_per_granule.push_back(num_rows_);
+    raw_rows_per_granule.push_back(num_rows_);
     granule_offsets.push_back(std::move(granule_offset));
     total_rows_per_granule += num_rows_;
 }
@@ -542,6 +546,52 @@ MarkRanges MergeTreeRangeReader::ReadResult::computeUnmatchedMarkRanges() const
         {
             size_t offset = i - started_ranges[range_idx].num_granules_read_before_start;
             emit(started_ranges[range_idx].range.begin + offset);
+        }
+    }
+
+    return result;
+}
+
+MergeTreeRangeReader::ReadResult::NumRows MergeTreeRangeReader::ReadResult::survivingRowsPerGranule() const
+{
+    /// Without a pending filter, `rows_per_granule` already holds the survivor count of each granule:
+    /// a const-true filter keeps the raw rows (all survive), a const-false one is materialized by
+    /// `clear`, which zeroes every entry. With a pending filter, `rows_per_granule` may still hold the
+    /// raw rows read (filtering of an incomplete trailing granule, or of a not-yet-shrunk block, is
+    /// deferred), so the survivor count has to be read from `final_filter`, whose size equals
+    /// `total_rows_per_granule` and whose set bits are laid out granule by granule in `rows_per_granule`
+    /// order (see `checkInternalConsistency`).
+    if (!final_filter.present())
+        return rows_per_granule;
+
+    NumRows result(rows_per_granule.size());
+    size_t offset = 0;
+
+    if (final_filter.isSparse())
+    {
+        /// Sparse filter: the set positions are sorted and absolute within [0, total_rows_per_granule).
+        const auto & indices = final_filter.getSparseIndices()->getData();
+        size_t idx_pos = 0;
+        for (size_t i = 0; i < rows_per_granule.size(); ++i)
+        {
+            const size_t end = offset + rows_per_granule[i];
+            size_t survived = 0;
+            while (idx_pos < indices.size() && indices[idx_pos] < end)
+            {
+                ++idx_pos;
+                ++survived;
+            }
+            result[i] = survived;
+            offset = end;
+        }
+    }
+    else
+    {
+        const UInt8 * filter_data = final_filter.getData().data();
+        for (size_t i = 0; i < rows_per_granule.size(); ++i)
+        {
+            result[i] = countBytesInFilter(filter_data, offset, offset + rows_per_granule[i]);
+            offset += rows_per_granule[i];
         }
     }
 
@@ -1899,6 +1949,16 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
             result.columns.erase(result.columns.begin() + filter_column_pos);
 
         FilterWithCachedCount current_filter(current_step_filter);
+
+        /// PREWHERE ProfileEvents: the number of rows this step filters out. The granule-level counters
+        /// (GranulesReadByPrewhereReaders / GranulesSkippedByPrewhereReaders) are computed once per part by
+        /// `MergeTreeReadersChain` from the final, all-steps-applied result, because a granule may be split
+        /// across read blocks and a later PREWHERE step may drop a granule that an earlier one did not.
+        /// Rows that survived the previous steps and therefore enter this one. When an earlier step deferred its
+        /// filter, `num_rows` is still the full block size, so the survivor count has to be read from final_filter.
+        const size_t rows_before_prewhere_filter
+            = result.final_filter.present() ? result.final_filter.countBytesInFilter() : result.num_rows;
+
         result.optimize(current_filter, can_read_incomplete_granules, false);
         /// Null when predicate_statistics_sample_rate = 0 (default). Counts the rows that passed all steps so far.
         if (performance_counters)
@@ -1914,6 +1974,17 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
                     : current_filter;
 
             result.applyFilter(filter_to_apply);
+        }
+
+        /// Rows that this step filtered out: those that entered the step minus those that still survive
+        /// (mirrors the survivor count used for `rows_passed_filter` above). Summed over all steps, this is
+        /// the total number of rows dropped by PREWHERE. Counted only for the query's PREWHERE predicate, so a
+        /// row-level-security filter, a lightweight-delete mask, or an on-fly mutation is not attributed to it.
+        if (prewhere_info->is_query_prewhere)
+        {
+            const size_t rows_after_prewhere_filter
+                = result.final_filter.present() ? result.final_filter.countBytesInFilter() : result.num_rows;
+            ProfileEvents::increment(ProfileEvents::RowsSkippedByPrewhereReaders, rows_before_prewhere_filter - rows_after_prewhere_filter);
         }
     }
 

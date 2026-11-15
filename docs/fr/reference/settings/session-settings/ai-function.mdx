@@ -52,6 +52,25 @@ Nombre maximal de textes pouvant être inclus dans une seule requête HTTP envoy
 
 Nombre maximal de requêtes HTTP que les fonctions d’IA peuvent émettre au cours d’une requête. La valeur 0 (par défaut) désactive la limite. Cette limite est appliquée indépendamment par chaque serveur et fragment de requête : dans un même contexte d’exécution, elle constitue un plafond strict partagé par toutes les fonctions d’IA, tous les blocs et tous les threads concernés. Toutefois, une requête distribuée (sur plusieurs segments ou fragments de répliques parallèles) peut émettre jusqu’à ce nombre de requêtes par segment ou fragment. Elle doit être définie dans la requête de niveau supérieur ; une surcharge `SETTINGS` dans une sous-requête est ignorée.
 
+## ai_function_max_concurrent_requests_per_thread {#ai_function_max_concurrent_requests_per_thread}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "8"},{"label": "nouveau paramètre"}]}]} />
+
+Nombre maximal de requêtes vers le fournisseur qu’un fil d’exécution de requête peut avoir en cours simultanément. Avec `1`, les requêtes sont émises une par une.
+
+Une requête s’exécutant sur plusieurs fils d’exécution (au plus `max_threads`) peut avoir jusqu’à ce nombre de requêtes en cours par fil d’exécution. Utilisez une [contrainte de settings profile](/fr/concepts/features/configuration/settings/constraints-on-settings) (`<constraints><ai_function_max_concurrent_requests_per_thread><max>...</max></...>`) pour imposer un plafond qu’une requête ne peut pas relever. Ce plafond s’applique toujours par fil d’exécution.
+
+Une valeur supérieure à `1` assouplit deux garanties :
+
+* La consommation de jetons d’une requête n’est connue qu’à la réception de sa réponse ; les quotas de jetons (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`) peuvent donc être dépassés de l’équivalent d’une requête par requête en cours, soit de l’équivalent de ce nombre de requêtes au maximum, et non d’une seule.
+* Toute une vague de requêtes est acheminée avant que la moindre erreur ne soit détectée ; une requête qui échoue dès sa première ligne peut donc avoir déjà émis jusqu’à ce nombre de requêtes, qui seront facturées.
+
+`ai_function_max_api_calls_per_query` n’est pas concerné et reste un plafond exact, car un créneau est réservé avant l’acheminement de chaque requête.
+
 ## ai_function_max_input_tokens_per_query {#ai_function_max_input_tokens_per_query}
 
 <BetaBadge />
@@ -80,9 +99,9 @@ Cette limite n’est appliquée qu’aux fournisseurs qui renvoient un objet `us
 
 <BetaBadge />
 
-<SettingsInfoBlock type="UInt64" default_value="1" />
+<SettingsInfoBlock type="UInt64" default_value="3" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Réessayer par défaut une fois une erreur d’API transitoire, afin qu’un seul code 429 ou 5xx du fournisseur n’entraîne pas l’échec de la requête."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Réessayer par défaut une fois une erreur d’API transitoire, afin qu’un seul code 429 ou 5xx du fournisseur n’entraîne pas l’échec de la requête."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "Nouveau paramètre"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "3"},{"label": "Réessayer par défaut jusqu’à trois fois une erreur d’API transitoire, afin de réduire la charge sur un fournisseur surchargé et soumis à une limitation de débit en cas de requêtes concurrentes."}]}]} />
 
 Nombre maximal de tentatives en cas d&#39;erreurs transitoires pour chaque requête d’API. Chaque tentative utilise un backoff exponentiel à partir de `ai_function_retry_initial_delay_ms`.
 

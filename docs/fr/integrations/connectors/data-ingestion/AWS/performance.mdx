@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['s3', 'performance', 'optimisation', 'stockage d’objets', 'chargement des données']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Cette section porte sur l’optimisation des performances lors de la lecture et de l’insertion de données depuis S3 à l’aide des [fonctions de table S3](/fr/reference/functions/table-functions/s3).
 
 <Info>
@@ -27,7 +25,15 @@ Outre la capacité matérielle, deux facteurs principaux influencent les perform
   ### Taille du bloc d’insertion
 </div>
 
-<Image img="/images/integrations/data-ingestion/s3/insert_mechanics.webp" size="lg" border alt="Mécanisme de la taille du bloc d’insertion dans ClickHouse" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Mécanisme de la taille du bloc d’insertion dans ClickHouse](/images/integrations/data-ingestion/s3/insert_mechanics.webp)
+
+</Frame>
+
+</div>
 
 Lors de l’exécution d’un `INSERT INTO SELECT`, ClickHouse reçoit une portion de données et ① forme, à partir des données reçues, au moins un bloc d’insertion en mémoire (par [clé de partitionnement](/fr/reference/engines/table-engines/mergetree-family/custom-partitioning-key)). Les données du bloc sont triées, puis des optimisations propres au moteur de table sont appliquées. Les données sont ensuite compressées puis ② écrites dans le stockage de la base de données sous la forme d’une nouvelle part de données.
 
@@ -35,7 +41,15 @@ La taille du bloc d’insertion a un impact à la fois sur l’[activité d’E/
 
 Lorsqu’une requête `INSERT INTO SELECT` est utilisée avec un moteur de table d’intégration ou une fonction de table, les données sont récupérées par le serveur ClickHouse :
 
-<Image img="/images/integrations/data-ingestion/s3/pull.webp" size="lg" border alt="Récupération de données depuis des sources externes dans ClickHouse" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Récupération de données depuis des sources externes dans ClickHouse](/images/integrations/data-ingestion/s3/pull.webp)
+
+</Frame>
+
+</div>
 
 Jusqu’à ce que les données soient entièrement chargées, le serveur exécute une boucle :
 
@@ -68,7 +82,15 @@ Plus la taille du bloc d’insertion configurée est petite, plus le nombre de p
 
 ClickHouse va [fusionner des parts](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance) en continu pour former des parts plus volumineuses, jusqu’à ce qu’elles [atteignent](/fr/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) une taille compressée d’environ 150 GiB. Ce schéma montre comment un serveur ClickHouse fusionne les parts :
 
-<Image img="/images/integrations/data-ingestion/s3/merges.webp" size="lg" border alt="Fusions en arrière-plan dans ClickHouse" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Fusions en arrière-plan dans ClickHouse](/images/integrations/data-ingestion/s3/merges.webp)
+
+</Frame>
+
+</div>
 
 Un serveur ClickHouse unique utilise plusieurs [threads de fusion en arrière-plan](/fr/reference/settings/server-settings/settings/background#background_pool_size) pour exécuter des [fusions de parts](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes) en parallèle. Chaque thread exécute une boucle :
 
@@ -94,13 +116,29 @@ Les parts qui ont été fusionnées en parts plus volumineuses sont marquées co
   ### Parallélisme des insertions
 </div>
 
-<Image img="/images/integrations/data-ingestion/s3/resource_usage.webp" size="lg" border alt="Utilisation des ressources pour le parallélisme des insertions" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Utilisation des ressources pour le parallélisme des insertions](/images/integrations/data-ingestion/s3/resource_usage.webp)
+
+</Frame>
+
+</div>
 
 Un serveur ClickHouse peut traiter et insérer des données en parallèle. Le niveau de parallélisme des insertions influe sur le débit d’ingestion et l’utilisation de la mémoire d’un serveur ClickHouse. Le chargement et le traitement des données en parallèle nécessitent davantage de mémoire vive, mais augmentent le débit d’ingestion, car les données sont traitées plus rapidement.
 
 Des fonctions de table comme s3 permettent de spécifier des ensembles de noms de fichiers à charger à l’aide de motifs glob. Lorsqu’un motif glob correspond à plusieurs fichiers existants, ClickHouse peut paralléliser les lectures entre ces fichiers et au sein de chacun d’eux, puis insérer les données en parallèle dans une table en utilisant des threads d’insertion exécutés en parallèle (par serveur) :
 
-<Image img="/images/integrations/data-ingestion/s3/insert_threads.webp" size="lg" border alt="Threads d’insertion parallèles dans ClickHouse" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Threads d’insertion parallèles dans ClickHouse](/images/integrations/data-ingestion/s3/insert_threads.webp)
+
+</Frame>
+
+</div>
 
 Tant que toutes les données de tous les fichiers n’ont pas été traitées, chaque thread d’insertion exécute une boucle :
 
@@ -128,7 +166,15 @@ Il est nécessaire d’optimiser les performances des requêtes utilisant les fo
   ## Impact des ressources matérielles
 </div>
 
-<Image img="/images/integrations/data-ingestion/s3/hardware_size.webp" size="lg" border alt="Impact des ressources matérielles sur les performances de ClickHouse" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Impact des ressources matérielles sur les performances de ClickHouse](/images/integrations/data-ingestion/s3/hardware_size.webp)
+
+</Frame>
+
+</div>
 
 Le nombre de cœurs CPU disponibles et la quantité de RAM influent sur :
 
@@ -359,7 +405,15 @@ L’utilisation d’un cluster pour les lectures S3 nécessite d’employer la f
 
 Le serveur qui reçoit initialement la requête d’insertion résout d’abord le motif glob, puis répartit dynamiquement le traitement de chaque fichier correspondant entre lui-même et les autres serveurs.
 
-<Image img="/images/integrations/data-ingestion/s3/s3Cluster.webp" size="lg" border alt="fonction s3Cluster dans ClickHouse" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![fonction s3Cluster dans ClickHouse](/images/integrations/data-ingestion/s3/s3Cluster.webp)
+
+</Frame>
+
+</div>
 
 Nous reprenons notre précédente requête de lecture en répartissant la charge de travail sur 3 nœuds, en ajustant la requête pour utiliser `s3Cluster`. Dans ClickHouse Cloud, cela se fait automatiquement en faisant référence au cluster `default`.
 
