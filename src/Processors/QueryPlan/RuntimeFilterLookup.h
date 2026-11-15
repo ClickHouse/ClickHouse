@@ -30,6 +30,7 @@ namespace DB
 
 class ReadBuffer;
 class WriteBuffer;
+struct KeyRangeHistogram;
 
 class RuntimeFilter;
 using UniqueRuntimeFilterPtr = std::unique_ptr<RuntimeFilter>;
@@ -88,19 +89,38 @@ public:
     bool canUseExactValues() const { return enabled && positive_filter; }
     void insert(const IColumn & values);
     void mergeFrom(const RuntimeFilterIndexAnalysis & source);
-    void setRange(const Range & range);
-    std::optional<Range> getRange() const;
+    void setRanges(const std::vector<Range> & ranges);
+
+    /// Disjoint closed intervals covering the recorded keys, by left bound; empty if none.
+    /// Must only be called after the build finished: the result is memoized.
+    std::vector<Range> getRanges() const;
+    /// The same as `getRanges`, but not memoized: for a state that may still change.
+    std::vector<Range> computeRanges() const;
+    /// The memoized result of `getRanges`, if it was computed already.
+    std::optional<std::vector<Range>> getCachedRanges() const { return cached_ranges; }
 
 private:
     static bool supportsDataType(const DataTypePtr & data_type);
+    static bool supportsHistogram(const DataTypePtr & data_type);
     void extendRange(const Field & new_min, const Field & new_max);
+    /// Everything recorded so far, unreduced: histogram runs, merged-in intervals, and the envelope.
+    void appendRangeCover(std::vector<std::pair<Field, Field>> & out) const;
 
     const bool range_supported;
     const bool positive_filter;
+    /// Whether the histogram can bucket this key type; if not, the envelope is used.
+    const bool histogram_supported;
     bool enabled = false;
+    /// Envelope, for key types the histogram cannot bucket.
     bool has_range = false;
     Field range_min{};
     Field range_max{};
+    /// Closed intervals, carried over from a replaced filter or merged in from other streams.
+    std::vector<std::pair<Field, Field>> range_cover;
+    /// Keys as bits over a bucketed domain; order-independent (see `KeyRangeHistogram`).
+    std::shared_ptr<KeyRangeHistogram> range_histogram;
+    /// Memoized `getRanges`; mutable for the const getter, guarded by the owning RuntimeFilter's mutex.
+    mutable std::optional<std::vector<Range>> cached_ranges;
 };
 
 /// Thread-safe, nonnegative row budget used to throttle runtime-filter evaluation.
@@ -267,8 +287,8 @@ public:
     /// `exact_bytes_limit` to the estimated keys times the key width, and the hash table buffer would
     /// reach that bound long before the keys do. A local filter keeps the buffer bound. Call before inserts.
     void boundExactSetByKeyBytes();
-    /// Empty if tracking is off or the range is not known.
-    std::optional<Range> getKeyRange() const { return key_range.getRange(); }
+    /// Disjoint closed intervals covering the inserted keys; empty if tracking is off or no key is known.
+    std::vector<Range> getKeyRanges() const { return key_range.computeRanges(); }
 
     /// Writes the raw filter state (exact values or bloom filter bits, and the key range) so that a
     /// partial filter can be sent to another server and merged there. Captures the state: further
@@ -328,7 +348,7 @@ public:
     SharedFixedHashTableRuntimeFilter(
         const DataTypePtr & filter_column_target_type_,
         ProbeFn probe_fn_,
-        std::optional<Range> key_range_ = {},
+        std::vector<Range> key_ranges_ = {},
         ColumnPtr recorded_key_values_ = {});
 
     /// All build entry points are no-ops: the data was built inside `HashJoin` already.
@@ -338,12 +358,12 @@ public:
     ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
     ColumnPtr getRecordedKeyValues() const { return recorded_key_values; }
     DataTypePtr getTargetType() const { return filter_column_target_type; }
-    const std::optional<Range> & getInitialKeyRange() const { return key_range; }
+    const std::vector<Range> & getInitialKeyRanges() const { return key_ranges; }
 
 private:
     const DataTypePtr filter_column_target_type;
     ProbeFn probe_fn;
-    std::optional<Range> key_range;
+    std::vector<Range> key_ranges;
     ColumnPtr recorded_key_values;
 };
 
@@ -370,9 +390,9 @@ private:
     {
         using FilterType = std::decay_t<FilterImpl>;
         auto target_type = filter.getTargetType();
-        std::optional<Range> initial_range;
+        std::vector<Range> initial_ranges;
         if constexpr (std::is_same_v<FilterType, Adaptive>)
-            initial_range = filter.getKeyRange();
+            initial_ranges = filter.getKeyRanges();
         Data result{
             detail::RuntimeFilterBuildState(FilterType::is_prebuilt ? 0 : filters_to_merge, FilterType::is_prebuilt),
             Filter(std::forward<FilterImpl>(filter)),
@@ -380,11 +400,11 @@ private:
         if constexpr (std::is_same_v<FilterType, SharedFixedHashTable>)
         {
             result.index_analysis.enable();
-            initial_range = std::get<SharedFixedHashTable>(result.filter).getInitialKeyRange();
+            /// Carry over the replaced filter's cover so left-side pruning survives the switch.
+            initial_ranges = std::get<SharedFixedHashTable>(result.filter).getInitialKeyRanges();
         }
         /// Kept even before `enableIndexAnalysis`: it is used only after that call.
-        if (initial_range)
-            result.index_analysis.setRange(*initial_range);
+        result.index_analysis.setRanges(initial_ranges);
         return result;
     }
 
@@ -419,7 +439,11 @@ public:
     /// Opt in to collecting build-side metadata for storage index analysis.
     void enableIndexAnalysis();
     ColumnPtr getRecordedKeyValues() const;
-    std::optional<Range> getRecordedKeyRanges() const;
+    /// Disjoint closed intervals covering the recorded keys, by left bound; empty if none.
+    std::vector<Range> getRecordedKeyRanges() const;
+
+    /// Intervals the cover may keep; each is another OR branch and mark-range trim per part.
+    static constexpr size_t max_key_range_intervals = 8;
     DataTypePtr getFilterColumnTargetType() const { return filter_column_target_type; }
 
     /// Usage statistics
