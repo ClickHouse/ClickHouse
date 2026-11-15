@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <thread>
 
 
 namespace DB
@@ -289,38 +290,45 @@ bool Elf::decompressSections(const std::vector<size_t> & indices) const
         inputs.emplace_back(compression, payload);
     }
 
-    /// The memory tracker does not throw while an exception is being formatted, so check the server limit here:
-    /// before allocating, and again with every buffer charged, since other threads allocate meanwhile.
-    auto fits_server_limit = [](uint64_t size)
-    {
-        Int64 limit = total_memory_tracker.getHardLimit();
-        if (limit <= 0)
-            return true;
-        Int64 used = std::max(total_memory_tracker.get(), total_memory_tracker.getRSS());
-        return used <= limit && size <= static_cast<uint64_t>(limit - used);
-    };
-    if (!fits_server_limit(total_size))
+    /// Refused before anything is allocated if the sections do not fit the server limit.
+    Int64 limit = total_memory_tracker.getHardLimit();
+    Int64 used = std::max(total_memory_tracker.get(), total_memory_tracker.getRSS());
+    if (limit > 0 && (used > limit || total_size > static_cast<uint64_t>(limit - used)))
         return false;
 
     bool done = false;
     try
     {
+        std::vector<Memory<> *> sections;
         for (size_t idx : indices)
-            decompressed_sections.try_emplace(idx);
+            sections.push_back(&decompressed_sections.try_emplace(idx).first->second);
 
-        std::vector<Memory<>> buffers(indices.size());
-        for (size_t i = 0; i < indices.size(); ++i)
-            if (inputs[i].first.size != 0)
-                buffers[i] = Memory<>(inputs[i].first.size);
+        /// Kept for the life of this object, so a thread of its own allocates them: charged to the server and checked
+        /// against its limit, not deferred by the thread (or charged to the query) that reads them first.
+        std::thread([&]
+        {
+            std::vector<Memory<>> buffers;
+            try
+            {
+                buffers.resize(indices.size());
+                for (size_t i = 0; i < indices.size(); ++i)
+                    if (inputs[i].first.size != 0)
+                        buffers[i] = Memory<>(inputs[i].first.size);
 
-        done = fits_server_limit(0);
-        for (size_t i = 0; done && i < indices.size(); ++i)
-            if (inputs[i].first.size != 0)
-                done = decompressSection(inputs[i].first, inputs[i].second, buffers[i].data());
+                done = true;
+                for (size_t i = 0; done && i < indices.size(); ++i)
+                    if (inputs[i].first.size != 0)
+                        done = decompressSection(inputs[i].first, inputs[i].second, buffers[i].data());
+            }
+            catch (const std::exception &) // Ok: reported as a failure below.
+            {
+                done = false;
+            }
 
-        if (done)
-            for (size_t i = 0; i < indices.size(); ++i)
-                decompressed_sections.find(indices[i])->second.swap(buffers[i]);
+            if (done)
+                for (size_t i = 0; i < indices.size(); ++i)
+                    sections[i]->swap(buffers[i]);
+        }).join();
     }
     catch (const std::exception &) // Ok: reported as a failure below.
     {

@@ -26,7 +26,6 @@
 #include <Common/Elf.h>
 #include <Common/Dwarf.h>
 #include <Common/Exception.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 
 #if defined(OS_DARWIN)
 #include <Common/MachO.h>
@@ -165,8 +164,6 @@ Dwarf::Dwarf(const std::shared_ptr<Elf> & elf)
     }
 #endif
 
-    /// Decompressed sections stay for the life of the process: charge them to the server, not to the query that symbolizes first.
-    MemoryTrackerBlockerInThread blocker(VariableContext::User);
     auto data = elf->getSectionsData(names);
     if (!data)
     {
