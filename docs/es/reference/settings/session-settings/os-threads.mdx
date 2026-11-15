@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas opciones de configuración están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="os_threads_nice_value_materialized_view">
-  ## os_threads_nice_value_materialized_view
-</div>
+## os_threads_nice_value_materialized_view {#os_threads_nice_value_materialized_view}
 
 <SettingsInfoBlock type="Int32" default_value="0" />
 
@@ -27,19 +25,17 @@ Requiere la capacidad CAP&#95;SYS&#95;NICE; de lo contrario, no tiene efecto.
 
 Valores posibles: de -20 a 19.
 
-<div id="os_threads_nice_value_query">
-  ## os_threads_nice_value_query
-</div>
+## os_threads_nice_value_query {#os_threads_nice_value_query}
 
 **Alias**: `os_thread_priority`
 
 <SettingsInfoBlock type="Int32" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "0"},{"label": "Nuevo ajuste."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "0"},{"label": "Nueva configuración, con `os_thread_priority` como alias."}]}]} />
 
 Valor nice de Linux para los hilos de procesamiento de consultas. Los valores más bajos implican una mayor prioridad de CPU.
 
-Requiere la capacidad CAP&#95;SYS&#95;NICE; de lo contrario, no surte efecto.
+Requiere la capacidad CAP&#95;SYS&#95;NICE; de lo contrario, no tiene efecto.
 
 Valores posibles: de -20 a 19.
 

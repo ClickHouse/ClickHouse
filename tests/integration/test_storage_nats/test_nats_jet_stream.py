@@ -1917,7 +1917,7 @@ def test_nats_jet_stream_keeps_buffered_backlog_across_broker_restart(nats_clust
         result, total_expected)
 
 
-UNSUBSCRIBED_LOG_LINE = "Consumer .* unsubscribed"
+UNSUBSCRIBED_LOG_LINE = "Consumer unsubscribed"
 
 
 def test_nats_jet_stream_returns_buffered_backlog_to_the_broker_when_unsubscribing(nats_cluster):

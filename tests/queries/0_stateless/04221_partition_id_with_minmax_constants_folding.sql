@@ -1,6 +1,5 @@
 -- Tags: no-parallel-replicas, no-shared-catalog
 
-SET enable_analyzer=1;
 SET optimize_move_to_prewhere=1;
 SET use_constant_folding_in_index_analysis=1;
 SET use_statistics_for_part_pruning=0;

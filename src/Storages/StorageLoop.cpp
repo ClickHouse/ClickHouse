@@ -57,6 +57,7 @@ namespace DB
             StoragePtr inner_storage;
             return std::make_shared<StorageLoop>(args.table_id, inner_storage);
         },
+        SecretArgumentsSpec{},
         {},
         Documentation{
             .description = "Reads from an inner table or table function repeatedly, returning its rows in an infinite loop. "

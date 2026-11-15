@@ -14,12 +14,6 @@ namespace
 {
     class FunctionToBool final : public IFunction
     {
-    private:
-        static String getReturnTypeName(const DataTypePtr & argument)
-        {
-            return argument->isNullable() ? "Nullable(Bool)" : "Bool";
-        }
-
     public:
         static constexpr auto name = "toBool";
 
@@ -36,22 +30,29 @@ namespace
         size_t getNumberOfArguments() const override { return 1; }
         bool useDefaultImplementationForConstants() const override { return true; }
         bool useDefaultImplementationForNulls() const override { return false; }
+        /// A `LowCardinality` dictionary always contains the default value of its type (an empty
+        /// string for `LowCardinality(String)`), which cannot be converted to `Bool`. Let the
+        /// default implementation for `LowCardinality` cast only the dictionary entries referenced
+        /// by the rows, so the dictionary is still converted once instead of row by row, while
+        /// invalid non-`NULL` values keep throwing.
+        bool canBeExecutedOnDefaultArguments() const override { return false; }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        String getSignatureString() const override
         {
-            return DataTypeFactory::instance().get(getReturnTypeName(arguments[0]));
+            return
+                "(Nullable(Any)) -> Nullable(\"Bool\")"
+                " OR (Any) -> \"Bool\"";
         }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override
         {
-
-            ColumnPtr col = DataTypeString().createColumnConst(arguments[0].column->size(), getReturnTypeName(arguments[0].type));
+            const String target_name = result_type->getName();
             ColumnsWithTypeAndName cast_args
             {
                 arguments[0],
                 {
-                    col,
+                    DataTypeString().createColumnConst(arguments[0].column->size(), target_name),
                     std::make_shared<DataTypeString>(),
                     ""
                 }

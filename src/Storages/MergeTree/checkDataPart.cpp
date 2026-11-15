@@ -57,6 +57,9 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int CACHE_CANNOT_WRITE_TO_CACHE_DISK;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 
@@ -155,6 +158,51 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     }
 }
 
+bool isIOErrorException(std::exception_ptr exception_ptr)
+{
+    try
+    {
+        rethrow_exception(exception_ptr);
+    }
+    catch (const ErrnoException & e)
+    {
+        return e.getErrno() == EIO;
+    }
+    catch (const std::filesystem::filesystem_error & e)
+    {
+        return e.code() == std::errc::io_error;
+    }
+    catch (...)
+    {
+        /// Ok: any other exception is not an I/O error.
+        return false;
+    }
+}
+
+/// A query that was killed or hit `max_execution_time` can throw from inside a part read, e.g. from
+/// `FileSegment::wait`, from the S3 client or from the marks loader. Such an exception says nothing
+/// about the data on disk, so a reader must not report the part as broken because of it.
+/// This is deliberately not part of `isRetryableException`: inside `checkDataPart` a retryable
+/// exception yields empty checksums, and a cancelled `CHECK TABLE` would then pass an unchecked part.
+bool isQueryCancellation(std::exception_ptr exception_ptr)
+{
+    try
+    {
+        rethrow_exception(exception_ptr);
+    }
+    catch (const Exception & e)
+    {
+        return e.code() == ErrorCodes::QUERY_WAS_CANCELLED
+            || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
+            || e.code() == ErrorCodes::TIMEOUT_EXCEEDED;
+    }
+    catch (...)
+    {
+        /// Ok: only a `DB::Exception` can carry a cancellation code.
+        return false;
+    }
+}
+
 static IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     const IDataPartStorage & data_part_storage,
@@ -217,6 +265,9 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
         catch (...)
         {
+            if (isIOErrorException(std::current_exception()))
+                throw;
+
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
                 "Failed to load file {} of data part {}, with error {}",
@@ -332,6 +383,13 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
     {
         auto file_name = it->name();
+
+        /// Skip temporary metadata files (e.g. checksums.txt.tmp) that an interrupted metadata
+        /// rewrite may have left behind. They are not part of the part's data and must not be
+        /// checksummed: doing so would record a file that the next rewrite deletes, making the
+        /// recalculated checksums self-invalidating.
+        if (file_name.ends_with(".tmp"))
+            continue;
 
         /// We will check projections later.
         if (data_part_storage.existsDirectory(file_name) && file_name.ends_with(".proj"))

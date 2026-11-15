@@ -8,20 +8,27 @@
 namespace DB
 {
 
-/// Table functions timeSeriesSamples('mydb', 'my_ts_table'), timeSeriesTags('mydb', 'my_ts_table'), timeSeriesMetricFamilies('mydb', 'my_ts_table')
-/// return the "samples" table, the "tags" table, and the "metric families" table respectively associated with any TimeSeries table mydb.my_ts_table
+/// Table functions timeSeriesSamples('mydb', 'my_ts_table'), timeSeriesTags('mydb', 'my_ts_table'),
+/// timeSeriesTimeRanges('mydb', 'my_ts_table'), timeSeriesMetricFamilies('mydb', 'my_ts_table')
+/// return the "samples" table, the "tags" table, the "time ranges" table, and the "metric families" table respectively
+/// associated with any TimeSeries table mydb.my_ts_table
 template <ViewTarget::Kind target_kind>
 class TableFunctionTimeSeriesTarget : public ITableFunction
 {
 public:
     static constexpr auto name = (target_kind == ViewTarget::Samples)
         ? "timeSeriesSamples"
-        : ((target_kind == ViewTarget::Tags) ? "timeSeriesTags" : "timeSeriesMetricFamilies");
+        : ((target_kind == ViewTarget::Tags) ? "timeSeriesTags"
+        : ((target_kind == ViewTarget::TimeRanges) ? "timeSeriesTimeRanges" : "timeSeriesMetricFamilies"));
 
     String getName() const override { return name; }
 
 private:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+
+    /// The call names the target table of the `TimeSeries` table it is given, so it denotes the same
+    /// table on every replica even though the target itself is a hidden table named after a UUID.
+    std::optional<String> getParallelReplicasReadID() const override;
 
     /// The returned storage is the target table itself, so a persisted table would rename a live table in memory.
     bool canBeUsedToCreateTable() const override { return false; }

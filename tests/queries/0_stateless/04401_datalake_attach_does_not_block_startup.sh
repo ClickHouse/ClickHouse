@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-msan
 
 # A DataLakeCatalog database persisted by an older version (which validated auth_header lazily)
 # must still attach when loaded by a newer version, so that one misconfigured or unreachable

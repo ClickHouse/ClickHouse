@@ -11,6 +11,7 @@ import pytest
 from helpers.client import Client
 from helpers.cluster import ClickHouseCluster
 from helpers.proxy1 import Proxy1
+from helpers.test_tools import assert_eq_with_retry
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -296,3 +297,67 @@ def test_http_forwarded_address_validation():
         "Invalid address in `X-Forwarded-For` HTTP header"
         in exc_info.value.read().decode("utf-8")
     )
+
+
+def test_protocol_metrics():
+    """Servers declared under `<protocols>` must report the same asynchronous metrics as the
+    equivalent built-in ports. See https://github.com/ClickHouse/ClickHouse/issues/80759
+    """
+    expected = [
+        "HTTPSecureThreads",  # <https>: tls over http
+        "HTTPThreads",  # <http>
+        "TCPSecureThreads",  # <tcp_secure>: tls over tcp
+        "TCPThreads",  # <tcp>
+        "TCPWithProxyThreads",  # <tcp_proxy>: proxy1 over tcp
+    ]
+
+    # Asynchronous metrics are refreshed on a timer, so the first update may not have
+    # happened yet when the test starts.
+    assert_eq_with_retry(
+        server,
+        "SELECT metric FROM system.asynchronous_metrics "
+        "WHERE metric LIKE '%Threads' AND metric NOT LIKE 'Keeper%' ORDER BY metric",
+        "\n".join(expected) + "\n",
+        retry_count=30,
+        sleep_time=1,
+    )
+
+    # Rejected-connection counters are emitted alongside the thread counters.
+    assert_eq_with_retry(
+        server,
+        "SELECT count() FROM system.asynchronous_metrics WHERE metric IN "
+        "('TCPRejectedConnections', 'TCPSecureRejectedConnections', "
+        "'TCPWithProxyRejectedConnections', 'HTTPRejectedConnections', "
+        "'HTTPSecureRejectedConnections')",
+        "5\n",
+        retry_count=30,
+        sleep_time=1,
+    )
+
+
+def test_protocol_metrics_sum_listeners_of_one_protocol():
+    """Listeners of the same protocol are summed rather than the last one overwriting the
+    others: the `tcp` (9000) and `tcp_endpoint` (9001) listeners both report into `TCPThreads`.
+    """
+    # Each running query holds one handler thread on its listener for its whole duration.
+    long_query = "SELECT sleepEachRow(1) FROM numbers(30) SETTINGS max_block_size = 1"
+    requests = [
+        Client(
+            server.ip_address, port, command=cluster.client_bin_path
+        ).get_query_request(long_query)
+        for port in (9000, 9000, 9001, 9001)
+    ]
+    try:
+        # If one listener overwrote the other, the metric would show at most one listener's
+        # two queries plus the checking query itself. Summing both listeners gives at least four.
+        assert_eq_with_retry(
+            server,
+            "SELECT value >= 4 FROM system.asynchronous_metrics WHERE metric = 'TCPThreads'",
+            "1\n",
+            retry_count=25,
+            sleep_time=1,
+        )
+    finally:
+        server.query("KILL QUERY WHERE query LIKE 'SELECT sleepEachRow(1)%' SYNC")
+        for request in requests:
+            request.get_answer_and_error()
