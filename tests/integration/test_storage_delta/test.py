@@ -595,7 +595,6 @@ def test_partition_key_cast_overflow(started_cluster):
 
     url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}"
     write = {
-        "allow_experimental_delta_kernel_rs": 1,
         "allow_experimental_delta_lake_writes": 1,
         "allow_delta_lake_create_table": 1,
     }
@@ -1810,7 +1809,6 @@ def test_partition_columns_2(started_cluster, cluster):
     num_files = int(
         node.query(
             f"SELECT uniqExact(_path) FROM {delta_function}",
-            settings={"allow_experimental_delta_kernel_rs": 1},
         )
     )
     assert num_files == 5
@@ -1836,14 +1834,12 @@ def test_partition_columns_2(started_cluster, cluster):
         "e\tNullable(String)"
         == node.query(
             f"DESCRIBE TABLE {delta_function}",
-            settings={"allow_experimental_delta_kernel_rs": 1},
         ).strip()
     )
 
     num_files = int(
         node.query(
             f"SELECT uniqExact(_path) FROM {delta_function}",
-            settings={"allow_experimental_delta_kernel_rs": 1},
         )
     )
     assert num_files == 6
@@ -1855,7 +1851,6 @@ def test_partition_columns_2(started_cluster, cluster):
         == node.query(
             f" SELECT * FROM {delta_function} ORDER BY all",
             settings={
-                "allow_experimental_delta_kernel_rs": 1,
                 "use_hive_partitioning": 0,
             },
         ).strip()
@@ -1867,7 +1862,6 @@ def test_partition_columns_2(started_cluster, cluster):
             f" SELECT a FROM {delta_function} WHERE c = 7 and d = 'aa'",
             query_id=query_id,
             settings={
-                "allow_experimental_delta_kernel_rs": 1,
                 "delta_lake_enable_engine_predicate": 0,
             },
         ).strip()
@@ -1893,7 +1887,6 @@ def test_partition_columns_2(started_cluster, cluster):
             f"SELECT a FROM {delta_function} WHERE c = 7 and d = 'bb'",
             query_id=query_id,
             settings={
-                "allow_experimental_delta_kernel_rs": 1,
                 "delta_lake_enable_engine_predicate": 0,
             },
         ).strip()
@@ -1946,7 +1939,6 @@ def test_partition_by_nullable_bool(started_cluster):
         "flag\tNullable(Bool)"
         == node.query(
             f"DESCRIBE TABLE {delta_function}",
-            settings={"allow_experimental_delta_kernel_rs": 1},
         ).strip()
     )
 
@@ -1956,7 +1948,6 @@ def test_partition_by_nullable_bool(started_cluster):
         == node.query(
             f"SELECT id, flag FROM {delta_function} ORDER BY id",
             settings={
-                "allow_experimental_delta_kernel_rs": 1,
                 "use_hive_partitioning": 0,
             },
         ).strip()
@@ -2009,7 +2000,6 @@ def test_partition_by_binary(started_cluster):
         "data\tNullable(String)"
         == node.query(
             f"DESCRIBE TABLE {delta_function}",
-            settings={"allow_experimental_delta_kernel_rs": 1},
         ).strip()
     )
 
@@ -2023,7 +2013,6 @@ def test_partition_by_binary(started_cluster):
         == node.query(
             f"SELECT id, toTypeName(data), isNull(data) FROM {delta_function} ORDER BY id",
             settings={
-                "allow_experimental_delta_kernel_rs": 1,
                 "use_hive_partitioning": 0,
             },
         ).strip()
@@ -2129,7 +2118,6 @@ SET TBLPROPERTIES ('delta.minReaderVersion'='2', 'delta.minWriterVersion'='5', '
             f"SELECT naam FROM {delta_function} WHERE age = 12",
             query_id=query_id,
             settings={
-                "allow_experimental_delta_kernel_rs": 1,
                 "delta_lake_enable_engine_predicate": 0,
             },
         ).strip()
@@ -2143,7 +2131,6 @@ SET TBLPROPERTIES ('delta.minReaderVersion'='2', 'delta.minWriterVersion'='5', '
             f"SELECT naam FROM {delta_function} WHERE age = 51",
             query_id=query_id,
             settings={
-                "allow_experimental_delta_kernel_rs": 1,
                 "delta_lake_enable_engine_predicate": 0,
             },
         ).strip()
@@ -5239,7 +5226,7 @@ def test_partition_columns_jumbled(started_cluster, cluster):
 
     result_from_delta = node.query(
         f"SELECT * FROM {delta_function} ORDER BY id",
-        settings={"allow_experimental_delta_kernel_rs": 1, "use_hive_partitioning": 0},
+        settings={"use_hive_partitioning": 0},
     ).strip()
 
     result_from_table = node.query(f"SELECT * FROM {dst_table} ORDER BY id").strip()
@@ -5859,7 +5846,7 @@ def test_snapshot_consistency(started_cluster):
             result_holder["query_id"] = query_id
             result = instance.query(
                 f"SELECT sum(a) FROM {TABLE_NAME} WHERE sleepEachRow(0.01) = 0",
-                settings={"max_threads": 1, "allow_experimental_delta_kernel_rs": 1},
+                settings={"max_threads": 1},
                 query_id=query_id,
                 timeout=60
             )
@@ -5888,7 +5875,6 @@ def test_snapshot_consistency(started_cluster):
     second_query_result = instance.query(
         f"SELECT sum(a) FROM {TABLE_NAME}",
         query_id=query_id_v1,
-        settings={"allow_experimental_delta_kernel_rs": 1},
     ).strip()
     # sum(0..49) = 1225
     assert int(second_query_result) == 1225, f"Expected sum=1225 in updated table, got {second_query_result}"
@@ -6079,7 +6065,7 @@ def test_insert_select_from_cluster_with_partition_pruning(started_cluster):
         WHERE (event_time >= '2026-02-01') AND (event_time < '2026-02-02')
         """,
         query_id=query_id,
-        settings={"allow_experimental_delta_kernel_rs": 1, "delta_lake_enable_engine_predicate": 0},
+        settings={"delta_lake_enable_engine_predicate": 0},
     )
 
     # The cluster INSERT path runs the SELECT on a remote replica, which writes
@@ -6141,7 +6127,6 @@ def test_insert_select_from_cluster_with_partition_pruning(started_cluster):
         """,
         query_id=query_id,
         settings={
-            "allow_experimental_delta_kernel_rs": 1,
             "delta_lake_enable_engine_predicate": 0,
         },
     )
