@@ -202,11 +202,15 @@ void GroupConcatImpl<has_limit>::deserialize(AggregateDataPtr __restrict place, 
         if (cur_data.num_rows > std::numeric_limits<UInt64>::max() / 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid groupConcat state: num_rows ({}) is too large and would overflow the offsets array.", cur_data.num_rows);
 
-        cur_data.offsets.resize_exact(cur_data.num_rows * 2, arena);
-
-        for (size_t i = 0; i < cur_data.offsets.size(); ++i)
+        /// The offsets are appended as they are read, so that a huge `num_rows` in a malformed state does not allocate
+        /// before the payload proves it.
+        cur_data.offsets.clear();
+        const size_t num_offsets = cur_data.num_rows * 2;
+        for (size_t i = 0; i < num_offsets; ++i)
         {
-            readVarUInt(cur_data.offsets[i], buf);
+            UInt64 offset = 0;
+            readVarUInt(offset, buf);
+            cur_data.offsets.push_back(offset, arena);
 
             if (cur_data.offsets[i] > cur_data.data_size)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid offset {} in groupConcat state: exceeds data size {}", cur_data.offsets[i], cur_data.data_size);

@@ -411,6 +411,17 @@ namespace detail
                         count_big[index - SMALL_THRESHOLD] = elem_count;
                 }
             }
+
+            /// The bins sum to the count, which is positive for this kind: finalizing a state where they do not would
+            /// treat it as nonempty and walk an empty histogram. Modulo 2^64, as the weights are added.
+            UInt64 total = 0;
+            for (UInt64 elem_count : count_small)
+                total = common::addIgnoreOverflow(total, elem_count);
+            for (UInt64 elem_count : count_big)
+                total = common::addIgnoreOverflow(total, elem_count);
+            if (count == 0 || total != count)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "The counts of 'large' kind of quantileTiming sum to {} instead of {}", total, count);
         }
 
 

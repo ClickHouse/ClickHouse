@@ -533,7 +533,8 @@ Prefetcher::Task * Prefetcher::pickRangesAndCreateTaskLocked(RequestState * init
     initial_offset = end_offset;
     for (size_t idx = range_idx + 1; idx < ranges.size(); ++idx)
     {
-        const RangeState & r = ranges[end_idx];
+        /// `end_idx` only advances past accepted ranges, so it would stay on a cancelled one.
+        const RangeState & r = ranges[idx];
         if (gapAtLeast(end_offset, r.start, min_bytes_for_seek) ||
             gapAtLeast(initial_offset, r.end, bytes_per_read_task) ||
             !may_coalesce(r.request))
