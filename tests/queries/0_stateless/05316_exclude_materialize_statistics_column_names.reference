@@ -1,0 +1,16 @@
+Rows inserted with an invalid list	0
+Columns without statistics after inserts with an empty list	0
+INSERT excludes n.x, d.z, c,ol, but not B, because the list names b
+B	1
+a	1
+c,ol	0
+d.z	0
+n.x	0
+n.y	1
+Merge excludes n.y and d.z, but not a, because the list names A
+B	1
+a	1
+c,ol	1
+d.z	0
+n.x	1
+n.y	0

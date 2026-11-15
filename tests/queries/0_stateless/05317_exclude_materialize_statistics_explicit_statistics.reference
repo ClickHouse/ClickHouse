@@ -1,0 +1,8 @@
+INSERT excludes b
+a	[]
+b	[]
+c	['TDigest']
+Merge excludes c
+a	[]
+b	['TDigest']
+c	[]
