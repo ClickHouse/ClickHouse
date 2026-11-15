@@ -2337,7 +2337,7 @@ ColumnPtr FunctionArrayElement<mode>::executeString(const ColumnsWithTypeAndName
         if (index == 0)
             throw Exception(ErrorCodes::ILLEGAL_INDEX, "Index 0 is not valid for string subscript (indices start from 1)");
 
-        if (str.size() == 0)
+        if (str.empty())
             throw Exception(ErrorCodes::ILLEGAL_INDEX, "Cannot access character in empty string");
 
         const UInt64 length = str.size();
@@ -2382,7 +2382,7 @@ ColumnPtr FunctionArrayElement<mode>::executeString(const ColumnsWithTypeAndName
             throw Exception(ErrorCodes::ILLEGAL_INDEX,
                 "Index 0 is not valid for string slice {} (indices start from 1)", position_name);
 
-        if (str.size() == 0)
+        if (str.empty())
             throw Exception(ErrorCodes::ILLEGAL_INDEX, "Cannot slice empty string");
 
         const UInt64 length = str.size();
