@@ -1886,7 +1886,12 @@ void StorageObjectStorageQueue::alter(
                 parallel_inserts_changed = true;
             }
             else if (setting.name == "processing_threads_num")
+            {
+                /// The same check as on table creation, otherwise there would be no streaming tasks left.
+                if (!SettingFieldUInt64(setting.value).value)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `processing_threads_num` cannot be set to zero");
                 processing_threads_num_changed = true;
+            }
 
             changed_settings.push_back(setting);
         }
