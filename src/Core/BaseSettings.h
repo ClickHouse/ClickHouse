@@ -3,7 +3,6 @@
 #include <Core/SettingIndex.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsTierType.h>
-#include <Core/SettingsWriteFormat.h>
 #include <IO/Operators.h>
 #include <IO/VarInt.h>
 #include <Common/FieldVisitorToString.h>
@@ -57,6 +56,7 @@ struct BaseSettingsHelpers
     /// Error handling
     [[noreturn]] static void throwSettingNotFound(std::string_view name);
     [[noreturn]] static void throwTooManySettings(std::string_view what);
+    [[noreturn]] static void throwNoBinarySerialization(std::string_view name, std::string_view type);
     [[noreturn]] static void throwValuelessSettingIsNotBool(std::string_view name, std::string_view type);
     [[noreturn]] static void throwValuelessSettingIsNotBool(std::string_view name);
     [[noreturn]] static void throwValuelessSettingHasValue(std::string_view name);
@@ -322,16 +322,17 @@ public:
     static String valueToStringUtil(std::string_view name, const Field & value);
     static Field stringToValueUtil(std::string_view name, const String & str);
 
-    /// Write all settings (or only changed ones depending on format)
-    void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
+    /// Write changed settings: every value is serialized as a string preceded by flags.
+    void write(WriteBuffer & out) const;
 
-    /// Read settings from a buffer.
+    /// Read settings written by `write`.
     /// With `skip_invalid_values`, a non-important setting whose value is rejected keeps its default instead of failing the read.
-    void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT, bool skip_invalid_values = false);
+    void read(ReadBuffer & in, bool skip_invalid_values = false);
 
     /// Write only changed settings in binary format.
     /// Used for serialization of object storage settings (`S3Settings`, `DataLakeStorageSettings`),
     /// including by code outside of this repository, so do not remove it as unused.
+    /// Only the setting types used there implement binary serialization (see `SettingFieldOps`).
     void writeChangedBinary(WriteBuffer & out) const;
 
     /// Read settings in binary format
@@ -764,7 +765,7 @@ Field BaseSettings<TTraits>::stringToValueUtil(std::string_view name, const Stri
 }
 
 template <typename TTraits>
-void BaseSettings<TTraits>::write(WriteBuffer & out, SettingsWriteFormat format) const
+void BaseSettings<TTraits>::write(WriteBuffer & out) const
 {
     const auto & accessor = Traits::Accessor::instance();
 
@@ -775,20 +776,15 @@ void BaseSettings<TTraits>::write(WriteBuffer & out, SettingsWriteFormat format)
 
         BaseSettingsHelpers::writeString(field.getName(), out);
 
-        if ((format >= SettingsWriteFormat::STRINGS_WITH_FLAGS) || is_custom)
-        {
-            using Flags = BaseSettingsHelpers::Flags;
-            Flags flags{};
-            if (is_custom)
-                flags = static_cast<Flags>(flags | Flags::CUSTOM);
-            else if (is_important)
-                flags = static_cast<Flags>(flags | Flags::IMPORTANT);
-            BaseSettingsHelpers::writeFlags(flags, out);
+        using Flags = BaseSettingsHelpers::Flags;
+        Flags flags{};
+        if (is_custom)
+            flags = static_cast<Flags>(flags | Flags::CUSTOM);
+        else if (is_important)
+            flags = static_cast<Flags>(flags | Flags::IMPORTANT);
+        BaseSettingsHelpers::writeFlags(flags, out);
 
-            BaseSettingsHelpers::writeString(field.getValueString(/* show_secrets */ true), out);
-        }
-        else
-            accessor.writeBinary(*this, field.index, out);
+        BaseSettingsHelpers::writeString(field.getValueString(/* show_secrets */ true), out);
     }
 
     /// Empty string is a marker of the end of settings.
@@ -843,7 +839,7 @@ void BaseSettings<TTraits>::readBinary(ReadBuffer & in)
 }
 
 template <typename TTraits>
-void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format, bool skip_invalid_values)
+void BaseSettings<TTraits>::read(ReadBuffer & in, bool skip_invalid_values)
 {
     resetToDefault();
     const auto & accessor = Traits::Accessor::instance();
@@ -861,9 +857,7 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format, bo
         size_t index = accessor.find(name);
 
         using Flags = BaseSettingsHelpers::Flags;
-        UInt64 flags{};
-        if (format >= SettingsWriteFormat::STRINGS_WITH_FLAGS)
-            flags = BaseSettingsHelpers::readFlags(in);
+        UInt64 flags = BaseSettingsHelpers::readFlags(in);
         bool is_important = (flags & Flags::IMPORTANT);
         bool is_custom = (flags & Flags::CUSTOM);
 
@@ -879,7 +873,7 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format, bo
                 temp.parseFromString(BaseSettingsHelpers::readString(in));
                 accessor.setValue(*this, index, static_cast<Field>(temp));
             }
-            else if (format >= SettingsWriteFormat::STRINGS_WITH_FLAGS)
+            else
             {
                 String value = BaseSettingsHelpers::readString(in);
                 try
@@ -894,8 +888,6 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format, bo
                     accessor.resetValueToDefault(*this, index);
                 }
             }
-            else
-                accessor.readBinary(*this, index, in);
         }
         else if (is_important)
         {
@@ -1532,11 +1524,15 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
             void writeBinary(const Data & data, size_t index, WriteBuffer & out) const \
             { \
                 const auto & fi = field_infos[index]; \
+                if (!fi.ops->write_binary) \
+                    BaseSettingsHelpers::throwNoBinarySerialization(fi.name, fi.type); \
                 fi.ops->write_binary(settingPtr(data, fi.data_offset), out); \
             } \
             void readBinary(Data & data, size_t index, ReadBuffer & in) const \
             { \
                 const auto & fi = field_infos[index]; \
+                if (!fi.ops->read_binary) \
+                    BaseSettingsHelpers::throwNoBinarySerialization(fi.name, fi.type); \
                 fi.ops->read_binary(settingPtr(data, fi.data_offset), in); \
             } \
             \
@@ -1626,6 +1622,14 @@ struct SettingFieldInfoInit
 /// Skip this setting in the macro expansion (used for selective application)
 /// NOLINTNEXTLINE
 #define SETTING_SKIP_TRAIT(...)
+
+/// Settings serialized with `BaseSettings::writeChangedBinary` must have only types with binary serialization.
+/// Expand the list of such settings with this macro for both arguments: LIST_OF_SETTINGS(ASSERT_..., ASSERT_...).
+/// NOLINTNEXTLINE
+#define ASSERT_SETTING_SUPPORTS_BINARY_SERIALIZATION(TYPE, NAME, ...) \
+    static_assert( \
+        SettingFieldWithBinarySerialization<SettingField##TYPE>, \
+        "Setting `" #NAME "` is serialized with `writeChangedBinary`, so its type must implement `writeBinary` and `readBinary`");
 
 
 /// Generates one or two alias mapping entries. The arguments after ALIAS are the change history of the setting.
