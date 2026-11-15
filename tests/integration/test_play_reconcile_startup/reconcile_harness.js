@@ -221,6 +221,10 @@ function makeElement(tag) {
         appendLog() {},
         updateMetrics() {},
         attachShadow() { return makeElement('shadow-root'); },
+        /// The Popover API (the download menu is a `popover`).
+        showPopover() {},
+        hidePopover() {},
+        togglePopover() { return false; },
     };
     return el;
 }
@@ -2075,6 +2079,70 @@ async function main() {
                 action.includes('&password=secret_a') && action.includes('&database=db_a') && action.includes('&shape=a')
                     && action.includes('&param_p=a') && !/secret_b|db_b|shape=b|param_p=b/.test(action), action);
             check('download-snapshot', 'and the query taken at the click', form.query === 'SELECT a', form.query);
+        }
+    }
+
+    /// Guard (Download of an implicit result with no password): the export is a form submission, which
+    /// cannot suppress the HTTP Basic login the browser may have cached for the origin, and with neither
+    /// `user` nor `password` the server would authenticate it as that login instead of the implicit
+    /// account the verification confirmed. The submitted request carries an explicit empty `password`
+    /// (preferred by the server over the header) once that exact request has been verified as the
+    /// recorded account; a verification that fails refuses the export.
+    for (const outcome of ['verified', 'failed']) {
+        const r = await runScenario(js, {
+            href: base,
+            historyState: null,
+            seedTabs: [
+                { id: 't11', title: 'Report', query: 'select 1', params: {}, result: null, lastSavedQuery: 'select 1' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't11', tabOrder: ['t11'], tabSeq: 11, tabTitleSeq: 2 },
+        });
+        const probes = [];
+        r.sandbox.fetch = async (url, options) => {
+            const is_probe = String(options && options.body).includes('currentUser()');
+            const pinned = /[?&]password=(&|$)/.test(String(url));
+            if (is_probe) probes.push({ url: String(url), authorization: options.headers && options.headers.Authorization });
+            const ok = is_probe && (outcome === 'verified' || !pinned);
+            return {
+                ok,
+                status: ok ? 200 : 503,
+                headers: { get: () => null },
+                text: async () => '',
+                json: async () => ({ v: 'test', t: 0, u: 'alice' }),
+            };
+        };
+        const forms = [];
+        let alerts = 0;
+        r.sandbox.alert = () => { ++alerts; };
+        const create_element = r.sandbox.document.createElement;
+        r.sandbox.document.createElement = (tag) => {
+            const el = create_element(tag);
+            if (String(tag).toLowerCase() === 'form') el.submit = () => { forms.push(el.action); };
+            return el;
+        };
+        vm.runInContext(`
+            last_url_for_download = 'http://a:8123/';
+            last_user_for_download = '';
+            last_implicit_user_for_download = 'alice';
+            last_query_for_download = 'SELECT a';
+            last_database_for_download = '';
+            last_shape_for_download = '';
+            last_params_for_download = {};
+            password_elem.value = '';
+            document.getElementById('download-format').value = 'CSV';
+            document.getElementById('download-button').dispatchEvent({ type: 'click', isTrusted: true });
+        `, r.sandbox);
+        for (let i = 0; i < 100 && !forms.length && !alerts; ++i) await sleep(10);
+        const pinned_probes = probes.filter(p => /[?&]password=(&|$)/.test(p.url));
+        check('download-cached-basic', `the request the export sends is verified first (${outcome})`,
+            pinned_probes.length === 1 && pinned_probes[0].authorization === 'never', probes);
+        if (outcome === 'verified') {
+            const action = forms[0] || '';
+            check('download-cached-basic', 'the export is submitted once, with an empty password and no user',
+                forms.length === 1 && /[?&]password=(&|$)/.test(action) && !/[?&]user=/.test(action), forms);
+        } else {
+            check('download-cached-basic', 'a failed verification refuses the export', forms.length === 0 && alerts === 1,
+                { forms, alerts });
         }
     }
 

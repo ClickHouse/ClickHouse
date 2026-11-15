@@ -101,6 +101,7 @@ def test_play_reconcile_startup(started_cluster, nodejs_container):
         "run-link-implicit-user",
         "run-link-delayed-probe",
         "download-snapshot",
+        "download-cached-basic",
         "probe-admission",
         "probe-admission-cancel",
         "popstate-implicit-account-database",

@@ -93,6 +93,7 @@ def test_play_credentials_store(started_cluster, nodejs_container):
         "run-link-carries-implicit-account",
         "proxy-authenticated-implicit-replay",
         "proxy-authenticated-replay-after-export",
+        "cached-basic-implicit-replay",
         "learned-implicit-user-restamps-recorded-run",
         "explicit-default-sent-without-userinfo",
         "userinfo-nothing-stored",

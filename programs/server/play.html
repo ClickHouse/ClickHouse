@@ -17007,6 +17007,48 @@ async function replayConnectionUser(server_address, user, implicit_user, passwor
     return account === learnedImplicitUser(server_address) ? '' : account;
 }
 
+/// The authentication parameters of an export (Download) that reproduces an implicit connection sent
+/// with no password, or `null` if the export must be refused. `account` is the name the stamp of the
+/// result denotes (`resolvedImplicitUser`), empty if not known. The export is a form submission, and
+/// unlike the scripted requests of the page (`Authorization: never`) it cannot suppress the HTTP Basic
+/// credentials that the browser may have cached for the origin: a request with neither `user` nor
+/// `password` would then be authenticated as the cached login rather than as the implicit account the
+/// verification (`replayConnectionUser`) confirmed. So the export carries an explicit empty `password`
+/// parameter, which the server prefers over the `Authorization` header, and which, with no `user`,
+/// still authenticates as the server's `default_session_user`. That exact request is verified first:
+/// - it authenticates as the recorded account (or the account is not known): `&password=`;
+/// - it authenticates as another account: the recorded account is named, so the export fails visibly
+///   or reproduces the result as that account, as in `replayConnectionUser`;
+/// - the server rejects the parameters as mixed with another authentication method (a proxy with the
+///   `X-ClickHouse-User` / `X-ClickHouse-Key` headers, a TLS certificate): no parameters, so the empty
+///   field is authenticated as before. The server rejects a cached `Authorization` header combined
+///   with those methods as well, so the cached login cannot be taken for the account there either;
+/// - anything else (the server cannot be reached, the query slot is taken): `null`, the export is
+///   refused rather than sent with an authentication that was not verified.
+/// The verification is admitted like the required one of `replayConnectionUser`.
+async function implicitReplayAuthentication(server_address, account) {
+    const probe_address = serverAddressWithoutSession(server_address);
+    if (!probe_address) return null;
+    const url = probe_address + (probe_address.indexOf('?') >= 0 ? '&' : '?') +
+        'add_http_cors_header=1&framing_output_format=None&default_format=JSONEachRow&password=';
+    const outcome = await admitImplicitUserProbe(server_address, async () => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), IMPLICIT_USER_PROBE_TIMEOUT_MS);
+        try {
+            const response = await fetch(url, { method: 'POST', body: 'SELECT currentUser() AS u', signal: controller.signal, headers: { 'Authorization': 'never' } });
+            if (response.ok) return { user: (await response.json()).u || '' };
+            return { rejected_parameters: /and authentication via parameters simultaneously/.test(await response.text()) };
+        } catch (e) {
+            return {};
+        } finally {
+            clearTimeout(timer);
+        }
+    }, /* required = */ true);
+    if (outcome.user) return (!account || outcome.user === account) ? '&password=' : '&user=' + encodeURIComponent(account);
+    if (outcome.rejected_parameters) return '';
+    return null;
+}
+
 /// Ask the server which user it authenticates a request without a `user` as (`currentUser` in
 /// `getServerStatus`), and remember the answer (`rememberImplicitUser`). Returns the name, or empty if
 /// the server cannot tell. The probe is sent outside of the connection's HTTP session (see
@@ -22849,7 +22891,9 @@ document.getElementById('download-button').addEventListener('click', async funct
     const database = last_database_for_download;
     const shape = last_shape_for_download;
     const params = { ...last_params_for_download };
-    const user = await replayConnectionUser(server_address, last_user_for_download, last_implicit_user_for_download, password);
+    const recorded_user = last_user_for_download;
+    const recorded_implicit_user = last_implicit_user_for_download;
+    const user = await replayConnectionUser(server_address, recorded_user, recorded_implicit_user, password);
 
     if (!query) {
         alert('No query to download results for');
@@ -22885,8 +22929,19 @@ document.getElementById('download-button').addEventListener('click', async funct
         '&framing_output_format=None' +
         '&default_format=' + encodeURIComponent(format) +
         '&http_response_headers=' + encodeURIComponent(`{'Content-Disposition':'attachment; filename="result.${encodeURIComponent(extension)}"'}`);
-    if (user) url += '&user=' + encodeURIComponent(user);
-    if (password) url += '&password=' + encodeURIComponent(password);
+    /// An implicit connection sent with neither `user` nor `password` would be authenticated as the
+    /// HTTP Basic login the browser may have cached for the origin, which a form submission cannot
+    /// suppress: pin the authentication of the export instead (`implicitReplayAuthentication`).
+    let authentication = (user ? '&user=' + encodeURIComponent(user) : '') +
+        (password ? '&password=' + encodeURIComponent(password) : '');
+    if (!authentication && !effectiveConnectionUser(server_address, recorded_user)) {
+        authentication = await implicitReplayAuthentication(server_address, resolvedImplicitUser(server_address, recorded_implicit_user));
+        if (authentication === null) {
+            alert('Could not verify which user the server authenticates the download as. Check the connection and try again.');
+            return;
+        }
+    }
+    url += authentication;
     if (database) url += '&database=' + encodeURIComponent(database);
     url += shape;
 

@@ -170,7 +170,10 @@ function makeContext(storage) {
             json: async () => json, text: async () => JSON.stringify(json) });
         if (ctx.implicit_user === null) return respond(false, {});
         const m = url.match(/[?&]user=([^&]*)/);
-        if (ctx.proxy_user !== null && m) return respond(false, {});
+        /// Like the server, the proxy headers combined with a `user` or a `password` parameter are rejected.
+        if (ctx.proxy_user !== null && (m || /[?&]password=/.test(url)))
+            return { ok: false, status: 516, headers: { get: () => null }, json: async () => ({}),
+                text: async () => 'Code: 516. DB::Exception: Invalid authentication: it is not allowed to use X-ClickHouse HTTP headers and authentication via parameters simultaneously. (AUTHENTICATION_FAILED)' };
         const u = ctx.proxy_user !== null ? ctx.proxy_user : m ? decodeURIComponent(m[1]) : ctx.implicit_user;
         return respond(true, { v: 'test', t: 0, u });
     };
@@ -185,7 +188,7 @@ const FUNCTIONS = ['effectiveConnectionUser', 'implicitUserStamp', 'implicitUser
     'serverAddressWithoutSession', 'storeCredentials', 'getServerStatus', 'buildCompletionUrl',
     'isAutofilled', 'dropAutofilledStalePassword', 'passwordlessLoginKey', 'loadPasswordlessLogins',
     'rememberLoginPassword', 'rememberAuthenticationOutcome', 'connectionTuple', 'checkCredentials',
-    'auxiliaryQuery', 'submitDownload', 'loadCompletions'];
+    'auxiliaryQuery', 'submitDownload', 'loadCompletions', 'implicitReplayAuthentication'];
 
 function boot(js, { withPasswordCredential = true, storage = makeStorage() } = {}) {
     const ctx = makeContext(storage);
@@ -484,6 +487,69 @@ scenario('proxy-authenticated-implicit-replay', async js => {
     result = await replay(changed, recorded);
     assertEqual(result.user, 'alice', 'the recorded account is named when the implicit account changed');
     assertEqual(result.status, false, 'and the request is not served as bob');
+});
+
+/// A Download of an implicit result sent with no password is a form submission, which cannot suppress
+/// the HTTP Basic credentials the browser may have cached for the origin (for `bob`), while every
+/// scripted request of the page, including the verification, sends `Authorization: never` and is
+/// authenticated as the implicit account (`alice`). With neither `user` nor `password` the server would
+/// take the cached header, so the export pins the authentication with an explicit empty `password`
+/// (which the server prefers over the header) after verifying that exact request
+/// (`implicitReplayAuthentication`). The transport model below follows `authenticateUserByHTTP`.
+scenario('cached-basic-implicit-replay', async js => {
+    const server = 'http://host:8123/?session_id=a';
+    /// Who the server authenticates a form submission as, with the cached Basic login attached.
+    const formUser = (ctx, query) => {
+        const params = new URLSearchParams(query);
+        const has_params = params.has('user') || params.has('password');
+        if (ctx.proxy_user !== null) return (has_params || ctx.cached_basic) ? null : ctx.proxy_user;
+        if (has_params) return params.get('user') || ctx.implicit_user;
+        return ctx.cached_basic || ctx.implicit_user;
+    };
+    const ctx = boot(js);
+    ctx.implicit_user = 'alice';
+    ctx.cached_basic = 'bob';
+    ctx.server = server;
+    ctx.account = 'alice';
+    assertEqual(formUser(ctx, ''), 'bob', 'without authentication parameters the cached login would be taken');
+    const pinned = await vm.runInContext('implicitReplayAuthentication(server, account)', ctx);
+    assertEqual(pinned, '&password=', 'the export pins the authentication with an empty password');
+    assertEqual(formUser(ctx, pinned), 'alice', 'so it is authenticated as the verified implicit account');
+    const probe = ctx.fetched[ctx.fetched.length - 1];
+    assertEqual(/[?&]session_id=/.test(probe.url), false, 'the verification is sent outside of the session');
+    assertEqual(/[?&]password=(&|$)/.test(probe.url), true, 'the verification sends the same empty password');
+    assertEqual(probe.options.headers.Authorization, 'never', 'and suppresses the cached login');
+
+    /// The server now authenticates the pinned request as another account: the recorded one is named.
+    const changed = boot(js);
+    changed.implicit_user = 'carol';
+    changed.cached_basic = 'bob';
+    changed.server = server;
+    changed.account = 'alice';
+    const named = await vm.runInContext('implicitReplayAuthentication(server, account)', changed);
+    assertEqual(named, '&user=alice', 'the recorded account is named when the implicit account changed');
+    assertEqual(formUser(changed, named), 'alice', 'so the export is not served as another account');
+
+    /// Behind a proxy the parameters are rejected: the empty field stays, and a cached login is rejected
+    /// by the server as a mix with the proxy headers rather than taken for the account.
+    const proxied = boot(js);
+    proxied.proxy_user = 'alice';
+    proxied.server = server;
+    proxied.account = 'alice';
+    const kept = await vm.runInContext('implicitReplayAuthentication(server, account)', proxied);
+    assertEqual(kept, '', 'a proxy-authenticated export keeps no authentication parameters');
+    proxied.cached_basic = null;
+    assertEqual(formUser(proxied, kept), 'alice', 'and is authenticated by the proxy');
+    proxied.cached_basic = 'bob';
+    assertEqual(formUser(proxied, kept), null, 'a cached login is rejected there, not taken');
+
+    /// A verification that fails otherwise refuses the export.
+    const failing = boot(js);
+    failing.implicit_user = null;
+    failing.server = server;
+    failing.account = 'alice';
+    assertEqual(await vm.runInContext('implicitReplayAuthentication(server, account)', failing), null,
+        'the export is refused when the authentication cannot be verified');
 });
 
 /// A fast run can finish, and be recorded with its marker, before this visit learns the implicit name.
