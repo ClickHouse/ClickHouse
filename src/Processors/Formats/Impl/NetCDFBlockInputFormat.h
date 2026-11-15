@@ -77,6 +77,18 @@ struct NetCDFTableLayout
 
 NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const FormatSettings & settings);
 
+/// The values of a numeric column that are read as NULL, prepared once from the attributes in
+/// `NetCDFTableLayout::Column::null_values` and sorted, so that a value is looked up by a binary
+/// search rather than compared to every sentinel. The integer sentinels are the bits of the
+/// values, zero-extended; the floating-point ones are compared by value, and a NaN sentinel
+/// matches every NaN.
+struct NetCDFNumericNullValues
+{
+    VectorWithMemoryTracking<UInt64> integers;
+    VectorWithMemoryTracking<Float64> floats;
+    bool has_nan = false;
+};
+
 class NetCDFBlockInputFormat final : public IInputFormat
 {
 public:
@@ -109,6 +121,9 @@ private:
         /// True when the variable has a single value that is repeated in every row.
         bool is_constant = false;
 
+        /// The values of a numeric column that are read as NULL.
+        NetCDFNumericNullValues null_values;
+
         /// The part of the data of the variable that is currently in memory.
         String buffer;
         UInt64 buffer_first_element = 0;
@@ -116,6 +131,8 @@ private:
     };
 
     void initialize();
+    /// Fills the sorted sentinels of a numeric column that is read as Nullable.
+    void prepareNullValues(ColumnState & state);
     /// Reads a range of the values of the variable of the column into `to`.
     void readElements(const NetCDFTableLayout::Column & column, UInt64 first_element, UInt64 num_elements_to_read, char * to);
     /// Reads the data of the variable at the given range of values into the buffer of the column.

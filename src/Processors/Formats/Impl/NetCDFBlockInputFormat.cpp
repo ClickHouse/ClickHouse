@@ -23,6 +23,7 @@
 #include <Core/Defines.h>
 
 #include <base/arithmeticOverflow.h>
+#include <base/sort.h>
 
 #include <algorithm>
 #include <cmath>
@@ -120,11 +121,25 @@ DataTypePtr getDataType(NetCDFType type)
 
 /// The `_Unsigned` attribute of the netCDF conventions changes the interpretation of the bits of
 /// the signed integer types: the three which classic NetCDF has and the 64-bit one of `CDF-5`. Its
-/// value is a `char` string, `true` or `True` (the reference decoder `netCDF4` accepts both).
+/// value is a `char` string, `true` or `True` (the reference decoder `netCDF4` accepts both). The
+/// zero bytes of the text are removed first, as the reference decoder does: a C writer that passes
+/// `sizeof("true")` to `nc_put_att_text` stores the terminating zero byte as well.
 bool hasUnsignedAttribute(const NetCDFVariable & variable)
 {
     const auto * attribute = variable.tryGetAttribute("_Unsigned");
-    return attribute && attribute->type == NetCDFType::Char && (attribute->data == "true" || attribute->data == "True");
+    if (!attribute || attribute->type != NetCDFType::Char)
+        return false;
+
+    String text;
+    for (char c : attribute->data)
+    {
+        if (c != '\0')
+            text += c;
+        /// Longer than any of the recognized spellings.
+        if (text.size() > 4)
+            return false;
+    }
+    return text == "true" || text == "True";
 }
 
 DataTypePtr getDataType(const NetCDFVariable & variable)
@@ -462,6 +477,86 @@ void NetCDFBlockInputFormat::readAt(UInt64 offset, UInt64 size, char * to)
     memcpy(to, content.data() + offset, size);
 }
 
+void NetCDFBlockInputFormat::prepareNullValues(ColumnState & state)
+{
+    const auto & column = *state.column;
+    auto & result = state.null_values;
+    const bool is_float = column.variable->type == NetCDFType::Float || column.variable->type == NetCDFType::Double;
+    const size_t size = column.element_size;
+
+    /// The values of the integer types of one or two bytes are deduplicated by a bitmap, which
+    /// keeps the prepared sentinels small even for a huge attribute.
+    VectorWithMemoryTracking<UInt8> seen;
+    if (!is_float && size <= 2)
+        seen.assign(size_t(1) << (8 * size), 0);
+
+    size_t num_processed = 0;
+    for (const auto & sentinels : column.null_values)
+    {
+        if (sentinels.value_size != size)
+            continue;
+
+        for (size_t offset = 0; offset + size <= sentinels.data.size(); offset += size)
+        {
+            /// Preparing a `missing_value` attribute of millions of values takes a while.
+            if (++num_processed % 65536 == 0 && isCancelled())
+                return;
+
+            const char * value = sentinels.data.data() + offset;
+            if (column.variable->type == NetCDFType::Float)
+            {
+                Float32 sentinel;
+                memcpy(&sentinel, value, sizeof(sentinel));
+                transformEndianness<std::endian::native, std::endian::big>(sentinel);
+                if (std::isnan(sentinel))
+                    result.has_nan = true;
+                else
+                    result.floats.push_back(static_cast<Float64>(sentinel));
+            }
+            else if (column.variable->type == NetCDFType::Double)
+            {
+                Float64 sentinel;
+                memcpy(&sentinel, value, sizeof(sentinel));
+                transformEndianness<std::endian::native, std::endian::big>(sentinel);
+                if (std::isnan(sentinel))
+                    result.has_nan = true;
+                else
+                    result.floats.push_back(static_cast<Float64>(sentinel));
+            }
+            else
+            {
+                /// The bits of the value in the big-endian order of the file.
+                UInt64 sentinel = 0;
+                for (size_t i = 0; i < size; ++i)
+                    sentinel = (sentinel << 8) | static_cast<UInt8>(value[i]);
+
+                if (seen.empty())
+                    result.integers.push_back(sentinel);
+                else
+                    seen[sentinel] = 1;
+            }
+        }
+    }
+
+    if (!seen.empty())
+    {
+        for (size_t i = 0; i < seen.size(); ++i)
+            if (seen[i])
+                result.integers.push_back(i);
+    }
+    else
+    {
+        ::sort(result.integers.begin(), result.integers.end());
+        result.integers.erase(std::unique(result.integers.begin(), result.integers.end()), result.integers.end());
+    }
+
+    /// `-0.0` and `+0.0` are equal, so the sorted values are searched as values, not as bits.
+    ::sort(result.floats.begin(), result.floats.end());
+    result.floats.erase(std::unique(result.floats.begin(), result.floats.end()), result.floats.end());
+    result.integers.shrink_to_fit();
+    result.floats.shrink_to_fit();
+}
+
 void NetCDFBlockInputFormat::initialize()
 {
     is_initialized = true;
@@ -546,6 +641,13 @@ void NetCDFBlockInputFormat::initialize()
 
             state.is_identity = state.column->axis_ids == layout.row_axes;
             state.is_constant = state.column->axis_ids.empty();
+
+            if (!state.column->is_string && !state.column->null_values.empty())
+            {
+                prepareNullValues(state);
+                if (isCancelled())
+                    return;
+            }
         }
         else
         {
@@ -751,7 +853,7 @@ bool isNullValue(const VectorWithMemoryTracking<NetCDFTableLayout::Column::NullV
 }
 
 template <typename T>
-void insertNumbers(IColumn & column, const char * data, UInt64 first_element, const PaddedPODArray<UInt64> & indexes, const VectorWithMemoryTracking<NetCDFTableLayout::Column::NullValues> & null_values)
+void insertNumbers(IColumn & column, const char * data, UInt64 first_element, const PaddedPODArray<UInt64> & indexes, const NetCDFNumericNullValues & null_values)
 {
     ColumnVector<T> * values = nullptr;
     NullMap * null_map = nullptr;
@@ -773,34 +875,6 @@ void insertNumbers(IColumn & column, const char * data, UInt64 first_element, co
     if (null_map)
         null_map->resize_fill(old_size + indexes.size(), 0);
 
-    /// A floating-point sentinel is compared by value, as the reference implementation does it,
-    /// rather than by its bytes: `-0.0` equals the sentinel `+0.0`, and a NaN sentinel matches every
-    /// NaN, whatever its payload is.
-    VectorWithMemoryTracking<T> float_sentinels;
-    bool has_nan_sentinel = false;
-    if constexpr (std::is_floating_point_v<T>)
-    {
-        if (null_map)
-        {
-            for (const auto & sentinels : null_values)
-            {
-                if (sentinels.value_size != sizeof(T))
-                    continue;
-
-                for (size_t offset = 0; offset + sizeof(T) <= sentinels.data.size(); offset += sizeof(T))
-                {
-                    T sentinel;
-                    memcpy(&sentinel, sentinels.data.data() + offset, sizeof(T));
-                    transformEndianness<std::endian::native, std::endian::big>(sentinel);
-                    if (std::isnan(sentinel))
-                        has_nan_sentinel = true;
-                    else
-                        float_sentinels.push_back(sentinel);
-                }
-            }
-        }
-    }
-
     for (size_t i = 0; i < indexes.size(); ++i)
     {
         const char * from = data + (indexes[i] - first_element) * sizeof(T);
@@ -813,13 +887,17 @@ void insertNumbers(IColumn & column, const char * data, UInt64 first_element, co
         if (!null_map)
             continue;
 
+        /// A floating-point sentinel is compared by value, as the reference implementation does
+        /// it, rather than by its bytes: `-0.0` equals the sentinel `+0.0`, and a NaN sentinel
+        /// matches every NaN, whatever its payload is.
         bool is_null = false;
         if constexpr (std::is_floating_point_v<T>)
             is_null = std::isnan(value)
-                ? has_nan_sentinel
-                : std::find(float_sentinels.begin(), float_sentinels.end(), value) != float_sentinels.end();
+                ? null_values.has_nan
+                : std::binary_search(null_values.floats.begin(), null_values.floats.end(), static_cast<Float64>(value));
         else
-            is_null = isNullValue(null_values, from, sizeof(T));
+            is_null = std::binary_search(null_values.integers.begin(), null_values.integers.end(),
+                static_cast<UInt64>(static_cast<std::make_unsigned_t<T>>(value)));
 
         if (is_null)
             (*null_map)[old_size + i] = 1;
@@ -879,45 +957,45 @@ void NetCDFBlockInputFormat::fillColumn(const ColumnState & state, IColumn & col
     {
         case NetCDFType::Byte:
             if (hasUnsignedAttribute(*description.variable))
-                insertNumbers<UInt8>(column, data, state.buffer_first_element, indexes, description.null_values);
+                insertNumbers<UInt8>(column, data, state.buffer_first_element, indexes, state.null_values);
             else
-                insertNumbers<Int8>(column, data, state.buffer_first_element, indexes, description.null_values);
+                insertNumbers<Int8>(column, data, state.buffer_first_element, indexes, state.null_values);
             return;
         case NetCDFType::Short:
             if (hasUnsignedAttribute(*description.variable))
-                insertNumbers<UInt16>(column, data, state.buffer_first_element, indexes, description.null_values);
+                insertNumbers<UInt16>(column, data, state.buffer_first_element, indexes, state.null_values);
             else
-                insertNumbers<Int16>(column, data, state.buffer_first_element, indexes, description.null_values);
+                insertNumbers<Int16>(column, data, state.buffer_first_element, indexes, state.null_values);
             return;
         case NetCDFType::Int:
             if (hasUnsignedAttribute(*description.variable))
-                insertNumbers<UInt32>(column, data, state.buffer_first_element, indexes, description.null_values);
+                insertNumbers<UInt32>(column, data, state.buffer_first_element, indexes, state.null_values);
             else
-                insertNumbers<Int32>(column, data, state.buffer_first_element, indexes, description.null_values);
+                insertNumbers<Int32>(column, data, state.buffer_first_element, indexes, state.null_values);
             return;
         case NetCDFType::Float:
-            insertNumbers<Float32>(column, data, state.buffer_first_element, indexes, description.null_values);
+            insertNumbers<Float32>(column, data, state.buffer_first_element, indexes, state.null_values);
             return;
         case NetCDFType::Double:
-            insertNumbers<Float64>(column, data, state.buffer_first_element, indexes, description.null_values);
+            insertNumbers<Float64>(column, data, state.buffer_first_element, indexes, state.null_values);
             return;
         case NetCDFType::UByte:
-            insertNumbers<UInt8>(column, data, state.buffer_first_element, indexes, description.null_values);
+            insertNumbers<UInt8>(column, data, state.buffer_first_element, indexes, state.null_values);
             return;
         case NetCDFType::UShort:
-            insertNumbers<UInt16>(column, data, state.buffer_first_element, indexes, description.null_values);
+            insertNumbers<UInt16>(column, data, state.buffer_first_element, indexes, state.null_values);
             return;
         case NetCDFType::UInt:
-            insertNumbers<UInt32>(column, data, state.buffer_first_element, indexes, description.null_values);
+            insertNumbers<UInt32>(column, data, state.buffer_first_element, indexes, state.null_values);
             return;
         case NetCDFType::Int64:
             if (hasUnsignedAttribute(*description.variable))
-                insertNumbers<UInt64>(column, data, state.buffer_first_element, indexes, description.null_values);
+                insertNumbers<UInt64>(column, data, state.buffer_first_element, indexes, state.null_values);
             else
-                insertNumbers<Int64>(column, data, state.buffer_first_element, indexes, description.null_values);
+                insertNumbers<Int64>(column, data, state.buffer_first_element, indexes, state.null_values);
             return;
         case NetCDFType::UInt64:
-            insertNumbers<UInt64>(column, data, state.buffer_first_element, indexes, description.null_values);
+            insertNumbers<UInt64>(column, data, state.buffer_first_element, indexes, state.null_values);
             return;
         case NetCDFType::Char:
             break;
