@@ -518,12 +518,11 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         }
     }
 
-    /// This server's copy can be outdated, so keep `after_processing` and `source` as they are in Keeper.
-    auto metadata_for_keeper{new_table_metadata};
+    /// This server's copy can be outdated, so use Keeper's values.
     if (!changes.tryGet("after_processing"))
-        metadata_for_keeper.after_processing = metadata_from_zk.after_processing.load();
-    metadata_for_keeper.source = metadata_from_zk.source;
-    const auto new_metadata_str = metadata_for_keeper.toString();
+        new_table_metadata.after_processing = metadata_from_zk.after_processing.load();
+    new_table_metadata.source = metadata_from_zk.source;
+    const auto new_metadata_str = new_table_metadata.toString();
     LOG_TRACE(log, "New metadata: {}", new_metadata_str);
 
     const fs::path table_metadata_path = zookeeper_path / "metadata";

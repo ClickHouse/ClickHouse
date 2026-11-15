@@ -125,13 +125,16 @@ DETACH TABLE tq_b; ATTACH TABLE tq_b;
 SELECT table, value FROM system.s3_queue_settings WHERE database = currentDatabase() AND table IN ('tq_a', 'tq_b') AND name = 'after_processing' ORDER BY table;
 
 -- Set `after_processing` to `keep` directly in keeper, as another server would. The in-memory metadata of this server
--- still has `delete`, and `tq_b` must still attach.
+-- still has `delete`, and attaching `tq_b` must take `keep` from keeper for both tables.
 INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceOne(value, '"after_processing":"delete"', '"after_processing":"keep"') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';
 DETACH TABLE tq_b; ATTACH TABLE tq_b;
-SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'tq_b';
--- An `ALTER` of another setting must not write the outdated `delete` of this server back to keeper.
+SELECT table, value FROM system.s3_queue_settings WHERE database = currentDatabase() AND table IN ('tq_a', 'tq_b') AND name = 'after_processing' ORDER BY table;
+-- Set it back to `delete` in keeper. An `ALTER` of another setting must take `delete` from keeper, and must not write
+-- the outdated `keep` of this server back.
+INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceOne(value, '"after_processing":"keep"', '"after_processing":"delete"') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';
 ALTER TABLE tq_a MODIFY SETTING polling_max_timeout_ms = 2000;
 SELECT JSONExtractString(value, 'after_processing') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';
+SELECT table, value FROM system.s3_queue_settings WHERE database = currentDatabase() AND table IN ('tq_a', 'tq_b') AND name = 'after_processing' ORDER BY table;
 
 -- Change the source in keeper: `tq_b` must still attach, with a warning.
 INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceOne(value, '05366_shared', '05366_other') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';

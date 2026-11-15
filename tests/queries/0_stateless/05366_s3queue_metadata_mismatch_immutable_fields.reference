@@ -6,7 +6,10 @@ HTTP://localhost:11111	test
 s3	http://localhost:11111	test	05366_shared/*
 tq_a	delete
 tq_b	delete
-1
-keep
+tq_a	keep
+tq_b	keep
+delete
+tq_a	delete
+tq_b	delete
 1
 http://localhost:11111
