@@ -1370,7 +1370,8 @@ IcebergStorageSink::~IcebergStorageSink()
 {
     cancelBuffers();
     /// Covers every way an insert can stop without committing, including cancellation, which skips `onException`.
-    if (!committed)
+    /// After a catalog commit with an unknown outcome the files may be referenced by a live snapshot, so keep them.
+    if (!committed && !commit_outcome_unknown)
         removeDataFilesAndManifests();
 }
 
@@ -1507,18 +1508,18 @@ void IcebergStorageSink::finalizeBuffers()
 
     /// TODO: there's a chance that initializeMetadata() doesn't succeed within MAX_TRANSACTION_RETRIES without throwing, perhaps we should fail in this case
     size_t i = 0;
-    bool successed_write = false;
+    bool write_succeeded = false;
     while (i < MAX_TRANSACTION_RETRIES)
     {
         if (initializeMetadata())
         {
-            successed_write = true;
+            write_succeeded = true;
             committed = true;
             break;
         }
         ++i;
     }
-    if (!successed_write)
+    if (!write_succeeded)
     {
         /// The last conflict kept the files for a retry that will not happen.
         removeDataFilesAndManifests();
@@ -1870,6 +1871,8 @@ bool IcebergStorageSink::initializeMetadata()
     }
     catch (...)
     {
+        if (commit_result_unknown)
+            commit_outcome_unknown = true;
         cleanup(false, /*remove_objects =*/!commit_result_unknown);
         throw;
     }
