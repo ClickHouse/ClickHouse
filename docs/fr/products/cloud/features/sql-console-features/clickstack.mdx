@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['hyperdx', 'observability', 'intégration', 'fonctionnalités cloud', 'monitoring', 'clickstack']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 [**Managed ClickStack**](/fr/clickstack/overview) apporte la plateforme d’observabilité open-source [ClickStack](/fr/clickstack/overview) à ClickHouse Cloud sous la forme d’une offre entièrement managée. Basé sur ClickHouse et OpenTelemetry (OTel), il unifie les logs, les traces, les métriques et les données de session au sein d’une solution unique hautes performances. Conçu pour le monitoring et le débogage des systèmes complexes, Managed ClickStack permet aux développeurs et aux SRE de suivre les problèmes de bout en bout sans avoir à changer d’outil ni à recouper manuellement les données à l’aide de timestamps ou d’identifiants de corrélation.
 
 En tant qu’offre managée, Managed ClickStack propose le projet open-source avec la ClickStack UI intégrée directement à la console ClickHouse Cloud, un contrôle d’accès basé sur les rôles (RBAC) natif, ainsi que des fonctionnalités supplémentaires comme les notebooks IA et des alertes de niveau entreprise. Il n’y a aucune infrastructure à gérer ni aucun mécanisme d’authentification distinct à configurer.
@@ -23,7 +21,15 @@ Managed ClickStack peut être lancé en un clic et connecté à vos données, av
 
 Vous trouverez ClickStack dans le menu de navigation principal de gauche lorsque vous sélectionnez un service.
 
-<Image img="/images/use-cases/observability/clickstack-cloud.webp" alt="Managed ClickStack dans ClickHouse Cloud" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed ClickStack dans ClickHouse Cloud](/images/use-cases/observability/clickstack-cloud.webp)
+
+</Frame>
+
+</div>
 
 Pour démarrer avec ClickStack dans ClickHouse Cloud, nous vous recommandons notre [guide de prise en main](/fr/clickstack/deployment/managed).
 

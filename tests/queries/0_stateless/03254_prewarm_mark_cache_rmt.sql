@@ -1,5 +1,7 @@
 -- Tags: no-parallel, no-shared-merge-tree
 
+SET use_columns_cache = 0;
+
 DROP TABLE IF EXISTS t_prewarm_cache_rmt_1;
 DROP TABLE IF EXISTS t_prewarm_cache_rmt_2;
 

@@ -17,6 +17,38 @@ macro(clickhouse_split_debug_symbols)
        message(FATAL_ERROR "Destination directory for stripped binary must be provided")
    endif()
 
+   set(COMPACT_SYMBOLS_COMMANDS)
+   if (SYMBOL_SECTIONS STREQUAL "compact")
+       if (NOT(
+           CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
+           AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
+           AND NOT USE_MUSL
+       ))
+           set(COMPACT_SYMBOLS_TOOL "${PROJECT_BINARY_DIR}/native/utils/compact-symbols/compact-symbols")
+       else()
+           set(COMPACT_SYMBOLS_TOOL "$<TARGET_FILE:compact-symbols>")
+           # The tool target is declared after programs, so add the dependency after the top-level target graph is complete.
+           cmake_language(EVAL CODE "
+               cmake_language(DEFER DIRECTORY [[${PROJECT_SOURCE_DIR}]]
+                   CALL add_dependencies [[${STRIP_TARGET}]] compact-symbols)
+           ")
+       endif()
+
+       set(COMPACT_SYMBOLS_BLOB "${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET}.symbols")
+       list(APPEND COMPACT_SYMBOLS_COMMANDS
+           COMMAND "${COMPACT_SYMBOLS_TOOL}" "${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET}" "${COMPACT_SYMBOLS_BLOB}"
+           # GNU `objcopy` regenerates `.symtab` and `.strtab` on `--remove-section` while the symbols are still there, so drop them with `--strip-unneeded`.
+           # Not `--strip-all`: `llvm-objcopy` would also remove the non-allocated `.clickhouse.hash` and `.gnu_debuglink` sections.
+           COMMAND "${OBJCOPY_PATH}"
+               --strip-unneeded
+               "--add-section=.clickhouse.symbols=${COMPACT_SYMBOLS_BLOB}"
+               "--remove-section=.symtab"
+               "--remove-section=.strtab"
+               "${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET}"
+           COMMAND "${CMAKE_COMMAND}" -E rm -f "${COMPACT_SYMBOLS_BLOB}"
+       )
+   endif()
+
    set(GNU_DEBUGDATA_COMMANDS)
    if (SYMBOL_SECTIONS STREQUAL "gnu_debugdata")
        set(MINI_DEBUGINFO_PATH "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.mini_debuginfo")
@@ -41,6 +73,7 @@ macro(clickhouse_split_debug_symbols)
        COMMAND "${STRIP_PATH}" --strip-debug --remove-section=.comment --remove-section=.note "${STRIP_BINARY_PATH}" -o "${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET}"
        # Associate stripped binary with debug symbols:
        COMMAND "${OBJCOPY_PATH}" --add-gnu-debuglink "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.debug" "${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET}"
+       ${COMPACT_SYMBOLS_COMMANDS}
        ${GNU_DEBUGDATA_COMMANDS}
        COMMENT "Stripping clickhouse binary" VERBATIM
    )

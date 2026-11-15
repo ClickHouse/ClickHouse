@@ -1128,6 +1128,22 @@ void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database,
     prev_table = std::move(table);
 }
 
+bool DatabaseCatalog::replaceUnusedTableInUUIDMapping(const UUID & uuid, const StoragePtr & old_table, StoragePtr new_table)
+{
+    chassert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
+    chassert(old_table && new_table);
+    UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
+    std::lock_guard lock{map_part.mutex};
+    auto it = map_part.map.find(uuid);
+    if (it == map_part.map.end() || it->second.second != old_table)
+        return false;
+    /// The mapping and the caller.
+    if (old_table.use_count() != 2)
+        return false;
+    it->second.second = std::move(new_table);
+    return true;
+}
+
 bool DatabaseCatalog::hasUUIDMapping(const UUID & uuid)
 {
     chassert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
@@ -1664,6 +1680,11 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
                 "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
                 table_id.getNameForLogs());
+        /// A lookup by `UUID` ignores the database name, so the table may have been dropped from another database.
+        if (it_dropped_table->table_id.database_name != table_id.database_name)
+            throw Exception(ErrorCodes::UNKNOWN_TABLE,
+                "Table {} was dropped from database {}, UNDROP into a different database is not supported",
+                table_id.getNameForLogs(), backQuoteIfNeed(it_dropped_table->table_id.database_name));
         /// Check the limit before moving the metadata file: a table that cannot be attached must
         /// stay in the dropped-table queue, so that `UNDROP` can be retried after freeing a slot.
         if (auto * database_on_disk = dynamic_cast<DatabaseOnDisk *>(database.get()))

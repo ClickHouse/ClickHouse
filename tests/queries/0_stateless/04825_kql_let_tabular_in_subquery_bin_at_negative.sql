@@ -2,7 +2,7 @@
 -- source, `union`), for the tabular-subquery form of `in` (`x in (T | project key)`), and
 -- for datetime `bin_at` returning null for a negative bin size like the numeric form does.
 
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 print '-- let binds a parenthesized source --';

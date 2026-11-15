@@ -1,0 +1,4 @@
+<clickhouse>
+    <totp_track_used_codes_in_keeper>1</totp_track_used_codes_in_keeper>
+    <totp_used_codes_keeper_path>/clickhouse/test_totp_auth/one_time_passwords/</totp_used_codes_keeper_path>
+</clickhouse>

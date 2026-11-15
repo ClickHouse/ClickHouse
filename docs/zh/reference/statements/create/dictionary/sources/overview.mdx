@@ -10,9 +10,7 @@ import CloudDetails from '/snippets/zh/_snippet_dictionary_in_cloud.mdx';
 import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-<div id="dictionary-sources">
-  ## 语法
-</div>
+## 语法 {#dictionary-sources}
 
 <CloudDetails />
 
@@ -49,9 +47,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 <br />
 
-<div id="supported-dictionary-sources">
-  ## 支持的字典源
-</div>
+## 支持的字典源 {#supported-dictionary-sources}
 
 支持以下源类型 (`SOURCE_TYPE`/`source_type`) ：
 
@@ -96,3 +92,40 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
     ```
   </Tab>
 </Tabs>
+
+## 自定义查询的列顺序 {#custom-query-column-order}
+
+[ClickHouse](/zh/reference/statements/create/dictionary/sources/clickhouse)、
+[MySQL](/zh/reference/statements/create/dictionary/sources/mysql)、
+[PostgreSQL](/zh/reference/statements/create/dictionary/sources/postgresql) 和
+[ODBC](/zh/reference/statements/create/dictionary/sources/odbc) 数据源支持 `query` 字段，
+用于替代 ClickHouse 原本会根据 `table` 和 `where` 构建的查询。
+
+字典要求该查询结果中的列遵循固定顺序，而这一顺序并不是属性在
+`CREATE DICTIONARY` 语句中的书写顺序：
+
+1. 键列，按 `PRIMARY KEY` 中的顺序排列；
+2. 对于 [`range_hashed`](/zh/reference/statements/create/dictionary/layouts/range-hashed) 或
+   `complex_key_range_hashed` 字典，先是 `range_min` 列，再是 `range_max` 列；
+3. 其余属性，按声明顺序排列。
+
+ClickHouse 数据源按列名将结果与上述顺序进行匹配，因此使用该数据源时，只要每一列都以其所填充的属性命名，
+`query` 中的列顺序就无关紧要。而 MySQL、PostgreSQL 和 ODBC 数据源按位置读取列，因此使用这些数据源时，
+只要 `query` 中的列顺序与上述不同，值就会被加载到错误的属性中。视所涉及的类型而定，
+字典要么因类型转换错误而加载失败，要么存入错误的值。因此，
+请按上述顺序编写 `query`：
+
+```sql
+CREATE DICTIONARY contracts (
+    meter_no String,
+    id Int64,
+    contract_time Date,
+    end_date Date
+)
+PRIMARY KEY meter_no
+-- The key comes first, then the range columns, then the remaining attributes.
+SOURCE(POSTGRESQL(... query 'SELECT meter_no, contract_time, end_date, id FROM contracts'))
+LAYOUT(RANGE_HASHED())
+RANGE(MIN contract_time MAX end_date)
+LIFETIME(300)
+```

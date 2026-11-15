@@ -112,6 +112,7 @@ public:
     void finalizeWriting() override;
     bool setIsCorrupted() noexcept override;
     bool tryRemoveAllFiles() noexcept override;
+    bool tryRemoveLockFileIfNothingWritten() noexcept override;
     void setOriginalEndpointAndNamespaceIfEmpty(const String & endpoint_, const String & namespace_) noexcept override;
 
 private:
@@ -226,6 +227,7 @@ private:
     OnceFlag data_file_names_check_once;
 
     bool writing_finalized = false;
+    bool started_writing_metadata = false;
     bool corrupted = false;
     /// Outcome of the one own-lock cleanup a failed `open` performs; see `tryRemoveOwnLockFile`.
     std::optional<bool> own_lock_cleanup_result;
