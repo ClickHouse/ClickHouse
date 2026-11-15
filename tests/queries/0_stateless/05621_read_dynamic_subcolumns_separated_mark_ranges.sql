@@ -1,3 +1,4 @@
+-- Random settings limits: compute_exact_num_defaults_for_sparse_columns=(1, 1); ratio_of_defaults_for_sparse_serialization=(0.5, 0.5)
 -- A block assembled from separated mark ranges appends to the result columns the reader
 -- created after the first range: those must keep passing the serialization check. The
 -- `d.JSON` and `v.JSON` subcolumns read into a Nullable(JSON) column through
