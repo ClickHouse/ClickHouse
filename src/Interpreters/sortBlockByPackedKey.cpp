@@ -203,46 +203,72 @@ int strictOrder(const IColumn & column, size_t rows)
 }
 
 /// Whether the values never decrease through the block, or never increase for a descending column. The rows are
-/// compared in groups without an early exit inside a group, so that the comparisons are vectorized.
-bool inSortOrder(const IColumn & column, size_t rows, bool descending)
+/// compared in groups without an early exit inside a group, so that the comparisons are vectorized. If `strictly` is
+/// set, it is the result for strictly increasing (decreasing) values.
+bool inSortOrder(const IColumn & column, size_t rows, bool descending, bool * strictly = nullptr)
 {
     const char * data = column.getRawData().data();
     bool in_order = false;
+    bool any_equal = false;
     callWithPackableOrderedBits(column, [&](auto get_bits)
     {
         using GetBits = decltype(get_bits);
-        auto ordered = [&](auto out_of_order)
+        auto ordered = [&](auto out_of_order, auto detect_equal)
         {
             constexpr size_t group = 64;
             size_t i = 1;
+            UInt8 equal = 0;
             for (; i + group <= rows; i += group)
             {
                 UInt8 any_out_of_order = 0;
                 for (size_t j = i; j < i + group; ++j)
-                    any_out_of_order |= static_cast<UInt8>(out_of_order(valueAt<GetBits>(data, j - 1), valueAt<GetBits>(data, j)));
+                {
+                    const auto prev = valueAt<GetBits>(data, j - 1);
+                    const auto value = valueAt<GetBits>(data, j);
+                    any_out_of_order |= static_cast<UInt8>(out_of_order(prev, value));
+                    if constexpr (decltype(detect_equal)::value)
+                        equal |= static_cast<UInt8>(prev == value);
+                }
                 if (any_out_of_order)
                     return false;
             }
             for (; i < rows; ++i)
-                if (out_of_order(valueAt<GetBits>(data, i - 1), valueAt<GetBits>(data, i)))
+            {
+                const auto prev = valueAt<GetBits>(data, i - 1);
+                const auto value = valueAt<GetBits>(data, i);
+                if (out_of_order(prev, value))
                     return false;
+                if constexpr (decltype(detect_equal)::value)
+                    equal |= static_cast<UInt8>(prev == value);
+            }
+            any_equal = equal;
             return true;
         };
-        if (descending)
-            in_order = ordered([](auto prev, auto value) { return prev < value; });
+        auto run = [&](auto detect_equal)
+        {
+            if (descending)
+                in_order = ordered([](auto prev, auto value) { return prev < value; }, detect_equal);
+            else
+                in_order = ordered([](auto prev, auto value) { return value < prev; }, detect_equal);
+        };
+        if (strictly != nullptr)
+            run(std::true_type{});
         else
-            in_order = ordered([](auto prev, auto value) { return value < prev; });
+            run(std::false_type{});
     });
+    if (strictly != nullptr)
+        *strictly = in_order && !any_equal;
     return in_order;
 }
 
 constexpr size_t max_grouped_order_bits = 18;
 
 /// Whether a column never decreases (never increases if `descending`) within each group of rows equal on the packed
-/// columns: `last` holds the last value per packed key, starting below every value.
-template <typename GetBits>
-bool inSortOrderWithinPackedKeys(
-    const std::vector<PackedSortColumn> & packed_columns, size_t total_bits, const char * data, size_t rows, bool descending)
+/// columns: `last` holds the last value per packed key, starting below every value. If `strictly` is set, it is the
+/// result for strictly increasing (decreasing) values; a first value equal to the start counts as a repeat.
+template <typename GetBits, bool detect_equal>
+NO_INLINE bool inSortOrderWithinPackedKeys(
+    const std::vector<PackedSortColumn> & packed_columns, size_t total_bits, const char * data, size_t rows, bool descending, bool * strictly)
 {
     using Bits = OrderedBits<GetBits>;
     PaddedPODArray<Bits> last;
@@ -251,6 +277,7 @@ bool inSortOrderWithinPackedKeys(
     constexpr size_t chunk = 1024;
     size_t positions[chunk];
     UInt64 keys[chunk];
+    UInt8 any_equal = 0;
     for (size_t begin = 0; begin < rows; begin += chunk)
     {
         const size_t size = std::min(chunk, rows - begin);
@@ -268,16 +295,21 @@ bool inSortOrderWithinPackedKeys(
             const Bits value = valueAt<GetBits>(data, begin + j);
             Bits & previous = last[keys[j]];
             out_of_order |= static_cast<UInt8>(descending ? previous < value : value < previous);
+            if constexpr (detect_equal)
+                any_equal |= static_cast<UInt8>(value == previous);
             previous = value;
         }
         if (out_of_order)
             return false;
     }
+    if constexpr (detect_equal)
+        *strictly = !any_equal;
     return true;
 }
 
 bool inSortOrderWithinPackedKeys(
-    const std::vector<PackedSortColumn> & packed_columns, size_t total_bits, const IColumn & column, size_t rows, bool descending)
+    const std::vector<PackedSortColumn> & packed_columns, size_t total_bits, const IColumn & column, size_t rows, bool descending,
+    bool * strictly = nullptr)
 {
     const char * data = column.getRawData().data();
     bool in_order = false;
@@ -285,8 +317,15 @@ bool inSortOrderWithinPackedKeys(
     {
         using GetBits = decltype(get_bits);
         if constexpr (sizeof(OrderedBits<GetBits>) <= sizeof(UInt64))
-            in_order = inSortOrderWithinPackedKeys<GetBits>(packed_columns, total_bits, data, rows, descending);
+        {
+            if (strictly != nullptr)
+                in_order = inSortOrderWithinPackedKeys<GetBits, true>(packed_columns, total_bits, data, rows, descending, strictly);
+            else
+                in_order = inSortOrderWithinPackedKeys<GetBits, false>(packed_columns, total_bits, data, rows, descending, nullptr);
+        }
     });
+    if (!in_order && strictly != nullptr)
+        *strictly = false;
     return in_order;
 }
 
@@ -551,6 +590,34 @@ void addEqualRanges(size_t rows, EqualRanges & equal_ranges, auto && key_at)
         equal_ranges.emplace_back(begin, rows);
 }
 
+/// Reverses each run of rows with equal values of the column within the ranges of the permutation.
+void reverseRunsOfEqualValues(const IColumn & column, const EqualRanges & ranges, IColumn::Permutation & permutation)
+{
+    const char * data = column.getRawData().data();
+    callWithPackableOrderedBits(column, [&](auto get_bits)
+    {
+        using GetBits = decltype(get_bits);
+        for (const auto & range : ranges)
+        {
+            size_t begin = range.from;
+            auto value = valueAt<GetBits>(data, permutation[begin]);
+            for (size_t i = begin + 1; i < range.to; ++i)
+            {
+                const auto next = valueAt<GetBits>(data, permutation[i]);
+                if (next != value)
+                {
+                    if (i - begin > 1)
+                        std::reverse(permutation.begin() + begin, permutation.begin() + i);
+                    begin = i;
+                    value = next;
+                }
+            }
+            if (range.to - begin > 1)
+                std::reverse(permutation.begin() + begin, permutation.begin() + range.to);
+        }
+    });
+}
+
 /// The work of the radix sort in `sortByPackedKey`, in bytes moved per row and pass: 4 passes for keys of up to
 /// 32 bits and 8 for 64 bits, over keys holding the row number or over (key, row number) pairs.
 size_t packedSortWork(size_t total_bits, size_t index_bits)
@@ -804,6 +871,9 @@ size_t trySortByPackedKey(
     size_t total_bits = 0;
     const size_t index_bits = std::bit_width(rows - 1);
     bool last_column_in_order = false;
+    /// The last column is in the reverse order within each range of rows equal on the packed columns.
+    bool last_column_reversed = false;
+    bool keep_equal_values_in_order = false;
     bool keep_ties_in_order = false;
 
     /// Kept while the packed columns do not change.
@@ -855,9 +925,19 @@ size_t trySortByPackedKey(
                 break;
             }
 
-            /// A last column in the reverse order is not packed: the column sort sorts reversed ranges in linear time.
-            if (inSortOrder(*column.column, rows, !descending))
+            /// A last column in the reverse order is not packed: reversing each range of rows equal on the columns before it,
+            /// sorted stably, sorts it. Otherwise the column sort sorts the reversed ranges.
+            bool strictly = false;
+            if (inSortOrder(*column.column, rows, !descending, stable ? &strictly : nullptr))
+            {
+                if (!need_equal_ranges && total_bits > 0 && total_bits <= 32)
+                {
+                    last_column_reversed = true;
+                    keep_equal_values_in_order = stable && !strictly;
+                    sorted_entries = columns.size();
+                }
                 break;
+            }
 
             /// Nor is one after packed columns that repeat at most 16 times and that the column sort sorts faster alone.
             if (total_bits > 0 && rows >= 1024 && (size_t(16) << total_bits) >= rows
@@ -875,10 +955,18 @@ size_t trySortByPackedKey(
                 break;
             }
 
-            /// Nor is a last column in the reverse order within each such group, as through the whole block.
+            /// Nor is a last column in the reverse order within each such group, which is reversed as through the whole block.
             if (total_bits > 0 && total_bits <= max_grouped_order_bits && (size_t(1) << total_bits) <= rows
-                && inSortOrderWithinPackedKeys(packed_columns, total_bits, *column.column, rows, !descending))
+                && inSortOrderWithinPackedKeys(packed_columns, total_bits, *column.column, rows, !descending, stable ? &strictly : nullptr))
+            {
+                if (!need_equal_ranges)
+                {
+                    last_column_reversed = true;
+                    keep_equal_values_in_order = stable && !strictly;
+                    sorted_entries = columns.size();
+                }
                 break;
+            }
         }
 
         const size_t bits_left = 64 - total_bits;
@@ -915,7 +1003,7 @@ size_t trySortByPackedKey(
 
     /// The column sort would still go through an ordered last column within every range of rows equal on the packed
     /// ones, while sorting the packed key leaves it in order: a key of up to 32 bits is then worth sorting alone.
-    const bool sort_before_ordered_column = last_column_in_order && total_bits <= 32;
+    const bool sort_before_ordered_column = (last_column_in_order || last_column_reversed) && total_bits <= 32;
 
     if (packed_columns.empty() || (!sort_before_ordered_column && columnSortIsCheaper(packed_columns, rows, total_bits, index_bits)))
         return 0;
@@ -938,6 +1026,18 @@ size_t trySortByPackedKey(
     /// ordered last column: every packed column is narrower than 64 bits, so appending it never shifts the key by 64.
     if (packed_columns.size() == 1 && packed_columns[0].bits > packed_columns[0].value_bits / 2 && !sort_before_ordered_column)
         return 0;
+
+    if (last_column_reversed)
+    {
+        /// Sorted stably by the packed columns, each range of rows equal on them has the last column in the reverse order.
+        EqualRanges ranges;
+        sortByPackedKey(packed_columns, ranks, total_bits, rows, /*stable=*/ true, /*need_equal_ranges=*/ true, permutation, ranges);
+        for (const auto & range : ranges)
+            std::reverse(permutation.begin() + range.from, permutation.begin() + range.to);
+        if (keep_equal_values_in_order)
+            reverseRunsOfEqualValues(*columns[last_non_const].column, ranges, permutation);
+        return sorted_entries;
+    }
 
     const bool keep_order = stable || last_column_in_order || keep_ties_in_order;
     sortByPackedKey(packed_columns, ranks, total_bits, rows, keep_order, need_equal_ranges, permutation, equal_ranges);
