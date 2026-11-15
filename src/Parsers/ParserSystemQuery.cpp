@@ -1245,7 +1245,7 @@ std::map<String, Documentation> ParserSystemQuery::getDocumentation() const
 
     documentation["SYSTEM"] =
     {
-        .description = R"DOCS_MD(
+        .description = String(R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
@@ -1894,7 +1894,8 @@ However, if the server on the specified port and protocol was not stopped using 
 ```sql
 SYSTEM START LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP WITH PROXY | TCP SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
 ```
-
+)DOCS_MD") +
+R"DOCS_MD(
 ## Managing MergeTree Tables {#managing-mergetree-tables}
 
 ClickHouse can manage background processes in [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables.
