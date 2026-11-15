@@ -233,6 +233,8 @@ struct ExportedArray
     /// A consumer may move a child out, leaving it released here; the children still owned are released with the parent.
     VectorWithMemoryTracking<std::unique_ptr<::ArrowArray>> children;
     VectorWithMemoryTracking<::ArrowArray *> children_pointers;
+    /// Copies of the buffers of the body that are not aligned enough, see `ArrayBuilder::nextBuffer`.
+    VectorWithMemoryTracking<PODArray<char>> aligned_copies;
 
     ~ExportedArray()
     {
@@ -292,14 +294,14 @@ public:
                 add_children(type.children);
                 break;
             case TypeKind::Union:
-                exported->buffers.push_back(nextBuffer(false));
+                exported->buffers.push_back(nextBuffer(*exported, false));
                 if (type.union_mode == flatbuf::UnionMode_Dense)
-                    exported->buffers.push_back(nextBuffer(false));
+                    exported->buffers.push_back(nextBuffer(*exported, false));
                 add_children(type.children);
                 break;
             default:
             {
-                exported->buffers.push_back(nextBuffer(/* is_validity */ true));
+                exported->buffers.push_back(nextBuffer(*exported, /* is_validity */ true));
                 switch (type.kind)
                 {
                     case TypeKind::Int:
@@ -312,25 +314,25 @@ public:
                     case TypeKind::Duration:
                     case TypeKind::Interval:
                     case TypeKind::FixedSizeBinary:
-                        exported->buffers.push_back(nextBuffer(false));
+                        exported->buffers.push_back(nextBuffer(*exported, false));
                         break;
                     case TypeKind::Utf8:
                     case TypeKind::LargeUtf8:
                     case TypeKind::Binary:
                     case TypeKind::LargeBinary:
-                        exported->buffers.push_back(nextBuffer(false));
-                        exported->buffers.push_back(nextBuffer(false));
+                        exported->buffers.push_back(nextBuffer(*exported, false));
+                        exported->buffers.push_back(nextBuffer(*exported, false));
                         break;
                     case TypeKind::List:
                     case TypeKind::LargeList:
                     case TypeKind::Map:
-                        exported->buffers.push_back(nextBuffer(false));
+                        exported->buffers.push_back(nextBuffer(*exported, false));
                         add_children(type.children);
                         break;
                     case TypeKind::ListView:
                     case TypeKind::LargeListView:
-                        exported->buffers.push_back(nextBuffer(false));
-                        exported->buffers.push_back(nextBuffer(false));
+                        exported->buffers.push_back(nextBuffer(*exported, false));
+                        exported->buffers.push_back(nextBuffer(*exported, false));
                         add_children(type.children);
                         break;
                     case TypeKind::FixedSizeList:
@@ -379,14 +381,23 @@ private:
         return batch.nodes[node_index++];
     }
 
-    const void * nextBuffer(bool is_validity)
+    /// The IPC format aligns the buffers of the body to 8 bytes, but a consumer may need the alignment of the values
+    /// (arrow-rs checks it, and its 128-bit integers are aligned to 16 bytes): a buffer that is not aligned to 16
+    /// bytes is copied.
+    const void * nextBuffer(ExportedArray & exported, bool is_validity)
     {
         if (buffer_index >= batch.buffers.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The encoded Arrow record batch has fewer buffers than its schema");
         const auto & buffer = batch.buffers[buffer_index++];
         if (buffer.length() == 0)
             return is_validity ? nullptr : zero_buffer;
-        return body->data() + buffer.offset();
+        const char * data = body->data() + buffer.offset();
+        if (reinterpret_cast<uintptr_t>(data) % 16 == 0)
+            return data;
+        auto & copy = exported.aligned_copies.emplace_back(static_cast<size_t>(buffer.length()));
+        memcpy(copy.data(), data, copy.size());
+        chassert(reinterpret_cast<uintptr_t>(copy.data()) % 16 == 0);
+        return copy.data();
     }
 
     const RecordBatchEncoder::EncodedBatch & batch;

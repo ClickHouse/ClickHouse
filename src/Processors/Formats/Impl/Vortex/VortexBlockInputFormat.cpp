@@ -9,7 +9,6 @@
 #include <IO/SharedThreadPools.h>
 #include <Processors/Formats/Impl/ArrowIPC/ArrowCData.h>
 #include <Processors/Formats/Impl/ArrowIPC/ArrowIPCBlockInputFormat.h>
-#include <Processors/Formats/Impl/ArrowIPC/ArrowIPCSchemaReader.h>
 #include <Processors/Formats/Impl/ArrowIPC/SchemaConverter.h>
 #include <Columns/ColumnsNumber.h>
 #include <boost/algorithm/string/case_conv.hpp>
@@ -874,7 +873,20 @@ NamesAndTypesList VortexSchemaReader::readSchema()
 {
     initializeIfNeeded();
 
-    return ArrowIPC::inferColumns(*file_schema, format_settings);
+    /// As the Apache Arrow library reader inferred the types of Vortex files: a field is nullable as in the file unless
+    /// `schema_inference_make_columns_nullable` is 0, and with 1 the types are then made nullable recursively, which
+    /// stops at a type that is nullable already (so the elements of a nullable struct keep their nullability).
+    const UInt64 make_columns_nullable = format_settings.schema_inference_make_columns_nullable;
+    NamesAndTypesList result;
+    for (const auto & field : file_schema->fields)
+    {
+        auto type = ArrowIPC::fieldToCHType(
+            field, format_settings, make_columns_nullable != 0 && ArrowIPC::isNullableField(field), /* allow_null_type */ true);
+        if (make_columns_nullable == 1)
+            type = makeNullableRecursively(type, format_settings);
+        result.emplace_back(field.name, std::move(type));
+    }
+    return result;
 }
 
 std::optional<size_t> VortexSchemaReader::readNumberOrRows()
