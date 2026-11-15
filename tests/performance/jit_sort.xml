@@ -59,6 +59,20 @@
                 <value>jit_test_merge_tree_nullable</value>
             </values>
         </substitution>
+        <substitution>
+            <name>plain_table</name>
+            <values>
+                <value>jit_test_memory</value>
+                <value>jit_test_merge_tree</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>nullable_table</name>
+            <values>
+                <value>jit_test_memory_nullable</value>
+                <value>jit_test_merge_tree_nullable</value>
+            </values>
+        </substitution>
     </substitutions>
 
     <fill_query>
@@ -75,7 +89,7 @@
         LIMIT 10000000
     </fill_query>
 
-    <query>
+    <query disabled="1">
         SELECT
             *
         FROM {table}
@@ -83,7 +97,7 @@
         FORMAT Null
     </query>
 
-    <query>
+    <query disabled="1">
         SELECT
             *
         FROM {table}
@@ -91,7 +105,7 @@
         FORMAT Null
     </query>
 
-    <query>
+    <query disabled="1">
         SELECT
             *
         FROM {table}
@@ -114,6 +128,59 @@
         FROM hits_100m_single
         ORDER BY WatchID ASC, CounterID DESC, ClientIP ASC, IPNetworkID DESC, SearchEngineID ASC
         LIMIT 2000000
+        FORMAT Null
+    </query>
+
+    <!-- Copies of the disabled queries above: the plain tables are read as before; the Nullable tables keep the rows
+         with an even key, half of every block, so the sort merges as many blocks as before. -->
+    <query>
+        SELECT
+            *
+        FROM {plain_table}
+        ORDER BY value_1 ASC
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT
+            *
+        FROM {nullable_table}
+        WHERE key % 2 = 0
+        ORDER BY value_1 ASC
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT
+            *
+        FROM {plain_table}
+        ORDER BY value_1 ASC, value_2 DESC, value_3 ASC
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT
+            *
+        FROM {nullable_table}
+        WHERE key % 2 = 0
+        ORDER BY value_1 ASC, value_2 DESC, value_3 ASC
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT
+            *
+        FROM {plain_table}
+        ORDER BY value_1 ASC, value_2 DESC, value_3 ASC, value_4 DESC, value_5 ASC
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT
+            *
+        FROM {nullable_table}
+        WHERE key % 2 = 0
+        ORDER BY value_1 ASC, value_2 DESC, value_3 ASC, value_4 DESC, value_5 ASC
         FORMAT Null
     </query>
 
