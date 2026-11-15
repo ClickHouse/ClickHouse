@@ -372,7 +372,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , min_insert_block_size_bytes_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_bytes_for_materialized_views])
     , configuration{configuration_}
     , format_settings(format_settings_)
-    , reschedule_processing_interval_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
     , log(getLogger(fmt::format("Storage{}Queue ({})", configuration->getEngineName(), table_id_.getFullTableName())))
     , can_be_moved_between_databases((*queue_settings_)[ObjectStorageQueueSetting::keeper_path].changed)
     , keep_data_in_keeper(keep_data_in_keeper_)
@@ -525,11 +524,18 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
 
 void StorageObjectStorageQueue::createStreamingTasks(size_t count)
 {
+    UInt64 initial_reschedule_interval_ms = 0;
+    {
+        std::lock_guard lock(mutex);
+        initial_reschedule_interval_ms = polling_min_timeout_ms;
+    }
+
     std::vector<std::unique_ptr<StreamingTask>> tasks;
     tasks.reserve(count);
     for (size_t i = 0; i < count; ++i)
     {
         auto * task = tasks.emplace_back(std::make_unique<StreamingTask>()).get();
+        task->reschedule_interval_ms = initial_reschedule_interval_ms;
         task->holder = getContext()->getSchedulePool()->createTask(getStorageID(), "ObjectStorageQueueStreamingTask", [this, task, i]{ threadFunc(*task, i); });
         /// Otherwise `SYSTEM START`/`SYSTEM REFRESH` can schedule the task before the caller is ready.
         task->holder->deactivate();
@@ -932,6 +938,8 @@ void StorageObjectStorageQueue::threadFunc(StreamingTask & task, size_t streamin
     /// for them; a viewless table still claims, draining a pending permit so it cannot fire later.
     const bool deps_ready = num_views == 0 || dependencies_count > 0;
 
+    UInt64 & reschedule_processing_interval_ms = task.reschedule_interval_ms;
+
     if (deps_ready && !stream_control.claimCycle(task.refresh_epoch))
     {
         /// SYSTEM STOP/PAUSE blocks polling: skip processing. SYSTEM START wakes the task promptly
@@ -949,7 +957,6 @@ void StorageObjectStorageQueue::threadFunc(StreamingTask & task, size_t streamin
             tryLogCurrentException(log);
         }
 
-        std::lock_guard lock(mutex);
         reschedule_processing_interval_ms = paused_reschedule_period;
     }
     else if (getContext()->getS3QueueDisableStreaming())
@@ -958,7 +965,6 @@ void StorageObjectStorageQueue::threadFunc(StreamingTask & task, size_t streamin
 
         LOG_TRACE(log, "Streaming is disabled, rescheduling next check in {} ms", disabled_streaming_reschedule_period);
 
-        std::lock_guard lock(mutex);
         reschedule_processing_interval_ms = disabled_streaming_reschedule_period;
     }
     else
@@ -1001,11 +1007,7 @@ void StorageObjectStorageQueue::threadFunc(StreamingTask & task, size_t streamin
 
     if (!shutdown_called)
     {
-        UInt64 reschedule_interval_ms = 0;
-        {
-            std::lock_guard lock(mutex);
-            reschedule_interval_ms = reschedule_processing_interval_ms;
-        }
+        const UInt64 reschedule_interval_ms = reschedule_processing_interval_ms;
 
         LOG_TRACE(log, "Reschedule processing thread in {} ms", reschedule_interval_ms);
         task.holder->scheduleAfter(reschedule_interval_ms);

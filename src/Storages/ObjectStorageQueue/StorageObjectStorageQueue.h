@@ -169,7 +169,6 @@ private:
 
     const std::optional<FormatSettings> format_settings;
 
-    UInt64 reschedule_processing_interval_ms TSA_GUARDED_BY(mutex);
 
     std::atomic<bool> startup_finished = false;
     std::atomic<bool> table_is_being_dropped = false;
@@ -182,6 +181,10 @@ private:
     {
         /// Declared before the holder, since it is used by the task.
         UInt64 refresh_epoch = 0;
+        /// The polling backoff of this task, accessed only by the task (it never runs concurrently with itself).
+        /// It is per task, because with `parallel_inserts` the idle cycles of many tasks would otherwise
+        /// add up to one shared backoff, and a reset by the task which found files would not wake the others.
+        UInt64 reschedule_interval_ms = 0;
         BackgroundSchedulePoolTaskHolder holder;
     };
     mutable std::mutex streaming_tasks_mutex;
