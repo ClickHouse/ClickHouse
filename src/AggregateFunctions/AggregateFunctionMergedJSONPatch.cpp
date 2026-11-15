@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Formats/FormatSettings.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/FieldVisitorToString.h>
 #include <AggregateFunctions/FactoryHelpers.h>

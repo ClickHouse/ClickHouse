@@ -70,3 +70,71 @@ SELECT 'check table with block number column';
 CHECK TABLE t_dry_run_proj_bn SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE t_dry_run_proj_bn;
+
+-- Coverage for StorageSystemProjectionParts.cpp and StorageSystemProjectionPartsColumns.cpp:
+-- many columns (parent_uuid, parent_part_type, bytes_on_disk, marks_bytes, etc.) were never
+-- requested by existing CI tests. Also exercises the default_kind/default_expression branch.
+
+DROP TABLE IF EXISTS t_proj_cov_05077;
+
+CREATE TABLE t_proj_cov_05077
+(
+    d    Date,
+    key  UInt64,
+    val  UInt64 DEFAULT 0,
+    PROJECTION p_key (SELECT * ORDER BY key)
+)
+ENGINE = MergeTree()
+ORDER BY d;
+
+INSERT INTO t_proj_cov_05077 (d, key, val) SELECT toDate('2024-01-01'), number, number * 2 FROM numbers(100);
+OPTIMIZE TABLE t_proj_cov_05077 FINAL;
+
+-- system.projection_parts: previously-uncovered columns
+SELECT
+    count(parent_uuid) = count(*)         AS has_parent_uuid,
+    count(parent_part_type) = count(*)    AS has_parent_part_type,
+    countIf(bytes_on_disk > 0)            AS has_bytes_on_disk,
+    countIf(marks_bytes >= 0) = count(*)  AS has_marks_bytes,
+    countIf(parent_marks > 0)             AS has_parent_marks,
+    countIf(parent_rows > 0)              AS has_parent_rows,
+    countIf(parent_bytes_on_disk > 0)     AS has_parent_bytes_on_disk,
+    countIf(parent_data_compressed_bytes >= 0) = count(*) AS has_parent_compressed_bytes,
+    countIf(parent_data_uncompressed_bytes >= 0) = count(*) AS has_parent_uncompressed_bytes,
+    countIf(parent_marks_bytes >= 0) = count(*) AS has_parent_marks_bytes,
+    countIf(remove_time = toDateTime(0))  AS active_no_remove_time,
+    countIf(refcount >= 1) = count(*)     AS valid_refcount
+FROM system.projection_parts
+WHERE database = currentDatabase() AND table = 't_proj_cov_05077' AND active;
+
+-- system.projection_parts_columns: previously-uncovered columns
+SELECT
+    count(partition) = count(*)                           AS has_partition,
+    count(part_type) = count(*)                           AS has_part_type,
+    count(parent_name) = count(*)                         AS has_parent_name,
+    count(parent_uuid) = count(*)                         AS has_parent_uuid,
+    count(parent_part_type) = count(*)                    AS has_parent_part_type,
+    countIf(marks > 0) = count(*)                         AS has_marks,
+    countIf(rows > 0) = count(*)                          AS has_rows,
+    countIf(bytes_on_disk > 0) = count(*)                 AS has_bytes_on_disk,
+    countIf(data_uncompressed_bytes > 0) = count(*)       AS has_uncompressed_bytes,
+    countIf(marks_bytes >= 0) = count(*)                  AS has_marks_bytes,
+    countIf(parent_marks > 0) = count(*)                  AS has_parent_marks,
+    countIf(parent_rows > 0) = count(*)                   AS has_parent_rows,
+    countIf(parent_bytes_on_disk > 0) = count(*)          AS has_parent_bytes_on_disk,
+    countIf(parent_data_compressed_bytes >= 0) = count(*) AS has_parent_compressed_bytes,
+    countIf(parent_data_uncompressed_bytes >= 0) = count(*) AS has_parent_uncompressed_bytes,
+    countIf(parent_marks_bytes >= 0) = count(*)           AS has_parent_marks_bytes,
+    countIf(modification_time > toDateTime(0)) = count(*) AS has_modification_time,
+    count(remove_time) = count(*)                         AS has_remove_time,
+    countIf(refcount >= 1) = count(*)                     AS valid_refcount
+FROM system.projection_parts_columns
+WHERE database = currentDatabase() AND table = 't_proj_cov_05077' AND active;
+
+-- Check that default_kind/default_expression are populated for the DEFAULT column (val).
+SELECT default_kind, default_expression
+FROM system.projection_parts_columns
+WHERE database = currentDatabase() AND table = 't_proj_cov_05077' AND active AND column = 'val' AND default_kind != ''
+ORDER BY default_kind;
+
+DROP TABLE t_proj_cov_05077;

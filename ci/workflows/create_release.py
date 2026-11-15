@@ -1,3 +1,5 @@
+import os
+
 from praktika import Job, Secret, Workflow
 
 from ci.defs.defs import SECRETS, RunnerLabels
@@ -8,7 +10,8 @@ robot_token_secret = Secret.Config(
 )
 
 release_job = Job.Config(
-    name="CreateRelease",
+    # Differs from the workflow name: both results share one S3 key otherwise
+    name="Create Release",
     runs_on=["self-hosted", "amd-release-maker"],
     command="PYTHONPATH=. python3 ./ci/jobs/release_job.py",
     timeout=2 * 3600,
@@ -35,7 +38,7 @@ _release_dry_run_digest = Job.CacheDigestConfig(
         "./ci/jobs/scripts/clickhouse_version.py",
         "./ci/jobs/scripts/expect_release_refusal.py",
         # Other release entrypoints the dry run invokes directly; a change must invalidate the cache or the guard would miss it.
-        "./tests/ci/changelog.py",
+        "./ci/tools/changelog.py",
         "./ci/jobs/scripts/artifactory.py",
         "./ci/jobs/scripts/release_packages.py",
     ],
@@ -92,6 +95,7 @@ PR_DRY_RUN_JOBS = _RELEASE_DRY_RUN_POSITIVE + _RELEASE_DRY_RUN_NEGATIVE
 
 workflow = Workflow.Config(
     name="CreateRelease",
+    engine=Workflow.Engine.GH_ACTIONS,
     event=Workflow.Event.DISPATCH,
     jobs=[release_job],
     secrets=SECRETS + [robot_token_secret],
@@ -103,7 +107,10 @@ workflow = Workflow.Config(
     # Route the job's pass/fail to the Slack Praktika app (the praktika-native
     # replacement for the dropped CIBuddy notifications), as master /
     # release_branches / pull_request do, so a failed release is not silent.
+    enable_concurrency_queue=True,
     enable_slack_feed=True,
+    # Uploads the job's `Result.files` (the reprepro, createrepo_c and geesefs logs) to S3
+    enable_report=os.getenv("GITHUB_REPOSITORY") == "ClickHouse/ClickHouse",
     inputs=[
         Workflow.Config.InputConfig(
             name="ref",

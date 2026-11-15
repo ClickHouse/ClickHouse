@@ -42,6 +42,7 @@ inline const char * toStringLowercase(IdentifierLookupContext identifier_lookup_
   */
 struct IdentifierLookup
 {
+    /// Part boundaries are part of a lookup's identity: quoted `a.b` is one part, `a`.`b` is two.
     Identifier identifier;
     IdentifierLookupContext lookup_context;
     ASTPtr original_ast_node = nullptr;
@@ -55,6 +56,12 @@ struct IdentifierLookup
     /// the outcome of a lookup (empty result instead of an exception), so a matcher qualifier
     /// lookup must not share an identifier resolve cache entry with an ordinary expression lookup.
     bool is_matcher_qualifier = false;
+
+    /// Join tree resolution of an expression identifier that binds to columns of several joined tables
+    /// returns a result with `ambiguous_in_join_tree` set instead of throwing `AMBIGUOUS_IDENTIFIER`.
+    /// The caller decides whether another resolution path (aliases) can take over.
+    /// Participates in comparison and hashing for the same reason as `is_matcher_qualifier`.
+    bool allow_ambiguous_join_tree_identifier = false;
 
     bool isExpressionLookup() const
     {
@@ -79,9 +86,10 @@ struct IdentifierLookup
 
 inline bool operator==(const IdentifierLookup & lhs, const IdentifierLookup & rhs)
 {
-    return lhs.identifier.getFullName() == rhs.identifier.getFullName()
+    return lhs.identifier.getParts() == rhs.identifier.getParts()
         && lhs.lookup_context == rhs.lookup_context
-        && lhs.is_matcher_qualifier == rhs.is_matcher_qualifier;
+        && lhs.is_matcher_qualifier == rhs.is_matcher_qualifier
+        && lhs.allow_ambiguous_join_tree_identifier == rhs.allow_ambiguous_join_tree_identifier;
 }
 
 [[maybe_unused]] inline bool operator!=(const IdentifierLookup & lhs, const IdentifierLookup & rhs)
@@ -93,9 +101,14 @@ struct IdentifierLookupHash
 {
     size_t operator()(const IdentifierLookup & identifier_lookup) const
     {
-        return std::hash<std::string>()(identifier_lookup.identifier.getFullName())
+        size_t hash = std::hash<std::string>()(identifier_lookup.identifier.getFullName());
+        for (const auto & part : identifier_lookup.identifier.getParts())
+            hash = hash * 31 + part.size();
+
+        return hash
             ^ static_cast<uint8_t>(identifier_lookup.lookup_context)
-            ^ (static_cast<size_t>(identifier_lookup.is_matcher_qualifier) << 8);
+            ^ (static_cast<size_t>(identifier_lookup.is_matcher_qualifier) << 8)
+            ^ (static_cast<size_t>(identifier_lookup.allow_ambiguous_join_tree_identifier) << 9);
     }
 };
 
@@ -133,6 +146,15 @@ struct IdentifierResolveResult
 {
     QueryTreeNodePtr resolved_identifier;
     IdentifierResolvePlace resolve_place = IdentifierResolvePlace::NONE;
+
+    /// Only for lookups with `allow_ambiguous_join_tree_identifier`: the identifier binds to columns
+    /// of several joined tables, so `resolved_identifier` is empty and no join tree column may win.
+    bool ambiguous_in_join_tree = false;
+
+    static IdentifierResolveResult ambiguousInJoinTree()
+    {
+        return { .resolved_identifier = nullptr, .resolve_place = IdentifierResolvePlace::NONE, .ambiguous_in_join_tree = true };
+    }
 
     explicit operator bool() const
     {
@@ -174,7 +196,7 @@ struct IdentifierResolveResult
     {
         if (!resolved_identifier)
         {
-            buffer << "unresolved";
+            buffer << (ambiguous_in_join_tree ? "ambiguous" : "unresolved");
             return;
         }
 

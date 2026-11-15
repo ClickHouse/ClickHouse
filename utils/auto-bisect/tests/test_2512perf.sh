@@ -112,7 +112,6 @@ WHERE
  (Timestamp <= (now()))
  AND (SpanAttributes['project.id'] = 'dffe5d60-3faa-421a-acf5-0755a1fb0f80')
 SETTINGS log_comment = 'repro_$i', use_query_cache = 0, use_uncompressed_cache = 0,
-    filesystem_cache_max_download_size = 0,
     filesystem_cache_segments_batch_size = 0,
     enable_filesystem_cache = 0,
     merge_tree_max_rows_to_use_cache = 0,

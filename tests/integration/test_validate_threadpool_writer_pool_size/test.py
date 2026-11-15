@@ -18,10 +18,10 @@ def test_invalid_setting():
         with pytest.raises(Exception) as exc_info:
             cluster.start()
 
-            assert (
-                "Code: 36. DB::Exception: A setting's value has to be greater than 0: while parsing setting 'threadpool_writer_pool_size' value. (BAD_ARGUMENTS)"
-                in str(exc_info.value)
-            )
+        # The exception carries the container's stdout, where the server only reports its exit code
+        # (36 is BAD_ARGUMENTS); the exception text itself goes to the error log, asserted below.
+        assert "failed to start" in str(exc_info.value)
+        assert "Server exited with 36" in str(exc_info.value)
 
         # Also check that the error logs contain the expected message
         logs = ""
@@ -35,7 +35,7 @@ def test_invalid_setting():
             logs = f.read()
 
         assert (
-            "Code: 36. DB::Exception: A setting's value has to be greater than 0: while parsing setting 'threadpool_writer_pool_size' value. (BAD_ARGUMENTS)"
+            "Code: 36. DB::Exception: A setting's value has to be greater than 0: while setting 'threadpool_writer_pool_size' to value '0'. (BAD_ARGUMENTS)"
             in logs
         )
     finally:

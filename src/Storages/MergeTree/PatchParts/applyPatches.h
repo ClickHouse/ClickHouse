@@ -78,9 +78,11 @@ struct PatchReadResultToApply
 
 /// Builds patches of all modes from patch read results and applies them to result_block.
 /// Patches updating the same set of columns are combined and applied together.
+/// `key_columns` supplies the sorting key columns used for MergeOnKey key comparisons.
 void applyPatchesToBlock(
     Block & result_block,
     Block & versions_block,
+    const Block & key_columns,
     const std::vector<PatchReadResultToApply> & patch_read_results,
     UInt64 source_data_version);
 

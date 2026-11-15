@@ -21,7 +21,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -89,15 +88,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
-        if (!isString(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[1]->getName(), getName());
-        return arguments[1];
+        return "(const String, String) -> String";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -136,10 +129,10 @@ REGISTER_FUNCTION(Lemmatize)
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-:::warning
+<Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
+</Warning>
 
 Performs lemmatization on a given word.
 This function needs dictionaries to operate, which can be obtained from [github](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models).

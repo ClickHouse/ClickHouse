@@ -6,7 +6,6 @@
 #include <base/unaligned.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
 
 #include <cstring>
 #include <utility>
@@ -21,6 +20,7 @@ public:
     explicit CompressionCodecDelta(UInt8 delta_bytes_size_);
 
     uint8_t getMethodByte() const override;
+    ASTPtr getCodecDescription() const override;
 
     void updateHash(SipHash & hash) const override;
 
@@ -58,7 +58,11 @@ namespace ErrorCodes
 CompressionCodecDelta::CompressionCodecDelta(UInt8 delta_bytes_size_)
     : delta_bytes_size(delta_bytes_size_)
 {
-    setCodecDescription("Delta", {make_intrusive<ASTLiteral>(static_cast<UInt64>(delta_bytes_size))});
+}
+
+ASTPtr CompressionCodecDelta::getCodecDescription() const
+{
+    return makeCodecDescription("Delta", {make_intrusive<ASTLiteral>(static_cast<UInt64>(delta_bytes_size))});
 }
 
 uint8_t CompressionCodecDelta::getMethodByte() const
@@ -68,7 +72,7 @@ uint8_t CompressionCodecDelta::getMethodByte() const
 
 void CompressionCodecDelta::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 namespace
@@ -254,19 +258,26 @@ UInt32 CompressionCodecDelta::doDecompressData(const char * source, UInt32 sourc
 namespace
 {
 
-UInt8 getDeltaBytesSize(const IDataType * column_type)
+/// Returns nullopt if the codec is not applicable to the type and `throw_if_not_applicable` is false.
+std::optional<UInt8> getDeltaBytesSize(const IDataType & column_type, bool throw_if_not_applicable)
 {
-    if (!column_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+    if (!column_type.isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+    {
+        if (!throw_if_not_applicable)
+            return {};
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Delta is not applicable for {} because the data type is not of fixed size",
-            column_type->getName());
+            column_type.getName());
+    }
 
-    size_t max_size = column_type->getSizeOfValueInMemory();
+    size_t max_size = column_type.getSizeOfValueInMemory();
     if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
         return static_cast<UInt8>(max_size);
+    if (!throw_if_not_applicable)
+        return {};
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
         "Codec Delta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
-        column_type->getName());
+        column_type.getName());
 }
 
 }
@@ -296,12 +307,13 @@ void registerCodecDelta(CompressionCodecFactory & factory)
         }
         else if (column_type)
         {
-            delta_bytes_size = getDeltaBytesSize(column_type);
+            delta_bytes_size = *getDeltaBytesSize(*column_type, /*throw_if_not_applicable=*/ true);
         }
 
         return std::make_shared<CompressionCodecDelta>(delta_bytes_size);
     };
-    factory.registerCompressionCodecWithType("Delta", method_code, codec_builder);
+    factory.registerCompressionCodecWithType("Delta", method_code, codec_builder,
+        {.is_applicable_to_type = [](const IDataType & type) { return getDeltaBytesSize(type, /*throw_if_not_applicable=*/ false).has_value(); }});
 }
 
 CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size)

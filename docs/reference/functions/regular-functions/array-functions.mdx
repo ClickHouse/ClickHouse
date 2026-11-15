@@ -370,6 +370,49 @@ SELECT arrayBottomK((x, y) -> y, 2, ['a', 'b', 'c'], [3, 1, 2])
 ['b','c']
 ```
 
+## arrayCombinations {#arrayCombinations}
+
+Introduced in: v26.10.0
+
+Returns all combinations (unordered selections without repeated indexes) of length `k` from the source array. Enumeration is done by indexes, so equal values may produce duplicate rows in the result. For `k = 0`, returns `[[]]`. The total result size per block is limited by `function_range_max_elements_in_block`; every generated array counts as its size plus one.
+
+**Syntax**
+
+```sql
+arrayCombinations(arr, k)
+```
+
+**Arguments**
+
+- `arr` — Source array. [`Array(T)`](/reference/data-types/array)
+- `k` — Length of each generated combination. Must not exceed source array size. Supports `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, and `UInt64`. [`(U)Int*`](/reference/data-types/int-uint)
+
+**Returned value**
+
+All combinations of length `k`. [`Array(Array(T))`](/reference/data-types/array)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT arrayCombinations([1, 2, 3], 2);
+```
+
+```response title=Response
+[[1,2],[1,3],[2,3]]
+```
+
+**`k = 0` example**
+
+```sql title=Query
+SELECT arrayCombinations([1, 2, 3], 0);
+```
+
+```response title=Response
+[[]]
+```
+
 ## arrayCompact {#arrayCompact}
 
 Introduced in: v20.1.0
@@ -442,6 +485,16 @@ Returns the number of elements for which `func(arr1[i], ..., arrN[i])` returns t
 If `func` is not specified, it returns the number of non-zero elements in the array.
 
 `arrayCount` is a [higher-order function](/reference/functions/regular-functions/overview#higher-order-functions).
+
+<Info>
+**Use setting `array_count_legacy_uint32_result` to return `UInt32`**
+
+Version 26.10 introduced a backward-incompatible change: `arrayCount` returns `UInt64` instead of `UInt32`, so that the result is exact for arrays with more than `4294967295` matching elements.
+The constness of the result also changed: for a non-constant array and a predicate that folds to a constant false, the result was a constant column before 26.10 (`isConstant(arrayCount(...))` returned `1`), and now it is a full column (`isConstant` returns `0`), matching `length(arrayFilter(...))`.
+To retain the previous behavior (both the `UInt32` result type and the result constness), set setting `array_count_legacy_uint32_result` (default: `false`) to `true`.
+
+During a rolling upgrade of a cluster, a distributed query initiated by a not-yet-upgraded server does not forward this setting, so type-sensitive expressions evaluated locally on already-upgraded shards (for example, `byteSize(arrayCount(...))`) observe `UInt64` there. To keep such queries fully unchanged until the whole cluster is upgraded, set `array_count_legacy_uint32_result = 1` on the upgraded servers for the users under which shard-side queries execute, and remove it after the upgrade is complete. Which user that is depends on the cluster configuration: with an interserver `secret` configured, the shard runs the query as the initiator's current user; otherwise it is the user from the cluster definition or from the `remote` table function (`default` unless specified). The simplest robust approach is to enable the setting for all users of the upgraded servers.
+</Info>
     
 
 **Syntax**
@@ -457,7 +510,7 @@ arrayCount([func, ] arr1, ...)
 
 **Returned value**
 
-Returns the number of elements for which `func` returns true. Otherwise, returns the number of non-zero elements in the array. [`UInt32`](/reference/data-types/int-uint)
+Returns the number of elements for which `func` returns true. Otherwise, returns the number of non-zero elements in the array. [`UInt64`](/reference/data-types/int-uint)
 
 **Examples**
 
@@ -715,7 +768,11 @@ Negative indexes are supported. In this case, the corresponding element is selec
 
 Operator `[n]` provides the same functionality.
 
-The first argument may also be a [QBit](/reference/data-types/qbit): the n-th vector element is reconstructed at the full precision of the QBit element type, reading only the bit planes of the stride group that contains it.
+The first argument may also be:
+
+- a [`Map`](/reference/data-types/map): `m['key']` returns the value stored for `key`, or the default value of the value type when the key is absent.
+- a [`QBit`](/reference/data-types/qbit): `q[n]` reconstructs the n-th vector element at the full precision of the QBit element type, reading only the bit planes of the stride group that contains it.
+- a [`JSON`](/reference/data-types/newjson) or a `Nullable(JSON)`: `json['key']` returns the value stored at the path `key`, which must be a constant string, exactly as the dot syntax `json.key` does. For a `Nullable(JSON)` the result follows the same nullability rules as `json.key`: a path that can represent `NULL` (`Dynamic`, or a typed path that can be wrapped into `Nullable`) gives `NULL` for the outer `NULL` rows, while a non-nullable typed path such as `Array` or `Map` keeps its default value there. The key may also be a constant `Nullable(String)`; a `NULL` key gives `NULL`. Nested access can be chained: `json['a']['b']`.
     
 
 **Syntax**
@@ -726,11 +783,11 @@ arrayElement(arr, n)
 
 **Arguments**
 
-- `arr` — The array to search. [`Array(T)`](/reference/data-types/array) or [`QBit`](/reference/data-types/qbit). - `n` — Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/reference/data-types/int-uint) or [`Array((U)Int*)`](/reference/data-types/array). 
+- `arr` — The value to read an element from. [`Array(T)`](/reference/data-types/array), [`Map(K, V)`](/reference/data-types/map), [`QBit`](/reference/data-types/qbit), [`JSON`](/reference/data-types/newjson) or `Nullable(JSON)`. - `n` — Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/reference/data-types/int-uint) or [`Array((U)Int*)`](/reference/data-types/array). For a `Map` argument, a key of type `K`; for a `JSON` argument, a constant [`String`](/reference/data-types/string) path. 
 
 **Returned value**
 
-When `n` is a scalar, returns the element of type `T`. When `n` is an array, returns `Array(Nullable(T))` if the index elements are nullable and `T` can be wrapped in `Nullable`, otherwise `Array(T)`. [`Any`](/reference/data-types/index) or [`Array(T)`](/reference/data-types/array) or [`Array(Nullable(T))`](/reference/data-types/array)
+When `n` is a scalar, returns the element of type `T`. When `n` is an array, returns `Array(Nullable(T))` if the index elements are nullable and `T` can be wrapped in `Nullable`, otherwise `Array(T)`. For a `Map` returns the value of type `V`, for a `JSON` the value stored at the path. [`Any`](/reference/data-types/index) or [`Array(T)`](/reference/data-types/array) or [`Array(Nullable(T))`](/reference/data-types/array)
 
 **Examples**
 
@@ -784,6 +841,26 @@ SELECT [10, 20, 30, 40][[2, 4, 1]]
 [20,40,10]
 ```
 
+**Map key access**
+
+```sql title=Query
+SELECT map('a', 1, 'b', 2)['b']
+```
+
+```response title=Response
+2
+```
+
+**JSON bracket access**
+
+```sql title=Query
+SELECT json['a'] FROM (SELECT '{"a" : 42}'::JSON AS json)
+```
+
+```response title=Response
+42
+```
+
 ## arrayElementOrNull {#arrayElementOrNull}
 
 Introduced in: v1.1.0
@@ -803,6 +880,9 @@ Arrays in ClickHouse are one-indexed.
 
 Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, `arr[-1]` is the last item in the array.
 
+The first argument may also be a [`Map`](/reference/data-types/map): an absent key gives `NULL` instead of the default value of the value type, as long as that type can be wrapped in `Nullable`.
+[`JSON`](/reference/data-types/newjson) is not supported here, use `arrayElement` instead.
+
 **Syntax**
 
 ```sql
@@ -811,11 +891,11 @@ arrayElementOrNull(arr, n)
 
 **Arguments**
 
-- `arr` — The array to search. [`Array(T)`](/reference/data-types/array). - `n` — Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/reference/data-types/int-uint) or [`Array((U)Int*)`](/reference/data-types/array). 
+- `arr` — The value to read an element from. [`Array(T)`](/reference/data-types/array) or [`Map(K, V)`](/reference/data-types/map). - `n` — Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/reference/data-types/int-uint) or [`Array((U)Int*)`](/reference/data-types/array). For a `Map` argument, a key of type `K`. 
 
 **Returned value**
 
-When `n` is a scalar, returns `Nullable(T)` if `T` can be wrapped in `Nullable`, otherwise `T`. When `n` is an array, returns `Array(Nullable(T))` if `T` can be wrapped in `Nullable`, otherwise `Array(T)`. [`Any`](/reference/data-types/index) or [`Nullable(T)`](/reference/data-types/nullable) or [`Array(T)`](/reference/data-types/array) or [`Array(Nullable(T))`](/reference/data-types/array)
+When `n` is a scalar, returns `Nullable(T)` if `T` can be wrapped in `Nullable`, otherwise `T`. When `n` is an array, returns `Array(Nullable(T))` if `T` can be wrapped in `Nullable`, otherwise `Array(T)`. For a `Map` the same rule applies to the value type `V`. [`Any`](/reference/data-types/index) or [`Nullable(T)`](/reference/data-types/nullable) or [`Array(T)`](/reference/data-types/array) or [`Array(Nullable(T))`](/reference/data-types/array)
 
 **Examples**
 
@@ -857,6 +937,16 @@ SELECT arrayElementOrNull([10, 20, 30], [1, 5, 2])
 
 ```response title=Response
 [10,NULL,20]
+```
+
+**Absent map key**
+
+```sql title=Query
+SELECT arrayElementOrNull(map('a', 1), 'z')
+```
+
+```response title=Response
+\N
 ```
 
 ## arrayEnumerate {#arrayEnumerate}
@@ -1780,7 +1870,7 @@ and Aggregate Functions which take a group of rows and "compress" or "reduce" th
 All the values in the columns are simply copied, except the values in the column where this function is applied;
 these are replaced with the corresponding array value.
 
-`unnest` (since version 26.5) is a case-insensitive alias of `arrayJoin` in function-call form (`SELECT unnest(arr)`). PostgreSQL table-source syntax is not supported (`FROM unnest(...)`, `CROSS JOIN UNNEST(...)`, and `LATERAL`). Use the `ARRAY JOIN` clause for those queries.
+`unnest` (since version 26.5) is a case-insensitive alias of `arrayJoin` in function-call form (`SELECT unnest(arr)`). PostgreSQL table-source syntax is not supported (`FROM unnest(...)`, `CROSS JOIN UNNEST(...)` and `LATERAL unnest(...)`). Use the `ARRAY JOIN` clause for those queries. `JOIN LATERAL` over a correlated subquery is a separate experimental feature and does not make `unnest` usable as a table source.
 
 `arrayJoin`, including via its `unnest` alias, cannot be used in a `JOIN ON` condition that is evaluated during the join, because such a condition must
 preserve the number of rows. A condition that applies to one side only, and an equality key over `arrayJoin`, are
@@ -2287,6 +2377,63 @@ SELECT arrayMax(x, y -> x/y, [4, 8, 12, 16], [1, 2, 1, 2]);
 12
 ```
 
+## arrayMaxIndex {#arrayMaxIndex}
+
+Introduced in: v26.10.0
+
+Returns the 1-based index of the maximum element in the source array, or `0` if the array is empty.
+
+If a lambda function `func` is specified, returns the index of the element corresponding to the maximum lambda result. If multiple elements have the same maximum value, returns the index of the first one.
+    
+
+**Syntax**
+
+```sql
+arrayMaxIndex([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])
+```
+
+**Arguments**
+
+- `func(x[, y1, ..., yN])` — Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [`Lambda function`](/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+- `source_arr` — The source array to process. [`Array(T)`](/reference/data-types/array)
+- `cond1_arr, ...` — Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/reference/data-types/array)
+
+**Returned value**
+
+Returns the 1-based index of the first maximum element, or `0` for an empty array. [`UInt32`](/reference/data-types/int-uint)
+
+**Examples**
+
+**Basic example**
+
+```sql title=Query
+SELECT arrayMaxIndex([5, 3, 2, 7]);
+```
+
+```response title=Response
+4
+```
+
+**First equal maximum**
+
+```sql title=Query
+SELECT arrayMaxIndex([5, 7, 7, 3]);
+```
+
+```response title=Response
+2
+```
+
+**Usage with lambda function**
+
+```sql title=Query
+SELECT arrayMaxIndex(x, y -> x/y, [4, 8, 12, 16], [1, 2, 1, 2]);
+```
+
+```response title=Response
+3
+```
+
 ## arrayMin {#arrayMin}
 
 Introduced in: v21.1.0
@@ -2334,6 +2481,63 @@ SELECT arrayMin(x, y -> x/y, [4, 8, 12, 16], [1, 2, 1, 2]);
 4
 ```
 
+## arrayMinIndex {#arrayMinIndex}
+
+Introduced in: v26.10.0
+
+Returns the 1-based index of the minimum element in the source array, or `0` if the array is empty.
+
+If a lambda function `func` is specified, returns the index of the element corresponding to the minimum lambda result. If multiple elements have the same minimum value, returns the index of the first one.
+    
+
+**Syntax**
+
+```sql
+arrayMinIndex([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])
+```
+
+**Arguments**
+
+- `func(x[, y1, ..., yN])` — Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [`Lambda function`](/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+- `source_arr` — The source array to process. [`Array(T)`](/reference/data-types/array)
+- `cond1_arr, ...` — Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/reference/data-types/array)
+
+**Returned value**
+
+Returns the 1-based index of the first minimum element, or `0` for an empty array. [`UInt32`](/reference/data-types/int-uint)
+
+**Examples**
+
+**Basic example**
+
+```sql title=Query
+SELECT arrayMinIndex([5, 3, 2, 7]);
+```
+
+```response title=Response
+3
+```
+
+**First equal minimum**
+
+```sql title=Query
+SELECT arrayMinIndex([5, 3, 3, 7]);
+```
+
+```response title=Response
+2
+```
+
+**Usage with lambda function**
+
+```sql title=Query
+SELECT arrayMinIndex(x, y -> x/y, [4, 8, 12, 16], [1, 2, 1, 2]);
+```
+
+```response title=Response
+1
+```
+
 ## arrayNormalizedGini {#arrayNormalizedGini}
 
 Introduced in: v25.1.0
@@ -2365,6 +2569,278 @@ SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);
 
 ```response title=Response
 (0.18055555555555558,0.2638888888888889,0.6842105263157896)
+```
+
+## arrayPackBitGroupsToFixedString {#arrayPackBitGroupsToFixedString}
+
+Introduced in: v26.10.0
+
+The same as `arrayPackBitsToFixedString`, but the lambda returns an integer whose low `g` bits form a group, and the groups
+are packed contiguously (most-significant-bit first) into a `FixedString(n)`. The result is the first `n` bytes of
+`arrayPackBitGroupsToString` (a group that straddles the boundary contributes only its leading bits), zero-padded to `n`
+bytes. Both the size `n` and the group size `g` must be positive constants, and `g` must not exceed 64.
+    
+
+**Syntax**
+
+```sql
+arrayPackBitGroupsToFixedString(f, n, g, arr1[, arr2, ...])
+```
+
+**Arguments**
+
+- `f` — Lambda function producing the group value for each element. [`Lambda function`](/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+- `n` — The size of the resulting `FixedString` in bytes. [`(U)Int8/16/32/64`](/reference/data-types/int-uint)
+- `g` — The number of bits per group. [`(U)Int8/16/32/64`](/reference/data-types/int-uint)
+- `arr1[, arr2, ...]` — One or more arrays of equal size to pack. The lambda takes one argument per array. [`Array(T)`](/reference/data-types/array)
+
+**Returned value**
+
+Returns the packed bits. [`FixedString(n)`](/reference/data-types/fixedstring)
+
+**Examples**
+
+**Example**
+
+```sql title=Query
+SELECT arrayPackBitGroupsToFixedString(x -> x, 2, 4, [3, 0, 3, 1])
+```
+
+```response title=Response
+01
+```
+
+## arrayPackBitGroupsToString {#arrayPackBitGroupsToString}
+
+Introduced in: v26.10.0
+
+The same as `arrayPackBitsToString`, but the lambda returns an integer whose low `g` bits form a group, and the groups
+are packed contiguously (most-significant-bit first). The length of the result is `ceil(size_of_array * g / 8)` bytes.
+The group size `g` must be a constant between 1 and 64.
+    
+
+**Syntax**
+
+```sql
+arrayPackBitGroupsToString(f, g, arr1[, arr2, ...])
+```
+
+**Arguments**
+
+- `f` — Lambda function producing the group value for each element. [`Lambda function`](/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+- `g` — The number of bits per group. [`(U)Int8/16/32/64`](/reference/data-types/int-uint)
+- `arr1[, arr2, ...]` — One or more arrays of equal size to pack. The lambda takes one argument per array. [`Array(T)`](/reference/data-types/array)
+
+**Returned value**
+
+Returns the packed bits. [`String`](/reference/data-types/string)
+
+**Examples**
+
+**Example**
+
+```sql title=Query
+SELECT arrayPackBitGroupsToString(x -> x, 4, [3, 0, 3, 1])
+```
+
+```response title=Response
+01
+```
+
+## arrayPackBitGroupsToUInt64 {#arrayPackBitGroupsToUInt64}
+
+Introduced in: v26.10.0
+
+The same as `arrayPackBitsToUInt64`, but the lambda returns an integer whose low `g` bits form a group, and the groups
+are packed contiguously (most-significant-bit first within each byte, bytes interpreted in little-endian order, so
+`arrayPackBitGroupsToUInt64(f, g, arr) = reinterpretAsUInt64(arrayPackBitGroupsToString(f, g, arr))`). The result
+holds the first 64 bits of the packed stream: if `g` does not divide 64, the group that straddles the boundary
+contributes only its leading bits. The group size `g` must be a constant between 1 and 64.
+    
+
+**Syntax**
+
+```sql
+arrayPackBitGroupsToUInt64(f, g, arr1[, arr2, ...])
+```
+
+**Arguments**
+
+- `f` — Lambda function producing the group value for each element. [`Lambda function`](/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+- `g` — The number of bits per group. [`(U)Int8/16/32/64`](/reference/data-types/int-uint)
+- `arr1[, arr2, ...]` — One or more arrays of equal size to pack. The lambda takes one argument per array. [`Array(T)`](/reference/data-types/array)
+
+**Returned value**
+
+Returns the packed bits. [`UInt64`](/reference/data-types/int-uint)
+
+**Examples**
+
+**Example**
+
+```sql title=Query
+SELECT arrayPackBitGroupsToUInt64(x -> x, 4, [1, 2, 3])
+```
+
+```response title=Response
+12306
+```
+
+## arrayPackBitsToFixedString {#arrayPackBitsToFixedString}
+
+Introduced in: v26.10.0
+
+Applies a lambda function to each element of the array and packs the resulting bits into a `FixedString(n)`.
+For each element the lambda returns an integer that is treated as a single bit (zero or non-zero).
+Bits are written most-significant-bit first, so the result is the first `n` bytes of `arrayPackBitsToString`.
+If the array has more than `n * 8` elements the rest are ignored; if it has fewer, the result is zero-padded to `n` bytes.
+The size `n` must be a positive constant.
+    
+
+**Syntax**
+
+```sql
+arrayPackBitsToFixedString(f, n, arr1[, arr2, ...])
+```
+
+**Arguments**
+
+- `f` — Lambda function producing the bit for each element. [`Lambda function`](/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+- `n` — The size of the resulting `FixedString` in bytes. [`(U)Int8/16/32/64`](/reference/data-types/int-uint)
+- `arr1[, arr2, ...]` — One or more arrays of equal size to pack. The lambda takes one argument per array. [`Array(T)`](/reference/data-types/array)
+
+**Returned value**
+
+Returns the packed bits. [`FixedString(n)`](/reference/data-types/fixedstring)
+
+**Examples**
+
+**Example**
+
+```sql title=Query
+SELECT arrayPackBitsToFixedString(x -> x, 2, [0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1])
+```
+
+```response title=Response
+01
+```
+
+## arrayPackBitsToString {#arrayPackBitsToString}
+
+Introduced in: v26.10.0
+
+Applies a lambda function to each element of the array and packs the resulting bits into a `String`.
+For each element the lambda returns an integer that is treated as a single bit (zero or non-zero).
+Bits are written most-significant-bit first; the length of the result is `ceil(size_of_array / 8)` bytes.
+    
+
+**Syntax**
+
+```sql
+arrayPackBitsToString(f, arr1[, arr2, ...])
+```
+
+**Arguments**
+
+- `f` — Lambda function producing the bit for each element. [`Lambda function`](/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+- `arr1[, arr2, ...]` — One or more arrays of equal size to pack. The lambda takes one argument per array. [`Array(T)`](/reference/data-types/array)
+
+**Returned value**
+
+Returns the packed bits. [`String`](/reference/data-types/string)
+
+**Examples**
+
+**Example**
+
+```sql title=Query
+SELECT arrayPackBitsToString(x -> x, [0, 0, 1, 1, 0, 0, 0, 0])
+```
+
+```response title=Response
+0
+```
+
+## arrayPackBitsToUInt64 {#arrayPackBitsToUInt64}
+
+Introduced in: v26.10.0
+
+Applies a lambda function to each element of the array and packs the resulting bits into a `UInt64`.
+For each element the lambda returns an integer that is treated as a single bit (zero or non-zero).
+The bit stream is laid out across bytes most-significant-bit first (the same bytes as `arrayPackBitsToString`),
+and the bytes are interpreted in little-endian order, so
+`arrayPackBitsToUInt64(f, arr) = reinterpretAsUInt64(arrayPackBitsToString(f, arr))`.
+Only the first 64 elements are used; if there are fewer, the remaining bits are zero.
+    
+
+**Syntax**
+
+```sql
+arrayPackBitsToUInt64(f, arr1[, arr2, ...])
+```
+
+**Arguments**
+
+- `f` — Lambda function producing the bit for each element. [`Lambda function`](/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+- `arr1[, arr2, ...]` — One or more arrays of equal size to pack. The lambda takes one argument per array. [`Array(T)`](/reference/data-types/array)
+
+**Returned value**
+
+Returns the packed bits. [`UInt64`](/reference/data-types/int-uint)
+
+**Examples**
+
+**Example**
+
+```sql title=Query
+SELECT arrayPackBitsToUInt64(x -> x, [1, 0, 0, 0, 0, 0])
+```
+
+```response title=Response
+128
+```
+
+## arrayPartialPermutations {#arrayPartialPermutations}
+
+Introduced in: v26.10.0
+
+Returns all partial permutations (ordered selections without repeated indexes) of length `k` from the source array. Enumeration is done by indexes, so equal values may produce duplicate rows in the result. For `k = 0`, returns `[[]]`. The total result size per block is limited by `function_range_max_elements_in_block`; every generated array counts as its size plus one.
+
+**Syntax**
+
+```sql
+arrayPartialPermutations(arr, k)
+```
+
+**Arguments**
+
+- `arr` — Source array. [`Array(T)`](/reference/data-types/array)
+- `k` — Length of each generated partial permutation. Must not exceed source array size. Supports `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, and `UInt64`. [`(U)Int*`](/reference/data-types/int-uint)
+
+**Returned value**
+
+All partial permutations of length `k`. [`Array(Array(T))`](/reference/data-types/array)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT arrayPartialPermutations([1, 2, 3], 2);
+```
+
+```response title=Response
+[[1,2],[1,3],[2,1],[2,3],[3,1],[3,2]]
+```
+
+**`k = 0` example**
+
+```sql title=Query
+SELECT arrayPartialPermutations([1, 2, 3], 0);
+```
+
+```response title=Response
+[[]]
 ```
 
 ## arrayPartialReverseSort {#arrayPartialReverseSort}
@@ -2633,6 +3109,38 @@ SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 
 ```response title=Response
 [2,1,0]
+```
+
+## arrayPermutations {#arrayPermutations}
+
+Introduced in: v26.10.0
+
+Returns all permutations of elements from the source array. Enumeration is done by indexes, so equal values may produce duplicate rows in the result. For an empty source array, returns `[[]]`. The total result size per block is limited by `function_range_max_elements_in_block`; every generated array counts as its size plus one.
+
+**Syntax**
+
+```sql
+arrayPermutations(arr)
+```
+
+**Arguments**
+
+- `arr` — Source array. [`Array(T)`](/reference/data-types/array)
+
+**Returned value**
+
+All permutations of the source array. [`Array(Array(T))`](/reference/data-types/array)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT arrayPermutations([1, 2, 3]);
+```
+
+```response title=Response
+[[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]]
 ```
 
 ## arrayPopBack {#arrayPopBack}
@@ -3004,6 +3512,8 @@ Introduced in: v20.4.0
 
 Applies an aggregate function to array elements in the given ranges and returns an array containing the result corresponding to each range.
 The function will return the same result as multiple `arrayReduce(agg_func, arraySlice(arr1, index, length), ...)`.
+The only difference is that the length is unsigned: a length greater than the maximum `Int64` value selects the rest of the array,
+while `arraySlice` interprets such a value as a negative length.
 
 **Syntax**
 
@@ -3082,6 +3592,62 @@ SELECT arrayRemove(['a', NULL, 'b', NULL], NULL)
 
 ```response title=Response
 ['a','b']
+```
+
+## arrayRemoveAt {#arrayRemoveAt}
+
+Introduced in: v26.10.0
+
+Removes the element at the specified index from an array.
+Indexes are 1-based. Negative indexes count from the end of the array.
+If the index is outside the array bounds, the array is returned unchanged.
+Index 0 is invalid.
+
+**Syntax**
+
+```sql
+arrayRemoveAt(arr, index)
+```
+
+**Arguments**
+
+- `arr` — Source array. [`Array(T)`](/reference/data-types/array)
+- `index` — Non-Nullable integer index of the element to remove. Negative indexes count from the end. [`(U)Int8/16/32/64`](/reference/data-types/int-uint)
+
+**Returned value**
+
+Returns the source array without the element at `index`, or the original array if `index` is out of bounds. [`Array(T)`](/reference/data-types/array)
+
+**Examples**
+
+**Positive index**
+
+```sql title=Query
+SELECT arrayRemoveAt([1, 2, 3, 4], 2)
+```
+
+```response title=Response
+[1,3,4]
+```
+
+**Negative index**
+
+```sql title=Query
+SELECT arrayRemoveAt([1, 2, 3, 4], -1)
+```
+
+```response title=Response
+[1,2,3]
+```
+
+**Out of bounds**
+
+```sql title=Query
+SELECT arrayRemoveAt([1, 2, 3, 4], 10)
+```
+
+```response title=Response
+[1,2,3,4]
 ```
 
 ## arrayResize {#arrayResize}
@@ -3641,6 +4207,8 @@ The first argument may also be a [QBit](/reference/data-types/qbit): the result 
 arraySlice(arr, offset [, length])
 ```
 
+**Aliases**: `slice`
+
 **Arguments**
 
 - `arr` — Array to slice. [`Array(T)`](/reference/data-types/array) or [`QBit`](/reference/data-types/qbit)
@@ -3992,6 +4560,169 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 [['a','c'],['b','d']]
 ```
 
+## arrayTreePreorder {#arrayTreePreorder}
+
+Introduced in: v26.11.0
+
+Lays out a tree (or a forest) stored as two arrays, node identifiers and parent identifiers, in depth-first preorder.
+
+Element `i` of `ids` and `parent_ids` describes input node `i` and its parent.
+The function returns a named tuple of four arrays. All of them are in preorder, and all positions are 1-based:
+element `k` describes the `k`-th node of the preorder.
+- `order[k]` — the input index of this node. Data arrays are brought into preorder with `arrayMap(i -> x[i], t.order)`.
+- `size[k]` — the number of nodes in the subtree of this node, including the node itself. The subtree is the contiguous range of positions `[k, k + size[k])`.
+- `parent[k]` — the preorder position of the node whose identifier equals the parent identifier of this node, or `0` if there is no such node.
+- `depth[k]` — the distance from this node to the root of its tree, `0` for the roots.
+
+Node `a` is an ancestor of node `b` if and only if `a < b AND b < a + size[a]`.
+Additive aggregates over a subtree are the difference of two prefix sums (see [`arrayCumSum`](#arrayCumSum)).
+Other aggregates over a subtree are available with [`arraySlice`](#arraySlice) of a data array reordered into preorder.
+
+The trees are written one by one, in the input order of their roots, and the children of each node are visited in the input order,
+so the result is deterministic. The time complexity is linear in the array size, and the depth of the tree is not limited.
+
+The function does not throw on the content of the arrays, and makes a valid forest from any input:
+- A node is a root if its parent identifier is `NULL` or is not present in `ids`, for example an empty string or an orphan node.
+- If the parent links make a cycle, the link of the node of the cycle which comes first in the input is cut, and this node becomes a root. Its `parent` keeps the position of its real parent, which is greater than its own position, so `parent[k] > k` shows that a cycle was cut at position `k`. A node which is its own parent gets `parent[k] = k`.
+- If `ids` has duplicate values, the children are attached to the first occurrence.
+
+The identifiers are compared by hashing. They cannot be or contain floating-point numbers (because `0.0` and `-0.0` are equal, but have different hashes),
+or `Dynamic`, `Variant` and `JSON` values (because a `NULL` inside them would be compared as an ordinary value, while a `NULL` of a `Nullable` type makes a root).
+
+The structure of the input follows from the result (see the examples below):
+- Is there a cycle: `arrayExists((p, k) -> p > k, t.parent, arrayEnumerate(t.parent))`.
+- Positions where the cycles were cut: `arrayFilter((k, p) -> p > k, arrayEnumerate(t.parent), t.parent)`.
+- Positions of the tree roots: `arrayFilter((k, d) -> d = 0, arrayEnumerate(t.depth), t.depth)`, and the number of trees is `countEqual(t.depth, 0)`.
+- Positions of the nodes whose parent identifier is not present: `arrayFilter((k, p) -> p = 0, arrayEnumerate(t.parent), t.parent)`.
+- Is the input one tree with a real root: `t.size[1] = length(ids) AND t.parent[1] <= 1`. It accepts both root conventions (a parent identifier which is not present gives `0`, a self-loop gives `1`), and rejects an array which is one big cycle.
+- Positions of the nodes of the cycle cut at position `r`: `arrayFilter(x -> x + t.size[x] > t.parent[r], range(r, t.parent[r] + 1))`. These are the nodes from `r` down to its real parent `t.parent[r]` whose subtree contains the real parent.
+- Duplicate identifiers: `arrayEnumerateUniq(ids) > 1`.
+
+To get the input index of the node at position `k`, use `t.order[k]`.
+
+**Syntax**
+
+```sql
+arrayTreePreorder(ids, parent_ids)
+```
+
+**Arguments**
+
+- `ids` — Node identifiers. Floating-point numbers, `Dynamic`, `Variant` and `JSON` are not supported. [`Array(T)`](/reference/data-types/array)
+- `parent_ids` — Parent identifiers, one per node. Must have the same size as `ids`. [`Array(T)`](/reference/data-types/array)
+
+**Returned value**
+
+Returns the tuple of the preorder layout. [`Tuple(order Array(UInt32), size Array(UInt32), parent Array(UInt32), depth Array(UInt32))`](/reference/data-types/tuple)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT arrayTreePreorder(['G2', 'A', 'T1', 'B', 'G1', 'G3'], ['B', '', 'B', 'A', 'A', 'A']) AS t
+```
+
+```response title=Response
+([2,4,1,3,5,6],[6,3,1,1,1,1],[0,1,2,2,1,1],[0,1,2,2,1,1])
+```
+
+**Cost and number of descendants of each agent span of a trace**
+
+```sql title=Query
+WITH
+    ['A', 'G1', 'B', 'G2', 'T1', 'G3'] AS ids,
+    ['', 'A', 'A', 'B', 'B', 'A'] AS parent_ids,
+    ['AGENT', 'GENERATION', 'AGENT', 'GENERATION', 'TOOL', 'GENERATION'] AS types,
+    [0, 2, 0, 3, 0, 1] AS costs,
+    arrayTreePreorder(ids, parent_ids) AS t,
+    arrayCumSum(arrayMap(i -> costs[i], t.order)) AS cum
+SELECT arrayMap(k -> (ids[t.order[k]], cum[k + t.size[k] - 1] - cum[k], t.size[k] - 1),
+    arrayFilter(k -> types[t.order[k]] = 'AGENT', arrayEnumerate(t.order))) AS res
+```
+
+```response title=Response
+[('A',6,5),('B',3,2)]
+```
+
+**Invalid input: a cycle C -> D -> E -> C, a node F below the cycle, an orphan G**
+
+```sql title=Query
+SELECT arrayTreePreorder(['A', 'B', 'C', 'D', 'E', 'F', 'G'], ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
+```
+
+```response title=Response
+([1,2,3,5,4,6,7],[2,1,4,2,1,1,1],[0,1,5,3,4,3,0],[0,1,0,1,2,1,0])
+```
+
+**Detect cycles and find where they were cut**
+
+```sql title=Query
+WITH
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
+    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
+SELECT
+    arrayExists((p, k) -> p > k, t.parent, arrayEnumerate(t.parent)) AS has_cycle,
+    arrayFilter((k, p) -> p > k, arrayEnumerate(t.parent), t.parent) AS cut_positions,
+    arrayMap(k -> ids[t.order[k]], cut_positions) AS cut_ids
+```
+
+```response title=Response
+┌─has_cycle─┬─cut_positions─┬─cut_ids─┐
+│         1 │ [3]           │ ['C']   │
+└───────────┴───────────────┴─────────┘
+```
+
+**Roots, number of trees, nodes whose parent is not found, check for one tree**
+
+```sql title=Query
+WITH
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
+    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
+SELECT
+    arrayMap(k -> ids[t.order[k]], arrayFilter((k, d) -> d = 0, arrayEnumerate(t.depth), t.depth)) AS roots,
+    countEqual(t.depth, 0) AS trees,
+    arrayMap(k -> ids[t.order[k]], arrayFilter((k, p) -> p = 0, arrayEnumerate(t.parent), t.parent)) AS parent_not_found,
+    t.size[1] = length(ids) AND t.parent[1] <= 1 AS is_one_tree
+```
+
+```response title=Response
+┌─roots─────────┬─trees─┬─parent_not_found─┬─is_one_tree─┐
+│ ['A','C','G'] │     3 │ ['A','G']        │           0 │
+└───────────────┴───────┴──────────────────┴─────────────┘
+```
+
+**Nodes of the cycle cut at position 3**
+
+```sql title=Query
+WITH
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
+    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t,
+    3 AS r
+SELECT arrayMap(k -> ids[t.order[k]], arrayFilter(x -> x + t.size[x] > t.parent[r], range(r, t.parent[r] + 1))) AS cycle
+```
+
+```response title=Response
+┌─cycle─────────┐
+│ ['C','E','D'] │
+└───────────────┘
+```
+
+**Duplicate identifiers: children are attached to the first occurrence**
+
+```sql title=Query
+WITH ['a', 'b', 'a', 'c'] AS ids
+SELECT
+    arrayFilter((id, n) -> n > 1, ids, arrayEnumerateUniq(ids)) AS duplicate_ids,
+    arrayTreePreorder(ids, ['', 'a', '', 'a']).order AS order
+```
+
+```response title=Response
+┌─duplicate_ids─┬─order─────┐
+│ ['a']         │ [1,2,4,3] │
+└───────────────┴───────────┘
+```
+
 ## arrayUnion {#arrayUnion}
 
 Introduced in: v24.10.0
@@ -4003,6 +4734,8 @@ Takes multiple arrays and returns an array which contains all elements that are 
 ```sql
 arrayUnion(arr1, arr2, ..., arrN)
 ```
+
+**Aliases**: `array_union`
 
 **Arguments**
 
@@ -4166,6 +4899,8 @@ Combines multiple arrays into a single array, allowing for unaligned arrays (arr
 arrayZipUnaligned(arr1, arr2, ..., arrN)
 ```
 
+**Aliases**: `zip`
+
 **Arguments**
 
 - `arr1, arr2, ..., arrN` — N arrays to combine into a single array. [`Array(T)`](/reference/data-types/array)
@@ -4184,6 +4919,39 @@ SELECT arrayZipUnaligned(['a'], [1, 2, 3]);
 
 ```response title=Response
 [('a',1),(NULL,2),(NULL,3)]
+```
+
+## array_position {#array_position}
+
+Introduced in: v26.8.0
+
+PostgreSQL compatibility function. Returns the 1-based position of the first occurrence of the element in the array, or `NULL` when the element does not occur. A `NULL` element searches for the first `NULL` of the array, as in PostgreSQL. The native ClickHouse counterpart is `indexOf`, which returns 0 instead of `NULL`.
+
+**Syntax**
+
+```sql
+array_position(array, element)
+```
+
+**Arguments**
+
+- `array` — The array to search. [`Array(T)`](/reference/data-types/array)
+- `element` — The element to search for. [`Any`](/reference/data-types/index)
+
+**Returned value**
+
+The 1-based position of the first occurrence, or `NULL` when the element does not occur. [`Nullable(UInt64)`](/reference/data-types/nullable)
+
+**Examples**
+
+**Example**
+
+```sql title=Query
+SELECT array_position(['a', 'b'], 'b')
+```
+
+```response title=Response
+2
 ```
 
 ## countEqual {#countEqual}
@@ -4230,7 +4998,7 @@ Checks whether the input array is empty.
 An array is considered empty if it does not contain any elements.
 
 <Note>
-Can be optimized by enabling the [`optimize_functions_to_subcolumns` setting](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
+When the column isn't used anywhere else in the query, the function can read only the [size0](/reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`. This optimization is controlled by the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting, which is enabled by default.
 </Note>
 
 The function also works for Strings or UUIDs.
@@ -5193,7 +5961,7 @@ It is ok to have ASCII NULL bytes in strings, and they will be counted as well.
 length(x)
 ```
 
-**Aliases**: `OCTET_LENGTH`, `CARDINALITY`
+**Aliases**: `CARDINALITY`, `OCTET_LENGTH`
 
 **Arguments**
 
@@ -5286,7 +6054,7 @@ Checks whether the input array is non-empty.
 An array is considered non-empty if it contains at least one element.
 
 <Note>
-Can be optimized by enabling the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
+When the column isn't used anywhere else in the query, the function can read only the [size0](/reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`. This optimization is controlled by the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting, which is enabled by default.
 </Note>
 
 The function also works for Strings or UUIDs.

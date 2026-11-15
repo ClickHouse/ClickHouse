@@ -27,7 +27,7 @@ ENV CONCURRENCY=""
 ENV NODES_FILE_PATH="/nodes.txt"
 ENV TEST_OUTPUT="/test_output"
 
-RUN mkdir "/root/.ssh"
+RUN mkdir -p "/root/.ssh"
 RUN touch "/root/.ssh/known_hosts"
 
 # install java

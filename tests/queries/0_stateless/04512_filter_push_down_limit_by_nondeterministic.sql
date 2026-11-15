@@ -5,7 +5,6 @@
 -- becomes the local read condition (generateSnowflakeID is per-row non-deterministic).
 
 DROP TABLE IF EXISTS t_04512;
-SET enable_analyzer = 1;
 SET query_plan_filter_push_down = 1;
 
 DROP TABLE IF EXISTS t_04512;

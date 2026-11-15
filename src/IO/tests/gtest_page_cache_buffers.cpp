@@ -499,8 +499,8 @@ TEST(PageCacheBuffers, ClaimLeadRoleAdoptsBlockCachedSinceResolve)
     /// A concurrent writer populates the block with 'C'.
     EXPECT_EQ(claimedWrite(*early[0].writer, makeChain(0, block_size, 'C')), block_size);
 
-    /// The late writer's takeFillRole re-probes: the block is now resident, so it is reported as
-    /// available (the whole block) with no role to fill.
+    /// The late writer's takeFillRole re-probes: the block is now resident, so it holds no role and
+    /// `committed()` reports the whole block.
     auto & late_writer = *late[0].writer;
     auto role = late_writer.takeFillRole();
     EXPECT_FALSE(static_cast<bool>(role)) << "nothing left to fill: the block is already committed";

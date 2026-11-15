@@ -16,6 +16,13 @@ enum class RefreshScheduleKind : UInt8
     EVERY
 };
 
+enum class RefreshMode : UInt8
+{
+    Replace,            /// no APPEND — recompute the whole query and replace the target.
+    AppendFull,         /// APPEND — append the full query result each refresh.
+    AppendIncremental,  /// APPEND INCREMENTAL — append only rows committed to the source since the last refresh.
+};
+
 /// Strategy for MATERIALIZED VIEW ... REFRESH ..
 class ASTRefreshStrategy : public IAST
 {
@@ -26,7 +33,10 @@ public:
     ASTTimeInterval * offset = nullptr;
     ASTTimeInterval * spread = nullptr;
     RefreshScheduleKind schedule_kind{RefreshScheduleKind::UNKNOWN};
-    bool append = false;
+    RefreshMode mode = RefreshMode::Replace;
+
+    bool isAppend() const { return mode != RefreshMode::Replace; }
+    bool isIncremental() const { return mode == RefreshMode::AppendIncremental; }
 
     String getID(char) const override { return "Refresh strategy definition"; }
 
