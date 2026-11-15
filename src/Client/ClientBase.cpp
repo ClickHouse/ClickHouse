@@ -4441,6 +4441,7 @@ void ClientBase::initAIProvider()
         LOG_DEBUG(logger, "Failed to initialize AI SQL generator: {}", e.what());
     }
 }
+#endif
 
 std::string ClientBase::executeQueryForSingleString(const std::string & query)
 {
@@ -4536,7 +4537,6 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
         return "";
     }
 }
-#endif
 
 Block ClientBase::fetchDocumentation(const String & query, const String & word)
 {
@@ -4754,7 +4754,6 @@ bool ClientBase::processHelpCommand(const String & word_arg)
     return true;
 }
 
-#if USE_CLIENT_AI
 void ClientBase::syncDefaultDatabase()
 {
     try
@@ -4771,6 +4770,7 @@ void ClientBase::syncDefaultDatabase()
     }
 }
 
+#if USE_CLIENT_AI
 bool ClientBase::checkAIProviderAcknowledgment()
 {
     // If API key came from environment and user hasn't acknowledged yet, ask for confirmation

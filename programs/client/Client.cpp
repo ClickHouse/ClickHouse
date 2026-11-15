@@ -1114,7 +1114,7 @@ void Client::connect()
     ///    the server considers the current database;
     ///  - {database} appears in the prompt string: querying the server is pointless
     ///    when the macro is absent and the result would never be shown.
-    if (is_interactive && default_database.empty() && prompt.find("{database}") != String::npos)
+    if (is_interactive && default_database.empty() && prompt.contains("{database}"))
         syncDefaultDatabase();
 }
 
