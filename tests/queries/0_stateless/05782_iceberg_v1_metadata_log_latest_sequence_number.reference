@@ -1,0 +1,7 @@
+--- empty format v1 table ---
+1	\N	\N
+--- after two inserts ---
+0	0	0
+0	0	0
+--- matches system.iceberg_files ---
+2	2
