@@ -42,6 +42,10 @@ namespace DB::WebAssembly
 namespace
 {
 
+/// The single linear memory every ABI in the runtime reads and writes. A module may export more
+/// than one memory; only this one takes part in a call.
+constexpr std::string_view MEMORY_EXPORT_NAME = "memory";
+
 void setStoreFuel(wasmtime::Store::Context ctx, const WasmModule::Config & cfg, std::string_view phase)
 {
     if (!cfg.usesFuelAccounting())
@@ -83,18 +87,20 @@ auto wasmtimeToNative(const wasmtime::Val & val)
         static_assert(false, "Unsupported WasmValKind");
 }
 
-wasmtime::ValKind toWasmTimeValKind(WasmValKind value)
+static wasmtime::ValType toWasmTimeValType(WasmValKind value)
 {
-    #define M(T) \
-        if (value == WasmValKind::T) \
-            return wasmtime::ValKind::T;
-
-    APPLY_FOR_WASM_TYPES(M)
-    #undef M
+    switch (value)
+    {
+        case WasmValKind::I32: return wasmtime::ValType::i32();
+        case WasmValKind::I64: return wasmtime::ValType::i64();
+        case WasmValKind::F32: return wasmtime::ValType::f32();
+        case WasmValKind::F64: return wasmtime::ValType::f64();
+        case WasmValKind::V128: return wasmtime::ValType::v128();
+    }
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-WasmValKind fromWasmTimeValKind(wasmtime::ValKind val_type)
+static WasmValKind fromWasmTimeValKind(wasmtime::ValKind val_type)
 {
     #define M(T) \
         if (wasmtime::ValKind::T == val_type) \
@@ -105,7 +111,17 @@ WasmValKind fromWasmTimeValKind(wasmtime::ValKind val_type)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-WasmVal fromWasmTimeValue(const wasmtime::Val & wasm_val)
+static WasmValKind fromWasmTimeValType(wasmtime::ValType::Ref ref)
+{
+    if (ref == wasmtime::ValType::i32()) return WasmValKind::I32;
+    if (ref == wasmtime::ValType::i64()) return WasmValKind::I64;
+    if (ref == wasmtime::ValType::f32()) return WasmValKind::F32;
+    if (ref == wasmtime::ValType::f64()) return WasmValKind::F64;
+    if (ref == wasmtime::ValType::v128()) return WasmValKind::V128;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
+}
+
+static WasmVal fromWasmTimeValue(const wasmtime::Val & wasm_val)
 {
     #define M(T) \
     { \
@@ -121,7 +137,7 @@ WasmVal fromWasmTimeValue(const wasmtime::Val & wasm_val)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-wasmtime::Val toWasmTimeValue(WasmVal val)
+static wasmtime::Val toWasmTimeValue(WasmVal val)
 {
     #define M(T) \
     { \
@@ -136,21 +152,21 @@ wasmtime::Val toWasmTimeValue(WasmVal val)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-wasmtime::FuncType toWasmFunctionType(const WasmFunctionDeclaration & host_function_decl)
+static wasmtime::FuncType toWasmFunctionType(const WasmFunctionDeclaration & host_function_decl)
 {
     auto argument_types = host_function_decl.getArgumentTypes();
     std::vector<wasmtime::ValType> param_types;
     param_types.reserve(argument_types.size());
     for (auto & argument_type : argument_types)
     {
-        param_types.emplace_back(toWasmTimeValKind(argument_type));
+        param_types.emplace_back(toWasmTimeValType(argument_type));
     }
 
     std::vector<wasmtime::ValType> result_type;
     result_type.reserve(1);
     if (auto return_type = host_function_decl.getReturnType())
     {
-        result_type.emplace_back(toWasmTimeValKind(return_type.value()));
+        result_type.emplace_back(toWasmTimeValType(return_type.value()));
     }
 
     return wasmtime::FuncType::from_iters(param_types, result_type);
@@ -168,6 +184,11 @@ struct WasmTimeRuntime::Impl
         config.epoch_interruption(true);
         config.signals_based_traps(false);
         config.wasm_exceptions(true);
+#if !defined(NDEBUG)
+        /// The Cranelift optimizer is prohibitively slow in debug builds and can
+        /// hit debug-only traps while simplifying even small modules.
+        config.cranelift_opt_level(wasmtime::OptLevel::None);
+#endif
         return config;
     }
 
@@ -202,7 +223,7 @@ struct WasmTimeStoreData
     std::shared_ptr<std::atomic_bool> stop_requested;
 };
 
-wasmtime::Result<wasmtime::DeadlineKind> epochDeadlineCallback(
+static wasmtime::Result<wasmtime::DeadlineKind> epochDeadlineCallback(
     wasmtime::Store::Context ctx, uint64_t & epoch_deadline_delta)
 {
     epoch_deadline_delta += 1;
@@ -243,6 +264,72 @@ public:
                 ptr, size, memory_span.size());
         }
         return memory_span.subspan(ptr, size);
+    }
+
+    std::optional<size_t> getLinearMemorySize() const override
+    {
+        auto & store_ref = const_cast<wasmtime::Store &>(store);
+        auto mem_result = const_cast<wasmtime::Instance &>(instance).get(store_ref, MEMORY_EXPORT_NAME);
+        if (!mem_result || !std::holds_alternative<wasmtime::Memory>(mem_result.value()))
+            return {};
+        return std::get<wasmtime::Memory>(mem_result.value()).data(store_ref).size();
+    }
+
+    std::optional<size_t> getInitialLinearMemorySize() const override
+    {
+        auto & store_ref = const_cast<wasmtime::Store &>(store);
+        auto mem_result = const_cast<wasmtime::Instance &>(instance).get(store_ref, MEMORY_EXPORT_NAME);
+        if (!mem_result || !std::holds_alternative<wasmtime::Memory>(mem_result.value()))
+            return {};
+        auto memory_type = std::get<wasmtime::Memory>(mem_result.value()).type(store_ref.context());
+        return static_cast<size_t>(memory_type->min()) * WASM_PAGE_SIZE;
+    }
+
+    std::optional<size_t> getMaxLinearMemorySize() const override
+    {
+        /// `store.limiter(cfg.memory_limit, ...)` is only an upper cap. A module may declare
+        /// a smaller maximum for its own memory, and then that is the real ceiling, so report
+        /// whichever binds first. Reporting the configured limit alone would let a caller size
+        /// work against memory the guest can never allocate.
+        /// A module declaring `memory N 0` bounds itself at zero bytes and can never allocate.
+        /// That is a ceiling like any other, not the absence of one, so it must not collapse into
+        /// the unbounded case below - the caller would then size work against memory the guest
+        /// cannot hold at all.
+        std::optional<size_t> module_max;
+        auto & store_ref = const_cast<wasmtime::Store &>(store);
+        auto mem_result = const_cast<wasmtime::Instance &>(instance).get(store_ref, MEMORY_EXPORT_NAME);
+        if (mem_result && std::holds_alternative<wasmtime::Memory>(mem_result.value()))
+        {
+            auto memory_type = std::get<wasmtime::Memory>(mem_result.value()).type(store_ref.context());
+            auto declared_max_pages = memory_type->max();
+            if (declared_max_pages.has_value())
+                module_max = static_cast<size_t>(*declared_max_pages) * WASM_PAGE_SIZE;
+        }
+
+        /// Wasmtime grows memory in whole pages, and the limiter refuses a growth that would
+        /// cross the configured cap, so a cap that is not a multiple of the page size can never
+        /// be reached: with `memory_limit = 100000` the guest holds one page and the growth to
+        /// two is refused, making the real ceiling 65536. Report what is reachable, or a caller
+        /// would treat sizes in the unreachable remainder as ones the guest might still hold.
+        /// A cap below one page is rejected by the functions that need guest memory before they
+        /// reach a compartment, so the floor is never zero for a configured cap they observe.
+        ///
+        /// `memory_limit` is a byte count the query can set to anything a `UInt64` holds, well
+        /// past what a `wasm32` guest can address, so cap it at the address space too: a ceiling
+        /// of 10 GiB would otherwise make a 5 GiB row look like one that might still fit, and it
+        /// would fail late in `allocateInWasmMemory` instead of being reported as a row no batch
+        /// size can accommodate.
+        size_t host_max = static_cast<size_t>(std::min<uint64_t>(cfg.memory_limit, WASM_MAX_LINEAR_MEMORY_SIZE) / WASM_PAGE_SIZE) * WASM_PAGE_SIZE;
+        if (host_max && module_max)
+            return std::min(host_max, *module_max);
+        if (host_max)
+            return host_max;
+        if (module_max)
+            return module_max;
+        /// Neither a host cap nor a module-declared maximum, but growth is still not unbounded:
+        /// a `wasm32` memory cannot exceed its address space, and that is a ceiling like any
+        /// other rather than the absence of one.
+        return static_cast<size_t>(WASM_MAX_LINEAR_MEMORY_SIZE);
     }
 
     VectorWithMemoryTracking<WasmVal> invokeImpl(std::string_view function_name, const VectorWithMemoryTracking<WasmVal> & params, StopToken stop_token) override
@@ -304,7 +391,7 @@ public:
 
     wasmtime::Memory getMemory()
     {
-        auto memory_result = instance.get(store, "memory");
+        auto memory_result = instance.get(store, MEMORY_EXPORT_NAME);
         if (!memory_result || !std::holds_alternative<wasmtime::Memory>(memory_result.value()))
         {
             throw Exception(ErrorCodes::WASM_ERROR, "cannot get memory from wasm instance");
@@ -386,7 +473,7 @@ wasmtime::Result<std::monostate, wasmtime::Trap> callHostFunction(
 }
 }
 
-WasmFunctionDeclaration buildFunctionDeclaration(std::string_view module_name, std::string_view function_name, wasmtime::FuncType::Ref function_info)
+static WasmFunctionDeclaration buildFunctionDeclaration(std::string_view module_name, std::string_view function_name, wasmtime::FuncType::Ref function_info)
 {
     if (function_info.results().size() > 1)
         throw Exception(ErrorCodes::WASM_ERROR, "Function '{}' has more than one return value", function_name);
@@ -394,14 +481,14 @@ WasmFunctionDeclaration buildFunctionDeclaration(std::string_view module_name, s
     std::optional<WasmValKind> return_type;
     if (function_info.results().size() == 1)
     {
-        return_type = fromWasmTimeValKind(function_info.results().begin()->kind());
+        return_type = fromWasmTimeValType(*function_info.results().begin());
     }
 
     std::vector<WasmValKind> argument_types;
     argument_types.reserve(function_info.params().size());
     for (auto function_argument : function_info.params())
     {
-        argument_types.emplace_back(fromWasmTimeValKind(function_argument.kind()));
+        argument_types.emplace_back(fromWasmTimeValType(function_argument));
     }
 
     return WasmFunctionDeclaration(module_name, function_name, std::move(argument_types), return_type);
@@ -446,7 +533,15 @@ public:
 
         wasmtime::Store store(engine);
         if (cfg.memory_limit)
+        {
+            /// The limiter refuses any growth that would cross the cap, and memory grows in whole
+            /// 64 KiB pages, so a cap below one page lets the guest hold no memory at all. That is
+            /// only a problem for a caller that has to place data in guest memory, and this runs
+            /// before the ABI is known - a function passing its arguments as WebAssembly values
+            /// never touches the memory and stays callable. The sub-page cap is therefore rejected
+            /// by the surfaces that need guest memory, not here.
             store.limiter(cfg.memory_limit, -1, -1, -1, -1);
+        }
 
         setStoreFuel(store.context(), cfg, "wasm module instantiation");
 

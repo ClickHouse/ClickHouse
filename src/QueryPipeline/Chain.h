@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Processors/IProcessor.h>
+#include <Processors/IProcessor_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Core/Block_fwd.h>
 
@@ -24,7 +24,8 @@ public:
     Chain(Chain &&) = default;
     Chain(const Chain &) = delete;
 
-    Chain & operator=(Chain &&) = default;
+    /// Not noexcept: the QueryPlanResourceHolder it owns appends on move-assignment, which can throw.
+    Chain & operator=(Chain &&) = default; /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
     Chain & operator=(const Chain &) = delete;
 
     explicit Chain(ProcessorPtr processor);

@@ -6,12 +6,14 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <mutex>
 
 #define SYSTEM_PERIODIC_LOG_ELEMENTS(M) \
     M(ErrorLogElement) \
     M(MetricLogElement) \
     M(TransposedMetricLogElement) \
+    M(BucketedMetricLogElement) \
     M(AggregatedZooKeeperLogElement) \
 
 namespace DB
@@ -52,8 +54,10 @@ private:
 
     std::mutex step_mutex;
     std::unique_ptr<ThreadFromGlobalPool> collecting_thread;
-    size_t collect_interval_milliseconds;
+    size_t collect_interval_milliseconds{};
     std::atomic<bool> is_shutdown_metric_thread{false};
+    std::mutex sleep_mutex;
+    std::condition_variable sleep_cv;
 };
 
 }

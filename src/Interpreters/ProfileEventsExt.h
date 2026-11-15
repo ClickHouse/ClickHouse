@@ -22,12 +22,12 @@ constexpr size_t VALUE_COLUMN_INDEX = 5;
 
 struct ProfileEventsSnapshot
 {
-    UInt64 thread_id;
+    UInt64 thread_id{};
     CountersIncrement counters;
-    Int64 memory_usage;
-    Int64 peak_memory_usage;
-    Int64 temp_data_on_disk_usage;
-    time_t current_time;
+    Int64 memory_usage{};
+    Int64 peak_memory_usage{};
+    Int64 temp_data_on_disk_usage{};
+    time_t current_time{};
 };
 
 using ThreadIdToCountersSnapshot = std::unordered_map<UInt64, Counters::Snapshot>;
@@ -41,6 +41,10 @@ DB::Block getProfileEvents(
     const String & host_name,
     DB::InternalProfileEventsQueuePtr profile_queue,
     ThreadIdToCountersSnapshot & last_sent_snapshots);
+
+/// Decreases the increments of `event` in a `ProfileEvents` packet `block` by `amount` in total, never below zero,
+/// and decreases `amount` by what was subtracted, so that it can be spread over several packets.
+void subtractIncrements(DB::Block & block, Event event, UInt64 & amount);
 
 /// This is for ProfileEvents packets.
 enum Type : int8_t

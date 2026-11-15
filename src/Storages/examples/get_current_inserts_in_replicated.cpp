@@ -9,6 +9,7 @@
 
 #include <filesystem>
 #include <iostream>
+#include <Examples/clickhouse_examples.h>
 
 namespace fs = std::filesystem;
 

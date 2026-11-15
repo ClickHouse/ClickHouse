@@ -70,13 +70,11 @@ void Chunk::checkNumRowsIsConsistent()
 
 MutableColumns Chunk::mutateColumns()
 {
-    size_t num_columns = columns.size();
-    MutableColumns mutable_columns(num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-        mutable_columns[i] = IColumn::mutate(std::move(columns[i]));
-
-    columns.clear();
-    num_rows = 0;
+    MutableColumns mutable_columns(columns.size());
+    /// Detach first: `IColumn::mutate` consumes the column even when it throws, and a chunk never holds a null column.
+    Columns detached_columns = detachColumns();
+    for (size_t i = 0; i < detached_columns.size(); ++i)
+        mutable_columns[i] = IColumn::mutate(std::move(detached_columns[i]));
 
     return mutable_columns;
 }
@@ -221,57 +219,20 @@ void materializeChunk(Chunk & chunk)
     chunk.setColumns(std::move(columns), num_rows);
 }
 
+void materializeChunk(Chunk & chunk, const ColumnNumbers & column_positions)
+{
+    const size_t num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    for (const auto pos : column_positions)
+        columns[pos] = removeSpecialRepresentations(columns[pos]->convertToFullColumnIfConst());
+    chunk.setColumns(std::move(columns), num_rows);
+}
+
 void compactReplicatedColumns(Chunk & chunk)
 {
     size_t num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
-
-    /// Step 1: Materialize columns where replication provides no benefit.
-    for (auto & col : columns)
-        col = convertToFullColumnIfReplicationNotUseful(col);
-
-    /// Step 2: Compact remaining ColumnReplicated columns.
-    /// First map shared indexes to the corresponding nested columns and their positions in the original columns.
-    struct IndexWithNestedColumns
-    {
-        ColumnPtr shared_index;
-        Columns nested_columns;
-        std::vector<size_t> positions;
-    };
-
-    std::unordered_map<const IColumn *, IndexWithNestedColumns> index_to_nested_cols_map;
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        if (!columns[i]->isReplicated())
-            continue;
-
-        const auto & rep = typeid_cast<const ColumnReplicated &>(*columns[i]);
-        const auto & src_index = rep.getIndexesColumn();
-        const auto * src_index_ptr = src_index.get();
-        if (auto it = index_to_nested_cols_map.find(src_index_ptr); it != index_to_nested_cols_map.end())
-        {
-            it->second.nested_columns.push_back(rep.getNestedColumn());
-            it->second.positions.push_back(i);
-        }
-        else
-            index_to_nested_cols_map[src_index_ptr] = {src_index, {rep.getNestedColumn()}, {i}};
-    }
-
-    /// Second compact the indexes with their nested columns and assign them back to the original columns.
-    for (const auto & [_, index_to_nested_cols] : index_to_nested_cols_map)
-    {
-        const auto & [shared_index, nested_columns, positions] = index_to_nested_cols;
-
-        ColumnIndex column_index(shared_index);
-        auto result = column_index.buildCompactIndexedColumns(nested_columns);
-        if (result.compact_indexes.get() != shared_index.get())
-        {
-            for (size_t j = 0; j < positions.size(); ++j)
-                columns[positions[j]] = ColumnReplicated::create(
-                    result.compact_indexed_columns[j], result.compact_indexes);
-        }
-    }
-
+    compactReplicatedColumns(columns);
     chunk.setColumns(std::move(columns), num_rows);
 }
 

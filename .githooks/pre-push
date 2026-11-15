@@ -15,12 +15,11 @@ while read -r local_ref local_sha remote_ref remote_sha; do
         continue
     fi
 
-    # For new branches, check commits not reachable from any remote branch
-    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
-        range=("$local_sha" --not --remotes)
-    else
-        range=("$remote_sha..$local_sha")
-    fi
+    # Exclude anything already reachable from a remote-tracking branch. Commits
+    # brought in by merging a remote-tracking ref (e.g. `git merge private/master`)
+    # are skipped because they live under `refs/remotes/`; commits authored
+    # locally are not on any remote yet and remain in scope.
+    range=("$local_sha" --not --remotes)
 
     # One git-log call per push ref. Records are NUL-separated (-z) so identities
     # containing tabs cannot bypass the check; fields within a record are newline-

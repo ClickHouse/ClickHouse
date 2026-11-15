@@ -2,6 +2,8 @@
 
 #include <Columns/IColumn_fwd.h>
 #include <Common/CollectionOfDerived.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Core/ColumnNumbers.h>
 #include <Core/Types_fwd.h>
 
 #include <memory>
@@ -140,7 +142,7 @@ private:
     void checkNumRowsIsConsistent();
 };
 
-using Chunks = std::vector<Chunk>;
+using Chunks = VectorWithMemoryTracking<Chunk>;
 
 /// AsyncInsert needs two kinds of information:
 /// - offsets of different sub-chunks
@@ -172,9 +174,10 @@ void removeSpecialColumnRepresentations(Chunk & chunk);
 /// Analog of materializeBlock: converts const columns to full and removes sparse/replicated representations.
 void materializeChunk(Chunk & chunk);
 
-/// Optimize ColumnReplicated columns memory layout:
-/// 1. Materializes columns where replication provides no benefit.
-/// 2. Compacts remaining ColumnReplicated columns by removing unreferenced nested rows.
+/// Materializes only the specified columns, preserving the representations of the remaining columns.
+void materializeChunk(Chunk & chunk, const ColumnNumbers & column_positions);
+
+/// Optimize ColumnReplicated columns memory layout.
 void compactReplicatedColumns(Chunk & chunk);
 
 /// Creates a chunk with the same columns but makes them constants with a default value and a specified number of rows.

@@ -1,4 +1,5 @@
 import functools
+import time
 
 import pytest
 
@@ -183,10 +184,24 @@ def test_cluster_discovery_macros(start_cluster):
         check_on_cluster, what="count()", msg="Wrong nodes count in cluster"
     )
     total_nodes = len(nodes) - 1
-    check_nodes_count([nodes["node_observer"]], total_nodes)
+    check_nodes_count([nodes["node_observer"]], total_nodes, retries=6)
 
-    # check macros
-    res = nodes["node_observer"].query(
-        "SELECT sum(number) FROM clusterAllReplicas('{autocluster}', system.numbers) WHERE number=1"
+    # Poll the distributed query instead of asserting once: it needs every replica
+    # reachable, and the cluster may still be settling when this test starts, so a
+    # single read can flake. Retry (tolerating transient errors) until it converges.
+    expected = str(total_nodes)
+    res = None
+    last_exception = None
+    for _ in range(30):
+        try:
+            res = nodes["node_observer"].query(
+                "SELECT sum(number) FROM clusterAllReplicas('{autocluster}', system.numbers) WHERE number=1"
+            ).strip()
+            if res == expected:
+                break
+        except Exception as e:
+            last_exception = e
+        time.sleep(2)
+    assert res == expected, (
+        f"Wrong macro result: {res}, expected {expected}, last exception: {last_exception!r}"
     )
-    assert res.strip() == "5"

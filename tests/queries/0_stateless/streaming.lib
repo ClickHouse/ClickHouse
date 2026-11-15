@@ -32,6 +32,7 @@ read_until()
 {
     local fifo="$1"
     local stop_string="$2"
+    local target_count="${3:-1}"
 
     # Check if the FIFO file exists
     if [[ ! -p "$fifo" ]]; then
@@ -39,11 +40,15 @@ read_until()
         return 1
     fi
 
+    local seen=0
     while IFS= read -r line; do
         echo $line
 
         if [[ "$line" == *"$stop_string"* ]]; then
-            break
+            seen=$((seen + 1))
+            if (( seen >= target_count )); then
+                break
+            fi
         fi
     done <"$fifo"
 }

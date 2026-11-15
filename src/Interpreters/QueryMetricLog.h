@@ -44,7 +44,7 @@ struct QueryMetricLogElement
 
 struct QueryMetricLogStatusInfo
 {
-    UInt64 interval_milliseconds;
+    UInt64 interval_milliseconds{};
     std::chrono::system_clock::time_point last_collect_time;
     std::chrono::system_clock::time_point next_collect_time;
     std::vector<ProfileEvents::Count> last_profile_events = std::vector<ProfileEvents::Count>(ProfileEvents::end());

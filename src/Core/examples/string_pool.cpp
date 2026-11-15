@@ -13,6 +13,7 @@
 
 //#define DBMS_HASH_MAP_COUNT_COLLISIONS
 #include <Common/HashTable/HashMap.h>
+#include <Examples/clickhouse_examples.h>
 
 int mainEntryExampleStringPool(int argc, char ** argv)
 {
@@ -29,9 +30,9 @@ int mainEntryExampleStringPool(int argc, char ** argv)
     size_t n = std::stol(argv[1]);
     size_t elems_show = 1;
 
-    using Vec = std::vector<std::string>;
-    using Set = std::unordered_map<std::string, int>;
-    using RefsSet = std::unordered_map<std::string_view, int, StringViewHash>;
+    using Vec = std::vector<std::string>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    using Set = std::unordered_map<std::string, int>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    using RefsSet = std::unordered_map<std::string_view, int, StringViewHash>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     using DenseSet = ::google::dense_hash_map<std::string, int>;
     using RefsDenseSet = ::google::dense_hash_map<std::string_view, int, StringViewHash>;
     using RefsHashMap = HashMap<std::string_view, int, StringViewHash>;
@@ -208,8 +209,8 @@ int mainEntryExampleStringPool(int argc, char ** argv)
 
         for (const auto & elem : vec)
         {
-            RefsHashMap::LookupResult inserted_it;
-            bool inserted;
+            RefsHashMap::LookupResult inserted_it = {};
+            bool inserted = {};
             set.emplace(std::string_view(elem), inserted_it, inserted);
         }
 
@@ -235,8 +236,8 @@ int mainEntryExampleStringPool(int argc, char ** argv)
 
         for (const auto & elem : vec)
         {
-            RefsHashMap::LookupResult inserted_it;
-            bool inserted;
+            RefsHashMap::LookupResult inserted_it = {};
+            bool inserted = {};
             set.emplace(std::string_view(pool.insert(elem.data(), elem.size()), elem.size()), inserted_it, inserted);
         }
 
