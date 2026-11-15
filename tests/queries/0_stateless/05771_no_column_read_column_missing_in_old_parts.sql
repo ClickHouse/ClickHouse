@@ -1,6 +1,7 @@
 -- A read that needs no column does not use a column that some parts do not store, or that a pending mutation drops or
 -- renames away there if its default is computed: computing it can read other columns and throw. A dropped column with
--- no default or a literal one is still used (t_clear, t_literal).
+-- no default or a literal one is still used (t_clear, t_literal), and so is a column that old parts store under its
+-- name before a pending rename (t_rename_insert).
 
 DROP TABLE IF EXISTS t_materialized;
 CREATE TABLE t_materialized (k UInt64, flag UInt8, url String) ENGINE = MergeTree ORDER BY k
@@ -159,3 +160,14 @@ ALTER TABLE t_literal CLEAR COLUMN k IN PARTITION ID 'all' SETTINGS alter_sync =
 SELECT count() FROM t_literal SETTINGS query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, max_bytes_to_read = 100000;
 SELECT count() FROM t_literal SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, max_bytes_to_read = 100000;
 DROP TABLE t_literal;
+
+DROP TABLE IF EXISTS t_rename_insert;
+CREATE TABLE t_rename_insert (k UInt8, s String) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP MERGES t_rename_insert;
+INSERT INTO t_rename_insert SELECT 0, repeat(hex(sipHash128(number)), 30) FROM numbers(1000);
+ALTER TABLE t_rename_insert RENAME COLUMN k TO renamed SETTINGS alter_sync = 0;
+INSERT INTO t_rename_insert VALUES (0, 'new');
+SELECT count() FROM t_rename_insert SETTINGS query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, max_bytes_to_read = 100000;
+SELECT count() FROM t_rename_insert SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, max_bytes_to_read = 100000;
+DROP TABLE t_rename_insert;

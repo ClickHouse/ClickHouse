@@ -9915,11 +9915,6 @@ NamesAndTypesList MergeTreeData::getColumnsStoredInAllParts(
     const MutationsSnapshotPtr & mutations_snapshot,
     const ContextPtr & query_context)
 {
-    /// A pending drop or rename changes what a part stores under a name. That matters only for a column whose default
-    /// is computed: the reader computes it where the part does not store the column.
-    const bool resolve_per_part = mutations_snapshot && mutations_snapshot->hasMetadataMutations()
-        && std::ranges::any_of(columns, [&](const auto & column) { return isDefaultComputed(table_columns, column.getNameInStorage()); });
-
     /// Parts with the same columns share one interned set of column positions, and parts with the same pending drops
     /// and renames share one `AlterConversions`, so each combination is checked once.
     std::unordered_set<const IMergeTreeDataPart::NameToNumber *> part_columns;
@@ -9927,29 +9922,44 @@ NamesAndTypesList MergeTreeData::getColumnsStoredInAllParts(
     std::set<std::pair<const IMergeTreeDataPart::NameToNumber *, AlterConversionsPtr>> converted_parts;
 
     for (const auto & part : parts)
-    {
-        MutationCommands metadata_commands;
-        if (resolve_per_part)
+        part_columns.insert(&part.data_part->getColumnPositions());
+
+    /// A pending drop or rename changes what a part stores under a name. That matters for a column whose default is
+    /// computed, as the reader computes it where the part does not store the column, and for a column that some part
+    /// does not store under its current name.
+    const bool resolve_per_part = mutations_snapshot && mutations_snapshot->hasMetadataMutations()
+        && std::ranges::any_of(columns, [&](const auto & column)
         {
+            const auto & name = column.getNameInStorage();
+            return isDefaultComputed(table_columns, name)
+                || !std::ranges::all_of(part_columns, [&](const auto * positions) { return positions->contains(name); });
+        });
+
+    if (resolve_per_part)
+    {
+        part_columns.clear();
+        for (const auto & part : parts)
+        {
+            MutationCommands metadata_commands;
             for (const auto & command : mutations_snapshot->getOnFlyMutationCommandsForPart(part.data_part))
                 if (AlterConversions::isSupportedMetadataMutation(command.type))
                     metadata_commands.push_back(command);
+
+            if (metadata_commands.empty())
+            {
+                part_columns.insert(&part.data_part->getColumnPositions());
+                continue;
+            }
+
+            std::vector<std::tuple<MutationCommand::Type, String, String>> key;
+            for (const auto & command : metadata_commands)
+                key.emplace_back(command.type, command.column_name, command.rename_to);
+
+            auto & conversions = conversions_by_commands[std::move(key)];
+            if (!conversions)
+                conversions = std::make_shared<AlterConversions>(metadata_commands, PatchPartsForReader{}, query_context);
+            converted_parts.emplace(&part.data_part->getColumnPositions(), conversions);
         }
-
-        if (metadata_commands.empty())
-        {
-            part_columns.insert(&part.data_part->getColumnPositions());
-            continue;
-        }
-
-        std::vector<std::tuple<MutationCommand::Type, String, String>> key;
-        for (const auto & command : metadata_commands)
-            key.emplace_back(command.type, command.column_name, command.rename_to);
-
-        auto & conversions = conversions_by_commands[std::move(key)];
-        if (!conversions)
-            conversions = std::make_shared<AlterConversions>(metadata_commands, PatchPartsForReader{}, query_context);
-        converted_parts.emplace(&part.data_part->getColumnPositions(), conversions);
     }
 
     const bool share_nested_offsets
