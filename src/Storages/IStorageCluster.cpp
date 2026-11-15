@@ -32,6 +32,8 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Interpreters/SetSerialization.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
+#include <Functions/FunctionFactory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Base64.h>
@@ -106,7 +108,10 @@ bool isSerializableFilterNode(const ActionsDAG::Node & node, const std::unordere
     for (const auto * child : node.children)
         if (!isSerializableFilterNode(*child, replica_columns))
             return false;
-    return node.type == ActionsDAG::ActionType::FUNCTION || node.type == ActionsDAG::ActionType::ALIAS;
+    /// The replica rebuilds a function only through `FunctionFactory`, so it cannot rebuild an executable or a WASM UDF.
+    if (node.type == ActionsDAG::ActionType::FUNCTION)
+        return FunctionFactory::instance().has(node.function_base->getName());
+    return node.type == ActionsDAG::ActionType::ALIAS;
 }
 
 String serializeFilterForReplicas(const ActionsDAG::Node & predicate, const std::unordered_map<String, ColumnWithTypeAndName> & replica_columns)
