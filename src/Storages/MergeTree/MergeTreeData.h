@@ -1340,10 +1340,10 @@ public:
 
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;
 
-    /// The columns of `columns` that every part of `parts` stores, resolving pending drops and renames as the reader
-    /// does. Elsewhere the read fills the column from its default, which can read other columns and throw, so a
-    /// pending drop counts only for a column whose default reads other columns.
-    static NamesAndTypesList getColumnsStoredInAllParts(
+    /// The columns of `columns` that a read of `parts` returns without reading other columns. Where a part does not
+    /// store a column (resolving pending drops and renames as the reader does), the read fills it from its default,
+    /// which can read other columns and throw.
+    static NamesAndTypesList getColumnsReadableWithoutOtherColumns(
         const NamesAndTypesList & columns,
         const ColumnsDescription & table_columns,
         const RangesInDataParts & parts,

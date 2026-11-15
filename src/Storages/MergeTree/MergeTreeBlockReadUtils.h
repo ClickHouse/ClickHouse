@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 
 #include <algorithm>
+#include <unordered_map>
 
 
 namespace DB
@@ -19,8 +20,9 @@ NameSet injectRequiredColumns(
     bool with_subcolumns,
     Names & columns);
 
-/// Whether filling the column from its default reads columns of the table.
-bool defaultReadsColumns(const ColumnsDescription & columns, const String & column_name);
+/// Whether filling the column from its default reads stored columns of the table. `cache` keeps the answers between
+/// calls for the same `columns`.
+bool defaultReadsColumns(const ColumnsDescription & columns, const String & column_name, std::unordered_map<String, bool> & cache);
 
 /// Whether the virtual columns of a text index can be read from the index in a part (direct read).
 /// Otherwise they are computed by their default expressions.

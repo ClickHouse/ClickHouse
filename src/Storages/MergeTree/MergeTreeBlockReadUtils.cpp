@@ -174,10 +174,23 @@ bool injectRequiredColumnsRecursively(
 
 }
 
-bool defaultReadsColumns(const ColumnsDescription & columns, const String & column_name)
+bool defaultReadsColumns(const ColumnsDescription & columns, const String & column_name, std::unordered_map<String, bool> & cache)
 {
+    checkStackSize();
+    if (auto it = cache.find(column_name); it != cache.end())
+        return it->second;
+
+    /// Cyclic defaults are rejected by `ALTER` and `CREATE`, so a column is never revisited before its answer is known.
+    cache.emplace(column_name, false);
     const auto * column = columns.tryGet(column_name);
-    return column && column->default_desc.expression && !getStorageColumnsReadByDefault(columns, *column).empty();
+    if (!column || !column->default_desc.expression)
+        return false;
+
+    /// An alias or ephemeral column is not stored: its own expression is computed instead.
+    const bool result = std::ranges::any_of(getStorageColumnsReadByDefault(columns, *column),
+        [&](const String & read) { return columns.hasPhysical(read) || defaultReadsColumns(columns, read, cache); });
+    cache[column_name] = result;
+    return result;
 }
 
 bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions)
@@ -247,6 +260,7 @@ NameSet injectRequiredColumns(
 
         NamesAndTypesList available_columns;
         NamesAndTypesList readable_columns;
+        std::unordered_map<String, bool> default_reads_columns;
         for (const auto & column : part_columns)
         {
             if (!storage_snapshot->tryGetColumn(options, column.name))
@@ -254,7 +268,7 @@ NameSet injectRequiredColumns(
             available_columns.push_back(column);
             /// A column that a pending mutation drops is filled from its default, which can read other columns.
             if (!alter_conversions || !alter_conversions->isColumnDropped(column.name, share_nested)
-                || !defaultReadsColumns(storage_snapshot->metadata->getColumns(), column.name))
+                || !defaultReadsColumns(storage_snapshot->metadata->getColumns(), column.name, default_reads_columns))
                 readable_columns.push_back(column);
         }
 

@@ -528,11 +528,11 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
     if (const auto * snapshot_data = dynamic_cast<const MergeTreeData::SnapshotData *>(storage_snapshot->data.get());
         snapshot_data && snapshot_data->parts)
     {
-        auto stored_columns = MergeTreeData::getColumnsStoredInAllParts(
+        auto readable_columns = MergeTreeData::getColumnsReadableWithoutOtherColumns(
             column_names_and_types, storage_snapshot->metadata->getColumns(), *snapshot_data->parts, snapshot_data->mutations_snapshot,
             query_context);
-        if (!stored_columns.empty())
-            column_names_and_types = std::move(stored_columns);
+        if (!readable_columns.empty())
+            column_names_and_types = std::move(readable_columns);
     }
 
     /// A table expression can resolve to no columns at all, for example a table function over a

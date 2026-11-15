@@ -1,7 +1,7 @@
--- A read that needs no column does not use a column that some parts do not store, or that a pending mutation drops
--- there if its default reads other columns: computing it reads them and can throw. A dropped column whose default reads
--- no column is still used (t_clear, t_literal, t_constant, t_lambda), and so is a column that old parts store under its name
--- before a pending rename (t_rename_insert, t_rename_readd).
+-- A read that needs no column does not use a column whose default reads stored columns (also through an alias,
+-- t_alias_reads) where a part does not store it or a pending mutation drops it: computing it reads them and can throw.
+-- A column whose default reads no stored column is still used (t_clear, t_literal, t_constant, t_lambda, t_alias,
+-- t_added), and so is a column that old parts store under its name before a pending rename (t_rename_insert, t_rename_readd).
 
 DROP TABLE IF EXISTS t_materialized;
 CREATE TABLE t_materialized (k UInt64, flag UInt8, url String) ENGINE = MergeTree ORDER BY k
@@ -193,3 +193,36 @@ ALTER TABLE t_rename_readd RENAME COLUMN k TO renamed, ADD COLUMN k UInt8 DEFAUL
 SELECT count() FROM t_rename_readd WHERE _part_offset % 2 = 0 SETTINGS max_bytes_to_read = 100000;
 SELECT count() FROM t_rename_readd GROUP BY _part SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, max_bytes_to_read = 100000;
 DROP TABLE t_rename_readd;
+
+DROP TABLE IF EXISTS t_alias;
+CREATE TABLE t_alias (k UInt8 DEFAULT c, s String, c UInt8 ALIAS d, d UInt8 ALIAS 0) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP MERGES t_alias;
+INSERT INTO t_alias (k, s) SELECT 0, repeat(hex(sipHash128(number)), 30) FROM numbers(1000);
+ALTER TABLE t_alias CLEAR COLUMN k IN PARTITION ID 'all' SETTINGS alter_sync = 0;
+SELECT count() FROM t_alias SETTINGS query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, max_bytes_to_read = 100000;
+SELECT count() FROM t_alias SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, max_bytes_to_read = 100000;
+SELECT count() FROM t_alias WHERE _part_offset % 2 = 0 SETTINGS max_bytes_to_read = 100000;
+DROP TABLE t_alias;
+
+DROP TABLE IF EXISTS t_alias_reads;
+CREATE TABLE t_alias_reads (k UInt64, s String) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP MERGES t_alias_reads;
+INSERT INTO t_alias_reads SELECT number, if(number = 500, 'n/a', toString(number % 100)) FROM numbers(1000);
+ALTER TABLE t_alias_reads ADD COLUMN a UInt8 ALIAS toUInt8(s), ADD COLUMN n UInt8 DEFAULT a;
+INSERT INTO t_alias_reads (k, s) VALUES (1000, '1');
+SELECT count() FROM t_alias_reads SETTINGS query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+SELECT count() FROM t_alias_reads SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+DROP TABLE t_alias_reads;
+
+DROP TABLE IF EXISTS t_added;
+CREATE TABLE t_added (s String) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP MERGES t_added;
+INSERT INTO t_added SELECT toString(number) FROM numbers(10);
+ALTER TABLE t_added ADD COLUMN k UInt8 DEFAULT 0;
+INSERT INTO t_added (s) SELECT repeat(hex(sipHash128(number)), 30) FROM numbers(1000);
+SELECT count() FROM t_added SETTINGS query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, max_bytes_to_read = 100000;
+SELECT count() FROM t_added SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, max_bytes_to_read = 100000;
+DROP TABLE t_added;
