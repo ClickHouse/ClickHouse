@@ -63,7 +63,7 @@ DROP ROLE r1_01293, r2_01293;
 
 SELECT '-- system.roles';
 CREATE ROLE r1_01293;
-SELECT name, storage from system.roles WHERE name='r1_01293';
+SELECT name, if(storage = 'replicated', 'local_directory', storage) from system.roles WHERE name='r1_01293';
 DROP ROLE r1_01293;
 
 SELECT '-- system.settings_profile_elements';

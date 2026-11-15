@@ -5,7 +5,6 @@
 #if USE_SQLITE
 #include <Core/Names.h>
 #include <Databases/DatabasesCommon.h>
-#include <Parsers/ASTCreateQuery.h>
 
 #include <sqlite3.h>
 
@@ -13,6 +12,7 @@
 namespace DB
 {
 struct AlterCommand;
+class ASTStorage;
 
 class DatabaseSQLite final : public DatabaseWithAltersOnDiskBase, WithContext
 {
@@ -45,15 +45,17 @@ private:
 
     String database_path;
 
-    mutable SQLitePtr sqlite_db;
-
     LoggerPtr log;
 
-    bool checkSQLiteTable(const String & table_name) const;
+    /// Every metadata operation runs on a connection opened for that operation; see the comment in the
+    /// definition. The connection never creates a missing database file.
+    SQLitePtr openConnection() const;
 
-    NameSet fetchTablesList() const TSA_REQUIRES(mutex);
+    static bool checkSQLiteTable(sqlite3 * sqlite_db, const String & table_name);
 
-    StoragePtr fetchTable(const String & table_name, ContextPtr context, bool table_checked) const TSA_REQUIRES(mutex);
+    static NameSet fetchTablesList(sqlite3 * sqlite_db);
+
+    StoragePtr fetchTable(const SQLitePtr & sqlite_db, const String & table_name, ContextPtr context, bool table_checked) const TSA_REQUIRES(mutex);
 
 };
 

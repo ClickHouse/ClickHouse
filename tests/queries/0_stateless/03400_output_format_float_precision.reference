@@ -1,0 +1,66 @@
+-- Test default behavior (precision = 0, dragonbox algorithm)
+0.3333333333333333
+3.141592653589793
+0.123456789012345
+-- Test specific precision values
+0.333333
+3.141593
+0.123457
+0.333
+3.142
+0.123
+-- Test both Float32 and Float64
+0.3333
+0.3333
+3.1416
+3.1416
+-- Test BFloat16
+0.332
+3.1406
+-- Test trailing zeros are stripped (at most N decimal places)
+1
+1.5
+1
+-- Test very large and very small numbers
+10000000000
+0.0000000001
+123456789012345000000
+1.23456789012345e-20
+-- Test large-magnitude numbers fall back to shortest representation (no exception)
+1e61
+-1e62
+-- Test rounding behavior
+1.24
+1.23
+1.24
+-1.24
+-1.23
+-1.24
+1.2346
+1.2346
+-- Test TabSeparated
+0.333
+-- Test JSON
+{"divide(1., 3)":0.333}
+-- Test CSV
+0.333
+-- Test out-of-range precision raises a BAD_ARGUMENTS exception
+-- Test non-finite values with non-zero precision (should not throw)
+inf
+-inf
+nan
+inf
+-inf
+nan
+inf
+-inf
+nan
+-- Regression: BFloat16 trailing zeros are stripped even at high precision
+1.09375
+-- Regression: negative zero with precision does not pad unnecessary decimal zeros
+-0
+-- Regression: default repr already satisfies precision, no ToFixed artefacts
+toFloat32(0.1) with precision=10 should give 0.1, not 0.1000000015
+0.1
+toFloat32(1.23e20) with precision=1 should give the round-trip integer, not the exact float bits
+123000000000000000000

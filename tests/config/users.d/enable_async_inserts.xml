@@ -2,6 +2,7 @@
     <profiles>
         <default>
             <async_insert>1</async_insert>
+            <async_insert_deduplicate>1</async_insert_deduplicate>
             <apply_settings_from_server>1</apply_settings_from_server>
         </default>
     </profiles>

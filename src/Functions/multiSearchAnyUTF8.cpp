@@ -31,17 +31,17 @@ Like [multiSearchAny](#multiSearchAny) but assumes `haystack` and the `needle` s
     FunctionDocumentation::Examples examples = {
     {
         "Given '你好，世界' ('Hello, world') as a UTF-8 string, check if there are any 你 or 界 characters in the string",
-        "SELECT multiSearchAnyUTF8('你好，世界', ['你', '界'])",
+        "SELECT multiSearchAnyUTF8('你好，世界', ['你', '界']) AS result",
         R"(
-┌─multiSearchA⋯你', '界'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─result─┐
+│      1 │
+└────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMultiSearchUTF8>(documentation);
 }

@@ -1,0 +1,4 @@
+in the working directory: visible
+keytab: visible
+keytab of a user: visible
+cache of the tickets: writable

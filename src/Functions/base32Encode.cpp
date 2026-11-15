@@ -37,8 +37,9 @@ Encodes a string using [Base32](https://datatracker.ietf.org/doc/html/rfc4648#se
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBase32Encode>(documentation);
+    factory.registerAlias("to_base32", "base32Encode", FunctionFactory::Case::Insensitive);
 }
 }

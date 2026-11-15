@@ -7,13 +7,14 @@
 #include <Common/JSONWebKey.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/ProfileEvents.h>
+#include <Common/config_version.h>
 #include <Disks/IO/ReadBufferFromWebServer.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 
 #include <Poco/Net/HTTPRequest.h>
-#include <Poco/StreamCopier.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace ProfileEvents
@@ -112,10 +113,12 @@ std::string API::requestNonce() const
     LOG_TEST(log, "Requesting nonce from {}", directory->new_nonce.toString());
 
     auto uri = Poco::URI(directory->new_nonce);
-    auto r = Poco::Net::HTTPRequest(Poco::Net::HTTPRequest::HTTP_HEAD, uri.getPathAndQuery());
+    auto r = Poco::Net::HTTPRequest(Poco::Net::HTTPRequest::HTTP_HEAD, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
+    r.set("User-Agent", fmt::format("ClickHouse/{}", VERSION_STRING));
 
     auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, uri, connection_timeout_settings, proxy_configuration);
-    session->sendRequest(r);
+    session->setKeepAlive(false);
+    sendHTTPRequest(*session, r)->finalize();
 
     auto response = Poco::Net::HTTPResponse();
     receiveResponse(*session, r, response, /* allow_redirects */ false);
@@ -162,24 +165,27 @@ std::string API::doJWSRequest(
     std::string nonce = requestNonce();
     std::string request_data = formatJWSRequestData(url, payload, nonce);
 
-    auto r = Poco::Net::HTTPRequest(Poco::Net::HTTPRequest::HTTP_POST, url.getPathAndQuery());
+    auto r = Poco::Net::HTTPRequest(Poco::Net::HTTPRequest::HTTP_POST, url.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
+    r.set("User-Agent", fmt::format("ClickHouse/{}", VERSION_STRING));
     r.set("Content-Type", APPLICATION_JOSE_JSON);
     r.set("Content-Length", std::to_string(request_data.size()));
 
     auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, url, connection_timeout_settings, proxy_configuration);
+    session->setKeepAlive(false);
 
     ProfileEvents::increment(ProfileEvents::ACMEAPIRequests);
 
-    auto & ostream = session->sendRequest(r);
-    ostream << request_data;
+    auto request_body = sendHTTPRequest(*session, r);
+    writeString(request_data, *request_body);
+    request_body->finalize();
 
     if (!response)
         response = std::make_shared<Poco::Net::HTTPResponse>();
 
-    auto * rstream = receiveResponse(*session, r, *response, /* allow_redirects */ false);
+    auto response_body = receiveResponse(*session, r, *response, /* allow_redirects */ false);
 
     std::string response_data;
-    Poco::StreamCopier::copyToString(*rstream, response_data);
+    readStringUntilEOF(response_data, *response_body);
 
     return response_data;
 }

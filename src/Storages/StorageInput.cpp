@@ -1,6 +1,8 @@
 #include <Storages/StorageInput.h>
 #include <Storages/IStorage.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 
 #include <memory>
@@ -17,19 +19,27 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_USAGE_OF_INPUT;
-    extern const int LOGICAL_ERROR;
 }
 
 StorageInput::StorageInput(const StorageID & table_id, const ColumnsDescription & columns_)
-    : IStorage(table_id)
+    : StorageWithCommonVirtualColumns(table_id)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
+VirtualColumnsDescription StorageInput::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
 
-class StorageInputSource : public ISource, WithContext
+
+class StorageInputSource final : public ISource, WithContext
 {
 public:
     StorageInputSource(ContextPtr context_, SharedHeader sample_block) : ISource(std::move(sample_block)), WithContext(context_) {}
@@ -47,6 +57,11 @@ public:
     String getName() const override { return "Input"; }
 };
 
+
+Pipe StorageInput::createInputFromClient(ContextPtr query_context, SharedHeader header)
+{
+    return Pipe(std::make_shared<StorageInputSource>(std::move(query_context), std::move(header)));
+}
 
 void StorageInput::setPipe(Pipe pipe_)
 {
@@ -75,7 +90,7 @@ private:
     StorageInput & storage;
 };
 
-void StorageInput::read(
+void StorageInput::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -96,10 +111,10 @@ void StorageInput::read(
         /// Send structure to the client.
         if (!is_input_initialized)
         {
-            query_context->initializeInput(shared_from_this());
+            query_context->initializeInput(storage_snapshot->metadata->getColumns(), *sample_block);
             is_input_initialized = true;
         }
-        input_source_pipe = Pipe(std::make_shared<StorageInputSource>(query_context, sample_block));
+        input_source_pipe = createInputFromClient(query_context, sample_block);
     }
 
     auto reading = std::make_unique<ReadFromInput>(
@@ -112,17 +127,23 @@ void StorageInput::read(
 
 void ReadFromInput::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    /// One-shot guard: applies to both the callback-backed path and the HTTP shared-pipe path below.
+    if (storage.was_pipe_used)
+        throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT,
+            "Table function `input` can only be read once per query because it is a one-shot stream from the client. "
+            "To reference the data multiple times, wrap `input` in a `MATERIALIZED` CTE "
+            "and enable the `enable_materialized_cte` setting (without the setting `MATERIALIZED` is just a hint and the CTE is still inlined): "
+            "`SETTINGS enable_materialized_cte = 1 WITH cte AS MATERIALIZED (SELECT ... FROM input(...)) ...`.");
+
     if (!pipe.empty())
     {
         pipeline.init(std::move(pipe));
+        storage.was_pipe_used = true;
         return;
     }
 
     if (!storage.was_pipe_initialized)
         throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "Input stream is not initialized, input() must be used only in INSERT SELECT query");
-
-    if (storage.was_pipe_used)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to read from input() twice.");
 
     pipeline.init(std::move(storage.pipe));
     storage.was_pipe_used = true;

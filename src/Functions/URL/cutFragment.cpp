@@ -34,7 +34,7 @@ SELECT cutFragment('http://example.com/path?query=value#fragment123');
     };
     FunctionDocumentation::IntroducedIn introduced_in_cutFragment = {1, 1};
     FunctionDocumentation::Category category_cutFragment = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_cutFragment = {description_cutFragment, syntax_cutFragment, arguments_cutFragment, returned_value_cutFragment, examples_cutFragment, introduced_in_cutFragment, category_cutFragment};
+    FunctionDocumentation documentation_cutFragment = {description_cutFragment, syntax_cutFragment, arguments_cutFragment, {}, returned_value_cutFragment, examples_cutFragment, introduced_in_cutFragment, category_cutFragment};
 
     factory.registerFunction<FunctionCutFragment>(documentation_cutFragment);
 }

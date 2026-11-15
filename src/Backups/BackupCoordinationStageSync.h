@@ -63,6 +63,12 @@ public:
     Strings getUnfinishedHosts() const;
     Strings getUnfinishedOtherHosts() const;
 
+    /// Whether the initiating host takes the named collections access decisions before dispatching
+    /// the query, which its coordination version shows: authorizing the export for BACKUP (see
+    /// `backupNamedCollections`) and requiring the restore right for RESTORE (see
+    /// `restoreNamedCollections`).
+    bool doesInitiatorTakeNamedCollectionsAccessDecisions() const;
+
     /// Returns a printable name of a specific host. For empty host the function returns "initiator".
     static String getHostDesc(const String & host);
     static String getHostsDesc(const Strings & hosts);
@@ -86,6 +92,9 @@ private:
 
     /// Checks that there is no concurrent backup or restore if `allow_concurrency` is false.
     void checkConcurrency(Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper);
+
+    /// Reads the initiator version from ZooKeeper.
+    void readInitiatorVersion();
 
     /// Watching thread periodically reads the current state from ZooKeeper and recreates the 'alive' node.
     void startWatchingThread();
@@ -171,6 +180,7 @@ private:
     const String operation_node_name;
     const String start_node_path;
     const String finish_node_path;
+    const String initiator_start_node_path;
     const String num_hosts_node_path;
     const String error_node_path;
     const String alive_node_path;

@@ -19,7 +19,7 @@ Float64 degrees(Float64 r)
     return degrees;
 }
 
-using FunctionDegrees = FunctionMathUnary<UnaryFunctionVectorized<DegreesName, degrees>>;
+using FunctionDegrees = FunctionMathUnary<UnaryFunctionVectorized<DegreesName, degrees, true>>;
 
 }
 
@@ -38,7 +38,7 @@ Converts radians to degrees.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionDegrees>(documentation, FunctionFactory::Case::Insensitive);
 }

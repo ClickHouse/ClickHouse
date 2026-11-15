@@ -1,0 +1,163 @@
+#include <Storages/ObjectStorage/DataLakes/Iceberg/MultipleFileWriter.h>
+
+#include <Formats/FormatFactory.h>
+#include <Formats/FormatFilterInfo.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Interpreters/Context.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
+#include <IO/WriteBufferFromFileBase.h>
+
+
+namespace DB
+{
+
+#if USE_AVRO
+
+static std::vector<Int64> fieldIdsOfWrittenColumns(const ColumnMapper & mapper, const Block & written_block)
+{
+    const auto & field_id_by_name = mapper.getStorageColumnEncoding();
+    std::vector<Int64> field_ids;
+    field_ids.reserve(written_block.columns());
+    for (const auto & column : written_block)
+    {
+        validateIcebergFieldIds(column.type, column.name, field_id_by_name);
+        field_ids.push_back(field_id_by_name.find(column.name)->second);
+    }
+    return field_ids;
+}
+
+MultipleFileWriter::MultipleFileWriter(
+    UInt64 max_data_file_num_rows_,
+    UInt64 max_data_file_num_bytes_,
+    Poco::JSON::Array::Ptr schema_,
+    FileNamesGenerator & filename_generator_,
+    const Iceberg::IcebergPathResolver & path_resolver_,
+    ObjectStoragePtr object_storage_,
+    ContextPtr context_,
+    const std::optional<FormatSettings> & format_settings_,
+    const String & write_format_,
+    SharedHeader sample_block_)
+    : max_data_file_num_rows(max_data_file_num_rows_)
+    , max_data_file_num_bytes(max_data_file_num_bytes_)
+    , column_mapper(Iceberg::createColumnMapperFromFields(schema_))
+    , stats(fieldIdsOfWrittenColumns(*column_mapper, *sample_block_))
+    , filename_generator(filename_generator_)
+    , path_resolver(path_resolver_)
+    , object_storage(object_storage_)
+    , context(context_)
+    , format_settings(format_settings_)
+    , write_format(std::move(write_format_))
+    , sample_block(sample_block_)
+{
+}
+
+void MultipleFileWriter::startNewFile()
+{
+    if (buffer)
+        finalize();
+
+    current_file_stats = std::make_shared<DataFileStatistics>(fieldIdsOfWrittenColumns(*column_mapper, *sample_block));
+    current_file_num_rows = 0;
+    auto metadata_path = filename_generator.generateDataFileName();
+    auto storage_path = path_resolver.resolve(metadata_path);
+
+    data_file_names.push_back(metadata_path);
+    buffer = object_storage->writeObject(
+        StoredObject(storage_path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
+
+    if (format_settings)
+    {
+        format_settings->parquet.write_page_index = true;
+        format_settings->parquet.bloom_filter_push_down = true;
+        format_settings->parquet.filter_push_down = true;
+    }
+
+    /// The Parquet writer writes a row group to the file only when the row group is complete, so the size of the file,
+    /// which `consume` compares with the limit, does not grow until then. A row group bigger than the limit would make
+    /// a file never cut: with the default `output_format_parquet_row_group_size_bytes` (512 MiB before compression),
+    /// the limit would be ignored for all smaller files.
+    FormatSettings file_format_settings = format_settings ? *format_settings : getFormatSettings(context);
+    file_format_settings.parquet.row_group_bytes = std::min(file_format_settings.parquet.row_group_bytes, max_data_file_num_bytes);
+
+    /// The ORC String/FixedString logical-type handling lives in ORCBlockOutputFormat, keyed on
+    /// the column mapper, so it covers the compaction/mutation rewrite paths too.
+    FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
+    /// Not `getOutputFormatParallelIfPossible`: `ParallelFormattingOutputFormat` writes to `buffer` from its own thread,
+    /// and `consume` reads `buffer->count()` to cut the file. The Iceberg data file formats are not formatted
+    /// in parallel anyway: the Parquet writer encodes row groups in parallel itself and writes them on the calling thread.
+    output_format = FormatFactory::instance().getOutputFormat(
+        write_format, *buffer, *sample_block, context, file_format_settings, format_filter_info);
+}
+
+void MultipleFileWriter::consume(const Chunk & chunk)
+{
+    /// The size limit is compared against the bytes written to the current file so far, that is, the compressed size,
+    /// the same measure as `file_size_in_bytes` in the manifest, which the compaction uses to select its input files.
+    /// Comparing it against the uncompressed size makes the files smaller than the target by the compression ratio,
+    /// and the output of the compaction is selected by the compaction again. The file can exceed the limit
+    /// by what the output format has not written yet: an incomplete Parquet row group and the row groups being encoded.
+    if (!current_file_num_rows || *current_file_num_rows >= max_data_file_num_rows || buffer->count() >= max_data_file_num_bytes)
+    {
+        startNewFile();
+    }
+    output_format->write(sample_block->cloneWithColumns(chunk.getColumns()));
+    output_format->flush();
+    *current_file_num_rows += chunk.getNumRows();
+    stats.update(chunk);
+    current_file_stats->update(chunk);
+}
+
+void MultipleFileWriter::finalize()
+{
+    output_format->flush();
+    output_format->finalize();
+
+    auto column_sizes_on_disk = output_format->getColumnSizesOnDisk();
+    if (current_file_stats)
+    {
+        current_file_stats->addColumnSizesOnDisk(column_sizes_on_disk, *sample_block);
+        current_file_stats->setSplitOffsets(output_format->getRowGroupOffsets());
+    }
+    stats.addColumnSizesOnDisk(column_sizes_on_disk, *sample_block);
+
+    buffer->finalize();
+    UInt64 file_bytes = buffer->count();
+    total_bytes += file_bytes;
+
+    if (current_file_stats)
+        completed_file_stats.push_back(std::move(current_file_stats));
+    data_file_byte_counts.push_back(file_bytes);
+    data_file_row_counts.push_back(current_file_num_rows.value_or(0));
+
+    /// A finished format can still hold resources: a Parquet one keeps its idle encoder threads.
+    release();
+}
+
+void MultipleFileWriter::release()
+{
+    output_format.reset();
+    buffer.reset();
+}
+
+void MultipleFileWriter::cancel()
+{
+    if (output_format)
+        output_format->cancel();
+    if (buffer)
+        buffer->cancel();
+}
+
+void MultipleFileWriter::clearAllDataFiles() const
+{
+    for (const auto & metadata_path : data_file_names)
+        object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(metadata_path)));
+}
+
+UInt64 MultipleFileWriter::getResultBytes() const
+{
+    return total_bytes;
+}
+
+#endif
+
+}

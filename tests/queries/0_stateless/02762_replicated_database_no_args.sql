@@ -1,3 +1,3 @@
 -- Tags: no-parallel
 
-create database replicated_db_no_args engine=Replicated; -- { serverError BAD_ARGUMENTS }
+create database {CLICKHOUSE_DATABASE_1:Identifier} engine=Replicated; -- { serverError BAD_ARGUMENTS }

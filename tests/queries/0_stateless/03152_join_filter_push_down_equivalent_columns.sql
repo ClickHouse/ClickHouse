@@ -1,5 +1,9 @@
-SET enable_analyzer = 1;
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
+SET explain_query_plan_default = 'legacy';
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET query_plan_join_swap_table = false;
+SET enable_join_runtime_filters = 0;
 
 DROP TABLE IF EXISTS users;
 CREATE TABLE users (uid Int16, name String, age Int16) ENGINE=MergeTree order by (uid, name);

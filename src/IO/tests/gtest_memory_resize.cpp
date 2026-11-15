@@ -1,7 +1,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <IO/BufferWithOwnMemory.h>
+#include <IO/BufferWithOwnMemoryImpl.h>
 #include <gtest/gtest.h>
+#include <Common/ErrnoException.h>
 
 #define EXPECT_THROW_ERROR_CODE(statement, expected_exception, expected_code)    \
     EXPECT_THROW(                                                                \
@@ -50,9 +51,9 @@ public:
         return dummy_address;
     }
 
-    void free([[maybe_unused]] void * buf, size_t /*size*/)
+    void free([[maybe_unused]] void * buf, size_t /*size*/, size_t /*alignment*/ = 0)
     {
-        assert(buf == dummy_address);
+        chassert(buf == dummy_address);
     }
 
     // the same check as in Common/Allocator.h
@@ -233,7 +234,8 @@ TEST(MemoryResizeTest, BigInitAndSmallResizeOverflowWhenPadding)
 TEST(MemoryResizeTest, AlignmentWithRealAllocator)
 {
     {
-        auto memory = Memory<>(0, 3); // not the power of 2 but less than MALLOC_MIN_ALIGNMENT 8 so user-defined alignment is ignored at Allocator
+        auto memory
+            = Memory<>(0, 3); // not a power of 2 but less than MALLOC_MIN_ALIGNMENT so user-defined alignment is ignored at Allocator
         ASSERT_EQ(memory.m_data, nullptr);
         ASSERT_EQ(memory.m_capacity, 0);
         ASSERT_EQ(memory.m_size, 0);
@@ -271,7 +273,7 @@ TEST(MemoryResizeTest, AlignmentWithRealAllocator)
 
 #if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER) && !defined(UNDEFINED_BEHAVIOR_SANITIZER)
     {
-        auto memory = Memory<>(0, 10); // not the power of 2
+        auto memory = Memory<>(0, 20); // not a power of 2, but more than MALLOC_MIN_ALIGNMENT
         ASSERT_EQ(memory.m_data, nullptr);
         ASSERT_EQ(memory.m_capacity, 0);
         ASSERT_EQ(memory.m_size, 0);
@@ -324,4 +326,52 @@ TEST(MemoryResizeTest, SomeAlignmentOverflowWhenAlignment)
         ASSERT_EQ(memory.m_capacity, PADDING_FOR_SIMD);
         ASSERT_EQ(memory.m_size, 1);
     }
+}
+
+namespace
+{
+/// Hands out the data `chunk_size` bytes per `next`, like a file read with a tiny `max_read_buffer_size`.
+class ChunkedReadBuffer : public ReadBuffer
+{
+public:
+    ChunkedReadBuffer(std::string_view data_, size_t chunk_size_) : ReadBuffer(nullptr, 0), data(data_), chunk_size(chunk_size_) {}
+
+private:
+    bool nextImpl() override
+    {
+        if (offset == data.size())
+            return false;
+        const size_t size = std::min(chunk_size, data.size() - offset);
+        BufferBase::set(const_cast<char *>(data.data()) + offset, size, 0);
+        offset += size;
+        return true;
+    }
+
+    std::string_view data;
+    size_t chunk_size;
+    size_t offset = 0;
+};
+}
+
+TEST(MemoryResizeTest, SaveUpToPositionSmallAppendsDoNotReallocateEachTime)
+{
+    const std::string data(1 << 20, 'a');
+    ChunkedReadBuffer in(data, 16);
+    Memory<> memory;
+
+    size_t capacity_changes = 0;
+    char * pos = in.position();
+    while (true)
+    {
+        const size_t capacity_before = memory.m_capacity;
+        const bool loaded = loadAtPosition(in, memory, pos);
+        capacity_changes += memory.m_capacity != capacity_before;
+        if (!loaded)
+            break;
+        pos = in.buffer().end();
+    }
+
+    ASSERT_EQ(std::string_view(memory.data(), memory.size()), data);
+    /// 65536 appends of 16 bytes; growing the capacity by exactly the appended size reallocates on each of them.
+    EXPECT_LT(capacity_changes, 200);
 }
