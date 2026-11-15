@@ -10,6 +10,18 @@ from ci.praktika.utils import Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
 
+# The binary under test: the release build of PR #131027
+CH_BINARY_URL_ARM = "https://clickhouse-builds.s3.amazonaws.com/PRs/131027/e7d7a78a5a9df6ac19262116ba9805a3f3f54c43/pr/build_arm_release/clickhouse"
+CH_BINARY_URL_AMD = "https://clickhouse-builds.s3.amazonaws.com/PRs/131027/e7d7a78a5a9df6ac19262116ba9805a3f3f54c43/pr/build_amd_release/clickhouse"
+
+
+def clickhouse_binary_url():
+    if Utils.is_arm():
+        return CH_BINARY_URL_ARM
+    if Utils.is_amd():
+        return CH_BINARY_URL_AMD
+    assert False, "Unknown processor architecture"
+
 
 def main():
     results = []  # array of job's sub results - see CI report
@@ -20,20 +32,14 @@ def main():
     _ = Shell.check("echo 'Run any shell command'", verbose=True)
     assert Shell.get_output("echo 'Run any shell command'") == "Run any shell command"
 
-    # Get link to the latest CH binary
-    if Utils.is_arm():
-        latest_ch_master_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
-    elif Utils.is_amd():
-        latest_ch_master_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
-    else:
-        assert False, "Unknown processor architecture"
-
     try:
         if not info.is_local_run:
+            ch_url = clickhouse_binary_url()
+            print(f"ClickHouse binary : {ch_url}")
             results.append(r := Result.from_commands_run(
                 name="Download ClickHouse",
                 command=[
-                    f"wget -nv -P {temp_dir} {latest_ch_master_url}",
+                    f"wget -nv -P {temp_dir} {ch_url}",
                     f"chmod +x {temp_dir}/clickhouse",
                     f"{temp_dir}/clickhouse --version",
                 ],

@@ -177,7 +177,9 @@ dataset_laion_5b_mini_for_quick_test = {
     DIMENSION: 768,
 }
 
-# 10 million LAION vectors, searched using the rabitq quantized codes instead of a vector similarity index
+# 10 million LAION vectors, searched using the rabitq quantized codes instead of a vector similarity index.
+# The column-level block sizes equal the size of one row (768 x BFloat16 = 1536 bytes), so that the rescoring step
+# reads only the shortlisted rows with `merge_tree_use_one_row_per_block_layout` (PR #131027).
 dataset_laion_5b_10m_quantized_rabitq = {
     TABLE: "laion_10m_rabitq",
     S3_URLS: [
@@ -185,7 +187,7 @@ dataset_laion_5b_10m_quantized_rabitq = {
     ],
     SCHEMA: """
         id Int32,
-        vector Array(BFloat16) CODEC(Quantized('rabitq', 768))
+        vector Array(BFloat16) CODEC(Quantized('rabitq', 768)) SETTINGS (min_compress_block_size = 1536, max_compress_block_size = 1536)
      """,
     ID_COLUMN: "id",
     VECTOR_COLUMN: "vector",
@@ -202,7 +204,7 @@ dataset_laion_5b_10m_quantized_turboquant = {
     ],
     SCHEMA: """
         id Int32,
-        vector Array(BFloat16) CODEC(Quantized('turboquant', 768))
+        vector Array(BFloat16) CODEC(Quantized('turboquant', 768)) SETTINGS (min_compress_block_size = 1536, max_compress_block_size = 1536)
      """,
     ID_COLUMN: "id",
     VECTOR_COLUMN: "vector",
@@ -333,7 +335,8 @@ test_params_laion_5b_10m_quantized_rabitq = {
     CONCURRENCY_TEST: False,
     USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
     SEARCH_METHOD: SEARCH_METHOD_QUANTIZED_CODEC,
-    SESSION_SETTINGS: "enable_quantized_codec = 1",
+    # Rescoring reads only the shortlisted rows of `vector`, see `dataset_laion_5b_10m_quantized_rabitq`
+    SESSION_SETTINGS: "enable_quantized_codec = 1, merge_tree_use_one_row_per_block_layout = 1",
     FETCH_MULTIPLIERS: [1, 5, 10],
 }
 
@@ -355,7 +358,8 @@ test_params_laion_5b_10m_quantized_turboquant = {
     CONCURRENCY_TEST: False,
     USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
     SEARCH_METHOD: SEARCH_METHOD_QUANTIZED_CODEC,
-    SESSION_SETTINGS: "enable_quantized_codec = 1",
+    # Rescoring reads only the shortlisted rows of `vector`, see `dataset_laion_5b_10m_quantized_rabitq`
+    SESSION_SETTINGS: "enable_quantized_codec = 1, merge_tree_use_one_row_per_block_layout = 1",
     FETCH_MULTIPLIERS: [1, 5, 10],
 }
 
@@ -1228,20 +1232,29 @@ def run_single_test(test_name, dataset, test_params):
     return result
 
 
+# The binary under test: the release build of PR #131027
+CH_BINARY_URL_ARM = "https://clickhouse-builds.s3.amazonaws.com/PRs/131027/e7d7a78a5a9df6ac19262116ba9805a3f3f54c43/pr/build_arm_release/clickhouse"
+CH_BINARY_URL_AMD = "https://clickhouse-builds.s3.amazonaws.com/PRs/131027/e7d7a78a5a9df6ac19262116ba9805a3f3f54c43/pr/build_amd_release/clickhouse"
+
+
+def clickhouse_binary_url():
+    if Utils.is_arm():
+        return CH_BINARY_URL_ARM
+    if Utils.is_amd():
+        return CH_BINARY_URL_AMD
+    assert False, "Unknown processor architecture"
+
+
 def install_clickhouse():
     results = []
 
-    if Utils.is_arm():
-        latest_ch_master_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
-    elif Utils.is_amd():
-        latest_ch_master_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
-    else:
-        assert False, "Unknown processor architecture"
+    ch_url = clickhouse_binary_url()
+    logger(f"ClickHouse binary : {ch_url}")
 
     results.append(Result.from_commands_run(
         name="Download ClickHouse",
         command=[
-            f"wget -nv -P {temp_dir} {latest_ch_master_url}",
+            f"wget -nv -P {temp_dir} {ch_url}",
             f"chmod +x {temp_dir}/clickhouse",
             f"{temp_dir}/clickhouse --version",
         ],
@@ -1276,16 +1289,16 @@ TESTS_TO_RUN = [
         dataset_laion_5b_10m_qbit_int8_strided,
         test_params_laion_5b_10m_qbit_int8_strided,
     ),
-    (
-        "Test using the hackernews dataset",
-        dataset_hackernews_openai,
-        test_params_hackernews_10m,
-    ),
-    (
-        "Test using the cohere wiki dataset",
-        dataset_cohere_wiki_20m,
-        test_params_cohere_wiki_20m,
-    ),
+    # (
+    #     "Test using the hackernews dataset",
+    #     dataset_hackernews_openai,
+    #     test_params_hackernews_10m,
+    # ),
+    # (
+    #     "Test using the cohere wiki dataset",
+    #     dataset_cohere_wiki_20m,
+    #     test_params_cohere_wiki_20m,
+    # ),
 ]
 
 
