@@ -19,8 +19,12 @@ void RenameColumnData::visit(ASTIdentifier & identifier, ASTPtr & ast) const
     }
     else if (rename_subcolumns && identifier_column_name->starts_with(column_name + "."))
     {
-        /// A compound identifier `column_name.x` is a subcolumn. One part `column_name.x` (as the key expressions built
-        /// from the metadata of a data lake are written) is a subcolumn unless the table has a column with this name.
+        /// `column_name.x` (written as a compound identifier, or as one part as the key expressions built from the metadata
+        /// of a data lake are written) is a subcolumn unless the table has a physical column with this name, such as
+        /// `MergeTree` with `share_nested_offsets = 0`.
+        if (columns && columns->has(*identifier_column_name))
+            return;
+
         if (identifier.compound())
         {
             if (identifier.name_parts[0] != column_name)
@@ -31,7 +35,7 @@ void RenameColumnData::visit(ASTIdentifier & identifier, ASTPtr & ast) const
             renamed->setAlias(identifier.tryGetAlias());
             ast = std::move(renamed);
         }
-        else if (!columns || !columns->has(*identifier_column_name))
+        else
         {
             identifier.setShortName(rename_to + identifier_column_name->substr(column_name.size()));
         }
