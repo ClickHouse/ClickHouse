@@ -211,6 +211,10 @@ struct Reader
         /// Definition level of innermost array. I.e. max levels[i].def where levels[i].is_array.
         UInt8 max_array_def = 0;
 
+        /// If nonzero, the column is read only for the sizes of its `levels_only_arrays` outermost
+        /// arrays, and its values are not used. See SchemaConverter::addLevelsOnlyPrimitive.
+        UInt8 levels_only_arrays = 0;
+
         bool use_bloom_filter = false;
 
         /// A single-column `KeyCondition` used for page-level pruning through the column index.
@@ -279,6 +283,8 @@ struct Reader
         bool is_primitive = false;
         /// Column not in the file, fill it with default values.
         bool is_missing_column = false;
+        /// Not in the file but sized like an array of the file; set in block missing values so that its DEFAULT applies.
+        bool report_as_missing = false;
         bool needs_cast = false; // if output_type is different from input_type
 
         /// If set, the assembled column (a ColumnTuple) is wrapped in ColumnNullable using the group
