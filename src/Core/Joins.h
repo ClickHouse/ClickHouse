@@ -29,6 +29,7 @@ const char * toString(JoinKind kind);
 
 constexpr bool isLeft(JoinKind kind)         { return kind == JoinKind::Left; }
 constexpr bool isRight(JoinKind kind)        { return kind == JoinKind::Right; }
+constexpr bool isLeftOrRight(JoinKind kind)  { return kind == JoinKind::Left || kind == JoinKind::Right; }
 constexpr bool isInner(JoinKind kind)        { return kind == JoinKind::Inner; }
 constexpr bool isFull(JoinKind kind)         { return kind == JoinKind::Full; }
 constexpr bool isCrossOrComma(JoinKind kind) { return kind == JoinKind::Comma || kind == JoinKind::Cross; }
@@ -123,10 +124,11 @@ enum class JoinAlgorithm : uint8_t
     HASH,
     PARTIAL_MERGE,
     PREFER_PARTIAL_MERGE,
-    PARALLEL_HASH,
     GRACE_HASH,
     DIRECT,
     FULL_SORTING_MERGE,
+    IE_JOIN,
+    PARALLEL_FULL_SORTING_MERGE,
 };
 
 const char * toString(JoinAlgorithm join_algorithm);
@@ -139,4 +141,40 @@ enum class JoinTableSide : uint8_t
 
 const char * toString(JoinTableSide join_table_side);
 
+enum class JoinOrderAlgorithm : uint8_t
+{
+    GREEDY = 0,
+    DPSIZE,
+    DPSUB,
+    DPHYP
+};
+
+const char * toString(JoinOrderAlgorithm join_order_algorithm);
+
+/// Which conflict detector the `dpsub` join order algorithm uses to decide whether a reordering is
+/// valid. `NONE` keeps the per-relation ON-clause restriction; CD-A is correct but incomplete;
+/// CD-C is correct and complete.
+enum class JoinOrderConflictDetector : uint8_t
+{
+    NONE = 0,
+    CD_A,
+    CD_C
+};
+
+const char * toString(JoinOrderConflictDetector join_order_conflict_detector);
+
+/// How a hash join builds its hash table, see the `hash_join_layout` setting.
+enum class HashJoinLayout : uint8_t
+{
+    AUTO = 0,
+    SERIAL,
+    PARALLEL,
+};
+
+enum class JoinAnalyzeMode : uint8_t
+{
+    None = 0,
+    Derived,
+    Exact,
+};
 }

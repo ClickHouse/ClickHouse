@@ -1,4 +1,7 @@
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
+SET optimize_trivial_count_query = 1;
+SET optimize_use_projections = 1;
+SET optimize_use_implicit_projections = 1;
 
 drop table if exists x;
 

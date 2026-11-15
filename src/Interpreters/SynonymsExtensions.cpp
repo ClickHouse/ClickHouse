@@ -128,10 +128,10 @@ SynonymsExtensions::ExtPtr SynonymsExtensions::getExtension(const String & name)
 {
     std::lock_guard guard(mutex);
 
-    if (extensions.find(name) != extensions.end())
+    if (extensions.contains(name))
         return extensions[name];
 
-    if (info.find(name) != info.end())
+    if (info.contains(name))
     {
         const Info & ext_info = info[name];
 

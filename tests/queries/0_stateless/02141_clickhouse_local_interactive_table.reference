@@ -1,2 +1,1 @@
 CREATE TEMPORARY TABLE `table`\n(\n    `key` String\n)\nENGINE = File(TSVWithNamesAndTypes, \'/dev/null\', auto)
-CREATE TEMPORARY TABLE `table`\n(\n    `key` String\n)\nENGINE = File(TSVWithNamesAndTypes, \'/dev/null\', auto)

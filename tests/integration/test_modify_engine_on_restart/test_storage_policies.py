@@ -84,7 +84,8 @@ def check_tables(converted):
 
 
 def test_modify_engine_on_restart(started_cluster):
-    ch1.query("CREATE DATABASE " + database_name)
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+    ch1.query(f"CREATE DATABASE {database_name}")
 
     create_tables()
 
@@ -101,3 +102,5 @@ def test_modify_engine_on_restart(started_cluster):
     check_flags_deleted(ch1, database_name, ["default", "jbod_exp", "jbod_imp", "s3"])
 
     check_tables(True)
+
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")

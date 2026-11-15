@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <boost/noncopyable.hpp>
 #include <list>
 #include <functional>
@@ -29,7 +29,8 @@ public:
     void add(const Reconnector & reconnector);
 
 private:
-    inline static ReplicasReconnector * instance_ptr = nullptr;
+    /// Defined out of line: a definition in the header gives every shared object its own copy.
+    static ReplicasReconnector * instance_ptr;
     ReconnectorsList reconnectors;
     std::mutex mutex;
     std::atomic_bool emergency_stop{false};

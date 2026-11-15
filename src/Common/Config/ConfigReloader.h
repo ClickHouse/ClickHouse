@@ -1,18 +1,14 @@
 #pragma once
 
-#include "ConfigProcessor.h"
+#include <Common/Config/ConfigProcessor.h>
 #include <Common/ThreadPool.h>
-#include <Common/ZooKeeper/Common.h>
-#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
-#include <time.h>
+#include <ctime>
 #include <string>
-#include <thread>
 #include <mutex>
-#include <condition_variable>
-#include <list>
 
 
 namespace Poco { class Logger; }
+namespace zkutil { class ZooKeeperNodeCache; }
 
 namespace DB
 {
@@ -33,8 +29,8 @@ public:
         std::string_view path_,
         const std::vector<std::string>& extra_paths_,
         const std::string & preprocessed_dir,
-        zkutil::ZooKeeperNodeCache && zk_node_cache,
-        const zkutil::EventPtr & zk_changed_event,
+        std::unique_ptr<zkutil::ZooKeeperNodeCache> && zk_node_cache_,
+        const Coordination::EventPtr & zk_changed_event,
         Updater && updater);
 
     ~ConfigReloader();
@@ -71,11 +67,15 @@ private:
     std::string config_path;
     std::vector<std::string> extra_paths;
 
+    /// The substitutions file from the <include_from> element of the loaded config.
+    /// Updated on every successful load; accessed only under reload_mutex.
+    std::string include_from_path;
+
     std::string preprocessed_dir;
     FilesChangesTracker files;
-    zkutil::ZooKeeperNodeCache zk_node_cache;
+    std::unique_ptr<zkutil::ZooKeeperNodeCache> zk_node_cache;
     bool need_reload_from_zk = false;
-    zkutil::EventPtr zk_changed_event = std::make_shared<Poco::Event>();
+    Coordination::EventPtr zk_changed_event = std::make_shared<Poco::Event>();
 
     Updater updater;
 

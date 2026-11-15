@@ -1,0 +1,10 @@
+<clickhouse>
+    <allow_experimental_transactions>42</allow_experimental_transactions>
+
+    <transaction_log>
+        <zookeeper_path>/test/clickhouse/txn</zookeeper_path>
+
+        <fault_probability_before_commit>0.0</fault_probability_before_commit>
+        <fault_probability_after_commit>0.0</fault_probability_after_commit>
+    </transaction_log>
+</clickhouse>

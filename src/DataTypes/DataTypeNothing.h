@@ -30,7 +30,9 @@ public:
     bool canBeInsideNullable() const override { return true; }
     bool isComparable() const override { return true; }
 
-    SerializationPtr doGetDefaultSerialization() const override;
+    void updateHashImpl(SipHash &) const override {}
+
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override;
 };
 
 }

@@ -10,10 +10,10 @@ namespace DB
 
 /// Takes blocks after grouping, with non-finalized aggregate functions.
 /// Calculates all subsets of columns and aggregates over them.
-class CubeTransform : public GroupByModifierTransform
+class CubeTransform final : public GroupByModifierTransform
 {
 public:
-    CubeTransform(Block header, AggregatingTransformParamsPtr params, bool use_nulls_);
+    CubeTransform(SharedHeader header, AggregatingTransformParamsPtr params, bool use_nulls_);
     String getName() const override { return "CubeTransform"; }
 
 protected:

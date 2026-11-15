@@ -120,7 +120,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 
         auto * function = to_node->as<ASTFunction>();
         /// Optimization does not respect aliases properly, which can lead to MULTIPLE_EXPRESSION_FOR_ALIAS error.
-        /// Disable it if an expression has an alias. Proper implementation is done with the new analyzer.
+        /// Disable it if an expression has an alias. Proper implementation is done with the analyzer.
         if (function && function->alias.empty() && function->name == "or" && function->children.size() == 1)
         {
             const auto * expression_list = function->children[0]->as<ASTExpressionList>();
@@ -301,17 +301,10 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
         equals_expr_lhs = operands[0];
     }
 
-    auto tuple_literal = std::make_shared<ASTLiteral>(std::move(tuple));
-
-    ASTPtr expression_list = std::make_shared<ASTExpressionList>();
-    expression_list->children.push_back(equals_expr_lhs);
-    expression_list->children.push_back(tuple_literal);
+    auto tuple_literal = make_intrusive<ASTLiteral>(std::move(tuple));
 
     /// Construct the expression `expr IN (x1, ..., xN)`
-    auto in_function = std::make_shared<ASTFunction>();
-    in_function->name = "in";
-    in_function->arguments = expression_list;
-    in_function->children.push_back(in_function->arguments);
+    auto in_function = makeASTOperator("in", equals_expr_lhs, tuple_literal);
     in_function->setAlias(or_with_expression.alias);
 
     /// 2. Insert the new IN expression.
@@ -364,7 +357,7 @@ void LogicalExpressionsOptimizer::cleanupOrExpressions()
     for (const auto & entry : garbage_map)
     {
         const auto * function = entry.first;
-        auto * first_erased = entry.second;
+        auto first_erased = entry.second;
 
         auto & operands = getFunctionOperands(function);
         operands.erase(first_erased, operands.end());

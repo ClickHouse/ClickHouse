@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
-FILE_NAME=test_02149.data
+FILE_NAME=$CLICKHOUSE_TEST_UNIQUE_NAME.data
 DATA_FILE=${USER_FILES_PATH:?}/$FILE_NAME
 
 touch $DATA_FILE
@@ -217,3 +217,5 @@ echo -e "\"[(1, 2, 3)]\""> $DATA_FILE
 
 $CLIENT_CMD -q "desc file('$FILE_NAME', 'CSV')"
 $CLIENT_CMD -q "select * from file('$FILE_NAME', 'CSV')"
+
+rm $DATA_FILE

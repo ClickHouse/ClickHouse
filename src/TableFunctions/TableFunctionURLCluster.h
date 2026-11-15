@@ -41,12 +41,15 @@ public:
         return signature;
     }
 
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+
 protected:
     StoragePtr getStorage(
         const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
         const std::string & table_name, const String & compression_method_, bool) const override;
 
-    const char * getStorageTypeName() const override { return "URLCluster"; }
+    const char * getStorageEngineName() const override { return "URLCluster"; }
+    const char * getNonClusteredStorageEngineName() const override { return "URL"; }
 };
 
 }

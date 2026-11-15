@@ -1,0 +1,15 @@
+insert_deduplication_token with INSERT SELECT without ORDER BY ALL
+100
+different token should insert new data
+200
+same token again should deduplicate
+200
+insert_deduplication_token with INSERT SELECT with ORDER BY ALL still works
+100
+force_enable with non-empty token should succeed without ORDER BY ALL
+100
+force_enable with empty token and no ORDER BY ALL should raise DEDUPLICATION_IS_NOT_POSSIBLE
+enable_even_for_bad_queries with non-empty token should deduplicate
+100
+enable_even_for_bad_queries with empty token still deduplicates (unstable mode)
+100

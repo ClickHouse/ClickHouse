@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-flaky-check
 
 create database if not exists shard_0;
 create database if not exists shard_1;

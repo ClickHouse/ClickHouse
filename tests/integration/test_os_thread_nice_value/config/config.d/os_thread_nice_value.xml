@@ -1,0 +1,3 @@
+<clickhouse>
+    <os_threads_nice_value_zookeeper_client_send_receive>-5</os_threads_nice_value_zookeeper_client_send_receive>
+</clickhouse>

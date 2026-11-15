@@ -61,7 +61,7 @@ static void processFile(const fs::path & file_path, const fs::path & dst_path, b
     else
     {
         ReadSettings read_settings{};
-        read_settings.local_fs_method = LocalFSReadMethod::pread;
+        read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
         auto src_buf = createReadBufferFromFileBase(file_path, read_settings, fs::file_size(file_path));
         std::shared_ptr<WriteBuffer> dst_buf;
 
@@ -150,13 +150,14 @@ static void processTableFiles(const fs::path & data_path, fs::path dst_path, boo
 }
 }
 
+int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
 int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv)
 try
 {
     using namespace DB;
     namespace po = boost::program_options;
 
-    po::options_description description("Allowed options", getTerminalWidth());
+    po::options_description description = createOptionsDescription("Allowed options", getTerminalWidth());
     description.add_options()
         ("help,h", "produce help message")
         ("metadata-path", po::value<std::string>(), "Metadata path (SELECT data_paths FROM system.tables WHERE name = 'table_name' AND database = 'database_name')")
@@ -170,7 +171,7 @@ try
     po::store(parsed, options);
     po::notify(options);
 
-    if (options.empty() || options.count("help"))
+    if (options.empty() || options.contains("help"))
     {
         std::cout << description << std::endl;
         exit(0); // NOLINT(concurrency-mt-unsafe)
@@ -178,7 +179,7 @@ try
 
     String metadata_path;
 
-    if (options.count("metadata-path"))
+    if (options.contains("metadata-path"))
         metadata_path = options["metadata-path"].as<std::string>();
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "No metadata-path option passed");
@@ -194,20 +195,20 @@ try
     auto test_mode = options.contains("test-mode");
     if (test_mode)
     {
-        if (options.count("url"))
+        if (options.contains("url"))
             root_path = options["url"].as<std::string>();
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "No url option passed for test mode");
     }
     else
     {
-        if (options.count("output-dir"))
+        if (options.contains("output-dir"))
             root_path = options["output-dir"].as<std::string>();
         else
             root_path = fs::current_path();
     }
 
-    processTableFiles(fs_path, root_path, test_mode, options.count("link"));
+    processTableFiles(fs_path, root_path, test_mode, options.contains("link"));
 
     return 0;
 }

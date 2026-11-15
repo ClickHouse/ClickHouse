@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 #include <thread>
+#include <cmath>
 #include <Common/DNSPTRResolverProvider.h>
 #include <Common/DNSResolver.h>
+#include <base/scope_guard.h>
 #include <Poco/Net/IPAddress.h>
 #include <random>
 
@@ -9,6 +11,9 @@ namespace DB
 {
 TEST(Common, ReverseDNS)
 {
+    /// Re-enable the cache of the process-wide resolver, as it is by default, for the tests that run after this one.
+    SCOPE_EXIT(DNSResolver::instance().setDisableCacheFlag(false));
+
     auto func = [&]()
     {
         // Good random seed, good engine
@@ -19,10 +24,10 @@ TEST(Common, ReverseDNS)
             auto & dns_resolver_instance = DNSResolver::instance();
             dns_resolver_instance.setDisableCacheFlag();
 
-            auto val1 = rnd1() % static_cast<uint32_t>((pow(2, 31) - 1));
-            auto val2 = rnd1() % static_cast<uint32_t>((pow(2, 31) - 1));
-            auto val3 = rnd1() % static_cast<uint32_t>((pow(2, 31) - 1));
-            auto val4 = rnd1() % static_cast<uint32_t>((pow(2, 31) - 1));
+            auto val1 = rnd1() % static_cast<uint32_t>((std::pow(2, 31) - 1));
+            auto val2 = rnd1() % static_cast<uint32_t>((std::pow(2, 31) - 1));
+            auto val3 = rnd1() % static_cast<uint32_t>((std::pow(2, 31) - 1));
+            auto val4 = rnd1() % static_cast<uint32_t>((std::pow(2, 31) - 1));
 
             uint32_t ipv4_buffer[1] = {
                 static_cast<uint32_t>(val1)

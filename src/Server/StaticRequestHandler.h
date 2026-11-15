@@ -18,8 +18,10 @@ private:
 
     int status;
     /// Overrides for response headers.
-    std::unordered_map<String, String> http_response_headers_override;
+    const std::unordered_map<String, String> http_response_headers_override;
     String response_expression;
+
+    void writeResponse(WriteBuffer & out);
 
 public:
     StaticRequestHandler(
@@ -27,8 +29,6 @@ public:
         const String & expression,
         const std::unordered_map<String, String> & http_response_headers_override_,
         int status_ = 200);
-
-    void writeResponse(WriteBuffer & out);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 };

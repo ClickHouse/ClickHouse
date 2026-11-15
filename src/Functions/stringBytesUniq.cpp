@@ -9,7 +9,7 @@
 #include <Common/BitHelpers.h>
 #include <Common/PODArray.h>
 
-#include <bit>
+#include <array>
 #include <cmath>
 
 namespace DB
@@ -19,18 +19,19 @@ struct StringBytesUniqImpl
 {
     using ResultType = UInt16;
 
-    static ResultType process(const UInt8 * data, size_t size)
+    std::array<UInt64, 256> last_seen_row{};
+    UInt64 row = 0;
+
+    ResultType process(const UInt8 * data, size_t size)
     {
-        UInt64 mask[4] = {0};
-        const UInt8 * end = data + size;
-
-        for (; data < end; ++data)
+        ++row;
+        ResultType res = 0;
+        for (const UInt8 * end = data + size; data < end; ++data)
         {
-            UInt8 byte = *data;
-            mask[byte >> 6] |= (1ULL << (byte & 0x3F));
+            res += last_seen_row[*data] < row;
+            last_seen_row[*data] = row;
         }
-
-        return std::popcount(mask[0]) + std::popcount(mask[1]) + std::popcount(mask[2]) + std::popcount(mask[3]);
+        return res;
     }
 };
 
@@ -45,29 +46,30 @@ using FunctionStringBytesUniq = FunctionStringBytes<StringBytesUniqImpl, NameStr
 
 REGISTER_FUNCTION(StringBytesUniq)
 {
-    FunctionDocumentation::Description description = "Counts the number of distinct bytes in a string.";
-    FunctionDocumentation::Syntax syntax = "stringBytesUniq(s);";
+    FunctionDocumentation::Description description = R"(
+Counts the number of distinct bytes in a string.
+)";
+    FunctionDocumentation::Syntax syntax = "stringBytesUniq(s)";
     FunctionDocumentation::Arguments arguments = {
-        {"s", "The string to analyze. [String](../../sql-reference/data-types/string.md)"}
+        {"s", "The string to analyze.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "The number of distinct bytes in the string. [UInt16](../../sql-reference/data-types/int-uint.md).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of distinct bytes in the string.", {"UInt16"}};
     FunctionDocumentation::Examples examples = {
-        {"Example", "SELECT stringBytesUniq('Hello, world!');", "10"}
+    {
+        "Usage example",
+        "SELECT stringBytesUniq('Hello')",
+        R"(
+┌─stringBytesUniq('Hello')─┐
+│                        4 │
+└──────────────────────────┘
+        )"
+    }
     };
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    FunctionDocumentation function_documentation = {
-        .description = description,
-        .syntax = syntax,
-        .arguments = arguments,
-        .returned_value = returned_value,
-        .examples = examples,
-        .introduced_in = introduced_in,
-        .category = category
-    };
-
-    factory.registerFunction<FunctionStringBytesUniq>(function_documentation);
+    factory.registerFunction<FunctionStringBytesUniq>(documentation);
 }
 
 }

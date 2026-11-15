@@ -12,7 +12,6 @@ def test_yaml_main_conf():
         "configs/config.d/access_control.xml",
         "configs/config.d/error_log.xml",
         "configs/config.d/keeper_port.xml",
-        "configs/config.d/latency_log.xml",
         "configs/config.d/logging_no_rotate.xml",
         "configs/config.d/log_to_console.xml",
         "configs/config.d/macros.xml",

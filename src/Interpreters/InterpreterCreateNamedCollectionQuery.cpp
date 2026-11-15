@@ -19,6 +19,12 @@ BlockIO InterpreterCreateNamedCollectionQuery::execute()
     const auto & query = updated_query->as<const ASTCreateNamedCollectionQuery &>();
 
     current_context->checkAccess(AccessType::CREATE_NAMED_COLLECTION, query.collection_name);
+    if (query.or_replace)
+        current_context->checkAccess(AccessType::DROP_NAMED_COLLECTION, query.collection_name);
+
+    /// `max_named_collection_num_to_throw` is enforced by `NamedCollectionFactory::createFromSQL`,
+    /// under the factory mutex, so that every path adding a new collection is covered - in
+    /// particular RESTORE, which calls the factory directly.
 
     if (!query.cluster.empty())
     {
@@ -27,9 +33,11 @@ BlockIO InterpreterCreateNamedCollectionQuery::execute()
     }
 
     NamedCollectionFactory::instance().createFromSQL(query);
+
     return {};
 }
 
+void registerInterpreterCreateNamedCollectionQuery(InterpreterFactory & factory);
 void registerInterpreterCreateNamedCollectionQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

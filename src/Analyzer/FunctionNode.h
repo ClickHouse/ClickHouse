@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunction.h>
 #include <Parsers/NullsAction.h>
-#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -66,6 +65,14 @@ public:
     /// Get NullAction modifier
     NullsAction getNullsAction() const { return nulls_action; }
     void setNullsAction(NullsAction action) { nulls_action = action; }
+
+    void markAsOperator(bool val = true) { this->is_operator = val; }
+
+    /// Whether the parser saw operator syntax for this call, e.g. `a + b` rather than `plus(a, b)`.
+    /// It normally affects only formatting, but it also tells an operator apart from an ordinary
+    /// call to a function of the same name, which matters for an operator whose internal name is
+    /// a legal identifier a user can define a function with.
+    bool isOperator() const { return is_operator; }
 
     /// Get parameters
     const ListNode & getParameters() const { return children[parameters_child_index]->as<const ListNode &>(); }
@@ -189,7 +196,7 @@ public:
                 function_name);
         auto type = function->getResultType();
         if (wrap_with_nullable)
-          return makeNullableSafe(type);
+          return makeNullableOrLowCardinalityNullableSafe(type);
         return type;
     }
 
@@ -201,6 +208,9 @@ public:
         if (kind == FunctionKind::ORDINARY)
             wrap_with_nullable = true;
     }
+
+    /// Whether `convertToNullable` was called, also when the result type cannot be `Nullable` and did not change.
+    bool isConvertedToNullable() const { return wrap_with_nullable; }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
@@ -219,6 +229,8 @@ private:
     NullsAction nulls_action = NullsAction::EMPTY;
     IResolvedFunctionPtr function;
     bool wrap_with_nullable = false;
+    /// Function was parsed as operator. This option is only needed to make AST formatting more consistent.
+    bool is_operator = false;
 
     static constexpr size_t parameters_child_index = 0;
     static constexpr size_t arguments_child_index = 1;

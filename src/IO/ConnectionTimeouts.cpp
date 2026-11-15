@@ -20,6 +20,10 @@ namespace Setting
     extern const SettingsSeconds http_connection_timeout;
     extern const SettingsSeconds http_send_timeout;
     extern const SettingsSeconds http_receive_timeout;
+    extern const SettingsUInt64 distributed_cache_connect_timeout_ms;
+    extern const SettingsUInt64 distributed_cache_send_timeout_ms;
+    extern const SettingsUInt64 distributed_cache_receive_timeout_ms;
+    extern const SettingsUInt64 distributed_cache_tcp_keep_alive_timeout_ms;
 }
 
 namespace ServerSetting
@@ -85,7 +89,18 @@ ConnectionTimeouts ConnectionTimeouts::getFetchPartHTTPTimeouts(const ServerSett
     return timeouts;
 }
 
-class SendReceiveTimeoutsForFirstAttempt
+#if ENABLE_DISTRIBUTED_CACHE
+ConnectionTimeouts ConnectionTimeouts::getDistributedCacheTimeouts(const Settings & settings)
+{
+    return ConnectionTimeouts()
+        .withConnectionTimeout(Poco::Timespan(settings[Setting::distributed_cache_connect_timeout_ms] * 1000))
+        .withSendTimeout(Poco::Timespan(settings[Setting::distributed_cache_send_timeout_ms] * 1000))
+        .withReceiveTimeout(Poco::Timespan(settings[Setting::distributed_cache_receive_timeout_ms] * 1000))
+        .withTCPKeepAliveTimeout(Poco::Timespan(settings[Setting::distributed_cache_tcp_keep_alive_timeout_ms] * 1000));
+}
+#endif
+
+class TimeoutsForFirstAttempt
 {
 private:
     static constexpr size_t known_methods_count = 6;
@@ -120,6 +135,11 @@ private:
     static_assert(sizeof(first_byte_ms) == sizeof(rest_bytes_ms));
     static_assert(sizeof(first_byte_ms) == known_methods_count * sizeof(Poco::Timestamp::TimeDiff) * 2);
 
+    /// These timeouts are specifically important for Azure blob storage.
+    /// For Azure first byte latency is usually very good, but connection to Azure blob storage can take a long time.
+    static constexpr auto CONNECT_TIMEOUT_FOR_FIRST_ATTEMPT_MS = 500;
+    static constexpr auto CONNECT_TIMEOUT_FOR_N_ATTEMPT_MS = 3000;
+
     static size_t getMethodIndex(const String & method)
     {
         KnownMethodsArray::const_iterator it = std::find(known_methods.begin(), known_methods.end(), method);
@@ -145,22 +165,43 @@ public:
             Poco::Timespan(rest_bytes_ms[idx][1] * 1000)
         );
     }
+
+    static std::pair<Poco::Timespan, Poco::Timespan> getConnectTimeouts(bool first_attempt)
+    {
+        if (first_attempt)
+        {
+            /// It is important for Azure blob storage, where connection can take a long time.
+            /// If the connection is not established in this time, we will try to connect to another endpoint.
+            return std::make_pair(
+                Poco::Timespan(CONNECT_TIMEOUT_FOR_FIRST_ATTEMPT_MS * 1000),
+                Poco::Timespan(CONNECT_TIMEOUT_FOR_FIRST_ATTEMPT_MS * 1000)
+            );
+        }
+
+        return std::make_pair(
+            Poco::Timespan(CONNECT_TIMEOUT_FOR_N_ATTEMPT_MS * 1000),
+            Poco::Timespan(CONNECT_TIMEOUT_FOR_N_ATTEMPT_MS * 1000)
+        );
+    }
 };
 
-const SendReceiveTimeoutsForFirstAttempt::KnownMethodsArray SendReceiveTimeoutsForFirstAttempt::known_methods =
+const TimeoutsForFirstAttempt::KnownMethodsArray TimeoutsForFirstAttempt::known_methods =
 {
         "GET", "POST", "DELETE", "PUT", "HEAD", "PATCH"
 };
-
 
 ConnectionTimeouts ConnectionTimeouts::getAdaptiveTimeouts(const String & method, bool first_attempt, bool first_byte) const
 {
     if (!first_attempt)
         return *this;
 
-    auto [send, recv] = SendReceiveTimeoutsForFirstAttempt::getSendReceiveTimeout(method, first_byte);
+    auto [send, recv] = TimeoutsForFirstAttempt::getSendReceiveTimeout(method, first_byte);
+
+    auto [unsecure_connect, secure_connect] = TimeoutsForFirstAttempt::getConnectTimeouts(first_attempt);
 
     return ConnectionTimeouts(*this)
+        .withConnectionTimeout(saturate(unsecure_connect, connection_timeout))
+        .withSecureConnectionTimeout(saturate(secure_connect, secure_connection_timeout))
         .withSendTimeout(saturate(send, send_timeout))
         .withReceiveTimeout(saturate(recv, receive_timeout));
 }

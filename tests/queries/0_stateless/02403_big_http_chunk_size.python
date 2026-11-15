@@ -4,6 +4,10 @@ from socket import AF_INET, SOCK_STREAM, socket
 
 EXCEPTION_CODE_HEADER = "X-ClickHouse-Exception-Code"
 TRANSFER_ENCODING_HEADER = "Transfer-Encoding"
+CONNECTION_HEADER = "Connection"
+HTTP_STATUS_STRING = "HTTP status string"
+
+INTERESTING_SET = set((EXCEPTION_CODE_HEADER, TRANSFER_ENCODING_HEADER, CONNECTION_HEADER, HTTP_STATUS_STRING))
 
 
 def main():
@@ -12,36 +16,48 @@ def main():
 
     sock = socket(AF_INET, SOCK_STREAM)
     sock.connect((host, port))
-    sock.settimeout(60)
-    s = "POST / HTTP/1.1\r\n"
+    sock.settimeout(160)
+    s = "POST /?query=select+1 HTTP/1.1\r\n"
     s += "Host: %s\r\n" % host
-    s += "Content-type: multipart/form-data; boundary=--b3f1zid8kqwy\r\n"
     s += "Transfer-encoding: chunked\r\n"
     s += "\r\n"
     s += "ffffffffffffffff"
     s += "\r\n"
-    s += "X" * 100000
+    s += "X" * 10
     sock.sendall(s.encode())
-    data = sock.recv(10000).decode()
+    data = ""
+
+    extraction = []
+
+    while 1:
+        try:
+            piece = sock.recv(10000).decode()
+        except ConnectionResetError as e:
+            break
+        if not piece:
+            break
+        data += piece
     sock.close()
 
     lines = data.splitlines()
 
-    print(lines.pop(0))
-
-    headers = {}
     for x in lines:
         x = x.strip()
         if not x:
             continue
+
+        if x.startswith("HTTP/1.1"):
+            extraction.append(("HTTP status string", x))
+
         tokens = x.split(":", 1)
         if len(tokens) < 2:
             continue
         key, val = tokens
-        headers[key.strip()] = val.strip()
+        extraction.append((key.strip(), val.strip()))
 
-    print("encoding type", headers[TRANSFER_ENCODING_HEADER])
-    print("error code", headers[EXCEPTION_CODE_HEADER])
+    for k, v in extraction:
+        if k in INTERESTING_SET:
+            print(k, ":", v)
 
 
 if __name__ == "__main__":

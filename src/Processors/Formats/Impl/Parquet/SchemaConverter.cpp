@@ -1,0 +1,2460 @@
+#include <DataTypes/DataTypeDynamic.h>
+#include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+
+#include <Common/checkStackSize.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime64.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/NestedUtils.h>
+#include <Formats/FormatFilterInfo.h>
+#include <Functions/DateTimeTransforms.h>
+#include <Processors/Formats/Impl/Parquet/Decoding.h>
+#include <Processors/Formats/Impl/Parquet/FileLogicalType.h>
+
+#include <array>
+#include <boost/algorithm/string/predicate.hpp>
+#include <fmt/ranges.h>
+
+namespace DB::ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+    extern const int DUPLICATE_COLUMN;
+    extern const int COLUMN_QUERIED_MORE_THAN_ONCE;
+    extern const int TYPE_MISMATCH;
+    extern const int TOO_DEEP_RECURSION;
+    extern const int NOT_IMPLEMENTED;
+    extern const int THERE_IS_NO_COLUMN;
+}
+
+namespace DB::Parquet
+{
+
+SchemaConverter::SchemaConverter(
+    const FileFooter & file_footer_, const ReadOptions & options_,
+    const Block * sample_block_, std::optional<UnorderedMapWithMemoryTracking<String, GeoColumnMetadata>> precomputed_geo_columns)
+    : file_footer(file_footer_), file_metadata(file_footer_.metadata), options(options_), sample_block(sample_block_)
+    , levels {LevelInfo {.def = 0, .rep = 0, .is_array = true}}
+{
+    if (precomputed_geo_columns.has_value())
+        geo_columns = std::move(*precomputed_geo_columns);
+    else if (options.format.parquet.allow_geoparquet_parser)
+    {
+        for (const auto & kv : file_metadata.key_value_metadata)
+        {
+            if (kv.key == "geo")
+            {
+                geo_columns = parseGeoMetadataEncoding(&kv.value);
+                break;
+            }
+        }
+    }
+}
+
+void SchemaConverter::checkHasColumns()
+{
+    if (file_metadata.schema.size() < 2)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet file has no columns");
+    if (file_metadata.schema.at(0).num_children <= 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Schema root has no children");
+}
+
+void SchemaConverter::prepareForReading()
+{
+    chassert(sample_block);
+    checkHasColumns();
+
+    /// DFS the schema tree.
+    size_t top_level_columns = size_t(file_metadata.schema.at(0).num_children);
+    for (size_t i = 0; i < top_level_columns; ++i)
+    {
+        TraversalNode node;
+        processSubtree(node);
+    }
+
+    /// Check that all requested columns were found.
+    VectorWithMemoryTracking<UInt8> found_columns(sample_block->columns());
+    for (const auto & col : output_columns)
+    {
+        if (!col.idx_in_output_block.has_value())
+            continue;
+        size_t idx = col.idx_in_output_block.value();
+        if (found_columns.at(idx))
+            throw Exception(
+                ErrorCodes::DUPLICATE_COLUMN,
+                "There are multiple columns with name `{}` in the parquet file. Note that a nested element is addressed by "
+                "its flattened path, so it collides with a top-level column that has a dot in its name",
+                sample_block->getByPosition(idx).name);
+        found_columns[idx] = true;
+
+        for (size_t i = col.primitive_start; i < col.primitive_end; ++i)
+        {
+            chassert(primitive_columns.at(i).idx_in_output_block == UINT64_MAX);
+            primitive_columns.at(i).idx_in_output_block = idx;
+        }
+    }
+    for (const auto & p : primitive_columns)
+        chassert(p.idx_in_output_block != UINT64_MAX);
+    for (const String & name : external_columns)
+    {
+        size_t idx = sample_block->getPositionByName(name, /* case_insensitive= */ false);
+        /// Note: it may already be true, if PREWHERE expression passes a column through.
+        found_columns[idx] = true;
+    }
+
+    for (size_t i = 0; i < found_columns.size(); ++i)
+    {
+        if (found_columns[i])
+            continue;
+        if (!options.format.parquet.allow_missing_columns)
+            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Column {} was not found in parquet schema", sample_block->getByPosition(i).name);
+        if (addMissingElementOfTupleInArray(i))
+            continue;
+
+        OutputColumnInfo & missing_output = output_columns.emplace_back();
+        missing_output.idx_in_output_block = i;
+        missing_output.name = sample_block->getByPosition(i).name;
+        missing_output.input_type = sample_block->getByPosition(i).type;
+        missing_output.output_type = missing_output.input_type;
+        missing_output.is_missing_column = true;
+    }
+
+}
+
+NamesAndTypesList SchemaConverter::inferSchema()
+{
+    chassert(!sample_block);
+    checkHasColumns();
+    size_t top_level_columns = size_t(file_metadata.schema.at(0).num_children);
+    NamesAndTypesList res;
+    for (size_t i = 0; i < top_level_columns; ++i)
+    {
+        TraversalNode node;
+        node.requested = true;
+        processSubtree(node);
+        if (node.output_idx.has_value())
+        {
+            const OutputColumnInfo & col = output_columns.at(node.output_idx.value());
+            res.emplace_back(col.name, col.output_type);
+        }
+    }
+    return res;
+}
+
+std::string_view SchemaConverter::useColumnMapperIfNeeded(
+    const parq::SchemaElement & element, const String & current_path, bool & out_not_in_schema) const
+{
+    out_not_in_schema = false;
+    if (!column_mapper)
+        return element.name;
+    const auto & map = column_mapper->getFieldIdToClickHouseName();
+    if (!element.__isset.field_id)
+    {
+        /// Does iceberg require that parquet files have field ids?
+        /// Our iceberg writer currently doesn't write them.
+        //throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Missing field_id for column {}", element.name);
+        return element.name;
+    }
+    auto it = map.find(element.field_id);
+    if (it == map.end())
+    {
+        /// Reserved field ids (https://iceberg.apache.org/spec/#reserved-field-ids) are not part of
+        /// the table schema, e.g. the v3 row-lineage fields `_row_id` (2147483540) and
+        /// `_last_updated_sequence_number` (2147483539) that spec-compliant writers materialize
+        /// into data files. Those are requested by their physical name, so they are matched by name.
+        static constexpr Int64 iceberg_max_user_field_id = 2147483447; /// Integer.MAX_VALUE - 200
+        if (element.field_id > iceberg_max_user_field_id)
+            return element.name;
+
+        /// A reader projects by field id, so a file column whose id is not in the read schema is
+        /// not selected (https://iceberg.apache.org/spec/#column-projection). This covers a column
+        /// dropped from the table, since `DROP COLUMN` is metadata-only and data files keep the
+        /// column, and a private column of the writer, e.g. `_CHANGE_TIMESTAMP` (2147483345) that
+        /// BigQuery writes into the files of its managed Iceberg tables but keeps out of the schema.
+        out_not_in_schema = true;
+        return element.name;
+    }
+
+    /// At top level (empty path), return the full mapped name. For nested
+    /// elements, strip the parent path prefix to get the child name.
+    if (current_path.empty())
+        return it->second;
+
+    /// Strip "current_path." prefix to get the child name (preserves dots in child names)
+    std::string_view mapped = it->second;
+    if (mapped.starts_with(current_path) && mapped.size() > current_path.size()
+        && mapped[current_path.size()] == '.')
+        return mapped.substr(current_path.size() + 1);
+
+    return it->second;
+}
+
+static bool isPrimitiveNode(const parq::SchemaElement & elem)
+{
+    /// `parquet.thrift` says "[num_children] is not set when the element is a primitive type".
+    /// If it's set but has value 0, logically it should be an empty tuple/struct.
+    /// But in practice some writers are sloppy about it and set this field to 0 (rather than unset)
+    /// for primitive columns. E.g.
+    /// tests/queries/0_stateless/data_hive/partitioning/non_existing_column=Elizabeth/sample.parquet
+    return !elem.__isset.num_children || (elem.num_children == 0 && elem.__isset.type);
+}
+
+/// Checks that the children of a group annotated with the `FILE` logical type are the fields
+/// defined by the specification, with the specified physical and logical types and `OPTIONAL`
+/// repetition. Apart from this, the group is read as an ordinary `Tuple`.
+///
+/// The values are not validated: a row whose fields do not form a valid reference (e.g. `offset`
+/// without `uri`, or no fields set at all) is returned as is, with each field as stored. The
+/// specification allows a reader to return a null reference for such rows, and returning the
+/// stored fields is not less informative than that (a reference with all fields null is the null
+/// reference), while avoiding a pass over the values.
+static void validateFileLogicalTypeGroup(const parq::FileMetaData & file_metadata, size_t group_schema_idx, const String & name_for_logging)
+{
+    const parq::SchemaElement & group = file_metadata.schema.at(group_schema_idx);
+    const size_t first_child_idx = group_schema_idx + 1;
+    if (group.num_children < 0 || size_t(group.num_children) > file_metadata.schema.size() - first_child_idx)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet schema element {} declares {} children, but only {} schema elements remain in the file", name_for_logging, group.num_children, file_metadata.schema.size() - first_child_idx);
+
+    UnorderedSetWithMemoryTracking<std::string_view> seen_names;
+    for (size_t i = 0; i < size_t(group.num_children); ++i)
+    {
+        /// Every child must be a primitive node (checked below), so the children are consecutive.
+        const parq::SchemaElement & field = file_metadata.schema[first_child_idx + i];
+        const std::optional<FileLogicalTypeFieldKind> kind = getFileLogicalTypeFieldKind(field.name);
+        if (!kind.has_value())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but contains unrecognized field `{}`. Valid fields are: {}",
+                name_for_logging, field.name, file_logical_type_field_names);
+        if (!seen_names.insert(field.name).second)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but contains field `{}` more than once", name_for_logging, field.name);
+        if (!isPrimitiveNode(field))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but its field `{}` is a group", name_for_logging, field.name);
+        if (field.repetition_type != parq::FieldRepetitionType::OPTIONAL)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but its field `{}` is not OPTIONAL", name_for_logging, field.name);
+
+        const parq::LogicalType & logical = field.logicalType;
+        const bool has_annotation = field.__isset.logicalType || field.__isset.converted_type;
+        bool valid_type = false;
+        std::string_view expected_type;
+        switch (*kind)
+        {
+            case FileLogicalTypeFieldKind::String:
+                expected_type = "BYTE_ARRAY annotated with STRING";
+                valid_type = field.type == parq::Type::BYTE_ARRAY
+                    && (field.__isset.logicalType ? logical.__isset.STRING
+                                                  : field.__isset.converted_type && field.converted_type == parq::ConvertedType::UTF8);
+                break;
+            case FileLogicalTypeFieldKind::Int64:
+                /// An `INTEGER(64, true)` annotation means the same as no annotation.
+                expected_type = "INT64";
+                valid_type = field.type == parq::Type::INT64
+                    && (!has_annotation
+                        || (field.__isset.logicalType && logical.__isset.INTEGER && logical.INTEGER.bitWidth == 64 && logical.INTEGER.isSigned)
+                        || (!field.__isset.logicalType && field.converted_type == parq::ConvertedType::INT_64));
+                break;
+            case FileLogicalTypeFieldKind::Binary:
+                expected_type = "BYTE_ARRAY without annotation";
+                valid_type = field.type == parq::Type::BYTE_ARRAY && !has_annotation;
+                break;
+        }
+        if (!field.__isset.type || !valid_type)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but its field `{}` has unexpected type (expected {}): {}",
+                name_for_logging, field.name, expected_type, thriftToString(field));
+    }
+}
+
+void SchemaConverter::processSubtree(TraversalNode & node)
+{
+    /// Reject deeply nested schemas before recursing. The def-level guard below (def == UINT8_MAX)
+    /// only counts OPTIONAL/REPEATED nodes, so a chain of REQUIRED groups would bypass it and
+    /// overflow the native stack. Track the real recursion depth unconditionally and reject early;
+    /// checkStackSize is a last-resort backstop if max_parser_depth is raised.
+    /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
+    checkStackSize();
+    ++recursion_depth;
+    SCOPE_EXIT({ --recursion_depth; });
+    if (options.format.max_parser_depth != 0 && recursion_depth > options.format.max_parser_depth)
+        throw Exception(
+            ErrorCodes::TOO_DEEP_RECURSION,
+            "Parquet schema is nested deeper than the limit ({}). It can be raised with the setting "
+            "'max_parser_depth', but a very deeply nested schema is rarely intentional",
+            options.format.max_parser_depth);
+
+    if (node.type_hint)
+        chassert(node.requested);
+    if (schema_idx >= file_metadata.schema.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid parquet schema tree");
+    node.element = &file_metadata.schema.at(schema_idx);
+    schema_idx += 1;
+    const size_t leaves_start = leaves_in_arrays.size();
+
+    std::optional<size_t> idx_in_output_block;
+    size_t wrap_in_arrays = 0;
+    DataTypePtr outer_type_hint = node.type_hint;
+
+    if (node.schema_context == SchemaContext::None || node.schema_context == SchemaContext::MapKey)
+    {
+        bool not_in_schema = false;
+        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name, not_in_schema));
+        node.not_in_datalake_schema |= not_in_schema;
+
+        /// A column that is not in the data lake schema is never requested, and its physical name
+        /// may coincide with an unrelated column of the current schema (e.g. a dropped `x` and a
+        /// later re-added `x` have different field ids), so it must not be matched by name.
+        if (sample_block && !not_in_schema)
+        {
+            /// Doing this lookup on each schema element to support reading individual tuple elements.
+            /// E.g.:
+            ///   insert into function file('t.parquet') select [(10,20,30)] as x;
+            ///   select * from file('t.parquet', Parquet, '`x.2` Array(UInt8)'); -- outputs [20]
+            std::optional<size_t> pos = sample_block->findPositionByName(node.name, options.format.parquet.case_insensitive_column_matching);
+            if (pos.has_value())
+            {
+                if (node.requested)
+                    throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE, "Requested column {} is part of another requested column", node.getNameForLogging());
+
+                node.requested = true;
+                /// Match case. Keep the name according to the parquet schema, it is used to look up
+                /// the GeoParquet metadata.
+                const String & requested_name = sample_block->getByPosition(pos.value()).name;
+                if (!node.parquet_name.has_value() && requested_name != node.name)
+                    node.parquet_name = node.name;
+                node.name = requested_name;
+                chassert(!node.type_hint);
+                node.type_hint = sample_block->getByPosition(pos.value()).type;
+                outer_type_hint = node.type_hint; // before unwrapping arrays
+
+                for (size_t i = 1; i < levels.size(); ++i)
+                {
+                    if (levels[i].is_array)
+                    {
+                        const DataTypeArray * array = typeid_cast<const DataTypeArray *>(node.type_hint.get());
+                        if (!array)
+                            throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of nested column {} doesn't match parquet schema: parquet type is Array, requested type is {}", node.getNameForLogging(), node.type_hint->getName());
+                        node.type_hint = array->getNestedType();
+                        wrap_in_arrays += 1;
+                    }
+                }
+                chassert(wrap_in_arrays == levels.back().rep);
+
+                idx_in_output_block = pos;
+            }
+        }
+    }
+
+    /// GeoParquet geometry column with a native (GeoArrow) encoding: nested lists of
+    /// `struct<x, y>` with the same layout as the corresponding geo type. Read it as a regular
+    /// nested column, requesting the geo type (so that it is also the inferred type). If `Geometry`
+    /// is requested, read the specific geo type and convert it at the end.
+    /// Only top-level columns, because geometry columns must be at the root of the schema.
+    DataTypePtr native_geo_type;
+    if (node.requested && levels.size() == 1 && node.schema_context == SchemaContext::None
+        && options.format.parquet.allow_geoparquet_parser && !isPrimitiveNode(*node.element))
+    {
+        auto geo_it = geo_columns.find(node.getParquetName());
+        if (geo_it != geo_columns.end() && geo_it->second.encoding == GeoEncoding::Native)
+        {
+            DataTypePtr geo_type = getGeoDataType(geo_it->second.type);
+            if (!node.type_hint)
+            {
+                node.type_hint = geo_type;
+                outer_type_hint = geo_type;
+                native_geo_type = geo_type;
+            }
+            else if (node.type_hint->getName() == "Geometry")
+            {
+                node.type_hint = geo_type;
+                native_geo_type = geo_type;
+            }
+        }
+    }
+
+    size_t prev_levels_size = levels.size();
+    SCOPE_EXIT(
+        {
+            chassert(levels.size() >= prev_levels_size);
+            levels.resize(prev_levels_size);
+        });
+
+    if (node.element->repetition_type != parq::FieldRepetitionType::REQUIRED)
+    {
+        LevelInfo prev = levels.back();
+        if (prev.def == UINT8_MAX)
+            throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "Parquet column {} has extremely deeply nested (>255 levels) arrays or nullables", node.getNameForLogging());
+        auto level = LevelInfo {.def = UInt8(prev.def + 1), .rep = prev.rep};
+        if (node.element->repetition_type == parq::FieldRepetitionType::REPEATED)
+        {
+            level.rep += 1; // no overflow, rep <= def
+            level.is_array = true;
+
+            /// We'll first process schema for array element type, then wrap it in Array type.
+            if (node.type_hint)
+            {
+                const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(node.type_hint.get());
+                if (!array_type)
+                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Array, requested type is {}", node.getNameForLogging(), node.type_hint->getName());
+                node.type_hint = array_type->getNestedType();
+            }
+        }
+        chassert(level.def == levels.size());
+        levels.push_back(level);
+    }
+
+    /// https://github.com/apache/parquet-format/blob/master/LogicalTypes.md
+
+    /// A `FILE` group is validated regardless of whether it is requested (even partially, like
+    /// `file.uri`), because a schema that violates the specification makes the file invalid.
+    /// After that it is read as a `Tuple`, which is what processSubtreeTuple below produces for it.
+    if (node.element->logicalType.__isset.FILE)
+    {
+        if (isPrimitiveNode(*node.element))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but it is a primitive column rather than a group", node.getNameForLogging());
+        validateFileLogicalTypeGroup(file_metadata, schema_idx - 1, node.getNameForLogging());
+    }
+
+    if (!processSubtreePrimitive(node) &&
+        !processSubtreeMap(node) &&
+        !processSubtreeArrayOuter(node) &&
+        !processSubtreeArrayInner(node) &&
+        !processSubtreeDynamic(node))
+    {
+        processSubtreeTuple(node);
+    }
+
+    if (!node.output_idx.has_value())
+        return;
+    if (!node.requested)
+        return; // we just needed to recurse to children, not interested in output_idx
+
+    auto make_array = [&](UInt8 rep)
+    {
+        size_t array_idx = output_columns.size();
+        OutputColumnInfo & array = output_columns.emplace_back();
+        const OutputColumnInfo & array_element = output_columns.at(node.output_idx.value());
+        array.name = node.name;
+        array.primitive_start = array_element.primitive_start;
+        array.primitive_end = primitive_columns.size();
+        array.input_type = std::make_shared<DataTypeArray>(array_element.output_type);
+        array.output_type = array.input_type;
+        array.nested_columns = {*node.output_idx};
+        array.rep = rep;
+        node.output_idx = array_idx;
+    };
+
+    /// E.g. `Array(Tuple(missing_element Int64))`: no requested element has a leaf to take the sizes from.
+    auto add_levels_only_primitive_if_no_leaves = [&]
+    {
+        if (sample_block && output_columns[*node.output_idx].primitive_start == primitive_columns.size())
+            addLevelsOnlyPrimitive(leaves_start, leaves_in_arrays.size(), levels.back().rep, node.name);
+    };
+
+    if (node.element->repetition_type == parq::FieldRepetitionType::REPEATED)
+    {
+        /// Array of some kind. Can be a child of List or Map, or a standalone repeated field.
+        /// We dispatch all 3 cases to this one code path to minimize probability of bugs.
+        chassert(levels.size() == prev_levels_size + 1);
+        add_levels_only_primitive_if_no_leaves();
+        make_array(levels.back().rep);
+    }
+
+    if (idx_in_output_block.has_value())
+    {
+        /// If the requested column is inside some arrays of tuples (requested using `arr.elem`
+        /// syntax), add intermediate OutputColumnInfo-s to create those arrays.
+        if (wrap_in_arrays > 0)
+            add_levels_only_primitive_if_no_leaves();
+        for (size_t i = 0; i < wrap_in_arrays; ++i)
+            make_array(static_cast<UInt8>(levels[prev_levels_size - 1].rep - i));
+
+        output_columns[node.output_idx.value()].idx_in_output_block = idx_in_output_block;
+    }
+
+    if (native_geo_type)
+    {
+        /// The type assembled from the nested columns has the same structure, but loses the custom
+        /// names of the geo types (e.g. `Array(Ring)` instead of `Polygon`), which matter for the
+        /// conversion to `Geometry`.
+        OutputColumnInfo & output = output_columns.at(node.output_idx.value());
+        chassert(output.input_type->equals(*native_geo_type));
+        output.input_type = native_geo_type;
+    }
+
+    if (outer_type_hint)
+    {
+        OutputColumnInfo & output = output_columns.at(node.output_idx.value());
+        output.output_type = outer_type_hint;
+        output.needs_cast = !output.output_type->equals(*output.input_type);
+    }
+}
+
+bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
+{
+    if (!isPrimitiveNode(*node.element))
+        return false;
+
+    primitive_column_idx += 1;
+    if (sample_block && levels.back().rep > 0)
+        leaves_in_arrays.push_back({.schema_idx = schema_idx - 1, .column_idx = primitive_column_idx - 1, .levels = levels});
+    if (!node.requested)
+        return true;
+    if (!node.element->__isset.type)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet metadata is missing physical type for column {}", node.getNameForLogging());
+
+    DataTypePtr primitive_type_hint = node.type_hint;
+    bool output_nullable = false;
+    bool output_nullable_requested = false;
+    bool output_nullable_if_not_json = false;
+    if (primitive_type_hint)
+    {
+        if (primitive_type_hint->lowCardinality())
+        {
+            primitive_type_hint = assert_cast<const DataTypeLowCardinality &>(*primitive_type_hint).getDictionaryType();
+        }
+        if (primitive_type_hint->isNullable())
+        {
+            output_nullable = true;
+            output_nullable_requested = true;
+            primitive_type_hint = assert_cast<const DataTypeNullable &>(*primitive_type_hint).getNestedType();
+        }
+    }
+    /// Force map key to be non-nullable because clickhouse Map doesn't support nullable map key.
+    else if (!options.schema_inference_force_not_nullable && node.schema_context != SchemaContext::MapKey)
+    {
+        if (levels.back().is_array == false)
+        {
+            /// This schema element is OPTIONAL or inside an OPTIONAL tuple.
+            output_nullable = true;
+        }
+        else if (options.schema_inference_force_nullable)
+        {
+            if (options.format.schema_inference_make_json_columns_nullable)
+                output_nullable = true;
+            else
+                /// Historically, the setting schema_inference_make_columns_nullable wasn't applied
+                /// to JSON columns (presumably because Nullable(Object) used to not be allowed).
+                /// Keep this behavior for compatibility.
+                output_nullable_if_not_json = true;
+        }
+    }
+
+    auto geo_it = geo_columns.find(node.getParquetName());
+    auto geo_metadata = geo_it == geo_columns.end() ? std::nullopt : std::optional(geo_it->second);
+
+    /// Iceberg stores only `time` as Parquet TIME, so a column of a file without field ids needs no lookup.
+    bool time_as_stored_integer = false;
+    if (column_mapper && primitive_type_hint && WhichDataType(primitive_type_hint).isInt64())
+        time_as_stored_integer = node.element->__isset.field_id
+            ? column_mapper->isIcebergTimeFieldId(node.element->field_id)
+            : column_mapper->hasIcebergTimeFieldIds();
+
+    DataTypePtr inferred_type;
+    DataTypePtr decoded_type;
+    PageDecoderInfo decoder;
+    try
+    {
+        processPrimitiveColumn(
+            *node.element, primitive_type_hint, time_as_stored_integer, decoder, decoded_type, inferred_type, geo_metadata,
+            primitive_column_idx - 1);
+    }
+    catch (Exception & e)
+    {
+        if (options.format.parquet.skip_columns_with_unsupported_types_in_schema_inference &&
+            (e.code() == ErrorCodes::INCORRECT_DATA || e.code() == ErrorCodes::NOT_IMPLEMENTED))
+        {
+            return true;
+        }
+        else
+        {
+            e.addMessage("column '" + node.getNameForLogging() + "'");
+            throw;
+        }
+    }
+
+    /// Geo types based on arrays, like Polygon, can't be inside Nullable.
+    /// Geometry (Variant) is also not Nullable-compatible.
+    /// Point (Tuple) can be inside Nullable, but it is inferred as non-nullable. If `Nullable(Point)`
+    /// is requested explicitly, keep the null map, otherwise NULLs would silently become (0, 0).
+    if (typeid_cast<const DataTypeArray *>(inferred_type.get())
+        || (typeid_cast<const DataTypeTuple *>(inferred_type.get()) && !output_nullable_requested)
+        || typeid_cast<const DataTypeVariant *>(inferred_type.get()))
+    {
+        output_nullable = false;
+        output_nullable_if_not_json = false;
+    }
+
+    size_t primitive_idx = primitive_columns.size();
+    PrimitiveColumnInfo & primitive = primitive_columns.emplace_back();
+    primitive.column_idx = primitive_column_idx - 1;
+    primitive.schema_idx = schema_idx - 1;
+    primitive.name = node.name;
+    primitive.levels = levels;
+    primitive.output_nullable = output_nullable || (output_nullable_if_not_json && !typeid_cast<const DataTypeObject *>(inferred_type.get()));
+    /// Leaf of a physically-nullable struct read as Nullable(Tuple(...)): its def-level null map is
+    /// the group null map. Keep that null map (don't throw on the group-null rows) and fill defaults
+    /// there; the group null map wraps the ColumnTuple in Reader::formOutputColumn.
+    primitive.group_nullable = nullable_tuple_group_depth > 0;
+    primitive.decoder = std::move(decoder);
+    primitive.decoded_type = decoded_type;
+    for (const auto & level : levels)
+        if (level.is_array)
+            primitive.max_array_def = level.def;
+
+    node.output_idx = output_columns.size();
+    OutputColumnInfo & output = output_columns.emplace_back();
+    output.name = node.name;
+    output.primitive_start = primitive_idx;
+    output.primitive_end = primitive_idx + 1;
+    output.is_primitive = true;
+
+    if (!primitive.decoded_type)
+        primitive.decoded_type = inferred_type;
+
+    primitive.output_type = primitive.decoded_type;
+    if (primitive.output_nullable)
+    {
+        primitive.output_type = std::make_shared<DataTypeNullable>(primitive.output_type);
+        inferred_type = std::make_shared<DataTypeNullable>(inferred_type);
+    }
+
+    output.input_type = primitive.output_type;
+    output.output_type = node.type_hint ? node.type_hint : inferred_type;
+    output.needs_cast = !output.output_type->equals(*output.input_type);
+
+    return true;
+}
+
+bool SchemaConverter::processSubtreeMap(TraversalNode & node)
+{
+    /// Map, aka Array(Tuple(2)).
+    ///   required group `name` (MAP or MAP_KEY_VALUE):
+    ///     repeated group "key_value" (maybe MAP_KEY_VALUE):
+    ///       reqiured <recurse> "key"
+    ///       <recurse> "value"
+
+    if (node.element->converted_type != parq::ConvertedType::MAP && node.element->converted_type != parq::ConvertedType::MAP_KEY_VALUE && !node.element->logicalType.__isset.MAP)
+        return false;
+    /// If an element is declared as MAP, but doesn't have the expected structure of children
+    /// and grandchildren, we fall back to interpreting it as array of tuples, as if there were
+    /// no MAP annotation on it. Also fall back if a positional Tuple or one naming the repeated group was requested
+    /// (presumably `Tuple(Array(Tuple(key, value))` - a literal interpretation of the schema tree)
+    /// (not to be confused with the case when `Array(Tuple(key, value))` was requested).
+    if (node.schema_context != SchemaContext::None && node.schema_context != SchemaContext::ListElement
+        && node.schema_context != SchemaContext::MapKey)
+        return false;
+    if (node.element->num_children != 1)
+        return false;
+    const parq::SchemaElement & child = file_metadata.schema.at(schema_idx);
+    if (child.repetition_type != parq::FieldRepetitionType::REPEATED || child.num_children != 2)
+        return false;
+    if (const auto * tuple_type_hint = typeid_cast<const DataTypeTuple *>(node.type_hint.get()))
+    {
+        /// Names are matched as in processSubtreeTuple; any other Tuple is rejected below.
+        bool literal = !tuple_type_hint->hasExplicitNames() || tuple_type_hint->getElements().empty();
+        if (!literal)
+        {
+            bool not_in_schema = false;
+            std::string_view child_name = useColumnMapperIfNeeded(child, node.name, not_in_schema);
+            literal = !not_in_schema
+                && tuple_type_hint->tryGetPositionByName(child_name, options.format.parquet.case_insensitive_column_matching).has_value();
+        }
+        if (literal)
+            return false;
+    }
+
+    DataTypePtr array_type_hint;
+    bool no_map = false; // return plain Array(Tuple) instead of Map
+    if (node.type_hint)
+    {
+        if (const DataTypeMap * map_type = typeid_cast<const DataTypeMap *>(node.type_hint.get()))
+        {
+            array_type_hint = map_type->getNestedType();
+        }
+        else if (typeid_cast<const DataTypeArray *>(node.type_hint.get()))
+        {
+            /// Support explicitly requesting Array(Tuple) type for map columns. Useful e.g. if the map
+            /// key type is something that's not allowed as Map key in clickhouse.
+            array_type_hint = node.type_hint;
+            no_map = true;
+        }
+        else if (typeid_cast<const DataTypeObject *>(node.type_hint.get()))
+        {
+            // (We'll produce Map, then do castColumn to JSON.)
+        }
+        else
+        {
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Map, requested type is {}", node.getNameForLogging(), node.type_hint->getName());
+        }
+    }
+    /// (MapTupleAsPlainTuple is needed to skip a level in the column name: it changes
+    /// `my_map.key_value.key` to `my_map.key`.
+    TraversalNode subnode = node.prepareToRecurse(no_map ? SchemaContext::MapTupleAsPlainTuple : SchemaContext::MapTuple, array_type_hint);
+    processSubtree(subnode);
+
+    if (!node.requested || !subnode.output_idx.has_value())
+        return true;
+    size_t array_idx = subnode.output_idx.value();
+
+    if (no_map)
+    {
+        node.output_idx = array_idx;
+    }
+    else
+    {
+        /// Add an OutputColumnInfo to wrap the Array in a Map.
+        /// (Why not just use `needs_cast` to cast Array to Map? Because we may need two cast steps:
+        //   Array -> Map -> JSON, if node.type_hint is DataTypeObject.)
+
+        node.output_idx = output_columns.size();
+        OutputColumnInfo & output = output_columns.emplace_back();
+        const OutputColumnInfo & array = output_columns.at(array_idx);
+
+        output.name = node.name;
+        output.primitive_start = array.primitive_start;
+        output.primitive_end = array.primitive_end;
+        output.input_type = std::make_shared<DataTypeMap>(array.output_type);
+        output.output_type = output.input_type;
+        output.nested_columns = {array_idx};
+        output.rep = array.rep;
+    }
+
+    return true;
+}
+
+bool SchemaConverter::processSubtreeArrayOuter(TraversalNode & node)
+{
+    /// Array:
+    ///   required/optional group `name` (List):
+    ///     repeated group "list":
+    ///       <recurse> "element"
+    ///
+    /// I.e. it's a double-wrapped burrito. To unwrap it into one Array, we have to coordinate
+    /// across two levels of recursion: processSubtreeArrayOuter for the outer wrapper,
+    /// processSubtreeArrayInner for the inner wrapper.
+    ///
+    /// But hudi writes arrays differently, without the inner group:
+    ///   required/optional group `name` (List):
+    ///     repeated <recurse> "array"
+    /// This probably makes it indinsinguishable from a single-element tuple.
+
+    if (node.element->converted_type != parq::ConvertedType::LIST && !node.element->logicalType.__isset.LIST)
+        return false;
+    if (node.schema_context != SchemaContext::None && node.schema_context != SchemaContext::ListElement
+        && node.schema_context != SchemaContext::MapKey)
+        return false;
+    /// A LIST map key requested as `Tuple` or `JSON` is read as the tuple of its children.
+    if (node.schema_context == SchemaContext::MapKey
+        && (typeid_cast<const DataTypeTuple *>(node.type_hint.get()) || typeid_cast<const DataTypeObject *>(node.type_hint.get())))
+        return false;
+    if (node.element->num_children != 1)
+        return false;
+    const parq::SchemaElement & child = file_metadata.schema.at(schema_idx);
+    if (child.repetition_type != parq::FieldRepetitionType::REPEATED)
+        return false;
+
+    /// A repeated group annotated with `FILE` is the element itself (a two-level list), even if it has
+    /// only one field: the middle level of a three-level list has no annotation.
+    bool has_inner_group = child.num_children == 1 && !child.logicalType.__isset.FILE;
+
+    TraversalNode subnode = node.prepareToRecurse(has_inner_group ? SchemaContext::ListTuple : SchemaContext::ListElement, node.type_hint);
+    processSubtree(subnode);
+
+    if (!node.requested || !subnode.output_idx.has_value())
+        return true;
+
+    node.output_idx = subnode.output_idx;
+
+    return true;
+}
+
+bool SchemaConverter::processSubtreeArrayInner(TraversalNode & node)
+{
+    if (node.schema_context != SchemaContext::ListTuple)
+        return false;
+
+    /// Array (middle schema element).
+    chassert(node.element->repetition_type == parq::FieldRepetitionType::REPEATED &&
+             node.element->num_children == 1); // caller checked this
+    /// (type_hint is already unwrapped to be element type, because of REPEATED)
+    TraversalNode subnode = node.prepareToRecurse(SchemaContext::ListElement, node.type_hint);
+
+    if (column_mapper && schema_idx < file_metadata.schema.size())
+    {
+        const auto & elem_schema = file_metadata.schema.at(schema_idx);
+        if (elem_schema.__isset.field_id)
+        {
+            const auto & field_id_map = column_mapper->getFieldIdToClickHouseName();
+            if (auto it = field_id_map.find(elem_schema.field_id); it != field_id_map.end())
+                subnode.name = std::string(it->second);
+        }
+    }
+
+    processSubtree(subnode);
+
+    if (!node.requested || !subnode.output_idx.has_value())
+        return true;
+
+    node.output_idx = subnode.output_idx;
+
+    return true;
+}
+
+/// Whether the subtree rooted at `schema[root_idx]` (a group) contains only REQUIRED, non-repeated
+/// elements below the root. If so, none of its descendants add a definition level, so every leaf's
+/// definition-level null map is exactly the root group's null map. This lets us reconstruct the
+/// group null map from any leaf and read a physically nullable struct (OPTIONAL group) as
+/// Nullable(Tuple(...)) losslessly. Returns false for any OPTIONAL/REPEATED descendant.
+static bool tupleSubtreeIsAllRequired(const std::vector<parq::SchemaElement> & schema, size_t root_idx) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- reads thrift `parq::FileMetaData::schema`
+{
+    /// schema is a flattened pre-order tree; num_children counts direct children, laid out
+    /// contiguously in pre-order. Walk the root's subtree with an explicit stack of
+    /// remaining-children counters for the groups we descended into.
+    if (root_idx >= schema.size())
+        return false;
+    VectorWithMemoryTracking<size_t> stack;
+    stack.push_back(size_t(schema.at(root_idx).num_children));
+    size_t idx = root_idx + 1;
+    while (!stack.empty())
+    {
+        if (stack.back() == 0)
+        {
+            stack.pop_back();
+            continue;
+        }
+        if (idx >= schema.size())
+            return false; // malformed schema; caller handles elsewhere
+        stack.back() -= 1;
+        const parq::SchemaElement & elem = schema.at(idx);
+        if (elem.repetition_type != parq::FieldRepetitionType::REQUIRED)
+            return false;
+        idx += 1;
+        if (elem.__isset.num_children && elem.num_children > 0)
+            stack.push_back(size_t(elem.num_children));
+    }
+    return true;
+}
+
+static std::optional<size_t> subtreeEnd(const std::vector<parq::SchemaElement> & schema, size_t idx) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `parq::FileMetaData::schema` is a thrift-generated std::vector
+{
+    size_t remaining = 1;
+    while (remaining > 0)
+    {
+        if (idx >= schema.size() || remaining > schema.size())
+            return std::nullopt;
+        const parq::SchemaElement & element = schema[idx];
+        remaining -= 1;
+        if (!isPrimitiveNode(element))
+        {
+            if (element.num_children < 0 || size_t(element.num_children) > schema.size())
+                return std::nullopt;
+            remaining += size_t(element.num_children);
+        }
+        idx += 1;
+    }
+    return idx;
+}
+
+bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
+{
+    if (node.element->num_children != 2 && node.element->num_children != 3)
+        return false;
+    const size_t num_children = size_t(node.element->num_children);
+    if (num_children > file_metadata.schema.size() - schema_idx)
+        return false;
+
+    const bool group_annotated_variant = node.element->logicalType.__isset.VARIANT;
+
+    enum ChildRole : size_t { Metadata = 0, Value = 1, TypedValue = 2, NumRoles = 3 };
+
+    std::array<std::optional<size_t>, NumRoles> schema_idx_of_role;
+    VectorWithMemoryTracking<size_t> role_of_child(num_children);
+    size_t child_schema_idx = schema_idx;
+    for (size_t i = 0; i < num_children; ++i)
+    {
+        const parq::SchemaElement & child = file_metadata.schema[child_schema_idx];
+        size_t role = 0;
+        if (child.name == "metadata")
+            role = Metadata;
+        else if (child.name == "value")
+            role = Value;
+        else if (child.name == "typed_value")
+            role = TypedValue;
+        else
+            return false;
+
+        if (schema_idx_of_role[role].has_value())
+            return false;
+        schema_idx_of_role[role] = child_schema_idx;
+        role_of_child[i] = role;
+
+        std::optional<size_t> end = subtreeEnd(file_metadata.schema, child_schema_idx);
+        if (!end.has_value())
+            return false;
+        child_schema_idx = *end;
+    }
+
+    if (!schema_idx_of_role[Metadata].has_value())
+        return false;
+    if (!schema_idx_of_role[Value].has_value() && !schema_idx_of_role[TypedValue].has_value())
+        return false;
+
+    /// `metadata` and `value` hold variant-encoded blobs: unannotated BYTE_ARRAY, not an array.
+    auto is_variant_blob_leaf = [&](size_t idx)
+    {
+        const parq::SchemaElement & element = file_metadata.schema[idx];
+        return isPrimitiveNode(element)
+            && element.type == parq::Type::BYTE_ARRAY
+            && element.repetition_type != parq::FieldRepetitionType::REPEATED
+            && (group_annotated_variant || (!element.logicalType.__isset.STRING && !element.__isset.converted_type));
+    };
+
+    if (!is_variant_blob_leaf(*schema_idx_of_role[Metadata]))
+        return false;
+    if (schema_idx_of_role[Value].has_value() && !is_variant_blob_leaf(*schema_idx_of_role[Value]))
+        return false;
+
+    const DataTypePtr type_hint = node.type_hint ? removeNullable(node.type_hint) : nullptr;
+    const bool read_as_json = type_hint && isObject(type_hint);
+    if (type_hint && !read_as_json && !isDynamic(type_hint))
+        return false;
+
+    /// Spark 4.0 writes variant columns without the `VARIANT` logical type, so they can only be
+    /// recognized by structure. Before this was supported, such groups were read as `Tuple`, hence
+    /// the setting. An explicit `Dynamic`/`JSON` request is not ambiguous and bypasses it.
+    if (!group_annotated_variant && !node.type_hint && !options.format.parquet.detect_variant_by_structure)
+        return false;
+
+    std::optional<String> unsupported;
+    if (group_annotated_variant && node.element->logicalType.VARIANT.__isset.specification_version
+        && node.element->logicalType.VARIANT.specification_version != 1)
+        unsupported = fmt::format(
+            "a variant with specification version {}, but only version 1 is supported",
+            Int16(node.element->logicalType.VARIANT.specification_version));
+    else if (schema_idx_of_role[TypedValue].has_value())
+        unsupported = "a shredded variant (it has a `typed_value` field), which is not supported yet";
+
+    size_t primitive_start = primitive_columns.size();
+    size_t output_start = output_columns.size();
+
+    /// Recurse even when the column is unsupported or not requested, to advance the traversal
+    /// past the group's children.
+    std::array<std::optional<size_t>, NumRoles> output_idx_of_role;
+    for (size_t i = 0; i < num_children; ++i)
+    {
+        TraversalNode subnode = node.prepareToRecurse(SchemaContext::None, nullptr);
+        subnode.requested = node.requested && !unsupported.has_value();
+        processSubtree(subnode);
+        output_idx_of_role[role_of_child[i]] = subnode.output_idx;
+    }
+
+    if (!node.requested)
+        return true;
+
+    if (unsupported.has_value())
+    {
+        /// Like for unsupported primitive types, schema inference can skip the column. When reading,
+        /// a requested column must not silently come out empty.
+        if (!sample_block && options.format.parquet.skip_columns_with_unsupported_types_in_schema_inference)
+            return true;
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Parquet column {} is {}", node.getNameForLogging(), *unsupported);
+    }
+
+    if (!output_idx_of_role[Metadata].has_value() || !output_idx_of_role[Value].has_value())
+    {
+        primitive_columns.resize(primitive_start);
+        output_columns.resize(output_start);
+        return true;
+    }
+
+    node.output_idx = output_columns.size();
+    OutputColumnInfo & output = output_columns.emplace_back();
+    output.name = node.name;
+    output.primitive_start = primitive_start;
+    output.primitive_end = primitive_columns.size();
+    output.input_type = read_as_json ? node.type_hint : std::make_shared<DataTypeDynamic>();
+    output.output_type = output.input_type;
+    output.nested_columns = {output_idx_of_role[Metadata].value(), output_idx_of_role[Value].value()};
+    return true;
+}
+
+void SchemaConverter::processSubtreeTuple(TraversalNode & node)
+{
+    /// Tuple (possibly a Map key_value tuple):
+    ///   (required|optional) group `name`:
+    ///     <recurse> `name1`
+    ///     <recurse> `name2`
+    ///     ...
+
+    /// Not a Map's key_value tuple: `map.keys` and `map.values` are the names of the subcolumns of a Map.
+    const bool is_tuple_in_array = sample_block && !node.requested && !node.not_in_datalake_schema && levels.back().rep > 0
+        && node.schema_context != SchemaContext::MapTuple;
+    const size_t tuple_schema_idx = schema_idx - 1;
+    const size_t leaves_start = leaves_in_arrays.size();
+
+    /// The requested type may wrap the tuple in Nullable (e.g. `Nullable(Tuple(...))` is a legal
+    /// type). Unwrap it, match elements against the inner Tuple, and restore the wrapper below.
+    ///
+    /// Two eligible cases, both requiring no optional/nullable STRUCT-group ancestor. Only Nullable
+    /// levels nested below the innermost array count: a Nullable level at or before it is the
+    /// optional wrapper of a LIST/MAP, whose nulls are normalized to empty collections by
+    /// processRepDefLevelsForArray and never reach the inner tuple null-map.
+    ///  1. REQUIRED group: always defined, so the outer Nullable is always-non-null. Restored via
+    ///     outer_type_hint (needs_cast) as an all-non-null wrapper.
+    ///  2. OPTIONAL group with an all-REQUIRED, non-array subtree: physically nullable struct. No
+    ///     descendant adds a definition level, so every leaf's def-level null map equals the group
+    ///     null map. We mark the leaves and the output so the assembled ColumnTuple is wrapped in
+    ///     ColumnNullable using that reconstructed null map (see OutputColumnInfo::nullable_group).
+    /// Otherwise keep the hint wrapped and let the check below reject it with TYPE_MISMATCH rather
+    /// than lose nulls. For an OPTIONAL group, processSubtree has already pushed this group's own
+    /// (non-array) level as levels.back(); exclude it when scanning for an ancestor.
+    size_t innermost_array_idx = 0;
+    for (size_t i = 0; i < levels.size(); ++i)
+        if (levels[i].is_array)
+            innermost_array_idx = i;
+    const bool group_is_optional = node.element->repetition_type == parq::FieldRepetitionType::OPTIONAL;
+    const size_t ancestor_end = levels.size() - (group_is_optional ? 1 : 0);
+    bool has_optional_ancestor = false;
+    for (size_t i = innermost_array_idx + 1; i < ancestor_end; ++i)
+        has_optional_ancestor |= !levels[i].is_array;
+    bool nullable_group = false;
+    if (node.type_hint && node.type_hint->isNullable() && !has_optional_ancestor)
+    {
+        if (node.element->repetition_type == parq::FieldRepetitionType::REQUIRED)
+            node.type_hint = assert_cast<const DataTypeNullable &>(*node.type_hint).getNestedType();
+        else if (group_is_optional && tupleSubtreeIsAllRequired(file_metadata.schema, schema_idx - 1))
+        {
+            node.type_hint = assert_cast<const DataTypeNullable &>(*node.type_hint).getNestedType();
+            nullable_group = true;
+        }
+    }
+    /// Case 2 in schema inference mode (sample_block is null only there), where only the type is
+    /// named: the read gets that type as its hint and re-derives nullable_group above. Excluded: a
+    /// Map key_value tuple (DataTypeMap requires Tuple(keys, values)) and a Map key (never Nullable).
+    const bool infer_nullable_group =
+        !sample_block
+        && !node.type_hint
+        && node.requested
+        && group_is_optional
+        && !has_optional_ancestor
+        && node.schema_context != SchemaContext::MapTuple
+        && node.schema_context != SchemaContext::MapKey
+        && options.format.schema_inference_allow_nullable_tuple_type
+        && !options.schema_inference_force_not_nullable
+        && tupleSubtreeIsAllRequired(file_metadata.schema, schema_idx - 1);
+
+    /// Mark leaves recursed below as belonging to a physically-nullable group (case 2 above).
+    nullable_tuple_group_depth += nullable_group ? 1 : 0;
+    SCOPE_EXIT({ nullable_tuple_group_depth -= nullable_group ? 1 : 0; });
+
+    const DataTypeTuple * tuple_type_hint = typeid_cast<const DataTypeTuple *>(node.type_hint.get());
+    if (node.type_hint && !tuple_type_hint && !typeid_cast<const DataTypeObject *>(node.type_hint.get()))
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Tuple, requested type is {}", node.getNameForLogging(), node.type_hint->getName());
+
+    /// 3 modes:
+    ///  * If type_hint has element names, we match elements from parquet to elements from type
+    ///    hint tuple by name. If some elements are not in type hint, we skip them.
+    ///    If elements are in different order, we reorder them to match type_hint.
+    ///  * If type_hint has no names, we match elements sequentially and preserve order.
+    ///  * If there's no type_hint, we preserve order, produce tuple with names.
+    ///    Only in this mode, we allow skipping unsupported elements if
+    ///    skip_columns_with_unsupported_types_in_schema_inference is true.
+    ///    In other modes, we skip the whole tuple if any element is unsupported.
+
+    bool lookup_by_name = false;
+    VectorWithMemoryTracking<size_t> elements;
+    if (tuple_type_hint)
+    {
+        if (tuple_type_hint->hasExplicitNames() && !tuple_type_hint->getElements().empty() &&
+            node.schema_context != SchemaContext::MapTuple)
+        {
+            /// Allow reading a subset of tuple elements, matched by name, possibly reordered.
+            lookup_by_name = true;
+            elements.resize(tuple_type_hint->getElements().size(), UINT64_MAX);
+        }
+        else
+        {
+            if (tuple_type_hint->getElements().size() != size_t(node.element->num_children))
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Tuple with {} elements, requested type is Tuple with {} elements", node.getNameForLogging(), node.element->num_children, tuple_type_hint->getElements().size());
+        }
+    }
+
+    /// `num_children` comes directly from untrusted input file, need to sanity-check before doing
+    /// `elements.resize(num_children)`.
+    if (node.element->num_children < 0 || size_t(node.element->num_children) > file_metadata.schema.size() - schema_idx)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet schema element {} declares {} children, but only {} schema elements remain in the file", node.getNameForLogging(), node.element->num_children, file_metadata.schema.size() - schema_idx);
+
+    if (!lookup_by_name && node.requested)
+        elements.resize(size_t(node.element->num_children), UINT64_MAX);
+
+    Strings names;
+    DataTypes types;
+    if (!tuple_type_hint && node.requested)
+    {
+        names.resize(elements.size());
+        types.resize(elements.size());
+    }
+
+    size_t primitive_start = primitive_columns.size();
+    size_t output_start = output_columns.size();
+    size_t skipped_unsupported_columns = 0;
+    VectorWithMemoryTracking<String> element_names_in_file;
+    for (size_t i = 0; i < size_t(node.element->num_children); ++i)
+    {
+        bool not_in_schema = false;
+        const String & element_name = element_names_in_file.emplace_back(
+            useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name, not_in_schema));
+        std::optional<size_t> idx_in_output_tuple = i - skipped_unsupported_columns;
+        if (lookup_by_name)
+        {
+            idx_in_output_tuple = std::nullopt;
+            if (!not_in_schema)
+                idx_in_output_tuple = tuple_type_hint->tryGetPositionByName(element_name, options.format.parquet.case_insensitive_column_matching);
+
+            if (idx_in_output_tuple.has_value() && elements.at(idx_in_output_tuple.value()) != UINT64_MAX)
+                throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Parquet tuple {} has multiple elements with name `{}`", node.getNameForLogging(), element_name);
+        }
+
+        DataTypePtr element_type_hint;
+        if (tuple_type_hint && idx_in_output_tuple.has_value())
+            element_type_hint = tuple_type_hint->getElement(idx_in_output_tuple.value());
+
+        const bool element_requested = node.requested && idx_in_output_tuple.has_value();
+
+        TraversalNode subnode = node.prepareToRecurse(SchemaContext::None, element_type_hint);
+        subnode.requested = element_requested;
+        if (node.schema_context == SchemaContext::MapTuple && idx_in_output_tuple == 0)
+            subnode.schema_context = SchemaContext::MapKey;
+
+        processSubtree(subnode);
+        auto element_idx = subnode.output_idx;
+
+        if (element_requested)
+        {
+            if (!element_idx.has_value())
+            {
+                if (tuple_type_hint || node.schema_context == SchemaContext::MapTuple)
+                {
+                    /// If one of the elements is skipped, skip the whole tuple.
+                    /// Remove previous elements.
+                    primitive_columns.resize(primitive_start);
+                    output_columns.resize(output_start);
+                    return;
+                }
+                else
+                {
+                    skipped_unsupported_columns += 1;
+                    elements.pop_back();
+                    names.pop_back();
+                    types.pop_back();
+                    continue;
+                }
+            }
+
+            elements.at(idx_in_output_tuple.value()) = element_idx.value();
+
+            const auto & type = output_columns.at(element_idx.value()).output_type;
+            if (tuple_type_hint)
+            {
+                chassert(type->equals(*element_type_hint));
+            }
+            else
+            {
+                names.at(idx_in_output_tuple.value()) = element_name;
+                types.at(idx_in_output_tuple.value()) = type;
+            }
+        }
+    }
+
+    if (!node.requested)
+    {
+        if (is_tuple_in_array)
+            tuples_in_arrays.push_back(
+                {.name = node.name, .schema_idx = tuple_schema_idx, .leaves_start = leaves_start,
+                 .leaves_end = leaves_in_arrays.size(), .levels = levels});
+        return;
+    }
+
+    /// Map tuple in parquet has elements: {"key" , "value" },
+    /// but DataTypeMap requires:          {"keys", "values"}.
+    if (node.schema_context == SchemaContext::MapTuple)
+        names = {"keys", "values"};
+
+    DataTypePtr output_type;
+    if (tuple_type_hint)
+    {
+        chassert(elements.size() == tuple_type_hint->getElements().size());
+        for (size_t i = 0; i < elements.size(); ++i)
+        {
+            if (elements[i] != UINT64_MAX)
+                continue;
+            if (!options.format.parquet.allow_missing_columns)
+                throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Requested tuple element {} of column {} was not found in parquet schema ({})", tuple_type_hint->getNameByPosition(i + 1), node.getNameForLogging(), element_names_in_file);
+
+            elements[i] = output_columns.size();
+            OutputColumnInfo & missing_output = output_columns.emplace_back();
+            missing_output.name = node.name + "." + (tuple_type_hint->hasExplicitNames() ? tuple_type_hint->getNameByPosition(i + 1) : std::to_string(i + 1));
+            missing_output.input_type = tuple_type_hint->getElement(i);
+            missing_output.output_type = missing_output.input_type;
+            missing_output.is_missing_column = true;
+        }
+        output_type = node.type_hint;
+    }
+    else
+    {
+        output_type = std::make_shared<DataTypeTuple>(types, names);
+        /// The group null map is reconstructed from a physical leaf's definition levels, so a group
+        /// with no leaf below it cannot be Nullable(Tuple(...)) and stays a plain Tuple.
+        if (infer_nullable_group && primitive_start != primitive_columns.size())
+            output_type = makeNullable(output_type);
+    }
+
+    /// Physically-nullable struct (OPTIONAL group, case 2 above): the assembled ColumnTuple must be
+    /// wrapped in ColumnNullable using the group null map. Make input_type Nullable(Tuple(...)) so
+    /// the outer restore in processSubtree sees no type change (needs_cast stays off); the wrapping
+    /// is done in Reader::formOutputColumn keyed by OutputColumnInfo::nullable_group.
+    /// The group null map is reconstructed from a physical leaf's definition levels, so at least one
+    /// leaf must actually be read. With allow_missing_columns, every requested element can be a
+    /// synthetic default (no physical leaf); then the null map is unrecoverable, so reject rather
+    /// than fabricate an all-non-null map that silently drops the struct nulls.
+    if (nullable_group && primitive_start == primitive_columns.size())
+        throw Exception(ErrorCodes::TYPE_MISMATCH,
+            "Requested type of column {} doesn't match parquet schema: physically nullable Tuple has no "
+            "physical elements to read (all requested elements are missing), so its null map cannot be "
+            "reconstructed; requested type is {}", node.getNameForLogging(), node.type_hint->getName());
+    if (nullable_group)
+        output_type = makeNullable(output_type);
+
+    node.output_idx = output_columns.size();
+    OutputColumnInfo & output = output_columns.emplace_back();
+    output.name = node.name;
+    output.primitive_start = primitive_start;
+    output.primitive_end = primitive_columns.size();
+    output.input_type = std::move(output_type);
+    output.output_type = output.input_type;
+    output.nested_columns = elements;
+    output.nullable_group = nullable_group;
+}
+
+/// Decodes the values as stored, ignoring the logical type, whose conversion can reject valid values.
+/// Returns false if the physical type is missing or unknown.
+static bool setPhysicalValuesDecoder(const parq::SchemaElement & element, PageDecoderInfo & decoder, DataTypePtr & type)
+{
+    if (!element.__isset.type)
+        return false;
+    decoder.physical_type = element.type;
+    size_t size = 0;
+    switch (element.type)
+    {
+        case parq::Type::BOOLEAN:
+        {
+            auto converter = std::make_shared<IntConverter>();
+            converter->input_size = 1;
+            converter->input_signed = false;
+            decoder.fixed_size_converter = std::move(converter);
+            type = std::make_shared<DataTypeUInt8>();
+            return true;
+        }
+        case parq::Type::BYTE_ARRAY:
+            decoder.string_converter = std::make_shared<TrivialStringConverter>();
+            type = std::make_shared<DataTypeString>();
+            return true;
+        case parq::Type::INT32: size = 4; break;
+        case parq::Type::INT64: size = 8; break;
+        case parq::Type::INT96: size = 12; break;
+        case parq::Type::FLOAT: size = 4; break;
+        case parq::Type::DOUBLE: size = 8; break;
+        case parq::Type::FIXED_LEN_BYTE_ARRAY:
+            if (element.type_length > 0)
+                size = size_t(element.type_length);
+            break;
+    }
+    if (size == 0)
+        return false;
+
+    auto converter = std::make_shared<FixedStringConverter>();
+    converter->input_size = size;
+    decoder.fixed_size_converter = std::move(converter);
+    type = std::make_shared<DataTypeFixedString>(size);
+    return true;
+}
+
+std::optional<size_t> SchemaConverter::addLevelsOnlyPrimitive(size_t leaves_start, size_t leaves_end, UInt8 arrays, const String & name)
+{
+    UnorderedSetWithMemoryTracking<size_t> read_column_idxs;
+    for (const auto & primitive : primitive_columns)
+        read_column_idxs.insert(primitive.column_idx);
+
+    /// The cheapest leaf that can be decoded: of fixed width, without arrays of its own, not read for another column.
+    std::optional<size_t> best;
+    UInt8 best_cost = 0;
+    PageDecoderInfo decoder;
+    DataTypePtr decoded_type;
+    for (size_t i = leaves_start; i < leaves_end; ++i)
+    {
+        const LeafInArray & leaf = leaves_in_arrays[i];
+        const parq::SchemaElement & element = file_metadata.schema[leaf.schema_idx];
+        const UInt8 cost = (element.type == parq::Type::BYTE_ARRAY ? 4 : 0) + (leaf.levels.back().rep > arrays ? 2 : 0)
+            + (read_column_idxs.contains(leaf.column_idx) ? 1 : 0);
+        PageDecoderInfo leaf_decoder;
+        DataTypePtr leaf_type;
+        if ((best && cost >= best_cost) || !setPhysicalValuesDecoder(element, leaf_decoder, leaf_type))
+            continue;
+        best = i;
+        best_cost = cost;
+        decoder = std::move(leaf_decoder);
+        decoded_type = std::move(leaf_type);
+    }
+
+    if (!best)
+    {
+        if (leaves_start == leaves_end || options.format.parquet.skip_columns_with_unsupported_types_in_schema_inference)
+            return std::nullopt;
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA, "No column under array {} has a known physical type to read the array sizes from, e.g. {}",
+            name, thriftToString(file_metadata.schema[leaves_in_arrays[leaves_start].schema_idx]));
+    }
+
+    const LeafInArray & leaf = leaves_in_arrays[*best];
+    size_t primitive_idx = primitive_columns.size();
+    PrimitiveColumnInfo & primitive = primitive_columns.emplace_back();
+    primitive.column_idx = leaf.column_idx;
+    primitive.schema_idx = leaf.schema_idx;
+    primitive.name = name;
+    primitive.output_nullable = !leaf.levels.back().is_array;
+    primitive.decoder = std::move(decoder);
+    primitive.decoded_type = decoded_type;
+    primitive.output_type = primitive.decoded_type;
+    if (primitive.output_nullable)
+        primitive.output_type = std::make_shared<DataTypeNullable>(primitive.output_type);
+    for (const auto & level : leaf.levels)
+        if (level.is_array)
+            primitive.max_array_def = level.def;
+    primitive.levels = leaf.levels;
+    primitive.levels_only_arrays = arrays;
+    return primitive_idx;
+}
+
+bool SchemaConverter::addMissingElementOfTupleInArray(size_t pos)
+{
+    const ColumnWithTypeAndName & column = sample_block->getByPosition(pos);
+    const bool case_insensitive = options.format.parquet.case_insensitive_column_matching;
+    auto names_equal = [&](std::string_view a, std::string_view b) { return case_insensitive ? boost::iequals(a, b) : a == b; };
+    /// Whether `path` is `prefix.<something>`.
+    auto is_path_prefix = [&](std::string_view path, std::string_view prefix)
+    {
+        return path.size() > prefix.size() + 1 && path[prefix.size()] == '.' && names_equal(path.substr(0, prefix.size()), prefix);
+    };
+
+    const TupleInArray * tuple = nullptr;
+    bool ambiguous = false;
+    for (const auto & candidate : tuples_in_arrays)
+    {
+        if (!is_path_prefix(column.name, candidate.name))
+            continue;
+        if (tuple && candidate.name.size() == tuple->name.size())
+            ambiguous = true;
+        else if (!tuple || candidate.name.size() > tuple->name.size())
+        {
+            tuple = &candidate;
+            ambiguous = false;
+        }
+    }
+    if (!tuple)
+        return false;
+    if (ambiguous)
+        throw Exception(ErrorCodes::DUPLICATE_COLUMN, "There are multiple columns with name `{}` in the parquet file", tuple->name);
+    const std::string_view rest = std::string_view(column.name).substr(tuple->name.size() + 1);
+
+    /// A path through an element the tuple has (e.g. `arr.primitive_element.x`) stays a missing column.
+    const parq::SchemaElement & group = file_metadata.schema.at(tuple->schema_idx);
+    bool through_existing_element = false;
+    size_t child_idx = tuple->schema_idx + 1;
+    for (Int32 i = 0; i < group.num_children && !through_existing_element; ++i)
+    {
+        bool not_in_schema = false;
+        const std::string_view child_name = useColumnMapperIfNeeded(file_metadata.schema.at(child_idx), tuple->name, not_in_schema);
+        through_existing_element = !not_in_schema && (names_equal(rest, child_name) || is_path_prefix(rest, child_name));
+        const std::optional<size_t> end = subtreeEnd(file_metadata.schema, child_idx);
+        if (!end.has_value())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid parquet schema tree");
+        child_idx = *end;
+    }
+    if (through_existing_element)
+        return false;
+
+    /// The requested type has an Array layer per array the tuple is in.
+    DataTypePtr element_type = column.type;
+    bool arrays_match = true;
+    for (size_t i = 1; i < tuple->levels.size() && arrays_match; ++i)
+    {
+        if (!tuple->levels[i].is_array)
+            continue;
+        const auto * array_type = typeid_cast<const DataTypeArray *>(element_type.get());
+        arrays_match = array_type != nullptr;
+        if (array_type)
+            element_type = array_type->getNestedType();
+    }
+    if (!arrays_match)
+        return false;
+
+    std::optional<size_t> levels_only_primitive
+        = addLevelsOnlyPrimitive(tuple->leaves_start, tuple->leaves_end, tuple->levels.back().rep, tuple->name);
+    if (!levels_only_primitive.has_value())
+        return false;
+    primitive_columns[*levels_only_primitive].idx_in_output_block = pos;
+
+    size_t output_idx = output_columns.size();
+    OutputColumnInfo & missing_output = output_columns.emplace_back();
+    missing_output.name = column.name;
+    missing_output.input_type = element_type;
+    missing_output.output_type = element_type;
+    missing_output.is_missing_column = true;
+
+    for (size_t i = tuple->levels.size() - 1; i > 0; --i)
+    {
+        if (!tuple->levels[i].is_array)
+            continue;
+        DataTypePtr array_type = std::make_shared<DataTypeArray>(output_columns[output_idx].output_type);
+        OutputColumnInfo & array = output_columns.emplace_back();
+        array.name = column.name;
+        array.primitive_start = *levels_only_primitive;
+        array.primitive_end = *levels_only_primitive + 1;
+        array.input_type = array_type;
+        array.output_type = array_type;
+        array.nested_columns = {output_idx};
+        array.rep = tuple->levels[i].rep;
+        output_idx = output_columns.size() - 1;
+    }
+    output_columns[output_idx].idx_in_output_block = pos;
+    output_columns[output_idx].report_as_missing = true;
+    return true;
+}
+
+namespace
+{
+
+struct RequestedIntegerSpace
+{
+    size_t bits;
+    bool is_signed;
+    /// Converting into `Date`/`Date32`/`DateTime`/`Enum*`/`IPv4`/`Time` clamps or rescales instead of wrapping modulo 2^bits.
+    bool is_native_integer;
+    /// The integer -> date CAST reads a value fitting in 16 bits as a day number, and a wider one as a Unix timestamp.
+    /// The one to `Time` keeps a 16-bit value and clamps a wider one at 999:59:59.
+    bool source_must_fit_in_16_bits;
+};
+
+std::optional<RequestedIntegerSpace> getRequestedIntegerSpace(const IDataType & type)
+{
+    WhichDataType which(type);
+    if (which.isNativeInteger())
+        return RequestedIntegerSpace{type.getSizeOfValueInMemory() * 8, which.isNativeInt(), true, false};
+    if (which.isIPv4() || which.isDateTime())
+        return RequestedIntegerSpace{32, false, false, false};
+    if (which.isEnum8())
+        return RequestedIntegerSpace{8, true, false, false};
+    if (which.isEnum16())
+        return RequestedIntegerSpace{16, true, false, false};
+    if (which.isDate())
+        return RequestedIntegerSpace{16, false, false, true};
+    if (which.isDate32() || which.isTime())
+        return RequestedIntegerSpace{32, true, false, true};
+    /// The integer CAST to an `Interval*` is a plain conversion to its `Int64`.
+    if (which.isInterval())
+        return RequestedIntegerSpace{64, true, true, false};
+    /// No constant of any other type reaches `tryHashInt`'s `Int64`/`UInt64`/`IPv4` `Field` cases.
+    return {};
+}
+
+}
+
+std::optional<GeoType> SchemaConverter::getGeoTypeFromGeospatialStatistics(size_t column_idx) const
+{
+    /// WKB (ISO) codes of 2D geometries are 1..6. With Z and/or M the code is increased by 1000,
+    /// 2000 or 3000. Such geometries have no corresponding ClickHouse type and cannot be parsed.
+    auto is_2d_geometry_type = [](Int32 geospatial_type) { return geospatial_type >= 1 && geospatial_type <= 6; };
+
+    /// The footer is parsed without column chunks, parse the chunks of only this column.
+    VectorWithMemoryTracking<FileColumnChunks> parsed;
+    deserializeColumnChunks(
+        file_footer.serialized.data(), file_footer.serialized.size(), file_footer.column_chunk_offsets, {column_idx}, parsed);
+    const auto & chunks = parsed.at(0).chunks;
+
+    std::optional<Int32> single_type;
+    bool is_mixed = false;
+    for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
+    {
+        if (column_idx >= file_footer.numColumnChunks(row_group_idx))
+        {
+            is_mixed = true;
+            continue;
+        }
+        const auto & column_meta = chunks.at(row_group_idx).meta_data;
+
+        /// A column chunk with only NULLs has no geometry types.
+        if (column_meta.statistics.__isset.null_count && column_meta.statistics.null_count == column_meta.num_values)
+            continue;
+
+        /// An empty list means that the types are unknown.
+        if (!column_meta.__isset.geospatial_statistics || column_meta.geospatial_statistics.geospatial_types.empty())
+        {
+            is_mixed = true;
+            continue;
+        }
+
+        for (Int32 geospatial_type : column_meta.geospatial_statistics.geospatial_types)
+        {
+            if (!is_2d_geometry_type(geospatial_type))
+                return std::nullopt;
+            if (single_type.has_value() && *single_type != geospatial_type)
+                is_mixed = true;
+            single_type = geospatial_type;
+        }
+    }
+
+    if (is_mixed || !single_type.has_value())
+        return GeoType::Mixed;
+
+    switch (*single_type)
+    {
+        case 1: return GeoType::Point;
+        case 2: return GeoType::LineString;
+        case 3: return GeoType::Polygon;
+        case 4: return GeoType::MultiPoint;
+        case 5: return GeoType::MultiLineString;
+        case 6: return GeoType::MultiPolygon;
+        default: return GeoType::Mixed;
+    }
+}
+
+void SchemaConverter::processPrimitiveColumn(
+    const parq::SchemaElement & element, DataTypePtr type_hint, bool time_as_stored_integer,
+    PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,
+    DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata, size_t column_idx) const
+{
+    /// Inputs:
+    ///  * Parquet Type ("physical type"),
+    ///  * Parquet ConvertedType (deprecated, but we have to support it),
+    ///  * Parquet LogicalType,
+    ///  * ClickHouse type hint (e.g. if the user specified column types explicitly).
+    ///
+    /// Outputs:
+    ///  * out_decoder - how to decode the column (it then separately further dispatches to
+    ///    different code paths depending on page encoding),
+    ///  * out_inferred_type - data type most closely matching the parquet logical type, used for
+    ///    schema inference.
+    ///  * out_decoded_type - data type of decoding result, chosen for decoding convenience or speed
+    ///    (e.g. matching the parquet physical type). If nullptr, equal to out_inferred_type.
+    /// After parsing, columns are converted (using castColumn) from out_decoded_type to the final
+    /// data type. E.g. maybe out_decoded_type is Int32 based on parquet physical type, but
+    /// out_inferred_type is Int16 based on schema inference, and castColumn does the conversion.
+
+    parq::Type::type type = element.type;
+    std::optional<parq::ConvertedType::type> converted =
+        element.__isset.converted_type ? std::make_optional(element.converted_type) : std::nullopt;
+    const parq::LogicalType & logical = element.logicalType;
+    using CONV = parq::ConvertedType;
+    chassert(!out_inferred_type && !out_decoded_type);
+    out_decoder.physical_type = type;
+
+    auto get_output_type = [&]() -> const IDataType &
+    {
+        chassert(out_inferred_type);
+        return type_hint ? *type_hint : *out_inferred_type;
+    };
+
+    auto get_output_type_index = [&]
+    {
+        return get_output_type().getTypeId();
+    };
+
+    /// Statistics endpoints are ordered as the stored type, so they bound the output column only
+    /// if the cast to it preserves that order for every stored value, not just the ones present.
+    /// `Date`, `IPv4` and an Enum order by their underlying integer, which is what getSizeOfValueInMemory
+    /// and `converter.field_signed` describe.
+    auto stats_order_preserved = [&](const IntConverter & converter)
+    {
+        const size_t stored_bits = type == parq::Type::BOOLEAN
+            ? 1 : converter.output_size.value_or(converter.input_size) * 8;
+        const size_t output_bits = get_output_type().getSizeOfValueInMemory() * 8;
+        return converter.input_signed == converter.field_signed
+            ? output_bits >= stored_bits
+            : !converter.input_signed && output_bits > stored_bits;
+    };
+
+    auto dispatch_int_stats_converter = [&](bool allow_datetime_and_ipv4, IntConverter & converter) -> bool
+    {
+        WhichDataType which(get_output_type_index());
+        /// An Enum orders and compares by its underlying signed integer, so it belongs with the
+        /// native integers of that width rather than with the reinterpreting types below.
+        const bool which_is_enum = which.isEnum();
+        /// A day number outside the target's window is reinterpreted rather than carried over. When
+        /// `date_overflow_behavior` is set (parquet `DATE`), convertField bounds nothing by an endpoint
+        /// outside that window, and inside it the day number is the output value.
+        const bool date_range_checked
+            = converter.date_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Ignore;
+        if (which.isNativeInteger() || which_is_enum)
+        {
+            converter.field_signed = which.isNativeInt() || which_is_enum;
+            converter.output_bool = isBool(type_hint ? type_hint : out_inferred_type);
+            if (!stats_order_preserved(converter))
+                return false;
+        }
+        else switch (which.idx)
+        {
+            case TypeIndex::IPv4:
+                /// There is no cast to IPv4 from a signed integer, and the one from a 64-bit integer wraps.
+                converter.field_signed = false;
+                if (!allow_datetime_and_ipv4 || !stats_order_preserved(converter))
+                    return false;
+                converter.field_ipv4 = true;
+                break;
+            case TypeIndex::Date:
+                converter.field_signed = false;
+                /// The `Date` window is the whole UInt16 domain (DATE_LUT_MAX_DAY_NUM is 0xFFFF), so
+                /// passing the order test already means no stored value leaves it.
+                if (!date_range_checked && !stats_order_preserved(converter))
+                    return false;
+                break;
+            case TypeIndex::DateTime:
+                if (!allow_datetime_and_ipv4)
+                    return false;
+                converter.field_signed = false;
+                converter.field_datetime = true;
+                break;
+            case TypeIndex::Date32:
+                /// `Date32` stops at day 2932896 and reads a larger number as seconds instead, so its
+                /// window is narrower than Int32 and matching widths prove nothing; only the range
+                /// check does.
+                if (!date_range_checked)
+                    return false;
+                break;
+            /// Not supported: DateTime64, Decimal*, Float*
+            /// Not possible (in most cases): String, FixedString
+            default:
+                return false;
+        }
+        return true;
+    };
+
+    /// For a 64-bit physical type the decoded width is the physical width, not the declared one.
+    auto allow_int_hash_filters = [&](size_t decoded_bits, bool decoded_signed, size_t physical_bits) -> bool
+    {
+        chassert(out_inferred_type);
+        /// A `Bool` may read any nonzero stored value as `true`, which hashes as 1.
+        if (isBool(type_hint ? type_hint : out_inferred_type))
+            return false;
+        const auto requested = getRequestedIntegerSpace(type_hint ? *type_hint : *out_inferred_type);
+        if (!requested)
+            return false;
+        if (requested->source_must_fit_in_16_bits && decoded_bits > 16)
+            return false;
+        const bool value_preserving = requested->bits >= decoded_bits
+            && (requested->is_signed == decoded_signed || (!decoded_signed && requested->bits > decoded_bits));
+        const bool reinterpretation = requested->is_native_integer && requested->bits >= physical_bits;
+        return value_preserving || reinterpretation;
+    };
+
+    /// Decides whether min/max stats can be used when convertField produces a DecimalField with
+    /// the given value size and scale (parquet DECIMAL and timestamp/time columns).
+    /// If the output type is a Decimal/DateTime64 with the same size and scale, stats are used
+    /// directly; if size or scale differs, the Field additionally goes through
+    /// tryConvertFieldToType, which rescales it the same way as the castColumn that is applied
+    /// to the values - see PageDecoderInfo::cast_stats_to_output_type.
+    /// `decoded_is_time_of_day` says that the decoded values are a time-of-day (parquet `TIME`),
+    /// i.e. that a `Time64` output type has the same semantics as the decoded values. It must stay
+    /// false for every other decoded semantic: casting a `DateTime64` (parquet `TIMESTAMP`) to
+    /// `Time64` wraps by day and is therefore not order-preserving, so min/max stats of the raw
+    /// values must not be used for pruning.
+    auto allow_decimal_stats = [&](size_t decoded_size, UInt32 decoded_scale, bool decoded_is_time_of_day = false)
+    {
+        const IDataType * output_type = type_hint ? type_hint.get() : out_inferred_type.get();
+        WhichDataType which(output_type->getTypeId());
+        bool same = false;
+        if (which.isDecimal())
+            same = output_type->getSizeOfValueInMemory() == decoded_size && getDecimalScale(*output_type) == decoded_scale;
+        else if (which.isDateTime64())
+        {
+            /// tryConvertFieldToType supports DateTime64 target only for Decimal64 source Field.
+            if (decoded_size != 8)
+                return;
+            same = assert_cast<const DataTypeDateTime64 *>(output_type)->getScale() == decoded_scale;
+        }
+        else if (which.isTime64())
+        {
+            /// Stats are usable only when the decoded values are already a time-of-day; a
+            /// `DateTime64 -> Time64` cast wraps by day (a row group spanning midnight would get
+            /// raw bounds like [23:00:00, 25:00:00] while the values are 23:00:00 and 01:00:00).
+            if (!decoded_is_time_of_day)
+                return;
+            /// Same restriction as for DateTime64: tryConvertFieldToType supports a Time64 target
+            /// only for a Decimal64 source Field.
+            if (decoded_size != 8)
+                return;
+            same = assert_cast<const DataTypeTime64 *>(output_type)->getScale() == decoded_scale;
+        }
+        else
+            return;
+        out_decoder.allow_stats = true;
+        out_decoder.cast_stats_to_output_type = !same;
+    };
+
+    /// Same for floats. convertField produces a Float64 Field (also for Float32 values - Field
+    /// has no separate Float32 type), so only the Float64 -> Float32 direction needs the Field
+    /// conversion (rounding to nearest, same as the castColumn that is applied to the values).
+    auto allow_float_stats = [&](size_t decoded_size)
+    {
+        size_t size = 0;
+        switch (get_output_type_index())
+        {
+            case TypeIndex::Float32: size = 4; break;
+            case TypeIndex::Float64: size = 8; break;
+            default: return;
+        }
+        out_decoder.allow_stats = true;
+        out_decoder.cast_stats_to_output_type = decoded_size == 8 && size == 4;
+    };
+
+    auto is_output_type_string = [&]() -> bool
+    {
+        return get_output_type_index() == TypeIndex::String;
+    };
+
+    auto set_plain_int64_decoder = [&](bool allow_datetime_and_ipv4)
+    {
+        out_inferred_type = std::make_shared<DataTypeInt64>();
+        auto converter = std::make_shared<IntConverter>();
+        converter->input_size = 8;
+        out_decoder.allow_stats = dispatch_int_stats_converter(allow_datetime_and_ipv4, *converter);
+        out_decoder.allow_hash_filters = allow_int_hash_filters(64, true, 64);
+        out_decoder.fixed_size_converter = std::move(converter);
+    };
+
+    /// Escape hatch for reading raw plain-encoded values and bypassing data type stuff.
+    /// If type FixedString is requested, and the parquet physical type is a fixed-size type of
+    /// matching size, use a trivial FixedSizeConverter.
+    /// E.g. don't do Decimal endianness conversion or INT96 timestamp conversion.
+    if (const DataTypeFixedString * fixed_string_type = typeid_cast<const DataTypeFixedString *>(type_hint.get()))
+    {
+        size_t size = 0;
+        bool found = true;
+        switch (type)
+        {
+            case parq::Type::INT32: size = 4; break;
+            case parq::Type::INT64: size = 8; break;
+            case parq::Type::INT96: size = 12; break;
+            case parq::Type::FLOAT: size = 4; break;
+            case parq::Type::DOUBLE: size = 8; break;
+            case parq::Type::FIXED_LEN_BYTE_ARRAY: size = size_t(element.type_length); break;
+
+            /// BYTE_ARRAY and FIXED_LEN_BYTE_ARRAY fall through to normal type dispatch.
+            default:
+                found = false;
+                break;
+        }
+        if (found && size == fixed_string_type->getN())
+        {
+            out_inferred_type = std::make_shared<DataTypeFixedString>(size);
+            auto converter = std::make_shared<FixedStringConverter>();
+            converter->input_size = size;
+            out_decoder.allow_stats = type == parq::Type::FIXED_LEN_BYTE_ARRAY && !element.__isset.converted_type && !element.__isset.logicalType;
+            /// Hashing, unlike min/max, is unaffected by the annotations: both sides hash the raw bytes.
+            out_decoder.allow_hash_filters = type == parq::Type::FIXED_LEN_BYTE_ARRAY;
+            out_decoder.fixed_size_converter = std::move(converter);
+            return;
+        }
+    }
+
+    /// Parquet `GEOMETRY` and `GEOGRAPHY` logical types: WKB values. ClickHouse has no geography
+    /// type, so `GEOGRAPHY` (whose coordinates are longitude/latitude) is read into the same geo
+    /// types as `GEOMETRY`, and its edge interpolation algorithm is not represented. The CRS is not
+    /// represented either. The sort order of these logical types is undefined, so min/max
+    /// statistics must be ignored: `allow_stats` stays false here and in the `String` case below.
+    const bool is_geospatial_logical_type = logical.__isset.GEOMETRY || logical.__isset.GEOGRAPHY;
+    if (is_geospatial_logical_type && type != parq::Type::BYTE_ARRAY)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for geospatial logical type: {}", thriftToString(element));
+
+    /// If the type hint is String, return the raw WKB bytes.
+    if (is_geospatial_logical_type && (!type_hint || !typeid_cast<const DataTypeString *>(type_hint.get())))
+    {
+        std::optional<GeoType> type_from_hint;
+        if (type_hint)
+        {
+            const String hint_name = type_hint->getName();
+            if (hint_name == "Point")
+                type_from_hint = GeoType::Point;
+            else if (hint_name == "MultiPoint")
+                type_from_hint = GeoType::MultiPoint;
+            else if (hint_name == "LineString" || hint_name == "Ring")
+                /// `Ring` has the same structure as `LineString` and is not a WKB geometry type.
+                type_from_hint = GeoType::LineString;
+            else if (hint_name == "Polygon")
+                type_from_hint = GeoType::Polygon;
+            else if (hint_name == "MultiLineString")
+                type_from_hint = GeoType::MultiLineString;
+            else if (hint_name == "MultiPolygon")
+                type_from_hint = GeoType::MultiPolygon;
+            else if (hint_name == "Geometry")
+                type_from_hint = GeoType::Mixed;
+        }
+
+        /// A geo type requested explicitly is decoded even if the inference of geo types is disabled.
+        if (options.format.parquet.allow_geoparquet_parser || type_from_hint)
+        {
+            GeoColumnMetadata column_geo_metadata{GeoEncoding::WKB, GeoType::Mixed, std::nullopt};
+            bool decode_geo = true;
+            if (type_from_hint)
+            {
+                /// Decode directly into the requested type (a value of another type is an error).
+                column_geo_metadata.type = *type_from_hint;
+            }
+            else if (geo_metadata.has_value())
+            {
+                /// GeoParquet 1.1 allows to have both the `geo` metadata and the logical type. Use
+                /// the geometry type declared in the metadata, the same as for a column without
+                /// the logical type.
+                if (geo_metadata->encoding != GeoEncoding::WKB)
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "Column with the geospatial logical type {} is declared with a non-WKB encoding in GeoParquet metadata",
+                        thriftToString(element));
+                column_geo_metadata.type = geo_metadata->type;
+            }
+            else if (auto type_from_statistics = getGeoTypeFromGeospatialStatistics(column_idx))
+            {
+                column_geo_metadata.type = *type_from_statistics;
+            }
+            else
+            {
+                /// The column has geometries with Z and/or M coordinates, which cannot be parsed.
+                /// Return the raw WKB bytes instead.
+                decode_geo = false;
+            }
+
+            if (decode_geo)
+            {
+                out_inferred_type = getGeoDataType(column_geo_metadata.type);
+                out_decoder.string_converter = std::make_shared<GeoConverter>(column_geo_metadata, options.format.precise_float_parsing);
+                return;
+            }
+        }
+    }
+
+    /// GeoParquet.
+    /// Spec says "Geometry columns MUST be at the root of the schema", but we allow them to be
+    /// nested in tuples etc, why not. (Though nesting in arrays/maps probably currently wouldn't
+    /// work because our names omit the wrapper SchemaElement-s. That would be easy to fix by
+    /// including them in parquet_name.)
+    /// If type hint is String, ignore geoparquet and return raw bytes.
+    if (geo_metadata.has_value() && (!type_hint || !typeid_cast<const DataTypeString *>(type_hint.get())))
+    {
+        if (geo_metadata->encoding == GeoEncoding::Native)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "GeoParquet column with a native (GeoArrow) encoding must be a group (a struct or a list), but it is a primitive column of type {}",
+                thriftToString(type));
+        if (type != parq::Type::BYTE_ARRAY)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type of GeoParquet column: {}", thriftToString(type));
+
+        out_inferred_type = getGeoDataType(geo_metadata->type);
+        out_decoder.string_converter = std::make_shared<GeoConverter>(*geo_metadata, options.format.precise_float_parsing);
+        return;
+    }
+
+    if (type_hint && type_hint->getName() == "Geometry" && type == parq::Type::BYTE_ARRAY)
+    {
+        GeoColumnMetadata iceberg_geo{GeoEncoding::WKB, GeoType::Mixed, std::nullopt};
+        out_inferred_type = getGeoDataType(GeoType::Mixed);
+        out_decoder.string_converter = std::make_shared<GeoConverter>(iceberg_geo, options.format.precise_float_parsing);
+        return;
+    }
+
+    if (is_geospatial_logical_type)
+    {
+        /// Raw WKB bytes, see above. Fall through to dispatch by physical type only.
+    }
+    else if (logical.__isset.STRING || logical.__isset.JSON || logical.__isset.BSON ||
+        logical.__isset.ENUM || converted == CONV::UTF8 || converted == CONV::JSON ||
+        converted == CONV::BSON || converted == CONV::ENUM)
+    {
+        if (type != parq::Type::BYTE_ARRAY && type != parq::Type::FIXED_LEN_BYTE_ARRAY)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected non-string physical type for string logical type: {}", thriftToString(element));
+        /// Fall through to dispatch by physical type only.
+    }
+    else if (logical.__isset.INTEGER || (converted >= CONV::UINT_8 && converted <= CONV::INT_64))
+    {
+        bool is_signed = logical.INTEGER.isSigned;
+        size_t bits = size_t(UInt8(logical.INTEGER.bitWidth));
+        if (!logical.__isset.INTEGER)
+        {
+            switch (converted.value())
+            {
+                case CONV::UINT_8: is_signed = false; bits = 8; break;
+                case CONV::UINT_16: is_signed = false; bits = 16; break;
+                case CONV::UINT_32: is_signed = false; bits = 32; break;
+                case CONV::UINT_64: is_signed = false; bits = 64; break;
+                case CONV::INT_8: is_signed = true; bits = 8; break;
+                case CONV::INT_16: is_signed = true; bits = 16; break;
+                case CONV::INT_32: is_signed = true; bits = 32; break;
+                case CONV::INT_64: is_signed = true; bits = 64; break;
+                default:
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected integer logical type: {}", thriftToString(element));
+            }
+        }
+
+        size_t physical_bits = 0;
+        if (type == parq::Type::INT32)
+            physical_bits = 32;
+        else if (type == parq::Type::INT64)
+            physical_bits = 64;
+        else
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected non-int physical type for int logical type: {}", thriftToString(element));
+
+        bits = std::min(bits, physical_bits);
+
+        if (!is_signed && bits == 8)
+            out_inferred_type = std::make_shared<DataTypeUInt8>();
+        else if (!is_signed && bits == 16)
+            out_inferred_type = std::make_shared<DataTypeUInt16>();
+        else if (!is_signed && bits == 32)
+            out_inferred_type = std::make_shared<DataTypeUInt32>();
+        else if (!is_signed && bits == 64)
+            out_inferred_type = std::make_shared<DataTypeUInt64>();
+        else if (is_signed && bits == 8)
+            out_inferred_type = std::make_shared<DataTypeInt8>();
+        else if (is_signed && bits == 16)
+            out_inferred_type = std::make_shared<DataTypeInt16>();
+        else if (is_signed && bits == 32)
+            out_inferred_type = std::make_shared<DataTypeInt32>();
+        else if (is_signed && bits == 64)
+            out_inferred_type = std::make_shared<DataTypeInt64>();
+        else
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected integer logical type: {}", thriftToString(element));
+
+        /// Can't leave the signed->unsigned conversion to castColumn.
+        /// E.g. if parquet type is UINT64, and the requested clickhouse type is Int128,
+        /// casting Int64 -> UInt64 -> Int128 produces different result from Int64 -> Int128.
+        auto converter = std::make_shared<IntConverter>();
+        converter->input_size = physical_bits / 8;
+        converter->input_signed = is_signed;
+        if (physical_bits == 64)
+        {
+            out_decoded_type = is_signed
+                ? std::static_pointer_cast<IDataType>(std::make_shared<DataTypeInt64>())
+                : std::static_pointer_cast<IDataType>(std::make_shared<DataTypeUInt64>());
+        }
+        else if (bits == 8)
+            converter->output_size = 1;
+        else if (bits == 16)
+            converter->output_size = 2;
+
+        out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ true, *converter);
+        out_decoder.allow_hash_filters = allow_int_hash_filters(physical_bits == 64 ? 64 : bits, is_signed, physical_bits);
+        out_decoder.fixed_size_converter = std::move(converter);
+
+        return;
+    }
+    else if (logical.__isset.TIMESTAMP || logical.__isset.TIME || converted == CONV::TIMESTAMP_MILLIS || converted == CONV::TIMESTAMP_MICROS || converted == CONV::TIME_MILLIS || converted == CONV::TIME_MICROS)
+    {
+        /// Parquet `TIMESTAMP` is a Unix timestamp -> ClickHouse `DateTime64` (timezone-aware).
+        /// Parquet `TIME` is a time-of-day (no date, no timezone) -> ClickHouse `Time64`
+        /// (timezone-unaware). Routing `TIME` through `DateTime64` and then casting to a
+        /// `Time64` target would shift the value by `session_timezone`, which is wrong because
+        /// time-of-day has no date/timezone to interpret (see issue #104038 for the Arrow
+        /// equivalent of this bug).
+        const bool is_time_of_day = logical.__isset.TIME
+            || converted == CONV::TIME_MILLIS
+            || converted == CONV::TIME_MICROS;
+
+        UInt32 scale = 0;
+        if (logical.TIMESTAMP.unit.__isset.MILLIS || logical.TIME.unit.__isset.MILLIS || converted == CONV::TIMESTAMP_MILLIS || converted == CONV::TIME_MILLIS)
+            scale = 3;
+        else if (logical.TIMESTAMP.unit.__isset.MICROS || logical.TIME.unit.__isset.MICROS || converted == CONV::TIMESTAMP_MICROS || converted == CONV::TIME_MICROS)
+            scale = 6;
+        else if (logical.TIMESTAMP.unit.__isset.NANOS || logical.TIME.unit.__isset.NANOS)
+            scale = 9;
+        else
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected timestamp units: {}", thriftToString(element));
+
+        if (time_as_stored_integer && is_time_of_day && scale == 6 && type == parq::Type::INT64)
+        {
+            set_plain_int64_decoder(/*allow_datetime_and_ipv4=*/ false);
+            return;
+        }
+
+        if (type != parq::Type::INT64 && type != parq::Type::INT32)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for timestamp logical type: {}", thriftToString(element));
+
+        if (is_time_of_day)
+        {
+            /// Time64 is timezone-unaware; `isAdjustedToUTC` is intentionally ignored here
+            /// because Time64 has no place to store that distinction.
+            out_inferred_type = std::make_shared<DataTypeTime64>(scale);
+        }
+        else
+        {
+            /// Can't leave int -> DateTime64 conversion to castColumn as it interprets the integer as seconds.
+            String timezone = "UTC";
+            if (!options.format.parquet.local_time_as_utc
+                && logical.__isset.TIMESTAMP && !logical.TIMESTAMP.isAdjustedToUTC)
+                timezone = "";
+            out_inferred_type = std::make_shared<DataTypeDateTime64>(scale, timezone);
+        }
+        auto converter = std::make_shared<IntConverter>();
+        /// `TIMESTAMP` is always INT64. INT32 is only used for `TIME_MILLIS`
+        /// (the sole INT32-backed time-of-day logical type in Parquet).
+        converter->input_size = type == parq::Type::INT32 ? 4 : 8;
+
+        if (!is_time_of_day && scale == 3 && converter->input_size == 8 && type_hint && type_hint->getTypeId() == TypeIndex::DateTime)
+        {
+            /// Special case: converting milliseconds to seconds.
+            /// We generally don't do such conversions during decoding, leaving it to castColumn.
+            /// And we usually don't use stats when a nontrivial castColumn is needed.
+            /// But in this case it's important to make stats work.
+            /// This comes up when round-tripping DateTime values through parquet. Our writer writes
+            /// DateTime (seconds) as TIMESTAMP_MILLIS (milliseconds) because parquet doesn't have
+            /// a more suitable type. It's probably common to then read it back with DateTime type
+            /// hint. It's pretty important for min/max stats to work with timestamps, so we add
+            /// this special case.
+            ///
+            /// (cast_stats_to_output_type doesn't cover this case because tryConvertFieldToType
+            /// doesn't support Decimal64 -> DateTime conversion.)
+            converter->field_timestamp_from_millis = true;
+            converter->field_signed = false;
+            out_decoder.allow_stats = true;
+        }
+        else
+        {
+            converter->field_decimal_scale = scale;
+            allow_decimal_stats(sizeof(Int64), scale, is_time_of_day);
+            if (converter->input_size == 4)
+                /// Can't leave Decimal32 -> DateTime64 conversion to castColumn because this
+                /// particular cast is not supported for some reason.
+                converter->output_size = 8;
+        }
+
+        out_decoder.fixed_size_converter = std::move(converter);
+
+        return;
+    }
+    else if (logical.__isset.DATE || converted == CONV::DATE)
+    {
+        if (type != parq::Type::INT32)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for date logical type: {}", thriftToString(element));
+
+        /// Skip date range check if plain integer type is requested.
+        bool output_plain_int = type_hint && WhichDataType(type_hint->getTypeId()).isNativeInteger();
+        if (output_plain_int)
+            out_inferred_type = std::make_shared<DataTypeInt32>();
+        else
+            out_inferred_type = std::make_shared<DataTypeDate32>();
+        auto converter = std::make_shared<IntConverter>();
+        converter->input_size = 4;
+
+        if (!output_plain_int)
+        {
+            converter->date_overflow_behavior = options.format.date_time_overflow_behavior;
+
+            /// Prior to introducing `date_time_overflow_behavior`, out parquet reader threw an error
+            /// in case date was out of range.
+            /// In order to leave this behavior as default, we also throw when
+            /// `date_time_overflow_mode == ignore`, as it is the setting's default value
+            /// (As we want to make this backwards compatible, not break any workflows.)
+            if (converter->date_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore)
+                converter->date_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Throw;
+
+            /// When the requested type is Date, enforce the narrower Date range [0, 65535]:
+            /// `formOutputColumn` later casts the decoded Date32 column to Date without checks,
+            /// narrowing the day number to UInt16, so an unchecked extended Date32 value would
+            /// wrap into an unrelated in-range Date. Similarly for a DateTime target, whose
+            /// context-less cast wraps day numbers whose midnight does not fit into DateTime.
+            /// A DateTime64 target needs the same treatment with a scale-dependent window, because the cast
+            /// clamps whole seconds that the target scale cannot represent.
+            converter->date_target_is_date = type_hint && WhichDataType(type_hint->getTypeId()).isDate();
+            converter->date_target_is_datetime = type_hint && WhichDataType(type_hint->getTypeId()).isDateTime();
+            if (const auto * dt64_hint = type_hint ? typeid_cast<const DataTypeDateTime64 *>(type_hint.get()) : nullptr)
+                converter->date_target_datetime64_day_range = getDateTime64DayNumRange(
+                    DecimalUtils::scaleMultiplier<DateTime64::NativeType>(dt64_hint->getScale()), dt64_hint->getTimeZone());
+        }
+
+        out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
+        out_decoder.fixed_size_converter = std::move(converter);
+
+        return;
+    }
+    else if (logical.__isset.DECIMAL || converted == CONV::DECIMAL)
+    {
+        UInt32 precision = logical.__isset.DECIMAL ? logical.DECIMAL.precision : element.precision;
+        UInt32 scale = logical.__isset.DECIMAL ? logical.DECIMAL.scale : element.scale;
+        precision = std::max(precision, scale);
+
+        if (type_hint && (type == parq::Type::FIXED_LEN_BYTE_ARRAY || type == parq::Type::BYTE_ARRAY))
+        {
+            const TypeIndex requested_type = type_hint->getTypeId();
+            const bool requested_wide_integer =
+                requested_type == TypeIndex::Int128 || requested_type == TypeIndex::UInt128
+                || requested_type == TypeIndex::Int256 || requested_type == TypeIndex::UInt256;
+            if (requested_wide_integer)
+            {
+                if (scale != 0)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Parquet Decimal with nonzero scale {} cannot be read directly as {}",
+                        scale,
+                        type_hint->getName());
+
+                const bool requested_128 = requested_type == TypeIndex::Int128 || requested_type == TypeIndex::UInt128;
+                const bool requested_signed = requested_type == TypeIndex::Int128 || requested_type == TypeIndex::Int256;
+                const UInt32 max_precision = requested_128 ? 39 : (requested_signed ? 77 : 78);
+
+                if (precision == 0 || precision > max_precision)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Parquet Decimal precision {} cannot be represented as {}",
+                        precision,
+                        type_hint->getName());
+                size_t input_size = 0;
+                if (type == parq::Type::FIXED_LEN_BYTE_ARRAY)
+                {
+                    if (element.type_length <= 0)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet Decimal width must be positive");
+                    input_size = size_t(element.type_length);
+
+                    /// Maximum precision for an n-byte signed fixed array is
+                    /// `floor(log10(2^(8n - 1) - 1))`. Widths above 33 bytes can represent every
+                    /// precision accepted by a ClickHouse wide integer.
+                    static constexpr std::array<UInt8, 33> max_decimal_precision_by_width{
+                        2, 4, 6, 9, 11, 14, 16, 18, 21, 23, 26,
+                        28, 31, 33, 35, 38, 40, 43, 45, 47, 50, 52,
+                        55, 57, 59, 62, 64, 67, 69, 71, 74, 76, 79};
+                    if (input_size <= max_decimal_precision_by_width.size()
+                        && precision > max_decimal_precision_by_width[input_size - 1])
+                        throw Exception(
+                            ErrorCodes::INCORRECT_DATA,
+                            "Parquet Decimal width {} is too small for precision {}",
+                            input_size,
+                            precision);
+                }
+
+                out_inferred_type = type_hint;
+                out_decoded_type = type_hint;
+                switch (requested_type)
+                {
+                    case TypeIndex::Int128:
+                        if (type == parq::Type::FIXED_LEN_BYTE_ARRAY)
+                            out_decoder.fixed_size_converter = std::make_shared<BigEndianDecimalWideIntegerConverter<Int128>>(input_size);
+                        else
+                            out_decoder.string_converter = std::make_shared<BigEndianDecimalWideIntegerStringConverter<Int128>>();
+                        break;
+                    case TypeIndex::UInt128:
+                        if (type == parq::Type::FIXED_LEN_BYTE_ARRAY)
+                            out_decoder.fixed_size_converter = std::make_shared<BigEndianDecimalWideIntegerConverter<UInt128>>(input_size);
+                        else
+                            out_decoder.string_converter = std::make_shared<BigEndianDecimalWideIntegerStringConverter<UInt128>>();
+                        break;
+                    case TypeIndex::Int256:
+                        if (type == parq::Type::FIXED_LEN_BYTE_ARRAY)
+                            out_decoder.fixed_size_converter = std::make_shared<BigEndianDecimalWideIntegerConverter<Int256>>(input_size);
+                        else
+                            out_decoder.string_converter = std::make_shared<BigEndianDecimalWideIntegerStringConverter<Int256>>();
+                        break;
+                    case TypeIndex::UInt256:
+                        if (type == parq::Type::FIXED_LEN_BYTE_ARRAY)
+                            out_decoder.fixed_size_converter = std::make_shared<BigEndianDecimalWideIntegerConverter<UInt256>>(input_size);
+                        else
+                            out_decoder.string_converter = std::make_shared<BigEndianDecimalWideIntegerStringConverter<UInt256>>();
+                        break;
+                    default:
+                        UNREACHABLE();
+                }
+                out_decoder.allow_stats = true;
+                return;
+            }
+        }
+
+        if (precision > 76)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Parquet Decimal precision {} exceeds the maximum supported ClickHouse Decimal precision 76; an explicit compatible wide-integer structure is required",
+                precision);
+
+        /// Precision of the Decimal type exactly as wide as one decoded value. Legal parquet can
+        /// make it exceed `precision` (e.g. INT64 with precision 9), so it, not `precision`,
+        /// determines the width of the column we decode into.
+        UInt32 max_precision = 0;
+        if (type == parq::Type::INT32 || type == parq::Type::INT64)
+        {
+            max_precision = type == parq::Type::INT32 ? 9 : 18;
+            auto converter = std::make_shared<IntConverter>();
+            converter->input_size = type == parq::Type::INT32 ? 4 : 8;
+            converter->field_decimal_scale = scale;
+            out_decoder.fixed_size_converter = std::move(converter);
+        }
+        else if (type == parq::Type::FIXED_LEN_BYTE_ARRAY)
+        {
+            size_t input_size = element.type_length;
+
+            if (input_size > 32)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet decimal value too long: {} bytes (at most 32 is supported)", input_size);
+
+            if (precision <= 9 && input_size <= 4)
+            {
+                max_precision = 9;
+                /// FIXED_LEN_BYTE_ARRAY decimals are big endian, while INT32/INT64 are little-endian.
+                out_decoder.fixed_size_converter = std::make_shared<BigEndianDecimalFixedSizeConverter<Int32>>(input_size, scale);
+            }
+            else if (precision <= 18 && input_size <= 8)
+            {
+                max_precision = 18;
+                out_decoder.fixed_size_converter = std::make_shared<BigEndianDecimalFixedSizeConverter<Int64>>(input_size, scale);
+            }
+            else if (precision <= 38 && input_size <= 16)
+            {
+                max_precision = 38;
+                out_decoder.fixed_size_converter = std::make_shared<BigEndianDecimalFixedSizeConverter<Int128>>(input_size, scale);
+            }
+            else
+            {
+                max_precision = 76;
+                out_decoder.fixed_size_converter = std::make_shared<BigEndianDecimalFixedSizeConverter<Int256>>(input_size, scale);
+            }
+        }
+        else if (type == parq::Type::BYTE_ARRAY)
+        {
+            if (precision <= 9)
+            {
+                max_precision = 9;
+                out_decoder.string_converter = std::make_shared<BigEndianDecimalStringConverter<Int32>>(scale);
+            }
+            else if (precision <= 18)
+            {
+                max_precision = 18;
+                out_decoder.string_converter = std::make_shared<BigEndianDecimalStringConverter<Int64>>(scale);
+            }
+            else if (precision <= 38)
+            {
+                max_precision = 38;
+                out_decoder.string_converter = std::make_shared<BigEndianDecimalStringConverter<Int128>>(scale);
+            }
+            else
+            {
+                max_precision = 76;
+                out_decoder.string_converter = std::make_shared<BigEndianDecimalStringConverter<Int256>>(scale);
+            }
+        }
+        else
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for Decimal column: {}", thriftToString(type));
+
+        if (precision > max_precision)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet decimal type precision or scale is too big ({} digits) for physical type {}", precision, thriftToString(type));
+
+        out_inferred_type = createDecimal<DataTypeDecimal>(precision, scale);
+
+        /// Decode into a column as wide as the converter writes; castColumn then narrows it to the
+        /// declared precision, throwing DECIMAL_OVERFLOW for values that don't fit.
+        auto decoded_type = createDecimal<DataTypeDecimal>(max_precision, scale);
+        size_t decoded_size = decoded_type->getSizeOfValueInMemory();
+        if (decoded_size != out_inferred_type->getSizeOfValueInMemory())
+            out_decoded_type = std::move(decoded_type);
+
+        allow_decimal_stats(decoded_size, scale);
+
+        return;
+    }
+    else if (logical.__isset.MAP || logical.__isset.LIST || converted == CONV::MAP ||
+             converted == CONV::MAP_KEY_VALUE || converted == CONV::LIST)
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected compound logical type for leaf column: {}", thriftToString(element));
+    }
+    else if (logical.__isset.UNKNOWN)
+    {
+        /// This means all values are nulls. We could use DataTypeNothing here, or fall through to
+        /// dispatch by physical type. Either way seems fine, currently we do the latter.
+    }
+    else if (logical.__isset.UUID)
+    {
+        if (type != parq::Type::FIXED_LEN_BYTE_ARRAY || element.type_length != 16)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for UUID column: {}", thriftToString(element));
+
+        out_inferred_type = std::make_shared<DataTypeUUID>();
+        out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
+        /// (Parquet's sort order for `uuid` is unsigned big-endian byte comparison, while ClickHouse
+        ///  sorts `UUID` by its second half, so the min/max pair is not an interval in the column's
+        ///  own order. Leaving allow_stats == false.)
+        return;
+    }
+    else if (logical.__isset.FLOAT16)
+    {
+        if (type != parq::Type::FIXED_LEN_BYTE_ARRAY || element.type_length != 2)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for FLOAT16 column: {}", thriftToString(element));
+
+        out_inferred_type = std::make_shared<DataTypeFloat32>();
+        out_decoder.fixed_size_converter = std::make_shared<Float16Converter>();
+        /// (Comment in 03263_parquet_write_bloom_filter in parquet.thrift doesn't mention sort order
+        ///  for FLOAT16, so presumably it's undefined. Leaving allow_stats == false.)
+        return;
+    }
+    else if (converted == CONV::INTERVAL)
+    {
+        /// TODO [parquet]: Support. For now, fall through to reading as FixedString(12).
+    }
+    else if (element.__isset.logicalType || element.__isset.converted_type)
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected logical/converted type: {}", thriftToString(element));
+    }
+
+    // If we didn't `return` above, dispatch by physical type.
+    switch (type)
+    {
+        case parq::Type::BOOLEAN:
+        {
+            out_inferred_type = DataTypeFactory::instance().get("Bool");
+            auto converter = std::make_shared<IntConverter>();
+            converter->input_size = 1;
+            converter->input_signed = false;
+            converter->field_signed = false;
+            out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
+            out_decoder.fixed_size_converter = std::move(converter);
+            return;
+        }
+        case parq::Type::INT32:
+        {
+            out_inferred_type = std::make_shared<DataTypeInt32>();
+            auto converter = std::make_shared<IntConverter>();
+            converter->input_size = 4;
+            out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ true, *converter);
+            out_decoder.allow_hash_filters = allow_int_hash_filters(32, true, 32);
+            out_decoder.fixed_size_converter = std::move(converter);
+            return;
+        }
+        case parq::Type::INT64:
+        {
+            set_plain_int64_decoder(/*allow_datetime_and_ipv4=*/ true);
+            return;
+        }
+        case parq::Type::INT96:
+        {
+            out_inferred_type = std::make_shared<DataTypeDateTime64>(9, "UTC");
+            auto converter = std::make_shared<Int96Converter>();
+            converter->overflow_behavior = options.format.date_time_overflow_behavior;
+            /// Decode at the requested precision; the rounding must match the cast to the requested type that follows.
+            const auto * dt64_hint = type_hint ? typeid_cast<const DataTypeDateTime64 *>(type_hint.get()) : nullptr;
+            if (dt64_hint && dt64_hint->getScale() < 9)
+            {
+                converter->scale = dt64_hint->getScale();
+                out_decoded_type = std::make_shared<DataTypeDateTime64>(converter->scale, "UTC");
+            }
+            else if (type_hint && WhichDataType(type_hint->getTypeId()).isDate32())
+            {
+                converter->scale = 0;
+                converter->round_down = true;
+                out_decoded_type = std::make_shared<DataTypeDateTime64>(0, "UTC");
+            }
+            out_decoder.fixed_size_converter = std::move(converter);
+            /// (Leaving allow_stats == false because INT96 sort order is undefined.)
+            return;
+        }
+        case parq::Type::FLOAT:
+        {
+            out_inferred_type = std::make_shared<DataTypeFloat32>();
+            auto converter = std::make_shared<FloatConverter<float>>();
+            allow_float_stats(converter->input_size);
+            out_decoder.fixed_size_converter = std::move(converter);
+            return;
+        }
+        case parq::Type::DOUBLE:
+        {
+            out_inferred_type = std::make_shared<DataTypeFloat64>();
+            auto converter = std::make_shared<FloatConverter<double>>();
+            allow_float_stats(converter->input_size);
+            out_decoder.fixed_size_converter = std::move(converter);
+            return;
+        }
+        case parq::Type::BYTE_ARRAY:
+        {
+            out_inferred_type = std::make_shared<DataTypeString>();
+            auto converter = std::make_shared<TrivialStringConverter>();
+            /// The sort order of the geospatial logical types is undefined, their min/max must be ignored.
+            out_decoder.allow_stats = is_output_type_string() && !is_geospatial_logical_type;
+            out_decoder.string_converter = std::move(converter);
+
+            if ((logical.__isset.JSON || converted == CONV::JSON) && options.format.parquet.enable_json_parsing)
+            {
+                /// Just output ColumnString and leave json parsing to castColumn.
+                /// Alternatively, we could add a custom StringConverter to avoid copying the strings.
+                out_decoded_type = std::move(out_inferred_type);
+                out_inferred_type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
+            }
+            /// The json block above reassigns the inferred type, so this must be read after it.
+            out_decoder.allow_hash_filters = is_output_type_string();
+            return;
+        }
+        case parq::Type::FIXED_LEN_BYTE_ARRAY:
+        {
+            if (type_hint)
+            {
+                WhichDataType which(type_hint->getTypeId());
+
+                /// Handle explicit UUID type hint (e.g. SELECT x::UUID)
+                if (which.isUUID() && element.type_length == 16)
+                {
+                    out_inferred_type = type_hint;
+                    out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
+                    /// (Leaving allow_stats == false: see the `UUID` logical type branch above.)
+                    return;
+                }
+
+                /// Legacy ClickHouse binary formats for [U]Int128 and [U]Int256.
+                /// These are written as FIXED_LEN_BYTE_ARRAY(16/32) but without logical types.
+                if (which.isInteger() && !which.isNativeInteger() &&
+                    type_hint->getSizeOfValueInMemory() == size_t(element.type_length))
+                {
+                    out_inferred_type = type_hint;
+                }
+            }
+
+            /// Automatic Inference: If no hint is provided, but the Parquet
+            /// file metadata explicitly flags this column as a UUID.
+            if (logical.__isset.UUID && element.type_length == 16)
+            {
+                out_inferred_type = std::make_shared<DataTypeUUID>();
+                out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
+                /// (Leaving allow_stats == false: see the `UUID` logical type branch above.)
+                return;
+            }
+
+            /// Default Fallback: If it's not a UUID or a BigInt hint, treat it as FixedString.
+            if (!out_inferred_type)
+                out_inferred_type = std::make_shared<DataTypeFixedString>(size_t(element.type_length));
+
+            auto converter = std::make_shared<FixedStringConverter>();
+            converter->input_size = size_t(element.type_length);
+            out_decoder.fixed_size_converter = std::move(converter);
+
+            /// Stats are only allowed for FixedString if the output is actually a string.
+            out_decoder.allow_stats = WhichDataType(get_output_type_index()).isString();
+            /// An `IPv6` holds the same 16 bytes as the `FixedString(16)` the array decodes to.
+            out_decoder.allow_hash_filters = WhichDataType(get_output_type_index()).isIPv6()
+                && size_t(element.type_length) == sizeof(IPv6);
+            return;
+        }
+    }
+
+    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type: {}", thriftToString(element));
+}
+
+}

@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 
 -- https://github.com/ClickHouse/ClickHouse/issues/55965
@@ -20,6 +19,7 @@ SELECT
 FROM error_win_func
 WINDOW
     w AS (ROWS BETWEEN CURRENT ROW AND 3 FOLLOWING)
+ORDER BY ALL
 LIMIT 1 BY
     k;
 
@@ -35,6 +35,7 @@ SELECT
   count() OVER (PARTITION BY m) cnt
 FROM t
 WHERE st IN ('x', 'y')
+ORDER BY ALL
 LIMIT 1 BY m;
 
 DROP TABLE t;

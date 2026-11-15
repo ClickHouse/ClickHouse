@@ -21,5 +21,5 @@ $CLICKHOUSE_CLIENT -m -q "
         query_duration_ms >= 7e3,
         ProfileEvents['ReadBufferFromFileDescriptorReadBytes'] > 8e6
     FROM system.query_log
-    WHERE current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id' AND type != 'QueryStart'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id' AND type != 'QueryStart'
 "
