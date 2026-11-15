@@ -1,0 +1,14 @@
+1
+Variant(Int8, String, UInt8)
+Variant(String, UInt8)
+Variant(Float64, String, UInt8)
+1
+Variant(Int8, String, UInt8)
+Variant(Date, Float64, String, UInt8)
+42
+fallback
+123
+42
+hello
+Variant(Int8, String)
+Variant(Int8, String)

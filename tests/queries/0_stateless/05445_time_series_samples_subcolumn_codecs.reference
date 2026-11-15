@@ -1,0 +1,20 @@
+-- the generated samples column declares the codecs for its elements, in both samples tables
+`id` Tuple(UInt64, LowCardinality(UUID)), `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))), `bucket` DateTime64(3) CODEC(Delta, T64, ZSTD(3)), `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(Delta, T64, ZSTD(3)), `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(Delta, T64, ZSTD(3)), CODEC `samples.timestamp` (Delta, T64, ZSTD(3)), CODEC `samples.value` (ALP, ZSTD(3))	1
+recentsamples		{'timestamp':'CODEC(Delta(8), T64, ZSTD(3))','value':'CODEC(ALP, ZSTD(3))'}
+samples		{'timestamp':'CODEC(Delta(8), T64, ZSTD(3))','value':'CODEC(ALP, ZSTD(3))'}
+-- a copy gets the declarations once
+`id` Tuple(UInt64, LowCardinality(UUID)), `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))), `bucket` DateTime64(3) CODEC(Delta, T64, ZSTD(3)), `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(Delta, T64, ZSTD(3)), `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(Delta, T64, ZSTD(3)), CODEC `samples.timestamp` (Delta, T64, ZSTD(3)), CODEC `samples.value` (ALP, ZSTD(3))
+[('1970-01-01 00:01:40.000',1),('1970-01-01 00:03:20.000',2)]
+-- a declared samples column keeps its own codec and gets no codecs for its elements
+`id` Tuple(UInt64, LowCardinality(UUID)), `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))) CODEC(ZSTD(5)), `bucket` DateTime64(3) CODEC(Delta, T64, ZSTD(3)), `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(Delta, T64, ZSTD(3)), `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(Delta, T64, ZSTD(3))
+CODEC(ZSTD(5))	{}
+-- the codecs declared for the elements are kept, also by a copy
+`id` Tuple(UInt64, LowCardinality(UUID)), `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))), `bucket` DateTime64(3) CODEC(Delta, T64, ZSTD(3)), `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(Delta, T64, ZSTD(3)), `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(Delta, T64, ZSTD(3)), CODEC `samples.timestamp` (DoubleDelta, ZSTD(1)), CODEC `samples.value` (Gorilla, ZSTD(1))
+`id` Tuple(UInt64, LowCardinality(UUID)), `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))), `bucket` DateTime64(3) CODEC(Delta, T64, ZSTD(3)), `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(Delta, T64, ZSTD(3)), `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(Delta, T64, ZSTD(3)), CODEC `samples.timestamp` (DoubleDelta, ZSTD(1)), CODEC `samples.value` (Gorilla, ZSTD(1))
+	{'timestamp':'CODEC(DoubleDelta, ZSTD(1))','value':'CODEC(Gorilla(8), ZSTD(1))'}
+[('1970-01-01 00:01:40.000',1)]
+-- a declared samples column without codecs gets the default codec
+`id` Tuple(UInt64, LowCardinality(UUID)), `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))), `bucket` DateTime64(3) CODEC(Delta, T64, ZSTD(3)), `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(Delta, T64, ZSTD(3)), `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(Delta, T64, ZSTD(3))
+	{}
+-- a copy pinned to a version storing one sample per row has no codecs for subcolumns
+`id` Tuple(UInt64, LowCardinality(UUID)), `timestamp` DateTime64(3) CODEC(Delta, T64, ZSTD(3)), `value` Float64 CODEC(ALP, ZSTD(3))

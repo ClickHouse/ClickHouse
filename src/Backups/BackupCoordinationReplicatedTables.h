@@ -104,7 +104,6 @@ private:
         std::map<String /* part_name */, PartReplicas> replicas_by_part_name; /// Should be ordered because we need this map to be in the same order on every replica.
         mutable std::unordered_map<String /* replica_name> */, Strings> part_names_by_replica_name;
         std::unique_ptr<CoveredPartsFinder> covered_parts_finder;
-        mutable std::unordered_map<String, Int64> min_data_versions_by_partition;
         mutable std::unordered_map<String, String> mutations;
         String replica_name_to_store_mutations;
         std::unordered_set<String> data_paths;

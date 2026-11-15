@@ -40,6 +40,9 @@ namespace BackupCoordinationStage
     /// Inserting restored data to tables.
     constexpr const char * INSERTING_DATA_TO_TABLES = "inserting data to tables";
 
+    /// Unpausing refreshable materialized views.
+    constexpr const char * FINALIZING_TABLES = "finalizing tables";
+
     /// Coordination stage meaning that a host finished its work.
     constexpr const char * COMPLETED = "completed";
 }

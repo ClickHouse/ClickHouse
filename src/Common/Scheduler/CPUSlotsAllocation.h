@@ -12,17 +12,29 @@
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
+#include <vector>
 
 namespace DB
 {
 
 class CPUSlotsAllocation;
+class ThreadGroup;
 
 // Represents a resource request for a cpu slot for a single thread
 class CPUSlotRequest final : public ResourceRequest
 {
 public:
-    CPUSlotRequest() = default;
+    CPUSlotRequest()
+        // 1 second is a fixed cost of a CPU slot used without preemption (it does not depend on real consumption)
+        // The only purpose of this value is to ensure that during transition to/from `cpu_slot_preemption` mode,
+        // when preemptibale and non-preemptible slots are mixed, the request cost is reasonable enough.
+        : ResourceRequest(1'000'000'000)
+    {
+        // Ignore throttling for this request, because cost has no meaning in this case
+        // This disables `max_cpus` and `max_burst_cpu_seconds` throttling for non-preemptible CPU slots
+        ignore_throttling = true;
+    }
+
     ~CPUSlotRequest() override = default;
 
     /// Callback to trigger resource consumption.
@@ -38,7 +50,7 @@ public:
 class AcquiredCPUSlot final : public IAcquiredSlot
 {
 public:
-    explicit AcquiredCPUSlot(SlotAllocationPtr && allocation_, CPUSlotRequest * request_);
+    explicit AcquiredCPUSlot(SlotAllocationPtr && allocation_, CPUSlotRequest * request_, size_t slot_id_);
     ~AcquiredCPUSlot() override;
 
 private:
@@ -68,18 +80,19 @@ public:
     [[nodiscard]] AcquiredSlotPtr acquire() override;
 
     // For tests only. Returns true iff resource request is enqueued in the scheduler
-    bool isRequesting() const;
+    bool isRequesting() const override;
 
 private:
-    friend class CPUSlotRequest; // for schedule() and failed()
+    friend class CPUSlotRequest; // for grant() and failed()
 
     // Resource request failed
     void failed(const std::exception_ptr & ptr);
 
-    // Enqueue resource request if necessary
+    // Grant a slot and enqueue another resource request if necessary
     void grant();
 
-    // Returns the queue for the current request
+    // Returns the link (and its queue) for the current request: master while `allocated < master_slots`, else worker.
+    const ResourceLink & getCurrentLink(const std::unique_lock<std::mutex> &) const;
     ISchedulerQueue * getCurrentQueue(const std::unique_lock<std::mutex> &) const;
 
     const SlotCount master_slots; // Max number of slots to allocate using master link
@@ -91,6 +104,7 @@ private:
     static constexpr SlotCount exception_value = SlotCount(-1);
     std::atomic<SlotCount> noncompeting{0}; // allocated noncompeting slots left to acquire
     std::atomic<SlotCount> granted{0}; // allocated competing slots left to acquire
+    std::atomic<size_t> last_slot_id{0};
     std::atomic<size_t> last_acquire_index{0};
 
     // Field that require sync with the scheduler thread
@@ -102,6 +116,9 @@ private:
     std::vector<CPUSlotRequest> requests; // Requests per every slot
     CPUSlotRequest * current_request;
     std::optional<CurrentMetrics::Increment> scheduled_slot_increment;
+    /// `wait_timer` may end on another thread after the creating one has exited, so it counts into the query's group, kept alive here.
+    std::shared_ptr<ThreadGroup> wait_thread_group;
+    ProfileEvents::Counters * wait_counters = &ProfileEvents::global_counters;
     std::optional<ProfileEvents::Timer> wait_timer;
 };
 

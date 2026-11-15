@@ -1,0 +1,17 @@
+-- no settings: LIMIT 5 WITH TIES extends to the whole tied group, 6 rows
+0
+0
+0
+1
+1
+1
+-- limit 4 caps the 6-row tied result at 4 rows
+0
+0
+0
+1
+-- offset 2 skips 2 of the 6-row tied result
+0
+1
+1
+1

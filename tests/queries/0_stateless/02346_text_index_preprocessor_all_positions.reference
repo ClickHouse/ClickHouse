@@ -1,0 +1,29 @@
+the occurrence agrees in every position and under every read-path setting
+[1,2]
+[1,2]
+1	1
+2	1
+3	0
+2
+2
+2
+2
+2
+Output: hasAnyTokens(lower(s), [\'a b\'], \'splitByString([\\\'|\\\'])\')
+hasToken, hasAllTokens and hasPhrase behave the same way
+[1,2]
+1	1
+2	1
+3	0
+[1,2]
+1	1
+2	1
+3	0
+[1,2]
+1	1
+2	1
+3	0
+a lightweight update on the indexed column keeps the preprocessor applied
+1
+1
+0

@@ -1,9 +1,10 @@
-#include <Functions/FunctionFactory.h>
-
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Functions/FunctionFactory.h>
+
 
 namespace DB
 {
@@ -15,12 +16,15 @@ namespace ErrorCodes
 namespace
 {
 template <typename Op>
-class FunctionOpDate : public IFunction
+class FunctionOpDate final : public IFunction
 {
 public:
     static constexpr auto name = Op::name;
 
-    explicit FunctionOpDate(ContextPtr context_) : context(context_) {}
+    explicit FunctionOpDate(ContextPtr context_)
+        : op(FunctionFactory::instance().get(Op::internal_name, context_))
+    {
+    }
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionOpDate<Op>>(context); }
 
@@ -28,6 +32,35 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
+
+    /// A String date is parsed by `plus`/`minus`, and its default value, the empty string, is not a valid date.
+    bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return arguments.empty() || !isString(removeLowCardinalityAndNullable(arguments[0].type));
+    }
+
+    /// Documentation-only — the override below is authoritative (it delegates
+    /// to plus/minus, whose own resolution determines the exact result type).
+    /// String inputs are accepted and parsed as a Date/DateTime by the
+    /// underlying operator.
+    String getSignatureString() const override
+    {
+        return "(DateOrDateTime | String, Interval) -> DateOrDateTime";
+    }
+
+    /// The declarative signature above is documentation-only: the exact result type is not
+    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
+    /// Route the types-only path to it as well, so the base
+    /// `IFunction::getReturnTypeImpl(DataTypes)` never applies the documentation string (which
+    /// would reject valid calls or evaluate an uncaptured return-type name).
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -45,7 +78,6 @@ public:
                 arguments[1].type->getName(),
                 getName());
 
-        auto op = FunctionFactory::instance().get(Op::internal_name, context);
         auto op_build = op->build(arguments);
 
         return op_build->getResultType();
@@ -69,7 +101,6 @@ public:
                 arguments[1].type->getName(),
                 getName());
 
-        auto op = FunctionFactory::instance().get(Op::internal_name, context);
         auto op_build = op->build(arguments);
 
         auto res_type = op_build->getResultType();
@@ -77,7 +108,7 @@ public:
     }
 
 private:
-    ContextPtr context;
+    FunctionOverloadResolverPtr op;
 };
 
 }
@@ -99,8 +130,61 @@ using FunctionSubDate = FunctionOpDate<SubDate>;
 
 REGISTER_FUNCTION(AddInterval)
 {
-    factory.registerFunction<FunctionAddDate>({}, FunctionFactory::Case::Insensitive);
-    factory.registerFunction<FunctionSubDate>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description_addDate = R"(
+Adds the time interval to the provided date, date with time or string-encoded date or date with time.
+If the addition results in a value outside the bounds of the data type, the result is undefined.
+    )";
+    FunctionDocumentation::Syntax syntax_addDate = R"(
+addDate(datetime, interval)
+    )";
+    FunctionDocumentation::Arguments arguments_addDate = {
+        {"datetime", "The date or date with time to which `interval` is added.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
+        {"interval", "Interval to add.", {"Interval"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_addDate = {"Returns date or date with time obtained by adding `interval` to `datetime`.", {"Date", "Date32", "DateTime", "DateTime64"}} ;
+    FunctionDocumentation::Examples examples_addDate = {
+        {"Add interval to date", R"(
+SELECT addDate(toDate('2018-01-01'), INTERVAL 3 YEAR)
+        )",
+        R"(
+┌─addDate(toDate('2018-01-01'), toIntervalYear(3))─┐
+│                                       2021-01-01 │
+└──────────────────────────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_addDate = {23, 9};
+    FunctionDocumentation::Category category_addDate = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_addDate = {description_addDate, syntax_addDate, arguments_addDate, {}, returned_value_addDate, examples_addDate, introduced_in_addDate, category_addDate
+    };
+    factory.registerFunction<FunctionAddDate>(documentation_addDate, FunctionFactory::Case::Insensitive);
+
+    FunctionDocumentation::Description description_subDate = R"(
+Subtracts the time interval from the provided date, date with time or string-encoded date or date with time.
+If the subtraction results in a value outside the bounds of the data type, the result is undefined.
+    )";
+    FunctionDocumentation::Syntax syntax_subDate = R"(
+subDate(datetime, interval)
+    )";
+    FunctionDocumentation::Arguments arguments_subDate = {
+        {"datetime", "The date or date with time from which `interval` is subtracted.", {"Date", "Date32", "DateTime", "DateTime64"}},
+        {"interval", "Interval to subtract.", {"Interval"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_subDate = {"Returns date or date with time obtained by subtracting `interval` from `datetime`.", {"Date", "Date32", "DateTime", "DateTime64"}};
+    FunctionDocumentation::Examples examples_subDate = {
+        {"Subtract interval from date", R"(
+SELECT subDate(toDate('2018-01-01'), INTERVAL 3 YEAR)
+        )",
+        R"(
+┌─subDate(toDate('2018-01-01'), toIntervalYear(3))─┐
+│                                       2015-01-01 │
+└──────────────────────────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_subDate = {23, 9};
+    FunctionDocumentation::Category category_subDate = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_subDate = {description_subDate, syntax_subDate, arguments_subDate, {}, returned_value_subDate, examples_subDate, introduced_in_subDate, category_subDate};
+
+    factory.registerFunction<FunctionSubDate>(documentation_subDate, FunctionFactory::Case::Insensitive);
 }
 
 }

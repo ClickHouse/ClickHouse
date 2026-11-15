@@ -1,0 +1,6 @@
+Nullable(DateTime64(3, \'UTC\'))	2023-01-01 12:00:00.000
+Nullable(DateTime64(3, \'UTC\'))	\N
+Nullable(DateTime64(3, \'UTC\'))	2023-01-02 13:00:00.000
+Nullable(DateTime64(3))	2023-01-01 13:00:00.000
+Nullable(DateTime64(3))	\N
+Nullable(DateTime64(3))	2023-01-02 14:00:00.000

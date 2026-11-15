@@ -20,14 +20,12 @@ template <typename Format, bool support_progress>
 class SSEFormat : public IRowOutputFormat
 {
 public:
-    SSEFormat(WriteBuffer & out_, const Block & header_, const FormatSettings &)
+    SSEFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings &)
         : IRowOutputFormat(header_, out_)
     {
     }
 
     String getName() const override { return formatter->getName() + "EventStream"; }
-
-    std::string getContentType() const override { return "text/event-stream"; }
 
 protected:
     bool supportTotals() const override { return support_progress; }
@@ -197,7 +195,7 @@ protected:
 class SSEFormatJSON : public SSEFormat<JSONEachRowRowOutputFormat, false>
 {
 public:
-    SSEFormatJSON(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
+    SSEFormatJSON(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
         : SSEFormat<JSONEachRowRowOutputFormat, false>(out_, header_, format_settings_)
     {
         formatter = std::make_shared<JSONEachRowRowOutputFormat>(buffer, header_, format_settings_);
@@ -207,7 +205,7 @@ public:
 class SSEFormatJSONWithProgress : public SSEFormat<JSONEachRowWithProgressRowOutputFormat, true>
 {
 public:
-    SSEFormatJSONWithProgress(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
+    SSEFormatJSONWithProgress(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
         : SSEFormat<JSONEachRowWithProgressRowOutputFormat, true>(out_, header_, format_settings_)
     {
         formatter = std::make_shared<JSONEachRowWithProgressRowOutputFormat>(buffer, header_, format_settings_);
@@ -217,7 +215,7 @@ public:
 class SSEFormatCSV : public SSEFormat<CSVRowOutputFormat, false>
 {
 public:
-    SSEFormatCSV(WriteBuffer & out_, const Block & header_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
+    SSEFormatCSV(WriteBuffer & out_, SharedHeader header_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
         : SSEFormat<CSVRowOutputFormat, false>(out_, header_, format_settings_)
     {
         formatter = std::make_shared<CSVRowOutputFormat>(buffer, header_, with_names_, with_types_, format_settings_);

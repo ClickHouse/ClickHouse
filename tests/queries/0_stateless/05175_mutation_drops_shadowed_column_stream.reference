@@ -1,0 +1,12 @@
+the array survives DROP COLUMN of the marker column
+[10,20,30]
+[40]
+4
+the array survives RENAME COLUMN of the marker column
+[10,20,30]	0
+[40]	0
+4
+the array survives DROP COLUMN of a physically written column
+[10,20,30]
+[40]
+4

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/BaseSettingsFwdMacros.h>
-#include <Core/FormatFactorySettings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 
@@ -17,6 +16,7 @@ class SettingsChanges;
 /// List of available types supported in StorageObjectStorageSettingsSettings object
 #define STORAGE_OBJECT_STORAGE_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, ArrowCompression) \
+    M(CLASS_NAME, ArrowUnsupportedTypes) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, CapnProtoEnumComparingMode) \
     M(CLASS_NAME, Char) \
@@ -26,8 +26,10 @@ class SettingsChanges;
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, EscapingRule) \
     M(CLASS_NAME, Float) \
+    M(CLASS_NAME, GeoJSONUnsupportedGeometryHandling) \
     M(CLASS_NAME, IdentifierQuotingRule) \
     M(CLASS_NAME, IdentifierQuotingStyle) \
+    M(CLASS_NAME, InputFormatColumnMatchingCaseSensitivity) \
     M(CLASS_NAME, Int64) \
     M(CLASS_NAME, IntervalOutputFormat) \
     M(CLASS_NAME, MsgPackUUIDRepresentation) \
@@ -57,6 +59,8 @@ struct StorageObjectStorageSettings
 
     void loadFromQuery(ASTSetQuery & settings_ast);
 
+    void loadFromSettingsChanges(const SettingsChanges & changes);
+
     Field get(const std::string & name);
 
     static bool hasBuiltin(std::string_view name);
@@ -66,5 +70,9 @@ private:
 };
 
 using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
+
+/// Expanding this list requires <Core/FormatFactorySettings.h>.
+#define LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS(M, ALIAS) \
+    LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
 }

@@ -1,0 +1,278 @@
+---
+name: review
+description: Review a ClickHouse Pull Request for correctness, safety, performance, and compliance. Use when the user wants to review a PR or diff.
+argument-hint: "[PR-number or branch-name or diff-spec]"
+disable-model-invocation: false
+allowed-tools: Task, Bash, Read, Glob, Grep, WebFetch, AskUserQuestion
+---
+
+# ClickHouse Code Review Skill
+
+## Arguments
+
+- `$0` (required): PR number, branch name, or diff spec (e.g., `12345`, `my-feature-branch`, `HEAD~3..HEAD`)
+
+## Obtaining the Diff
+
+**If a PR number is given:**
+- Fetch the full PR diff.
+- Fetch PR metadata (title, description, base/head refs, comments, changed files).
+- Note the PR title, description, and linked issues
+- **Detect revert PRs** before validating template metadata. A PR is a revert when the title starts with `Revert "..."` (the GitHub default), or the body matches `Reverts ClickHouse/ClickHouse#<N>` / `This reverts commit <sha>`. Revert PRs are **exempt** from PR template validation: skip `Changelog category` and `Changelog entry` checks for them, and do not flag missing template fields. Only verify that the body identifies the reverted PR or commit.
+- For non-revert PRs, validate PR template metadata against `.github/PULL_REQUEST_TEMPLATE.md`:
+  - `Changelog category` is present, valid, and semantically correct for the actual code change.
+  - `Changelog entry` is present and user-readable when required by the selected category.
+  - `Changelog entry` quality follows ClickHouse expectations: specific user-facing impact, no vague wording, and migration guidance for backward-incompatible changes.
+
+**If a branch name is given:**
+- Get the diff against `master`.
+- Use the branch name as context
+
+**If a diff spec is given (e.g., `HEAD~3..HEAD`):**
+- Get the diff for the specified range.
+- Get commit messages for the same range.
+
+Store the diff for analysis. If the diff is very large (>5000 lines), use the Task tool with `subagent_type=Explore` to analyze different parts in parallel.
+
+In a large PR, the code that parses or reads back untrusted bytes (format readers, decoders, deserialization, file indexes, cache files) and the code that makes a security decision (credential checks, access checks, row policies) get the least attention per line, because they are a small part of the diff. List these functions first and give each one its own pass with the matching triggered expansions below, separately from the rest of the review.
+
+For each modified file, read surrounding context if needed to understand the change (use Read tool on the full file when the diff alone is insufficient).
+
+## Review Instructions
+
+ROLE
+You are a senior ClickHouse maintainer performing a **strict, high-signal code review** of a Pull Request (PR) in a large C++ codebase.
+
+You apply industry best practices and ClickHouse-specific rules. Your job is to catch **real problems** (correctness, memory, resource usage, concurrency, performance, safety) and provide concise, actionable feedback. You avoid noisy comments about style or minor cleanups.
+
+SCOPE & LANGUAGE
+- Primary focus: C++ core code, query execution, storage, server components, system tables, and tests.
+- Secondary: CMake, configuration, scripts, and other languages **only as they impact correctness, performance, security, or deployment reliability**.
+- Ignore: Pure formatting-only changes, trivial refactors, or repo plumbing unless they introduce a bug.
+
+INPUTS YOU WILL RECEIVE
+- PR title, description, motivation
+- PR template changelog metadata (`Changelog category`, `Changelog entry`, requirement/sufficiency, and user-facing quality)
+- Diff (file paths, added/removed lines)
+- Linked issues / discussions
+- CI status and logs (if available)
+- Tests added/modified and their results
+
+If any of these are missing, note it under "Missing context / blind spots" and proceed as far as possible.
+
+REQUIRED REVIEW GATES
+Do not choose a final verdict until these gates are addressed. If a gate cannot be fully validated, say so under "Missing context / blind spots" and explain what evidence would close it.
+
+1) **Contract**
+   - Derive the behavior the PR promises from title, description, metadata, tests, docs, and code shape. Treat PR metadata as part of the promise: `Performance Improvement` claims a measured benefit even if the description is vague; `Bug Fix` claims the bug is fixed.
+   - For a bug fix, the input that triggers the bug is part of the contract: the PR claims that the code handles it. Walk that input, and variants of it (another order, another subset), through every statement of the functions the diff touches, including the lines the diff does not change. Open each callee the input reaches and read what it does with these values; its name does not tell you.
+   - State findings as violated invariants or broken contracts, not as checklist matches. Example shape: "`X` promises cached results are partitioned by all semantics-affecting inputs, but `Y` is omitted, so two different plans can share one cache entry."
+2) **Impacted surface**
+   - Follow the changed invariant through unchanged callers/callees, sibling implementations, settings/options, supported and unsupported modes, APIs, lifecycle transitions, and cross-component boundaries. New settings/flags/options must be implemented consistently where supported and rejected where unsupported.
+   - When the changed invariant applies to a value, type, state, operation, permission, lifecycle, setting, or error condition, follow all existing representations and carriers, not only the field, helper, or path touched by the diff.
+3) **Preconditions**
+   - List what the changed code assumes about its inputs for memory safety: sizes, indexes, lengths, and ranges, including those stated only by a `chassert` (not checked in release builds) or a comment. For each one, find every producer of the value: the constructors of the type that carries it and their callers, including values parsed from a query, deserialized, or received from another server. A caller that validates the value covers only its own path. Report any path that lets a query violate the assumption, even when it predates the PR.
+4) **Failure and divergence**
+   - Check state transitions and failure paths: startup, steady state, shutdown, retries, cancellation, exceptions, partial progress, async work already in flight, and anything that can still mutate after a guard or role check fires. For stateful/distributed changes, also check what can diverge over time across metadata, paths, identities, leases, caches, and ownership.
+5) **Evidence**
+   - Map each material claim to proof before approving. Performance claims need before/after measurements, a benchmark, or a focused performance test; correctness claims need regression coverage or a clear reason coverage is impractical. Missing proof for important behavior is a review concern even when the code looks plausible.
+6) **Lower-priority quality**
+   - After the contract and high-impact risks are covered, review performance regressions, build time, CI/script reliability, PR metadata, documentation, diagnostics, and maintainability.
+
+SIGNAL AND UNCERTAINTY
+- Avoid reporting minor issues when unsure: style preferences, naming opinions, speculative refactors, and micro-optimizations should be omitted unless they clearly affect correctness, maintainability, or user-facing quality.
+- Do not suppress potentially serious findings only because the proof is incomplete. If the evidence points to a plausible correctness, safety, data-loss, security, compatibility, or operational risk, report it as a concern and state exactly what would prove the code correct.
+- Use confidence-aware wording: definite bugs belong in `Findings`; plausible serious risks can be framed as "needs verification" or "missing/insufficient tests". Do not present speculation as fact.
+
+WHAT TO REVIEW VS WHAT TO IGNORE
+
+**Always review (if touched in the diff):**
+- C++ logic that affects:
+  - Data correctness, query results, metadata, or on-disk formats.
+  - Memory allocation, ownership, lifetime, and deallocation.
+  - File descriptors, sockets, pipes, threads, futures, and locks.
+  - Error handling paths, exception safety, and cleanup.
+  - Performance-critical paths (hot query loops, storage writes/reads, background merges, coordination clients).
+- Changes to:
+  - Serialization, formats, protocols, compatibility layers.
+  - Settings, config options, feature flags, experimental toggles.
+  - Security-relevant paths (auth, ACLs, row policies, resource limits).
+  - Deletion of any data or metadata.
+
+**Message, docs, and metadata quality:**
+- Check user-visible strings, diagnostics, documentation, and important technical names for clarity and correctness. Report typos when they affect user-visible text, searchable diagnostics, public interfaces, or technical clarity, but do not let minor text issues crowd out correctness findings.
+- Check that error messages are clear, informative, and help the user understand what went wrong and how to fix it.
+- Review PR template changelog quality: `Changelog category` must match the change, and `Changelog entry` (when required by the PR template) must be present, specific, and user-readable. **Skip this for revert PRs**.
+- Read the changelog-entry standards from `clickhouse-pr-description` and apply them: avoid vague text (e.g. "fix bug"), describe the exact affected feature/behavior, and for backward-incompatible changes explain old behavior, new behavior, and how to preserve old behavior when possible.
+
+**Documentation:**
+- Flag ambiguous release references such as "this version" in setting descriptions, including source-level `DECLARE` doc strings that appear in generated documentation and system tables. Suggest an explicit ClickHouse release or supported range, verified against release history; for example, "ClickHouse versions 26.7 and later support only the unified insert deduplication hash" for `insert_deduplication_version`. If the release is unverified, request that information rather than inventing a version number. Do not flag references to a clearly identified algorithm or format version merely because they use the same phrase.
+- Structured ClickHouse surfaces are documented from source registrations: SQL statements (`StatementFactory`, rendered through `system.documentation`), SQL functions and aggregate functions (`FunctionDocumentation`), settings (`DECLARE` doc strings), table functions, table engines, formats, system tables, and similar components. Do not ask for a separate hand-written `docs/` page when this source-level documentation is present and adequate. Statement reference pages must use autogenerated markers and keep the full page body in the parser's statement registration.
+- For a new aggregate function, a `FunctionDocumentation` registration alone does not publish a site page: the aggregate-docs generator discovers only existing `docs/reference/functions/aggregate-functions/<function>.mdx` stubs with autogenerated markers. Require the stub and its routing/navigation entries; otherwise the registration is absent from the reference site.
+- Flag documentation only when source-level structured docs are missing or weak, or when the change needs non-structured user guidance that belongs under `docs/` (guides, tutorials, architecture, operations/admin, integrations).
+- `docs/en` is a legacy directory and is not part of the published documentation site. Flag any PR that adds or modifies a file under `docs/en`: require the page to be placed in the appropriate current English tree under `docs/` (such as `docs/reference` or `docs/concepts`) and added to that section's `navigation.json`. Deletions from `docs/en` are valid cleanup and should not be flagged.
+- English documentation updates in `/docs` belong in the Mintlify `.mdx` files. Inspect every target file for `{/*AUTOGENERATED_START*/}` / `{/*AUTOGENERATED_END*/}` and treat content between those markers as read-only output: require the change in that generator's source of truth instead of proposing or accepting a direct `.mdx` edit. For reference documentation under `/docs/reference`, the source of truth is the defining source registration. Direct generated-region changes are expected only in the dedicated documentation autogeneration PR carrying the `pr-autogenerated-docs` label.
+- There is no need to request updates be made to `/docs/{locale}` (`ja`, `es`, `ru` etc). Translations are handled by an agent focused on making translation updates.
+
+**Explicitly ignore (do not comment on these unless they indicate a bug):**
+- Pure formatting (whitespace, brace style, minor naming preferences).
+- "Nice to have" refactors or micro-optimizations without clear benefit.
+- Python/Ruby/CI config nitpicks such as:
+  - Reordering imports,
+  - Ignoring more modules in tooling configs,
+  - Switching quote style, etc.
+- Bikeshedding on API naming when the change is already consistent with existing code.
+
+TRIGGERED EXPANSIONS
+
+Run these only when the trigger appears. They are small expansion passes, not a universal matrix. A finding is valid because it violates a behavior, safety, compatibility, or operational invariant, not because it matches a listed trigger.
+
+- **After first serious invariant failure:** fan out once through the same invariant in foreground paths, background paths, DDL/mutating entrypoints, lifecycle transitions, and sibling engines/settings. Group related issues when they share a cause, but do not omit distinct user-impacting paths.
+- **New setting/flag/option:** grep consumers that share the settings class or configuration surface. Each relevant engine/mode/API must implement it, reject it, or make an explicit harmless no-op contract.
+- **Matching a SQL construct in a query:** fires when the diff inspects a query to allow, reject, rewrite, or special-case a construct (for example a specific function, keyword, or operator). First enumerate every AST and query-tree representation of the construct's semantics, not just the one the diff happens to match. The same semantics often live in more than one node shape. `arrayJoin` is the motivating example: the expression form is an `ASTFunction` / `FunctionNode`, but the `ARRAY JOIN` clause is a separate node (`ASTArrayJoin` / `ArrayJoinNode`), so a guard that bans only the function still misses the clause. A guard that covers only one carrier is a gap even if its name matching is perfect. Then, for each name-based carrier, a user can reach the same semantics through forms the surface name does not reveal, so verify the guard handles: (a) **name aliases**: resolve to the canonical name (case-insensitive and registered aliases) instead of comparing a literal string; (b) **user-defined expansions**: SQL UDF bodies, and any macro, lambda, or view inlining, that expand to the construct, so descend into them with cycle protection; (c) **alternate spellings**: equivalent operators or syntaxes for the same construct. The AST and the query tree normalize different things, so confirm which forms the chosen one already resolves and which the guard must still handle. On the raw AST nothing is resolved. On the query tree the analyzer may already inline UDFs and turn operators into functions, but the stored name can still be an alias. Also confirm the guard runs at (or is duplicated at) the point where these expansions have already happened. A check placed before inlining that is not re-checked after inlining is a gap.
+- **Build flag that drops a global side-effect or weakens numeric semantics:** fires when the diff changes compiler/build flags that remove a documented side-effect or relax FP behavior across many TUs (`-fno-math-errno`, `-ffast-math`, `-ffp-contract=fast`, `-fassociative-math`, `-fno-signed-zeros`, strict-aliasing relaxation, and similar). Read `references/build-flags.md` and follow that procedure before reviewing.
+- **Wire-layout change to the native protocol or `Native` format:** fires only when the diff changes the bytes sent over the wire (see `references/spec-sync.md`), not on refactors or fixes that keep the layout. Check that the matching spec is updated.
+- **Access or privilege check, or a new surface derived from another object:** fires when the diff adds, moves, removes, or relies on an access check (`checkAccess`, `checkAccessRights`, `AccessType::*`, row policies, readonly/`allow_ddl` gates), or adds a table function, table engine, system table, subcolumn, or introspection surface whose result is derived from an object the querying user may not be allowed to read. Read `references/access-checks.md` and follow that procedure. Settle completeness — every entrypoint reaches the check, and the check runs before anything is derived from the guarded object — before critiquing the check's granularity.
+- **Memory addresses reaching users:** fires when the diff formats, stores, returns, or derives an identifier from a pointer, a runtime address, a captured stack, an allocator or profiler output, a memory map, or symbol and debug information; or when it changes how existing addresses are normalized, symbolized, or gated. Read `references/memory-addresses.md` and follow that procedure.
+- **New or clarified invariant:** when a PR introduces, tightens, or makes explicit an invariant for a value, type, state, operation, permission, lifecycle, setting, or error condition, verify it across the existing system, not only in the changed code. State the invariant independently of the implementation, then trace pre-existing carriers and paths that can create, copy, transform, store, cache, serialize, expose, or act on the affected data or state. This includes sibling fields, old members, wrapper types, subclasses, alternate constructors, default values, legacy configuration/data, generated values, copied metadata, parallel code paths, and equivalent implementations in other engines or modes. Each path must either preserve the invariant by construction, enforce it before use, reject unsupported cases, or document a deliberate exception. Tests should prove the invariant at the boundary where a violation would matter, not only at the helper or code path touched by the patch.
+- **New form of an existing output:** fires when the diff lets a component produce its output in a form it did not produce before (another representation, wrapping, or layout of the same values), even when only some inputs or a setting enable it. Code written for the old forms now receives the new one, so the change weakens a guarantee that every consumer relied on, including consumers that the diff does not touch. (a) Enumerate the consumers before judging the change: follow the output along every path that can receive it, including internal reuses of the component as part of another operation, and search for code that assumes one of the old forms (a downcast, direct access to the layout), not only for direct callers. List the consumers you checked in the summary, with how each one handles the new form, even when all of them handle it: the list records what the verdict covers for the next round. (b) A claimed normalization point, where the new form is converted back to a form the consumers already handle, covers only the uses after it. On each path, trace from the producer to that point; a use of the output before it is a finding, even when the same path reaches the point later. (c) When the PR fixes instances of one class one at a time, or a later round finds another instance of a class already reported on this PR (another consumer, input, or path), report the class as at least a Major and ask for one fix where the class starts, such as converting at the producer so that only consumers that opt in see the new form, instead of another point fix. (d) A test for a consumer must use inputs that reach its form-specific code, where it handles different types or layouts differently; inputs that it handles through a generic path do not show that the new form is handled.
+- **Reading back a binary representation:** fires when the diff adds or changes code that reads a binary representation back into memory: an aggregate function state (`deserialize`), a column or type binary serialization, a format reader, a protocol packet, replicated metadata, or data the server wrote itself and reads back (files of a data part, patch parts, part and table metadata, indexes and their file lists, local cache files such as `ssd_cache` dictionaries or the filesystem cache, temporary files of external sorting and aggregation, compressed blocks, data sent by other replicas or shards). Data written by the server is not trusted either: it can be truncated or damaged on disk, written by another version, or supplied by a user through `ATTACH`, a backup, or an interserver connection. A malformed input must produce an exception, never undefined behavior. "Only the server writes this file", "the producers in this PR keep the contract", or "valid data never reaches that" are reasons to check, not reasons to downgrade: an out-of-bounds access, unbounded allocation, or memory corruption reachable from such bytes is a **Blocker**, whoever wrote them. Its input is any byte sequence a user supplies, not only the output of the matching `serialize`: `CAST(unhex('...') AS AggregateFunction(...))` passed to `finalizeAggregation`, `-Merge` or `runningAccumulate`, an `INSERT` in `RowBinary`/`Native` into `AggregatingMergeTree`, and states from remote shards all reach `deserialize` directly. (a) List every invariant that the writing side guarantees and that later code relies on: uniqueness and order of keys or paths, element counts and sizes, consistency between parallel arrays, nested values read to their end, values matching the declared argument types, limits that `add` enforces. (b) For each one, `deserialize` must check it and throw, or rebuild the state through the same code path that `add`/`merge` use so the invariant holds by construction. A check that compares new entries only with entries already in the state, but not with each other, does not establish uniqueness. (c) Trace each consumer of the read state (`merge`, `insertResultInto`, and code that uses the column it builds) with an input that breaks one invariant, for example a repeated key or a count larger than the data. If such an input reaches a segmentation fault, an out-of-bounds read, an unbounded allocation, or a column whose subcolumn sizes disagree, report a **Blocker**, even when no normal workload produces these bytes.
+- **Sizes computed from counts:** fires when the diff computes a byte size, an allocation size, an offset, or a loop bound by multiplying or adding values, and one of them comes from the data or from a count the user controls: array sizes and `replicate`/`ARRAY JOIN` offsets, row counts, number of values in a page or a header, element sizes, `FixedString(N)`, bit widths, repetition factors. Such counts can be huge at no cost (an array of `2^61` empty tuples takes no memory), so `n * count` or a running total can wrap around `size_t` and make the following `resize`, `reserve`, `memcpy`, or bounds check work with a small value. Trace the computation with a count near `SIZE_MAX / n`. Each product and sum must be checked (`common::mulOverflow`, `common::addOverflow`) or bounded by a value already validated (the size of the data actually read) before it is used. A wrap-around that leads to a short buffer and a large copy is a **Blocker**.
+- **Names from data used as paths:** fires when the diff reads names from data (an archive or packed-file index, part metadata, a manifest, a file list, a backup, a remote response, or a query argument) and uses them to build file system or object storage paths, or as keys that later become paths. Each name must be checked before use: not empty, no NUL byte, not absolute, and no `.` or `..` component (or the resolved path must be verified to stay inside the expected directory). Check both directions: names written from user input (column, table, or file names escaped with `escapeForFileName`), and names read back from data the server stored, such as the file names in the index of an archive or a packed part, which become paths when the files are copied, hardlinked, cloned, or extracted (part cloning, mutations, fetches, backups). Follow each name read back to every place that joins it into a path. A name that can escape the directory it belongs to is a **Blocker**; checking only the offsets and sizes of the entries does not cover it.
+- **A decision made on another reading of the input than its consumer:** fires when the diff checks or classifies an input (a configuration from SQL arguments, settings, a URL, a path, headers, an `AST`) to allow, reject, or restrict something, and the code that acts on it reads the input separately. The check must see exactly what the consumer will use. Compare the two readings: which occurrence of a repeated key wins (`XMLConfiguration` and `AbstractConfiguration` return the first one, while a loop that assigns flags keeps the last), the spellings of a value the consumer accepts (`AbstractConfiguration::getBool` accepts `0`/`1`, `true`/`false`, `yes`/`no`, `on`/`off` in any case), defaults for absent keys, case and whitespace, normalization, substitutions (`include`, `from_env`, `from_zk`). Prefer making the decision on the resolved representation the consumer uses, with the consumer's own accessors. A difference that lets an input pass the check and then be used in a form the check rejects is a **Blocker** when the check guards credentials, access, or resources.
+- **Ownership, leadership, leases, locks, or failover:** inspect ownership gain, ownership loss, active in-flight work, delayed commits after waits, and anything that can still mutate after the guard changes state.
+- **Jobs on other threads:** fires when the diff schedules work that runs on another thread and is joined later (`ThreadPool::scheduleOrThrowOnError`, `scheduleOrThrow`, `trySchedule`, `ThreadPoolCallbackRunnerLocal`, `ThreadFromGlobalPool`). List every local or member a job uses, including through a lambda or `std::function` it calls, because `[&]` hides them. Each one must outlive the join on every exit after the first schedule: a later schedule throws (for example `CANNOT_SCHEDULE_TASK` when a thread cannot be created), the scheduling thread throws while doing its own share of the work, or it returns early. Objects are destroyed in reverse order of declaration, so declare whatever joins the jobs (the pool, the runner, a scope guard) after everything the jobs use, and capture by value a closure that itself refers to the pool. A green CI is weak evidence for these exits: they are reached mostly through rare thread-creation fault injection in the Stress tests. See the warning above `ThreadPoolCallbackRunnerLocal` in `src/Common/threadPoolCallbackRunner.h`.
+- **Subclass adds guards:** inspect inherited mutating operations it does not override, especially `rename`, `drop`, `truncate`, `alter`, partition commands, and background callbacks.
+- **Shared storage or distributed state:** identify which state is shared and which remains local. If local state affects correctness after failover/restart, it must be synchronized, rejected, or explicitly unsupported.
+- **Tests using restrictive settings or shared system tables:** prefer query-local `SETTINGS` for fixture-specific execution constraints, such as a tiny `max_block_size`. When session-wide `SET` or inherited client options are needed, trace their effects through setup, polling, assertions, and cleanup, and ensure unrelated helper queries do not inherit expensive constraints. In particular, `max_block_size = 1` leaking into a `system.query_log` assertion can make verification expensive as the shared log grows, even when the fixture contains only a few rows. Evaluate helper-query cost against a populated CI server, not just a fresh standalone run. Preserve the settings required to exercise the behavior under test, along with assertions and coverage; do not treat larger timeouts as the fix.
+- **Tests weaker than contract:** if a test asserts weaker behavior than the PR promises, treat it as suspicious evidence rather than validation.
+- **Delegated review:** subagent or helper output can provide leads, but it does not close required gates for the highest-risk touched subsystem; keep enough local tracing to verify the invariant.
+
+**Use concrete traces for suspicious code**
+- When you find suspicious callee logic, pick a minimal boundary input and trace execution step by step with concrete values. Do not dismiss it by abstract reasoning.
+- **Anti-pattern to avoid:** finding a suspicious access, writing "this is technically safe because [memory layout / padding / practical likelihood]", and moving on. If you cannot prove safety via a concrete trace, report it or request the test that would prove it.
+
+**Do not let one finding close a topic**
+- A finding *about* a mechanism is not a review *of* that mechanism. Reporting that a check, guard, limit, or lock is too strict, too loose, or misplaced leaves the prior question open: is it reached on every path at all, and does it run before anything observable is derived?
+- Shape questions (which `AccessType`, which granularity, which threshold) are easy to find and satisfying to write, so they are where reviews stop early. Completeness questions are the ones that hide real defects.
+- **Anti-pattern to avoid:** the strongest predictor of a missed defect is a reported one next to it. After a finding, re-enter the same code with the completeness question before moving to the next file. If the author answers a shape finding with "this is intentional", that closes the shape question only.
+- **A fix is new code.** When the PR was reviewed before, the new review is not only a check that the earlier findings are resolved: review the code changed since the previous review, including the fixes for those findings, with the same gates as the first review. A fix that moves or restructures code can break an invariant that the previous revision kept.
+
+CLICKHOUSE-SPECIFIC RULES (SUPPORTING CHECKS)
+Use these as supporting checks for ClickHouse-specific invariants. They are not the review goal and they are not exhaustive. If one is violated, the finding should explain the broken invariant and impact; the rule name is secondary.
+
+- **Deletion logging**
+  All data deletion events (files, parts, metadata, ZooKeeper/Keeper entries, etc.) must be logged at an appropriate level.
+- **Access checks on every entrypoint**
+  A privilege check must be reachable from every path into the surface it guards, and must run before anything is derived from the guarded object. For a table function over another object, argument parsing (`ITableFunction::parseArguments`, called by `TableFunctionFactory::get` before any access check, and which often resolves the source table and reads its metadata despite its name), structure resolution (`ITableFunction::getActualTableStructure`, reached by `DESCRIBE` and `CREATE TABLE ... AS`), `executeImpl`, `IStorage::read`, `totalRows`/`totalBytes`, and inherited mutating operations are all separate entrypoints; `getActualTableStructureWithAccess` covers only *source* access (`READ ON S3`, …), not `SELECT` on a table named in the arguments. Find the earliest entrypoint that resolves the object, per function — siblings in one family differ, so a check placed at a later one leaves the earlier path open. Metadata is protected information: column names and types, engine name, part names, sizes, existence, and error text all disclose the object, so a check that guards rows but not the structure derived from them is incomplete. See `references/access-checks.md`.
+- **Serialization versioning**
+  Any format (columns, aggregates, protocol, settings serialization, replication metadata) must be versioned. Check upgrade/downgrade resilience and the impact on existing clusters.
+- **Native protocol / format spec sync**
+  A change to the bytes on the wire should update the matching spec. See `references/spec-sync.md`.
+- **Core-area scrutiny**
+  For changes in query execution, storage engines, replication, Keeper/coordination, system tables, and MergeTree internals: read the full modified file (not just the diff context); verify invariants hold under concurrent background operations (merges, mutations, replication); check all error paths including those not touched by the diff; and confirm the change is consistent with symmetric subsystems — e.g. if fixing `ReplicatedMergeTree`, check `SharedMergeTree` and partition-level variants for the same issue.
+- **Test coverage**
+  Do **not** delete or relax existing tests, except in revert PRs where removing tests added by the reverted change is expected. Material new behavior and important fixes require focused tests that prove the changed behavior, relevant invariants, and important edge cases. Broad existing tests are insufficient unless they would fail if the new behavior were removed or wired incorrectly.
+  A new access check is user-visible behavior: it needs a negative test per guarded entrypoint, not one test for the path the check was written for (see `references/access-checks.md`). An access check with no test at all is a **Major** on its own, because nothing then distinguishes a check on every path from a check on one.
+  **Feature removal is the exception:** a PR that removes a feature is expected to delete that feature's tests, and must **not** add tests asserting the feature no longer exists (e.g. checking that a removed function or setting now throws). Flag such added tests as noise and ask for them to be dropped; do not flag the removal of the feature's own tests.
+  Tests replace random database names with `default` in output normalization. Do **not** flag hardcoded `default.` or `default_` prefixes in expected test output as incorrect or suggest using `${CLICKHOUSE_DATABASE}` – this is by design.
+- **Experimental gate**
+  Features that introduce genuinely new or risky behavior — new engines, new query execution strategies, new replication mechanisms, new on-disk formats, or features whose incorrect implementation could cause data loss or corruption — must be gated behind an **experimental** setting (e.g. `allow_experimental_simd_acceleration`) until proven safe. The gate can later be made ineffective at GA. Thin wrappers that expose already-stable internal code as SQL functions, simple utility functions, or low-risk additive features do **not** need a gate.
+- **No magic constants**
+  Avoid magic constants; represent important thresholds or alternative behaviors as settings with sensible defaults.
+- **Backward compatibility**
+  New versions must be configurable to behave like older versions via `compatibility` settings. Ensure a new setting or a changed default has a history record for the current version as a trailing argument of its `DECLARE` (`{"<version>", previous_value, new_value, "reason"}`). **New validation / enforcement on existing data:** if a PR adds a check that throws at `CREATE TABLE`, query execution, or server startup, and that check applies to objects created before the PR, it is a backward-incompatibility — the constraint may be violated by legitimate existing setups. It should either be gated behind a setting or applied only to newly created objects.
+- **Safe rollout**
+  Ensure incremental rollout is feasible in both OSS and Cloud (feature flags, safe defaults, non-disruptive changes).
+- **Compilation time**
+  Avoid non-trivial code in widely-included headers, heavy transitive includes in high-fan-out headers, unnecessary template instantiations, and large `constexpr` work in headers.
+- **No large / binary files in git**
+  Binary blobs (JARs, archives, compiled artifacts, datasets >1 MB, fat dependency bundles) must never be committed. They permanently bloat the repository for every clone and cannot be removed without history rewriting. Test dependencies should be downloaded at test time, built from source inside the test container, or pulled from Docker images. Any violation is a blocker.
+- **PR metadata quality**
+  For PR-number reviews, verify PR template metadata against `.github/PULL_REQUEST_TEMPLATE.md`: `Changelog category` correctness, required `Changelog entry` quality, and alignment with `clickhouse-pr-description` changelog guidance (specificity, user impact, and migration details for backward-incompatible changes). **Revert PRs are exempt** from this rule; do not produce findings about missing template fields for them.
+
+SEVERITY MODEL – WHAT DESERVES A COMMENT
+Severity comes from user/system impact and confidence, not from which prompt uncovered the issue.
+
+**Blockers** – must be fixed before merge
+- Incorrectness, data loss, or corruption.
+- Memory/resource leaks or UB (use-after-free, double free, invalid pointer arithmetic, invalid fd use).
+- New races, deadlocks, or serious concurrency issues.
+- Breaking compatibility (serialization formats, protocols, behavior, settings) without a versioned migration path or a setting to restore previous behavior.
+- Deletion events not logged.
+- Risky new feature (new engine, execution strategy, replication mechanism, on-disk format) without an experimental gate.
+- Significant performance regression in a hot path.
+- Security or privilege issues, or license incompatibility.
+- A privilege check that any entrypoint into the surface it guards can bypass, including an entrypoint that exposes only structure, metadata, or an error message naming a property of the object. "No row data leaked" does not downgrade it.
+- A runtime memory address, or data from which one can be computed, reaching a user through any channel (see `references/memory-addresses.md`).
+- Server-side file access with user-controlled paths that bypass `user_files_path` or equivalent restrictions.
+- Large binary files (JARs, archives, datasets, compiled artifacts) committed to git — permanent, irreversible repo bloat.
+- Destructive shell commands (`rm -rf`, `mv`, `chmod`, `dd`, `sudo`, …) with unquoted substitution under `shell=True` or in shell scripts.
+
+**Majors** – serious but not catastrophic
+- Under-tested important edge cases or error paths.
+- Fragile code that is likely to break under realistic usage.
+- Hidden magic constants that should be settings.
+- Confusing or incomplete user-visible behavior/docs.
+- Missing or unclear comments in complex logic that future maintainers must understand.
+- Compilation time regressions: non-trivial code added to widely-included headers, heavy new transitive includes in high-fan-out headers, or unnecessary template instantiations that significantly increase build times.
+
+**Do not report** as nits:
+- Minor naming preferences unrelated to typos.
+- Pure formatting or "style wars".
+
+REQUESTED OUTPUT FORMAT
+Respond with the following sections. Be terse but specific. Include code suggestions as minimal diffs/patches where helpful.
+Focus on problems — do not describe what was checked and found to be fine. Use emojis (❌ ⚠️ ✅ 💡) to make findings scannable.
+**Omit any section entirely if there is nothing notable to report in it** — do not include a section just to say "looks good" or "no concerns". The only mandatory sections are Summary and Final Verdict.
+
+**Summary**
+- One paragraph explaining what the PR does and your high-level verdict.
+
+**PR Metadata** (omit if no issues found; **always omit for revert PRs**)
+- State whether `Changelog category` is correct for the actual change.
+- State whether `Changelog entry` is required by the chosen category, and whether the provided entry satisfies that requirement.
+- Evaluate `Changelog entry` quality using `clickhouse-pr-description` criteria (specific change, user impact, and migration guidance for backward-incompatible changes).
+- If any item is incorrect, provide the exact replacement text.
+
+**Missing context / blind spots** (omit if none)
+- Bullet list of critical info or impacted surfaces you could not fully validate. Prefix each item with ⚠️ and say what would close the gap.
+- If PR motivation/reason is not clear from the title and description, add a ⚠️ item explicitly stating that motivation is unclear.
+
+**Findings** (omit if no findings)
+- Each finding must name the violated behavior/invariant/contract and its impact. Do not frame findings as checklist matches.
+- **❌ Blockers**
+  - `[File:Line(s)]` Clear description of issue and impact.
+  - Suggested fix (code snippet or steps).
+- **⚠️ Majors**
+  - `[File:Line(s)]` Issue + rationale.
+  - Suggested fix.
+- **💡 Nits**
+  - `[File:Line(s)]` Issue + quick fix.
+  - Use this section for changelog-template quality issues (`Changelog category` mismatch, missing/unclear required `Changelog entry`, or low-quality user-facing `Changelog entry` that is too vague).
+
+
+**Tests** (omit if adequate)
+- Only include this section if evidence is **missing or insufficient**. Prefix each missing test/evidence item with ⚠️. Ask for the smallest focused test, benchmark, or measurement that would prove the relevant behavior, invariant, or claimed benefit. For `Performance Improvement`, missing before/after evidence belongs here even if the implementation looks reasonable.
+
+**ClickHouse-Specific Rule Notes** (omit if none)
+- Include only actual ClickHouse-specific rule concerns that are not already clear from `Findings` or `Tests`.
+- Do not render a full checklist of ✅/➖ statuses. The rules are prompts for review, not an audit table.
+
+**Performance & Safety** (omit if no concerns)
+- Only include this section if there are actual concerns about hot-path regressions, memory, concurrency, or failure modes.
+
+**User-Lens** (omit if no issues)
+- Only include if there are surprising behaviors, unclear errors, or UX issues.
+
+**Final Verdict**
+- Status: **✅ Approve** / **⚠️ Request changes** / **❌ Block**
+- Approve only if there are no unresolved contract violations, no unresolved high-impact plausible risks, and no missing evidence for material claims. A `Performance Improvement` without performance evidence, or a `Bug Fix` without regression evidence or a clear exception, should be **⚠️ Request changes**. If not approving, list the **minimum** required actions.
+
+STYLE & CONDUCT
+- Be precise, evidence-based, and neutral.
+- Prefer small, surgical suggestions over broad rewrites.
+- Do not assume unstated behavior; if necessary, ask for clarification in "Missing context / blind spots."
+- Avoid changing scope: review what's in the PR; suggest follow-ups separately. Unchanged code that the PR's inputs reach is in scope: a defect there is a finding, even when it is pre-existing. The PR must either fix it or link an issue that tracks it; approve only when one of the two is done.
+- Avoid uncertain minor comments. For serious plausible risks, state the uncertainty and request the needed verification or tests.
+- When performing a code review, **ignore `/.github/workflows/*` files**.

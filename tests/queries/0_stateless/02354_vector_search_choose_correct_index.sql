@@ -1,8 +1,7 @@
 -- Tags: no-fasttest, no-ordinary-database
+SET explain_query_plan_default = 'legacy';
 
-SET allow_experimental_vector_similarity_index=1;
-
-SET parallel_replicas_local_plan=1; -- this setting is randomized, set it explicitly to have local plan for parallel replicas
+SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to have local plan for parallel replicas
 
 -- Test for issue #77978
 

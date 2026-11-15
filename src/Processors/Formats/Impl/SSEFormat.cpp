@@ -8,13 +8,15 @@
 namespace DB
 {
 
+void registerOutputFormatSSE(FormatFactory & factory);
 void registerOutputFormatSSE(FormatFactory & factory)
 {
 
     factory.registerOutputFormat("JSONEachRowWithProgressEventStream", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings &)
+        const FormatSettings &,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
         FormatSettings sse_settings;
         sse_settings.json.array_of_rows = false;
@@ -23,13 +25,15 @@ void registerOutputFormatSSE(FormatFactory & factory)
         sse_settings.json.quote_64bit_integers = true;
         sse_settings.json.quote_64bit_floats = true;
         sse_settings.json.serialize_as_strings = false;
-        return std::make_shared<SSEFormatJSONWithProgress>(buf, sample, sse_settings);
+        return std::make_shared<SSEFormatJSONWithProgress>(buf, std::make_shared<const Block>(sample), sse_settings);
     });
+    factory.setContentType("JSONEachRowWithProgressEventStream", "text/event-stream");
 
     factory.registerOutputFormat("JSONEachRowEventStream", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings &)
+        const FormatSettings &,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
         FormatSettings sse_settings;
         sse_settings.json.array_of_rows = false;
@@ -38,8 +42,9 @@ void registerOutputFormatSSE(FormatFactory & factory)
         sse_settings.json.quote_64bit_integers = true;
         sse_settings.json.quote_64bit_floats = true;
         sse_settings.json.serialize_as_strings = false;
-        return std::make_shared<SSEFormatJSON>(buf, sample, sse_settings);
+        return std::make_shared<SSEFormatJSON>(buf, std::make_shared<const Block>(sample), sse_settings);
     });
+    factory.setContentType("JSONEachRowEventStream", "text/event-stream");
 
 
     auto register_func = [&](const String & format_name, bool with_names, bool with_types)
@@ -47,10 +52,12 @@ void registerOutputFormatSSE(FormatFactory & factory)
         factory.registerOutputFormat(format_name, [with_names, with_types](
                    WriteBuffer & buf,
                    const Block & sample,
-                   const FormatSettings & format_settings)
+                   const FormatSettings & format_settings,
+                   FormatFilterInfoPtr /*format_filter_info*/)
         {
-            return std::make_shared<SSEFormatCSV>(buf, sample, with_names, with_types, format_settings);
+            return std::make_shared<SSEFormatCSV>(buf, std::make_shared<const Block>(sample), with_names, with_types, format_settings);
         });
+        factory.setContentType(format_name, "text/event-stream");
         factory.markOutputFormatSupportsParallelFormatting(format_name);
     };
 

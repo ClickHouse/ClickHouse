@@ -1,0 +1,200 @@
+---
+sidebarTitle: '보안'
+slug: /cloud/security
+title: '보안'
+description: 'ClickHouse Cloud 및 BYOC 보안에 대해 자세히 알아보십시오'
+doc_type: 'reference'
+keywords: ['보안', '클라우드 보안', '액세스 제어', '컴플라이언스', '데이터 보호']
+---
+
+이 문서에서는 ClickHouse 조직 및 서비스를 보호하기 위해 제공되는 보안 옵션과 모범 사례를 설명합니다.
+ClickHouse는 안전한 분석 데이터베이스 솔루션 제공에 전념하며, 데이터와 서비스 무결성 보호를 최우선으로 합니다.
+이 문서의 정보는 ClickHouse 환경을 안전하게 보호하는 데 도움이 되도록 설계된 다양한 방법을 다룹니다.
+
+<div id="cloud-console-auth">
+  ## Cloud Console 인증
+</div>
+
+<div id="password-auth">
+  ### 비밀번호 인증
+</div>
+
+ClickHouse Cloud 콘솔 비밀번호는 NIST 800-63B 표준을 따르며, 최소 12자 이상이어야 하고 복잡성 요구 사항 4가지 중 3가지를 충족해야 합니다: 영문 대문자, 영문 소문자, 숫자 및/또는 특수 문자.
+
+[비밀번호 인증](/ko/products/cloud/guides/security/cloud-access-management/manage-my-account#email-and-password)에 대해 자세히 알아보십시오.
+
+<div id="social-sso">
+  ### 소셜 Single Sign-On (SSO)
+</div>
+
+ClickHouse Cloud는 Google 또는 Microsoft 계정을 통한 소셜 single sign-on(SSO)을 지원합니다.
+
+[소셜 SSO](/ko/products/cloud/guides/security/cloud-access-management/manage-my-account#social-sso)에서 자세한 내용을 확인하세요.
+
+<div id="mfa">
+  ### 다중 인증
+</div>
+
+이메일과 비밀번호 또는 소셜 SSO를 사용하는 사용자는 Authy 또는 Google Authenticator와 같은 인증 앱을 사용해 다중 인증을 설정할 수도 있습니다.
+
+[다중 인증](/ko/products/cloud/guides/security/cloud-access-management/manage-my-account#mfa)에서 자세한 내용을 확인하십시오.
+
+<div id="saml-auth">
+  ### Security Assertion Markup Language (SAML) 인증
+</div>
+
+Enterprise 고객은 SAML 인증을 설정할 수 있습니다.
+
+자세한 내용은 [SAML 인증](/ko/products/cloud/guides/security/cloud-access-management/saml-sso-setup)을 참조하십시오.
+
+<div id="api-auth">
+  ### API 인증
+</div>
+
+고객은 OpenAPI, Terraform 및 Query API 엔드포인트에서 사용할 API Key를 구성할 수 있습니다.
+
+[API 인증](/ko/products/cloud/features/admin-features/api/openapi)에서 자세히 알아보세요.
+
+<div id="database-auth">
+  ## 데이터베이스 인증
+</div>
+
+<div id="db-password-auth">
+  ### 데이터베이스 비밀번호 인증
+</div>
+
+ClickHouse 데이터베이스 사용자 비밀번호는 NIST 800-63B 표준을 준수하도록 설정되며, 최소 12자 이상이고 대문자, 소문자, 숫자 및/또는 특수 문자를 포함해야 합니다.
+
+[데이터베이스 비밀번호 인증](/ko/products/cloud/guides/security/cloud-access-management/manage-database-users#database-user-id--password)에서 자세히 알아보십시오.
+
+<div id="ssh-auth">
+  ### Secure Shell (SSH) 데이터베이스 인증
+</div>
+
+ClickHouse 데이터베이스 사용자는 SSH 인증을 사용하도록 설정할 수 있습니다.
+
+자세한 내용은 [SSH 인증](/ko/products/cloud/guides/security/cloud-access-management/manage-database-users#database-ssh)을 참조하십시오.
+
+<div id="access-control">
+  ## 접근 제어
+</div>
+
+<div id="console-rbac">
+  ### Console 역할 기반 접근 제어(RBAC)
+</div>
+
+ClickHouse Cloud는 조직, 서비스, 데이터베이스 권한에 역할을 할당하는 기능을 지원합니다. 이 방식을 사용하는 데이터베이스 권한은 SQL 콘솔에서만 지원됩니다.
+
+자세한 내용은 [console RBAC](/ko/products/cloud/reference/security/console-roles)를 참조하십시오.
+
+<div id="database-user-grants">
+  ### 데이터베이스 사용자 권한 부여
+</div>
+
+ClickHouse 데이터베이스는 사용자 권한 부여를 통해 세분화된 권한 관리와 역할 기반 접근을 지원합니다.
+
+[데이터베이스 사용자 권한 부여](/ko/products/cloud/guides/security/cloud-access-management/manage-database-users#database-permissions)에서 자세히 알아보십시오.
+
+<div id="network-security">
+  ## 네트워크 보안
+</div>
+
+<div id="ip-filters">
+  ### IP 필터
+</div>
+
+IP 필터를 구성하여 ClickHouse 서비스로 들어오는 연결을 제한합니다.
+
+자세한 내용은 [IP 필터](/ko/products/cloud/guides/security/connectivity/setting-ip-filters)를 참조하십시오.
+
+<div id="private-connectivity">
+  ### 프라이빗 연결
+</div>
+
+프라이빗 연결을 사용해 AWS, GCP 또는 Azure에서 ClickHouse 클러스터에 연결합니다.
+
+자세한 내용은 [프라이빗 연결](/ko/products/cloud/guides/security/connectivity/private-networking/index)을 참조하십시오.
+
+<div id="encryption">
+  ## 암호화
+</div>
+
+<div id="storage-encryption">
+  ### 스토리지 수준 암호화
+</div>
+
+ClickHouse Cloud는 기본적으로 클라우드 제공업체가 관리하는 AES 256 키를 사용해 저장 데이터를 암호화합니다.
+
+[스토리지 암호화](/ko/products/cloud/guides/security/cmek#storage-encryption)에서 자세히 알아보십시오.
+
+<div id="tde">
+  ### 투명한 데이터 암호화
+</div>
+
+스토리지 암호화에 더해, ClickHouse Cloud Enterprise 고객은 추가적인 보호를 위해 데이터베이스 수준의 투명한 데이터 암호화(투명한 데이터 암호화)를 활성화할 수 있습니다.
+
+[투명한 데이터 암호화](/ko/products/cloud/guides/security/cmek#transparent-data-encryption-tde)에 대해 자세히 알아보십시오.
+
+<div id="cmek">
+  ### 고객 관리형 암호화 키
+</div>
+
+ClickHouse Cloud Enterprise 고객은 데이터베이스 수준 암호화에 자체 키를 사용할 수 있습니다.
+
+[고객 관리형 암호화 키](/ko/products/cloud/guides/security/cmek#customer-managed-encryption-keys-cmek)에서 자세히 알아보십시오.
+
+<div id="auditing-logging">
+  ## 감사 및 로깅
+</div>
+
+<div id="console-audit-log">
+  ### 콘솔 감사 로그
+</div>
+
+콘솔에서 수행된 활동은 기록됩니다. 로그는 검토하고 내보낼 수 있습니다.
+
+[콘솔 감사 로그](/ko/products/cloud/guides/security/audit-logging/console-audit-log)에서 자세히 알아보십시오.
+
+<div id="database-audit-logs">
+  ### 데이터베이스 감사 로그
+</div>
+
+데이터베이스 내 활동이 로그로 기록됩니다. 로그를 검토하고 내보낼 수 있습니다.
+
+자세한 내용은 [데이터베이스 감사 로그](/ko/products/cloud/guides/security/audit-logging/database-audit-log)를 참조하세요.
+
+<div id="byoc-security-playbook">
+  ### BYOC 보안 플레이북
+</div>
+
+ClickHouse BYOC 인스턴스를 운영하는 보안 팀을 위한 예시 탐지 쿼리입니다.
+
+[BYOC 보안 플레이북](/ko/products/cloud/guides/security/audit-logging/byoc-security-playbook)에서 자세히 알아보십시오.
+
+<div id="compliance">
+  ## 컴플라이언스
+</div>
+
+<div id="compliance-reports">
+  ### 보안 및 컴플라이언스 보고서
+</div>
+
+ClickHouse는 강력한 보안 및 컴플라이언스 체계를 운영하고 있습니다. 새로운 제3자 감사 보고서는 정기적으로 다시 확인하십시오.
+
+[보안 및 컴플라이언스 보고서](/ko/products/cloud/reference/security/compliance-overview)에서 자세히 알아보십시오.
+
+<div id="hipaa-compliance">
+  ### HIPAA 준수 서비스
+</div>
+
+ClickHouse Cloud Enterprise 고객은 Business Associate Agreement (BAA)에 서명한 후 보호 대상 건강 정보(PHI)를 저장하는 서비스를 HIPAA 규정을 준수하는 리전에 배포할 수 있습니다.
+
+자세한 내용은 [HIPAA 컴플라이언스](/ko/products/cloud/guides/security/compliance/hipaa-onboarding)를 참조하십시오.
+
+<div id="pci-compliance">
+  ### PCI 규정 준수 서비스
+</div>
+
+ClickHouse Cloud Enterprise 고객은 신용카드 정보를 저장하는 서비스를 PCI 규정을 준수하는 리전에 배포할 수 있습니다.
+
+[PCI 컴플라이언스](/ko/products/cloud/guides/security/compliance/pci-onboarding)에 관해 자세히 알아보십시오.

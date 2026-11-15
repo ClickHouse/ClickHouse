@@ -26,15 +26,18 @@ class WriteBufferFromHTTPServerResponse final : public HTTPWriteBuffer
 {
 public:
     static constexpr std::string_view EXCEPTION_MARKER = "__exception__";
+    static constexpr size_t EXCEPTION_TAG_LENGTH = 16;
+    static constexpr size_t MAX_EXCEPTION_SIZE= 16 * 1024; // 16K
 
     WriteBufferFromHTTPServerResponse(
         HTTPServerResponse & response_,
         bool is_http_method_head_,
         const ProfileEvents::Event & write_event_ = ProfileEvents::end(),
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         bool is_event_stream_enabled_ = false);
 
     /// Writes progress in repeating HTTP headers.
-    void onProgress(const Progress & progress);
+    void onProgress(const Progress & progress, ContextPtr context);
 
     void onProgressSSE(const Progress & progress);
 
@@ -83,7 +86,7 @@ private:
     void startSendHeaders();
 
     /// Used to write the header X-ClickHouse-Progress / X-ClickHouse-Summary
-    void writeHeaderProgressImpl(const char * header_name);
+    void writeHeaderProgressImpl(const char * header_name, Progress::DisplayMode mode);
     /// Used to write the header X-ClickHouse-Progress
     void writeHeaderProgress();
     /// Used to write the header X-ClickHouse-Summary
@@ -101,8 +104,6 @@ private:
     bool is_http_method_head;
     bool add_cors_header = false;
 
-    bool initialized = false;
-
     bool headers_started_sending = false;
     bool headers_finished_sending = false;    /// If true, you could not add any headers.
 
@@ -114,6 +115,8 @@ private:
     CompressionMethod compression_method = CompressionMethod::None;
 
     int exception_code = 0;
+
+    std::string exception_tag;
 
     bool is_event_stream_enabled;
 

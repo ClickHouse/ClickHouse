@@ -2,6 +2,8 @@
 
 #include <Backups/IBackupEntry.h>
 
+#include <mutex>
+
 
 namespace DB
 {

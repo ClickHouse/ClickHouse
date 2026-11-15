@@ -2,8 +2,9 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Port.h>
-#include "Formats/FormatFactory.h"
-#include "Processors/Formats/Impl/JSONEachRowRowOutputFormat.h"
+#include <DataTypes/IDataType.h>
+#include <Formats/FormatFactory.h>
+#include <Processors/Formats/Impl/JSONEachRowRowOutputFormat.h>
 
 
 namespace DB
@@ -13,11 +14,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-IRowOutputFormat::IRowOutputFormat(const Block & header, WriteBuffer & out_)
+IRowOutputFormat::IRowOutputFormat(SharedHeader header, WriteBuffer & out_)
     : IOutputFormat(header, out_)
-    , num_columns(header.columns())
-    , types(header.getDataTypes())
-    , serializations(header.getSerializations())
+    , num_columns(header->columns())
+    , types(header->getDataTypes())
+    , serializations(header->getSerializations())
 {
 }
 
@@ -25,6 +26,7 @@ void IRowOutputFormat::consume(DB::Chunk chunk)
 {
     auto num_rows = chunk.getNumRows();
     const auto & columns = chunk.getColumns();
+    updateSerializationsIfNeeded(columns);
 
     for (size_t row = 0; row < num_rows; ++row)
     {
@@ -46,6 +48,7 @@ void IRowOutputFormat::consumeTotals(DB::Chunk chunk)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} in totals chunk, expected 1", num_rows);
 
     const auto & columns = chunk.getColumns();
+    updateSerializationsIfNeeded(columns);
 
     writeBeforeTotals();
     writeTotals(columns, 0);
@@ -59,6 +62,8 @@ void IRowOutputFormat::consumeExtremes(DB::Chunk chunk)
 
     auto num_rows = chunk.getNumRows();
     const auto & columns = chunk.getColumns();
+    updateSerializationsIfNeeded(columns);
+
     if (num_rows != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} in extremes chunk, expected 2", num_rows);
 
@@ -97,6 +102,15 @@ void IRowOutputFormat::writeMaxExtreme(const DB::Columns & columns, size_t row_n
 void IRowOutputFormat::writeTotals(const DB::Columns & columns, size_t row_num)
 {
     write(columns, row_num);
+}
+
+void IRowOutputFormat::updateSerializationsIfNeeded(const Columns & columns)
+{
+    if (supportsSpecialSerializationKinds())
+    {
+        for (size_t i = 0; i != columns.size(); ++i)
+            serializations[i] = types[i]->getSerialization(*types[i]->getSerializationInfo(*columns[i]));
+    }
 }
 
 }

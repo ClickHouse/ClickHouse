@@ -1,0 +1,19 @@
+Expression
+  Sorting
+    Expression
+      JoinLogical
+        JoinLogical
+          Expression
+            ReadFromMergeTree
+          Expression
+            ReadFromMergeTree
+        JoinLogical
+          Expression
+            ReadFromMergeTree
+          Expression
+            ReadFromMergeTree
+1	AA	aaodd	11	AA
+2	BB	bbeven	22	BB
+3	CC	ccodd	33	CC
+1	1	1	10
+2	2	2	20

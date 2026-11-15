@@ -1,0 +1,7 @@
+--- Row policy filters URL Parquet table ---
+1	a
+2	b
+--- Row policy with WHERE on URL Parquet table ---
+1	a
+--- Row policy count on URL Parquet table ---
+2

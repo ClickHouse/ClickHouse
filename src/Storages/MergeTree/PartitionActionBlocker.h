@@ -1,12 +1,12 @@
 #pragma once
 
 #include <memory>
-#include <shared_mutex>
 #include <string>
 #include <unordered_map>
 
 #include <Common/ActionLock.h>
 #include <Common/ActionBlocker.h>
+#include <Common/SharedMutex.h>
 
 namespace DB
 {
@@ -60,7 +60,7 @@ private:
 
     ActionBlocker global_blocker;
 
-    mutable std::shared_mutex mutex;
+    mutable SharedMutex mutex;
     std::unordered_map<std::string, ActionBlocker> partition_blockers;
     size_t cleanup_counter = 0;
 };

@@ -1,0 +1,115 @@
+---
+sidebarTitle: 'MariaDB عامة'
+description: 'إعداد أي مثيل MariaDB كمصدر لـ ClickPipes'
+slug: /integrations/clickpipes/mysql/source/generic_maria
+title: 'دليل إعداد مصدر MariaDB عام'
+doc_type: 'guide'
+keywords: ['mariadb عامة', 'ClickPipes', 'التسجيل الثنائي', 'ssl tls', 'مستضاف ذاتيًا']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+<Info>
+  إذا كنت تستخدم أحد المزوّدين المدعومين (في الشريط الجانبي)، فالرجاء الرجوع إلى الدليل الخاص بذلك المزوّد.
+</Info>
+
+<div id="enable-binlog-retention">
+  ## تمكين الاحتفاظ بالسجلات الثنائية
+</div>
+
+تحتوي السجلات الثنائية على معلومات حول تعديلات البيانات التي أُجريت على مثيل خادم MariaDB، وهي مطلوبة لعملية النسخ المتماثل.
+
+لتمكين التسجيل الثنائي على مثيل MariaDB لديك، تأكد من تكوين الإعدادات التالية:
+
+```sql
+server_id = 1               -- or greater; anything but 0
+log_bin = ON
+binlog_format = ROW
+binlog_row_image = FULL
+binlog_row_metadata = FULL  -- introduced in 10.5.0
+expire_logs_days = 1        -- or higher; 0 would mean logs are preserved forever
+```
+
+للتحقق من هذه الإعدادات، شغّل أوامر SQL التالية:
+
+```sql
+SHOW VARIABLES LIKE 'server_id';
+SHOW VARIABLES LIKE 'log_bin';
+SHOW VARIABLES LIKE 'binlog_format';
+SHOW VARIABLES LIKE 'binlog_row_image';
+SHOW VARIABLES LIKE 'binlog_row_metadata';
+SHOW VARIABLES LIKE 'expire_logs_days';
+```
+
+إذا لم تتطابق القيم، يمكنك ضبطها في ملف الإعدادات (عادةً في `/etc/my.cnf` أو `/etc/my.cnf.d/mariadb-server.cnf`):
+
+```ini
+[mysqld]
+server_id = 1
+log_bin = ON
+binlog_format = ROW
+binlog_row_image = FULL
+binlog_row_metadata = FULL  ; only in 10.5.0 and newer
+expire_logs_days = 1
+```
+
+إذا كانت قاعدة البيانات المصدر نسخة متماثلة، فتأكد أيضًا من تفعيل `log_slave_updates`.
+
+يجب عليك إعادة تشغيل مثيل MariaDB لكي تسري التغييرات.
+
+<Note>
+  لا يدعم MariaDB &lt;= 10.4 استبعاد الأعمدة لأن إعداد `binlog_row_metadata` لم يكن متاحًا بعد.
+</Note>
+
+<div id="configure-database-user">
+  ## تهيئة مستخدم قاعدة بيانات
+</div>
+
+اتصل بمثيل MariaDB الخاص بك بصفتك المستخدم root، ثم نفّذ الأوامر التالية:
+
+1. أنشئ مستخدمًا مخصصًا لـ ClickPipes:
+
+   ```sql
+   CREATE USER 'clickpipes_user'@'%' IDENTIFIED BY 'some_secure_password';
+   ```
+
+2. امنح أذونات المخطط. يوضّح المثال التالي الأذونات الخاصة بقاعدة البيانات `clickpipes`. كرّر هذه الأوامر لكل قاعدة بيانات ولكل مضيف تريد إجراء النسخ المتماثل له:
+
+   ```sql
+   GRANT SELECT ON `clickpipes`.* TO 'clickpipes_user'@'%';
+   ```
+
+3. امنح المستخدم أذونات النسخ المتماثل:
+
+   ```sql
+   GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
+   GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
+   ```
+
+<Note>
+  تأكد من استبدال `clickpipes_user` و`some_secure_password` باسم المستخدم وكلمة المرور اللذين تريد استخدامهما.
+</Note>
+
+<div id="ssl-tls-configuration">
+  ## إعداد SSL/TLS (موصى به)
+</div>
+
+تضمن شهادات SSL اتصالات آمنة بقاعدة بيانات MariaDB الخاصة بك. ويعتمد الإعداد على نوع الشهادة لديك:
+
+**سلطة شهادات موثوقة (DigiCert, Let&#39;s Encrypt, وغيرها)** - لا يلزم أي إعداد إضافي.
+
+**سلطة شهادات داخلية** - احصل على ملف شهادة CA الجذرية من فريق تقنية المعلومات لديك. في ClickPipes UI، ارفعه عند إنشاء MariaDB ClickPipe جديد.
+
+**MariaDB مستضاف ذاتيًا** - انسخ شهادة CA من خادم MariaDB لديك (يمكنك معرفة المسار عبر الإعداد `ssl_ca` في `my.cnf`). في ClickPipes UI، ارفعها عند إنشاء MariaDB ClickPipe جديد. استخدم عنوان IP الخاص بالخادم باعتباره المضيف.
+
+**MariaDB مستضاف ذاتيًا بدءًا من الإصدار 11.4** - إذا كان `ssl_ca` مُعدًّا على خادمك، فاتبع الخيار أعلاه. وإلا، فاستشر فريق تقنية المعلومات لديك لتوفير شهادة مناسبة. وكحل أخير، استخدم مفتاح التبديل &quot;Skip Certificate Verification&quot; في ClickPipes UI (غير موصى به لأسباب أمنية).
+
+لمزيد من المعلومات حول خيارات SSL/TLS، اطّلع على [FAQ](/ar/integrations/clickpipes/mysql/faq#tls-certificate-validation-error).
+
+<div id="whats-next">
+  ## ما الخطوة التالية؟
+</div>
+
+يمكنك الآن [إنشاء ClickPipe الخاص بك](/ar/integrations/clickpipes/mysql/index) وبدء إدخال البيانات من مثيل MariaDB لديك إلى ClickHouse Cloud.
+احرص على تدوين تفاصيل الاتصال التي استخدمتها أثناء إعداد مثيل MariaDB، إذ ستحتاج إليها خلال عملية إنشاء ClickPipe.

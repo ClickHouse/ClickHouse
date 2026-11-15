@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include <Databases/DatabasesCommon.h>
 #include <Disks/IDisk.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -19,7 +21,8 @@ std::pair<String, StoragePtr> createTableFromAST(
     const String & database_name,
     const String & table_data_path_relative,
     ContextMutablePtr context,
-    LoadingStrictnessLevel mode);
+    LoadingStrictnessLevel mode,
+    bool set_attach_flag = true);
 
 /** Get the string with the table definition based on the CREATE query.
   * It is an ATTACH query that you can execute to create a table from the correspondent database.
@@ -58,8 +61,6 @@ public:
         bool exchange,
         bool dictionary) override;
 
-    ASTPtr getCreateDatabaseQuery() const override;
-
     void drop(ContextPtr context) override;
 
     String getObjectMetadataPath(const String & object_name) const override;
@@ -71,17 +72,37 @@ public:
     String getTableDataPath(const ASTCreateQuery & query) const override { return getTableDataPath(query.getTable()); }
     String getMetadataPath() const override { return metadata_path; }
 
-    static ASTPtr parseQueryFromMetadata(LoggerPtr logger, ContextPtr context, const String & metadata_file_path, bool throw_on_error = true, bool remove_empty = false);
+    static ASTPtr parseQueryFromMetadata(
+        LoggerPtr logger,
+        ContextPtr context,
+        DiskPtr disk,
+        const String & metadata_file_path,
+        bool throw_on_error = true,
+        bool remove_empty = false);
 
-    static ASTPtr parseQueryFromMetadata(LoggerPtr logger, ContextPtr context, const String & metadata_file_path, const String & query, bool throw_on_error = true);
+    static ASTPtr parseQueryFromMetadata(
+        LoggerPtr logger, ContextPtr context, const String & metadata_file_path, const String & query, bool throw_on_error = true);
 
     /// will throw when the table we want to attach already exists (in active / detached / detached permanently form)
     void checkMetadataFilenameAvailability(const String & to_table_name) const override;
     void checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name) const TSA_REQUIRES(mutex);
 
+    void checkTableNameLength(const String & table_name) const override;
+    static void checkTableNameLengthUnlocked(const String & database_name_, const String & table_name, ContextPtr context_);
+
     void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context);
 
-    void alterDatabaseComment(const AlterCommand & alter_command) override;
+    /// Throws `TOO_MANY_TABLES` if adding `tables_to_add` more table-like objects would exceed the
+    /// `max_tables` limit. More than one slot is needed for the engines that create hidden inner
+    /// tables (`MaterializedView`, `TimeSeries`): all of them must be accounted for at once,
+    /// otherwise the inner tables are created and the outer object is then rejected. The check is
+    /// done before an operation starts, so it is best-effort under concurrency.
+    void checkTablesLimit(size_t tables_to_add = 1) const;
+    void checkTablesLimitUnlocked(size_t tables_to_add = 1) const TSA_REQUIRES(mutex);
+
+    /// Supports `ALTER DATABASE ... MODIFY SETTING max_tables = ...` for Atomic and Ordinary
+    /// databases. Other engines derived from this class reject the query.
+    void applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context) override;
 
 protected:
     static constexpr const char * create_suffix = ".tmp";
@@ -92,6 +113,7 @@ protected:
 
     void iterateMetadataFiles(const IteratingFunction & process_metadata_file) const;
 
+    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     ASTPtr getCreateTableQueryImpl(
         const String & table_name,
         ContextPtr context,
@@ -100,8 +122,10 @@ protected:
     virtual ASTPtr getCreateQueryFromMetadata(const String & table_name, bool throw_on_error) const;
     ASTPtr getCreateQueryFromStorage(const String & table_name, const StoragePtr & storage, bool throw_on_error) const;
 
+    /// `table_metadata_tmp_path` is empty when nothing has been written yet: then `statement` is written to `table_metadata_path` at the commit.
     virtual void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
-                                   const String & table_metadata_tmp_path, const String & table_metadata_path, ContextPtr query_context);
+                                   const String & table_metadata_tmp_path, const String & table_metadata_path,
+                                   const String & statement, ContextPtr query_context);
 
     virtual void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach);
     virtual void setDetachedTableNotInUseForce(const UUID & /*uuid*/) {}
@@ -111,6 +135,9 @@ protected:
 
     const String metadata_path;
     const String data_path;
+
+    /// Limit on the number of tables in the database (`max_tables` setting). 0 means unlimited.
+    std::atomic<UInt64> max_tables = 0;
 };
 
 }
