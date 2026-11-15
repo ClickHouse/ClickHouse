@@ -242,15 +242,6 @@ bool sourceHasColumnCaseInsensitive(const QueryTreeNodePtr & column_source, cons
     return false;
 }
 
-/// Two substreams are the same step only if they are the same kind AND name the same element: `type`
-/// alone cannot tell ``TupleElement(j)`` from ``TupleElement(`j.m`)``, nor one JSON path from another.
-bool isSameSubstream(const ISerialization::Substream & lhs, const ISerialization::Substream & rhs)
-{
-    return lhs.type == rhs.type && lhs.name_of_substream == rhs.name_of_substream
-        && lhs.variant_element_name == rhs.variant_element_name
-        && lhs.object_path_name == rhs.object_path_name && lhs.bucket == rhs.bucket;
-}
-
 /// A rewrite descends into the column it started from, so that column's substream path must be a proper
 /// prefix of the rewritten subcolumn's: inside ``Tuple(`j.m` Map(..), j JSON(m Map(..)))`` the element and
 /// the JSON path both answer to `c.j.m` and only the paths differ. A non-subcolumn sits at the root.
@@ -274,7 +265,7 @@ bool subcolumnDescendsFromColumn(
     }
 
     return target_path.size() > source_path.size()
-        && std::equal(source_path.begin(), source_path.end(), target_path.begin(), isSameSubstream);
+        && std::equal(source_path.begin(), source_path.end(), target_path.begin(), ISerialization::isSameSubstream);
 }
 
 using SubcolumnPredicate = std::function<bool(const ISerialization::SubstreamPath &)>;

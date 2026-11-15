@@ -1,0 +1,11 @@
+bloom_filter over mapKeys	1
+tokenbf_v1 over mapKeys	1
+text over mapKeys	1
+text over mapValues	1
+bloom_filter over mapKeys, typed JSON path	1
+sibling JSON path, bloom_filter over mapKeys	1
+sibling JSON path, bloom_filter over mapValues	1
+sibling JSON path, tokenbf_v1 over mapKeys	1
+sibling JSON path, text over mapKeys	1
+sibling JSON path, text over mapValues	1
+sibling JSON path, text over the map, keyValuePairs	1

@@ -648,6 +648,10 @@ public:
     /// Returns true if stream with specified path corresponds to dynamic subcolumn.
     static bool isDynamicSubcolumn(const SubstreamPath & path, size_t prefix_len);
 
+    /// Two substreams are the same step only if they are the same kind and name the same element: `type`
+    /// alone cannot tell ``TupleElement(j)`` from ``TupleElement(`j.m`)``, nor one JSON path from another.
+    static bool isSameSubstream(const Substream & lhs, const Substream & rhs);
+
     /// Returns whether a substream should be prefetched.
     static bool isPrefetchNeededForSubstream(const SubstreamPath & path, size_t prefix_len, bool prefetch_json_shared_data_substreams);
 

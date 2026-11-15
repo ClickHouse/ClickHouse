@@ -157,7 +157,7 @@ public:
         MergeTreeIndexTextPreprocessorPtr preprocessor_,
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
         bool has_positions_,
-        IsShadowingColumn is_column_shadowing_map_subcolumn_,
+        StorageMetadataPtr metadata_snapshot_,
         JSONIndexArgumentTypes json_argument_types_,
         TextIndexAutomatonBudgetPtr automaton_budget_ = nullptr);
 
@@ -304,7 +304,7 @@ private:
     /// N when the index is defined over a `FixedString(N)`, directly or as the array element type.
     std::optional<size_t> indexed_fixed_string_size;
     std::optional<String> normalized_index_column_name;
-    IsShadowingColumn is_column_shadowing_map_subcolumn;
+    StorageMetadataPtr metadata_snapshot;
     /// A private clone of the index tokenizer when it is stateful, so concurrent conditions do not
     /// share mutable parsing state; null otherwise.
     std::shared_ptr<const ITokenizer> owned_tokenizer;

@@ -107,6 +107,7 @@ scalar.xml                                               # AggregateFunction col
 scalar2.xml                                              # AggregateFunction column
 serialization_pool_lookup.xml                            # PREWHERE on a Nested subcolumn
 set_index.xml                                            # assertion in the test (throwIf)
+skip_indexes_wide_table.xml                              # ALTER ADD_INDEX
 sorted_key_prefix_runs.xml                               # FINAL
 squash_json_dynamic_paths.xml                            # JSON column
 streaming_queries_read_round.xml                         # STREAM, MATERIALIZE STATISTICS

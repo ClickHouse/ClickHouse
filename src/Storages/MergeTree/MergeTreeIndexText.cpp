@@ -2463,7 +2463,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const Action
 {
     return std::make_shared<MergeTreeIndexConditionText>(
         predicate, context, index.sample_block, normalized_index_column_name, tokenizer.get(),
-        preprocessor, postprocessor, params.enable_positions, getMapSubcolumnShadowingCheck(), collectJSONIndexArgumentTypes(*index.expression),
+        preprocessor, postprocessor, params.enable_positions, metadata_snapshot, collectJSONIndexArgumentTypes(*index.expression),
         automaton_budget);
 }
 

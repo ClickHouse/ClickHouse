@@ -797,6 +797,13 @@ bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath 
     return false;
 }
 
+bool ISerialization::isSameSubstream(const Substream & lhs, const Substream & rhs)
+{
+    return lhs.type == rhs.type && lhs.name_of_substream == rhs.name_of_substream
+        && lhs.variant_element_name == rhs.variant_element_name
+        && lhs.object_path_name == rhs.object_path_name && lhs.bucket == rhs.bucket;
+}
+
 bool ISerialization::isLowCardinalityDictionarySubcolumn(const DB::ISerialization::SubstreamPath & path)
 {
     if (path.empty())
