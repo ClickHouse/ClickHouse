@@ -549,12 +549,44 @@ namespace
         return match.node;
     }
 
+    bool canCastPreserveAllMatchingKeys(const DataTypePtr & from_type, const DataTypePtr & to_type)
+    {
+        auto from_unwrapped = removeNullable(recursiveRemoveLowCardinality(from_type));
+        auto to_unwrapped = removeNullable(recursiveRemoveLowCardinality(to_type));
+        if (!to_unwrapped->canBeInsideNullable())
+            return false;
+
+        /// Floating-point comparisons coerce integers/decimals to Float64 (so distinct keys such as
+        /// Decimal128(18) `1` and `1.000000000000000001` both match `1.0`), and `-0.0 == +0.0`
+        /// hashes to different shards.
+        if (isFloat(from_unwrapped) || isFloat(to_unwrapped))
+            return false;
+
+        /// Wrapper-only differences (`Nullable` / `LowCardinality`) over the same non-float base type
+        /// preserve a 1-to-1 value bijection (including `Nullable(String)` / `LowCardinality(Nullable(String))` `= ''`).
+        if (from_unwrapped->equals(*to_unwrapped))
+            return true;
+
+        /// `String` vs `FixedString` equality pads zero bytes (`''`, `'\0'`, `'\0\0'` all match
+        /// `toFixedString('', 1)`), and `String` vs temporal types parses multiple strings to one value.
+        if (isString(to_unwrapped))
+            return false;
+
+        /// Historically `Nullable` keys declined cross-type casts completely (`Nullable::canBeInsideNullable() == false`).
+        /// Keep cross-type `Nullable` inference limited to exact integer-to-integer casts.
+        if (recursiveRemoveLowCardinality(to_type)->isNullable())
+            return isInteger(from_unwrapped) && isInteger(to_unwrapped)
+                && !from_unwrapped->hasCustomName() && !to_unwrapped->hasCustomName();
+
+        return true;
+    }
+
     ColumnPtr tryCastColumn(ColumnPtr col, const DataTypePtr & from_type, const DataTypePtr & to_type)
     {
-        auto to_type_unwrapped = removeNullable(recursiveRemoveLowCardinality(to_type));
-        // std::cerr << ".. casting " << from_type->getName() << " -> " << to_type_unwrapped->getName() << std::endl;
-        if (!to_type_unwrapped->canBeInsideNullable())
+        if (!canCastPreserveAllMatchingKeys(from_type, to_type))
             return {};
+
+        auto to_type_unwrapped = removeNullable(recursiveRemoveLowCardinality(to_type));
 
         auto res = castColumnAccurateOrNull({col, from_type, std::string()}, makeNullable(to_type_unwrapped));
         if (res->onlyNull())
