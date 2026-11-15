@@ -32,8 +32,10 @@ void registerStorageNull(StorageFactory & factory)
 
         return std::make_shared<StorageNull>(args.table_id, args.columns, args.constraints, args.comment);
     },
+    SecretArgumentsSpec{},
     {
         .supports_parallel_insert = true,
+        .supports_temporary = true,
     },
     Documentation{
         .description = R"DOCS_MD(

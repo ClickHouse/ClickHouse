@@ -74,7 +74,9 @@ On a request raised this way, a `readonly` parameter in the query string is refu
 
 There is a way to prohibit the user from changing only specific settings, and a way to allow changing
 only specific settings under `readonly = 1` restrictions. For details see
-[constraints on settings](/concepts/features/configuration/settings/constraints-on-settings).
+[constraints on settings](/concepts/features/configuration/settings/constraints-on-settings), which also
+recommends against making the `readonly` setting itself
+[changeable in read-only mode](/concepts/features/configuration/settings/constraints-on-settings#readonly-changeable-in-readonly).
 </Note>
 
 ## allow_ddl {#allow_ddl}
@@ -116,9 +118,10 @@ session's own settings constraints, which is also why `SET allow_ddl = 1` is ref
 **KILL QUERY**
 
 Killing your own queries does not require the `KILL QUERY` privilege, so it works with any combination
-of `readonly` and `allow_ddl`. It does require `SELECT` on `system.processes`. Killing a query that
-belongs to another user, and any `KILL QUERY ... ON CLUSTER`, require the `KILL QUERY` privilege, which
-`readonly = 1` and `readonly = 2` refuse.
+of `readonly` and `allow_ddl`. It does require `SELECT` on `system.processes`, except for
+`KILL QUERY WHERE query_id = '<id>'`, which cancels your own query with that id without reading that
+table. Killing a query that belongs to another user, and any `KILL QUERY ... ON CLUSTER`, require the
+`KILL QUERY` privilege, which `readonly = 1` and `readonly = 2` refuse.
 </Info>
 
 ## Other relevant settings {#other-relevant-settings}

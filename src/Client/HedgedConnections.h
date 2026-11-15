@@ -217,7 +217,7 @@ private:
 
     Packet last_received_packet;
 
-    Epoll epoll;
+    Epoll epoll{EpollNesting::HedgedConnections};
     ContextPtr context;
     const Settings & settings;
     ThrottlerPtr throttler;

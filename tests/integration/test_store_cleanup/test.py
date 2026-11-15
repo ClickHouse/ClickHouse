@@ -107,9 +107,11 @@ def test_store_cleanup(started_cluster):
     node1.query("DETACH DATABASE db2", settings=sync_drop)
     node1.query("DETACH TABLE db3.log")
 
+    # 9 garbage entries on the default disk: kek, 12, 3 dirs in store/100 and 4 entries in store/456.
     node1.wait_for_log_line(
-        "Removing access rights for unused directory",
+        "Removing access rights for unused directory store/.* from disk default",
         timeout=60,
+        repetitions=9,
         look_behind_lines=1000000,
     )
     node1.wait_for_log_line(
@@ -188,7 +190,9 @@ def test_store_cleanup(started_cluster):
         "directories from store", timeout=90, look_behind_lines=1000000
     )
     node1.wait_for_log_line(
-        "Nothing to clean up from store/", timeout=90, look_behind_lines=1000000
+        "Nothing to clean up from store/ on disk default",
+        timeout=90,
+        look_behind_lines=1000000,
     )
     node1.wait_for_log_line(
         f"Removing unused directory {encrypted_logical_path} from disk encrypted_disk",

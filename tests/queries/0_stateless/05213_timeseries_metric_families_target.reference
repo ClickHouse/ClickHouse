@@ -1,6 +1,6 @@
 --- a new table: the METRIC FAMILIES keyword, the .inner_id.metricfamilies inner table ---
 METRIC FAMILIES INNER COLUMNS
-METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
+METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family
 1
 0
 http_requests_total	counter	requests	Total HTTP requests

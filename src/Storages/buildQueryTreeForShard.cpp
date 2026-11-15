@@ -4,6 +4,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
+#include <Analyzer/TableQualifiers.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -33,6 +34,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/Set.h>
 #include <IO/WriteHelpers.h>
 #include <Planner/findQueryForParallelReplicas.h>
 #include <Planner/PlannerContext.h>
@@ -46,6 +48,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageSnapshot.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Analyzer/UnionNode.h>
 
 #include <stack>
@@ -155,7 +158,7 @@ void inlineJoinUsingKeys(QueryTreeNodePtr & join_expression)
 /// handed back to `inlineAliasColumnsImpl` so their own projection columns keep their names.
 void inlineAliasColumnsInExpression(QueryTreeNodePtr & node)
 {
-    if (node->as<QueryNode>() || node->as<UnionNode>())
+    if ((node->getNodeType() == QueryTreeNodeType::QUERY) || node->as<UnionNode>())
     {
         inlineAliasColumnsImpl(node);
         return;
@@ -293,14 +296,23 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<DistributedProductModeRewriteInJoinVisitor>;
     using Base::Base;
 
-    explicit DistributedProductModeRewriteInJoinVisitor(const ContextPtr & context_, bool allow_global_join_for_right_table_)
+    /// `enforce_distributed_product_mode` is false when the visitor is only asked what shipping would
+    /// do, rather than driving it. `distributed_product_mode = 'deny'` - the default - makes a local
+    /// IN/JOIN over a distributed table an error, which is a policy the real shipping path has to
+    /// apply but a prediction must not: it would fail a query that the caller was only considering.
+    /// A denied query ships nothing, so it also materializes nothing, which is the answer the
+    /// prediction wants.
+    explicit DistributedProductModeRewriteInJoinVisitor(
+        const ContextPtr & context_, bool allow_global_join_for_right_table_, bool enforce_distributed_product_mode_ = true)
         : Base(context_)
         , allow_global_join_for_right_table(allow_global_join_for_right_table_)
+        , enforce_distributed_product_mode(enforce_distributed_product_mode_)
     {}
 
     struct InFunctionOrJoin
     {
         QueryTreeNodePtr query_node;
+        QueryTreeNodePtr parent_query_node;
         size_t subquery_depth = 0;
     };
 
@@ -331,7 +343,7 @@ public:
     void enterImpl(QueryTreeNodePtr & node)
     {
         if (node->getNodeType() == QueryTreeNodeType::QUERY)
-            ++query_node_depth;
+            query_node_stack.push_back(node);
 
         auto * function_node = node->as<FunctionNode>();
         auto * join_node = node->as<JoinNode>();
@@ -341,7 +353,9 @@ public:
         {
             InFunctionOrJoin in_function_or_join_entry;
             in_function_or_join_entry.query_node = node;
-            in_function_or_join_entry.subquery_depth = query_node_depth;
+            if (!query_node_stack.empty())
+                in_function_or_join_entry.parent_query_node = query_node_stack.back();
+            in_function_or_join_entry.subquery_depth = query_node_stack.size();
             global_in_or_join_nodes.push_back(std::move(in_function_or_join_entry));
             return;
         }
@@ -351,7 +365,9 @@ public:
         {
             InFunctionOrJoin in_function_or_join_entry;
             in_function_or_join_entry.query_node = node;
-            in_function_or_join_entry.subquery_depth = query_node_depth;
+            if (!query_node_stack.empty())
+                in_function_or_join_entry.parent_query_node = query_node_stack.back();
+            in_function_or_join_entry.subquery_depth = query_node_stack.size();
             in_function_or_join_stack.push_back(in_function_or_join_entry);
             return;
         }
@@ -362,11 +378,11 @@ public:
 
     void leaveImpl(QueryTreeNodePtr & node)
     {
-        if (node->getNodeType() == QueryTreeNodeType::QUERY)
-            --query_node_depth;
-
         if (!in_function_or_join_stack.empty() && node.get() == in_function_or_join_stack.back().query_node.get())
             in_function_or_join_stack.pop_back();
+
+        if (node->getNodeType() == QueryTreeNodeType::QUERY)
+            query_node_stack.pop_back();
     }
 
 private:
@@ -441,6 +457,9 @@ private:
         }
         else if (distributed_product_mode == DistributedProductMode::DENY)
         {
+            if (!enforce_distributed_product_mode)
+                return;
+
             throw Exception(ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED,
                 "Double-distributed IN/JOIN subqueries is denied (distributed_product_mode = 'deny'). "
                 "You may rewrite query to use local tables "
@@ -448,13 +467,12 @@ private:
         }
     }
 
-    /// Number of enclosing SELECT queries; a UNION is not a level. `max_subquery_depth` is checked against
-    /// this same count for a plain IN/JOIN, so a GLOBAL subquery recorded here needs no higher limit.
-    size_t query_node_depth = 0;
     std::vector<InFunctionOrJoin> in_function_or_join_stack;
+    std::vector<QueryTreeNodePtr> query_node_stack;
     IQueryTreeNode::ReplacementMap replacement_map;
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
     bool allow_global_join_for_right_table = false;
+    bool enforce_distributed_product_mode = true;
 };
 
 /** Replaces large constant values with `__getScalar` function calls to avoid
@@ -540,6 +558,23 @@ public:
             return;
         }
 
+        /// Do not replace the state arguments of an analyzer-built `grouping` specialization:
+        /// `removeGroupingFunctionSpecializations` strips them from the query sent to the remote
+        /// server only while they are constants, and the remote server rebuilds them itself.
+        if (auto * function_node = node->as<FunctionNode>())
+        {
+            if (size_t num_state_arguments = getGroupingFunctionSpecializationStateArgumentsCount(*function_node))
+            {
+                const auto & arguments = function_node->getArguments().getNodes();
+                for (size_t i = arguments.size() - num_state_arguments; i < arguments.size(); ++i)
+                    grouping_state_arguments.insert(arguments[i].get());
+            }
+            return;
+        }
+
+        if (grouping_state_arguments.contains(node.get()))
+            return;
+
         auto * constant_node = node->as<ConstantNode>();
 
         if (!constant_node)
@@ -584,6 +619,7 @@ public:
 private:
     Int64 max_size = 0;
     std::stack<QueryTreeNodePtr> in_second_argument;
+    std::unordered_set<const IQueryTreeNode *> grouping_state_arguments;
 };
 
 // Helper function to add DISTINCT to all QueryNode objects inside a query/union subtree
@@ -698,7 +734,8 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
         std::make_shared<const Block>(Block{}),
         std::move(set_and_key),
         network_transfer_limits,
-        /* prepared_sets_cache = */ nullptr);
+        /* prepared_sets_cache = */ nullptr,
+        /* spill_settings = */ {});
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
 
@@ -893,7 +930,7 @@ void checkJoin(const JoinNode & join_node, const QueryNode & enclosing_query)
             continue;
 
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "JOIN {} using identifier '{}' is resolved from an alias nested in the SELECT list, which is not "
+            "JOIN {} using identifier '{}' is resolved from an alias that is not a top-level alias of the SELECT list, which is not "
             "supported for queries sent to remote servers. Move the alias to the top level of the SELECT list",
             join_node.formatASTForErrorMessage(), name);
     }
@@ -925,6 +962,28 @@ void inlineAliasColumns(QueryTreeNodePtr & query_tree_to_modify)
     inlineAliasColumnsImpl(query_tree_to_modify);
 }
 
+bool shippingQueryMaterializesSubqueries(const QueryTreeNodePtr & query_tree, const ContextPtr & context)
+{
+    /// Fixed rather than a parameter: this predicts the parallel-replicas path, and both of its
+    /// `buildQueryTreeForShard` call sites - `findParallelReplicasQuery` and
+    /// `ClusterProxy::executeQuery` - pass true. `StorageDistributed` passes false, but nothing here
+    /// predicts that path, and letting a caller choose would let it predict the wrong one.
+    static constexpr bool allow_global_join_for_right_table = true;
+
+    /// Both rewrites below modify the tree as they walk it - `in` becomes `globalIn`, a join's
+    /// locality becomes `Global` - so they get a clone. Handing them the caller's tree would convert
+    /// the real query to its shipped form behind its back.
+    auto query_tree_copy = query_tree->clone();
+
+    /// `ClusterProxy::executeQuery` makes joins global before shipping, so predict that first:
+    /// without it a plain `JOIN` that ships as a `GLOBAL JOIN` goes unnoticed. Then ask the visitor
+    /// `buildQueryTreeForShard` itself uses to decide what to ship.
+    rewriteJoinToGlobalJoin(query_tree_copy, context);
+    DistributedProductModeRewriteInJoinVisitor visitor(context, allow_global_join_for_right_table, /*enforce_distributed_product_mode*/ false);
+    visitor.visit(query_tree_copy);
+    return !visitor.getGlobalInOrJoinNodes().empty();
+}
+
 QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table)
 {
     CollectColumnSourceToColumnsVisitor collect_column_source_to_columns_visitor;
@@ -944,6 +1003,14 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
 
     for (const auto & global_in_or_join_node : global_in_or_join_nodes)
     {
+        /** `PREWHERE` is bound to the broadcast table and is moved into that subquery (below).
+          * Nested `GLOBAL IN` / `GLOBAL JOIN` nodes collected from the original `PREWHERE` then
+          * point at a tree that is no longer attached. Executing them here would materialize the
+          * nested subquery a second time, after `executeSubqueryNode` already ran the moved copy.
+          */
+        if (!isNodePartOfTree(global_in_or_join_node.query_node.get(), query_tree_to_modify.get()))
+            continue;
+
         if (auto * join_node = global_in_or_join_node.query_node->as<JoinNode>())
         {
             TableExpressionNodePtr join_table_expression;
@@ -962,6 +1029,24 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
             }
 
             auto subquery_node = getSubqueryFromTableExpression(join_table_expression, column_source_to_columns, planner_context->getQueryContext());
+
+            auto * parent_query_node = global_in_or_join_node.parent_query_node
+                ? global_in_or_join_node.parent_query_node->as<QueryNode>()
+                : nullptr;
+            if (parent_query_node && parent_query_node->hasPrewhere())
+            {
+                auto prewhere_table_expression = getPrewhereTableExpression(parent_query_node->getPrewhere());
+
+                if (prewhere_table_expression && isNodePartOfTree(prewhere_table_expression.get(), join_table_expression.get()))
+                {
+                    auto * subquery_query_node = subquery_node->as<QueryNode>();
+                    if (!subquery_query_node || subquery_query_node->hasPrewhere())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot move PREWHERE into GLOBAL JOIN subquery");
+
+                    subquery_query_node->getPrewhere() = parent_query_node->getPrewhere()->clone();
+                    parent_query_node->getPrewhere() = {};
+                }
+            }
 
             auto temporary_table_expression_node = executeSubqueryNode(subquery_node,
                 planner_context->getMutableQueryContext(),
@@ -1054,6 +1139,19 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     // are written into the query context and will be sent by the query pipeline.
     if (auto * query_node = query_tree_to_modify->as<QueryNode>())
         query_node->clearSettingsChanges();
+    else if (auto * union_node = query_tree_to_modify->as<UnionNode>())
+    {
+        union_node->clearSettingsChanges();
+        /// `UnionNode::toASTImpl` does not serialize the union's query-level clause: it is carried by
+        /// the last arm's `QueryNode` (where the parser leaves a trailing clause and `QueryTreeBuilder`
+        /// reads it back from), so that arm's clause has to be dropped as well.
+        auto & union_queries = union_node->getQueries().getNodes();
+        if (!union_queries.empty())
+        {
+            if (auto * last_query_node = union_queries.back()->as<QueryNode>())
+                last_query_node->clearSettingsChanges();
+        }
+    }
 
     auto max_const_name_size = planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size];
     if (max_const_name_size >= 0)
@@ -1373,98 +1471,6 @@ private:
     std::unordered_set<String> & tails;
 };
 
-/// `name[at]` opens a quoted span (a string constant `'...'` or a backquoted identifier `` `...` ``). Return the
-/// offset just past the closing quote, or `name.size()` if unterminated. A backslash escapes the next character
-/// (including the quote and another backslash), matching `writeAnyEscapedString` (the escaping used by both string
-/// constants and backquoted identifiers), so the span ends at the first unescaped matching quote.
-size_t skipQuotedSpan(const String & name, size_t at)
-{
-    const char quote = name[at];
-    size_t pos = at + 1;
-    while (pos < name.size())
-    {
-        if (name[pos] == '\\')
-            pos += 2; /// Skip the backslash and the character it escapes.
-        else if (name[pos] == quote)
-            return pos + 1;
-        else
-            ++pos;
-    }
-    return name.size();
-}
-
-/// Erase the numeric index of every GENUINE analyzer-generated table qualifier in a column action name, rewriting
-/// `__tableN.<tail>` to `__table.<tail>`. A `__tableN.` is treated as a genuine qualifier only when `<tail>` is one of
-/// `genuine_tails` (the column names collected structurally from the query tree, see
-/// `CollectGenuineQualifierTailsVisitor`). Returns the normalized name.
-///
-/// Why this is the right operation. The shard query tree is renumbered independently from the initiator's:
-/// `buildQueryTreeForShard` runs `createUniqueAliasesIfNecessary`, which restarts the `__tableN` aliases at 1. When a
-/// distributed read is nested inside a subquery, the same source column is therefore named `__table1.x` on the shard
-/// but `__tableK.x` (K > 1) in the initiator's tree even though the columns correspond. The ONLY systematic difference
-/// between the shard name and the initiator's expected name is this qualifier numbering, so erasing just the genuine
-/// qualifier number on both sides makes corresponding columns compare equal while leaving every other difference
-/// intact. The column name (`x`) is the same on both sides; only the `__tableN` integer differs, so the closed set of
-/// tails collected from the initiator tree applies to the shard names too.
-///
-/// We do NOT erase the number of a `__table<digits>.` that merely looks like a qualifier but is user text: a string
-/// constant such as `'__table1.'` (skipped as a quoted span), a backquoted identifier, a lambda argument named
-/// `__table1.` (its tail is not a genuine column name), or a bare column named `__table9` (no trailing dot). Such text
-/// is left untouched, so two distinct expressions like `concat('__table1.', x)` and `concat('__table2.', x)` keep
-/// their distinct literals and do not collapse onto one another. The digit run is never parsed into an integer, so an
-/// over-long run cannot overflow.
-String normalizeGenuineQualifiers(const String & name, const std::unordered_set<String> & genuine_tails)
-{
-    static constexpr std::string_view prefix = "__table";
-    String result;
-    result.reserve(name.size());
-    size_t pos = 0;
-    while (pos < name.size())
-    {
-        if (name[pos] == '\'' || name[pos] == '`')
-        {
-            /// Copy the quoted span verbatim: its contents are user text, never an analyzer qualifier.
-            size_t span_end = skipQuotedSpan(name, pos);
-            result.append(name, pos, span_end - pos);
-            pos = span_end;
-            continue;
-        }
-
-        bool boundary = pos == 0 || !isWordCharASCII(name[pos - 1]);
-        if (boundary && name.compare(pos, prefix.size(), prefix) == 0)
-        {
-            size_t digit_begin = pos + prefix.size();
-            size_t digit_end = digit_begin;
-            while (digit_end < name.size() && isNumericASCII(name[digit_end]))
-                ++digit_end;
-            if (digit_end > digit_begin && digit_end < name.size() && name[digit_end] == '.')
-            {
-                /// Read the tail right after the dot. It is the column name as `buildColumnIdentifier` renders it:
-                /// either a backquoted span (`` `col` `` for a column whose name needs quoting, e.g. one containing a
-                /// dot) or a bare run of identifier characters. The qualifier is genuine only when that tail is a known
-                /// column name from the query tree.
-                size_t tail_begin = digit_end + 1;
-                size_t tail_end = tail_begin;
-                if (tail_begin < name.size() && name[tail_begin] == '`')
-                    tail_end = skipQuotedSpan(name, tail_begin);
-                else
-                    while (tail_end < name.size() && isWordCharASCII(name[tail_end]))
-                        ++tail_end;
-                if (tail_end > tail_begin && genuine_tails.contains(name.substr(tail_begin, tail_end - tail_begin)))
-                {
-                    /// Genuine qualifier `__table<digits>.<tail>`: copy `__table` and the `.`, dropping the digits.
-                    result.append(prefix);
-                    result.push_back('.');
-                    pos = digit_end + 1;
-                    continue;
-                }
-            }
-        }
-        result.push_back(name[pos]);
-        ++pos;
-    }
-    return result;
-}
 
 }
 
@@ -1501,7 +1507,7 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
     }
 
     /// Index the shard columns by their normalized name (the genuine `__tableN.` qualifier numbering erased, see
-    /// `normalizeGenuineQualifiers`). The shard query tree is renumbered independently from the initiator's:
+    /// `normalizeGeneratedTableQualifiers`). The shard query tree is renumbered independently from the initiator's:
     /// `buildQueryTreeForShard` runs `createUniqueAliasesIfNecessary`, which restarts the `__tableN` aliases at 1, so
     /// when this distributed read is nested inside a subquery the same source column is named `__table1.x` on the
     /// shard but `__tableK.x` (K > 1) in the initiator's tree. Erasing the genuine qualifier number on both sides
@@ -1515,7 +1521,7 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
     shard_normalized_to_index.reserve(shard_header.columns());
     for (size_t i = 0; i < shard_header.columns(); ++i)
     {
-        auto normalized = normalizeGenuineQualifiers(shard_header.getByPosition(i).name, genuine_qualifier_tails);
+        auto normalized = normalizeGeneratedTableQualifiers(shard_header.getByPosition(i).name, &genuine_qualifier_tails);
         if (!shard_normalized_to_index.emplace(normalized, i).second)
             ambiguous_shard_names.emplace(std::move(normalized));
     }
@@ -1538,7 +1544,7 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
             inlined_name = it->second;
 
         /// Match by normalized name so the independent shard/initiator qualifier numbering does not matter.
-        auto normalized_inlined_name = normalizeGenuineQualifiers(inlined_name, genuine_qualifier_tails);
+        auto normalized_inlined_name = normalizeGeneratedTableQualifiers(inlined_name, &genuine_qualifier_tails);
         if (ambiguous_shard_names.contains(normalized_inlined_name))
             return {}; /// Two shard columns share this name, so which one feeds this column is undecidable.
 
@@ -1619,7 +1625,7 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
         if (shard_index == computed_from_expression)
         {
             /// The body's leaves are named by the initiator's column identifiers, while the shard header carries the
-            /// shard's own independently renumbered qualifiers (see `normalizeGenuineQualifiers`). Aliasing the shard
+            /// shard's own independently renumbered qualifiers (see `normalizeGeneratedTableQualifiers`). Aliasing the shard
             /// column under the initiator's name resolves the expression onto an existing input instead of adding one.
             std::unordered_set<String> leaf_names;
             collectLeafColumnActionNames(expression_for_expected[i], *planner_context, leaf_names);
@@ -1627,7 +1633,7 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
             {
                 /// Two shard columns share this name, so which one the leaf reads is undecidable. An exact-name hit
                 /// does not settle it either: the shard column of that exact name may belong to the other source.
-                auto normalized_leaf_name = normalizeGenuineQualifiers(leaf_name, genuine_qualifier_tails);
+                auto normalized_leaf_name = normalizeGeneratedTableQualifiers(leaf_name, &genuine_qualifier_tails);
                 if (ambiguous_shard_names.contains(normalized_leaf_name))
                     return {};
                 /// Already resolvable: the leaf names a shard column directly, or an earlier expression aliased it.

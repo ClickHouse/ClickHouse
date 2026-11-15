@@ -1,0 +1,15 @@
+a structure_only backup keeps the collections: a restored object may resolve them in its CREATE
+1
+1
+restore after dropping everything recreates the collection and the table depending on it
+1
+1
+1
+the backup held no table data
+0
+backup_named_collections = 0 still turns the export off under structure_only
+1
+0
+EXCEPT DATA FROM TABLE still turns the export off under structure_only
+1
+0

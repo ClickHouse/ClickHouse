@@ -8,41 +8,33 @@ doc_type: 'landing-page'
 
 ClickHouse s’intègre aux formats de table ouverts, notamment [Apache Iceberg](/fr/reference/engines/table-engines/integrations/iceberg), [Delta Lake](/fr/reference/engines/table-engines/integrations/deltalake), [Apache Hudi](/fr/reference/engines/table-engines/integrations/hudi) et [Apache Paimon](/fr/reference/functions/table-functions/paimon). Les utilisateurs peuvent ainsi connecter ClickHouse à des données déjà stockées dans ces formats sur du stockage objet, et combiner la puissance analytique de ClickHouse avec leur infrastructure de lac de données existante.
 
-<div id="why-clickhouse-uses-lake-formats">
-  ## Pourquoi utiliser ClickHouse avec des formats de table ouverts ?
-</div>
+## Pourquoi utiliser ClickHouse avec des formats de table ouverts ? {#why-clickhouse-uses-lake-formats}
 
-<div id="querying-data-in-place">
-  ### Interroger les données existantes sans les déplacer
-</div>
+### Interroger les données existantes sans les déplacer {#querying-data-in-place}
 
 ClickHouse peut interroger directement des formats de table ouverts dans le stockage objet, sans dupliquer les données. Les organisations qui ont standardisé Iceberg, Delta Lake, Hudi ou Paimon peuvent faire pointer ClickHouse vers des tables existantes et utiliser immédiatement son dialecte SQL, ses fonctions d&#39;analyse et son lecteur Parquet natif performant. Parallèlement, des outils comme [clickhouse-local](/fr/concepts/features/tools-and-utilities/clickhouse-local) et [chDB](/fr/chdb/index) permettent d&#39;effectuer des analyses exploratoires ad hoc sur plus de 70 formats de fichiers dans un stockage distant, afin d&#39;explorer de façon interactive des datasets de lac de données sans configuration d&#39;infrastructure.
 
 Les utilisateurs peuvent y parvenir soit par lecture directe, à l&#39;aide des [fonctions de table et des moteurs de table](/fr/guides/use-cases/data-warehousing/getting-started/querying-directly), soit en [se connectant à un catalogue de données](/fr/guides/use-cases/data-warehousing/getting-started/connecting-catalogs).
 
-<div id="real-time-with-clickhouse">
-  ### Workloads analytiques en temps réel avec ClickHouse
-</div>
+### Ajouter du compute à certaines requêtes {#add-compute-to-selected-queries}
+
+On-Demand Compute, actuellement en private preview, vous permet d&#39;exécuter les requêtes `SELECT` éligibles sur les données Apache Iceberg et Delta Lake prises en charge, en mobilisant des workers ClickHouse supplémentaires, via votre service et votre endpoint existants, sans redimensionner le service. La disponibilité est assurée au mieux, les performances varient, et les SLO et SLA de ClickHouse Cloud ne s&#39;appliquent pas. Consultez la [documentation On-Demand Compute](/fr/products/cloud/features/infrastructure/on-demand-compute) pour connaître les conditions d&#39;éligibilité et les limitations.
+
+### Workloads analytiques en temps réel avec ClickHouse {#real-time-with-clickhouse}
 
 Pour les workloads qui exigent une forte simultanéité et des réponses à faible latence, les utilisateurs peuvent charger des données depuis des formats de table ouverts dans le moteur [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree) de ClickHouse. Cela ajoute une couche d&#39;analyse en temps réel au-dessus de données provenant d&#39;un lac de données, prenant en charge les tableaux de bord, le reporting opérationnel et d&#39;autres workloads sensibles à la latence qui tirent parti du stockage en colonnes de MergeTree et de ses capacités d&#39;indexation.
 
 Consultez le guide de démarrage pour [accélérer les analyses avec MergeTree](/fr/guides/use-cases/data-warehousing/getting-started/accelerating-analytics).
 
-<div id="capabilities">
-  ## Capacités
-</div>
+## Capacités {#capabilities}
 
-<div id="read-data-directly">
-  ### Lire les données directement
-</div>
+### Lire les données directement {#read-data-directly}
 
 ClickHouse fournit des [fonctions de table](/fr/reference/functions/table-functions/index) et des [moteurs](/fr/reference/engines/table-engines/integrations/index) pour lire directement des formats de table ouverts sur du stockage objet. Des fonctions telles que [`iceberg()`](/fr/reference/functions/table-functions/iceberg), [`deltaLake()`](/fr/reference/functions/table-functions/deltalake), [`hudi()`](/fr/reference/functions/table-functions/hudi) et [`paimon()`](/fr/reference/functions/table-functions/paimon) permettent d’interroger des tables au format de table ouvert dans une instruction SQL, sans configuration préalable. Il existe des versions de ces fonctions pour les stockages objet les plus courants, comme S3, Azure Blob Storage et GCS. Ces fonctions ont également des moteurs de table équivalents, qui peuvent être utilisés pour créer dans ClickHouse des tables faisant référence au stockage objet sous-jacent au format de table ouvert, ce qui facilite les requêtes.
 
 Consultez notre guide de prise en main pour [interroger directement](/fr/guides/use-cases/data-warehousing/getting-started/querying-directly) les données, ou pour [vous connecter à un catalogue de données](/fr/guides/use-cases/data-warehousing/getting-started/connecting-catalogs).
 
-<div id="expose-catalogs-as-databases">
-  ### Exposer des catalogues comme bases de données
-</div>
+### Exposer des catalogues comme bases de données {#expose-catalogs-as-databases}
 
 À l’aide du moteur de base de données [`DataLakeCatalog`](/fr/reference/engines/database-engines/datalake), les utilisateurs peuvent connecter ClickHouse à un catalogue externe et l’exposer comme une base de données. Les tables enregistrées dans le catalogue apparaissent comme des tables dans ClickHouse, ce qui permet d’utiliser de manière transparente l’ensemble de la syntaxe ClickHouse SQL et des fonctions d’analyse. Les utilisateurs peuvent ainsi interroger, joindre et agréger des tables gérées par le catalogue comme s’il s’agissait de tables ClickHouse natives, tout en bénéficiant de l’optimisation des requêtes, de l’exécution parallèle et des capacités de lecture de ClickHouse.
 
@@ -61,9 +53,7 @@ Les catalogues pris en charge incluent :
 
 Consultez le guide de prise en main pour [vous connecter aux catalogues](/fr/guides/use-cases/data-warehousing/getting-started/connecting-catalogs).
 
-<div id="write-back-to-lakehouse-formats">
-  ### Réécrire vers des formats de table ouverts
-</div>
+### Réécrire vers des formats de table ouverts {#write-back-to-lakehouse-formats}
 
 ClickHouse prend en charge la réécriture de données vers des formats de table ouverts, ce qui est utile dans des scénarios tels que :
 
@@ -72,14 +62,10 @@ ClickHouse prend en charge la réécriture de données vers des formats de table
 
 Consultez le guide de démarrage pour [l&#39;écriture vers des lacs de données](/fr/guides/use-cases/data-warehousing/getting-started/writing-data).
 
-<div id="best-practices">
-  ### Bonnes pratiques
-</div>
+### Bonnes pratiques {#best-practices}
 
 Pour les charges de travail de production, consultez [Bonnes pratiques pour les lacs de données](/fr/guides/use-cases/data-warehousing/getting-started/best-practices) pour savoir comment choisir les fonctions de table, les moteurs de table ou les connexions au catalogue, ajuster les paramètres de performance et déboguer les requêtes sur le lac de données.
 
-<div id="next-steps">
-  ## Étapes suivantes
-</div>
+## Étapes suivantes {#next-steps}
 
 Prêt à l’essayer ? Le [guide de prise en main](/fr/guides/use-cases/data-warehousing/getting-started/overview) vous guide à travers l’interrogation directe de formats de table ouverts, la connexion à un catalogue, le chargement de données dans MergeTree pour des analyses rapides et la réécriture des résultats, le tout dans un workflow complet de bout en bout.

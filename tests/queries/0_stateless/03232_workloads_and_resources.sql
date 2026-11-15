@@ -11,7 +11,7 @@ create workload production in all settings priority = 1, weight = 9;
 create workload development in all settings priority = 1, weight = 1;
 
 -- Test that illegal actions are not allowed
-create workload another_root; -- {serverError BAD_ARGUMENTS}
+-- Multiple root workloads (a forest) are allowed; see 03588_multiple_root_workloads for coverage.
 create workload self_ref in self_ref; -- {serverError BAD_ARGUMENTS}
 drop workload all; -- {serverError BAD_ARGUMENTS}
 create workload invalid in 03232_write; -- {serverError BAD_ARGUMENTS}
@@ -74,6 +74,20 @@ create or replace workload development in all settings priority = 1, weight = 1;
 create or replace workload development in production settings priority = 1, weight = 1;
 create or replace workload development in admin settings priority = 1, weight = 1;
 create or replace workload development in all settings priority = 1, weight = 1;
+
+-- `scheduler` applies only to time-shared CPU/IO leaves; a `FOR <resource>` clause targeting a
+-- non-CPU/IO resource (QUERY / MEMORY RESERVATION) is silently ignored (the leaf falls back to
+-- fifo), while targeting a CPU/IO resource is honored.
+create resource 03232_sched_query (query);
+create resource 03232_sched_memory (memory reservation);
+create workload sched_q in all settings scheduler = 'fair' for 03232_sched_query;
+create workload sched_m in all settings scheduler = 'las' for 03232_sched_memory;
+create workload sched_ok in all settings scheduler = 'fair' for 03232_write;
+drop workload sched_q;
+drop workload sched_m;
+drop workload sched_ok;
+drop resource 03232_sched_query;
+drop resource 03232_sched_memory;
 
 -- Clean up
 drop workload if exists production;
