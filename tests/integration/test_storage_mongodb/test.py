@@ -1832,7 +1832,16 @@ def test_order_by_reader_values_limit(started_cluster):
     drop_mongo_collection_if_exists(db, collection_name)
     collection = db[collection_name]
     # MongoDB sorts a `null` first and a number before a string, but the reader reads `null` as `NULL` and 10 as '10'.
-    collection.insert_many([{"id": 1, "s": None, "t": 10}, {"id": 2, "s": "a", "t": "0"}])
+    collection.insert_many(
+        [{"id": 1, "s": None, "t": 10}, {"id": 2, "s": "a" * 4096, "t": "0"}]
+    )
+    previous_profile = db.command("profile", -1)
+    previous_sort_limits = mongo_connection.admin.command(
+        "getParameter",
+        1,
+        internalQueryMaxBlockingSortMemoryUsageBytes=1,
+        allowDiskUseByDefault=1,
+    )
 
     node = started_cluster.instances["node"]
     structure = "id UInt8, s Nullable(String), t String"
@@ -1843,21 +1852,52 @@ def test_order_by_reader_values_limit(started_cluster):
         f"ENGINE = MongoDB({arguments})"
     )
     try:
+        mongo_connection.admin.command(
+            "setParameter",
+            1,
+            internalQueryMaxBlockingSortMemoryUsageBytes=1024,
+            allowDiskUseByDefault=False,
+        )
         node.query(
             f"CREATE OR REPLACE TABLE {reference} ENGINE = Memory "
             f"AS SELECT * FROM {collection_name}"
         )
         for source in (collection_name, f"mongodb({arguments}, '{structure}')"):
-            for order_by, expected in (
-                ("s", "2\n"),
-                ("s DESC NULLS FIRST", "1\n"),
-                ("t", "2\n"),
-                ("t DESC", "1\n"),
+            for order_by, limit_clause, expected in (
+                ("s", "LIMIT 1", "2\n"),
+                ("s DESC NULLS FIRST", "LIMIT 1", "1\n"),
+                ("t", "LIMIT 1", "2\n"),
+                ("t DESC", "LIMIT 1", "1\n"),
+                ("s", "", "2\n1\n"),
             ):
-                query = f"SELECT id FROM {{}} ORDER BY {order_by} LIMIT 1"
+                query = f"SELECT id FROM {{}} ORDER BY {order_by} {limit_clause}"
                 assert node.query(query.format(reference)) == expected
-                assert node.query(query.format(source)) == expected, (query, source)
+                try:
+                    db.command("profile", 2)
+                    assert node.query(query.format(source)) == expected, (query, source)
+                finally:
+                    db.command(
+                        "profile",
+                        previous_profile["was"],
+                        slowms=previous_profile["slowms"],
+                        sampleRate=previous_profile["sampleRate"],
+                        filter=previous_profile.get("filter", "unset"),
+                    )
+                profile = db["system.profile"].find_one(
+                    {"ns": f"test.{collection_name}", "command.find": collection_name},
+                    sort=[("$natural", -1)],
+                )
+                assert profile is not None
+                assert "sort" not in profile["command"], profile
     finally:
+        mongo_connection.admin.command(
+            "setParameter",
+            1,
+            internalQueryMaxBlockingSortMemoryUsageBytes=previous_sort_limits[
+                "internalQueryMaxBlockingSortMemoryUsageBytes"
+            ],
+            allowDiskUseByDefault=previous_sort_limits["allowDiskUseByDefault"],
+        )
         node.query(f"DROP TABLE IF EXISTS {reference}")
         node.query(f"DROP TABLE {collection_name}")
         collection.drop()

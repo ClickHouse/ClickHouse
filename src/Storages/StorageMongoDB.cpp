@@ -1194,7 +1194,9 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
 
     if (query_tree.hasOrderBy())
     {
-        document sort{};
+        /// BSON ordering may differ from the local sort after reader conversions. Keep all rows, and do not
+        /// ask MongoDB to sort them without a limit: that redundant sort can exceed its memory limit.
+        options.limit(0);
         for (const auto & child : query_tree.getOrderByNode()->getChildren())
         {
             if (const auto * sort_node = child->as<SortNode>())
@@ -1202,26 +1204,11 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
                 if (sort_node->withFill() || sort_node->hasFillTo() || sort_node->hasFillFrom() || sort_node->hasFillStep())
                     on_error(sort_node);
 
-                if (const auto & column = sort_node->getExpression()->as<ColumnNode>())
-                {
-                    /// MongoDB sorts by BSON type first, puts a `null` and a missing field first, and may use the collection's
-                    /// collation, while the reader converts every value to the declared type (a number or a bool to a number or
-                    /// to text, a `null` to `NULL` or the default). Keep all rows for the local sort instead of truncating by
-                    /// the BSON order.
-                    options.limit(0);
-                    sort.append(kvp(column->getColumnName(), sort_node->getSortDirection() == SortDirection::ASCENDING ? 1 : -1));
-                }
-                else
+                if (!sort_node->getExpression()->as<ColumnNode>())
                     on_error(sort_node);
             }
             else
                 on_error(sort_node);
-        }
-
-        if (!sort.view().empty())
-        {
-            LOG_DEBUG(log, "MongoDB sort has built: '{}'", bsoncxx::to_json(sort));
-            options.sort(sort.extract());
         }
     }
 
