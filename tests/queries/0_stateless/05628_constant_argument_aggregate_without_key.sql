@@ -1,5 +1,5 @@
--- Without keys, a constant argument of a function that ignores repeated values is added once,
--- instead of being copied to the size of the block.
+-- Without keys, a constant argument is not copied to the size of the block: a function that ignores
+-- repeated values adds it once, any other function adds a copy of at most 1 MiB repeatedly.
 
 SET count_distinct_implementation = 'uniqExact', aggregate_functions_null_for_empty = 0;
 
@@ -59,3 +59,38 @@ FROM (SELECT toString(number * 7 % 5) AS y, toLowCardinality(y) AS x FROM number
 SELECT COUNTOrDefaultDistinct(x), length(groupArrayDistinct(x)), length(anyDistinct(x))
 FROM (SELECT materialize(toLowCardinality(toFixedString('', 100000))) AS x FROM numbers(200000))
 SETTINGS max_block_size = 65409, max_threads = 1, max_memory_usage = 100000000;
+
+-- Functions that do not ignore repeated values: a copy of the constant to 65409 rows would take 6.5 GB.
+WITH toFixedString('', 100000) AS c
+SELECT count(c), length(any(c)), length(anyLast(c)), length(anyOrDefault(c)), length(argMax(c, c)), length(anyHeavy(c)), countIf(c, 1 = 1)
+FROM numbers(200000) SETTINGS max_block_size = 65409, max_threads = 1, max_memory_usage = 100000000, optimize_normalize_count_variants = 0;
+
+-- A constant of 1 MiB is not folded by the analyzer, so `count` keeps its argument: 64 GiB for a copy to 65409 rows.
+SELECT count(toFixedString('', 1048576)) FROM numbers(200000) SETTINGS max_block_size = 65409, max_threads = 1, max_memory_usage = 100000000;
+SELECT length(anyOrDefault(toFixedString(CAST('' AS LowCardinality(Nullable(FixedString(12)))), 1048576))) FROM numbers(200000)
+SETTINGS max_block_size = 65409, max_threads = 1, max_memory_usage = 100000000;
+
+-- A constant of about 1 KB is added in five copies of about 1000 rows, the last one partial.
+SELECT 'String, copies', tuple(count(c), length(any(c)), length(anyLast(c)), length(anyOrDefault(c)), length(argMax(c, c)), length(groupArray(c)),
+    length(groupConcat(c)), countIf(c, 1 = 1), length(topK(1)(c))) AS r,
+    r <=> tuple(count(m), length(any(m)), length(anyLast(m)), length(anyOrDefault(m)), length(argMax(m, m)), length(groupArray(m)),
+    length(groupConcat(m)), countIf(m, 1 = 1), length(topK(1)(m)))
+FROM (SELECT repeat('x', 1000) AS c, materialize(c) AS m FROM numbers(5000))
+SETTINGS max_block_size = 5000, max_threads = 1, optimize_normalize_count_variants = 0;
+
+SELECT 'Numeric, copies', tuple(sum(c), avg(c), count(c), sumArray(a), count(a), finalizeAggregation(sumState(c)), sumIf(c, 1 = 1), uniq(c, a)) AS r,
+    r <=> tuple(sum(mc), avg(mc), count(mc), sumArray(ma), count(ma), finalizeAggregation(sumState(mc)), sumIf(mc, 1 = 1), uniq(mc, ma))
+FROM (SELECT 1.5 AS c, [1, 2, 3] AS a, materialize(c) AS mc, materialize(a) AS ma FROM numbers(300000))
+SETTINGS max_block_size = 300000, max_threads = 1, optimize_normalize_count_variants = 0;
+
+SELECT 'Nullable, copies', tuple(count(c), any(c), count(n), any(n), sum(n)) AS r,
+    r <=> tuple(count(mc), any(mc), count(mn), any(mn), sum(mn))
+FROM (SELECT CAST('x' AS Nullable(String)) AS c, CAST(NULL AS Nullable(Float64)) AS n, materialize(c) AS mc, materialize(n) AS mn FROM numbers(5000))
+SETTINGS max_block_size = 5000, max_threads = 1, optimize_normalize_count_variants = 0;
+
+SELECT 'String, copies, empty', tuple(count(c), length(any(c)), length(anyLast(c)), length(anyOrDefault(c)), length(argMax(c, c)), length(groupArray(c)),
+    length(groupConcat(c)), countIf(c, 1 = 1), length(topK(1)(c))) AS r,
+    r <=> tuple(count(m), length(any(m)), length(anyLast(m)), length(anyOrDefault(m)), length(argMax(m, m)), length(groupArray(m)),
+    length(groupConcat(m)), countIf(m, 1 = 1), length(topK(1)(m)))
+FROM (SELECT repeat('x', 1000) AS c, materialize(c) AS m FROM numbers(0))
+SETTINGS max_threads = 1, optimize_normalize_count_variants = 0;
