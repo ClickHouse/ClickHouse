@@ -8,33 +8,62 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ar/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
 
-تتيح لك النسخ المتماثلة للقراءة إنشاء نسخة واحدة أو أكثر من قاعدة بيانات Managed Postgres الأساسية لديك. وتتابع هذه النسخ قاعدة بياناتك الأساسية باستمرار باستخدام النسخ المتماثل الأصلي في PostgreSQL، لضمان مواكبة التغييرات أولًا بأول.
+تتيح لك النسخ المتماثلة للقراءة إنشاء نسخة واحدة أو أكثر من قاعدة بيانات ClickHouse Managed Postgres الأساسية لديك. وتتابع هذه النسخ قاعدة بياناتك الأساسية باستمرار باستخدام النسخ المتماثل الأصلي في PostgreSQL، لضمان مواكبة التغييرات أولًا بأول.
 
 لإدارة النسخ المتماثلة للقراءة، انقر على أيقونة Edit في الـ warehouse لديك:
 
-<Image img="/images/managed-postgres/warehouse-view.webp" alt="عرض warehouse مع أيقونة Edit" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![عرض warehouse مع أيقونة Edit](/images/managed-postgres/warehouse-view.webp)
+
+</Frame>
+
+</div>
 
 سيؤدي ذلك إلى فتح مربع حوار warehouse، حيث يمكنك عرض الخدمات الحالية وإنشاء نسخ متماثلة جديدة للقراءة:
 
-<Image img="/images/managed-postgres/read-replica-dialog.webp" alt="مربع حوار إدارة النسخ المتماثلة للقراءة" size="md" border />
+<div className="ch-image-md">
 
-<div id="managing-read-replicas">
-  ## إدارة النسخ المتماثلة للقراءة
+<Frame>
+
+![مربع حوار إدارة النسخ المتماثلة للقراءة](/images/managed-postgres/read-replica-dialog.webp)
+
+</Frame>
+
 </div>
+
+## إدارة النسخ المتماثلة للقراءة {#managing-read-replicas}
 
 توفّر لك صفحة **النسخ المتماثلة للقراءة** عرضين، ويمكن التبديل بينهما باستخدام خياري **Flow** و**Table** في الزاوية العلوية اليمنى.
 
 يعرض **Flow** بنية النسخ المتماثل — إذ يظهر المثيل الأساسي في الأعلى مع أسهم تتجه إلى الأسفل نحو كل نسخة متماثلة مرتبطة، مع إظهار الفئة والمنطقة والحالة بلمحة سريعة:
 
-<Image img="/images/managed-postgres/read-replicas-flow.webp" alt="عرض التدفق للنسخ المتماثلة للقراءة الذي يوضّح بنية المثيل الأساسي والنسخ المتماثلة" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![عرض التدفق للنسخ المتماثلة للقراءة الذي يوضّح بنية المثيل الأساسي والنسخ المتماثلة](/images/managed-postgres/read-replicas-flow.webp)
+
+</Frame>
+
+</div>
 
 يسرد عرض **Table** كل نسخة متماثلة مع اسم الخدمة، وموفّر الخدمة السحابية والمنطقة، وحالة الخدمة، ووقت الإنشاء، وإجراء **Detach service**:
 
-<Image img="/images/managed-postgres/read-replicas-table.webp" alt="عرض الجدول للنسخ المتماثلة للقراءة" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![عرض الجدول للنسخ المتماثلة للقراءة](/images/managed-postgres/read-replicas-table.webp)
+
+</Frame>
+
+</div>
 
 لإنشاء نسخة متماثلة جديدة، انقر على **Create read replica** في الزاوية العلوية اليمنى من أيٍّ من العرضين.
 
@@ -64,15 +93,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## كيف تعمل النسخ المتماثلة للقراءة
 </div>
 
-تعتمد النسخ المتماثلة للقراءة في Managed Postgres على معمارية شحن WAL بدلًا من النسخ المتماثل المتدفق. ويهدف هذا الخيار التصميمي إلى تقليل التأثير على قاعدة البيانات الرئيسية لديك.
+تعتمد النسخ المتماثلة للقراءة في ClickHouse Managed Postgres على معمارية شحن WAL بدلًا من النسخ المتماثل المتدفق. ويهدف هذا الخيار التصميمي إلى تقليل التأثير على قاعدة البيانات الأساسية لديك.
 
 <div id="wal-shipping-from-object-storage">
   ### شحن WAL من تخزين الكائنات
 </div>
 
-عندما تعالج قاعدة البيانات الأساسية المعاملات، فإنها تُنشئ سجلات Write-Ahead Log ‏(WAL). وتُؤرشف مقاطع WAL هذه باستمرار في تخزين الكائنات (S3). ثم تجلب النسخ المتماثلة للقراءة مقاطع WAL هذه من تخزين الكائنات وتُعيد تطبيقها لكي تبقى متزامنة مع النسخة الأساسية.
+عندما تعالج قاعدة البيانات الأساسية المعاملات، فإنها تُنشئ سجلات Write-Ahead Log ‏(WAL). وتُؤرشف مقاطع WAL هذه باستمرار في تخزين الكائنات. ثم تجلب النسخ المتماثلة للقراءة مقاطع WAL هذه من تخزين الكائنات وتُعيد تطبيقها لكي تبقى متزامنة مع النسخة الأساسية.
 
-تختلف هذه المعمارية عن [مثيلات الاستعداد عالية التوافر](/ar/products/managed-postgres/high-availability)، التي تستخدم النسخ المتماثل المتدفق عبر اتصال مباشر بالنسخة الأساسية.
+تختلف هذه المعمارية عن [نسخ الاستعداد عالية التوافر](/ar/products/managed-postgres/high-availability)، التي تستخدم النسخ المتماثل المتدفق عبر اتصال مباشر بالنسخة الأساسية.
 
 <div id="why-we-chose-this-approach">
   ### لماذا اخترنا هذا النهج

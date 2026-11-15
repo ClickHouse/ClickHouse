@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'JavaScript'
+sidebarTitle: '概要'
 keywords: ['clickhouse', 'js', 'JavaScript', 'NodeJS', 'web', 'browser', 'Cloudflare', 'workers', 'client', 'connect', 'integrate']
 slug: /integrations/javascript
 description: 'ClickHouse に接続するための公式 JS クライアント。'
@@ -25,7 +25,7 @@ ClickHouse に接続するための公式 JS Client です。
 
 TypeScript を使用する場合は、少なくとも [version 4.5](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-4-5.html) 以降を使用してください。これにより、[inline import and export syntax](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-4-5.html#type-modifiers-on-import-names) が有効になります。
 
-この Client のソースコードは、[ClickHouse-JS GitHub repository](https://github.com/ClickHouse/clickhouse-js) で公開されています。
+この Client のソースコードは、[ClickHouse-JS GitHub リポジトリ](https://github.com/ClickHouse/clickhouse-js) で公開されています。
 
 <Info>
   **AI agent スキル**
@@ -33,7 +33,7 @@ TypeScript を使用する場合は、少なくとも [version 4.5](https://www.
   この JS Client には、コーディングエージェントが Client を扱う際に役立つ AI agent スキルが含まれています。次のようにインストールしてください。
 
   ```sh
-  npm skills add ClickHouse/clickhouse-js
+  npx skills add ClickHouse/clickhouse-js
   ```
 </Info>
 
@@ -1005,10 +1005,10 @@ await client.query({
 </div>
 
 サーバーはこれらを数値として受け取れますが、これらの型の最大値は `Number.MAX_SAFE_INTEGER` を超えるため、
-整数オーバーフローを避ける目的で、`JSON*` 系の出力フォーマットでは文字列として返されます。
+整数オーバーフローを避ける目的で、`JSON*` ファミリーの出力フォーマットでは文字列として返されます。
 
 ただし、この動作は
-[`output_format_json_quote_64bit_integers` 設定](/ja/reference/settings/formats#output_format_json_quote_64bit_integers)
+[`output_format_json_quote_64bit_integers` 設定](/ja/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
 で変更できます。
 
 **例:** 64 ビット整数の JSON 出力フォーマットを調整します。
@@ -1100,7 +1100,7 @@ await client.query({
 })
 ```
 
-詳細については、https://clickhouse.com/docs/interfaces/cli#cli-queries-with-parameters-syntax を参照してください。
+詳細については、https://clickhouse.com/docs/interfaces/client#cli-queries-with-parameters-syntax を参照してください。
 
 <div id="compression">
   ### 圧縮

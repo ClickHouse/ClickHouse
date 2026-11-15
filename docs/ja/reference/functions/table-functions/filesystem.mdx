@@ -14,7 +14,7 @@ import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupporte
 
 ディレクトリを再帰的に走査し、ファイルのメタデータ (パス、サイズ、種別、権限、最終更新時刻) と、必要に応じてファイルの内容を含むテーブルを返します。
 
-`clickhouse-server` モードでは、パスは [user&#95;files&#95;path](/ja/reference/settings/server-settings/settings#user_files_path) ディレクトリ内になければなりません。`user_files_path` 内にあるものの、その外部を指すシンボリックリンクはたどられますが、返されるのは (シンボリックリンク経由の) パスが `user_files_path` で始まるエントリのみです。
+`clickhouse-server` モードでは、パスは [user&#95;files&#95;path](/ja/reference/settings/server-settings/settings/user#user_files_path) ディレクトリ内になければなりません。`user_files_path` 内にあるものの、その外部を指すシンボリックリンクはたどられますが、返されるのは (シンボリックリンク経由の) パスが `user_files_path` で始まるエントリのみです。
 
 `clickhouse-local` モードでは、パスに制限はありません。
 
@@ -34,7 +34,7 @@ filesystem([path])
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `path` | 一覧表示するディレクトリです。絶対パス (サーバーモードでは `user_files_path` 内にある必要があります) または `user_files_path` からの相対パスを指定できます。空欄または省略した場合は、デフォルトで `user_files_path` が使用されます。 |
 
-<div id="returned_columns">
+<div id="returned-columns">
   ## 返されるカラム
 </div>
 

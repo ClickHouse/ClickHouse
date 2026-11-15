@@ -12,35 +12,27 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estas opciones de configuración están disponibles en [system.merge&#95;tree&#95;settings](/es/reference/system-tables/merge_tree_settings) y se generan automáticamente a partir del código fuente de ClickHouse.
 
-<div id="primary_key_compress_block_size">
-  ## primary_key_compress_block_size
-</div>
+## primary_key_compress_block_size {#primary_key_compress_block_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="65536" />
 
-Tamaño del bloque de compresión de la clave primaria; es el tamaño real del bloque que se va a comprimir.
+Tamaño, en bytes sin comprimir, de los bloques que se usan al escribir un índice de clave primaria comprimido para partes de datos nuevas o reescritas. Solo se aplica cuando `compress_primary_key` está habilitado. Controla la estructura de tramas y el almacenamiento en búfer de la compresión; no modifica la clave primaria ni la granularidad del índice.
 
-<div id="primary_key_compression_codec">
-  ## primary_key_compression_codec
-</div>
+## primary_key_compression_codec {#primary_key_compression_codec}
 
 <SettingsInfoBlock type="String" default_value="ZSTD(3)" />
 
 Codificación de compresión utilizada por la clave primaria. Esta es lo suficientemente pequeña y está en caché,
 por lo que la compresión predeterminada es ZSTD(3).
 
-<div id="primary_key_lazy_load">
-  ## primary_key_lazy_load
-</div>
+## primary_key_lazy_load {#primary_key_lazy_load}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Carga la clave primaria en memoria en el
 primer uso en lugar de hacerlo al inicializar la tabla. Esto puede ahorrar memoria cuando hay una gran cantidad de tablas.
 
-<div id="primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns">
-  ## primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns
-</div>
+## primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns {#primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns}
 
 <SettingsInfoBlock type="Float" default_value="0.9" />
 

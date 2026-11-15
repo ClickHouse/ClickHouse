@@ -7,8 +7,6 @@ keywords: ['ML', 'Marimo', 'chDB', 'pandas']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Dans ce guide, vous apprendrez à explorer un jeu de données dans ClickHouse Cloud depuis un notebook Marimo à l’aide de [chDB](/fr/chdb/index) - un moteur SQL OLAP rapide en processus, powered by ClickHouse.
 
 **Prérequis :**
@@ -44,15 +42,39 @@ Pour ajouter ce jeu de données à un service ClickHouse Cloud existant, connect
 
 Dans le menu de gauche, cliquez sur `Data sources`. Cliquez ensuite sur `Predefined sample data` :
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/1.webp" alt="Ajouter un exemple de jeu de données" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Ajouter un exemple de jeu de données](/images/use-cases/AI_ML/jupyter/1.webp)
+
+</Frame>
+
+</div>
 
 Sélectionnez `Get started` dans la carte UK property price paid data (4GB) :
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/2.webp" alt="Sélectionner le jeu de données UK price paid" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Sélectionner le jeu de données UK price paid](/images/use-cases/AI_ML/jupyter/2.webp)
+
+</Frame>
+
+</div>
 
 Cliquez ensuite sur `Import dataset` :
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/3.webp" alt="Importer le jeu de données UK price paid" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Importer le jeu de données UK price paid](/images/use-cases/AI_ML/jupyter/3.webp)
+
+</Frame>
+
+</div>
 
 ClickHouse créera automatiquement la table `pp_complete` dans la base de données `default` et la remplira avec 28,92 millions de lignes de données de prix.
 
@@ -93,7 +115,15 @@ marimo edit clickhouse_exploration.py
 
 Une nouvelle fenêtre du navigateur devrait s’ouvrir avec l’interface Marimo sur localhost:2718 :
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/4.webp" alt="interface Marimo" />
+<div className="ch-image-md">
+
+<Frame>
+
+![interface Marimo](/images/use-cases/AI_ML/Marimo/4.webp)
+
+</Frame>
+
+</div>
 
 Les notebooks Marimo sont stockés sous forme de fichiers Python pur, ce qui facilite leur gestion avec un système de contrôle de version et leur partage avec d’autres utilisateurs.
 
@@ -124,7 +154,15 @@ result
 
 Vous devriez voir le résultat s’afficher sous la cellule que vous venez d’exécuter :
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/5.webp" alt="Marimo Hello World" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Marimo Hello World](/images/use-cases/AI_ML/Marimo/5.webp)
+
+</Frame>
+
+</div>
 
 <div id="exploring-the-data">
   ## Explorer les données
@@ -206,7 +244,15 @@ fig
 
 Sans surprise, les prix de l’immobilier à Londres ont fortement augmenté au fil du temps.
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/6.webp" alt="Visualisation de données Marimo" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Visualisation de données Marimo](/images/use-cases/AI_ML/Marimo/6.webp)
+
+</Frame>
+
+</div>
 
 L’un des points forts de Marimo est son modèle d’exécution réactif. Créons un widget interactif pour sélectionner différentes villes de manière dynamique.
 
@@ -267,7 +313,15 @@ fig_reactive
 
 Désormais, lorsque vous sélectionnez une ville dans la liste déroulante, le graphique se met à jour automatiquement :
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/7.webp" alt="Graphique dynamique Marimo" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Graphique dynamique Marimo](/images/use-cases/AI_ML/Marimo/7.webp)
+
+</Frame>
+
+</div>
 
 <div id="exploring-price-distributions">
   ### Explorer les distributions de prix avec des boîtes à moustaches interactives
@@ -343,7 +397,15 @@ Si vous cliquez sur le bouton d’options en haut à droite de la cellule, vous 
 le code.
 Lorsque vous déplacez le curseur, le graphique se met automatiquement à jour grâce à l’exécution réactive de Marimo :
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/8.webp" alt="Graphique dynamique de Marimo" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Graphique dynamique de Marimo](/images/use-cases/AI_ML/Marimo/8.webp)
+
+</Frame>
+
+</div>
 
 <div id="summary">
   ## Résumé

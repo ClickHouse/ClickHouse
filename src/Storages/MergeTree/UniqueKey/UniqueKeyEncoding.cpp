@@ -62,6 +62,19 @@ void encodeBlock(
     }
 }
 
+void encodeBlockKeys(
+    const Block & block,
+    const Names & uk_names,
+    size_t max_size,
+    VectorWithMemoryTracking<String> & out)
+{
+    Columns uk_columns;
+    uk_columns.reserve(uk_names.size());
+    for (const auto & name : uk_names)
+        uk_columns.push_back(block.getByName(name).column);
+    encodeBlock(uk_columns, /*permutation=*/nullptr, max_size, out);
+}
+
 }
 
 }

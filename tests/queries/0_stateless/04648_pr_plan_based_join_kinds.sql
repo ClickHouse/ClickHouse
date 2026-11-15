@@ -12,7 +12,6 @@ CREATE TABLE jr_04648 (id UInt64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO jl_04648 SELECT number FROM numbers(2000);          -- 0..1999
 INSERT INTO jr_04648 SELECT number + 1000 FROM numbers(2000);   -- 1000..2999 (overlap 1000..1999)
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';

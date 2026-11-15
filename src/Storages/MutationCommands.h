@@ -157,6 +157,10 @@ public:
     bool hasAnyUpdateCommand() const;
     bool hasOnlyUpdateCommands() const;
 
+    /// True if the set contains `ALTER TABLE ... REWRITE PARTS`, which rewrites every column of
+    /// the part from scratch and therefore may also change the part format.
+    bool hasRewritePartsCommand() const;
+
     /// These set of commands contain barrier command and shouldn't
     /// stick with other commands. Commands from one set have already been validated
     /// to be executed without issues on the creation state.

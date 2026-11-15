@@ -197,6 +197,20 @@ struct KeeperMemNodesStorage final : public KeeperNodesStorage
 
     UncommittedNodesMap uncommitted_nodes;
 
+    /// Uncommitted nodes grouped by parent path. Lets RemoveRecursive find the uncommitted
+    /// children of a node without scanning all uncommitted nodes. Kept in sync with
+    /// `uncommitted_nodes` by addUncommittedNode() and eraseUncommittedNode(), which are the
+    /// only functions that insert into or erase from `uncommitted_nodes`.
+    using UncommittedChildrenByParent = std::unordered_map<
+        std::string,
+        std::unordered_set<UncommittedNodesIterator, UncommittedNodesIteratorHash>,
+        StringHashForHeterogeneousLookup,
+        StringHashForHeterogeneousLookup::transparent_key_equal>;
+    UncommittedChildrenByParent uncommitted_children_by_parent;
+
+    std::pair<UncommittedNodesIterator, bool> addUncommittedNode(std::string path, UncommittedNode node);
+    void eraseUncommittedNode(UncommittedNodesIterator it);
+
     /// Mapping of uncommitted transaction to all it's modified nodes for a faster cleanup.
     /// zxid_to_nodes[0] contains nodes that were duplicated from committed container to
     /// UncommittedState::nodes, but weren't necessarily updated.

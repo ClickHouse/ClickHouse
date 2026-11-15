@@ -93,6 +93,16 @@ public:
         nested_func->serialize(place, buf, version);
     }
 
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
+    {
+        return nested_func->getSerializedSizeBound(version);
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
+    {
+        return nested_func->serializeToMemory(place, dst, version);
+    }
+
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
         nested_func->deserialize(place, buf, version, arena);
@@ -103,12 +113,12 @@ public:
         nested_func->insertResultInto(place, to, arena);
     }
 
-    bool allocatesMemoryInArena() const override { return nested_func->allocatesMemoryInArena(); }
-
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override
     {
-        return nested_func->getArgumentsThatCanBeOnlyNull();
+        nested_func->rollbackInsertResult(place, to);
     }
+
+    bool allocatesMemoryInArena() const override { return nested_func->allocatesMemoryInArena(); }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 };

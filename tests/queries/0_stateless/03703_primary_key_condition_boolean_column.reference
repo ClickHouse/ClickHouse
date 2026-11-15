@@ -18,3 +18,10 @@ yes
 --- Test 8: indexHint with bare column
 16
 16
+--- Test 9: a bare key column whose type has no boolean reading
+24
+24
+24
+8
+--- Test 10: partition pruning by a bare key column with no boolean reading
+16

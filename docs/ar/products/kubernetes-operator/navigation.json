@@ -1,5 +1,4 @@
 {
-  "icon": "/images/icons/icon-kubernetes-operator.svg",
   "item": "مشغّل Kubernetes",
   "pages": [
     "ar/products/kubernetes-operator/overview",
@@ -14,7 +13,7 @@
     },
     {
       "expanded": true,
-      "group": "الأدلة",
+      "group": "أدلة إرشادية",
       "pages": [
         "ar/products/kubernetes-operator/guides/introduction",
         "ar/products/kubernetes-operator/guides/configuration",

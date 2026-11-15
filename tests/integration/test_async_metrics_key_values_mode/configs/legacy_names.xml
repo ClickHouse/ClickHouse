@@ -1,0 +1,3 @@
+<clickhouse>
+    <asynchronous_metrics_key_values_mode>legacy_names</asynchronous_metrics_key_values_mode>
+</clickhouse>

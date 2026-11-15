@@ -11,7 +11,7 @@ Les exemples précédents de chargement de données JSON supposent l’utilisati
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONEachRow)
 LIMIT 5
 ```
 
@@ -45,7 +45,7 @@ Comparez l’exemple ci-dessus avec la requête suivante, qui lit les mêmes don
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONAsObject)
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONAsObject)
 LIMIT 5
 ```
 
@@ -72,7 +72,7 @@ ENGINE = MergeTree
 ORDER BY tuple();
 
 INSERT INTO pypi SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONAsObject)
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONAsObject)
 LIMIT 5;
 
 SELECT *
@@ -93,7 +93,7 @@ Le format `JSONAsObject` peut également être utile pour lire du JSON délimit�
 
 ```sql
 SELECT count()
-FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz', 'JSONEachRow')
+FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz', NOSIGN, 'JSONEachRow')
 ```
 
 ```response
@@ -110,7 +110,7 @@ You can specify the structure manually: (in file/uri bluesky/file_0001.json.gz).
 
 ```sql
 SELECT count()
-FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz', 'JSONAsObject')
+FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz', NOSIGN, 'JSONAsObject')
 ```
 
 ```response
@@ -225,7 +225,7 @@ SELECT * FROM sometable;
   ### Spécifier les valeurs de clé de l’objet parent
 </div>
 
-Supposons que nous voulions également enregistrer dans la table les valeurs associées aux clés de l’objet parent. Dans ce cas, nous pouvons utiliser [l’option suivante](/fr/reference/settings/formats#format_json_object_each_row_column_for_object_name) pour définir le nom de la colonne dans laquelle ces valeurs de clé doivent être enregistrées :
+Supposons que nous voulions également enregistrer dans la table les valeurs associées aux clés de l’objet parent. Dans ce cas, nous pouvons utiliser [l’option suivante](/fr/reference/settings/formats/format#format_json_object_each_row_column_for_object_name) pour définir le nom de la colonne dans laquelle ces valeurs de clé doivent être enregistrées :
 
 ```sql
 SET format_json_object_each_row_column_for_object_name = 'id'
@@ -401,13 +401,13 @@ LIMIT 1
   ## Accéder aux objets JSON imbriqués
 </div>
 
-Nous pouvons faire référence aux [clés JSON imbriquées](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list-nested.json) en activant [l’option de réglage suivante](/fr/reference/settings/formats#input_format_import_nested_json) :
+Nous pouvons faire référence aux [clés JSON imbriquées](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list-nested.json) en activant [l’option de réglage suivante](/fr/reference/settings/formats/input-format#input_format_import_nested_json) :
 
 ```sql
 SET input_format_import_nested_json = 1
 ```
 
-Cela nous permet de référencer les clés d’objets JSON imbriqués à l’aide de la notation par points (n’oubliez pas de les entourer d’accents graves pour que cela fonctionne) :
+Cela nous permet de référencer les clés d’objets JSON imbriqués à l’aide de la notation pointée (n’oubliez pas de les entourer d’accents graves pour que cela fonctionne) :
 
 ```sql
 SELECT *
@@ -454,7 +454,7 @@ SELECT * FROM shorttable
 └───────────────────────────┴──────┘
 ```
 
-ClickHouse ignorera les colonnes inconnues lors de l’importation. Ce comportement peut être désactivé à l’aide de l’option de paramètre [input&#95;format&#95;skip&#95;unknown&#95;fields](/fr/reference/settings/formats#input_format_skip_unknown_fields) :
+ClickHouse ignorera les colonnes inconnues lors de l’importation. Ce comportement peut être désactivé à l’aide de l’option de paramètre [input&#95;format&#95;skip&#95;unknown&#95;fields](/fr/reference/settings/formats/input-format#input_format_skip_unknown_fields) :
 
 ```sql
 SET input_format_skip_unknown_fields = 0;
