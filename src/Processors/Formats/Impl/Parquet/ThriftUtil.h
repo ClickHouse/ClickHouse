@@ -4,7 +4,9 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <generated/parquet_types.h> // in contrib/arrow/cpp/src/ , generated from parquet.thrift
 
+#include <cstring>
 #include <memory>
+#include <type_traits>
 
 namespace DB
 {
@@ -16,6 +18,17 @@ namespace DB::Parquet
 
 /// Namespace with structs generated from parquet.thrift
 namespace parq = parquet::format;
+
+/// Thrift deserialization can store an out-of-range value into an unscoped enum field when the
+/// input file is malformed. Loading such an enum directly is undefined behavior (caught by
+/// -fsanitize=enum); reading the raw underlying integer via memcpy is well-defined.
+template <typename E>
+int thriftEnumToInt(const E & e)
+{
+    std::underlying_type_t<E> v;
+    memcpy(&v, &e, sizeof(v));
+    return static_cast<int>(v);
+}
 
 /// Indices of column chunks in a row group.
 using ColumnIndices = VectorWithMemoryTracking<size_t>;
