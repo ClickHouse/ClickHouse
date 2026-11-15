@@ -47,13 +47,17 @@ SETTINGS optimize_move_to_prewhere = 0, log_comment = 'parallel_probe_large';
 
 SYSTEM FLUSH LOGS query_log, text_log;
 
--- The last column is the number of probes that analyzed the parts in parallel.
+-- The last column is the number of probes that analyzed the parts in parallel. Other queries can clear the primary
+-- index cache meanwhile (e.g. creating a table with an explicit UUID drops all caches), and then its indexes are
+-- loaded again, in parallel: a cache query that loaded more indexes than it has parts shows 1.
 WITH (
     SELECT groupArray(query_id) FROM system.text_log
     WHERE event_date >= yesterday() AND event_time >= now() - 600
         AND message_format_string = 'Analyzing the primary key of parts in {} threads to decide whether to load statistics'
 ) AS parallel_probes
-SELECT log_comment, ProfileEvents['LoadedStatistics'] > 0, ProfileEvents['SelectedParts'], countEqual(parallel_probes, query_id)
+SELECT log_comment, ProfileEvents['LoadedStatistics'] > 0, ProfileEvents['SelectedParts'],
+    if(log_comment = 'parallel_probe_small_cache' AND ProfileEvents['LoadedPrimaryIndexFiles'] > ProfileEvents['SelectedParts'],
+        1, countEqual(parallel_probes, query_id))
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND current_database = currentDatabase() AND type = 'QueryFinish' AND startsWith(log_comment, 'parallel_probe_')
