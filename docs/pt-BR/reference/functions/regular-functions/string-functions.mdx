@@ -198,13 +198,15 @@ SELECT ascii('234')
 Introduzido em: v25.6.0
 
 Decodifica uma string em [Base32](https://datatracker.ietf.org/doc/html/rfc4648#section-6) (RFC 4648).
-Se a string não estiver codificada em Base32 de forma válida, uma exceção será gerada.
+Se a string não estiver codificada em Base32 de forma válida, uma exceção é lançada.
 
 **Sintaxe**
 
 ```sql
 base32Decode(encoded)
 ```
+
+**aliases**: `from_base32`
 
 **Argumentos**
 
@@ -232,13 +234,15 @@ SELECT base32Decode('IVXGG33EMVSA====');
 
 Introduzido em: v25.6.0
 
-Codifica uma cadeia de caracteres usando [Base32](https://datatracker.ietf.org/doc/html/rfc4648#section-6).
+Codifica uma string usando [Base32](https://datatracker.ietf.org/doc/html/rfc4648#section-6).
 
 **Sintaxe**
 
 ```sql
 base32Encode(plaintext)
 ```
+
+**aliases**: `to_base32`
 
 **Argumentos**
 
@@ -416,7 +420,7 @@ Introduzido em: v24.6.0
 
 Decodifica uma string a partir da representação [Base64](https://en.wikipedia.org/wiki/Base64), usando um alfabeto seguro para URL, de acordo com a RFC 4648.
 O alfabeto padrão (`+` e `/`) também é aceito na decodificação.
-Desde a versão 26.7, os caracteres de espaço em branco espaço, tab (`\t`), quebra de linha (`\n`), retorno de carro (`\r`) e avanço de formulário (`\f`) na entrada são ignorados (as versões anteriores rejeitavam entradas que os continham). A tabulação vertical (`\v`) e quaisquer outros caracteres fora do alfabeto Base64 são rejeitados.
+Desde a versão 26.7, os caracteres de espaço em branco espaço, aba (`\t`), quebra de linha (`\n`), retorno de carro (`\r`) e avanço de formulário (`\f`) na entrada são ignorados (as versões anteriores rejeitavam entradas que os continham). A tabulação vertical (`\v`) e quaisquer outros caracteres fora do alfabeto Base64 são rejeitados.
 Lança uma exceção em caso de erro.
 
 **Sintaxe**
@@ -424,6 +428,8 @@ Lança uma exceção em caso de erro.
 ```sql
 base64URLDecode(encoded)
 ```
+
+**aliases**: `from_base64url`
 
 **Argumentos**
 
@@ -449,7 +455,7 @@ SELECT base64URLDecode('aHR0cHM6Ly9jbGlja2hvdXNlLmNvbQ')
 
 ## base64URLEncode {#base64URLEncode}
 
-Introduzido na versão: v18.16.0
+Introduzido em: v18.16.0
 
 Codifica uma string usando a representação [Base64](https://datatracker.ietf.org/doc/html/rfc4648#section-4) (RFC 4648) com um alfabeto seguro para URL.
 
@@ -458,6 +464,8 @@ Codifica uma string usando a representação [Base64](https://datatracker.ietf.o
 ```sql
 base64URLEncode(plaintext)
 ```
+
+**aliases**: `to_base64url`
 
 **Argumentos**
 
@@ -1098,7 +1106,7 @@ Calcula a [distância de edição](https://en.wikipedia.org/wiki/Edit_distance) 
 editDistanceUTF8(s1, s2)
 ```
 
-**Aliases**: `levenshteinDistanceUTF8`
+**aliases**: `levenshteinDistanceUTF8`, `levenshtein_distance`
 
 **Argumentos**
 
@@ -1170,6 +1178,8 @@ Verifica se uma string termina com o sufixo informado.
 ```sql
 endsWith(s, suffix)
 ```
+
+**aliases**: `ends_with`
 
 **Argumentos**
 
@@ -2883,6 +2893,8 @@ Verifica se uma string começa com a sequência de caracteres fornecida.
 ```sql
 startsWith(s, prefix)
 ```
+
+**aliases**: `starts_with`
 
 **Argumentos**
 

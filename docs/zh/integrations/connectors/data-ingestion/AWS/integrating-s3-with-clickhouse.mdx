@@ -12,8 +12,6 @@ integration:
 
 import BucketDetails from '/snippets/zh/_S3_authentication_and_bucket.mdx';
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 您可以将 S3 中的数据插入 ClickHouse，也可以将 S3 用作导出目标端，从而与“数据湖”架构进行交互。此外，S3 还能提供“冷”存储层级，并有助于实现存储与计算分离。在下面的章节中，我们将以纽约市出租车数据集为例，演示如何在 S3 和 ClickHouse 之间移动数据，同时介绍关键配置参数，并提供一些性能优化建议。
 
 ## S3 表函数 {#s3-table-functions}
@@ -234,13 +232,15 @@ clickhouse-local --query "INSERT INTO TABLE FUNCTION remote('localhost:9000', 'd
   要通过安全的 SSL 连接执行此操作，请使用 `remoteSecure` 函数。
 </Note>
 
-<div id="exporting-data">
-  ### 导出数据
-</div>
+### 导出数据 {#exporting-data}
 
 你可以使用 `s3` 表函数将数据写入 S3 中的文件。这需要具备相应的权限。我们会在请求中传递所需的凭证，但如需了解更多选项，请参阅 [管理凭证](#managing-credentials) 页面。
 
-在下面这个简单示例中，我们将表函数用作目标端而不是源端。这里，我们把 `trips` 表中的 10,000 行流式传输到一个存储桶，并指定 `lz4` 压缩和 `CSV` 输出类型：
+<Warning>
+  从 ClickHouse Cloud 导出数据到亚马逊 S3 时，请使用桶所在区域的 S3 端点 (例如 `https://my-bucket.s3.eu-west-1.amazonaws.com/...`) ，而不要使用全局端点 `https://s3.amazonaws.com/...`。使用全局端点可能会产生额外的数据传输费用。
+</Warning>
+
+在下面这个简单示例中，我们将表函数用作目标端而不是源端。这里，我们把 `trips` 表中的 10,000 行流式传输到一个桶，并指定 `lz4` 压缩和 `CSV` 输出类型：
 
 ```sql
 INSERT INTO FUNCTION
@@ -700,7 +700,8 @@ ALTER TABLE trips_s3 MODIFY SETTING storage_policy='s3_tiered'
 
 借助 `ReplicatedMergeTree` 表引擎，可在使用 S3 磁盘时实现复制。详情请参阅[使用 S3 对象存储跨两个 AWS 区域复制单个分片](#s3-multi-region)指南。
 
-### 读写 {#read--writes}
+<a id="read--writes" />
+### 读写
 
 以下说明介绍了 ClickHouse 与 S3 交互的实现方式。虽然通常只是补充信息，但在[性能优化](#s3-optimizing-performance)时，可能会对读者有所帮助：
 
@@ -781,7 +782,8 @@ chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
 service clickhouse-server restart
 ```
 
-### 测试 {#testing}
+<a id="testing" />
+### 测试
 
 1. 使用 ClickHouse 客户端登录，如下所示
 
@@ -859,7 +861,15 @@ SELECT * FROM s3_table1;
 6. 在 AWS 控制台中，进入存储桶列表，选择新建的存储桶和相应文件夹。
    你应该会看到类似下面这样的内容：
 
-<Image img="/images/integrations/data-ingestion/s3/s3-j.webp" size="lg" border alt="AWS 控制台中的 S3 存储桶视图，显示存储在 S3 中的 ClickHouse 数据文件" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS 控制台中的 S3 存储桶视图，显示存储在 S3 中的 ClickHouse 数据文件](/images/integrations/data-ingestion/s3/s3-j.webp)
+
+</Frame>
+
+</div>
 
 <div id="s3-multi-region">
   ## 使用 S3 对象存储在两个 AWS 区域之间复制单个分片
@@ -1166,7 +1176,8 @@ zk_synced_followers     2
 sudo service clickhouse-server start
 ```
 
-#### 验证 ClickHouse 服务器 {#verify-clickhouse-server}
+<a id="verify-clickhouse-server" />
+#### 验证 ClickHouse 服务器
 
 添加[集群配置](#define-a-cluster)时，系统定义了一个单分片集群，并在两个 ClickHouse 节点之间进行复制。在此验证步骤中，你将检查 ClickHouse 启动时是否已构建该集群，并使用该集群创建一个复制表。
 
@@ -1237,7 +1248,8 @@ sudo service clickhouse-server start
   你可以通过设置 `default_replica_path` 和 `default_replica_name`，自定义上面显示的 ZooKeeper 路径 `'clickhouse/tables/{uuid}/{shard}`。相关文档见[这里](/zh/reference/settings/server-settings/settings/default-replica#default_replica_path)。
 </Note>
 
-### 测试 {#testing-1}
+<a id="testing-1" />
+### 测试
 
 这些测试将验证数据是否已在两台服务器之间复制，以及数据是否存储在 S3 存储桶中而非本地磁盘。
 
@@ -1298,9 +1310,25 @@ sudo service clickhouse-server start
 
   检查每个 S3 存储桶中的数据 (这里未显示总量，但插入后两个存储桶中都大约存储了 36 MiB)：
 
-<Image img="/images/integrations/data-ingestion/s3/bucket1.webp" size="lg" border alt="第一个 S3 存储桶中的数据大小，显示存储使用指标" />
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/s3/bucket2.webp" size="lg" border alt="第二个 S3 存储桶中的数据大小，显示存储使用指标" />
+<Frame>
+
+![第一个 S3 存储桶中的数据大小，显示存储使用指标](/images/integrations/data-ingestion/s3/bucket1.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![第二个 S3 存储桶中的数据大小，显示存储使用指标](/images/integrations/data-ingestion/s3/bucket2.webp)
+
+</Frame>
+
+</div>
 
 <div id="s3express">
   ## S3Express

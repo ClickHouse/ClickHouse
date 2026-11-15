@@ -1,0 +1,2 @@
+enforce	No
+tmpfs read-only hidden

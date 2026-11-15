@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
@@ -613,4 +614,32 @@ TEST(JoinRowStoreStringPlanSetting, GatedOnThePlanVersion)
     EXPECT_FALSE(carries_setting(serializeAt(changed, pre_row_store_strings_version)));
     const JoinSettings read_back(serializeAt(changed, pre_row_store_strings_version), pre_row_store_strings_version);
     EXPECT_EQ(read_back.min_string_column_bytes_for_hash_join_row_store, defaults.min_string_column_bytes_for_hash_join_row_store);
+}
+
+/// `enable_packed_string_keys_in_hash_join` and `min_rows_for_packed_string_keys_in_hash_join` are written at every
+/// version and read back as sent. Plan settings without the names read back as `false` and `0`: exact keys.
+TEST(JoinPackedStringKeysPlanSetting, RoundTrip)
+{
+    auto round_trip = [](const JoinSettings & join_settings)
+    {
+        WriteBufferFromOwnString out;
+        serializeAt(join_settings, current_version).write(out);
+        const String data = out.str();
+        ReadBufferFromString in(data);
+        QueryPlanSerializationSettings settings;
+        settings.read(in);
+        return JoinSettings(settings, current_version);
+    };
+
+    for (const auto & [enable, min_rows] : std::vector<std::pair<bool, UInt64>>{{true, 12345}, {false, 7}, {true, 0}})
+    {
+        const auto read_back = round_trip(makeJoinSettings(
+            {{"enable_packed_string_keys_in_hash_join", enable}, {"min_rows_for_packed_string_keys_in_hash_join", min_rows}}));
+        EXPECT_EQ(read_back.enable_packed_string_keys_in_hash_join, enable);
+        EXPECT_EQ(read_back.min_rows_for_packed_string_keys_in_hash_join, min_rows);
+    }
+
+    const JoinSettings without_names(QueryPlanSerializationSettings{}, current_version);
+    EXPECT_FALSE(without_names.enable_packed_string_keys_in_hash_join);
+    EXPECT_EQ(without_names.min_rows_for_packed_string_keys_in_hash_join, 0u);
 }

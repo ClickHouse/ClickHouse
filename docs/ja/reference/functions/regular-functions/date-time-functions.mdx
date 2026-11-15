@@ -970,7 +970,7 @@ age('unit', startdate, enddate[, timezone])
 
 * `startdate` — 減算される最初の時刻値 (減数) 。[`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
 * `enddate` — そこから減算する 2 番目の時刻値 (被減数) 。[`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
-* `timezone` — 任意。タイムゾーン名です。指定した場合は、startdate と enddate の両方に適用されます。指定しない場合は、startdate と enddate のタイムゾーンが使用されます。両者が同一でない場合、結果は未定です。[`String`](/ja/reference/data-types/string)
+* `timezone` — 任意。タイムゾーン名です。指定した場合は、startdate と enddate の両方に適用されます。指定しない場合は、startdate と enddate のタイムゾーンが使用されます。両者が同一でない場合、結果は未規定です。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -1225,7 +1225,7 @@ unit に `week` を指定した場合、`dateDiff` は週の開始日を月曜�
 dateDiff(unit, startdate, enddate[, timezone])
 ```
 
-**別名**: `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `date_diff`, `timestamp_diff`
+**別名**: `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `timestamp_diff`, `date_diff`
 
 **引数**
 
@@ -1247,7 +1247,7 @@ dateDiff(unit, startdate, enddate[, timezone])
 
 * `startdate` — 減算される最初の時刻値 (減数) 。[`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
 * `enddate` — 減算元となる 2 番目の時刻値 (被減数) 。[`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
-* `timezone` — 任意。タイムゾーン名。指定した場合は、`startdate` と `enddate` の両方に適用されます。指定しない場合は、`startdate` と `enddate` のタイムゾーンが使用されます。両者が同一でない場合、結果は未定義です。[`String`](/ja/reference/data-types/string)
+* `timezone` — 任意。タイムゾーン名。指定した場合は、`startdate` と `enddate` の両方に適用されます。指定しない場合は、`startdate` と `enddate` のタイムゾーンが使用されます。両者が同一でない場合、結果は未規定です。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -1570,6 +1570,8 @@ LIMIT 10
 formatDateTimeInJodaSyntax(datetime, format[, timezone])
 ```
 
+**別名**: `FORMAT_DATETIME`
+
 **引数**
 
 * `datetime` — フォーマットする日付または日時。[`DateTime`](/ja/reference/data-types/datetime) または [`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime64`](/ja/reference/data-types/datetime64)
@@ -1582,7 +1584,7 @@ formatDateTimeInJodaSyntax(datetime, format[, timezone])
 
 **例**
 
-**Joda構文を使用して datetime をフォーマットする**
+**Joda構文を使用して 日時 をフォーマットする**
 
 ```sql title=Query
 SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')
@@ -2158,7 +2160,7 @@ SELECT monthName(date_value)
 now([timezone])
 ```
 
-**別名**: `current_timestamp`, `localtimestamp`
+**別名**: `localtimestamp`, `current_timestamp`
 
 **引数**
 
@@ -3307,7 +3309,7 @@ SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') AS ts;
 timezone()
 ```
 
-**別名**: `timeZone`
+**別名**: `current_timezone`, `timeZone`
 
 **引数**
 
@@ -3420,7 +3422,7 @@ timezoneOffset(Time) AS Offset_in_seconds,
 toDayOfMonth(datetime)
 ```
 
-**別名**: `DAYOFMONTH`, `DAY`
+**別名**: `DAYOFMONTH`, `DAY`, `DAY_OF_MONTH`
 
 **引数**
 
@@ -3466,7 +3468,7 @@ SELECT toDayOfMonth(toDateTime('2023-04-21 10:20:30'))
 toDayOfWeek(datetime[, mode[, timezone]])
 ```
 
-**別名**: `DAYOFWEEK`
+**別名**: `DAYOFWEEK`, `DAY_OF_WEEK`
 
 **引数**
 
@@ -3483,7 +3485,7 @@ toDayOfWeek(datetime[, mode[, timezone]])
 **使用例**
 
 ```sql title=Query
--- 以下の日付は2023年4月21日（金曜日）です:
+-- The following date is April 21, 2023, which was a Friday:
 SELECT
     toDayOfWeek(toDateTime('2023-04-21')),
     toDayOfWeek(toDateTime('2023-04-21'), 1)
@@ -3507,7 +3509,7 @@ SELECT
 toDayOfYear(datetime)
 ```
 
-**別名**: `DAYOFYEAR`
+**別名**: `DAYOFYEAR`, `DAY_OF_YEAR`
 
 **引数**
 
@@ -3662,6 +3664,8 @@ ISO 8601 では、週番号の範囲は 1 から 53 です。
 toISOWeek(datetime[, timezone])
 ```
 
+**別名**: `WEEK_OF_YEAR`
+
 **引数**
 
 * `datetime` — ISO 週番号を取得する対象の日付または日時。[`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime64`](/ja/reference/data-types/datetime64)
@@ -3709,6 +3713,8 @@ SELECT toDate('2025-12-29') AS date, toISOWeek(date) AS isoWeek, toYear(date) AS
 toISOYear(datetime)
 ```
 
+**別名**: `YEAR_OF_WEEK`
+
 **引数**
 
 * `datetime` — 日付または日時の値。[`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
@@ -3749,7 +3755,7 @@ toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 toLastDayOfMonth(value)
 ```
 
-**別名**: `LAST_DAY`
+**別名**: `LAST_DAY_OF_MONTH`, `LAST_DAY`
 
 **引数**
 
@@ -5748,7 +5754,7 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 today()
 ```
 
-**別名**: `current_date`, `curdate`
+**別名**: `curdate`, `current_date`
 
 **引数**
 
