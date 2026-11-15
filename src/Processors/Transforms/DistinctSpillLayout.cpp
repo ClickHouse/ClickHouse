@@ -7,16 +7,25 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/SetVariants.h>
 #include <Processors/Transforms/DistinctSetFilter.h>
 #include <Common/ColumnsHashing.h>
+#include <Common/Exception.h>
+
+#include <utility>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
 
-constexpr auto FINGERPRINT_COLUMN_NAME = "__distinct_fingerprint";
+constexpr auto COMPARISON_KEY_COLUMN_NAME = "__distinct_comparison_key";
 constexpr auto FLAG_COLUMN_NAME = "__distinct_already_emitted";
 constexpr auto ARRIVAL_NUMBER_COLUMN_NAME = "__distinct_arrival_number";
 
@@ -58,6 +67,83 @@ String uniqueColumnName(const Block & header, String name)
     return name;
 }
 
+template <typename Method>
+ColumnPtr packExactKeys(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, size_t num_rows)
+{
+    typename Method::State state(key_columns, key_sizes, /*context=*/ nullptr);
+    using Key = typename Method::Key;
+    auto packed = ColumnVector<Key>::create(num_rows);
+    Arena pool;
+    for (size_t row = 0; row < num_rows; ++row)
+        packed->getData()[row] = state.getKeyHolder(row, pool);
+    return packed;
+}
+
+ColumnPtr packExactKeys(
+    DistinctKeyRepresentation representation, const ColumnRawPtrs & key_columns, size_t num_rows)
+{
+    Sizes key_sizes;
+    const auto method = SetVariants::chooseMethod(key_columns, key_sizes);
+
+#define PACK_EXACT_KEYS(NAME, REPRESENTATION) \
+    case SetVariants::Type::NAME: \
+    { \
+        if (representation != DistinctKeyRepresentation::REPRESENTATION) \
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "DISTINCT spill key representation does not match the set method"); \
+        using Method = typename decltype(std::declval<SetVariants>().NAME)::element_type; \
+        return packExactKeys<Method>(key_columns, key_sizes, num_rows); \
+    }
+
+    switch (method)
+    {
+        PACK_EXACT_KEYS(key16, Key16)
+        PACK_EXACT_KEYS(key32, Key32)
+        PACK_EXACT_KEYS(key64, Key64)
+        PACK_EXACT_KEYS(keys32, Keys32)
+        PACK_EXACT_KEYS(keys64, Keys64)
+        PACK_EXACT_KEYS(keys128, Keys128)
+        PACK_EXACT_KEYS(keys256, Keys256)
+        PACK_EXACT_KEYS(nullable_keys128, NullableKeys128)
+        PACK_EXACT_KEYS(nullable_keys256, NullableKeys256)
+        case SetVariants::Type::EMPTY:
+        case SetVariants::Type::key8:
+        case SetVariants::Type::key_string:
+        case SetVariants::Type::key_fixed_string:
+        case SetVariants::Type::hashed:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected DISTINCT set method for exact packed spill keys");
+    }
+
+#undef PACK_EXACT_KEYS
+
+    UNREACHABLE();
+}
+
+template <typename Column>
+size_t estimateColumnMemory(size_t num_rows)
+{
+    using Array = typename Column::Container;
+    return PODArrayDetails::minimum_memory_for_elements(num_rows, sizeof(typename Column::ValueType), Array::pad_left, Array::pad_right);
+}
+
+size_t estimateComparisonKeyMemory(size_t num_rows, DistinctKeyRepresentation representation)
+{
+    switch (representation)
+    {
+        case DistinctKeyRepresentation::Columns: return 0;
+        case DistinctKeyRepresentation::Key16: return estimateColumnMemory<ColumnUInt16>(num_rows);
+        case DistinctKeyRepresentation::Key32:
+        case DistinctKeyRepresentation::Keys32: return estimateColumnMemory<ColumnUInt32>(num_rows);
+        case DistinctKeyRepresentation::Key64:
+        case DistinctKeyRepresentation::Keys64: return estimateColumnMemory<ColumnUInt64>(num_rows);
+        case DistinctKeyRepresentation::Hash128:
+        case DistinctKeyRepresentation::Keys128:
+        case DistinctKeyRepresentation::NullableKeys128: return estimateColumnMemory<ColumnUInt128>(num_rows);
+        case DistinctKeyRepresentation::Keys256:
+        case DistinctKeyRepresentation::NullableKeys256: return estimateColumnMemory<ColumnUInt256>(num_rows);
+    }
+    UNREACHABLE();
+}
+
 }
 
 DistinctSpillLayout::DistinctSpillLayout(
@@ -83,10 +169,10 @@ DistinctSpillLayout::DistinctSpillLayout(
     merged_header = std::make_shared<const Block>(ordinary);
 
     Block suppression;
-    if (key_representation == DistinctKeyRepresentation::Hash128)
+    if (key_representation != DistinctKeyRepresentation::Columns)
     {
-        auto type = std::make_shared<DataTypeUInt128>();
-        ordinary.insert({type->createColumn(), type, uniqueColumnName(ordinary, FINGERPRINT_COLUMN_NAME)});
+        auto type = getDistinctKeyRepresentationType(key_representation);
+        ordinary.insert({type->createColumn(), type, uniqueColumnName(ordinary, COMPARISON_KEY_COLUMN_NAME)});
         suppression.insert(ordinary.getByPosition(ordinary.columns() - 1));
     }
     else
@@ -119,11 +205,7 @@ size_t DistinctSpillLayout::estimateServiceColumnsMemory(
         using Array = ColumnUInt64::Container;
         bytes += PODArrayDetails::minimum_memory_for_elements(num_rows, sizeof(UInt64), Array::pad_left, Array::pad_right);
     }
-    if (key_representation == DistinctKeyRepresentation::Hash128)
-    {
-        using Array = ColumnUInt128::Container;
-        bytes += PODArrayDetails::minimum_memory_for_elements(num_rows, sizeof(UInt128), Array::pad_left, Array::pad_right);
-    }
+    bytes += estimateComparisonKeyMemory(num_rows, key_representation);
     return bytes;
 }
 
@@ -137,8 +219,8 @@ Chunk DistinctSpillLayout::prepareInputChunk(Chunk chunk, UInt64 first_arrival_n
         columns.push_back(std::move(input_columns[pos]));
 
     chunk.setColumns(std::move(columns), num_rows);
-    /// Match the set's normalization before hashing. Fingerprints survive `Native` round trips,
-    /// which can change an aggregate state's serialized bytes.
+    /// Match the set's normalization before building its comparison key. Fingerprints survive `Native`
+    /// round trips, which can change an aggregate state's serialized bytes.
     materializeChunk(chunk);
     columns = chunk.detachColumns();
 
@@ -149,16 +231,22 @@ Chunk DistinctSpillLayout::prepareInputChunk(Chunk chunk, UInt64 first_arrival_n
         columns.emplace_back(std::move(arrival_numbers));
     }
 
-    if (key_representation == DistinctKeyRepresentation::Hash128)
+    if (key_representation != DistinctKeyRepresentation::Columns)
     {
         ColumnRawPtrs key_columns;
         key_columns.reserve(key_columns_pos.size());
         for (const auto pos : key_columns_pos)
             key_columns.push_back(columns[pos].get());
-        auto hashes = ColumnUInt128::create(num_rows);
-        for (size_t row = 0; row < num_rows; ++row)
-            hashes->getData()[row] = ColumnsHashing::hash128(row, key_columns.size(), key_columns);
-        columns.emplace_back(std::move(hashes));
+
+        if (key_representation == DistinctKeyRepresentation::Hash128)
+        {
+            auto hashes = ColumnUInt128::create(num_rows);
+            for (size_t row = 0; row < num_rows; ++row)
+                hashes->getData()[row] = ColumnsHashing::hash128(row, key_columns.size(), key_columns);
+            columns.emplace_back(std::move(hashes));
+        }
+        else
+            columns.emplace_back(packExactKeys(key_representation, key_columns, num_rows));
     }
 
     /// The flag stays constant while sorting and deduplication can reduce the chunk's row count.

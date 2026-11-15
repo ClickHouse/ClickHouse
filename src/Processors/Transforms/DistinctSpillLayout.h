@@ -14,7 +14,8 @@ enum class DistinctKeyRepresentation;
 
 /// Describes the comparison keys and output payload used by external `DISTINCT`. Ordinary runs carry
 /// non-constant input columns and optional arrival numbers. Suppression runs carry only comparison keys.
-/// Both carry an already-emitted flag. Generic keys use the fingerprints retained by the hash set.
+/// Both carry an already-emitted flag. Generic keys use fingerprints; fixed keys whose values comparison
+/// can merge use the exact packed representation retained by the set.
 /// The layout owns these conversions and their metadata; its caller sorts and schedules the runs.
 class DistinctSpillLayout
 {
@@ -31,12 +32,12 @@ public:
     const SortDescription & getArrivalNumberSortDescription() const { return arrival_number_sort_description; }
     bool preservesInputOrder() const { return arrival_number_column_pos.has_value(); }
 
-    /// Estimates the dense service columns added to ordinary input: fingerprints and arrival numbers.
+    /// Estimates the dense service columns added to ordinary input: comparison keys and arrival numbers.
     /// Available before constructing the layout so hashing can reserve memory to start spilling.
     static size_t estimateServiceColumnsMemory(
         size_t num_rows, DistinctKeyRepresentation key_representation, bool preserve_input_order);
 
-    /// Normalizes ordinary rows, adding fingerprints for generic keys and optional arrival numbers.
+    /// Normalizes ordinary rows, adding comparison keys when required and optional arrival numbers.
     Chunk prepareInputChunk(Chunk chunk, UInt64 first_arrival_number) const;
 
     /// Adds the emitted flag to owning comparison-key columns returned by the set's extractor.
