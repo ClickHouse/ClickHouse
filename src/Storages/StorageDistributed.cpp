@@ -3010,11 +3010,13 @@ Every line after the header is a move: the partition ID (`partition_id` in `syst
 
 To move partition `202401` from shard 1 to shard 3:
 
-1. Add the line `202401 1 3 source`, and wait until the tables on all servers load this version.
+1. Add the line `202401 1 3 source`, wait until the tables on all servers load this version, and wait for the queries that started before.
 2. On shard 3, run `ALTER TABLE ... FETCH PARTITION ID '202401' FROM '<ZooKeeper path of the table on shard 1>'` and `ALTER TABLE ... ATTACH PARTITION ID '202401'`.
 3. Change the line to `202401 1 3 destination`, wait until the tables on all servers load this version, and wait for the queries that started before.
 4. On shard 1, run `ALTER TABLE ... DROP PARTITION ID '202401'`.
 5. Remove the line.
+
+A query uses the version of the moves that its server had loaded when the query started, and it can send its queries to the shards later. So a query that started before step 1 does not skip the copy on the destination, and a query that started before step 3 reads the copy on the source: steps 2 and 4 must not start while such queries run (see `system.processes` on all servers).
 
 The destination must not have the partition before the move, and no rows may be inserted into the partition on either shard during the move: rows inserted on the source after the copy are dropped with it. So move partitions that no longer receive inserts. Only `SELECT` queries through the `Distributed` table skip the copies; the `remote`, `remoteSecure`, `cluster` and `clusterAllReplicas` table functions read both and do not accept `partition_moves_zookeeper_path`.
 
