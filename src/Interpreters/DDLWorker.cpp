@@ -87,6 +87,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int NO_ZOOKEEPER;
+    extern const int QUERY_IS_PROHIBITED;
 }
 
 constexpr const char * TASK_PROCESSED_OUT_REASON = "Task has been already processed";
@@ -852,18 +853,27 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, const Stora
 
     if (auto * alter = ast_ddl->as<ASTAlterQuery>())
     {
-        // Setting/comment alters should be executed on all replicas, including
+        // Setting/table comment alters should be executed on all replicas, including
         // mixed batches (e.g. MODIFY COMMENT ..., MODIFY SETTING ...) that match
         // neither single-type predicate. The storage layer applies such commands
         // as local metadata without a replicated log entry, so leader-only routing
-        // would leave the followers diverged.
+        // would leave the followers diverged. Column comments are replicated
+        // through ZooKeeper, so they take the leader-only path.
         if (alter->isSettingsAlter() ||
             alter->isFreezeAlter() ||
             alter->isUnlockSnapshot() ||
             alter->isMovePartitionToDiskOrVolumeAlter() ||
-            alter->isCommentAlter() ||
-            alter->isSettingsOrCommentAlter())
+            alter->isSettingsOrTableCommentAlter())
             return false;
+
+        // A batch mixing replicated column comments with local-only settings or table
+        // comments fits neither path: on the leader-only path the followers would miss
+        // the local-only part, on the all-replicas path every replica would race to
+        // write the same column comment to ZooKeeper.
+        if (storage->supportsReplication() && alter->isSettingsOrCommentAlter() && !alter->isColumnCommentAlter())
+            throw Exception(ErrorCodes::QUERY_IS_PROHIBITED,
+                "ALTER ON CLUSTER of a replicated table cannot combine column comment changes with setting "
+                "or table comment changes in a single query. Execute them as separate queries");
     }
 
     return storage->supportsReplication();
