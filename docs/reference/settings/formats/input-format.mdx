@@ -293,6 +293,34 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 
+## input_format_excel_header {#input_format_excel_header}
+
+<SettingsInfoBlock type="UInt64Auto" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "auto"},{"label": "New setting for the `XLSX` and `XLS` input formats: whether the first row is a header."}]}]}/>
+
+Whether the first row of the range in `XLSX` and `XLS` input is a header with the column names. Possible values: `1`, `0`, or `auto` - the first row is a header if all its non-empty cells are strings.
+
+## input_format_excel_range {#input_format_excel_range}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "New setting for the `XLSX` and `XLS` input formats: the range of cells to read."}]}]}/>
+
+The range of cells to read from `XLSX` and `XLS` input, like `B2:D10`. The range can be open-ended: `B2:D` (from row 2 to the end of the data), `A:C` (whole columns), `3:10` (whole rows), or just the top-left cell like `B2`. If empty, the used range of the sheet is read.
+
+## input_format_excel_sheet {#input_format_excel_sheet}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "New setting for the `XLSX` and `XLS` input formats: the sheet to read."}]}]}/>
+
+The sheet to read from `XLSX` and `XLS` input: its name, or its 1-based index if no sheet has such a name. If empty, the first visible worksheet is read.
+
+## input_format_excel_skip_empty_rows {#input_format_excel_skip_empty_rows}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting for the `XLSX` and `XLS` input formats: skip empty rows."}]}]}/>
+
+Skip empty rows inside the data in `XLSX` and `XLS` input. If disabled, empty rows are read as rows with all values empty (`NULL` or default values). Empty rows before and after the data are always skipped.
+
 ## input_format_force_null_for_omitted_fields {#input_format_force_null_for_omitted_fields}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

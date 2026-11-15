@@ -1,0 +1,22 @@
+--- escaped UTF-16 surrogate pairs in a cell and in a sheet name
+emoji 😀 and lone � end	656D6F6A6920F09F988020616E64206C6F6E6520EFBFBD20656E64	1
+--- elapsed time formats keep whole days
+text	Nullable(String)					
+h_mm_ss	Nullable(String)					
+mm_ss	Nullable(String)					
+h_mm	Nullable(String)					
+clock	Nullable(String)					
+emoji 😀 and lone � end	60:00:00	60:00:00	30:00:00	12:00:00
+plain	12:00:00	00:01:00	744:01:00	18:00:00
+lone	-06:00:00	00:01:26.400	2400:00:00	00:00:00
+2.5	2.5
+0.5	0.0006944444444444445
+-0.25	0.001
+60:00:00	60:00:00
+12:00:00	12:00:00
+744:01:00	744:01:00
+--- the length of a cell is limited to 32767 characters
+32767
+too long for the XLSX format: 32768 characters
+32766
+too long for the XLSX format: 32768 characters

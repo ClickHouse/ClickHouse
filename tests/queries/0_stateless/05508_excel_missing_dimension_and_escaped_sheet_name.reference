@@ -1,0 +1,26 @@
+--- sample.xlsx: inferred
+a	Nullable(Int64)					
+b	Nullable(String)					
+c3	Nullable(String)					
+c4	Nullable(String)					
+10	x	\N	\N
+30	z	\N	\N
+\N	\N	\N	far
+--- sample.xlsx: explicit structure
+10	x
+30	z
+0	
+--- sample_no_dimension.xlsx: inferred
+a	Nullable(Int64)					
+b	Nullable(String)					
+c3	Nullable(String)					
+c4	Nullable(String)					
+10	x	\N	\N
+30	z	\N	\N
+\N	\N	\N	far
+--- sample_no_dimension.xlsx: explicit structure
+10	x
+30	z
+0	
+--- a sheet name with a literal _xHHHH_ sequence
+1
