@@ -32,6 +32,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/Session.h>
 #include <Processors/Chunk.h>

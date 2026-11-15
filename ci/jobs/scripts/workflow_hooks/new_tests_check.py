@@ -214,6 +214,12 @@ def check():
         print("Not a bug fix PR - skip")
         return True
 
+    if Labels.CI_SKIP_NEW_TESTS_CHECK in labels:
+        print(
+            f"Label `{Labels.CI_SKIP_NEW_TESTS_CHECK}` is set - new tests are not required"
+        )
+        return True
+
     changed_files = Info().get_changed_files()
     has_unit = has_new_unit_tests(changed_files)
     has_ft = has_new_functional_tests(changed_files)

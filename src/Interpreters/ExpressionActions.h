@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ShortCircuitArgumentStatistics.h>
 #include <Common/Exception.h>
 #include <Core/Block.h>
@@ -96,7 +97,7 @@ public:
     ExpressionActions & operator=(ExpressionActions &&) = default;
 
     const Actions & getActions() const { return actions; }
-    const std::list<Node> & getNodes() const { return actions_dag.getNodes(); }
+    const ActionsDAG::Nodes & getNodes() const { return actions_dag.getNodes(); }
     const ActionsDAG & getActionsDAG() const { return actions_dag; }
     const ColumnNumbers & getResultPositions() const { return result_positions; }
     const ExpressionActionsSettings & getSettings() const { return settings; }
@@ -132,11 +133,11 @@ public:
     ///
     /// `executeOnColumns` consumes `columns` (chunk data, in `header` order) and returns the result
     /// columns in `getSampleBlock()` order. It assumes `allow_duplicates_in_input == false`.
-    std::vector<ssize_t> getInputPositions(const Block & header) const;
+    VectorWithMemoryTracking<ssize_t> getInputPositions(const Block & header) const;
     Columns executeOnColumns(
         Columns columns,
         const Block & header,
-        const std::vector<ssize_t> & input_positions_for_header,
+        const VectorWithMemoryTracking<ssize_t> & input_positions_for_header,
         size_t & num_rows,
         bool dry_run = false,
         const std::atomic<bool> * is_cancelled = nullptr) const;

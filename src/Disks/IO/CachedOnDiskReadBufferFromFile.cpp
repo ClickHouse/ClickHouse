@@ -133,7 +133,6 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , allow_seeks_after_first_read(allow_seeks_after_first_read_)
     , use_external_buffer(use_external_buffer_)
     , cache_log(cache_settings_.enable_log ? cache_log_ : nullptr)
-    , query_context_holder(cache_->getQueryContextHolder(query_id, cache_settings_))
     , skip_cache_on_disk_failure(cache_->skipCacheOnDiskFailure())
     , info(
         cache_key_,
@@ -1512,7 +1511,8 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     if (size)
         file_offset_of_buffer_end += size;
 
-    working_buffer = Buffer(internal_buffer.begin(), internal_buffer.begin() + size);
+    setWorkingBufferFromInternal();
+    working_buffer.resize(size);
 
     /// The reader stays in the segment, so drop our reference before the next downloader can take it over.
     if (state->read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE)

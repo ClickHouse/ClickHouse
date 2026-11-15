@@ -1,0 +1,77 @@
+---
+slug: /clickstack/observability/text-to-dashboard
+title: 'Text-to-Dashboard'
+sidebarTitle: 'Text-to-Dashboard'
+description: 'Create dashboards from natural language prompts in ClickHouse Observability.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'text-to-dashboard', 'AI', 'dashboards', 'natural language']
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+Text-to-Dashboard creates a dashboard from a plain-language description of what you want to monitor. The AI inspects your available data, builds relevant tiles, and saves a dashboard you can open and edit.
+
+To generate a single chart instead, use [Text-to-Chart](/clickstack/observability/text-to-chart).
+
+## Prerequisites {#prerequisites}
+
+- Data must be available in your ClickHouse Observability service.
+- A team admin must [enable Generative AI](/clickstack/observability/notebooks#enabling-generative-ai).
+- Your role must allow you to use AI notebooks and create dashboards.
+
+## Generate a dashboard {#generate-a-dashboard}
+
+<Steps>
+<Step title="Open dashboard generation" id="open-dashboard-generation">
+
+Select **Dashboards** in the sidebar. Open **New Dashboard** and select **Generate with AI**.
+
+</Step>
+<Step title="Describe the dashboard" id="describe-the-dashboard">
+
+In **Generate dashboard with AI**, describe the questions you want the dashboard to answer. Include relevant services, data sources, fields, and chart types. For example:
+
+> Create a dashboard using the Logs source. Show total log count, log volume over time, and log counts grouped by severity. Use the dashboard time filter for every tile.
+
+<Image img="/images/clickstack/observability-text-to-dashboard-prompt.png" alt="Generate dashboard with AI dialog with a prompt describing log volume, errors by service, and frequent error messages" />
+
+Select **Generate dashboard**.
+
+</Step>
+<Step title="Follow the generation in the notebook" id="follow-dashboard-generation">
+
+An AI notebook opens with your request. The AI examines the available sources and data, creates the dashboard, and reports the result in the notebook. Review any explanation of missing data or changes to the requested dashboard.
+
+</Step>
+<Step title="Open and review the dashboard" id="review-generated-dashboard">
+
+Follow the dashboard link in the notebook's response. The generated dashboard is saved and is also available from **Dashboards**.
+
+<Image img="/images/clickstack/observability-text-to-dashboard-result.png" alt="AI-generated dashboard showing total logs, log volume over time, and log counts by severity in ClickHouse Observability" />
+
+Check the selected sources, filters, aggregations, and time range. Confirm that the charts answer your original question and respond to changes in the dashboard time filter. You can edit the tiles and layout using the standard [dashboard controls](/clickstack/observability/features/dashboards/overview).
+
+To refine the result, continue in the notebook with a specific follow-up, such as adding a service filter or changing a chart's grouping.
+
+</Step>
+</Steps>
+
+## Example prompts {#example-prompts}
+
+Adapt these prompts to the data available in your service:
+
+- **Log monitoring:** "Create a dashboard showing log volume over time, error counts by service, and the most frequent error messages."
+- **Service performance:** "Using the Traces source, create a dashboard for the checkout service with request volume, error rate, and p95 latency by endpoint."
+- **Focused investigation:** "Build a dashboard for payment failures. Show their frequency over time and break them down by service and error message."
+
+Name the fields or attributes you want to use when their meaning is not obvious from the schema. Specify how an error or failure should be identified in your data.
+
+## Review generated results {#review-generated-results}
+
+AI-generated dashboards can contain incorrect queries or assumptions. Review each tile before using it for operational decisions. An empty chart may indicate missing data, a restrictive filter, or a time range with no matching events.
+
+## Related guides {#related-guides}
+
+- [Text-to-Chart](/clickstack/observability/text-to-chart): generate an individual chart in Chart Explorer.
+- [AI notebooks](/clickstack/observability/notebooks): investigate data and refine requests with AI.
+- [Dashboards and visualizations](/clickstack/observability/features/dashboards/overview): edit and organize dashboard tiles.

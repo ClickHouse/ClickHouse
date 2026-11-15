@@ -8,5 +8,4 @@ ExpressionTransform
 (Expression)
 ExpressionTransform × 2
   (ReadFromFile)
-  Resize 1 → 2
-    File 0 → 1
+  File × 2 0 → 1

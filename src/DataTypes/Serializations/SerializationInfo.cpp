@@ -1,4 +1,5 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <Formats/FormatSettings.h>
 
 #include <algorithm>
 #include <array>

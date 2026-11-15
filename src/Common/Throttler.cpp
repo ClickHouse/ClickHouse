@@ -180,6 +180,12 @@ Int64 Throttler::getAvailable()
     double tokens_value = 0.0;
     throttleImpl(0, count_value, tokens_value);
 
+    /// The bucket of a throttler with a huge burst (e.g. `s3_max_get_rps` = 2^64 - 1, which makes the burst the same)
+    /// holds more tokens than `Int64` can represent, and converting such a value to `Int64` is undefined behavior.
+    if (tokens_value >= static_cast<double>(std::numeric_limits<Int64>::max()))
+        return std::numeric_limits<Int64>::max();
+    if (tokens_value <= static_cast<double>(std::numeric_limits<Int64>::min()))
+        return std::numeric_limits<Int64>::min();
     return static_cast<Int64>(tokens_value);
 }
 

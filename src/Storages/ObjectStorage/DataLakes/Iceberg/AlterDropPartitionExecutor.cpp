@@ -377,7 +377,7 @@ AlterDropPartitionExecutor::discoverTargetFilePaths(const SnapshotState & state,
             if (!parsed)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Manifest file entry is not parsed");
 
-            if (partitionEquals(parsed->partition_key_value, target_partition))
+            if (partitionEquals(entry->normalized_partition_key_value, target_partition))
                 targets.emplace(components.path_resolver.resolve(parsed->file_path_key));
         }
     };
@@ -394,7 +394,7 @@ AlterDropPartitionExecutor::discoverTargetFilePaths(const SnapshotState & state,
             if (!entry->parsed_entry)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Manifest file entry is not parsed");
 
-            if (partitionEquals(entry->parsed_entry->partition_key_value, target_partition))
+            if (partitionEquals(entry->normalized_partition_key_value, target_partition))
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED, "DROP PARTITION is not supported when the selected partition has equality deletes");
         }
@@ -418,24 +418,24 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
     /// Paranoia. Partition's key values are converted from iceberg's manifest to clickhouse's representation
     /// We're trying to protect ourselves against ambiguous conversions which might lead to several partitions matches a single clickhouse's defintion
     Row partition_key_value_for_assert;
-    auto assert_on_ambigious_partition_key = [&](const auto & parsed_entry)
+    auto assert_on_ambigious_partition_key = [&](const Row & partition_key_value)
     {
-        if (!partitionEquals(parsed_entry.partition_key_value, target_partition))
+        if (!partitionEquals(partition_key_value, target_partition))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Manifest file entry partition value ({}) is different from target ({})",
-                fmt::join(parsed_entry.partition_key_value, ", "),
+                fmt::join(partition_key_value, ", "),
                 fmt::join(target_partition, ", "));
 
         if (partition_key_value_for_assert.empty())
-            partition_key_value_for_assert = parsed_entry.partition_key_value;
-        else if (!std::ranges::equal(partition_key_value_for_assert, parsed_entry.partition_key_value))
+            partition_key_value_for_assert = partition_key_value;
+        else if (!std::ranges::equal(partition_key_value_for_assert, partition_key_value))
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Manifest file entry partition value ({}) is different from previous one ({})",
                 fmt::join(partition_key_value_for_assert, ", "),
-                fmt::join(parsed_entry.partition_key_value, ", "));
+                fmt::join(partition_key_value, ", "));
         }
     };
 
@@ -454,7 +454,7 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
                 continue;
             }
 
-            assert_on_ambigious_partition_key(parsed_entry);
+            assert_on_ambigious_partition_key(entry->normalized_partition_key_value);
 
             ++entries_to_remove;
             unprocessed_target_file_paths.erase(storage_path);
@@ -667,8 +667,9 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
     /// table can move from uncompressed to e.g. `vN.gz.metadata.json` (external writer or changed
     /// setting), and the replacement metadata must follow the same convention.
     const auto compression_method = DB::Iceberg::getCompressionMethodFromMetadataFile(state.table_state.metadata_file_path);
-    FileNamesGenerator filename_generator(components.path_resolver.getTableLocation(), false, compression_method, write_format);
-    filename_generator.setVersion(state.table_state.metadata_version + 1);
+    FileNamesGenerator filename_generator(
+        components.path_resolver.getTableLocation(), /* use_uuid_in_metadata */ catalog != nullptr, compression_method, write_format);
+    filename_generator.setBaseMetadataFile(state.table_state.metadata_version, state.table_state.metadata_file_path);
     filename_generator.setCompressionMethod(compression_method);
 
     std::vector<std::string> files_for_cleanup;

@@ -696,19 +696,24 @@ protected:
 
         alignas(Cell) std::byte tmp[sizeof(Cell)];
 
+        /// compiler assumes that moving a cell can change them, and would reload them for every cell.
+        Cell * const cells = buf;
+        const Grower local_grower = grower;
+        auto distance_from_optimal = [&](size_t pos) { return local_grower.place(pos - local_grower.place(cells[pos].getHash(*this))); };
+
         for (size_t i = 1; i < buf_size; ++i)
         {
-            size_t place_value = grower.place(start + i);
-            if (buf[place_value].isZero(*this))
+            size_t place_value = local_grower.place(start + i);
+            if (cells[place_value].isZero(*this))
                 continue;
 
             /// Find the new place of the element: before all elements whose optimal positions are after its own.
-            size_t distance = distanceFromOptimalPosition(buf[place_value], place_value);
+            size_t distance = distance_from_optimal(place_value);
             size_t new_place = place_value;
             while (distance > 0)
             {
-                size_t prev_place = grower.place(new_place - 1);
-                if (buf[prev_place].isZero(*this) || distanceFromOptimalPosition(buf[prev_place], prev_place) + 1 >= distance)
+                size_t prev_place = local_grower.place(new_place - 1);
+                if (cells[prev_place].isZero(*this) || distance_from_optimal(prev_place) + 1 >= distance)
                     break;
                 new_place = prev_place;
                 --distance;
@@ -717,14 +722,14 @@ protected:
             if (new_place == place_value)
                 continue;
 
-            memcpy(static_cast<void *>(tmp), static_cast<const void *>(&buf[place_value]), sizeof(Cell));
+            memcpy(static_cast<void *>(tmp), static_cast<const void *>(&cells[place_value]), sizeof(Cell));
             for (size_t pos = place_value; pos != new_place;)
             {
-                size_t prev_pos = grower.place(pos - 1);
-                memcpy(static_cast<void *>(&buf[pos]), static_cast<const void *>(&buf[prev_pos]), sizeof(Cell));
+                size_t prev_pos = local_grower.place(pos - 1);
+                memcpy(static_cast<void *>(&cells[pos]), static_cast<const void *>(&cells[prev_pos]), sizeof(Cell));
                 pos = prev_pos;
             }
-            memcpy(static_cast<void *>(&buf[new_place]), static_cast<const void *>(tmp), sizeof(Cell));
+            memcpy(static_cast<void *>(&cells[new_place]), static_cast<const void *>(tmp), sizeof(Cell));
         }
     }
 
@@ -877,14 +882,16 @@ protected:
 
         if (!empty() && grower.bufSize() != old_size)
         {
+            /// compiler assumes that moving a cell can change them, and would reload them for every cell.
+            Cell * const cells = buf;
             /** Now some items may need to be moved to a new location.
               * The element can stay in place, or move to a new location "on the right",
               *  or move to the left of the collision resolution chain, because the elements to the left of it have been moved to the new "right" location.
               */
             size_t i = 0;
             for (; i < old_size; ++i)
-                if (!buf[i].isZero(*this))
-                    reinsert(buf[i], buf[i].getHash(*this));
+                if (!cells[i].isZero(*this))
+                    reinsert(cells, new_grower, cells[i], cells[i].getHash(*this));
 
             /** There is also a special case:
               *    if the element was to be at the end of the old buffer,                  [        x]
@@ -895,8 +902,8 @@ protected:
               *    process tail from the collision resolution chain immediately after it   [        o    x    ]
               */
             size_t new_size = grower.bufSize();
-            for (; i < new_size && !buf[i].isZero(*this); ++i)
-                reinsert(buf[i], buf[i].getHash(*this));
+            for (; i < new_size && !cells[i].isZero(*this); ++i)
+                reinsert(cells, new_grower, cells[i], cells[i].getHash(*this));
         }
 
         if (isRobinHood())
@@ -915,24 +922,19 @@ protected:
       * Used when increasing the buffer size.
       * It uses the ordinary linear probing, and in the Robin Hood mode the order of the elements has to be restored afterwards.
       */
-    void reinsert(Cell & x, size_t hash_value)
+    void reinsert(Cell * cells, const Grower & new_grower, Cell & x, size_t hash_value)
     {
-        size_t place_value = grower.place(hash_value);
+        size_t place_value = new_grower.place(hash_value);
 
-        /// If the element is in its place.
-        if (&x == &buf[place_value])
-            return;
+        /// The keys are unique, so comparing addresses is same as comparing keys.
+        while (&cells[place_value] != &x && !cells[place_value].isZero(*this))
+            place_value = new_grower.next(place_value);
 
-        /// Compute a new location, taking into account the collision resolution chain.
-        place_value = findCell(Cell::getKey(x.getValue()), hash_value, place_value);
-
-        /// If the item remains in its place in the old collision resolution chain.
-        if (!buf[place_value].isZero(*this))
+        if (&cells[place_value] == &x)
             return;
 
         /// Copy to a new location and zero the old one.
-        x.setHash(hash_value);
-        memcpy(static_cast<void*>(&buf[place_value]), &x, sizeof(x)); /// NOLINT(bugprone-undefined-memory-manipulation)
+        memcpy(static_cast<void*>(&cells[place_value]), &x, sizeof(x)); /// NOLINT(bugprone-undefined-memory-manipulation)
         x.setZero();
     }
 
@@ -1547,9 +1549,6 @@ public:
 
         return res;
     }
-
-    /// Reinsert node pointed to by iterator
-    void ALWAYS_INLINE reinsert(iterator & it, size_t hash_value) { reinsert(*it.getPtr(), hash_value); }
 
     template <typename KeyHolder>
     void ALWAYS_INLINE prefetch(KeyHolder && key_holder) const

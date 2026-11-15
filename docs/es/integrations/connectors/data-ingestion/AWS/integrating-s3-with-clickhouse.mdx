@@ -234,11 +234,13 @@ clickhouse-local --query "INSERT INTO TABLE FUNCTION remote('localhost:9000', 'd
   Para ejecutar esto a través de una conexión SSL segura, utilice la función `remoteSecure`.
 </Note>
 
-<div id="exporting-data">
-  ### Exportación de datos
-</div>
+### Exportación de datos {#exporting-data}
 
 Puede escribir archivos en S3 mediante la función de tabla `s3`. Para ello, necesitará los permisos adecuados. Incluimos las credenciales necesarias en la solicitud, pero consulte la página [Gestión de credenciales](#managing-credentials) para ver más opciones.
+
+<Warning>
+  Al exportar desde ClickHouse Cloud a Amazon S3, utilice el punto de conexión de S3 regional del bucket, como `https://my-bucket.s3.eu-west-1.amazonaws.com/...`, en lugar del punto de conexión global `https://s3.amazonaws.com/...`. Usar el punto de conexión global puede generar cargos adicionales por transferencia de datos.
+</Warning>
 
 En el sencillo ejemplo siguiente, usamos la función de tabla como destino en lugar de como origen. Aquí enviamos 10,000 filas de la tabla `trips` a un bucket, especificando compresión `lz4` y el tipo de salida `CSV`:
 
@@ -255,7 +257,7 @@ FROM trips
 LIMIT 10000;
 ```
 
-Observe aquí cómo el formato del archivo se deduce de la extensión. Tampoco es necesario especificar las columnas en la función `s3`; esto puede deducirse de `SELECT`.
+Observe aquí cómo el formato del archivo se infiere de la extensión. Tampoco es necesario especificar las columnas en la función `s3`; esto puede inferirse de `SELECT`.
 
 <div id="splitting-large-files">
   ### Dividir archivos grandes
@@ -700,7 +702,8 @@ Aquí reutilizamos el volumen principal en nuestra nueva política s3&#95;tiered
 
 La replicación con discos S3 puede implementarse mediante el motor de tabla `ReplicatedMergeTree`. Consulte la guía sobre [cómo replicar un único segmento entre dos regiones de AWS con almacenamiento de objetos S3](#s3-multi-region) para obtener más detalles.
 
-### Lecturas y escrituras {#read--writes}
+<a id="read--writes" />
+### Lecturas y escrituras
 
 Las siguientes notas describen la implementación de las interacciones de S3 con ClickHouse. Aunque en general son solo informativas, pueden resultar útiles al [optimización del rendimiento](#s3-optimizing-performance):
 
@@ -781,7 +784,8 @@ chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
 service clickhouse-server restart
 ```
 
-### Prueba {#testing}
+<a id="testing" />
+### Prueba
 
 1. Inicie sesión con el cliente de ClickHouse; por ejemplo:
 
@@ -1166,7 +1170,8 @@ En cada servidor de ClickHouse, ejecute
 sudo service clickhouse-server start
 ```
 
-#### Verificar el servidor de ClickHouse {#verify-clickhouse-server}
+<a id="verify-clickhouse-server" />
+#### Verificar el servidor de ClickHouse
 
 Cuando agregó la [configuración del clúster](#define-a-cluster), se definió un único segmento replicado entre los dos nodos de ClickHouse. En este paso de verificación, comprobará que el clúster se creó cuando se inició ClickHouse y creará una tabla replicada usando ese clúster.
 
@@ -1237,7 +1242,8 @@ Cuando agregó la [configuración del clúster](#define-a-cluster), se definió 
   Puede personalizar la ruta de ZooKeeper `'clickhouse/tables/{uuid}/{shard}` que se muestra arriba configurando `default_replica_path` y `default_replica_name`. La documentación está [aquí](/es/reference/settings/server-settings/settings/default-replica#default_replica_path).
 </Note>
 
-### Pruebas {#testing-1}
+<a id="testing-1" />
+### Pruebas
 
 Estas pruebas verificarán que los datos se estén replicando entre los dos servidores y que se almacenen en los buckets de S3, no en el disco local.
 

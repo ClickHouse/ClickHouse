@@ -17,13 +17,15 @@ SET grace_hash_join_initial_buckets = 1;
 SELECT 'single-thread hash';
 SET join_algorithm = 'hash';
 SET max_threads = 1;
+-- Only the serial layout keeps one table that doubles.
+SET hash_join_layout = 'serial';
 SELECT count()
 FROM (SELECT number AS k FROM numbers(3000000)) AS t1
 INNER JOIN (SELECT number AS k FROM numbers(3000000)) AS t2
 USING (k);
 
 SELECT 'concurrent parallel_hash';
-SET join_algorithm = 'parallel_hash';
+SET hash_join_layout = 'parallel';
 SET max_threads = 4;
 SELECT count()
 FROM (SELECT number AS k FROM numbers(3000000)) AS t1

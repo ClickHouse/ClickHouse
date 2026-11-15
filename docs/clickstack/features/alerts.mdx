@@ -11,7 +11,7 @@ import { Image } from "/snippets/components/Image.jsx";
 
 ClickStack includes built-in support for alerting, enabling teams to detect and respond to issues in real time across logs, metrics, and traces.
 
-Alerts can be created directly in the HyperDX interface and integrate with popular notification systems like Slack and PagerDuty.
+Alerts can be created directly in the ClickStack UI interface and integrate with popular notification systems like Slack and PagerDuty.
 
 Alerting works seamlessly across your ClickStack data, helping you track system health, catch performance regressions, and monitor key business events.
 
@@ -153,7 +153,7 @@ Depending on the service type, you will need to provide different details. Speci
 
 ## Managing alerts {#managing-alerts}
 
-Alerts can be centrally managed through the alerts panel on the left-hand side of HyperDX.
+Alerts can be centrally managed through the alerts panel on the left-hand side of ClickStack UI.
 
 <Image img="/images/use-cases/observability/manage_alerts.webp" alt="Manage alerts" size="lg"/>
 
@@ -161,7 +161,7 @@ From this view, you can see all alerts that have been created and are currently 
 
 <Image img="/images/use-cases/observability/alerts_view.webp" alt="Alerts view" size="lg"/>
 
-This view also displays the alert evaluation history. Alerts are evaluated on a recurring time interval (defined by the period/duration set during alert creation). During each evaluation, HyperDX queries your data to check whether the alert condition is met:
+This view also displays the alert evaluation history. Alerts are evaluated on a recurring time interval (defined by the period/duration set during alert creation). During each evaluation, ClickStack UI queries your data to check whether the alert condition is met:
 
 - **Red bar**: The threshold condition was met during this evaluation and the alert fired (notification sent)
 - **Green bar**: The alert was evaluated but the threshold condition wasn't met (no notification sent)
@@ -341,7 +341,7 @@ Note that the query fetches 30 intervals *before* the start of the date range to
 
 ## Common alert scenarios {#common-alert-scenarios}
 
-Here are a few common alert scenarios you can use HyperDX for:
+Here are a few common alert scenarios you can use ClickStack UI for:
 
 **Errors:** We recommend setting up alerts for the default
 `All Error Events` and `HTTP Status >= 400` saved searches to be notified when

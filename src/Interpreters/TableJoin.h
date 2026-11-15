@@ -173,12 +173,15 @@ private:
     const bool enable_join_fixed_hash_table_conversion = false;
     const bool enable_join_key_only_hash_tables = false;
     const bool join_runtime_filter_from_fixed_hash_table = false;
+    /// The planner turns it off for a small right side, see `min_rows_for_packed_string_keys_in_hash_join`.
+    bool enable_packed_string_keys_in_hash_join = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
 
     /// Decision by the planner whether to enable row store tranformation or not.
-    bool enable_row_store = false;
+    NameSet row_store_candidate_columns;
+    std::unordered_map<String, Float64> right_columns_avg_bytes;
 
     ASTs key_asts_left;
     ASTs key_asts_right;
@@ -312,7 +315,6 @@ public:
         return isEnabledAlgorithm(join_algorithms, val);
     }
 
-    bool allowParallelHashJoin() const;
     void swapSides();
 
     bool joinUseNulls() const { return join_use_nulls; }
@@ -338,6 +340,8 @@ public:
     size_t defaultMaxBytes() const { return default_max_bytes; }
     bool joinedBlockAllowSplitSingleRow() const { return joined_block_split_single_row; }
     bool allowParallelNonJoinedRowsProcessing() const { return parallel_non_joined_rows_processing; }
+    bool preferParallelHashLayout(
+        HashJoinLayout layout, std::optional<UInt64> rhs_size_estimation, UInt64 parallel_hash_join_threshold) const;
     size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
     size_t maxJoinedBlockBytes() const { return max_joined_block_bytes; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
@@ -353,8 +357,18 @@ public:
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
     bool enableJoinKeyOnlyHashTables() const { return enable_join_key_only_hash_tables; }
     bool joinRuntimeFilterFromFixedHashTable() const { return join_runtime_filter_from_fixed_hash_table; }
-    void setRowStoreEnabled(bool value) { enable_row_store = value; }
-    bool isRowStoreEnabled() const { return enable_row_store; }
+    bool enablePackedStringKeysInHashJoin() const { return enable_packed_string_keys_in_hash_join; }
+    void setPackedStringKeysInHashJoinEnabled(bool value) { enable_packed_string_keys_in_hash_join = value; }
+    void setRowStoreCandidateColumns(NameSet columns) { row_store_candidate_columns = std::move(columns); }
+    const NameSet & getRowStoreCandidateColumns() const { return row_store_candidate_columns; }
+    bool isRowStoreEnabled() const { return !row_store_candidate_columns.empty(); }
+    void setRightColumnAvgBytes(const String & name, Float64 avg_bytes) { right_columns_avg_bytes[name] = avg_bytes; }
+    Float64 getRightColumnAvgBytes(const String & name) const
+    {
+        if (auto it = right_columns_avg_bytes.find(name); it != right_columns_avg_bytes.end())
+            return it->second;
+        return 0;
+    }
 
     const std::vector<SharedRuntimeFilterDescriptor> & getSharedRuntimeFilterDescriptors() const
     {
@@ -501,7 +515,7 @@ public:
     NamesAndTypesList correctedColumnsAddedByJoin() const;
 };
 
-bool allowParallelHashJoin(
+bool allowHashJoinCacheKeys(
     const std::vector<JoinAlgorithm> & join_algorithms,
     JoinKind kind,
     bool is_special_storage,

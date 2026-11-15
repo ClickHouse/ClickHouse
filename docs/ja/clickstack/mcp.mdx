@@ -148,9 +148,7 @@ https://mcp.clickhouse.cloud/clickstack
 
 Open Source および BYOC のデプロイメントでは、ClickStack インスタンスに組み込まれた MCP エンドポイントを Bearer トークン認証で使用します。
 
-<div id="oss-prerequisites">
-  ### 前提条件
-</div>
+### 前提条件 {#oss-prerequisites}
 
 * 稼働中の ClickStack インスタンス (セットアップ方法については [デプロイメント](/ja/clickstack/deployment/overview) を参照してください)
 * **Personal API Access Key** — HyperDX の **Team Settings → API Keys → Personal API Access Key** で確認できます
@@ -162,6 +160,7 @@ Open Source および BYOC のデプロイメントでは、ClickStack インス
 </Note>
 
 <div id="managed-endpoint">
+  <a id="oss-endpoint" />
   ### エンドポイント
 </div>
 
@@ -174,6 +173,7 @@ MCPサーバーは、ClickStack のフロントエンドURLの `/api/mcp` パス
 MCPサーバーは、**Bearer token** 認証で **Streamable HTTP** トランスポートを使用します。
 
 <div id="managed-connecting-a-client">
+  <a id="oss-connecting-a-client" />
   ### MCP client の接続
 </div>
 
@@ -271,7 +271,7 @@ MCPサーバーは、**Bearer token** 認証で **Streamable HTTP** トランス
 * **データのクエリ** — ClickStack のクエリビルダー、検索構文、または生の SQL を使用して、ログ、トレース、メトリクスを検索・集計できます。
 * **データソース** — 利用可能なデータソース、データベース接続、カラムスキーマ、属性キーを一覧表示できます。
 * **ダッシュボード** — タイルを含むダッシュボードの作成、更新、削除、確認ができます。
-* **アラート** — 評価履歴を含むアラートの作成、更新、確認ができます。
+* **アラート** — 評価履歴を含むアラートの作成、更新、確認ができます。[異常検知](/ja/clickstack/features/anomaly-detection)が有効になっている場合は、異常検知アラートの設定を保存する前に、直近の履歴データでバックテストを実行することもできます。
 * **保存済み検索** — 再利用可能な保存済み検索定義の作成、更新、確認ができます。
 * **Webhooks** — アラート通知に使用できる webhook の宛先を一覧表示できます。
 * **チーム** — 現在のユーザーが所属しているチームを一覧表示し、アクティブなチームを特定できます。

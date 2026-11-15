@@ -236,6 +236,35 @@ TEST(CascadesBestImplementation, SortingSatisfactionSelectsImplementation)
     EXPECT_EQ(for_k_ts.expression, nullptr);
 }
 
+/// A partitioned sort satisfies a disjoint-streams requirement at a strictly lower cost than
+/// the plain sort (it pays no merge), so the cost comparison alone picks the plan that keeps
+/// the streams split; a plain sort with its merge cost never suppresses it.
+TEST(CascadesBestImplementation, CheaperDisjointWinsDisjointRequirement)
+{
+    Group group(0);
+    CostConfig cost_config;
+
+    auto single_props = propsAt(4, sortByColumns({"k"}));
+    single_props.stream_layout = StreamLayout::Single;
+    auto single_sort = costedExpr(single_props, 50);
+
+    auto disjoint_props = propsAt(4, sortByColumns({"k"}));
+    disjoint_props.setDisjointStreams({NameSet{"k"}});
+    auto disjoint_sort = costedExpr(disjoint_props, 45);
+
+    group.updateBestImplementation(single_sort, cost_config);
+    group.updateBestImplementation(disjoint_sort, cost_config);
+
+    auto disjoint_required = propsAt(4, sortByColumns({"k"}));
+    disjoint_required.setDisjointStreams({NameSet{"k"}});
+    EXPECT_EQ(group.getBestImplementation(disjoint_required, cost_config).expression, disjoint_sort);
+
+    /// The requirement for one stream is served only by the single-stream sort.
+    auto single_required = propsAt(4, sortByColumns({"k"}));
+    single_required.stream_layout = StreamLayout::Single;
+    EXPECT_EQ(group.getBestImplementation(single_required, cost_config).expression, single_sort);
+}
+
 /// Implementations of different distribution shapes do not satisfy each other's requirements.
 TEST(CascadesBestImplementation, DistributionShapeIsolation)
 {

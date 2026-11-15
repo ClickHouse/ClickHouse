@@ -88,7 +88,7 @@ ClickHouseProfileEvents_FileOpen{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1f
 # TYPE ClickHouseProfileEvents_Seek counter
 ClickHouseProfileEvents_Seek{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",hostname="c-cream-ma-20-server-3vd2ehh-0",instance="c-cream-ma-20-server-3vd2ehh-0",table="system.events"} 1840
 
-# HELP ClickPipes_Info Always equal to 1. Label "clickpipe_state" contains the current state of the pipe: Stopped/Provisioning/Running/Paused/Failed
+# HELP ClickPipes_Info Always equal to 1. Label "clickpipe_status" contains the current state of the pipe: Stopped/Provisioning/Running/Paused/Failed
 # TYPE ClickPipes_Info gauge
 ClickPipes_Info{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent",clickpipe_status="Running"} 1
 
@@ -159,7 +159,7 @@ For ClickPipes, there's a similar `ClickPipes_Info` metric `gauge` that in addit
 
 | Label | Description |
 | --- | --- |
-| clickpipe_state | The current state of the pipe |
+| clickpipe_status | The current state of the pipe |
 
 ### Configuring Prometheus {#configuring-prometheus}
 

@@ -20,18 +20,16 @@ COPY --from=cctools \
   /etc/ssl/
 
 # Refresh the kitware GPG key inherited from fasttest base image, it may be stale
-RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor - > /etc/apt/trusted.gpg.d/kitware.gpg \
-    && apt-get update \
-    && apt-get install software-properties-common --yes --no-install-recommends --verbose-versions
+RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor - > /etc/apt/trusted.gpg.d/kitware.gpg
 
-RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
-    && apt-get update \
+RUN apt-get update \
     && apt-get -o Dpkg::Options::="--force-overwrite" upgrade --yes \
     && apt-get -o Dpkg::Options::="--force-overwrite" install --yes \
         binutils-dev \
         build-essential \
         zlib1g-dev \
         python3-boto3 \
+        pigz \
         yasm \
         zstd \
         zip \

@@ -8,49 +8,51 @@ keywords: ['개발자 확인', 'macOS']
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-<div id="fix-the-developer-verification-error-in-macos">
-  ## macOS에서 개발자 확인 오류 수정하기
-</div>
+## macOS에서 개발자 확인 오류 해결하기 {#fix-the-developer-verification-error-in-macos}
 
-`brew`를 사용해 ClickHouse를 설치하면 macOS 오류가 발생할 수 있습니다.
-기본적으로 macOS는 확인할 수 없는 개발자가 만든 애플리케이션이나 도구를 실행하지 않습니다.
+macOS는 기본적으로 인터넷에서 다운로드한 애플리케이션이나 도구가 확인된 개발자의 서명을 받고 Apple의 공증(notarization)을 거친 경우에만 실행을 허용합니다.
 
-`clickhouse` 명령을 실행하려고 하면 다음과 같은 오류가 표시될 수 있습니다:
+ClickHouse의 macOS 빌드는 26.7.4 릴리스부터(그리고 26.8 이후의 모든 릴리스에서) ClickHouse Inc.의 Developer ID로 서명되고 Apple의 공증을 받습니다. 이 빌드는 [GitHub 릴리스 페이지](https://github.com/ClickHouse/ClickHouse/releases)에 `clickhouse-macos.zip`(Intel) 및 `clickhouse-macos-aarch64.zip`(Apple silicon)으로 게시되며, Homebrew cask로 설치할 수도 있습니다. 이 중 하나를 사용하면 macOS에서 경고 없이 `clickhouse`가 실행되므로 이 문서의 내용은 필요하지 않습니다.
 
-<Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="md" alt="macOS 개발자 확인 오류 대화상자" border />
+다만 macOS가 격리(quarantine)한 서명되지 않은 바이너리를 실행하면 여전히 오류가 표시될 수 있습니다. 예를 들면 다음과 같습니다.
 
-이 개발자 확인 오류를 해결하려면 시스템 설정 창에서 관련 설정을 찾아 macOS의 격리 상태에서 앱을 제거하거나, 터미널을 사용하거나, ClickHouse를 다시 설치해야 합니다.
+* Homebrew로 설치한 이전 버전의 ClickHouse 릴리스 - `brew upgrade --cask clickhouse`를 실행하여 서명된 버전으로 업그레이드하십시오.
+* GitHub 릴리스 페이지에서 웹 브라우저로 다운로드한 자체 압축 해제형 `clickhouse-macos` 또는 `clickhouse-macos-aarch64` 바이너리 - 대신 같은 릴리스의 `.zip` 파일을 다운로드하십시오.
+* 웹 브라우저로 다운로드한 26.7.4 이전 릴리스
 
-<div id="system-settings-process">
-  ## 시스템 설정 절차
-</div>
+`curl https://clickhouse.com/ | sh`로 설치한 바이너리는 서명되어 있지 않지만, `curl`은 다운로드한 파일을 격리하지 않으므로 macOS에서 이 오류 없이 실행됩니다.
 
-격리 상태에서 `clickhouse` 실행형을 제거하는 가장 쉬운 방법은 다음과 같습니다.
+격리된 `clickhouse` 바이너리를 실행하려고 하면 다음과 같은 오류가 표시될 수 있습니다.
 
-1. **시스템 설정**을 여십시오.
+<Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="md" alt="MacOS 개발자 확인 오류 대화 상자" border />
 
-2. **Privacy &amp; Security**로 이동하십시오.
+서명된 빌드로 전환할 수 없다면 시스템 설정이나 터미널에서 바이너리의 격리를 해제하십시오.
+
+## 시스템 설정 절차 {#system-settings-process}
+
+1. macOS가 위의 오류를 표시하고 차단된 바이너리를 기록하도록 `clickhouse` 바이너리를 한 번 실행해 보십시오.
+
+2. **시스템 설정**을 여십시오.
+
+3. **Privacy &amp; Security**로 이동하십시오.
 
    <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="MacOS Privacy & Security 설정 기본 보기" border />
 
-3. 창 하단으로 스크롤하여 &#95;&quot;clickhouse-macos-aarch64&quot; was blocked from use because it is not from an identified developer&quot;&#95;라는 메시지를 찾으십시오.
+4. **Security** 섹션까지 아래로 스크롤하여 *&quot;clickhouse-macos-aarch64&quot; was blocked from use because it is not from an identified developer*라는 메시지를 찾으십시오.
 
-4. **Allow Anyway**를 클릭하십시오.
+5. **Allow Anyway**(최신 macOS 버전에서는 **Open Anyway**)를 클릭하십시오.
 
    <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="Allow Anyway 버튼이 표시된 MacOS Privacy & Security 설정" border />
 
-5. MacOS 사용자 비밀번호를 입력하십시오.
+6. macOS 사용자 비밀번호를 입력하십시오.
 
-이제 터미널에서 `clickhouse` 명령을 실행할 수 있습니다.
+이제 터미널에서 `clickhouse` 명령을 실행할 수 있습니다. 다음에 실행할 때 macOS가 한 번 더 확인을 요청할 수 있습니다.
 
-<div id="terminal-process">
-  ## 터미널에서 진행하는 방법
-</div>
+## 터미널에서 진행하는 방법 {#terminal-process}
 
-가끔 `Allow Anyway` 버튼을 눌러도 이 문제가 해결되지 않을 수 있습니다. 이런 경우에는 명령줄에서 이 과정을 진행할 수도 있습니다.
-또는 단순히 명령줄 사용을 선호할 수도 있습니다!
+시스템 설정의 버튼으로 문제가 해결되지 않거나 명령줄 사용을 선호하는 경우, `xattr`을 사용하여 바이너리에서 격리 속성을 제거하십시오.
 
-먼저 Homebrew가 `clickhouse` 실행형을 어디에 설치했는지 확인합니다:
+`clickhouse`가 `PATH`에 있다면 먼저 위치를 확인합니다:
 
 ```shell
 which clickhouse
@@ -74,7 +76,7 @@ xattr -d com.apple.quarantine /opt/homebrew/bin/clickhouse
 clickhouse
 ```
 
-다음과 비슷한 출력이 표시됩니다:
+다음과 비슷한 출력이 나타나야 합니다:
 
 ```shell
 Use one of the following commands:
@@ -82,22 +84,4 @@ clickhouse local [args]
 clickhouse client [args]
 clickhouse benchmark [args]
 ...
-```
-
-<div id="fix-the-issue-by-reinstalling-clickhouse">
-  ## ClickHouse를 다시 설치하여 문제 해결
-</div>
-
-Brew에는 설치된 바이너리가 처음부터 격리되지 않도록 하는 명령줄 옵션이 있습니다.
-
-먼저 ClickHouse를 제거하세요:
-
-```shell
-brew uninstall clickhouse
-```
-
-이제 `--no-quarantine` 옵션으로 ClickHouse를 다시 설치하세요:
-
-```shell
-brew install --no-quarantine clickhouse
 ```

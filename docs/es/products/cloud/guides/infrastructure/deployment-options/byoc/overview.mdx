@@ -28,13 +28,13 @@ A grandes rasgos, BYOC separa el plano de control de ClickHouse, que se ejecuta 
 * Azure (GA)
 
 **Regiones Cloud compatibles:**
-Todas las **regiones públicas** que figuran en nuestra documentación sobre [regiones compatibles](/es/products/cloud/reference/supported-regions) están disponibles para implementaciones de BYOC. Las regiones privadas están disponibles para BYOC previa solicitud. Póngase en contacto con su representante de ClickHouse para solicitar una.
+BYOC está disponible en todas las regiones marcadas con `BYOC` en nuestra documentación sobre [regiones compatibles](/es/products/cloud/reference/supported-regions). En las regiones que también estén marcadas con `Private`, BYOC está disponible previa solicitud. Póngase en contacto con su representante de ClickHouse para solicitar una.
 
 ## Requisitos previos {#prerequisites}
 
 Los siguientes requisitos son fundamentales para el diseño y la operación de BYOC. Se aplican a todas las implementaciones y no pueden omitirse ni eludirse:
 
-* **Una región compatible.** BYOC se despliega en las regiones públicas incluidas en la documentación de [regiones compatibles](/es/products/cloud/reference/supported-regions). Las regiones privadas están disponibles a petición. AWS Local Zones y las regiones de una sola zona no son compatibles. Si la región que necesita no aparece en la lista, hable con su representante de ClickHouse antes de planificar una implementación.
+* **Una región compatible.** BYOC se despliega en las regiones marcadas como `BYOC` en la documentación de [regiones compatibles](/es/products/cloud/reference/supported-regions). Las regiones marcadas también como `Private` están disponibles a petición. AWS Local Zones y las regiones de una sola zona no son compatibles. Si la región que necesita no aparece en la lista, hable con su representante de ClickHouse antes de planificar una implementación.
 * **Tres zonas de disponibilidad.** Toda infraestructura BYOC se distribuye entre tres zonas de disponibilidad; así se proporciona alta disponibilidad para los servidores de ClickHouse y ClickHouse Keeper. Las regiones con menos de tres zonas no pueden alojar BYOC, y no se ofrecen implementaciones de una o dos zonas.
 * **Los artefactos de onboarding, aplicados sin modificaciones.** La plantilla de CloudFormation o el módulo de Terraform deben aplicarse exactamente como se proporcionan; los nombres de los recursos (como el rol de IAM `ClickHouseManagementRole`) y los [permisos básicos documentados](/es/products/bring-your-own-cloud/reference/privilege) están codificados de forma fija en la automatización de ClickHouse. Cualquier modificación requiere la aprobación explícita de ClickHouse; las personalizaciones compatibles se exponen como parámetros de plantilla. Consulte el [onboarding estándar](/es/products/bring-your-own-cloud/onboarding/standard).
 * **Un clúster de Kubernetes gestionado por ClickHouse.** El clúster de EKS/GKE/AKS es creado y operado íntegramente por ClickHouse. No se admite la instalación en un clúster de Kubernetes existente, ni se deben instalar en él controladores de admisión ni motores de políticas para todo el clúster.

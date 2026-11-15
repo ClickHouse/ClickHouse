@@ -31,9 +31,7 @@ ClickHouse Private 是一个自行部署的软件包，由运行于 ClickHouse C
 * 在 ClickHouse Cloud 中经过全面测试和验证的 ClickHouse 数据库及 operator 版本
 * 用于程序化操作的 API，包括备份和扩缩容操作
 
-<div id="architecture">
-  ## 架构
-</div>
+## 架构 {#architecture}
 
 ClickHouse Private 完全部署在您的环境中，提供云原生的计算与存储分离架构。
 
@@ -47,12 +45,14 @@ ClickHouse Private 完全部署在您的环境中，提供云原生的计算与�
   ## 支持的配置
 </div>
 
-ClickHouse Private 目前支持以下配置：
+ClickHouse Private 提供以下配置，各环境的支持状态如下：
 
-| 环境  | 编排方式                             | 存储                          | 状态  |
-| :-- | :------------------------------- | :-------------------------- | :-- |
-| AWS | Elastic Kubernetes Service (EKS) | Simple Storage Service (S3) | 可用  |
-| GCP | Google Kubernetes Service (GKS)  | Google Cloud Storage (GCS)  | 预览版 |
+| 环境    | 编排方式                             | 存储                          | 状态  |
+| :---- | :------------------------------- | :-------------------------- | :-- |
+| AWS   | Elastic Kubernetes Service (EKS) | Simple Storage Service (S3) | 已支持 |
+| GCP   | Google Kubernetes Engine (GKE)   | Google Cloud Storage (GCS)  | 已支持 |
+| 本地部署  | 自托管 Kubernetes                   | MinIO AIStor                | 已支持 |
+| Azure | Azure Kubernetes Service (AKS)   | Azure Blob Storage          | 预览版 |
 
 <div id="onboarding-process">
   ## 接入流程

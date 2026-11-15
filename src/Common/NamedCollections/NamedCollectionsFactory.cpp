@@ -8,6 +8,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/UUID.h>
 #include <Interpreters/Context.h>
+#include <Common/FailPoint.h>
 
 namespace CurrentMetrics
 {
@@ -23,6 +24,12 @@ namespace ErrorCodes
     extern const int NAMED_COLLECTION_ALREADY_EXISTS;
     extern const int NAMED_COLLECTION_IS_IMMUTABLE;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_MANY_NAMED_COLLECTIONS;
+}
+
+namespace FailPoints
+{
+    extern const char named_collections_replicated_update_pause[];
 }
 
 
@@ -39,10 +46,22 @@ NamedCollectionFactory::~NamedCollectionFactory()
 
 void NamedCollectionFactory::shutdown()
 {
+    /// Stop the update task without holding `mutex`: the task locks it, and `deactivate` waits for the task.
     shutdown_called = true;
     if (update_task)
         update_task->deactivate();
+
+    /// The factory is a process-wide singleton, but its metadata storage belongs to the global context which is
+    /// being shut down. Return to the initial state, so that the next use loads the collections again (from the
+    /// next global context, if the process creates one) instead of using the destroyed metadata storage.
+    std::lock_guard lock(mutex);
+    update_task = {};
     metadata_storage.reset();
+    loaded_named_collections.clear();
+    CurrentMetrics::set(CurrentMetrics::NamedCollection, 0);
+    dependencies.clear();
+    loaded = false;
+    shutdown_called = false;
 }
 
 bool NamedCollectionFactory::exists(const std::string & collection_name) const
@@ -312,6 +331,17 @@ void NamedCollectionFactory::createFromSQL(const ASTCreateNamedCollectionQuery &
         return;
     }
 
+    /// `max_named_collection_num_to_throw` is enforced here, under the mutex, rather than in
+    /// `InterpreterCreateNamedCollectionQuery`, so that every path adding a new collection is
+    /// covered - in particular RESTORE, which calls this function directly. Only this branch adds
+    /// a collection: the skip and the replacement above do not increase the count and stay allowed
+    /// at the limit.
+    if (UInt64 limit = Context::getGlobalContextInstance()->getMaxNamedCollectionNumToThrow();
+        limit > 0 && loaded_named_collections.size() >= limit)
+        throw Exception(ErrorCodes::TOO_MANY_NAMED_COLLECTIONS,
+                        "Too many named collections. The limit (server configuration parameter `max_named_collection_num_to_throw`) "
+                        "is set to {}, the current number is {}", limit, loaded_named_collections.size());
+
     if (query.or_replace)
         add(query.collection_name, metadata_storage->createOrReplace(query), lock);
     else
@@ -394,6 +424,56 @@ bool NamedCollectionFactory::usesReplicatedStorage()
     return metadata_storage->isReplicated();
 }
 
+NamedCollectionFactory::MetadataStorageProperties NamedCollectionFactory::getMetadataStorageProperties()
+{
+    std::lock_guard lock(mutex);
+    loadIfNot(lock);
+
+    MetadataStorageProperties properties;
+    properties.is_encrypted = metadata_storage->isEncrypted();
+    properties.is_replicated = metadata_storage->isReplicated();
+    if (properties.is_replicated)
+        properties.replication_id = metadata_storage->getReplicationId();
+    return properties;
+}
+
+#if CLICKHOUSE_CLOUD && USE_SSL
+NamedCollectionsEncryptionKeyInfo NamedCollectionFactory::getEncryptionKeyInfo()
+{
+    std::lock_guard lock(mutex);
+    loadIfNot(lock);
+
+    auto key_info = metadata_storage->getEncryptionKeyInfo();
+    if (!key_info)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The metadata storage for named collections is not encrypted");
+    return std::move(*key_info);
+}
+#endif
+
+std::map<std::string, std::string> NamedCollectionFactory::getRawEntriesForBackup()
+{
+    std::lock_guard lock(mutex);
+    loadIfNot(lock);
+
+    /// The metadata storage holds exactly the SQL-created collections; the config-defined ones
+    /// exist only in memory and must be neither backed up nor restored.
+    return metadata_storage->getAllRaw();
+}
+
+std::string NamedCollectionFactory::authenticateStoredEntryForBackup(const std::string & stored)
+{
+    std::lock_guard lock(mutex);
+    loadIfNot(lock);
+    return metadata_storage->authenticateStoredForBackup(stored);
+}
+
+std::string NamedCollectionFactory::decryptStoredEntryFromBackup(const std::string & data)
+{
+    std::lock_guard lock(mutex);
+    loadIfNot(lock);
+    return metadata_storage->decryptStoredFromBackup(data);
+}
+
 void NamedCollectionFactory::updateFunc()
 {
     LOG_TRACE(log, "Named collections background updating thread started");
@@ -404,6 +484,9 @@ void NamedCollectionFactory::updateFunc()
         {
             if (metadata_storage->waitUpdate())
             {
+                /// Lets a test hold this replica's loaded collections stale while another server
+                /// modifies the shared storage.
+                FailPointInjection::pauseFailPoint(FailPoints::named_collections_replicated_update_pause);
                 reloadFromSQL();
             }
         }

@@ -116,6 +116,10 @@ FROM votes
 GROUP BY PostId
 ```
 
+<Note title="ClickHouse Cloud">
+When creating a dictionary that reads from a ClickHouse table, include a dedicated user's username and password in the `SOURCE` clause. That user needs `SELECT` permission on the source table. See the [ClickHouse dictionary source example](/reference/statements/create/dictionary/sources/clickhouse).
+</Note>
+
 To create our dictionary requires the following DDL - note the use of our above query:
 
 ```sql

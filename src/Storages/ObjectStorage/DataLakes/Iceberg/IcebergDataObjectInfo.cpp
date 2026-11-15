@@ -76,6 +76,10 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
           data_manifest_file_entry_->first_row_id,
           std::move(identity_partition_columns_)}
 {
+    if (data_manifest_file_entry_->parsed_entry->split_offsets.has_value())
+        for (Int64 offset : *data_manifest_file_entry_->parsed_entry->split_offsets)
+            if (offset >= 0)
+                split_offsets.push_back(static_cast<UInt64>(offset));
 }
 
 IcebergDataObjectInfo::IcebergDataObjectInfo(const RelativePathWithMetadata & path_)

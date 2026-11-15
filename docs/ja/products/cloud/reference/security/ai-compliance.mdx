@@ -31,15 +31,15 @@ ClickHouse では、設定やトラブルシューティングに関する支援
 組織で、製品改善を目的として ClickHouse とデータを共有する管理者レベルの設定がオンになっている場合、ClickHouse は、モデル評価 (精度、性能、安全性/コンプライアンステスト) 、サービスの信頼性・安全性・ユーザー体験の向上、分析の実施などの目的で、AI 機能の利用を通じてユーザーが生成または収集したデータ (入力、出力、ログ、メタデータを含みますが、ClickHouse Cloud へのクエリの直接的な結果は除きます) を使用することがあります。当社は、このデータをモデルのトレーニング、再トレーニング、またはファインチューニングに使用することはありません。
 
 <div id="clickhouse-assistant">
-  ## ClickHouse Assistant
+  ## Assistant
 </div>
 
-[ClickHouse Assistant](/ja/products/cloud/features/ai-ml/aichat/using-ai-chat) を有効にする設定は、`service:manage-generative-ai` 権限を持つユーザーが確認および変更できます。この設定はサービス設定ページで利用できます。この機能では、次の 2 つの異なる機能を利用できます。
+[Assistant](/ja/products/cloud/features/ai-ml/agents/assistant/using-ai-chat) を有効にする設定は、`service:manage-generative-ai` 権限を持つユーザーが確認および変更できます。この設定はサービス設定ページで利用できます。この機能では、次の 2 つの異なる機能を利用できます。
 
 | Feature              | Description                 | Data used                                   | User validation                        |
 | :------------------- | :-------------------------- | :------------------------------------------ | :------------------------------------- |
 | SQL AI               | クエリを作成・分析し、改善案を提示します        | サービスメタデータ、クエリテキスト、プロンプト入力                   | 出力はクエリ実行前にユーザーに提示され、内容を確認できます          |
-| ClickHouse Assistant | ユーザーが自然言語で質問し、回答を得られるようにします | サービスのメタデータとコンテンツ、ClickHouse のドキュメント、プロンプト入力 | 出力は確認用に表示されるため、使用前にユーザーが内容を検証する必要があります |
+| Assistant | ユーザーが自然言語で質問し、回答を得られるようにします | サービスのメタデータとコンテンツ、ClickHouse のドキュメント、プロンプト入力 | 出力は確認用に表示されるため、使用前にユーザーが内容を検証する必要があります |
 
 <div id="model-comtext-protocol">
   ## Model Context Protocol

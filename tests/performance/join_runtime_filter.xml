@@ -1,17 +1,23 @@
 <test>
     <settings>
         <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+        <iceberg_delete_data_on_drop>1</iceberg_delete_data_on_drop>
     </settings>
 
     <create_query>CREATE TABLE orders(o_orderkey Int32, o_custkey Int32, o_totalprice Decimal(15, 2)) ENGINE MergeTree ORDER BY o_orderkey</create_query>
     <create_query>CREATE TABLE customer(c_custkey Int32, c_nationkey Int32) ENGINE MergeTree ORDER BY c_custkey</create_query>
     <create_query>CREATE TABLE nation(n_nationkey Int32, n_name String) ENGINE MergeTree ORDER BY n_nationkey</create_query>
+    <create_query>CREATE TABLE customer_nullable(c_custkey Nullable(Int32), c_nationkey Int32) ENGINE MergeTree ORDER BY c_nationkey</create_query>
+    <create_query>DROP TABLE IF EXISTS orders_iceberg</create_query>
+    <create_query>CREATE TABLE orders_iceberg (o_orderkey Int32, o_custkey Int32, o_totalprice Decimal(15, 2)) ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/perf_join_runtime_filter_orders_iceberg_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0, output_format_parquet_row_group_size = 1000000</create_query>
 
     <fill_query>INSERT INTO orders SELECT number, number/10000, number%1000 FROM numbers(100000000)</fill_query>
     <fill_query>INSERT INTO customer SELECT number, 5 FROM numbers(1)</fill_query>
     <fill_query>INSERT INTO customer SELECT number+1, 6 FROM numbers(100)</fill_query>
     <fill_query>INSERT INTO customer SELECT number+1000, 7 FROM numbers(10000)</fill_query>
     <fill_query>INSERT INTO nation VALUES (5,'ETHIOPIA'),(6,'FRANCE'),(7,'GERMANY'),(100,'UNKNOWN')</fill_query>
+    <fill_query>INSERT INTO customer_nullable SELECT * FROM customer</fill_query>
+    <fill_query>INSERT INTO orders_iceberg SELECT * FROM orders WHERE o_orderkey &lt; 20000000 ORDER BY o_custkey SETTINGS allow_insert_into_iceberg = 1, max_insert_threads = 1, iceberg_insert_max_rows_in_data_file = 100000000, iceberg_insert_max_bytes_in_data_file = 100000000000</fill_query>
 
     <!-- 1 element in filter  -->
     <query>
@@ -62,6 +68,15 @@
         JOIN (SELECT * FROM customer JOIN nation ON c_nationkey = n_nationkey WHERE n_name = 'FRANCE') AS cn
         ON c_custkey = o_custkey
         SETTINGS enable_join_runtime_filters=1, join_runtime_filter_exact_values_limit=10
+    </query>
+
+    <!-- 100 elements in filter, Nullable key -->
+    <query>
+        SELECT avg(o_totalprice)
+        FROM orders
+        JOIN (SELECT * FROM customer_nullable JOIN nation ON c_nationkey = n_nationkey WHERE n_name = 'FRANCE') AS cn
+        ON c_custkey = o_custkey
+        SETTINGS enable_join_runtime_filters=1, join_runtime_filter_from_fixed_hash_table=0
     </query>
 
 
@@ -203,7 +218,18 @@
         SETTINGS enable_join_runtime_filters=1
     </query>
 
+    <!-- One data file sorted by the key: file skipping cannot help, the runtime filter skips 19 of 20 row groups. -->
+    <query>
+        SELECT avg(o_totalprice)
+        FROM orders_iceberg
+        JOIN (SELECT * FROM customer JOIN nation ON c_nationkey = n_nationkey WHERE n_name = 'ETHIOPIA') AS cn
+        ON c_custkey = o_custkey
+        SETTINGS enable_join_runtime_filters = 1
+    </query>
+
     <drop_query>DROP TABLE orders</drop_query>
     <drop_query>DROP TABLE customer</drop_query>
+    <drop_query>DROP TABLE customer_nullable</drop_query>
     <drop_query>DROP TABLE nation</drop_query>
+    <drop_query>DROP TABLE IF EXISTS orders_iceberg</drop_query>
 </test>

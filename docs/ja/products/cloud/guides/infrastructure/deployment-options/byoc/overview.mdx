@@ -13,7 +13,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 Bring Your Own Cloud (BYOC) を利用すると、デフォルトの ClickHouse Cloud インフラストラクチャに依存することなく、お客様自身のクラウドアカウント内に ClickHouse サービスをデプロイし、データを直接保存できます。このアプローチは、データに対する完全な管理権と主権が求められるような、厳格なセキュリティポリシーや規制コンプライアンス要件を持つ組織に特に適しています。
 
-BYOC では大きく分けて、ClickHouse VPC 内で稼働し ClickHouse Cloud によって管理される ClickHouse のコントロールプレーンと、お客様のクラウドアカウント内で完全に稼働し、ClickHouse クラスター、データ、backups を含むデータプレーンが分離されています。関連するコンポーネントや、それらの間のトラフィックフローの詳細については、[Architecture](/ja/products/bring-your-own-cloud/overview/architecture) ページを参照してください。
+BYOC では大きく分けて、ClickHouse VPC 内で稼働し ClickHouse Cloud によって管理される ClickHouse のコントロールプレーンと、お客様のクラウドアカウント内で完全に稼働し、ClickHouse クラスター、データ、バックアップ を含むデータプレーンが分離されています。関連するコンポーネントや、それらの間のトラフィックフローの詳細については、[Architecture](/ja/products/bring-your-own-cloud/overview/architecture) ページを参照してください。
 
 > **アクセスをご希望の場合は、[お問い合わせ](https://clickhouse.com/cloud/bring-your-own-cloud)ください。** 詳細については、[Terms of Service](https://clickhouse.com/legal/agreements/terms-of-service)を参照してください。
 
@@ -28,13 +28,13 @@ BYOC では大きく分けて、ClickHouse VPC 内で稼働し ClickHouse Cloud 
 * Azure (GA)
 
 **サポート対象の Cloud リージョン:**
-BYOC デプロイメントでは、[サポート対象リージョン](/ja/products/cloud/reference/supported-regions) のドキュメントに記載されているすべての**パブリックリージョン**を利用できます。プライベートリージョンも、ご要望に応じて BYOC でご利用いただけます。ご希望の場合は、ClickHouse の担当者までお問い合わせください。
+BYOC は、[サポート対象リージョン](/ja/products/cloud/reference/supported-regions) のドキュメントで `BYOC` と記載されているすべてのリージョンで利用できます。`Private` とも記載されているリージョンでは、ご要望に応じて BYOC をご利用いただけます。ご希望の場合は、ClickHouse の担当者までお問い合わせください。
 
 ## 前提条件 {#prerequisites}
 
 以下の要件は、BYOCの構築および運用における基本要件です。すべてのデプロイメントに適用され、免除や代替手段は認められません。
 
-* **サポート対象リージョン。** BYOCは、[サポート対象リージョン](/ja/products/cloud/reference/supported-regions)のドキュメントに記載されているパブリックリージョンにデプロイできます。プライベートリージョンはリクエストに応じて利用できます。AWS Local Zonesおよび単一ゾーンのリージョンはサポートされません。必要なリージョンが記載されていない場合は、デプロイメントを計画する前にClickHouseの担当者にご相談ください。
+* **サポート対象リージョン。** BYOCは、[サポート対象リージョン](/ja/products/cloud/reference/supported-regions)のドキュメントで`BYOC`と記載されているリージョンにデプロイできます。`Private`とも記載されているリージョンはリクエストに応じて利用できます。AWS Local Zonesおよび単一ゾーンのリージョンはサポートされません。必要なリージョンが記載されていない場合は、デプロイメントを計画する前にClickHouseの担当者にご相談ください。
 * **3つのアベイラビリティゾーン。** すべてのBYOCインフラストラクチャは3つのアベイラビリティゾーンにまたがって構成されます。これにより、ClickHouseサーバーおよびClickHouse Keeperの高可用性が実現されます。ゾーンが3つ未満のリージョンではBYOCをホストできず、単一ゾーンまたは2ゾーンでのデプロイメントは提供していません。
 * **オンボーディングアーティファクトを変更せずに適用すること。** CloudFormationテンプレートまたはTerraformモジュールは、提供されたとおりに正確に適用する必要があります。リソース名 (`ClickHouseManagementRole` IAMロールなど) および[文書化されたベースライン権限](/ja/products/bring-your-own-cloud/reference/privilege)は、ClickHouseの自動化処理にハードコードされています。変更にはClickHouseによる明示的な承認が必要です。サポートされるカスタマイズは、Template パラメータとして公開されています。[標準オンボーディング](/ja/products/bring-your-own-cloud/onboarding/standard)を参照してください。
 * **ClickHouse管理のKubernetesクラスター。** EKS/GKE/AKSクラスターはClickHouseが作成し、全面的に運用します。既存のKubernetesクラスターへのインストールはサポートされていません。また、クラスター全体に適用されるadmission controllerやpolicy engineをインストールしてはなりません。

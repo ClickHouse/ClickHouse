@@ -1,0 +1,27 @@
+-- build side computed key
+Input (left): k, v
+Input (right): plus(k, 1_UInt8)
+BuildRuntimeFilter (Build runtime join filter on plus(k, 1_UInt8))
+24877500
+24877500
+-- probe side computed key
+Input (left): plus(k, 1_UInt8), v
+Input (right): k
+BuildRuntimeFilter (Build runtime join filter on k)
+24372600
+24372600
+-- the source column of a computed key stays when the join still reads it
+Input (left): k, v
+Input (right): plus(k, 1_UInt8), k
+BuildRuntimeFilter (Build runtime join filter on plus(k, 1_UInt8))
+24877500	122500
+24877500	122500
+-- renamed key of a subquery merged into the join
+Input (left): o_custkey, o_price
+Input (right): c_custkey
+BuildRuntimeFilter (Build runtime join filter on c_custkey)
+Input (left): c_nationkey, c_custkey
+Input (right): n_nationkey
+BuildRuntimeFilter (Build runtime join filter on n_nationkey)
+496485000
+496485000

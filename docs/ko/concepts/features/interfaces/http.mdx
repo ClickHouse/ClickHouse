@@ -288,7 +288,8 @@ curl 'http://localhost:8123/my_db/hits?filter=a%3E0&sort=-a&limit=10'
 curl 'http://localhost:8123/my_db/hits?limit=100&page=2'
 ```
 
-#### 기존 쿼리 수정 {#modify-an-existing-query}
+<a id="modify-an-existing-query" />
+#### 기존 쿼리 수정
 
 구성 설정은 경로 요청에만 적용되는 것이 아니라 직접 작성한 쿼리의 형태에도 영향을 줍니다. 쿼리는 파생 테이블이 되므로 설정은 쿼리에 병합되지 않고 쿼리 결과에 적용됩니다. 예를 들어, `?query=SELECT a, b FROM hits&filter=a > 0&sort=-b&limit=10`은 다음과 같이 실행됩니다:
 
@@ -323,7 +324,8 @@ INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
   `filter`는 액세스 제어 메커니즘이 아닙니다. 래핑하는 하위 쿼리에 `WHERE` 절을 추가하므로 필터가 적용되기 전에 원본 데이터를 읽고 처리할 수 있습니다. 사용자가 액세스할 수 있는 행을 제한하려면 [행 정책](/ko/concepts/features/security/access-rights#row-policy-management) 또는 [`additional_table_filters`](/ko/reference/settings/session-settings/additional#additional_table_filters)를 사용하십시오.
 </Warning>
 
-### 포맷 및 압축 재정의 {#format-and-compression-overrides}
+<a id="format-and-compression-overrides" />
+### 포맷 및 압축 재정의
 
 | 설정               | 효과                                                                                                                                                                                                                                  |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -339,7 +341,8 @@ INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
 
 바이너리 및 압축된 HTTP 응답에는 `Content-Disposition: attachment; filename=…` 헤더가 포함됩니다. 파일 이름은 URL 경로를 기반으로 생성되며, 경로에서 파일 이름을 제공하지 않으면 `result.<format>.<compression>`이 사용됩니다.
 
-### 쿼리와 함께 경로 테이블 사용 {#implicit-table}
+<a id="implicit-table" />
+### 쿼리와 함께 경로 테이블 사용
 
 경로가 테이블을 가리키고 `query` 매개변수도 제공된 경우, 경로 테이블은 [`implicit_table_at_top_level`](/ko/reference/settings/session-settings/implicit#implicit_table_at_top_level)을 통해 노출됩니다. `FROM` 절 없이 사용하는 `SELECT`는 경로 테이블을 읽습니다:
 
@@ -356,7 +359,7 @@ curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
 
 데이터를 전송할 때 `INSERT` 쿼리에는 `POST` 메서드가 필요합니다. 이 경우 쿼리의 앞부분은 URL 매개변수에 작성하고, 삽입할 데이터는 POST로 전달할 수 있습니다. 삽입할 데이터는 예를 들어 MySQL의 탭 구분 덤프일 수 있습니다. 이렇게 하면 `INSERT` 쿼리가 MySQL의 `LOAD DATA LOCAL INFILE`를 대체합니다.
 
-### 예시 {#examples}
+### 예시
 
 테이블(table)을 생성하려면:
 
@@ -442,7 +445,8 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 
 데이터 테이블을 반환하지 않는 요청이 성공한 경우, 빈 응답 본문이 반환됩니다.
 
-### Protobuf 데이터 삽입 {#insert-protobuf}
+<a id="insert-protobuf" />
+### Protobuf 데이터 삽입
 
 [`Protobuf`](/ko/reference/formats/Protobuf/Protobuf)와 같은 바이너리 포맷도 같은 방식으로 전송합니다. `--data-binary`는 바이트를 변경하지 않고 그대로 전달하기 때문입니다.
 [`format_schema`](/ko/reference/settings/formats/format-schema#format_schema)처럼 포맷에 필요한 설정은 다른 설정과 마찬가지로 `query`와 함께 URL 매개변수로 전달합니다.
@@ -499,7 +503,8 @@ Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
 `Protobuf` 포맷에서는 각 메시지 앞에 해당 메시지의 길이가 varint 형식의 접두사로 붙어 있어야 합니다.
 접두사가 없는 단일 메시지에는 [`ProtobufSingle`](/ko/reference/formats/Protobuf/ProtobufSingle)을 사용하고, 행을 하나의 `Envelope` 메시지의 하위 메시지로 전송하는 경우에는 [`ProtobufList`](/ko/reference/formats/Protobuf/ProtobufList)를 사용하십시오.
 
-## 압축 {#compression}
+<a id="compression" />
+## 압축
 
 대량의 데이터를 전송할 때 네트워크 트래픽을 줄이거나, 생성과 동시에 압축되는 덤프를 만들기 위해 압축을 사용할 수 있습니다.
 
@@ -647,7 +652,8 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 * [설정](/ko/reference/settings/session-settings)
 * [SET](/ko/reference/statements/set)
 
-## HTTP 프로토콜에서 ClickHouse 세션 사용하기 {#using-clickhouse-sessions-in-the-http-protocol}
+<a id="using-clickhouse-sessions-in-the-http-protocol" />
+## HTTP 프로토콜에서 ClickHouse 세션 사용하기
 
 HTTP 프로토콜에서도 ClickHouse 세션을 사용할 수 있습니다. 이렇게 하려면 요청에 `session_id` `GET` 매개변수를 추가해야 합니다. 세션 ID로는 임의의 문자열을 사용할 수 있습니다.
 
@@ -688,7 +694,8 @@ X-ClickHouse-Progress: {"read_rows":"1000000","read_bytes":"8000000","total_rows
 
 HTTP 인터페이스에서는 쿼리를 위해 외부 데이터(외부 임시 테이블)를 전달할 수 있습니다. 자세한 내용은 [&quot;쿼리 처리용 외부 데이터&quot;](/ko/reference/engines/table-engines/special/external-data)를 참조하십시오.
 
-## 응답 버퍼링 {#response-buffering}
+<a id="response-buffering" />
+## 응답 버퍼링
 
 응답 버퍼링은 서버 측에서 활성화할 수 있습니다. 이를 위해 다음 URL 매개변수를 사용할 수 있습니다.
 
@@ -714,9 +721,8 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
   응답 코드와 HTTP headers가 클라이언트에 전송된 뒤 쿼리 처리 오류가 발생하는 상황을 방지하려면 버퍼링을 사용하십시오. 이런 경우 오류 메시지는 응답 본문 끝에 기록되며, 클라이언트 측에서는 파싱 단계에서만 오류를 감지할 수 있습니다.
 </Tip>
 
-<div id="setting-role-with-query-parameters">
-  ## 쿼리 매개변수로 역할 설정
-</div>
+<a id="setting-role-with-query-parameters" />
+## 쿼리 매개변수로 역할 설정
 
 이 기능은 ClickHouse 24.4에 추가되었습니다.
 
@@ -749,7 +755,10 @@ curl -sS "http://localhost:8123?role=my_role&role=my_other_role" --data-binary "
 
 이 경우 `?role=my_role&role=my_other_role`는 해당 SQL 문을 실행하기 전에 `SET ROLE my_role, my_other_role`를 실행하는 것과 비슷하게 동작합니다.
 
-## HTTP 응답 코드 관련 주의사항 {#http_response_codes_caveats}
+`role` 쿼리 매개변수는 `access_control_improvements.readonly_restricts_set_role` 서버 설정의 영향을 받지 않습니다. 이 서버 설정은 `SET ROLE` SQL 문만 거부합니다.
+
+<a id="http_response_codes_caveats" />
+## HTTP 응답 코드 관련 주의사항
 
 HTTP 프로토콜의 한계로 인해 HTTP 200 응답 코드가 쿼리 성공을 보장하지는 않습니다.
 
@@ -847,6 +856,7 @@ __exception__
 매개변수가 있는 쿼리를 생성하고, 해당 값은 대응하는 HTTP 요청 매개변수를 통해 전달할 수 있습니다. 자세한 내용은 [CLI용 매개변수가 있는 쿼리](/ko/concepts/features/interfaces/client#cli-queries-with-parameters)를 참조하십시오.
 
 <div id="examples">
+  <a id="example-3" />
   ### 예시
 </div>
 
@@ -885,9 +895,8 @@ curl -sS "http://localhost:8123?param_arg1=abc%5C%09123" -d "SELECT splitByChar(
 ['abc','123']
 ```
 
-<div id="predefined_http_interface">
-  ## 미리 정의된 HTTP 인터페이스
-</div>
+<a id="predefined_http_interface" />
+## 미리 정의된 HTTP 인터페이스
 
 ClickHouse는 HTTP 인터페이스를 통해 특정 쿼리를 지원합니다. 예를 들어, 다음과 같이 테이블에 데이터를 쓸 수 있습니다.
 
@@ -895,7 +904,9 @@ ClickHouse는 HTTP 인터페이스를 통해 특정 쿼리를 지원합니다. �
 $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
 ```
 
-ClickHouse는 [Prometheus exporter](https://github.com/ClickHouse/clickhouse_exporter)와 같은 서드파티 도구와 더 쉽게 통합할 수 있도록 Predefined HTTP Interface도 지원합니다. 예시를 살펴보겠습니다.
+ClickHouse는 [Prometheus exporter](https://github.com/ClickHouse/clickhouse_exporter)와 같은 서드파티 도구와 더 쉽게 통합할 수 있도록 미리 정의된 HTTP 인터페이스도 지원합니다. 예시를 살펴보겠습니다.
+
+서버 설정 파일을 편집하지 않고도 SQL로 동일한 핸들러를 정의할 수 있습니다. 자세한 내용은 [`CREATE HANDLER`](/ko/reference/statements/create/handler)를 참조하십시오.
 
 먼저 서버 설정 파일에 이 섹션을 추가하십시오.
 
@@ -1016,7 +1027,8 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 서로 다른 `type`에 대한 구성 방법은 다음에서 설명합니다.
 
-### predefined_query_handler {#predefined_query_handler}
+<a id="predefined_query_handler" />
+### predefined_query_handler
 
 `predefined_query_handler`는 `Settings` 및 `query_params` 값 설정을 지원합니다. `predefined_query_handler` 타입에서 `query`를 구성할 수 있습니다.
 
@@ -1096,7 +1108,8 @@ curl -X POST 'http://localhost:8123/api/events?id=123' \
   `predefined_query_handler` 하나당 지원되는 `query`는 하나뿐입니다.
 </Note>
 
-### dynamic_query_handler {#dynamic_query_handler}
+<a id="dynamic_query_handler" />
+### dynamic_query_handler
 
 `dynamic_query_handler`에서는 HTTP 요청의 매개변수 형식으로 쿼리를 작성합니다. `predefined_query_handler`와의 차이점은 `predefined_query_handler`에서는 쿼리를 설정 파일에 작성한다는 것입니다. `query_param_name`은 `dynamic_query_handler`에서 구성할 수 있습니다.
 
@@ -1380,7 +1393,8 @@ ClickHouse에서는 구성할 수 있는 모든 유형의 핸들러에 적용할
 </clickhouse>
 ```
 
-## HTTP streaming 중 예외 발생 시 유효한 JSON/XML 응답 {#valid-output-on-exception-http-streaming}
+<a id="valid-output-on-exception-http-streaming" />
+## HTTP streaming 중 예외 발생 시 유효한 JSON/XML 응답
 
 HTTP를 통해 쿼리를 실행하는 동안 데이터의 일부가 이미 전송된 후 예외가 발생할 수 있습니다. 일반적으로 예외는 일반 텍스트로 클라이언트에 전송됩니다.
 데이터를 출력할 때 특정 데이터 포맷을 사용했더라도, 그 결과가 지정된 데이터 포맷 기준으로는 유효하지 않게 될 수 있습니다.

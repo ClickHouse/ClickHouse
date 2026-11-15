@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/ParsedTemplateFormatString.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <IO/PeekableReadBuffer.h>
@@ -69,13 +70,13 @@ public:
     bool parseRowBetweenDelimiterWithDiagnosticInfo(WriteBuffer & out) override;
     bool tryParseSuffixWithDiagnosticInfo(WriteBuffer & out) override;
 
-    std::vector<String> readNames() override { return readHeaderRow(); }
-    std::vector<String> readTypes() override { return readHeaderRow(); }
-    std::vector<String> readHeaderRow() {return readRowImpl<ReadFieldMode::AS_STRING>(); }
+    VectorWithMemoryTracking<String> readNames() override { return readHeaderRow(); }
+    VectorWithMemoryTracking<String> readTypes() override { return readHeaderRow(); }
+    VectorWithMemoryTracking<String> readHeaderRow() {return readRowImpl<ReadFieldMode::AS_STRING>(); }
 
-    std::vector<String> readRow() { return readRowImpl<ReadFieldMode::AS_FIELD>(); }
+    VectorWithMemoryTracking<String> readRow() { return readRowImpl<ReadFieldMode::AS_FIELD>(); }
 
-    std::vector<String> readRowForHeaderDetection() override { return readRowImpl<ReadFieldMode::AS_POSSIBLE_STRING>(); }
+    VectorWithMemoryTracking<String> readRowForHeaderDetection() override { return readRowImpl<ReadFieldMode::AS_POSSIBLE_STRING>(); }
 
     bool checkForEndOfRow() override;
 
@@ -95,7 +96,7 @@ private:
     };
 
     template <ReadFieldMode mode>
-    std::vector<String> readRowImpl();
+    VectorWithMemoryTracking<String> readRowImpl();
 
     template <ReadFieldMode mode>
     String readFieldIntoString(bool is_first, bool is_last, bool is_unknown);
@@ -117,7 +118,7 @@ private:
 
     std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
 
-    std::optional<std::pair<std::vector<String>, DataTypes>> readRowAndGetFieldsAndDataTypes() override;
+    std::optional<std::pair<VectorWithMemoryTracking<String>, DataTypes>> readRowAndGetFieldsAndDataTypes() override;
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 

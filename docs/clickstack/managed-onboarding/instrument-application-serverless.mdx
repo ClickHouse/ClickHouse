@@ -1,0 +1,269 @@
+---
+slug: /clickstack/managed-onboarding/instrument-application-serverless
+title: 'Instrument your application with OpenTelemetry'
+sidebarTitle: 'Instrument your application'
+description: 'Instrument a demo Node.js application with OpenTelemetry and send its logs, traces, and metrics directly to ClickHouse Observability. No collector required.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'instrumentation', 'OpenTelemetry', 'OTLP', 'Node.js', 'TypeScript', 'session replay', 'getting started']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+import { Image } from '/snippets/components/Image.jsx';
+
+<Info>
+**TL;DR**
+
+Run a small demo application, instrument it with the AI prompt from your service's Getting Started page or with two manual edits, and watch logs, traces, and metrics arrive in ClickHouse Observability.
+
+Time required: about 10 minutes
+</Info>
+
+You have created your ClickHouse Observability service. This guide takes you from that empty service to telemetry from a running application.
+
+ClickHouse Observability provides a managed OpenTelemetry endpoint. Your application sends telemetry straight to it. There is no collector to run, no schema to create, and no database to size. Ingestion, schemas, storage, optimization, and scaling are handled for you.
+
+## The demo application {#the-demo-application}
+
+To give you something realistic to instrument, this guide uses the [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer), a demo application we provide for exactly this purpose. It is a small Node.js and TypeScript app that queries the HackerNews dataset hosted in the public ClickHouse demo. Every chart, table, and search box is backed by a real request to the backend. Requests that miss the app's cache also query ClickHouse, which adds an outbound HTTPS span to each trace.
+
+The demo ships in two variants:
+
+- **Uninstrumented** on the `main` branch. You add the instrumentation yourself in this guide, either with an AI agent or by hand, without changing the application's business logic. The same steps apply to your own services.
+- **Pre-instrumented** on the `instrumented` branch. Check this out if you just want telemetry flowing quickly and to explore the UI.
+
+## Prerequisites {#prerequisites}
+
+- A ClickHouse Observability service. If you do not have one yet, follow the [Getting started guide](/clickstack/observability/getting-started).
+- Node.js 18 or later and npm.
+- Network access to your service's telemetry endpoint from the machine running the demo and from your browser.
+
+## Instrument the demo application {#instrument-the-demo-application}
+
+<Steps>
+<Step title="Open the Getting Started page" id="open-getting-started">
+Open your ClickHouse Observability service. Until data arrives, it shows the **Start sending telemetry** page with three ways to connect.
+
+<Image img="/images/clickstack/getting-started/observability-start-sending-telemetry.png" alt="Start sending telemetry page showing the current service with no data yet and three options: Use an existing OpenTelemetry setup, Instrument with AI, and Follow setup guides" size="lg" />
+
+This guide uses **Instrument with AI** to let a coding agent do the work, or **View connection details** if you prefer to make the edits yourself. Keep this page open. You will come back to it to confirm data is arriving.
+</Step>
+
+<Step title="Clone and run the demo application" id="clone-and-run-the-demo-application">
+Clone the repository, install dependencies, and copy the env template:
+
+```bash
+git clone https://github.com/ClickHouse/hn-news-analyzer.git
+cd hn-news-analyzer
+npm install
+cp .env.example .env
+```
+
+Start the demo. The ClickHouse data source defaults to the public read-only demo cluster, so it runs without any further configuration:
+
+```bash
+./run.sh
+```
+
+Open [http://localhost:5001](http://localhost:5001). You will see a year selector, summary statistics, an activity chart, top users and domains tables, and a search box. Click around: switch years, drill into stories.
+
+<Frame>
+  <img src="/images/clickstack/getting-started/hackernews_main.webp" alt="The HackerNews Analyzer demo application running locally" />
+</Frame>
+
+At this point the demo is running but uninstrumented. Your service shows no data from it yet. Stop it with Ctrl-C before continuing.
+</Step>
+
+<Step title="Instrument the demo" id="instrument">
+Pick one path. All three end at the same instrumented demo.
+
+<Tabs>
+<Tab title="Instrument with AI" id="instrument-with-ai">
+
+On the **Start sending telemetry** page, select **Copy prompt** under **Instrument with AI**. The **Set it up with an AI agent** dialog opens with a prompt for your coding agent and the two secrets the instrumented app needs.
+
+<Image img="/images/clickstack/getting-started/observability-ai-agent-prompt.png" alt="Set it up with an AI agent dialog showing the instrumentation prompt and the masked CLICKSTACK_OTLP_ENDPOINT and CLICKSTACK_API_KEY values" size="md" />
+
+First, copy the two secrets into the `.env` file in the `hn-news-analyzer` directory. Select **Reveal key** to show the full API key, then use the copy button next to it:
+
+```bash
+CLICKSTACK_OTLP_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+CLICKSTACK_API_KEY=<your-api-key>
+```
+
+The prompt tells the agent to read these values from the environment and never to hardcode them. `.env` is excluded from version control in the demo repository. For your own applications, use a gitignored `.env` or your secrets store.
+
+Next, copy the prompt and paste it into your coding agent, such as Claude Code, Cursor, or Copilot, **from the `hn-news-analyzer` directory**. The agent detects the language, framework, and entrypoints, installs the OpenTelemetry SDK, configures the exporter from the two variables above, and exports logs, traces, and metrics over OTLP/HTTP to your service.
+
+Review the changes the agent proposes before applying them. When it finishes, start the demo again with `./run.sh`.
+
+<Warning>
+The browser SDK embeds the endpoint and API key in the browser bundle, where anyone inspecting the network tab can read them. Use a service intended for testing and keep `.env` out of version control.
+</Warning>
+
+</Tab>
+<Tab title="Manual instrumentation" id="instrument-manually">
+
+On the **Start sending telemetry** page, select **View connection details** under **Use an existing OpenTelemetry setup**, then open the **Env vars** tab. It shows your OTLP endpoint and API key as the environment variables the demo expects.
+
+<Image img="/images/clickstack/getting-started/observability-connection-details.png" alt="Set up OpenTelemetry dialog with URL, Collector config, and Env vars options and masked connection details" size="md" />
+
+### Point the demo at your service {#configure-environment}
+
+Open `.env` and set the following values, replacing the endpoint and API key with the values from the dialog:
+
+```bash
+OTEL_SERVICE_NAME=hn-analyzer-api
+OTEL_EXPORTER_OTLP_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+OTEL_EXPORTER_OTLP_HEADERS=authorization=<your-api-key>
+OTEL_TRACES_EXPORTER=otlp
+OTEL_METRICS_EXPORTER=otlp
+OTEL_LOGS_EXPORTER=otlp
+```
+
+These are standard OpenTelemetry exporter variables. Nothing is hardcoded in the application source.
+
+Keep the `https://` prefix in `OTEL_EXPORTER_OTLP_ENDPOINT` and do not append `/v1/logs`, `/v1/traces`, or `/v1/metrics`. The SDKs add the signal paths. Set `OTEL_EXPORTER_OTLP_HEADERS` to `authorization=<your-api-key>` without a `Bearer` prefix.
+
+Instrumentation then has three parts: install the SDK, switch the launch command, and enable the browser SDK. None of it changes the application's business logic.
+
+### Install the Node SDK {#install-node-sdk}
+
+```bash
+npm install @hyperdx/node-opentelemetry
+```
+
+### Enable the wrapper in run.sh {#enable-run-sh-wrapper}
+
+The bottom of `run.sh` has two `exec` lines. Comment the plain `node` line and uncomment the instrumented one:
+
+```diff
+ # BEFORE: plain node, no instrumentation:
+-exec node scripts/entrypoint.js
++# exec node scripts/entrypoint.js
+
+ # AFTER: same source, wrapped by opentelemetry-instrument:
+-# exec npx opentelemetry-instrument scripts/entrypoint.js
++exec npx opentelemetry-instrument scripts/entrypoint.js
+```
+
+Keep launching through `scripts/entrypoint.js`. That shim calls `require('console')` so console capture wraps `console.log`. Pointing `opentelemetry-instrument` at `dist/server/index.js` directly ships traces but silently drops logs.
+
+### Enable the browser SDK {#enable-browser-sdk}
+
+```bash
+npm install @hyperdx/browser
+```
+
+In `src/web/telemetry.ts`, uncomment the import, the `HyperDX.init` block, and `HyperDX.addAction` in `recordAction`:
+
+```diff
+-// import HyperDX from '@hyperdx/browser';
++import HyperDX from '@hyperdx/browser';
+
+ export function initTelemetry(): void {
+-  // HyperDX.init({
+-  //   url: __OTLP_ENDPOINT__,
+-  //   apiKey: __OTLP_AUTH_TOKEN__,
+-  //   service: 'hn-analyzer-web',
+-  //   tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
+-  //   consoleCapture: true,
+-  //   advancedNetworkCapture: true,
+-  // });
++  HyperDX.init({
++    url: __OTLP_ENDPOINT__,
++    apiKey: __OTLP_AUTH_TOKEN__,
++    service: 'hn-analyzer-web',
++    tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
++    consoleCapture: true,
++    advancedNetworkCapture: true,
++  });
+ }
+```
+
+`__OTLP_ENDPOINT__` and `__OTLP_AUTH_TOKEN__` are compile-time constants injected by `vite.config.ts` from the same `OTEL_EXPORTER_OTLP_*` values the backend uses.
+
+<Warning>
+The browser SDK embeds the endpoint and API key in the browser bundle, where anyone inspecting the network tab can read them. Use a service intended for testing and keep `.env` out of version control.
+</Warning>
+
+Start the demo again with `./run.sh`.
+
+</Tab>
+<Tab title="Use a pre-instrumented branch" id="use-the-instrumented-branch">
+
+To skip instrumentation and start with an already instrumented demo, set the `OTEL_EXPORTER_OTLP_*` values in `.env` as described in the manual instrumentation tab, then check out the [`instrumented` branch](https://github.com/ClickHouse/hn-news-analyzer/tree/instrumented):
+
+```bash
+git checkout instrumented
+npm install
+./run.sh
+```
+
+Don't run `./reset.sh` on this branch unless you want to strip the SDKs.
+
+</Tab>
+</Tabs>
+</Step>
+
+<Step title="Generate traffic and confirm data is arriving" id="confirm-data-is-arriving">
+With the instrumented demo running, reload [http://localhost:5001](http://localhost:5001) so the browser serves the updated bundle. Switch years and click into stories to generate traffic.
+
+If you used the manual path or the pre-instrumented branch, the startup banner prints three `Health check passed` lines for `/v1/traces`, `/v1/metrics`, and `/v1/logs`. Those checks go directly from the demo to your service, so passing them means your endpoint and API key are correct.
+
+Return to the **Start sending telemetry** page in your service and select **Check for data**. Once your telemetry has arrived, the service status changes to **Data received** and **Start exploring** becomes available.
+
+<Image img="/images/clickstack/getting-started/observability-data-received.png" alt="Start sending telemetry page showing the service status as Data received, a confirmation that you are ready to explore, and the Start exploring button enabled" size="lg" />
+
+Select **Start exploring** to open **Search**.
+</Step>
+
+<Step title="Explore your telemetry" id="explore-your-telemetry">
+1. In **Search**, select the **Logs** source and set the time range to **Last 15 minutes**. Filter `ServiceName` to `hn-analyzer-api` to find the backend logs.
+
+<Frame>
+  <img src="/images/clickstack/getting-started/observability-hackernews-logs.png" alt="ClickHouse Observability Search showing backend logs filtered to hn-analyzer-api" />
+</Frame>
+
+2. Select the **Traces** source and open a request from `hn-analyzer-api`. You will see the Express handler span, a child HTTP span pointing at `sql-clickhouse.clickhouse.com` with real network duration, and correlated `console.log` records on the same trace.
+
+<Frame>
+  <img src="/images/clickstack/getting-started/observability-hackernews-traces.png" alt="ClickHouse Observability trace showing the browser request, backend spans, correlated logs, and an HTTP request to ClickHouse" />
+</Frame>
+
+3. Open **Client Sessions**, select a session from `hn-analyzer-web`, and open **Session Replay** to review the browser interactions alongside the requests they triggered.
+
+<Frame>
+  <img src="/images/clickstack/getting-started/observability-hackernews-sessions.png" alt="ClickHouse Observability session replay showing the HackerNews Analyzer demo with dashboard refresh and search events" />
+</Frame>
+
+4. Open **Chart Explorer**, select **Time Series** and the **Metrics** source, and choose a metric emitted by the demo. Filter by `ResourceAttributes.service.name:"hn-analyzer-api"`, select a time range covering your test, and select **Run** to confirm metric data is present.
+
+Logs, traces, metrics, and session replays land in the same place, share the same search syntax, and are correlated automatically.
+</Step>
+</Steps>
+
+## If nothing shows up {#if-nothing-shows-up}
+
+- Check the values in `.env`. The endpoint must start with `https://`, end with port `4318`, and have no `/v1/...` suffix. The API key must be the full value, which you can copy after selecting **Reveal key**.
+- If you used the manual path, confirm `OTEL_EXPORTER_OTLP_HEADERS` is `authorization=<your-api-key>` with no `Bearer` prefix, and that the startup banner shows all three `Health check passed` lines.
+- Confirm you restarted the demo after instrumenting it and reloaded the browser tab. Session replay only starts once the instrumented bundle is served.
+- Widen the time range in **Search** and remove any filters. The default source may be set to **Traces** rather than **Logs**.
+- To rule out the service itself, go to **Team Settings → Managed Telemetry** and use **Send a Test Log**. If that log appears in **Search**, the service is receiving data and the problem is in the demo's configuration.
+
+## Next steps {#next-steps}
+
+Your service now holds telemetry from a real application. To instrument your own services, reuse the **Instrument with AI** prompt from your service, or use the [supported language SDKs](/clickstack/observability/ingesting-data/sdks/index) with the same endpoint and API key.
+
+To collect from infrastructure rather than application code:
+
+- [Monitoring Kubernetes](/clickstack/observability/example-datasets/kubernetes): collect cluster logs and metrics and explore the Kubernetes dashboard.
+- [Local logs and metrics](/clickstack/observability/example-datasets/local-data): collect local files and system metrics on macOS or Linux.
+
+To go further with the UI:
+
+- [Search](/clickstack/observability/features/search): query logs and traces with Lucene-style syntax or SQL.
+- [Session Replay](/clickstack/observability/features/session-replay): feature overview, SDK options, and privacy controls.
+- [Sample datasets](/clickstack/observability/example-datasets): richer datasets and guided investigations.

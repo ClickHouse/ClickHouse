@@ -90,14 +90,14 @@ Para obtener información detallada sobre los permisos específicos necesarios, 
   ### Conexión de red privada de Tailscale
 </div>
 
-Tailscale proporciona una red privada segura y de confianza cero entre ClickHouse Cloud y su implementación de BYOC. Por ella circulan el acceso de diagnóstico y resolución de problemas de los ingenieros de ClickHouse y las métricas y los paneles que ClickHouse utiliza para monitorizar su despliegue, así como el tráfico de la API de Kubernetes cuando se habilita un endpoint privado de la API. Esta conexión permite:
+Tailscale proporciona una red privada segura y de confianza cero entre ClickHouse Cloud y su implementación de BYOC. Por ella circulan el acceso para la resolución de problemas de los ingenieros de ClickHouse y las métricas y los dashboards que ClickHouse utiliza para monitorizar su despliegue, así como el tráfico de la API de Kubernetes cuando se habilita un endpoint privado de la API. Esta conexión permite:
 
 * **Monitorización continua**: los ingenieros de ClickHouse pueden acceder a la pila de monitorización de Prometheus desplegada en su VPC BYOC para supervisar el estado y el rendimiento del servicio
 * **Mantenimiento proactivo**: los ingenieros pueden realizar tareas rutinarias de mantenimiento, actualizaciones y operaciones de diagnóstico y resolución de problemas
 * **Soporte de emergencia**: en caso de problemas del servicio, los ingenieros pueden acceder rápidamente a su entorno para diagnosticar y resolver incidencias
-* **Gestión de infraestructura**: cuando se habilita un endpoint privado de la API de Kubernetes, el servicio de administración accede a la API de Kubernetes a través de esta conexión, en lugar de hacerlo a través de su endpoint público
+* **Gestión de infraestructura**: cuando se habilita un endpoint privado de la API de Kubernetes, el servicio de administración accede a la API de Kubernetes a través de esta conexión, en lugar de hacerlo a través de su endpoint público. En GCP, solo las herramientas de despliegue y la monitorización utilizan esta conexión; el servicio de administración utiliza, en su lugar, el endpoint basado en DNS con autorización de IAM. Consulte [Exposición del servidor de API de Kubernetes](/es/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)
 
-Los agentes de Tailscale de su cluster establecen únicamente conexiones **salientes**: el propio Tailscale no requiere ninguna regla de entrada en security groups, firewalls ni network security groups, lo que reduce su superficie de exposición. Todo acceso es:
+Los agentes de Tailscale de su cluster establecen únicamente conexiones **salientes**: el propio Tailscale no requiere ninguna regla de entrada en grupos de seguridad, firewalls ni grupos de seguridad de red, lo que reduce su superficie de exposición. Todo acceso es:
 
 * **Aprobado y auditado**: los ingenieros deben solicitar acceso a través de un sistema interno de aprobación
 * **Limitado en el tiempo**: el acceso caduca automáticamente después de un período determinado

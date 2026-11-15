@@ -109,7 +109,8 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 
 上記のデータ型マッピングは読み取り時に適用されます。ClickHouse で Iceberg スキーマを作成または変更し、データを書き込む際には、以下の制限事項があります。
 
-* ClickHouse では、`Bool`、`Decimal`、`FixedString`、`Int8`、`UInt8`、`Int16`、`UInt16` を含む Iceberg スキーマを作成したり、カラムをこれらの型のいずれかとして追加または変更したりすることはできません。この操作は、サポートされていない型の例外により失敗します。ただし、既存の Iceberg カラムに `Bool` または `Decimal` の値を挿入することは可能です。
+* ClickHouse では、`Bool`、`FixedString`、`Int8`、`UInt8`、`Int16`、`UInt16`、`Time`、`Time64` を含む Iceberg スキーマを作成したり、カラムをこれらの型のいずれかとして追加または変更したりすることはできません。この操作は、サポートされていない型の例外により失敗します。ただし、既存の Iceberg カラムに `Bool` の値を挿入することは可能です。
+* ClickHouse では、`UInt64` を含む Iceberg スキーマも作成できません。Iceberg で最も幅の広い整数型は符号付き 64 ビットの `long` であり、`UInt64` のすべての値を表現できないためです。代わりに `Int64` または `Decimal(20, 0)` を使用してください。`UInt64` カラム (`Array(UInt64)` のようなネストされたものを含む) を持つテーブルを作成しようとすると、そのパスに Iceberg テーブルがすでに存在する場合でも、例外が発生して失敗します。同じ理由から、`UInt32` カラムは Iceberg の `long` に拡張されるため、読み取り時には `Int64` として返されます。
 * ClickHouse で Iceberg スキーマを作成または変更する場合、すべての `DateTime` および `DateTime64` カラムは、マイクロ秒精度でタイムゾーンを持たない Iceberg の `timestamp` にマッピングされます。ClickHouse では `timestamptz`、`timestamp_ns`、`timestamptz_ns` のスキーマ型を生成できないため、より高い精度やタイムゾーンのセマンティクスは Iceberg スキーマに反映されません。
 * ClickHouse では、`decimal`、`fixed`、`timestamp_ns`、`timestamptz_ns` のカラムを直接パーティションフィールドとして使用する Iceberg テーブルには書き込めません。この操作は、サポートされていない型の例外により失敗します。
 * `Bool` や `Decimal` など、ClickHouse が境界値をシリアル化できない型を含むデータファイルでは、ClickHouse は Iceberg マニフェストエントリからすべてのカラムの下限値と上限値を省略します。カラムサイズと null カウントは引き続き含まれ、データの正確性も維持されますが、リーダーはこれらのファイルに対してマニフェストレベルの min-max プルーニングを使用できません。
@@ -132,7 +133,7 @@ ClickHouse は、Iceberg テーブルに対する SELECT クエリでパーテ�
 
 ## `DROP PARTITION` {#drop-partition}
 
-`ALTER TABLE ... DROP PARTITION <value>` は、単一のパーティションに属するすべてのデータファイルを削除し、それらを参照しない新しいスナップショットを作成します。現在はローカルおよびオブジェクトストレージ上の Iceberg テーブルでサポートされていますが、カタログ経由のテーブルではサポートされていません。
+`ALTER TABLE ... DROP PARTITION <value>` は、単一のパーティションに属するすべてのデータファイルを削除し、それらを参照しない新しいスナップショットを作成します。ローカルおよびオブジェクトストレージ上の Iceberg テーブルに加え、カタログ種別が `rest`、`onelake`、`biglake`、`delta_sharing`、`horizon`、`s3tables`、または `unity` (`use_unity_catalog_v2 = 1` の場合) である `DataLakeCatalog` データベース内のテーブルでサポートされています。
 
 この操作を使用するには、`allow_insert_into_iceberg` を有効にしてください。
 
@@ -346,18 +347,19 @@ ClickHouse で `Iceberg` テーブルエンジンを使用する場合、シス�
 
 1. **パスの直接指定**:
 
-* `iceberg_metadata_file_path` を設定すると、システムはこの値を Iceberg テーブル の directory path と組み合わせて、その正確な path を使用します。
+* `iceberg_metadata_file_path` を設定すると、システムはこの値を Iceberg テーブル の ディレクトリ パス と組み合わせて、その正確な パス を使用します。
 * この設定が指定されている場合、他のすべての解決設定は無視されます。
 
-2. **table UUID の照合**:
+2. **テーブル UUID の照合**:
 
 * `iceberg_metadata_table_uuid` が指定されている場合、システムは次のように動作します:
-  * `metadata` directory 内の `.metadata.json` ファイルのみを対象にします
+  * `metadata` ディレクトリ 内の `.metadata.json` ファイルのみを対象にします
   * 指定した UUID と一致する `table-uuid` フィールドを含むファイルに絞り込みます (大文字と小文字は区別しません)
 
 3. **デフォルトの検索**:
 
-* 上記のどちらの設定も指定されていない場合、`metadata` directory 内のすべての `.metadata.json` ファイルが候補になります
+* 上記のどちらの設定も指定されていない場合、`metadata` ディレクトリ 内のすべての `.metadata.json` ファイルが候補になります
+* S3 および Azure では、クエリレベルの設定 `iceberg_list_only_v_prefixed_metadata_files` が有効で、かつ `iceberg_use_version_hint` が無効の場合、これらのファイルの中に `v` で始まる名前のもの (ClickHouse カタログおよび Hadoop カタログによる命名) があれば、そのファイルのみが候補となり、一覧取得の対象もそれらに限られます (キープレフィックス `metadata/v` で一覧取得するため、同じディレクトリに保存されているマニフェストは一覧取得されません)。この設定は、メタデータファイルがすべてこの命名規則に従っているテーブルに限って有効化してください。両方の命名規則が混在するディレクトリでは、`<N>-<uuid>.metadata.json` ファイルが候補になることはありません
 
 ### 最新のファイルの選択 {#most-recent-file}
 
@@ -415,6 +417,22 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 **注記**: 非同期メタデータの先読みは `ICEBERG_SCEDULE_POOL` で実行されます。これは、アクティブな `Iceberg` テーブルに対するバックグラウンド処理用のサーバー側 threadpool です。この threadpool のサイズは、`iceberg_background_schedule_pool_size` サーバー設定パラメータ (デフォルトは 10) で制御されます。
 
 **注記**: 現時点では、非同期先読みが有効な場合、メタデータキャッシュのサイズは、すべてのアクティブなテーブルの最新のメタデータスナップショット全体を保持できるだけ十分であることが想定されています。
+
+## テーブル設定の変更 {#modify-settings}
+
+Iceberg のメタデータには保存されず、テーブル定義にのみ保存される設定は、既存のテーブルに対して `ALTER TABLE ... MODIFY SETTING` および `ALTER TABLE ... RESET SETTING` で変更できます。
+
+* メタデータファイルのルックアップ: `iceberg_use_version_hint`、`iceberg_recent_metadata_file_by_last_updated_ms_field`、`iceberg_metadata_async_prefetch_period_ms`
+* バックグラウンドでのコンパクションとその後のクリーンアップ: `allow_experimental_iceberg_compaction`、`allow_experimental_cleanup_old_data_files_compaction`、`iceberg_compaction_lock_lease_seconds`、`iceberg_compaction_delay_bias`、`iceberg_compaction_data_cleanup`、`iceberg_read_with_snapshot_lease`、`iceberg_snapshot_lease_seconds`、`iceberg_outdated_snapshot_lifetime_seconds`、`iceberg_compaction_commit_batch_size`、`iceberg_compaction_max_rows_in_data_file`、`iceberg_compaction_max_bytes_in_data_file`、`iceberg_max_number_datafiles_to_compact`、`iceberg_data_file_size_lower_threshold_compaction`、`iceberg_data_file_size_upper_threshold_compaction`
+
+新しい値は以降のクエリから適用され、テーブル定義に保存されます。設定の変更中はテーブルのバックグラウンドジョブがいったん停止し、新しい設定で再開されます。したがって、`allow_experimental_iceberg_compaction` を無効にするとテーブルのバックグラウンドコンパクションが停止し、有効にすると開始されます。上記以外の設定は変更できません。また、設定の変更を他の `ALTER` コマンドと同じクエリ内で組み合わせることもできません。`DataLakeCatalog` データベースのテーブルでは、設定の変更はサポートされていません。
+
+```sql
+ALTER TABLE example_table MODIFY SETTING iceberg_use_version_hint = 1;
+ALTER TABLE example_table RESET SETTING iceberg_use_version_hint;
+ALTER TABLE example_table MODIFY SETTING allow_experimental_iceberg_compaction = 0;
+ALTER TABLE example_table MODIFY SETTING iceberg_compaction_delay_bias = 600, iceberg_data_file_size_lower_threshold_compaction = 268435456;
+```
 
 ## 関連項目 {#see-also}
 

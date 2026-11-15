@@ -27,9 +27,7 @@ Cada modo de implementación tiene sus propios puntos fuertes y casos de uso ide
   <iframe src="https://www.youtube.com/embed/EOXEW_-r10A?si=6IanDSJlRzN8f9Mo" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-<div id="clickhouse-server">
-  ## ClickHouse Server
-</div>
+## ClickHouse Server {#clickhouse-server}
 
 ClickHouse Server representa la arquitectura tradicional cliente/servidor y es ideal para implementaciones de producción. Este modo de implementación ofrece todas las capacidades de una base de datos OLAP, con consultas de alto rendimiento y baja latencia por las que ClickHouse es conocido.
 
@@ -41,9 +39,7 @@ En cuanto a la flexibilidad de implementación, ClickHouse Server puede instalar
 
 Este modo de implementación es la opción preferida para entornos de producción donde la fiabilidad, el rendimiento y el acceso completo a todas las funciones son cruciales.
 
-<div id="clickhouse-cloud">
-  ## ClickHouse Cloud
-</div>
+## ClickHouse Cloud {#clickhouse-cloud}
 
 [ClickHouse Cloud](/es/products/cloud/getting-started/intro) es una versión totalmente gestionada de ClickHouse que elimina la carga operativa de ejecutar su propia implementación. Aunque conserva todas las capacidades principales de ClickHouse Server, mejora la experiencia con funciones adicionales diseñadas para agilizar el desarrollo y las operaciones.
 
@@ -57,29 +53,25 @@ Para la supervisión y la optimización, ClickHouse Cloud incluye gráficos inte
 
 La naturaleza gestionada del servicio implica que no tiene que preocuparse por las actualizaciones, las copias de seguridad, el escalado ni los parches de seguridad, ya que todo ello se gestiona automáticamente. Esto lo convierte en una opción ideal para las organizaciones que quieren centrarse en sus datos y aplicaciones en lugar de en la administración de bases de datos.
 
-<div id="clickhouse-cli">
-  ## ClickHouse CLI
-</div>
+## CLI de ClickHouse {#clickhouse-cli}
 
-ClickHouse CLI (`clickhousectl`) es una herramienta de línea de comandos para el desarrollo local de ClickHouse y la gestión de ClickHouse Cloud. Simplifica el flujo de trabajo de instalar versiones de ClickHouse, iniciar y administrar instancias locales del servidor, y ejecutar consultas.
+La [CLI de ClickHouse](/es/concepts/features/interfaces/cli) (`clickhousectl`, alias `chctl`) es una herramienta de línea de comandos para el desarrollo local con ClickHouse y Postgres, y para la gestión de ClickHouse Cloud. Permite instalar versiones de ClickHouse, iniciar y administrar servidores locales, y ejecutar consultas.
 
-Para el desarrollo local, `clickhousectl` ayuda a instalar versiones de ClickHouse y ejecutar servidores. Puede instalar cualquier versión de ClickHouse, levantar servidores con nombre y conectarse mediante el cliente integrado. Cada servidor obtiene su propio directorio de datos, por lo que puede ejecutar varios entornos aislados en paralelo.
+Para el desarrollo local, `clickhousectl` instala cualquier versión de ClickHouse y ejecuta servidores con nombre. Conéctese con `clickhousectl local client`, que ejecuta el `clickhouse-client` de esa versión. Cada servidor guarda sus datos en el directorio `.clickhouse/` del proyecto, lo que le permite ejecutar varios entornos aislados en paralelo. Si Docker está en ejecución, `clickhousectl local postgres` inicia servidores Postgres locales de la misma forma.
 
-`clickhousectl` también proporciona una gestión completa de los recursos de ClickHouse Cloud, incluida la creación y el escalado de servicios, la gestión de claves API y la administración de organizaciones, lo que la convierte en una herramienta unificada tanto para flujos de trabajo locales como en la nube.
+`clickhousectl` también administra recursos de ClickHouse Cloud: servicios, escalado, copias de seguridad, Managed Postgres, ClickPipes, Managed ClickStack, claves de API y organizaciones. El inicio de sesión mediante navegador (`clickhousectl cloud auth login`) es de solo lectura; para crear o modificar recursos se necesita una clave de API.
 
 ```bash
-# Install the CLI
-curl https://clickhouse.com/cli | sh
+# Install the CLI to ~/.local/bin/clickhousectl, with a chctl alias
+curl -fsSL https://clickhouse.com/cli | sh
 
-# Install the latest ClickHouse, set it as your default, and symlink the clickhouse binary onto your PATH
+# Install the latest ClickHouse, set it as your default, and symlink it to ~/.local/bin/clickhouse
 clickhousectl local use latest
 clickhousectl local server start
 clickhousectl local client
 ```
 
-<div id="clickhouse-local">
-  ## clickhouse-local
-</div>
+## clickhouse-local {#clickhouse-local}
 
 [clickhouse-local](/es/concepts/features/tools-and-utilities/clickhouse-local) es una potente herramienta de línea de comandos que ofrece toda la funcionalidad de ClickHouse en un ejecutable independiente. Es, en esencia, la misma base de datos que ClickHouse Server, pero empaquetada de forma que permite aprovechar todas las capacidades de ClickHouse directamente desde la línea de comandos sin ejecutar una instancia de servidor.
 
@@ -91,9 +83,7 @@ Dado que clickhouse-local incluye toda la funcionalidad de ClickHouse, puedes us
 
 La combinación de table functions remotas y acceso al sistema de archivos local hace que clickhouse-local sea especialmente útil en escenarios en los que necesitas hacer join entre datos de un ClickHouse Server y archivos de tu máquina local. Esto resulta especialmente valioso al trabajar con datos locales sensibles o temporales que no quieres subir a un servidor.
 
-<div id="chdb">
-  ## chDB
-</div>
+## chDB {#chdb}
 
 [chDB](/es/chdb/index) es ClickHouse integrado como un motor de base de datos en el mismo proceso, con Python como implementación principal, aunque también está disponible para Go, Rust, NodeJS y Bun. Esta opción de implementación lleva las potentes capacidades OLAP de ClickHouse directamente al proceso de la aplicación, eliminando la necesidad de una instalación de base de datos independiente.
 

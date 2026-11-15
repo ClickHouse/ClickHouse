@@ -57,6 +57,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
       لا يتضمن هذا الإعداد الأولي حاويات التخزين وVPC/VNet ومجموعة Kubernetes وموارد الحوسبة المطلوبة لتشغيل ClickHouse. وسيتم توفيرها في الخطوة التالية.
     </Note>
 
+<a id="terraform-module-aws" />
 #### وحدة Terraform لـ AWS
 
     إذا كنت تفضل استخدام Terraform بدلًا من CloudFormation لعمليات النشر على AWS، فاستخدم وحدة [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
@@ -76,6 +77,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
       كانت الوحدة تُوزَّع سابقًا كأرشيف tarball على `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`. لا يزال عنوان URL هذا متاحًا، لكنه مهمل — استخدم وحدة GitHub المذكورة أعلاه.
     </Note>
 
+<a id="aws-external-id" />
 #### المعرّف الخارجي لـ AWS
 
     في AWS، يثق دور IAM الذي يُنشأ أثناء الإعداد بـ ClickHouse Cloud باستخدام [معرّف خارجي](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html) (`sts:ExternalId`) للحماية من هجمات «النائب الملتبس». تنشئ واجهة ClickHouse Cloud معرّفًا خارجيًا لحساب AWS الخاص بك عند بدء عملية الإعداد، وتملؤه مسبقًا في رابط CloudFormation؛ وإذا كنت تستخدم Terraform، فمرّر القيمة نفسها باعتبارها `external_id`. تشترك جميع البنى التحتية لـ BYOC ضمن حساب AWS نفسه في المعرّف الخارجي ذاته.
@@ -88,7 +90,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="إعداد البنية التحتية لنموذج BYOC" id="setup-byoc-infrastructure">
     سيُطلب منك إعداد البنية التحتية من وحدة تحكم ClickHouse Cloud، بما في ذلك حاويات تخزين الكائنات وVPC/VNet وعنقود Kubernetes. يجب تحديد بعض الإعدادات في هذه المرحلة، إذ لا يمكن تغييرها لاحقًا. وتشمل تحديدًا ما يلي:
 
-    * **المنطقة**: تتوفر جميع **المناطق العامة** المدرجة في وثائق [المناطق المدعومة](/ar/products/cloud/reference/supported-regions) لعمليات نشر BYOC. ولا تُدعم المناطق الخاصة حاليًا.
+    * **المنطقة**: اختر منطقة موسومة بـ `BYOC` في وثائق [المناطق المدعومة](/ar/products/cloud/reference/supported-regions). أما المناطق الموسومة أيضًا بـ `Private` فتتوفر عند الطلب، لذا تواصل مع ممثل ClickHouse المسؤول عنك لطلب إحداها.
 
     * **نطاق CIDR لـ VPC/VNet**: نستخدم افتراضيًا `10.0.0.0/16` كنطاق CIDR لـ VPC الخاص بـ BYOC (في AWS/GCP) أو VNet (في Azure). إذا كنت تخطط لاستخدام VPC/VNet peering مع حساب آخر، فتأكد من عدم تداخل نطاقات CIDR. يختلف الحد الأدنى للحجم حسب السحابة:
 
@@ -102,6 +104,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="إعداد البنية التحتية لنموذج BYOC" background="black" />
 
+<a id="preflight-validation" />
 #### التحقق المسبق
 
     عند النقر على **Set up Infrastructure**، تُجري ClickHouse Cloud مجموعة من فحوصات ما قبل التشغيل **للقراءة فقط** على حسابك قبل إنشاء أي موارد. وإذا اجتازت جميع الفحوصات، فيستمر التوفير. أما إذا فشل أحد الفحوصات، فيتوقف الإعداد مؤقتًا وتعرض الواجهة الخطأ بدقة، بحيث يمكنك إصلاحه قبل إنشاء أي موارد.
@@ -138,7 +141,8 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 </Steps>
 
-### أنشئ أول خدمة ClickHouse BYOC {#create-clickhouse-service}
+<a id="create-clickhouse-service" />
+### أنشئ أول خدمة ClickHouse BYOC
 
 بعد توفير البنية التحتية لـ BYOC، تصبح جاهزًا لإطلاق أول خدمة ClickHouse. افتح وحدة تحكم ClickHouse Cloud، وحدد بيئة BYOC الخاصة بك، ثم اتبع الإرشادات لإنشاء خدمة جديدة.
 
