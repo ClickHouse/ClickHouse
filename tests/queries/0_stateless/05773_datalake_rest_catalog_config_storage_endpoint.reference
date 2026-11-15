@@ -2,3 +2,4 @@ defaults: defaults
 overrides: overrides
 table: table
 setting: setting
+local: ENGINE = Iceberg('/nonexistent/ns/t')

@@ -4,8 +4,9 @@
 
 # An Iceberg REST catalog can set `s3.endpoint` for all its tables in the `defaults` and `overrides` of its
 # configuration, `overrides` winning. The endpoint vended with the table takes precedence over both, and the
-# `storage_endpoint` setting over all of them. The stub serves the catalog and the object storage: every endpoint
-# names its case and its source, which the stub records from the storage requests and answers with 404.
+# `storage_endpoint` setting over all of them, and a table outside S3 keeps its location. The stub serves the catalog
+# and the object storage: every endpoint names its case and its source, which the stub records from the storage
+# requests and answers with 404.
 
 # The failing table reads are logged by the server, keep them off the client's stderr.
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
@@ -30,20 +31,21 @@ lock = threading.Lock()
 
 def cases(port):
     def endpoint(case, source):
-        return {"s3.endpoint": f"http://127.0.0.1:{port}/s3/{case}/{source}"}
+        return {"s3.endpoint": f"http://127.0.0.1:{port}/storage/{case}/{source}"}
 
-    # <case>: (defaults, overrides, config of the load-table response)
+    # <case>: (defaults, overrides, config of the load-table response, table location)
     return {
-        "defaults": (endpoint("defaults", "defaults"), {}, {}),
-        "overrides": (endpoint("overrides", "defaults"), endpoint("overrides", "overrides"), {}),
-        "table": (endpoint("table", "defaults"), endpoint("table", "overrides"), endpoint("table", "table")),
-        "setting": (endpoint("setting", "defaults"), endpoint("setting", "overrides"), {}),
+        "defaults": (endpoint("defaults", "defaults"), {}, {}, "s3://bucket/ns/t"),
+        "overrides": (endpoint("overrides", "defaults"), endpoint("overrides", "overrides"), {}, "s3://bucket/ns/t"),
+        "table": (endpoint("table", "defaults"), endpoint("table", "overrides"), endpoint("table", "table"), "s3://bucket/ns/t"),
+        "setting": (endpoint("setting", "defaults"), endpoint("setting", "overrides"), {}, "s3://bucket/ns/t"),
+        "local": (endpoint("local", "defaults"), {}, {}, "file:///nonexistent/ns/t"),
     }
 
 
-def load_table(table_config):
+def load_table(table_config, location):
     metadata = {
-        "format-version": 2, "table-uuid": "4f3c2b1a-0d9e-4c8b-a7f6-e5d4c3b2a190", "location": "s3://bucket/ns/t",
+        "format-version": 2, "table-uuid": "4f3c2b1a-0d9e-4c8b-a7f6-e5d4c3b2a190", "location": location,
         "last-sequence-number": 0, "last-updated-ms": 1, "last-column-id": 1,
         "current-schema-id": 0,
         "schemas": [{"type": "struct", "schema-id": 0, "fields": [{"id": 1, "name": "x", "required": False, "type": "int"}]}],
@@ -52,7 +54,7 @@ def load_table(table_config):
         "properties": {}, "snapshots": [], "snapshot-log": [], "metadata-log": [],
     }
     config = {"s3.access-key-id": "key", "s3.secret-access-key": "secret", **table_config}
-    return {"metadata-location": "s3://bucket/ns/t/metadata/v1.metadata.json", "metadata": metadata, "config": config}
+    return {"metadata-location": f"{location}/metadata/v1.metadata.json", "metadata": metadata, "config": config}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -65,7 +67,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def storage_request(self, parts):
-        if len(parts) >= 3 and parts[0] == "s3":
+        if len(parts) >= 3 and parts[0] == "storage":
             with lock:
                 recorded.setdefault(parts[1], set()).add(parts[2])
         self.reply(404)
@@ -82,11 +84,11 @@ class Handler(BaseHTTPRequestHandler):
             with lock:
                 return self.reply(200, " ".join(sorted(recorded.pop(parts[0], {"no request"}))).encode())
         if len(parts) >= 3 and parts[0] in known and parts[1] == "v1":
-            defaults, overrides, table_config = known[parts[0]]
+            defaults, overrides, table_config, location = known[parts[0]]
             if parts[2:] == ["config"]:
                 return self.reply(200, json.dumps({"defaults": defaults, "overrides": overrides}).encode())
             if parts[2:] == ["namespaces", "ns", "tables", "t"]:
-                return self.reply(200, json.dumps(load_table(table_config)).encode())
+                return self.reply(200, json.dumps(load_table(table_config, location)).encode())
             return self.reply(404, b'{"error": {"message": "Not found", "type": "NoSuchTableException", "code": 404}}')
         self.storage_request(parts)
 
@@ -102,7 +104,7 @@ server.serve_forever()
 EOF
 HTTP_PID=$!
 
-CASES="defaults overrides table setting"
+CASES="defaults overrides table setting local"
 cleanup() {
     kill $HTTP_PID 2>/dev/null
     for c in $CASES; do
@@ -125,11 +127,16 @@ done
 for c in $CASES; do
     settings="catalog_type = 'rest', warehouse = 'wh'"
     if [ "$c" = "setting" ]; then
-        settings="${settings}, storage_endpoint = 'http://127.0.0.1:${HTTP_PORT}/s3/setting/setting'"
+        settings="${settings}, storage_endpoint = 'http://127.0.0.1:${HTTP_PORT}/storage/setting/setting'"
     fi
     ${CLICKHOUSE_CLIENT} --allow_database_iceberg=1 --query "
         CREATE DATABASE ${CLICKHOUSE_DATABASE}_${c} ENGINE = DataLakeCatalog('http://127.0.0.1:${HTTP_PORT}/${c}/v1')
         SETTINGS ${settings}"
+    if [ "$c" = "local" ]; then
+        # Not an S3 location, so the endpoint of the catalog configuration does not apply to it.
+        echo "${c}: $(${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE ${CLICKHOUSE_DATABASE}_${c}.\`ns.t\` FORMAT TSVRaw" | grep -o "ENGINE = .*")"
+        continue
+    fi
     ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${CLICKHOUSE_DATABASE}_${c}.\`ns.t\`" >/dev/null 2>&1
     echo "${c}: $(${CLICKHOUSE_CURL} -s "http://127.0.0.1:${HTTP_PORT}/${c}/requests")"
 done
