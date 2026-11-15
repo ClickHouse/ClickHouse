@@ -172,7 +172,6 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
         return;
 
     removeSpecialColumnRepresentations(chunk);
-    /// Header constants stay compact, as in DistinctSetFilter.
     materializeChunk(chunk, materialized_columns_pos);
 
     Columns input_columns = chunk.detachColumns();
