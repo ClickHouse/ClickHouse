@@ -237,6 +237,7 @@ struct AsyncReadCounters;
 struct QueryExecutionCounters;
 using QueryExecutionCountersPtr = std::shared_ptr<QueryExecutionCounters>;
 struct ICgroupsReader;
+class OpenPolicyAgentAccess;
 class WasmModuleManager;
 
 struct TemporaryTableHolder;
@@ -426,6 +427,8 @@ protected:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
+    mutable bool opa_enabled = true;
+    mutable std::shared_ptr<const OpenPolicyAgentAccess> open_policy_agent;
     String current_database;
     /// The SQL-defined HTTP handler name and the HTTP request URL are stored in `client_info` (see
     /// `ClientInfo::http_handler_name` / `http_request_url`) so that they are serialized on distributed
@@ -1067,6 +1070,7 @@ public:
     void checkAccess(const AccessRightsElements & elements) const;
 
     std::shared_ptr<const ContextAccessWrapper> getAccess() const;
+    std::shared_ptr<const OpenPolicyAgentAccess> getOpenPolicyAgent() const;
 
     RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
 
