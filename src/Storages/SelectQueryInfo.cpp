@@ -1,12 +1,24 @@
+#include <Core/Defines.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Set.h>
 #include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Planner/PlannerContext.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageSnapshot.h>
 #include <Processors/QueryPlan/Serialization.h>
+
+#include <algorithm>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+    extern const int TOO_LARGE_ARRAY_SIZE;
+}
 
 SelectQueryInfo::SelectQueryInfo()
     : prepared_sets(std::make_shared<PreparedSets>())
@@ -59,6 +71,9 @@ std::optional<TableExpressionModifiers::Rational> SelectQueryInfo::getSampleOffs
 
 UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNodeNameToInputNodeColumn() const
 {
+    if (!planner_context)
+        return deserialized_column_identifiers;
+
     UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
     if (planner_context)
     {
@@ -74,6 +89,24 @@ UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> SelectQueryIn
         }
     }
     return node_name_to_input_node_column;
+}
+
+NameToNameVector SelectQueryInfo::getColumnIdentifiers() const
+{
+    NameToNameVector identifiers;
+    for (const auto & [identifier, column] : buildNodeNameToInputNodeColumn())
+        identifiers.emplace_back(identifier, column.name);
+    std::ranges::sort(identifiers);
+    return identifiers;
+}
+
+void SelectQueryInfo::setColumnIdentifiers(const NameToNameVector & identifiers, const StorageSnapshotPtr & storage_snapshot)
+{
+    deserialized_column_identifiers.clear();
+    const auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
+    for (const auto & [identifier, name] : identifiers)
+        if (auto column = storage_snapshot->tryGetColumn(options, name))
+            deserialized_column_identifiers.emplace(identifier, ColumnWithTypeAndName(nullptr, column->type, name));
 }
 
 PrewhereInfo PrewhereInfo::clone() const
@@ -108,6 +141,37 @@ PrewhereInfo PrewhereInfo::deserialize(IQueryPlanStep::Deserialization & ctx)
     readBinary(prewhere_info.need_filter, ctx.in);
 
     return prewhere_info;
+}
+
+void serializeColumnIdentifiers(const NameToNameVector & identifiers, WriteBuffer & out)
+{
+    writeVarUInt(identifiers.size(), out);
+    for (const auto & [identifier, name] : identifiers)
+    {
+        writeStringBinary(identifier, out);
+        writeStringBinary(name, out);
+    }
+}
+
+NameToNameVector deserializeColumnIdentifiers(ReadBuffer & in)
+{
+    UInt64 size = 0;
+    readVarUInt(size, in);
+    if (size > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Suspiciously many column identifiers ({}) in a serialized query plan (maximum: {})",
+            size, DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS);
+
+    NameToNameVector identifiers(size);
+    NameSet seen;
+    for (auto & [identifier, name] : identifiers)
+    {
+        readStringBinary(identifier, in);
+        readStringBinary(name, in);
+        if (!seen.insert(identifier).second)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate column identifier {} in a serialized query plan", identifier);
+    }
+    return identifiers;
 }
 
 void FilterDAGInfo::serialize(IQueryPlanStep::Serialization & ctx, ActionsDAG::IndexHintActions index_hint_actions) const

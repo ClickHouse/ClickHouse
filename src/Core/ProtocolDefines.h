@@ -257,7 +257,8 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HASH_JOIN_L
 /// no effect there.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_STORE_STRING_COLUMN_BYTES = 21;
 /// First global query-plan version that writes the predicate of `indexHint`: version 1 of the steps that carry an
-/// `ActionsDAG`, and version 2 of `ReadFromMergeTree`.
+/// `ActionsDAG`, and version 2 of `ReadFromMergeTree`. Also version 1 of `ReadFromTableStep`,
+/// `ReadFromTableFunctionStep` and `ReadFromSystemNumbersStep`, which carry the column identifiers of the read.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_INDEX_HINT_ACTIONS = 21;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.

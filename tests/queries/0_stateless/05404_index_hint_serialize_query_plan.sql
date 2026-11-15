@@ -22,9 +22,21 @@ SELECT sum(b), count() FROM remote('127.0.0.2', currentDatabase(), t_index_hint_
 SELECT sum(b), count() FROM remote('127.0.0.2', currentDatabase(), t_index_hint_serialized) WHERE indexHint(a IN (SELECT number FROM numbers(10))) SETTINGS serialize_query_plan = 0;
 SELECT sum(b), count() FROM remote('127.0.0.2', currentDatabase(), t_index_hint_serialized) WHERE indexHint(a IN (SELECT number FROM numbers(10))) SETTINGS serialize_query_plan = 1;
 
+-- The hinted column is also read, or the source is not MergeTree: the remote maps the column identifiers back.
+SELECT sum(a), count() FROM remote('127.0.0.2', currentDatabase(), t_index_hint_serialized) WHERE indexHint(a < 10) SETTINGS serialize_query_plan = 0;
+SELECT sum(a), count() FROM remote('127.0.0.2', currentDatabase(), t_index_hint_serialized) WHERE indexHint(a < 10) SETTINGS serialize_query_plan = 1;
+SELECT sum(a), count() FROM remote('127.0.0.2', currentDatabase(), t_index_hint_serialized) PREWHERE indexHint(a < 10) SETTINGS serialize_query_plan = 0;
+SELECT sum(a), count() FROM remote('127.0.0.2', currentDatabase(), t_index_hint_serialized) PREWHERE indexHint(a < 10) SETTINGS serialize_query_plan = 1;
+SELECT count() FROM remote('127.0.0.2', numbers(100000)) WHERE indexHint(number < 10) SETTINGS serialize_query_plan = 0;
+SELECT count() FROM remote('127.0.0.2', numbers(100000)) WHERE indexHint(number < 10) SETTINGS serialize_query_plan = 1;
+-- A hint through a subquery alias does not prune on any path.
+SELECT sum(x), count() FROM (SELECT a AS x FROM remote('127.0.0.2', currentDatabase(), t_index_hint_serialized)) WHERE indexHint(x < 10) SETTINGS serialize_query_plan = 0;
+SELECT sum(x), count() FROM (SELECT a AS x FROM remote('127.0.0.2', currentDatabase(), t_index_hint_serialized)) WHERE indexHint(x < 10) SETTINGS serialize_query_plan = 1;
+
 -- The CI profile sets max_rows_to_group_by, which a distributed aggregation rejects.
 SELECT sum(b), count() FROM t_index_hint_serialized WHERE indexHint(a < 10) SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0, max_rows_to_group_by = 0;
 SELECT sum(b), count() FROM t_index_hint_serialized WHERE indexHint(a IN (SELECT number FROM numbers(10))) SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0, max_rows_to_group_by = 0;
+SELECT sum(a), count() FROM t_index_hint_serialized WHERE indexHint(a < 10) SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0, max_rows_to_group_by = 0;
 
 -- A cluster table function sends its filter to the replicas without `indexHint`.
 CREATE TABLE t_index_hint_iceberg (a UInt32) ENGINE = IcebergLocal(currentDatabase() || '_05404/', 'Parquet');
@@ -55,5 +67,12 @@ SELECT sum(b), count() FROM t_index_hint_serialized WHERE b IN (SELECT n FROM (S
 SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') = 0 FROM (EXPLAIN SELECT sum(b) FROM t_index_hint_serialized WHERE indexHint(a IN (SELECT length(x) FROM generateRandom('x String', 1, 0, 1) LIMIT 3)));
 SELECT sum(b), count() FROM t_index_hint_serialized WHERE indexHint(a IN (SELECT number FROM numbers(10)));
 SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 FROM (EXPLAIN SELECT sum(b) FROM t_index_hint_serialized WHERE indexHint(a IN (SELECT number FROM numbers(10))));
+
+-- A shipped read maps the column identifiers back, including `numbers` on the broadcast side of a shipped join.
+SELECT sum(a), count() FROM t_index_hint_serialized WHERE indexHint(a < 10) SETTINGS parallel_replicas_local_plan = 0;
+SELECT sum(a), count() FROM t_index_hint_serialized WHERE indexHint(a < 10) SETTINGS parallel_replicas_local_plan = 1;
+SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 FROM (EXPLAIN SELECT sum(a) FROM t_index_hint_serialized WHERE indexHint(a < 10) SETTINGS parallel_replicas_local_plan = 0);
+SELECT count(), sum(r.a) FROM t_index_hint_serialized AS r INNER JOIN numbers(100000) AS l ON l.number = r.a WHERE indexHint(l.number < 3) SETTINGS parallel_replicas_local_plan = 0;
+SELECT countIf(explain ILIKE '%JoinLogical%') > 0 FROM (EXPLAIN SELECT count(), sum(r.a) FROM t_index_hint_serialized AS r INNER JOIN numbers(100000) AS l ON l.number = r.a WHERE indexHint(l.number < 3) SETTINGS parallel_replicas_local_plan = 0);
 
 DROP TABLE t_index_hint_serialized;
