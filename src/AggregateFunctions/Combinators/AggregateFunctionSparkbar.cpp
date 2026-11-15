@@ -140,11 +140,18 @@ public:
         /// `is_window_function` (`anyRespectNulls`, `anyLastRespectNulls`, ...), because those handle
         /// `NULL`s in their own arguments themselves. The key is not their argument, though, so the
         /// combinator has to handle a `NULL` key on its own: rows with a `NULL` key are skipped in `add`.
-        /// A bare `NULL` key (`Nullable(Nothing)`) skips every row, so it is accepted with signed bounds.
+        /// A bare `NULL` key (`Nullable(Nothing)`) skips every row, so it is accepted with any bounds the
+        /// typed axes accept: unsigned, signed, or `DateTime64` ones, chosen by the kind of the bounds.
         const DataTypePtr key_type = removeNullable(arguments[0]);
         WhichDataType which{key_type};
 
-        if (which.isNativeUInt() || which.isDate() || which.isDateTime())
+        /// Non-negative literals are stored as `UInt64`, so a bare `NULL` key with two such bounds takes the
+        /// unsigned path: otherwise a valid `UInt64` upper bound above the `Int64` range would be rejected.
+        const bool nothing_with_unsigned_bounds = which.isNothing()
+            && params[n - 2].getType() == Field::Types::UInt64
+            && params[n - 1].getType() == Field::Types::UInt64;
+
+        if (which.isNativeUInt() || which.isDate() || which.isDateTime() || nothing_with_unsigned_bounds)
         {
             const UInt64 begin_x = params[n - 2].safeGet<UInt64>();
             const UInt64 end_x   = params[n - 1].safeGet<UInt64>();
