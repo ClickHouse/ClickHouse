@@ -197,8 +197,7 @@ private:
     // Quota, how many temporary locks can be taken in current round
     size_t tmp_locks_quota{};
 
-    /// Refresh rounds each still-active replica has been lockless for; streaks of replicas
-    /// that took locks or disappeared are dropped. Guarded by topic_partition_locks_mutex.
+    /// Rounds each still-active replica has been lockless; resets when it takes locks or disappears.
     std::unordered_map<String, size_t> TSA_GUARDED_BY(topic_partition_locks_mutex) lockless_rounds_by_replica;
 
     std::atomic<UInt64> last_poll_timestamp = 0;

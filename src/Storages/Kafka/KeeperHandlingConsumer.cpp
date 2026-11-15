@@ -24,12 +24,8 @@ namespace
 const std::string lock_file_name{"lock"};
 const std::string commit_file_name{"committed"};
 const std::string intent_file_name{"intention"};
-/// A lockless active replica may just be restarting, so free partitions up to its permanent
-/// quota are reserved for it for this many rounds. Afterwards the reservation recurs for one
-/// round every MAX_ROUNDS_TO_YIELD_TO_LOCKLESS_REPLICA rounds: a replica that starts
-/// consuming later retries its full scan every reschedule interval and catches such a
-/// window, while a permanently idle replica only costs one round of temporary coverage
-/// per window.
+/// Rounds to keep free partitions reserved (up to a lockless replica's permanent quota)
+/// for a possibly restarting replica; afterwards the reservation recurs one round per window.
 constexpr size_t MAX_ROUNDS_TO_YIELD_TO_LOCKLESS_REPLICA = 8;
 
 std::optional<int64_t> getNumber(zkutil::ZooKeeper & keeper, const fs::path & path)
@@ -466,9 +462,8 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
     size_t node_quota,
     const std::vector<String> & lockless_active_replicas) TSA_REQUIRES(topic_partition_locks_mutex)
 {
-    /// Age the lockless streak of every still-active replica and drop the streaks of replicas
-    /// that took locks or disappeared. A fresh streak usually belongs to a replica that is
-    /// still taking its permanent locks; a long streak belongs to an idle one.
+    /// Track how long each still-active replica has been lockless; streaks reset when the
+    /// replica takes locks or disappears.
     for (const auto & replica : lockless_active_replicas)
         ++lockless_rounds_by_replica[replica];
     std::erase_if(lockless_rounds_by_replica, [&](const auto & entry)
@@ -477,11 +472,8 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
             == lockless_active_replicas.end();
     });
 
-    /// Reserve the free partitions a lockless replica may still take as permanent locks
-    /// (at most its permanent quota): during the initial window after it went lockless, and
-    /// for one recurring round per window afterwards so a replica that starts consuming
-    /// later still gets a full-round opening. Everything above the reservation is covered
-    /// with temporary locks, so coverage does not stall while a replica is not consuming.
+    /// Reserve free partitions for the lockless replicas (up to their permanent quota):
+    /// during the initial window, then one recurring round per window; the rest stays covered.
     size_t lockless_replicas_to_reserve_for = 0;
     for (const auto & entry : lockless_rounds_by_replica)
         if (entry.second <= MAX_ROUNDS_TO_YIELD_TO_LOCKLESS_REPLICA || entry.second % MAX_ROUNDS_TO_YIELD_TO_LOCKLESS_REPLICA == 0)
