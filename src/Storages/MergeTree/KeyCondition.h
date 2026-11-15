@@ -387,6 +387,10 @@ public:
         /// `has`, `nullIn`, and their negations, which are true or false on such a row.
         bool null_on_null_key = true;
 
+        /// Whether the key expression can store a row where the atom is NULL as an ordinary value. `assumeNotNull(x)`
+        /// does that for a NULL `x`. Such an atom can be NULL on any key range.
+        bool hides_null = false;
+
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range = Range::createWholeUniverse();
 
@@ -516,6 +520,8 @@ public:
     ///
     /// One exact atom represents the whole predicate leaf of the group (see
     /// `RPNElement::group_atoms`).
+    ///
+    /// An atom with `hides_null` counts as relaxed here. It can be NULL on any range, so it finds no exact range.
     ///
     /// NOTE: we also need to examine special functions that generate atoms. For
     /// example, the `match` function can produce a FUNCTION_IN_RANGE atom based
@@ -651,6 +657,8 @@ private:
         /// True when this transformation requires a relaxed atom. Otherwise, subsequent type
         /// conversion and atom construction still determine whether the atom is exact.
         bool requires_relaxed_atom = true;
+        /// Whether the key expression can hide a NULL argument, see `RPNElement::hides_null`.
+        bool hides_null = false;
         /// True when the key-side chain that produced this constant reverses comparison
         /// order; the consumer must reverse the comparison operator accordingly.
         bool reverse_comparison = false;
@@ -676,6 +684,8 @@ private:
         /// `tryBuildComparisonAtom` can further relax the constraint during type conversion; exact
         /// conversions preserve this initial precision.
         bool is_relaxed = false;
+        /// Whether the key expression can hide a NULL argument, see `RPNElement::hides_null`.
+        bool hides_null = false;
         /// This flag is true when the key-side chain that produced the constant reverses comparison
         /// order (see `TransformedConstant::reverse_comparison`); the comparison operator
         /// must then be reversed as well.
@@ -867,6 +877,8 @@ private:
         size_t args_count = 1;
         /// A non-injective transform makes the set check a superset of the matching values.
         bool is_relaxed = false;
+        /// Whether the key expression can hide a NULL argument, see `RPNElement::hides_null`.
+        bool hides_null = false;
     };
 
     /// A predicate expression from which deterministic key transforms derive set atoms, together with those

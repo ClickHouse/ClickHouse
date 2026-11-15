@@ -59,6 +59,7 @@
 #include <Interpreters/Set.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <base/itoa.h>
@@ -1956,6 +1957,7 @@ bool KeyCondition::isRelaxed() const
     const auto is_relaxed_atom = [](const RPNElement & elem)
     {
         return elem.relaxed
+            || (elem.hides_null && elem.null_on_null_key)
             || elem.function == RPNElement::FUNCTION_UNKNOWN
             || ((elem.function == RPNElement::FUNCTION_IN_SET || elem.function == RPNElement::FUNCTION_NOT_IN_SET)
                 && elem.set_index->size() > 1);
@@ -3294,6 +3296,36 @@ static bool deterministicTransformMayHideNull(
     return !nested_null_is_ordinary_value && tupleTypeMayHoldNestedNull(input_type);
 }
 
+/// The same for the key expression in `dag`. The types don't show a hidden NULL for an expression like
+/// `toNullable(ifNull(x, 0))`, so this also runs the expression on a NULL. An expression with `assumeNotNull`,
+/// like `nullIf(assumeNotNull(x), 0)`, reads the value stored under a NULL, so it can differ from one NULL to the
+/// next. It counts as hiding a NULL without being run.
+static bool deterministicTransformMayHideNull(
+    const DeterministicKeyTransformDag & dag, const DataTypePtr & key_type, const String & input_name, bool nested_null_is_ordinary_value)
+{
+    if (deterministicTransformMayHideNull(dag.input_type, key_type, nested_null_is_ordinary_value))
+        return true;
+    if (!isNullableOrLowCardinalityNullable(dag.input_type))
+        return false;
+    if (QueryPlanOptimizations::dagReadsUnspecifiedValueUnderNull(dag.actions->getActionsDAG()))
+        return true;
+
+    /// Not `executeDeterministicDag`, which returns false when the output holds a NULL.
+    Block block;
+    block.insert({dag.input_type->createColumnConst(1, Field())->convertToFullColumnIfConst(), dag.input_type, input_name});
+    try
+    {
+        dag.actions->execute(block, false, true);
+    }
+    catch (const Exception & e)
+    {
+        if (isQueryOuterGuardError(e.code()))
+            throw;
+        return true;
+    }
+    return !block.getByName(dag.output_name).column->isNullAt(0);
+}
+
 /// Returns true if `output_name` depends on `input_name` and the whole sub-DAG is injective w.r.t. that input
 /// Assumes this sub-DAG depends only on `input_name` (checked by the caller)
 /// May not catch all cases, but should be sufficient for most practical cases
@@ -3538,6 +3570,9 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
             || !normalization_is_exact
             || !isDeterministicTransformInjective(candidate.dag.actions->getActionsDAG(), expr_name, candidate.dag.output_name);
 
+        const bool hides_null
+            = deterministicTransformMayHideNull(candidate.dag, candidate.key_column_type, expr_name, nested_null_is_ordinary_value);
+
         Field transformed_value = (*transformed_const_column)[0];
 
         /// If the key transform produces NaN for the constant, the index cannot answer this predicate;
@@ -3553,7 +3588,8 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
             .value = std::move(transformed_value),
             .type = transformed_const_type,
             .is_fixed_string = transformed_is_fixed_string,
-            .requires_relaxed_atom = requires_relaxed_atom});
+            .requires_relaxed_atom = requires_relaxed_atom,
+            .hides_null = hides_null});
     }
 
     return result;
@@ -3625,11 +3661,10 @@ std::optional<KeyCondition::SetIndexAnalysisResult> KeyCondition::tryAnalyzePred
         else if (auto transform = tryGetDeterministicKeyTransform(node, info))
         {
             const auto & dag = transform->dag;
-            /// With `tuple(x)` as the key, a NULL `x` is an ordinary key value that isn't in the set, but
-            /// `x NOT IN (...)` is NULL on that row.
-            if (!isDeterministicTransformInjective(dag.actions->getActionsDAG(), dag.input_name, dag.output_name)
-                || deterministicTransformMayHideNull(dag.input_type, transform->key_column_type, /*nested_null_is_ordinary_value*/ false))
+            if (!isDeterministicTransformInjective(dag.actions->getActionsDAG(), dag.input_name, dag.output_name))
                 candidate.is_relaxed = true;
+            if (deterministicTransformMayHideNull(dag, transform->key_column_type, dag.input_name, /*nested_null_is_ordinary_value*/ false))
+                candidate.hides_null = true;
 
             candidate.column_mappings.push_back({
                 .index_mapping = {.tuple_index = tuple_index, .key_index = transform->key_column_num, .functions = {}},
@@ -4241,6 +4276,7 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryPrepareSetAtom(
 
     RPNElement element;
     element.relaxed = candidate.is_relaxed;
+    element.hides_null = candidate.hides_null;
     std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
     indexes_mapping.reserve(candidate.column_mappings.size());
     for (auto & mapping : candidate.column_mappings)
@@ -4320,14 +4356,14 @@ void KeyCondition::appendSetAtoms(
 
             const bool is_injective = isDeterministicTransformInjective(
                 candidate.dag.actions->getActionsDAG(), candidate.dag.input_name, candidate.dag.output_name);
-            const bool hides_null = deterministicTransformMayHideNull(
-                candidate.dag.input_type, candidate.key_column_type, /*nested_null_is_ordinary_value*/ false);
             /// A non-injective transform supplies only a necessary membership condition, whose
-            /// complement cannot prune. The same holds for a transform that hides a NULL.
-            if (!allow_relaxed_pruning && (!is_injective || hides_null))
+            /// complement cannot prune.
+            if (!allow_relaxed_pruning && !is_injective)
                 continue;
 
             SetAtomCandidate set_candidate;
+            set_candidate.hides_null = deterministicTransformMayHideNull(
+                candidate.dag, candidate.key_column_type, candidate.dag.input_name, /*nested_null_is_ordinary_value*/ false);
             set_candidate.column_mappings.push_back({
                 .index_mapping = std::move(mapping),
                 .set_transform = std::move(candidate.dag),
@@ -4335,7 +4371,7 @@ void KeyCondition::appendSetAtoms(
             /// A whole-tuple candidate consumes one packed set column, like `packed_tuple_candidate`.
             /// `tryPrepareSetAtom` repacks an unpacked set for the transform's tuple input.
             set_candidate.args_count = source.is_whole_tuple ? 1 : args_count;
-            set_candidate.is_relaxed = !is_injective || hides_null;
+            set_candidate.is_relaxed = !is_injective;
 
             auto candidate_atom = tryPrepareSetAtom(
                 set_columns, set_types, std::move(set_candidate), has_element_type, source_set);
@@ -5994,7 +6030,7 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
 
     /// The constant was already pushed through a key-side recipe, so it compares
     /// against the key column directly and the check-time chain is empty.
-    auto add_transformed_constant_candidate = [&](const TransformedConstant & transformed, bool is_relaxed)
+    auto add_transformed_constant_candidate = [&](const TransformedConstant & transformed, bool is_relaxed, bool hides_null)
     {
         candidates.push_back(ComparisonAtomCandidate{
             .key_column_num = transformed.key_column_num,
@@ -6005,6 +6041,7 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
             .const_type = transformed.type,
             .const_is_fixed_string = transformed.is_fixed_string,
             .is_relaxed = is_relaxed,
+            .hides_null = hides_null,
             .reverse_comparison = transformed.reverse_comparison});
     };
 
@@ -6149,8 +6186,12 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
                 return monotonicity.is_always_monotonic || monotonicity.is_always_monotonic_where_defined;
             });
 
+        /// The chain isn't run on a NULL, so the atom hides any NULL that the argument can hold.
+        const DataTypePtr & key_arg_type = key_arg.getDAGNode()->result_type;
+        const bool hides_null = isNullableOrLowCardinalityNullable(key_arg_type) || tupleTypeMayHoldNestedNull(key_arg_type);
+
         for (const auto & transformed : transformed_candidates)
-            add_transformed_constant_candidate(transformed, /*is_relaxed*/ true);
+            add_transformed_constant_candidate(transformed, /*is_relaxed*/ true, hides_null);
     }
 
     /// 3. The deterministic constant transform contributes candidates for the key columns
@@ -6176,7 +6217,7 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
             key_arg, info, constant_for_transform, /*nested_null_is_ordinary_value*/ func_name == "isNotDistinctFrom");
 
         for (const auto & transformed : transformed_candidates)
-            add_transformed_constant_candidate(transformed, /*is_relaxed*/ transformed.requires_relaxed_atom);
+            add_transformed_constant_candidate(transformed, /*is_relaxed*/ transformed.requires_relaxed_atom, transformed.hides_null);
     }
 
     return candidates;
@@ -6403,6 +6444,7 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
     element.monotonic_functions_chain = std::move(chain);
     element.argument_num_of_space_filling_curve = candidate.argument_num_of_space_filling_curve;
     element.relaxed = is_relaxed;
+    element.hides_null = candidate.hides_null;
 
     const auto atom_it = atom_map.find(func_name);
     chassert(atom_it != atom_map.end());
@@ -7833,7 +7875,8 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
         /// relaxation handling. Operator elements (`FUNCTION_AND`, `FUNCTION_OR`, `FUNCTION_NOT`,
         /// `ALWAYS_TRUE`, `ALWAYS_FALSE`) are never set as relaxed; relaxation propagates through them
         /// via their child atoms (see the comment on `KeyCondition::isRelaxed` in `KeyCondition.h`).
-        if (element.relaxed)
+        /// An atom that hides a NULL can be NULL anywhere on a range, so it doesn't yield exact ranges either.
+        if (element.relaxed || (element.hides_null && element.null_on_null_key))
             return false;
 
         if (element.function == RPNElement::FUNCTION_AND)
@@ -8144,6 +8187,9 @@ bool atomMayBeNull(const KeyCondition::RPNElement & element, const DataTypes & k
 {
     if (!element.null_on_null_key)
         return false;
+
+    if (element.hides_null)
+        return true;
 
     static const Range whole_universe = Range::createWholeUniverse();
     for (size_t key_column : element.key_columns)
