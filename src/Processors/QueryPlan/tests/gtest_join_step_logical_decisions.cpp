@@ -54,7 +54,7 @@ std::unique_ptr<JoinStepLogical> makeStep()
         JoinOperator{},
         makeExpressionActions(*left_header, *right_header),
         ActionsDAG::NodeRawConstPtrs{},
-        JoinSettings(settings),
+        JoinSettings(settings, current_version),
         SortingStep::Settings(settings));
 }
 
@@ -80,7 +80,7 @@ std::unique_ptr<JoinStepLogical> deserializeStep(const String & bytes, UInt64 ve
     ContextPtr context = getContext().context;
 
     IQueryPlanStep::Deserialization ctx{
-        in, registry, {}, context, input_headers, output_header, settings, 0, version, false};
+        in, registry, {}, context, input_headers, output_header, settings, 0, version, 0, false};
 
     auto step = JoinStepLogical::deserialize(ctx);
 

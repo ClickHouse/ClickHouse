@@ -137,7 +137,7 @@ If rounding causes an overflow (for example, `round(255, -1)`), the result is un
         },
         {
             "Decimal inputs",
-            "SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3;",
+            "SELECT cast(number / 2 AS Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3;",
             R"(
 ┌───x─┬─round(x)─┐
 │   0 │        0 │

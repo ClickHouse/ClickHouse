@@ -132,6 +132,10 @@ namespace Net
         /// Writes the HTTP request to the given
         /// output stream.
 
+        void write(std::string & out) const;
+        /// Appends the HTTP request line and headers to the given string,
+        /// in the same format as the `std::ostream` overload writes them.
+
 #    pragma clang diagnostic push
 #    pragma clang diagnostic ignored "-Woverloaded-virtual"
         void read(std::istream & istr);

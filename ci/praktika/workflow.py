@@ -71,6 +71,8 @@ class Workflow:
         # workflow/job status via the GitHub Checks API.
         enable_commit_status_on_failure: bool = False
         enable_cidb: bool = False
+        # Emit `queue: max` so pending runs queue (up to 100) instead of coalescing to the latest.
+        enable_concurrency_queue: bool = False
         cron_schedules: List[str] = field(default_factory=list)
         inputs: List["Workflow.Config.InputConfig"] = field(default_factory=list)
         pre_hooks: List[Union[str, callable]] = field(default_factory=list)
@@ -96,6 +98,10 @@ class Workflow:
         # Optional runner label override for Praktika-native jobs such as
         # Config Workflow and Finish Workflow.
         native_job_runs_on: List[str] = field(default_factory=list)
+        # Optional timeout (seconds) override for the Praktika-native Config
+        # Workflow job, for a workflow whose .pre_hooks legitimately wait longer
+        # than the default allows. 0 keeps the default.
+        config_job_timeout: int = 0
         # Simple mode: the job is not required to dump a Result and praktika
         # derives the job outcome purely from the script exit code
         # (0 -> OK, non-zero -> FAIL). Setup-env / pre-run failures and
@@ -111,7 +117,7 @@ class Workflow:
         # If set, every runs_on label across user-defined and Praktika-injected
         # jobs is prefixed with this string, except "self-hosted".
         runs_on_label_prefix: str = ""
-        # Override the dispatch `concurrency.group`; empty keeps `${{ github.workflow }}`.
+        # Override the dispatch and schedule `concurrency.group`; empty keeps `${{ github.workflow }}`.
         concurrency_group: str = ""
         # If set, GHAuth mints the GitHub token for this workflow's jobs by
         # invoking this AWS Lambda instead of Settings.GH_AUTH_LAMBDA_NAME. Lets

@@ -2,166 +2,114 @@
 sidebarTitle: 'ClickHouse CLI'
 slug: /cloud/features/cli
 title: 'ClickHouse CLI'
-description: 'Используйте ClickHouse CLI для управления сервисами ClickHouse Cloud и локальными экземплярами ClickHouse'
-keywords: ['clickhousectl', 'CLI', 'управление облачными сервисами', 'локальная разработка']
-doc_type: 'reference'
+description: 'Используйте ClickHouse CLI (clickhousectl), чтобы создавать сервисы ClickHouse Cloud, Managed Postgres, ClickPipes и ClickStack и управлять ими из терминала'
+keywords: ['clickhousectl', 'chctl', 'CLI', 'управление Cloud', 'командная строка']
+doc_type: 'guide'
 ---
 
-ClickHouse CLI (`clickhousectl`) — это универсальный инструмент командной строки для управления ресурсами ClickHouse Cloud и локальной разработки на базе ClickHouse. Он также позволяет управлять сервисами [ClickHouse Cloud Postgres](/ru/products/managed-postgres/overview).
+ClickHouse CLI (`clickhousectl`, псевдоним `chctl`) позволяет управлять ClickHouse Cloud из терминала, скрипта или агента для программирования. На этой странице описаны возможности CLI, относящиеся к Cloud. Сведения обо всех группах команд и локальной разработке, а также полное описание работы CLI см. в [справочнике по clickhousectl](/ru/concepts/features/interfaces/cli).
 
-<div id="installation">
-  ## Установка
-</div>
+## Чем можно управлять {#what-you-can-manage}
 
-```bash
-curl https://clickhouse.com/cli | sh
-```
+Команды `clickhousectl cloud` позволяют работать со следующим:
 
-Для удобства также автоматически создаётся алиас `chctl`.
+* **Сервисы:** создание, масштабирование, запуск и остановка сервисов ClickHouse Cloud, а также выполнение SQL-запросов к ним через API запросов.
+* **[Managed Postgres](/ru/products/managed-postgres/overview) (бета):** создание сервисов Postgres, реплик для чтения и восстановление на определённый момент времени, а также изменение их конфигурации.
+* **[ClickPipes](/ru/integrations/clickpipes/home):** приём данных из объектного хранилища, Kafka, Kinesis, Pub/Sub, Postgres, MySQL, MongoDB и BigQuery.
+* **[ClickStack](/ru/clickstack/overview):** управление источниками, панелями мониторинга, оповещениями, вебхуками, сохранёнными поисками и ролями в сервисе [Управляемый ClickStack](/ru/clickstack/deployment/managed).
+* **Пользовательские функции:** локальное тестирование исполняемых UDF и их последующее развертывание в сервисе ClickHouse Cloud.
+* **Резервные копии:** просмотр списка резервных копий, изменение расписания резервного копирования и восстановление резервной копии в новый сервис.
+* **Доступ к организации:** организации, участники, приглашения, ключи API и журнал действий.
 
-<div id="cloud-management">
-  ## Управление Cloud
-</div>
+Чтобы узнать флаги любой команды и необходимые для неё разрешения ключа API, выполните `clickhousectl cloud <command> --help`.
 
-Войдите в ClickHouse Cloud и управляйте своими сервисами прямо из командной строки.
-
-<div id="authentication">
-  ### Аутентификация
-</div>
+## Установка {#installation}
 
 ```bash
-clickhousectl cloud auth
+curl -fsSL https://clickhouse.com/cli | sh
 ```
 
-Будет предложено ввести ваш ключ API и секрет; затем они будут сохранены в `.clickhouse/credentials.json` (локально для проекта, файл игнорируется Git).
+Скрипт устанавливает `~/.local/bin/clickhousectl` и псевдоним `chctl`. Убедитесь, что каталог `~/.local/bin` добавлен в `PATH`. Об установке через npm, pip, uv и другими способами см. раздел [Установка](/ru/concepts/features/interfaces/cli#installation).
 
-Также можно использовать переменные окружения:
+## Аутентификация {#authentication}
+
+Вход через OAuth в браузере даёт доступ только для чтения. Чтобы создавать или изменять ресурсы, нужен [ключ API](/ru/products/cloud/features/admin-features/api/openapi) с ролью, которая разрешает соответствующие изменения.
 
 ```bash
-export CLICKHOUSE_CLOUD_API_KEY=your-key
-export CLICKHOUSE_CLOUD_API_SECRET=your-secret
+# Read-only: OAuth device flow in your browser
+clickhousectl cloud auth login
+
+# Read and write: prompts for the API key and secret, keeping the secret out of shell history
+clickhousectl cloud auth login --interactive
+
+# Alternative for scripts
+clickhousectl cloud auth login --api-key <key> --api-secret <secret>
 ```
 
-<div id="services">
-  ### Сервисы
-</div>
+При входе проверяются учётные данные и выводится текущая идентичность. Проверить её можно в любой момент командой `clickhousectl cloud auth whoami`. Если вы состоите в нескольких организациях, добавляйте к командам Cloud параметр `--org-id <org-id>` (или `--org-name <name>`). В CI вместо входа задайте переменные `CLICKHOUSE_CLOUD_API_KEY` и `CLICKHOUSE_CLOUD_API_SECRET`. Порядок приоритета учётных данных и выход из системы описаны в разделе [Аутентификация](/ru/concepts/features/interfaces/cli#authentication).
+
+## Примеры {#examples}
+
+### Создание сервиса и выполнение запросов к нему {#create-and-query-a-service}
 
 ```bash
-# Список сервисов
-clickhousectl cloud service list
+# Create a service. Save the initial password; it is printed only once.
+# Omitting --ip-allow allows all addresses (0.0.0.0/0).
+clickhousectl cloud service create --name analytics \
+  --provider aws --region us-east-1 \
+  --ip-allow '203.0.113.10/32=Office'
 
-# Создать сервис
-clickhousectl cloud service create --name my-service \
-  --provider aws \
-  --region us-east-1
-
-# Получить сведения о сервисе
-clickhousectl cloud service get <service-id>
-
-# Масштабировать сервис
-clickhousectl cloud service scale <service-id> \
-  --min-replica-memory-gb 24 \
-  --max-replica-memory-gb 48 \
-  --num-replicas 3
-
-# Запустить/остановить сервис
-clickhousectl cloud service start <service-id>
-clickhousectl cloud service stop <service-id>
-
-# Удалить сервис
-clickhousectl cloud service delete <service-id>
+# Look up the service ID, then run SQL over the Query API
+CH_ID=$(clickhousectl cloud service get --name analytics --json | jq -r .id)
+clickhousectl cloud service query "$CH_ID" --query "SELECT version()"
 ```
 
-<div id="postgres-services">
-  ### Сервисы Postgres (бета)
-</div>
+Команда создания завершается до того, как сервис будет запущен. Периодически выполняйте `clickhousectl cloud service get "$CH_ID"`, пока `state` не примет значение `running`.
 
-Создавайте сервисы [ClickHouse Cloud Postgres](/ru/products/managed-postgres/overview) и управляйте ими.
+При первом запросе с ключом API clickhousectl добавляет ваш ключ API к конечной точке API запросов сервиса и при необходимости создаёт эту конечную точку; новый ключ при этом не создаётся. Чтобы вместо этого команда завершалась с ошибкой, передайте `--no-auto-enable`. При использовании OAuth команда `service query` выполняет операторы `SELECT` только в режиме только для чтения. Тайм-аут API запросов составляет около 30 секунд, поэтому для длительных запросов и массовых загрузок используйте `clickhouse client`.
+
+### Создание управляемого сервиса Postgres {#create-a-managed-postgres-service}
 
 ```bash
-# List Postgres services
-clickhousectl cloud postgres list
-
-# Create a Postgres service
-clickhousectl cloud postgres create \
-  --name my-pg \
-  --region us-east-1 \
-  --size m6gd.xlarge \
-  --pg-version 18
-
-# Get service details
-clickhousectl cloud postgres get <pg-id>
-
-# Update a service
-clickhousectl cloud postgres update <pg-id> --size m6gd.2xlarge --add-tag env=prod
-
-# Reset the password
-clickhousectl cloud postgres reset-password <pg-id> --generate
-
-# Read replicas and point-in-time restore
-clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
-clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
-
-# Delete a service
-clickhousectl cloud postgres delete <pg-id>
+clickhousectl cloud postgres create --name app-db \
+  --provider aws --region us-east-1 --size c6gd.xlarge --pg-version 18 \
+  --ip-allow '203.0.113.10/32:5432=Office'
+clickhousectl cloud postgres get <postgres-id>
+clickhousectl cloud postgres certs get <postgres-id> --output ca.pem
 ```
 
-<div id="organizations">
-  ### Организации
-</div>
+Пароль и строку подключения возвращает только команда `create`, поэтому обязательно сохраните их. Если не указать `--ip-allow`, порты 5432 и 6432 будут открыты для всех адресов. Дождитесь, пока поле `state` примет значение `running`, а затем подключитесь через `psql`, используя CA‑сертификат.
+
+### Просмотр ClickPipes, ClickStack и резервных копий {#inspect-clickpipes-clickstack-and-backups}
 
 ```bash
-clickhousectl cloud org list
-clickhousectl cloud org get <org-id>
+clickhousectl cloud clickpipe list "$CH_ID"
+clickhousectl cloud clickstack source list <clickstack-service-id>
+clickhousectl cloud backup list "$CH_ID"
 ```
 
-<div id="api-keys">
-  ### Ключи API
-</div>
+Эти команды чтения поддерживают аутентификацию через OAuth. Для создания ClickPipe или изменения ресурса ClickStack нужен ключ API — см. руководства в репозитории ниже.
+
+### Развертывание пользовательской функции {#deploy-a-user-defined-function}
 
 ```bash
-clickhousectl cloud key list
-clickhousectl cloud key create --name ci-key --role-id <role-id>
-clickhousectl cloud key delete <key-id>
+# Uploads clickhouse/udfs/my_udf/, waits for the build, then attaches that version to the service
+clickhousectl cloud udf deploy my_udf --service "$CH_ID"
 ```
 
-<div id="members-and-invitations">
-  ### Участники и приглашения
-</div>
+Сначала протестируйте функцию на локальном сервере с помощью команды `clickhousectl local udf deploy my_udf`.
 
-```bash
-clickhousectl cloud member list
-clickhousectl cloud invitation create --email dev@example.com --role-id <role-id>
-```
+## Вывод в формате JSON и агенты для программирования {#json-output}
 
-<div id="backups">
-  ### Резервные копии
-</div>
+Команды Cloud поддерживают параметр `--json`, а CLI автоматически переключается на JSON, если обнаруживает агента для программирования. В этом случае `cloud service query` по умолчанию использует формат `JSONEachRow`, поэтому скрипты, которые разбирают его вывод, должны явно указывать `--format`, например `--format TabSeparated`. См. разделы [Вывод в формате JSON](/ru/concepts/features/interfaces/cli#json-output) и [Коды выхода](/ru/concepts/features/interfaces/cli#exit-codes). Чтобы установить ClickHouse agent skills, выполните `clickhousectl skills`.
 
-```bash
-clickhousectl cloud backup list <service-id>
-clickhousectl cloud backup get <service-id> <backup-id>
-```
+## Дополнительные материалы {#learn-more}
 
-<div id="json-output">
-  ### Вывод JSON
-</div>
-
-Используйте флаг `--json`, чтобы получать ответы в формате JSON при выполнении любой облачной команды:
-
-```bash
-clickhousectl cloud --json service list
-```
-
-<div id="local-development">
-  ## Локальная разработка
-</div>
-
-CLI также позволяет управлять локальными установками и серверами ClickHouse. Чтобы начать работу с локальной разработкой, см. страницу [clickhousectl (CLI)](/ru/get-started/setup/self-managed/clickhousectl).
-
-<div id="requirements">
-  ## Требования
-</div>
-
-* macOS (aarch64, x86&#95;64) или Linux (aarch64, x86&#95;64)
-* Для команд Cloud нужен [ключ API ClickHouse Cloud](/ru/products/cloud/features/admin-features/api/openapi)
+* [Справочник по clickhousectl](/ru/concepts/features/interfaces/cli): все группы команд, локальная разработка, навыки, самообновление и телеметрия.
+* Руководства в репозитории:
+  * [Сервисы ClickHouse Cloud](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/cloud-service.md)
+  * [ClickHouse Managed Postgres](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/managed-postgres.md)
+  * [ClickPipes](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/clickpipes.md)
+  * [ClickStack](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/clickstack.md)
+  * [Пользовательские функции](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/user-defined-functions.md)
+* Справочные материалы в репозитории: [аутентификация и доступ](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/authentication.md), [SQL и API запросов](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/query-api.md), [конфигурация ClickPipe](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/clickpipe-configuration.md), а также [автоматизация и контракты вывода](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/automation.md).

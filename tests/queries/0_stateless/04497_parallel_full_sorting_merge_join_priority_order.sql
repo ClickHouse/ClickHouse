@@ -20,8 +20,6 @@ INSERT INTO pfsmj_prio_left  SELECT number, number FROM numbers(0, 2000);
 INSERT INTO pfsmj_prio_left  SELECT number, number FROM numbers(2000, 2000);
 INSERT INTO pfsmj_prio_right SELECT number, number * 2 FROM numbers(0, 4000);
 
-SET enable_analyzer = 1;
-
 -- `parallel_full_sorting_merge` selected -> sharded.
 SELECT 'analyzer parallel_only_scattered', countIf(explain LIKE '%ScatterByPartitionTransform%') = 2
 FROM (EXPLAIN PIPELINE SELECT l.id FROM pfsmj_prio_left AS l INNER JOIN pfsmj_prio_right AS r ON l.k = r.k SETTINGS join_algorithm = 'parallel_full_sorting_merge', max_threads = 4);

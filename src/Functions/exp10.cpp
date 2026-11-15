@@ -13,7 +13,7 @@ struct Exp10Name { static constexpr auto name = "exp10"; };
 void exp10Kernel(const double * src, size_t size, double * dst) { NFastOps::Exp10<true>(src, size, dst); }
 using FunctionExp10 = FunctionMathUnary<VectorizedFloat64Impl<Exp10Name, exp10Kernel>>;
 #else
-using FunctionExp10 = FunctionMathUnary<UnaryFunctionVectorized<Exp10Name, preciseExp10>>;
+using FunctionExp10 = FunctionMathUnary<UnaryFunctionVectorized<Exp10Name, preciseExp10, true>>;
 #endif
 
 }

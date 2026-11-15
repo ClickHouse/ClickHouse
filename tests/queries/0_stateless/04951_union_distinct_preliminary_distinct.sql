@@ -13,8 +13,6 @@ SET query_plan_lift_up_union = 1;
 SET max_threads = 2;
 SET max_threads_min_free_memory_per_thread = 0;
 
-SET enable_analyzer = 1;
-
 SELECT '-- analyzer: UNION DISTINCT has one preliminary DISTINCT per branch';
 SELECT count() FROM (
     EXPLAIN PLAN SELECT 1 AS x UNION DISTINCT SELECT 2 AS x
@@ -38,18 +36,6 @@ SELECT count() FROM (
 SELECT count() FROM (
     EXPLAIN PLAN SELECT 1 AS x EXCEPT DISTINCT SELECT 2 AS x
 ) WHERE explain ILIKE '%Preliminary%';
-
-SET enable_analyzer = 0;
-
-SELECT '-- old analyzer: UNION DISTINCT has one preliminary DISTINCT per branch';
-SELECT count() FROM (
-    EXPLAIN PLAN SELECT 1 AS x UNION DISTINCT SELECT 2 AS x
-) WHERE explain ILIKE '%Preliminary DISTINCT%';
-SELECT count() FROM (
-    EXPLAIN PIPELINE SELECT 1 AS x UNION DISTINCT SELECT 2 AS x
-) WHERE explain ILIKE '%DistinctTransform%';
-
-SET enable_analyzer = 1;
 
 SELECT '-- results match the rewrite, per type';
 CREATE TEMPORARY TABLE src (i UInt64);
@@ -139,14 +125,6 @@ SELECT count() FROM (
 SELECT count(), sum(cityHash64(x)) FROM (
     (SELECT i % 200 AS x FROM src) UNION DISTINCT (SELECT i % 300 AS x FROM src)
 );
-SET enable_analyzer = 0;
-SELECT count() FROM (
-    EXPLAIN PLAN SELECT 1 AS x UNION DISTINCT SELECT 2 AS x
-) WHERE explain ILIKE '%Preliminary DISTINCT%';
-SELECT count(), sum(cityHash64(x)) FROM (
-    (SELECT i % 200 AS x FROM src) UNION DISTINCT (SELECT i % 300 AS x FROM src)
-);
-SET enable_analyzer = 1;
 SET max_threads = 2;
 
 SELECT '-- size limits are enforced the same way as in the rewrite';

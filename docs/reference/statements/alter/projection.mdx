@@ -332,7 +332,8 @@ The statement restates the full projection definition, but only the `WITH SETTIN
 The projection query itself (or, for a projection index, the index expression and type) must stay the same, because existing projection parts store data built from it; to change it, use [`DROP PROJECTION`](#drop-projection) followed by [`ADD PROJECTION`](#add-projection).
 
 The command only changes the table metadata and does not rewrite any data: existing projection parts keep the settings they were written with, while projection parts written by future inserts and merges use the new settings.
-To rebuild existing parts with the new settings, run [`MATERIALIZE PROJECTION`](#materialize-projection).
+[`MATERIALIZE PROJECTION`](#materialize-projection) does not apply the new settings to existing parts either: it builds the projection only in the parts where it is missing or broken and leaves the projection parts that already exist unchanged.
+To rebuild existing parts with the new settings, run [`CLEAR PROJECTION`](#clear-projection) followed by [`MATERIALIZE PROJECTION`](#materialize-projection), or merge the parts, for example with [`OPTIMIZE TABLE ... FINAL`](/reference/statements/optimize).
 
 Example:
 
@@ -356,7 +357,8 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name
 
 ### MATERIALIZE PROJECTION {#materialize-projection}
 
-Use the statement below to rebuild the projection `name` in partition `partition_name`.
+Use the statement below to build the projection `name` in the parts where it is missing or broken, optionally only in partition `partition_name`.
+Parts that already have the projection are left unchanged, even if the projection settings were changed with [`MODIFY PROJECTION`](#modify-projection) after they were written; to rebuild them, run [`CLEAR PROJECTION`](#clear-projection) first.
 This is implemented as a [mutation](/reference/statements/alter/index#mutations).
 
 ```sql

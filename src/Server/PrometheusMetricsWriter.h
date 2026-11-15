@@ -3,6 +3,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <Common/AsynchronousMetricsKeyValuesMode.h>
 #include <Common/HistogramMetrics.h>
@@ -13,6 +14,13 @@ namespace DB
 {
 class AsynchronousMetrics;
 class WriteBuffer;
+
+/// Writes a metric or label name with the "underscores" escaping, the default of the Prometheus text format:
+/// each character not allowed in a legacy name ([a-zA-Z_:][a-zA-Z0-9_:]*) becomes '_'.
+void writePrometheusLabelName(std::string_view name, WriteBuffer & out);
+
+/// Writes a label value escaped like the Prometheus text format (without the surrounding quotes).
+void writePrometheusLabelValue(std::string_view value, WriteBuffer & out);
 
 /// Write metrics in Prometheus format
 class PrometheusMetricsWriter
