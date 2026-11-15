@@ -1,0 +1,24 @@
+<test>
+    <!-- Subcolumns of a column a subquery returns: only the subcolumn is read from the table. -->
+    <create_query>
+        CREATE TABLE subcolumns_push_down (key UInt64, tup Tuple(a UInt64, b String), data JSON, arr Array(String))
+        ENGINE = MergeTree ORDER BY key
+    </create_query>
+
+    <fill_query>
+        INSERT INTO subcolumns_push_down
+        SELECT number, (number, randomPrintableASCII(100)),
+            toJSONString(map('k0', toString(number), 'k1', toString(number % 7), 'k2', toString(number % 11), 'k3', toString(number % 13),
+                'k4', toString(number % 17), 'k5', toString(number % 19), 'k6', toString(number % 23), 'k7', toString(number % 29),
+                'k8', toString(number % 31), 's', randomPrintableASCII(50))),
+            [randomPrintableASCII(10), randomPrintableASCII(10), randomPrintableASCII(10)]
+        FROM numbers(10000000)
+    </fill_query>
+
+    <query>SELECT tup.a FROM (SELECT * FROM subcolumns_push_down) FORMAT Null</query>
+    <query>SELECT data.k0 FROM (SELECT * FROM subcolumns_push_down WHERE key % 2 = 0) FORMAT Null</query>
+    <query>SELECT data.k0 FROM (SELECT * FROM subcolumns_push_down ORDER BY key LIMIT 100000) FORMAT Null</query>
+    <query>SELECT length(arr) FROM (SELECT * FROM subcolumns_push_down) SETTINGS optimize_functions_to_subcolumns = 1 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS subcolumns_push_down</drop_query>
+</test>

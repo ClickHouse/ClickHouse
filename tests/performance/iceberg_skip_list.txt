@@ -92,6 +92,7 @@ prewhere_column_sizes_pruned_parts.xml                   # JSON column
 prewhere_subcolumn_read_steps.xml                        # JSON column
 prewhere_subcolumns.xml                                  # JSON column
 projection_materialize.xml                               # ALTER ADD_PROJECTION, ALTER DROP_PROJECTION
+push_down_subcolumns_to_reading.xml                      # JSON column
 qbit_distance_transposed_micro.xml                       # QBit column
 qbit_insert_memory.xml                                   # QBit column
 qbit_l2_distance_bfloat16_memory.xml                     # QBit column

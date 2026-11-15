@@ -1,0 +1,83 @@
+N9 row policy on the whole column
+tup
+[(2),(7),(8),(9)]
+[(2),(7),(8),(9)]
+N11 JSON part written before a lazy type hint
+data
+[(0),(1),(2),(3),(4),(5),(6),(7)]
+[(0),(1),(2),(3),(4),(5),(6),(7)]
+N11b JSON column omitted from a part before a lazy type hint
+data
+[(1),(1)]
+[(1),(1)]
+N12 pending mutation of the column
+tup
+[(0),(10),(20),(30)]
+[(0),(10),(20),(30)]
+N25b pending mutation of another column
+tup
+[(0),(1),(2),(3)]
+[(0),(1),(2),(3)]
+N25 MATERIALIZED columns of a column mutated on the fly
+m, m2
+[(84,172)]
+[(84,172)]
+N25 two subquery levels
+m, m2
+[(84,172)]
+[(84,172)]
+N25 tupleElement
+m
+[(84)]
+[(84)]
+N26 patch part of a lightweight update
+m, x
+[(84,84)]
+[(84,84)]
+N13 compact part without substream marks
+n, tup
+[(0,1),(1,0),(2,1),(3,0),(4,1),(5,0)]
+[(0,1),(1,0),(2,1),(3,0),(4,1),(5,0)]
+P20 normal projection
+tup.a
+[(3)]
+[(3)]
+N20 normal projection, part written before a lazy type hint
+data
+[(1)]
+[(1)]
+N27 aggregate projection over length(s)
+count(), length(s)
+[(0,100),(1,100),(2,100)]
+[(0,100),(1,100),(2,100)]
+N28 filtered projection over length(s)
+s
+[(100)]
+[(100)]
+N29 aggregate projection, two subquery levels
+count(), length(s)
+[(0,100),(1,100),(2,100)]
+[(0,100),(1,100),(2,100)]
+N29 filtered projection, two subquery levels
+s
+[(100)]
+[(100)]
+N30 sorting key suffix length(s)
+s
+[(0),(0),(0)]
+[(0),(0),(0)]
+N30 read in order kept	1
+[(0),(0),(0)]
+[(0),(0),(0)]
+N31 sorting key suffix m[\'k\']
+m
+[(0),(0),(0)]
+[(0),(0),(0)]
+N31 read in order kept	1
+[(0),(0),(0)]
+[(0),(0),(0)]
+N27-N29 projections are used
+0	100
+1	100
+2	100
+100

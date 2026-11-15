@@ -259,7 +259,7 @@ public:
     /** Returns true if the function maps a variable-size argument (`String`, `FixedString`, `Array`, `Map`)
       * to a small fixed-size result, so that computing it early and carrying the result instead of the
       * argument strictly reduces the volume of data flowing through the query plan.
-      * Examples: `length`, `lengthUTF8`, `empty`, `notEmpty`.
+      * Examples: `length`, `lengthUTF8`, `empty`, `notEmpty`; `getSubcolumn`, whose argument can be read as the subcolumn.
       * Used by the `pushDownVolumeReducingFunction` query plan optimization.
       */
     virtual bool isVolumeReducing() const { return false; }

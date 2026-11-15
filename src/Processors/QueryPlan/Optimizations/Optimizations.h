@@ -105,6 +105,8 @@ struct Optimization
         bool legacy_array_join_function_nondeterministic_evaluation = false;
         bool enable_lazy_columns_replication = false;
         bool filter_push_down_below_limit_by = true;
+        /// `tryPushDownVolumeReducingFunction` reads a subcolumn for a function of a column (`length(arr)`) only with it.
+        bool optimize_functions_to_subcolumns = false;
     };
 
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, const ExtraSettings &);
@@ -150,7 +152,8 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 /// Fuse a FilterStep directly above an ArrayJoinStep: element-only conjuncts become the ArrayJoinStep's
 /// element filter, applied before expansion so filtered elements are never expanded or replicated.
 size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
-/// Move volume-reducing functions down if possible.
+/// Move volume-reducing functions down if possible, and read a subcolumn of a column read from MergeTree instead of
+/// computing it from the whole column.
 size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
 /// Volume-reducing function nodes (`length`, `lengthUTF8`, `empty`, `notEmpty`) of `actions`,
