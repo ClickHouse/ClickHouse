@@ -235,7 +235,7 @@ namespace
         {
             result = node.function_base->execute(arguments, node.result_type, values.size(), /* dry_run = */ false);
         }
-        catch (...)
+        catch (...) // Ok: a comparison that throws on these values is left untranslated
         {
             return false;
         }

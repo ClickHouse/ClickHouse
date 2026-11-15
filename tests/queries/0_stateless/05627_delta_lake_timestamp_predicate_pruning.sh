@@ -288,7 +288,7 @@ check ts "ts = '2026-01-01 00:00:00.123456'" "date_time_overflow_behavior='satur
 
 # The INT96 9999-12-31 23:59:59 lies beyond the `Int64` nanoseconds and is read as written, in any
 # overflow mode, as its statistics say.
-copy_table int96 timestamp "${CUR_DIR}/data_parquet/05534_int96_beyond_int64_nanoseconds.parquet" '9999-12-31 23:59:59.000000'
+copy_table int96 timestamp "${CUR_DIR}/data_parquet/05627_int96_beyond_int64_nanoseconds.parquet" '9999-12-31 23:59:59.000000'
 check int96 "ts = '9999-12-31 23:59:59'"
 check int96 "ts < '2262-04-12 00:00:00'"
 check int96 "ts < '2262-04-12 00:00:00'" "date_time_overflow_behavior='saturate'"
@@ -300,7 +300,7 @@ check int96_saturate "ts < '2262-04-12 00:00:00'"
 # The INT96 1969-12-31 23:59:59.9999995 is read rounded towards zero as 1970-01-01 00:00:00, while Spark
 # floors it to 23:59:59.999999 and truncates the statistics to 23:59:59.999: one microsecond beyond the
 # millisecond that delta-kernel allows, so a constant at or before the epoch keeps such rows undecided.
-copy_table int96_before_epoch timestamp "${CUR_DIR}/data_parquet/05534_int96_before_epoch_sub_microsecond.parquet" '1969-12-31 23:59:59.999'
+copy_table int96_before_epoch timestamp "${CUR_DIR}/data_parquet/05627_int96_before_epoch_sub_microsecond.parquet" '1969-12-31 23:59:59.999'
 check int96_before_epoch "ts = '1970-01-01 00:00:00'"
 check int96_before_epoch "ts >= '1970-01-01 00:00:00'"
 check int96_before_epoch "ts > '1970-01-01 00:00:00'"
