@@ -1920,6 +1920,24 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             if (const auto nul_pos = pattern_string.find('\0'); nul_pos != String::npos)
                 pattern_string.resize(nul_pos);
 
+            /// `OptimizedRegularExpression::analyze` models RE2 syntax only. Vectorscan accepts PCRE constructs
+            /// that RE2 rejects (such as `(?#...)` comments and `(?x)` / `(?x:...)` extended mode), which
+            /// `analyze` would misread as required literal substrings and wrongly prune matching granules.
+            re2::RE2::Options regexp_options;
+            regexp_options.set_log_errors(false);
+            regexp_options.set_dot_nl(true);
+            auto re2_check = std::make_unique<re2::RE2>(pattern_string, regexp_options);
+            if (!re2_check->ok() && re2_check->error_code() == re2::RE2::ErrorCode::ErrorBadUTF8)
+            {
+                regexp_options.set_encoding(re2::RE2::Options::EncodingLatin1);
+                re2_check = std::make_unique<re2::RE2>(pattern_string, regexp_options);
+            }
+            if (!re2_check->ok())
+            {
+                out.text_search_queries.clear();
+                return false;
+            }
+
             auto tokens_for_queries = regexpToTokensForQueries(pattern_string);
 
             if (tokens_for_queries.empty())
