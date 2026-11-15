@@ -18,6 +18,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadHelpers.h>
 #include <Common/quoteString.h>
+#include <boost/algorithm/string/replace.hpp>
 #include <fmt/ranges.h>
 
 #include <Interpreters/ExpressionActions.h>
@@ -32,6 +33,70 @@ using namespace DB;
 
 namespace DB::Iceberg
 {
+
+namespace
+{
+
+std::optional<Int32> tryParseIcebergFieldIdName(const String & key_name)
+{
+    Int32 field_id{};
+    if (tryParse(field_id, key_name))
+        return field_id;
+
+    if (key_name.size() >= 2 && key_name.front() == '`' && key_name.back() == '`')
+    {
+        auto unquoted_key_name = key_name.substr(1, key_name.size() - 2);
+        if (tryParse(field_id, unquoted_key_name))
+            return field_id;
+    }
+
+    return std::nullopt;
+}
+
+String normalizeExplainKeyName(
+    const IcebergSchemaProcessor & schema_processor,
+    Int32 current_schema_id,
+    const String & key_name)
+{
+    if (auto field_id = tryParseIcebergFieldIdName(key_name))
+    {
+        if (auto field = schema_processor.tryGetFieldCharacteristics(current_schema_id, *field_id))
+            return field->name;
+    }
+
+    return key_name;
+}
+
+ManifestFilesPruner::ExplainDescription buildExplainDescription(
+    const IcebergSchemaProcessor & schema_processor,
+    Int32 current_schema_id,
+    const std::vector<String> & key_names,
+    const KeyCondition::Description & key_condition_description)
+{
+    ManifestFilesPruner::ExplainDescription result;
+
+    for (const auto & key_name : key_names)
+    {
+        String current_name = normalizeExplainKeyName(schema_processor, current_schema_id, key_name);
+
+        if (std::find(result.used_keys.begin(), result.used_keys.end(), current_name) == result.used_keys.end())
+            result.used_keys.push_back(current_name);
+    }
+
+    result.condition = key_condition_description.condition;
+    for (const auto & used_key : key_condition_description.used_keys)
+    {
+        if (auto field_id = tryParseIcebergFieldIdName(used_key))
+        {
+            if (auto field = schema_processor.tryGetFieldCharacteristics(current_schema_id, *field_id))
+                boost::replace_all(result.condition, backQuote(DB::toString(*field_id)), backQuote(field->name));
+        }
+    }
+
+    return result;
+}
+
+}
 
 DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name)
 {
@@ -176,22 +241,37 @@ ManifestFilesPruner::ManifestFilesPruner(
             require_ready_sets);
 
         int32_truncate_wraparounds = getInt32TruncateWraparounds(partition_specification, schema_processor, initial_schema_id);
+
+        auto description = partition_key_condition->getDescription();
+        if (!description.used_keys.empty() || !description.condition.empty())
+            partition_explain_description = buildExplainDescription(schema_processor, current_schema_id, partition_key->column_names, description);
     }
 
+    std::vector<String> minmax_conditions;
     for (Int32 used_column_id : used_columns_in_filter)
     {
         std::optional<NameAndTypePair> name_and_type;
+        /// The user-facing name of the column for `EXPLAIN`.
+        String explain_name;
         if (auto lineage_column = row_lineage_columns.find(used_column_id); lineage_column != row_lineage_columns.end())
         {
             name_and_type = lineage_column->second;
+            explain_name = name_and_type->name;
         }
         else
         {
+            auto current_name_and_type = schema_processor.tryGetFieldCharacteristics(current_schema_id, used_column_id);
+            /// Build the pruning `KeyCondition` in the manifest namespace, using the
+            /// field/type from `initial_schema_id`. Manifest file statistics are keyed
+            /// by stable Iceberg field ids and may come from an older schema version.
             name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, used_column_id);
-            if (!name_and_type.has_value())
+            if (!current_name_and_type.has_value() || !name_and_type.has_value())
                 continue;
+            explain_name = current_name_and_type->name;
 
             min_max_column_types.emplace(used_column_id, name_and_type->type);
+            /// Use the Iceberg field id as the key name in the pruning expression.
+            /// This keeps pruning correct across column renames.
             name_and_type->name = DB::backQuote(DB::toString(used_column_id));
         }
 
@@ -213,7 +293,41 @@ ManifestFilesPruner::ManifestFilesPruner(
             relaxed.relaxAtomsOverNaNHidingColumns({name_and_type->type});
             nan_relaxed_min_max_key_conditions.emplace(used_column_id, std::move(relaxed));
         }
-        min_max_key_conditions.emplace(used_column_id, std::move(condition));
+        auto [it, inserted] = min_max_key_conditions.emplace(used_column_id, std::move(condition));
+
+        if (inserted)
+        {
+            if (!minmax_explain_description)
+                minmax_explain_description.emplace();
+
+            auto description = it->second.getDescription();
+            /// `buildExplainDescription` is responsible for converting internal
+            /// field-id-based key names into current user-facing column names for
+            /// `EXPLAIN`, so we pass the current schema id here even though pruning
+            /// itself is built over the manifest namespace above.
+            auto explain_description = buildExplainDescription(
+                schema_processor,
+                current_schema_id,
+                {explain_name},
+                description);
+            for (const auto & used_key : explain_description.used_keys)
+            {
+                if (std::find(minmax_explain_description->used_keys.begin(), minmax_explain_description->used_keys.end(), used_key)
+                    == minmax_explain_description->used_keys.end())
+                    minmax_explain_description->used_keys.push_back(used_key);
+            }
+
+            if (!explain_description.condition.empty())
+                minmax_conditions.push_back(explain_description.condition);
+        }
+    }
+
+    if (!min_max_key_conditions.empty())
+    {
+        if (!minmax_explain_description)
+            minmax_explain_description.emplace();
+        if (!minmax_conditions.empty())
+            minmax_explain_description->condition = fmt::format("({})", fmt::join(minmax_conditions, ") AND ("));
     }
 }
 

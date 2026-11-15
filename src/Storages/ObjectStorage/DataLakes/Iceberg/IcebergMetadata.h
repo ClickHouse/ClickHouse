@@ -142,6 +142,8 @@ public:
 
     bool isDataSortedBySortingKey(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
 
+    std::vector<ExplainIndexDescription> getExplainIndexDescriptions(
+        const ActionsDAG * filter_dag, StorageMetadataPtr storage_metadata, ContextPtr context) const override;
     bool supportsLazyMaterialization(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
 
     std::optional<DataLakeReadEstimate>

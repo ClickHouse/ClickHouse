@@ -1,0 +1,13 @@
+combined
+Partition
+Partitions: 2/3
+Files: 2/3
+MinMax
+Partitions: 1/2
+Files: 1/2
+minmax_only
+MinMax
+Partitions: 1/1
+Files: 1/3
+disabled
+NoIndexes

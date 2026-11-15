@@ -13,6 +13,7 @@
 #include <Interpreters/IcebergMetadataLog.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergFieldParseHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
@@ -149,6 +150,20 @@ namespace
             }
             hyperrectangles.emplace(field_id, DB::Range(bounds->lower, true, bounds->upper, true));
         }
+    }
+
+    std::optional<IDataLakeMetadata::ExplainIndexDescription> makeExplainIndexDescription(
+        String type,
+        const std::optional<ManifestFilesPruner::ExplainDescription> & explain_description)
+    {
+        if (!explain_description)
+            return std::nullopt;
+
+        IDataLakeMetadata::ExplainIndexDescription result;
+        result.type = std::move(type);
+        result.used_keys = explain_description->used_keys;
+        result.condition = explain_description->condition;
+        return result;
     }
 
     /// The bounds of one column of a data file: as declared, and as range borders, where a decimal bound is shifted outward.
@@ -682,6 +697,27 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         const auto hyperrectangles = getDataFileHyperrectangles(*entry, current_pruner->getMinMaxColumnTypes(), path_to_manifest_file);
         pruning_status = current_pruner->canBePruned(entry, hyperrectangles);
     }
+    if (parsed_entry->content_type == FileContentType::DATA)
+    {
+        std::lock_guard lock(explain_stats_mutex);
+        ++explain_initial_data_files;
+
+        String partition_id = Iceberg::computePartitionId(parsed_entry->partition_key_value);
+        explain_initial_partitions.insert(partition_id);
+
+        if (pruning_status != PruningReturnStatus::PARTITION_PRUNED)
+        {
+            ++explain_partition_selected_data_files;
+            explain_partition_selected_partitions.insert(partition_id);
+        }
+
+        if (pruning_status == PruningReturnStatus::NOT_PRUNED)
+        {
+            ++explain_minmax_selected_data_files;
+            explain_minmax_selected_partitions.insert(partition_id);
+        }
+    }
+
     insertRowToLogTable(
         context,
         [&] { return manifest_file_deserializer->getContent(row_index); },
@@ -738,6 +774,24 @@ const ManifestFilesPruner * ManifestFileIterator::getOrCreatePruner(Int32 schema
         partition_key_description.get(),
         *common_partition_specification,
         context);
+
+    {
+        std::lock_guard explain_lock(explain_stats_mutex);
+        if (!partition_explain_index_description)
+        {
+            partition_explain_index_description = makeExplainIndexDescription(
+                "Partition",
+                pruner->getPartitionExplainDescription());
+        }
+
+        if (!minmax_explain_index_description)
+        {
+            minmax_explain_index_description = makeExplainIndexDescription(
+                "MinMax",
+                pruner->getMinMaxExplainDescription());
+        }
+    }
+
     return pruners_by_schema_id.emplace(schema_id, std::move(pruner)).first->second.get();
 }
 
@@ -804,6 +858,47 @@ std::optional<Int64> ManifestFileIterator::getBytesCountInAllDataFilesExcludingD
         if (!found)
             return std::nullopt;
     }
+    return result;
+}
+
+ManifestFileIterator::ExplainPruningStatistics ManifestFileIterator::getExplainPruningStatistics() const
+{
+    std::lock_guard lock(explain_stats_mutex);
+    return {
+        .initial_data_files = explain_initial_data_files,
+        .partition_selected_data_files = explain_partition_selected_data_files,
+        .minmax_selected_data_files = explain_minmax_selected_data_files,
+        .initial_partitions = explain_initial_partitions.size(),
+        .partition_selected_partitions = explain_partition_selected_partitions.size(),
+        .minmax_selected_partitions = explain_minmax_selected_partitions.size(),
+    };
+}
+
+std::optional<IDataLakeMetadata::ExplainIndexDescription> ManifestFileIterator::getPartitionExplainIndexDescription() const
+{
+    std::lock_guard lock(explain_stats_mutex);
+    if (!partition_explain_index_description)
+        return std::nullopt;
+
+    auto result = *partition_explain_index_description;
+    result.initial_partitions = explain_initial_partitions.size();
+    result.selected_partitions = explain_partition_selected_partitions.size();
+    result.initial_files = explain_initial_data_files;
+    result.selected_files = explain_partition_selected_data_files;
+    return result;
+}
+
+std::optional<IDataLakeMetadata::ExplainIndexDescription> ManifestFileIterator::getMinMaxExplainIndexDescription() const
+{
+    std::lock_guard lock(explain_stats_mutex);
+    if (!minmax_explain_index_description)
+        return std::nullopt;
+
+    auto result = *minmax_explain_index_description;
+    result.initial_partitions = explain_partition_selected_partitions.size();
+    result.selected_partitions = explain_minmax_selected_partitions.size();
+    result.initial_files = explain_partition_selected_data_files;
+    result.selected_files = explain_minmax_selected_data_files;
     return result;
 }
 

@@ -71,6 +71,18 @@ struct DataLakeReadEstimate
 class IDataLakeMetadata : boost::noncopyable
 {
 public:
+    struct ExplainIndexDescription
+    {
+        String type;
+        String description;
+        std::vector<String> used_keys;
+        String condition;
+        size_t initial_partitions = 0;
+        size_t selected_partitions = 0;
+        size_t initial_files = 0;
+        size_t selected_files = 0;
+    };
+
     virtual ~IDataLakeMetadata() = default;
 
     virtual bool operator==(const IDataLakeMetadata & other) const = 0;
@@ -145,6 +157,12 @@ public:
     /// not be rewritten and will be left unsorted or with previous sort order.
     /// In this case we shouldn't use read in order optimization.
     virtual bool isDataSortedBySortingKey(StorageMetadataPtr, ContextPtr) const { return false; }
+
+    virtual std::vector<ExplainIndexDescription> getExplainIndexDescriptions(
+        const ActionsDAG * /* filter_dag */, StorageMetadataPtr /* storage_metadata */, ContextPtr /* context */) const
+    {
+        return {};
+    }
 
     /// Whether LIMIT lazy materialization can be used for the data snapshot pinned in the
     /// storage metadata snapshot (see ReadFromObjectStorageStep::canUseLazyMaterialization).

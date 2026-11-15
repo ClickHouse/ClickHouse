@@ -1,6 +1,8 @@
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/JSONBuilder.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -53,6 +55,97 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace
+{
+
+void formatExplainIndexes(
+    IQueryPlanStep::FormatSettings & explain_settings,
+    const std::vector<IDataLakeMetadata::ExplainIndexDescription> & indexes)
+{
+    if (indexes.empty())
+        return;
+
+    const std::string & prefix = explain_settings.detail_prefix;
+    std::string indent(explain_settings.base_indent, explain_settings.indent_char);
+    explain_settings.out << prefix << "Indexes:\n";
+
+    for (const auto & stat : indexes)
+    {
+        explain_settings.out << prefix << indent << stat.type << '\n';
+
+        if (!stat.description.empty())
+            explain_settings.out << prefix << indent << indent << "Description: " << stat.description << '\n';
+
+        if (!stat.used_keys.empty())
+        {
+            explain_settings.out << prefix << indent << indent << "Keys:" << '\n';
+            for (const auto & used_key : stat.used_keys)
+                explain_settings.out << prefix << indent << indent << indent << used_key << '\n';
+        }
+
+        if (!stat.condition.empty())
+            explain_settings.out << prefix << indent << indent << "Condition: " << stat.condition << '\n';
+
+        explain_settings.out << prefix << indent << indent << "Partitions: " << stat.selected_partitions << '/' << stat.initial_partitions << '\n';
+        explain_settings.out << prefix << indent << indent << "Files: " << stat.selected_files << '/' << stat.initial_files << '\n';
+    }
+}
+
+void formatExplainIndexes(
+    JSONBuilder::JSONMap & map,
+    const std::vector<IDataLakeMetadata::ExplainIndexDescription> & indexes)
+{
+    if (indexes.empty())
+        return;
+
+    auto indexes_array = std::make_unique<JSONBuilder::JSONArray>();
+    for (const auto & stat : indexes)
+    {
+        auto index_map = std::make_unique<JSONBuilder::JSONMap>();
+        index_map->add("Type", stat.type);
+
+        if (!stat.description.empty())
+            index_map->add("Description", stat.description);
+
+        if (!stat.used_keys.empty())
+        {
+            auto keys_array = std::make_unique<JSONBuilder::JSONArray>();
+            for (const auto & used_key : stat.used_keys)
+                keys_array->add(used_key);
+            index_map->add("Keys", std::move(keys_array));
+        }
+
+        if (!stat.condition.empty())
+            index_map->add("Condition", stat.condition);
+
+        index_map->add("Initial Partitions", stat.initial_partitions);
+        index_map->add("Selected Partitions", stat.selected_partitions);
+        index_map->add("Initial Files", stat.initial_files);
+        index_map->add("Selected Files", stat.selected_files);
+        indexes_array->add(std::move(index_map));
+    }
+
+    map.add("Indexes", std::move(indexes_array));
+}
+
+std::vector<IDataLakeMetadata::ExplainIndexDescription> getExplainIndexes(
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const std::shared_ptr<const ActionsDAG> & filter_actions_dag,
+    StorageMetadataPtr storage_metadata,
+    ContextPtr context)
+{
+    if (!filter_actions_dag)
+        return {};
+
+    auto metadata = configuration->getExternalMetadata();
+    if (!metadata)
+        return {};
+
+    return metadata->getExplainIndexDescriptions(filter_actions_dag.get(), storage_metadata, context);
+}
+
+}
 
 namespace Setting
 {
@@ -425,6 +518,16 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         processors.emplace_back(processor);
 
     pipeline.init(std::move(pipe));
+}
+
+void ReadFromObjectStorageStep::describeIndexes(FormatSettings & explain_settings) const
+{
+    formatExplainIndexes(explain_settings, getExplainIndexes(configuration, filter_actions_dag, storage_snapshot->metadata, getContext()));
+}
+
+void ReadFromObjectStorageStep::describeIndexes(JSONBuilder::JSONMap & map) const
+{
+    formatExplainIndexes(map, getExplainIndexes(configuration, filter_actions_dag, storage_snapshot->metadata, getContext()));
 }
 
 void ReadFromObjectStorageStep::addJoinRuntimeFilterIndexAnalysisOnDataRead(
