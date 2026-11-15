@@ -26,6 +26,8 @@ wait_for_column() {
     echo "the rename of $1 was not applied to the metadata"
 }
 
+# A mutation queued behind an unfinished ALTER mutation is assigned only by the next merge-selecting round,
+# whose interval otherwise backs off up to max_merge_selecting_sleep_ms (60 s).
 for table in t_lwu_pending_rename t_lwu_rename_after
 do
     ${CLICKHOUSE_CLIENT} -q "
@@ -33,7 +35,7 @@ do
     CREATE TABLE ${table} (id UInt64, v UInt64)
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/${table}', '1')
     ORDER BY id PARTITION BY tuple()
-    SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+    SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
 
     INSERT INTO ${table} SELECT number, 0 FROM numbers(2000);
     SYSTEM STOP MERGES ${table};
@@ -72,7 +74,8 @@ CREATE TABLE t_lwu_merged_patches (id UInt64, v UInt64)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_lwu_merged_patches', '1')
 ORDER BY id PARTITION BY tuple()
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
-    max_replicated_mutations_in_queue = 0, max_bytes_to_merge_at_max_space_in_pool = 1;
+    max_replicated_mutations_in_queue = 0, max_bytes_to_merge_at_max_space_in_pool = 1,
+    merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
 
 INSERT INTO t_lwu_merged_patches SELECT number, 0 FROM numbers(2000);
 ALTER TABLE t_lwu_merged_patches RENAME COLUMN v TO w SETTINGS alter_sync = 0;

@@ -12,8 +12,11 @@ namespace
 /** pgTableIsVisible(oid) - compatibility function for the PostgreSQL wire protocol,
   * an analog of `pg_catalog.pg_table_is_visible`. PostgreSQL clients (e.g. psql for
   * the `\d` command) use it to filter the tables that are visible in the search path.
-  * The emulated `pg_class` view exposes only the tables of the current database,
-  * which are all visible, so the function unconditionally returns 1.
+  * Outside a PostgreSQL session there is no emulated catalog to resolve an oid against,
+  * so the function returns 1. Inside one the answer is not a constant, because the
+  * emulated `pg_class` exposes every database as a schema, and `PostgreSQLHandler`
+  * rewrites the call into a search-path check against the catalog (see
+  * `rewritePgTableIsVisible`).
   */
 class FunctionPgTableIsVisible final : public IFunction
 {
@@ -55,7 +58,8 @@ REGISTER_FUNCTION(PgTableIsVisible)
     FunctionDocumentation::Description description = R"(
 Compatibility function for the PostgreSQL wire protocol, an analog of `pg_catalog.pg_table_is_visible`.
 PostgreSQL clients (for example, the `\d` command in `psql`) use it to filter tables visible in the search path.
-Since the `pg_class` view emulated by ClickHouse exposes only the tables of the current database, which are all visible, the function unconditionally returns `1`.
+Outside a PostgreSQL wire-protocol session there is no emulated catalog to resolve the oid against, so the function returns `1`.
+Inside such a session the PostgreSQL handler rewrites the call into a search-path check against the emulated catalog, because it exposes every database as a schema.
     )";
     FunctionDocumentation::Syntax syntax = "pgTableIsVisible(oid)";
     FunctionDocumentation::Arguments arguments = {

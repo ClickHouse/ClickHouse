@@ -559,6 +559,16 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
         // Account for counter multiplexing. time_running and time_enabled are
         // not reset by PERF_EVENT_IOC_RESET, so we don't use it and calculate
         // deltas from old values.
+        //
+        // Recreating the descriptors does reset them, though, and then the previous values are
+        // larger than the current ones. Every delta of the period is meaningless in that case, and
+        // publishing the wrapped ones puts about 1.8e19 into PerfMinEnabledTime, so skip the period.
+        // The current values are stored for the next one either way.
+        if (current_value.time_enabled < previous_value.time_enabled
+            || current_value.time_running < previous_value.time_running
+            || current_value.value < previous_value.value)
+            continue;
+
         const auto enabled = current_value.time_enabled - previous_value.time_enabled;
         const auto running = current_value.time_running - previous_value.time_running;
         const auto scaled_value = static_cast<Float64>(current_value.value - previous_value.value) * static_cast<Float64>(enabled) / std::max(1., static_cast<Float64>(running));

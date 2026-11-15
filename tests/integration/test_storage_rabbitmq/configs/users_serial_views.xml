@@ -2,8 +2,8 @@
     <profiles>
         <default>
             <stream_like_engine_allow_direct_select>1</stream_like_engine_allow_direct_select>
-            <!-- Force serial materialized-view processing so the per-consumer RabbitMQ sources share a
-                 single pipeline thread; this is the case the REFRESH self-drive budget must be fair to. -->
+            <!-- parallel_view_processing = 0 (the default): the insert into materialized views gets a single
+                 pipeline thread. -->
             <parallel_view_processing>0</parallel_view_processing>
         </default>
     </profiles>

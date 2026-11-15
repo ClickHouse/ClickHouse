@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 --These tests just need to run, dont care about output
 SELECT 'Test repeated alias for literal as 2nd arg to IN operator:';

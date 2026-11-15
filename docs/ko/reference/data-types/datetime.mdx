@@ -20,23 +20,19 @@ DateTime([timezone])
 
 해상도: 1초.
 
-<div id="speed">
-  ## 속도
-</div>
+## 속도 {#speed}
 
 대부분의 상황에서 `Date` 데이터 타입은 `DateTime`보다 더 빠릅니다.
 
 `Date` 데이터 타입은 저장 공간으로 2바이트가 필요하지만 `DateTime`은 4바이트가 필요합니다. 하지만 압축 시에는 `Date`와 `DateTime`의 크기 차이가 더 크게 벌어집니다. 이는 `DateTime`의 분과 초는 압축 효율이 낮기 때문입니다. 또한 `DateTime` 대신 `Date`에 필터링과 집계를 수행하는 것도 더 빠릅니다.
 
-<div id="usage-remarks">
-  ## 사용 시 유의사항
-</div>
+## 사용 시 유의사항 {#usage-remarks}
 
 시점은 시간대나 일광 절약 시간제와 관계없이 [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time)로 저장됩니다. 시간대는 `DateTime` 타입 값이 텍스트 포맷으로 표시되는 방식과 문자열로 지정된 값(&#39;2020-01-01 05:00:01&#39;)이 파싱되는 방식에 영향을 줍니다.
 
 시간대와 무관한 Unix timestamp가 테이블에 저장되며, 시간대는 데이터 가져오기/내보내기 시 이를 텍스트 포맷으로 변환하거나 다시 되돌리는 데 사용됩니다. 또한 값에 대해 달력 계산을 수행할 때도 사용됩니다(예: `toDate`, `toHour` 함수 등). 시간대는 테이블의 행(또는 결과 집합)에는 저장되지 않지만, 컬럼 메타데이터에는 저장됩니다.
 
-지원되는 시간대 목록은 [IANA Time Zone Database](https://www.iana.org/time-zones)에서 확인할 수 있으며, `SELECT * FROM system.time_zones`로도 조회할 수 있습니다. [이 목록](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)은 Wikipedia에서도 제공됩니다.
+지원되는 시간대 이름은 `SELECT * FROM system.time_zones`가 나열하는 이름과 정확히 일치합니다. 이 목록은 서버에 함께 제공되는 [IANA Time Zone Database](https://www.iana.org/time-zones)를 기반으로 하므로, 결과가 호스트 자체의 데이터베이스에 좌우되지 않습니다. [이 목록](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)은 Wikipedia에서도 제공됩니다. `Fixed/UTC±HH:MM:SS` 형식으로 표기한 UTC 기준 고정 오프셋(예: `Fixed/UTC+05:30:00`)도 허용됩니다. 고정 오프셋 시간대를 가진 Arrow 또는 ORC 타임스탬프 컬럼을 읽으면 이러한 형식의 이름이 생성됩니다. 그 외의 이름은 거부됩니다.
 
 테이블을 생성할 때 `DateTime` 타입 컬럼에 시간대를 명시적으로 설정할 수 있습니다. 예시: `DateTime('UTC')`. 시간대가 설정되지 않으면 ClickHouse는 서버 설정의 [timezone](/ko/reference/settings/server-settings/settings/other#timezone) 매개변수 값 또는 ClickHouse 서버가 시작될 당시의 운영 체제 설정을 사용합니다.
 
@@ -46,9 +42,7 @@ ClickHouse는 [date&#95;time&#95;output&#95;format](/ko/reference/settings/forma
 
 ClickHouse에 데이터를 삽입할 때는 [date&#95;time&#95;input&#95;format](/ko/reference/settings/formats/date-time#date_time_input_format) 설정 값에 따라 다양한 날짜 및 시간 문자열 포맷을 사용할 수 있습니다.
 
-<div id="examples">
-  ## 예시
-</div>
+## 예시 {#examples}
 
 **1.** `DateTime` 타입의 컬럼이 있는 테이블을 생성하고 데이터를 삽입하는 예시:
 
@@ -134,9 +128,7 @@ FROM dt
 
 시간대 변환은 메타데이터만 변경하므로 연산 비용이 발생하지 않습니다.
 
-<div id="limitations-on-time-zones-support">
-  ## 시간대 지원의 제한 사항
-</div>
+## 시간대 지원의 제한 사항 {#limitations-on-time-zones-support}
 
 일부 시간대는 완전히 지원되지 않을 수 있습니다. 대표적인 경우는 다음과 같습니다.
 
@@ -150,9 +142,7 @@ UTC와의 오프셋이 15분의 배수가 아니면 시와 분 계산이 부정�
 
 여러 날에 걸친 시간 이동도 있습니다. 일부 태평양 섬은 시간대 오프셋을 UTC+14에서 UTC-12로 변경했습니다. 이는 허용되는 경우이지만, 전환이 일어난 날짜의 과거 시점에 대해 해당 시간대로 계산을 수행하면 일부 부정확성이 발생할 수 있습니다.
 
-<div id="handling-daylight-saving-time-dst">
-  ## 일광 절약 시간제(DST) 처리
-</div>
+## 일광 절약 시간제(DST) 처리 {#handling-daylight-saving-time-dst}
 
 시간대가 지정된 ClickHouse의 DateTime 유형은 일광 절약 시간제(DST) 전환 시 예상치 못한 동작을 보일 수 있으며, 특히 다음과 같은 경우에 그렇습니다.
 
@@ -193,9 +183,7 @@ SELECT '2023-03-26 01:30:00'::DateTime('Europe/London') AS time, time + toInterv
 
 이 경우 ClickHouse는 존재하지 않는 시각 `2023-03-26 01:30:00`을 `2023-03-26 00:30:00`으로 앞당깁니다.
 
-<div id="see-also">
-  ## 관련 항목
-</div>
+## 관련 항목 {#see-also}
 
 * [타입 변환 함수](/ko/reference/functions/regular-functions/type-conversion-functions)
 * [날짜 및 시간을 처리하는 함수](/ko/reference/functions/regular-functions/date-time-functions)

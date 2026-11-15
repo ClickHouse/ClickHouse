@@ -41,6 +41,8 @@ def clear_workloads_and_resources():
         drop workload if exists production;
         drop workload if exists development;
         drop workload if exists admin;
+        drop workload if exists victim;
+        drop workload if exists competitor;
         drop workload if exists all;
         drop resource if exists cpu;
     """
@@ -628,3 +630,78 @@ def test_create_workload_under_load():
     development2.stop()
     assert development2.get_errors() == 0, "Errors occurred in development2 workload"
     assert production2.get_errors() == 0, "Errors occurred in production2 workload"
+
+
+# A worker whose preempted CPU lease is not granted back in time is downscaled. When the competing query
+# finishes and the capacity is back, the same query starts a thread for it again, without waiting for its
+# threads to push to the executor's global queue (each step here takes ~1 s of CPU, and a thread that runs
+# only local tasks pushes after 128 of them).
+@pytest.mark.parametrize(
+    "with_custom_config",
+    [{"node": {"cpu_slot_preemption_timeout_ms": 100}}],
+    indirect=True,
+)
+def test_worker_replaced_after_downscale(with_custom_config):
+    if node.is_built_with_address_sanitizer() or node.is_built_with_thread_sanitizer() or node.is_built_with_llvm_coverage():
+        pytest.skip("doesn't fit in timeouts due to heavy workload")
+
+    node.query(
+        """
+        create resource cpu (master thread, worker thread);
+        create workload all settings max_concurrent_threads=4;
+        create workload victim in all;
+        create workload competitor in all;
+    """
+    )
+
+    victim_id = "test_worker_replaced_after_downscale_victim"
+    competitor_id = "test_worker_replaced_after_downscale_competitor"
+    # CPU-bound steps of ~1 s each with little memory; the query runs until it is killed.
+    hashes = "number"
+    for _ in range(150):
+        hashes = f"cityHash64({hashes})"
+    heavy = f"select count() from numbers_mt(1000000000000) where not ignore({hashes}) settings max_block_size=5000000, max_threads=4"
+    errors = {}
+
+    def run(name, query_id, workload):
+        try:
+            node.query(f"{heavy}, workload='{workload}'", query_id=query_id)
+        except QueryRuntimeException as e:
+            errors[name] = e
+
+    def wait_for(condition, what, timeout=60):
+        deadline = time.monotonic() + timeout
+        while not condition():
+            assert time.monotonic() < deadline, f"Timed out waiting for {what}, errors: {errors}"
+            time.sleep(0.1)
+
+    def victim_event(profile_event):
+        value = node.query(
+            f"select ProfileEvents['{profile_event}'] from system.processes where query_id = '{victim_id}'"
+        ).strip()
+        return int(value) if value else 0
+
+    victim = threading.Thread(target=run, args=("victim", victim_id, "victim"))
+    competitor = threading.Thread(target=run, args=("competitor", competitor_id, "competitor"))
+    try:
+        victim.start()
+        wait_for(lambda: victim_event("ConcurrencyControlSlotsAcquired") >= 4, "the victim to take all slots")
+
+        # The competitor takes its share, so the victim's workers are preempted and downscaled after the timeout.
+        competitor.start()
+        wait_for(lambda: victim_event("ConcurrencyControlDownscales") >= 1, "the victim to be downscaled")
+
+        upscales = victim_event("ConcurrencyControlUpscales")
+        node.query(f"kill query where query_id = '{competitor_id}' sync")
+        wait_for(
+            lambda: victim_event("ConcurrencyControlUpscales") > upscales,
+            "the victim to start a thread for the released capacity",
+            timeout=15,
+        )
+    finally:
+        try:
+            node.query(f"kill query where query_id in ('{victim_id}', '{competitor_id}') sync")
+        finally:
+            for thread in (victim, competitor):
+                if thread.ident is not None:
+                    thread.join()

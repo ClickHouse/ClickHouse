@@ -184,6 +184,7 @@ struct PaimonManifestEntry
         std::optional<String> embedded_file_index;
         std::optional<FileSource> file_source;
         std::optional<Array> value_stats_cols;
+        std::optional<String> external_path;
 
         DataFileMeta(
             const Iceberg::AvroForIcebergDeserializer & avro_deserializer,
@@ -253,6 +254,10 @@ struct PaimonManifestEntry
             }
             getNullableValueFromRowByName(
                 value_stats_cols, avro_deserializer, row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_VALUE_STATS_COLS}));
+            /// Absent in the manifests of older writers.
+            if (const auto external_path_column = Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_EXTERNAL_PATH});
+                avro_deserializer.hasPath(external_path_column))
+                getNullableValueFromRowByName(external_path, avro_deserializer, row_num, external_path_column);
         }
 
     };
@@ -304,6 +309,11 @@ struct PaimonManifest
     size_t file_bytes_size = 0; /// Original avro file size in bytes, used for heuristic memory estimation.
 };
 
+struct PaimonIndexManifest
+{
+    bool has_deletion_vectors = false;
+};
+
 class PaimonTableClient : private WithContext
 {
 public:
@@ -322,6 +332,7 @@ public:
     PaimonSnapshot getSnapshot(const std::pair<Int64, String> & snapshot_meta_info);
     PaimonManifest getDataManifest(String manifest_path, const PaimonTableSchema & table_schema, const String & partition_default_name, bool disable_filesystem_cache = false);
     std::pair<std::vector<PaimonManifestFileMeta>, size_t> getManifestMeta(String manifest_list_path, bool disable_filesystem_cache = false);
+    PaimonIndexManifest getIndexManifest(const String & index_manifest_path, bool disable_filesystem_cache = false);
 private:
     /// Build ReadSettings for metadata reads.  When the caller knows that the
     /// in-memory Paimon metadata cache is active it passes disable_filesystem_cache=true

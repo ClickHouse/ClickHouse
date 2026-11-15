@@ -243,7 +243,7 @@ StorageSystemFilesystemCache::StorageSystemFilesystemCache(const StorageID & tab
         {"key", std::make_shared<DataTypeString>(), "Cache key of the file segment"},
         {"file_segment_range_begin", std::make_shared<DataTypeUInt64>(), "Offset corresponding to the beginning of the file segment range"},
         {"file_segment_range_end", std::make_shared<DataTypeUInt64>(), "Offset corresponding to the (including) end of the file segment range"},
-        {"size", std::make_shared<DataTypeUInt64>(), "Size of the file segment"},
+        {"size", std::make_shared<DataTypeUInt64>(), "Size of the file segment: the logical size of its range. It is not affected by the `use_real_disk_size` cache setting, which only changes how reservations are accounted in the cache size metrics. Use `downloaded_size` for the number of bytes actually written for this segment"},
         {"state", std::make_shared<DataTypeString>(), "File segment state (DOWNLOADED, DOWNLOADING, PARTIALLY_DOWNLOADED, ...)"},
         {"finished_download_time", std::make_shared<DataTypeDateTime>(), "Time when file segment finished downloading."},
         {"cache_hits", std::make_shared<DataTypeUInt64>(), "Number of cache hits of corresponding file segment"},

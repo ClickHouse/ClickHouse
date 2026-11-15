@@ -44,6 +44,7 @@ public:
     bool supportsReadingSubsetOfColumns(const ContextPtr & context) override;
     NameSet getVirtualsToCheckBeforeUsingStructureHint() const override;
     bool hasStaticStructure() const override;
+    bool hasUnreplicatedTableDataOnDisk() const override;
     void setPartitionBy(const ASTPtr & partition_by_) override;
 
     static void updateStructureAndFormatArgumentsIfNeeded(
@@ -52,19 +53,26 @@ public:
         const String & format_,
         const ContextPtr & context,
         bool with_structure,
-        bool is_replayed_definition = false)
+        bool is_replayed_definition = false,
+        bool replace_not_overridable = false)
     {
         if (auto collection = tryGetNamedCollectionWithOverrides(args, context, true, nullptr, nullptr, nullptr, is_replayed_definition))
         {
             /// In case of named collection, just add key-value pairs "format='...', structure='...'"
             /// at the end of arguments to override existed format and structure with "auto" values.
-            if (collection->getOrDefault<String>("format", "auto") == "auto")
+            /// A `NOT OVERRIDABLE` "auto" is replaced only if `replace_not_overridable`: only a replayed definition accepts it.
+            auto can_replace = [&](const String & key)
+            {
+                return collection->getOrDefault<String>(key, "auto") == "auto"
+                    && (replace_not_overridable || collection->isOverridable(key, /* default_value= */ true));
+            };
+            if (can_replace("format"))
             {
                 ASTs format_equal_func_args = {make_intrusive<ASTIdentifier>("format"), make_intrusive<ASTLiteral>(format_)};
                 auto format_equal_func = makeASTOperator("equals", std::move(format_equal_func_args));
                 args.push_back(format_equal_func);
             }
-            if (with_structure && collection->getOrDefault<String>("structure", "auto") == "auto")
+            if (with_structure && can_replace("structure"))
             {
                 ASTs structure_equal_func_args = {make_intrusive<ASTIdentifier>("structure"), make_intrusive<ASTLiteral>(structure_)};
                 auto structure_equal_func = makeASTOperator("equals", std::move(structure_equal_func_args));
@@ -107,6 +115,10 @@ protected:
     /// Source URI used for the access check of the delegated function (e.g. the file path or the
     /// resolved object-storage URL). Empty for `file://`, matching `TableFunctionFile` behavior.
     String delegate_function_uri;
+    /// Whether the URL argument was a relative reference resolved against the `url_base` setting.
+    bool is_relative_url = false;
+    /// Whether the structure is a `NOT OVERRIDABLE` "auto" of a named collection, so it cannot be sent to the nodes of a cluster.
+    bool is_structure_not_overridable = false;
 
 private:
     /// Build `delegate` for a non-URL scheme target by constructing and parsing the delegate

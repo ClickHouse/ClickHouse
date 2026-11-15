@@ -13,13 +13,13 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## alter_move_to_space_execute_async
+## alter_move_to_space_execute_async {#alter_move_to_space_execute_async}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 ALTER TABLE MOVE ... TO [DISK|VOLUME] を非同期で実行します
 
-## alter_partition_verbose_result
+## alter_partition_verbose_result {#alter_partition_verbose_result}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -54,13 +54,13 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 └──────────────┴──────────────┴──────────────┴─────────────┴───────────────────────────────┴─────────────────────────────────────────────────────────────┘
 ```
 
-## alter_sync
+## alter_sync {#alter_sync}
 
 **別名**: `replication_alter_partitions_sync`
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
-[`ALTER`](/ja/reference/statements/alter/index)、[`OPTIMIZE`](/ja/reference/statements/optimize)、[`TRUNCATE`](/ja/reference/statements/truncate) クエリによってレプリカ上で実行されるアクションに対して、どのように待機するかを指定できます。
+[`ALTER`](/ja/reference/statements/alter/index)、[`OPTIMIZE`](/ja/reference/statements/optimize)、[`TRUNCATE`](/ja/reference/statements/truncate) クエリが、その操作の完了をどのように待機するかを指定できます。
 
 設定可能な値:
 
@@ -72,10 +72,10 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 Cloud でのデフォルト値: `0`.
 
 <Note>
-  `alter_sync` は `Replicated` テーブルおよび `SharedMergeTree` テーブルにのみ適用され、`Replicated` でも `Shared` でもないテーブルに対する alter には影響しません。
+  `alter_sync` は `MergeTree` ファミリーのテーブルに対する `ALTER` クエリに適用されます。値 `2` および `3` でレプリカの完了を待機するのは、`ReplicatedMergeTree` テーブルおよび `SharedMergeTree` テーブルの場合のみです。
 </Note>
 
-## alter_update_mode
+## alter_update_mode {#alter_update_mode}
 
 <SettingsInfoBlock type="AlterUpdateMode" default_value="heavy" />
 

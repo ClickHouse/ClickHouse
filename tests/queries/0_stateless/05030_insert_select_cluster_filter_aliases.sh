@@ -51,7 +51,7 @@ echo "--- errors logged by the interpreter ---"
 $CLICKHOUSE_CLIENT --query "
     SELECT count()
     FROM system.text_log
-    WHERE query_id = '${QUERY_ID}' AND logger_name = 'InterpreterInsertQuery' AND level = 'Error'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${QUERY_ID}' AND logger_name = 'InterpreterInsertQuery' AND level = 'Error'
 "
 
 echo "--- alias from the SELECT list ---"

@@ -80,10 +80,11 @@ COPY times FROM 's3://datasets-documentation/my-test-bucket-768/{some,another}_p
 ```
 
 يمكن أيضًا لعبارة [CREATE TABLE] أن تستمد أعمدتها وتُحمّل صفوفها من عنوان
-URL كهذا:
+URL كهذا (تنبيه: يحتوي ملف البيانات العام هذا على 41 مليون صف):
 
 ```sql
 CREATE TABLE reviews () WITH (
+    encoding_check = 'replace',
     copy_from = 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet'
 );
 ```
@@ -155,18 +156,25 @@ CREATE TABLE reviews () WITH (
 curl -sL https://lib.chdb.io | bash
 ```
 
-لتضمين [chDB] عبر التجميع الساكن (static) في التطبيق المساعد، عيّن المتغيرات التالية
+على نظام macOS، قد تحتاج إلى توقيع المكتبة قبل بناء الامتداد:
+
+```sh
+sudo install_name_tool -id /usr/local/lib/libchdb.so /usr/local/lib/libchdb.so
+sudo codesign -f -s - /usr/local/lib/libchdb.so
+```
+
+لتضمين [chDB] عبر التصريف الساكن (static) في التطبيق المساعد، عيّن المتغيرات التالية
 قبل تشغيل أوامر `make` الخاصة بـ[التثبيت](#compile-from-source).
 
 ```sh
 export BUNDLE_LIBCHDB=1 LIBCHDB_BUILD=static
 ```
 
-سيقوم `Makefile` بتنزيل مكتبة `libchdb` الثابتة (static) وترجمتها داخل التطبيق.
+سيقوم `Makefile` بتنزيل مكتبة `libchdb` الثابتة (static) وتصريفها داخل التطبيق.
 
 على Linux، يمكنك أيضاً جعل عملية التثبيت تنزّل مكتبة `libchdb` الديناميكية وتثبّتها، وذلك بتعيين `export BUNDLE_LIBCHDB=1` قبل تشغيل أوامر `make` الخاصة بـ [التثبيت](#compile-from-source).
 
-### البناء من المصدر {#compile-from-source}
+### التصريف من المصدر {#compile-from-source}
 
 لبناء chdb، نفّذ ما يلي فقط:
 
@@ -228,6 +236,12 @@ ERROR:  must be owner of database regression
 
 ```sh
 make installcheck PGUSER=postgres
+```
+
+لتعطيل مخطط `file://` في خطاف `COPY`، عرِّف `NO_FILE_SCHEME`:
+
+```sh
+make NO_FILE_SCHEME=1
 ```
 
 لتثبيت الامتداد في custom prefix على PostgreSQL 18 أو أحدث، مرّر

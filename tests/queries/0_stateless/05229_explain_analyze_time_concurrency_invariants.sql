@@ -4,8 +4,6 @@
 -- The output of EXPLAIN ANALYZE carries timings and is non-deterministic, so the
 -- test asserts only invariants of the `Time` and `Concurrency` lines printed with `time = 1`.
 
-SET enable_analyzer = 1;
-
 -- 1. The step is a subset of its branch, so the step share never exceeds the branch share.
 SELECT countIf(
     toFloat64(extract(explain, 'step [^(]*\\((\\d+\\.\\d+)%')) >

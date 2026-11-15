@@ -63,8 +63,8 @@ bool isStringLike(const DataTypePtr & type)
 
 /// `num_defaults` is produced by `IColumn::isDefaultAt`, which is bitwise: row is
 /// counted iff its underlying storage equals zero. For these types SQL equality to
-/// `default(type)` matches the same row set. Excluded: Enum (type default is a named
-/// value, not bitwise 0), Float (treats -0.0 and +0.0 separately, handled at the
+/// `default(type)` matches the same row set. Excluded: Enum and Date32 (type default is not bitwise 0:
+/// a named value, 1900-01-01), Float (treats -0.0 and +0.0 separately, handled at the
 /// caller), Nullable / LowCardinality / composite (Tuple, Array, Map, ...) where the
 /// "default" partition does not coincide with SQL equality to the type default.
 bool typeMatchesDefaultnessStat(const DataTypePtr & type)
@@ -77,7 +77,6 @@ bool typeMatchesDefaultnessStat(const DataTypePtr & type)
         || w.isString()
         || w.isFixedString()
         || w.isDate()
-        || w.isDate32()
         || w.isDateTime()
         || w.isDateTime64()
         || w.isDecimal()
