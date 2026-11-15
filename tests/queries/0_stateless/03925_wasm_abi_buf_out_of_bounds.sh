@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << EOF
+${CLICKHOUSE_CLIENT} << EOF
 
 DROP FUNCTION IF EXISTS returns_out_of_bounds;
 DROP FUNCTION IF EXISTS returns_out_of_bounds2;
@@ -17,7 +17,7 @@ EOF
 
 cat ${CUR_DIR}/wasm/abi_buf_out_of_bounds.wasm | ${CLICKHOUSE_CLIENT} --query "INSERT INTO system.webassembly_modules (name, code) SELECT 'abi_buf_out_of_bounds', code FROM input('code String') FORMAT RawBlob"
 
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << EOF
+${CLICKHOUSE_CLIENT} << EOF
 
 CREATE OR REPLACE FUNCTION returns_out_of_bounds LANGUAGE WASM ABI BUFFERED_V1 FROM 'abi_buf_out_of_bounds' ARGUMENTS (UInt32) RETURNS Int32;
 SELECT returns_out_of_bounds(0 :: UInt32); -- { serverError WASM_ERROR }

@@ -156,11 +156,42 @@ struct ConnectionParams
     AuthMethod auth_method;
     BlobClientOptions client_options;
 
+    /// When true, the client must not authenticate with the AKS workload identity or the machine's managed identity.
+    bool forbid_implicit_credentials = true;
+
+    /// With `forbid_implicit_credentials`, build a client with no credentials instead of throwing.
+    bool anonymous_fallback_for_server_credentials = false;
+
+    /// A storage defined in user SQL, whose client follows the restriction of each accessing session. Not a disk, or a
+    /// table on a disk, whose configuration comes from the server.
+    bool follows_session_restriction = false;
+
+    /// `client_id` and `tenant_id` of a `WorkloadIdentityCredential` in `auth_method` given in `extra_credentials`,
+    /// which the credential does not expose. Empty when the credential takes them from the environment
+    /// (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`). Used to pass the same identity to `delta-kernel-rs`.
+    String workload_identity_client_id;
+    String workload_identity_tenant_id;
+
     String getContainer() const { return endpoint.container_name; }
     String getConnectionURL() const;
+    /// Without the query, which can be a SAS, for where the url only names the endpoint (logs, errors, cache keys).
+    String getConnectionURLWithoutQuery() const;
 
     std::unique_ptr<ServiceClient> createForService() const;
     std::unique_ptr<ContainerClient> createForContainer() const;
+
+    /// Throws `ACCESS_DENIED` when the credential is off limits and the anonymous fallback is not allowed.
+    bool checkOrDropServerManagedCredentials() const;
+
+    /// Whether requests would authenticate with the server's own identity: no SAS token and a server-managed `auth_method`.
+    bool usesServerManagedCredentials() const;
+
+    /// `auth_method` for a caller that obtains tokens from it directly; throws `ACCESS_DENIED` if it is off limits.
+    AuthMethod getPermittedAuthMethod() const;
+
+    /// Throws `ACCESS_DENIED` if a storage defined in user SQL uses the server's own identity and the accessing session
+    /// is restricted. Does not change the parameters, so a client kept for others is not affected.
+    void checkSessionMayUseServerIdentity(bool restrict_server_credentials) const;
 };
 
 void processURL(const String & url, const String & container_name, Endpoint & endpoint, AuthMethod & auth_method);
@@ -189,6 +220,10 @@ struct AuthConfig
 AuthConfig readAuthConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 AuthMethod getAuthMethod(const AuthConfig & auth_config);
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
+/// `ETag` is an optional response header, and `Azure::ETag::ToString` aborts the process when the tag is absent
+/// (also in release builds). Use this function instead: it throws an exception when the endpoint did not send the tag.
+String getETag(const Azure::ETag & etag, const String & blob_path);
 
 #endif
 

@@ -1,7 +1,6 @@
 -- A volatile `additional_table_filters` predicate is rejected inside a LATERAL subquery not only for a plain
 -- table but also for a table function, because the read-planning path attaches it to both.
 
-SET enable_analyzer = 1;
 SET allow_experimental_lateral_join = 1;
 
 DROP TABLE IF EXISTS outer_t;

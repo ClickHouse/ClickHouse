@@ -61,37 +61,30 @@ ${CLICKHOUSE_CLIENT} --user "${user}" --query "
 
 # throwIf is a side channel: a predicate that observes another user's row throws. It must return
 # only the current user's own rows no matter how the predicate is injected into the query.
-for analyzer in 1
-do
-    ${CLICKHOUSE_CLIENT} --user "${user}" --query "
-        SELECT count() >= 1
-        FROM system.user_query_log
-        WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '${query_id}'
-          AND throwIf(if(initial_user != '', initial_user, user) != currentUser()) = 0
-        SETTINGS enable_analyzer = ${analyzer}"
+${CLICKHOUSE_CLIENT} --user "${user}" --query "
+    SELECT count() >= 1
+    FROM system.user_query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '${query_id}'
+      AND throwIf(if(initial_user != '', initial_user, user) != currentUser()) = 0"
 
-    ${CLICKHOUSE_CLIENT} --user "${user}" --query "
-        SELECT count() >= 1
-        FROM system.user_query_log
-        WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '${query_id}'
-        SETTINGS enable_analyzer = ${analyzer},
-            additional_table_filters = {'system.query_log': 'throwIf(if(initial_user != \\'\\', initial_user, user) != currentUser()) = 0'}"
+${CLICKHOUSE_CLIENT} --user "${user}" --query "
+    SELECT count() >= 1
+    FROM system.user_query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '${query_id}'
+    SETTINGS additional_table_filters = {'system.query_log': 'throwIf(if(initial_user != \\'\\', initial_user, user) != currentUser()) = 0'}"
 
-    ${CLICKHOUSE_CLIENT} --user "${user}" --query "
-        SELECT count() >= 1
-        FROM system.user_query_log
-        WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '${query_id}'
-        SETTINGS enable_analyzer = ${analyzer},
-            additional_table_filters = {'system.user_query_log': 'throwIf(if(initial_user != \\'\\', initial_user, user) != currentUser()) = 0'}"
+${CLICKHOUSE_CLIENT} --user "${user}" --query "
+    SELECT count() >= 1
+    FROM system.user_query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '${query_id}'
+    SETTINGS additional_table_filters = {'system.user_query_log': 'throwIf(if(initial_user != \\'\\', initial_user, user) != currentUser()) = 0'}"
 
-    # `additional_result_filter` is resolved against the result columns, so the result must contain them.
-    ${CLICKHOUSE_CLIENT} --user "${user}" --query "
-        SELECT user, initial_user
-        FROM system.user_query_log
-        WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '${query_id}'
-        SETTINGS enable_analyzer = ${analyzer},
-            additional_result_filter = 'throwIf(if(initial_user != \\'\\', initial_user, user) != currentUser()) = 0'" | sort -u | wc -l
-done
+# `additional_result_filter` is resolved against the result columns, so the result must contain them.
+${CLICKHOUSE_CLIENT} --user "${user}" --query "
+    SELECT user, initial_user
+    FROM system.user_query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '${query_id}'
+    SETTINGS additional_result_filter = 'throwIf(if(initial_user != \\'\\', initial_user, user) != currentUser()) = 0'" | sort -u | wc -l
 
 # The name is taken by a system table, so it cannot be occupied by CREATE or RENAME, and it cannot be dropped.
 if ${CLICKHOUSE_CLIENT} --query "CREATE TABLE system.user_query_log (x UInt8) ENGINE = Memory" >/dev/null 2>&1

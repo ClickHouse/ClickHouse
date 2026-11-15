@@ -10,10 +10,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # too many groups exist. The producers cannot see the staged keys' cardinality (their frozen
 # tables are bounded by the freeze threshold), so the limit is enforced where the groups first
 # materialize: as the bucket-parallel merge converts buckets. The dropping modes (break, any)
-# stay rejected. Both external thresholds are pinned off because the ratio threshold defaults
-# to a half of the memory limit: a pressured runner could spill, and a spilled run merges
-# externally, where the limit is checked as the spill drains build their tables (its own cell
-# below).
+# stay rejected. Both external thresholds are pinned off, so that each cell runs the path it
+# names: the ratio threshold defaults to a half of the memory limit, and a pressured runner could
+# spill. A run that spills only its staged records keeps the bucket-parallel merge, which reads
+# them back (its own cell below). A run whose frozen tables spill merges externally, which
+# `05386_adaptive_aggregator_max_rows_throw_external_merge` covers.
 # The two-level thresholds are pinned high so the baseline spill branch stays out of the way.
 # The test runs in one `clickhouse-local` process per cell, so the `system.events` counters
 # belong to that cell alone.
@@ -69,13 +70,12 @@ SET max_rows_to_group_by = 50000;
 SELECT g, c FROM (SELECT number % 200000 AS g, count() AS c FROM numbers_mt(600000) GROUP BY g ORDER BY c DESC LIMIT 10);
 " 2>&1 | grep -oF "TOO_MANY_ROWS" | head -1
 
-# A spilled run merges through the external machinery instead of the counted in-memory merge,
-# so the spill drains hold the limit against their drain tables as they build them, bucket by
-# bucket. The one-byte threshold keeps the pressure valve draining for the whole query, and the
-# staged keys exceed the limit many times over, so the first drain batch must abort the query.
-# The reported group count pins the per-bucket granularity: the abort must come within a few
-# buckets' worth of keys past the limit, not after a whole floor-sized batch (which would
-# report close to a million).
+# Over the threshold the producers write their staged records to disk, and the merge reads them
+# back bucket by bucket, holding the limit against the groups merged so far. The one-byte
+# threshold keeps the producers spilling for the whole query, and the staged keys exceed the
+# limit many times over. The reported group count pins the per-bucket granularity: the abort
+# must come within a few buckets' worth of keys past the limit, not after the whole stream
+# (which would report close to 1.3 million).
 echo "A spilling run hits the limit within a few buckets past it"
 $CLICKHOUSE_LOCAL --query "
 $SETTINGS_COMMON

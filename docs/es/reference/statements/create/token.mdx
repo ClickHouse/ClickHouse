@@ -38,7 +38,7 @@ autenticado con una clave de hardware o un certificado puede usarlo para crear u
 misma cuenta. Ese mismo privilegio autoriza la sentencia equivalente
 `ALTER USER <current user> ADD IDENTIFIED ...`.
 
-## Resultado
+## Resultado {#result}
 
 La consulta devuelve una fila con dos columnas:
 
@@ -58,7 +58,7 @@ es necesario validarlo (ni se valida) frente a las
 [reglas de complejidad de contraseñas](/es/reference/statements/create/user#identification): estas existen para
 limitar las contraseñas elegidas por personas.
 
-## Cláusulas VALID UNTIL y VALID FOR
+## Cláusulas VALID UNTIL y VALID FOR {#valid-until-clause}
 
 Limitan el tiempo de vida del token. Funcionan exactamente igual que las cláusulas correspondientes de un método de autenticación
 de [`CREATE USER`](/es/reference/statements/create/user#valid-until-clause): `VALID UNTIL` recibe una fecha y hora
@@ -76,7 +76,7 @@ Ejemplos:
 * `CREATE TOKEN VALID FOR INTERVAL 30 DAY`
 * `CREATE TOKEN VALID UNTIL 'infinity'`
 
-## Cláusula GRANTS
+## Cláusula GRANTS {#grants-clause}
 
 Limita los derechos de acceso de las sesiones autenticadas con el token a la intersección con los privilegios
 enumerados. Funciona exactamente igual que la [cláusula `GRANTS` de `CREATE USER`](/es/reference/statements/create/user#grants-clause),
@@ -93,7 +93,7 @@ Ejemplos:
 Ni este límite ni el límite de tiempo se aplican a lo que dejan tras de sí las sesiones del token: consulte
 [Consideraciones de seguridad](#security-considerations).
 
-## Gestión de tokens
+## Gestión de tokens {#managing-tokens}
 
 Un token es un método de autenticación del usuario, por lo que aparece en
 [`SHOW CREATE USER`](/es/reference/statements/show#show-create-user) (con sus cláusulas `VALID UNTIL` y `GRANTS`,
@@ -104,11 +104,14 @@ No existe ninguna sentencia que elimine un único token. Para revocar todos los 
 métodos de autenticación, por ejemplo con `ALTER USER <name> IDENTIFIED WITH ...`, o utilice
 `ALTER USER <name> RESET AUTHENTICATION METHODS TO NEW` para conservar solo el añadido más recientemente. El
 número de métodos de autenticación que un usuario puede tener a la vez está limitado por el
-server setting `max_authentication_methods_per_user`.
+server setting `max_authentication_methods_per_user`. Los tokens expirados no computan para este límite durante mucho tiempo: al igual que
+cualquier `ALTER USER`, `CREATE TOKEN` elimina, antes de añadir el nuevo, los métodos de autenticación del usuario cuyo plazo ya ha
+vencido, por lo que los tokens con una cláusula `VALID UNTIL` o `VALID FOR` (o con el TTL predeterminado)
+pueden crearse indefinidamente. Consulte [`VALID UNTIL`](/es/reference/statements/create/user#valid-until-clause).
 
 El secreto lo genera y lo almacena la propia consulta, de modo que un `CREATE TOKEN` cuyo resultado nunca llega al
 client —una connection perdida mientras se envía la fila, o un `INTO OUTFILE` que el client no puede abrir—
-deja tras de sí un método de autenticación que nadie puede usar y que sigue contando para ese límite. Nadie
+deja tras de sí un método de autenticación que nadie puede usar y que cuenta para ese límite hasta que expira. Nadie
 posee ese secreto: existe únicamente mientras se ejecuta la consulta. Una consulta rechazada antes de ejecutarse,
 incluida aquella cuya `FORMAT` cláusula indique un format que no puede utilizarse, no añade nada.
 
@@ -116,7 +119,7 @@ incluida aquella cuya `FORMAT` cláusula indique un format que no puede utilizar
 cada nodo con la sentencia equivalente `ALTER USER ... ADD IDENTIFIED WITH sha256_hash`) para que un token funcione
 en un cluster cuyas access entities se almacenan localmente.
 
-## Consideraciones de seguridad
+## Consideraciones de seguridad {#security-considerations}
 
 `VALID UNTIL` y `GRANTS` limitan las sesiones que se autentican con el token, pero no limitan
 lo que esas sesiones dejan tras de sí:

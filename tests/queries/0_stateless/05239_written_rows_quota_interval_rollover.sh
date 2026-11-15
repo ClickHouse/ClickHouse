@@ -25,9 +25,11 @@ ${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER}"
 ${CLICKHOUSE_CLIENT} -q "GRANT ALL ON *.* TO ${ROLE}"
 ${CLICKHOUSE_CLIENT} -q "GRANT ${ROLE} TO ${USER}"
 
+# The inserts are synchronous: an asynchronous insert is accounted when its batch is flushed, which can be seconds
+# later and in another quota interval.
 # Measure how many bytes one inserted block costs.
 ${CLICKHOUSE_CLIENT} -q "CREATE QUOTA ${QUOTA} FOR INTERVAL 100 YEAR TRACKING ONLY TO ${ROLE}"
-${CLICKHOUSE_CLIENT} --user ${USER} -q "INSERT INTO ${TABLE} VALUES (${ROW})"
+${CLICKHOUSE_CLIENT} --user ${USER} -q "INSERT INTO ${TABLE} SETTINGS async_insert = 0 VALUES (${ROW})"
 BLOCK_BYTES=$(${CLICKHOUSE_CLIENT} -q "SELECT written_bytes FROM system.quotas_usage WHERE quota_name = '${QUOTA}'")
 ${CLICKHOUSE_CLIENT} -q "DROP QUOTA ${QUOTA}"
 ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE ${TABLE}"
@@ -62,11 +64,11 @@ for _ in {1..10}; do
     # A slow attempt may also exceed the quota by accounting both inserts in one interval, so the errors are
     # ignored, and such an attempt is repeated as it does not report both checkpoints.
     RESULT=$(${CLICKHOUSE_CLIENT} --user ${USER} 2>/dev/null -q "
-        INSERT INTO ${TABLE} VALUES (${ROW});
+        INSERT INTO ${TABLE} SETTINGS async_insert = 0 VALUES (${ROW});
         SELECT toUnixTimestamp(end_time) FROM system.quota_usage WHERE quota_name = '${QUOTA}';
         SELECT sleep(3) FORMAT Null;
         SELECT sleep(2.5) FORMAT Null;
-        INSERT INTO ${TABLE} VALUES (${ROW});
+        INSERT INTO ${TABLE} SETTINGS async_insert = 0 VALUES (${ROW});
         SELECT toUnixTimestamp(end_time), written_rows, written_bytes = ${BLOCK_BYTES} FROM system.quota_usage WHERE quota_name = '${QUOTA}' FORMAT TSV;
     ")
 

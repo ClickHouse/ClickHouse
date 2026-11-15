@@ -10,7 +10,6 @@
 SET join_algorithm = 'full_sorting_merge';
 SET query_plan_join_shard_by_pk_ranges = 1;
 SET optimize_read_in_order = 1;
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET use_skip_indexes_on_data_read = 1;
 SET use_indexes_refiner_in_read_pools = 1;

@@ -124,7 +124,7 @@ SELECT * FROM cluster(`cluster_name`, view(SELECT a, b, c FROM table_name));
 ## Related {#related}
 
 - [View Table Engine](/reference/engines/table-engines/special/view)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true});
 }
 
 }

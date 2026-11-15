@@ -11,6 +11,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Common/NamedCollections/NamedCollections_fwd.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/SecretArgumentsSpec.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/SelectQueryInfo.h>
 
@@ -85,6 +86,9 @@ struct MongoDBConfiguration
     void checkHosts(const ContextPtr & context) const;
     void checkCollection() const;
 
+    void checkServerCredentialsForTable(const ContextPtr & context) const;
+    void checkServerCredentialsForDictionary() const;
+
     bool isOidColumn(const std::string & name) const
     {
         return oid_fields.contains(name);
@@ -158,6 +162,9 @@ private:
     const MongoDBConfiguration configuration;
     LoggerPtr log;
 };
+
+/// The `SecretArgumentsSpec` of `mongodb` and the `MongoDB` table engine.
+SecretArgumentsSpec mongoDBSecretArguments();
 
 }
 #endif

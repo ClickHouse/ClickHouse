@@ -3,6 +3,7 @@
 #include <Backups/BackupFactory.h>
 #include <Core/Settings.h>
 #include <Common/Exception.h>
+#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 
 #if USE_AWS_S3
 #include <Backups/BackupIO_S3.h>
@@ -33,6 +34,7 @@ namespace DB::S3AuthSetting
     extern const S3AuthSettingsString google_adc_client_id;
     extern const S3AuthSettingsString google_adc_client_secret;
     extern const S3AuthSettingsString google_adc_refresh_token;
+    extern const S3AuthSettingsString google_service_account_key;
     extern const S3AuthSettingsString impersonate_service_account;
     extern const S3AuthSettingsString impersonation_delegates;
     extern const S3AuthSettingsString impersonation_scopes;
@@ -312,6 +314,7 @@ void registerBackupEngineS3(BackupFactory & factory)
             auth[S3AuthSetting::google_adc_client_id] = collection->getOrDefault<String>("google_adc_client_id", "");
             auth[S3AuthSetting::google_adc_client_secret] = collection->getOrDefault<String>("google_adc_client_secret", "");
             auth[S3AuthSetting::google_adc_refresh_token] = collection->getOrDefault<String>("google_adc_refresh_token", "");
+            auth[S3AuthSetting::google_service_account_key] = collection->getOrDefault<String>("google_service_account_key", "");
             auth[S3AuthSetting::impersonate_service_account] = collection->getOrDefault<String>("impersonate_service_account", "");
             auth[S3AuthSetting::impersonation_delegates] = collection->getOrDefault<String>("impersonation_delegates", "");
             auth[S3AuthSetting::impersonation_scopes] = collection->getOrDefault<String>("impersonation_scopes", "");
@@ -488,7 +491,7 @@ void registerBackupEngineS3(BackupFactory & factory)
 #endif
     };
 
-    factory.registerBackupEngine("S3", creator_fn, destination_identity_fn, source_access_fn);
+    factory.registerBackupEngine("S3", creator_fn, destination_identity_fn, source_access_fn, s3BackupSecretArguments());
 }
 
 }

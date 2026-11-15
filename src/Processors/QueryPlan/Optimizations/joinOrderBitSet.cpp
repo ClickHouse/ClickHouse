@@ -1,4 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/joinOrderBitSet.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <algorithm>
 #include <unordered_set>
@@ -59,12 +61,12 @@ std::optional<JoinKind> isValidJoinOrder(
     return {};
 }
 
-std::vector<JoinActionRef *> getApplicableExpressions(
+VectorWithMemoryTracking<JoinActionRef *> getApplicableExpressions(
     QueryGraph & query_graph,
     const BitSet & left,
     const BitSet & right)
 {
-    std::vector<JoinActionRef *> applicable;
+    VectorWithMemoryTracking<JoinActionRef *> applicable;
 
     BitSet joined_rels = left | right;
     for (auto & edge : query_graph.edges)
@@ -82,7 +84,7 @@ std::vector<JoinActionRef *> getApplicableExpressions(
             /// null-supplying relation is joined. That relation appears as a singleton
             /// on one side of the join step (enforced by isValidJoinOrder), so the
             /// predicate becomes applicable exactly at that step.
-            if (!joined_rels.test(pin_it->second))
+            if (!isSubsetOf(pin_it->second, joined_rels))
                 continue;
         }
 
@@ -98,7 +100,7 @@ SelectivityEstimate computeSelectivity(
     const QueryGraph & query_graph,
     const PlanMemo & dp_table,
     SelectivityCache & expression_selectivity,
-    const std::vector<JoinActionRef *> & edges,
+    const VectorWithMemoryTracking<JoinActionRef *> & edges,
     const BitSet & left,
     const BitSet & right)
 {
@@ -106,7 +108,7 @@ SelectivityEstimate computeSelectivity(
 
     /// Also account for transitively-equivalent columns spanning both sides.
     using ConstClassPtr = EquivalenceClasses<JoinActionRef>::ConstClassPtr;
-    std::unordered_set<ConstClassPtr> visited;
+    UnorderedSetWithMemoryTracking<ConstClassPtr> visited;
 
     for (const auto & [member, _] : query_graph.column_equivalences.getMemberToClassMap())
     {

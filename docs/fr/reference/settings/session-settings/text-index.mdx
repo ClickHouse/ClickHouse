@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## text_index_hint_max_selectivity
+## text_index_hint_max_selectivity {#text_index_hint_max_selectivity}
 
 <SettingsInfoBlock type="Float" default_value="0.2" />
 
@@ -21,18 +21,7 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 Sélectivité maximale du filtre permettant d’utiliser le hint construit à partir de l’index de texte inversé.
 
-## text_index_lazy_intersection_density_threshold
-
-**Alias** : `text_index_density_threshold`
-
-<SettingsInfoBlock type="Float" default_value="0.2" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0.2"},{"label": "Renommé depuis `text_index_density_threshold` (conservé comme alias) ; sélectionne l’algorithme d’intersection des posting lists en mode lazy d’application des posting lists."}]}]} />
-
-Seuil de densité des posting lists qui détermine l’algorithme d’intersection en mode lazy d’application des posting lists (`text_index_posting_list_apply_mode = 'lazy'`).
-En dessous du seuil : intersection leapfrog (privilégie les posting lists clairsemées). À partir du seuil : intersection bitmap en brute-force (privilégie les posting lists denses).
-
-## text_index_like_max_postings_to_read
+## text_index_like_max_postings_to_read {#text_index_like_max_postings_to_read}
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
@@ -42,7 +31,7 @@ Nombre maximal de postings volumineux à lire lorsque l’évaluation LIKE de l�
 
 Nécessite que `use_text_index_like_evaluation_by_dictionary_scan` soit activé.
 
-## text_index_like_min_pattern_length
+## text_index_like_min_pattern_length {#text_index_like_min_pattern_length}
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
@@ -56,15 +45,29 @@ Avec le tokenizer `array`, où tout motif est éligible, le seuil est comparé a
 
 Nécessite que `use_text_index_like_evaluation_by_dictionary_scan` soit activé.
 
-## text_index_posting_list_apply_mode
+## text_index_posting_list_apply_mode {#text_index_posting_list_apply_mode}
 
 <SettingsInfoBlock type="TextIndexPostingListApplyMode" default_value="lazy" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "lazy"},{"label": "Les requêtes utilisant un index de texte décodent désormais les posting lists à la demande avec un curseur au lieu de les matérialiser en bitmaps Roaring, ce qui réduit l’utilisation de la mémoire et le temps CPU pour les requêtes sélectives."}]}, {"id": "row-2","items": [{"label": "26.6"},{"label": "materialize"},{"label": "Nouveau paramètre pour le mode d’application lazy des posting lists"}]}]} />
 
-Contrôle la façon dont les posting lists sont appliquées lors des requêtes utilisant un index de texte.
-&#39;materialize&#39; décode immédiatement les posting lists en bitmaps Roaring.
-&#39;lazy&#39; (par défaut) utilise un décodage à la demande basé sur des curseurs (nécessite un format d’index avec un codec sérialisé).
-&#39;lazy&#39; est appliqué uniquement là où il est pris en charge : les requêtes avec des motifs (tels que `LIKE`) et les parts avec un index écrit par une version antérieure reviennent à &#39;materialize&#39;.
+Contrôle la façon dont les listes de postings sont appliquées lors des requêtes utilisant un index de texte.
+&#39;materialize&#39; décode immédiatement les listes de postings en bitmaps Roaring.
+&#39;différé&#39; (par défaut) utilise un décodage à la demande basé sur des curseurs (nécessite un format d’index avec un codec sérialisé).
+&#39;différé&#39; est appliqué uniquement là où il est pris en charge : les requêtes avec des motifs (tels que `LIKE`) et les parts avec un index écrit par une version antérieure reviennent à &#39;materialize&#39;.
+
+## text_index_postings_intersection_algorithm {#text_index_postings_intersection_algorithm}
+
+<SettingsInfoBlock type="TextIndexPostingsIntersectionAlgorithm" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "auto"},{"label": "Nouveau paramètre remplaçant `text_index_lazy_intersection_density_threshold` : sélectionne l'algorithme d'intersection des listes de postings en mode d'application différée des listes de postings. `auto` conserve le comportement par défaut précédent ; `compatibility` ne doit donc pas le modifier."}]}]} />
+
+Sélectionne l&#39;algorithme d&#39;intersection des listes de postings en mode d&#39;application différée des listes de postings (`text_index_posting_list_apply_mode = 'lazy'`).
+
+* `auto` (par défaut) : l&#39;algorithme leapfrog n&#39;est utilisé que si la liste de postings la plus clairsemée permet de sauter des blocs compactés entiers de la plus dense ; sinon, c&#39;est l&#39;intersection par bitmap en force brute qui est utilisée.
+* `bruteforce` : utilise systématiquement l&#39;intersection par bitmap en force brute.
+* `leapfrog` : utilise systématiquement l&#39;intersection leapfrog.
+
+Les intersections portant sur 256 jetons ou plus utilisent toujours leapfrog.
 
 {/*AUTOGENERATED_END*/}

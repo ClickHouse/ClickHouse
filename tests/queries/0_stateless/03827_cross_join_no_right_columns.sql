@@ -12,7 +12,6 @@ CREATE TABLE t2 (a UInt64, b String) ENGINE = MergeTree ORDER BY a;
 
 INSERT INTO t1 VALUES (1), (2), (3);
 INSERT INTO t2 VALUES (1, 'x'), (2, 'y');
-SET enable_analyzer = 1;
 -- PREWHERE references all columns from t2, so after PREWHERE pushdown
 -- the right side of the join has zero columns in its header.
 SELECT count() FROM t1, t2 PREWHERE a > 0 AND b != ''

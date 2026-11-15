@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="os_threads_nice_value_materialized_view">
-  ## os_threads_nice_value_materialized_view
-</div>
+## os_threads_nice_value_materialized_view {#os_threads_nice_value_materialized_view}
 
 <SettingsInfoBlock type="Int32" default_value="0" />
 
@@ -27,19 +25,17 @@ materialized view 线程的 Linux nice 值。值越小，CPU 优先级越高。
 
 可能的值：-20 到 19。
 
-<div id="os_threads_nice_value_query">
-  ## os_threads_nice_value_query
-</div>
+## os_threads_nice_value_query {#os_threads_nice_value_query}
 
 **别名**: `os_thread_priority`
 
 <SettingsInfoBlock type="Int32" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "0"},{"label": "新设置。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "0"},{"label": "新增设置，`os_thread_priority` 为其别名。"}]}]} />
 
 查询处理线程的 Linux nice 值。值越低，CPU 优先级越高。
 
-需要 `CAP_SYS_NICE` 能力，否则为空操作。
+需要 CAP&#95;SYS&#95;NICE 能力，否则为空操作。
 
 可能的值：-20 到 19。
 

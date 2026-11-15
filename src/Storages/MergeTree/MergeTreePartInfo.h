@@ -206,6 +206,7 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "merge-not-byte-identical",
         "mutate-not-byte-identical",
         "broken-from-backup",
+        "fsync-failed",
     });
 
     static constexpr auto DETACHED_REASONS_REMOVABLE_BY_TIMEOUT = std::to_array<std::string_view>({

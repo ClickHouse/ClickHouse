@@ -1,0 +1,173 @@
+---
+slug: /use-cases/observability/clickstack/anomaly-detection
+title: 'ClickStack의 이상 탐지 알림'
+sidebarTitle: '이상 탐지'
+description: 'ClickStack의 이상 탐지 기능을 사용하면 고정 임계값을 지정하지 않고도 메트릭이 예상 범위를 벗어날 때 알림을 받을 수 있습니다.'
+doc_type: 'guide'
+keywords: ['ClickStack', '관측성', '알림', '이상 탐지', 'z-score', '기준값', '동적 임계값', '표준 편차']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<Info>
+  **베타: Managed ClickStack 전용**
+
+  이상 탐지 알림은 베타 단계이며 Managed ClickStack에서만 사용할 수 있습니다. ClickStack Open Source에서는 사용할 수 없습니다. 베타 기간 동안 동작과 기본값이 변경될 수 있습니다.
+</Info>
+
+이상 탐지 알림은 값이 고정된 수치를 넘을 때가 아니라 예상 범위를 벗어날 때 알림을 보냅니다. ClickStack은 시계열의 최근 이력에서 예상 범위를 학습하므로, 서비스별로 &quot;오류가 너무 많다&quot;거나 &quot;너무 느리다&quot;의 기준을 미리 정해 둘 필요가 없습니다.
+
+다음과 같은 경우 이상 탐지를 사용하십시오.
+
+* 적절한 임계값이 서비스, 엔드포인트 또는 고객마다 다르며, 알림을 해당 차원으로 그룹화하는 경우
+* 정상 값이 하루 중에도 변동하여, 고정 임계값을 사용하면 피크 시간에는 알림이 과도하게 발생하고 비피크 시간에는 문제를 감지하지 못하는 경우
+* 절대적인 수준보다 오류 급증, 지연 시간 급상승, 트래픽이 0으로 떨어지는 현상 등 급격한 변화를 감지하는 것이 더 중요한 경우
+
+&quot;p99 지연 시간 2초 초과&quot;나 &quot;결제 실패 발생&quot;처럼 항상 적용해야 하는 하드 제한이 있다면 [정적 임계값 알림](/ko/clickstack/features/alerts)을 사용하십시오.
+
+## 지원되는 알림 {#supported-alerts}
+
+이상 탐지(Anomaly detection)는 별도의 알림 유형이 아니라 기존 알림에 적용하는 탐지 모드입니다. 다음 알림에서 사용할 수 있습니다.
+
+* [검색 알림](/ko/clickstack/features/alerts#search-alerts): 일치하는 이벤트 수를 기준으로 점수를 산정합니다.
+* [대시보드 차트 알림](/ko/clickstack/features/alerts#dashboard-alerts): 차트 빌더로 만든 차트에서 사용할 수 있습니다.
+
+[SQL 기반 차트 알림](/ko/clickstack/features/alerts#sql-based-alerts)에서는 이상 탐지를 사용할 수 없습니다. 이상 탐지 알림이 설정된 차트를 SQL 모드로 전환하면 ClickStack은 해당 알림을 정적 임계값 알림으로 변환합니다. 이상 탐지를 계속 사용하려면 차트를 다시 빌더 모드로 전환하십시오.
+
+## 이상 탐지 알림 생성 {#creating-an-anomaly-alert}
+
+<Steps>
+  <Step title="알림 편집기 열기" id="open-alert-editor">
+    [알림](/ko/clickstack/features/alerts#types-of-alerts)에 설명된 대로 저장된 검색 또는 대시보드 차트의 알림 편집기를 엽니다.
+  </Step>
+
+  <Step title="이상 탐지 선택" id="select-anomaly-detection">
+    **Alert type**에서 **이상 탐지**를 선택합니다. 기본값은 **Static threshold**입니다.
+  </Step>
+
+  <Step title="조건 구성" id="configure-condition">
+    조건은 하나의 문장 형태로 표시됩니다: **Alert when z-score is at least** `3` **when value is** `outside expected range` **compared to the past** `2 hours` **checked every** `5 minute`.
+
+    <Image img="/images/clickstack/anomaly-detection/anomaly-alert-condition.webp" alt="알림 유형으로 Anomaly detection이 선택되어 있으며, z-score, 방향, 기준값, 인터벌 컨트롤과 평이한 문장으로 된 요약, 백테스트 결과가 표시된 화면" size="lg" />
+
+    * **z-score is at least** (기본값 `3`): 값이 예상값에서 표준편차의 몇 배만큼 벗어나야 이상치로 간주할지를 지정합니다. 최솟값은 0.5이며, 화살표를 누르면 0.5씩 증감합니다. 값이 낮을수록 민감도가 높아져 알림이 더 자주 발생합니다.
+    * **When value is** (기본값 `outside expected range`): 알림을 보낼 방향을 `above expected`, `below expected`, `outside expected range` 중에서 지정합니다. 오류 수와 지연 시간에는 `above expected`를, 처리량이나 가입 수에는 `below expected`를 사용하십시오.
+    * **Compared to the past** (기본값 2시간): ClickStack이 정상 변동 폭을 측정하는 데 사용하는 이력 기간으로, 30분 또는 1, 2, 4, 6, 12, 24시간 중에서 선택합니다. 기준 기간이 길수록 범위가 안정적이지만, 새로운 정상 상태에 적응하는 속도는 느려집니다.
+    * **Checked every** (기본값 5분): 알림을 평가하는 주기로, 5분, 15분, 30분 또는 1시간 중에서 선택합니다. 이상 탐지 알림에서는 이보다 짧거나 긴 인터벌을 사용할 수 없습니다.
+
+    조건 아래에는 ClickStack이 알림의 동작을 요약하여 보여 줍니다. 예: &quot;Every 5 minutes, values are compared to their typical range from the past 2 hours. Notifies when values rise above the expected range, once per incident.&quot;
+
+    <Tip>
+      급증이 잦은 시계열에는 `outside expected range`보다 `above expected` 또는 `below expected`를 사용하는 것이 좋습니다. 짧은 급증이 발생하면 예상값이 뒤늦게 따라 올라가 몇 분간 높게 유지되므로, 값이 정상으로 돌아오는 구간도 이상치로 판정될 수 있습니다. `outside expected range`를 사용하면 한 번의 급증으로 알림이 두 번 발생할 수 있습니다.
+    </Tip>
+  </Step>
+
+  <Step title="백테스트 및 프리뷰 검토" id="review-preview">
+    요약 아래의 줄은 백테스트 결과입니다. 백테스트는 현재 설정을 최근 이력에 재적용하여 알림이 몇 번 발생했을지를 보여 줍니다. 예: &quot;Would have notified 6 times in the past 24 hours, firing on 12 of 288 checks.&quot; 검색 알림의 백테스트는 최근 24시간을 대상으로 합니다. 대시보드 차트 알림은 차트에서 선택한 시간 범위를 최대 24시간까지 대상으로 합니다. 알림이 하루 10회를 초과하여 발생할 것으로 예상되면 횟수가 노란색으로 표시됩니다.
+
+    양식 아래의 **이상 탐지 chart**에는 동일한 범위가 표시됩니다:
+
+    * 실선은 시계열입니다.
+    * 점선은 예상 기준값입니다.
+    * 음영 영역은 알림 트리거 구역입니다. 값이 예상 범위를 벗어나 이 영역 안에 들어가면 알림이 발생합니다.
+    * **Notify** 표식은 알림이 전송되었을 지점을 나타냅니다.
+
+    <Image img="/images/clickstack/anomaly-detection/anomaly-alert-preview.webp" alt="24시간 시계열과 예상 기준값, 음영으로 표시된 알림 트리거 구역, 6번의 급증마다 표시된 Notify 표식을 보여 주는 Anomaly detection chart" size="lg" />
+
+    알림이 그룹화된 경우 백테스트는 모든 시계열을 합산합니다. **Show breakdown by series**를 선택하면 어떤 시계열에서 알림이 가장 많이 발생했을지 확인할 수 있습니다. 아래 예시에서는 희소한 시계열 하나가 전체 알림의 40% 이상을 차지하므로, 해당 시계열을 제외하거나 별도의 알림으로 분리하는 것이 좋습니다.
+
+    <Image img="/images/clickstack/anomaly-detection/anomaly-backtest-breakdown.webp" alt="그룹화된 이상 알림에 대해 서비스별 알림 발생 건수를 나열한 백테스트 분석 화면" size="md" />
+
+    백테스트 결과가 원하는 알림 수준과 일치할 때까지 z-score, 방향, 기준 기간을 조정하십시오. 알림이 하루에 여러 번 발생할 것으로 예상되면 z-score를 높이거나 방향을 좁히십시오.
+  </Step>
+
+  <Step title="알림 채널 선택 및 저장" id="save-anomaly-alert">
+    다른 알림과 마찬가지로 웹훅 또는 다른 채널을 선택합니다. [웹훅 추가](/ko/clickstack/features/alerts#add-webhook)를 참조하십시오. 알림을 저장하면 평가가 시작됩니다.
+  </Step>
+</Steps>
+
+### 적합성 경고 {#suitability-warnings}
+
+일부 시계열은 이상 탐지에 적합하지 않습니다. 이런 경우 저장하기 전에 프리뷰 차트 아래에 경고가 표시되지만, 저장 자체가 차단되지는 않습니다.
+
+| 경고                             | 원인                                                                          | 조치 방법                                            |
+| ------------------------------ | --------------------------------------------------------------------------- | ------------------------------------------------ |
+| 기준값을 산출하기 위한 이력이 아직 충분하지 않음    | 새로 생긴 시계열이거나, 프리뷰 범위 대부분에 기준값 데이터가 없습니다.                                    | 데이터가 더 쌓일 때까지 기다리거나, 이력이 확보될 때까지 정적 임계값을 사용하십시오. |
+| 대부분의 시간 버킷(time bucket)이 비어 있음 | 시계열에 처음 데이터가 들어온 이후 절반 이상의 분(minute)이 비어 있습니다. 이는 대략 분당 이벤트가 1건 미만이라는 뜻입니다. | 검색 범위를 넓히거나, group-by를 제거하거나, 정적 임계값을 사용하십시오.    |
+| 이 시계열은 거의 평탄함                  | 시계열의 변화가 거의 없어 아주 작은 변동에도 극단적인 z-score가 나타납니다.                                 | 정적 임계값을 사용하거나 z-score를 높이십시오.                       |
+
+<Image img="/images/clickstack/anomaly-detection/anomaly-suitability-warning.webp" alt="대부분의 시간 버킷이 비어 있다는 경고가 표시된 희소 시계열의 이상 탐지 차트" size="lg" />
+
+## 이상 탐지 작동 방식 {#how-it-works}
+
+ClickStack은 평가할 때마다 평가 윈도우를 버킷 하나씩 차례로 점수화합니다. 각 버킷의 길이는 60초입니다.
+
+각 버킷에 대해 다음 과정을 수행합니다.
+
+1. **예상값.** ClickStack은 평가 윈도우 하나만큼 이전 시점에 끝나는 7개 버킷의 이동 평균을 구합니다. 예상값은 음수가 되지 않습니다.
+2. **분산 정도.** ClickStack은 **Compared to the past**에서 선택한 기준 기간 동안 시계열의 표준편차를 ClickHouse에서 계산합니다. 기준 기간은 평가 윈도우 하나보다 짧아지지 않습니다.
+3. **z-score.** z-score는 `(value − expected) / standard deviation`입니다.
+4. **판정.** z-score가 구성된 방향으로 구성된 임계값을 넘고, 값과 예상값의 차이가 예상값의 5% 이상(예상값이 0이면 0.01 이상)이면 해당 버킷에서 알림이 발생합니다. 이 5% 하한은 거의 일정한 시계열이 사소한 변동만으로 알림을 발생시키지 않도록 합니다.
+
+예상 범위는 `expected ± z-score × standard deviation`이며, 5% 하한만큼 더 넓어집니다. 프리뷰에서는 이 범위를 벗어난 모든 영역이 알림 트리거 구역으로 음영 처리됩니다.
+
+평가 윈도우에 속한 버킷 중 하나라도 알림이 발생하면 해당 평가 윈도우에서 알림이 발생합니다.
+
+### 빈 버킷 {#empty-buckets}
+
+ClickStack이 데이터가 없는 1분 구간을 처리하는 방식은 집계 유형에 따라 다릅니다.
+
+* **개수 및 합계**(검색 알림 포함): 빈 버킷은 0으로 평가됩니다. 따라서 방향이 `below expected` 또는 `outside expected range`인 알림은 트래픽이 완전히 끊기면 발생합니다.
+* **평균, 백분위수, 최솟값, 최댓값, 비율 및 메트릭 소스**: 빈 버킷은 측정할 대상이 없었다는 뜻이므로 0으로 평가하지 않고 건너뜁니다.
+
+이력이 충분히 쌓이지 않은 버킷은 평가되지 않으므로, 새로 생성된 시계열에서는 기준값이 확보될 때까지 알림이 발생하지 않습니다.
+
+### 그룹화된 알림 {#grouped-alerts}
+
+알림을 `ServiceName`과 같은 필드로 그룹화하면 각 그룹은 자체 예상 범위와 알림 상태를 갖는 별도의 시계열이 됩니다. ClickStack은 알림당 최대 100개의 시계열에 점수를 매기며, 데이터가 가장 많은 시계열을 우선합니다. 이미 알림이 발생 중인 시계열은 상위 100개 밖으로 밀려나더라도 해결될 때까지 계속 점수가 매겨집니다.
+
+### 알림 및 해소 {#notifications}
+
+이상 탐지 알림은 시계열별로 인시던트당 한 번만 전송됩니다.
+
+* 시계열이 발생(firing) 상태가 되면 ClickStack은 알림을 한 번 보내고 해당 시계열을 알림 상태로 표시합니다.
+* 이후 평가에서도 시계열이 계속 발생 상태이면 추가 알림을 보내지 않습니다.
+* 평가 윈도우에 발생 상태인 버킷이 하나도 없으면 시계열이 해소되고, ClickStack은 해소 알림을 보냅니다.
+
+장애 등으로 여러 번의 평가가 누락되면 다음 평가에서 누락된 윈도우를 한꺼번에 처리하며, 이때에도 발생 알림은 시계열별로 최대 한 번만 보냅니다.
+
+ClickStack은 윈도우가 종료되고 30초가 지난 후에 평가하므로, 늦게 도착한 데이터도 집계에 포함됩니다.
+
+알림에는 임계값 대신 이상 현상에 대한 설명이 담깁니다. 예시는 다음과 같습니다.
+
+* 제목: `Alert for "Checkout errors" - value 142 is above the expected range (z-score 4.4)`
+* 본문: `Value 142 is above the expected range — z-score 4.4 vs sensitivity 3; expected 120 ± 5 (expected range 105 to 135).`
+
+사용자 정의 알림 이름과 메시지에서는 `{{anomaly.value}}`, `{{anomaly.expectedValue}}`, `{{anomaly.expectedStddev}}`, `{{anomaly.lowerBound}}`, `{{anomaly.upperBound}}`, `{{anomaly.zScore}}`를 사용하여 알림을 트리거한 버킷을 참조할 수 있습니다. 이 값들은 발생 알림에서만 설정되며 해소 알림에는 포함되지 않습니다. 따라서 동일한 이름이나 메시지를 두 알림에 모두 사용한다면 `{{#if anomaly}}...{{/if}}`로 감싸십시오.
+
+## 이상 탐지 알림 모니터링 {#monitoring}
+
+**Alerts** 페이지에서 **Filter by type**을 **Anomaly**로 설정하면 이상 탐지 알림만 표시됩니다. 각 행에는 &quot;If value is above expected with z-score at least 3&quot;과 같은 조건이 표시됩니다.
+
+<Image img="/images/clickstack/anomaly-detection/anomaly-alerts-list.webp" alt="이상 탐지 알림으로 필터링된 Alerts 페이지로, 하나의 알림과 해당 조건 및 최근 평가 이력이 표시됨" size="lg" />
+
+알림을 선택하면 상세 페이지가 열립니다. ClickStack은 인터벌과 기준값이 포함된 조건 요약 아래에 보존된 이력 기간 동안 알림이 몇 번 발생했는지를 &quot;Fired 2 times in the past 2 days.&quot;와 같은 형식으로 표시합니다. 이 범위를 선택하면 해당 기간이 차트와 평가 이력에 표시됩니다.
+
+<Image img="/images/clickstack/anomaly-detection/anomaly-alert-detail.webp" alt="조건 요약과 지난 2일 동안 알림이 발생한 횟수를 보여 주는 이상 탐지 알림 상세 페이지" size="lg" />
+
+**Evaluation History** 테이블에는 각 검사의 상태(state), 최신 값, 알림 상태였던 시계열 수가 나열됩니다. 알림 소요 시간이 표시된 행은 알림이 발생했을 때와 해소되었을 때 모두 알림이 전송되었음을 의미합니다.
+
+<Image img="/images/clickstack/anomaly-detection/anomaly-alert-history.webp" alt="5분마다 수행된 각 검사의 Alert 및 Ok 상태를 보여 주는 이상 탐지 알림의 평가 이력" size="lg" />
+
+알림이 연속된 윈도우 20개 이상 동안 알림 상태로 유지되면, 상세 페이지에는 해당 시계열이 이상 징후가 아니라 새로운 정상 상태에 도달했을 수 있다는 안내가 표시됩니다. 이 경우 z-score를 높이거나, 더 적절한 기준값과 비교하도록 알림을 수정하십시오.
+
+## MCP를 활용한 백테스트 {#backtesting-with-mcp}
+
+[ClickStack MCP 서버](/ko/clickstack/mcp)를 사용하면 AI 어시스턴트가 이상 탐지 설정을 저장하기 전에 미리 백테스트할 수 있습니다. `clickstack_backtest_anomaly_alert` 도구는 최대 24시간 분량의 이력에 구성을 재적용한 뒤, 시계열별로 발송되었을 알림을 데이터 품질 경고와 함께 보고합니다. 이 도구는 읽기 전용입니다.
+
+## 튜닝 팁 {#tuning-tips}
+
+* **알림이 너무 자주 발생하는 경우:** z-score를 0.5 단위로 높이거나, 방향을 `outside expected range`에서 중요하게 보는 쪽으로 변경하십시오.
+* **알림이 실제 장애를 놓친 경우:** z-score를 낮추거나 기준값 기간을 줄여 범위가 최근 동작을 반영하도록 하십시오.
+* **배포 후 하루 종일 알림이 발생하는 경우:** 시계열의 정상 수준이 새로 바뀐 것입니다. 기준값 기간이 길수록 새로운 수준에 적응하는 데 더 오래 걸립니다.
+* **데이터량이 적은 시계열:** 각 시계열에 분당 최소 1개의 이벤트가 있도록 더 적은 차원(dimensions)으로 그룹화하거나, 더 넓은 범위의 검색을 대상으로 알림을 설정하십시오.

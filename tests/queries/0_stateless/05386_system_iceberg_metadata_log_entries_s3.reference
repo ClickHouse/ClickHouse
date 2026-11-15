@@ -1,0 +1,11 @@
+--- one row per metadata file ---
+v1.metadata.json	1755788828044	1	\N	\N
+v2.metadata.json	1755788830011	0	0	1
+v3.metadata.json	1755788830368	0	0	2
+v4.metadata.json	1755788831757	0	0	3
+v5.metadata.json	1755788832026	0	0	4
+v6.metadata.json	1755788832654	0	0	5
+v7.metadata.json	1755788832937	0	0	6
+v8.metadata.json	1755788833168	0	0	7
+--- latest snapshots are the snapshots of system.iceberg_history ---
+7	7

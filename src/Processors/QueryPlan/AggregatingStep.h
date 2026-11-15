@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
@@ -9,6 +10,9 @@
 
 namespace DB
 {
+
+struct AggregatingTransformParams;
+using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
 
 Block appendGroupingSetColumn(Block header);
 Block generateOutputHeader(const Block & input_header, const Names & keys, bool use_nulls);
@@ -62,7 +66,7 @@ public:
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    std::vector<size_t> getStepGroups() const override;
+    VectorWithMemoryTracking<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
     StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
@@ -75,13 +79,27 @@ public:
     const Aggregator::Params & getParams() const { return params; }
     bool isFinal() const { return final; }
 
+    /// See `Aggregator::Params::threshold_top_k`; called by the plan optimization.
+    void enableThresholdTopK(Aggregator::Params::ThresholdTopKParams threshold_top_k)
+    {
+        params.threshold_top_k = threshold_top_k;
+    }
+
+    void disableThresholdTopK() { params.threshold_top_k.reset(); }
+
+    /// Whether the radix partitioned `uniqExact` (see `RadixUniqExactTransform.h`) may compute this aggregation.
+    /// Shared by the plan optimization that stamps the statistics key and by `transformPipeline`.
+    bool canUseRadixUniqExact() const;
+
     /// See `Aggregator::Params::bucket_top_k`; called by the plan optimization.
-    void enableBucketTopK(size_t n, bool ascending, size_t count_index)
+    void enableBucketTopK(size_t n, bool ascending, size_t rank_index)
     {
         params.bucket_top_k = n;
         params.bucket_top_k_ascending = ascending;
-        params.bucket_top_k_count_index = count_index;
+        params.bucket_top_k_rank_index = rank_index;
     }
+
+    void disableBucketTopK() { params.bucket_top_k = 0; }
 
     /// See `Aggregator::Params::having_prefilter_op`; called by the plan optimization.
     void enableHavingPrefilter(Aggregator::Params::HavingPrefilterOp op, UInt64 threshold, size_t count_index)
@@ -99,9 +117,36 @@ public:
     bool explicitSortingRequired() const { return explicit_sorting_required_for_aggregation_in_order; }
     bool isGroupingSets() const { return !grouping_sets_params.empty(); }
     void applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_);
+    /// Set by the plan optimization when the input is read in order of the argument of the single `uniqExact`.
+    void applyUniqExactInOrder(SortDescription sort_description, size_t layer_prefix)
+    {
+        uniq_exact_in_order = std::move(sort_description);
+        uniq_exact_in_order_layer_prefix = layer_prefix;
+    }
+    /// Set by `optimizeAggregationInOrder` for a read by parallel replicas, whose order is decided before the projections.
+    void setOrderDecidedBeforeProjections() { order_decided_before_projections = true; }
+    bool isOrderDecidedBeforeProjections() const { return order_decided_before_projections; }
+    bool hasUniqExactInOrder() const { return !uniq_exact_in_order.empty(); }
+    void clearUniqExactInOrder()
+    {
+        uniq_exact_in_order.clear();
+        uniq_exact_in_order_layer_prefix = 0;
+        uniq_exact_in_order_disjoint_streams = false;
+    }
+    size_t getUniqExactInOrderLayerPrefix() const { return uniq_exact_in_order_layer_prefix; }
+    /// Set when the read is split into layers by the key, so that no value of the argument is in two streams.
+    void setUniqExactInOrderDisjointStreams() { uniq_exact_in_order_disjoint_streams = true; }
     void applyTopKOptimization(Aggregator::Params::TopKParams top_k);
+    void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker);
     bool memoryBoundMergingWillBeUsed() const;
-    void skipMerging() { skip_merging = true; }
+    void skipMerging()
+    {
+        skip_merging = true;
+        /// The skip-merging path (`ConvertingAggregatedToChunksSource`) only calls
+        /// `Aggregator::convertOneBucketToChunk` and never reaches the top-K threshold merge,
+        /// which the first optimization pass may have set. Drop it, like `applyOrder` does.
+        params.threshold_top_k.reset();
+    }
     /// `prefix_columns` is the number of leading columns of the group-by sort description
     /// the query is ordered by; the in-order streams may stop only at a boundary of them.
     void setLimitHint(size_t limit, size_t prefix_columns)
@@ -167,13 +212,18 @@ public:
     void setShouldProduceResultsInBucketOrder(bool new_value) { should_produce_results_in_order_of_bucket_number = new_value; }
     bool usingMemoryBoundMerging() const noexcept { return memory_bound_merging_of_aggregation_results_enabled; }
 
-    bool supportsDataflowStatisticsCollection() const override
-    {
-        return grouping_sets_params.empty();
-    }
+    bool supportsDataflowStatisticsCollection() const override;
 
 private:
     void updateOutputHeader() override;
+
+    /// Replaces the aggregation by the radix partitioned `uniqExact` (see `RadixUniqExactTransform.h`), if `canUseRadixUniqExact`.
+    void buildRadixUniqExact(
+        QueryPipelineBuilder & pipeline,
+        const AggregatingTransformParamsPtr & transform_params,
+        size_t max_threads,
+        size_t new_temporary_data_merge_threads,
+        const StatsCollectingParams & stats_collecting_params) const;
 
     Aggregator::Params params;
     GroupingSetsParamsList grouping_sets_params;
@@ -193,6 +243,12 @@ private:
     /// group_by_sort_description contains all GROUP BY keys and is used for final merging of aggregated data.
     SortDescription sort_description_for_merging;
     SortDescription group_by_sort_description;
+    /// The input is sorted by the argument of the single `uniqExact`, which then counts its changes.
+    SortDescription uniq_exact_in_order;
+    /// The number of sorting key columns the read can be split into layers by, or 0.
+    size_t uniq_exact_in_order_layer_prefix = 0;
+    bool uniq_exact_in_order_disjoint_streams = false;
+    bool order_decided_before_projections = false;
 
     /// These settings are used to determine if we should resize pipeline to 1 at the end.
     bool should_produce_results_in_order_of_bucket_number;
@@ -223,7 +279,7 @@ public:
     String getName() const override { return "AggregatingProjection"; }
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
-    std::vector<size_t> getStepGroups() const override;
+    VectorWithMemoryTracking<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
     StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
