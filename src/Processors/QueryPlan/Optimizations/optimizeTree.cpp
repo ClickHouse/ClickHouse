@@ -1,4 +1,7 @@
 #include <IO/WriteBufferFromString.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -28,6 +31,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <Common/StackWithMemoryTracking.h>
 
 namespace DB
 {
@@ -104,12 +108,12 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
     };
 }
 
-static String describeProjectionRejections(const std::unordered_map<String, String> & reject_reasons)
+static String describeProjectionRejections(const UnorderedMapWithMemoryTracking<String, String> & reject_reasons)
 {
     if (reject_reasons.empty())
         return "no projection was considered";
 
-    std::vector<String> formatted_reasons;
+    VectorWithMemoryTracking<String> formatted_reasons;
     for (const auto & [projection, reason] : reject_reasons)
         formatted_reasons.push_back(fmt::format("projection {} is rejected because {}", projection, reason));
 
@@ -162,7 +166,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
     /// of optimizations.
     const auto apply_local_optimizations = [&](bool remove_unused_columns_locally) -> bool
     {
-        std::stack<Frame> stack;
+        StackWithMemoryTracking<Frame> stack;
         stack.push({.node = &root});
 
         while (!stack.empty())
@@ -288,8 +292,8 @@ void optimizeTreeSecondPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
 {
     const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
-    std::unordered_set<String> applied_projection_names;
-    std::unordered_map<String, String> projection_reject_reasons;
+    UnorderedSetWithMemoryTracking<String> applied_projection_names;
+    UnorderedMapWithMemoryTracking<String, String> projection_reject_reasons;
     bool has_reading_from_mt = false;
 
     const Optimization::ExtraSettings extra_settings = makeExtraSettings(optimization_settings);
@@ -320,7 +324,8 @@ void optimizeTreeSecondPass(
         updateQueryConditionCache(stack, optimization_settings);
 
         /// Must be executed after index analysis and before PREWHERE optimization.
-        processAndOptimizeTextIndexFunctions(stack, nodes, optimization_settings.direct_read_from_text_index, extra_settings);
+        processAndOptimizeTextIndexFunctions(
+            stack, nodes, optimization_settings.direct_read_from_text_index, optimization_settings.find_single_node_read, extra_settings);
 
         auto & frame = stack.back();
 
