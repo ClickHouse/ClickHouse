@@ -26,6 +26,7 @@ class ExternalAuthenticators;
 enum class AuthenticationType : uint8_t;
 class BackupEntriesCollector;
 class RestorerFromBackup;
+class MultipleAccessStorage;
 
 /// Result of authentication
 struct AuthResult
@@ -148,9 +149,9 @@ public:
     /// Reads only name of an entity.
     String readName(const UUID & id) const;
     std::optional<String> readName(const UUID & id, bool throw_if_not_exists) const;
-    Strings readNames(const std::vector<UUID> & ids, bool throw_if_not_exists = true) const;
+    Strings readNames(const UUIDs & ids, bool throw_if_not_exists = true) const;
     std::optional<String> tryReadName(const UUID & id) const;
-    Strings tryReadNames(const std::vector<UUID> & ids) const;
+    Strings tryReadNames(const UUIDs & ids) const;
 
     std::pair<String, AccessEntityType> readNameWithType(const UUID & id) const;
     std::optional<std::pair<String, AccessEntityType>> readNameWithType(const UUID & id, bool throw_if_not_exists) const;
@@ -277,6 +278,8 @@ protected:
     [[noreturn]] void throwRestoreNotAllowed() const;
 
 private:
+    friend class MultipleAccessStorage;
+
     const String storage_name;
 
     mutable OnceFlag log_initialized;

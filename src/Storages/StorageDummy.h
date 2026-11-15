@@ -19,7 +19,7 @@ public:
 
     std::string getName() const override { return "StorageDummy"; }
 
-    static VirtualColumnsDescription createVirtuals();
+    static VirtualColumnsDescription createVirtuals(const StorageSnapshotPtr & original_storage_snapshot);
 
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
@@ -28,6 +28,11 @@ public:
     std::optional<NameSet> supportedPrewhereColumns() const override
     {
         return original_storage_snapshot ? original_storage_snapshot->storage.supportedPrewhereColumns() : std::nullopt;
+    }
+
+    bool supportedPrewhereColumnsIncludeSubcolumns() const override
+    {
+        return original_storage_snapshot && original_storage_snapshot->storage.supportedPrewhereColumnsIncludeSubcolumns();
     }
 
     bool supportsSubcolumns() const override { return true; }
@@ -89,6 +94,11 @@ public:
     String getName() const override { return "ReadFromDummy"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
+
+    QueryPlanStepPtr clone() const override
+    {
+        return std::make_unique<ReadFromDummy>(column_names, query_info, storage_snapshot, context, storage);
+    }
 
 private:
     const StorageDummy & storage;

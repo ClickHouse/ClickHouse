@@ -1,0 +1,73 @@
+---
+slug: '/examples/aggregate-function-combinators/sumMap'
+title: 'sumMap'
+description: 'sumMap コンビネータの使用例'
+keywords: ['sum', 'map', 'コンビネータ', '例', 'sumMap']
+sidebarTitle: 'sumMap'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 説明
+</div>
+
+[`Map`](/ja/reference/functions/aggregate-functions/combinators#-map) コンビネータは、[`sum`](/ja/reference/functions/aggregate-functions/sum)
+関数に適用でき、`sumMap`
+集約コンビネータ関数を使用して、Map 内の値の合計をキーごとに計算します。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+この例では、時間帯ごとのステータスコードとその件数を格納するテーブルを作成します。
+各行には、ステータスコードとそれに対応する件数を保持する Map が含まれます。各時間帯における
+各ステータスコードの合計件数を計算するために、`sumMap` を使用します。
+
+```sql title="Query"
+CREATE TABLE metrics(
+    date Date,
+    timeslot DateTime,
+    status Map(String, UInt64)
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO metrics VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', (['a', 'b', 'c'], [15, 25, 35])),
+    ('2000-01-01', '2000-01-01 00:00:00', (['c', 'd', 'e'], [45, 55, 65])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['d', 'e', 'f'], [75, 85, 95])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['f', 'g', 'g'], [105, 115, 125]));
+
+SELECT
+    timeslot,
+    sumMap(status),
+FROM metrics
+GROUP BY timeslot;
+```
+
+`sumMap` 関数は、各タイムスロット内の各ステータスコードごとの合計を計算します。たとえば、次のとおりです。
+
+* タイムスロット &#39;2000-01-01 00:00:00&#39;:
+  * ステータス &#39;a&#39;: 15
+  * ステータス &#39;b&#39;: 25
+  * ステータス &#39;c&#39;: 35 + 45 = 80
+  * ステータス &#39;d&#39;: 55
+  * ステータス &#39;e&#39;: 65
+* タイムスロット &#39;2000-01-01 00:01:00&#39;:
+  * ステータス &#39;d&#39;: 75
+  * ステータス &#39;e&#39;: 85
+  * ステータス &#39;f&#39;: 95 + 105 = 200
+  * ステータス &#39;g&#39;: 115 + 125 = 240
+
+```response title="Response"
+   ┌────────────timeslot─┬─sumMap(status)───────────────────────┐
+1. │ 2000-01-01 00:01:00 │ {'d':75,'e':85,'f':200,'g':240}      │
+2. │ 2000-01-01 00:00:00 │ {'a':15,'b':25,'c':80,'d':55,'e':65} │
+   └─────────────────────┴──────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [`sum`](/ja/reference/functions/aggregate-functions/sum)
+* [`Map コンビネータ`](/ja/reference/functions/aggregate-functions/combinators#-map)

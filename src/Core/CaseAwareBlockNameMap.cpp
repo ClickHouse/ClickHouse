@@ -6,6 +6,7 @@
 #include <unordered_set>
 #include <Core/Block.h>
 #include <Formats/FormatSettings.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <base/StringViewHash.h>
 #include <base/defines.h>
 #include <sparsehash/dense_hash_map>
@@ -147,7 +148,7 @@ public:
 
 protected:
     ::google::dense_hash_map<std::string_view, size_t, CaseInsensitiveHash, CaseInsensitiveEquality> map;
-    std::unordered_set<std::string_view, CaseInsensitiveHash, CaseInsensitiveEquality> ambiguous_keys;
+    UnorderedSetWithMemoryTracking<std::string_view, CaseInsensitiveHash, CaseInsensitiveEquality> ambiguous_keys;
     size_t expected_size{0};
 };
 

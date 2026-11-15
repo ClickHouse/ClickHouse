@@ -35,6 +35,7 @@
 #include <QueryPipeline/Pipe.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/checkDataPart.h>
 
 
 namespace DB
@@ -148,6 +149,14 @@ public:
         }
         catch (const Exception & e)
         {
+            /// Rethrow transient errors instead of reporting a false "broken" row. That includes the
+            /// shutdown `ABORTED` this catch was originally added for: nothing was read, so reporting a
+            /// failed check would certify that the data is broken - which is what a monitoring query
+            /// reads out of `check_query_single_value_result = 1` - on a replica that merely lost its
+            /// Keeper session. `isRetryableException` treats `ABORTED` as retryable.
+            if (isRetryableException(std::current_exception()))
+                throw;
+
             is_finished = true;
             CheckResult result{"", false, e.displayText()};
             return result;
@@ -474,7 +483,7 @@ BlockIO InterpreterCheckQuery::execute()
         }
     }
 
-    OutputPort * resize_outport;
+    OutputPort * resize_outport = nullptr;
     {
         chassert(!processors->empty() && !processors->back()->getOutputs().empty());
         auto header = processors->back()->getOutputs().front().getSharedHeader();
@@ -488,7 +497,7 @@ BlockIO InterpreterCheckQuery::execute()
             connect(*worker_ports[i], *resize_inport_it);
         processors->emplace_back(resize_processor);
 
-        assert(resize_processor->getOutputs().size() == 1);
+        chassert(resize_processor->getOutputs().size() == 1);
         resize_outport = &resize_processor->getOutputs().front();
     }
 
@@ -513,6 +522,7 @@ BlockIO InterpreterCheckQuery::execute()
     return res;
 }
 
+void registerInterpreterCheckQuery(InterpreterFactory & factory);
 void registerInterpreterCheckQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

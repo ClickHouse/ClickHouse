@@ -1,0 +1,56 @@
+---
+title: '管理 AWS 服务限制和配额'
+slug: /cloud/reference/byoc/aws-service-limits
+sidebarTitle: 'AWS 服务限制和配额'
+keywords: ['BYOC', '自备 Cloud', 'AWS', '服务配额', '服务限制', 'EC2', 'EKS', 'VPC', 'EBS']
+description: 'BYOC onboarding 前需要核查的 AWS 服务配额、如何申请提高配额，以及随着服务扩展需要监控的内容'
+doc_type: 'reference'
+---
+
+成功的 BYOC 部署取决于您的 AWS 账户是否具备足够的 AWS 服务配额 (此前称为*服务限制*) 。AWS 会对大多数服务按区域施加默认配额。许多默认值都低于 production BYOC 部署所需的水平，尤其是在新创建或使用较少的 AWS 账户中。
+
+本页提供了一份部署前配额检查清单。请监控您的使用情况，并直接与云服务提供商沟通申请提高配额。
+
+<div id="pre-deployment-quota-checklist">
+  ## 部署前配额检查清单
+</div>
+
+在开始 BYOC onboarding 之前，请先核实计划部署所在 AWS 区域中的以下配额。配额按区域和账户分别计算。
+
+<div id="required-quotas">
+  ### 所需配额
+</div>
+
+| 服务                         | 配额名称                             | BYOC 要求                                                                     | 默认值                | 操作                                |
+| -------------------------- | -------------------------------- | --------------------------------------------------------------------------- | ------------------ | --------------------------------- |
+| **EC2**                    | 正在运行的按需标准 (A、C、D、H、I、M、R、T、Z) 实例 | ≥ 你的服务层级峰值 vCPU × 1.5 (为自动扩缩容和 MBB 升级预留余量) + 100 个 vCPU 核心用于系统和 Keeper 工作负载 | 新账户通常为 32–256 vCPU | **申请提高配额** 以满足 BYOC 要求            |
+| **EC2 (VPC)**              | 每个区域的 VPC 数                      | ≥ 1 (BYOC 会创建 1 个专用 VPC)                                                    | 5                  | 确认可用                              |
+| **EC2 (VPC)**              | 每个区域的弹性 IP 数                     | ≥ 3 (每个 AZ 的 NAT Gateway 各 1 个)                                             | 5                  | 确认可用。如果在同一区域运行多个 BYOC 部署，请申请提高配额。 |
+| **EC2 (VPC)**              | 每个 AZ 的 NAT Gateway 数            | ≥ 1                                                                         | 5                  | 确认可用                              |
+| **EC2 (VPC)**              | 每个区域的 Internet Gateway 数         | ≥ 1                                                                         | 5                  | 确认可用                              |
+| **EC2 (VPC)**              | 每个 VPC 的子网数                      | ≥ 6 (3 个公有 + 3 个私有)                                                         | 200                | 无需操作                              |
+| **EC2 (VPC)**              | 每个 VPC 的安全组数                     | ≥ 10                                                                        | 2,500              | 无需操作                              |
+| **EKS**                    | 每个区域的集群数                         | ≥ 1                                                                         | 100                | 无需操作                              |
+| **EKS**                    | 每个集群的托管节点组数                      | ≥ 4                                                                         | 30                 | 无需操作                              |
+| **EKS**                    | 每个托管节点组的节点数                      | ≥ 你的服务层级峰值节点数                                                               | 450                | 无需操作                              |
+| **S3**                     | 每个账户的存储桶数                        | ≥ 4 (数据、备份、计费、监控)                                                           | 100 (支持提高到 1,000)  | 确认是否为其他工作负载留有足够余量                 |
+| **EBS**                    | 通用型 SSD (gp3) 存储容量               | ≥ (ClickHouse 日志卷 + OS 卷) 的峰值容量 × 节点数                                       | 50 TiB             | 确认可用                              |
+| **Elastic Load Balancing** | 每个区域的网络负载均衡器数                    | 每个 ClickHouse 服务 ≥ 1                                                        | 50                 | 确认可用                              |
+| **CloudWatch Logs**        | 每个区域的日志组数                        | ≥ 5                                                                         | 1,000,000          | 无需操作                              |
+
+<div id="optional-feature-quotas">
+  ### 用于验证可选功能是否已启用的配额
+</div>
+
+| 已启用的功能          | 服务        | 配额                                                                         |
+| --------------- | --------- | -------------------------------------------------------------------------- |
+| AWS PrivateLink | EC2 (VPC) | 每个区域的 VPC endpoint service 数量 (默认 20) ——每增加一个启用 PrivateLink 的服务，都需要申请提高配额。 |
+| VPC Peering     | EC2 (VPC) | 每个 VPC 的活动 VPC peering connection 数量 (默认 50) 。                             |
+
+<div id="related">
+  ## 相关
+</div>
+
+* [计费 AWS 服务](/zh/products/bring-your-own-cloud/reference/billable-aws-services) — BYOC 预配的 AWS 服务完整清单
+* [BYOC 成本模型 (AWS)](/zh/products/bring-your-own-cloud/reference/cost-model-aws) — ClickHouse Cloud 与 AWS 费用如何共同构成总成本
+* [BYOC 架构](/zh/products/bring-your-own-cloud/overview/architecture) — ClickHouse Cloud 在您的账户中部署的各个组件

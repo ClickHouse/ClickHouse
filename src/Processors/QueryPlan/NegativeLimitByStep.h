@@ -1,4 +1,5 @@
 #pragma once
+#include <Core/SortDescription.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 
 namespace DB
@@ -19,12 +20,16 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
+    QueryPlanStepPtr clone() const override;
+
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    void applyOrder(SortDescription sort_desc);
+    const Names & getColumns() const { return columns; }
+
+    void applyOrder(const SortDescription & sort_description);
 
 private:
     void updateOutputHeader() override
@@ -37,7 +42,7 @@ private:
 
     Names columns;
 
-    bool in_order = false;
+    SortDescription sorted_columns_descr;
 };
 
 }

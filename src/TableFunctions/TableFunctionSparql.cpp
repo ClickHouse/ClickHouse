@@ -100,6 +100,7 @@ void registerTableFunctionSparql(TableFunctionFactory & factory)
             .description = "Translates a SPARQL 1.1 SELECT query to SQL and executes it against an rdf_triples table in the current database.",
             .examples = {{"basic", "SELECT * FROM sparql('SELECT ?name WHERE { ?p <rdf:type> <:Person> . ?p <:name> ?name }')", ""}},
             .category = FunctionDocumentation::Category::Other},
+        SecretArgumentsSpec{},
         TableFunctionProperties{.allow_readonly = true});
 }
 

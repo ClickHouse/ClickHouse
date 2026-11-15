@@ -145,7 +145,7 @@ def send_empty_block(sock):
 def read_exception(sock):
     """Fully consume an Exception packet (after packet type is already read)."""
     code = struct.unpack("<I", recv_exact(sock, 4))[0]
-    name = read_string(sock)
+    read_string(sock)
     message = read_string(sock)
     _stack_trace = read_string(sock)
     has_nested = recv_exact(sock, 1)[0]
@@ -229,7 +229,7 @@ def test_connection_closed_after_bad_settings():
         WITH anchor AS (
             SELECT thread_id, event_time_microseconds AS t
             FROM system.text_log
-            WHERE {recent}
+            WHERE event_date >= yesterday() AND event_time >= now() - 600 AND {recent}
             AND message LIKE '%{setting_name}%'
             ORDER BY event_time_microseconds DESC
             LIMIT 1

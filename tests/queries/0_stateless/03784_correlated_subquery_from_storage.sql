@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET correlated_subqueries_substitute_equivalent_expressions = 0;
 
 SELECT 1 FROM (SELECT 1) AS tx(c0) WHERE (SELECT tx.c0) = 1;

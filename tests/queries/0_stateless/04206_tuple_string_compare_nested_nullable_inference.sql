@@ -13,8 +13,6 @@
 -- the analyzer's constant-folding type-match assertion at
 -- `src/Analyzer/Resolve/resolveFunction.cpp`.
 
-SET enable_analyzer = 1;
-
 -- Minimal reproducers — must NOT crash and must return `Nullable(UInt8)`.
 SELECT toTypeName(tuple(tuple(toNullable('x'))) <= '((NULL))');
 SELECT tuple(tuple(toNullable('x'))) <= '((NULL))';

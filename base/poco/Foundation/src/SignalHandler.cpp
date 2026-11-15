@@ -73,7 +73,10 @@ void SignalHandler::install()
 {
 #ifndef POCO_NO_SIGNAL_HANDLER
 	struct sigaction sa;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 	sa.sa_handler = handleSignal;
+#pragma clang diagnostic pop
 	sa.sa_flags   = 0;
 	sigemptyset(&sa.sa_mask);
 	sigaction(SIGILL,  &sa, 0);

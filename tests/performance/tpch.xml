@@ -1,6 +1,6 @@
 <!-- https://clickhouse.com/docs/getting-started/example-datasets/tpch -->
 <!-- Scale factor: 10 -->
-<test>
+<test run_all_queries="1">
 
 <settings file="../benchmarks/tpc-h/settings.json"/>
 <settings>
@@ -36,7 +36,7 @@
 <!-- Q2 -->  <query file="../benchmarks/tpc-h/queries/query_02.sql"/>
 <!-- Q3 -->  <query file="../benchmarks/tpc-h/queries/query_03.sql"/>
 <!-- Q4 -->  <query file="../benchmarks/tpc-h/queries/query_04.sql"/>
-<!-- Q5 --> <!-- OOM on SF10 --> <!-- query file="../benchmarks/tpc-h/queries/query_05.sql"-->
+<!-- Q5 -->  <query file="../benchmarks/tpc-h/queries/query_05.sql"/>
 <!-- Q6 -->  <query file="../benchmarks/tpc-h/queries/query_06.sql"/>
 <!-- Q7 -->  <query file="../benchmarks/tpc-h/queries/query_07.sql"/>
 <!-- Q8 -->  <query file="../benchmarks/tpc-h/queries/query_08.sql"/>
