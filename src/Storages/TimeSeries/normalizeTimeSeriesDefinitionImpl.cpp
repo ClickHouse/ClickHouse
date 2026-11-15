@@ -1,6 +1,7 @@
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinitionImpl.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
@@ -9,6 +10,7 @@
 #include <Interpreters/StorageID.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/dataTypeToAST.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -21,6 +23,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/ColumnsDescription.h>
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTCodecDeclaration.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -34,6 +37,7 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Parsers/Prometheus/CreateQueryTimeSeriesSettings.h>
 #include <Parsers/Prometheus/TimeSeriesVersion.h>
+#include <Storages/TimeSeries/TimeSeriesDownsamplingPeriods.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
 #include <base/EnumReflection.h>
@@ -57,6 +61,7 @@ namespace TimeSeriesSetting
     extern const TimeSeriesSettingsASTFunction recent_samples_partition_by;
     extern const TimeSeriesSettingsUInt64 recent_samples_ttl_seconds;
     extern const TimeSeriesSettingsUInt64 samples_bucket_step_seconds;
+    extern const TimeSeriesSettingsString samples_downsampling_periods;
     extern const TimeSeriesSettingsUInt64 samples_index_granularity;
     extern const TimeSeriesSettingsUInt64 samples_index_granularity_bytes;
     extern const TimeSeriesSettingsASTFunction samples_partition_by;
@@ -695,6 +700,89 @@ namespace
         return makeASTOperator("plus", std::move(time), makeASTFunction("toIntervalSecond", make_intrusive<ASTLiteral>(ttl_seconds)));
     }
 
+    /// The expression of `SET samples = ...` of a downsampling TTL rule: the samples of the group sorted and merged by
+    /// `timeSeriesGroupArray`, then only the last sample of each `[k * interval, (k + 1) * interval)` interval is kept.
+    /// The interval id is the timestamp rounded down to a multiple of the interval, toward negative infinity, in the
+    /// native ticks of the type: the raw `Int64` of a `DateTime64`, or Unix seconds of a `DateTime` or `UInt32`.
+    /// The step is at most `UInt32::max` and the interval divides it, so the modulus stays inside `Int64`.
+    /// A non-zero step from this id to the next id marks the last sample of the interval. The last element has no
+    /// next id, so the shifted difference uses the default 1.
+    ASTPtr makeDownsampledSamplesExpression(UInt64 interval_seconds, const DataTypePtr & timestamp_type)
+    {
+        const auto scale = tryGetDecimalScale(*timestamp_type).value_or(0);
+        const Int64 interval_ticks = static_cast<Int64>(interval_seconds) * DecimalUtils::scaleMultiplier<Int64>(scale);
+
+        auto samples = [] { return makeASTFunction("timeSeriesGroupArray", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Samples)); };
+        /// The operators are marked as such to be formatted as `s -> ... s.1 ...` and `(s, d) -> d != 0`, the way the parser reads them back.
+        auto start_of_interval = [&](ASTPtr sample)
+        {
+            auto timestamp = [&]()
+            {
+                return makeASTOperator("tupleElement", sample->clone(), make_intrusive<ASTLiteral>(static_cast<UInt64>(1)));
+            };
+            auto ticks = [&]()
+            {
+                if (WhichDataType{timestamp_type}.isDateTime64())
+                    return makeASTFunction("reinterpret", timestamp(), make_intrusive<ASTLiteral>(String{"Int64"}));
+                return makeASTFunction("toUnixTimestamp", timestamp());
+            };
+            return makeASTOperator("minus", ticks(),
+                makeASTFunction("positiveModulo", ticks(), make_intrusive<ASTLiteral>(static_cast<UInt64>(interval_ticks))));
+        };
+
+        auto one = [] { return make_intrusive<ASTLiteral>(static_cast<Int64>(1)); };
+        auto differences = makeASTFunction("arrayShiftLeft",
+            makeASTFunction("arrayDifference",
+                makeASTOperator("lambda",
+                    makeASTOperator("tuple", make_intrusive<ASTIdentifier>("s")),
+                    start_of_interval(make_intrusive<ASTIdentifier>("s"))),
+                samples()),
+            one(), one());
+        auto keep = makeASTOperator("lambda",
+            makeASTOperator("tuple", make_intrusive<ASTIdentifier>("s"), make_intrusive<ASTIdentifier>("d")),
+            makeASTOperator("notEquals", make_intrusive<ASTIdentifier>("d"), make_intrusive<ASTLiteral>(static_cast<Int64>(0))));
+        return makeASTFunction("arrayFilter", std::move(keep), samples(), std::move(differences));
+    }
+
+    /// The generated TTL of an inner samples table with the `samples_downsampling_periods` setting: one `GROUP BY` rule per level.
+    /// A row older than the offset of a level is rewritten by the rule of that level; the row keeps its key, so the rule groups
+    /// by the whole sorting key `(id, bucket)`. The TTL counts from the start of the bucket plus the step, like the TTL of
+    /// the recent samples table, through `toDateTime64` to keep the full signed 64-bit range of the buckets for any type
+    /// of the timestamps (e.g. a raw `UInt32`). Returns nullptr if the setting is empty.
+    ASTPtr getSamplesDownsamplingTTLFromSettings(const TimeSeriesSettings & settings, const DataTypePtr & timestamp_type)
+    {
+        const auto periods = TimeSeriesDownsamplingPeriods::parse(settings[TimeSeriesSetting::samples_downsampling_periods].value);
+        if (periods.levels.empty())
+            return nullptr;
+
+        const UInt64 bucket_step_seconds = settings[TimeSeriesSetting::samples_bucket_step_seconds];
+        auto assignment = [](std::string_view column_name, ASTPtr expression)
+        {
+            auto result = make_intrusive<ASTAssignment>();
+            result->column_name = String{column_name};
+            result->children.push_back(std::move(expression));
+            return result;
+        };
+
+        auto ttl_list = make_intrusive<ASTExpressionList>();
+        for (const auto & level : periods.levels)
+        {
+            auto ttl_element = make_intrusive<ASTTTLElement>(TTLMode::GROUP_BY, DataDestinationType::DELETE, "", /*if_exists=*/ false);
+            ttl_element->setTTL(makeASTOperator("plus",
+                makeASTFunction("toDateTime64", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Bucket), make_intrusive<ASTLiteral>(static_cast<UInt64>(0)), make_intrusive<ASTLiteral>(String{"UTC"})),
+                makeASTFunction("toIntervalSecond", make_intrusive<ASTLiteral>(level.offset_seconds + bucket_step_seconds))));
+            ttl_element->group_by_key.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+            ttl_element->group_by_key.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Bucket));
+            ttl_element->group_by_assignments.push_back(assignment(TimeSeriesColumnNames::Samples, makeDownsampledSamplesExpression(level.interval_seconds, timestamp_type)));
+            ttl_element->group_by_assignments.push_back(assignment(TimeSeriesColumnNames::MinTime,
+                makeASTFunction("min", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MinTime))));
+            ttl_element->group_by_assignments.push_back(assignment(TimeSeriesColumnNames::MaxTime,
+                makeASTFunction("max", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MaxTime))));
+            ttl_list->children.push_back(std::move(ttl_element));
+        }
+        return ttl_list;
+    }
+
     /// The codec declared by the entry `CODEC <name> (...)` of the column list of an inner table, where `name` is a column
     /// or a subcolumn of a column written as a dotted name (e.g. `samples.timestamp`), or nullptr if there is no such entry.
     ASTPtr getCodecDeclaration(const ASTColumns & inner_table_columns, std::string_view name)
@@ -776,6 +864,11 @@ namespace
         if (new_version < TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES)
             old_settings.removeSettings({"samples_bucket_step_seconds", "samples_partition_by", "samples_index_granularity_bytes",
                                          "recent_samples_bucket_step_seconds", "recent_samples_index_granularity_bytes"});
+
+        /// The `samples_downsampling_periods` setting exists from version MIN_WITH_SAMPLES_DOWNSAMPLING (see TimeSeriesVersion.h),
+        /// so it isn't copied into a table pinned to an earlier version.
+        if (new_version < TimeSeriesVersion::MIN_WITH_SAMPLES_DOWNSAMPLING)
+            old_settings.removeSetting("samples_downsampling_periods");
 
         /// The default value of `recent_samples_ttl_seconds` is 345600 (4 days), so an absent setting doesn't disable the recent samples table.
         if (const auto * value = get_new_value("recent_samples_ttl_seconds"); value && (SettingFieldUInt64{*value}.value == 0))
@@ -1215,7 +1308,9 @@ namespace
     /// Strips generated inner engine clauses (partition by, TTL, settings) so they are regenerated.
     /// Custom engine kinds or engines with arguments are preserved.
     /// `settings` are the settings of the table the engine was generated for.
-    void removeGeneratedInnerEngine(ASTStorage & inner_engine, ViewTarget::Kind inner_table_kind, const TimeSeriesSettings & settings)
+    /// `timestamp_type` is the resolved type of that table: the generated downsampling TTL embeds it.
+    void removeGeneratedInnerEngine(
+        ASTStorage & inner_engine, ViewTarget::Kind inner_table_kind, const TimeSeriesSettings & settings, const DataTypePtr & timestamp_type)
     {
         const bool is_version_0 = (settings[TimeSeriesSetting::version] == 0);
 
@@ -1301,6 +1396,10 @@ namespace
                             : getDefaultSamplesPartitionKey()->formatWithSecretsOneLine();
                         if (partitioning_equals(expected_partition_by))
                             inner_engine.reset(inner_engine.partition_by);
+
+                        if (auto downsampling_ttl = getSamplesDownsamplingTTLFromSettings(settings, timestamp_type);
+                            downsampling_ttl && ttl_equals(downsampling_ttl->formatWithSecretsOneLine()))
+                            inner_engine.reset(inner_engine.ttl_table);
                     }
                 }
                 else
@@ -1971,6 +2070,23 @@ namespace
                         /// Otherwise a declared partition key is kept; if there is none, the default one (one partition per month) is used.
                         set_partition_by(getDefaultSamplesPartitionKey());
                     }
+
+                    /// The downsampling levels define the whole TTL of the table, so a declared TTL is rejected, unless it is
+                    /// the generated one: the definition is normalized again with the generated clauses in place.
+                    if (auto downsampling_ttl = getSamplesDownsamplingTTLFromSettings(settings, resolved_types.timestamp_type))
+                    {
+                        const auto expected_ttl = downsampling_ttl->formatWithSecretsOneLine();
+                        if (inner_engine.ttl_table && (inner_engine.ttl_table->formatWithSecretsOneLine() != expected_ttl))
+                            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                                "{}: The inner samples table cannot declare TTL when the `samples_downsampling_periods` setting is set, "
+                                "because the setting defines the TTL of the table",
+                                table_id.getNameForLogs());
+                        if (!inner_engine.ttl_table)
+                        {
+                            inner_engine.set(inner_engine.ttl_table, downsampling_ttl);
+                            changed = true;
+                        }
+                    }
                     break;
                 }
 
@@ -2493,7 +2609,7 @@ namespace
                     /// The generated clauses are recognized by the spelling of the old table first: removing the clauses of the old
                     /// layout before that could leave a generated clause unrecognized, e.g. `allow_nullable_key` without the key it was
                     /// generated for.
-                    removeGeneratedInnerEngine(*new_inner_engine, kind, old_settings);
+                    removeGeneratedInnerEngine(*new_inner_engine, kind, old_settings, old_types.timestamp_type);
                     removeInnerEngineDisabledByNewSettings(*new_inner_engine, kind, old_settings, new_settings);
                     create_query.setTargetInnerEngine(kind, new_inner_engine);
                 }
