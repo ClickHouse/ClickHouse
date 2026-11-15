@@ -195,7 +195,7 @@ ClickHouse читает такой столбец обратно в тип, ук
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "3"},{"label": "Добавлена возможность изменять уровень сжатия в выводе запроса"}]}]} />
 
-Уровень сжатия по умолчанию, если вывод запроса сжат. Эта настройка применяется, когда запрос `SELECT` содержит `INTO OUTFILE` или при записи в табличные функции `file`, `url`, `hdfs`, `s3` или `azureBlobStorage`.
+Уровень сжатия по умолчанию, если вывод запроса сжат. Эта настройка применяется, когда запрос `SELECT` содержит `INTO OUTFILE` или при записи в табличные функции `file`, `url`, `hdfs`, `s3` или `azureBlobStorage`. Она также применяется к сжатому ответу на HTTP-запрос, если используется метод сжатия, отличный от `gzip` и `deflate` (для них применяется настройка [http&#95;zlib&#95;compression&#95;level](/ru/reference/settings/session-settings/http#http_zlib_compression_level)).
 
 Возможные значения: от `1` до `22`
 
@@ -730,8 +730,8 @@ SELECT area/period FROM account_orders FORMAT JSON;
 Где в файле Parquet размещать bloom-фильтры. Bloom-фильтры будут записываться порциями примерно такого размера. В частности:
 
 * если значение равно 0, bloom-фильтры каждой группы строк записываются сразу после соответствующей группы строк,
-  * если значение больше общего размера всех bloom-фильтров, bloom-фильтры для всех групп строк будут накапливаться в памяти, а затем записываться вместе ближе к концу файла,
-  * в противном случае bloom-фильтры будут накапливаться в памяти и записываться, как только их общий размер превысит это значение.
+* если значение больше общего размера всех bloom-фильтров, bloom-фильтры для всех групп строк будут накапливаться в памяти, а затем записываться вместе ближе к концу файла,
+* в противном случае bloom-фильтры будут накапливаться в памяти и записываться, как только их общий размер превысит это значение.
 
 ## output_format_parquet_compression_method {#output_format_parquet_compression_method}
 
@@ -787,6 +787,14 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Позволяет записывать информацию о геопространственных столбцах в метаданные Parquet и кодировать столбцы в формате WKB.
 
+## output_format_parquet_geometry_logical_type {#output_format_parquet_geometry_logical_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Новая настройка"}]}]} />
+
+Помечает геопространственные столбцы, записываемые в формате WKB (см. `output_format_parquet_geometadata`), логическим типом Parquet `GEOMETRY` и записывает для них `GeospatialStatistics` (ограничивающий прямоугольник и геометрические типы) вместо статистики min/max. Считыватели, поддерживающие этот логический тип, распознают такие столбцы как геометрические объекты даже без метаданных GeoParquet `geo`. Не действует, если настройка `output_format_parquet_geometadata` отключена. Столбец `Geometry` также описывается в метаданных GeoParquet `geo` с пустым списком геометрических типов. Если настройка отключена, такие столбцы записываются как `BYTE_ARRAY` без геопространственной аннотации и со статистикой min/max, а столбец `Geometry` в метаданных `geo` не описывается. По умолчанию отключено, поскольку считыватели, которые не поддерживают этот логический тип (например, Arrow C++ и `pyarrow` до версии 20), вообще не могут открыть такой файл.
+
 ## output_format_parquet_max_dictionary_size {#output_format_parquet_max_dictionary_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
@@ -821,6 +829,14 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Использовать тип String в Parquet вместо Binary для столбцов String.
 
+## output_format_parquet_use_alp_encoding {#output_format_parquet_use_alp_encoding}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Новая настройка"}]}]} />
+
+Кодирует столбцы `Float32` и `Float64` (Parquet `FLOAT` и `DOUBLE`) с помощью кодирования `ALP` (Adaptive Lossless floating-Point). `ALP` работает без потерь и сжимает данные с плавающей точкой, близкие к десятичным (цены, результаты измерений, координаты), значительно эффективнее, чем `PLAIN`. Такие столбцы записываются без словаря, а страница, для которой `ALP` дало бы больший размер, чем `PLAIN`, записывается в кодировании `PLAIN`. Это кодирование появилось в формате Parquet недавно, поэтому пока его поддерживают не все ридеры Parquet: включайте настройку, только если файлы будут читаться ридерами Parquet, которые его поддерживают.
+
 ## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -844,6 +860,16 @@ SELECT area/period FROM account_orders FORMAT JSON;
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "Новая настройка"}]}]} />
 
 Добавляет контрольные суммы CRC32 в заголовки страниц Parquet.
+
+## output_format_parquet_write_file_logical_type {#output_format_parquet_write_file_logical_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Новая настройка для записи именованного `Tuple` с полями логического типа Parquet `FILE` в виде группы с аннотацией `FILE`."}]}]} />
+
+Записывает именованный `Tuple`, все имена элементов которого являются полями логического типа Parquet `FILE` (`uri`, `offset`, `size`, `content_type`, `checksum`, `inline`; любое непустое подмножество в любом порядке), в виде группы с аннотацией логического типа `FILE`. Этот тип представляет ссылку на диапазон байтов, хранящихся встроенно или во внешнем файле. Элементы `offset` и `size` должны быть целыми числами (записываются как `INT64`), остальные элементы — иметь тип `String` или `FixedString` (`inline` записывается как `BYTE_ARRAY` без аннотации, остальные — как `STRING`). Согласно спецификации, каждое поле записывается как `OPTIONAL`. Значения записываются как есть, без проверки того, образуют ли они корректную ссылку.
+
+При чтении группа с аннотацией `FILE` всегда читается как такой `Tuple` из элементов `Nullable`.
 
 ## output_format_parquet_write_page_index {#output_format_parquet_write_page_index}
 

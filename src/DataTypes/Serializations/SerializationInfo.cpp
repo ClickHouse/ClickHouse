@@ -331,12 +331,6 @@ void SerializationInfo::checkKindStack(ISerialization::KindSet allowed_kinds) co
 
     for (auto kind : kind_stack)
     {
-        if (!allowed_kinds.contains(kind))
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Unexpected serialization kind {} in the received data",
-                ISerialization::kindToString(kind));
-
         expected = std::find(expected, canonical_kind_order.end(), kind);
         if (expected == canonical_kind_order.end())
             throw Exception(
@@ -353,6 +347,14 @@ void SerializationInfo::checkKindStack(ISerialization::KindSet allowed_kinds) co
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Serialization kinds LowCardinality and Sparse cannot be combined in a kind stack");
+
+    /// A well-formed stack is checked from the outermost kind, the first one a consumer would have to unwrap.
+    for (auto it = kind_stack.rbegin(); it != kind_stack.rend(); ++it)
+        if (!allowed_kinds.contains(*it))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Unexpected serialization kind {} in the received data",
+                ISerialization::kindToString(*it));
 }
 
 void SerializationInfo::checkKindStackForType(const IDataType & type) const

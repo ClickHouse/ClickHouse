@@ -102,6 +102,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/NamesAndTypes.h>
 #include <Functions/FunctionFactory.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -3141,7 +3142,7 @@ QueryPlan ReadFromMerge::expandForParallelReplicas()
     chassert(child_plans && !child_plans->empty());
 
     SharedHeaders input_headers;
-    std::vector<std::unique_ptr<QueryPlan>> plans;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> plans;
     input_headers.reserve(child_plans->size());
     plans.reserve(child_plans->size());
     for (auto & child : *child_plans)

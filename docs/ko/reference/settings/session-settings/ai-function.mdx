@@ -52,6 +52,25 @@ false(기본값)로 설정하면 AI 함수는 프롬프트와 API Key를 암호�
 
 AI 함수가 쿼리당 전송할 수 있는 HTTP 요청의 최대 개수입니다. 0(기본값)으로 설정하면 제한이 비활성화됩니다. 각 서버와 쿼리 프래그먼트에서 독립적으로 적용됩니다. 하나의 실행 Context 내에서는 해당 Context의 모든 AI 함수, 블록, 스레드가 공유하는 정확한 상한이지만, 분산 쿼리는 세그먼트 또는 병렬 레플리카 프래그먼트당 최대 이만큼의 요청을 전송할 수 있습니다. 최상위 쿼리에서 설정해야 하며, 하위 쿼리의 `SETTINGS` 재정의는 무시됩니다.
 
+## ai_function_max_concurrent_requests_per_thread {#ai_function_max_concurrent_requests_per_thread}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "8"},{"label": "새로운 설정"}]}]} />
+
+하나의 쿼리 스레드가 동시에 처리 중인 상태로 둘 수 있는 provider 요청의 최대 개수입니다. `1`로 설정하면 요청을 한 번에 하나씩 보냅니다.
+
+여러 스레드(최대 `max_threads`개)에서 실행되는 쿼리는 스레드마다 이 값만큼의 요청을 동시에 처리 중인 상태로 둘 수 있습니다. 쿼리에서 높일 수 없는 상한을 지정하려면 [설정 프로파일(Settings Profile) 제약 조건](/ko/concepts/features/configuration/settings/constraints-on-settings)(`<constraints><ai_function_max_concurrent_requests_per_thread><max>...</max></...>`)을 사용하십시오. 이때도 상한은 스레드 단위로 적용됩니다.
+
+값이 `1`보다 크면 다음 두 가지 보장이 약해집니다.
+
+* 요청의 토큰 사용량은 응답을 받은 후에야 알 수 있으므로, 토큰 쿼터(`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`)가 처리 중인 요청 하나당 요청 하나 분량씩 초과될 수 있습니다. 즉, 초과량이 요청 하나 분량에 그치지 않고 최대 이 값만큼의 요청 분량에 이를 수 있습니다.
+* 한 차례 분량의 요청이 모두 전달된 후에야 오류를 확인할 수 있으므로, 첫 번째 행(First row)에서 실패한 쿼리라도 이미 최대 이 값만큼의 요청을 보냈고 그에 대한 비용이 청구되었을 수 있습니다.
+
+`ai_function_max_api_calls_per_query`는 영향을 받지 않으며 계속 정확한 상한으로 동작합니다. 각 요청이 전달되기 전에 슬롯이 먼저 예약되기 때문입니다.
+
 ## ai_function_max_input_tokens_per_query {#ai_function_max_input_tokens_per_query}
 
 <BetaBadge />
@@ -80,9 +99,9 @@ AI 함수가 쿼리당 전송할 수 있는 HTTP 요청의 최대 개수입니�
 
 <BetaBadge />
 
-<SettingsInfoBlock type="UInt64" default_value="1" />
+<SettingsInfoBlock type="UInt64" default_value="3" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "기본적으로 일시적 API 오류는 한 번 재시도하므로 프로바이더에서 단일 429 또는 5xx가 발생해도 쿼리가 실패하지 않습니다."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "기본적으로 일시적 API 오류는 한 번 재시도하므로 프로바이더에서 단일 429 또는 5xx가 발생해도 쿼리가 실패하지 않습니다."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "새로운 설정"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "3"},{"label": "동시 요청이 몰릴 때 속도 제한이 걸린 과부하 상태의 provider에 가해지는 부하를 줄이기 위해, 기본적으로 일시적 API 오류를 최대 세 번까지 재시도합니다."}]}]} />
 
 개별 API 요청에서 일시적 오류가 발생했을 때의 최대 재시도 횟수입니다. 각 재시도에는 `ai_function_retry_initial_delay_ms`에서 시작하는 지수 백오프가 적용됩니다.
 

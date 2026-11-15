@@ -120,6 +120,8 @@ graph LR
 * `max_burst_cpu_seconds` - 该工作负载在不因 `max_cpus` 而被限流的情况下可消耗的最大 CPU 秒数。
 * `scheduler` - (仅限时间共享) 此工作负载内各查询之间采用的调度算法：`fifo` (默认，先到先服务) 、`fair` (加权公平排队) 、`las` (最少获得服务优先) 或 `priority` (严格按查询的 `workload_priority` 设置排序) 。请参阅 [查询感知调度](#query_aware_scheduling)。
 * `max_memory` - 为此工作负载保留的总内存上限。
+* `max_memory_before_spill` - 内存软限制：超过该值后，会在硬性 `max_memory` 限制强制执行驱逐之前，要求该工作负载的查询将可回收内存落盘。Experimental，请参阅 [溢写可回收内存](#spilling-reclaimable-memory)。
+* `max_memory_to_spill_ratio` - 与 `max_memory_before_spill` 相同的软限制，但按此工作负载的 `max_memory` 进行归一化。若两者同时设置，则以计算得出的较小阈值为准。
 
 通过工作负载设置指定的所有限制，对每种资源都是相互独立的。例如，设置了 `max_bytes_per_second = '10Mi'` 的工作负载，会对每个读取资源和写入资源分别应用 10 MB/s 的带宽限制。如果需要让读取和写入共用同一个限制，可以考虑对 READ 和 WRITE 访问使用同一个资源。
 
@@ -163,8 +165,8 @@ CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100
 
 当线程未被阻塞且正在执行 CPU 密集型任务时，就会消耗 CPU 时间。出于调度需要，这里区分两类线程：
 
-* Master thread — 开始执行查询或 merge、变更等后台活动的第一个线程。
-* Worker thread — 可由 master 派生出的额外线程，用于执行 CPU 密集型任务。
+* Master thread — 开始执行查询或合并、变更等后台活动的第一个线程。
+* 工作线程 — 可由 master 派生出的额外线程，用于执行 CPU 密集型任务。
 
 为了获得更好的响应性，可能需要将 master 线程和工作线程使用的资源分开。当查询设置 `max_threads` 的值较高时，大量工作线程很容易独占 CPU 资源。这样一来，新到达的查询就只能阻塞，等待为其 master 线程分配一个 CPU 插槽后才能开始执行。为避免这种情况，可以使用以下配置：
 
@@ -174,7 +176,7 @@ CREATE RESOURCE master_cpu (MASTER THREAD)
 CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100 FOR worker_cpu, max_concurrent_threads = 1000 FOR master_cpu
 ```
 
-这将对 master 线程和 worker 线程分别设置限制。即使 100 个 worker CPU 插槽全都处于忙碌状态，只要还有可用的 master CPU 插槽，新查询就不会被阻塞。它们将先以单线程开始执行。之后，如果 worker CPU 插槽可用，此类查询就可以扩展并派生出 worker 线程。另一方面，这种方法不会将插槽总数限制在 CPU 处理器数量以内，而运行过多并发线程会影响性能。
+这将对 master 线程和工作线程分别设置限制。即使 100 个 worker CPU 插槽全都处于忙碌状态，只要还有可用的 master CPU 插槽，新查询就不会被阻塞。它们将先以单线程开始执行。之后，如果 worker CPU 插槽可用，此类查询就可以扩展并派生出工作线程。另一方面，这种方法不会将插槽总数限制在 CPU 处理器数量以内，而运行过多并发线程会影响性能。
 
 限制 master 线程的并发度，并不会限制并发查询的数量。CPU 插槽可能会在查询执行过程中途被释放，然后被其他线程重新获取。例如，在 master 线程并发限制为 2 的情况下，4 个并发查询仍然可以全部并行执行。在这种情况下，每个查询将获得一个 CPU 处理器 50% 的处理能力。要限制并发查询的数量，应使用单独的逻辑，而工作负载目前尚不支持这一点。
 
@@ -197,8 +199,10 @@ CPU 调度目前尚不支持合并和变更。
 
 为了让工作负载获得公平的资源分配，需要在查询执行期间进行抢占和缩容。可通过 `cpu_slot_preemption` 服务器设置启用抢占。如果启用，每个线程都会定期续用其 CPU 插槽 (根据 `cpu_slot_quantum_ns` 服务器设置) 。如果 CPU 过载，这种续用可能会阻塞执行。当执行被阻塞较长时间时 (参见 `cpu_slot_preemption_timeout_ms` 服务器设置) ，查询会缩容，并且并发运行的线程数会动态减少。请注意，工作负载之间的 CPU 时间公平性可以得到保证，但在同一工作负载内部，不同查询之间的公平性在某些边缘情况下可能无法保证。
 
+线程持有 CPU 插槽时并不总是在使用 CPU，但默认情况下，即使线程未在使用 CPU，插槽也会一直被占用——因此即便 CPU 处于空闲状态，其他查询也无法使用它。启用 `cpu_slot_parking` 服务器设置后，线程可以在某些不占用 CPU 的等待期间释放 (“停放”) 其 CPU 插槽，并在恢复 CPU 工作时重新获取插槽。这些等待包括：无任务可运行的空闲工作线程、等待远程或异步数据源的线程、正在从存储拉取数据的已缓存读取，以及因读取带宽限流而暂停的线程。并非所有非 CPU 等待都会释放插槽，例如普通的本地文件读取就不会。这样，在某个查询停滞期间，其他查询便可利用释放出来的 CPU 容量，从而在过载情况下提升 CPU 利用率并降低查询延迟。仅当 `cpu_slot_preemption` 已启用，且由单个 CPU 资源同时定义 `MASTER THREAD` 和 `WORKER THREAD` (如上文 `CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)` 示例所示) 时，停放机制才会生效；在其他配置下则不起作用。
+
 <Warning>
-  Slot 调度提供了一种控制[查询并发](/zh/reference/settings/session-settings/max-threads#max_threads)的方法，但除非将服务器设置 `cpu_slot_preemption` 设为 `true`，否则无法保证 CPU 时间分配的公平性；否则，只能基于竞争工作负载之间获得 CPU 插槽 分配次数的多少来实现公平。这并不意味着各方获得的 CPU 秒数相同，因为在没有抢占的情况下，CPU 插槽 可能会被无限期占用。线程会在开始时获取一个 slot，并在工作完成后释放它。
+  插槽调度提供了一种控制[查询并发度](/zh/reference/settings/session-settings/max-threads#max_threads)的方式，但除非将服务器设置 `cpu_slot_preemption` 设为 `true`，否则无法保证 CPU 时间的公平分配；此时，公平性仅基于竞争工作负载之间 CPU 插槽的分配次数来实现。这并不意味着各工作负载获得的 CPU 秒数相等，因为在没有抢占的情况下，CPU 插槽可能被无限期持有。线程在开始时获取插槽，并在工作完成后将其释放。
 </Warning>
 
 <Note>
@@ -357,6 +361,28 @@ CREATE WORKLOAD testing IN user SETTINGS precedence = 2
 如果出现内存压力，testing 工作负载的内存分配会最先被驱逐。随后，如果还需要释放更多内存，并且 staging 工作负载 和 production 工作负载 超过各自的保证值，则 staging 工作负载 的内存分配会先于 production 工作负载 的内存分配被驱逐。请注意，production 和 staging 中处于等待状态的查询可以驱逐 testing 工作负载 中正在运行的内存分配以释放内存，但它们彼此不能相互驱逐，因为它们具有相同的优先次序。在内存压力情况下，它们会在队列中等待，这使系统能够避免因并发执行的查询过多而导致的 MEMORY&#95;LIMIT&#95;EXCEEDED 错误。
 
 请注意，system 工作负载的优先次序为 0 (default) ，高于 production、staging 和 testing 工作负载，但它们并不是同级工作负载。它们最近的共同祖先是工作负载 all，其两个子节点具有相同的优先次序。因此，处于等待状态的 system 工作负载 不能驱逐其中任何一个，反之亦然。这确保了 system 活动不容易被驱逐。
+
+### 溢写可回收内存 {#spilling-reclaimable-memory}
+
+除了硬性的 `max_memory` 限制之外，工作负载还可以定义一个更低的*软性*内存限制，在硬限制强制执行驱逐之前，先触发将可回收内存溢写到磁盘。可回收内存是指查询所分配的内存中，可由其运算符序列化到磁盘并按需重新加载的部分 (例如外部排序中已排序的连续序列，或中间聚合状态) ；与之相对的是必须保留在 RAM 中的不可回收内存。
+
+软限制通过两个工作负载设置进行配置；若两者均已设置，则以计算得出的较小阈值为准：
+
+```sql
+CREATE RESOURCE memory (MEMORY RESERVATION)
+-- Absolute soft limit:
+CREATE WORKLOAD all SETTINGS max_memory = '10Gi', max_memory_before_spill = '7Gi'
+-- Or as a fraction of this workload's own max_memory:
+CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = '10Gi', max_memory_to_spill_ratio = 0.7
+```
+
+当某个工作负载子树中已分配的内存超过其软限制时，调度器会要求持有可回收内存的查询将数据落盘。多个查询可以并发溢写，从而将内存使用量降至软限制以下。
+
+超过软限制本身并不会阻塞或驱逐查询：溢写由选定的运算符在执行期间完成。请在软限制与硬限制之间留出一定差值，为溢写预留资源余量。如果该工作负载下没有任何可回收内存，则不会发出溢写请求，硬限制 `max_memory` 仍是唯一的兜底保障。请在涵盖所有待管控工作负载的上级工作负载上设置软限制。只有在单根层次结构中，根工作负载 `all` 上的限制才具有全局效力；同级的其他根不在其作用域内。嵌套的工作负载可以定义各自的软限制。
+
+:::note
+可回收内存的溢写是实验性功能，构建于内存预留调度之上 (后者本身也是实验性功能) 。已支持的运算符包括外部排序、聚合、可溢写的哈希连接、外部 `DISTINCT` 以及子查询 `IN` 集合。这些集合在构建和使用阶段均可溢写，即使已禁用单查询级别的外部集合阈值也不受影响。可回收的内存量取决于各运算符当前所处的执行阶段。低于查询设置 `min_bytes_to_spill` 的可回收内存估算值会被忽略。若未报告任何可回收内存，软限制将不起作用，其行为与仅使用硬限制 `max_memory` 时完全相同。
+:::
 
 ## 查询槽位调度 {#query_scheduling}
 
