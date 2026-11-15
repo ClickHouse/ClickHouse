@@ -212,6 +212,7 @@ parser.add_argument(
     help="In seconds. Two ordered integers separated by comma (e.g., 3,5)",
 )
 parser.add_argument(
+    "--without-s3-server",
     "--without-minio",
     action="store_false",
     dest="with_minio",
