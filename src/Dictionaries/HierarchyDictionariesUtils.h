@@ -296,7 +296,7 @@ namespace detail
             Int64 depth;
         };
 
-        /// Cleared after every requested key, so clear() must not depend on the capacity.
+        /// Cleared after every requested key that has children, so clearing must not cost O(capacity).
         ClearableHashSet<UInt64> already_processed_keys_during_loop;
         already_processed_keys_during_loop.reserve(keys_size);
 
