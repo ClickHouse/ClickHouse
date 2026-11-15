@@ -23,6 +23,8 @@ DROP TABLE IF EXISTS t_full_null;
 DROP TABLE IF EXISTS t_short_str;
 DROP TABLE IF EXISTS t_short_lc;
 DROP TABLE IF EXISTS t_short_null;
+DROP TABLE IF EXISTS t_merge_full_str;
+DROP TABLE IF EXISTS t_merge_short_str;
 
 SELECT '--- full PK: String';
 CREATE TABLE t_full_str (s String, id UInt64) ENGINE = MergeTree ORDER BY (s, id);
@@ -88,6 +90,48 @@ INSERT INTO t_short_null VALUES (1, '', 20), (1, NULL, 3), (1, '', 40), (2, '', 
 SELECT trim(explain) FROM (EXPLAIN PLAN actions = 1, indexes = 1, pretty = 0 SELECT id FROM t_short_null WHERE tenant = 1 AND s = '' ORDER BY id ASC LIMIT 3) WHERE explain LIKE '%ReadType%';
 SELECT id FROM t_short_null WHERE tenant = 1 AND s = '' ORDER BY id ASC LIMIT 3;
 SELECT id FROM t_short_null WHERE tenant = 1 AND s = '' ORDER BY id ASC LIMIT 3 SETTINGS read_in_order_two_level_merge_threshold = 1;
+
+SELECT '--- Merge over MergeTree';
+CREATE TABLE t_merge_full_str AS t_full_str ENGINE = Merge(currentDatabase(), '^t_full_str
+SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT id FROM t_short_str WHERE tenant = 1 AND s = '' ORDER BY id LIMIT 2) WHERE explain LIKE '%s.size%';
+SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT s = '' FROM t_short_str ORDER BY length(s)) WHERE explain LIKE '%s.size%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT sum(length(s)) FROM t_short_str WHERE tenant = 1 AND s != '') WHERE explain LIKE '%s.size%';
+SELECT sum(length(s)) FROM t_short_str WHERE tenant = 1 AND s != '';
+SELECT trim(explain) FROM (EXPLAIN PLAN actions = 1, indexes = 1, pretty = 0 SELECT id FROM t_short_str WHERE tenant = 1 AND s != '' ORDER BY id ASC LIMIT 2) WHERE explain LIKE '%ReadType%';
+SELECT id FROM t_short_str WHERE tenant = 1 AND s != '' ORDER BY id ASC LIMIT 2;
+
+DROP TABLE t_full_str;
+DROP TABLE t_full_lc;
+DROP TABLE t_full_null;
+DROP TABLE t_short_str;
+DROP TABLE t_short_lc;
+DROP TABLE t_merge_short_str;
+DROP TABLE t_merge_full_str;
+DROP TABLE t_short_null;
+);
+CREATE TABLE t_merge_short_str AS t_short_str ENGINE = Merge(currentDatabase(), '^t_short_str
+SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT id FROM t_short_str WHERE tenant = 1 AND s = '' ORDER BY id LIMIT 2) WHERE explain LIKE '%s.size%';
+SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT s = '' FROM t_short_str ORDER BY length(s)) WHERE explain LIKE '%s.size%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT sum(length(s)) FROM t_short_str WHERE tenant = 1 AND s != '') WHERE explain LIKE '%s.size%';
+SELECT sum(length(s)) FROM t_short_str WHERE tenant = 1 AND s != '';
+SELECT trim(explain) FROM (EXPLAIN PLAN actions = 1, indexes = 1, pretty = 0 SELECT id FROM t_short_str WHERE tenant = 1 AND s != '' ORDER BY id ASC LIMIT 2) WHERE explain LIKE '%ReadType%';
+SELECT id FROM t_short_str WHERE tenant = 1 AND s != '' ORDER BY id ASC LIMIT 2;
+
+DROP TABLE t_full_str;
+DROP TABLE t_full_lc;
+DROP TABLE t_full_null;
+DROP TABLE t_short_str;
+DROP TABLE t_short_lc;
+DROP TABLE t_short_null;
+);
+
+SELECT trim(explain) FROM (EXPLAIN PLAN actions = 1, indexes = 1, pretty = 0 SELECT id FROM t_merge_full_str WHERE s = '' ORDER BY id ASC LIMIT 3) WHERE explain LIKE '%ReadType%';
+SELECT trim(explain) FROM (EXPLAIN PLAN actions = 1, indexes = 1, pretty = 0 SELECT id FROM t_merge_full_str WHERE s = '' ORDER BY id DESC LIMIT 2) WHERE explain LIKE '%ReadType%';
+SELECT id FROM t_merge_full_str WHERE s = '' ORDER BY id ASC LIMIT 3;
+SELECT id FROM t_merge_full_str WHERE s = '' ORDER BY id DESC LIMIT 2;
+
+SELECT trim(explain) FROM (EXPLAIN PLAN actions = 1, indexes = 1, pretty = 0 SELECT id FROM t_merge_short_str WHERE tenant = 1 AND s = '' ORDER BY id ASC LIMIT 3) WHERE explain LIKE '%ReadType%';
+SELECT id FROM t_merge_short_str WHERE tenant = 1 AND s = '' ORDER BY id ASC LIMIT 3;
 
 SELECT '--- controls';
 SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT id FROM t_short_str WHERE tenant = 1 AND s = '' ORDER BY id LIMIT 2) WHERE explain LIKE '%s.size%';

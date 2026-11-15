@@ -5,6 +5,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -385,7 +386,73 @@ void addFixedColumn(const ActionsDAG::Node * fixed_column, FixedColumns & fixed_
 /// Right now we find only simple cases like 'and(..., and(..., and(column = value, ...), ...'
 /// A single-element `IN`, like `column IN (value)`, fixes the column the same way as `column = value`.
 /// Injective functions are supported here. For a condition 'injectiveFunction(x) = 5' column 'x' is fixed.
-void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns)
+bool isZeroIntegerConstant(ColumnPtr constant, const DataTypePtr & constant_type_with_wrappers)
+{
+    if (!constant)
+        return false;
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(constant.get()))
+        constant = column_const->getDataColumnPtr();
+    chassert(constant->size() == 1);
+    if (constant->isNullAt(0))
+        return false;
+    constant = removeNullable(constant->convertToFullColumnIfLowCardinality());
+
+    auto constant_type = removeLowCardinalityAndNullable(constant_type_with_wrappers);
+    if (!isInteger(constant_type))
+        return false;
+
+    Field value;
+    constant->get(0, value);
+    return (value.getType() == Field::Types::UInt64 && value.safeGet<UInt64>() == 0)
+        || (value.getType() == Field::Types::Int64 && value.safeGet<Int64>() == 0);
+}
+
+/// `FunctionToSubcolumnsPass` rewrites `empty(s)` to `s.size = 0` when the source table's own
+/// metadata does not list `s` in a key (e.g. a `Merge` table wrapping `MergeTree` children).
+/// A `.size` subcolumn equal to `0` uniquely fixes a `String` column `s` to `''`.
+void addFixedStringColumnFromSizeSubcolumn(
+    ActionsDAG & dag, const ActionsDAG::Node * fixed_column, FixedColumns & fixed_columns)
+{
+    const ActionsDAG::Node * node = fixed_column;
+    while (true)
+    {
+        if (node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children.front();
+        else if (node->type == ActionsDAG::ActionType::FUNCTION
+            && node->children.size() == 1
+            && node->function_base->isInjective(getFunctionArgumentColumns(*node)))
+            node = node->children.front();
+        else
+            break;
+    }
+
+    if (node->type != ActionsDAG::ActionType::INPUT)
+        return;
+
+    if (!WhichDataType(removeLowCardinalityAndNullable(node->result_type)).isUInt64())
+        return;
+
+    constexpr std::string_view size_suffix = ".size";
+    std::string_view name = node->result_name;
+    if (name.size() <= size_suffix.size() || !name.ends_with(size_suffix))
+        return;
+
+    std::string_view column_name = name.substr(0, name.size() - size_suffix.size());
+    for (const auto & dag_node : dag.getNodes())
+    {
+        if (dag_node.type == ActionsDAG::ActionType::INPUT && dag_node.result_name == column_name)
+        {
+            if (isString(removeLowCardinalityAndNullable(dag_node.result_type)))
+                fixed_columns.insert(&dag_node);
+            return;
+        }
+    }
+
+    const auto * string_input = &dag.addInput(String(column_name), std::make_shared<DataTypeString>());
+    fixed_columns.insert(string_input);
+}
+
+void appendFixedColumnsFromFilterExpression(ActionsDAG & dag, const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns)
 {
     std::stack<const ActionsDAG::Node *> stack;
     stack.push(&filter_expression);
@@ -422,7 +489,11 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
 
                 if (maybe_fixed_column && num_constant_columns + 1 == node->children.size()
                     && !equalsMatchesSeveralValues(maybe_fixed_column->result_type, constant->column, constant->result_type))
+                {
                     addFixedColumn(maybe_fixed_column, fixed_columns);
+                    if (isZeroIntegerConstant(constant->column, constant->result_type))
+                        addFixedStringColumnFromSizeSubcolumn(dag, maybe_fixed_column, fixed_columns);
+                }
             }
             else if (name == "empty")
             {
@@ -462,7 +533,7 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
 
             appendExpression(dag, prewhere_info->prewhere_actions);
             if (const auto * filter_expression = dag->tryFindInOutputs(prewhere_info->prewhere_column_name))
-                appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
+                appendFixedColumnsFromFilterExpression(*dag, *filter_expression, fixed_columns);
 
         }
         if (const auto row_level_filter = reading->getRowLevelFilter())
@@ -472,7 +543,7 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
 
             appendExpression(dag, row_level_filter->actions);
             if (const auto * filter_expression = dag->tryFindInOutputs(row_level_filter->column_name))
-                appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
+                appendFixedColumnsFromFilterExpression(*dag, *filter_expression, fixed_columns);
 
         }
         return;
@@ -511,7 +582,7 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
 
         appendExpression(dag, filter->getExpression());
         if (const auto * filter_expression = dag->tryFindInOutputs(filter->getFilterColumnName()))
-            appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
+            appendFixedColumnsFromFilterExpression(*dag, *filter_expression, fixed_columns);
     }
 
     if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(step))
@@ -680,7 +751,12 @@ SortingInputOrder buildInputOrderFromSortDescription(
             //    << " to " << static_cast<const void *>(match.node) << " " << (match.node ? match.node->result_name : "") << std::endl;
             if (!match.monotonicity || match.monotonicity->strict)
             {
-                if (match.node && fixed_columns.contains(node))
+                const bool compatible_input = node->type != ActionsDAG::ActionType::INPUT
+                    || !match.node
+                    || match.node->type != ActionsDAG::ActionType::INPUT
+                    || !isString(removeLowCardinalityAndNullable(node->result_type))
+                    || isStringOrFixedString(removeLowCardinalityAndNullable(match.node->result_type));
+                if (match.node && compatible_input && fixed_columns.contains(node))
                     fixed_key_columns.insert(match.node);
             }
         }
@@ -1001,7 +1077,12 @@ InputOrder buildInputOrderFromUnorderedKeys(
         {
             if (!match.monotonicity || match.monotonicity->strict)
             {
-                if (match.node && fixed_columns.contains(node))
+                const bool compatible_input = node->type != ActionsDAG::ActionType::INPUT
+                    || !match.node
+                    || match.node->type != ActionsDAG::ActionType::INPUT
+                    || !isString(removeLowCardinalityAndNullable(node->result_type))
+                    || isStringOrFixedString(removeLowCardinalityAndNullable(match.node->result_type));
+                if (match.node && compatible_input && fixed_columns.contains(node))
                     fixed_key_columns.insert(match.node);
             }
         }
