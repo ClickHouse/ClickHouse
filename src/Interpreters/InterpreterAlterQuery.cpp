@@ -527,6 +527,9 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 MutationsInterpreter::Settings mutation_settings(false);
                 auto validation_context = Context::createCopy(context);
                 validation_context->setAnalyzingBackgroundExpressions(true);
+                /// `MergeTree` executes the mutation in the background with the database of the table as the current one.
+                if (table->isMergeTree())
+                    validation_context->setCurrentDatabase(table->getStorageID().getDatabaseName());
                 MutationsInterpreter(table, metadata_snapshot, *mutation_commands, validation_context, mutation_settings).validate();
                 context->onQueryExecutionStarted();
                 table->mutate(*mutation_commands, context);

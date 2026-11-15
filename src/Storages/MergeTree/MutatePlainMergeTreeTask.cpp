@@ -226,6 +226,8 @@ ContextMutablePtr MutatePlainMergeTreeTask::createTaskContext() const
 {
     auto context = Context::createCopy(storage.getContext()->getBackgroundContext());
     context->makeQueryContextForMutate(*storage.getSettings());
+    /// The background context has no current database: a mutation uses the database of its table, e.g. in `merge('', 'regexp')`.
+    context->setCurrentDatabaseUnchecked(storage.getStorageID().getDatabaseName());
     auto queryId = getQueryId();
     context->setCurrentQueryId(queryId);
     return context;

@@ -1,35 +1,26 @@
--- An empty database name in the `merge` table function means the current database. A mutation is interpreted
--- in a background thread without one, so the database of the mutated table is substituted when the mutation
--- is created, as for `merge(regexp)`.
+-- Tags: zookeeper
 
-CREATE TABLE t_mut (id UInt64) ENGINE = MergeTree ORDER BY id;
-CREATE TABLE t_src (id UInt64) ENGINE = MergeTree ORDER BY id;
-INSERT INTO t_mut VALUES (1), (2), (3), (4);
-INSERT INTO t_src VALUES (2);
+-- A mutation is executed in a background context. Its current database is the database of the mutated table,
+-- also when the mutation is checked, so an empty database name is not resolved to `default_database`.
+-- The queries are issued from another database, which has no `t_src`.
 
-ALTER TABLE t_mut DELETE WHERE id IN (SELECT id FROM merge('', '^t_src$')) SETTINGS mutations_sync = 2;
-SELECT id FROM t_mut ORDER BY id;
-SELECT position(command, concat('merge(''', currentDatabase(), ''', ''^t_src$'')')) > 0
-FROM system.mutations WHERE database = currentDatabase() AND table = 't_mut';
-
-INSERT INTO t_src VALUES (3);
-DELETE FROM t_mut WHERE id IN (SELECT id FROM merge('', '^t_src$')) SETTINGS lightweight_deletes_sync = 2;
-SELECT id FROM t_mut ORDER BY id;
-
--- The database of the updated table is used, not the one of the session.
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
-CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_upd (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id
-    SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
-INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_upd VALUES (1, 0), (2, 0), (3, 0);
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_src (id UInt64) ENGINE = MergeTree ORDER BY id;
-INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_src VALUES (1);
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mut (id UInt64, s String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_src VALUES (1), (2), (3), (4);
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_mut SELECT number, '' FROM numbers(6);
 
-UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_upd SET v = 1 WHERE id IN (SELECT id FROM merge('', '^t_src$'));
-SELECT id FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_upd WHERE v = 1;
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mut DELETE WHERE id IN (SELECT id FROM merge('', '^t_src$') WHERE id = 1) SETTINGS mutations_sync = 2;
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mut DELETE WHERE id IN (SELECT id FROM merge(concat('', ''), '^t_src$') WHERE id = 2) SETTINGS mutations_sync = 2;
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mut DELETE WHERE id IN (SELECT id FROM remote('127.0.0.1', '', 't_src') WHERE id = 3) SETTINGS mutations_sync = 2;
+DELETE FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_mut WHERE id IN (SELECT id FROM merge('', '^t_src$') WHERE id = 4) SETTINGS lightweight_deletes_sync = 2, lightweight_delete_mode = 'alter_update';
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mut UPDATE s = currentDatabase() WHERE 1 SETTINGS mutations_sync = 2, alter_update_mode = 'heavy';
+SELECT id, s = {CLICKHOUSE_DATABASE_1:String} FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_mut ORDER BY id;
 
--- A view binds the database at `CREATE`, as for `merge(regexp)`.
-CREATE VIEW v AS SELECT id FROM merge('', '^t_src$');
-SELECT position(create_table_query, concat('merge(''', currentDatabase(), ''', ''^t_src$'')')) > 0
-FROM system.tables WHERE database = currentDatabase() AND name = 'v';
+-- A replicated table, whose mutations are also pruned by partition.
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_rmt (id UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_rmt', 'r1') PARTITION BY id ORDER BY id;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_rmt SELECT number FROM numbers(6);
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_rmt DELETE WHERE id IN (SELECT id FROM merge('', '^t_src$')) SETTINGS mutations_sync = 2, allow_nondeterministic_mutations = 1;
+SELECT id FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_rmt ORDER BY id;
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
