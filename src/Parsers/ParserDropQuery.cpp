@@ -490,6 +490,11 @@ You can specify how long (in seconds) to wait for inactive replicas to execute `
 If the `alter_sync` is set to `2` and some replicas are not active for more than the time, specified by the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown. With `alter_sync = 3` the inactive replicas are not waited for, so no exception is thrown.
 </Note>
 
+<Note>
+For non-replicated `MergeTree` tables the removed parts stay on disk as inactive parts for `old_parts_lifetime` seconds. Use `SETTINGS truncate_removes_parts_immediately = 1` to remove them at once.
+For `ReplicatedMergeTree` tables the removed parts are deleted at once, because `TRUNCATE` is executed on every replica as a `DROP_RANGE` log entry, like `DROP PARTITION`.
+</Note>
+
 The `TRUNCATE TABLE` query is **not supported** for the following table engines:
 
 - [`View`](/reference/engines/table-engines/special/view)
