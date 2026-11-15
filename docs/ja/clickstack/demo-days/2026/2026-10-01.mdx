@@ -1,0 +1,150 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-10-01
+title: 'デモデイズ - 2026-10-01'
+sidebarTitle: '2026-10-01'
+description: '2026-10-01 の ClickStack デモデー'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## ダッシュボードの読み込みインジケーターとライブテールの範囲 {#dashboard-loading-indicators-and-live-tail-ranges}
+
+*デモ担当者: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ここで紹介する変更は、いずれもオープンソースコミュニティからのコントリビューションです。読み込みインジケーターは [@Harshul1484](https://github.com/Harshul1484)、ライブテールの変更は [@krishs01](https://github.com/krishs01) によるものです。どちらも、ここ数週間にリポジトリへ寄せられたイシューがきっかけとなっています。
+
+これまでは、ダッシュボードをリフレッシュした際に何が起きているのかが分かりにくいことがありました。スピナーに隠れて見えなくなるタイルがある一方で、クエリの実行中であることを示さないまま以前のデータを表示し続けるタイルもありました。そのため、接続が遅い場合や重いクエリを実行している場合には、表示されているのが最新の結果なのかを判断できませんでした。折れ線グラフと積み上げ棒グラフの時系列チャートは以前から再フェッチ中にパルス表示されていましたが、数値、棒グラフ、円グラフ、テーブルの各タイルは `isLoading` しか確認しておらず、この値は react-query がプレースホルダーデータを表示している間 `false` のままでした。
+
+現在、これらのタイルは再フェッチが完了するまで以前のデータを画面に残したままパルス表示されます。この変更は複数の小さな PR に分けてマージされ、まず数値、棒グラフ、円グラフのタイル、続いてテーブル、ヒートマップ、そして Services ダッシュボードのリストバーチャートとヒストグラムチャートに適用されました。テーブルについては、`useOffsetPaginatedQuery` がライブモードでしか以前の行を保持していなかったため、リフレッシュ中にタイル全体が消えてしまい、追加の修正が必要でした。検索タイルとイベントパターンタイル、および Kubernetesダッシュボードの Pods、Nodes、Namespaces テーブルは、まだ従来の動作のままです。これらに対応する PR は現在オープン中です。
+
+ライブテールについては、これまでタイムピッカーが 1 時間を超えるプリセットをすべて、理由を示さないままグレーアウトしていました。また、これらのプリセットを切り替えるスイッチは、アプリ内の他の箇所ではライブテールと呼ばれているにもかかわらず、「Relative Time」というラベルになっていました。
+
+現在は 3h と 6h のプリセットが利用できるようになり、スイッチのラベルは **Live tail ranges** に変更されました。引き続き無効になっているプリセットにカーソルを合わせると、「Not available for Live Tail」というツールチップが表示されます。12h 以上の範囲は、リフレッシュのたびに時間ウィンドウ全体を再クエリするため、引き続き無効です。デフォルトのリフレッシュ間隔は 10 秒なので、これを有効にすると 10 秒ごとに 12～24 時間分のデータをスキャンすることになります。
+
+**関連 PR:** [#3211](https://github.com/hyperdxio/hyperdx/pull/3211) ダッシュボードのリフレッシュ中に数値、棒グラフ、円グラフのタイルをパルス表示、[#3212](https://github.com/hyperdxio/hyperdx/pull/3212) ダッシュボードのリフレッシュ中にテーブルタイルの行を画面に保持、[#3221](https://github.com/hyperdxio/hyperdx/pull/3221) ダッシュボードのリフレッシュ中にヒートマップタイルを画面に保持、[#3229](https://github.com/hyperdxio/hyperdx/pull/3229) リフレッシュ中にリストバーチャートとヒストグラムチャートをパルス表示、[#3224](https://github.com/hyperdxio/hyperdx/pull/3224) ダッシュボードのリフレッシュ中に検索タイルとパターンタイルを画面に保持 (オープン) 、[#3228](https://github.com/hyperdxio/hyperdx/pull/3228) ページのリフレッシュ中に Kubernetesダッシュボードのテーブルを画面に保持 (オープン) 、[#3219](https://github.com/hyperdxio/hyperdx/pull/3219) 3h と 6h のライブテールを有効化、スイッチをリネーム、無効時のツールチップを追加
+
+## イシューテンプレートと Needs Feedback フロー {#issue-templates-and-the-needs-feedback-flow}
+
+*デモ担当者: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=118" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これは製品ではなく、リポジトリ側の変更です。これまでは、HyperDX リポジトリでボディを自由形式で記述したイシューを作成できました。今後、新しいイシューはバグレポートまたは機能リクエストのいずれかのテンプレートから作成することになり、空のイシューは無効化されています。テンプレートは必要に応じて追加していく予定です。
+
+バグレポートのテンプレートでは、最初にデバッグ情報の記入を求めます。アプリにはすでに **Help → Copy debug info** アクションがあり、フロントエンドとバックエンドのバージョン、デプロイメントモード、ブラウザ、セッション ID をコピーできます(APIキーとクエリパラメータは除去されます)。これをイシューに貼り付けておけば、確認のやり取りを一往復省けるはずです。collector および CLI に関するイシューでは、このフィールドには `N/A` と記入します。
+
+また、新しいイシューには `Needs Feedback` ラベルが自動的に付与されます。これは、そのイシューがまだ議論中で、PR を受け付ける段階にないことを示します。スコープについて合意が取れたら、メンテナーがラベルを `Accepting PR` に変更し、誰でも着手できる状態になります。
+
+このフローは `CONTRIBUTING.md` に記載されています。現時点ではあくまで慣例であり、PR 側でこれを強制する仕組みはありません。イシューの内容や対応方針について合意する前に、修正作業に時間を費やしてしまうのを防ぐことが狙いです。実際の運用状況を見ながら、今後改善していく予定です。
+
+**関連 PR:** [#3239](https://github.com/hyperdxio/hyperdx/pull/3239) Add debug-info ask and Needs Feedback issue flow
+
+## 1つのチャートに複数のPromQL式を表示 {#multiple-promql-expressions-on-one-chart}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=191" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これまでPromQLは時系列チャートでのみサポートされており、1つのタイルにつき1つの式しか使用できませんでした。今回のアップデートにより、同じ時系列チャートに複数のPromQL式を追加し、それぞれに別名を付けられるようになりました。デモでは、この機能を使ってp50、p95、p99のレイテンシーを1つのチャートにまとめてプロットしています。
+
+また、エディターの下にあるクエリプレビューに、すべての式について生成されたPromQLが変数を置換した状態で表示されるようになりました。以前は最初の式しか表示されませんでした。これにより、保存前に各クエリが最終的にどのように展開されるかを確認できます。
+
+一覧の最初のPRは、この機能を実現するために行ったリファクタリングです。PromQLエディターとチャートビルダー内の系列コントロールを共有コンポーネントとして切り出し、式ごとに再利用できるようにしました。
+
+**関連PR:** [#3145](https://github.com/hyperdxio/hyperdx/pull/3145) PromQL関数、PromqlExpressionEditor、ChartSeriesControlsの切り出し、[#3146](https://github.com/hyperdxio/hyperdx/pull/3146) 1つのチャートに複数のPromQL式をプロット
+
+## PromQL の数値、円グラフ、表形式のチャート {#promql-number-pie-and-table-charts}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=241" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+*このクリップは音声が聞き取りにくくなっています。申し訳ありません。紹介した内容はすべて以下で説明しています。*
+
+PromQL は、時系列に加えて、数値、円グラフ、棒グラフ、表形式のチャートでも利用できるようになりました。最も大きな変更点は数値チャートです。これまでは、すべての PromQL クエリが範囲クエリとして扱われ、選択した時間範囲全体にわたって各ステップで評価されていました。そのうえで、チャートには時刻と系列名の順で最初の結果が表示されていました。現在は、範囲の終端で一度だけ評価されるインスタントクエリと、範囲クエリのどちらかを選択できます。これは Grafana の stat タイルと同じ仕組みです。
+
+範囲クエリでは、さらに reducer として last、min、max、avg、sum、count のいずれかを選択します。reducer はクライアント側で実行され、各系列のサンプルを単一の値に集約します。複数の系列が存在する、あるいは集約されていないサンプルがあるなどの理由で値が複数残る場合は、チャートに警告が表示されます。この警告では、数値タイルには単一の値しか表示できないため、式で集約する必要があることが説明されます。
+
+数値チャートでは、範囲クエリの場合にスパークラインも表示でき、数値用にフェッチしたものと同じ結果が使われます。これらのクエリは時系列クエリと同様に、ダッシュボードの時間範囲と粒度に従うようになったため、数値とスパークラインで結果を共有できます。
+
+円グラフと棒グラフにも、reducer 付きのインスタント/範囲のオプションが同様に用意されており、凡例テンプレートにも対応しています。reducer は、系列ごとに複数のサンプルを返すインスタントクエリにも適用できます。例えば、`up[5m]` はマトリックスを返しますが、これは時間方向に集約されてインスタントベクトルとなり、そのうえでスライスや棒として表示されます。数値チャートでも同じ集約が行われます。
+
+テーブルには生のクエリ結果が表示されます。各サンプルが 1 行となり、ラベルごとにカラムが作成されます。`__name__` と Timestamp が存在する場合は、先頭のカラムとして表示されます。そのため範囲クエリでは、各ステップのすべてのサンプルについて、タイムスタンプ付きの行が作成されます。数値のフォーマットは、これらすべてのチャートタイプでサポートされています。
+
+**関連 PR:** [#3169](https://github.com/hyperdxio/hyperdx/pull/3169) インスタントおよび範囲ベースの PromQL 数値タイルをサポート、[#3178](https://github.com/hyperdxio/hyperdx/pull/3178) PromQL 数値チャートでスパークラインをサポート、[#3238](https://github.com/hyperdxio/hyperdx/pull/3238) PromQL 表形式のチャートをサポート、[#3253](https://github.com/hyperdxio/hyperdx/pull/3253) PromQL 円グラフおよび棒グラフをサポート
+
+## Markdown タイルでのダッシュボード変数 {#dashboard-variables-in-markdown-tiles}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=345" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これまでダッシュボード変数はクエリ内では使用できたものの、Markdown タイルでは使用できませんでした。今回のアップデートにより、リンク内も含めて Markdown 内で変数を参照できるようになりました。変数ピッカーで値を変更すると、テキストとリンク先の両方が更新されます。デモでは、この機能を使って選択した値を別のページに引き渡しています。
+
+値にはデフォルトで新しい `markdown` フォーマットが適用され、Markdown の特殊文字がエスケープされます。また、Markdown タイルではスクリプトや未加工の HTML もブロックされます。コードブロック内などでエスケープされていない値が必要な場合は、`${var:csv}` などの別のフォーマットを使用してください。
+
+無効な変数参照はエディタ上で警告表示されます。あわせて、MCP のダッシュボード検証とプロンプトもこれに対応するよう更新されました。
+
+**関連 PR:** [#3246](https://github.com/hyperdxio/hyperdx/pull/3246) Substitute variables in markdown tiles
+
+## PromQL マクロ {#promql-macros}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=376" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+PromQL で、ダッシュボードの時間範囲と粒度に基づく Grafana 互換のマクロ 3 種類が使えるようになりました。`$__interval` はチャートまたはダッシュボードの粒度を、`$__range` はチャートの日付範囲の長さを秒単位で返します。`$__rate_interval` は `max(4 × 15s, $__interval)` として計算され、rate の計算に複数のスクレイプ間隔をカバーするウィンドウを提供します。なお、現時点ではスクレイプ間隔を 15 秒と仮定しています。
+
+これらのマクロは変数と同じタイミングで置換されるため、生成された PromQL のプレビューで解決後の値を確認できます。また、エディタの自動補完でも候補として表示されます。内部的には、既存の SQL マクロの仕組みの大部分を流用しています。
+
+**関連 PR:** [#3244](https://github.com/hyperdxio/hyperdx/pull/3244) Support PromQL macros
+
+## 検索ページでの行の選択 {#selecting-rows-on-the-search-page}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=398" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ユーザーからのリクエストを受けて追加された小さな機能です。検索結果の行をチェックボックスで個別に選択できるようになったほか、Shift キーを押しながらクリックして範囲選択もできるようになりました。行を選択すると、**Download CSV**、**Copy CSV**、**Copy JSON** の各アクションと、選択を解除するオプションが使えるようになります。出力には現在テーブルに表示されているすべてのカラムが含まれるため、結果セット全体をエクスポートしなくても、必要な数行だけを ClickStack から取り出せます。
+
+チェックボックスはホバー時に表示されます。これは [@MikeShi42](https://github.com/MikeShi42) によるフォローアップの改善です。チェックボックスはデフォルトでは非表示で、行にカーソルを合わせるとフェードインします。キーボードでフォーカスしたときにも表示されるため、Tab キーで移動した先が見えないコントロールになることはありません。いずれかの行を選択すると、Shift クリックする位置がわかるよう、すべてのチェックボックスが表示されたままになります。タッチデバイスでは常に表示されます。
+
+チェックボックスのカラムはホバー時も幅が変わらないため、テーブルのレイアウトが崩れることはありません。また、カラム幅は 24px から 18px に狭められ、チェックボックスには Shift クリックで範囲選択する方法を説明するツールチップが追加されました。
+
+**関連 PR:** [#3140](https://github.com/hyperdxio/hyperdx/pull/3140) 検索結果の行の複数選択によるダウンロードとコピーのサポート、[#3164](https://github.com/hyperdxio/hyperdx/pull/3164) ホバー時に検索結果の行選択チェックボックスを表示
+
+## 行詳細パネルにおけるマテリアライズドカラムと別名カラム {#materialized-and-alias-columns-in-the-row-details-panel}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=435" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これは、行詳細パネルで計算カラムを表示してほしいというイシューを受けて、[@BilalAtique](https://github.com/BilalAtique) から寄せられたオープンソースのコントリビューションです。このパネルは各行を `SELECT *` でフェッチしますが、`asterisk_include_materialized_columns` と `asterisk_include_alias_columns` が有効になっていない限り、`MATERIALIZED` カラムと `ALIAS` カラムは除外されます。そのため、ログテーブルに追加したマテリアライズドカラムや、標準の `otel_logs` にある `*AttributeItems` 別名カラムは表示されていませんでした。
+
+Column Values ビューの歯車メニューに、新たに **Show materialized and alias columns** オプションが追加されました。このオプションはデフォルトでオフになっており、他のパネル設定と同様にローカルストレージに保存されます。オンにすると、`*` を使用する行クエリに上記の 2 つの設定が付与されます。Known Columns List が設定されたソースには影響しません。
+
+また、行のルックアップではログソース自体のクエリ設定も適用されるようになり、こちらがトグルよりも優先されます。ログソースで両方の設定が有効になっていれば、オプションがオフでもカラムは表示されます。逆に、ログソースに `asterisk_include_alias_columns = 0` が設定されている場合は、オプションをオンにしても別名カラムは非表示のままです。
+
+いくつか注意点があります。接続に使用するユーザーがこれらの設定を変更できない場合 (たとえば `readonly = 1` が設定されている場合や、設定プロファイルでこれらが `CONST` に指定されている場合) 、行クエリは失敗します。また、その行で別名カラムを評価できない場合にも失敗します。その際、パネルには ClickHouse のエラーとともに、オプションをオフに戻すための **Hide materialized and alias columns** アクションが表示されます。
+
+`__hdx_materialized_*` カラムもフェッチされますが、ビューアーでは引き続き非表示となります。これらのカラムを表示するトグルは、今回の変更には含まれていません。
+
+**関連 PR:** [#3234](https://github.com/hyperdxio/hyperdx/pull/3234) 行サイドパネルの行ルックアップにログソースのクエリ設定を適用、[#3231](https://github.com/hyperdxio/hyperdx/pull/3231) 行詳細パネルで MATERIALIZED カラムと ALIAS カラムを表示するオプションを追加
+
+## キーでラベル付けされる Map 属性カラム {#map-attribute-columns-labelled-by-their-key}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=495" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+こちらもオープンソースコミュニティからのコントリビューションで、今回は [@DevShoaib78](https://github.com/DevShoaib78) によるものです。これまでは、フィルタのサイドバーや行のサイドパネルから `host.arch` のような Map 属性をカラムとして追加すると、結果テーブルには ClickHouse が導出した名前 (例: `arrayElement(ResourceAttributes, 'host.arch')`) が表示されていました。
+
+現在は、検索ページ上のどちらの操作も同じロジックで処理され、式が別名付きで `SELECT` に追加されます (`ResourceAttributes['host.arch'] AS "host.arch"`)。その結果、列ヘッダーには `host.arch` と表示されます。別名は `SELECT` 入力欄で確認・編集できます。手動で記述した SQL が書き換えられることはないため、既存の保存済み検索、アラート、ダッシュボードには影響しません。
+
+クエリの意味が変わるおそれがある場合、別名は付与されません。たとえば、テーブルのカラム名と一致するキー (ClickHouse は `WHERE` や `ORDER BY` でカラムよりも別名を優先して解決するため) や、2 つの異なる Map に含まれる同じキーのように、`SELECT` 内ですでに使用されている名前が該当します。また、キーに `"` または `\` が含まれる場合も別名はスキップされます。
+
+サイドパネル、フィルタのサイドバー、ネストされたフィルタグループでは、カラムがすでに表示されているかを判定する際に、別名の有無を問わず式を認識するようになりました。これにより、テーブルにすでに存在するカラムの追加が提案されることはなくなります。
+
+**関連 PR:** [#3163](https://github.com/hyperdxio/hyperdx/pull/3163) Label Map attribute columns by their key instead of arrayElement(...)

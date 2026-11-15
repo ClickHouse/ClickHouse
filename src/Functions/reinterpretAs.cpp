@@ -56,21 +56,31 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
+    /// The result type is the type named by the const second argument (`typeFromString`). The
+    /// override below is authoritative-but-examined: it delegates the type computation to the
+    /// declarative signature and only adds the source/destination memory-compatibility validation.
+    String getSignatureString() const override
+    {
+        return "(Any, const t String) -> typeFromString(t)";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const auto & column = arguments.back().column;
-
-        DataTypePtr from_type = arguments[0].type;
-
-        const auto * type_col = checkAndGetColumnConst<ColumnString>(column.get());
+        const auto * type_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
         if (!type_col)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Second argument to {} must be a constant string describing type."
                 " Instead there is non-constant column of type {}",
                 getName(),
-                arguments.back().type->getName());
+                arguments[1].type->getName());
 
+        DataTypePtr from_type = arguments[0].type;
+
+        /// Resolve the query-provided type name outside the signature's factory-info suppression so
+        /// `query_log.used_data_type_families` records it. The signature validates the same type
+        /// expression, while the lookup below preserves the legacy query-log attribution.
         DataTypePtr to_type = DataTypeFactory::instance().get(type_col->getValue<String>());
+        IFunction::getReturnTypeImpl(arguments);
 
         WhichDataType result_reinterpret_type(to_type);
 
@@ -510,6 +520,30 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
+    /// `reinterpretAs<T>` accepts any type whose value fits unambiguously in a fixed-size
+    /// contiguous memory region — i.e. `canBeReinterpretedAsNumeric`-typed inputs plus
+    /// `String`/`FixedString`. Returns the requested target type. We can advertise a
+    /// signature when `ToDataType` is default-constructible (all the numeric/date/UUID
+    /// variants); `reinterpretAsFixedString` derives its `N` from the input's value size
+    /// so its signature is documentation-only.
+    String getSignatureString() const override
+    {
+        if constexpr (std::is_same_v<ToDataType, DataTypeFixedString>)
+            /// The FixedString length N is the source value's in-memory size.
+            return "(T : UnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion) -> FixedString(sizeOfValueInMemory(T))";
+        else if constexpr (std::is_same_v<ToDataType, DataTypeString>)
+            /// reinterpretAsString accepts any value laid out contiguously in memory.
+            return "(UnambiguouslyRepresentedInContiguousMemoryRegion) -> String";
+        else
+        {
+            /// The input matcher is exactly `canBeReinterpretedAsNumeric` plus String/FixedString.
+            static const String sig
+                = String("(Number | Date | DateTime | DateTime64 | UUID | StringOrFixedString) -> ")
+                + ToDataType{}.getName();
+            return sig;
+        }
+    }
+
     bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants(); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
@@ -550,11 +584,9 @@ public:
         return arguments_with_type;
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        auto arguments_with_type = addTypeColumnToArguments(arguments);
-        return impl.getReturnTypeImpl(arguments_with_type);
-    }
+    /// getReturnTypeImpl is intentionally not overridden: the declarative signature is
+    /// authoritative for every target (including FixedString, whose N is `sizeOfValueInMemory`).
+    /// The input matcher encodes exactly which source types can be reinterpreted.
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
     {
@@ -577,6 +609,7 @@ struct NameReinterpretAsInt32       { static constexpr auto name = "reinterpretA
 struct NameReinterpretAsInt64       { static constexpr auto name = "reinterpretAsInt64"; };
 struct NameReinterpretAsInt128      { static constexpr auto name = "reinterpretAsInt128"; };
 struct NameReinterpretAsInt256      { static constexpr auto name = "reinterpretAsInt256"; };
+struct NameReinterpretAsBFloat16    { static constexpr auto name = "reinterpretAsBFloat16"; };
 struct NameReinterpretAsFloat32     { static constexpr auto name = "reinterpretAsFloat32"; };
 struct NameReinterpretAsFloat64     { static constexpr auto name = "reinterpretAsFloat64"; };
 struct NameReinterpretAsDate        { static constexpr auto name = "reinterpretAsDate"; };
@@ -597,6 +630,7 @@ using FunctionReinterpretAsInt32 = FunctionReinterpretAs<DataTypeInt32, NameRein
 using FunctionReinterpretAsInt64 = FunctionReinterpretAs<DataTypeInt64, NameReinterpretAsInt64>;
 using FunctionReinterpretAsInt128 = FunctionReinterpretAs<DataTypeInt128, NameReinterpretAsInt128>;
 using FunctionReinterpretAsInt256 = FunctionReinterpretAs<DataTypeInt256, NameReinterpretAsInt256>;
+using FunctionReinterpretAsBFloat16 = FunctionReinterpretAs<DataTypeBFloat16, NameReinterpretAsBFloat16>;
 using FunctionReinterpretAsFloat32 = FunctionReinterpretAs<DataTypeFloat32, NameReinterpretAsFloat32>;
 using FunctionReinterpretAsFloat64 = FunctionReinterpretAs<DataTypeFloat64, NameReinterpretAsFloat64>;
 using FunctionReinterpretAsDate = FunctionReinterpretAs<DataTypeDate, NameReinterpretAsDate>;
@@ -1050,6 +1084,34 @@ SELECT reinterpretAsUInt64(toFloat64(0.2)) AS x, reinterpretAsFloat64(x)
     FunctionDocumentation documentation_reinterpretAsFloat64 = {description_reinterpretAsFloat64, syntax_reinterpretAsFloat64, arguments_reinterpretAsFloat64, {}, returned_value_reinterpretAsFloat64, examples_reinterpretAsFloat64, introduced_in_reinterpretAsFloat64, category_reinterpretAsFloat64};
 
     factory.registerFunction<FunctionReinterpretAsFloat64>(documentation_reinterpretAsFloat64);
+
+    FunctionDocumentation::Description description_reinterpretAsBFloat16 = R"(
+Reinterprets the input value as a value of type BFloat16.
+Unlike [`CAST`](#CAST), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
+    )";
+    FunctionDocumentation::Syntax syntax_reinterpretAsBFloat16 = "reinterpretAsBFloat16(x)";
+    FunctionDocumentation::Arguments arguments_reinterpretAsBFloat16 = {
+        {"x", "Value to reinterpret as BFloat16.", {"(U)Int*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_reinterpretAsBFloat16 = {"Returns the reinterpreted value `x`.", {"BFloat16"}};
+    FunctionDocumentation::Examples examples_reinterpretAsBFloat16 = {
+    {
+        "Usage example",
+        R"(
+SELECT reinterpretAsBFloat16(reverse(unhex('3F80'))) AS x
+        )",
+        R"(
+┌─x─┐
+│ 1 │
+└───┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_reinterpretAsBFloat16 = {26, 8};
+    FunctionDocumentation::Category category_reinterpretAsBFloat16 = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation documentation_reinterpretAsBFloat16 = {description_reinterpretAsBFloat16, syntax_reinterpretAsBFloat16, arguments_reinterpretAsBFloat16, {}, returned_value_reinterpretAsBFloat16, examples_reinterpretAsBFloat16, introduced_in_reinterpretAsBFloat16, category_reinterpretAsBFloat16};
+
+    factory.registerFunction<FunctionReinterpretAsBFloat16>(documentation_reinterpretAsBFloat16);
 
     FunctionDocumentation::Description description_reinterpretAsDate = R"(
 Reinterprets the input value as a Date value (assuming little endian order) which is the number of days since the beginning of the Unix epoch 1970-01-01

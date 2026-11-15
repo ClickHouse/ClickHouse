@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Field.h>
+#include <Common/HiddenSecret.h>
 
 #include <Core/ConstantValue.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -120,7 +121,7 @@ public:
     {
         chassert(isMasked());
         if (mask_id == std::numeric_limits<decltype(mask_id)>::max())
-            return "[HIDDEN]";
+            return String(HIDDEN_SECRET);
         return "[HIDDEN id: " + std::to_string(mask_id) + "]";
     }
 

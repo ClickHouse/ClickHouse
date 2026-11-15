@@ -1,0 +1,7 @@
+both queries are pruned by the dictionary of b
+{"result":[{"count()":0}],"rows_read":0}
+{"result":[{"count()":0}],"rows_read":0}
+the dictionary page of a is not read
+OK
+a value present in a is still found
+1

@@ -12,21 +12,15 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定はClickHouse serverを設定するためのもので、ClickHouseのソースコードから自動生成されています。
 
-<div id="vector_similarity_index_cache_max_entries">
-  ## vector_similarity_index_cache_max_entries
-</div>
+## vector_similarity_index_cache_max_entries {#vector_similarity_index_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="10000000" changeable_without_restart="No" />ベクトル類似度索引のキャッシュサイズ (エントリ数) 。0 は無効を意味します。
 
-<div id="vector_similarity_index_cache_policy">
-  ## vector_similarity_index_cache_policy
-</div>
+## vector_similarity_index_cache_policy {#vector_similarity_index_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />ベクトル類似度索引キャッシュのポリシー名。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />ベクトル類似度索引キャッシュのエビクションポリシー名。設定可能な値: `LRU`、`SLRU`、`SIEVE`。
 
-<div id="vector_similarity_index_cache_size">
-  ## vector_similarity_index_cache_size
-</div>
+## vector_similarity_index_cache_size {#vector_similarity_index_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Yes" />ベクトル類似度索引キャッシュのサイズです。0 は無効を意味します。
 
@@ -34,9 +28,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
   この設定は実行時に変更でき、変更は直ちに反映されます。
 </Note>
 
-<div id="vector_similarity_index_cache_size_ratio">
-  ## vector_similarity_index_cache_size_ratio
-</div>
+## vector_similarity_index_cache_size_ratio {#vector_similarity_index_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />ベクトル類似度索引キャッシュ内の保護キュー (SLRUポリシーの場合) のサイズが、キャッシュ全体のサイズに占める割合。
 

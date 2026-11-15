@@ -1,5 +1,5 @@
 #include <Processors/QueryPlan/JoinEstimation.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>

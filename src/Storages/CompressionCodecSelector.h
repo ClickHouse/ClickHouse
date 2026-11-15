@@ -44,7 +44,8 @@ namespace ErrorCodes
   *
   * The threshold is applied to the size `choose` is called with, which is the size known when the codec
   * has to be picked - before the data is written - exactly like the `min_part_size` conditions above.
-  * A freshly inserted part has no size yet and is passed `0`, so it starts as `LZ4`; a merge or a
+  * A freshly inserted part has no size yet and is passed the uncompressed size of the inserted block,
+  * so small inserts start as `LZ4`, and large inserts get `ZSTD(3)` right away; a merge or a
   * mutation passes the size of its source parts, so the bigger parts produced by background merges
   * cross the threshold and switch to `ZSTD(3)`. It is therefore an estimate, not the size of the
   * resulting part: a rewrite that shrinks its input - a `TTL DELETE`, deduplicating or collapsing

@@ -31,3 +31,9 @@
 1
 -- remote plan reads all replicas remotely
 1
+-- local plan uses the projection
+1	20
+2	20
+3	20
+4	20
+1	1

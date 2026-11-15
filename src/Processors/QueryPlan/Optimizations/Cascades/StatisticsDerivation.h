@@ -59,6 +59,8 @@ private:
     ExpressionStatistics deriveSortingStatistics(const SortingStep & sorting_step, const ExpressionStatistics & input_statistics);
     ExpressionStatistics deriveLimitStatistics(const LimitStep & limit_step, const ExpressionStatistics & input_statistics);
     ExpressionStatistics deriveDistinctStatistics(const DistinctStep & distinct_step, const ExpressionStatistics & input_statistics);
+    /// A final `DISTINCT` directly over a preliminary one on the same columns.
+    static bool isOverPreliminaryDistinct(const DistinctStep & distinct_step, const Group & input_group);
 
     /// Estimate bytes per row of a read: table-level hint if present, otherwise the sum of the
     /// per-column widths already filled into `statistics`.

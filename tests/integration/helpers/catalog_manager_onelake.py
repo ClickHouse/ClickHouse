@@ -23,8 +23,7 @@ ONELAKE_BLOB_HOST = "onelake.blob.fabric.microsoft.com"
 ONELAKE_STORAGE_ENDPOINT = f"https://{ONELAKE_DFS_HOST}"
 ONELAKE_CATALOG_URL = "https://onelake.table.fabric.microsoft.com/iceberg"
 
-# All tables this manager creates -- including those produced by
-# `test_list_tables_pagination` (`e2e_pg_*`) -- start with this prefix.
+# All tables this manager creates start with this prefix.
 # Stale cleanup must restrict itself to this prefix so other workloads
 # sharing the same Fabric lakehouse are never touched.
 TABLE_NAME_PREFIX = "e2e_"
@@ -48,6 +47,10 @@ class OneLakeCatalogManager(CatalogManager):
     ``abfss://`` paths.  Fabric automatically exposes them through
     an Iceberg REST API, which is what ClickHouse reads.
     """
+
+    # OneLake hands out `abfss://` table locations.
+    table_engine = "IcebergAzure"
+    mismatched_table_engine = "IcebergS3"
 
     def __init__(self, config: OneLakeConfig):
         self.config = config
@@ -342,6 +345,21 @@ class OneLakeCatalogManager(CatalogManager):
         self._tables_created.append(table_name)
         log.info("Created Iceberg table '%s' on OneLake", table_name)
         return table_name
+
+    def create_namespace_with_location(self) -> str:
+        return "dbo"
+
+    def track_table(self, namespace: str, table_name: str) -> None:
+        self._tables_created.append(table_name)
+
+    def metadata_location(self, namespace: str, table_name: str) -> str:
+        resp = requests.get(
+            self._table_api_url(table_name, namespace),
+            headers=self._authed_headers(),
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()["metadata-location"]
 
     def create_sample_table(self) -> Tuple[str, pa.Table]:
         """Create a small ``(id Int64, value String)`` table.

@@ -1,0 +1,5 @@
+status:       applicable
+status:       not_applicable
+reason:       Hypothetical projection no longer matches the table: column `b` was UInt64, now Float64. Run CREATE HYPOTHETICAL PROJECTION again
+status:       not_applicable
+reason:       Hypothetical projection no longer matches the table: column `b` was UInt64, now absent. Run CREATE HYPOTHETICAL PROJECTION again
