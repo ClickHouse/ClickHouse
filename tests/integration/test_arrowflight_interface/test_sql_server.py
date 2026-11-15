@@ -7,6 +7,8 @@ import pyarrow as pa
 import pyarrow.flight as flight
 import random
 import string
+import time
+import uuid
 from google.protobuf import any_pb2
 from .flight_sql_client import (
     FlightSQLClient,
@@ -34,6 +36,7 @@ node = cluster.add_instance(
     main_configs=[
         "configs/flight_port.xml",
         "configs/display_secrets.xml",
+        "configs/audit_log.xml",
     ],
 )
 
@@ -432,6 +435,39 @@ def test_cancel_flight_info():
 
     result = client.cancel_flight_info(poll_result.info_bytes)
     assert result.status == CancelStatus.Value('CANCEL_STATUS_CANCELLED')
+
+
+def test_cancel_flight_info_after_reading_ticket_is_audited():
+    """A query cancelled with `CancelFlightInfo` after a ticket was already read terminates through
+    `BlockIO::onCancelOrConnectionLoss`, which runs neither the finish nor the exception callbacks.
+    It must still leave a DML audit record with the cancellation outcome."""
+    client = get_client()
+
+    marker = f"audit_flight_cancel_{uuid.uuid4().hex}"
+    descriptor = flight.FlightDescriptor.for_command(
+        f"SELECT number, '{marker}' FROM numbers(10) SETTINGS max_block_size = 1".encode()
+    )
+    poll_result = client.poll_flight_info(descriptor)
+    assert poll_result.flight_descriptor is not None
+
+    # The next poll pulls the first block and returns a ticket for it.
+    poll_result = client.poll_flight_info(poll_result.flight_descriptor)
+    assert poll_result.flight_descriptor is not None
+    assert len(poll_result.info.endpoints) == 1
+    assert client.do_get(poll_result.info.endpoints[0].ticket).read_all().num_rows == 1
+
+    result = client.cancel_flight_info(poll_result.info_bytes)
+    assert result.status == CancelStatus.Value('CANCEL_STATUS_CANCELLED')
+
+    for _ in range(60):
+        log_content = node.grep_in_log(marker, from_host=True, filename="clickhouse-server.audit.log")
+        records = [line.split("AUDIT: ", 1)[1].split(", ") for line in log_content.strip().split("\n") if "AUDIT: " in line]
+        if records:
+            break
+        time.sleep(0.5)
+    assert len(records) == 1, f"the cancelled query must be audited once: {log_content}"
+    assert records[0][0] == "DML", log_content
+    assert records[0][2] == "394", log_content
 
 
 def test_unsupported_action():

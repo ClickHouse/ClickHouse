@@ -63,10 +63,25 @@ BlockIO InterpreterParallelWithQuery::execute()
 
     /// Call the interpreters of all the subqueries - it may produce some pipelines which we combine together into
     /// one combined pipeline.
-    executeSubqueries(subqueries);
+    try
+    {
+        executeSubqueries(subqueries);
 
-    if (runner)
-        runner->waitForAllToFinishAndRethrowFirstError();
+        if (runner)
+            runner->waitForAllToFinishAndRethrowFirstError();
+    }
+    catch (...)
+    {
+        /// Join the workers first: they may still be adding to `io_holders`.
+        if (runner)
+            runner->waitForAllToFinish();
+
+        /// Some subqueries may have already done part of their work (e.g. `CREATE TABLE ... AS SELECT`
+        /// publishes the table before returning its fill pipeline), but their pipelines will never run now.
+        /// Report them as failed, otherwise their finish, exception and cancellation callbacks are never called.
+        onExceptionForPreparedSubqueries();
+        throw;
+    }
 
     /// We don't need our thread pool anymore.
     /// (Function executeCombinedPipeline() below will use its own thread pool.)
@@ -126,6 +141,9 @@ void InterpreterParallelWithQuery::executeSubqueries(const ASTs & subqueries)
 
 void InterpreterParallelWithQuery::executeSubquery(ASTPtr subquery, ContextMutablePtr subquery_context)
 {
+    /// The subqueries are internal (they are parts of the caller's query), but each of them must still
+    /// be audited on its own, with its own text and outcome. That is why the subquery's `BlockIO`
+    /// callbacks are also triggered below for the subqueries that never make it into the combined pipeline.
     /// The subqueries are nested, hence `internal`, but their text comes from the user, hence `user_initiated`:
     /// without it the access checks of `CREATE` subqueries would be skipped.
     auto query_io = executeQuery(
@@ -135,6 +153,7 @@ void InterpreterParallelWithQuery::executeSubquery(ASTPtr subquery, ContextMutab
             .internal = true,
             .user_initiated = true,
             .parse_server_owned_query_without_limits = subquery_context->shouldParseServerOwnedQueryWithoutLimits(),
+            .audit_internal = true,
         }).second;
 
     auto & pipeline = query_io.pipeline;
@@ -142,6 +161,7 @@ void InterpreterParallelWithQuery::executeSubquery(ASTPtr subquery, ContextMutab
     if (!pipeline.initialized())
     {
         /// The subquery interpreter (called by executeQuery()) has already done all the work.
+        query_io.onFinish();
         return;
     }
 
@@ -160,9 +180,18 @@ void InterpreterParallelWithQuery::executeSubquery(ASTPtr subquery, ContextMutab
         if (subquery->getQueryKind() == IAST::QueryKind::Select)
             reason += " (Use UNION to combine select queries)";
 
-        throw Exception(ErrorCodes::INCORRECT_QUERY,
-                        "Query {} can't be combined with other queries using PARALLEL WITH clause because this query {}",
-                        subquery->formatForLogging(), reason);
+        try
+        {
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                            "Query {} can't be combined with other queries using PARALLEL WITH clause because this query {}",
+                            subquery->formatForLogging(), reason);
+        }
+        catch (...)
+        {
+            /// The subquery is rejected without running; record that as its outcome.
+            query_io.onException();
+            throw;
+        }
     }
 
     chassert(pipeline.completed());
@@ -172,6 +201,17 @@ void InterpreterParallelWithQuery::executeSubquery(ASTPtr subquery, ContextMutab
     io_holders.push_back(std::move(query_io));
 
     /// TODO: Special processing for ON CLUSTER queries and also for queries related to a replicated database is required.
+}
+
+
+void InterpreterParallelWithQuery::onExceptionForPreparedSubqueries()
+{
+    std::lock_guard lock{mutex};
+    /// The combined pipeline was never executed. Destroy it before the subqueries release their workload resources.
+    combined_pipeline.reset();
+    for (auto & io : io_holders)
+        io.onException();
+    io_holders.clear();
 }
 
 
