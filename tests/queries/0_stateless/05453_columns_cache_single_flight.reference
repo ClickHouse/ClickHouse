@@ -17,8 +17,8 @@ waits, timeouts, misses
 waits, timeouts, misses
 0	0	1
 -- older compatibility versions do not wait
-1
-0
+true
+false
 -- a stripe another read wrote after this read looked its range up is served from the cache
 51539410944	393218
 57981763584	589821
