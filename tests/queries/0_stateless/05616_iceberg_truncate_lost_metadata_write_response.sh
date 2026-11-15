@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel
 # Tag no-fasttest: requires `IcebergLocal` (USE_AVRO).
 
 # `TRUNCATE` of an Iceberg table without a catalog commits by a conditional PUT of the next metadata file.
