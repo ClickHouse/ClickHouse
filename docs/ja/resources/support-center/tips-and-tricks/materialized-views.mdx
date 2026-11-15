@@ -1,0 +1,77 @@
+---
+slug: /tips-and-tricks/materialized-views
+sidebarTitle: 'materialized views'
+doc_type: 'guide'
+keywords: [
+  'ClickHouse materialized view',
+  'materialized view の最適化',
+  'materialized view のストレージに関する問題',
+  'materialized view のベストプラクティス',
+  'データベースの集約パターン',
+  'materialized view のアンチパターン',
+  'ストレージ急増の問題',
+  'materialized view のパフォーマンス',
+  'データベースビューの最適化',
+  '集約戦略',
+  'materialized view のトラブルシューティング',
+  'ビューのストレージオーバーヘッド'
+]
+title: '教訓：materialized view'
+description: 'materialized view の実例、問題、解決策'
+---
+
+*このガイドは、コミュニティミートアップで得られた知見をまとめたシリーズの一部です。実際の課題に対する解決策や知見をさらに知りたい場合は、[問題別に参照](/ja/resources/support-center/tips-and-tricks/community-wisdom)してください。*
+*パーツが多すぎることでデータベースのパフォーマンスが低下していませんか？ [パーツが多すぎる](/ja/resources/support-center/tips-and-tricks/too-many-parts) のコミュニティ知見ガイドをご覧ください。*
+*[Materialized Views](/ja/concepts/features/materialized-views/index) について詳しくは、こちらをご覧ください。*
+
+<div id="storage-antipattern">
+  ## ストレージが10倍に膨らむアンチパターン
+</div>
+
+**実運用で実際に起きた問題:** *「materialized view を使っていました。生ログテーブルは約20GBだったのに、そのログテーブルから作成したビューは190GBにまで膨れ上がり、生テーブルのほぼ10倍のサイズになりました。これは、attribute ごとに1行を作っていて、各ログが10個の attribute を持ち得るために起きたことです。」*
+
+**ルール:** `GROUP BY` で減らせる以上に多くの行を作っているなら、それは materialized view ではなく、高コストな索引を作っているだけです。
+
+<div id="mv-health-validation">
+  ## 本番環境の materialized view の健全性検証
+</div>
+
+このクエリは、materialized view を作成する前に、それがデータを圧縮するのか、逆に膨れ上がらせるのかを予測するのに役立ちます。実際のテーブルとカラムに対して実行し、「190GBに膨れ上がる」ような事態を避けてください。
+
+**確認できる内容:**
+
+* **低い集約率** (&lt;10%) = 良い MV、大幅な圧縮
+* **高い集約率** (&gt;70%) = 悪い MV、ストレージ肥大化のリスク
+* **ストレージ倍率** = MV のサイズがどれだけ大きく/小さくなるか
+
+```sql
+-- 実際のテーブルとカラムに置き換えてください
+SELECT 
+    count() as total_rows,
+    uniq(your_group_by_columns) as unique_combinations,
+    round(uniq(your_group_by_columns) / count() * 100, 2) as aggregation_ratio
+FROM your_table
+WHERE your_filter_conditions;
+
+-- aggregation_ratio が 70% を超える場合は、materialized view の設計を見直してください
+-- aggregation_ratio が 10% 未満の場合は、高い圧縮率が期待できます
+```
+
+<div id="mv-problems">
+  ## materialized viewが問題になる場合
+</div>
+
+**注意すべき兆候:**
+
+* insertのレイテンシが増加する (10msで完了していたクエリが100ms以上かかるようになる)
+* &quot;パーツが多すぎる&quot; エラーの発生頻度が高くなる
+* insert処理中にCPUスパイクが発生する
+* 以前は発生していなかったinsertのタイムアウトが起きる
+
+`system.query_log` を使ってクエリ実行時間の傾向を追跡すると、MV追加前後のinsertパフォーマンスを比較できます。
+
+<div id="video-sources">
+  ## ビデオの出典
+</div>
+
+* [ClickHouse at CommonRoom - Kirill Sapchuk](https://www.youtube.com/watch?v=liTgGiTuhJE) - 「materialized view への過度な熱意」と「20GB→190GBへの爆発的増加」の事例の出典

@@ -72,7 +72,8 @@ struct AzureStorageParsedArguments : private StorageParsedArguments
     void fromAST(ASTs & args, ContextPtr context, bool with_structure);
     void initializeForOneLake(
         ASTs & args,
-        ContextPtr context);
+        ContextPtr context,
+        bool use_blob_endpoint);
 
     Path blob_path;
     AzureBlobStorage::ConnectionParams connection_params;
@@ -101,12 +102,16 @@ public:
     void setRawPath(const Path & path) override { blob_path = path; }
     const String & getRawURI() const override { return blob_path.path; }
 
-    const Paths & getPaths() const override { return blobs_paths; }
-    void setPaths(const Paths & paths) override { blobs_paths = paths; }
-
     String getNamespace() const override { return connection_params.getContainer(); }
-    String getDataSourceDescription() const override { return std::filesystem::path(connection_params.getConnectionURL()) / connection_params.getContainer(); }
+
+    std::string getMetadataLocationURI() const override;
+    String getDataSourceDescription() const override { return std::filesystem::path(connection_params.getConnectionURLWithoutQuery()) / connection_params.getContainer(); }
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
+
+    String getContainer() const { return connection_params.getContainer(); }
+    String getAccountName() const { return connection_params.endpoint.account_name; }
+    String getAccountKey() const { return connection_params.endpoint.account_key; }
+    String getSasKey() const { return connection_params.endpoint.sas_auth; }
 
     void check(ContextPtr context) override;
 
@@ -119,14 +124,27 @@ public:
         ContextPtr context,
         bool with_structure) override;
 
-    void setInitializationAsOneLake(const String & client_id_, const String & client_secret_, const String & tenant_id_)
+    void setInitializationAsOneLake(
+        const String & client_id_,
+        const String & client_secret_,
+        const String & tenant_id_,
+        const String & access_token_,
+        AzureBlobStorage::TokenProviderCredential::TokenProvider access_token_provider_,
+        bool use_blob_endpoint_)
     {
         onelake_client_id = client_id_;
         onelake_client_secret = client_secret_;
         onelake_tenant_id = tenant_id_;
+        onelake_access_token = access_token_;
+        onelake_access_token_provider = std::move(access_token_provider_);
+        onelake_use_blob_endpoint = use_blob_endpoint_;
+        is_onelake = true;
     }
 
 protected:
+    const Paths & getPathsImpl() const override TSA_REQUIRES_SHARED(paths_mutex) { return blobs_paths; }
+    void setPathsImpl(const Paths & paths) override TSA_REQUIRES(paths_mutex) { blobs_paths = paths; }
+
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
 private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
@@ -134,13 +152,19 @@ private:
     ASTPtr extractExtraCredentials(ASTs & args);
 
     Path blob_path;
-    Paths blobs_paths;
+    Paths blobs_paths TSA_GUARDED_BY(paths_mutex);
     AzureBlobStorage::ConnectionParams connection_params;
     DiskPtr disk;
 
     String onelake_client_id;
     String onelake_client_secret;
     String onelake_tenant_id;
+    String onelake_access_token;
+    /// Set in refresh-token mode: yields a currently valid access token (renewed by the
+    /// catalog client with the Entra ID refresh token) for every storage request.
+    AzureBlobStorage::TokenProviderCredential::TokenProvider onelake_access_token_provider;
+    bool onelake_use_blob_endpoint = true;
+    bool is_onelake = false;
 
     void initializeFromParsedArguments(const AzureStorageParsedArguments & parsed_arguments);
 };

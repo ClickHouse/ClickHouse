@@ -1,3 +1,5 @@
+#include <cstdlib>
+#include <string_view>
 #include <unistd.h>
 #include <sys/ioctl.h>
 #if defined(OS_SUNOS)
@@ -34,6 +36,39 @@ std::pair<uint16_t, uint16_t> getTerminalSize(int in_fd, int err_fd)
 uint16_t getTerminalWidth(int in_fd, int err_fd)
 {
     return getTerminalSize(in_fd, err_fd).first;
+}
+
+bool terminalSupportsUTF8()
+{
+    /// The character encoding is determined by the locale environment variables,
+    /// in order of precedence: LC_ALL, LC_CTYPE, LANG.
+    const char * locale = nullptr;
+    for (const char * name : {"LC_ALL", "LC_CTYPE", "LANG"})
+    {
+        const char * value = std::getenv(name); /// NOLINT(concurrency-mt-unsafe)
+        if (value && *value)
+        {
+            locale = value;
+            break;
+        }
+    }
+
+    /// If no locale is set, the default "C"/"POSIX" locale is in effect, which is not UTF-8.
+    if (!locale)
+        return false;
+
+    /// Look for the substring "UTF" (case-insensitively), as in "en_US.UTF-8" or "C.utf8".
+    /// No standard locale or encoding name contains these letters except for UTF encodings.
+    std::string_view value(locale);
+    for (size_t i = 0; i + 3 <= value.size(); ++i)
+    {
+        if ((value[i] == 'U' || value[i] == 'u')
+            && (value[i + 1] == 'T' || value[i + 1] == 't')
+            && (value[i + 2] == 'F' || value[i + 2] == 'f'))
+            return true;
+    }
+
+    return false;
 }
 
 po::options_description createOptionsDescription(const std::string & caption, uint16_t terminal_width)

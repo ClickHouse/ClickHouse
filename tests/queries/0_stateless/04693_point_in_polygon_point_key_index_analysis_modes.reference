@@ -1,0 +1,24 @@
+Point key column, dense index analysis
+25001
+Granules: 26/100
+Point key column, lightweight index analysis
+25001
+Granules: 26/100
+Disjoint polygon, dense index analysis
+0
+Granules: 0/100
+Disjoint polygon, lightweight index analysis
+0
+Granules: 0/100
+Fixed first coordinate, dense index analysis
+40001
+Granules: 42/100
+Fixed first coordinate, lightweight index analysis
+40001
+Granules: 42/100
+Key expression, dense index analysis
+25001
+Granules: 26/100
+Key expression, lightweight index analysis
+25001
+Granules: 26/100

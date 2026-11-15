@@ -1,0 +1,45 @@
+---
+slug: /native-protocol/hash
+title: 'CityHash'
+description: '原生协议哈希'
+doc_type: 'reference'
+keywords: ['CityHash', '原生协议哈希', '哈希函数', 'Google CityHash', '协议哈希']
+---
+
+ClickHouse 使用的是 [Google CityHash](https://github.com/google/cityhash) 的**早期版本之一**。
+
+<Info>
+  在我们将 CityHash 引入 ClickHouse 之后，CityHash 的算法发生了变化。
+
+  CityHash 文档特别指出，用户不应依赖特定的
+  哈希值，也不应将其保存到任何地方，或将其用作分片键。
+
+  但由于我们向用户开放了这个函数，因此必须将 CityHash 的版本固定为 1.0.2。现在我们保证，SQL 中可用的 CityHash 函数的行为不会再发生变化。
+
+  — Alexey Milovidov
+</Info>
+
+<Info>
+  **注意**
+
+  Google 当前版本的 CityHash [与](https://github.com/ClickHouse/ClickHouse/issues/8354) ClickHouse 的 `cityHash64` 变体不同。
+
+  不要使用 `farmHash64` 来获取 Google 的 CityHash 值！[FarmHash](https://opensource.googleblog.com/2014/03/introducing-farmhash.html) 是 CityHash 的后继者，但两者并不完全兼容。
+
+  | String                                                     | ClickHouse64         | CityHash64          | FarmHash64           |
+  | ---------------------------------------------------------- | -------------------- | ------------------- | -------------------- |
+  | `Moscow`                                                   | 12507901496292878638 | 5992710078453357409 | 5992710078453357409  |
+  | `How can you write a big system without C++?  -Paul Glick` | 6237945311650045625  | 749291162957442504  | 11716470977470720228 |
+</Info>
+
+另请参阅 [Introducing CityHash](https://opensource.googleblog.com/2011/04/introducing-cityhash.html)，了解其设计说明及创建原因。简而言之：这是一种**非加密**哈希，比 [MurmurHash](http://en.wikipedia.org/wiki/MurmurHash) 更快，但也更复杂。
+
+<div id="implementations">
+  ## 实现
+</div>
+
+<div id="go">
+  ### Go
+</div>
+
+你可以使用 [go-faster/city](https://github.com/go-faster/city) 这个 Go 包，它同时实现了这两种 Variant。

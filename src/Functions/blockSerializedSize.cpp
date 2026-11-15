@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -11,7 +12,7 @@ namespace
 {
 
 /// Returns size on disk for *columns* (without taking into account compression).
-class FunctionBlockSerializedSize : public IFunction
+class FunctionBlockSerializedSize final : public IFunction
 {
 public:
     static constexpr auto name = "blockSerializedSize";
@@ -29,9 +30,9 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    String getSignatureString() const override
     {
-        return std::make_shared<DataTypeUInt64>();
+        return "(...) -> UInt64";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
