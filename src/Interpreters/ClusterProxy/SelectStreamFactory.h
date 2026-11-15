@@ -96,7 +96,8 @@ public:
         UInt32 shard_count,
         bool parallel_replicas_enabled,
         AdditionalShardFilterGenerator shard_filter_generator,
-        const UnavailableShardTrackerPtr & unavailable_shard_tracker);
+        const UnavailableShardTrackerPtr & unavailable_shard_tracker,
+        const Strings * partitions_to_skip);
 
     SharedHeader header;
     const StorageSnapshotPtr storage_snapshot;

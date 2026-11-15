@@ -10,7 +10,11 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -49,6 +53,8 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ALL_REPLICAS_ARE_STALE;
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace FailPoints
@@ -58,6 +64,48 @@ namespace FailPoints
 
 namespace ClusterProxy
 {
+
+namespace
+{
+
+/// Makes the query for a shard skip `partitions` of the table that it reads, the first one in `FROM`,
+/// with a condition on `_partition_id` in `WHERE`. A setting of the query could be rejected or dropped by the constraints of the user.
+void skipPartitionsInQueryForShard(const ASTPtr & query_ast, const Strings & partitions)
+{
+    auto & select_query = query_ast->as<ASTSelectQuery &>();
+    const auto & tables = select_query.tables()->children;
+
+    /// After other kinds of JOIN a condition in `WHERE` is not the same as a filter of the left table.
+    for (const auto & element : tables)
+    {
+        const auto & table_join = element->as<ASTTablesInSelectQueryElement &>().table_join;
+        if (!table_join)
+            continue;
+
+        auto kind = table_join->as<ASTTableJoin &>().kind;
+        if (!isInnerOrLeft(kind) && !isCrossOrComma(kind))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "{} JOIN is not supported for a `Distributed` table while its partitions are moved between shards", toString(kind));
+    }
+
+    const auto & table_expression = tables.front()->as<ASTTablesInSelectQueryElement &>().table_expression->as<ASTTableExpression &>();
+    if (!table_expression.database_and_table_name)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a table in the query for a shard to skip its partitions");
+    const auto & table = table_expression.database_and_table_name->as<ASTTableIdentifier &>();
+
+    Strings column = table.tryGetAlias().empty() ? table.name_parts : Strings{table.tryGetAlias()};
+    column.push_back("_partition_id");
+
+    ASTPtr filter = makeASTFunction("notIn",
+        make_intrusive<ASTIdentifier>(std::move(column)), make_intrusive<ASTLiteral>(Array(partitions.begin(), partitions.end())));
+
+    if (auto where = select_query.where())
+        filter = makeASTFunction("and", where, filter);
+
+    select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(filter));
+}
+
+}
 
 SelectStreamFactory::SelectStreamFactory(
     SharedHeader header_,
@@ -307,7 +355,8 @@ void SelectStreamFactory::createForShard(
     UInt32 shard_count,
     bool parallel_replicas_enabled,
     AdditionalShardFilterGenerator shard_filter_generator,
-    const UnavailableShardTrackerPtr & unavailable_shard_tracker)
+    const UnavailableShardTrackerPtr & unavailable_shard_tracker,
+    const Strings * partitions_to_skip)
 {
     /// Convert grouping function specializations (e.g. __groupingForGroupingSets -> grouping)
     /// so the AST contains the generic function name that the shard's analyzer can re-resolve.
@@ -316,9 +365,13 @@ void SelectStreamFactory::createForShard(
     auto query_tree_for_ast = query_tree->clone();
     removeGroupingFunctionSpecializations(query_tree_for_ast);
 
+    auto query_ast = queryNodeToDistributedSelectQuery(query_tree_for_ast);
+    if (partitions_to_skip)
+        skipPartitionsInQueryForShard(query_ast, *partitions_to_skip);
+
     createForShardImpl(
         shard_info,
-        queryNodeToDistributedSelectQuery(query_tree_for_ast),
+        query_ast,
         query_tree,
         main_table,
         table_func_ptr,

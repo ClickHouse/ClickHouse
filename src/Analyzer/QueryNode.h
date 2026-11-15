@@ -119,12 +119,6 @@ public:
         return query_parameters;
     }
 
-    /// Set query node settings changes
-    void setSettingsChanges(SettingsChanges settings_changes_)
-    {
-        settings_changes = std::move(settings_changes_);
-    }
-
     void clearSettingsChanges()
     {
         settings_changes.clear();
