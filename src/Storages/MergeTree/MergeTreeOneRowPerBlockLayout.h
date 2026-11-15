@@ -48,20 +48,25 @@ bool declaredCodecStoresDataVerbatim(const ASTPtr & codec_desc);
 ///
 /// The writer of a Wide part checks the blocks it wrote to the file of the array elements of a column: exactly one block
 /// per row, every block of `row_bytes` stored without compression, and every row of `array_size` elements. Only then it
-/// writes a marker file, which is in the checksums of the part. The marker holds `row_bytes`, `array_size`, and the size and
-/// the hash of the file of the elements it describes.
+/// writes a marker file, which is in the checksums of the part. The marker holds `row_bytes`, `array_size`, and the sizes and
+/// the hashes of the two files that define the layout: the file of the elements and the file of the array sizes, which
+/// define where the rows begin.
 ///
-/// The name of the marker contains the hash of that file, e.g. `vec.<hash>.one_row_per_block`. A marker is valid exactly
-/// for the bytes it was written for, which is what makes it safe to carry over as is: a mutation that keeps the file of the
-/// elements keeps its marker, and one that rewrites the file writes a marker of another name, so it never writes into a
-/// marker hardlinked from the source part. A marker of a file that is not in the part any more is not used.
+/// The name of the marker is a hash of the name of the stream and of these two checksums, e.g. `<hash>.one_row_per_block`,
+/// so its length does not depend on the name of the column. A marker is valid exactly for the bytes it was written for,
+/// which is what makes it safe to carry over as is: a mutation that keeps both files keeps their marker, and one that
+/// rewrites either of them changes the expected name, so the old marker is not used, and a new marker is never written
+/// into one hardlinked from the source part.
 constexpr auto ONE_ROW_PER_BLOCK_MARKER_EXTENSION = ".one_row_per_block";
 
-/// The name of the marker of the file of array elements of `stream_name` with checksum `data_checksum`.
-String getOneRowPerBlockMarkerName(const String & stream_name, const MergeTreeDataPartChecksum & data_checksum);
+/// The name of the marker of the file of array elements of `stream_name` with checksum `data_checksum`, and with the file of
+/// array sizes with checksum `sizes_checksum`.
+String getOneRowPerBlockMarkerName(
+    const String & stream_name, const MergeTreeDataPartChecksum & data_checksum, const MergeTreeDataPartChecksum & sizes_checksum);
 
-/// The content of the marker of a file of array elements with checksum `data_checksum`.
-String makeOneRowPerBlockMarker(UInt64 row_bytes, UInt64 array_size, const MergeTreeDataPartChecksum & data_checksum);
+/// The content of the marker of these files.
+String makeOneRowPerBlockMarker(
+    UInt64 row_bytes, UInt64 array_size, const MergeTreeDataPartChecksum & data_checksum, const MergeTreeDataPartChecksum & sizes_checksum);
 
 /// The checksum of a marker file with `content`, as recorded in the checksums of the part.
 MergeTreeDataPartChecksum getOneRowPerBlockMarkerChecksum(const String & content);

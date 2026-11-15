@@ -112,6 +112,24 @@ mutated vectors, setting off
 389	1.034	1
 181	0.532	1
 298	1.323	1
+resized arrays, setting on
+1785	65	65
+390	63	63
+389	65	65
+181	65	65
+298	63	63
+resized arrays, setting off
+1785	65	65
+390	63	63
+389	65	65
+181	65	65
+298	63	63
+long column name, setting on
+1785	178500
+390	39000
+389	38900
+181	18100
+298	29800
 compressed, setting on
 1785	6	256
 390	6	256
@@ -126,12 +144,14 @@ compressed, setting off
 298	6	256
 codes in few blocks	1
 05617_adaptive_on	0
+05617_long_name_on	5
 05617_lz4_on	0
 05617_merged_on	5
 05617_mutated_on	5
 05617_one_part_off	0
 05617_one_part_on	100
 05617_other_block_sizes_on	0
+05617_resized_on	0
 05617_same_sizes_on	3
 05617_several_rows_per_block_on	0
 05617_sizes_off	0

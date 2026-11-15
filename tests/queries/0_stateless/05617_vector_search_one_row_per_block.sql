@@ -20,6 +20,8 @@ DROP TABLE IF EXISTS tab_sizes;
 DROP TABLE IF EXISTS tab_other_block_sizes;
 DROP TABLE IF EXISTS tab_adaptive;
 DROP TABLE IF EXISTS tab_merged;
+DROP TABLE IF EXISTS tab_resized;
+DROP TABLE IF EXISTS tab_long_name;
 DROP TABLE IF EXISTS tab_lz4;
 
 -- 64 `Float32` elements are 256 bytes, so every row is one block.
@@ -193,6 +195,45 @@ SELECT 'mutated vectors, setting off';
 SELECT id, vec[1], x FROM tab_merged ORDER BY sipHash64(id) LIMIT 5
 SETTINGS merge_tree_use_one_row_per_block_layout = 0;
 
+-- A mutation that changes the sizes of the arrays but not the bytes of the elements: rows of 64 ones become rows of 63 and
+-- 65 ones, so the file of the elements is the same, but the rows cross the blocks. The record of the source part must
+-- not be used.
+CREATE TABLE tab_resized
+(
+    id UInt32,
+    vec Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO tab_resized SELECT number, arrayMap(j -> toFloat32(1), range(64)) FROM numbers(2000);
+ALTER TABLE tab_resized UPDATE vec = arrayMap(j -> toFloat32(1), range(if(id % 2 = 0, 63, 65))) WHERE 1 SETTINGS mutations_sync = 2;
+
+SELECT 'resized arrays, setting on';
+SELECT id, length(vec), arraySum(vec) FROM tab_resized ORDER BY sipHash64(id) LIMIT 5
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, log_comment = '05617_resized_on';
+
+SELECT 'resized arrays, setting off';
+SELECT id, length(vec), arraySum(vec) FROM tab_resized ORDER BY sipHash64(id) LIMIT 5
+SETTINGS merge_tree_use_one_row_per_block_layout = 0;
+
+-- The name of the record does not depend on the name of the column, so a column with a long name, kept as is with a large
+-- `max_file_name_length`, can be inserted and is read this way.
+CREATE TABLE tab_long_name
+(
+    id UInt32,
+    vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, max_file_name_length = 255;
+
+INSERT INTO tab_long_name SELECT number, arrayMap(j -> toFloat32(number * 100 + j), range(64)) FROM numbers(2000)
+SETTINGS merge_tree_use_one_row_per_block_layout = 0;
+
+SELECT 'long column name, setting on';
+SELECT id, vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv[1] FROM tab_long_name ORDER BY sipHash64(id) LIMIT 5
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, log_comment = '05617_long_name_on';
+
 -- A codec that compresses is not supported, even when every compressed block happens to have the size of a row,
 -- as with these values and `LZ4`: the file then has the sizes of one block per row stored without compression.
 CREATE TABLE tab_lz4
@@ -227,7 +268,7 @@ FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
     AND log_comment IN ('05617_one_part_on', '05617_one_part_off', '05617_two_parts_on', '05617_two_parts_off', '05617_several_rows_per_block_on',
         '05617_sizes_on', '05617_sizes_off', '05617_same_sizes_on', '05617_lz4_on', '05617_other_block_sizes_on', '05617_adaptive_on',
-        '05617_merged_on', '05617_mutated_on', '05617_vec_mutated_on')
+        '05617_merged_on', '05617_mutated_on', '05617_vec_mutated_on', '05617_resized_on', '05617_long_name_on')
 ORDER BY log_comment;
 
 DROP TABLE tab_one_row_per_block;
@@ -236,4 +277,6 @@ DROP TABLE tab_sizes;
 DROP TABLE tab_other_block_sizes;
 DROP TABLE tab_adaptive;
 DROP TABLE tab_merged;
+DROP TABLE tab_resized;
+DROP TABLE tab_long_name;
 DROP TABLE tab_lz4;

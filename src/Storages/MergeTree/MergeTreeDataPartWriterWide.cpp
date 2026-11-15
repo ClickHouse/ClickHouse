@@ -195,6 +195,9 @@ void MergeTreeDataPartWriterWide::initStreamsToOpenCount()
 
 void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_type)
 {
+    /// The stream of the array sizes of a top-level `Array`, enumerated before the stream of its elements.
+    String array_sizes_stream_name;
+
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         chassert(!substream_path.empty());
@@ -206,6 +209,9 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
         auto full_stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
         String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, *storage_settings, data_part_storage.get());
+
+        if (substream_path.size() == 1 && substream_path[0].type == ISerialization::Substream::ArraySizes)
+            array_sizes_stream_name = stream_name;
 
         /// Shared offsets for Nested type.
         if (column_streams.contains(stream_name))
@@ -302,6 +308,7 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
         {
             OneRowPerBlockCandidate candidate;
             candidate.stream_name = stream_name;
+            candidate.sizes_stream_name = array_sizes_stream_name;
             candidate.element_bytes = assert_cast<const DataTypeArray &>(*name_and_type.type).getNestedType()->getSizeOfValueInMemory();
             one_row_per_block_candidates.emplace(name_and_type.name, std::move(candidate));
         }
@@ -1002,8 +1009,16 @@ void MergeTreeDataPartWriterWide::fillOneRowPerBlockMarkers(MergeTreeDataPartChe
             || data_checksum_it->second.file_size != candidate.rows * (getOneRowPerBlockHeaderBytes() + row_bytes))
             continue;
 
-        String marker = makeOneRowPerBlockMarker(row_bytes, *candidate.array_size, data_checksum_it->second);
-        String marker_name = getOneRowPerBlockMarkerName(candidate.stream_name, data_checksum_it->second);
+        /// The marker is valid only together with these array sizes. They are written by this writer, except shared
+        /// offsets of `Nested` written separately, in which case there is no marker.
+        if (candidate.sizes_stream_name.empty())
+            continue;
+        const auto sizes_checksum_it = checksums.files.find(candidate.sizes_stream_name + DATA_FILE_EXTENSION);
+        if (sizes_checksum_it == checksums.files.end())
+            continue;
+
+        String marker = makeOneRowPerBlockMarker(row_bytes, *candidate.array_size, data_checksum_it->second, sizes_checksum_it->second);
+        String marker_name = getOneRowPerBlockMarkerName(candidate.stream_name, data_checksum_it->second, sizes_checksum_it->second);
         checksums.files[marker_name] = getOneRowPerBlockMarkerChecksum(marker);
         one_row_per_block_markers.emplace_back(std::move(marker_name), std::move(marker));
     }

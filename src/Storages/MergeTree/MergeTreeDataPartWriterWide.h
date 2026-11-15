@@ -160,6 +160,8 @@ private:
     struct OneRowPerBlockCandidate
     {
         String stream_name;
+        /// The stream of the array sizes, which define where the rows begin.
+        String sizes_stream_name;
         size_t element_bytes = 0;
         size_t rows = 0;
         /// The number of elements of the first row, and whether all the rows written so far have it.
