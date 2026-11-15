@@ -236,6 +236,60 @@ bool inSortOrder(const IColumn & column, size_t rows, bool descending)
     return in_order;
 }
 
+constexpr size_t max_grouped_order_bits = 18;
+
+/// Whether a column never decreases (never increases if `descending`) within each group of rows equal on the packed
+/// columns: `last` holds the last value per packed key, starting below every value.
+template <typename GetBits>
+bool inSortOrderWithinPackedKeys(
+    const std::vector<PackedSortColumn> & packed_columns, size_t total_bits, const char * data, size_t rows, bool descending)
+{
+    using Bits = OrderedBits<GetBits>;
+    PaddedPODArray<Bits> last;
+    last.resize_fill(size_t(1) << total_bits, descending ? std::numeric_limits<Bits>::max() : Bits(0));
+
+    constexpr size_t chunk = 1024;
+    size_t positions[chunk];
+    UInt64 keys[chunk];
+    for (size_t begin = 0; begin < rows; begin += chunk)
+    {
+        const size_t size = std::min(chunk, rows - begin);
+        for (size_t j = 0; j < size; ++j)
+        {
+            positions[j] = begin + j;
+            keys[j] = 0;
+        }
+        for (const auto & column : packed_columns)
+            column.append_at(column, keys, positions, size);
+
+        UInt8 out_of_order = 0;
+        for (size_t j = 0; j < size; ++j)
+        {
+            const Bits value = valueAt<GetBits>(data, begin + j);
+            Bits & previous = last[keys[j]];
+            out_of_order |= static_cast<UInt8>(descending ? previous < value : value < previous);
+            previous = value;
+        }
+        if (out_of_order)
+            return false;
+    }
+    return true;
+}
+
+bool inSortOrderWithinPackedKeys(
+    const std::vector<PackedSortColumn> & packed_columns, size_t total_bits, const IColumn & column, size_t rows, bool descending)
+{
+    const char * data = column.getRawData().data();
+    bool in_order = false;
+    callWithPackableOrderedBits(column, [&](auto get_bits)
+    {
+        using GetBits = decltype(get_bits);
+        if constexpr (sizeof(OrderedBits<GetBits>) <= sizeof(UInt64))
+            in_order = inSortOrderWithinPackedKeys<GetBits>(packed_columns, total_bits, data, rows, descending);
+    });
+    return in_order;
+}
+
 constexpr size_t max_rank_bits = 16;
 constexpr size_t min_rows_per_rank = 16;
 /// Each ranked column keeps a `UInt32` per row until the keys are built.
@@ -531,6 +585,26 @@ bool packedColumnsNearlyUnique(const std::vector<PackedSortColumn> & columns, si
     return equal * 2 * rows < sample_size * sample_size;
 }
 
+/// Whether the rows repeat at most 16 times on average on the packed columns, counted as in `packedColumnsNearlyUnique`
+/// at hashed positions, which do not align with a period of the keys. A row drawn twice counts as a pair.
+bool packedColumnsRepeatRarely(const std::vector<PackedSortColumn> & columns, size_t rows)
+{
+    const size_t sample_size = std::min<size_t>(2 * static_cast<size_t>(std::sqrt(static_cast<double>(rows))), 16384);
+    PaddedPODArray<size_t> positions(sample_size);
+    for (size_t k = 0; k < sample_size; ++k)
+        positions[k] = static_cast<size_t>((static_cast<UInt128>(intHash64(k)) * rows) >> 64);
+
+    PaddedPODArray<UInt64> keys(sample_size, 0);
+    for (const auto & column : columns)
+        column.append_at(column, keys.data(), positions.data(), sample_size);
+
+    ::sort(keys.begin(), keys.end());
+    size_t equal = 0;
+    for (size_t k = 1; k < sample_size; ++k)
+        equal += keys[k] == keys[k - 1];
+    return equal * 2 * rows < 16 * sample_size * sample_size;
+}
+
 /// Whether the column sort is all radix sorts (ranges of at least 256 rows on average; shorter ones are sorted by
 /// comparisons through the permutation) that move fewer bytes than the radix sort of the packed key.
 bool columnSortIsCheaper(const std::vector<PackedSortColumn> & columns, size_t rows, size_t total_bits, size_t index_bits)
@@ -730,6 +804,7 @@ size_t trySortByPackedKey(
     size_t total_bits = 0;
     const size_t index_bits = std::bit_width(rows - 1);
     bool last_column_in_order = false;
+    bool keep_ties_in_order = false;
 
     /// Kept while the packed columns do not change.
     size_t columns_not_unique = 0;
@@ -761,6 +836,15 @@ size_t trySortByPackedKey(
 
         const bool descending = column.description.direction == -1;
 
+        /// A middle column in order or reversed is left to the column sort where it compares values (unstable or descending
+        /// sort): sorted stably by the columns before it, it stays presorted.
+        if (i != first_non_const && i != last_non_const && (!stable || descending)
+            && (inSortOrder(*column.column, rows, descending) || inSortOrder(*column.column, rows, !descending)))
+        {
+            keep_ties_in_order = true;
+            break;
+        }
+
         if (i == last_non_const && i != first_non_const)
         {
             /// A last column already in order stays in order under a stable sort by the columns before it.
@@ -774,6 +858,22 @@ size_t trySortByPackedKey(
             /// A last column in the reverse order is not packed: the column sort sorts reversed ranges in linear time.
             if (inSortOrder(*column.column, rows, !descending))
                 break;
+
+            /// Nor is one after packed columns that repeat at most 16 times and that the column sort sorts faster alone.
+            if (total_bits > 0 && rows >= 1024 && (size_t(16) << total_bits) >= rows
+                && (columnSortIsCheaper(packed_columns, rows, total_bits, index_bits)
+                    || (packed_columns.size() == 1 && packed_columns[0].bits > packed_columns[0].value_bits / 2))
+                && packedColumnsRepeatRarely(packed_columns, rows))
+                break;
+
+            /// A last column in order within each group of equal packed keys (time series in arrival order) stays in order too.
+            if (total_bits > 0 && total_bits <= max_grouped_order_bits && (size_t(1) << total_bits) <= rows && !need_equal_ranges
+                && inSortOrderWithinPackedKeys(packed_columns, total_bits, *column.column, rows, descending))
+            {
+                last_column_in_order = true;
+                sorted_entries = columns.size();
+                break;
+            }
         }
 
         const size_t bits_left = 64 - total_bits;
@@ -834,7 +934,8 @@ size_t trySortByPackedKey(
     if (packed_columns.size() == 1 && packed_columns[0].bits > packed_columns[0].value_bits / 2 && !sort_before_ordered_column)
         return 0;
 
-    sortByPackedKey(packed_columns, ranks, total_bits, rows, stable || last_column_in_order, need_equal_ranges, permutation, equal_ranges);
+    const bool keep_order = stable || last_column_in_order || keep_ties_in_order;
+    sortByPackedKey(packed_columns, ranks, total_bits, rows, keep_order, need_equal_ranges, permutation, equal_ranges);
     return sorted_entries;
 }
 

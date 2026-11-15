@@ -21,6 +21,9 @@ cat, toString(n)	1
 mix, ts	1
 rep, ts	1
 cat, n	1
+cat, n DESC	1
+cat, rev	1
+cat, n	1
 uid, n	1
 spread, n	1
 small, rev DESC	1
@@ -29,6 +32,19 @@ cat, rev	1
 cat, n DESC	1
 cat, late1	1
 cat, late2	1
+cat, jit	1
+cat, jit DESC	1
+cat, rjit	1
+cat, rjit DESC	1
+cat, jlate	1
+small, jit	1
+small, jit DESC	1
+small, jlate	1
+mid, jit	1
+mid, jit DESC	1
+mid, jlate	1
+cat, uh, jit	1
+cat DESC, uh, rjit	1
 INSERT uid, ts	1
 INSERT uid, cat	1
 INSERT uh, ts	1
@@ -51,4 +67,21 @@ INSERT cat, rev	1
 INSERT cat DESC, rev	1
 INSERT cat, late1	1
 INSERT cat, late2	1
+INSERT cat, jit	1
+INSERT cat, jit DESC	1
+INSERT cat, rjit	1
+INSERT cat DESC, rjit DESC	1
+INSERT cat, tj	1
+INSERT cat, tj DESC	1
+INSERT cat, jlate	1
+INSERT small, jit	1
+INSERT small, jit DESC	1
+INSERT small, jlate	1
+INSERT mid, jit	1
+INSERT mid, jit DESC	1
+INSERT mid, jlate	1
+INSERT uid, jit	1
+INSERT cat, uh, jit	1
+INSERT cat, inc DESC, ts	1
+INSERT cat, rev DESC, ts	1
 DISTINCT cat, uh	1
