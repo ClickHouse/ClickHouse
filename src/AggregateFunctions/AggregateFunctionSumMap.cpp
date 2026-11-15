@@ -18,6 +18,7 @@
 #include <Common/assert_cast.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/SetWithMemoryTracking.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 
 namespace DB

@@ -3,11 +3,13 @@
 #include <base/TypeName.h>
 #include <Core/TypeId.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/Serializations/SerializationNumber.h>
 
 
 namespace DB
 {
+
+template <typename T>
+class ColumnVector;
 
 /** Implements part of the IDataType interface, common to all numbers and for Date and DateTime.
   */
@@ -54,7 +56,7 @@ public:
 
     void updateHashImpl(SipHash &) const override { /* For numeric types, the type ID is sufficient */ }
 
-    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override { return SerializationNumber<T>::create(); }
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override;
 };
 
 /// Prevent implicit template instantiation of DataTypeNumberBase for common numeric types

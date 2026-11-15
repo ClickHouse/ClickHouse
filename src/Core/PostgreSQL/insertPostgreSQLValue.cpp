@@ -19,6 +19,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Common/assert_cast.h>
 #include <pqxx/pqxx>
 

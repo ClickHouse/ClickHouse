@@ -12,6 +12,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/quoteString.h>

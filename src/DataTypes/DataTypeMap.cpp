@@ -21,6 +21,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
+#include <DataTypes/Serializations/SerializationArray.h>
 
 
 namespace DB

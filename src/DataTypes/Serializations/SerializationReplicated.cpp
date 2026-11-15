@@ -2,6 +2,7 @@
 #include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationReplicated.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/Serializations/SerializationNumber.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnReplicated.h>

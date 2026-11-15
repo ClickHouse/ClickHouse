@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesCache.h>
 #include <Interpreters/Context.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 using namespace DB;
 

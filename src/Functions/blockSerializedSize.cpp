@@ -4,6 +4,7 @@
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/NullWriteBuffer.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 
 namespace DB

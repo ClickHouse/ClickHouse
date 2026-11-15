@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationNumber.h>
 
 #include <DataTypes/DataTypeInterval.h>
 #include <Formats/FormatSettings.h>

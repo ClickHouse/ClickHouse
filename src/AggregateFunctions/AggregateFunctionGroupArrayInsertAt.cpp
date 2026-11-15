@@ -3,6 +3,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
