@@ -1,8 +1,6 @@
 
 
 .hidden	OPENSSL_cpuid_setup
-.section	.init
-	call	OPENSSL_cpuid_setup
 
 .hidden	OPENSSL_ia32cap_P
 .comm	OPENSSL_ia32cap_P,40,4

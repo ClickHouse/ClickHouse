@@ -11,9 +11,7 @@ doc_type: 'reference'
 
 [SQLite](https://www.sqlite.org/index.html) データベースに接続し、`INSERT` および `SELECT` クエリを実行して、ClickHouse と SQLite 間でデータをやり取りできます。
 
-<div id="creating-a-database">
-  ## データベースの作成
-</div>
+## データベースの作成 {#creating-a-database}
 
 ```sql
     CREATE DATABASE sqlite_database
@@ -26,19 +24,15 @@ doc_type: 'reference'
 
 <a id="data_types-support" />
 
-<div id="data-types-support">
-  ## データ型のサポート
-</div>
+## データ型のサポート {#data-types-support}
 
 以下の表は、ClickHouse が SQLite からスキーマを自動推論する際のデフォルトの型マッピングを示しています。
 
-| SQLite  | ClickHouse                              |
-| ------- | --------------------------------------- |
-| INTEGER | [Int32](/ja/reference/data-types/int-uint) |
-| REAL    | [Float32](/ja/reference/data-types/float)  |
-| TEXT    | [String](/ja/reference/data-types/string)  |
-| TEXT    | [UUID](/ja/reference/data-types/uuid)      |
-| BLOB    | [String](/ja/reference/data-types/string)  |
+| SQLite で宣言された型            | ClickHouse                                |
+| ------------------------- | ----------------------------------------- |
+| 型名に `INT` を含む             | [`Int64`](/ja/reference/data-types/int-uint) |
+| `REAL`, `FLOAT`, `DOUBLE` | [`Float64`](/ja/reference/data-types/float)  |
+| `TEXT` や `BLOB` を含むその他の型  | [`String`](/ja/reference/data-types/string)  |
 
 [SQLite table engine](/ja/reference/engines/table-engines/integrations/sqlite) を使用して、特定の ClickHouse 型でテーブルを明示的に定義した場合、SQLite の TEXT カラムから次の ClickHouse 型をパースできます。
 
@@ -48,21 +42,17 @@ doc_type: 'reference'
 * [Enum8, Enum16](/ja/reference/data-types/enum)
 * [Decimal32, Decimal64, Decimal128, Decimal256](/ja/reference/data-types/decimal)
 * [FixedString](/ja/reference/data-types/fixedstring)
-* すべての整数型 ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](/ja/reference/data-types/int-uint))
+* すべての整数型 ([UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256](/ja/reference/data-types/int-uint))
 * [Float32, Float64](/ja/reference/data-types/float)
 
 SQLite は動的型付けを採用しており、型アクセス関数では自動的に型変換が行われます。たとえば、TEXT カラムを整数として読み取る場合、そのテキストを数値としてパースできなければ 0 が返されます。つまり、ClickHouse テーブルが基になる SQLite カラムとは異なる型で定義されていると、エラーにならずに値が暗黙的に変換される可能性があります。
 
-<div id="specifics-and-recommendations">
-  ## 特記事項と推奨事項
-</div>
+## 特記事項と推奨事項 {#specifics-and-recommendations}
 
 SQLite は、データベース全体 (定義、テーブル、インデックス、データそのもの) を、ホストマシン上の単一のクロスプラットフォーム対応ファイルとして保存します。書き込み時にはデータベースファイル全体がロックされるため、書き込み操作は順次実行されます。一方、読み取り操作は並行して実行できます。
 SQLite では、サービス管理 (起動スクリプトなど) や、`GRANT` やパスワードに基づくアクセス制御は必要ありません。アクセス制御は、データベースファイル自体に設定されたファイルシステム権限によって行われます。
 
-<div id="usage-example">
-  ## 使用例
-</div>
+## 使用例 {#usage-example}
 
 SQLite に接続された ClickHouse のデータベース:
 

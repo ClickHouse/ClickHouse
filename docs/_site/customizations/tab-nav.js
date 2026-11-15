@@ -4,8 +4,8 @@
   // ── Desktop tab navigation ────────────────────────────────────────────────
   var TAB_URLS = {
     'Home':         '/',
-    'Database':     '/get-started/about/intro',
-    'Solutions':    '/products/cloud/getting-started/cloud-get-started',
+    'Databases':    '/get-started/about/intro',
+    'Products':     '/products/cloud/getting-started/cloud-get-started',
     'Integrations': '/integrations/home',
   };
 
@@ -27,6 +27,19 @@
     var locale = currentLocale();
     var localized = locale ? '/' + locale + (url === '/' ? '' : url) : url;
     return BASE + localized;
+  }
+
+  // Prefer Mintlify's router; a real anchor click is the fallback.
+  function followLink(href) {
+    if (window.mintlify && typeof window.mintlify.navigate === 'function') {
+      window.mintlify.navigate(href);
+      return;
+    }
+    var a = document.createElement('a');
+    a.href = href;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   }
 
   function patchTabButtons() {
@@ -53,13 +66,47 @@
       labelDiv.style.cursor = 'pointer';
       labelDiv.addEventListener('click', function (e) {
         e.stopPropagation();
-        window.location.href = localizeUrl(url);
+        followLink(localizeUrl(url));
       });
     });
   }
 
+  // The shared ClickStack tree contains managed and OSS documentation, so
+  // Mintlify's tree ownership alone cannot identify the active product link.
+  function syncClickStackActiveItem() {
+    var prefix = BASE + (currentLocale() ? '/' + currentLocale() : '');
+    var path = window.location.pathname.slice(prefix.length).replace(/\/$/, '');
+    if (path !== '/clickstack' && path.indexOf('/clickstack/') !== 0) return;
+
+    var managed = path === '/clickstack/observability'
+      || path.indexOf('/clickstack/observability/') === 0
+      || path.indexOf('/clickstack/self-configured/') === 0;
+    document.querySelectorAll('a.nav-dropdown-item, a.mobile-nav-tabs-item').forEach(function (a) {
+      var href = new URL(a.href, window.location.origin).pathname.replace(/\/$/, '');
+      var isManaged = href === prefix + '/clickstack/observability';
+      var isOSS = href === prefix + '/clickstack';
+      if (!isManaged && !isOSS) return;
+      if (managed === isManaged) {
+        if (a.getAttribute('aria-current') !== 'location') a.setAttribute('aria-current', 'location');
+      } else {
+        a.removeAttribute('aria-current');
+      }
+    });
+  }
+
   // ── Mobile section header styling ─────────────────────────────────────────
-  var SECTION_HEADERS = ['ClickHouse', 'Open source'];
+  var SECTION_HEADERS = [
+    'ClickHouse',
+    'Deployments', 'Applications', 'Open source',
+    'عمليات النشر', 'التطبيقات', 'مفتوح المصدر',
+    'Implementaciones', 'Aplicaciones', 'Código abierto',
+    'Déploiements', 'Applications', 'Open source',
+    'デプロイメント', 'アプリケーション', 'オープンソース',
+    '배포', '애플리케이션', '오픈 소스',
+    'Implantações', 'Aplicações', 'Código aberto',
+    'Развертывания', 'Приложения', 'С открытым исходным кодом',
+    '部署', '应用', '开源'
+  ];
 
   function styleDropdownHeaders() {
     document.querySelectorAll('a.mobile-nav-tabs-item').forEach(function (a) {
@@ -68,14 +115,14 @@
       if (SECTION_HEADERS.indexOf(text) === -1) return;
 
       a.dataset.headerStyled = '1';
+      a.setAttribute('aria-disabled', 'true');
+      a.setAttribute('tabindex', '-1');
       a.style.fontWeight = '700';
-      a.style.fontSize = '0.75rem';
-      a.style.letterSpacing = '0.05em';
-      a.style.textTransform = 'uppercase';
-      a.style.opacity = '0.5';
+      a.style.fontSize = '0.875rem';
+      a.style.letterSpacing = 'normal';
+      a.style.textTransform = 'none';
       a.style.pointerEvents = 'none';
       a.style.cursor = 'default';
-      a.style.borderBottom = '1px solid rgba(255,255,255,0.08)';
       a.style.paddingBottom = '8px';
       a.style.marginBottom = '2px';
 
@@ -99,8 +146,11 @@
   // ── Homepage sidebar hiding ───────────────────────────────────────────────
   // Each locale has its own homepage at /<locale> (e.g. /es, /ja); treat those
   // the same as the English homepage at /.
+  // Mintlify can update the URL before the new page renders; only advance on mintlify:navigate.
+  var renderedPath = window.location.pathname;
+
   function isHomePath() {
-    var path = stripBase(window.location.pathname).replace(/\/+$/, '') || '/';
+    var path = stripBase(renderedPath).replace(/\/+$/, '') || '/';
     return path === '/' || LOCALES.indexOf(path.slice(1)) !== -1;
   }
 
@@ -115,6 +165,7 @@
   // ── Homepage: inject logo + theme toggle into navbar ──────────────────────
   var LOGO_ID = 'ch-homepage-logo';
   var TOGGLE_ID = 'ch-homepage-toggle';
+  var toggleOrigin = null;
 
   function findSidebarThemeToggle() {
     // Current Mintlify builds render a segmented control: a
@@ -151,8 +202,13 @@
         // Move the whole control back — it may be a segmented group (a div with
         // several buttons), not a single button, so restore firstElementChild.
         var control = toggleWrapper.firstElementChild;
-        var sidebar = document.getElementById('sidebar');
-        if (control && sidebar) sidebar.appendChild(control);
+        // Sidebar re-rendered meanwhile; React already rendered a fresh toggle.
+        var origin = toggleOrigin;
+        toggleOrigin = null;
+        if (control && origin && origin.parent.isConnected) {
+          var next = origin.next && origin.next.parentNode === origin.parent ? origin.next : null;
+          origin.parent.insertBefore(control, next);
+        }
         toggleWrapper.parentNode.removeChild(toggleWrapper);
       }
       var logo = document.getElementById(LOGO_ID);
@@ -182,6 +238,7 @@
         var wrapper = document.createElement('div');
         wrapper.id = TOGGLE_ID;
         wrapper.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:0.75rem;margin-right:auto;';
+        toggleOrigin = { parent: sidebarToggle.parentNode, next: sidebarToggle.nextSibling };
         sidebarToggle.parentNode.removeChild(sidebarToggle);
         wrapper.appendChild(sidebarToggle);
         // Insert as second child (right after the logo)
@@ -220,6 +277,7 @@
     setupHomepageNavbar();
     patchTabButtons();
     styleDropdownHeaders();
+    syncClickStackActiveItem();
     markNavbarReady();
 
     // Debounce the observer so rapid React re-renders don't thrash the main
@@ -235,15 +293,19 @@
         updateLogoTheme();
         patchTabButtons();
         styleDropdownHeaders();
+        syncClickStackActiveItem();
         markNavbarReady();
       });
     });
     observer.observe(document.documentElement, { childList: true, subtree: true });
 
     window.addEventListener('resize', patchTabButtons);
-    window.addEventListener('popstate', function () {
+    window.addEventListener('mintlify:navigate', function () {
+      renderedPath = window.location.pathname;
+      syncClickStackActiveItem();
       applyHomepageClass();
       setupHomepageNavbar();
+      markNavbarReady();
     });
 
     // Failsafe: never leave the navbar hidden. If an injection never completes

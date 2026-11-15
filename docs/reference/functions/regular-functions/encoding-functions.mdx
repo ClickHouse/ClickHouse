@@ -410,6 +410,86 @@ SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x
 └────────┘
 ```
 
+## decodeQuotedPrintable {#decodeQuotedPrintable}
+
+Introduced in: v26.10.0
+
+Decodes a [Quoted-Printable](https://en.wikipedia.org/wiki/Quoted-printable) encoded string, according to [RFC 2045](https://www.rfc-editor.org/rfc/rfc2045#section-6.7).
+
+`=XX` (hex digits in either case) is replaced by the byte it encodes.
+A `=` followed by `\r` or `\n` is a soft line break: it is removed together with the rest of the line up to and including the next `\n`.
+Other malformed escape sequences (such as `=ZZ`, or `=4` at the end of the string) are kept as is, except that a bare `=` at the very end of the string is dropped.
+The behavior matches Python's `quopri.decodestring`.
+    
+
+**Syntax**
+
+```sql
+decodeQuotedPrintable(s)
+```
+
+**Arguments**
+
+- `s` — Quoted-Printable encoded string. [`String`](/reference/data-types/string)
+
+**Returned value**
+
+Returns the decoded string. [`String`](/reference/data-types/string)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT decodeQuotedPrintable('Caf=C3=A9 =3D 3 =E2=82=AC') AS decoded
+```
+
+```response title=Response
+┌─decoded────┐
+│ Café = 3 € │
+└────────────┘
+```
+
+## encodeQuotedPrintable {#encodeQuotedPrintable}
+
+Introduced in: v26.10.0
+
+Encodes a string using [Quoted-Printable](https://en.wikipedia.org/wiki/Quoted-printable) encoding, according to [RFC 2045](https://www.rfc-editor.org/rfc/rfc2045#section-6.7), as used in email.
+
+Printable ASCII characters except `=` are kept as is, other bytes are written as `=XX` with uppercase hex digits.
+A `\r\n` line break is kept, a lone `\r` or `\n` is encoded. A space or tab is encoded when it would end a line.
+Lines are kept to at most 76 characters with soft line breaks (`=\r\n`).
+`decodeQuotedPrintable(encodeQuotedPrintable(s))` returns the original string `s` for any `s`.
+    
+
+**Syntax**
+
+```sql
+encodeQuotedPrintable(s)
+```
+
+**Arguments**
+
+- `s` — String to encode. [`String`](/reference/data-types/string)
+
+**Returned value**
+
+Returns the Quoted-Printable encoded string. [`String`](/reference/data-types/string)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT encodeQuotedPrintable('Café = 3 €') AS encoded
+```
+
+```response title=Response
+┌─encoded───────────────────┐
+│ Caf=C3=A9 =3D 3 =E2=82=AC │
+└───────────────────────────┘
+```
+
 ## hex {#hex}
 
 Introduced in: v1.1.0
@@ -433,6 +513,8 @@ The function uses uppercase letters `A-F` and not using any prefixes (like `0x`)
 ```sql
 hex(arg)
 ```
+
+**Aliases**: `to_hex`
 
 **Arguments**
 
@@ -746,7 +828,7 @@ mortonDecode(range_mask, code)
 
 - `tuple_size` — Integer value no more than 8. [`UInt8/16/32/64`](/reference/data-types/int-uint)
 - `range_mask` — For the expanded mode, the mask for each argument. The mask is a tuple of unsigned integers. Each number in the mask configures the amount of range shrink. [`Tuple(UInt8/16/32/64)`](/reference/data-types/tuple)
-- `code` — UInt64 code. [`UInt64`](/reference/data-types/int-uint)
+- `code` — Morton code to decode, as produced by `mortonEncode`. Only the low `N * intDiv(64, N)` bits form the input domain, where `N` is the resulting tuple size. Results for larger codes are unspecified and can differ between builds. [`UInt64`](/reference/data-types/int-uint)
 
 **Returned value**
 
@@ -1082,6 +1164,8 @@ For a numeric argument the inverse of hex(N) is not performed by unhex().
 ```sql
 unhex(arg)
 ```
+
+**Aliases**: `from_hex`
 
 **Arguments**
 

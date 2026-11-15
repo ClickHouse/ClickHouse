@@ -29,6 +29,7 @@ LAYOUT_PAGES = {
     "range-hashed": ("registerRangeHashedDictionary.cpp", "range_hashed"),
     "regexp-tree": ("RegExpTreeDictionary.cpp", "regexp_tree"),
     "ssd-cache": ("registerCacheDictionaries.cpp", "ssd_cache"),
+    "xgboost": ("XGBoostDictionary.cpp", "xgboost"),
 }
 
 RAW_DESCRIPTION_RE = re.compile(

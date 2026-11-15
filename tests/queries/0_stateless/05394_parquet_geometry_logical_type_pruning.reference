@@ -1,0 +1,20 @@
+wrapped bbox: 170.0 -170.0
+wrapped bbox: 170.0 -170.0
+--- a polygon with a bounding box crossing the antimeridian
+1
+1
+--- a multipoint with a bounding box crossing the antimeridian, used as a polygon
+1
+1
+--- NULL points read as (0, 0)
+(0,0)
+(0,0)
+--- pruning still works if the filter does not contain (0, 0)
+ParquetPrunedRowGroups: 1
+--- coordinates converted to the requested type
+(1,1)
+(1,1)
+--- NULLs read as Nullable(Point)
+Nullable(Point)	(7,8)	0
+Nullable(Point)	\N	1
+Nullable(Point)	(9,10)	0
