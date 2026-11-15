@@ -8,8 +8,6 @@ keywords: ['registro de cambios', 'notas de la versión', 'actualizaciones', 'nu
 rss: true
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Además de este registro de cambios de ClickHouse Cloud, consulte la página [Compatibilidad de Cloud](/es/products/cloud/guides/cloud-compatibility).
 
 <Update label="19 oct. 2026">
@@ -214,7 +212,7 @@ Además de este registro de cambios de ClickHouse Cloud, consulte la página [Co
   <a id="open-langfuse-session-traces-from-clickhouse-agents" />
   ### Abra las trazas de sesiones de Langfuse desde ClickHouse Agents
 
-  Los administradores de la organización ahora pueden abrir la sesión de Langfuse correspondiente directamente desde un chat de [ClickHouse Agents](/es/products/cloud/features/ai-ml/agents/index) e inspeccionar las trazas de toda la conversación. Esto facilita la investigación del comportamiento de los agentes y la depuración de ejecuciones de varios pasos. Esta mejora está disponible en Beta pública para los chats creados recientemente.
+  Los administradores de la organización ahora pueden abrir la sesión de Langfuse correspondiente directamente desde un chat de [ClickHouse Agents](/es/agents/index) e inspeccionar las trazas de toda la conversación. Esto facilita la investigación del comportamiento de los agentes y la depuración de ejecuciones de varios pasos. Esta mejora está disponible en Beta pública para los chats creados recientemente.
 
   <a id="saml-redirects-help-prevent-duplicate-accounts" />
   ### Las redirecciones SAML ayudan a evitar cuentas duplicadas
@@ -262,7 +260,7 @@ Además de este registro de cambios de ClickHouse Cloud, consulte la página [Co
   <a id="clickhouse-agents-updates-public-beta" />
   ### Actualizaciones de ClickHouse Agents (beta pública)
 
-  [ClickHouse Agents](/es/products/cloud/features/ai-ml/agents/index) ahora admiten Chat Projects para organizar conversaciones, un medidor de uso de contexto que muestra el uso de tokens y de la ventana de contexto, Skills creadas por agentes y Skills de mejores prácticas de ClickHouse incluidas en el paquete. Esta versión también incluye mejoras en la configuración, la navegación, los atajos y la fijación.
+  [ClickHouse Agents](/es/agents/index) ahora admiten Chat Projects para organizar conversaciones, un medidor de uso de contexto que muestra el uso de tokens y de la ventana de contexto, Skills creadas por agentes y Skills de mejores prácticas de ClickHouse incluidas en el paquete. Esta versión también incluye mejoras en la configuración, la navegación, los atajos y la fijación.
 
   <a id="clickhouse-byoc-on-the-azure-marketplace" />
   ### ClickHouse BYOC en Azure Marketplace
@@ -302,7 +300,7 @@ Además de este registro de cambios de ClickHouse Cloud, consulte la página [Co
 
   ClickHouse Agents está ahora en Public Beta en [ai.clickhouse.cloud](http://ai.clickhouse.cloud) — una plataforma de agentes propia impulsada por Claude para análisis conversacional con reconocimiento de esquemas sobre los datos de ClickHouse Cloud. Cree agentes personalizados con un AgentBuilder sin código, conecte MCP servers (Slack, Linear, Notion y más), componga flujos de trabajo de subagentes y genere consultas, canalizaciones y aplicaciones sin salir de la conversación. Incluye integración con AWS Bedrock AgentCore y bases gestionadas de LibreChat.
 
-  Obtenga más información en la [documentación de ClickHouse Agents](/es/products/cloud/features/ai-ml/agents/index).
+  Obtenga más información en la [documentación de ClickHouse Agents](/es/agents/index).
 
   <a id="clickhouse-managed-postgres-public-beta" />
   ### ClickHouse Managed Postgres (beta pública)
@@ -518,7 +516,15 @@ Además de este registro de cambios de ClickHouse Cloud, consulte la página [Co
     * GCP us-east1 (Carolina del Sur)
   * Las preferencias de recopilación de informes de fallos ahora pueden configurarse a nivel de organización. Antes, esta configuración solo estaba disponible a nivel de servicio. Cuando se desactiva a nivel de organización, todos los servicios existentes y futuros quedarán excluidos automáticamente.
 
-  <Image img="/images/cloud/reference/crash-reports-collection.webp" size="md" alt="Recopilación de informes de fallos" />
+  <div className="ch-image-md">
+
+  <Frame>
+
+  ![Recopilación de informes de fallos](/images/cloud/reference/crash-reports-collection.webp)
+
+  </Frame>
+
+  </div>
 </Update>
 
 <Update label="23 ene 2026">

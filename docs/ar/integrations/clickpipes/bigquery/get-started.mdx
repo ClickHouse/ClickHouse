@@ -8,8 +8,6 @@ doc_type: 'guide'
 
 import IntroClickPipe from '/snippets/ar/_intro.mdx';
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <IntroClickPipe />
 
 ## المتطلبات المسبقة {#pre-requisites}
@@ -24,11 +22,27 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="اختر مصدر البيانات" id="1-select-the-data-source">
     **1.** في ClickHouse Cloud، اختر **Data sources** من قائمة التنقل الرئيسية، ثم انقر على **Create ClickPipe**.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="اختيار عمليات الاستيراد" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![اختيار عمليات الاستيراد](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+    </Frame>
+
+    </div>
 
     **2.** انقر على بطاقة **BigQuery**.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="اختيار بطاقة BigQuery" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![اختيار بطاقة BigQuery](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
   <Step title="إعداد اتصال ClickPipe" id="2-setup-your-clickpipe-connection">
@@ -36,11 +50,27 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     **1.** ارفع ملف المفتاح `.json` الخاص بحساب الخدمة الذي أنشأته لـ ClickPipes. تأكّد من منح حساب الخدمة الحد الأدنى من [الأذونات](/ar/integrations/clickpipes/bigquery/overview#permissions) المطلوبة.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp" alt="تحميل مفتاح حساب الخدمة" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![تحميل مفتاح حساب الخدمة](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp)
+
+    </Frame>
+
+    </div>
 
     **2.** اختر **وضع النسخ المتماثل**: [التحميل الأولي فقط](/ar/integrations/clickpipes/bigquery/overview#initial-load)، أو **التحميل الأولي + CDC**، أو **CDC فقط**. إذا اخترت أحد وضعَي CDC، فحدّد [طريقة تعتمد على الاستعلامات أو الأحداث](/ar/integrations/clickpipes/bigquery/overview#cdc).
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/select-replication-mode.png" alt="خيارات وضع النسخ المتماثل في BigQuery: التحميل الأولي فقط، والتحميل الأولي مع CDC، وCDC فقط" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![خيارات وضع النسخ المتماثل في BigQuery: التحميل الأولي فقط، والتحميل الأولي مع CDC، وCDC فقط](/images/integrations/data-ingestion/clickpipes/bigquery/select-replication-mode.png)
+
+    </Frame>
+
+    </div>
 
     **3.** إذا كنت تُجري تحميلاً أوليًا، فأدخل مسار حاوية GCS المستخدمة لتخزين البيانات مؤقتًا.
 
@@ -50,7 +80,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="هيّئ ClickPipe الخاص بك" id="3-configure-your-clickpipe">
     اضبط القيم التالية للمراحل التي اخترتها. لا تنطبق إعدادات التحميل الأولي إلا عند استيراد ClickPipe للبيانات الموجودة، ولا تنطبق إعدادات CDC إلا عند مواصلته نسخ التغييرات.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/configure-pipe.png" alt="إعدادات BigQuery ClickPipe للفاصل الزمني للمزامنة والتحميل الأولي وCDC" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![إعدادات BigQuery ClickPipe للفاصل الزمني للمزامنة والتحميل الأولي وCDC](/images/integrations/data-ingestion/clickpipes/bigquery/configure-pipe.png)
+
+    </Frame>
+
+    </div>
 
     | الإعداد                                        | ما يتحكم فيه                                                                                                                                                                                                                                                                                                      |
     | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -68,7 +106,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     **2.** حدّد جداول المصدر. يمكنك تغيير اسم كل جدول في الوجهة، واختيار الأعمدة التي تريد نسخها نسخًا متماثلًا من **إعدادات الأعمدة**. لا تظهر في القائمة إلا مجموعات البيانات التي يملك حساب الخدمة صلاحية الوصول إليها.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/select-table-settings.png" alt="اختيار جدول مصدر في BigQuery وتهيئة اسمه في الوجهة، وعمود العلامة المائية لـ CDC، ومفتاح الفرز، والإعدادات المتقدمة" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![اختيار جدول مصدر في BigQuery وتهيئة اسمه في الوجهة، وعمود العلامة المائية لـ CDC، ومفتاح الفرز، والإعدادات المتقدمة](/images/integrations/data-ingestion/clickpipes/bigquery/select-table-settings.png)
+
+    </Frame>
+
+    </div>
 
     **3.** اضبط خيار CDC لكل جدول. تعرض لقطة الشاشة إعدادات النسخ المتماثل القائم على الاستعلامات. حدّد **عمود العلامة المائية لـ CDC** من النوع `TIMESTAMP`، وأبقِه ضمن الأعمدة التي يجري نسخها نسخًا متماثلًا، وحدّث قيمته كلما تغيّر الصف. أما عند استخدام النسخ المتماثل القائم على الأحداث، فحدّد [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) أو [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) بدلًا من ذلك. يتطلب [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) ضبط `enable_change_history = TRUE` في جدول المصدر.
 
@@ -89,6 +135,14 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="أكمل الإعداد" id="7-complete-setup">
     انقر على **Create ClickPipe** لإكمال الإعداد. ستنتقل إلى صفحة النظرة العامة، حيث يمكنك متابعة تقدّم التحميل الأولي والنقر للاطلاع على تفاصيل ClickPipes الخاصة بك في BigQuery.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp" alt="الأذونات" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![الأذونات](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 </Steps>
