@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Formats/SchemaInferenceUtils.h>
 
@@ -202,36 +203,44 @@ bool hasEqualsAmbiguousAlternatives(const DataTypes & alternatives)
 }
 
 DataTypePtr replaceNestedTypesInPairImpl(
-    const DataTypePtr & left, const DataTypePtr & right, const PairedLeafCallback & on_leaf, bool skip_custom_name)
+    const DataTypePtr & left,
+    const DataTypePtr & right,
+    const PairedLeafCallback & on_leaf,
+    bool skip_custom_name,
+    bool left_is_common_type)
 {
     const WhichDataType left_which(left);
     const WhichDataType right_which(right);
 
     /// Neither wrapper hides a leaf, so a pair differing only by one of them still has to be walked.
     if (right_which.isLowCardinality() && !left_which.isLowCardinality())
-        return replaceNestedTypesInPairImpl(left, removeLowCardinality(right), on_leaf, skip_custom_name);
+        return replaceNestedTypesInPairImpl(left, removeLowCardinality(right), on_leaf, skip_custom_name, left_is_common_type);
     if (right_which.isNullable() && !left_which.isNullable())
-        return replaceNestedTypesInPairImpl(left, removeNullable(right), on_leaf, skip_custom_name);
+        return replaceNestedTypesInPairImpl(left, removeNullable(right), on_leaf, skip_custom_name, left_is_common_type);
 
     const bool descendable = left_which.isNullable() || left_which.isLowCardinality() || left_which.isArray()
-        || left_which.isMap() || left_which.isTuple() || left_which.isVariant();
+        || left_which.isMap() || left_which.isTuple() || left_which.isVariant() || (left_is_common_type && left_which.isObject());
 
     if (!descendable)
         return on_leaf(left, right);
 
+    if (left_is_common_type && right_which.isNothing())
+        return left;
+
     /// Rebuilding below cannot keep the name, so hand back `right` whole, and only once the children clear:
     /// restoring a customization over children that did not is how a relabel changes what a level means.
-    if (!skip_custom_name && (left->hasCustomName() || right->hasCustomName()) && left->getName() != right->getName())
+    if (!skip_custom_name && (left->hasCustomName() || (right->hasCustomName() && !left_is_common_type))
+        && left->getName() != right->getName())
     {
         if (!left->equals(*right))
             return nullptr;
-        return replaceNestedTypesInPairImpl(left, right, on_leaf, /*skip_custom_name=*/ true) ? right : nullptr;
+        return replaceNestedTypesInPairImpl(left, right, on_leaf, /*skip_custom_name=*/ true, left_is_common_type) ? right : nullptr;
     }
 
     if (left_which.isNullable())
     {
         const DataTypePtr left_nested = removeNullable(left);
-        auto nested = replaceNestedTypesInPairImpl(left_nested, removeNullable(right), on_leaf, false);
+        auto nested = replaceNestedTypesInPairImpl(left_nested, removeNullable(right), on_leaf, false, left_is_common_type);
         if (!nested)
             return nullptr;
         return nested.get() == left_nested.get() ? left : makeNullable(nested);
@@ -240,7 +249,7 @@ DataTypePtr replaceNestedTypesInPairImpl(
     if (left_which.isLowCardinality())
     {
         const DataTypePtr left_nested = removeLowCardinality(left);
-        auto nested = replaceNestedTypesInPairImpl(left_nested, removeLowCardinality(right), on_leaf, false);
+        auto nested = replaceNestedTypesInPairImpl(left_nested, removeLowCardinality(right), on_leaf, false, left_is_common_type);
         if (!nested)
             return nullptr;
         return nested.get() == left_nested.get() ? left : std::make_shared<DataTypeLowCardinality>(nested);
@@ -252,7 +261,7 @@ DataTypePtr replaceNestedTypesInPairImpl(
         if (!right_array)
             return nullptr;
         const DataTypePtr left_nested = assert_cast<const DataTypeArray &>(*left).getNestedType();
-        auto nested = replaceNestedTypesInPairImpl(left_nested, right_array->getNestedType(), on_leaf, false);
+        auto nested = replaceNestedTypesInPairImpl(left_nested, right_array->getNestedType(), on_leaf, false, left_is_common_type);
         if (!nested)
             return nullptr;
         return nested.get() == left_nested.get() ? left : std::make_shared<DataTypeArray>(nested);
@@ -264,8 +273,8 @@ DataTypePtr replaceNestedTypesInPairImpl(
         if (!right_map)
             return nullptr;
         const auto & left_map = assert_cast<const DataTypeMap &>(*left);
-        auto key = replaceNestedTypesInPairImpl(left_map.getKeyType(), right_map->getKeyType(), on_leaf, false);
-        auto value = replaceNestedTypesInPairImpl(left_map.getValueType(), right_map->getValueType(), on_leaf, false);
+        auto key = replaceNestedTypesInPairImpl(left_map.getKeyType(), right_map->getKeyType(), on_leaf, false, left_is_common_type);
+        auto value = replaceNestedTypesInPairImpl(left_map.getValueType(), right_map->getValueType(), on_leaf, false, left_is_common_type);
         if (!key || !value)
             return nullptr;
         if (key.get() == left_map.getKeyType().get() && value.get() == left_map.getValueType().get())
@@ -282,14 +291,15 @@ DataTypePtr replaceNestedTypesInPairImpl(
         /// `DataTypeTuple::equals` cannot see the naming mode (an anonymous tuple compares by its ordinal
         /// names), while serialization does (`toJSONString` writes an object or an array), so a pair that
         /// disagrees on it is not interchangeable whether or not a child moves.
-        if (right_tuple->hasExplicitNames() != left_tuple.hasExplicitNames())
+        if (!left_is_common_type && right_tuple->hasExplicitNames() != left_tuple.hasExplicitNames())
             return nullptr;
         DataTypes elements;
         elements.reserve(left_tuple.getElements().size());
         bool moved = false;
         for (size_t i = 0; i < left_tuple.getElements().size(); ++i)
         {
-            auto nested = replaceNestedTypesInPairImpl(left_tuple.getElements()[i], right_tuple->getElements()[i], on_leaf, false);
+            auto nested = replaceNestedTypesInPairImpl(
+                left_tuple.getElements()[i], right_tuple->getElements()[i], on_leaf, false, left_is_common_type);
             if (!nested)
                 return nullptr;
             moved |= nested.get() != left_tuple.getElements()[i].get();
@@ -302,6 +312,37 @@ DataTypePtr replaceNestedTypesInPairImpl(
         return std::make_shared<DataTypeTuple>(elements);
     }
 
+    if (left_which.isObject())
+    {
+        const auto * right_object = typeid_cast<const DataTypeObject *>(right.get());
+        if (!right_object)
+            return nullptr;
+        const auto & left_object = assert_cast<const DataTypeObject &>(*left);
+        DataTypeObject::TypedPathsMap typed_paths;
+        bool moved = false;
+        for (const auto & [path, type] : left_object.getTypedPaths())
+        {
+            auto it = right_object->getTypedPaths().find(path);
+            if (it == right_object->getTypedPaths().end())
+                return nullptr;
+            auto nested = replaceNestedTypesInPairImpl(type, it->second, on_leaf, false, left_is_common_type);
+            if (!nested)
+                return nullptr;
+            moved |= nested.get() != type.get();
+            typed_paths.emplace(path, std::move(nested));
+        }
+        if (!moved)
+            return left;
+        return std::make_shared<DataTypeObject>(
+            left_object.getSchemaFormat(),
+            std::move(typed_paths),
+            left_object.getPathsToSkip(),
+            left_object.getPathRegexpsToSkip(),
+            left_object.getMaxDynamicPaths(),
+            left_object.getMaxDynamicTypes(),
+            left_object.getSharedTypedPaths());
+    }
+
     const auto * right_variant = typeid_cast<const DataTypeVariant *>(right.get());
     const auto & left_variant = assert_cast<const DataTypeVariant &>(*left);
     if (!right_variant || right_variant->getVariants().size() != left_variant.getVariants().size())
@@ -312,7 +353,8 @@ DataTypePtr replaceNestedTypesInPairImpl(
     bool moved = false;
     for (size_t i = 0; i < left_variant.getVariants().size(); ++i)
     {
-        auto nested = replaceNestedTypesInPairImpl(left_variant.getVariants()[i], right_variant->getVariants()[i], on_leaf, false);
+        auto nested = replaceNestedTypesInPairImpl(
+            left_variant.getVariants()[i], right_variant->getVariants()[i], on_leaf, false, left_is_common_type);
         if (!nested)
             return nullptr;
         /// A Variant holding one type twice has no unambiguous discriminator for it, and a replacement can
@@ -338,9 +380,10 @@ DataTypePtr replaceNestedTypesInPairImpl(
 
 }
 
-DataTypePtr replaceNestedTypesInPair(const DataTypePtr & left, const DataTypePtr & right, const PairedLeafCallback & on_leaf)
+DataTypePtr replaceNestedTypesInPair(
+    const DataTypePtr & left, const DataTypePtr & right, const PairedLeafCallback & on_leaf, bool left_is_common_type)
 {
-    return replaceNestedTypesInPairImpl(left, right, on_leaf, /*skip_custom_name=*/ false);
+    return replaceNestedTypesInPairImpl(left, right, on_leaf, /*skip_custom_name=*/ false, left_is_common_type);
 }
 
 }

@@ -52,11 +52,14 @@ SETTINGS max_rows_in_set = 100, max_bytes_before_external_set = 0, log_comment =
 SELECT 'rows limit', count() FROM numbers(200) WHERE number IN (SELECT number % 101 FROM numbers(1000))
 SETTINGS max_rows_in_set = 100, max_bytes_before_external_set = 1, max_block_size = 50, log_comment = 'rows limit exceeded on disk';
 
--- `max_bytes_in_set` limits the memory of the set, which on disk is only its directory.
+-- `max_bytes_in_set` counts the memory of a set in memory, and 8 bytes for each key of a set on disk. The
+-- 100,000 keys take a hash table of 2 MiB in memory, and count 800,000 bytes on disk.
 SELECT 'bytes limit', count() FROM numbers(10) WHERE number IN (SELECT number FROM numbers(100000))
 SETTINGS max_bytes_in_set = 1048576, max_bytes_before_external_set = 0, log_comment = 'bytes limit in memory';
 SELECT 'bytes limit', count() FROM numbers(10) WHERE number IN (SELECT number FROM numbers(100000))
 SETTINGS max_bytes_in_set = 1048576, max_bytes_before_external_set = 1, log_comment = 'bytes limit on disk';
+SELECT 'bytes limit', count() FROM numbers(10) WHERE number IN (SELECT number FROM numbers(100000))
+SETTINGS max_bytes_in_set = 524288, max_bytes_before_external_set = 1, log_comment = 'bytes limit exceeded on disk';
 
 -- In the `break` mode, a set in memory keeps the blocks up to the one that reaches the limit and stops
 -- reading. A set on disk reads the whole subquery and keeps the keys that come first in the order of its disk
@@ -71,13 +74,14 @@ WHERE number IN (SELECT number * 7919 % 10000 FROM numbers(20000))
 SETTINGS max_rows_in_set = 100, set_overflow_mode = 'break', max_block_size = 50, max_bytes_before_external_set = 1,
     log_comment = 'rows break on disk';
 
--- The set in memory reaches the byte limit with its first block, and the set on disk with the merged block
--- that grows its directory to the limit.
+-- The set in memory reaches the byte limit with its first block, whose hash table takes at least 16 KiB. The
+-- set on disk counts 8 bytes for each key, so it reaches the limit with its second merged block and keeps the
+-- keys below 2,000.
 SELECT 'bytes break', count() FROM numbers(20000) WHERE number IN (SELECT number FROM numbers(20000))
-SETTINGS max_bytes_in_set = 1024, set_overflow_mode = 'break', max_block_size = 1000, max_bytes_before_external_set = 0,
+SETTINGS max_bytes_in_set = 12000, set_overflow_mode = 'break', max_block_size = 1000, max_bytes_before_external_set = 0,
     log_comment = 'bytes break in memory';
 SELECT 'bytes break', count() FROM numbers(20000) WHERE number IN (SELECT number FROM numbers(20000))
-SETTINGS max_bytes_in_set = 1024, set_overflow_mode = 'break', max_block_size = 1000, max_bytes_before_external_set = 1,
+SETTINGS max_bytes_in_set = 12000, set_overflow_mode = 'break', max_block_size = 1000, max_bytes_before_external_set = 1,
     log_comment = 'bytes break on disk';
 
 -- Each partition is read by its own stream, whose preliminary `DISTINCT` passes the keys through under the

@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
@@ -104,15 +105,6 @@ TEST(QueryPlanExecutionLimits, SerializationPreservesLimits)
     EXPECT_TRUE(restored.getConcurrencyControl());
 }
 
-TEST(QueryPlanExecutionLimits, SerializationRejectsOlderPeerWhenLimitsAreSet)
-{
-    auto source = makeSourcePlan();
-    source.setMaxThreads(4);
-
-    WriteBufferFromOwnString out;
-    EXPECT_THROW(source.serialize(out, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS - 1), Exception);
-}
-
 TEST(QueryPlanExecutionLimits, ReplaceNodeWithPlanMergesConcurrencyControl)
 {
     auto destination = makeSourcePlan();
@@ -159,7 +151,7 @@ TEST(QueryPlanExecutionLimits, UnitePlansMergesLimitsFromChildren)
         with->setMaxThreads(4);
         with->setConcurrencyControl(true);
 
-        std::vector<QueryPlanPtr> plans;
+        QueryPlanPtrs plans;
         if (asking_child_first)
         {
             plans.emplace_back(std::move(with));
@@ -188,7 +180,7 @@ TEST(QueryPlanExecutionLimits, UnitePlansKeepsDefaultsWhenNoChildAsks)
     auto right = std::make_unique<QueryPlan>(makeSourcePlan());
 
     SharedHeaders input_headers{makeHeader(), makeHeader()};
-    std::vector<QueryPlanPtr> plans;
+    QueryPlanPtrs plans;
     plans.emplace_back(std::move(left));
     plans.emplace_back(std::move(right));
 

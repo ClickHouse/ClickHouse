@@ -21,9 +21,7 @@ Hive 엔진을 사용하면 HDFS의 Hive 테이블에서 `SELECT` 쿼리를 수�
 
 * Parquet: 모든 단순 스칼라 컬럼 타입을 지원하며, `array`와 같은 복합 타입만 지원합니다.
 
-<div id="creating-a-table">
-  ## 테이블 만들기
-</div>
+## 테이블 만들기 {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -51,39 +49,11 @@ PARTITION BY expr
 
 * `table` — 원격 테이블 이름.
 
-<div id="usage-example">
-  ## 사용 예시
-</div>
+## 사용 예시 {#usage-example}
 
-<div id="how-to-use-local-cache-for-hdfs-filesystem">
-  ### HDFS 파일 시스템에서 로컬 캐시를 사용하는 방법
-</div>
+### ORC 입력 형식으로 Hive 테이블 쿼리하기 {#query-hive-table-with-orc-input-format}
 
-원격 파일 시스템에는 로컬 캐시를 활성화하는 것을 강력히 권장합니다. 벤치마크 결과, 캐시를 사용하면 속도가 거의 2배 빨라집니다.
-
-캐시를 사용하기 전에 `config.xml`에 이를 추가하십시오.
-
-```xml
-<local_cache_for_remote_fs>
-    <enable>true</enable>
-    <root_dir>local_cache</root_dir>
-    <limit_size>559096952</limit_size>
-    <bytes_read_before_flush>1048576</bytes_read_before_flush>
-</local_cache_for_remote_fs>
-```
-
-* enable: `true`이면 ClickHouse가 시작된 후 원격 파일 시스템(HDFS)에 대한 로컬 캐시를 유지합니다.
-* root&#95;dir: 필수입니다. 원격 파일 시스템의 로컬 캐시 파일을 저장할 루트 디렉터리입니다.
-* limit&#95;size: 필수입니다. 로컬 캐시 파일의 최대 크기(바이트)입니다.
-* bytes&#95;read&#95;before&#95;flush: 원격 파일 시스템에서 파일을 다운로드할 때 로컬 파일 시스템에 플러시하기 전에 읽을 바이트 수를 제어합니다. 기본값은 1MB입니다.
-
-<div id="query-hive-table-with-orc-input-format">
-  ### ORC 입력 형식으로 Hive 테이블 쿼리하기
-</div>
-
-<div id="create-table-in-hive">
-  #### Hive에서 테이블 생성
-</div>
+#### Hive에서 테이블 생성 {#create-table-in-hive}
 
 ```text
 hive > CREATE TABLE `test`.`test_orc`(
@@ -131,9 +101,7 @@ OK
 Time taken: 0.295 seconds, Fetched: 1 row(s)
 ```
 
-<div id="create-table-in-clickhouse">
-  #### ClickHouse에서 테이블 생성
-</div>
+#### ClickHouse에서 테이블 생성 {#create-table-in-clickhouse}
 
 위에서 생성한 Hive 테이블의 데이터를 가져오는 ClickHouse 테이블입니다:
 
@@ -205,13 +173,9 @@ day:                  2021-09-18
 1 rows in set. Elapsed: 0.078 sec.
 ```
 
-<div id="query-hive-table-with-parquet-input-format">
-  ### Parquet 입력 형식으로 Hive 테이블 쿼리하기
-</div>
+### Parquet 입력 형식으로 Hive 테이블 쿼리하기 {#query-hive-table-with-parquet-input-format}
 
-<div id="create-table-in-hive">
-  #### Hive에서 테이블 생성
-</div>
+#### Hive에서 테이블 생성 {#create-table-in-hive-1}
 
 ```text
 hive >
@@ -260,9 +224,7 @@ OK
 Time taken: 0.766 seconds, Fetched: 1 row(s)
 ```
 
-<div id="create-table-in-clickhouse">
-  #### ClickHouse에서 테이블 생성
-</div>
+#### ClickHouse에서 테이블 생성 {#create-table-in-clickhouse-1}
 
 위에서 생성한 Hive 테이블의 데이터를 가져오는 ClickHouse 테이블:
 
@@ -335,13 +297,9 @@ day:                  2021-09-18
 1 rows in set. Elapsed: 0.357 sec.
 ```
 
-<div id="query-hive-table-with-text-input-format">
-  ### Text 입력 형식으로 Hive 테이블 쿼리하기
-</div>
+### Text 입력 형식으로 Hive 테이블 쿼리하기 {#query-hive-table-with-text-input-format}
 
-<div id="create-table-in-hive">
-  #### Hive에서 테이블 생성
-</div>
+#### Hive에서 테이블 생성 {#create-table-in-hive-2}
 
 ```text
 hive >
@@ -389,9 +347,7 @@ OK
 Time taken: 0.624 seconds, Fetched: 1 row(s)
 ```
 
-<div id="create-table-in-clickhouse">
-  #### ClickHouse에서 테이블 생성
-</div>
+#### ClickHouse에서 테이블 생성 {#create-table-in-clickhouse-2}
 
 위에서 생성한 Hive 테이블의 데이터를 가져오는 ClickHouse 테이블:
 

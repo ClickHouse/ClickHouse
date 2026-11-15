@@ -111,6 +111,8 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 set_settings.temporary_files_codec),
             .min_free_disk_space = set_settings.min_free_disk_space,
             .max_block_size = set_settings.max_block_size,
+            .max_bytes_for_bloom_filter = set_settings.max_bytes_for_external_set_bloom_filter,
+            .max_bytes_for_cache = set_settings.max_bytes_for_external_set_cache,
             .process_list_element = build_settings.process_list_element,
         };
     }
@@ -142,7 +144,8 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 /// table and passes rows through under the spill threshold of the set.
                 return std::make_shared<DistinctTransform>(
                     header, SizeLimits{}, 0, Names{}, /*allow_abandoning_=*/true, skip_null_keys,
-                    max_bytes_before_external_set, /*allow_spilling_=*/ true);
+                    max_bytes_before_external_set, /*shared_set_bytes_=*/ nullptr, /*coalesce_rows_=*/ 0,
+                    /*allow_spilling_=*/ true);
             });
     }
 
@@ -237,7 +240,7 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::Subqueries subque
     SharedHeaders input_headers;
     input_headers.emplace_back(query_plan.getCurrentHeader());
 
-    std::vector<std::unique_ptr<QueryPlan>> plans;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
     query_plan = QueryPlan();
 
@@ -300,11 +303,11 @@ QueryPipelineBuilderPtr addCreatingSetsTransform(QueryPipelineBuilderPtr pipelin
     return CreatingSetsStep(input_headers).updatePipeline(std::move(pipelines), pipeline_settings);
 }
 
-std::vector<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSets(
+VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSets(
     DelayedCreatingSetsStep && step,
     const QueryPlanOptimizationSettings & optimization_settings)
 {
-    std::vector<std::unique_ptr<QueryPlan>> plans;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> plans;
 
     for (auto & future_set : step.subqueries)
     {
@@ -396,7 +399,7 @@ void forEachSubquerySet(const QueryPlan * root, const std::function<bool(FutureS
     if (!root || !root->getRootNode())
         return;
 
-    std::vector<QueryPlan::Node *> stack{root->getRootNode()};
+    VectorWithMemoryTracking<QueryPlan::Node *> stack{root->getRootNode()};
     while (!stack.empty())
     {
         auto * node = stack.back();

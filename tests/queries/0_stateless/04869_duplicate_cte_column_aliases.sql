@@ -1,5 +1,4 @@
 -- Duplicate names in a column alias list must be rejected instead of silently collapsing columns.
-SET enable_analyzer = 1;
 
 WITH t (a, a) AS (SELECT number, number + 10 FROM numbers(3)) SELECT * FROM t ORDER BY 1; -- { serverError BAD_ARGUMENTS }
 WITH t (a, a) AS (SELECT number, number + 10 FROM numbers(3) UNION ALL SELECT 5, 6) SELECT * FROM t ORDER BY 1; -- { serverError BAD_ARGUMENTS }

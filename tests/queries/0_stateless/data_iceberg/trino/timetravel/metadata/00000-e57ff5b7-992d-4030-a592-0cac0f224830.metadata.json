@@ -1,0 +1,64 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "bed033c8-301a-4f2b-b18a-dbe85348dc67",
+  "location" : "s3://test-bucket-time-travel/timetravel",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1688101306265,
+  "last-column-id" : 1,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "data",
+      "required" : false,
+      "type" : "int"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "write.format.default" : "PARQUET"
+  },
+  "current-snapshot-id" : 3669526782178248824,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 3669526782178248824,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 3669526782178248824,
+    "timestamp-ms" : 1688101306265,
+    "summary" : {
+      "operation" : "append",
+      "trino_query_id" : "20230630_050145_00001_9ikf4",
+      "changed-partition-count" : "0",
+      "total-records" : "0",
+      "total-files-size" : "0",
+      "total-data-files" : "0",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3://test-bucket-time-travel/timetravel/metadata/snap-3669526782178248824-1-cde47a04-b45e-4057-b872-aca0841fe99c.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1688101306265,
+    "snapshot-id" : 3669526782178248824
+  } ],
+  "metadata-log" : [ ]
+}

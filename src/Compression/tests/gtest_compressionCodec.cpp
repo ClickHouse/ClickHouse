@@ -461,7 +461,7 @@ private:
 CompressionCodecPtr makeCodec(const std::string & codec_string, const DataTypePtr data_type)
 {
     const std::string codec_statement = "(" + codec_string + ")";
-    Tokens tokens(codec_statement.begin().base(), codec_statement.end().base());
+    Tokens tokens(codec_statement.data(), codec_statement.data() + codec_statement.size());
     IParser::Pos token_iterator(tokens, 0, 0);
 
     Expected expected;
@@ -1820,6 +1820,21 @@ TEST(CompressionCodecMultipleTest, NestedCodecDescription)
     ASSERT_NE(inner_description->as<ASTExpressionList>(), nullptr);
     ASSERT_EQ(inner_description->children.size(), 2);
     EXPECT_EQ(inner_description->formatForErrorMessage(), "LZ4, ZSTD(3)");
+}
+
+TEST(CompressionCodecMultipleTest, DescriptionsHaveCodecKind)
+{
+    /// `findSecretArguments` skips `Kind::CODEC`, so programs without a secret arguments finder can format these.
+    const auto kind = [](const ASTPtr & description) { return description->as<const ASTFunction &>().getKind(); };
+
+    const auto single = CompressionCodecFactory::instance().get("ZSTD(3)");
+    const auto chain = CompressionCodecFactory::instance().get("LZ4, ZSTD(3)");
+    const CompressionCodecPtr nested = std::make_shared<CompressionCodecMultiple>(Codecs{chain});
+
+    EXPECT_EQ(kind(single->getCodecDescription()), ASTFunction::Kind::CODEC);
+    EXPECT_EQ(kind(single->getFullCodecDescription()), ASTFunction::Kind::CODEC);
+    EXPECT_EQ(kind(chain->getFullCodecDescription()), ASTFunction::Kind::CODEC);
+    EXPECT_EQ(kind(nested->getFullCodecDescription()), ASTFunction::Kind::CODEC);
 }
 
 TEST(CompressionCodecMultipleTest, DecompressMalformedInputReversedRange)

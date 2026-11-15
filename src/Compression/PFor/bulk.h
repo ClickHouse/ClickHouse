@@ -57,6 +57,17 @@ inline ALWAYS_INLINE const uint8_t * getVarintChecked(const uint8_t * p, const u
     }
 }
 
+/// Returns the residual that the blocks of a stream in `mode` encode for `value`, which follows `prev` in the
+/// stream. `bulkEncode` and `EncodedBytesBound` share it, so that the bound always matches the encoding.
+template <Delta mode, typename T>
+inline ALWAYS_INLINE T deltaResidual(T value, T prev) noexcept
+{
+    if constexpr (mode == Delta::none)
+        return value;
+    else
+        return static_cast<T>(value - prev - (mode == Delta::d1 ? 1 : 0));
+}
+
 template <typename T>
 inline size_t bulkEncode(const T * in, size_t n, Delta mode, uint8_t * out) noexcept
 {
@@ -77,7 +88,7 @@ inline size_t bulkEncode(const T * in, size_t n, Delta mode, uint8_t * out) noex
             case Delta::d0:
                 for (unsigned i = 0; i < cnt; ++i)
                 {
-                    residuals[i] = static_cast<T>(in[s + i] - prev);
+                    residuals[i] = deltaResidual<Delta::d0>(in[s + i], prev);
                     prev = in[s + i];
                 }
                 block = residuals;
@@ -85,7 +96,7 @@ inline size_t bulkEncode(const T * in, size_t n, Delta mode, uint8_t * out) noex
             case Delta::d1:
                 for (unsigned i = 0; i < cnt; ++i)
                 {
-                    residuals[i] = static_cast<T>(in[s + i] - prev - 1);
+                    residuals[i] = deltaResidual<Delta::d1>(in[s + i], prev);
                     prev = in[s + i];
                 }
                 block = residuals;
@@ -98,12 +109,11 @@ inline size_t bulkEncode(const T * in, size_t n, Delta mode, uint8_t * out) noex
 
 // With non-null `end`, a corrupt block makes blockDecode return 0, propagated as a 0 return here so the caller can report CORRUPTED_DATA.
 template <typename T>
-inline size_t bulkDecode(const uint8_t * in, size_t count, Delta mode, T * out, const uint8_t * end = nullptr) noexcept
+inline size_t bulkDecode(const uint8_t * in, size_t count, Delta mode, T * out, const uint8_t * end = nullptr, T prev = 0) noexcept
 {
     if (count == 0)
         return 0;
     const uint8_t * p = in;
-    T prev = 0;
     for (size_t s = 0; s < count; s += BLOCK)
     {
         const unsigned cnt = static_cast<unsigned>((count - s < BLOCK) ? (count - s) : BLOCK);

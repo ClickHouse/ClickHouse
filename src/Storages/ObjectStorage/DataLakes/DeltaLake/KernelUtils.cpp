@@ -103,8 +103,8 @@ void recordKernelErrorAllocation(uintptr_t error, std::string error_message)
     {
         throw DB::Exception(
             DB::ErrorCodes::LOGICAL_ERROR,
-            "Trying to record already allocated error. (Current Pointer: {}, Current Message: {}, Previous Message: {})",
-            error, error_message, it->second);
+            "Trying to record already allocated error. (Current Message: {}, Previous Message: {})",
+            error_message, it->second);
     }
 }
 
@@ -114,7 +114,7 @@ std::string forgetKernelErrorAllocation(uintptr_t error)
 
     const auto it = allocated_errors.find(error);
     if (it == allocated_errors.end())
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Trying to deallocate unregistered error. (Pointer: {})", error);
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Trying to deallocate unregistered error");
 
     std::string recorded_message = std::move(it->second);
     allocated_errors.erase(it);
@@ -140,8 +140,8 @@ ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::Kerne
 
     LOG_TRACE(
         getLogger("KernelUtils"),
-        "Allocated KernelError (Pointer: {}, EType: {}, Message: {})",
-        ptrToInt(error), etype, error_message);
+        "Allocated KernelError (EType: {}, Message: {})",
+        etype, error_message);
 
     return error;
 }
@@ -157,8 +157,8 @@ ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::Kerne
     {
         LOG_TRACE(
             getLogger("KernelUtils"),
-            "Deallocating KernelError (Pointer: {}) (in {})",
-            error_ptr, from);
+            "Deallocating KernelError (in {})",
+            from);
 
         ffi::KernelError etype = error->etype;
         delete error;
@@ -177,13 +177,13 @@ ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::Kerne
 
         LOG_ERROR(
             getLogger("KernelUtils"),
-            "Received unknown error from DeltaLake kernel. (Pointer: {}, EType: {}) (in {})",
-            error_ptr, etype, from);
+            "Received unknown error from DeltaLake kernel. (EType: {}) (in {})",
+            etype, from);
 
         throw DB::Exception(
             DB::ErrorCodes::LOGICAL_ERROR,
-            "Received unknown error from DeltaLake kernel. (Pointer: {}, EType: {}) (in {})",
-            error_ptr, etype, from);
+            "Received unknown error from DeltaLake kernel. (EType: {}) (in {})",
+            etype, from);
     }
 }
 

@@ -3,6 +3,8 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/FilterDescription.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
 
@@ -93,6 +95,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
             std::move(merged),
             parent_filter->getFilterColumnName(),
             parent_filter->removesFilterColumn());
+        filter->setOptimizeConstantColumnsAfterFilter(parent_filter->getOptimizeConstantColumnsAfterFilter());
         filter->setStepDescription(mergeStepDescriptions(parent_filter->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
 
         parent_node->step = std::move(filter);
@@ -146,6 +149,8 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
                                                    std::move(child_actions),
                                                    condition_name,
                                                    true);
+        filter->setOptimizeConstantColumnsAfterFilter(FilterStep::combineOptimizeConstantColumnsAfterFilter(
+            parent_filter->getOptimizeConstantColumnsAfterFilter(), child_filter->getOptimizeConstantColumnsAfterFilter()));
         filter->setStepDescription(mergeStepDescriptions(parent_filter->getStepDescription(), child_filter->getStepDescription()), settings.max_step_description_length);
 
         parent_node->step = std::move(filter);
@@ -154,6 +159,27 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
     }
 
     return 0;
+}
+
+/// an always-true `FilterStep` stays above a join and splits the join graph
+size_t tryReplaceAlwaysTrueFilter(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &)
+{
+    auto * filter = typeid_cast<FilterStep *>(node->step.get());
+    if (!filter || !filter->removesFilterColumn())
+        return 0;
+
+    auto & dag = filter->getExpression();
+    const auto & filter_column_name = filter->getFilterColumnName();
+    const auto & filter_node = dag.findInOutputs(filter_column_name);
+    if (filter_node.type != ActionsDAG::ActionType::COLUMN || !ConstantFilterDescription(*filter_node.column).always_true)
+        return 0;
+
+    dag.removeUnusedResult(filter_column_name);
+    dag.removeUnusedActions(false, false);
+    auto expression = std::make_unique<ExpressionStep>(filter->getInputHeaders().front(), std::move(dag));
+    expression->setStepDescription(*filter);
+    node->step = std::move(expression);
+    return 1;
 }
 
 }

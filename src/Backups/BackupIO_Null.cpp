@@ -36,7 +36,7 @@ void BackupWriterNull::copyDataToFile(const String & /* path_in_backup */, const
     /// no op
 }
 
-void BackupWriterNull::copyFileFromDisk(
+void BackupWriterNull::copyFileFromDiskWithFallback(
     const String & /* path_in_backup */,
     DiskPtr /* src_disk */,
     const String & /* src_path */,

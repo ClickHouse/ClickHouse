@@ -2,6 +2,8 @@
 
 #include <Core/Types.h>
 
+/// `fiu.h` includes `<stdatomic.h>` inside `extern "C"`, which compiles only if `<atomic>` comes first.
+#include <atomic>
 #include <mutex>
 
 #include "config.h"
@@ -18,12 +20,15 @@
 #else // USE_LIBFIU
 
 // stubs from fiu-local.h
+// The code under a failpoint is kept in a dead branch instead of being dropped, so that the variables and functions
+// used only there are not reported as unused. The extra parentheses tell the compiler that the code is dead on purpose
+// (otherwise `-Wunreachable-code` reports it).
 #define fiu_init(flags) 0
-#define fiu_fail(name) 0
+#define fiu_fail(name) (0)
 #define fiu_failinfo() NULL
-#define fiu_do_on(name, action)
+#define fiu_do_on(name, action) do { if ((false)) { action; } } while (0)
 #define fiu_exit_on(name)
-#define fiu_return_on(name, retval)
+#define fiu_return_on(name, retval) do { if ((false)) { return retval; } } while (0)
 
 #endif // USE_LIBFIU
 
@@ -92,7 +97,7 @@ public:
     static void pauseFailPoint(const String & fail_point_name);
 
     /** Fast-path check used to avoid even local failpoint guards when no failpoint
-      * has ever been enabled in this process.
+      * is enabled.
       */
     static bool hasAnyFailPointBeenRegistered();
 
