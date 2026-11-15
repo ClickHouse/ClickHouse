@@ -35,15 +35,21 @@ ColumnPtr nullableString()
 
 /// Serializations that deserialize into a column of a specific class reach into it with
 /// `assert_cast`; `isColumnCompatible` is what MergeTree readers check result columns with.
-TEST(SerializationIsColumnCompatible, PlainSerializationAcceptsAnyColumn)
+TEST(SerializationIsColumnCompatible, StringRequiresColumnString)
 {
-    const auto serialization = SerializationString::create();
+    /// The bulk readers of every serialization version read into a ColumnString: the
+    /// size-stream and the filtered single-stream paths cast to it unchecked, so a
+    /// sparse column of strings is still the wrong destination.
+    const auto versions = {MergeTreeStringSerializationVersion::SINGLE_STREAM, MergeTreeStringSerializationVersion::WITH_SIZE_STREAM};
+    for (auto version : versions)
+    {
+        const auto serialization = SerializationString::create(version);
 
-    EXPECT_TRUE(serialization->isColumnCompatible(*ColumnString::create()));
-    /// The default declares no class requirement; a wrong column type is a different contract.
-    EXPECT_TRUE(serialization->isColumnCompatible(*ColumnUInt8::create()));
-    EXPECT_TRUE(serialization->isColumnCompatible(*nullableString()));
-    EXPECT_TRUE(serialization->isColumnCompatible(*ColumnSparse::create(ColumnString::create())));
+        EXPECT_TRUE(serialization->isColumnCompatible(*ColumnString::create()));
+        EXPECT_FALSE(serialization->isColumnCompatible(*ColumnSparse::create(ColumnString::create())));
+        EXPECT_FALSE(serialization->isColumnCompatible(*ColumnUInt8::create()));
+        EXPECT_FALSE(serialization->isColumnCompatible(*nullableString()));
+    }
 }
 
 TEST(SerializationIsColumnCompatible, SparseRequiresColumnSparse)

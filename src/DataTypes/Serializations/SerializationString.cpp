@@ -68,6 +68,14 @@ SerializationPtr SerializationString::create(MergeTreeStringSerializationVersion
     return ISerialization::pooled(getHash(version_), [=] { return new SerializationString(version_); });
 }
 
+bool SerializationString::isColumnCompatible(const IColumn & column) const
+{
+    /// The bulk readers of every version read into a ColumnString; the size-stream and
+    /// the filtered single-stream paths cast to it unchecked, so a sparse column of
+    /// strings is still the wrong destination.
+    return typeid(column) == typeid(ColumnString);
+}
+
 bool SerializationString::isStringSizesSubcolumn(const SubstreamPath & path)
 {
     return !path.empty() && (path.back().type == Substream::StringSizes || path.back().type == Substream::InlinedStringSizes);
