@@ -1,0 +1,14 @@
+wide, fsync on: local synced=1 objstore syncs more=1 DirectorySync=0
+2000	1999000
+compact, fsync on: local synced=1 objstore syncs more=1 DirectorySync=0
+2000	1999000
+wide, fsync off: local FileSync=0 objstore FileSync=0 DirectorySync=0
+2000	1999000
+compact, fsync off: local FileSync=0 objstore FileSync=0 DirectorySync=0
+2000	1999000
+merge, fsync on: local synced=1 objstore syncs more=1
+2000	1999000
+merge, fsync off: local FileSync=0 objstore FileSync=0
+2000	1999000
+alter, fsync on: local synced=1 objstore syncs more=1
+500	124750
