@@ -65,6 +65,10 @@ echo "--- a subscriber that falls behind fails instead of blocking the inserts"
 $CLICKHOUSE_CLIENT -q "DROP TABLE mv"
 read -r fifo_3 pid_3 < <(spawn $STREAMING_CLIENT -q "SELECT k, sleepEachRow(0.1) FROM n STREAM")
 wait_for_subscription "$fifo_3"
+# The output of a client that exits while nothing reads its FIFO is lost, so the reader starts first.
+read_until "$fifo_3" "TOO_SLOW" > "$fifo_3.out" &
 $CLICKHOUSE_CLIENT --max_block_size=1 --min_insert_block_size_rows=1 --min_insert_block_size_bytes=0 -q "INSERT INTO n SELECT 'x', number FROM numbers(3000)"
-read_until "$fifo_3" "TOO_SLOW" | grep -o -m1 "TOO_SLOW"
+wait
+grep -o -m1 "TOO_SLOW" "$fifo_3.out"
+rm -f "$fifo_3.out"
 cleanup "$fifo_3" "$pid_3" > /dev/null
