@@ -974,9 +974,15 @@ void MergeTreeData::MutationsSnapshotBase::addColumnsChangedOnFly(const Mutation
 
         if (is_applied)
             AlterConversions::addUpdatedColumns(command, result);
-        /// Metadata mutations are always applied on read, and the reader returns defaults for a dropped column.
+        /// Metadata mutations are always applied on read: the reader returns defaults for a dropped column
+        /// and reads a renamed one under its old name.
         else if (command.type == MutationCommand::DROP_COLUMN)
             result.insert(command.column_name);
+        else if (command.type == MutationCommand::RENAME_COLUMN)
+        {
+            result.insert(command.column_name);
+            result.insert(command.rename_to);
+        }
     }
 }
 
@@ -9910,11 +9916,41 @@ IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns, 
 NamesAndTypesList MergeTreeData::getColumnsStoredInAllParts(
     const NamesAndTypesList & columns, const RangesInDataParts & parts, const MutationsSnapshotPtr & mutations_snapshot, const ContextPtr & query_context)
 {
+    NameSet changed_on_fly;
+    if (mutations_snapshot)
+        changed_on_fly = mutations_snapshot->getColumnsChangedOnFly();
+
+    /// A pending mutation of a column or of its Nested parent can change what a part stores under its name.
+    auto is_changed = [&](const String & name_in_storage)
+    {
+        const auto dot = name_in_storage.find('.');
+        return changed_on_fly.contains(name_in_storage)
+            || (dot != String::npos && changed_on_fly.contains(name_in_storage.substr(0, dot)));
+    };
+
     /// Parts with the same columns share one interned set of column positions, so each set is checked once.
     std::unordered_set<const IMergeTreeDataPart::NameToNumber *> part_columns;
+    for (const auto & part : parts)
+        part_columns.insert(&part.data_part->getColumnPositions());
+
+    NamesAndTypesList result;
+    bool has_changed_columns = false;
+    for (const auto & column : columns)
+    {
+        const auto name_in_storage = column.getNameInStorage();
+        if (is_changed(name_in_storage))
+            has_changed_columns = true;
+        else if (std::ranges::all_of(part_columns, [&](const auto * positions) { return positions->contains(name_in_storage); }))
+            result.push_back(column);
+    }
+
+    if (!result.empty() || !has_changed_columns)
+        return result;
+
+    part_columns.clear();
     std::vector<std::pair<const IMergeTreeDataPart::NameToNumber *, AlterConversionsPtr>> converted_parts;
 
-    const bool has_metadata_mutations = mutations_snapshot && mutations_snapshot->hasMetadataMutations();
+    const bool has_metadata_mutations = mutations_snapshot->hasMetadataMutations();
     for (const auto & part : parts)
     {
         MutationCommands metadata_commands;
@@ -9950,24 +9986,13 @@ NamesAndTypesList MergeTreeData::getColumnsStoredInAllParts(
         });
     };
 
-    NameSet changed_on_fly;
-    if (mutations_snapshot)
-        changed_on_fly = mutations_snapshot->getColumnsChangedOnFly();
-
-    NamesAndTypesList result;
-    NamesAndTypesList updated;
     for (const auto & column : columns)
     {
         const auto name_in_storage = column.getNameInStorage();
-        if (!is_stored(name_in_storage))
-            continue;
-
-        if (changed_on_fly.contains(name_in_storage))
-            updated.push_back(column);
-        else
+        if (is_changed(name_in_storage) && is_stored(name_in_storage))
             result.push_back(column);
     }
-    return result.empty() ? updated : result;
+    return result;
 }
 
 void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
