@@ -246,6 +246,15 @@ bool hasCommands(const CommandSegments & segments)
     return std::ranges::any_of(segments, [](const auto & segment) { return std::holds_alternative<CommandsType>(segment); });
 }
 
+/// `MergeTree` executes a mutation in the background with the database of the table as the current one.
+ContextMutablePtr createMutationContext(const StoragePtr & table, const ContextPtr & context)
+{
+    auto mutation_context = Context::createCopy(context);
+    if (table->isMergeTree())
+        mutation_context->setCurrentDatabase(table->getStorageID().getDatabaseName());
+    return mutation_context;
+}
+
 CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context)
 {
     SegmentsHolder segments_holder;
@@ -284,7 +293,7 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
             if (mutation_command->type == MutationCommand::UPDATE || mutation_command->type == MutationCommand::DELETE)
             {
                 /// TODO: add a check for result query size.
-                auto rewritten_command_ast = replaceNonDeterministicToScalars(*command_ast, context);
+                auto rewritten_command_ast = replaceNonDeterministicToScalars(*command_ast, createMutationContext(table, context));
                 if (rewritten_command_ast)
                 {
                     auto * new_alter_command = rewritten_command_ast->as<ASTAlterCommand>();
@@ -525,11 +534,8 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 /// fails to analyze.
                 MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, *mutation_commands, context);
                 MutationsInterpreter::Settings mutation_settings(false);
-                auto validation_context = Context::createCopy(context);
+                auto validation_context = createMutationContext(table, context);
                 validation_context->setAnalyzingBackgroundExpressions(true);
-                /// `MergeTree` executes the mutation in the background with the database of the table as the current one.
-                if (table->isMergeTree())
-                    validation_context->setCurrentDatabase(table->getStorageID().getDatabaseName());
                 MutationsInterpreter(table, metadata_snapshot, *mutation_commands, validation_context, mutation_settings).validate();
                 context->onQueryExecutionStarted();
                 table->mutate(*mutation_commands, context);
