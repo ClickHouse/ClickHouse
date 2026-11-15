@@ -874,6 +874,11 @@ size_t trySortByPackedKey(
                 sorted_entries = columns.size();
                 break;
             }
+
+            /// Nor is a last column in the reverse order within each such group, as through the whole block.
+            if (total_bits > 0 && total_bits <= max_grouped_order_bits && (size_t(1) << total_bits) <= rows
+                && inSortOrderWithinPackedKeys(packed_columns, total_bits, *column.column, rows, !descending))
+                break;
         }
 
         const size_t bits_left = 64 - total_bits;

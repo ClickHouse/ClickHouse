@@ -41,6 +41,8 @@
     <query>SELECT toUInt8(number % 1000) AS k, number AS v FROM numbers_mt(10000000) ORDER BY k, v DESC LIMIT 10 BY k FORMAT Null</query>
     <!-- A middle column in the reverse order is left to the column sort. -->
     <query>SELECT toUInt8(number % 1000) AS k, number AS v, intHash64(number) AS w FROM numbers_mt(10000000) ORDER BY k, v DESC, w LIMIT 10 BY k SETTINGS optimize_redundant_functions_in_order_by = 0 FORMAT Null</query>
+    <!-- `v` increases within each `k`, not through the block: it is in the reverse order within each `k`. -->
+    <query>SELECT toUInt8(number % 1000) AS k, number + sipHash64(number) % 100 AS v FROM numbers_mt(10000000) ORDER BY k, v DESC LIMIT 10 BY k FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS packed_sort_src</drop_query>
     <drop_query>DROP TABLE IF EXISTS packed_sort_uuid</drop_query>
