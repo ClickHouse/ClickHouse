@@ -5,7 +5,10 @@
 #include <base/sort.h>
 
 #include <Core/Field.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -32,9 +35,11 @@
 
 #include <algorithm>
 #include <list>
+#include <numeric>
 #include <ranges>
 
 #include <boost/functional/hash.hpp>
+#include <boost/noncopyable.hpp>
 
 #include <fmt/ranges.h>
 
@@ -181,6 +186,40 @@ void checkPartRangeMatchesKeyOrder(
         range.end);
 }
 
+/// Accounts memory that the server already holds as memory usage of the query and of the user.
+class QueryMemoryCharge : private boost::noncopyable
+{
+public:
+    explicit QueryMemoryCharge(Int64 size_) : size(size_)
+    {
+        std::ignore = CurrentMemoryTracker::alloc(size);
+
+        /// The total memory usage has it twice now.
+        MemoryTrackerBlockerInThread only_total;
+        std::ignore = CurrentMemoryTracker::free(size);
+        CurrentThread::flushUntrackedMemory();
+    }
+
+    ~QueryMemoryCharge() { handOverCurrentQueryMemoryToServer(size); }
+
+private:
+    const Int64 size;
+};
+
+/// The parts with the index in the cache go first, because loading of the other indexes can evict it.
+VectorWithMemoryTracking<size_t> getOrderToLoadIndexes(const RangesInDataParts & parts)
+{
+    VectorWithMemoryTracking<size_t> order(parts.size());
+    std::iota(order.begin(), order.end(), 0);
+    std::ranges::stable_partition(order, [&](size_t part_index)
+    {
+        const auto & part = *parts[part_index].data_part;
+        auto cache = part.storage.getPrimaryIndexCache();
+        return cache && cache->contains(part.getIndexCacheKey());
+    });
+    return order;
+}
+
 /// Adaptor to access PK values from the index of one part.
 class PartIndexAccess
 {
@@ -218,6 +257,15 @@ public:
         size_t rows = 0;
         for (const auto & range : ranges)
             rows += get_rows(range);
+
+        /// A copy of almost all values saves nothing, while the index itself can be shared with other queries. Account it as a copy.
+        if (rows * 8 >= index_rows * 7 && max_columns >= index->size())
+        {
+            charge.emplace(PrimaryIndexWeightFunction{}(*index));
+            /// A small allocation does not check the limits on its own.
+            CurrentMemoryTracker::check();
+            return;
+        }
 
         has_all_values = rows >= index_rows;
         if (!has_all_values)
@@ -354,6 +402,7 @@ private:
     }
 
     IMergeTreeDataPart::IndexPtr index;
+    std::optional<QueryMemoryCharge> charge;
     bool is_copy = false;
     bool has_all_values = true;
     /// Sorted, if there are not all values.
@@ -393,8 +442,8 @@ public:
             checked_bytes = not_copied_bytes;
         };
 
-        indices.reserve(parts.size());
-        for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+        indices.resize(parts.size());
+        for (size_t part_index : getOrderToLoadIndexes(parts))
         {
             const auto & part = parts[part_index];
 
@@ -420,7 +469,7 @@ public:
             if (!index)
                 index = std::make_shared<PartIndexAccess>(*part.data_part);
 
-            indices.push_back(index);
+            indices[part_index] = index;
             if (index->isCopy() || !is_cache_used)
                 continue;
 
@@ -1287,8 +1336,9 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
     }
 
     size_t columns = std::numeric_limits<size_t>::max();
-    for (const auto & part : ranges_in_data_parts)
+    for (size_t part_index : getOrderToLoadIndexes(ranges_in_data_parts))
     {
+        const auto & part = ranges_in_data_parts[part_index];
         if (part.ranges.empty())
             continue;
 
@@ -1335,7 +1385,7 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
 
     /// Only the ranges selected by the primary key analysis are candidates, the other ranges are
     /// already rejected by the primary key and don't need to be checked again for intersection.
-    for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
+    for (size_t part_index : getOrderToLoadIndexes(ranges_in_data_parts))
     {
         if (!ranges_in_data_parts[part_index].ranges_snapshot_after_pk_analysis)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ranges selected by primary key for part {}",
