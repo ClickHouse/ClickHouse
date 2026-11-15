@@ -217,10 +217,8 @@ String IcebergPathResolver::storageIdentity(const IcebergPathFromMetadata & meta
         std::filesystem::path fs_path(path);
         if (blob_storage.type_name == "local")
         {
-            /// The file `LocalObjectStorage` opens for a relative path: from the working directory or from the key prefix.
-            if (fs_path.is_relative())
-                fs_path = std::filesystem::absolute(resolvePathRelativelyToBase(path, key_prefix));
-            fs_path = std::filesystem::weakly_canonical(fs_path);
+            /// The file `LocalObjectStorage` opens: the path `resolvePathRelativelyToBase` returns, with its symlinks followed.
+            fs_path = std::filesystem::weakly_canonical(std::filesystem::absolute(resolvePathRelativelyToBase(path, key_prefix)));
         }
         path = fs_path.lexically_normal().string();
         return String(trimTrailingSlashes(path));
