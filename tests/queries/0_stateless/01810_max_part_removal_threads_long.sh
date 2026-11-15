@@ -39,7 +39,7 @@ $CLICKHOUSE_CLIENT -m -q """
     select throwIf(not(length(thread_ids) between 1 and 129))
     from system.query_log
     where
-        event_date >= yesterday() and
+        event_date >= yesterday() AND event_time >= now() - 600 and
         current_database = currentDatabase() and
         query = 'drop table data_01810 settings log_queries=1;' and
         type = 'QueryFinish'
@@ -69,7 +69,7 @@ $CLICKHOUSE_CLIENT -m -q """
     select throwIf(not(length(thread_ids) between 1 and 129))
     from system.query_log
     where
-        event_date >= yesterday() and
+        event_date >= yesterday() AND event_time >= now() - 600 and
         current_database = currentDatabase() and
         query = 'drop table rep_data_01810 settings log_queries=1;' and
         type = 'QueryFinish'

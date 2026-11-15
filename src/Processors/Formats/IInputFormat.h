@@ -1,47 +1,147 @@
 #pragma once
 
 #include <Formats/ColumnMapping.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/InputFormatErrorsLogger.h>
-#include <Processors/SourceWithKeyCondition.h>
-#include <Storages/MergeTree/KeyCondition.h>
-#include <Core/BlockMissingValues.h>
+#include <Core/Field.h>
+#include <Core/Names.h>
+#include <Common/PODArray.h>
+#include <IO/WriteBuffer.h>
+#include <base/types.h>
+#include <Processors/ISource.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
 {
 
+class BlockMissingValues;
 struct SelectQueryInfo;
+class ColumnMapper;
+struct RelativePathWithMetadata;
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
+using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;
+using IColumnFilter = PaddedPODArray<UInt8>;
+
+/// Most (all?) file formats have a natural order of rows within the file.
+/// But our format readers and query pipeline may reorder or filter rows. This struct is used to
+/// propagate the original row numbers, e.g. for _row_number virtual column or for iceberg
+/// positional deletes.
+///
+/// Warning: we currently don't correctly update this info in most transforms. E.g. things like
+/// LimitTransform and SortingTransform logically should remove this ChunkInfo, but don't; we don't
+/// have a mechanism to systematically find all code sites that would need to do that or to detect
+/// if one was missed. (FilterTransform can optionally update it, but only when explicitly told to
+/// via `update_row_numbers_info`; by default it leaves it untouched like the others.)
+/// So this is only used in a few specific situations, and the builder of query pipeline must be
+/// careful to never put a step that uses this info after a step that breaks it.
+///
+/// If row numbers in a chunk are consecutive, this contains just the first row number.
+/// If row numbers are not consecutive as a result of filtering, this additionally contains the mask
+/// that was used for filtering, from which row numbers can be recovered.
+struct ChunkInfoRowNumbers : public ChunkInfo
+{
+    explicit ChunkInfoRowNumbers(size_t row_num_offset_, std::optional<IColumnFilter> applied_filter_ = std::nullopt);
+
+    Ptr clone() const override;
+
+    const size_t row_num_offset;
+    /// If nullopt, row numbers are consecutive.
+    /// If not empty, the number of '1' elements is equal to the number of rows in the chunk;
+    /// row i in the chunk has row number:
+    /// row_num_offset + {index of the i-th '1' element in applied_filter}.
+    std::optional<IColumnFilter> applied_filter;
+};
+
+/// Indices of row groups (or stripes) in a file.
+using RowGroupIndices = VectorWithMemoryTracking<size_t>;
+
+/// Structure for storing information about buckets that IInputFormat needs to read.
+struct FileBucketInfo
+{
+    FileBucketInfo() = default;
+    FileBucketInfo(const FileBucketInfo &) = default;
+    FileBucketInfo & operator=(const FileBucketInfo &) = default;
+
+    virtual void serialize(WriteBuffer & buffer, size_t protocol_version) const = 0;
+    virtual void deserialize(ReadBuffer & buffer, size_t protocol_version) = 0;
+    virtual String getIdentifier() const = 0;
+    virtual String getFormatName() const = 0;
+    virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const RowGroupIndices & matching_row_groups) const = 0;
+
+    virtual ~FileBucketInfo() = default;
+};
+using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
+
+/// Interface for splitting a file into buckets.
+struct IBucketSplitter
+{
+    /// Splits a file into buckets using the given read buffer and format settings.
+    /// Returns information about the resulting buckets (see the structure above for details).
+    virtual VectorWithMemoryTracking<FileBucketInfoPtr> splitToBuckets(
+        size_t bucket_size,
+        ReadBuffer & buf,
+        const RelativePathWithMetadata & object,
+        const FormatSettings & format_settings_,
+        const ContextPtr & context) = 0;
+
+    /// Splits a file into at most `max_buckets` buckets of similar size, to be read in parallel by
+    /// separate input formats within one query. Unlike `splitToBuckets`, the buckets may carry state
+    /// that is not serialized, e.g. the parsed file metadata, so that their readers don't have to
+    /// read it again. `object_with_metadata` identifies the version of the file for the format's
+    /// metadata cache, as in `FormatFactory::getInputWithMetadata`. Returns less than two buckets if
+    /// the file can't be split. The buckets are ordered from the largest.
+    virtual VectorWithMemoryTracking<FileBucketInfoPtr> splitForParallelReading(
+        size_t max_buckets,
+        ReadBuffer & buf,
+        const FormatSettings & format_settings_,
+        const std::optional<RelativePathWithMetadata> & object_with_metadata,
+        const ContextPtr & context) = 0;
+
+    virtual VectorWithMemoryTracking<FileBucketInfoPtr> splitByByteRanges(size_t /*bucket_size*/, size_t /*file_size*/, const VectorWithMemoryTracking<UInt64> & /*split_offsets*/)
+    {
+        return {};
+    }
+
+    virtual ~IBucketSplitter() = default;
+};
+using BucketSplitter = std::shared_ptr<IBucketSplitter>;
 
 /** Input format is a source, that reads data from ReadBuffer.
   */
-class IInputFormat : public SourceWithKeyCondition
+class IInputFormat : public ISource
 {
 protected:
 
+    /// Note: implementations should prefer to drain this ReadBuffer to the end if it's not seekable
+    /// (unless it would cause too much extra IO). That's because `in` may be reading HTTP POST data
+    /// from the socket, and if not all data is read then the connection can't be reused for later
+    /// HTTP requests (keepalive).
     ReadBuffer * in [[maybe_unused]] = nullptr;
 
 public:
     /// ReadBuffer can be nullptr for random-access formats.
-    IInputFormat(Block header, ReadBuffer * in_);
+    IInputFormat(SharedHeader header, ReadBuffer * in_);
 
     Chunk generate() override;
+
+    void onFinish() override;
 
     /// All data reading from the read buffer must be performed by this method.
     virtual Chunk read() = 0;
 
-    /** In some usecase (hello Kafka) we need to read a lot of tiny streams in exactly the same format.
-     * The recreating of parser for each small stream takes too long, so we introduce a method
-     * resetParser() which allow to reset the state of parser to continue reading of
-     * source stream without recreating that.
-     * That should be called after current buffer was fully read.
-     */
+    virtual void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read);
+    /// Prepares the format to read the next input. Called only for formats registered with
+    /// `supports_reset_parser` (see `FormatFactory::registerInputFormat`), which must reset every
+    /// per-input field; other formats are created anew for each input.
     virtual void resetParser();
+    bool supportsResetParser() const { return supports_reset_parser; }
+    void setSupportsResetParser(bool value) { supports_reset_parser = value; }
 
     virtual void setReadBuffer(ReadBuffer & in_);
-    virtual void resetReadBuffer() { in = nullptr; }
+    virtual void resetReadBuffer() { in = nullptr; resetOwnedBuffers(); }
 
     virtual const BlockMissingValues * getMissingValues() const { return nullptr; }
 
@@ -58,13 +158,39 @@ public:
     /// in custom serializations (e.g. Sparse) for parsing and avoid extra conversion.
     virtual void setSerializationHints(const SerializationInfoByName & /*hints*/) {}
 
-    void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }
+    /// `FormatFilterInfo::column_mapper`, for a format whose creator does not receive the `FormatFilterInfo`.
+    virtual void setColumnMapper(const ColumnMapperPtr & /*column_mapper*/) {}
+
+    /// Not by value: if the insertion throws, `buffer` must stay with the caller, since this format still reads it.
+    template <typename Buffer>
+    void addBuffer(std::unique_ptr<Buffer> && buffer) { owned_buffers.emplace_back(std::move(buffer)); }
 
     void setErrorsLogger(const InputFormatErrorsLoggerPtr & errors_logger_) { errors_logger = errors_logger_; }
 
     virtual size_t getApproxBytesReadForChunk() const { return 0; }
 
-    void needOnlyCount() { need_only_count = true; }
+    /// Query parameters make sense only for the Values format, where the data may contain expressions.
+    virtual void setQueryParameters(const NameToNameMap & /*parameters*/) {}
+
+    virtual void needOnlyCount() { need_only_count = true; }
+
+    virtual void prefetch() {}
+
+    virtual std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
+
+    /// TopN dynamic filtering with `FormatTopKFilterInfo::track_row_group_best_values`: for the buckets
+    /// which returned rows, the best value of the sort column among these rows, in the query's order.
+    /// A bucket whose best value is beyond the final threshold holds no row of the result.
+    virtual VectorWithMemoryTracking<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const { return {}; }
+    /// Whether the format has applied TopN dynamic filtering (`FormatFilterInfo::top_k_filter`) to the
+    /// rows it read. A format can decline it per file, e.g. when the file does not store the sort column.
+    virtual bool isTopKFilterApplied() const { return false; }
+    /// The format skipped row groups or pages of the file by a JOIN runtime filter (`FormatFilterInfo::join_runtime_filter_predicate`).
+    virtual bool isJoinRuntimeFilterApplied() const { return false; }
+    /// Whether the rows returned for this file were built from statistics (`FormatFilterInfo::min_max_from_statistics`).
+    virtual bool isMinMaxFromStatisticsApplied() const { return false; }
+    /// Called after the file was read, if its version provably did not change during the read.
+    virtual void cacheFilterColumnStatistics() {}
 
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }
@@ -78,7 +204,11 @@ protected:
     bool need_only_count = false;
 
 private:
-    std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
+    void resetOwnedBuffers();
+
+    VectorWithMemoryTracking<std::unique_ptr<ReadBuffer>> owned_buffers;
+
+    bool supports_reset_parser = false;
 };
 
 using InputFormatPtr = std::shared_ptr<IInputFormat>;

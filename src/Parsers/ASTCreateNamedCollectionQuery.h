@@ -14,6 +14,7 @@ public:
     std::string collection_name;
     SettingsChanges changes;
     bool if_not_exists = false;
+    bool or_replace = false;
     std::unordered_map<String, bool> overridability;
 
     String getID(char) const override { return "CreateNamedCollectionQuery"; }
@@ -26,10 +27,12 @@ public:
 
     std::string getCollectionName() const;
 
+    bool hasSecretParts() const override { return true; }
+
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };
 
-using ASTCreateNamedCollectionQueryPtr = std::shared_ptr<ASTCreateNamedCollectionQuery>;
+using ASTCreateNamedCollectionQueryPtr = boost::intrusive_ptr<ASTCreateNamedCollectionQuery>;
 
 }

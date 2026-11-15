@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#Tags: no-flaky-check
+# Tags: no-random-settings
 
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

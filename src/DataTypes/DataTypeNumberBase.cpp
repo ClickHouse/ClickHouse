@@ -18,6 +18,12 @@ MutableColumnPtr DataTypeNumberBase<T>::createColumn() const
 }
 
 template <typename T>
+MutableColumnPtr DataTypeNumberBase<T>::createUninitializedColumnWithSize(size_t size) const
+{
+    return ColumnVector<T>::create(size);
+}
+
+template <typename T>
 bool DataTypeNumberBase<T>::isValueRepresentedByInteger() const
 {
     return is_integer<T>;

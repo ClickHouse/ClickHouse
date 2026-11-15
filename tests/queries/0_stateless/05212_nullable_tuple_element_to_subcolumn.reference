@@ -1,0 +1,47 @@
+0	10	s	lc	lcn	50	60
+1	\N	\N	\N	\N	\N	\N
+2	12	\N	lc	\N	52	62
+0	10	s	lc	lcn	50	60
+1	\N	\N	\N	\N	\N	\N
+2	12	\N	lc	\N	52	62
+Nullable(UInt64)	Nullable(String)	LowCardinality(Nullable(String))	LowCardinality(Nullable(String))	Variant(String, UInt64)	Dynamic
+6
+10	10	10	10
+\N	\N	\N	\N
+12	12	12	12
+3
+99
+99
+99
+0
+2	(12,NULL,'lc',NULL,52,62)
+1
+0	\N
+1	10
+2	\N
+0	\N
+1	10
+2	\N
+0	10	s	lc	lcn	50	60
+1	\N	\N	\N	\N	\N	\N
+2	12	\N	lc	\N	52	62
+0	10	s	lc	lcn	50	60
+1	\N	\N	\N	\N	\N	\N
+2	12	\N	lc	\N	52	62
+0	[20]	{'k':30}
+1	[]	{}
+2	[22]	{'k':32}
+0	[20]	{'k':30}
+1	[]	{}
+2	[22]	{'k':32}
+0
+1
+1
+0	value
+1	\N
+10	30
+\N	\N
+0
+1
+2
+0

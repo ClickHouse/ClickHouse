@@ -11,10 +11,10 @@ namespace DB
  *     ...
  * ]
  */
-class JSONCompactColumnsBlockOutputFormat : public JSONColumnsBlockOutputFormatBase
+class JSONCompactColumnsBlockOutputFormat final : public JSONColumnsBlockOutputFormatBase
 {
 public:
-    JSONCompactColumnsBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
+    JSONCompactColumnsBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "JSONCompactColumnsBlockOutputFormat"; }
 

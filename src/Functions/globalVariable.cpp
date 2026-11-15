@@ -7,7 +7,8 @@
 #include <Columns/ColumnConst.h>
 #include <Core/Field.h>
 
-#include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+
 #include <Poco/String.h>
 
 
@@ -26,7 +27,7 @@ namespace
   *
   * Currently it's a stub, no variables are implemented. Feel free to add more variables.
   */
-class FunctionGlobalVariable : public IFunction
+class FunctionGlobalVariable final : public IFunction
 {
 public:
     static constexpr auto name = "globalVariable";
@@ -46,6 +47,13 @@ public:
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// Documentation-only — the result type is looked up from the
+    /// per-variable map, so it varies with the const-string argument.
+    String getSignatureString() const override
+    {
+        return "(const String) -> Any";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -76,7 +84,7 @@ private:
         DataTypePtr type;
         Field value;
     };
-    std::unordered_map<String, TypeAndValue> global_variable_map =
+    UnorderedMapWithMemoryTracking<String, TypeAndValue> global_variable_map =
     {
         {"max_allowed_packet", {std::make_shared<DataTypeInt32>(), 67108864}},
         {"version", {std::make_shared<DataTypeString>(), "5.7.30"}},
@@ -91,7 +99,22 @@ private:
 
 REGISTER_FUNCTION(GlobalVariable)
 {
-    factory.registerFunction<FunctionGlobalVariable>();
+    FunctionDocumentation::Description description = R"(
+Takes a constant string argument and returns the value of the global variable with that name. This function is intended for compatibility with MySQL and not needed or useful for normal operation of ClickHouse. Only few dummy global variables are defined.
+    )";
+    FunctionDocumentation::Syntax syntax = "globalVariable(name)";
+    FunctionDocumentation::Arguments arguments = {
+        {"name", "Global variable name.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the value of variable `name`.", {"Any"}};
+    FunctionDocumentation::Examples examples = {
+        {"globalVariable", "SELECT globalVariable('max_allowed_packet')", "67108864"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionGlobalVariable>(documentation);
 }
 
 }

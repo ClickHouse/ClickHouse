@@ -1,4 +1,5 @@
-#include "StorageSystemNamedCollections.h"
+#include <Storages/System/StorageSystemNamedCollections.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <base/EnumReflection.h>
 #include <Columns/ColumnArray.h>
@@ -7,10 +8,13 @@
 #include <DataTypes/DataTypeMap.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnMap.h>
+#include <Common/HiddenSecret.h>
+#include <Common/NamedCollections/NamedCollectionsBackup.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 
 
@@ -53,7 +57,8 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
         auto & tuple_column = column_map->getNestedData();
         auto & key_column = tuple_column.getColumn(0);
         auto & value_column = tuple_column.getColumn(1);
-        bool access_secrets = access->isGranted(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS);
+        const bool access_secrets
+            = access->isGranted(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS) && canDisplaySecrets(context);
 
         size_t size = 0;
         for (const auto & key : collection->getKeys())
@@ -62,7 +67,7 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
             if (access_secrets)
                 value_column.insert(collection->get<String>(key));
             else
-                value_column.insert("[HIDDEN]");
+                value_column.insert(String(HIDDEN_SECRET));
             size++;
         }
 
@@ -73,4 +78,22 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
     }
 }
 
+void StorageSystemNamedCollections::backupData(
+    BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
+{
+    backupNamedCollections(backup_entries_collector, data_path_in_backup);
 }
+
+void StorageSystemNamedCollections::restoreDataFromBackup(
+    RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
+{
+    /// Normally RESTORE does not come here: the named collections are restored before any database
+    /// or table is created (see RestorerFromBackup::restoreNamedCollections), because database and
+    /// table engines resolve them inside CREATE.
+    restoreNamedCollections(restorer, data_path_in_backup);
+}
+
+}
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemNamedCollections) }

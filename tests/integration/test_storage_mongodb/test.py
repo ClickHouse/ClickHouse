@@ -7,9 +7,11 @@ import bson
 import pymongo
 import pytest
 
+from helpers.database_disk import replace_text_in_metadata
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import mongo_pass
+from helpers.test_tools import wait_condition
 
 
 @pytest.fixture(scope="module")
@@ -21,6 +23,7 @@ def started_cluster(request):
             main_configs=["configs/named_collections.xml"],
             user_configs=["configs/users.xml"],
             with_mongo=True,
+            stay_alive=True,
         )
         cluster.start()
         yield cluster
@@ -43,11 +46,17 @@ def get_mongo_connection(started_cluster, secure=False, with_credentials=True):
     )
 
 
+def drop_mongo_collection_if_exists(db, collection_name):
+    if collection_name in db.list_collection_names():
+        db[collection_name].drop()
+
+
 def test_simple_select(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "simple_table")
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -56,18 +65,38 @@ def test_simple_select(started_cluster):
 
     node = started_cluster.instances["node"]
     node.query(
-        f"CREATE OR REPLACE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'root', '{mongo_pass}')"
+        f"CREATE OR REPLACE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1', 'test', 'simple_table', 'root', '{mongo_pass}')"
     )
 
     assert node.query("SELECT COUNT() FROM simple_mongo_table") == "100\n"
     assert (
         node.query("SELECT sum(key) FROM simple_mongo_table")
-        == str(sum(range(0, 100))) + "\n"
+        == f"{str(99 * 100 // 2)}\n"
     )
     assert (
         node.query("SELECT data from simple_mongo_table where key = 42")
-        == hex(42 * 42) + "\n"
+        == f"{hex(42 * 42)}\n"
     )
+
+    system_warnings_query = "SELECT count() >= 1 FROM system.warnings WHERE message LIKE '%MongoDB%path%ignored%'"
+
+    # Need to restart to clear system.warning from previous run in flaky check
+    # FIXME: we can do `TRUNCATE` after https://github.com/ClickHouse/ClickHouse/pull/82087
+    node.restart_clickhouse()
+
+    assert node.query(system_warnings_query) == "0\n"
+
+    metadata_path = node.query(
+        "SELECT metadata_path FROM system.tables WHERE database='default' AND table='simple_mongo_table'"
+    ).strip()
+    node.stop_clickhouse()
+    replace_text_in_metadata(
+        node, metadata_path, "mongo1", "mongo1/ignored/path"
+    )
+
+    node.start_clickhouse()
+    assert node.query("SELECT COUNT() FROM simple_mongo_table") == "100\n"
+    assert node.query(system_warnings_query) == "1\n"
 
     node.query("DROP TABLE simple_mongo_table")
     simple_mongo_table.drop()
@@ -78,6 +107,7 @@ def test_simple_select_uri(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "simple_table_uri")
     simple_mongo_table = db["simple_table_uri"]
     data = []
     for i in range(0, 100):
@@ -108,6 +138,9 @@ def test_simple_select_from_view(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "simple_table")
+    drop_mongo_collection_if_exists(db, "simple_table_view")
+
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -142,6 +175,8 @@ def test_arrays(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "arrays_table")
+
     arrays_mongo_table = db["arrays_table"]
     data = []
     for i in range(0, 100):
@@ -255,51 +290,51 @@ def test_arrays(started_cluster):
         )
 
     assert (
-        node.query(f"SELECT arr_date FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_date FROM arrays_mongo_table WHERE key = 42")
         == "['2002-10-27','2024-01-08']\n"
     )
     assert (
-        node.query(f"SELECT arr_date32 FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_date32 FROM arrays_mongo_table WHERE key = 42")
         == "['2002-10-27','2024-01-08']\n"
     )
     assert (
-        node.query(f"SELECT arr_datetime FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_datetime FROM arrays_mongo_table WHERE key = 42")
         == "['2023-03-31 06:03:12','1999-02-28 12:46:34']\n"
     )
     assert (
-        node.query(f"SELECT arr_datetime64 FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_datetime64 FROM arrays_mongo_table WHERE key = 42")
         == "['2023-03-31 06:03:12.000','1999-02-28 12:46:34.000']\n"
     )
     assert (
-        node.query(f"SELECT arr_string FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_string FROM arrays_mongo_table WHERE key = 42")
         == "['43','44','45']\n"
     )
     assert (
-        node.query(f"SELECT arr_uuid FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_uuid FROM arrays_mongo_table WHERE key = 42")
         == "['f0e77736-91d1-48ce-8f01-15123ca1c7ed','93376a07-c044-4281-a76e-ad27cf6973c5']\n"
     )
     assert (
-        node.query(f"SELECT arr_arr_bool FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_arr_bool FROM arrays_mongo_table WHERE key = 42")
         == "[[true,false,true],[true],[false],[false]]\n"
     )
     assert (
         node.query(
-            f"SELECT arr_arr_bool_nullable FROM arrays_mongo_table WHERE key = 42"
+            "SELECT arr_arr_bool_nullable FROM arrays_mongo_table WHERE key = 42"
         )
         == "[[true,false,true],[true,NULL],[NULL],[false]]\n"
     )
     assert (
-        node.query(f"SELECT arr_empty FROM arrays_mongo_table WHERE key = 42") == "[]\n"
+        node.query("SELECT arr_empty FROM arrays_mongo_table WHERE key = 42") == "[]\n"
     )
     assert (
-        node.query(f"SELECT arr_null FROM arrays_mongo_table WHERE key = 42") == "[]\n"
+        node.query("SELECT arr_null FROM arrays_mongo_table WHERE key = 42") == "[]\n"
     )
     assert (
-        node.query(f"SELECT arr_arr_null FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_arr_null FROM arrays_mongo_table WHERE key = 42")
         == "[]\n"
     )
     assert (
-        node.query(f"SELECT arr_nullable FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_nullable FROM arrays_mongo_table WHERE key = 42")
         == "[]\n"
     )
 
@@ -312,6 +347,7 @@ def test_complex_data_type(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "complex_table")
     incomplete_mongo_table = db["complex_table"]
     data = []
     for i in range(0, 100):
@@ -342,6 +378,7 @@ def test_secure_connection(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "simple_table")
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -371,6 +408,7 @@ def test_secure_connection_with_validation(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "simple_table")
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -392,6 +430,7 @@ def test_secure_connection_with_validation(started_cluster):
 def test_secure_connection_uri(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, secure=True)
     db = mongo_connection["test"]
+    drop_mongo_collection_if_exists(db, "test_secure_connection_uri")
     simple_mongo_table = db["test_secure_connection_uri"]
     data = []
     for i in range(0, 100):
@@ -419,6 +458,7 @@ def test_secure_connection_uri(started_cluster):
 def test_secure_connection_uri_with_validation(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, secure=True)
     db = mongo_connection["test"]
+    drop_mongo_collection_if_exists(db, "test_secure_connection_uri")
     simple_mongo_table = db["test_secure_connection_uri"]
     data = []
     for i in range(0, 100):
@@ -443,6 +483,7 @@ def test_predefined_connection_configuration(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "simple_table")
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -465,6 +506,7 @@ def test_predefined_connection_configuration_uri(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "simple_table_uri")
     simple_mongo_table = db["simple_table_uri"]
     data = []
     for i in range(0, 100):
@@ -485,6 +527,7 @@ def test_predefined_connection_configuration_uri(started_cluster):
 def test_no_credentials(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, with_credentials=False)
     db = mongo_connection["test"]
+    drop_mongo_collection_if_exists(db, "simple_table")
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -505,6 +548,7 @@ def test_no_credentials(started_cluster):
 def test_no_credentials_uri(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, with_credentials=False)
     db = mongo_connection["test"]
+    drop_mongo_collection_if_exists(db, "simple_table_uri")
     simple_mongo_table = db["simple_table_uri"]
     data = []
     for i in range(0, 100):
@@ -532,12 +576,14 @@ def test_auth_source(started_cluster):
         pwd=mongo_pass,
         roles=[{"role": "userAdminAnyDatabase", "db": "admin"}, "readWriteAnyDatabase"],
     )
+    drop_mongo_collection_if_exists(admin_db, "simple_table")
     simple_mongo_table = admin_db["simple_table"]
     data = []
     for i in range(0, 50):
         data.append({"key": i, "data": hex(i * i)})
     simple_mongo_table.insert_many(data)
     db = mongo_connection["test"]
+    drop_mongo_collection_if_exists(db, "simple_table")
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -566,6 +612,7 @@ def test_missing_columns(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "simple_table")
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 10):
@@ -602,6 +649,7 @@ def test_string_casting(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "strings_table")
     string_mongo_table = db["strings_table"]
     data = {
         "k_boolT": True,
@@ -682,6 +730,7 @@ def test_dates_casting(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "dates_table")
     dates_mongo_table = db["dates_table"]
     data = {
         "k_dateTime": datetime.datetime(1999, 2, 28, 11, 23, 16),
@@ -707,6 +756,88 @@ def test_dates_casting(started_cluster):
         == "1999-02-28 11:23:16\t1999-02-28 11:23:16.000\t1999-02-28\t1999-02-28\n"
     )
 
+    # An `IN` list is pushed down as `$in`; the list's type has to reach each element.
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime IN (toDateTime64('1999-02-28 11:23:16', 3))"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime NOT IN (toDateTime64('1999-02-28 11:23:16', 3))"
+        )
+        == "0\n"
+    )
+    # A list is converted element by element.
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime IN (toDateTime64('1999-02-28 11:23:16', 3), toDateTime64('2000-01-01 00:00:00', 3))"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_date NOT IN (toDateTime('1999-02-28 00:00:00'), toDateTime('2000-01-01 00:00:00'))"
+        )
+        == "0\n"
+    )
+    # A sub-second bound is not pushed down truncated: the query is refused like any other predicate MongoDB
+    # cannot take, and evaluated in ClickHouse when allowed to.
+    assert "NOT_IMPLEMENTED" in node.query_and_get_error(
+        "SELECT COUNT() FROM dates_table WHERE k_dateTime >= toDateTime64('1999-02-28 11:23:16.5', 3)"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime >= toDateTime64('1999-02-28 11:23:16.5', 3) SETTINGS mongodb_throw_on_unsupported_query = 0"
+        )
+        == "0\n"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_date32 < toDateTime('1999-02-28 12:00:00') SETTINGS mongodb_throw_on_unsupported_query = 0"
+        )
+        == "1\n"
+    )
+
+    # A member converts as `IN` converts it, and a sub-second member matches nothing. MongoDB compares the
+    # stored value, so a `Date` member with a time of day is refused, and a midnight one matches the
+    # document stored at midnight.
+    dates_mongo_table.insert_one({k: datetime.datetime(2000, 1, 1) for k in data})
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_date IN (toDateTime('2000-01-01 00:00:00'))"
+        )
+        == "1\n"
+    )
+    assert "NOT_IMPLEMENTED" in node.query_and_get_error(
+        "SELECT COUNT() FROM dates_table WHERE k_date IN (toDateTime('2000-01-01 12:00:00'))"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_date IN (toDateTime('2000-01-01 12:00:00')) SETTINGS mongodb_throw_on_unsupported_query = 0"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_date NOT IN (toDateTime('2000-01-01 12:00:00'))"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime IN (toDateTime64('1999-02-28 11:23:16.5', 3))"
+        )
+        == "0\n"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime NOT IN (toDateTime64('1999-02-28 11:23:16.5', 3))"
+        )
+        == "2\n"
+    )
+
     node.query("DROP TABLE dates_table")
     dates_mongo_table.drop()
 
@@ -716,6 +847,7 @@ def test_order_by(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "sort_table")
     sort_mongo_table = db["sort_table"]
     data = []
     for i in range(1, 31):
@@ -765,6 +897,7 @@ def test_where(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "where_table")
     where_mongo_table = db["where_table"]
     data = []
     for i in range(1, 3):
@@ -778,6 +911,7 @@ def test_where(started_cluster):
                     "keyDateTime": datetime.datetime(1999, d, i, 11, 23, 16),
                     "keyDate": datetime.datetime(1999, d, i, 11, 23, 16),
                     "keyNull": None,
+                    "keyBool": d == 1,
                     "keyUuid": bson.Binary(
                         uuid.UUID("8d9c5028-3371-4941-943f-84a0c90c5149").bytes,
                         subtype=4,
@@ -797,6 +931,7 @@ def test_where(started_cluster):
              keyDate      Date,
              keyNull      Nullable(UInt8),
              keyNotExists Nullable(Int),
+             keyBool      Nullable(Bool),
              keyUuid      UUID
         ) ENGINE = MongoDB('mongo1:27017', 'test', 'where_table', 'root', '{mongo_pass}')"""
     )
@@ -822,6 +957,7 @@ def test_where(started_cluster):
     assert node.query("SELECT id FROM where_table WHERE id IN ['11']") == "11\n"
     assert node.query("SELECT id FROM where_table WHERE id IN ('11', 100)") == "11\n"
     assert node.query("SELECT id FROM where_table WHERE id IN ('11', '22') ORDER BY keyFloat") == "11\n22\n"
+    assert node.query("SELECT id FROM where_table WHERE keyInt IN (1.0, 2.0) ORDER BY id") == "11\n12\n21\n22\n"
     assert node.query("SELECT id FROM where_table WHERE id IN ['11', '22'] ORDER BY keyFloat") == "11\n22\n"
 
     assert node.query("SELECT id FROM where_table WHERE id NOT IN ('11') ORDER BY keyFloat") == "12\n21\n22\n"
@@ -830,8 +966,7 @@ def test_where(started_cluster):
     assert node.query("SELECT id FROM where_table WHERE id NOT IN ('11') AND id IN ('12')") == "12\n"
     assert node.query("SELECT id FROM where_table WHERE id NOT IN ['11'] AND id IN ('12')") == "12\n"
 
-    with pytest.raises(QueryRuntimeException):
-        assert node.query("SELECT id FROM where_table WHERE id NOT IN ['11', 100] ORDER BY keyFloat") == "12\n21\n22\n"
+    assert node.query("SELECT id FROM where_table WHERE id NOT IN ['11', 100] ORDER BY keyFloat") == "12\n21\n22\n"
 
     assert node.query("SELECT id FROM where_table WHERE keyDateTime > now()") == ""
     assert (
@@ -854,6 +989,8 @@ def test_where(started_cluster):
     assert node.query("SELECT count() FROM where_table WHERE isNull(keyNotExists)") == "4\n"
     assert node.query("SELECT count() FROM where_table WHERE keyNotExists = 0") == "0\n"
     assert node.query("SELECT count() FROM where_table WHERE keyNotExists != 0") == "0\n"
+    assert node.query("SELECT count() FROM where_table WHERE keyBool = true") == "2\n"
+    assert node.query("SELECT count() FROM where_table WHERE keyBool IN (false)") == "2\n"
 
     with pytest.raises(QueryRuntimeException):
         node.query("SELECT * FROM where_table WHERE keyInt = keyFloat")
@@ -869,6 +1006,7 @@ def test_defaults(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "defaults_table")
     defaults_mongo_table = db["defaults_table"]
     defaults_mongo_table.insert_one({"key": "key"})
 
@@ -922,6 +1060,7 @@ def test_nulls(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "nulls_table")
     nulls_mongo_table = db["nulls_table"]
     nulls_mongo_table.insert_one({"key": "key"})
 
@@ -951,6 +1090,8 @@ def test_nulls(started_cluster):
     )
 
     assert node.query("SELECT COUNT() FROM nulls_table") == "1\n"
+    # A date-family constant is pushed down against a `Nullable` column as against a plain one.
+    assert node.query("SELECT COUNT() FROM nulls_table WHERE k_datetime = toDate('2024-01-02')") == "0\n"
 
     assert (
         node.query(
@@ -974,6 +1115,7 @@ def test_oid(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "oid_table")
     oid_mongo_table = db["oid_table"]
     inserted_result = oid_mongo_table.insert_many(
         [
@@ -994,7 +1136,7 @@ def test_oid(started_cluster):
         """
     )
 
-    assert node.query(f"SELECT COUNT() FROM oid_table") == "3\n"
+    assert node.query("SELECT COUNT() FROM oid_table") == "3\n"
 
     assert node.query(f"SELECT _id FROM oid_table WHERE _id = '{str(ids[0])}'") == f"{str(ids[0])}\n"
     assert node.query(f"SELECT key FROM oid_table WHERE _id = '{str(ids[0])}'") == "oid1\n"
@@ -1004,21 +1146,21 @@ def test_oid(started_cluster):
     assert node.query(f"SELECT key FROM oid_table WHERE _id not in ['{ids[0]}', '{ids[1]}'] ORDER BY key") == "oid3\n"
 
     with pytest.raises(QueryRuntimeException):
-        node.query(f"SELECT * FROM oid_table WHERE _id = 'not-oid'")
+        node.query("SELECT * FROM oid_table WHERE _id = 'not-oid'")
     with pytest.raises(QueryRuntimeException):
-        node.query(f"SELECT * FROM oid_table WHERE _id != 'not-oid'")
+        node.query("SELECT * FROM oid_table WHERE _id != 'not-oid'")
     with pytest.raises(QueryRuntimeException):
-        node.query(f"SELECT * FROM oid_table WHERE _id = 1234567")
+        node.query("SELECT * FROM oid_table WHERE _id = 1234567")
     with pytest.raises(QueryRuntimeException):
-        node.query(f"SELECT * FROM oid_table WHERE _id != 1234567")
+        node.query("SELECT * FROM oid_table WHERE _id != 1234567")
     with pytest.raises(QueryRuntimeException):
         node.query(f"SELECT key FROM oid_table WHERE _id in ['{ids[0]}', 'not-oid']")
     with pytest.raises(QueryRuntimeException):
         node.query(f"SELECT key FROM oid_table WHERE _id not in ['{ids[0]}', 'not-oid']")
     with pytest.raises(QueryRuntimeException):
-        node.query(f"SELECT key FROM oid_table WHERE _id in ['nope', 'not-oid']")
+        node.query("SELECT key FROM oid_table WHERE _id in ['nope', 'not-oid']")
     with pytest.raises(QueryRuntimeException):
-        node.query(f"SELECT key FROM oid_table WHERE _id not in ['nope', 'not-oid']")
+        node.query("SELECT key FROM oid_table WHERE _id not in ['nope', 'not-oid']")
 
     node.query(
         """
@@ -1029,7 +1171,7 @@ def test_oid(started_cluster):
         """
     )
     with pytest.raises(QueryRuntimeException):
-        node.query(f"SELECT * FROM oid_table WHERE key = 'not-oid'")
+        node.query("SELECT * FROM oid_table WHERE key = 'not-oid'")
 
     node.query(
         """
@@ -1040,7 +1182,7 @@ def test_oid(started_cluster):
         """
     )
     with pytest.raises(QueryRuntimeException):
-        node.query(f"SELECT * FROM oid_table WHERE key = 'not-oid'")
+        node.query("SELECT * FROM oid_table WHERE key = 'not-oid'")
 
     node.query("DROP TABLE oid_table")
     oid_mongo_table.drop()
@@ -1051,6 +1193,7 @@ def test_uuid(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "uuid_table")
     uuid_mongo_table = db["uuid_table"]
     uuid_mongo_table.insert_many(
         [
@@ -1080,7 +1223,7 @@ def test_uuid(started_cluster):
         """
     )
 
-    assert node.query(f"SELECT kUUID FROM uuid_table WHERE isValid = 2") == "f0e77736-91d1-48ce-8f01-15123ca1c7ed\n"
+    assert node.query("SELECT kUUID FROM uuid_table WHERE isValid = 2") == "f0e77736-91d1-48ce-8f01-15123ca1c7ed\n"
 
     with pytest.raises(QueryRuntimeException):
         node.query("SELECT * FROM uuid_table WHERE isValid = 0")
@@ -1098,6 +1241,7 @@ def test_no_fail_on_unsupported_clauses(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "unsupported_clauses")
     unsupported_clauses_table = db["unsupported_clauses"]
 
     node = started_cluster.instances["node"]
@@ -1111,16 +1255,16 @@ def test_no_fail_on_unsupported_clauses(started_cluster):
     )
 
     node.query(
-        f"SELECT * FROM unsupported_clauses WHERE a > rand() SETTINGS mongodb_throw_on_unsupported_query = 0"
+        "SELECT * FROM unsupported_clauses WHERE a > rand() SETTINGS mongodb_throw_on_unsupported_query = 0"
     )
     node.query(
-        f"SELECT * FROM unsupported_clauses WHERE a / 1000 > 0 SETTINGS mongodb_throw_on_unsupported_query = 0"
+        "SELECT * FROM unsupported_clauses WHERE a / 1000 > 0 SETTINGS mongodb_throw_on_unsupported_query = 0"
     )
     node.query(
-        f"SELECT * FROM unsupported_clauses WHERE toFloat64(a) < 6.66 > rand() SETTINGS mongodb_throw_on_unsupported_query = 0"
+        "SELECT * FROM unsupported_clauses WHERE toFloat64(a) < 6.66 > rand() SETTINGS mongodb_throw_on_unsupported_query = 0"
     )
     node.query(
-        f"SELECT * FROM unsupported_clauses ORDER BY a, b LIMIT 2 BY a SETTINGS mongodb_throw_on_unsupported_query = 0"
+        "SELECT * FROM unsupported_clauses ORDER BY a, b LIMIT 2 BY a SETTINGS mongodb_throw_on_unsupported_query = 0"
     )
 
     node.query("DROP TABLE unsupported_clauses")
@@ -1235,6 +1379,7 @@ def test_json_serialization(started_cluster):
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "json_serialization_table")
     json_serialization_table = db["json_serialization_table"]
 
     date = datetime.datetime.strptime("2025-05-17 13:14:15", "%Y-%m-%d %H:%M:%S")
@@ -1266,9 +1411,234 @@ def test_json_serialization(started_cluster):
         """
     )
 
-    assert node.query(f"SELECT COUNT() FROM json_serialization_table") == "1\n"
-    assert (node.query(f"SELECT dataset FROM json_serialization_table")[:-1]
+    assert node.query("SELECT COUNT() FROM json_serialization_table") == "1\n"
+    assert (node.query("SELECT dataset FROM json_serialization_table")[:-1]
             == json.dumps(create_dataset(False, 10), separators=(',', ':')))
 
     node.query("DROP TABLE json_serialization_table")
     json_serialization_table.drop()
+
+
+def test_numbers_parsing(started_cluster):
+    cases = [
+        {"type": "Int16", "value": "32767", "ok": True},
+        {"type": "Int16", "value": "-32768", "ok": True},
+        {"type": "Int16", "value": "32767.0", "ok": False},
+        {"type": "Int16", "value": "-32768.0", "ok": False},
+        {"type": "Int16", "value": "12.5", "ok": False},
+        {"type": "Int16", "value": "-0.1", "ok": False},
+        {"type": "Int16", "value": "abc", "ok": False},
+
+        {"type": "UInt16", "value": "65535", "ok": True},
+        {"type": "UInt16", "value": "0", "ok": True},
+        {"type": "UInt16", "value": "65535.0", "ok": False},
+        {"type": "UInt16", "value": "0.0", "ok": False},
+        {"type": "UInt16", "value": "12.34", "ok": False},
+        {"type": "UInt16", "value": "-1.0", "ok": False},
+        {"type": "UInt16", "value": "-32768", "ok": False},
+
+        {"type": "Int32", "value": "2147483647", "ok": True},
+        {"type": "Int32", "value": "-2147483648", "ok": True},
+        {"type": "Int32", "value": "2147483647.0", "ok": False},
+        {"type": "Int32", "value": "-2147483648.0", "ok": False},
+        {"type": "Int32", "value": "12.5", "ok": False},
+        {"type": "Int32", "value": "-0.1", "ok": False},
+        {"type": "Int32", "value": "abc", "ok": False},
+
+        {"type": "UInt32", "value": "4294967295", "ok": True},
+        {"type": "UInt32", "value": "0", "ok": True},
+        {"type": "UInt32", "value": "4294967295.0", "ok": False},
+        {"type": "UInt32", "value": "0.0", "ok": False},
+        {"type": "UInt32", "value": "12.34", "ok": False},
+        {"type": "UInt32", "value": "-1.0", "ok": False},
+        {"type": "UInt32", "value": "-2147483648", "ok": False},
+
+        {"type": "Int64", "value": "9223372036854775807", "ok": True},
+        {"type": "Int64", "value": "-9223372036854775808", "ok": True},
+        {"type": "Int64", "value": "9223372036854775807.0", "ok": False},
+        {"type": "Int64", "value": "-9223372036854775808.0", "ok": False},
+        {"type": "Int64", "value": "12.5", "ok": False},
+        {"type": "Int64", "value": "-0.1", "ok": False},
+        {"type": "Int64", "value": "abc", "ok": False},
+
+        {"type": "UInt64", "value": "18446744073709551615", "ok": True},
+        {"type": "UInt64", "value": "0", "ok": True},
+        {"type": "UInt64", "value": "18446744073709551615.0", "ok": False},
+        {"type": "UInt64", "value": "0.0", "ok": False},
+        {"type": "UInt64", "value": "12.34", "ok": False},
+        {"type": "UInt64", "value": "-1.0", "ok": False},
+        {"type": "UInt64", "value": "-9223372036854775808", "ok": False},
+
+        {"type": "Int128", "value": "170141183460469231731687303715884105727",  "ok": True},
+        {"type": "Int128", "value": "-170141183460469231731687303715884105728", "ok": True},
+        {"type": "Int128", "value": "170141183460469231731687303715884105727.0", "ok": False},
+        {"type": "Int128", "value": "-170141183460469231731687303715884105728.0", "ok": False},
+        {"type": "Int128", "value": "12.5", "ok": False},
+        {"type": "Int128", "value": "-0.1", "ok": False},
+        {"type": "Int128", "value": "abc", "ok": False},
+
+        {"type": "UInt128", "value": "340282366920938463463374607431768211455", "ok": True},
+        {"type": "UInt128", "value": "0", "ok": True},
+        {"type": "UInt128", "value": "340282366920938463463374607431768211455.0", "ok": False},
+        {"type": "UInt128", "value": "0.0", "ok": False},
+        {"type": "UInt128", "value": "12.34", "ok": False},
+        {"type": "UInt128", "value": "-1.0", "ok": False},
+        {"type": "UInt128", "value": "-170141183460469231731687303715884105728", "ok": False},
+
+        {"type": "Int256", "value": "57896044618658097711785492504343953926634992332820282019728792003956564819967", "ok": True},
+        {"type": "Int256", "value": "-57896044618658097711785492504343953926634992332820282019728792003956564819968", "ok": True},
+        {"type": "Int256", "value": "57896044618658097711785492504343953926634992332820282019728792003956564819967.0", "ok": False},
+        {"type": "Int256", "value": "-57896044618658097711785492504343953926634992332820282019728792003956564819968.0", "ok": False},
+        {"type": "Int256", "value": "12.5", "ok": False},
+        {"type": "Int256", "value": "-0.1", "ok": False},
+        {"type": "Int256", "value": "abc", "ok": False},
+
+        {"type": "UInt256", "value": "115792089237316195423570985008687907853269984665640564039457584007913129639935", "ok": True},
+        {"type": "UInt256", "value": "0", "ok": True},
+        {"type": "UInt256", "value": "115792089237316195423570985008687907853269984665640564039457584007913129639935.0", "ok": False},
+        {"type": "UInt256", "value": "0.0", "ok": False},
+        {"type": "UInt256", "value": "12.34", "ok": False},
+        {"type": "UInt256", "value": "-1.0", "ok": False},
+        {"type": "UInt256", "value": "-57896044618658097711785492504343953926634992332820282019728792003956564819968", "ok": False},
+
+        {"type": "Float32", "value": "3.14",     "ok": True},
+        {"type": "Float32", "value": "-2.71",    "ok": True},
+        {"type": "Float32", "value": "0.0",      "ok": True},
+        {"type": "Float32", "value": "-0.0",     "ok": True},
+        {"type": "Float32", "value": "1e38",     "ok": True},
+        {"type": "Float32", "value": "-1e38",    "ok": True},
+        {"type": "Float32", "value": "abc",      "ok": False},
+        {"type": "Float32", "value": "",         "ok": False},
+
+        {"type": "Float64", "value": "3.14",     "ok": True},
+        {"type": "Float64", "value": "-2.71",    "ok": True},
+        {"type": "Float64", "value": "0.0",      "ok": True},
+        {"type": "Float64", "value": "-0.0",     "ok": True},
+        {"type": "Float64", "value": "1e308",    "ok": True},
+        {"type": "Float64", "value": "-1e308",   "ok": True},
+        {"type": "Float64", "value": "abc",      "ok": False},
+        {"type": "Float64", "value": "",         "ok": False},
+    ]
+
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "numbers_parsing_table")
+    numbers_parsing_table = db["numbers_parsing_table"]
+
+    node = started_cluster.instances["node"]
+    node.query(
+        f"""
+        CREATE OR REPLACE TABLE numbers_parsing_table(
+            caseNum UInt8,
+            
+            Int8_ Int8,
+            UInt8_ UInt8,
+            Int16_ Int16,
+            UInt16_ UInt16,
+            Int32_ Int32,
+            UInt32_ UInt32,
+            Int64_ Int64,
+            UInt64_ UInt64,
+            Int128_ Int128,
+            UInt128_ UInt128,
+            Int256_ Int256,
+            UInt256_ UInt256,
+            Float32_ Float32,
+            Float64_ Float64
+        ) ENGINE = MongoDB('mongo1:27017', 'test', 'numbers_parsing_table', 'root', '{mongo_pass}')
+        """
+    )
+
+    for num, case in enumerate(cases):
+        numbers_parsing_table.insert_one({"caseNum": num, f"{case['type']}_": case['value']})
+        query = f"SELECT {case['type']}_ FROM numbers_parsing_table WHERE caseNum = {num}"
+        if case['ok']:
+            if case['value'] in ["0.0"]:
+                assert node.query(query) == "0\n"
+            elif case['value'] in ["-0.0"]:
+                assert node.query(query) == "-0\n"
+            else:
+                assert node.query(query) == f"{case['value']}\n"
+        else:
+            with pytest.raises(QueryRuntimeException):
+                node.query(query)
+
+    node.query("DROP TABLE numbers_parsing_table")
+    numbers_parsing_table.drop()
+
+
+def test_url_validation(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root@aa.com", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "url_validation_table")
+    url_validation_table = db["url_validation_table"]
+    data = []
+    for i in range(0, 100):
+        data.append({"key": i, "data": hex(i * i)})
+    url_validation_table.insert_many(data)
+
+    node = started_cluster.instances["node"]
+    node.query(
+        f"CREATE OR REPLACE TABLE url_validation_table(key UInt64, data String) ENGINE = MongoDB('mongo1', 'test', 'url_validation_table', 'root@aa.com', '{mongo_pass}')"
+    )
+
+    assert node.query("SELECT COUNT() FROM url_validation_table") == "100\n"
+
+
+def test_handshake_metadata(started_cluster):
+    # ClickHouse identifies itself in the MongoDB connection handshake as a wrapping library
+    # (https://github.com/mongodb/specifications/blob/master/source/mongodb-handshake/handshake.md#wrapping-libraries),
+    # so that MongoDB server operators can tell ClickHouse connections apart in mongod/mongos logs.
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "handshake_metadata_table")
+    handshake_metadata_table = db["handshake_metadata_table"]
+    handshake_metadata_table.insert_many([{"key": i} for i in range(0, 10)])
+
+    node = started_cluster.instances["node"]
+    clickhouse_version = node.query("SELECT version()").strip()
+
+    node.query(
+        f"CREATE OR REPLACE TABLE handshake_metadata_table(key UInt64) ENGINE = MongoDB('mongo1', 'test', 'handshake_metadata_table', 'root', '{mongo_pass}')"
+    )
+
+    # mongod logs the metadata received in the handshake of every new connection as a JSON line
+    # with `"msg": "client metadata"` and the handshake document under `attr.doc`.
+    # Earlier tests in this module have already opened ClickHouse connections to mongo1, so
+    # snapshot the container log first and only look at what gets appended by the SELECT below.
+    logs_before = started_cluster.get_container_logs("mongo1")
+
+    assert node.query("SELECT COUNT() FROM handshake_metadata_table") == "10\n"
+
+    def clickhouse_handshakes_since_snapshot():
+        new_logs = started_cluster.get_container_logs("mongo1")[len(logs_before) :]
+        drivers = []
+        for line in new_logs.splitlines():
+            if '"client metadata"' not in line:
+                continue
+            driver = json.loads(line)["attr"]["doc"]["driver"]
+            # Connections from other clients (e.g. pymongo) are logged too.
+            if driver["name"] == "mongoc / mongocxx / ClickHouse":
+                drivers.append(driver)
+        return drivers
+
+    # Container logs are observed eventually consistently, so retry until the handshake
+    # of the connection opened by the SELECT above shows up.
+    drivers = wait_condition(
+        clickhouse_handshakes_since_snapshot,
+        lambda drivers: len(drivers) > 0,
+        max_attempts=50,
+        delay=0.2,
+    )
+    assert all(
+        driver["version"].endswith(f" / {clickhouse_version}") for driver in drivers
+    ), drivers
+
+    node.query("DROP TABLE handshake_metadata_table")
+    handshake_metadata_table.drop()

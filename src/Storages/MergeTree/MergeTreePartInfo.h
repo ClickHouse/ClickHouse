@@ -25,11 +25,15 @@ public:
     {
         /// Regular data part. Created on inserts, merges and mutations.
         Regular,
+        /// Patch data part. Created on lightweight updates. Contains only subset of
+        /// columns updated in query and extra system columns (see PatchPartsInfo.h).
+        /// Can be applied to regular data parts on reading to get the latest state of data.
+        Patch,
     };
 
-    static Kind getKind(const String & /*partition_id*/)
+    static Kind getKind(const String & partition_id)
     {
-        return Kind::Regular;
+        return partition_id.starts_with(PATCH_PART_PREFIX) ? Kind::Patch : Kind::Regular;
     }
 
 private:
@@ -56,7 +60,8 @@ public:
     {
     }
 
-    Kind getKind() const { return kind; }
+    Kind getKind() const { return kind;}
+    bool isPatch() const { return kind == Kind::Patch; }
 
     void setPartitionId(const String & new_partition_id)
     {
@@ -65,10 +70,14 @@ public:
     }
 
     const String & getPartitionId() const { return partition_id; }
+    String getOriginalPartitionId() const;
 
     auto toTuple() const { return std::tie(kind, partition_id, min_block, max_block, level, mutation); }
     auto operator<=>(const MergeTreePartInfo & rhs) const { return toTuple() <=> rhs.toTuple();}
     bool operator==(const MergeTreePartInfo & rhs) const { return toTuple() == rhs.toTuple(); }
+
+    /// Agrees with `operator==`, for use as a hash-table key.
+    UInt64 hash() const;
 
     /// Get block number that can be used to determine which mutations we still need to apply to this part
     /// (all mutations with version greater than this block number).
@@ -150,8 +159,15 @@ public:
     static bool areAllBlockNumbersCovered(const MergeTreePartInfo & blocks_range, std::vector<MergeTreePartInfo> candidates);
 
     static constexpr UInt32 MAX_LEVEL = 999999999;
-    static constexpr UInt32 MAX_BLOCK_NUMBER = 999999999;
-
+    /// The maximum block number cannot be higher than the maximum sequence number that Keeper can handle.
+    /// The sequence number was Int32 originally, it was recently changed to Int64 (https://github.com/ClickHouse/ClickHouse/pull/99120).
+    /// To be safe, we keep it as Int32, but more than doubled than the old maximum block number (999999999).
+    /// Once we are sure bigger block numbers don't cause any issues, we can increase it even higher.
+    static constexpr UInt32 MAX_BLOCK_NUMBER = static_cast<UInt32>(std::numeric_limits<Int32>::max());
+    static constexpr std::string_view PATCH_PART_PREFIX = "patch-";
+    /// The full prefix of patch part is "patch-<hash>-".
+    /// The size of hash is 32 chars plus 1 char for extra dash.
+    static constexpr UInt64 PATCH_PART_PREFIX_SIZE = PATCH_PART_PREFIX.size() + 32 + 1;
     static constexpr UInt32 LEGACY_MAX_LEVEL = std::numeric_limits<decltype(level)>::max();
 };
 
@@ -168,7 +184,13 @@ struct DetachedPartInfo : public MergeTreePartInfo
     DiskPtr disk;
 
     /// If false, MergeTreePartInfo is in invalid state (directory name was not successfully parsed).
-    bool valid_name;
+    bool valid_name{};
+
+    /// True if the directory name carried a "_tryN" suffix that was stripped before parsing.
+    /// Such directories are leftover copies created by failed detach renames: they are valid
+    /// enough to be listed and dropped, but must not be considered as candidates for ATTACH,
+    /// because their on-disk name is not a parsable part name.
+    bool has_try_suffix{};
 
     static constexpr auto DETACH_REASONS = std::to_array<std::string_view>({
         "broken",
@@ -184,6 +206,7 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "merge-not-byte-identical",
         "mutate-not-byte-identical",
         "broken-from-backup",
+        "fsync-failed",
     });
 
     static constexpr auto DETACHED_REASONS_REMOVABLE_BY_TIMEOUT = std::to_array<std::string_view>({
@@ -199,6 +222,8 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "broken-from-backup",
     });
 
+    inline static const std::string TRY_N_SUFFIX = "_try";
+
     /// NOTE: It may parse part info incorrectly.
     /// For example, if prefix contains '_' or if DETACH_REASONS doesn't contain prefix.
     // This method has different semantics with MergeTreePartInfo::tryParsePartName.
@@ -211,5 +236,15 @@ private:
 };
 
 using DetachedPartsInfo = std::vector<DetachedPartInfo>;
+
+}
+
+namespace std
+{
+
+template <> struct hash<DB::MergeTreePartInfo>
+{
+    size_t operator()(const DB::MergeTreePartInfo & part) const { return part.hash(); }
+};
 
 }

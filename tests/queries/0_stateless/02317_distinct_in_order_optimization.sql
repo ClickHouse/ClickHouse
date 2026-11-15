@@ -1,6 +1,3 @@
--- Tags: no-parallel-replicas
--- no-parallel-replicas: optimize_read_in_order=0 leads to "Replica 1 decided to read in Default mode, not in WithOrder. This is a bug: While executing Remote. (LOGICAL_ERROR)"
-
 select '-- enable distinct in order optimization';
 set optimize_distinct_in_order=1;
 select '-- create table with only primary key columns';
@@ -107,7 +104,7 @@ select '-- bug 42185, distinct in order and empty sort description';
 select '-- distinct in order, sorting key tuple()';
 create table sorting_key_empty_tuple (a int, b int) engine=MergeTree() order by tuple() SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 insert into sorting_key_empty_tuple select number % 2, number % 5 from numbers(1,10);
-select distinct a from sorting_key_empty_tuple;
+select distinct a from sorting_key_empty_tuple order by a;
 
 select '-- distinct in order, sorting key contains function';
 create table sorting_key_contain_function (datetime DateTime, a int) engine=MergeTree() order by (toDate(datetime)) SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';

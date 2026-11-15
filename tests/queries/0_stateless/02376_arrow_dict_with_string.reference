@@ -1,4 +1,4 @@
-x	LowCardinality(Nullable(String))					
+x	LowCardinality(String)					
 0
 1
 2

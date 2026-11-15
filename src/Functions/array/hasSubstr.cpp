@@ -1,4 +1,4 @@
-#include "hasAllAny.h"
+#include <Functions/array/hasAllAny.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 
@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class FunctionArrayHasSubstr : public FunctionArrayHasAllAny
+class FunctionArrayHasSubstr final : public FunctionArrayHasAllAny
 {
 public:
     static constexpr auto name = "hasSubstr";
@@ -31,10 +31,10 @@ Raises a `NO_COMMON_TYPE` exception if any of the elements of the two arrays do 
 )";
     FunctionDocumentation::Syntax syntax = "hasSubstr(arr1, arr2)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr1", "Array of any type with a set of elements. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"arr2", "Array of any type with a set of elements. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"arr1", "Array of any type with a set of elements.", {"Array(T)"}},
+        {"arr2", "Array of any type with a set of elements.", {"Array(T)"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns `1` if array `arr1` contains array `arr2`. Otherwise, returns `0`.";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if array `arr1` contains array `arr2`. Otherwise, returns `0`.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
         {"Both arrays are empty", "SELECT hasSubstr([], [])", "1"},
         {"Arrays containing NULL values", "SELECT hasSubstr([1, Null], [Null])", "1"},
@@ -43,11 +43,15 @@ Raises a `NO_COMMON_TYPE` exception if any of the elements of the two arrays do 
         {"Arrays with valid ordering", "SELECT hasSubstr(['a', 'b' , 'c'], ['a', 'b'])", "1"},
         {"Arrays with invalid ordering", "SELECT hasSubstr(['a', 'b' , 'c'], ['a', 'c'])", "0"},
         {"Array of arrays", "SELECT hasSubstr([[1, 2], [3, 4], [5, 6]], [[1, 2], [3, 4]])", "1"},
-        {"Arrays without a common type", "SELECT hasSubstr([1, 2, NULL, 3, 4], ['a'])", "Raises a `NO_COMMON_TYPE` exception"},
+        {"Arrays without a common type", "SELECT hasSubstr([1, 2, NULL, 3, 4], ['a'])",
+         R"(
+Received exception:
+Code: 386. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString/Enum and some of them are not. (NO_COMMON_TYPE)
+        )"},
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayHasSubstr>(documentation);
 }

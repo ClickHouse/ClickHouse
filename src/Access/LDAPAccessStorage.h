@@ -55,7 +55,6 @@ private: // IAccessStorage implementations.
 
     void applyRoleChangeNoLock(bool grant, const UUID & role_id, const String & role_name);
     void assignRolesNoLock(User & user, const LDAPClient::SearchResultsList & external_roles) const;
-    void assignRolesNoLock(User & user, const LDAPClient::SearchResultsList & external_roles, std::size_t external_roles_hash) const;
     void updateAssignedRolesNoLock(const UUID & id, const String & user_name, const LDAPClient::SearchResultsList & external_roles) const;
     std::set<String> mapExternalRolesNoLock(const LDAPClient::SearchResultsList & external_roles) const;
     bool areLDAPCredentialsValidNoLock(const User & user, const Credentials & credentials,
@@ -66,7 +65,7 @@ private: // IAccessStorage implementations.
     String ldap_server_name;
     LDAPClient::RoleSearchParamsList role_search_params;
     std::set<String> common_role_names;                         // role name that should be granted to all users at all times
-    mutable std::map<String, std::size_t> external_role_hashes; // user name -> LDAPClient::SearchResultsList hash (most recently retrieved and processed)
+    mutable std::map<String, LDAPClient::SearchResultsList> users_external_roles; // user name -> LDAPClient::SearchResultsList (most recently retrieved and processed)
     mutable std::map<String, std::set<String>> users_per_roles; // role name -> user names (...it should be granted to; may but don't have to exist for common roles)
     mutable std::map<String, std::set<String>> roles_per_users; // user name -> role names (...that should be granted to it; may but don't have to include common roles)
     mutable std::map<UUID, String> granted_role_names;          // (currently granted) role id -> its name

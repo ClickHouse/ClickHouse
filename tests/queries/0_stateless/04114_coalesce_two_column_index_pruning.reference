@@ -1,0 +1,55 @@
+--- both columns indexed: coalesce equals prunes via skip indexes ---
+Granules: 1024/1024
+Skip
+Name: b_idx
+Granules: 1024/1024
+Skip
+Name: a_idx
+Granules: 1024/1024
+Skip
+Name: <Combined skip indexes>
+Granules: 688/1024
+682
+682
+Granules: 1024/1024
+--- ifNull behaves the same as coalesce ---
+Granules: 1024/1024
+Skip
+Name: b_idx
+Granules: 1024/1024
+Skip
+Name: a_idx
+Granules: 1024/1024
+Skip
+Name: <Combined skip indexes>
+Granules: 688/1024
+682
+--- only one column indexed: partial pruning still works ---
+Skip
+Name: a_idx
+682
+--- PK form: ORDER BY (a, id) prunes via PrimaryKey on a ---
+PrimaryKey
+Condition: (a in [42, 42])
+Granules: 17/1024
+1024
+--- ordered comparison: coalesce(a, b) > K ---
+Granules: 1024/1024
+Skip
+Name: b_idx
+Granules: 1024/1024
+Skip
+Name: a_idx
+Granules: 1024/1024
+Skip
+Name: <Combined skip indexes>
+Granules: 1024/1024
+23894
+23894
+--- PR #94754 regression: coalesce(key, const) = X still prunes via PK ---
+PrimaryKey
+Granules: 3/1024
+128
+--- negative operators must not regress (no pruning, correct results) ---
+64854
+0

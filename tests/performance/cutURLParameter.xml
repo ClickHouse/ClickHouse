@@ -1,0 +1,8 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(cutURLParameter(URL, 'utm_source'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(cutURLParameter(URL, ['utm_source', 'utm_medium', 'utm_campaign']))</query>
+</test>

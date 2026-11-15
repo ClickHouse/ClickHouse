@@ -1,4 +1,4 @@
-mt source table count()	1000000
+mt source table count()	100000
 -- check result with local pipeline
 3
-1000000
+100000

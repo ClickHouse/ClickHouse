@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/StorageID.h>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
 
@@ -11,7 +12,7 @@ namespace DB
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-using ConstraintsExpressions = std::vector<ExpressionActionsPtr>;
+using ConstraintsExpressions = VectorWithMemoryTracking<ExpressionActionsPtr>;
 
 /** Check for constraints violation. If anything is found - throw an exception with detailed error message.
   * Otherwise just pass block to output unchanged.
@@ -24,12 +25,13 @@ class CheckConstraintsTransform final : public ExceptionKeepingTransform
 public:
     CheckConstraintsTransform(
             const StorageID & table_,
-            const Block & header,
+            SharedHeader header,
             const ConstraintsDescription & constraints_,
             ContextPtr context_);
 
     String getName() const override { return "CheckConstraintsTransform"; }
 
+    void onCancel() noexcept override;
     void onConsume(Chunk chunk) override;
     GenerateResult onGenerate() override
     {

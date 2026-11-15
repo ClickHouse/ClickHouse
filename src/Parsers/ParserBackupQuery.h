@@ -13,7 +13,20 @@ namespace DB
   *          ALL [EXCEPT {TABLES|DATABASES}...] } [,...]
   *        [ON CLUSTER 'cluster_name']
   *        TO { File('path/') |
-  *             Disk('disk_name', 'path/') }
+  *             Disk('disk_name', 'path/') |
+  *             S3('path/' [, 'aws_access_key_id', 'aws_secret_access_key']) |
+  *             AzureBlobStorage(
+  *                 'connection_string' | 'storage_account_url', 'container_name', 'blobpath'
+  *             )
+  *           }
+  *        [SETTINGS ...]
+  *
+  * BACKUP FROM SNAPSHOT { S3(...) | AzureBlobStorage(...) }
+  *        TO { File('path/') |
+  *             Disk('disk_name', 'path/') |
+  *             S3(...) |
+  *             AzureBlobStorage(...)
+  *           }
   *        [SETTINGS ...]
   *
   * RESTORE { TABLE [db.]table_name_in_backup [AS [db.]table_name] [PARTITION[S] partition_expr [,...]] |

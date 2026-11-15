@@ -18,13 +18,25 @@ struct WorkloadSettings
     static constexpr Int64 unlimited = std::numeric_limits<Int64>::max();
     static constexpr Float64 default_burst_seconds = 1.0;
 
-    /// Priority and weight among siblings
+    /// Weight, priority and precedence among siblings
     Float64 weight = 1.0;
     Priority priority;
+    Priority precedence;
 
-    /// Throttling constraints
+    /// IO throttling constraints
     Float64 max_bytes_per_second = 0; // Zero means unlimited
     Float64 max_burst_bytes = 0; // default is `default_burst_seconds * max_bytes_per_second`
+
+    /// CPU throttling constraints
+    Float64 max_cpus = 0; // Zero means unlimited
+    Float64 max_burst_cpu_seconds = 1.0;
+
+    /// Query throttling constraints
+    Float64 max_queries_per_second = 0; // Zero means unlimited
+    Float64 max_burst_queries = 0; // default is `default_burst_seconds * max_queries_per_second`
+
+    /// Intra-workload scheduling algorithm for the time-shared leaf: "fifo" (default), "fair", "las", or "priority".
+    String scheduler = "fifo";
 
     /// Limits total number of concurrent resource requests that are allowed to consume
     Int64 max_io_requests = unlimited;
@@ -32,25 +44,44 @@ struct WorkloadSettings
     /// Limits total bytes in-inflight for concurrent IO resource requests
     Int64 max_bytes_inflight = unlimited;
 
-    /// Limits total number of query threads (the first main thread is not counted)
+    /// Limits total number of query threads
     Int64 max_concurrent_threads = unlimited;
 
-    /// Settings that are applied depend on cost unit
-    using Unit = ASTCreateResourceQuery::CostUnit;
-    Unit unit = Unit::IOByte;
+    /// Limits total number of queries
+    Int64 max_concurrent_queries = unlimited;
 
-    // Throttler
-    bool hasThrottler() const;
-    Float64 getThrottlerMaxSpeed() const;
-    Float64 getThrottlerMaxBurst() const;
+    /// Limits total number of waiting queries
+    Int64 max_waiting_queries = unlimited;
 
-    // Semaphore
-    bool hasSemaphore() const;
-    Int64 getSemaphoreMaxRequests() const;
-    Int64 getSemaphoreMaxCost() const;
+    /// Limits total memory reservation (hard limit; over it an allocation is killed)
+    Int64 max_memory = unlimited;
+
+    /// Soft memory limit: above it the workload's reclaimable allocations are asked to spill, but nothing
+    /// is killed. Computed as the minimum of the absolute `max_memory_before_spill` and
+    /// `max_memory_to_spill_ratio * max_memory`. `unlimited` means no soft limit (spilling disabled).
+    Int64 max_memory_before_spill = unlimited;
+
+    // Throttler (time-shared resource)
+    bool hasThrottler(CostUnit unit) const;
+    Float64 getThrottlerMaxSpeed(CostUnit unit) const;
+    Float64 getThrottlerMaxBurst(CostUnit unit) const;
+
+    // Semaphore (time-shared resource)
+    bool hasSemaphore(CostUnit unit) const;
+    Int64 getSemaphoreMaxRequests(CostUnit unit) const;
+    Int64 getSemaphoreMaxCost(CostUnit unit) const;
+
+    // Queue (both time-shared and space-shared resources)
+    bool hasQueueLimit(CostUnit unit) const;
+    Int64 getQueueLimit(CostUnit unit) const;
+
+    // Allocation Limit (space-shared resource)
+    bool hasAllocationLimit(CostUnit unit) const;
+    Int64 getAllocationLimit(CostUnit unit) const;
+    Int64 getSoftAllocationLimit(CostUnit unit) const; // Soft limit (spill threshold); `unlimited` = disabled
 
     // Should be called after default constructor
-    void initFromChanges(Unit unit_, const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name = {}, bool throw_on_unknown_setting = true);
+    void initFromChanges(const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name = {}, bool throw_on_unknown_setting = true);
 };
 
 }

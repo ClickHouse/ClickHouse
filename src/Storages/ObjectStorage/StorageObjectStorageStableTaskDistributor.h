@@ -7,6 +7,9 @@
 #include <unordered_set>
 #include <vector>
 #include <mutex>
+#include <chrono>
+#include <optional>
+#include <condition_variable>
 #include <memory>
 
 namespace DB
@@ -17,22 +20,36 @@ class StorageObjectStorageStableTaskDistributor
 public:
     StorageObjectStorageStableTaskDistributor(
         std::shared_ptr<IObjectIterator> iterator_,
-        size_t number_of_replicas_);
+        std::vector<std::string> && ids_of_nodes_,
+        bool send_over_whole_archive_,
+        std::chrono::milliseconds wait_for_owner_ = std::chrono::milliseconds(0));
 
-    std::optional<String> getNextTask(size_t number_of_current_replica);
+    ObjectInfoPtr getNextTask(size_t number_of_current_replica);
 
 private:
     size_t getReplicaForFile(const String & file_path);
-    std::optional<String> getPreQueuedFile(size_t number_of_current_replica);
-    std::optional<String> getMatchingFileFromIterator(size_t number_of_current_replica);
-    std::optional<String> getAnyUnprocessedFile(size_t number_of_current_replica);
+    ObjectInfoPtr getPreQueuedFile(size_t number_of_current_replica);
+    ObjectInfoPtr getMatchingFileFromIterator(size_t number_of_current_replica);
+    ObjectInfoPtr getAnyUnprocessedFile(size_t number_of_current_replica);
+    ObjectInfoPtr takeQueuedFile(size_t replica);
 
-    std::shared_ptr<IObjectIterator> iterator;
+    const std::shared_ptr<IObjectIterator> iterator;
+    const bool send_over_whole_archive;
 
-    std::vector<std::vector<String>> connection_to_files;
-    std::unordered_set<String> unprocessed_files;
+    const std::chrono::milliseconds wait_for_owner;
+
+    std::vector<std::vector<ObjectInfoPtr>> connection_to_files;
+    std::unordered_map<std::string, ObjectInfoPtr> unprocessed_files;
+    std::vector<size_t> remaining_bytes;
+
+    std::vector<std::string> ids_of_nodes;
+    std::vector<bool> replica_seen;
+    /// Replicas that have received an empty task: they will not ask again.
+    std::vector<bool> replica_finished;
+    std::optional<std::chrono::steady_clock::time_point> stealing_allowed_since;
 
     std::mutex mutex;
+    std::condition_variable replica_seen_cv;
     bool iterator_exhausted = false;
 
     LoggerPtr log = getLogger("StorageClusterTaskDistributor");

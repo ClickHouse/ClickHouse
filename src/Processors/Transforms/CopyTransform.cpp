@@ -5,7 +5,7 @@
 namespace DB
 {
 
-CopyTransform::CopyTransform(const Block & header, size_t num_outputs)
+CopyTransform::CopyTransform(SharedHeader header, size_t num_outputs)
     : IProcessor(InputPorts(1, header), OutputPorts(num_outputs, header))
     , was_output_processed(num_outputs, 0)
 {
@@ -51,6 +51,10 @@ IProcessor::Status CopyTransform::prepareConsume()
 
         return Status::Finished;
     }
+
+    if (!was_output_needed && !isAnyOutputNeeded())
+        return Status::PortFull;
+    was_output_needed = true;
 
     input.setNeeded();
     if (!input.hasData())

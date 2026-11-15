@@ -50,16 +50,19 @@ public:
     /// Get free space from most free disk
     UInt64 getMaxUnreservedFreeSpace() const override;
 
+    /// Throws if the policy is marked `backup_metadata_only` but one of its volumes is not read-only.
+    bool isBackupMetadataOnly() const override;
+
     const String & getName() const override{ return name; }
 
     /// Returns valid reservation or nullptr
-    ReservationPtr reserve(UInt64 bytes) const override;
+    ReservationPtrOrError reserve(UInt64 bytes) const override;
 
     /// Reserves space on any volume or throws
     ReservationPtr reserveAndCheck(UInt64 bytes) const override;
 
     /// Reserves space on any volume with index > min_volume_index or returns nullptr
-    ReservationPtr reserve(UInt64 bytes, size_t min_volume_index) const override;
+    ReservationPtrOrError reserve(UInt64 bytes, size_t min_volume_index) const override;
 
     /// Find volume index, which contains disk
     std::optional<size_t> tryGetVolumeIndexByDiskName(const String & disk_name) const override;
@@ -101,7 +104,10 @@ private:
     /// filled more than total_size * move_factor
     double move_factor = 0.1; /// by default move factor is 10%
 
+    bool backup_metadata_only = false;
+
     void buildVolumeIndices();
+    void checkVolumesAreReadOnly() const;
 
     LoggerPtr log;
 };

@@ -1,4 +1,4 @@
-#include "Functions/UserDefined/UserDefinedSQLObjectsStorageBase.h"
+#include <Functions/UserDefined/UserDefinedSQLObjectsStorageBase.h>
 
 #include <boost/container/flat_set.hpp>
 
@@ -6,7 +6,13 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
-#include <Parsers/ASTCreateFunctionQuery.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedWebAssembly.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
+#include <Parsers/ASTCreateWasmFunctionQuery.h>
+#include <Common/quoteString.h>
+
+#include <optional>
 
 namespace DB
 {
@@ -23,23 +29,34 @@ namespace ErrorCodes
 
 namespace
 {
+    std::optional<UserDefinedWebAssemblyFunctionFactory::RegisteredFunction> prepareWasmFunction(
+        const String & function_name,
+        ASTPtr create_query,
+        const ContextPtr & context)
+    {
+        if (!create_query->as<ASTCreateWasmFunctionQuery>())
+            return std::nullopt;
 
-ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query, const ContextPtr & context)
-{
-    auto ptr = create_function_query.clone();
-    auto & res = typeid_cast<ASTCreateFunctionQuery &>(*ptr);
-    res.if_not_exists = false;
-    res.or_replace = false;
-    FunctionNameNormalizer::visit(res.function_core.get());
-    NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef()[Setting::union_default_mode]};
-    NormalizeSelectWithUnionQueryVisitor{data}.visit(res.function_core);
-    return ptr;
-}
+        /// Startup can load persisted `CREATE FUNCTION ... LANGUAGE WASM` definitions before
+        /// `WasmModuleManager` is initialized.
+        /// Keep the `AST` in storage and let `loadFunctions` synchronize the runtime registry later.
+        if (!context->hasWasmModuleManager())
+            return std::nullopt;
 
+        try
+        {
+            return UserDefinedWebAssemblyFunctionFactory::instance().prepareFunction(std::move(create_query), context->getWasmModuleManager());
+        }
+        catch (Exception & exception)
+        {
+            exception.addMessage(fmt::format("while loading user defined function {}", backQuote(function_name)));
+            throw;
+        }
+    }
 }
 
 UserDefinedSQLObjectsStorageBase::UserDefinedSQLObjectsStorageBase(ContextPtr global_context_)
-    : global_context(std::move(global_context_))
+    : WithContext(global_context_)
 {}
 
 ASTPtr UserDefinedSQLObjectsStorageBase::get(const String & object_name) const
@@ -71,9 +88,9 @@ bool UserDefinedSQLObjectsStorageBase::has(const String & object_name) const
     return tryGet(object_name) != nullptr;
 }
 
-std::vector<std::string> UserDefinedSQLObjectsStorageBase::getAllObjectNames() const
+VectorWithMemoryTracking<String> UserDefinedSQLObjectsStorageBase::getAllObjectNames() const
 {
-    std::vector<std::string> object_names;
+    VectorWithMemoryTracking<String> object_names;
 
     std::lock_guard lock(mutex);
     object_names.reserve(object_name_to_create_object_map.size());
@@ -156,20 +173,31 @@ std::unique_lock<std::recursive_mutex> UserDefinedSQLObjectsStorageBase::getLock
     return std::unique_lock{mutex};
 }
 
-void UserDefinedSQLObjectsStorageBase::setAllObjects(const std::vector<std::pair<String, ASTPtr>> & new_objects)
+void UserDefinedSQLObjectsStorageBase::setAllObjects(const VectorWithMemoryTracking<std::pair<String, ASTPtr>> & new_objects)
 {
-    std::unordered_map<String, ASTPtr> normalized_functions;
-    for (const auto & [function_name, create_query] : new_objects)
-        normalized_functions[function_name] = normalizeCreateFunctionQuery(*create_query, global_context);
+    UnorderedMapWithMemoryTracking<String, ASTPtr> normalized_functions;
+    VectorWithMemoryTracking<UserDefinedWebAssemblyFunctionFactory::RegisteredFunction> wasm_functions;
 
-    std::lock_guard lock(mutex);
-    object_name_to_create_object_map = std::move(normalized_functions);
+    for (const auto & [function_name, create_query] : new_objects)
+    {
+        auto normalized_query = normalizeCreateFunctionQuery(*create_query, getContext());
+        if (auto wasm_function = prepareWasmFunction(function_name, normalized_query, getContext()))
+            wasm_functions.push_back(std::move(*wasm_function));
+        normalized_functions[function_name] = std::move(normalized_query);
+    }
+
+    {
+        std::lock_guard lock(mutex);
+        object_name_to_create_object_map = std::move(normalized_functions);
+    }
+
+    UserDefinedWebAssemblyFunctionFactory::instance().replaceAll(std::move(wasm_functions));
 }
 
-std::vector<std::pair<String, ASTPtr>> UserDefinedSQLObjectsStorageBase::getAllObjects() const
+VectorWithMemoryTracking<std::pair<String, ASTPtr>> UserDefinedSQLObjectsStorageBase::getAllObjects() const
 {
     std::lock_guard lock{mutex};
-    std::vector<std::pair<String, ASTPtr>> all_objects;
+    VectorWithMemoryTracking<std::pair<String, ASTPtr>> all_objects;
     all_objects.reserve(object_name_to_create_object_map.size());
     std::copy(object_name_to_create_object_map.begin(), object_name_to_create_object_map.end(), std::back_inserter(all_objects));
     return all_objects;
@@ -177,25 +205,48 @@ std::vector<std::pair<String, ASTPtr>> UserDefinedSQLObjectsStorageBase::getAllO
 
 void UserDefinedSQLObjectsStorageBase::setObject(const String & object_name, const IAST & create_object_query)
 {
-    std::lock_guard lock(mutex);
-    object_name_to_create_object_map[object_name] = normalizeCreateFunctionQuery(create_object_query, global_context);
+    auto normalized_query = normalizeCreateFunctionQuery(create_object_query, getContext());
+    auto wasm_function = prepareWasmFunction(object_name, normalized_query, getContext());
+
+    {
+        std::lock_guard lock(mutex);
+        object_name_to_create_object_map[object_name] = std::move(normalized_query);
+    }
+
+    if (wasm_function)
+        UserDefinedWebAssemblyFunctionFactory::instance().addOrReplace(std::move(*wasm_function));
+    else
+        UserDefinedWebAssemblyFunctionFactory::instance().dropIfExists(object_name);
 }
 
 void UserDefinedSQLObjectsStorageBase::removeObject(const String & object_name)
 {
-    std::lock_guard lock(mutex);
-    object_name_to_create_object_map.erase(object_name);
+    {
+        std::lock_guard lock(mutex);
+        object_name_to_create_object_map.erase(object_name);
+    }
+
+    UserDefinedWebAssemblyFunctionFactory::instance().dropIfExists(object_name);
 }
 
 void UserDefinedSQLObjectsStorageBase::removeAllObjectsExcept(const Strings & object_names_to_keep)
 {
     boost::container::flat_set<std::string_view> names_set_to_keep{object_names_to_keep.begin(), object_names_to_keep.end()};
-    std::lock_guard lock(mutex);
-    for (auto it = object_name_to_create_object_map.begin(); it != object_name_to_create_object_map.end();)
+
     {
-        auto current = it++;
-        if (!names_set_to_keep.contains(current->first))
-            object_name_to_create_object_map.erase(current);
+        std::lock_guard lock(mutex);
+        for (auto it = object_name_to_create_object_map.begin(); it != object_name_to_create_object_map.end();)
+        {
+            auto current = it++;
+            if (!names_set_to_keep.contains(current->first))
+                object_name_to_create_object_map.erase(current);
+        }
+    }
+
+    for (const auto & registered_function : UserDefinedWebAssemblyFunctionFactory::instance().getAllFunctions())
+    {
+        if (!names_set_to_keep.contains(registered_function.sql_name))
+            UserDefinedWebAssemblyFunctionFactory::instance().dropIfExists(registered_function.sql_name);
     }
 }
 

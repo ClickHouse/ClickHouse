@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Formats/FormatSettings.h>
 #include "config.h"
 
 #if USE_MONGODB
@@ -24,7 +26,7 @@ public:
         const std::string & collection_name,
         const bsoncxx::document::view_or_value & query,
         const mongocxx::options::find & options,
-        const Block & sample_block_,
+        SharedHeader sample_block_,
         const UInt64 & max_block_size_);
 
     ~MongoDBSource() override;
@@ -32,8 +34,6 @@ public:
     String getName() const override { return "MongoDB"; }
 
 private:
-    MongoDBInstanceHolder & instance_holder = MongoDBInstanceHolder::instance();
-
     static void insertDefaultValue(IColumn & column, const IColumn & sample_column);
     void insertValue(IColumn & column, const size_t & idx, const DataTypePtr & type, const std::string & name, const bsoncxx::document::element & value);
 
@@ -45,7 +45,7 @@ private:
     mongocxx::cursor cursor;
 
     Block sample_block;
-    std::unordered_map<size_t, std::pair<size_t, std::pair<DataTypePtr, Field>>> arrays_info;
+    UnorderedMapWithMemoryTracking<size_t, std::pair<size_t, std::pair<DataTypePtr, Field>>> arrays_info;
     const UInt64 max_block_size;
     bool all_read = false;
 

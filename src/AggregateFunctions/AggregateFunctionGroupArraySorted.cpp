@@ -1,4 +1,5 @@
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Formats/FormatSettings.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
@@ -8,29 +9,23 @@
 #include <type_traits>
 #include <utility>
 
-#include <Common/RadixSort.h>
-#include <Common/Exception.h>
 #include <Common/ArenaAllocator.h>
+#include <Common/Exception.h>
+#include <Common/NaNUtils.h>
+#include <Common/RadixSort.h>
 #include <Common/assert_cast.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
 
 #include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 
 #include <Columns/IColumn.h>
-#include <Columns/ColumnConst.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -62,7 +57,7 @@ struct GroupArraySortedData
     static constexpr bool is_value_generic_field = std::is_same_v<T, Field>;
 
     using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
-    using Array = typename std::conditional_t<is_value_generic_field, std::vector<T>, PODArray<T, 32, Allocator>>;
+    using Array = typename std::conditional_t<is_value_generic_field, VectorWithMemoryTracking<T>, PODArray<T, 32, Allocator>>;
 
     static constexpr size_t partial_sort_max_elements_factor = 2;
 
@@ -76,7 +71,7 @@ struct GroupArraySortedData
         }
         else
         {
-            return CompareHelper<T>::less(lhs, rhs, -1);
+            return CompareHelper<T>::less(lhs, rhs, 1);
         }
     }
 
@@ -140,7 +135,13 @@ struct GroupArraySortedData
         {
             bool try_sort = trySort(values.begin(), values.end(), Comparator());
             if (!try_sort)
-                RadixSort<RadixSortNumTraits<T>>::executeLSD(values.data(), values.size());
+            {
+                auto * sort_end = values.end();
+                /// RadixSort puts NaNs with the sign bit set first, so move all NaNs to the end and sort the rest.
+                if constexpr (is_floating_point<T>)
+                    sort_end = std::partition(values.begin(), values.end(), [](T value) { return !isNaN(value); });
+                RadixSort<RadixSortNumTraits<T>>::executeLSD(values.data(), static_cast<size_t>(sort_end - values.begin()));
+            }
         }
 
         if (values.size() > max_elements)
@@ -270,7 +271,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & rhs_values = this->data(rhs).values;
         for (auto rhs_element : rhs_values)
@@ -421,11 +422,53 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
 
 }
 
+void registerAggregateFunctionGroupArraySorted(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupArraySorted(AggregateFunctionFactory & factory)
 {
+    FunctionDocumentation::Description description = R"(
+Returns an array with the first N items in ascending order.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+groupArraySorted(N)(column)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"column", "Column for which to group into an array.", {"Any"}}
+    };
+    FunctionDocumentation::Parameters parameters = {
+        {"N", "The number of elements to return.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array with the first N items in ascending order.", {"Array"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Getting first 10 numbers",
+        R"(
+SELECT groupArraySorted(10)(number) FROM numbers(100);
+        )",
+        R"(
+┌─groupArraySorted(10)(number)─┐
+│ [0,1,2,3,4,5,6,7,8,9]        │
+└──────────────────────────────┘
+        )"
+    },
+    {
+        "String sorting example",
+        R"(
+SELECT groupArraySorted(5)(str) FROM (SELECT toString(number) AS str FROM numbers(5));
+        )",
+        R"(
+┌─groupArraySorted(5)(str)─┐
+│ ['0','1','2','3','4']    │
+└──────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = false };
 
-    factory.registerFunction("groupArraySorted", { createAggregateFunctionGroupArray, properties });
+    factory.registerFunction("groupArraySorted", { createAggregateFunctionGroupArray, documentation, properties });
 }
 
 }

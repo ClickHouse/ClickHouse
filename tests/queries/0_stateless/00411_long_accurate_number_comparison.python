@@ -178,7 +178,7 @@ def main():
 
     num_int_tests = len(list(itertools.combinations(VALUES, 2)))
 
-    num_parts = 4
+    num_parts = 8
     for part in range(0, num_parts):
         if "int" + str(part + 1) in sys.argv[1:]:
             for v1, v2 in itertools.islice(

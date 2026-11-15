@@ -1,4 +1,4 @@
-#include "HTTPAuthenticationScheme.h"
+#include <Access/Common/HTTPAuthenticationScheme.h>
 
 #include <base/EnumReflection.h>
 #include <base/types.h>

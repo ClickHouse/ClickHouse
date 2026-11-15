@@ -1,0 +1,56 @@
+#include <Disks/DiskObjectStorage/MetadataStorages/Cache/MetadataStorageFromCacheObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
+#include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+
+
+#include <Common/assert_cast.h>
+
+namespace DB
+{
+
+/// TODO: This is crap, we need to reimplement cache disk, it is too bad :(
+DiskObjectStoragePtr DiskObjectStorage::wrapWithCache(
+    FileCachePtr cache,
+    const FileCacheSettings & cache_settings,
+    const String & layer_name,
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix) const
+{
+    auto registry = object_storages->getRegistry();
+    auto local_location = cluster->getLocalLocation();
+    const ObjectStoragePtr wrapped_object_storage = registry[local_location];
+    registry[local_location] = std::make_shared<CachedObjectStorage>(wrapped_object_storage, cache, cache_settings, layer_name);
+
+    auto cache_disk = std::make_shared<DiskObjectStorage>(
+        layer_name,
+        std::make_shared<ClusterConfiguration>(layer_name, cluster->getConfiguration()),
+        std::make_shared<MetadataStorageFromCacheObjectStorage>(metadata_storage, wrapped_object_storage),
+        std::make_shared<ObjectStorageRouter>(std::move(registry)),
+        std::dynamic_pointer_cast<const DiskObjectStorage>(shared_from_this()),
+        config,
+        config_prefix);
+
+    return cache_disk;
+}
+
+NameSet DiskObjectStorage::getCacheLayersNames() const
+{
+    NameSet disk_names;
+    DiskObjectStorageConstPtr layer = std::dynamic_pointer_cast<const DiskObjectStorage>(shared_from_this());
+    while (layer)
+    {
+        disk_names.insert(layer->getName());
+        layer = layer->wrapped_disk;
+    }
+
+    return disk_names;
+}
+
+DiskObjectStorageConstPtr DiskObjectStorage::getWrappedDisk() const
+{
+    return wrapped_disk;
+}
+
+}

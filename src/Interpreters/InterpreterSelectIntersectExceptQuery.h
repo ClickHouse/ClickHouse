@@ -31,11 +31,9 @@ public:
 
     BlockIO execute() override;
 
-    Block getSampleBlock() { return result_header; }
+    SharedHeader getSampleBlock() { return result_header; }
 
     void ignoreWithTotals() override;
-
-    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 
 private:
     static String getName() { return "SelectIntersectExceptQuery"; }

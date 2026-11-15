@@ -1,24 +1,20 @@
 #pragma once
 
 #include <Processors/Formats/IInputFormat.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Formats/FormatFactory.h>
-#include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
+#include <IO/SharedThreadPools.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Poco/Event.h>
 
-
-namespace CurrentMetrics
-{
-    extern const Metric ParallelParsingInputFormatThreads;
-    extern const Metric ParallelParsingInputFormatThreadsActive;
-    extern const Metric ParallelParsingInputFormatThreadsScheduled;
-}
 
 namespace DB
 {
@@ -74,7 +70,7 @@ class Context;
  *  4) repeat until it encounters unit that is marked as "past_the_end"
  * All threads must also check for cancel/eof/exception flags.
  */
-class ParallelParsingInputFormat : public IInputFormat
+class ParallelParsingInputFormat final : public IInputFormat
 {
 public:
     /* Used to recreate parser on every new data piece.*/
@@ -95,7 +91,7 @@ public:
     };
 
     explicit ParallelParsingInputFormat(Params params)
-        : IInputFormat(std::move(params.header), &params.in)
+        : IInputFormat(std::make_shared<const Block>(std::move(params.header)), &params.in)
         , internal_parser_creator(params.internal_parser_creator)
         , file_segmentation_engine_creator(params.file_segmentation_engine_creator)
         , format_name(params.format_name)
@@ -104,14 +100,12 @@ public:
         , max_block_size(params.max_block_size)
         , last_block_missing_values(getPort().getHeader().columns())
         , is_server(params.is_server)
-        , pool(CurrentMetrics::ParallelParsingInputFormatThreads, CurrentMetrics::ParallelParsingInputFormatThreadsActive, CurrentMetrics::ParallelParsingInputFormatThreadsScheduled, params.max_threads)
+        , runner(getFormatParsingThreadPool().get(), ThreadName::PARALLEL_FORMATER_PARSER)
     {
         // One unit for each thread, including segmentator and reader, plus a
         // couple more units so that the segmentation thread doesn't spuriously
         // bump into reader thread on wraparound.
         processing_units.resize(params.max_threads + 2);
-
-        LOG_TRACE(getLogger("ParallelParsingInputFormat"), "Parallel parsing is used");
     }
 
     ~ParallelParsingInputFormat() override
@@ -141,6 +135,14 @@ public:
 private:
 
     Chunk read() final;
+
+    void onFinish() final
+    {
+        /// We have to wait for all threads to finish before calling IInputFormat::onFinish()
+        /// because segmentator thread still uses owned buffers.
+        finishAndWait();
+        IInputFormat::onFinish();
+    }
 
     void onCancel() noexcept final
     {
@@ -188,7 +190,7 @@ private:
 
                     case IProcessor::Status::NeedData: break;
                     case IProcessor::Status::Async: break;
-                    case IProcessor::Status::ExpandPipeline:
+                    case IProcessor::Status::UpdatePipeline:
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "One of the parsers returned status {} during parallel parsing",
                                              IProcessor::statusToName(status));
                 }
@@ -212,7 +214,7 @@ private:
 
     BlockMissingValues last_block_missing_values;
     size_t last_approx_bytes_read_for_chunk = 0;
-    SerializationInfoByName serialization_hints;
+    SerializationInfoByName serialization_hints{{}};
 
     /// Non-atomic because it is used in one thread.
     std::optional<size_t> next_block_in_current_unit;
@@ -242,9 +244,9 @@ private:
 
     const bool is_server;
 
-    /// There are multiple "parsers", that's why we use thread pool.
-    ThreadPool pool;
-    /// Reading and segmentating the file
+    /// Parsing threads.
+    ThreadPoolCallbackRunnerLocal<void> runner;
+    /// Reading and segmentating the file.
     ThreadFromGlobalPool segmentator_thread;
 
     enum ProcessingUnitStatus
@@ -256,9 +258,9 @@ private:
 
     struct ChunkExt
     {
-        std::vector<Chunk> chunk;
-        std::vector<BlockMissingValues> block_missing_values;
-        std::vector<size_t> approx_chunk_sizes;
+        Chunks chunk;
+        VectorWithMemoryTracking<BlockMissingValues> block_missing_values;
+        VectorWithMemoryTracking<size_t> approx_chunk_sizes;
     };
 
     struct ProcessingUnit
@@ -270,7 +272,7 @@ private:
 
         ChunkExt chunk_ext;
         Memory<> segment;
-        size_t original_segment_size;
+        size_t original_segment_size{};
         std::atomic<ProcessingUnitStatus> status;
         /// Needed for better exception message.
         size_t offset = 0;
@@ -281,7 +283,7 @@ private:
 
     /// We use deque instead of vector, because it does not require a move
     /// constructor, which is absent for atomics that are inside ProcessingUnit.
-    std::deque<ProcessingUnit> processing_units;
+    DequeWithMemoryTracking<ProcessingUnit> processing_units;
 
     /// Compute it to have a more understandable error message.
     size_t successfully_read_rows_count{0};
@@ -289,9 +291,9 @@ private:
 
     void scheduleParserThreadForUnitWithNumber(size_t ticket_number)
     {
-        pool.scheduleOrThrowOnError([this, ticket_number, group = CurrentThread::getGroup()]()
+        runner.enqueueAndKeepTrack([this, ticket_number]()
         {
-            parserThreadFunction(group, ticket_number);
+            parserThreadFunction(ticket_number);
         });
         /// We have to wait here to possibly extract ColumnMappingPtr from the first parser.
         if (ticket_number == 0)
@@ -324,7 +326,7 @@ private:
 
         try
         {
-            pool.wait();
+            runner.waitForAllToFinishAndRethrowFirstError();
         }
         catch (...)
         {
@@ -333,7 +335,7 @@ private:
     }
 
     void segmentatorThreadFunction(ThreadGroupPtr thread_group);
-    void parserThreadFunction(ThreadGroupPtr thread_group, size_t current_ticket_number);
+    void parserThreadFunction(size_t current_ticket_number);
 
     /// Save/log a background exception, set termination flag, wake up all
     /// threads. This function is used by segmentator and parsed threads.

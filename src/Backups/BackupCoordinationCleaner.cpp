@@ -9,28 +9,29 @@ BackupCoordinationCleaner::BackupCoordinationCleaner(bool is_restore_, const Str
 {
 }
 
-bool BackupCoordinationCleaner::cleanup(bool throw_if_error)
+void BackupCoordinationCleaner::cleanup(bool throw_if_error)
 {
     WithRetries::Kind retries_kind = throw_if_error ? WithRetries::kNormal : WithRetries::kErrorHandling;
-    return cleanupImpl(throw_if_error, retries_kind);
+    cleanupImpl(throw_if_error, retries_kind);
 }
 
-bool BackupCoordinationCleaner::cleanupImpl(bool throw_if_error, WithRetries::Kind retries_kind)
+void BackupCoordinationCleaner::cleanupImpl(bool throw_if_error, WithRetries::Kind retries_kind)
 {
     {
         std::lock_guard lock{mutex};
         if (succeeded)
         {
             LOG_TRACE(log, "Nodes from ZooKeeper are already removed");
-            return true;
+            return;
         }
         if (tried)
         {
             LOG_INFO(log, "Skipped removing nodes from ZooKeeper because because earlier we failed to do that");
-            return false;
+            return;
         }
     }
 
+    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationCleaner::cleanupImpl");
     try
     {
         LOG_TRACE(log, "Removing nodes from ZooKeeper");
@@ -44,7 +45,6 @@ bool BackupCoordinationCleaner::cleanupImpl(bool throw_if_error, WithRetries::Ki
         std::lock_guard lock{mutex};
         tried = true;
         succeeded = true;
-        return true;
     }
     catch (...)
     {
@@ -57,7 +57,6 @@ bool BackupCoordinationCleaner::cleanupImpl(bool throw_if_error, WithRetries::Ki
 
         if (throw_if_error)
             throw;
-        return false;
     }
 }
 

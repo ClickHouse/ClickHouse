@@ -41,11 +41,6 @@ public:
 
     const google::protobuf::Descriptor * import(const String & schema_path, const String & message_name)
     {
-        // Search the message type among already imported ones.
-        const auto * descriptor = importer.pool()->FindMessageTypeByName(message_name);
-        if (descriptor)
-            return descriptor;
-
         const auto * file_descriptor = importer.Import(schema_path);
         if (error)
         {
@@ -60,38 +55,43 @@ public:
                 info.message);
         }
 
-        assert(file_descriptor);
+        if (!file_descriptor)
+            throw Exception(
+                ErrorCodes::CANNOT_PARSE_PROTOBUF_SCHEMA,
+                "Cannot parse '{}' file",
+                schema_path);
 
-        if (with_envelope == WithEnvelope::No)
+        if (with_envelope == WithEnvelope::Yes)
         {
-            const auto * message_descriptor = file_descriptor->FindMessageTypeByName(message_name);
-            if (!message_descriptor)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not find a message named '{}' in the schema file '{}'",
-                    message_name, schema_path);
-
-            return message_descriptor;
+            const auto * envelope_descriptor = file_descriptor->FindMessageTypeByName("Envelope");
+            if (envelope_descriptor)
+            {
+                const auto * message_descriptor = envelope_descriptor->FindNestedTypeByName(message_name);
+                if (message_descriptor)
+                    return message_descriptor;
+            }
         }
 
-        const auto * envelope_descriptor = file_descriptor->FindMessageTypeByName("Envelope");
-        if (!envelope_descriptor)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not find a message named 'Envelope' in the schema file '{}'", schema_path);
-
-        const auto * message_descriptor = envelope_descriptor->FindNestedTypeByName(
-            message_name); // silly protobuf API disallows a restricting the field type to messages
+        const auto * message_descriptor = file_descriptor->FindMessageTypeByName(message_name);
         if (!message_descriptor)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Could not find a message named '{}' in the schema file '{}'", message_name, schema_path);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not find a message named '{}' in the schema file '{}'",
+                message_name, schema_path);
 
         return message_descriptor;
     }
 
 private:
     // Overrides google::protobuf::compiler::MultiFileErrorCollector:
-    void AddError(const String & filename, int line, int column, const String & message) override
+    void RecordError(absl::string_view filename, int line, int column, absl::string_view message) override
     {
         /// Protobuf library code is not exception safe, we should
         /// remember the error and throw it later from our side.
-        error = ErrorInfo{filename, line, column, message};
+        error = ErrorInfo{
+            std::string(filename),
+            line,
+            column,
+            std::string(message),
+        };
     }
 
     google::protobuf::compiler::DiskSourceTree disk_source_tree;
@@ -113,12 +113,23 @@ private:
 ProtobufSchemas::DescriptorHolder
 ProtobufSchemas::getMessageTypeForFormatSchema(const FormatSchemaInfo & info, WithEnvelope with_envelope, const String & google_protos_path)
 {
+    /// Auto-generated schema should not be stored in the import cache. Generated schemas are typically temporary and
+    /// may throw exceptions during type inference (e.g., protobufSchemaToCHSchema). Caching them could pollute the
+    /// global cache with invalid importers, leading to failures in subsequent schema inference. Instead, we create and
+    /// return a local importer without caching.
+    if (info.isGenerated())
+    {
+        auto import = std::make_shared<ImporterWithSourceTree>(info.schemaDirectory(), google_protos_path, with_envelope);
+        return DescriptorHolder(import, import->import(info.schemaPath(), info.messageName()));
+    }
+
     std::lock_guard lock(mutex);
-    auto it = importers.find(info.schemaDirectory());
+    auto key = ImporterKey{info.schemaDirectory(), info.schemaPath(), with_envelope};
+    auto it = importers.find(key);
     if (it == importers.end())
         it = importers
                  .emplace(
-                     info.schemaDirectory(),
+                     key,
                      std::make_shared<ImporterWithSourceTree>(info.schemaDirectory(), google_protos_path, with_envelope))
                  .first;
     auto * importer = it->second.get();
