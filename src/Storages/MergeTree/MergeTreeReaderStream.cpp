@@ -663,15 +663,46 @@ size_t MergeTreeReaderStreamAllOfMultipleColumns::getRightOffset(size_t right_ma
 
 std::pair<size_t, size_t> MergeTreeReaderStreamAllOfMultipleColumns::estimateMarkRangeBytes(const MarkRanges & mark_ranges)
 {
+    if (marks_count == 0)
+        return {0, 0};
+
+    loadMarks();
+    const size_t num_columns = marks_getter->getNumColumns();
+    if (num_columns == 1)
+        return estimateMarkRangeBytesOneColumn(mark_ranges, 0);
+
+    /// The stream reads all columns, and all columns of a stripe lie together in the file, from the mark of the first
+    /// column to the start of the next stripe. So estimate whole stripes instead of every column separately: that costs
+    /// the number of marks, not the number of marks times the number of columns, which is in the thousands for a part
+    /// with a `JSON` column with many paths and substream marks.
+    const size_t last_column = num_columns - 1;
     size_t max_range_bytes = 0;
     size_t sum_range_bytes = 0;
 
-    for (size_t i = 0; i < marks_loader->getNumColumns(); ++i)
+    for (const auto & mark_range : mark_ranges)
     {
-        auto [current_max, current_sum] = estimateMarkRangeBytesOneColumn(mark_ranges, i);
+        size_t mark = mark_range.begin;
+        while (mark < mark_range.end)
+        {
+            const size_t begin_offset = marks_getter->getMark(mark, 0).offset_in_compressed_file;
 
-        max_range_bytes = std::max(max_range_bytes, current_max);
-        sum_range_bytes += current_sum;
+            /// The first mark after the stripe of `mark` is the first one whose first column starts after the last
+            /// column of `mark`, see `getStartOfNextStripeMark`.
+            const auto last_column_mark = marks_getter->getMark(mark, last_column);
+            size_t next_stripe = mark + 1;
+            while (next_stripe < marks_count && marks_getter->getMark(next_stripe, 0) <= last_column_mark)
+                ++next_stripe;
+
+            const size_t end_offset = next_stripe == marks_count
+                ? file_size
+                : marks_getter->getMark(next_stripe, 0).offset_in_compressed_file;
+
+            const size_t current_range_bytes = end_offset - begin_offset;
+            max_range_bytes = std::max(max_range_bytes, current_range_bytes);
+            sum_range_bytes += current_range_bytes;
+
+            mark = next_stripe;
+        }
     }
 
     return {max_range_bytes, sum_range_bytes};
