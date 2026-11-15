@@ -201,8 +201,8 @@ struct EntityChange
     ASTPtr before; /// Entity before change (CREATE if not set)
     ASTPtr after; /// Entity after change (DROP if not set)
 
-    /// True if the change drops the entity and creates a new one (the entity type changes)
-    bool recreates() const
+    /// True if the change drops the entity and creates a new one of another type
+    bool changesType() const
     {
         return before && after && getEntityType(before) != getEntityType(after);
     }
@@ -211,7 +211,7 @@ struct EntityChange
     {
         if (!after)
             return {{getEntityType(before), name, {}}};
-        if (recreates())
+        if (changesType())
             return {{getEntityType(before), name, {}}, {getEntityType(after), name, after}};
         return {{getEntityType(after), name, after}};
     }
@@ -295,11 +295,7 @@ std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityCha
         {
             if (!event.entity) // DROP
             {
-                // Rule 1: Entity can only be removed after all existing references to it are removed as well. A recreated
-                // entity is exempt: its create event follows the drop immediately, while waiting for its old references
-                // would make a cycle with rule 2.
-                if (change.recreates())
-                    continue;
+                // Rule 1: Entity can only be removed after all existing references to it are removed as well.
                 for (const String & source : old_sources[change.name])
                 {
                     if (change_by_name.contains(source))
@@ -308,17 +304,19 @@ std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityCha
             }
             else // CREATE || CREATE OR REPLACE
             {
-                // Rule 2: Entity can only be created or updated after all changed entities it references. A dropped target
-                // is not waited for, so nothing waits for a dropped entity and the rules form no cycle.
+                // Rule 2: Entity can only be created or updated after all changed entities it references. A target that is
+                // dropped or changes its type is not waited for: its drop may wait for this entity (rule 1), so the rules
+                // form no cycle.
                 for (const String & target : new_targets[change.name])
                 {
-                    if (auto it = change_by_name.find(target); it != change_by_name.end() && it->second->after)
+                    if (auto it = change_by_name.find(target); it != change_by_name.end() && it->second->after && !it->second->changesType())
                         dependencies[change.name].insert(target);
                 }
 
                 // Rule 3: A workload is changed after its nearest changed ancestor in the new hierarchy, so all its new
-                // ancestors already have their new parents when it is attached, and the hierarchy stays acyclic
-                if (auto ancestor = nearest_changed_ancestor(change.name))
+                // ancestors already have their new parents when it is attached, and the hierarchy stays acyclic. An ancestor
+                // that changes its type is not waited for, as in rule 2.
+                if (auto ancestor = nearest_changed_ancestor(change.name); ancestor && !change_by_name.at(*ancestor)->changesType())
                     dependencies[change.name].insert(*ancestor);
             }
         }

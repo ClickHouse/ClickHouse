@@ -4618,6 +4618,22 @@ TEST(SchedulerWorkloadResourceManager, ReversedHierarchyIsApplied)
     EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "c", "a"));
 }
 
+// A workload that becomes a resource of the same name is dropped only after its children leave it
+TEST(SchedulerWorkloadResourceManager, WorkloadReplacedByResourceOutlivesItsChildren)
+{
+    ResourceTest t;
+    t.storage.loadFromString("CREATE RESOURCE io (READ DISK d); CREATE WORKLOAD a; CREATE WORKLOAD b IN a");
+    t.storage.loadFromString("CREATE RESOURCE io (READ DISK d); CREATE RESOURCE a (WRITE DISK d); CREATE WORKLOAD b SETTINGS weight = 2 FOR a");
+
+    bool has_b_in_a = false;
+    t.manager->forEachNode([&](const String & resource, const String & path, ISchedulerNode *)
+    {
+        if (resource == "a" && path.ends_with("/b"))
+            has_b_in_a = true;
+    });
+    EXPECT_TRUE(has_b_in_a);
+}
+
 // Unit-test coverage for the lazy-allocation path in CPULeaseAllocation
 // (current_max_slots gated schedule + setMax growth). Higher-level fairness /
 // preemption behaviour is exercised by the PreemptiveCPUScheduling* tests above;
