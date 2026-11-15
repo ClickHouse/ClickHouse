@@ -5,8 +5,6 @@ description: "了解如何使用 LLVM 的 XRay 插桩分析器对 ClickHouse 进
 tags: ['性能与优化', '工具与实用程序']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <div id="types-of-profilers">
   ## Profiler 的类型
 </div>
@@ -46,7 +44,15 @@ SYSTEM INSTRUMENT REMOVE ALL
 我们将 system.trace&#95;log 中收集的数据转换为[Chrome
 格式](/zh/reference/system-tables/trace_log#chrome-event-trace-format)，以便在 [Perfetto](https://ui.perfetto.dev) 中可视化。请注意每个条目的 query&#95;id、cpu&#95;id 和 stacktrace。
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp" size="md" alt="time-order" />
+<div className="ch-image-md">
+
+<Frame>
+
+![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp)
+
+</Frame>
+
+</div>
 
 <div id="profiling-a-native-application-using-xray">
   ## 使用 XRay 对原生应用程序进行性能分析
@@ -154,19 +160,43 @@ llvm-xray convert --symbolize --instr_map=./test --output-format=trace_event xra
   #### 按时间顺序
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp" size="md" alt="time-order" />
+<div className="ch-image-md">
+
+<Frame>
+
+![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp)
+
+</Frame>
+
+</div>
 
 <div id="left-heavy">
   #### 左偏重
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp" size="md" alt="左偏重" />
+<div className="ch-image-md">
+
+<Frame>
+
+![左偏重](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp)
+
+</Frame>
+
+</div>
 
 <div id="sandwitch">
   #### 三明治
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp" size="md" alt="三明治" />
+<div className="ch-image-md">
+
+<Frame>
+
+![三明治](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp)
+
+</Frame>
+
+</div>
 
 <div id="check-out-the-docs">
   ## 查阅文档

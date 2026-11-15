@@ -7,6 +7,8 @@
 #include <Common/ProfileEvents.h>
 #include <Poco/Net/Socket.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -38,19 +40,25 @@ public:
 
     void setReceiveTimeout(size_t receive_timeout_microseconds);
 
-    /// Set a wall-clock deadline for the entire handshake phase.
-    /// Every nextImpl() call will check elapsed time and throw SOCKET_TIMEOUT if exceeded.
-    /// Call clearHandshakeTimeout() after the handshake completes.
+    /// Bound the whole handshake phase, whether the peer trickles bytes or goes silent in a read.
     void setHandshakeTimeout(size_t timeout_milliseconds);
     void clearHandshakeTimeout();
+    /// Take over a deadline from the buffer this one replaces mid-handshake.
+    void adoptHandshakeDeadlineFrom(const ReadBufferFromPocoSocketBase & other);
+    /// Throw if the deadline has passed, else hold the socket at the time left. Reads that bypass
+    /// this buffer have to call it themselves; nextImpl does it for the rest.
+    void applyHandshakeDeadlineToSocket();
 
 private:
+    void clampReceiveTimeoutToHandshakeDeadline(UInt64 milliseconds_left);
+
     AsyncCallback async_callback;
     std::string socket_description;
 
-    /// Wall-clock deadline for the handshake phase (optional).
     size_t handshake_timeout_milliseconds = 0;
     Stopwatch handshake_stopwatch = Stopwatch(STOPWATCH_DEFAULT_CLOCK, 0, /* is running */ false);
+    std::optional<Poco::Timespan> receive_timeout_before_handshake;
+    std::optional<Poco::Timespan> send_timeout_before_handshake;
 };
 
 class ReadBufferFromPocoSocket : public ReadBufferFromPocoSocketBase

@@ -1,0 +1,13 @@
+u64 =	1	1
+u64 in	3	3
+u64 in subquery	3	3
+u64 not in subquery	3	3
+cast in subquery	1	1
+i64 =	1	1
+i64 in subquery	2	2
+skip index =	1	1
+skip index in subquery	3	3
+prunes =	1000000000000000707
+prunes in subquery	1000000000000000707
+prunes i64 =	1000000000000000707
+bool =	1	1

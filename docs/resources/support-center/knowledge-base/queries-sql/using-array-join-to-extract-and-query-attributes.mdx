@@ -66,7 +66,7 @@ VALUES
 (24, '2023-09-20 00:03:00', 'DEF', 240,{'env':'qa','app':'app1','server':'server1'});
 ```
 
-We can then create a materialized view with array join so that it can extract the map attributes onto keys and values columns.  For demonstration, in the example below, it uses an implicit table (with the POPULATE command, and backing table like `.inner.{uuid}...` ).  The recommended best practice, however, is to use an explicit table where you wouldd define the table first, then create a materialized view on top with the `TO` command instead.
+We can then create a materialized view with array join so that it can extract the map attributes onto keys and values columns.  For demonstration, in the example below, it uses an implicit table (with the POPULATE command, and backing table like `.inner.{uuid}...` ).  The recommended best practice, however, is to use an explicit table where you would define the table first, then create a materialized view on top with the `TO` command instead.
 
 ```
 CREATE MATERIALIZED VIEW db1.table1_metric_map_mv

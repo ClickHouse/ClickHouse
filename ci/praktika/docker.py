@@ -41,6 +41,12 @@ class Docker:
         # mirror). Images that don't declare the arg silently ignore it.
         build_args: Dict[str, str] = dataclasses.field(default_factory=dict)
 
+    @staticmethod
+    def tag_build_arg(image_name: str) -> str:
+        """The name of the build argument with the tag of the dependency image,
+        e.g. CCTOOLS_TAG for clickhouse/cctools"""
+        return image_name.split("/")[-1].upper().replace("-", "_") + "_TAG"
+
     @classmethod
     def build(
         cls, config: "Docker.Config", digests, amd_only, arm_only, disable_push=False
@@ -73,12 +79,14 @@ class Docker:
         if code != 0:
             tags_substr = f" -t {config.name}:{tag}"
 
+            # The first dependency is the base image and its tag is passed as FROM_TAG.
+            # The tag of every dependency is also passed as <NAME>_TAG
+            # (e.g. CCTOOLS_TAG for clickhouse/cctools) for the images that copy files from it
             from_tag = ""
             if config.depends_on:
-                assert (
-                    len(config.depends_on) == 1
-                ), f"Only one dependency in depends_on is currently supported, docker [{config}]"
                 from_tag = f" --build-arg FROM_TAG={digests[config.depends_on[0]]}{aarch_suffix}"
+                for dependency in config.depends_on:
+                    from_tag += f" --build-arg {cls.tag_build_arg(dependency)}={digests[dependency]}{aarch_suffix}"
 
             platforms = []
             for platform in config.platforms:

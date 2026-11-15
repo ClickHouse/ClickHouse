@@ -8,7 +8,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 UDF="${CLICKHOUSE_DATABASE}_udf_with_alias"
 
 $CLICKHOUSE_CLIENT -m -q "
-SET enable_analyzer = 1;
 
 DROP FUNCTION IF EXISTS ${UDF};
 CREATE FUNCTION ${UDF} AS event -> array(length(event) AS l1, (l1 + l1) AS l2);
