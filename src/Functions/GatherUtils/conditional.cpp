@@ -11,7 +11,8 @@ namespace DB::GatherUtils
 namespace
 {
 
-/// Rows are processed 64 at a time: a group with few runs of equal conditions is copied one run per copy, any other group row by row.
+/// Rows are processed 64 at a time: a group with few runs of equal conditions (on aarch64 also a group of long strings) is copied one run
+/// per copy, any other group row by row.
 template <typename SourceA, typename SourceB>
 void conditionalStrings(const SourceA & src_a, const SourceB & src_b, StringSink & sink, const PaddedPODArray<UInt8> & condition)
 {
@@ -23,6 +24,12 @@ void conditionalStrings(const SourceA & src_a, const SourceB & src_b, StringSink
     /// From this many runs the condition (almost) alternates, so a branch on it is predictable.
     static constexpr size_t min_runs_to_copy_rows_with_branch = 56;
     static constexpr size_t max_bytes_for_small_copy = 256;
+#if defined(__aarch64__)
+    /// On aarch64 rows of this many bytes are copied faster by runs than one by one, even when the runs are short.
+    static constexpr size_t min_bytes_per_row_to_copy_by_runs = 64;
+#else
+    static constexpr size_t min_bytes_per_row_to_copy_by_runs = 0;
+#endif
 
     const size_t rows = condition.size();
     const UInt8 * cond = condition.data();
@@ -170,8 +177,28 @@ void conditionalStrings(const SourceA & src_a, const SourceB & src_b, StringSink
 
         if (runs > max_runs_to_copy_by_runs)
         {
-            copy_rows.template operator()<false>(group, group + group_rows);
-            continue;
+            bool long_strings = false;
+            if constexpr (min_bytes_per_row_to_copy_by_runs != 0)
+            {
+                size_t column_bytes = 0;
+                size_t column_rows = 0;
+                if constexpr (!a_is_const)
+                {
+                    column_bytes += a_offsets[group + group_rows - 1] - a_offsets[static_cast<ssize_t>(group) - 1];
+                    column_rows += group_rows;
+                }
+                if constexpr (!b_is_const)
+                {
+                    column_bytes += b_offsets[group + group_rows - 1] - b_offsets[static_cast<ssize_t>(group) - 1];
+                    column_rows += group_rows;
+                }
+                long_strings = column_bytes >= column_rows * min_bytes_per_row_to_copy_by_runs;
+            }
+            if (!long_strings)
+            {
+                copy_rows.template operator()<false>(group, group + group_rows);
+                continue;
+            }
         }
 
         while (run_starts)
