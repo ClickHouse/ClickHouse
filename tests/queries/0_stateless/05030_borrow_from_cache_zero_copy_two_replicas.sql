@@ -69,11 +69,13 @@ FROM system.parts WHERE database = currentDatabase() AND table = 'zc_r2' AND act
 SYSTEM FLUSH LOGS text_log;
 SELECT 'zero-copy disk selection attempted', count() > 0
 FROM system.text_log
-WHERE logger_name LIKE currentDatabase() || '.zc_r2 %(Fetcher)'
+WHERE event_time >= now() - INTERVAL 10 MINUTE
+  AND logger_name LIKE currentDatabase() || '.zc_r2 %(Fetcher)'
   AND message LIKE 'Checking disk %';
 SELECT 'disks offering zero-copy', count()
 FROM system.text_log
-WHERE logger_name LIKE currentDatabase() || '.zc_r2 %(Fetcher)'
+WHERE event_time >= now() - INTERVAL 10 MINUTE
+  AND logger_name LIKE currentDatabase() || '.zc_r2 %(Fetcher)'
   AND message LIKE '% supports zero-copy replication';
 
 DROP TABLE zc_r2;
