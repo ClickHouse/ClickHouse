@@ -1,0 +1,29 @@
+-- the view on the right side
+0	p0	4
+1	p1	4
+
+0		20
+0	p0	4
+1	p1	4
+
+0		20
+-- the view on the left side
+0	4	p0
+1	4	p1
+
+0	20	
+0	4	p0
+1	4	p1
+
+0	20	
+-- a Merge table over the view
+0	p0	4
+1	p1	4
+
+0		20
+0	p0	4
+1	p1	4
+
+0		20
+-- nothing is read lazily
+0

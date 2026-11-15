@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -66,11 +67,12 @@ namespace Setting
 namespace
 {
 
-/// Wrapper storages answer both predicates by walking what they wrap, so they are memoized per visitor.
+/// Wrapper storages answer these predicates by walking what they wrap, so they are memoized per visitor.
 struct SubcolumnSupportAnswers
 {
     bool all_transformers;
     std::optional<bool> tuple_element_only;
+    std::optional<bool> bucketed_map_serialization;
 };
 
 using SubcolumnSupportCache = std::unordered_map<const IStorage *, SubcolumnSupportAnswers>;
@@ -79,7 +81,7 @@ SubcolumnSupportAnswers & getSubcolumnSupportAnswers(const IStorage & storage, S
 {
     auto it = cache.find(&storage);
     if (it == cache.end())
-        it = cache.emplace(&storage, SubcolumnSupportAnswers{storage.supportsOptimizationToSubcolumns(), std::nullopt}).first;
+        it = cache.emplace(&storage, SubcolumnSupportAnswers{storage.supportsOptimizationToSubcolumns(), std::nullopt, std::nullopt}).first;
     return it->second;
 }
 
@@ -999,6 +1001,24 @@ std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full
     {TypeIndex::QBit, "tupleElement"},
 };
 
+/// The constant path element `tupleElement` (a `String` only) or `arrayElement` (also a `Nullable` or `LowCardinality` one)
+/// accepts over `JSON`. Over `Dynamic` the call checks it only per stored type at execution.
+std::optional<String> tryGetJSONPathElement(const QueryTreeNodePtr & node, bool allow_nullable_or_low_cardinality)
+{
+    const auto * constant = node->as<ConstantNode>();
+    if (!constant || constant->getValue().getType() != Field::Types::String)
+        return {};
+
+    auto type = constant->getResultType();
+    if (allow_nullable_or_low_cardinality)
+        type = removeLowCardinalityAndNullable(type);
+
+    if (!isString(type))
+        return {};
+
+    return constant->getValue().safeGet<String>();
+}
+
 /// Optimizes:
 ///   tupleElement(... tupleElement(arrayElement(ColumnNode(Dynamic), N), 'f1') ..., 'fK')
 /// to:
@@ -1032,10 +1052,10 @@ void optimizeJSONArrayElement(
         auto & args = function_node.getArguments().getNodes();
         if (args.size() != 2)
             return;
-        const auto * constant = args[1]->as<ConstantNode>();
-        if (!constant || constant->getValue().getType() != Field::Types::String)
+        auto field_name = tryGetJSONPathElement(args[1], /*allow_nullable_or_low_cardinality=*/ false);
+        if (!field_name)
             return;
-        field_names.push_back(constant->getValue().safeGet<String>());
+        field_names.push_back(std::move(*field_name));
     }
 
     /// All intermediates except the last (arrayElement) must be tupleElement with constant string second arg.
@@ -1047,10 +1067,10 @@ void optimizeJSONArrayElement(
         auto & args = inner_func->getArguments().getNodes();
         if (args.size() != 2)
             return;
-        const auto * constant = args[1]->as<ConstantNode>();
-        if (!constant || constant->getValue().getType() != Field::Types::String)
+        auto field_name = tryGetJSONPathElement(args[1], /*allow_nullable_or_low_cardinality=*/ false);
+        if (!field_name)
             return;
-        field_names.push_back(constant->getValue().safeGet<String>());
+        field_names.push_back(std::move(*field_name));
     }
 
     /// Reverse to get inner-to-outer order (the path under Array(JSON)).
@@ -1135,10 +1155,10 @@ void optimizeJSONArrayElementChain(
         auto & args = function_node.getArguments().getNodes();
         if (args.size() != 2)
             return;
-        const auto * constant = args[1]->as<ConstantNode>();
-        if (!constant || constant->getValue().getType() != Field::Types::String)
+        auto key = tryGetJSONPathElement(args[1], /*allow_nullable_or_low_cardinality=*/ true);
+        if (!key)
             return;
-        keys.push_back(constant->getValue().safeGet<String>());
+        keys.push_back(std::move(*key));
     }
 
     /// All intermediates must be arrayElement with constant string 2nd arg.
@@ -1149,10 +1169,10 @@ void optimizeJSONArrayElementChain(
         auto & args = inner_func->getArguments().getNodes();
         if (args.size() != 2)
             return;
-        const auto * constant = args[1]->as<ConstantNode>();
-        if (!constant || constant->getValue().getType() != Field::Types::String)
+        auto key = tryGetJSONPathElement(args[1], /*allow_nullable_or_low_cardinality=*/ true);
+        if (!key)
             return;
-        keys.push_back(constant->getValue().safeGet<String>());
+        keys.push_back(std::move(*key));
     }
 
     /// Reverse to get inner-to-outer order (the JSON path).
@@ -1256,6 +1276,16 @@ bool storageAllowsTransformer(
     const IStorage & storage, const IDataType & type, const String & function_name, SubcolumnSupportCache & cache)
 {
     auto & answers = getSubcolumnSupportAnswers(storage, cache);
+
+    /// Without buckets the key subcolumn `m.key_<key>` reads the whole Map, so `m['key']` is not rewritten to it.
+    if (function_name == "arrayElement" && isMap(type))
+    {
+        if (!answers.bucketed_map_serialization)
+            answers.bucketed_map_serialization = storage.hasBucketedMapSerialization();
+        if (!*answers.bucketed_map_serialization)
+            return false;
+    }
+
     if (answers.all_transformers)
         return true;
     if (!answers.tuple_element_only)

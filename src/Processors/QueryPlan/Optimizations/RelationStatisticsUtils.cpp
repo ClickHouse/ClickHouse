@@ -1,9 +1,12 @@
 #include <memory>
 #include <ranges>
+#include <vector>
+
 #include <Core/Block.h>
 #include <Core/Joins.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
+#include <fmt/ranges.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -27,10 +30,32 @@
 namespace DB
 {
 
+String dumpRelationStatsForLogs(const RelationStats & stats)
+{
+    auto dump_column = [](const auto & column)
+    {
+        const auto & [name, column_stats] = column;
+        /// No min/max: they can be values of rows hidden by a row policy, and this line reaches clients with `send_logs_level`.
+        std::vector<String> fields;
+        if (column_stats.null_fraction)
+            fields.push_back(fmt::format("null {}", *column_stats.null_fraction));
+        if (column_stats.avg_bytes != 0)
+            fields.push_back(fmt::format("avg_bytes {}", column_stats.avg_bytes));
+        if (fields.empty())
+            return fmt::format("{}: {}", name, column_stats.num_distinct_values);
+        return fmt::format("{}: {} [{}]", name, column_stats.num_distinct_values, fmt::join(fields, ", "));
+    };
+    return fmt::format(
+        "{}: {} rows, columns: [{}]",
+        stats.table_name.empty() ? "<unknown>" : stats.table_name,
+        stats.estimated_rows ? fmt::format("{}", stats.estimated_rows.value()) : "unknown",
+        fmt::join(stats.column_stats | std::views::transform(dump_column), ", "));
+}
+
 /* Read a table statistics hint from the query parameter.
  * The parameter should be a JSON object with the following structure:
  * SET param__internal_join_table_stat_hints = '{
- *   "table_name": { "cardinality": 1000, "distinct_keys": { "column_name": 100, ... } },
+ *   "table_name": { "cardinality": 1000, "distinct_keys": { "column_name": 100, ... }, "key_ranges": { "column_name": [0, 999] } },
  *   ...
  * }';
  */
@@ -74,6 +99,20 @@ RelationStats parseTableStatsHint(const String & stats_hint_json, const String &
             auto column_bytes = stat_object->getObject("column_bytes");
             for (const auto & [key, value] : *column_bytes)
                 stats.column_stats[key].avg_bytes = value.convert<Float64>();
+        }
+
+        /// `"key_ranges": { "column_name": [min, max] }`
+        if (stat_object->isObject("key_ranges"))
+        {
+            auto key_ranges = stat_object->getObject("key_ranges");
+            for (const auto & [key, value] : *key_ranges)
+            {
+                const auto & range = value.extract<Poco::JSON::Array::Ptr>();
+                if (!range || range->size() != 2)
+                    continue;
+                stats.column_stats[key].min_value = Field(range->get(0).convert<Float64>());
+                stats.column_stats[key].max_value = Field(range->get(1).convert<Float64>());
+            }
         }
         LOG_DEBUG(
             getLogger("optimizeJoin"),

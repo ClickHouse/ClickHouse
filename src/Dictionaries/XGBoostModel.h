@@ -11,8 +11,6 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
-#include <mutex>
-
 namespace DB
 {
 
@@ -49,6 +47,11 @@ public:
 
     /// Predict on a batch of feature rows. Returns a Float64 column of predictions with one element per
     /// row of `batch`.
+    ///
+    /// Can be called concurrently from many threads after `finalizeTraining`: XGBoost prediction is thread-safe
+    /// for a trained booster, and `XGBoosterPredictFromDMatrix` returns its result in a thread-local buffer.
+    /// `gblinear` is not covered by the guarantee of XGBoost only because of its timing monitor, which is active
+    /// with debug verbosity, so `sanitizeTrainingParams` rejects that verbosity.
     ColumnPtr predict(const Block & batch, const PredictParameters & params);
 
     /// Names of the feature columns, in the order the model was trained on. Used by the dictionary to bind
@@ -90,10 +93,6 @@ private:
     VectorWithMemoryTracking<float> flattened_features;
     /// Vector of labels.
     VectorWithMemoryTracking<float> labels;
-
-    /// A trained model is shared through the dictionary, so concurrent predictXGBoost queries would otherwise
-    /// race inside XGBoosterPredict, which writes into a prediction buffer owned by the booster.
-    std::mutex predict_mutex;
 };
 
 }

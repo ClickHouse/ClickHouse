@@ -11,9 +11,7 @@ O backup por snapshot é um modo de backup leve para motores de tabela cloud-nat
 
 O modo leve se aplica às tabelas [SharedMergeTree](/pt-BR/products/cloud/features/infrastructure/shared-merge-tree), SharedSet e SharedJoin. Para todos os outros tipos de motor — como Log ou Memory — o backup volta automaticamente para um backup padrão baseado em cópia.
 
-<div id="create-a-snapshot">
-  ## Criar um snapshot
-</div>
+## Criar um snapshot {#create-a-snapshot}
 
 O backup por snapshot usa o comando padrão [`BACKUP`](/pt-BR/concepts/features/backup-restore/overview#syntax) com `experimental_lightweight_snapshot = true`. A configuração `id` é obrigatória — ela dá nome ao snapshot e é usada para referenciá-lo nos comandos de desbloqueio e observabilidade:
 
@@ -50,6 +48,15 @@ TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/full/', 'ACCESS_KE
 SETTINGS experimental_lightweight_snapshot = true, id = 'full_snapshot_1'
 ```
 
+Faça backup do DDL da tabela sem os dados (a restauração cria uma tabela vazia com o schema correto):
+
+```sql
+BACKUP TABLE mydb.events
+EXCEPT DATA FROM TABLE mydb.events
+TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events_schema/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS experimental_lightweight_snapshot = true, id = 'events_schema_snapshot'
+```
+
 Os mesmos comandos também funcionam com o Azure Blob Storage:
 
 ```sql
@@ -58,9 +65,7 @@ TO AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=myaccount;Accoun
 SETTINGS experimental_lightweight_snapshot = true, id = 'events_snapshot_1'
 ```
 
-<div id="restore-to-same-service">
-  ## Restaurar para o mesmo serviço
-</div>
+## Restaurar para o mesmo serviço {#restore-to-same-service}
 
 Como um snapshot armazena referências a arquivos no armazenamento de objetos, em vez de cópias dos dados, a restauração em um serviço do ClickHouse novo ou diferente exige acesso ao armazenamento de objetos original. Por esse motivo, a restauração entre serviços não tem suporte via SQL — ela só está disponível pela UI. Via SQL, você pode restaurar um snapshot para o mesmo serviço a partir de um bucket de backup externo usando `snapshot_from_current_service = 1`. Isso lê objetos diretamente pelo disco de destino, em vez de passar por um leitor remoto de snapshot:
 
@@ -80,9 +85,7 @@ FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCES
 SETTINGS snapshot_from_current_service = 1
 ```
 
-<div id="unlock-snapshot">
-  ## Desbloquear um snapshot
-</div>
+## Desbloquear um snapshot {#unlock-snapshot}
 
 Cada snapshot mantém bloqueios no ClickHouse Keeper que impedem que os arquivos referenciados no armazenamento de objetos sejam removidos pela coleta de lixo. Após a conclusão de uma restauração — ou quando um snapshot não for mais necessário — desbloqueie-o para liberar esses bloqueios.
 
@@ -113,13 +116,9 @@ ALTER TABLE mydb.events UNLOCK SNAPSHOT '<snapshot_id>'
 
 Após o desbloqueio, a linha correspondente desaparece de `system.snapshot_locks`, e as partes que não são mais referenciadas por outros snapshots deixam de constar em `system.snapshot_parts`.
 
-<div id="observability">
-  ## Observabilidade
-</div>
+## Observabilidade {#observability}
 
-<div id="system-backups">
-  ### system.backups
-</div>
+### system.backups {#system-backups}
 
 Todas as operações de snapshot aparecem em [`system.backups`](/pt-BR/reference/system-tables/backups), junto com as operações regulares de backup e restauração. Consulte essa tabela usando o `id` que você definiu (ou o UUID retornado pelo comando):
 
@@ -144,9 +143,7 @@ uncompressed_size: 1073741824
 compressed_size:   0
 ```
 
-<div id="system-snapshot-locks">
-  ### system.snapshot_locks
-</div>
+### system.snapshot_locks {#system-snapshot-locks}
 
 `system.snapshot_locks` mostra os snapshots confirmados atualmente registrados no Keeper. Quando um snapshot é confirmado, um nó no Keeper é criado em `/clickhouse/snapshot/committed/{snapshot_id}`. Antes de excluir qualquer parte de dados, o servidor verifica se algum snapshot confirmado mantém um bloqueio sobre essa parte de dados. Se mantiver, a exclusão não é realizada. O bloqueio persiste até que você desbloqueie o snapshot explicitamente.
 
@@ -172,9 +169,7 @@ FROM system.snapshot_locks
 WHERE id = 'events_snapshot_1'
 ```
 
-<div id="system-snapshot-parts">
-  ### system.snapshot_parts
-</div>
+### system.snapshot_parts {#system-snapshot-parts}
 
 `system.snapshot_parts` mostra as partes de dados atualmente retidas por pelo menos um bloqueio de snapshot. Para cada parte bloqueada, existe um nó do Keeper em `/clickhouse/snapshot/{table_uuid}/{part_name}` contendo o tamanho compactado e o tamanho sem compactação da parte. Esta tabela lê esses nós para mostrar quais partes estão atualmente protegidas contra exclusão.
 
@@ -229,9 +224,7 @@ WHERE (name, table_id) NOT IN (
 
 Isso é útil para entender o overhead de armazenamento de manter snapshots depois que os dados originais foram alterados ou removidos.
 
-<div id="server-settings">
-  ## Configurações do servidor
-</div>
+## Configurações do servidor {#server-settings}
 
 Os parâmetros a seguir da configuração do servidor controlam o comportamento dos snapshots. Eles são definidos no arquivo de configuração do servidor, não em SQL.
 

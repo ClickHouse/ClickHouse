@@ -2,7 +2,6 @@
 -- for constant `multiIf` / `if` expressions and avoid evaluating dead branches
 -- during analysis-time constant folding.
 
-SET enable_analyzer = 1;
 SET allow_suspicious_low_cardinality_types = 1;
 
 -- Canonical issue #72714 reproducer.

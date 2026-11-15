@@ -10,7 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
 import { IAMAuthentication } from "/snippets/fr/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
@@ -42,17 +41,49 @@ Si ce n’est pas déjà configuré, suivez ces étapes :
 1. Créez un nouveau groupe de paramètres pour votre version de Postgres avec les paramètres requis :
    * Définissez `rds.logical_replication` sur 1
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp" alt="Où trouver les groupes de paramètres dans RDS ?" size="lg" border />
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp" alt="Modification de rds.logical_replication" size="lg" border />
+<Frame>
+
+![Où trouver les groupes de paramètres dans RDS ?](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Modification de rds.logical_replication](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp)
+
+</Frame>
+
+</div>
 
 2. Appliquez le nouveau groupe de paramètres à votre base de données RDS Postgres
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp" alt="Modification de RDS Postgres avec le nouveau groupe de paramètres" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Modification de RDS Postgres avec le nouveau groupe de paramètres](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp)
+
+</Frame>
+
+</div>
 
 3. Redémarrez votre instance RDS pour appliquer les modifications
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp" alt="Redémarrage de RDS Postgres" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Redémarrage de RDS Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp)
+
+</Frame>
+
+</div>
 
 <div id="configure-database-user">
   ## Configurer l’utilisateur de la base de données
@@ -120,9 +151,25 @@ La publication `clickpipes` définit l’ensemble des tables dont les événemen
 
 Si vous souhaitez restreindre le trafic vers votre instance RDS, ajoutez les [adresses IP NAT statiques documentées](/fr/integrations/clickpipes/networking/static-ips) aux `règles entrantes` du groupe de sécurité de votre instance RDS.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="Où trouver le groupe de sécurité dans RDS Postgres ?" size="lg" border />
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="Modifier les règles entrantes du groupe de sécurité ci-dessus" size="lg" border />
+<Frame>
+
+![Où trouver le groupe de sécurité dans RDS Postgres ?](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Modifier les règles entrantes du groupe de sécurité ci-dessus](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+
+</Frame>
+
+</div>
 
 <div id="private-access-via-aws-privatelink">
   ### Accès privé via AWS PrivateLink

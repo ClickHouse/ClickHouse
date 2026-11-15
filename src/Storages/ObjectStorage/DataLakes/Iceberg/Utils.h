@@ -51,6 +51,9 @@ void writeMessageToFile(
     const std::string & write_if_match = "",
     DB::CompressionMethod compression_method = DB::CompressionMethod::None);
 
+/// Whether a conditional write failed because another writer created or changed the object first.
+bool isConditionalWriteConflict(const DB::Exception & e);
+
 /// Writes the metadata file with If-None-Match; false means the write was not confirmed or the path already exists.
 bool writeMetadataFile(
     const IcebergPathResolver & resolver,
@@ -79,6 +82,13 @@ bool writeMetadataFileAndVersionHint(
     DB::ContextPtr context,
     bool try_write_version_hint);
 
+/// Removes the metadata file written by `writeMetadataFileAndVersionHint` after the catalog definitively rejected
+/// the commit pointing to it, so that the next attempt, which takes the version from the catalog, can reuse its name.
+void removeRejectedMetadataFile(
+    const IcebergPathResolver & resolver,
+    const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
+    DB::ObjectStoragePtr object_storage);
+
 struct TransformAndArgument
 {
     String transform_name;
@@ -92,6 +102,7 @@ String normalizeIcebergTransformFunctionName(const String & function_name);
 
 CompressionMethod getCompressionMethodFromMetadataFile(const String & path);
 
+/// The metadata file of the table, checked with validateTableMetadata and IcebergSchemaProcessor::checkTableSchemas.
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
@@ -100,6 +111,22 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     LoggerPtr log,
     CompressionMethod compression_method,
     const std::optional<String> & table_uuid);
+
+String readMetadataJSONString(
+    const String & metadata_file_path,
+    ObjectStoragePtr object_storage,
+    bool use_metadata_cache,
+    const ContextPtr & local_context,
+    LoggerPtr log,
+    CompressionMethod compression_method);
+
+Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str, const String & metadata_file_path);
+
+/// Throws ICEBERG_SPECIFICATION_VIOLATION if the metadata file lacks a field that the Iceberg spec requires for its format version,
+/// or has a field of the wrong type.
+void validateTableMetadata(const Poco::JSON::Object & metadata, const String & metadata_file_path);
+
+Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object);
 
 
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
@@ -113,6 +140,17 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     ASTPtr order_by,
     ContextPtr context,
     UInt64 format_version = 2);
+
+/// Adds the metadata compression codec from the settings to the table properties.
+/// A catalog that writes the first metadata file reads the codec from there.
+/// Returns the compression method.
+CompressionMethod setMetadataCompressionCodecProperty(Poco::JSON::Object::Ptr metadata_object, const ContextPtr & context);
+
+/// Format version 1 requires `schema` (the current schema) and `partition-spec` (the default spec's fields) next to `schemas` and `partition-specs`.
+void setFormatVersion1SchemaAndPartitionSpec(Poco::JSON::Object::Ptr metadata);
+
+/// Parses the version out of a metadata file name: `v<N>.metadata.json`, `v<N>-<uuid>.metadata.json` or `<N>-<uuid>.metadata.json`.
+MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path);
 
 /// `ignore_metadata_pointer_overrides` distrusts the version a configured pointer names
 /// (`iceberg_metadata_file_path`, `version-hint.text`) and resolves by listing; the scheme that name
@@ -129,7 +167,15 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     bool force_fetch_latest_metadata = true,
     bool ignore_metadata_pointer_overrides = false);
 
-String getCatalogMetadataFilePath(const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier);
+struct CatalogMetadataFilePath
+{
+    /// Exactly as the catalog returned it, for a commit to check that the catalog still points to it.
+    String location;
+    /// `location` relative to the table location, for reading the file.
+    String path;
+};
+
+CatalogMetadataFilePath getCatalogMetadataFilePath(const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier);
 
 MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
     const ObjectStoragePtr & object_storage,
@@ -176,8 +222,8 @@ void forEachAvroEntry(
 
 /// Iceberg stores some partition values in a form that does not directly correspond to the ClickHouse
 /// type of the partition column: a decimal is an Avro `fixed` holding the two's-complement big-endian
-/// unscaled value, and older ClickHouse versions wrote a `DateTime64` partition value as a plain `long`.
-/// Bring such a value to the column type; any other value is returned unchanged.
+/// unscaled value, and older ClickHouse versions wrote a `DateTime64` partition value as a plain `long`
+/// and a `Bool` one as an `int`. Bring such a value to the column type; any other value is returned unchanged.
 /// The result of a decimal always uses `Decimal256` as its carrier, independently of the width of the
 /// ClickHouse type, because `DB::Field` compares and orders on its variant tag first and Iceberg allows
 /// widening `decimal(P, S)` to `decimal(P', S)` between schemas of the same table.

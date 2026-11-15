@@ -15,23 +15,22 @@ des dictionnaires, des tables, des fonctions de table et le stockage d’objets.
 </Note>
 
 Les collections nommées peuvent être configurées via du DDL ou dans des fichiers de configuration, et sont prises en compte
-au démarrage de ClickHouse. Elles simplifient la création d’objets et permettent de masquer les informations d’authentification
+au démarrage de ClickHouse. Elles simplifient la création d’objets et permettent de masquer les identifiants
 aux utilisateurs sans accès administratif.
 
 Les clés d’une collection nommée doivent correspondre aux noms des paramètres de la
-fonction, du moteur de table, de la base de données, etc. correspondants. Dans les exemples ci-dessous, un lien vers la liste des paramètres
+fonction, du table engine, de la base de données, etc. correspondants. Dans les exemples ci-dessous, un lien vers la liste des paramètres
 est fourni pour chaque type.
 
-Les paramètres définis dans une collection nommée peuvent être surchargés en SQL, comme le montrent les exemples
-ci-dessous. Cette possibilité peut être limitée à l’aide des mots-clés `[NOT] OVERRIDABLE` et des attributs XML,
-et/ou de l’option de configuration `allow_named_collection_override_by_default`.
+Pour surcharger un paramètre stocké dans une collection nommée, le privilège `SHOW NAMED COLLECTIONS SECRETS` sur cette collection est requis, y compris lorsque le paramètre est marqué `OVERRIDABLE`. Les clés marquées `NOT OVERRIDABLE` en SQL ou `overridable="false"` en XML ne peuvent pas être surchargées. L’ajout d’un paramètre absent de la collection ne nécessite pas ce privilège supplémentaire. Les alias, tels que `addresses_expr` pour `host`, sont considérés comme des surcharges du paramètre stocké.
 
-<Warning>
-  Si la surcharge est autorisée, des utilisateurs sans accès administratif peuvent
-  être en mesure de découvrir les informations d’authentification que vous essayez de masquer.
-  Si vous utilisez des collections nommées à cette fin, vous devez désactiver
-  `allow_named_collection_override_by_default` (qui est activé par défaut).
-</Warning>
+```sql
+GRANT SHOW NAMED COLLECTIONS SECRETS ON my_collection TO my_user;
+```
+
+Cette vérification requiert uniquement le privilège ; elle ne dépend pas des paramètres qui contrôlent l’affichage des secrets. Le paramètre `allow_named_collection_override_by_default` est obsolète et n’a aucun effet.
+
+Les sources de dictionnaire obéissent à la même règle. Le privilège est vérifié lors de la création, du rattachement ou de la restauration du dictionnaire. Lors du chargement du dictionnaire, seules les clés marquées `NOT OVERRIDABLE` sont imposées.
 
 ## Stocker des collections nommées dans la base de données système {#storing-named-collections-in-the-system-database}
 
@@ -46,9 +45,9 @@ url = 'https://connection.url/'
 
 Dans l’exemple ci-dessus :
 
-* `key_1` peut toujours être surchargée.
+* `key_1` peut être surchargée par les utilisateurs disposant du privilège `SHOW NAMED COLLECTIONS SECRETS` sur la collection.
 * `key_2` ne peut jamais être surchargée.
-* `url` peut être surchargée ou non selon la valeur de `allow_named_collection_override_by_default`.
+* `url` peut être surchargée par les utilisateurs disposant du privilège `SHOW NAMED COLLECTIONS SECRETS` sur la collection.
 
 ### Permissions pour créer des collections nommées avec DDL {#permissions-to-create-named-collections-with-ddl}
 
@@ -126,11 +125,11 @@ La modification du type de stockage nécessite un redémarrage du serveur ; `SY
 </clickhouse>
 ```
 
-Dans l’exemple ci-dessus :
+Dans l’exemple ci-dessus :
 
-* `key_1` peut toujours être surchargée.
+* `key_1` peut être surchargée par les utilisateurs disposant du privilège `SHOW NAMED COLLECTIONS SECRETS` sur la collection.
 * `key_2` ne peut jamais être surchargée.
-* `url` peut être surchargée ou non selon la valeur de `allow_named_collection_override_by_default`.
+* `url` peut être surchargée par les utilisateurs disposant du privilège `SHOW NAMED COLLECTIONS SECRETS` sur la collection.
 
 ## Modification des collections nommées {#modifying-named-collections}
 
@@ -503,9 +502,16 @@ SELECT * FROM remote(remote1, database = default, table = test);
 ### Exemple d’utilisation de collections nommées avec un dictionnaire dont la source est ClickHouse {#example-of-using-named-collections-with-a-dictionary-with-source-clickhouse}
 
 ```sql
+CREATE NAMED COLLECTION remote_dict AS
+host = 'localhost',
+port = 9000,
+database = 'default',
+user = 'default',
+password = '';
+
 CREATE DICTIONARY dict(a Int64, b String)
 PRIMARY KEY a
-SOURCE(CLICKHOUSE(NAME remote1 TABLE test DB default))
+SOURCE(CLICKHOUSE(NAME remote_dict TABLE test))
 LIFETIME(MIN 1 MAX 2)
 LAYOUT(HASHED());
 
@@ -689,7 +695,7 @@ CREATE DICTIONARY dict
     `b` String
 )
 PRIMARY KEY a
-SOURCE(MONGODB(NAME mymongo COLLECTION my_dict))
+SOURCE(MONGODB(NAME mymongo))
 LIFETIME(MIN 1 MAX 2)
 LAYOUT(HASHED())
 
@@ -701,5 +707,5 @@ SELECT dictGet('dict', 'b', 2);
 ```
 
 <Note>
-  La collection nommée indique `my_collection` comme nom de la collection. Dans l’appel de fonction, ce nom est remplacé par `collection = 'my_dict'` pour sélectionner une autre collection.
+  Le dictionnaire utilise `my_collection`, comme indiqué dans la collection nommée. Pour utiliser une autre collection MongoDB, définissez une collection nommée distincte contenant cette valeur.
 </Note>
