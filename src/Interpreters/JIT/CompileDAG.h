@@ -13,7 +13,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
 
-#include <unordered_set>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace llvm
 {
@@ -93,7 +93,7 @@ private:
 CompileDAG getCompilableDAG(
     const ActionsDAG::Node * root,
     ActionsDAG::NodeRawConstPtrs & children,
-    const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes);
+    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes);
 
 }
 
