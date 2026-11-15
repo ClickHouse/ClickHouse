@@ -175,8 +175,8 @@ EOF
 )
 run "distributed_product_mode = 'deny', max_distributed_depth = 1"
 
-# What is still sent as text.
-echo '-- as before'
+# The set has other uses.
+echo '-- shared sets'
 QUERIES=$(cat <<'EOF'
 same right side, global and local|select count() from events_view where id global in (select id from lookup_05507) and (id + 0) in (select id from lookup_05507)
 same right side, local and global|select count() from events_view where (id + 0) in (select id from lookup_05507) and id global in (select id from lookup_05507)
@@ -186,7 +186,7 @@ set built for a virtual column|select count() from (select _partition_id as p fr
 set built for a virtual column, not in|select count() from (select _partition_id as p from events_05507 union all select _partition_id from parts) where p not in (select toString(g) from lookup_05507)
 EOF
 )
-run "distributed_product_mode = 'global'"
+run "distributed_product_mode = 'global', max_distributed_depth = 1"
 
 # The same `IN` written over the `Distributed` table directly is none of this: there the mode is applied.
 echo '-- directly over the Distributed table'
@@ -209,9 +209,9 @@ system flush logs query_log;
 select 'sent with an explain', round(ProfileEvents['NetworkSendBytes'] / 1600000) from system.query_log
 where event_date >= yesterday() and event_time >= now() - 600 and current_database = currentDatabase() and query_id = '$query_id' and type = 'QueryFinish'"
 
-# The result is limited as with `GLOBAL IN`.
+# A result over the limit is not sent.
 $CLICKHOUSE_CLIENT --enable_analyzer 1 --prefer_localhost_replica 0 --enable_parallel_replicas 0 --serialize_query_plan 0 -q "
-select count() from events_view where id in (select id from lookup_05507) settings distributed_product_mode = 'global', max_rows_to_transfer = 2; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
+select count() from events_view where id in (select id from lookup_05507) settings distributed_product_mode = 'global', max_rows_to_transfer = 2;
 select count() from events_view where id + rand() % 1 in (select id from lookup_05507) settings distributed_product_mode = 'global', max_rows_to_transfer = 2;
 "
 

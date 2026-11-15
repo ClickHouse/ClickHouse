@@ -78,7 +78,7 @@ distributed_product_mode = 'deny', prefer_global_in_and_join = 1: same
 -- settings of a scope
 outer local, inner global	10
 outer deny, inner prefer global	10
--- as before
+-- shared sets
 same right side, global and local	10
 same right side, local and global	10
 same right side, global or local	11
@@ -91,4 +91,5 @@ local	0
 -- lazily
 10
 sent with an explain	0
+10
 10

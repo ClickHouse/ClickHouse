@@ -5,6 +5,7 @@
 
 # What the shards are sent for an `IN` written over a subquery that reads a `Distributed` table: its text, or the
 # result of the right side (`_data_`) if `distributed_product_mode` is 'global' where the `Distributed` table is read.
+# In that mode, a result that cannot be sent is not replaced with the text: the condition is not sent.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -78,6 +79,7 @@ Distributed, and one that is not deterministic|id + rand() % 2 in (select id fro
 Distributed, the same set is global elsewhere|id in (select id from some_dist) having sum(id global in (select id from some_dist)) > 0
 Distributed, and an in without a set|inIgnoreSet(id, (1, 2)) = 0 and id in (select id from some_dist)
 Distributed, and a Set|id in some_set and id + 1 in (select id from some_dist)
+Distributed, or a Set|id in some_set or id + 1 in (select id from some_dist)
 Distributed, and a constant|id in (1, 2) and id + 1 in (select id from some_dist)
 Distributed, and one over one shard|id in (select id from some_dist) and id + 1 in (select id from some_one_shard)
 Distributed, or one that is allowed|id in (select id from some_dist) or id + 1 in (select id from some_dist settings distributed_product_mode = 'allow')
@@ -86,11 +88,9 @@ Distributed, set may be cut|id in (select id from some_dist) settings max_rows_i
 Distributed, set is cut, not on the shards|id in (select id from some_dist) settings max_rows_in_set = 2, set_overflow_mode = 'break'|(select id from events_dist settings max_rows_in_set = 0, set_overflow_mode = 'throw' union all select id from some)
 Distributed, set may be cut on the shards|id in (select id from some_dist)|(select id, g from events_dist settings max_rows_in_set = 100, set_overflow_mode = 'break')
 Distributed, table may be cut|id in (select id from some_dist) settings max_rows_to_transfer = 100, transfer_overflow_mode = 'break'
-Distributed, table may not be cut, the set is built|id in (select id from some_dist) settings max_rows_to_transfer = 4, max_bytes_to_transfer = 32, transfer_overflow_mode = 'break'|(select id from events_dist union all select id from some)
+Distributed, table may not be cut, the set is built|id in (select id from some_dist) settings max_rows_to_transfer = 5, max_bytes_to_transfer = 33, transfer_overflow_mode = 'break'|(select id from events_dist union all select id from some)
 Distributed, the set is built, with too many rows|id in (select id from some_dist) settings max_rows_to_transfer = 3|(select id from events_dist union all select id from some)
 Distributed, the set is built, with too many bytes|id in (select id from some_dist) settings max_bytes_to_transfer = 31|(select id from events_dist union all select id from some)
-Distributed, the set is built, with as many bytes of other types|id in (select toNullable(id) from some_dist) settings max_bytes_to_transfer = 36|(select id from events_dist union all select id from some)
-Distributed, the set is built, with too many bytes of other types|id in (select toNullable(id) from some_dist) settings max_bytes_to_transfer = 35|(select id from events_dist union all select id from some)
 Distributed, reading may be cut|id in (select id from some_dist) settings max_rows_to_read = 1000000, read_overflow_mode = 'break'
 Distributed, reading may be cut on the shards|id in (select id from some_dist) settings max_rows_to_read_leaf = 1000000, read_overflow_mode_leaf = 'break'
 Distributed, time may be cut|id in (select id from some_dist) settings max_execution_time = 1000, timeout_overflow_mode = 'break'
@@ -129,7 +129,7 @@ where $LOG and not is_initial_query and type = 'QueryStart' and has(tables, curr
 group by log_comment order by log_comment"
 
 # The set of two `IN`s is sent once, and not for nothing. The shards prune by it, and read other columns only where it matches.
-# Replicas that read the data of this server, or analyze its indexes, stand in for it and get the text. Many parts: some
+# Replicas that read the data of this server, or analyze its indexes, get the result too. Many parts: some
 # of them have to be given to the other replica.
 $CLIENT --distributed_product_mode global --network_compression_method none -q "
 create table parts (id UInt64) engine = MergeTree order by id

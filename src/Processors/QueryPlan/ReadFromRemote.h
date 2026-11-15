@@ -7,8 +7,10 @@
 #include <Client/IConnections.h>
 #include <Common/GetPriorityForLoadBalancing.h>
 #include <Storages/IStorage_fwd.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Core/UUID.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -48,6 +50,8 @@ public:
 
     String getName() const override { return "ReadFromRemote"; }
 
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
+
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
@@ -81,9 +85,6 @@ private:
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
     bool allow_reading_shard_from_several_replicas = false;
-
-    /// Returns the query of the shard with the filters, and the tables to send with it.
-    std::pair<ASTPtr, Tables> addFiltersToQuery(const ClusterProxy::SelectStreamFactory::Shard & shard, bool clone_query);
 
     /// An EXPLAIN runs extra executors of its own, whose skips are not the query's: it passes no tracker.
     Pipes addPipes(
@@ -153,10 +154,10 @@ public:
     std::optional<size_t> getExcludePoolIndex() const { return exclude_pool_index; }
 
 private:
-    Pipes addPipes(ASTPtr ast, const SharedHeader & out_header);
+    Pipes addPipes(ASTPtr ast, const SharedHeader & out_header, RemoteQueryExecutor::BeforeSendingQuery before_sending_query = {});
 
     Pipe createPipeForSingeReplica(const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const SharedHeader & out_header,
-                                   size_t parallel_marshalling_threads);
+                                   size_t parallel_marshalling_threads, RemoteQueryExecutor::BeforeSendingQuery before_sending_query);
 
     ClusterPtr cluster;
     ASTPtr query_ast;
@@ -178,6 +179,20 @@ private:
     std::shared_ptr<const QueryPlan> query_plan;
 };
 
+/// The right sides of the `IN`s in a condition of this server that is sent to remote servers too.
+/// In a subquery, the same names can mean other tables there.
+struct SetsToSend
+{
+    /// Otherwise the conjuncts with such an `IN` are left out.
+    bool send = false;
+
+    /// By the names of their tables.
+    UnorderedMapWithMemoryTracking<String, FutureSetFromSubqueryPtr> sets = {};
+
+    /// Call it when the sets are built. Returns false if the condition has to be sent without them.
+    bool addTables(Tables & external_tables, const Settings & settings, size_t num_servers) const;
+};
+
 ASTPtr tryBuildAdditionalFilterAST(
     const ActionsDAG & dag,
     const NameSet & projection_names,
@@ -186,8 +201,8 @@ ASTPtr tryBuildAdditionalFilterAST(
     ContextMutablePtr & context,
     /// The conjuncts the conversion leaves out of a positive `AND`, when asked.
     VectorWithMemoryTracking<const ActionsDAG::Node *> * dropped_conjuncts = nullptr,
-    /// Instead of the subquery of a local `IN`, write a table with its result, and add the table to `external_tables`.
-    bool send_sets = false);
+    /// If given, the right side of an `IN` is not written as a subquery.
+    SetsToSend * sets_to_send = nullptr);
 
 /// The conjuncts of `condition` (`ActionsDAG::extractConjunctionAtoms`) the splice would leave out of the
 /// remote query - all of them where it does not run.

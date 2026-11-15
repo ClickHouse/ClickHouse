@@ -72,12 +72,7 @@ namespace Setting
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsBool make_distributed_plan;
     extern const SettingsUInt64 max_rows_to_transfer;
-    extern const SettingsOverflowMode read_overflow_mode;
-    extern const SettingsOverflowMode read_overflow_mode_leaf;
-    extern const SettingsOverflowMode set_overflow_mode;
-    extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsOverflowMode transfer_overflow_mode;
-    extern const SettingsBool transform_null_in;
     extern const SettingsBool use_index_for_in_with_subqueries;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
 }
@@ -280,7 +275,7 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     std::shared_ptr<FutureSetFromSubquery> external_table_set_,
     FutureSetSettings set_settings_)
     : hash(hash_), ast(std::move(ast_)), set_settings(std::move(set_settings_)), external_table_set(std::move(external_table_set_))
-    , source(std::move(source_)), source_header(source->getCurrentHeader())
+    , source(std::move(source_))
 {
     set_and_key = std::make_shared<SetAndKey>();
     set_and_key->key = PreparedSets::toString(hash_, {});
@@ -330,39 +325,7 @@ SetPtr FutureSetFromSubquery::get() const
 void FutureSetFromSubquery::setQueryPlan(std::unique_ptr<QueryPlan> source_)
 {
     source = std::move(source_);
-    source_header = source->getCurrentHeader();
-    set_and_key->set->setHeader(source_header->getColumnsWithTypeAndName());
-}
-
-static Columns convertSetElements(const Set & set, const DataTypes & expected_types)
-{
-    Columns set_elements = set.getSetElements();
-    const auto & set_types = set.getElementsTypes();
-
-    /// The Set class may strip Nullable/LowCardinality from types when storing elements
-    /// (depending on transform_null_in setting), so we need to convert the set elements
-    /// to match the external table's expected column types.
-    Columns converted_columns;
-    converted_columns.reserve(set_elements.size());
-
-    size_t idx = 0;
-    for (const auto & expected_type : expected_types)
-    {
-        if (idx >= set_elements.size())
-            break;
-
-        const auto & set_column = set_elements[idx];
-        const auto & set_type = set_types[idx];
-
-        if (!set_type->equals(*expected_type))
-            converted_columns.push_back(castColumn({set_column, set_type, ""}, expected_type));
-        else
-            converted_columns.push_back(set_column);
-
-        ++idx;
-    }
-
-    return converted_columns;
+    set_and_key->set->setHeader(source->getCurrentHeader()->getColumnsWithTypeAndName());
 }
 
 void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external_table_)
@@ -374,8 +337,36 @@ void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external
         return;
 
     auto metadata = external_table_->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    const auto & expected_columns = metadata->getColumns().getAllPhysical();
 
-    Chunk set_chunk(convertSetElements(set, metadata->getColumns().getAllPhysical().getTypes()), set.getTotalRowCount());
+    Columns set_elements = set.getSetElements();
+    const auto & set_types = set.getElementsTypes();
+
+    /// The Set class may strip Nullable/LowCardinality from types when storing elements
+    /// (depending on transform_null_in setting), so we need to convert the set elements
+    /// to match the external table's expected column types.
+    Columns converted_columns;
+    converted_columns.reserve(set_elements.size());
+
+    size_t idx = 0;
+    for (const auto & expected_col : expected_columns)
+    {
+        if (idx >= set_elements.size())
+            break;
+
+        const auto & set_column = set_elements[idx];
+        const auto & set_type = set_types[idx];
+        const auto & expected_type = expected_col.type;
+
+        if (!set_type->equals(*expected_type))
+            converted_columns.push_back(castColumn({set_column, set_type, ""}, expected_type));
+        else
+            converted_columns.push_back(set_column);
+
+        ++idx;
+    }
+
+    Chunk set_chunk(std::move(converted_columns), set.getTotalRowCount());
     auto pipeline = QueryPipeline(external_table_->write({}, metadata, nullptr, /*async_insert=*/false));
     PushingPipelineExecutor executor(pipeline);
     executor.push(std::move(set_chunk));
@@ -395,64 +386,37 @@ void FutureSetFromSubquery::setExternalTable(StoragePtr external_table_)
     set_and_key->external_table = std::move(external_table_);
 }
 
-bool FutureSetFromSubquery::canFillTableForLocalIn(const ContextPtr & context) const
+String FutureSetFromSubquery::createTableOfElements(const DataTypes & types, const ContextPtr & context)
 {
-    const auto & settings = context->getSettingsRef();
-    const auto & set = *set_and_key->set;
-    if (set.transformNullIn() != settings[Setting::transform_null_in])
-        return false;
-
-    const auto & query_settings = context->hasQueryContext() ? context->getQueryContext()->getSettingsRef() : settings;
-    /// Whatever cuts the set or the table silently would cut it at different rows here and on the shards.
-    for (auto mode : {set.limits.overflow_mode, settings[Setting::set_overflow_mode].value, settings[Setting::read_overflow_mode].value,
-                      settings[Setting::read_overflow_mode_leaf].value, settings[Setting::timeout_overflow_mode].value,
-                      query_settings[Setting::timeout_overflow_mode].value})
-        if (mode == OverflowMode::BREAK)
-            return false;
-
-    /// A `GLOBAL IN` over the same subquery in another condition has a table of its own.
-    if (set_and_key->external_table_expected)
-        return false;
-
-    if (!set.isCreated())
-        return is_build_planned;
-
-    if (!set.hasExplicitSetElements())
-        return false;
-
-    /// A build without a table does not check these limits.
-    if (const UInt64 max_rows = settings[Setting::max_rows_to_transfer]; max_rows && set.getTotalRowCount() > max_rows)
-        return false;
-
-    if (const UInt64 max_bytes = settings[Setting::max_bytes_to_transfer]; max_bytes && !set.empty())
+    /// Index analyses can be concurrent.
+    std::lock_guard lock(inplace_build_mutex);
+    if (!table_of_elements)
     {
-        size_t bytes = 0;
-        for (const auto & column : convertSetElements(set, source_header->getDataTypes()))
-            bytes += column->byteSize();
+        NamesAndTypesList columns;
+        for (const auto & type : types)
+            columns.emplace_back(fmt::format("c{}", columns.size()), type);
 
-        return bytes <= max_bytes;
+        table_of_elements = std::make_shared<TemporaryTableHolder>(
+            context, ColumnsDescription{columns}, ConstraintsDescription{}, /*query=*/ nullptr, /*create_for_global_subquery=*/ true);
     }
 
-    return true;
+    return fmt::format("_data_{}", table_of_elements->id);
 }
 
-std::pair<String, StoragePtr> FutureSetFromSubquery::getTableForLocalIn(const ContextPtr & context)
+StoragePtr FutureSetFromSubquery::fillTableOfElements()
 {
-    if (!set_and_key->table_for_local_in)
+    auto table = table_of_elements->getTable();
+    callOnce(fill_table_of_elements_once, [&]
     {
-        /// Not the names of the subquery: they can repeat, or be ones that a table must not have.
-        NamesAndTypesList columns;
-        for (const auto & column : *source_header)
-            columns.emplace_back(fmt::format("c{}", columns.size()), column.type);
-
-        auto holder = std::make_shared<TemporaryTableHolder>(
-            context, ColumnsDescription{columns}, ConstraintsDescription{}, /*query=*/ nullptr, /*create_for_global_subquery=*/ true);
-        setExternalTable(holder->getTable());
-        set_and_key->table_for_local_in = std::move(holder);
-    }
-
-    auto table = set_and_key->table_for_local_in->getTable();
-    return {fmt::format("_data_{}", table->getStorageID().uuid), table};
+        auto metadata = table->getInMemoryMetadataPtr(nullptr, false);
+        auto pipeline = QueryPipeline(table->write({}, metadata, nullptr, /*async_insert=*/ false));
+        PushingPipelineExecutor executor(pipeline);
+        const auto blocks = get()->getElementBlocks().value();
+        for (const auto & block : blocks)
+            executor.push(Chunk(block, block.front()->size()));
+        executor.finish();
+    });
+    return table;
 }
 
 DataTypes FutureSetFromSubquery::getTypes() const

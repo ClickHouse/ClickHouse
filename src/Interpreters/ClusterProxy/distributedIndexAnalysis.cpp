@@ -29,6 +29,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
 #include <IO/ConnectionTimeouts.h>
+#include <Analyzer/Utils.h>
 #include <Columns/ColumnString.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -190,17 +191,31 @@ IndexAnalysisPartsRanges getIndexAnalysisFromReplicaSync(const LoggerPtr & logge
     return res;
 }
 
-ASTPtr getFilterAST(const ActionsDAG & filter_actions_dag, const NameSet & indexes_column_names, ContextMutablePtr & context, Tables * external_tables)
+ASTPtr getFilterAST(
+    const ActionsDAG & filter_actions_dag, const NameSet & indexes_column_names, ContextMutablePtr & context, Tables * external_tables,
+    size_t num_servers)
 {
-    ASTPtr predicate = tryBuildAdditionalFilterAST(filter_actions_dag,
-        /*projection_names=*/ indexes_column_names,
-        /*execution_name_to_projection_query_tree=*/ {},
-        /*external_tables=*/ external_tables,
-        context);
-    if (!predicate)
-        return nullptr;
+    auto build = [&](SetsToSend * sets_to_send)
+    {
+        return tryBuildAdditionalFilterAST(filter_actions_dag,
+            /*projection_names=*/ indexes_column_names,
+            /*execution_name_to_projection_query_tree=*/ {},
+            /*external_tables=*/ external_tables,
+            context,
+            /*dropped_conjuncts=*/ nullptr,
+            sets_to_send);
+    };
 
-    return predicate;
+    if (!areInAndJoinMadeGlobal(context->getSettingsRef()))
+        return build(nullptr);
+
+    SetsToSend sets{.send = true};
+    auto predicate = build(&sets);
+    if (sets.addTables(*external_tables, context->getSettingsRef(), num_servers))
+        return predicate;
+
+    sets = {};
+    return build(&sets);
 }
 
 
@@ -248,7 +263,7 @@ public:
 
         ASTPtr filter_ast;
         if (filter_actions_dag)
-            filter_ast = getFilterAST(*filter_actions_dag, indexes_column_names, execution_context, &external_tables);
+            filter_ast = getFilterAST(*filter_actions_dag, indexes_column_names, execution_context, &external_tables, remote_replicas);
 
         if (filter_ast && sampling_filter)
             filter_ast = makeASTForLogicalAnd({filter_ast, sampling_filter});

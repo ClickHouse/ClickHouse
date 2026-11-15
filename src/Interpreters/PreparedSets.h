@@ -9,7 +9,6 @@
 #include <unordered_map>
 #include <vector>
 #include <mutex>
-#include <Core/Block_fwd.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/FutureSetSettings.h>
@@ -56,8 +55,6 @@ struct SetAndKey
     /// `ReadFromRemote`), so the intent is recorded at set registration for the plan optimizations
     /// that must know whether the set fill also feeds an external table.
     bool external_table_expected = false;
-    /// Owns `external_table` if it was made by `FutureSetFromSubquery::getTableForLocalIn`, which is at pipeline build time too.
-    std::shared_ptr<TemporaryTableHolder> table_for_local_in = nullptr;
 };
 
 using SetAndKeyPtr = std::shared_ptr<SetAndKey>;
@@ -248,14 +245,11 @@ public:
     void setExternalTable(StoragePtr external_table_);
     void markExternalTableExpected() { set_and_key->external_table_expected = true; }
 
-    /// The build of the set is a part of a plan: it fills `external_table` before the rest of that plan runs.
-    void markBuildPlanned() { is_build_planned = true; }
-
-    /// Whether the set can fill a table from which a shard builds the same set, if it is sent there with this context.
-    bool canFillTableForLocalIn(const ContextPtr & context) const;
-    /// The table to send to the shards for a local `IN`, and its name there. The name is unique: a shard that gets it can be an
-    /// initiator too, with a set of the same subquery over other tables.
-    std::pair<String, StoragePtr> getTableForLocalIn(const ContextPtr & context);
+    /// Creates a table with these types, from which a remote server builds the same set, and returns its name there. The name is
+    /// unique: a server that gets the table can be an initiator too, with a set of the same subquery over other tables.
+    String createTableOfElements(const DataTypes & types, const ContextPtr & context);
+    /// The set must be built and have all its elements.
+    StoragePtr fillTableOfElements();
 
     const QueryPlan * getQueryPlan() const { return source.get(); }
     QueryPlan * getQueryPlan() { return source.get(); }
@@ -273,9 +267,10 @@ private:
     std::shared_ptr<FutureSetFromSubquery> external_table_set;
 
     std::unique_ptr<QueryPlan> source;
-    SharedHeader source_header;
     QueryTreeNodePtr query_tree;
-    bool is_build_planned = false;
+
+    std::shared_ptr<TemporaryTableHolder> table_of_elements;
+    OnceFlag fill_table_of_elements_once;
 
     /// Why the destructive in-place build in `buildOrderedSetInplace` failed after it consumed `source`.
     /// The set can never be built once that happened, so `build` rethrows this instead of returning a null
