@@ -1,0 +1,23 @@
+Part A: every writer, IcebergLocal
+0
+v1.metadata.json	[]	1	1	1	[]
+v2.metadata.json	['v1.metadata.json']	1	1	1	[0]
+v3.metadata.json	['v1.metadata.json','v2.metadata.json']	1	1	1	[0,1]
+v4.metadata.json	['v1.metadata.json','v2.metadata.json','v3.metadata.json']	1	1	1	[0,1]
+v5.metadata.json	['v1.metadata.json','v2.metadata.json','v3.metadata.json','v4.metadata.json']	1	1	1	[0,1,1]
+v6.metadata.json	['v1.metadata.json','v2.metadata.json','v3.metadata.json','v4.metadata.json','v5.metadata.json']	1	1	1	[0,1,1,1]
+v7.metadata.json	['v1.metadata.json','v2.metadata.json','v3.metadata.json','v4.metadata.json','v5.metadata.json','v6.metadata.json']	1	1	1	[1,1,1]
+v8.metadata.json	['v1.metadata.json','v2.metadata.json','v3.metadata.json','v4.metadata.json','v5.metadata.json','v6.metadata.json','v7.metadata.json']	1	1	1	[1,1,1,1]
+2	1	\N
+4	1	\N
+deleted_metadata_files_count	0
+Part B: IcebergS3
+v1.metadata.json	[]	1	1	1	[]
+v2.metadata.json	['v1.metadata.json']	1	1	1	[0]
+v3.metadata.json	['v1.metadata.json','v2.metadata.json']	1	1	1	[0,1]
+v4.metadata.json	['v1.metadata.json','v2.metadata.json','v3.metadata.json']	1	1	1	[0,1]
+v5.metadata.json	['v1.metadata.json','v2.metadata.json','v3.metadata.json','v4.metadata.json']	1	1	1	[0,1,1]
+deleted_metadata_files_count	0
+Part C: OPTIMIZE full rewrite
+[]	[0,1]
+2
