@@ -12,6 +12,8 @@
 #include <pcg_random.hpp>
 
 #include <filesystem>
+#include <map>
+#include <mutex>
 
 namespace DB
 {
@@ -42,6 +44,8 @@ using ConnectionPoolWithFailoverPtr = std::shared_ptr<ConnectionPoolWithFailover
 class IStorageCluster;
 struct DistributedBucketMap;
 class DistributedBucketMapWatcher;
+struct DistributedBucketMap;
+class QueryStatus;
 
 /** A distributed table that resides on multiple servers.
   * Uses data from the specified database and tables on each server.
@@ -157,10 +161,11 @@ public:
 
     /// The index of the shard of every sharding key slot: from the bucket map of the table if it has one,
     /// otherwise from the shard weights of `cluster`. `cluster` must be the full cluster of the table.
-    std::shared_ptr<const Cluster::SlotToShard> getSlotToShard(const ClusterPtr & cluster) const;
+    /// With `insert_context`, every call of the same query returns the same version of the bucket map.
+    std::shared_ptr<const Cluster::SlotToShard> getSlotToShard(const ClusterPtr & cluster, const ContextPtr & insert_context = nullptr) const;
 
     /// The latest bucket map of the table, checked to fit `cluster`, or nullptr if the table does not have a bucket map.
-    std::shared_ptr<const DistributedBucketMap> getBucketMap(const ClusterPtr & cluster) const;
+    std::shared_ptr<const DistributedBucketMap> getBucketMap(const ClusterPtr & cluster, const ContextPtr & insert_context = nullptr) const;
 
     /// Used by StorageSystemDistributedBucketMaps. Returns nullptr if the table does not have a bucket map.
     DistributedBucketMapWatcher * getBucketMapWatcher() const { return bucket_map_watcher.get(); }
@@ -209,7 +214,7 @@ private:
     /// Used by StorageSystemDistributionQueue
     std::vector<DistributedAsyncInsertDirectoryQueue::Status> getDirectoryQueueStatuses() const;
 
-    static IColumn::Selector createSelector(const Cluster::SlotToShard & slot_to_shard, const ColumnWithTypeAndName & result);
+    IColumn::Selector createSelector(const Cluster::SlotToShard & slot_to_shard, const ColumnWithTypeAndName & result) const;
     /// Apply the following settings:
     /// - optimize_skip_unused_shards
     /// - force_optimize_skip_unused_shards
@@ -320,6 +325,12 @@ private:
 
     /// Is set if the table has the `bucket_map_zookeeper_path` setting.
     std::unique_ptr<DistributedBucketMapWatcher> bucket_map_watcher;
+
+    /// The bucket map of every running INSERT query: all sinks of a query route rows with the same version.
+    /// The entry of a finished query is removed by the next INSERT.
+    mutable std::mutex insert_bucket_maps_mutex;
+    mutable std::map<std::weak_ptr<QueryStatus>, std::shared_ptr<const DistributedBucketMap>, std::owner_less<>> insert_bucket_maps
+        TSA_GUARDED_BY(insert_bucket_maps_mutex);
 
     struct ClusterNodeData
     {

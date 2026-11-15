@@ -82,7 +82,8 @@ class DistributedBucketMapWatcher : WithContext
 {
 public:
     /// `zookeeper_path_` may start with the name of an auxiliary ZooKeeper, as the path of `ReplicatedMergeTree`.
-    DistributedBucketMapWatcher(ContextPtr context_, const StorageID & storage_id, const String & zookeeper_path_);
+    /// `buckets_` is the `bucket_map_buckets` setting of the table: 0 accepts any number of buckets in the first loaded map.
+    DistributedBucketMapWatcher(ContextPtr context_, const StorageID & storage_id, const String & zookeeper_path_, UInt64 buckets_);
 
     /// Creates the map with `buckets` buckets split evenly between `num_shards` shards if the node does not exist.
     /// If the node exists, checks that its map has `buckets` buckets.
@@ -107,6 +108,7 @@ private:
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
     /// Reads the map, sets a watch on its node and stores the map.
+    /// A map with another number of buckets than `table_buckets` or the stored map is an error.
     DistributedBucketMapPtr load();
 
     /// The body of `task`.
@@ -115,6 +117,7 @@ private:
     const String full_zookeeper_path;
     const String zookeeper_name;
     const String zookeeper_path;
+    const UInt64 table_buckets;
     const LoggerPtr log;
 
     /// Serializes the calls of `load`, so a later call always stores a map read later.

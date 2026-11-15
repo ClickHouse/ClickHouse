@@ -63,6 +63,15 @@ echo '-- a new map splits the buckets evenly between the shards'
 $CLICKHOUSE_CLIENT --allow_experimental_distributed_bucket_map 1 -q "CREATE TABLE dist $DIST_DEFINITION SETTINGS bucket_map_zookeeper_path = '$MAP_PATH', bucket_map_buckets = 4"
 $CLICKHOUSE_CLIENT -q "SELECT value FROM system.zookeeper WHERE path = '$MAP_PARENT' AND name = 'bucket_map' FORMAT TSVRaw"
 
+echo '-- table functions do not take a bucket map and do not create it'
+for allow_experimental in 0 1; do
+    $CLICKHOUSE_CLIENT --allow_experimental_distributed_bucket_map $allow_experimental -q "SELECT * FROM cluster(test_cluster_two_shards_different_databases, shard_0.data, key, SETTINGS bucket_map_zookeeper_path = '${MAP_PARENT}/function_bucket_map', bucket_map_buckets = 4)" 2>&1 \
+        | grep -o -m1 'is not supported by table function'
+    $CLICKHOUSE_CLIENT --allow_experimental_distributed_bucket_map $allow_experimental -q "SELECT * FROM remote('127.0.0.{1,2}', shard_0.data, key, SETTINGS bucket_map_zookeeper_path = '${MAP_PARENT}/function_bucket_map', bucket_map_buckets = 4)" 2>&1 \
+        | grep -o -m1 'is not supported by table function'
+done
+$CLICKHOUSE_CLIENT -q "SELECT name FROM system.zookeeper WHERE path = '$MAP_PARENT' ORDER BY name"
+
 echo '-- a row goes to the shard of the bucket sharding_key % buckets'
 $CLICKHOUSE_CLIENT --distributed_foreground_insert 1 -q "INSERT INTO dist SELECT number FROM numbers(8)"
 shard_keys shard_0
@@ -91,6 +100,19 @@ set_map 'format version: 1\nbuckets: 4\n0 1 1\n2 3 3\n'
 wait_for_map_version 3
 $CLICKHOUSE_CLIENT --distributed_foreground_insert 1 -q "INSERT INTO dist VALUES (100)" 2>&1 \
     | grep -o -m1 'assigns buckets to shard 3, but cluster test_cluster_two_shards_different_databases has 2 shards'
+
+echo '-- a map with a different number of buckets is rejected, the loaded map keeps routing'
+set_map 'format version: 1\nbuckets: 4\n0 1 1\n2 3 2\n'
+wait_for_map_version 4
+set_map 'format version: 1\nbuckets: 8\n0 3 1\n4 7 2\n'
+wait_for_map_exception
+$CLICKHOUSE_CLIENT -q "SELECT last_exception LIKE '%The map has 8 buckets, but the table uses 4 buckets%' FROM system.distributed_bucket_maps WHERE database = currentDatabase() AND table = 'dist'"
+$CLICKHOUSE_CLIENT -q "SELECT version, buckets, ranges FROM system.distributed_bucket_maps WHERE database = currentDatabase() AND table = 'dist'"
+$CLICKHOUSE_CLIENT --distributed_foreground_insert 1 -q "INSERT INTO dist VALUES (101)"
+shard_keys shard_0
+set_map 'format version: 1\nbuckets: 4\n0 0 1\n1 3 2\n'
+wait_for_map_version 6
+$CLICKHOUSE_CLIENT -q "SELECT version, buckets, ranges, last_exception FROM system.distributed_bucket_maps WHERE database = currentDatabase() AND table = 'dist'"
 
 echo '-- the table is attached without the experimental setting'
 set_map 'format version: 1\nbuckets: 4\n0 1 1\n2 3 2\n'

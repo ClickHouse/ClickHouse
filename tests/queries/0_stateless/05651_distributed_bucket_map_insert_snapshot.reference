@@ -1,0 +1,6 @@
+-- the map changes after the first sink of the INSERT is created, both sinks use the old map
+shard_0	[0,1,100,101]
+shard_1	[2,3,102,103]
+-- the next INSERT uses the new map
+shard_0	[0,1,6,100,101,106]
+shard_1	[2,3,4,102,103,104]

@@ -673,12 +673,12 @@ StorageDistributed::StorageDistributed(
         if (is_fresh_definition && !sharding_key_)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `bucket_map_zookeeper_path` requires a sharding key");
 
-        bucket_map_watcher = std::make_unique<DistributedBucketMapWatcher>(getContext(), id_, bucket_map_path);
+        const UInt64 bucket_map_buckets = (*distributed_settings)[DistributedSetting::bucket_map_buckets];
+        bucket_map_watcher = std::make_unique<DistributedBucketMapWatcher>(getContext(), id_, bucket_map_path, bucket_map_buckets);
 
         /// The map is created by the query that creates the table, and not on server startup, to not depend on ZooKeeper there.
         if (mode <= LoadingStrictnessLevel::SECONDARY_CREATE)
-            bucket_map_watcher->createIfNotExists(
-                (*distributed_settings)[DistributedSetting::bucket_map_buckets], getCluster()->getShardsInfo().size());
+            bucket_map_watcher->createIfNotExists(bucket_map_buckets, getCluster()->getShardsInfo().size());
     }
 
     initializeFromDisk();
@@ -2201,19 +2201,31 @@ ClusterPtr StorageDistributed::getCluster() const
     return owned_cluster ? owned_cluster : getContext()->getCluster(cluster_name);
 }
 
-std::shared_ptr<const Cluster::SlotToShard> StorageDistributed::getSlotToShard(const ClusterPtr & cluster) const
+std::shared_ptr<const Cluster::SlotToShard> StorageDistributed::getSlotToShard(const ClusterPtr & cluster, const ContextPtr & insert_context) const
 {
-    if (auto map = getBucketMap(cluster))
+    if (auto map = getBucketMap(cluster, insert_context))
         return std::shared_ptr<const Cluster::SlotToShard>(map, &map->slot_to_shard);
     return std::shared_ptr<const Cluster::SlotToShard>(cluster, &cluster->getSlotToShard());
 }
 
-DistributedBucketMapPtr StorageDistributed::getBucketMap(const ClusterPtr & cluster) const
+DistributedBucketMapPtr StorageDistributed::getBucketMap(const ClusterPtr & cluster, const ContextPtr & insert_context) const
 {
     if (!bucket_map_watcher)
         return nullptr;
 
-    auto map = bucket_map_watcher->get();
+    DistributedBucketMapPtr map;
+    if (auto query = insert_context ? insert_context->getProcessListElementSafe() : nullptr)
+    {
+        std::lock_guard lock(insert_bucket_maps_mutex);
+        std::erase_if(insert_bucket_maps, [](const auto & entry) { return entry.first.expired(); });
+        auto & query_map = insert_bucket_maps[query];
+        if (!query_map)
+            query_map = bucket_map_watcher->get();
+        map = query_map;
+    }
+    else
+        map = bucket_map_watcher->get();
+
     size_t num_shards = cluster->getShardsInfo().size();
     if (map->max_shard_num > num_shards)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -2262,9 +2274,19 @@ void StorageDistributed::checkShardingKeySetsAreBuilt() const
             "Sharding expression cannot contain IN with a subquery or a non-Set table, because its set is never built");
 }
 
-IColumn::Selector StorageDistributed::createSelector(const Cluster::SlotToShard & slot_to_shard, const ColumnWithTypeAndName & result)
+IColumn::Selector StorageDistributed::createSelector(const Cluster::SlotToShard & slot_to_shard, const ColumnWithTypeAndName & result) const
 {
     const IColumn * column = result.column.get();
+
+    /// `createBlockSelector` narrows a signed key differently for constant and ordinary columns.
+    /// With a bucket map the key is always a sign-extended UInt64, as in `shardContains` of the `IN` rewrite.
+    if (bucket_map_watcher && isNativeInteger(removeLowCardinality(result.type)))
+    {
+        IColumn::Selector selector(column->size());
+        for (size_t i = 0; i < selector.size(); ++i)
+            selector[i] = slot_to_shard[static_cast<UInt64>(column->getInt(i)) % slot_to_shard.size()];
+        return selector;
+    }
 
 /// NOLINTBEGIN(readability-else-after-return)
 // If result.type is DataTypeLowCardinality, do shard according to its dictionaryType
@@ -3015,7 +3037,7 @@ If the server ceased to exist or had a rough restart (for example, due to a hard
 This is an experimental feature. Enable it with the [`allow_experimental_distributed_bucket_map`](/reference/settings/session-settings/allow-experimental#allow_experimental_distributed_bucket_map) setting.
 </Note>
 
-With the `bucket_map_zookeeper_path` setting, the table selects shards with a bucket map stored in ZooKeeper instead of the shard weights. A row goes to the bucket `sharding_key % buckets`, and then to the shard the bucket is assigned to. The number of buckets is fixed, so assigning a bucket to another shard does not change the shard of the rows of the other buckets. The map is shared by all `Distributed` tables with the same path, for example by the tables of the same name on all servers of the cluster.
+With the `bucket_map_zookeeper_path` setting, the table selects shards with a bucket map stored in ZooKeeper instead of the shard weights. A row goes to the bucket `sharding_key % buckets`, and then to the shard the bucket is assigned to. A negative sharding key is taken as an unsigned 64-bit number, `reinterpretAsUInt64(toInt64(sharding_key))`. The number of buckets is fixed, so assigning a bucket to another shard does not change the shard of the rows of the other buckets. The map is shared by all `Distributed` tables with the same path, for example by the tables of the same name on all servers of the cluster.
 
 When the table is created and the map does not exist, the map is created with `bucket_map_buckets` buckets split into ranges of almost equal size, one range for every shard of the cluster. The map is a text node:
 
@@ -3026,9 +3048,9 @@ buckets: 4
 2 3 2
 ```
 
-Every line after the header assigns an inclusive range of buckets to a shard number, as `shard_num` in [system.clusters](/reference/system-tables/clusters). The ranges go in order and cover all buckets. The table watches the node and uses a new version of the map as soon as it is written, for example with `INSERT INTO system.zookeeper`. A new version changes the shard only of the rows inserted after it: the existing rows stay where they are, so the shards of the moved buckets no longer match the map for them, as after a change of the shard weights. The loaded maps are shown in [system.distributed_bucket_maps](/reference/system-tables/distributed_bucket_maps).
+Every line after the header assigns an inclusive range of buckets to a shard number, as `shard_num` in [system.clusters](/reference/system-tables/clusters). The ranges go in order and cover all buckets. The table watches the node and uses a new version of the map as soon as it is written, for example with `INSERT INTO system.zookeeper`. A new version with a different number of buckets is rejected: the table keeps the map it has loaded and shows the error in `last_exception` of `system.distributed_bucket_maps`. A new version changes the shard only of the rows inserted after it: the existing rows stay where they are, so the shards of the moved buckets no longer match the map for them, as after a change of the shard weights. The loaded maps are shown in [system.distributed_bucket_maps](/reference/system-tables/distributed_bucket_maps).
 
-`optimize_skip_unused_shards` and `optimize_skip_unused_shards_rewrite_in` use the bucket map as well. `DROP TABLE` does not remove the map from ZooKeeper.
+`optimize_skip_unused_shards` and `optimize_skip_unused_shards_rewrite_in` use the bucket map as well. `DROP TABLE` does not remove the map from ZooKeeper. The `remote`, `remoteSecure`, `cluster` and `clusterAllReplicas` table functions do not accept `bucket_map_zookeeper_path`.
 
 To keep these settings correct when buckets are assigned to another shard, list the shards that keep their rows after `previous`. For example, to assign bucket 3 of the map above to a new shard 3:
 
