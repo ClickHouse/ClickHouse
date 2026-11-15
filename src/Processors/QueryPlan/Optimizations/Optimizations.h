@@ -1,5 +1,8 @@
 #pragma once
 #include <Core/Joins.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -156,7 +159,7 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
 /// it, which is what `tryPushDownVolumeReducingFunction` requires to be worth doing.
 /// `tryExecuteFunctionsAfterSorting` uses the same set to avoid lifting those functions back above
 /// a `SortingStep` they have been pushed below.
-std::unordered_map<const ActionsDAG::Node *, ActionsDAG::NodeRawConstPtrs>
+UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, ActionsDAG::NodeRawConstPtrs>
 collectVolumeReducingFunctionsReplacingTheirArgument(const ActionsDAG & actions);
 
 /// Volume-reducing function nodes of `actions` (and their aliases among the outputs) that must stay
@@ -171,7 +174,7 @@ collectVolumeReducingFunctionsReplacingTheirArgument(const ActionsDAG & actions)
 /// lifting them loses nothing. `low_part_root` identifies nodes that a caller already keeps below
 /// its barrier (for example, a `FilterStep` predicate) and which therefore do not make the
 /// argument flow through that barrier.
-std::unordered_set<const ActionsDAG::Node *> collectVolumeReducingFunctionsToKeepBelow(
+UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> collectVolumeReducingFunctionsToKeepBelow(
     const ActionsDAG & actions, const ActionsDAG::Node * low_part_root = nullptr);
 
 /// Convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values
@@ -315,14 +318,18 @@ struct Frame
     size_t next_child = 0;
 };
 
-using Stack = std::vector<Frame>;
+using Stack = VectorWithMemoryTracking<Frame>;
 
 /// Second pass optimizations
 void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
 /// Register the applied `__applyFilter` conjuncts on the reading step at the top of the stack.
 void collectAppliedJoinRuntimeFilters(const Stack & stack);
 void processAndOptimizeTextIndexFunctions(
-    const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index, const Optimization::ExtraSettings & settings);
+    const Stack & stack,
+    QueryPlan::Nodes & nodes,
+    bool direct_read_from_text_index,
+    const FindSingleNodeRead & find_single_node_read,
+    const Optimization::ExtraSettings & settings);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 /// A full sorting without LIMIT or PARTITION BY merges all its streams in one thread, so a small read all of whose streams
 /// reach it keeps its default stream count.
@@ -368,14 +375,14 @@ bool optimizeVectorSearchWithQuantizedCodes(QueryPlan::Node & root, Stack & stac
 /// `FutureSetFromSubquery` source can be claimed only once; the caller attaches one builder for them
 /// above a node that dominates every copy.
 void materializeQueryPlanReferences(
-    QueryPlan::Node & node, QueryPlan::Nodes & nodes, std::vector<FutureSetFromSubqueryPtr> & extracted_sets);
+    QueryPlan::Node & node, QueryPlan::Nodes & nodes, std::vector<FutureSetFromSubqueryPtr> & extracted_sets); // STYLE_CHECK_ALLOW_STD_CONTAINERS -- this is `PreparedSets::Subqueries`; naming it here would need the full PreparedSets header
 void optimizeUnusedCommonSubplans(QueryPlan::Node & node);
 void useMemoryBufferForCommonSubplanResult(QueryPlan::Node & node, const QueryPlanOptimizationSettings & settings);
 void optimizeJoinLazyIndexing(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 
 // Should be called once the query plan tree structure is finalized, i.e. no nodes addition, deletion or pushing down should happen after that call.
 // Since those hashes are used for join optimization, the calculation performed before join optimization.
-std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root);
+UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root);
 
 /// Stamp every AggregatingStep in the plan with a hash-table preallocation cache key derived from
 /// the query plan (the node's bottom-up hash from calculateHashTableCacheKeys), instead of from the
@@ -389,8 +396,8 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
 /// it builds itself; `cache_keys` matches the value `HashTablesStatistics` is keyed by.
 void calculateHashTableCacheKeys(
     const QueryPlan::Node & root,
-    std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys,
-    std::unordered_map<const QueryPlan::Node *, UInt64> & raw_hashes);
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> & cache_keys,
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> & raw_hashes);
 
 /// Per-side join-step hash used to derive HashTablesStatistics cache keys after join reorder.
 UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side);
@@ -421,7 +428,7 @@ void allowReadingShardsFromSeveralReplicas(QueryPlan::Node & root);
 struct UseProjectionsResult
 {
     std::optional<String> applied_projection;
-    std::unordered_map<String, String> projection_reject_reasons;
+    UnorderedMapWithMemoryTracking<String, String> projection_reject_reasons;
 };
 
 UseProjectionsResult optimizeUseAggregateProjections(
