@@ -82,6 +82,7 @@ CREATE TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | splitByRegexp(regexp[, match_tokens])
+                                            | regexpMasked[([base][, masks = [...]][, custom_masks = [...]])]
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -122,6 +123,7 @@ ALTER TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | splitByRegexp(regexp[, match_tokens])
+                                            | regexpMasked[([base][, masks = [...]][, custom_masks = [...]])]
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -168,6 +170,7 @@ ALTER TABLE table DROP INDEX text_idx;
   - with `match_tokens = false` (the default), `regexp` represents separators: the tokens are the (non-empty) pieces of text between successive matches (same semantics as function [splitByRegexp](/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)).
   - with `match_tokens = true`, `regexp` is matched directly instead: each match contributes at most one token - its first capture group, or the whole match if `regexp` has no capture group - and everything outside the matches is discarded. For example, `tokenizer = splitByRegexp('tag:(\w+)', true)` indexes `hello` and `world` from `tag:hello tag:world`, dropping the `tag:` prefix. Matching uses [RE2](https://github.com/google/re2), the same engine every regex-based function in ClickHouse uses; only the first capture group is ever used, so further groups merely constrain what matches. A capture group that did not participate in the match, or that matched an empty string, contributes no token, and scanning always resumes after the whole match rather than after the captured span (so matches never overlap).
   With `match_tokens = true`, note that search needles in text search functions are tokenized with the index's own tokenizer, so a plain string needle that does not itself match `regexp` yields no tokens and therefore no results. Needles passed as arrays to text search functions are not tokenized, and are therefore recommended for use with regexp tokenizers.
+- `regexpMasked([base][, masks = [...]][, custom_masks = [...]])` splits strings like the base tokenizer `base` (`splitByNonAlpha` by default, or `splitByString`), but keeps values such as IP addresses, UUIDs, timestamps, numbers, paths and URLs as single tokens. It is meant for log messages, see [the `regexpMasked` tokenizer](#tokenizer-regexp-masked).
 - `asciiCJK` splits strings into tokens using Unicode word boundary rules (similar to [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). ASCII alphanumeric characters and underscores form tokens with connectors (ASCII `:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters, including [CJK](https://en.wikipedia.org/wiki/CJK_characters) characters, become single-character tokens.
 - `chinese[(granularity)]` segments Chinese text into words using a dictionary and a hidden Markov model (the algorithm follows [jieba](https://github.com/fxsjy/jieba); the embedded dictionary and model data are derived from [cppjieba](https://github.com/yanyiwu/cppjieba)). Unlike `asciiCJK`, which treats every non-ASCII character as a single-character token, `chinese` groups consecutive Chinese characters into words (for example `北京大学` becomes one token `北京大学` rather than four single-character tokens). This yields more meaningful tokens for Chinese text and higher search quality. For general/mixed text, please use `asciiCJK`, for Chinese-only text, please use `chinese`. The optional `granularity` argument is either `'coarse_grained'` (the default if not specified) or `'fine_grained'`. The latter additionally enumerates overlapping sub-words for example `北京邮电大学` also yields `北京`, `邮电`, `大学`. Fine-grained tokenization improves recall at the cost of a larger index.
   Search a `chinese` text index with [hasAnyTokens](/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/reference/functions/regular-functions/string-search-functions#hasAllTokens) (which tokenize the needle with the `chinese` tokenizer), not `hasToken` (which splits on ASCII separators only).
@@ -187,6 +190,92 @@ ALTER TABLE table DROP INDEX text_idx;
 - `keyValuePairs` combines the key-value pairs of a `Map` column to a single token. This helps to perform combined key-value lookups such as `WHERE map['key'] = 'value'`, `WHERE map['key'] IN ('value1', 'value2')` or `WHERE mapContainsKeyValue(map, 'key', 'value')` (see [the `keyValuePairs` tokenizer](#tokenizer-key-value-pairs)).
 
 All available tokenizers are listed in [system.tokenizers](/reference/system-tables/tokenizers).
+
+### The `regexpMasked` tokenizer {#tokenizer-regexp-masked}
+
+The `regexpMasked` tokenizer is meant for log messages.
+It produces the tokens of a base tokenizer, except that every match of a mask, a regular expression for a kind of value such as an IP address or a timestamp, becomes a single token.
+For example, `splitByNonAlpha` splits `10.0.0.1` into `10`, `0`, `0` and `1`, while `regexpMasked` keeps it whole, so a search for the address reads one posting list and does not match `1.0.0.10` or `10.1.0.0`.
+
+```sql
+regexpMasked[([base][, masks = [...]][, custom_masks = [...]])]
+```
+
+- `base`: the base tokenizer, `splitByNonAlpha` (the default) or `splitByString[(S)]`. If given, it must be the first argument.
+- `masks`: the names of the built-in masks to use (see the table below). By default, all built-in masks are used. With `masks = []`, no built-in mask is used.
+- `custom_masks`: an array of additional masks, written as [RE2](https://github.com/google/re2/wiki/Syntax) regular expressions. At most 64 masks of at most 1024 bytes each are allowed.
+
+```sql title="Query"
+SELECT
+    tokens('took 1.5GB from 10.0.0.1:9000', 'regexpMasked') AS masked,
+    tokens('took 1.5GB from 10.0.0.1:9000', 'splitByNonAlpha') AS non_alpha,
+    tokens('user=alice session=sess_9f2c1a7b3d4e5f60', 'regexpMasked(custom_masks = [\'sess_[0-9a-f]{16}\'])') AS custom
+FORMAT Vertical;
+```
+
+```text title="Response"
+Row 1:
+──────
+masked:    ['took','1.5GB','from','10.0.0.1','9000']
+non_alpha: ['took','1','5GB','from','10','0','0','1','9000']
+custom:    ['user','alice','session','sess_9f2c1a7b3d4e5f60']
+```
+
+The input is scanned from left to right:
+
+1. A separator of the base tokenizer is skipped.
+2. Any other position starts a token. All masks are tried at this position, and the longest match wins.
+3. The match is extended to the next separator or to the end of the input, so `10.0.0.1x` is one token, and the extended match is the token.
+4. If no mask matches, the token is the one of the base tokenizer, which ends at the next separator.
+
+So masks are tried only where a token of the base tokenizer starts: never inside a token, and never at a separator.
+A mask whose matches begin with a separator never matches. For example, with `splitByNonAlpha`, the sign of `-5` is a separator and the token is `5`, and the leading `/` of the path `/var/lib/clickhouse/x.bin` is a separator and the token is `var/lib/clickhouse/x.bin`.
+Tokens are separated by at least one separator, and the tokens of a piece of text do not depend on the text before or after it.
+With `masks = []` and no custom masks, the tokens are exactly those of the base tokenizer.
+
+All masks match case-insensitively.
+A custom mask must not contain anchors (`^`, `$`, `\A`, `\z`) or word-boundary assertions (`\b`, `\B`), and must not match the empty string.
+
+The built-in masks are:
+
+| Mask | Matches | Example tokens |
+|---|---|---|
+| `timestamp` | An ISO 8601 date with an optional time, fraction and time zone; an access log timestamp; a syslog timestamp | `2026-11-05 10:15:30.123+00:00`, `2026-11-05T10:15:30Z`, `04/Nov/2026:10:15:30 +0000`, `Nov 15 10:15:30` |
+| `ip` | An IPv4 address (without the port); an IPv6 address that begins with a hexadecimal group and contains a digit | `10.0.0.1`, `fe80::1:2` (but not `DB::Add`) |
+| `uuid` | A UUID | `97a133f8-4d41-4e4f-b869-db7c48b6da4c` |
+| `hex` | `0x` followed by hexadecimal digits; eight or more hexadecimal digits that contain a decimal digit | `0x7f3a`, `9f2c1a7b3d4e5f60` (but not `deadbeef`) |
+| `number` | An unsigned integer or decimal number with an optional exponent and an optional unit or `%` | `9000`, `1.5GB`, `3.2e5`, `45%` |
+| `path` | Two or more segments joined by `/` or `\`; a Windows path with a drive letter | `var/lib/clickhouse/x.bin`, `11/15/2026`, `C:\Users\x` (but not `read/write`) |
+| `url` | A scheme, `://` and the following characters up to a whitespace | `http://host:8123/?q=1` |
+
+The regular expressions of the built-in masks are:
+
+```text
+timestamp   \d{4}-\d{2}-\d{2}(?:[t ]\d{2}:\d{2}(?::\d{2})?(?:[.,]\d+)?(?:z|[+-]\d{2}(?::?\d{2})?)?)?
+            \d{2}/[a-z]{3}/\d{4}:\d{2}:\d{2}:\d{2} [+-]\d{4}
+            (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec) [ \d]\d \d{2}:\d{2}:\d{2}
+ip          \d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}
+            (?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}|(?:[0-9a-f]{1,4}:){1,6}:(?:[0-9a-f]{1,4}:){0,5}[0-9a-f]{1,4}    (must contain a digit)
+uuid        [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
+hex         0x[0-9a-f]+
+            [0-9a-f]{8,}    (must contain a digit)
+number      \d+(?:\.\d+)?(?:e[-+]?\d+)?(?:[a-z]+|%)?
+path        [a-z0-9._\-~%+@]+(?:[/\\][a-z0-9._\-~%+@]+){2,}
+            [a-z]:\\[a-z0-9._\-~%+@/\\]+
+url         [a-z][a-z0-9+.\-]*://[^\s]+
+```
+
+The built-in masks consist of ASCII characters only and fold the case of ASCII letters only.
+Custom masks are matched in UTF-8 and fold case by Unicode rules.
+
+Search a `regexpMasked` index with [hasAnyTokens](/reference/functions/regular-functions/string-search-functions#hasAnyTokens), [hasAllTokens](/reference/functions/regular-functions/string-search-functions#hasAllTokens) or [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasPhrase) and a string needle, which is tokenized with the index tokenizer: `hasAllTokens(message, 'from 10.0.0.1')` searches the tokens `from` and `10.0.0.1`.
+Note that a value matched by a mask is one token: `hasAllTokens(message, 'users')` does not match `api/v1/users`.
+`hasToken`, `LIKE`, `startsWith` and `endsWith` cannot use a `regexpMasked` index, because whether a mask matches depends on the text around a search fragment.
+
+<Note>
+Tokenizing with masks is slower than with the base tokenizer alone.
+A custom mask is tried at every token start whose first byte can begin a match, so a mask that begins with a broad pattern such as `\w+` or `.+` is tried at almost every token, and a mask that can match far ahead without succeeding makes tokenizing long strings slow.
+</Note>
 
 ### Japanese tokenizer dictionary {#japanese-tokenizer-dictionary}
 
@@ -577,7 +666,7 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [hasAllTokens(col, str)](/reference/functions/regular-functions/string-search-functions#hasAllTokens) | yes | all | yes |
 | [hasAnyTokens(col, arr)](/reference/functions/regular-functions/string-search-functions#hasAnyTokens) | no (array elements are tokens as-is) | all | yes |
 | [hasAllTokens(col, arr)](/reference/functions/regular-functions/string-search-functions#hasAllTokens) | no (array elements are tokens as-is) | all | yes |
-| [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasPhrase)                 | yes | `splitByNonAlpha`, `splitByString`, `splitByRegexp`³, `ngrams`, `asciiCJK`, `icu` | yes³ |
+| [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasPhrase)                 | yes | `splitByNonAlpha`, `splitByString`, `splitByRegexp`³, `regexpMasked`, `ngrams`, `asciiCJK`, `icu` | yes³ |
 | [startsWith](/reference/functions/regular-functions/string-functions#startsWith)                      | yes⁴ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁴ | yes⁴ |
 | [endsWith](/reference/functions/regular-functions/string-functions#endsWith)                          | yes⁴ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁴ | yes⁴ |
 | [like](/reference/functions/regular-functions/string-search-functions#like)                           | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
@@ -879,7 +968,7 @@ Function [hasPhrase](/reference/functions/regular-functions/string-search-functi
 Unlike `hasAllTokens`, which only requires all tokens to be present somewhere, `hasPhrase` requires them to appear as a consecutive sequence.
 The search phrase is tokenized using the same tokenizer configured for the index column.
 When the text index uses a postprocessor, the search phrase is normalized before the index lookup as well.
-Note that the function requires one of the `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK`, or `icu` tokenizers.
+Note that the function requires one of the `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `regexpMasked`, `ngrams`, `asciiCJK`, or `icu` tokenizers.
 
 Example:
 
@@ -1349,7 +1438,7 @@ Within those granules, ClickHouse then verifies exact token adjacency.
 This process is relatively costly and slower than regular text search queries.
 To speed phrase search queries up, please enable position storage in the text index (see `Optional parameters` above).
 
-`hasPhrase` can be used together with tokenizers `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK`, and `icu`.
+`hasPhrase` can be used together with tokenizers `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `regexpMasked`, `ngrams`, `asciiCJK`, and `icu`.
 The given phrase string is tokenized using the index's tokenizer.
 Separator characters in the phrase are ignored: `hasPhrase(text, 'quick+brown')` is equivalent to `hasPhrase(text, 'quick brown')`, assuming `splitByNonAlpha` is used as tokenizer.
 

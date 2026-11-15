@@ -97,7 +97,13 @@ TokenizerFactory::TokenizerFactory()
 
 void TokenizerFactory::registerTokenizer(const String & name, ITokenizer::Type type, Creator creator)
 {
-    if (!tokenizers.emplace(name, Entry{type, creator}).second)
+    if (!tokenizers.emplace(name, Entry{type, std::move(creator), {}}).second)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "TokenizerFactory: tokenizer '{}' is already registered", name);
+}
+
+void TokenizerFactory::registerTokenizer(const String & name, ITokenizer::Type type, ASTCreator creator)
+{
+    if (!tokenizers.emplace(name, Entry{type, {}, std::move(creator)}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "TokenizerFactory: tokenizer '{}' is already registered", name);
 }
 
@@ -150,6 +156,10 @@ std::unique_ptr<ITokenizer> TokenizerFactory::get(const ASTPtr & ast) const
 
     if (const auto * function = ast->as<ASTFunction>())
     {
+        auto it = tokenizers.find(function->name);
+        if (it != tokenizers.end() && it->second.ast_creator)
+            return it->second.ast_creator(function->arguments ? function->arguments->children : ASTs{});
+
         args = getFieldsFromIndexArgumentsAST(function->arguments);
         return get(function->name, args);
     }
@@ -168,6 +178,14 @@ std::unique_ptr<ITokenizer> TokenizerFactory::get(
 
     if (!allowed.empty() && !allowed.contains(it->second.type))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tokenizer '{}' is not allowed in this context", name);
+
+    if (it->second.ast_creator)
+    {
+        ASTs arguments;
+        for (const auto & arg : args)
+            arguments.push_back(make_intrusive<ASTLiteral>(arg));
+        return it->second.ast_creator(arguments);
+    }
 
     return it->second.creator(args);
 }
@@ -339,6 +357,82 @@ static void registerTokenizers(TokenizerFactory & factory)
     factory.registerTokenizer(AsciiCJKTokenizer::getName(), ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
     factory.registerTokenizer("unicodeWord", ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
     factory.registerTokenizer("unicode_word", ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
+
+    auto regexp_masked_creator = [&factory](const ASTs & args) -> std::unique_ptr<ITokenizer>
+    {
+        const auto * tokenizer_name = RegexpMaskedTokenizer::getExternalName();
+
+        auto get_strings = [&](const ASTPtr & value, std::string_view argument_name)
+        {
+            const auto * literal = value->as<ASTLiteral>();
+            if (!literal)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Argument '{}' of tokenizer '{}' must be an array of string literals, got: '{}'",
+                    argument_name, tokenizer_name, value->formatForErrorMessage());
+
+            std::vector<String> result;
+            for (const auto & element : castAs<Array>(literal->value, argument_name))
+                result.push_back(castAs<String>(element, argument_name));
+            return result;
+        };
+
+        std::shared_ptr<const ITokenizer> base;
+        std::optional<std::vector<String>> masks;
+        std::optional<std::vector<String>> custom_masks;
+
+        for (size_t i = 0; i < args.size(); ++i)
+        {
+            const auto * function = args[i]->as<ASTFunction>();
+            if (function && function->name == "equals" && function->arguments && function->arguments->children.size() == 2)
+            {
+                const auto * key = function->arguments->children[0]->as<ASTIdentifier>();
+                const auto & value = function->arguments->children[1];
+                const String key_name = key ? key->name() : "";
+
+                std::optional<std::vector<String>> * target = nullptr;
+                if (key_name == "masks")
+                    target = &masks;
+                else if (key_name == "custom_masks")
+                    target = &custom_masks;
+                else
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Unknown argument of tokenizer '{}': '{}'. Expected 'masks' or 'custom_masks'",
+                        tokenizer_name, function->arguments->children[0]->formatForErrorMessage());
+
+                if (target->has_value())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' of tokenizer '{}' is specified more than once", key_name, tokenizer_name);
+
+                *target = get_strings(value, key_name);
+                continue;
+            }
+
+            if (i != 0)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The base tokenizer must be the first argument of tokenizer '{}', got: '{}'",
+                    tokenizer_name, args[i]->formatForErrorMessage());
+
+            base = factory.get(args[i]);
+            if (base->getType() != ITokenizer::Type::SplitByNonAlpha && base->getType() != ITokenizer::Type::SplitByString)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Tokenizer '{}' supports only '{}' and '{}' as the base tokenizer, got: '{}'",
+                    tokenizer_name, SplitByNonAlphaTokenizer::getExternalName(), SplitByStringTokenizer::getExternalName(),
+                    base->getDescription());
+        }
+
+        if (!base)
+            base = std::make_shared<SplitByNonAlphaTokenizer>();
+
+        auto token_masks = std::make_shared<const TokenMasks>(
+            masks.value_or(TokenMasks::getBuiltinMaskNames()), custom_masks.value_or(std::vector<String>{}));
+
+        return std::make_unique<RegexpMaskedTokenizer>(std::move(base), std::move(token_masks));
+    };
+
+    factory.registerTokenizer(RegexpMaskedTokenizer::getName(), ITokenizer::Type::RegexpMasked, regexp_masked_creator);
 
 #if USE_JIEBA
     auto chinese_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
