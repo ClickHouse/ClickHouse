@@ -116,6 +116,13 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     }
 
+    /// `COPY (query) TO STDOUT` - keep the inner query as the child, so that the `COPY` is formatted and
+    /// logged from it and the secrets in it are hidden.
+    ASTPtr inner_query = name_or_expr;
+    if (const auto * subquery_node = name_or_expr->as<ASTSubquery>())
+        inner_query = subquery_node->children.at(0);
+    copy_element->setSubquery(inner_query);
+
     saved_pos = pos;
     if (s_to.ignore(pos, expected))
     {

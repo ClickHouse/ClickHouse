@@ -41,6 +41,7 @@
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTConstraintDeclaration.h>
+#include <Parsers/ASTCopyQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -8524,6 +8525,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 describe->temporary = !describe->temporary;
         }
         fuzzChildrenWithAlias(*describe, describe->table_expression);
+    }
+    else if (auto * copy_query = typeid_cast<ASTCopyQuery *>(ast.get()))
+    {
+        fuzzChildrenWithAlias(*copy_query, copy_query->subquery_ast);
     }
     else if (auto * drop_function = typeid_cast<ASTDropFunctionQuery *>(ast.get()))
     {

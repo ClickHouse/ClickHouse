@@ -6,6 +6,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/VectorSearchUtils.h>
@@ -343,6 +344,9 @@ struct IMergeTreeIndex
 
     Names getColumnsRequiredForIndexCalc() const;
     const NamesAndTypesList & getColumnsWithTypesRequiredForIndexCalc() const;
+
+    /// Tells whether a name that looks like a subcolumn of a `JSON` column can belong to another column.
+    IsShadowingJSONSubcolumn getJSONSubcolumnShadowingCheck() const;
 
     StorageMetadataPtr metadata_snapshot;
     const IndexDescription & index;
