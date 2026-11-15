@@ -60,6 +60,11 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE dist $DIST_DEFINITION SETTINGS partition_mov
 $CLICKHOUSE_CLIENT -q "CREATE TABLE remote_dist (d Date, x UInt64) ENGINE = Remote('127.0.0.1', 'shard_0', 'data') SETTINGS partition_moves_zookeeper_path = '${MOVES_PARENT}/remote_partition_moves'" 2>&1 \
     | grep -o -m1 'SUPPORT_IS_DISABLED'
 
+echo '-- a table over a table function does not take partition moves'
+$CLICKHOUSE_CLIENT --allow_experimental_distributed_partition_moves 1 -q "CREATE TABLE remote_function (number UInt64) ENGINE = Remote('127.0.0.{1,2}', numbers(3)) SETTINGS partition_moves_zookeeper_path = '${MOVES_PARENT}/remote_partition_moves'" 2>&1 \
+    | grep -o -m1 'is not supported for a table function target'
+$CLICKHOUSE_CLIENT -q "EXISTS TABLE remote_function"
+
 echo '-- the node is created without moves'
 $CLICKHOUSE_CLIENT --allow_experimental_distributed_partition_moves 1 -q "CREATE TABLE dist $DIST_DEFINITION SETTINGS partition_moves_zookeeper_path = '$MOVES_PATH'"
 $CLICKHOUSE_CLIENT -q "SELECT value FROM system.zookeeper WHERE path = '$MOVES_PARENT' AND name = 'partition_moves' FORMAT TSVRaw"

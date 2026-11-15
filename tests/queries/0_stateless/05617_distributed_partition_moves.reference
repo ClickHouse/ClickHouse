@@ -1,6 +1,9 @@
 -- the setting is experimental
 SUPPORT_IS_DISABLED
 SUPPORT_IS_DISABLED
+-- a table over a table function does not take partition moves
+is not supported for a table function target
+0
 -- the node is created without moves
 format version: 1
 

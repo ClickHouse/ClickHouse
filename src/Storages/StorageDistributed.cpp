@@ -669,6 +669,10 @@ StorageDistributed::StorageDistributed(
 
     if (const String & moves_path = (*distributed_settings)[DistributedSetting::partition_moves_zookeeper_path].value; !moves_path.empty())
     {
+        /// The copies are skipped by the partitions of the remote table, which a table function does not have.
+        if (remote_table_function_ptr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `partition_moves_zookeeper_path` is not supported for a table function target");
+
         partition_moves_watcher = std::make_unique<DistributedPartitionMovesWatcher>(getContext(), id_, moves_path);
 
         /// The node is created by the query that creates the table, and not on server startup, to not depend on ZooKeeper there.
@@ -3002,7 +3006,7 @@ format version: 1
 202401 1 3 source
 ```
 
-Every line after the header is a move: the partition ID (`partition_id` in `system.parts`), the source and the destination shard numbers (`shard_num` in [system.clusters](/reference/system-tables/clusters)), and the copy that queries read, `source` or `destination`. The other copy is skipped with a filter on the `_partition_id` virtual column. A partition can be in one move at a time. When the table is created, an empty node is created if it does not exist. The table watches the node, and the loaded version is shown in [system.distributed_partition_moves](/reference/system-tables/distributed_partition_moves).
+Every line after the header is a move: the partition ID (`partition_id` in `system.parts`), the source and the destination shard numbers (`shard_num` in [system.clusters](/reference/system-tables/clusters)), and the copy that queries read, `source` or `destination`. The other copy is skipped with a filter on the `_partition_id` virtual column. A partition can be in one move at a time. A `Remote` table over a table function does not accept the setting. When the table is created, an empty node is created if it does not exist. The table watches the node, and the loaded version is shown in [system.distributed_partition_moves](/reference/system-tables/distributed_partition_moves).
 
 To move partition `202401` from shard 1 to shard 3:
 
