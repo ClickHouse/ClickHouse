@@ -21,6 +21,8 @@ namespace DB
 
 using URLParams = std::vector<std::pair<std::string, std::string>>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
+class NamesAndTypesList;
+
 /// Class for Helpers for XDBC-bridges, provide utility methods, not main request.
 class IXDBCBridgeHelper : public IBridgeHelper
 {
@@ -35,6 +37,9 @@ public:
     virtual IdentifierQuotingStyle getIdentifierQuotingStyle() = 0;
 
     virtual bool isSchemaAllowed() = 0;
+
+    /// Throws for a column of a type that the bridge would read or write as another type.
+    virtual void checkColumnTypes(const NamesAndTypesList & columns) const = 0;
 
     virtual String getName() const = 0;
 };
@@ -109,6 +114,8 @@ protected:
     auto getConnectionString() const { return connection_string; }
 
     String getName() const override { return BridgeHelperMixin::getName(); }
+
+    void checkColumnTypes(const NamesAndTypesList & columns) const override { BridgeHelperMixin::checkColumnTypes(columns); }
 
     unsigned getDefaultPort() const override { return DEFAULT_PORT; }
 
@@ -204,6 +211,8 @@ struct JDBCBridgeMixin
     {
         return true;
     }
+
+    static void checkColumnTypes(const NamesAndTypesList &) {}
 };
 
 
@@ -235,6 +244,8 @@ struct ODBCBridgeMixin
     {
         return false;
     }
+
+    static void checkColumnTypes(const NamesAndTypesList & columns);
 };
 
 }

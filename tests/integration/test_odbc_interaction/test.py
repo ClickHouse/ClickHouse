@@ -850,6 +850,29 @@ def test_odbc_postgres_date_data_type(started_cluster):
         node1.query("DROP TABLE IF EXISTS test_date")
 
 
+def test_odbc_postgres_time_column(started_cluster):
+    skip_test_sanitizers(node1)
+
+    conn = get_postgres_conn(started_cluster)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("CREATE TABLE clickhouse.test_time (id integer, t integer)")
+        cursor.execute("INSERT INTO clickhouse.test_time VALUES (1, 2), (2, NULL)")
+        node1.query(
+            """
+            CREATE TABLE test_time (id Int32, t Time)
+            ENGINE = ODBC('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_time')"""
+        )
+        assert "UNKNOWN_TYPE" in node1.query_and_get_error("SELECT * FROM test_time")
+        assert "UNKNOWN_TYPE" in node1.query_and_get_error(
+            "INSERT INTO test_time VALUES (3, '00:00:03')"
+        )
+        assert node1.query("SELECT id FROM test_time ORDER BY id") == "1\n2\n"
+    finally:
+        cursor.execute("DROP TABLE IF EXISTS clickhouse.test_time")
+        node1.query("DROP TABLE IF EXISTS test_time")
+
+
 def test_odbc_postgres_conversions(started_cluster):
     skip_test_sanitizers(node1)
 
