@@ -135,4 +135,8 @@ TEST(IcebergPathResolver, StorageIdentity)
         EXPECT_EQ(identity(local, path), "/w/t/metadata/s.avro") << path;
     /// A server's local storage takes a relative path from `user_files_path`.
     EXPECT_EQ(identity(local, "t/metadata/s.avro", "/w"), "/w/t/metadata/s.avro");
+
+    IcebergPathResolver hdfs("hdfs://h:9000/w/t", "/w/t", {.type_name = "hdfs", .namespace_name = "h:9000", .allow_foreign_namespaces = false});
+    for (const auto * path : {"hdfs://h:9000/w/t/data/x.parquet", "hdfs://h:9000/w/t/data//x.parquet", "hdfs://h:9000/w/t/./data/x.parquet"})
+        EXPECT_EQ(identity(hdfs, path), "/w/t/data/x.parquet") << path;
 }

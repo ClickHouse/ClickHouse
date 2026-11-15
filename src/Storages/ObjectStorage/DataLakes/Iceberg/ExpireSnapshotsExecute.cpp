@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <limits>
 #include <set>
+#include <unordered_map>
 #include <unordered_set>
 
 #include <Core/ColumnsWithTypeAndName.h>
@@ -385,11 +386,20 @@ ExpiredFiles collectExpiredFiles(
     const auto & path_resolver = persistent_table_components.path_resolver;
     const String key_prefix = object_storage->getCommonKeyPrefix();
 
+    std::unordered_map<Iceberg::IcebergPathFromMetadata, String> identities;
+    auto storage_identity = [&](const Iceberg::IcebergPathFromMetadata & path) -> const String &
+    {
+        if (auto it = identities.find(path); it != identities.end())
+            return it->second;
+        auto object = path_resolver.storageIdentity(path, key_prefix);
+        return identities.emplace(path, std::move(object)).first->second;
+    };
+
     /// Metadata may spell one storage object in several ways, so files are matched by the object they name.
     std::unordered_set<String> retained_objects;
     for (const auto * paths : {&retained.manifest_list_paths, &retained.manifest_paths, &retained.data_file_paths})
         for (const auto & path : *paths)
-            retained_objects.insert(path_resolver.storageIdentity(path, key_prefix));
+            retained_objects.insert(storage_identity(path));
 
     std::unordered_set<String> collected_objects;
     std::unordered_set<String> unresolved_paths;
@@ -400,7 +410,7 @@ ExpiredFiles collectExpiredFiles(
         String object;
         try
         {
-            object = path_resolver.storageIdentity(path, key_prefix);
+            object = storage_identity(path);
         }
         catch (const Exception & e)
         {
@@ -423,7 +433,7 @@ ExpiredFiles collectExpiredFiles(
         ManifestFileCacheKeys manifest_keys;
         try
         {
-            list_object = path_resolver.storageIdentity(manifest_list_path, key_prefix);
+            list_object = storage_identity(manifest_list_path);
             if (is_kept_or_collected(list_object))
                 continue;
             manifest_keys = getManifestList(object_storage, persistent_table_components, context, manifest_list_path, log);
@@ -439,7 +449,7 @@ ExpiredFiles collectExpiredFiles(
             String manifest_object;
             try
             {
-                manifest_object = path_resolver.storageIdentity(manifest_entry.manifest_file_path, key_prefix);
+                manifest_object = storage_identity(manifest_entry.manifest_file_path);
                 if (is_kept_or_collected(manifest_object))
                     continue;
 
