@@ -111,9 +111,9 @@ private:
     };
 
     /// The best match of at most 2 bytes for the first two bytes at a position.
-    std::array<UInt16, 65536> short_codes;
+    std::array<UInt16, 65536> short_codes{};
     /// The same for the last byte of the data.
-    std::array<UInt16, 256> byte_codes;
+    std::array<UInt16, 256> byte_codes{};
     std::array<Slot, HASH_TABLE_SIZE> slots{};
 };
 
@@ -473,7 +473,7 @@ size_t encode(const SymbolTable & table, const char * src, size_t size, UInt8 * 
         splits[i] = std::max(split, splits[i - 1]);
     }
 
-    std::array<Lane, NUM_LANES> lanes;
+    std::array<Lane, NUM_LANES> lanes{};
     for (size_t i = 0; i < num_lanes; ++i)
     {
         Lane & lane = lanes[i];
@@ -481,7 +481,8 @@ size_t encode(const SymbolTable & table, const char * src, size_t size, UInt8 * 
         lane.end = src + splits[i + 1];
         lane.next_boundary = value_boundaries ? std::upper_bound(boundaries_begin, boundaries_end, splits[i]) : nullptr;
         lane.boundaries_end = value_boundaries ? std::lower_bound(boundaries_begin, boundaries_end, splits[i + 1]) : nullptr;
-        lane.segment_end = lane.next_boundary != lane.boundaries_end ? src + *lane.next_boundary++ : lane.end;
+        /// For an empty lane (the splits can repeat), `next_boundary` can be after `boundaries_end`, so compare them with `<`.
+        lane.segment_end = lane.next_boundary < lane.boundaries_end ? src + *lane.next_boundary++ : lane.end;
         lane.out_begin = dest + 2 * splits[i];
         lane.out = lane.out_begin;
     }
@@ -491,7 +492,7 @@ size_t encode(const SymbolTable & table, const char * src, size_t size, UInt8 * 
         const size_t remaining = lane.segment_end - lane.pos;
         writeMatch(remaining >= 8 ? encoder->matchFast(lane.pos) : encoder->match(lane.pos, remaining), lane.pos, lane.out);
         if (lane.pos == lane.segment_end)
-            lane.segment_end = lane.next_boundary != lane.boundaries_end ? src + *lane.next_boundary++ : lane.end;
+            lane.segment_end = lane.next_boundary < lane.boundaries_end ? src + *lane.next_boundary++ : lane.end;
     };
 
     if (num_lanes == NUM_LANES)

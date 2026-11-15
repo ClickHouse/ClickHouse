@@ -550,7 +550,7 @@ public:
         auto scalar_step = [&]
         {
             const size_t code_pos = pos;
-            UInt64 cls;
+            UInt64 cls = 0;
             if (codes[pos] == FSST::ESCAPE_CODE)
             {
                 ++pos;
@@ -856,8 +856,27 @@ static NO_INLINE void deserializeBinaryFilteredFromFSST(
             size_t next_candidate_code = 0;
             if (!scanner.empty())
             {
-                scanner.build(table, encoded.codes, encoded.codes_size);
-                scanner.findCandidateCodes(encoded, cursor.code_pos, encoded.codes_size, candidate_codes);
+                /// Scan only the codes of the values requested by this read that end in this block: the rest of the block
+                /// stays pending and is scanned by the next read, so scanning it here would make small reads quadratic.
+                /// Every non-empty value takes one boundary of the index (or ends with the codes, if it is the last one).
+                size_t num_values_with_codes = 0;
+                size_t prev_value_end = original_pos;
+                for (size_t k = i; k < num_rows && offsets[k] - original_pos <= available; ++k)
+                {
+                    num_values_with_codes += offsets[k] != prev_value_end;
+                    prev_value_end = offsets[k];
+                }
+
+                if (num_values_with_codes)
+                {
+                    const size_t last_boundary = next_boundary + num_values_with_codes - 1;
+                    const size_t scan_end = last_boundary < boundaries.size() ? boundaries[last_boundary] : encoded.codes_size;
+                    if (scan_end > cursor.code_pos)
+                    {
+                        scanner.build(table, encoded.codes, encoded.codes_size);
+                        scanner.findCandidateCodes(encoded, cursor.code_pos, scan_end, candidate_codes);
+                    }
+                }
             }
             auto has_candidate_code = [&](size_t begin, size_t end)
             {
