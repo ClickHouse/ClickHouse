@@ -40,9 +40,14 @@ echo "second"
 read_until "$fifo_2" "6" | sort
 
 echo "--- the data is replaced by a mutation"
+# The output of a client that exits while nothing reads its FIFO is lost, so the readers start first.
+read_until "$fifo_1" "ABORTED" > "$fifo_1.out" &
+read_until "$fifo_2" "ABORTED" > "$fifo_2.out" &
 $STREAMING_CLIENT -q "ALTER TABLE m UPDATE v = v + 1 WHERE 1"
-read_until "$fifo_1" "ABORTED" | grep -o -m1 "ABORTED"
-read_until "$fifo_2" "ABORTED" | grep -o -m1 "ABORTED"
+wait
+grep -o -m1 "ABORTED" "$fifo_1.out"
+grep -o -m1 "ABORTED" "$fifo_2.out"
+rm -f "$fifo_1.out" "$fifo_2.out"
 cleanup "$fifo_1" "$pid_1" > /dev/null
 cleanup "$fifo_2" "$pid_2" > /dev/null
 
@@ -51,6 +56,10 @@ $STREAMING_CLIENT -q "CREATE TABLE ring (v UInt64) ENGINE = Memory SETTINGS max_
 read -r fifo_3 pid_3 < <(spawn $STREAMING_CLIENT --max_block_size=1 -q "SELECT v, sleepEachRow(0.5) FROM ring STREAM")
 $STREAMING_CLIENT -q "INSERT INTO ring VALUES (0)"
 read_until "$fifo_3" "0" > /dev/null
+# The output of a client that exits while nothing reads its FIFO is lost, so the reader starts first.
+read_until "$fifo_3" "TOO_SLOW" > "$fifo_3.out" &
 $STREAMING_CLIENT --max_block_size=1 --min_insert_block_size_rows=1 --min_insert_block_size_bytes=0 -q "INSERT INTO ring SELECT number FROM numbers(1, 100)"
-read_until "$fifo_3" "TOO_SLOW" | grep -o -m1 "TOO_SLOW"
+wait
+grep -o -m1 "TOO_SLOW" "$fifo_3.out"
+rm -f "$fifo_3.out"
 cleanup "$fifo_3" "$pid_3" > /dev/null
