@@ -233,6 +233,11 @@ TextIndexDictionaryDFA::Cursor::Result TextIndexAnalyzer::nextPatternToken(std::
     return found ? Result::Seek : Result::Exhausted;
 }
 
+bool TextIndexAnalyzer::hasQueryBuilder(const TextSearchQuery & query) const
+{
+    return query_builders.contains(query.getHash());
+}
+
 const TextIndexAnalyzer::QueryBuilder & TextIndexAnalyzer::getQueryBuilder(const TextSearchQuery & query) const
 {
     auto hash = query.getHash();
