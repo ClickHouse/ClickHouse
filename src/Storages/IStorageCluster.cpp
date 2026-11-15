@@ -27,6 +27,7 @@
 #include <Columns/ColumnSet.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -61,6 +62,8 @@ namespace Setting
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
+    extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 max_rows_to_transfer;
 }
 
 namespace ErrorCodes
@@ -81,7 +84,22 @@ IStorageCluster::IStorageCluster(
 namespace
 {
 
-bool isSerializableFilterNode(const ActionsDAG::Node & node, const std::unordered_map<String, ColumnWithTypeAndName> & replica_columns)
+/// A set is sent to every replica, so it has to fit `max_rows_to_transfer` and `max_bytes_to_transfer` like the sets
+/// of a distributed plan. Unlike there, a larger set does not fail the query: its conjunct stays on the initiator.
+bool fitsTransferLimits(const Columns & set_columns, const SizeLimits & transfer_limits)
+{
+    const UInt64 rows = set_columns.empty() ? 0 : set_columns.front()->size();
+    UInt64 bytes = 0;
+    for (const auto & column : set_columns)
+        bytes += column->byteSize();
+    return (!transfer_limits.max_rows || rows <= transfer_limits.max_rows)
+        && (!transfer_limits.max_bytes || bytes <= transfer_limits.max_bytes);
+}
+
+bool isSerializableFilterNode(
+    const ActionsDAG::Node & node,
+    const std::unordered_map<String, ColumnWithTypeAndName> & replica_columns,
+    const SizeLimits & transfer_limits)
 {
     /// A lambda's body is built, and JIT-compiled in place, while the initiator plans the query, so a replica cannot always rebuild it.
     if (WhichDataType(node.result_type).isFunction())
@@ -96,17 +114,18 @@ bool isSerializableFilterNode(const ActionsDAG::Node & node, const std::unordere
         if (!column_set)
             return true;
         const auto & future_set = column_set->getData();
-        if (typeid_cast<const FutureSetFromTuple *>(future_set.get()))
-            return true;
+        if (const auto * from_tuple = typeid_cast<const FutureSetFromTuple *>(future_set.get()))
+            return fitsTransferLimits(from_tuple->getKeyColumns(), transfer_limits);
         if (typeid_cast<const FutureSetFromSubquery *>(future_set.get()))
         {
             auto set = future_set->get();
-            return set && set->hasExplicitSetElements() && !set->isTruncated();
+            return set && set->hasExplicitSetElements() && !set->isTruncated()
+                && fitsTransferLimits(set->getSetElements(), transfer_limits);
         }
         return false;
     }
     for (const auto * child : node.children)
-        if (!isSerializableFilterNode(*child, replica_columns))
+        if (!isSerializableFilterNode(*child, replica_columns, transfer_limits))
             return false;
     /// The replica rebuilds a function only through `FunctionFactory`, so it cannot rebuild an executable or a WASM UDF.
     if (node.type == ActionsDAG::ActionType::FUNCTION)
@@ -114,11 +133,14 @@ bool isSerializableFilterNode(const ActionsDAG::Node & node, const std::unordere
     return node.type == ActionsDAG::ActionType::ALIAS;
 }
 
-String serializeFilterForReplicas(const ActionsDAG::Node & predicate, const std::unordered_map<String, ColumnWithTypeAndName> & replica_columns)
+String serializeFilterForReplicas(
+    const ActionsDAG::Node & predicate,
+    const std::unordered_map<String, ColumnWithTypeAndName> & replica_columns,
+    const SizeLimits & transfer_limits)
 {
     ActionsDAG::NodeRawConstPtrs serializable;
     for (const auto * atom : ActionsDAG::extractConjunctionAtoms(&predicate))
-        if (isSerializableFilterNode(*atom, replica_columns))
+        if (isSerializableFilterNode(*atom, replica_columns, transfer_limits))
             serializable.push_back(atom);
 
     auto filter = ActionsDAG::buildFilterActionsDAG(serializable, replica_columns);
@@ -209,7 +231,11 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
         }
 
         if (!replica_columns.empty())
-            pushed_down_filter = serializeFilterForReplicas(*filter_actions_dag->getOutputs().at(0), replica_columns);
+        {
+            const auto & settings = context->getSettingsRef();
+            const SizeLimits transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], OverflowMode::THROW);
+            pushed_down_filter = serializeFilterForReplicas(*filter_actions_dag->getOutputs().at(0), replica_columns, transfer_limits);
+        }
     }
 
     createExtension(predicate);
