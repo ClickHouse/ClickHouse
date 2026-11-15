@@ -28,7 +28,7 @@ BuildQueryPipelineSettings::BuildQueryPipelineSettings(ContextPtr from)
     temp_data_on_disk = from->getTempDataOnDisk();
     progress_callback = from->getProgressCallback();
 
-    max_threads = getEffectiveMaxThreads(settings);
+    max_threads = getEffectiveMaxThreads(*from);
     aggregation_in_order_shuffle = from->getSettingsRef()[Setting::aggregation_in_order_shuffle];
     aggregation_in_order_shuffle_max_buffered_bytes = from->getSettingsRef()[Setting::aggregation_in_order_shuffle_max_buffered_bytes];
     aggregation_memory_efficient_merge_threads = from->getSettingsRef()[Setting::aggregation_memory_efficient_merge_threads];
