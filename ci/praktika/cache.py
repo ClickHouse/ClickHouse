@@ -1,4 +1,5 @@
 import dataclasses
+import hashlib
 import json
 from pathlib import Path
 
@@ -13,6 +14,24 @@ from .utils import Utils
 class Cache:
     # Workflow kv data key with per-job digest salts, see `CacheRunnerHooks.configure`.
     DIGEST_SALTS_KV_KEY = "job_digest_salts"
+
+    @staticmethod
+    def salt_token(salt):
+        return hashlib.md5(salt.encode()).hexdigest()[: Settings.CACHE_DIGEST_LEN]
+
+    @classmethod
+    def artifact_dir(cls, job_name, kv_data):
+        """The directory, under the S3 prefix of a run, of the artifacts of `job_name`.
+
+        A salted job (see `CacheRunnerHooks.configure`) does something that its regular
+        digest does not show, so its artifacts go to a directory of their own, named after
+        the salt: another run on the same commit with a different salt, or none, must not
+        overwrite them - a cache record of the job, or a re-run of failed jobs of its run,
+        downloads them from there. The salt of a cached record is the salt of the current
+        run, because the salt is a part of the digest."""
+        salt = (kv_data.get(cls.DIGEST_SALTS_KV_KEY) or {}).get(job_name)
+        name = Utils.normalize_string(job_name)
+        return f"{name}_{cls.salt_token(salt)}" if salt else name
 
     @dataclasses.dataclass
     class CacheRecord:

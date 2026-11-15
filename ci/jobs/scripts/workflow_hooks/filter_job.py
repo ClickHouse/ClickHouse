@@ -795,14 +795,15 @@ def record_thinlto_choice(info, without_thinlto, with_thinlto):
 
     The digests of both kinds are salted, so that a cached build of one kind never
     stands for the other. A non-LTO build gets a fixed salt and is reused as usual. A
-    ThinLTO build gets a salt unique to the run, so it is not reused from the cache at
-    all, and neither are the jobs that require it: a cache record points to the
-    artifacts of the run that produced it by PR number and commit SHA only, and a later
-    run on the same commit that builds without ThinLTO overwrites them (also the
-    `pr-<N>` docker image tags). So a run that needs the ThinLTO binary - e.g. for a
-    performance comparison after adding the `pr-performance` label - always builds it,
-    and the only possible overwrite is of a non-LTO build by a ThinLTO one, which every
-    consumer of the non-LTO build accepts."""
+    ThinLTO build gets a salt unique to the run attempt, so it is not reused from the
+    cache at all, and neither are the jobs that require it. A salted build stores its
+    artifacts in a directory of its own (`Cache.artifact_dir`), so no run on the same
+    commit overwrites the ThinLTO binary that a re-run of failed jobs downloads. But
+    other things that a build feeds are keyed by the PR only - e.g. the private `pr-<N>`
+    docker image tags - so a run that needs the ThinLTO binary, e.g. for a performance
+    comparison after adding the `pr-performance` label, rebuilds it and everything
+    that requires it rather than reusing a run whose outputs could have been replaced
+    since."""
     from ci.praktika.cache import Cache
 
     assert info.pr_number > 0, "only PR builds may skip ThinLTO"
@@ -814,7 +815,8 @@ def record_thinlto_choice(info, without_thinlto, with_thinlto):
     for job_name in without_thinlto.values():
         salts[job_name] = "without_thinlto"
     for job_name in with_thinlto.values():
-        salts[job_name] = f"with_thinlto_run_{info.run_id}"
+        # `run_id` stays the same when all jobs of a run are re-run, `run_attempt` changes.
+        salts[job_name] = f"with_thinlto_run_{info.run_id}_{info.run_attempt}"
     info.store_kv_data(Cache.DIGEST_SALTS_KV_KEY, salts)
 
 
