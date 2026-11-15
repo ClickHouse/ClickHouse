@@ -138,7 +138,12 @@ void CustomSeparatedFormatReader::skipRowStartDelimiter()
 void CustomSeparatedFormatReader::skipFieldDelimiter()
 {
     skipSpaces();
-    assertString(format_settings.custom.field_delimiter, *buf);
+    /// This is called for every field, so check the common one-character delimiter inline instead of calling `assertString`.
+    const auto & delimiter = format_settings.custom.field_delimiter;
+    if (delimiter.size() == 1)
+        assertChar(delimiter.front(), *buf);
+    else
+        assertString(delimiter, *buf);
 }
 
 void CustomSeparatedFormatReader::skipRowEndDelimiter()
@@ -156,10 +161,25 @@ void CustomSeparatedFormatReader::skipRowBetweenDelimiter()
 void CustomSeparatedFormatReader::skipField()
 {
     skipSpaces();
-    if (format_settings.custom.escaping_rule == FormatSettings::EscapingRule::CSV)
-        readCSVFieldWithTwoPossibleDelimiters(*buf, format_settings.csv, format_settings.custom.field_delimiter, format_settings.custom.row_after_delimiter);
-    else
-        skipFieldByEscapingRule(*buf, format_settings.custom.escaping_rule, format_settings);
+    /// Skipping is the main cost of reading a few columns from a wide file, so the `Escaped` and `Raw`
+    /// rules read the field directly, as `TabSeparatedFormatReader::skipField` does, instead of going
+    /// through the generic `skipFieldByEscapingRule` for every field.
+    NullOutput out;
+    switch (format_settings.custom.escaping_rule)
+    {
+        case FormatSettings::EscapingRule::Escaped:
+            readEscapedStringInto<NullOutput, false>(out, *buf);
+            break;
+        case FormatSettings::EscapingRule::Raw:
+            readStringInto(out, *buf);
+            break;
+        case FormatSettings::EscapingRule::CSV:
+            readCSVFieldWithTwoPossibleDelimiters(*buf, format_settings.csv, format_settings.custom.field_delimiter, format_settings.custom.row_after_delimiter);
+            break;
+        default:
+            skipFieldByEscapingRule(*buf, format_settings.custom.escaping_rule, format_settings);
+            break;
+    }
 }
 
 bool CustomSeparatedFormatReader::checkForEndOfRow()
