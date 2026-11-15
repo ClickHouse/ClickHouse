@@ -34,7 +34,7 @@ f_long	Nullable(Int64)
 f_float	Nullable(Float32)
 f_double	Nullable(Float64)
 f_date	Nullable(Date32)
-f_time	Nullable(Time64(6))
+f_time	Nullable(Int64)
 f_timestamp	Nullable(DateTime64(6))
 f_timestamptz	Nullable(DateTime64(6, \'UTC\'))
 f_string	Nullable(String)
@@ -134,7 +134,7 @@ c	Nullable(Float64)
 types_primitive__date valid
 c	Nullable(Date32)
 types_primitive__time valid
-c	Nullable(Time64(6))
+c	Nullable(Int64)
 types_primitive__timestamp valid
 c	Nullable(DateTime64(6))
 types_primitive__timestamptz valid

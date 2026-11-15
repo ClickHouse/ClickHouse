@@ -7,7 +7,7 @@
 # `wrap_cases.py` turns each case into a table without snapshots: the schema cases become the table schema,
 # the type cases become the type of a nullable column `c`. A valid case must be described with the
 # corresponding ClickHouse types, an invalid case must be rejected with an exception.
-# The `unknown` type is described as `Nullable(Nothing)`, because it has no values but NULL, and `time` as `Time64(6)`.
+# The `unknown` type is described as `Nullable(Nothing)`, because it has no values but NULL, and `time` as `Int64` (microseconds from midnight, as stored).
 # ClickHouse deliberately extends the specification with wide decimals (precision up to 76, written as `Decimal256`),
 # so `decimal-precision-over-38` (`decimal(39,0)`) is described as `Nullable(Decimal(39, 0))`, although the suite marks it invalid.
 

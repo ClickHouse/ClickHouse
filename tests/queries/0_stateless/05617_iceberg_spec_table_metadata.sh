@@ -14,6 +14,10 @@
 # `s3://a/b/1.avro` and `s3://a/b/2.avro`, which are not supplied and are outside the table location
 # `s3://bucket/test/location`. Describing the table reads the manifest list of the current snapshot,
 # so the test remaps them into `metadata/` of the table and supplies empty manifest lists.
+# Known deviations of ClickHouse, which are recorded in the reference until they are fixed:
+# - `TableMetadataV1Valid` is rejected, because ClickHouse requires `schema-id` in the schema,
+#   which is optional in format version 1 (`'schema-id' field is missing in schema`);
+# - `TableMetadataV2Valid` is rejected with `Can not convert empty value` while reading its current snapshot.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

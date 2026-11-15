@@ -1,11 +1,7 @@
 --- TableMetadataV1Valid
-x	Int64
-y	Int64
-z	Int64
+exception
 --- TableMetadataV2Valid
-x	Int64
-y	Int64
-z	Int64
+exception
 --- TableMetadataV2ValidMinimal
 x	Int64
 y	Int64
