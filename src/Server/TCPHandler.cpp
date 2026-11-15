@@ -333,6 +333,21 @@ Block convertColumnsToBLOBs(
     }
     return res;
 }
+
+/// For a query that fails with the exception being handled: `cancel` rethrows the exception of the cancelled execution,
+/// which can be caused by the cancellation itself, and it must not replace the one being handled.
+template <typename Executor>
+void cancelExecutorOnException(Executor & executor, const LoggerPtr & log)
+{
+    try
+    {
+        executor.cancel();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Exception of the cancelled query execution", LogsLevel::debug);
+    }
+}
 }
 
 namespace DB
@@ -1669,7 +1684,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
         catch (...)
         {
             killQueryIfStoppedByClient(state);
-            executor.cancel();
+            cancelExecutorOnException(executor, log);
             throw;
         }
     };
@@ -1828,7 +1843,7 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
         catch (...)
         {
             killQueryIfStoppedByClient(state);
-            executor.cancel();
+            cancelExecutorOnException(executor, log);
             throw;
         }
 
