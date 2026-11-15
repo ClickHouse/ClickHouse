@@ -40,8 +40,11 @@ ${CLICKHOUSE_CLIENT} --query "
         sum(ProfileEvents['ParquetPrunedRowGroups']) > 0,
         sum(read_rows) < 40000
     FROM system.query_log
-    WHERE type = 'QueryFinish' AND is_initial_query = 0
+    WHERE event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query = 0
         AND initial_query_id IN ('${query_id}_direct', '${query_id}_view')
+        AND initial_query_id IN (
+            SELECT query_id FROM system.query_log
+            WHERE event_date >= yesterday() AND current_database = currentDatabase() AND is_initial_query)
     GROUP BY initial_query_id
     ORDER BY initial_query_id
     SETTINGS enable_parallel_replicas = 0"
