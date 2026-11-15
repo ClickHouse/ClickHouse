@@ -1,0 +1,10 @@
+<clickhouse>
+    <remote_servers>
+        <test_auto_cluster3>
+            <discovery>
+                <path>/clickhouse/discovery2/test_auto_cluster3</path>
+                <shard>1</shard>
+            </discovery>
+        </test_auto_cluster3>
+    </remote_servers>
+</clickhouse>

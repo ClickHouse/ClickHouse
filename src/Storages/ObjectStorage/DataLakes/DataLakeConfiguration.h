@@ -1,0 +1,644 @@
+#pragma once
+
+#include "config.h"
+
+#include <IO/WriteBuffer.h>
+#include <IO/VarInt.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
+
+#include <Storages/IStorage.h>
+#include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/HDFS/Configuration.h>
+#include <Storages/ObjectStorage/Local/Configuration.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/ColumnsDescription.h>
+#include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatFactory.h>
+#include <optional>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <type_traits>
+#include <utility>
+
+#include <Common/ErrorCodes.h>
+#include <Common/filesystemHelpers.h>
+#include <Disks/DiskType.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Databases/DataLake/DatabaseDataLake.h>
+
+#include <fmt/ranges.h>
+
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
+    extern const int PATH_ACCESS_DENIED;
+}
+
+namespace DataLakeStorageSetting
+{
+    extern const DataLakeStorageSettingsDatabaseDataLakeCatalogType storage_catalog_type;
+    extern const DataLakeStorageSettingsString object_storage_endpoint;
+    extern const DataLakeStorageSettingsString storage_aws_access_key_id;
+    extern const DataLakeStorageSettingsString storage_aws_secret_access_key;
+    extern const DataLakeStorageSettingsString storage_region;
+    extern const DataLakeStorageSettingsString storage_aws_role_arn;
+    extern const DataLakeStorageSettingsString storage_aws_role_session_name;
+    extern const DataLakeStorageSettingsString storage_catalog_url;
+    extern const DataLakeStorageSettingsString storage_warehouse;
+    extern const DataLakeStorageSettingsString storage_catalog_credential;
+
+    extern const DataLakeStorageSettingsString storage_auth_scope;
+    extern const DataLakeStorageSettingsString storage_auth_header;
+    extern const DataLakeStorageSettingsString storage_oauth_server_uri;
+    extern const DataLakeStorageSettingsBool storage_oauth_server_use_request_body;
+}
+
+struct FormatParserSharedResources;
+using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
+
+template <typename T>
+concept StorageConfiguration = std::derived_from<T, StorageObjectStorageConfiguration>;
+
+template <StorageConfiguration BaseStorageConfiguration, typename DataLakeMetadata>
+class DataLakeConfiguration : public BaseStorageConfiguration, public std::enable_shared_from_this<StorageObjectStorageConfiguration>
+{
+public:
+    explicit DataLakeConfiguration(DataLakeStorageSettingsPtr settings_) : settings(settings_) {}
+
+    bool isDataLakeConfiguration() const override { return true; }
+
+    bool isIcebergConfiguration() const override
+    {
+#if USE_AVRO
+        return std::is_same_v<DataLakeMetadata, IcebergMetadata>;
+#else
+        return false;
+#endif
+    }
+
+    /// Only DeltaLake can onboard an existing table from a columnless CREATE (schema read from the
+    /// `_delta_log`); Iceberg's create path still requires an explicit schema, so it keeps the default.
+    bool supportsCreateFromExistingTableInCatalog() const override
+    {
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+        return std::is_same_v<DataLakeMetadata, DeltaLakeMetadataDeltaKernel>;
+#else
+        return false;
+#endif
+    }
+
+    DataLakeStorageSettingsPtr getDataLakeSettings() const override
+    {
+        std::lock_guard lock(settings_mutex);
+        return settings;
+    }
+
+    void setDataLakeSettings(ContextPtr local_context, DataLakeStorageSettingsPtr new_settings) override
+    {
+        DataLakeStorageSettingsPtr previous_settings;
+        {
+            std::lock_guard lock(settings_mutex);
+            previous_settings = std::exchange(settings, std::move(new_settings));
+        }
+
+        auto metadata = tryGetMetadata();
+        if (!metadata)
+            return;
+
+        std::shared_ptr<IDataLakeMetadata> fresh;
+        try
+        {
+            fresh = metadata->cloneWithNewSettings(this->shared_from_this(), local_context);
+        }
+        catch (...)
+        {
+            std::lock_guard lock(settings_mutex);
+            settings = std::move(previous_settings);
+            throw;
+        }
+
+        std::shared_ptr<IDataLakeMetadata> displaced;
+        {
+            std::lock_guard lock(metadata_mutex);
+            displaced = std::exchange(current_metadata, std::move(fresh));
+        }
+    }
+
+    void setExplicitMetadataFilePath(const String & path) override
+    {
+        if (auto metadata = tryGetMetadata())
+            metadata->setExplicitMetadataFilePath(path);
+    }
+
+    std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }
+
+    StorageObjectStorageConfiguration::Path getRawPath() const override
+    {
+        auto result = BaseStorageConfiguration::getRawPath().path;
+        if (result.empty())
+            return StorageObjectStorageConfiguration::Path("");
+
+        return StorageObjectStorageConfiguration::Path(result.ends_with('/') ? result : result + "/");
+    }
+
+    void update(ObjectStoragePtr object_storage, ContextPtr local_context) override
+    {
+        BaseStorageConfiguration::update(object_storage, local_context);
+        assertLocalPathCorrect(object_storage, local_context);
+        if (auto metadata = tryGetMetadata(); metadata && metadata->supportsUpdate())
+        {
+            metadata->update(local_context);
+            return;
+        }
+        auto fresh = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
+        /// Destroyed after the lock is released: ~IcebergMetadata waits for its background
+        /// prefetch task, so it must never run while metadata_mutex is held.
+        std::shared_ptr<IDataLakeMetadata> displaced;
+        {
+            std::lock_guard lock(metadata_mutex);
+            displaced = std::exchange(current_metadata, std::move(fresh));
+        }
+    }
+
+    void lazyInitializeIfNeeded(ObjectStoragePtr object_storage, ContextPtr local_context) override
+    {
+        if (tryGetMetadata())
+            return;
+        BaseStorageConfiguration::update(object_storage, local_context);
+        assertLocalPathCorrect(object_storage, local_context);
+        auto fresh = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
+        std::shared_ptr<IDataLakeMetadata> displaced;
+        {
+            std::lock_guard lock(metadata_mutex);
+            /// Compare-and-set: another thread may have published fresher metadata meanwhile.
+            if (!current_metadata)
+                current_metadata = std::move(fresh);
+            else
+                displaced = std::move(fresh);
+        }
+    }
+
+    void create(
+        ObjectStoragePtr object_storage,
+        ContextPtr local_context,
+        const std::optional<ColumnsDescription> & columns,
+        ASTPtr partition_by,
+        ASTPtr order_by,
+        bool if_not_exists,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        const StorageID & table_id_) override
+    {
+        BaseStorageConfiguration::update(object_storage, local_context);
+
+        assertLocalPathCorrect(object_storage, local_context);
+        DataLakeMetadata::createInitial(
+            object_storage, weak_from_this(), local_context, columns, partition_by, order_by, if_not_exists, catalog, table_id_);
+    }
+
+    bool supportsDelete() const override
+    {
+        return getMetadata()->supportsDelete();
+    }
+
+    bool supportsParallelInsert() const override
+    {
+        return getMetadata()->supportsParallelInsert();
+    }
+
+    void mutate(const MutationCommands & commands,
+        ContextPtr context,
+        StoragePtr storage_ptr,
+        const StorageID & storage_id,
+        StorageMetadataPtr metadata_snapshot,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        const std::optional<FormatSettings> & format_settings) override
+    {
+        getMetadata()->mutate(commands, storage_ptr, context, storage_id, metadata_snapshot, catalog, format_settings);
+    }
+
+    void checkMutationIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const MutationCommands & commands) override
+    {
+        lazyInitializeIfNeeded(object_storage, context);
+        getMetadata()->checkMutationIsPossible(commands);
+    }
+
+    void checkAlterIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const AlterCommands & commands) override
+    {
+        lazyInitializeIfNeeded(object_storage, context);
+        getMetadata()->checkAlterIsPossible(commands);
+    }
+
+    void checkAlterPartitionIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const PartitionCommands & commands) override
+    {
+        lazyInitializeIfNeeded(object_storage, context);
+        getMetadata()->checkAlterPartitionIsPossible(commands);
+    }
+
+    Pipe alterPartition(
+        ObjectStoragePtr object_storage,
+        const PartitionCommands & commands,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        StorageID storage_id) override
+    {
+        lazyInitializeIfNeeded(object_storage, context);
+        return getMetadata()->alterPartition(commands, context, std::move(catalog), std::move(storage_id));
+    }
+
+    void alter(
+        ObjectStoragePtr object_storage,
+        const AlterCommands & params,
+        ContextPtr context,
+        const StorageID & storage_id,
+        std::shared_ptr<DataLake::ICatalog> catalog) override
+    {
+        lazyInitializeIfNeeded(object_storage, context);
+        getMetadata()->alter(params, context, storage_id, catalog);
+    }
+
+    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, StorageObjectStorageConfiguration::CredentialsConfigurationCallback refresh_credentials_callback) override
+    {
+        if (ready_object_storage)
+            return ready_object_storage;
+        return BaseStorageConfiguration::createObjectStorage(context, is_readonly, refresh_credentials_callback);
+    }
+
+    void check(ContextPtr context) override
+    {
+        if (ready_object_storage
+            && (ready_object_storage->getType() == ObjectStorageType::S3
+                || ready_object_storage->getType() == ObjectStorageType::Azure))
+            this->checkFormat();
+        else
+            BaseStorageConfiguration::check(context);
+    }
+
+    std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const override
+    {
+        if (auto schema = getMetadata()->getTableSchema(local_context); !schema.empty())
+        {
+            validateLakeSchemaColumnNames(schema, DataLakeMetadata::name);
+            return ColumnsDescription(std::move(schema));
+        }
+        return std::nullopt;
+    }
+
+    bool supportsTotalRows(ContextPtr context, ObjectStorageType storage_type) const override
+    {
+        return DataLakeMetadata::supportsTotalRows(context, storage_type);
+    }
+
+    std::optional<size_t> totalRows(ContextPtr local_context, const std::optional<DataLakeTableStateSnapshot> & state) override
+    {
+        return getMetadata()->totalRows(local_context, state);
+    }
+
+    bool supportsTotalBytes(ContextPtr context, ObjectStorageType storage_type) const override
+    {
+        return DataLakeMetadata::supportsTotalBytes(context, storage_type);
+    }
+
+    std::optional<size_t> totalBytes(ContextPtr local_context) override
+    {
+        return getMetadata()->totalBytes(local_context);
+    }
+
+    bool isDataSortedBySortingKey(StorageMetadataPtr metadata_snapshot, ContextPtr local_context) const override
+    {
+        return getMetadata()->isDataSortedBySortingKey(metadata_snapshot, local_context);
+    }
+
+    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override
+    {
+        return getMetadata()->getInitialSchemaByPath(local_context, object_info);
+    }
+
+    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override
+    {
+        return getMetadata()->getSchemaTransformer(local_context, object_info);
+    }
+
+    std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr context) const override
+    {
+        return getMetadata()->getTableStateSnapshot(context);
+    }
+
+    std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(
+        const DataLakeTableStateSnapshot & state, ContextPtr context) const override
+    {
+        auto metadata = getMetadata()->buildStorageMetadataFromState(state, context);
+        if (metadata)
+        {
+            validateLakeSchemaColumnNames(metadata->getColumns().getAll(), DataLakeMetadata::name);
+            LOG_TEST(log, "Built storage metadata from state with columns: {}",
+                metadata->getColumns().toString(/* include_comments */false));
+        }
+        return metadata;
+    }
+
+    bool shouldReloadSchemaForConsistency(ContextPtr context) const override
+    {
+        return getMetadata()->shouldReloadSchemaForConsistency(context);
+    }
+
+    std::shared_ptr<IDataLakeMetadata> getExternalMetadata() override
+    {
+        return getMetadata();
+    }
+
+    bool supportsFileIterator() const override { return true; }
+
+    bool supportsWrites() const override
+    {
+        return getMetadata()->supportsWrites();
+    }
+
+    ObjectIterator iterate(
+        const ActionsDAG * filter_dag,
+        IDataLakeMetadata::FileProgressCallback callback,
+        size_t list_batch_size,
+        StorageMetadataPtr storage_metadata,
+        ContextPtr context) override
+    {
+        if constexpr (std::is_same_v<DataLakeMetadata, HudiMetadata>)
+            HudiMetadata::pauseBeforeIterate();
+        return getMetadata()->iterate(filter_dag, callback, list_batch_size, storage_metadata, context);
+    }
+
+    void modifyFormatSettings(FormatSettings & settings_, const Context & local_context) const override
+    {
+        getMetadata()->modifyFormatSettings(settings_, local_context);
+    }
+
+    ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override
+    {
+        return getMetadata()->getColumnMapperForObject(object_info);
+    }
+    ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override
+    {
+        return getMetadata()->getColumnMapperForCurrentSchema(storage_metadata_snapshot, context);
+    }
+    ColumnMapperPtr getCurrentSchemaColumnMapperForFilters(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override
+    {
+        return getMetadata()->getCurrentSchemaColumnMapperForFilters(storage_metadata_snapshot, context);
+    }
+
+    void drop(ContextPtr local_context) override
+    {
+        if (auto metadata = tryGetMetadata())
+            metadata->drop(local_context);
+    }
+
+    SinkToStoragePtr write(
+        SharedHeader sample_block,
+        const StorageID & table_id,
+        ObjectStoragePtr object_storage,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog) override
+    {
+        lazyInitializeIfNeeded(object_storage, context);
+        /// When the storage carries no format settings (table functions pass none),
+        /// derive them from the context. Substituting FormatSettings{} here (struct
+        /// defaults, e.g. `output_string_as_string = false`) made table-function
+        /// writes produce parquet without the `String` annotation, unreadable for
+        /// external Iceberg readers such as Spark.
+        return getMetadata()->write(
+            sample_block,
+            table_id,
+            object_storage,
+            shared_from_this(),
+            format_settings.has_value() ? *format_settings : getFormatSettings(context),
+            context,
+            catalog);
+    }
+
+    std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context, [[maybe_unused]] const StorageID & table_id) const override
+    {
+#if USE_AVRO && USE_PARQUET
+        const auto current_settings = getDataLakeSettings();
+        if ((*current_settings)[DataLakeStorageSetting::storage_catalog_type].changed
+            || (*current_settings)[DataLakeStorageSetting::storage_catalog_url].changed
+            || (*current_settings)[DataLakeStorageSetting::storage_aws_access_key_id].changed)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Don't use deprecated settings storage_catalog_type, storage_catalog_url, storage_aws_access_key_id");
+        auto datalake_database = tryGetDataLakeDatabase(table_id, context);
+        if (!datalake_database)
+            return nullptr;
+        return datalake_database->getCatalog();
+#else
+        return nullptr;
+#endif
+    }
+
+    ASTs completeEngineArgsFromCatalog(
+        [[maybe_unused]] const StorageID & table_id, [[maybe_unused]] ContextPtr context) override
+    {
+#if USE_AVRO && USE_PARQUET
+        auto datalake_database = tryGetDataLakeDatabase(table_id, context);
+        if (!datalake_database)
+            return {};
+        auto args = datalake_database->getEngineArgsForNewTable(table_id.table_name, this->getType());
+        datalake_database->applyCatalogSpecificConfiguration(*this);
+        return args;
+#else
+        return {};
+#endif
+    }
+
+    bool optimize(
+        ObjectStoragePtr object_storage,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        const std::optional<FormatSettings> & format_settings,
+        std::shared_ptr<DataLake::ICatalog> catalog) override
+    {
+        lazyInitializeIfNeeded(object_storage, context);
+        return getMetadata()->optimize(metadata_snapshot, context, format_settings, catalog);
+    }
+
+    void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, FormatParserSharedResourcesPtr parser_shared_resources, ContextPtr local_context) const override
+    {
+        getMetadata()->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, local_context);
+    }
+
+    void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override
+    {
+        if (!Context::getGlobalContextInstance()->getAllowedDisksForTableEngines().contains(disk_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk '{}' is not allowed for usage in storage engines. The list of allowed disks is defined by server setting `allowed_disks_for_table_engines`", disk_name);
+
+        BaseStorageConfiguration::fromDisk(disk_name, args, context, with_structure);
+        this->source_disk_name = disk_name;
+        auto disk = context->getDisk(disk_name);
+        /// The table works through a private copy of the disk's object storage: the decorators
+        /// (e.g. `CachedObjectStorage`), connection settings and the disk's IO scheduling resources
+        /// stay in effect for the table, while per-table setting updates (see `update`) cannot
+        /// corrupt the disk's own storage.
+        ready_object_storage = disk->getObjectStorage()->clone();
+    }
+
+    bool supportsPrewhere() const override
+    {
+#if USE_AVRO
+        return std::is_same_v<DataLakeMetadata, IcebergMetadata>;
+#else
+        return false;
+#endif
+    }
+
+    bool supportsLazyMaterialization(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override
+    {
+        return getMetadata()->supportsLazyMaterialization(storage_metadata_snapshot, context);
+    }
+
+    std::optional<DataLakeReadEstimate>
+    estimateRead(StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, const Names & column_names, ContextPtr context) const override
+    {
+        return getMetadata()->estimateRead(storage_metadata_snapshot, filter, column_names, context);
+    }
+
+    /// Data lakes never overwrite an existing data file in place: a new snapshot references new
+    /// files. This makes the lazy-materialization reread race-free regardless of the backend.
+    bool dataFilesAreImmutable() const override
+    {
+        return true;
+    }
+
+private:
+    mutable std::mutex settings_mutex;
+    DataLakeStorageSettingsPtr settings TSA_GUARDED_BY(settings_mutex);
+    ObjectStoragePtr ready_object_storage;
+    mutable std::mutex metadata_mutex;
+    /// Readers take a copy of this pointer under the lock and use that copy, so a concurrent
+    /// republish in update() cannot destroy the object they are still calling into.
+    std::shared_ptr<IDataLakeMetadata> current_metadata TSA_GUARDED_BY(metadata_mutex);
+    LoggerPtr log = getLogger("DataLakeConfiguration");
+
+#if USE_AVRO && USE_PARQUET
+    static std::shared_ptr<DatabaseDataLake> tryGetDataLakeDatabase(const StorageID & table_id, const ContextPtr & context)
+    {
+        const String db_name = table_id.hasDatabase() ? table_id.database_name : context->getCurrentDatabase();
+        /// Having no associated `DataLakeDatabase` is a valid state (e.g. an `Iceberg` table in a
+        /// regular `Atomic`/`Ordinary` database, or a database not currently registered during
+        /// async load), so return nullptr rather than throwing. Callers treat a null catalog as
+        /// "no catalog integration", the same as the base-class default.
+        return std::dynamic_pointer_cast<DatabaseDataLake>(DatabaseCatalog::instance().tryGetDatabase(db_name));
+    }
+#endif
+
+    void assertLocalPathCorrect(ObjectStoragePtr object_storage, ContextPtr local_context)
+    {
+        if (object_storage->getType() == ObjectStorageType::Local)
+        {
+            auto user_files_path = local_context->getUserFilesPath();
+            /// A relative path is resolved the same way the local object storage resolves the keys of data files:
+            /// relative to `user_files_path` in the server and to the current directory in `clickhouse-local`.
+            String table_path = this->getPathForRead().path;
+            if (std::filesystem::path(table_path).is_relative())
+                table_path = resolvePathRelativelyToBase(table_path, object_storage->getCommonKeyPrefix());
+            if (!fileOrSymlinkPathStartsWith(table_path, user_files_path) || !pathStartsWith(table_path, user_files_path))
+                throw Exception(
+                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", table_path, user_files_path);
+        }
+    }
+
+    std::shared_ptr<IDataLakeMetadata> tryGetMetadata() const
+    {
+        std::lock_guard lock(metadata_mutex);
+        return current_metadata;
+    }
+
+    std::shared_ptr<IDataLakeMetadata> getMetadata() const
+    {
+        auto metadata = tryGetMetadata();
+        if (!metadata)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Metadata is not initialized");
+        return metadata;
+    }
+
+    ReadFromFormatInfo prepareReadingFromFormat(
+        ObjectStoragePtr object_storage,
+        const Strings & requested_columns,
+        const StorageSnapshotPtr & storage_snapshot,
+        bool supports_subset_of_columns,
+        bool supports_tuple_elements,
+        ContextPtr local_context,
+        const PrepareReadingFromFormatHiveParams &) override
+    {
+        assertLocalPathCorrect(object_storage, local_context);
+        auto metadata = tryGetMetadata();
+        if (!metadata)
+        {
+            auto fresh = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
+            std::shared_ptr<IDataLakeMetadata> displaced;
+            {
+                std::lock_guard lock(metadata_mutex);
+                if (!current_metadata)
+                    current_metadata = std::move(fresh);
+                else
+                    displaced = std::move(fresh);
+                metadata = current_metadata;
+            }
+        }
+        return metadata->prepareReadingFromFormat(
+            requested_columns, storage_snapshot, local_context, supports_subset_of_columns, supports_tuple_elements);
+    }
+};
+
+
+#if USE_AVRO
+#    if USE_AWS_S3
+using StorageS3IcebergConfiguration = DataLakeConfiguration<StorageS3Configuration, IcebergMetadata>;
+using StorageS3PaimonConfiguration = DataLakeConfiguration<StorageS3Configuration, PaimonMetadata>;
+#endif
+
+#if USE_AZURE_BLOB_STORAGE
+using StorageAzureIcebergConfiguration = DataLakeConfiguration<StorageAzureConfiguration, IcebergMetadata>;
+using StorageAzurePaimonConfiguration = DataLakeConfiguration<StorageAzureConfiguration, PaimonMetadata>;
+#endif
+
+#if USE_HDFS
+using StorageHDFSIcebergConfiguration = DataLakeConfiguration<StorageHDFSConfiguration, IcebergMetadata>;
+using StorageHDFSPaimonConfiguration = DataLakeConfiguration<StorageHDFSConfiguration, PaimonMetadata>;
+#endif
+
+using StorageLocalIcebergConfiguration = DataLakeConfiguration<StorageLocalConfiguration, IcebergMetadata>;
+using StorageLocalPaimonConfiguration = DataLakeConfiguration<StorageLocalConfiguration, PaimonMetadata>;
+#endif
+
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+#if USE_AWS_S3
+using StorageS3DeltaLakeConfiguration = DataLakeConfiguration<StorageS3Configuration, DeltaLakeMetadataDeltaKernel>;
+#endif
+
+#if USE_AZURE_BLOB_STORAGE
+using StorageAzureDeltaLakeConfiguration = DataLakeConfiguration<StorageAzureConfiguration, DeltaLakeMetadataDeltaKernel>;
+#endif
+
+using StorageLocalDeltaLakeConfiguration = DataLakeConfiguration<StorageLocalConfiguration, DeltaLakeMetadataDeltaKernel>;
+
+#endif
+
+#if USE_AWS_S3
+using StorageS3HudiConfiguration = DataLakeConfiguration<StorageS3Configuration, HudiMetadata>;
+#endif
+}

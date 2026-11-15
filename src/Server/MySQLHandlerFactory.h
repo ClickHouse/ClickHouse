@@ -1,15 +1,17 @@
 #pragma once
 
-#include <atomic>
-#include <memory>
+#include <Core/Types.h>
 #include <Server/IServer.h>
 #include <Server/TCPServerConnectionFactory.h>
 #include <Common/ProfileEvents.h>
 
 #include "config.h"
 
+#include <atomic>
+#include <optional>
+
 #if USE_SSL
-#    include <openssl/rsa.h>
+#    include <Common/Crypto/KeyPair.h>
 #endif
 
 namespace DB
@@ -23,32 +25,35 @@ private:
     LoggerPtr log;
 
 #if USE_SSL
-    struct RSADeleter
-    {
-        void operator()(RSA * ptr) { RSA_free(ptr); }
-    };
-    using RSAPtr = std::unique_ptr<RSA, RSADeleter>;
-
-    RSAPtr public_key;
-    RSAPtr private_key;
+    KeyPair keypair;
 
     bool ssl_enabled = true;
 #else
     bool ssl_enabled = false;
 #endif
 
+    bool secure_required = false;
+
+    /// If set, overrides the `default_session_user` server setting for this listener.
+    std::optional<String> default_session_user;
+
     std::atomic<unsigned> last_connection_id = 0;
 
     ProfileEvents::Event read_event;
     ProfileEvents::Event write_event;
 public:
-    explicit MySQLHandlerFactory(IServer & server_, const ProfileEvents::Event & read_event_ = ProfileEvents::end(), const ProfileEvents::Event & write_event_ = ProfileEvents::end());
+    explicit MySQLHandlerFactory(
+        IServer & server_,
+        bool secure_required_,
+        const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
+        const ProfileEvents::Event & write_event_ = ProfileEvents::end(),
+        std::optional<String> default_session_user_ = {});
 
     void readRSAKeys();
 
     void generateRSAKeys();
 
-    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override;
+    Poco::Net::TCPServerConnection * createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override;
 };
 
 }

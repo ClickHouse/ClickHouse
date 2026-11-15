@@ -1,12 +1,16 @@
 #pragma once
 
-#include "Pool.h"
+#include <map>
+
+#include <mysqlxx/Pool.h>
 
 
+/// NOLINTBEGIN(modernize-macro-to-enum)
 #define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS 1
 #define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS 16
 #define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES 3
 #define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_CONNECTION_WAIT_TIMEOUT 5 /// in seconds
+/// NOLINTEND(modernize-macro-to-enum)
 
 
 namespace mysqlxx
@@ -79,10 +83,14 @@ namespace mysqlxx
         size_t max_tries;
         /// Mutex for set of replicas.
         std::mutex mutex;
+        /// Guards the order of `replicas_by_priority`. `get` holds `mutex` across connects, so copies take only this one.
+        mutable std::mutex replicas_order_mutex;
         /// Can the Pool be shared
         bool shareable;
         /// Timeout for waiting free connection.
         uint64_t wait_timeout = 0;
+        /// Attempt to reconnect in background thread
+        bool bg_reconnect = false;
 
     public:
         using Entry = Pool::Entry;
@@ -119,12 +127,15 @@ namespace mysqlxx
             const RemoteDescription & addresses,
             const std::string & user,
             const std::string & password,
+            const SSLParams & ssl_params,
             unsigned default_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
             unsigned max_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS,
             size_t max_tries_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
             uint64_t wait_timeout_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_CONNECTION_WAIT_TIMEOUT,
             size_t connect_timeout = MYSQLXX_DEFAULT_TIMEOUT,
-            size_t rw_timeout = MYSQLXX_DEFAULT_RW_TIMEOUT);
+            size_t rw_timeout = MYSQLXX_DEFAULT_RW_TIMEOUT,
+            bool bg_reconnect_ = false,
+            bool enable_compression_ = false);
 
         PoolWithFailover(const PoolWithFailover & other);
 

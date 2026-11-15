@@ -1,4 +1,3 @@
-import os
 import re
 import time
 import uuid
@@ -50,11 +49,14 @@ def test_read_write_storage(started_cluster):
 def test_read_write_storage_with_globs(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
+    # An enum glob expands into concrete paths without listing, and every expanded
+    # path must exist (see the `test_s3_enum_glob_should_not_list` counterpart),
+    # so the ranges reference only the files created below.
     node1.query(
-        "create table HDFSStorageWithRange (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/storage{1..5}', 'TSV')"
+        "create table HDFSStorageWithRange (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/storage{1..3}', 'TSV')"
     )
     node1.query(
-        "create table HDFSStorageWithEnum (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/storage{1,2,3,4,5}', 'TSV')"
+        "create table HDFSStorageWithEnum (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/storage{1,2,3}', 'TSV')"
     )
     node1.query(
         "create table HDFSStorageWithQuestionMark (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/storage?', 'TSV')"
@@ -138,7 +140,7 @@ def test_storage_with_multidirectory_glob(started_cluster):
     r = node1.query(
         "SELECT * FROM hdfs('hdfs://hdfs1:9000/multiglob/{p1/path1,p2/path2}/postfix/data{1,2}', TSV)"
     )
-    assert (r == f"File1\t11\nFile2\t22\n") or (r == f"File2\t22\nFile1\t11\n")
+    assert (r == "File1\t11\nFile2\t22\n") or (r == "File2\t22\nFile1\t11\n")
 
     try:
         node1.query(
@@ -183,29 +185,25 @@ def test_write_table(started_cluster):
 
 
 def test_bad_hdfs_uri(started_cluster):
-    try:
-        node1.query(
-            "create table BadStorage1 (id UInt32, name String, weight Float64) ENGINE = HDFS('hads:hgsdfs100500:9000/other_storage', 'TSV')"
-        )
-    except Exception as ex:
-        print(ex)
-        assert "Bad HDFS URL" in str(ex)
-    try:
-        node1.query(
-            "create table BadStorage2 (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs100500:9000/other_storage', 'TSV')"
-        )
-    except Exception as ex:
-        print(ex)
-        assert "Unable to connect to HDFS" in str(ex)
+    # A malformed URL is rejected at CREATE time.
+    error = node1.query_and_get_error(
+        "create table BadStorage1 (id UInt32, name String, weight Float64) ENGINE = HDFS('hads:hgsdfs100500:9000/other_storage', 'TSV')"
+    )
+    assert "Bad HDFS URL" in error
 
+    # An unreachable NameNode and a nonexistent path are detected on first access.
+    node1.query(
+        "create table BadStorage2 (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs100500:9000/other_storage', 'TSV')"
+    )
+    error = node1.query_and_get_error("select * from BadStorage2")
+    assert "Unable to connect to HDFS" in error
     node1.query("drop table BadStorage2")
-    try:
-        node1.query(
-            "create table BadStorage3 (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/<>', 'TSV')"
-        )
-    except Exception as ex:
-        print(ex)
-        assert "Unable to open HDFS file" in str(ex)
+
+    node1.query(
+        "create table BadStorage3 (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/<>', 'TSV')"
+    )
+    error = node1.query_and_get_error("select * from BadStorage3")
+    assert "Unable to open HDFS file" in error or "FileNotFoundException" in error
     node1.query("drop table BadStorage3")
 
 
@@ -364,7 +362,7 @@ def test_virtual_columns(started_cluster):
     hdfs_api.write_data("/file1", "1\n")
     hdfs_api.write_data("/file2", "2\n")
     hdfs_api.write_data("/file3", "3\n")
-    expected = "1\tfile1\tfile1\n2\tfile2\tfile2\n3\tfile3\tfile3\n"
+    expected = "1\tfile1\t/file1\n2\tfile2\t/file2\n3\tfile3\t/file3\n"
     assert (
         node1.query(
             "select id, _file as file_name, _path as file_path from virtual_cols order by id"
@@ -374,10 +372,28 @@ def test_virtual_columns(started_cluster):
     node1.query("drop table virtual_cols")
 
 
+def test_path_filter_pushdown(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+
+    hdfs_api.write_data("/pushdown1", "1\n")
+    hdfs_api.write_data("/pushdown2", "2\n")
+
+    # A `_path` equality over a glob is answered by turning the value back into a storage key,
+    # so the predicate has to read the same paths the column reports. HDFS has no namespace,
+    # and an inverse that assumes one is present yields an empty key and drops every row.
+    assert (
+        node1.query(
+            "select id from hdfs('hdfs://hdfs1:9000/pushdown*', 'TSV', 'id UInt32') "
+            "where _path = '/pushdown2' settings s3_path_filter_limit = 10"
+        )
+        == "2\n"
+    )
+
+
 def test_read_files_with_spaces(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
-    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
     dir = "/test_spaces"
     exists = fs.exists(dir)
     if exists:
@@ -393,19 +409,21 @@ def test_read_files_with_spaces(started_cluster):
     )
     assert node1.query("select * from test order by id") == "1\n2\n3\n"
     fs.delete(dir, recursive=True)
-    node1.query(f"drop table test")
+    node1.query("drop table test")
 
 
 def test_write_files_with_spaces(started_cluster):
-    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
     dir = "/itime=2024-10-24 10%3A02%3A04"
     fs.mkdirs(dir)
 
     node1.query(
         f"insert into function hdfs('hdfs://hdfs1:9000{dir}/test.csv', TSVRaw) select 123 settings hdfs_truncate_on_insert=1"
     )
+    # The directory name looks like a hive partition (`itime=...`), so disable
+    # hive partitioning detection to read back only the data column.
     result = node1.query(
-        f"select * from hdfs('hdfs://hdfs1:9000{dir}/test.csv', TSVRaw)"
+        f"select * from hdfs('hdfs://hdfs1:9000{dir}/test.csv', TSVRaw) settings use_hive_partitioning=0"
     )
     assert int(result) == 123
     fs.delete(dir, recursive=True)
@@ -429,62 +447,123 @@ def test_truncate_table(started_cluster):
     node1.query("drop table test_truncate")
 
 
+def test_truncate_table_keeps_user_directories(started_cluster):
+    # The `HDFS` table engine constructs the object storage with the URL stripped down
+    # to the NameNode, so its storage root is `/` and the files live in user-managed
+    # directories. Removing a file (e.g. on TRUNCATE) must not prune the emptied ancestor
+    # directories.
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
+    fs.mkdirs("/user_dirs/a/b")
+    node1.query(
+        "create table test_truncate_user_dirs (id UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/user_dirs/a/b/tr.tsv', 'TSV')"
+    )
+    node1.query("insert into test_truncate_user_dirs values (1)")
+    assert node1.query("select * from test_truncate_user_dirs") == "1\n"
+    node1.query("truncate table test_truncate_user_dirs")
+    assert not fs.exists("/user_dirs/a/b/tr.tsv")
+    assert fs.exists("/user_dirs/a/b")
+    assert fs.exists("/user_dirs/a")
+    assert fs.exists("/user_dirs")
+    node1.query("drop table test_truncate_user_dirs")
+    fs.delete("/user_dirs", recursive=True)
+
+
 def test_partition_by(started_cluster):
-    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
     id = uuid.uuid4()
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     dir = f"partition_{id}"
     fs.mkdirs(f"/{dir}/", permission=777)
 
-    file_name = "test_{_partition_id}"
-    partition_by = "column3"
-    values = "(1, 2, 3), (3, 2, 1), (1, 3, 2)"
-    table_function = (
-        f"hdfs('hdfs://hdfs1:9000/{dir}/{file_name}', 'TSV', '{table_format}')"
-    )
+    try:
+        file_name = "test_{_partition_id}"
+        partition_by = "column3"
+        values = "(1, 2, 3), (3, 2, 1), (1, 3, 2)"
+        table_function = (
+            f"hdfs('hdfs://hdfs1:9000/{dir}/{file_name}', 'TSV', '{table_format}')"
+        )
 
-    node1.query(
-        f"insert into table function {table_function} PARTITION BY {partition_by} values {values}"
-    )
-    result = node1.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test_1', 'TSV', '{table_format}')"
-    )
-    assert result.strip() == "3\t2\t1"
-    result = node1.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test_2', 'TSV', '{table_format}')"
-    )
-    assert result.strip() == "1\t3\t2"
-    result = node1.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test_3', 'TSV', '{table_format}')"
-    )
-    assert result.strip() == "1\t2\t3"
+        node1.query(
+            f"insert into table function {table_function} PARTITION BY {partition_by} values {values}"
+        )
+        result = node1.query(
+            f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test_1', 'TSV', '{table_format}')"
+        )
+        assert result.strip() == "3\t2\t1"
+        result = node1.query(
+            f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test_2', 'TSV', '{table_format}')"
+        )
+        assert result.strip() == "1\t3\t2"
+        result = node1.query(
+            f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test_3', 'TSV', '{table_format}')"
+        )
+        assert result.strip() == "1\t2\t3"
 
-    file_name = "test2_{_partition_id}"
-    node1.query(
-        f"create table p(column1 UInt32, column2 UInt32, column3 UInt32) engine = HDFS('hdfs://hdfs1:9000/{dir}/{file_name}', 'TSV') partition by column3"
+        file_name = "test2_{_partition_id}"
+        node1.query(
+            f"create table p(column1 UInt32, column2 UInt32, column3 UInt32) engine = HDFS('hdfs://hdfs1:9000/{dir}/{file_name}', 'TSV') partition by column3"
+        )
+        node1.query(f"insert into p values {values}")
+        result = node1.query(
+            f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test2_1', 'TSV', '{table_format}')"
+        )
+        assert result.strip() == "3\t2\t1"
+        result = node1.query(
+            f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test2_2', 'TSV', '{table_format}')"
+        )
+        assert result.strip() == "1\t3\t2"
+        result = node1.query(
+            f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test2_3', 'TSV', '{table_format}')"
+        )
+        assert result.strip() == "1\t2\t3"
+    finally:
+        node1.query("drop table if exists p")
+        fs.delete(f"/{dir}", recursive=True)
+
+
+def test_globbed_path_partition_by_round_trips(started_cluster):
+    # A globbed path with `PARTITION BY` and no explicit `partition_strategy` keeps
+    # the pre-26.6 behavior: no strategy, `PARTITION BY` ignored. The strategy is
+    # recoverable from the path shape alone, so nothing is persisted and the table
+    # survives DETACH/ATTACH (the metadata-load path used at server startup).
+    table_name = f"test_hdfs_glob_round_trip_{uuid.uuid4().hex}"
+    path = f"hdfs://hdfs1:9000/{table_name}/*.parquet"
+
+    try:
+        node1.query(
+            f"CREATE TABLE {table_name} (d Date, x UInt64) "
+            f"ENGINE = HDFS('{path}', 'Parquet') PARTITION BY d"
+        )
+
+        create_query = node1.query(f"SHOW CREATE TABLE {table_name}")
+        assert "partition_strategy" not in create_query
+
+        node1.query(f"DETACH TABLE {table_name}")
+        node1.query(f"ATTACH TABLE {table_name}")
+    finally:
+        node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+
+
+def test_plain_path_wildcard_default_is_rejected(started_cluster):
+    # A plain path under `file_like_engine_default_partition_strategy = 'wildcard'`
+    # resolves the implicit strategy to 'none', but HDFS engine arguments can not
+    # persist `partition_strategy = 'none'`, so on reload the same definition would
+    # silently switch to the 'hive' strategy. Such a CREATE must fail instead.
+    table_name = f"test_hdfs_plain_wildcard_default_{uuid.uuid4().hex}"
+    path = f"hdfs://hdfs1:9000/{table_name}/data.parquet"
+
+    error = node1.query_and_get_error(
+        f"CREATE TABLE {table_name} (d Date, x UInt64) "
+        f"ENGINE = HDFS('{path}', 'Parquet') PARTITION BY d",
+        settings={"file_like_engine_default_partition_strategy": "wildcard"},
     )
-    node1.query(f"insert into p values {values}")
-    result = node1.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test2_1', 'TSV', '{table_format}')"
-    )
-    assert result.strip() == "3\t2\t1"
-    result = node1.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test2_2', 'TSV', '{table_format}')"
-    )
-    assert result.strip() == "1\t3\t2"
-    result = node1.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test2_3', 'TSV', '{table_format}')"
-    )
-    assert result.strip() == "1\t2\t3"
-    node1.query(f"drop table p")
-    fs.delete("/{dir}", recursive=True)
+    assert "can not persist" in error
 
 
 def test_seekable_formats(started_cluster):
-    hdfs_api = started_cluster.hdfs_api
 
     table_function = (
-        f"hdfs('hdfs://hdfs1:9000/parquet', 'Parquet', 'a Int32, b String')"
+        "hdfs('hdfs://hdfs1:9000/parquet', 'Parquet', 'a Int32, b String')"
     )
     node1.query(
         f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(5000000) SETTINGS hdfs_truncate_on_insert=1"
@@ -493,7 +572,7 @@ def test_seekable_formats(started_cluster):
     result = node1.query(f"SELECT count() FROM {table_function}")
     assert int(result) == 5000000
 
-    table_function = f"hdfs('hdfs://hdfs1:9000/orc', 'ORC', 'a Int32, b String')"
+    table_function = "hdfs('hdfs://hdfs1:9000/orc', 'ORC', 'a Int32, b String')"
     node1.query(
         f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(5000000) SETTINGS hdfs_truncate_on_insert=1"
     )
@@ -519,31 +598,31 @@ def test_read_table_with_default(started_cluster):
 
 def test_schema_inference(started_cluster):
     node1.query(
-        f"insert into table function hdfs('hdfs://hdfs1:9000/native', 'Native', 'a Int32, b String') SELECT number, randomString(100) FROM numbers(5000000) SETTINGS hdfs_truncate_on_insert=1"
+        "insert into table function hdfs('hdfs://hdfs1:9000/native', 'Native', 'a Int32, b String') SELECT number, randomString(100) FROM numbers(5000000) SETTINGS hdfs_truncate_on_insert=1"
     )
 
-    result = node1.query(f"desc hdfs('hdfs://hdfs1:9000/native', 'Native')")
+    result = node1.query("desc hdfs('hdfs://hdfs1:9000/native', 'Native')")
     assert result == "a\tInt32\t\t\t\t\t\nb\tString\t\t\t\t\t\n"
 
     result = node1.query(
-        f"select count(*) from hdfs('hdfs://hdfs1:9000/native', 'Native')"
+        "select count(*) from hdfs('hdfs://hdfs1:9000/native', 'Native')"
     )
     assert int(result) == 5000000
 
     node1.query(
-        f"create table schema_inference engine=HDFS('hdfs://hdfs1:9000/native', 'Native')"
+        "create table schema_inference engine=HDFS('hdfs://hdfs1:9000/native', 'Native')"
     )
-    result = node1.query(f"desc schema_inference")
+    result = node1.query("desc schema_inference")
     assert result == "a\tInt32\t\t\t\t\t\nb\tString\t\t\t\t\t\n"
 
-    result = node1.query(f"select count(*) from schema_inference")
+    result = node1.query("select count(*) from schema_inference")
     assert int(result) == 5000000
-    node1.query(f"drop table schema_inference")
+    node1.query("drop table schema_inference")
 
 
 def test_hdfsCluster(started_cluster):
     hdfs_api = started_cluster.hdfs_api
-    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
     dir = "/test_hdfsCluster"
     exists = fs.exists(dir)
     if exists:
@@ -556,13 +635,13 @@ def test_hdfsCluster(started_cluster):
     actual = node1.query(
         "select id, _file as file_name, _path as file_path from hdfs('hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') order by id"
     )
-    expected = "1\tfile1\ttest_hdfsCluster/file1\n2\tfile2\ttest_hdfsCluster/file2\n3\tfile3\ttest_hdfsCluster/file3\n"
+    expected = "1\tfile1\t/test_hdfsCluster/file1\n2\tfile2\t/test_hdfsCluster/file2\n3\tfile3\t/test_hdfsCluster/file3\n"
     assert actual == expected
 
     actual = node1.query(
         "select id, _file as file_name, _path as file_path from hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') order by id"
     )
-    expected = "1\tfile1\ttest_hdfsCluster/file1\n2\tfile2\ttest_hdfsCluster/file2\n3\tfile3\ttest_hdfsCluster/file3\n"
+    expected = "1\tfile1\t/test_hdfsCluster/file1\n2\tfile2\t/test_hdfsCluster/file2\n3\tfile3\t/test_hdfsCluster/file3\n"
     assert actual == expected
     fs.delete(dir, recursive=True)
 
@@ -577,78 +656,77 @@ def test_hdfs_directory_not_exist(started_cluster):
 
 
 def test_overwrite(started_cluster):
-    hdfs_api = started_cluster.hdfs_api
 
-    table_function = f"hdfs('hdfs://hdfs1:9000/data', 'Parquet', 'a Int32, b String')"
+    table_function = "hdfs('hdfs://hdfs1:9000/data', 'Parquet', 'a Int32, b String')"
     node1.query(f"create table test_overwrite as {table_function}")
     node1.query(
-        f"insert into test_overwrite select number, randomString(100) from numbers(5)"
+        "insert into test_overwrite select number, randomString(100) from numbers(5)"
     )
     node1.query_and_get_error(
-        f"insert into test_overwrite select number, randomString(100) FROM numbers(10)"
+        "insert into test_overwrite select number, randomString(100) FROM numbers(10)"
     )
     node1.query(
-        f"insert into test_overwrite select number, randomString(100) from numbers(10) settings hdfs_truncate_on_insert=1"
+        "insert into test_overwrite select number, randomString(100) from numbers(10) settings hdfs_truncate_on_insert=1"
     )
 
-    result = node1.query(f"select count() from test_overwrite")
+    result = node1.query("select count() from test_overwrite")
     assert int(result) == 10
-    node1.query(f"truncate table test_overwrite")
-    node1.query(f"drop table test_overwrite")
+    node1.query("truncate table test_overwrite")
+    node1.query("drop table test_overwrite")
 
 
 def test_multiple_inserts(started_cluster):
-    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
     id = uuid.uuid4()
     fs.mkdirs(f"/{id}/", permission=777)
 
     table_function = f"hdfs('hdfs://hdfs1:9000/{id}/data_multiple_inserts', 'Parquet', 'a Int32, b String')"
     node1.query(f"create table test_multiple_inserts as {table_function}")
     node1.query(
-        f"insert into test_multiple_inserts select number, randomString(100) from numbers(10)"
+        "insert into test_multiple_inserts select number, randomString(100) from numbers(10)"
     )
     node1.query(
-        f"insert into test_multiple_inserts select number, randomString(100) from numbers(20) settings hdfs_create_new_file_on_insert=1"
+        "insert into test_multiple_inserts select number, randomString(100) from numbers(20) settings hdfs_create_new_file_on_insert=1"
     )
     node1.query(
-        f"insert into test_multiple_inserts select number, randomString(100) from numbers(30) settings hdfs_create_new_file_on_insert=1"
+        "insert into test_multiple_inserts select number, randomString(100) from numbers(30) settings hdfs_create_new_file_on_insert=1"
     )
 
-    result = node1.query(f"select count() from test_multiple_inserts")
+    result = node1.query("select count() from test_multiple_inserts")
     assert int(result) == 60
 
-    result = node1.query(f"drop table test_multiple_inserts")
+    result = node1.query("drop table test_multiple_inserts")
 
     table_function = f"hdfs('hdfs://hdfs1:9000/{id}/data_multiple_inserts.gz', 'Parquet', 'a Int32, b String')"
     node1.query(f"create table test_multiple_inserts as {table_function}")
     node1.query(
-        f"insert into test_multiple_inserts select number, randomString(100) FROM numbers(10)"
+        "insert into test_multiple_inserts select number, randomString(100) FROM numbers(10)"
     )
     node1.query(
-        f"insert into test_multiple_inserts select number, randomString(100) FROM numbers(20) settings hdfs_create_new_file_on_insert=1"
+        "insert into test_multiple_inserts select number, randomString(100) FROM numbers(20) settings hdfs_create_new_file_on_insert=1"
     )
     node1.query(
-        f"insert into test_multiple_inserts select number, randomString(100) FROM numbers(30) settings hdfs_create_new_file_on_insert=1"
+        "insert into test_multiple_inserts select number, randomString(100) FROM numbers(30) settings hdfs_create_new_file_on_insert=1"
     )
 
-    result = node1.query(f"select count() from test_multiple_inserts")
+    result = node1.query("select count() from test_multiple_inserts")
     assert int(result) == 60
-    node1.query(f"drop table test_multiple_inserts")
+    node1.query("drop table test_multiple_inserts")
 
 
-def test_format_detection(started_cluster):
+def test_format_detection_from_file_name(started_cluster):
     node1.query(
-        f"create table arrow_table (x UInt64) engine=HDFS('hdfs://hdfs1:9000/data.arrow')"
+        "create table arrow_table (x UInt64) engine=HDFS('hdfs://hdfs1:9000/data.arrow')"
     )
-    node1.query(f"insert into arrow_table select 1")
-    result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/data.arrow')")
+    node1.query("insert into arrow_table select 1")
+    result = node1.query("select * from hdfs('hdfs://hdfs1:9000/data.arrow')")
     assert int(result) == 1
-    node1.query(f"truncate table arrow_table")
-    node1.query(f"drop table arrow_table")
+    node1.query("truncate table arrow_table")
+    node1.query("drop table arrow_table")
 
 
 def test_schema_inference_with_globs(started_cluster):
-    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
     dir = "/test_schema_inference_with_globs"
     fs.mkdirs(dir)
     node1.query(
@@ -693,63 +771,83 @@ def test_schema_inference_with_globs(started_cluster):
 
 
 def test_insert_select_schema_inference(started_cluster):
-    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
 
     node1.query(
-        f"insert into table function hdfs('hdfs://hdfs1:9000/test.native.zst') select toUInt64(1) as x"
+        "insert into table function hdfs('hdfs://hdfs1:9000/test.native.zst') select toUInt64(1) as x"
     )
 
-    result = node1.query(f"desc hdfs('hdfs://hdfs1:9000/test.native.zst')")
+    result = node1.query("desc hdfs('hdfs://hdfs1:9000/test.native.zst')")
     assert result.strip() == "x\tUInt64"
 
-    result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/test.native.zst')")
+    result = node1.query("select * from hdfs('hdfs://hdfs1:9000/test.native.zst')")
     assert int(result) == 1
     fs.delete("/test.native.zst")
 
 
 def test_cluster_join(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
+    dir = "/test_cluster_join"
+    fs.mkdirs(dir)
+    for i in range(1, 4):
+        hdfs_api.write_data(f"{dir}/file{i}", f"{i}\n")
+
     result = node1.query(
-        """
-        SELECT l.id,r.id FROM hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') as l
-        JOIN hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') as r
+        f"""
+        SELECT l.id,r.id FROM hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000{dir}/file*', 'TSV', 'id UInt32') as l
+        JOIN hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000{dir}/file*', 'TSV', 'id UInt32') as r
         ON l.id = r.id
+        ORDER BY l.id
     """
     )
-    assert "AMBIGUOUS_COLUMN_NAME" not in result
+    assert result == "1\t1\n2\t2\n3\t3\n"
+    fs.delete(dir, recursive=True)
 
 
 def test_cluster_macro(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
+    dir = "/test_cluster_macro"
+    fs.mkdirs(dir)
+    for i in range(1, 4):
+        hdfs_api.write_data(f"{dir}/file{i}", f"{i}\n")
+
     with_macro = node1.query(
-        """
-        SELECT id FROM hdfsCluster('{default_cluster_macro}', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32')
+        f"""
+        SELECT id FROM hdfsCluster('{{default_cluster_macro}}', 'hdfs://hdfs1:9000{dir}/file*', 'TSV', 'id UInt32') ORDER BY id
     """
     )
 
     no_macro = node1.query(
-        """
-        SELECT id FROM hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32')
+        f"""
+        SELECT id FROM hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000{dir}/file*', 'TSV', 'id UInt32') ORDER BY id
     """
     )
 
+    assert with_macro == "1\n2\n3\n"
     assert TSV(with_macro) == TSV(no_macro)
+    fs.delete(dir, recursive=True)
 
 
 def test_virtual_columns_2(started_cluster):
-    hdfs_api = started_cluster.hdfs_api
-    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
 
     table_function = (
-        f"hdfs('hdfs://hdfs1:9000/parquet_2', 'Parquet', 'a Int32, b String')"
+        "hdfs('hdfs://hdfs1:9000/parquet_2', 'Parquet', 'a Int32, b String')"
     )
     node1.query(f"insert into table function {table_function} SELECT 1, 'kek'")
 
     result = node1.query(f"SELECT _path FROM {table_function}")
-    assert result.strip() == "parquet_2"
+    assert result.strip() == "/parquet_2"
 
     table_function = (
-        f"hdfs('hdfs://hdfs1:9000/parquet_3', 'Parquet', 'a Int32, _path String')"
+        "hdfs('hdfs://hdfs1:9000/parquet_3', 'Parquet', 'a Int32, _path String')"
     )
-    node1.query(f"insert into table function {table_function} SELECT 1, 'kek'")
+    node1.query(
+        f"insert into table function {table_function} SELECT 1, 'kek'",
+        settings={"use_hive_partitioning": 0},
+    )
 
     result = node1.query(f"SELECT _path FROM {table_function}")
     assert result.strip() == "kek"
@@ -814,7 +912,7 @@ def run_count_query(node, file):
 def test_schema_inference_cache(started_cluster):
     node1.query("system drop schema cache")
     node1.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache0.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
+        "insert into function hdfs('hdfs://hdfs1:9000/test_cache0.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
     )
     time.sleep(1)
 
@@ -826,7 +924,7 @@ def test_schema_inference_cache(started_cluster):
     check_cache_hits(node1, "test_cache0.jsonl")
 
     node1.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache0.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
+        "insert into function hdfs('hdfs://hdfs1:9000/test_cache0.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
     )
     time.sleep(1)
 
@@ -834,7 +932,7 @@ def test_schema_inference_cache(started_cluster):
     check_cache_invalidations(node1, "test_cache0.jsonl")
 
     node1.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache1.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
+        "insert into function hdfs('hdfs://hdfs1:9000/test_cache1.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
     )
     time.sleep(1)
 
@@ -846,7 +944,7 @@ def test_schema_inference_cache(started_cluster):
     check_cache_hits(node1, "test_cache1.jsonl")
 
     node1.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache2.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
+        "insert into function hdfs('hdfs://hdfs1:9000/test_cache2.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
     )
     time.sleep(1)
 
@@ -878,7 +976,7 @@ def test_schema_inference_cache(started_cluster):
     check_cache_hits(node1, "test_cache0.jsonl")
 
     node1.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache3.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
+        "insert into function hdfs('hdfs://hdfs1:9000/test_cache3.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
     )
     time.sleep(1)
 
@@ -886,7 +984,7 @@ def test_schema_inference_cache(started_cluster):
     run_describe_query(node1, files)
     check_cache_hits(node1, files)
 
-    node1.query(f"system drop schema cache for hdfs")
+    node1.query("system drop schema cache for hdfs")
     check_cache(node1, [])
 
     run_describe_query(node1, files)
@@ -902,7 +1000,7 @@ def test_schema_inference_cache(started_cluster):
     check_cache(node1, [])
 
     node1.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache0.csv') select * from numbers(100) settings hdfs_truncate_on_insert=1"
+        "insert into function hdfs('hdfs://hdfs1:9000/test_cache0.csv') select * from numbers(100) settings hdfs_truncate_on_insert=1"
     )
     time.sleep(1)
 
@@ -916,7 +1014,7 @@ def test_schema_inference_cache(started_cluster):
     check_cache_hits(node1, "test_cache0.csv")
 
     node1.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache0.csv') select * from numbers(200) settings hdfs_truncate_on_insert=1"
+        "insert into function hdfs('hdfs://hdfs1:9000/test_cache0.csv') select * from numbers(200) settings hdfs_truncate_on_insert=1"
     )
     time.sleep(1)
 
@@ -925,7 +1023,7 @@ def test_schema_inference_cache(started_cluster):
     check_cache_invalidations(node1, "test_cache0.csv")
 
     node1.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache1.csv') select * from numbers(100) settings hdfs_truncate_on_insert=1"
+        "insert into function hdfs('hdfs://hdfs1:9000/test_cache1.csv') select * from numbers(100) settings hdfs_truncate_on_insert=1"
     )
     time.sleep(1)
 
@@ -942,22 +1040,22 @@ def test_schema_inference_cache(started_cluster):
     assert int(res) == 300
     check_cache_hits(node1, "test_cache{0,1}.csv", 2)
 
-    node1.query(f"system drop schema cache for hdfs")
+    node1.query("system drop schema cache for hdfs")
     check_cache(node1, [])
 
     res = run_count_query(node1, "test_cache{0,1}.csv")
     assert int(res) == 300
     check_cache_misses(node1, "test_cache{0,1}.csv", 2)
 
-    node1.query(f"system drop schema cache for hdfs")
+    node1.query("system drop schema cache for hdfs")
     check_cache(node1, [])
 
     node1.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache.parquet') select * from numbers(100) settings hdfs_truncate_on_insert=1"
+        "insert into function hdfs('hdfs://hdfs1:9000/test_cache.parquet') select * from numbers(100) settings hdfs_truncate_on_insert=1"
     )
     time.sleep(1)
     res = node1.query(
-        f"select count() from hdfs('hdfs://hdfs1:9000/test_cache.parquet')"
+        "select count() from hdfs('hdfs://hdfs1:9000/test_cache.parquet')"
     )
     assert int(res) == 100
     check_cache_misses(node1, "test_cache.parquet")
@@ -968,7 +1066,7 @@ def test_schema_inference_cache(started_cluster):
 def test_hdfsCluster_skip_unavailable_shards(started_cluster):
     # Although skip_unavailable_shards is not set, cluster table functions should always skip unavailable shards.
     hdfs_api = started_cluster.hdfs_api
-    node = started_cluster.instances["node1"]
+    started_cluster.instances["node1"]
     data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
     hdfs_api.write_data("/skip_unavailable_shards", data)
 
@@ -982,7 +1080,7 @@ def test_hdfsCluster_skip_unavailable_shards(started_cluster):
 
 def test_hdfsCluster_unset_skip_unavailable_shards(started_cluster):
     hdfs_api = started_cluster.hdfs_api
-    node = started_cluster.instances["node1"]
+    started_cluster.instances["node1"]
     data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
     hdfs_api.write_data("/unskip_unavailable_shards", data)
 
@@ -998,47 +1096,47 @@ def test_skip_empty_files(started_cluster):
     node = started_cluster.instances["node1"]
 
     node.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/skip_empty_files1.parquet', TSVRaw) select * from numbers(0) settings hdfs_truncate_on_insert=1"
+        "insert into function hdfs('hdfs://hdfs1:9000/skip_empty_files1.parquet', TSVRaw) select * from numbers(0) settings hdfs_truncate_on_insert=1"
     )
 
     node.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/skip_empty_files2.parquet') select * from numbers(1) settings hdfs_truncate_on_insert=1"
+        "insert into function hdfs('hdfs://hdfs1:9000/skip_empty_files2.parquet') select * from numbers(1) settings hdfs_truncate_on_insert=1"
     )
 
     node.query_and_get_error(
-        f"select * from hdfs('hdfs://hdfs1:9000/skip_empty_files1.parquet') settings hdfs_skip_empty_files=0"
+        "select * from hdfs('hdfs://hdfs1:9000/skip_empty_files1.parquet') settings hdfs_skip_empty_files=0"
     )
 
     node.query_and_get_error(
-        f"select * from hdfs('hdfs://hdfs1:9000/skip_empty_files1.parquet', auto, 'number UINt64') settings hdfs_skip_empty_files=0"
+        "select * from hdfs('hdfs://hdfs1:9000/skip_empty_files1.parquet', auto, 'number UInt64') settings hdfs_skip_empty_files=0"
     )
 
     node.query_and_get_error(
-        f"select * from hdfs('hdfs://hdfs1:9000/skip_empty_files1.parquet') settings hdfs_skip_empty_files=1"
+        "select * from hdfs('hdfs://hdfs1:9000/skip_empty_files1.parquet') settings hdfs_skip_empty_files=1"
     )
 
     res = node.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/skip_empty_files1.parquet', auto, 'number UInt64') settings hdfs_skip_empty_files=1"
+        "select * from hdfs('hdfs://hdfs1:9000/skip_empty_files1.parquet', auto, 'number UInt64') settings hdfs_skip_empty_files=1"
     )
 
     assert len(res) == 0
 
     node.query_and_get_error(
-        f"select * from hdfs('hdfs://hdfs1:9000/skip_empty_files*.parquet') settings hdfs_skip_empty_files=0"
+        "select * from hdfs('hdfs://hdfs1:9000/skip_empty_files*.parquet') settings hdfs_skip_empty_files=0"
     )
 
     node.query_and_get_error(
-        f"select * from hdfs('hdfs://hdfs1:9000/skip_empty_files*.parquet', auto, 'number UInt64') settings hdfs_skip_empty_files=0"
+        "select * from hdfs('hdfs://hdfs1:9000/skip_empty_files*.parquet', auto, 'number UInt64') settings hdfs_skip_empty_files=0"
     )
 
     res = node.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/skip_empty_files*.parquet') settings hdfs_skip_empty_files=1"
+        "select * from hdfs('hdfs://hdfs1:9000/skip_empty_files*.parquet') settings hdfs_skip_empty_files=1"
     )
 
     assert int(res) == 0
 
     res = node.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/skip_empty_files*.parquet', auto, 'number UInt64') settings hdfs_skip_empty_files=1"
+        "select * from hdfs('hdfs://hdfs1:9000/skip_empty_files*.parquet', auto, 'number UInt64') settings hdfs_skip_empty_files=1"
     )
 
     assert int(res) == 0
@@ -1048,47 +1146,47 @@ def test_read_subcolumns(started_cluster):
     node = started_cluster.instances["node1"]
 
     node.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/test_subcolumns.tsv', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)') select ((1, 2), 3) settings hdfs_truncate_on_insert=1"
+        "insert into function hdfs('hdfs://hdfs1:9000/test_subcolumns.tsv', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)') select ((1, 2), 3) settings hdfs_truncate_on_insert=1"
     )
 
     node.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/test_subcolumns.jsonl', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)') select ((1, 2), 3) settings hdfs_truncate_on_insert=1"
+        "insert into function hdfs('hdfs://hdfs1:9000/test_subcolumns.jsonl', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)') select ((1, 2), 3) settings hdfs_truncate_on_insert=1"
     )
 
     res = node.query(
-        f"select a.b.d, _path, a.b, _file, a.e from hdfs('hdfs://hdfs1:9000/test_subcolumns.tsv', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
+        "select a.b.d, _path, a.b, _file, a.e from hdfs('hdfs://hdfs1:9000/test_subcolumns.tsv', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
     )
 
-    assert res == "2\ttest_subcolumns.tsv\t(1,2)\ttest_subcolumns.tsv\t3\n"
+    assert res == "2\t/test_subcolumns.tsv\t(1,2)\ttest_subcolumns.tsv\t3\n"
 
     res = node.query(
-        f"select a.b.d, _path, a.b, _file, a.e from hdfs('hdfs://hdfs1:9000/test_subcolumns.jsonl', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
+        "select a.b.d, _path, a.b, _file, a.e from hdfs('hdfs://hdfs1:9000/test_subcolumns.jsonl', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
     )
 
-    assert res == "2\ttest_subcolumns.jsonl\t(1,2)\ttest_subcolumns.jsonl\t3\n"
+    assert res == "2\t/test_subcolumns.jsonl\t(1,2)\ttest_subcolumns.jsonl\t3\n"
 
     res = node.query(
-        f"select x.b.d, _path, x.b, _file, x.e from hdfs('hdfs://hdfs1:9000/test_subcolumns.jsonl', auto, 'x Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
+        "select x.b.d, _path, x.b, _file, x.e from hdfs('hdfs://hdfs1:9000/test_subcolumns.jsonl', auto, 'x Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
     )
 
-    assert res == "0\ttest_subcolumns.jsonl\t(0,0)\ttest_subcolumns.jsonl\t0\n"
+    assert res == "0\t/test_subcolumns.jsonl\t(0,0)\ttest_subcolumns.jsonl\t0\n"
 
     res = node.query(
-        f"select x.b.d, _path, x.b, _file, x.e from hdfs('hdfs://hdfs1:9000/test_subcolumns.jsonl', auto, 'x Tuple(b Tuple(c UInt32, d UInt32), e UInt32) default ((42, 42), 42)')"
+        "select x.b.d, _path, x.b, _file, x.e from hdfs('hdfs://hdfs1:9000/test_subcolumns.jsonl', auto, 'x Tuple(b Tuple(c UInt32, d UInt32), e UInt32) default ((42, 42), 42)')"
     )
 
-    assert res == "42\ttest_subcolumns.jsonl\t(42,42)\ttest_subcolumns.jsonl\t42\n"
+    assert res == "42\t/test_subcolumns.jsonl\t(42,42)\ttest_subcolumns.jsonl\t42\n"
 
 
 def test_read_subcolumn_time(started_cluster):
     node = started_cluster.instances["node1"]
 
     node.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/test_subcolumn_time.tsv', auto, 'a UInt32') select (42) settings hdfs_truncate_on_insert=1"
+        "insert into function hdfs('hdfs://hdfs1:9000/test_subcolumn_time.tsv', auto, 'a UInt32') select (42) settings hdfs_truncate_on_insert=1"
     )
 
     res = node.query(
-        f"select a, dateDiff('minute', _time, now()) < 59 from hdfs('hdfs://hdfs1:9000/test_subcolumn_time.tsv', auto, 'a UInt32')"
+        "select a, dateDiff('minute', _time, now()) < 59 from hdfs('hdfs://hdfs1:9000/test_subcolumn_time.tsv', auto, 'a UInt32')"
     )
 
     assert res == "42\t1\n"
@@ -1096,7 +1194,7 @@ def test_read_subcolumn_time(started_cluster):
 
 def test_union_schema_inference_mode(started_cluster):
     id = uuid.uuid4()
-    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
 
     dir = f"union_{id}"
     fs.mkdirs(f"/{dir}/", permission=777)
@@ -1119,7 +1217,7 @@ def test_union_schema_inference_mode(started_cluster):
     assert result == "a\tNullable(Int64)\nb\tNullable(Int64)\n"
 
     result = node.query(
-        f"select schema_inference_mode, splitByChar('/', source)[-1] as file, schema from system.schema_inference_cache where source like '%test_union_schema_inference%' order by file format TSV"
+        "select schema_inference_mode, splitByChar('/', source)[-1] as file, schema from system.schema_inference_cache where source like '%test_union_schema_inference%' order by file format TSV"
     )
     assert (
         result == "UNION\ttest_union_schema_inference1.jsonl\ta Nullable(Int64)\n"
@@ -1129,7 +1227,7 @@ def test_union_schema_inference_mode(started_cluster):
         f"select * from hdfs('hdfs://hdfs1:9000/{dir}/test_union_schema_inference*.jsonl') order by tuple(*) settings schema_inference_mode='union', describe_compact_output=1 format TSV"
     )
     assert result == "1\t\\N\n" "\\N\t2\n"
-    node.query(f"system drop schema cache for hdfs")
+    node.query("system drop schema cache for hdfs")
     result = node.query(
         f"desc hdfs('hdfs://hdfs1:9000/{dir}/test_union_schema_inference2.jsonl') settings schema_inference_mode='union', describe_compact_output=1 format TSV"
     )
@@ -1151,7 +1249,7 @@ def test_union_schema_inference_mode(started_cluster):
 
 def test_format_detection(started_cluster):
     node = started_cluster.instances["node1"]
-    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
     id = uuid.uuid4()
     dir = f"{id}"
     fs.mkdirs(f"/{dir}/", permission=777)
@@ -1222,6 +1320,37 @@ def test_format_detection(started_cluster):
 
     assert expected_result == result
 
+    node.query(
+        f"create table test_format_detection engine=HDFS('hdfs://hdfs1:9000/{dir}/test_format_detection1')"
+    )
+    result = node.query("show create table test_format_detection")
+    assert (
+        result
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(Int64),\\n    `y` Nullable(String)\\n)\\nENGINE = HDFS(\\'hdfs://hdfs1:9000/{dir}/test_format_detection1\\', \\'JSON\\')\n"
+    )
+
+    node.query("drop table test_format_detection")
+    node.query(
+        f"create table test_format_detection engine=HDFS('hdfs://hdfs1:9000/{dir}/test_format_detection1', auto)"
+    )
+    result = node.query("show create table test_format_detection")
+    assert (
+        result
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(Int64),\\n    `y` Nullable(String)\\n)\\nENGINE = HDFS(\\'hdfs://hdfs1:9000/{dir}/test_format_detection1\\', \\'JSON\\')\n"
+    )
+
+    node.query("drop table test_format_detection")
+    node.query(
+        f"create table test_format_detection engine=HDFS('hdfs://hdfs1:9000/{dir}/test_format_detection1', auto, 'none')"
+    )
+    result = node.query("show create table test_format_detection")
+    assert (
+        result
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(Int64),\\n    `y` Nullable(String)\\n)\\nENGINE = HDFS(\\'hdfs://hdfs1:9000/{dir}/test_format_detection1\\', \\'JSON\\', \\'none\\')\n"
+    )
+
+    node.query("drop table test_format_detection")
+
 
 def test_write_to_globbed_partitioned_path(started_cluster):
     node = started_cluster.instances["node1"]
@@ -1241,33 +1370,33 @@ def test_respect_object_existence_on_partitioned_write(started_cluster):
     )
 
     result = node.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/test_partitioned_write42.csv', CSV)"
+        "select * from hdfs('hdfs://hdfs1:9000/test_partitioned_write42.csv', CSV)"
     )
 
     assert int(result) == 42
 
     error = node.query_and_get_error(
-        f"insert into table function hdfs('hdfs://hdfs1:9000/test_partitioned_write{{_partition_id}}.csv', CSV) partition by 42 select 42 settings hdfs_truncate_on_insert=0"
+        "insert into table function hdfs('hdfs://hdfs1:9000/test_partitioned_write{_partition_id}.csv', CSV) partition by 42 select 42 settings hdfs_truncate_on_insert=0"
     )
 
     assert "BAD_ARGUMENTS" in error
 
     node.query(
-        f"insert into table function hdfs('hdfs://hdfs1:9000/test_partitioned_write{{_partition_id}}.csv', CSV) partition by 42 select 43 settings hdfs_truncate_on_insert=1"
+        "insert into table function hdfs('hdfs://hdfs1:9000/test_partitioned_write{_partition_id}.csv', CSV) partition by 42 select 43 settings hdfs_truncate_on_insert=1"
     )
 
     result = node.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/test_partitioned_write42.csv', CSV)"
+        "select * from hdfs('hdfs://hdfs1:9000/test_partitioned_write42.csv', CSV)"
     )
 
     assert int(result) == 43
 
     node.query(
-        f"insert into table function hdfs('hdfs://hdfs1:9000/test_partitioned_write{{_partition_id}}.csv', CSV) partition by 42 select 44 settings hdfs_truncate_on_insert=0, hdfs_create_new_file_on_insert=1"
+        "insert into table function hdfs('hdfs://hdfs1:9000/test_partitioned_write{_partition_id}.csv', CSV) partition by 42 select 44 settings hdfs_truncate_on_insert=0, hdfs_create_new_file_on_insert=1"
     )
 
     result = node.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/test_partitioned_write42.1.csv', CSV)"
+        "select * from hdfs('hdfs://hdfs1:9000/test_partitioned_write42.1.csv', CSV)"
     )
 
     assert int(result) == 44
@@ -1276,36 +1405,36 @@ def test_respect_object_existence_on_partitioned_write(started_cluster):
 def test_hive_partitioning_with_one_parameter(started_cluster):
     hdfs_api = started_cluster.hdfs_api
     hdfs_api.write_data(
-        f"/column0=Elizabeth/file_1", f"column0,column1\nElizabeth,Gordon\n"
+        "/column0=Elizabeth/file_1", "column0,column1\nElizabeth,Gordon\n"
     )
     assert (
-        hdfs_api.read_data(f"/column0=Elizabeth/file_1")
-        == f"column0,column1\nElizabeth,Gordon\n"
+        hdfs_api.read_data("/column0=Elizabeth/file_1")
+        == "column0,column1\nElizabeth,Gordon\n"
     )
 
     r = node1.query(
         "SELECT column0 FROM hdfs('hdfs://hdfs1:9000/column0=Elizabeth/file_1', 'CSVWithNames')",
         settings={"use_hive_partitioning": 1},
     )
-    assert r == f"Elizabeth\n"
+    assert r == "Elizabeth\n"
 
 
 def test_hive_partitioning_without_setting(started_cluster):
     hdfs_api = started_cluster.hdfs_api
     hdfs_api.write_data(
-        f"/column0=Elizabeth/column1=Gordon/parquet_2", f"Elizabeth\tGordon\n"
+        "/column0=Elizabeth/column1=Gordon/parquet_2", "Elizabeth\tGordon\n"
     )
     assert (
-        hdfs_api.read_data(f"/column0=Elizabeth/column1=Gordon/parquet_2")
-        == f"Elizabeth\tGordon\n"
+        hdfs_api.read_data("/column0=Elizabeth/column1=Gordon/parquet_2")
+        == "Elizabeth\tGordon\n"
     )
     pattern = re.compile(
-        r"DB::Exception: Unknown expression identifier `.*` in scope.*", re.DOTALL
+        r"DB::Exception: Unknown expression identifier .*In scope.*", re.DOTALL
     )
 
     with pytest.raises(QueryRuntimeException, match=pattern):
         node1.query(
-            f"SELECT column1 FROM hdfs('hdfs://hdfs1:9000/column0=Elizabeth/column1=Gordon/parquet_2', 'TSV');",
+            "SELECT column1 FROM hdfs('hdfs://hdfs1:9000/column0=Elizabeth/column1=Gordon/parquet_2', 'TSV');",
             settings={"use_hive_partitioning": 0},
         )
 

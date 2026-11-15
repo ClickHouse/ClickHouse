@@ -17,9 +17,11 @@ SELECT * FROM map_test_index_map_keys WHERE map['K2'] = 'V2' SETTINGS force_data
 SELECT 'Equals with non existing key and default value';
 SELECT * FROM map_test_index_map_keys WHERE map['K3'] = '';
 SELECT 'Not equals with existing key';
-SELECT * FROM map_test_index_map_keys WHERE map['K0'] != 'V0' SETTINGS force_data_skipping_indices='map_bloom_filter_keys';
+SELECT * FROM map_test_index_map_keys WHERE map['K0'] != 'V0' SETTINGS force_data_skipping_indices='map_bloom_filter_keys'; -- { serverError INDEX_NOT_USED }
+SELECT * FROM map_test_index_map_keys WHERE map['K0'] != 'V0';
 SELECT 'Not equals with non existing key';
-SELECT * FROM map_test_index_map_keys WHERE map['K2'] != 'V2' SETTINGS force_data_skipping_indices='map_bloom_filter_keys';
+SELECT * FROM map_test_index_map_keys WHERE map['K2'] != 'V2' SETTINGS force_data_skipping_indices='map_bloom_filter_keys'; -- { serverError INDEX_NOT_USED }
+SELECT * FROM map_test_index_map_keys WHERE map['K2'] != 'V2';
 SELECT 'Not equals with non existing key and default value';
 SELECT * FROM map_test_index_map_keys WHERE map['K3'] != '';
 
@@ -30,9 +32,11 @@ SELECT * FROM map_test_index_map_keys WHERE map['K2'] IN 'V2' SETTINGS force_dat
 SELECT 'IN with non existing key and default value';
 SELECT * FROM map_test_index_map_keys WHERE map['K3'] IN '';
 SELECT 'NOT IN with existing key';
-SELECT * FROM map_test_index_map_keys WHERE map['K0'] NOT IN 'V0' SETTINGS force_data_skipping_indices='map_bloom_filter_keys';
+SELECT * FROM map_test_index_map_keys WHERE map['K0'] NOT IN 'V0' SETTINGS force_data_skipping_indices='map_bloom_filter_keys'; -- { serverError INDEX_NOT_USED }
+SELECT * FROM map_test_index_map_keys WHERE map['K0'] NOT IN 'V0';
 SELECT 'NOT IN with non existing key';
-SELECT * FROM map_test_index_map_keys WHERE map['K2'] NOT IN 'V2' SETTINGS force_data_skipping_indices='map_bloom_filter_keys';
+SELECT * FROM map_test_index_map_keys WHERE map['K2'] NOT IN 'V2' SETTINGS force_data_skipping_indices='map_bloom_filter_keys'; -- { serverError INDEX_NOT_USED }
+SELECT * FROM map_test_index_map_keys WHERE map['K2'] NOT IN 'V2';
 SELECT 'NOT IN with non existing key and default value';
 SELECT * FROM map_test_index_map_keys WHERE map['K3'] NOT IN '';
 
@@ -42,6 +46,13 @@ SELECT 'MapContains with non existing key';
 SELECT * FROM map_test_index_map_keys WHERE mapContains(map, 'K2') SETTINGS force_data_skipping_indices='map_bloom_filter_keys';
 SELECT 'MapContains with non existing key and default value';
 SELECT * FROM map_test_index_map_keys WHERE mapContains(map, '');
+
+SELECT 'MapContainsKey with existing key';
+SELECT * FROM map_test_index_map_keys WHERE mapContainsKey(map, 'K0') SETTINGS force_data_skipping_indices='map_bloom_filter_keys';
+SELECT 'MapContainsKey with non existing key';
+SELECT * FROM map_test_index_map_keys WHERE mapContainsKey(map, 'K2') SETTINGS force_data_skipping_indices='map_bloom_filter_keys';
+SELECT 'MapContainsKey with non existing key and default value';
+SELECT * FROM map_test_index_map_keys WHERE mapContainsKey(map, '');
 
 SELECT 'Has with existing key';
 SELECT * FROM map_test_index_map_keys WHERE has(map, 'K0') SETTINGS force_data_skipping_indices='map_bloom_filter_keys';
@@ -71,9 +82,11 @@ SELECT * FROM map_test_index_map_values WHERE map['K2'] = 'V2' SETTINGS force_da
 SELECT 'Equals with non existing key and default value';
 SELECT * FROM map_test_index_map_values WHERE map['K3'] = '';
 SELECT 'Not equals with existing key';
-SELECT * FROM map_test_index_map_values WHERE map['K0'] != 'V0' SETTINGS force_data_skipping_indices='map_bloom_filter_values';
+SELECT * FROM map_test_index_map_values WHERE map['K0'] != 'V0' SETTINGS force_data_skipping_indices='map_bloom_filter_values'; -- { serverError INDEX_NOT_USED }
+SELECT * FROM map_test_index_map_values WHERE map['K0'] != 'V0';
 SELECT 'Not equals with non existing key';
-SELECT * FROM map_test_index_map_values WHERE map['K2'] != 'V2' SETTINGS force_data_skipping_indices='map_bloom_filter_values';
+SELECT * FROM map_test_index_map_values WHERE map['K2'] != 'V2' SETTINGS force_data_skipping_indices='map_bloom_filter_values'; -- { serverError INDEX_NOT_USED }
+SELECT * FROM map_test_index_map_values WHERE map['K2'] != 'V2';
 SELECT 'Not equals with non existing key and default value';
 SELECT * FROM map_test_index_map_values WHERE map['K3'] != '';
 SELECT 'IN with existing key';
@@ -83,10 +96,19 @@ SELECT * FROM map_test_index_map_values WHERE map['K2'] IN 'V2' SETTINGS force_d
 SELECT 'IN with non existing key and default value';
 SELECT * FROM map_test_index_map_values WHERE map['K3'] IN '';
 SELECT 'NOT IN with existing key';
-SELECT * FROM map_test_index_map_values WHERE map['K0'] NOT IN 'V0' SETTINGS force_data_skipping_indices='map_bloom_filter_values';
+SELECT * FROM map_test_index_map_values WHERE map['K0'] NOT IN 'V0' SETTINGS force_data_skipping_indices='map_bloom_filter_values'; -- { serverError INDEX_NOT_USED }
+SELECT * FROM map_test_index_map_values WHERE map['K0'] NOT IN 'V0';
 SELECT 'NOT IN with non existing key';
-SELECT * FROM map_test_index_map_values WHERE map['K2'] NOT IN 'V2' SETTINGS force_data_skipping_indices='map_bloom_filter_values';
+SELECT * FROM map_test_index_map_values WHERE map['K2'] NOT IN 'V2' SETTINGS force_data_skipping_indices='map_bloom_filter_values'; -- { serverError INDEX_NOT_USED }
+SELECT * FROM map_test_index_map_values WHERE map['K2'] NOT IN 'V2';
 SELECT 'NOT IN with non existing key and default value';
 SELECT * FROM map_test_index_map_values WHERE map['K3'] NOT IN '';
+
+SELECT 'MapContainsValue with existing value';
+SELECT * FROM map_test_index_map_values WHERE mapContainsValue(map, 'V0') SETTINGS force_data_skipping_indices='map_bloom_filter_values';
+SELECT 'MapContainsValue with non existing value';
+SELECT * FROM map_test_index_map_values WHERE mapContainsValue(map, 'V2') SETTINGS force_data_skipping_indices='map_bloom_filter_values';
+SELECT 'MapContainsValue with non existing default value';
+SELECT * FROM map_test_index_map_values WHERE mapContainsValue(map, '');
 
 DROP TABLE map_test_index_map_values;

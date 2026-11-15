@@ -1,0 +1,8 @@
+databricks133/uniform_iceberg_v1
+a	Nullable(Int32)					
+b	Nullable(String)					
+1	test data
+databricks143/uniform_iceberg_v2
+a	Nullable(Int32)					
+b	Nullable(String)					
+1	test data

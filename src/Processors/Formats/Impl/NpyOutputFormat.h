@@ -1,16 +1,9 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <IO/WriteBuffer.h>
-#include <IO/WriteBufferFromVector.h>
 #include <Processors/Formats/IRowOutputFormat.h>
-#include <Formats/FormatSettings.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/NumpyDataTypes.h>
-#include <Columns/IColumn.h>
-#include <Common/PODArray_fwd.h>
-
-#include <vector>
-#include <string>
+#include <Columns/IColumn_fwd.h>
 
 
 namespace DB
@@ -19,14 +12,12 @@ namespace DB
 /** Stream for output data in Npy format.
   * https://numpy.org/doc/stable/reference/generated/numpy.lib.format.html
   */
-class NpyOutputFormat : public IOutputFormat
+class NpyOutputFormat final : public IOutputFormat
 {
 public:
-    NpyOutputFormat(WriteBuffer & out_, const Block & header_);
+    NpyOutputFormat(WriteBuffer & out_, SharedHeader header_);
 
     String getName() const override { return "NpyOutputFormat"; }
-
-    String getContentType() const override { return "application/octet-stream"; }
 
 private:
     String shapeStr() const;
@@ -49,7 +40,7 @@ private:
     DataTypePtr nested_data_type;
     std::shared_ptr<NumpyDataType> numpy_data_type;
     UInt64 num_rows = 0;
-    std::vector<UInt64> numpy_shape;
+    VectorWithMemoryTracking<UInt64> numpy_shape;
     Columns columns;
 
     /// static header (version 3.0)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/ReadBuffer.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/PODArray.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/IMergingTransform.h>
@@ -61,6 +62,7 @@ public:
         ReadBuffer & row_sources_buf_,
         size_t block_preferred_size_rows_,
         size_t block_preferred_size_bytes_,
+        std::optional<size_t> max_dynamic_subcolumns_,
         bool is_result_sparse_);
 
     const char * getName() const override { return "ColumnGathererStream"; }
@@ -84,21 +86,17 @@ private:
         size_t pos = 0;
         size_t size = 0;
 
-        void update(ColumnPtr column_)
-        {
-            column = std::move(column_);
-            size = column->size();
-            pos = 0;
-        }
+        void update(ColumnPtr column_);
     };
 
     MutableColumnPtr result_column;
 
-    std::vector<Source> sources;
+    VectorWithMemoryTracking<Source> sources;
     ReadBuffer & row_sources_buf;
 
     const size_t block_preferred_size_rows;
     const size_t block_preferred_size_bytes;
+    const std::optional<size_t> max_dynamic_subcolumns;
     const bool is_result_sparse;
 
     Source * source_to_fully_copy = nullptr;
@@ -113,11 +111,12 @@ class ColumnGathererTransform final : public IMergingTransform<ColumnGathererStr
 {
 public:
     ColumnGathererTransform(
-        const Block & header,
+        SharedHeader header,
         size_t num_inputs,
         std::unique_ptr<ReadBuffer> row_sources_buf_,
         size_t block_preferred_size_rows_,
         size_t block_preferred_size_bytes_,
+        std::optional<size_t> max_dynamic_subcolumns_,
         bool is_result_sparse_);
 
     String getName() const override { return "ColumnGathererTransform"; }

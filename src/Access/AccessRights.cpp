@@ -2,7 +2,6 @@
 #include <base/sort.h>
 #include <Common/Exception.h>
 #include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
 
 #include <boost/container/small_vector.hpp>
 #include <list>
@@ -43,8 +42,8 @@ namespace
             if (left.is_partial_revoke != right.is_partial_revoke)
                 return right.is_partial_revoke; /// if left is grant, right is partial revoke, we assume left < right
 
-            /// Grants with grant option after other grants.
-            /// Revoke grant option after normal revokes.
+            /// Grants with a grant option after other grants.
+            /// Revoke the grant option after normal revokes.
             if (left.grant_option != right.grant_option)
                 return right.grant_option; /// if left is without grant option, and right is with grant option, we assume left < right
 
@@ -72,8 +71,16 @@ namespace
                 }
                 case 2:
                 {
-                    res.database = full_name[0];
-                    res.table = full_name[1];
+                    if (access_flags.isGlobalWithParameter())
+                    {
+                        res.parameter = full_name[0];
+                        res.filter = full_name[1];
+                    }
+                    else
+                    {
+                        res.database = full_name[0];
+                        res.table = full_name[1];
+                    }
                     break;
                 }
                 case 3:
@@ -232,8 +239,8 @@ namespace
         {
             case GLOBAL_LEVEL: return AccessFlags::allFlagsGrantableOnGlobalLevel();
             case DATABASE_LEVEL: return AccessFlags::allFlagsGrantableOnDatabaseLevel() | AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
-            case TABLE_LEVEL: return AccessFlags::allFlagsGrantableOnTableLevel();
-            case COLUMN_LEVEL: return AccessFlags::allFlagsGrantableOnColumnLevel();
+            case TABLE_LEVEL: return AccessFlags::allFlagsGrantableOnTableLevel() | AccessFlags::allSourceFlags() | AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
+            case COLUMN_LEVEL: return AccessFlags::allFlagsGrantableOnColumnLevel() | AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
         }
         chassert(false);
     }
@@ -253,7 +260,7 @@ namespace
   * node3: GRANT ON db.table*  (matches db.table, db.table1)
   * node4: GRANT ON db.table   (matches db.table)
   *
-  * If too paths have the same prefix, the tree splits in between:
+  * If two paths have the same prefix, the tree splits in between:
   *
   * GRANT ON team.*
   * GRANT ON test.table
@@ -359,12 +366,14 @@ public:
     AccessFlags flags;                   /// flags = (inherited_flags - partial_revokes) | explicit_grants
     AccessFlags min_flags_with_children; /// min_flags_with_children = access & child[0].min_flags_with_children & ... & child[N-1].min_flags_with_children
     AccessFlags max_flags_with_children; /// max_flags_with_children = access | child[0].max_flags_with_children | ... | child[N-1].max_flags_with_children
-    std::unique_ptr<Container> children;
+    std::shared_ptr<Container> children;
 
     bool wildcard_grant = false;
 
     Node() = default;
     Node(const Node & src) { *this = src; }
+    Node(Node && src) noexcept = default;
+    Node & operator=(Node && src) noexcept = default;
 
     Iterator begin() const { return ++Iterator{*this}; }
     Iterator end() const { return Iterator{*this}; }
@@ -381,10 +390,23 @@ public:
         min_flags_with_children = src.min_flags_with_children;
         max_flags_with_children = src.max_flags_with_children;
         if (src.children)
-            children = std::make_unique<Container>(*src.children);
+            children = std::make_shared<Container>(*src.children);
         else
             children = nullptr;
         return *this;
+    }
+
+    Node makeLightCopy() const
+    {
+        Node res;
+        res.node_name = node_name;
+        res.level = level;
+        res.flags = flags;
+        res.wildcard_grant = wildcard_grant;
+        res.min_flags_with_children = min_flags_with_children;
+        res.max_flags_with_children = max_flags_with_children;
+        res.children = children;
+        return res;
     }
 
     bool isLeaf() const { return node_name.empty(); }
@@ -405,7 +427,7 @@ public:
     {
         auto next_level = static_cast<Level>(level + 1);
 
-        Node * child;
+        Node * child = nullptr;
         if constexpr (sizeof...(Args) == 0)
             /// In order to grant/revoke a wildcard grant we need to update flags on the leaf's parent and not the actual leaf.
             child = &getLeaf(name, next_level, /* return_parent_node= */ wildcard);
@@ -442,7 +464,7 @@ public:
     {
         auto next_level = static_cast<Level>(level + 1);
 
-        Node * child;
+        Node * child = nullptr;
         if constexpr (sizeof...(Args) == 0)
             /// In order to grant/revoke a wildcard grant we need to update flags on the leaf's parent and not the actual leaf.
             child = &getLeaf(name, next_level, /* return_parent_node= */ wildcard);
@@ -473,6 +495,8 @@ public:
     template <bool wildcard = false, typename... Args>
     bool isGranted(const AccessFlags & flags_, std::string_view name, const Args &... subnames) const
     {
+        const auto next_level = static_cast<Level>(level + 1);
+
         AccessFlags flags_to_check = flags_ - min_flags_with_children;
         if (!flags_to_check)
             return true;
@@ -491,15 +515,12 @@ public:
             ///                 "foo" (SELECT)
             ///                /             \
             ///     "" (leaf, USAGE)        "bar" (SELECT)
-            const auto & [node, _] = tryGetLeafOrPrefix(name, /* return_parent_node= */ true);
-            return node.flags.contains(flags_to_check);
+            const auto node = tryGetLeaf(name, next_level, /* return_parent_node= */ true);
+            return node.isGranted(flags_to_check);
         }
 
-        const auto & [node, final] = tryGetLeafOrPrefix(name);
-        if (final)
-            return node.isGranted<wildcard>(flags_to_check, subnames...);
-
-        return node.flags.contains(flags_to_check);
+        const auto node = tryGetLeaf(name, next_level);
+        return node.isGranted<wildcard>(flags_to_check, subnames...);
     }
 
     template <bool wildcard = false, typename StringT>
@@ -513,20 +534,71 @@ public:
 
         for (const auto & name : names)
         {
-            const Node * child = tryGetLeaf(name);
-            if (child)
-            {
-                if (!child->isGranted<wildcard>(flags_to_check, name))
-                    return false;
-            }
-            else
-            {
-                if (!flags.contains(flags_to_check))
-                    return false;
-            }
+            Node child = tryGetLeaf(name);
+            if (!child.isGranted<wildcard>(flags_to_check, name))
+                return false;
         }
         return true;
     }
+
+    /// Like `isGranted`, but for the last name returns what that name inherits from its enclosing level, ignoring
+    /// a grant or revoke made on this exact name. A grant or revoke on a name changes only its leaf, while the parent
+    /// node of the leaf keeps the inherited flags.
+    template <typename... Args>
+    bool isGrantedInherited(const AccessFlags & flags_, std::string_view name, const Args &... subnames) const
+    {
+        const auto next_level = static_cast<Level>(level + 1);
+        if constexpr (sizeof...(Args) == 0)
+        {
+            const auto node = tryGetLeaf(name, next_level, /* return_parent_node= */ true);
+            return node.flags.contains(flags_);
+        }
+        else
+        {
+            const auto node = tryGetLeaf(name, next_level);
+            return node.isGrantedInherited(flags_, subnames...);
+        }
+    }
+
+    /// Collects the names that start with the last name and have an explicit grant of `flags_`, i.e. a grant that
+    /// gives `flags_` the name does not inherit from its enclosing level.
+    template <typename... Args>
+    void collectExplicitGrantsWithPrefix(Strings & res, const AccessFlags & flags_, std::string_view name, const Args &... subnames) const
+    {
+        const auto next_level = static_cast<Level>(level + 1);
+        if constexpr (sizeof...(Args) == 0)
+        {
+            const auto node = tryGetLeaf(name, next_level, /* return_parent_node= */ true);
+            node.collectExplicitGrantsInSubtree(res, flags_, String{name});
+        }
+        else
+        {
+            const auto node = tryGetLeaf(name, next_level);
+            node.collectExplicitGrantsWithPrefix(res, flags_, subnames...);
+        }
+    }
+
+    /// Collects the full names (`path` is the name of this node) of the leaves in this subtree that have `flags_`
+    /// while their parent node, which carries the flags the leaf inherits, does not.
+    void collectExplicitGrantsInSubtree(Strings & res, const AccessFlags & flags_, const String & path) const
+    {
+        if (!children || !max_flags_with_children.contains(flags_))
+            return;
+
+        for (const auto & child : *children)
+        {
+            if (child.isLeaf())
+            {
+                if (child.flags.contains(flags_) && !flags.contains(flags_))
+                    res.push_back(path);
+            }
+            else
+                child.collectExplicitGrantsInSubtree(res, flags_, path + child.node_name);
+        }
+    }
+
+    /// Unlike `isGranted`, ignores the access rights of the children of `name`.
+    AccessFlags getFlags(std::string_view name) const { return tryGetLeaf(name, static_cast<Level>(level + 1)).flags; }
 
     friend bool operator ==(const Node & left, const Node & right)
     {
@@ -549,17 +621,55 @@ public:
 
     friend bool operator!=(const Node & left, const Node & right) { return !(left == right); }
 
+    /// Checks whether `this` node's access rights are a superset of `other`'s
     bool contains(const Node & other) const
     {
-        Node tmp_node = *this;
-        tmp_node.makeIntersection(other);
-        /// If we get the same node after the intersection, our node is fully covered by the given one.
-        return tmp_node == other;
+        /// The check traverses children from both sides:
+        /// 1) For each child in `other`, find the matching node in `this` and verify containment.
+        /// 2) For each child in `this`, find the matching node in `other` and verify containment.
+        ///
+        /// The reverse traversal (step 2) is needed to handle partial revokes correctly.
+        /// Example: GRANT SELECT ON *.*, REVOKE SELECT ON foo.*
+        ///
+        ///   this:                   other:
+        ///       root (SELECT)         root (SELECT)
+        ///        |
+        ///      "foo" (SELECT)
+        ///        |
+        ///        "" (leaf, USAGE)
+        ///
+        /// Step 1 alone would pass because `other` has no children to check against, but `this` does not contain `other` because
+        /// `this` has revoked SELECT on "foo".
+
+        if (!flags.contains(other.flags))
+            return false;
+
+        if (other.children)
+        {
+            for (const auto & other_child : *other.children)
+            {
+                Node this_child = tryGetLeaf(other_child.node_name, other_child.level, !other_child.isLeaf());
+                if (!this_child.contains(other_child))
+                    return false;
+            }
+        }
+
+        if (children)
+        {
+            for (const auto & this_child : *children)
+            {
+                Node other_child = other.tryGetLeaf(this_child.node_name, this_child.level, !this_child.isLeaf());
+                if (!this_child.contains(other_child))
+                    return false;
+            }
+        }
+
+        return true;
     }
 
     void makeUnion(const Node & other)
     {
-        /// We need these tmp nodes because union/intersect operations are use `getLeaf` function which can't be made const.
+        /// We need these tmp nodes because union/intersect operations use the `getLeaf` function, which can't be made const.
         /// Potentially, we can use tryGetLeaf, but it's very complicated to traverse both trees at the same time:
         ///
         /// Tree1:
@@ -641,6 +751,18 @@ public:
         }
     }
 
+    std::vector<Filter> getFilters(std::string_view parameter) const
+    {
+        std::vector<Filter> res;
+        /// `tryGetLeaf` returns by value and its light copy shares `children` with this tree,
+        /// so the node must outlive the loop: bind it to a named local, never to `auto &`.
+        const auto node = tryGetLeaf(parameter, GLOBAL_WITH_PARAMETER);
+        for (auto it = node.begin(); it != node.end(); ++it)
+            res.emplace_back(it->flags, it.getPath());
+
+        return res;
+    }
+
 private:
     AccessFlags getAllGrantableFlags() const { return ::DB::getAllGrantableFlags(level); }
     AccessFlags getChildAllGrantableFlags() const { return ::DB::getAllGrantableFlags(static_cast<Level>(level == Level::MAX ? level : (level + 1))); }
@@ -653,7 +775,7 @@ private:
             return *this;
 
         if (!children)
-            children = std::make_unique<Container>();
+            children = std::make_shared<Container>();
 
         auto find_possible_prefix = [path](const Node & n)
         {
@@ -692,7 +814,9 @@ private:
 
             auto & new_parent = getChildNode(prefix, level_);
             child.node_name = child.node_name.substr(i);
-            new_parent.children = std::make_unique<Container>();
+            new_parent.children = std::make_shared<Container>();
+            new_parent.min_flags_with_children = it->min_flags_with_children & flags;
+            new_parent.max_flags_with_children = it->max_flags_with_children | flags;
             new_parent.children->splice(new_parent.children->begin(), *children, it);
 
             return new_parent.getLeaf(new_path, level_, return_parent_node);
@@ -702,44 +826,68 @@ private:
         auto & child = getChildNode(path, level_);
 
         /// Child is a leaf.
-        if (path.empty())
+        if (path.empty() || return_parent_node)
             return child;
 
         /// Creates a leaf in child.
         return child.getLeaf("", level_, return_parent_node);
     }
 
-    /// Returns a pair [node, is_leaf].
-    std::pair<const Node &, bool> tryGetLeafOrPrefix(std::string_view path, bool return_parent_node = false) const
+    /// Same logic as `getLeaf`, but const.
+    /// Using non-move copy on the returned node will make a full copy of all underlying children.
+    Node tryGetLeaf(std::string_view path, Level level_ = Level::GLOBAL_LEVEL, bool return_parent_node = false) const
     {
-        if (!children)
-            return {*this, false};
+        /// The implementation of this function is almost the same as `getLeaf`.
+        /// Instead of creating new nodes in-place, this function creates ephemeral nodes without modifying the tree structure.
+        /// If a node already exists, this function returns a lightweight copy of it (without the deep copy of the children)
+        ///
+        /// The nodes, returned by this function, don't have ownership of their children (!)
+        /// Attempting to read or modify `.children` may break the grants tree logic     (!)
+        /// The returned ephemeral nodes shouldn't be used longer than a function scope  (!)
+        if (path.empty() && return_parent_node)
+            return this->makeLightCopy();
 
-        for (auto & child : *children)
+        auto find_possible_prefix = [path](const Node & n)
         {
-            if (path.empty() && child.isLeaf())
-                return {child, true};
+            if (path.empty())
+                return n.isLeaf();
 
-            if (!child.isLeaf() && path.starts_with(child.node_name))
+            return n.node_name[0] == path[0];
+        };
+
+        if (children)
+        {
+            if (auto it = std::find_if(children->begin(), children->end(), find_possible_prefix); it != children->end())
             {
-                if (return_parent_node && path == child.node_name)
-                    return {child, true};
+                if (path.empty())
+                    return it->makeLightCopy();
 
-                return child.tryGetLeafOrPrefix(path.substr(child.node_name.size()));
+                auto child = it->makeLightCopy();
+                const auto & [left, right] = std::mismatch(path.begin(), path.end(), child.node_name.begin(), child.node_name.end());
+
+                if (right == child.node_name.end())
+                    return child.tryGetLeaf(path.substr(child.node_name.size()), level_, return_parent_node);
+
+                /// See `getLeaf`
+                size_t i = std::distance(path.begin(), left);
+                std::string_view prefix = path.substr(0, i);
+                std::string_view new_path = path.substr(i);
+
+                auto new_parent = createChildNode(prefix, level_);
+                child.node_name = child.node_name.substr(i);
+                new_parent.children = std::make_shared<Container>();
+                new_parent.min_flags_with_children = child.min_flags_with_children & flags;
+                new_parent.max_flags_with_children = child.max_flags_with_children | flags;
+                new_parent.children->push_back(std::move(child));
+
+                return new_parent.tryGetLeaf(new_path, level_, return_parent_node);
             }
         }
 
-        return {*this, false};
-    }
+        if (path.empty() || return_parent_node)
+            return createChildNode(path, level_);
 
-    /// Similar to `getLeaf`, but returns nullptr if no leaf was found.
-    const Node * tryGetLeaf(std::string_view path, bool return_parent_node = false) const
-    {
-        const auto & [node, final] = tryGetLeafOrPrefix(path, return_parent_node);
-        if (!final)
-            return nullptr;
-
-        return &node;
+        return createChildNode(path, level_).tryGetLeaf("", level_, return_parent_node);
     }
 
     /// Returns a child node with the given name. If no child was found, creates a new one with specified *level_*.
@@ -750,14 +898,22 @@ private:
             return *child;
 
         if (!children)
-            children = std::make_unique<Container>();
+            children = std::make_shared<Container>();
 
-        auto & new_child = children->emplace_back();
-        new_child.node_name = name;
-        new_child.level = level_;
-        new_child.flags = flags & new_child.getAllGrantableFlags();
-
+        auto & new_child = children->emplace_back(createChildNode(name, level_));
         return new_child;
+    }
+
+    Node createChildNode(const std::string_view name, const Level level_ = Level::GLOBAL_LEVEL) const
+    {
+        Node child;
+        child.node_name = name;
+        child.level = level_;
+        child.flags = flags & child.getAllGrantableFlags();
+        child.min_flags_with_children = flags;
+        child.max_flags_with_children = flags;
+
+        return child;
     }
 
     /// Similar to `getChildNode`, but returns nullptr if no child node was found.
@@ -862,7 +1018,13 @@ private:
         const AccessFlags & parent_flags_go,
         String path)
     {
-        auto grantable_flags = ::DB::getAllGrantableFlags(static_cast<Level>(full_name.size()));
+        Node * target_node = node;
+        if (!target_node)
+            target_node = node_go;
+
+        auto grantable_flags = target_node
+            ? ::DB::getAllGrantableFlags(target_node->level)
+            : ::DB::getAllGrantableFlags(static_cast<Level>(full_name.size()));
         auto parent_fl = parent_flags & grantable_flags;
         auto parent_fl_go = parent_flags_go & grantable_flags;
         auto flags = node ? node->flags : parent_fl;
@@ -872,12 +1034,10 @@ private:
         auto grants_go = flags_go - parent_fl_go;
         auto grants = flags - parent_fl - grants_go;
 
-        Node * target_node = node;
-        if (!target_node)
-            target_node = node_go;
-
         /// Inserts into result only meaningful nodes (e.g. wildcards or leafs).
-        if (target_node && (target_node->isLeaf() || target_node->wildcard_grant))
+        const bool node_meaningful = node && (node->isLeaf() || node->wildcard_grant);
+        const bool node_go_meaningful = node_go && (node_go->isLeaf() || node_go->wildcard_grant);
+        if (node_meaningful || node_go_meaningful)
         {
             boost::container::small_vector<String, 3> new_full_name = full_name;
 
@@ -893,17 +1053,25 @@ private:
                 }
             }
 
-            if (node && revokes)
+            if (node_meaningful && revokes)
                 res.push_back(ProtoElement{revokes, new_full_name, false, true, node->wildcard_grant});
 
-            if (node_go && revokes_go)
+            if (node_go_meaningful && revokes_go)
                 res.push_back(ProtoElement{revokes_go, new_full_name, true, true, node_go->wildcard_grant});
 
-            if (node && grants)
+            if (node_meaningful && grants)
                 res.push_back(ProtoElement{grants, new_full_name, false, false, node->wildcard_grant});
 
-            if (node_go && grants_go)
+            if (node_go_meaningful && grants_go)
                 res.push_back(ProtoElement{grants_go, new_full_name, true, false, node_go->wildcard_grant});
+        }
+
+        /// The two tries compress child names independently: a child of one can be a strict name
+        /// prefix of a child of the other, and only exactly-named pairs can be walked together.
+        if (node && node_go && node_go->children)
+        {
+            for (auto & child_go : *node_go->children)
+                node->getLeaf(child_go.node_name, child_go.level, !child_go.isLeaf());
         }
 
         if (node && node->children)
@@ -925,19 +1093,8 @@ private:
         {
             for (auto & child : *node_go->children)
             {
-                if (node && node->children)
-                {
-                    auto starts_with = [&child](const Node & n)
-                    {
-                        if (child.isLeaf())
-                            return n.isLeaf();
-
-                        return !n.isLeaf() && child.node_name[0] == n.node_name[0];
-                    };
-
-                    if (auto it = std::find_if(node->children->begin(), node->children->end(), starts_with); it != node->children->end())
-                        continue; /// already processed
-                }
+                if (node && node->tryGetChildNode(child.node_name))
+                    continue; /// already processed
 
                 String new_path = path;
                 new_path.append(child.node_name);
@@ -1155,7 +1312,13 @@ private:
 
         calculateMinMaxFlags();
 
-        auto new_flags = function(flags, min_flags_with_children, max_flags_with_children, level, grant_option);
+        auto new_flags = function(
+            flags,
+            min_flags_with_children,
+            max_flags_with_children,
+            level,
+            grant_option,
+            isLeaf() || wildcard_grant);
 
         if (new_flags != flags)
         {
@@ -1183,6 +1346,9 @@ AccessRights::AccessRights(const AccessRights & src)
 
 AccessRights & AccessRights::operator =(const AccessRights & src)
 {
+    if (&src == this)
+        return *this;
+
     if (src.root)
         root = std::make_unique<Node>(*src.root);
     else
@@ -1209,7 +1375,13 @@ AccessRights::AccessRights(const AccessRightsElement & element)
 
 AccessRights::AccessRights(const AccessRightsElements & elements)
 {
-    grant(elements);
+    for (const auto & element : elements)
+    {
+        if (element.is_partial_revoke)
+            revoke(element);
+        else
+            grant(element);
+    }
 }
 
 
@@ -1246,24 +1418,28 @@ void AccessRights::grantImpl(const AccessFlags & flags, const Args &... args)
 template <bool with_grant_option, bool wildcard>
 void AccessRights::grantImplHelper(const AccessRightsElement & element)
 {
-    assert(!element.is_partial_revoke);
-    assert(!element.grant_option || with_grant_option);
+    chassert(!element.is_partial_revoke);
+    chassert(!element.grant_option || with_grant_option);
 
+    /// Parameters share tree nodes with database names, so e.g. granting or revoking `ALL ON db.tbl` must not touch `READ ON db('tbl')`.
+    const auto flags = element.getGrantableFlags();
     if (element.isGlobalWithParameter())
     {
         if (element.anyParameter())
-            grantImpl<with_grant_option, wildcard>(element.access_flags);
+            grantImpl<with_grant_option, wildcard>(flags);
+        else if (element.hasFilter())
+            grantImpl<with_grant_option, wildcard>(flags, element.parameter, element.filter);
         else
-            grantImpl<with_grant_option, wildcard>(element.access_flags, element.parameter);
+            grantImpl<with_grant_option, wildcard>(flags, element.parameter);
     }
     else if (element.anyDatabase())
-        grantImpl<with_grant_option, wildcard>(element.access_flags);
+        grantImpl<with_grant_option, wildcard>(flags);
     else if (element.anyTable())
-        grantImpl<with_grant_option, wildcard>(element.access_flags, element.database);
+        grantImpl<with_grant_option, wildcard>(flags, element.database);
     else if (element.anyColumn())
-        grantImpl<with_grant_option, wildcard>(element.access_flags, element.database, element.table);
+        grantImpl<with_grant_option, wildcard>(flags, element.database, element.table);
     else
-        grantImpl<with_grant_option, wildcard>(element.access_flags, element.database, element.table, element.columns);
+        grantImpl<with_grant_option, wildcard>(flags, element.database, element.table, element.columns);
 }
 
 template <bool with_grant_option, bool wildcard>
@@ -1330,6 +1506,51 @@ void AccessRights::grantWildcardWithGrantOption(const AccessFlags & flags, std::
 template <bool grant_option, bool wildcard, typename... Args>
 void AccessRights::revokeImpl(const AccessFlags & flags, const Args &... args)
 {
+    if constexpr (sizeof...(Args) >= 2)
+    {
+        /// A partial revoke under a source filter would make `isGranted` deny the whole source.
+        const auto & check_root = grant_option ? root_with_grant_option : root;
+        const auto names = std::forward_as_tuple(args...);
+        if (check_root && AccessFlags::allGlobalWithParameterFlags().contains(flags))
+        {
+            if (auto granted = check_root->getFlags(std::get<0>(names)) & flags)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot revoke {}{} ON {}('{}') because {} ON {} is granted{} without a filter. "
+                    "Partial revokes of source filters are not supported",
+                    grant_option ? "GRANT OPTION FOR " : "",
+                    flags.toString(),
+                    std::get<0>(names),
+                    std::get<1>(names),
+                    granted.toString(),
+                    std::get<0>(names),
+                    grant_option ? " with grant option" : "");
+
+            if constexpr (sizeof...(Args) == 2 && !wildcard)
+            {
+                /// Flags missing in this exact filter can't be narrowed out of other filters, so revoking them would silently do nothing.
+                AccessFlags exact_flags;
+                AccessFlags other_flags;
+                for (const auto & filter : check_root->getFilters(std::get<0>(names)))
+                    (filter.path == std::get<1>(names) ? exact_flags : other_flags) |= filter.access_flags;
+                if (auto missing = (flags - exact_flags) & other_flags)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot revoke {}{} ON {}('{}') because {} ON {} is granted{} only with other filters, and filters are compared "
+                        "as strings. Revoke a granted filter exactly, or {} ON {} without a filter",
+                        grant_option ? "GRANT OPTION FOR " : "",
+                        flags.toString(),
+                        std::get<0>(names),
+                        std::get<1>(names),
+                        missing.toString(),
+                        std::get<0>(names),
+                        grant_option ? " with grant option" : "",
+                        missing.toString(),
+                        std::get<0>(names));
+            }
+        }
+    }
+
     auto helper = [&](std::unique_ptr<Node> & root_node)
     {
         if (!root_node)
@@ -1347,22 +1568,25 @@ void AccessRights::revokeImpl(const AccessFlags & flags, const Args &... args)
 template <bool grant_option, bool wildcard>
 void AccessRights::revokeImplHelper(const AccessRightsElement & element)
 {
-    assert(!element.grant_option || grant_option);
+    chassert(!element.grant_option || grant_option);
+    const auto flags = element.getGrantableFlags();
     if (element.isGlobalWithParameter())
     {
         if (element.anyParameter())
-            revokeImpl<grant_option, wildcard>(element.access_flags);
+            revokeImpl<grant_option, wildcard>(flags);
+        else if (element.hasFilter())
+            revokeImpl<grant_option, wildcard>(flags, element.parameter, element.filter);
         else
-            revokeImpl<grant_option, wildcard>(element.access_flags, element.parameter);
+            revokeImpl<grant_option, wildcard>(flags, element.parameter);
     }
     else if (element.anyDatabase())
-        revokeImpl<grant_option, wildcard>(element.access_flags);
+        revokeImpl<grant_option, wildcard>(flags);
     else if (element.anyTable())
-        revokeImpl<grant_option, wildcard>(element.access_flags, element.database);
+        revokeImpl<grant_option, wildcard>(flags, element.database);
     else if (element.anyColumn())
-        revokeImpl<grant_option, wildcard>(element.access_flags, element.database, element.table);
+        revokeImpl<grant_option, wildcard>(flags, element.database, element.table);
     else
-        revokeImpl<grant_option, wildcard>(element.access_flags, element.database, element.table, element.columns);
+        revokeImpl<grant_option, wildcard>(flags, element.database, element.table, element.columns);
 }
 
 template <bool grant_option, bool wildcard>
@@ -1439,6 +1663,23 @@ String AccessRights::toString() const
 }
 
 
+AccessRights AccessRights::getGrantableRights() const
+{
+    AccessRights result;
+    for (auto & element : getElements())
+    {
+        if (!element.grant_option && !element.is_partial_revoke)
+            continue;
+
+        if (element.is_partial_revoke)
+            result.revoke(element);
+        else
+            result.grant(element);
+    }
+    return result;
+}
+
+
 template <bool grant_option, bool wildcard, typename... Args>
 bool AccessRights::isGrantedImpl(const AccessFlags & flags, const Args &... args) const
 {
@@ -1457,25 +1698,25 @@ bool AccessRights::isGrantedImpl(const AccessFlags & flags, const Args &... args
 template <bool grant_option>
 bool AccessRights::containsImpl(const AccessRights & other) const
 {
-    auto helper = [&](const std::unique_ptr<Node> & root_node) -> bool
+    auto helper = [&](const std::unique_ptr<Node> & root_node, const std::unique_ptr<Node> & other_root_node) -> bool
     {
         if (!root_node)
-            return !other.root;
-        if (!other.root)
+            return !other_root_node;
+        if (!other_root_node)
             return true;
-        return root_node->contains(*other.root);
+        return root_node->contains(*other_root_node);
     };
     if constexpr (grant_option)
-        return helper(root_with_grant_option);
+        return helper(root_with_grant_option, other.root);
     else
-        return helper(root);
+        return helper(root, other.root) && helper(root_with_grant_option, other.root_with_grant_option);
 }
 
 
 template <bool grant_option, bool wildcard>
 bool AccessRights::isGrantedImplHelper(const AccessRightsElement & element) const
 {
-    assert(!element.grant_option || grant_option);
+    chassert(!element.grant_option || grant_option);
     if (element.isGlobalWithParameter())
     {
         if (element.anyParameter())
@@ -1527,6 +1768,22 @@ bool AccessRights::isGranted(const AccessFlags & flags, std::string_view databas
 bool AccessRights::isGranted(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const { return isGrantedImpl<false, false>(flags, database, table, columns); }
 bool AccessRights::isGranted(const AccessRightsElement & element) const { return isGrantedImpl<false, false>(element); }
 bool AccessRights::isGranted(const AccessRightsElements & elements) const { return isGrantedImpl<false, false>(elements); }
+
+bool AccessRights::isGrantedInherited(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const
+{
+    if (!root)
+        return flags.isEmpty();
+    return root->isGrantedInherited(flags, database, table, column);
+}
+
+Strings AccessRights::getColumnsWithExplicitGrantAndPrefix(
+    const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view prefix) const
+{
+    Strings res;
+    if (root)
+        root->collectExplicitGrantsWithPrefix(res, flags, database, table, prefix);
+    return res;
+}
 
 bool AccessRights::isGrantedWildcard(const AccessFlags & flags) const { return isGrantedImpl<false, true>(flags); }
 bool AccessRights::isGrantedWildcard(const AccessFlags & flags, std::string_view database) const { return isGrantedImpl<false, true>(flags, database); }
@@ -1626,12 +1883,22 @@ void AccessRights::makeDifference(const AccessRights & other)
 }
 
 
+std::vector<AccessRights::Filter> AccessRights::getFilters(std::string_view parameter) const
+{
+    if (root)
+        return root->getFilters(parameter);
+
+    return {};
+}
+
+
 void AccessRights::modifyFlags(const ModifyFlagsFunction & function)
 {
     if (!root)
         return;
 
-    bool flags_added, flags_removed;
+    bool flags_added = false;
+    bool flags_removed = false;
     root->modifyFlags(function, false, flags_added, flags_removed);
     if (flags_removed && root_with_grant_option)
         root_with_grant_option->makeIntersection(*root);

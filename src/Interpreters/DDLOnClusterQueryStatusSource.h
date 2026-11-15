@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/SettingsEnums.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DistributedQueryStatusSource.h>
@@ -25,6 +26,8 @@ protected:
     void fillHostStatus(const String & host_id, const ExecutionStatus & status, MutableColumns & columns) override;
 
 private:
-    static Block getSampleBlock(ContextPtr context_);
+    DistributedDDLOutputMode output_mode;
+    static bool nullableErrorAndStatusFields(DistributedDDLOutputMode output_mode);
+    static Block getSampleBlock(DistributedDDLOutputMode output_mode);
 };
 }

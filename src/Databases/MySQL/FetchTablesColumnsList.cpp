@@ -1,6 +1,7 @@
 #include "config.h"
 
 #if USE_MYSQL
+#include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Databases/MySQL/FetchTablesColumnsList.h>
@@ -11,7 +12,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
 #include <memory>
@@ -89,7 +89,7 @@ std::map<String, ColumnsDescription> fetchTablesColumnsList(
 
     query << " TABLE_NAME IN " << toQueryStringWithQuote(tables_name) << " ORDER BY ORDINAL_POSITION";
 
-    StreamSettings mysql_input_stream_settings(settings);
+    MySQLStreamSettings mysql_input_stream_settings(settings);
     auto result = std::make_unique<MySQLSource>(pool.get(), query.str(), tables_columns_sample_block, mysql_input_stream_settings);
     QueryPipeline pipeline(std::move(result));
 

@@ -1,0 +1,5 @@
+*** enable slowdown_parallel_replicas_local_plan_read ***
+1	0	0	1249950000
+1	0	2	1250000000
+1	1	1	1249975000
+1	1	3	1250025000

@@ -1,6 +1,7 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import minio_secret_key
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -36,9 +37,9 @@ def test_backup_s3_storage_class(started_cluster):
             INSERT INTO test_s3_storage_class VALUES (1, 'a');
         """,
     )
-    result = node.query(
-        """
-            BACKUP TABLE test_s3_storage_class TO S3('http://minio1:9001/root/data', 'minio', 'minio123')
+    node.query(
+        f"""
+            BACKUP TABLE test_s3_storage_class TO S3('http://minio1:9001/root/data', 'minio', '{minio_secret_key}')
             SETTINGS s3_storage_class='STANDARD';
         """
     )

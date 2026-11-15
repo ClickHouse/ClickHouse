@@ -32,14 +32,14 @@ $CLICKHOUSE_CLIENT -m -q """
 
     insert into data_01810 select * from numbers(100);
     drop table data_01810 settings log_queries=1;
-    system flush logs;
+    system flush logs query_log;
 
     -- sometimes the same thread can be used to remove part, due to ThreadPool,
     -- hence we cannot compare strictly.
     select throwIf(not(length(thread_ids) between 1 and 129))
     from system.query_log
     where
-        event_date >= yesterday() and
+        event_date >= yesterday() AND event_time >= now() - 600 and
         current_database = currentDatabase() and
         query = 'drop table data_01810 settings log_queries=1;' and
         type = 'QueryFinish'
@@ -62,14 +62,14 @@ $CLICKHOUSE_CLIENT -m -q """
 
     insert into rep_data_01810 select * from numbers(100);
     drop table rep_data_01810 settings log_queries=1;
-    system flush logs;
+    system flush logs query_log;
 
     -- sometimes the same thread can be used to remove part, due to ThreadPool,
     -- hence we cannot compare strictly.
     select throwIf(not(length(thread_ids) between 1 and 129))
     from system.query_log
     where
-        event_date >= yesterday() and
+        event_date >= yesterday() AND event_time >= now() - 600 and
         current_database = currentDatabase() and
         query = 'drop table rep_data_01810 settings log_queries=1;' and
         type = 'QueryFinish'

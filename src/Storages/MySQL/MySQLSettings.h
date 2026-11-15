@@ -3,6 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace Poco::Util
 {
@@ -39,12 +40,14 @@ struct MySQLSettings
 
     MYSQL_SETTINGS_SUPPORTED_TYPES(MySQLSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    std::vector<std::string_view> getAllRegisteredNames() const;
+    VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
 
     void loadFromQuery(ASTStorage & storage_def);
     void loadFromQuery(const ASTSetQuery & settings_def);
     void loadFromQueryContext(ContextPtr context, ASTStorage & storage_def);
     void loadFromNamedCollection(const NamedCollection & named_collection);
+
+    static bool hasBuiltin(std::string_view name);
 
 private:
     std::unique_ptr<MySQLSettingsImpl> impl;

@@ -27,6 +27,7 @@ set(SRCS
     "${NATS_IO_SOURCE_DIR}/comsock.c"
     "${NATS_IO_SOURCE_DIR}/conn.c"
     "${NATS_IO_SOURCE_DIR}/crypto.c"
+    "${NATS_IO_SOURCE_DIR}/dispatch.c"
     "${NATS_IO_SOURCE_DIR}/hash.c"
     "${NATS_IO_SOURCE_DIR}/js.c"
     "${NATS_IO_SOURCE_DIR}/jsm.c"
@@ -46,6 +47,13 @@ set(SRCS
     "${NATS_IO_SOURCE_DIR}/timer.c"
     "${NATS_IO_SOURCE_DIR}/url.c"
     "${NATS_IO_SOURCE_DIR}/util.c"
+    "${NATS_IO_SOURCE_DIR}/glib/glib.c"
+    "${NATS_IO_SOURCE_DIR}/glib/glib_async_cb.c"
+    "${NATS_IO_SOURCE_DIR}/glib/glib_dispatch_pool.c"
+    "${NATS_IO_SOURCE_DIR}/glib/glib_gc.c"
+    "${NATS_IO_SOURCE_DIR}/glib/glib_last_error.c"
+    "${NATS_IO_SOURCE_DIR}/glib/glib_ssl.c"
+    "${NATS_IO_SOURCE_DIR}/glib/glib_timer.c"
 )
 
 add_library(_nats_io ${SRCS} ${PS_SOURCES})

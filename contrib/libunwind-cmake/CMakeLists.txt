@@ -1,4 +1,4 @@
-set(LIBUNWIND_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libunwind")
+set(LIBUNWIND_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libunwind")
 
 set(LIBUNWIND_CXX_SOURCES
     "${LIBUNWIND_SOURCE_DIR}/src/libunwind.cpp"
@@ -43,9 +43,11 @@ target_compile_options(unwind PRIVATE -Wno-unused-but-set-variable)
 # Example: DwarfInstructions.hpp: register unsigned long long x16 __asm("x16") = cfa;
 target_compile_options(unwind PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-Wno-register>")
 
-install(
-    TARGETS unwind
-    EXPORT global
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib
-)
+if (USE_MUSL)
+    add_dependencies(unwind musl-headers)
+    # The arch dirs are not in the toolchain flags to avoid include order issues in musl's own build.
+    target_include_directories(unwind SYSTEM BEFORE PRIVATE
+        "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/${MUSL_ARCH}"
+        "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/generic"
+    )
+endif()

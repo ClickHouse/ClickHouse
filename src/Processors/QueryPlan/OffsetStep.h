@@ -9,7 +9,7 @@ namespace DB
 class OffsetStep : public ITransformingStep
 {
 public:
-    OffsetStep(const Header & input_header_, size_t offset_);
+    OffsetStep(const SharedHeader & input_header_, size_t offset_);
 
     String getName() const override { return "Offset"; }
 
@@ -17,6 +17,20 @@ public:
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
+
+    void serialize(Serialization & ctx) const override;
+    bool isSerializable() const override { return true; }
+
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
+
+    QueryPlanStepPtr clone() const override;
+
+    /// `OFFSET` skips a prefix of the whole result and cannot be evaluated per replica, so it runs on
+    /// the initiator; where the planner does put one on a shard (under a negative limit) it is never the
+    /// topmost replica step.
+    bool supportsDataflowStatisticsCollection() const override { return true; }
+
+    size_t getOffset() const { return offset; }
 
 private:
     void updateOutputHeader() override

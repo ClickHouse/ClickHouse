@@ -1,4 +1,5 @@
 set allow_experimental_dynamic_type = 1;
+set allow_suspicious_types_in_order_by=1;
 
 drop table if exists test;
 create table test (d1 Dynamic(max_types=2), d2 Dynamic(max_types=2)) engine=Memory;

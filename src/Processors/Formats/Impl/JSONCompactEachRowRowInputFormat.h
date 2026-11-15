@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/SchemaInferenceUtils.h>
@@ -10,6 +10,7 @@
 namespace DB
 {
 
+class Block;
 class ReadBuffer;
 class JSONCompactEachRowFormatReader;
 
@@ -24,7 +25,7 @@ class JSONCompactEachRowRowInputFormat final : public RowInputFormatWithNamesAnd
 {
 public:
     JSONCompactEachRowRowInputFormat(
-        const Block & header_,
+        SharedHeader header_,
         ReadBuffer & in_,
         Params params_,
         bool with_names_,
@@ -54,7 +55,7 @@ public:
         return *pos != ',' && *pos != ']' && *pos != ' ' && *pos != '\t';
     }
 
-    bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
+    bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name, size_t column_index) override;
 
     void skipField(size_t /*column_index*/) override { skipField(); }
     void skipField();
@@ -70,19 +71,18 @@ public:
 
     bool checkForSuffix() override;
 
-    std::vector<String> readHeaderRow();
-    std::vector<String> readNames() override { return readHeaderRow(); }
-    std::vector<String> readTypes() override { return readHeaderRow(); }
+    VectorWithMemoryTracking<String> readHeaderRow();
+    VectorWithMemoryTracking<String> readNames() override { return readHeaderRow(); }
+    VectorWithMemoryTracking<String> readTypes() override { return readHeaderRow(); }
 
     bool checkForEndOfRow() override;
-    bool allowVariableNumberOfColumns() const override { return format_settings.json.compact_allow_variable_number_of_columns; }
 
     bool yieldStrings() const { return yield_strings; }
 private:
     bool yield_strings;
 };
 
-class JSONCompactEachRowRowSchemaReader : public FormatWithNamesAndTypesSchemaReader
+class JSONCompactEachRowRowSchemaReader final : public FormatWithNamesAndTypesSchemaReader
 {
 public:
     JSONCompactEachRowRowSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool yield_strings_, const FormatSettings & format_settings_);

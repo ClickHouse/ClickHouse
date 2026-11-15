@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/ColumnNumbers.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 
 
@@ -11,7 +12,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -21,7 +21,7 @@ namespace
 /// Returns 1 if argument is zero or NULL.
 /// It can be used to negate filter in WHERE condition.
 /// "WHERE isZeroOrNull(expr)" will return exactly the same rows that "WHERE expr" will filter out.
-class FunctionIsZeroOrNull : public IFunction
+class FunctionIsZeroOrNull final : public IFunction
 {
 public:
     static constexpr auto name = "isZeroOrNull";
@@ -38,17 +38,16 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    /// A Nothing argument is handled explicitly (returns const UInt8), so the default
+    /// Nothing-dispatch must not rewrite the declared return type to Nothing.
+    bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
+    String getSignatureString() const override
     {
-        if (!isNumber(removeNullable(types.at(0))) && !isNothing(removeNullable(types.at(0))))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "The argument of function {} must have simple numeric type, possibly Nullable or Null", name);
-
-        return std::make_shared<DataTypeUInt8>();
+        return "(MaybeNullable(Number | IsNothing)) -> UInt8";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -127,7 +126,43 @@ private:
 
 REGISTER_FUNCTION(IsZeroOrNull)
 {
-    factory.registerFunction<FunctionIsZeroOrNull>();
+    FunctionDocumentation::Description description = R"(
+Checks if the argument is either zero (`0`) or `NULL`.
+    )";
+    FunctionDocumentation::Syntax syntax = "isZeroOrNull(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "A numeric value.", {"UInt"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `x` is `NULL` or equal to zero, otherwise `0`.", {"UInt8/16/32/64", "Float32/Float64"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE t_null
+(
+  x Int32,
+  y Nullable(Int32)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO t_null VALUES (1, NULL), (2, 0), (3, 3);
+
+SELECT x FROM t_null WHERE isZeroOrNull(y);
+        )",
+        R"(
+┌─x─┐
+│ 1 │
+│ 2 │
+└───┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionIsZeroOrNull>(documentation);
 }
 
 }

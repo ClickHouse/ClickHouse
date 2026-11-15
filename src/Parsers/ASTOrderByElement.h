@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST.h>
 
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -18,6 +19,7 @@ private:
         FILL_FROM,
         FILL_TO,
         FILL_STEP,
+        FILL_STALENESS,
     };
 
 public:
@@ -32,28 +34,32 @@ public:
     void setFillFrom(ASTPtr node)  { setChild(Child::FILL_FROM, node); }
     void setFillTo(ASTPtr node)    { setChild(Child::FILL_TO, node);   }
     void setFillStep(ASTPtr node)  { setChild(Child::FILL_STEP, node); }
+    void setFillStaleness(ASTPtr node)  { setChild(Child::FILL_STALENESS, node); }
 
     /** Collation for locale-specific string comparison. If empty, then sorting done by bytes. */
     ASTPtr getCollation() const { return getChild(Child::COLLATION); }
     ASTPtr getFillFrom()  const { return getChild(Child::FILL_FROM); }
     ASTPtr getFillTo()    const { return getChild(Child::FILL_TO);   }
     ASTPtr getFillStep()  const { return getChild(Child::FILL_STEP); }
+    ASTPtr getFillStaleness()  const { return getChild(Child::FILL_STALENESS); }
 
     String getID(char) const override { return "OrderByElement"; }
 
     ASTPtr clone() const override
     {
-        auto clone = std::make_shared<ASTOrderByElement>(*this);
+        auto clone = make_intrusive<ASTOrderByElement>(*this);
         clone->cloneChildren();
         return clone;
     }
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-private:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
+private:
     ASTPtr getChild(Child child) const
     {
         auto it = positions.find(child);
@@ -64,10 +70,24 @@ private:
 
     void setChild(Child child, ASTPtr node)
     {
-        if (node == nullptr)
-            return;
-
         auto it = positions.find(child);
+        if (node == nullptr)
+        {
+            /// Remove the child, shifting down the positions of the children stored after it.
+            if (it != positions.end())
+            {
+                const size_t removed_pos = it->second;
+                children.erase(children.begin() + removed_pos);
+                positions.erase(it);
+                for (auto & [_, pos] : positions)
+                {
+                    if (pos > removed_pos)
+                        --pos;
+                }
+            }
+            return;
+        }
+
         if (it != positions.end())
         {
             children[it->second] = node;
@@ -80,6 +100,27 @@ private:
     }
 
     std::unordered_map<Child, size_t> positions;
+};
+
+class ASTStorageOrderByElement : public IAST
+{
+public:
+    int direction = 1; /// 1 for ASC, -1 for DESC
+
+    ASTPtr clone() const override
+    {
+        auto clone = make_intrusive<ASTStorageOrderByElement>(*this);
+        clone->cloneChildren();
+        return clone;
+    }
+
+    String getID(char) const override { return "StorageOrderByElement"; }
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }

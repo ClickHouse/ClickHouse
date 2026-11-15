@@ -15,7 +15,8 @@ echo "
 
 function read_thread_big()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         echo "
             SELECT * FROM ( SELECT number AS x FROM numbers(100000) ) AS t1 ALL FULL JOIN storage_join_race USING (x) FORMAT Null;
         " | $CLICKHOUSE_CLIENT
@@ -24,7 +25,8 @@ function read_thread_big()
 
 function read_thread_small()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         echo "
             SELECT * FROM ( SELECT number AS x FROM numbers(10) ) AS t1 ALL FULL JOIN storage_join_race USING (x) FORMAT Null;
         " | $CLICKHOUSE_CLIENT
@@ -33,23 +35,19 @@ function read_thread_small()
 
 function read_thread_select()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         echo "
             SELECT * FROM storage_join_race FORMAT Null;
         " | $CLICKHOUSE_CLIENT
     done
 }
 
-# https://stackoverflow.com/questions/9954794/execute-a-shell-function-with-timeout
-export -f read_thread_big;
-export -f read_thread_small;
-export -f read_thread_select;
-
 TIMEOUT=20
 
-timeout $TIMEOUT bash -c read_thread_big 2> /dev/null &
-timeout $TIMEOUT bash -c read_thread_small 2> /dev/null &
-timeout $TIMEOUT bash -c read_thread_select 2> /dev/null &
+read_thread_big 2> /dev/null &
+read_thread_small 2> /dev/null &
+read_thread_select 2> /dev/null &
 
 # Run insert query with a sleep to make sure that it is executed all the time during the read queries.
 echo "

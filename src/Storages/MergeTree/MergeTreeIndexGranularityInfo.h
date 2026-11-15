@@ -3,23 +3,25 @@
 #include <optional>
 #include <base/types.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
-#include <Disks/IDisk.h>
-#include <Storages/MergeTree/IDataPartStorage.h>
 
 namespace DB
 {
 
 class MergeTreeData;
+class IDataPartStorage;
+struct MergeTreeSettings;
 
+struct ProjectionDescription;
+using ProjectionDescriptionRawPtr = const ProjectionDescription *;
 
 /** Various types of mark files are stored in files with various extensions:
-  * .mrk, .mrk2, .mrk3, .cmrk, .cmrk2, .cmrk3.
+  * .mrk, .mrk2, .mrk3, .mrk4, .cmrk, .cmrk2, .cmrk3, .cmrk4.
   * This helper allows to obtain mark type from file extension and vice versa.
   */
 struct MarkType
 {
     explicit MarkType(std::string_view extension);
-    MarkType(bool adaptive_, bool compressed_, MergeTreeDataPartType::Value part_type_);
+    MarkType(bool adaptive_, bool compressed_, bool with_substreams_, MergeTreeDataPartType::Value part_type_);
 
     static bool isMarkFileExtension(std::string_view extension);
     std::string getFileExtension() const;
@@ -28,6 +30,9 @@ struct MarkType
 
     bool adaptive = false;
     bool compressed = false;
+    /// For Compact parts only.
+    /// If true, marks are written for each substream, not for each column.
+    bool with_substreams = false;
     MergeTreeDataPartType::Value part_type = MergeTreeDataPartType::Unknown;
 };
 
@@ -44,12 +49,9 @@ public:
     /// Approximate bytes size of one granule
     size_t index_granularity_bytes = 0;
 
-    MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MergeTreeDataPartType type_);
+    MergeTreeIndexGranularityInfo(const MergeTreeData & storage, const MergeTreeSettings & storage_settings, MergeTreeDataPartType type_);
 
-    MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MarkType mark_type_);
-
-    MergeTreeIndexGranularityInfo(MergeTreeDataPartType type_, bool is_adaptive_, size_t index_granularity_, size_t index_granularity_bytes_);
-    MergeTreeIndexGranularityInfo(MarkType mark_type_, size_t index_granularity_, size_t index_granularity_bytes_);
+    MergeTreeIndexGranularityInfo(const MergeTreeSettings & storage_settings, MarkType mark_type_);
 
     void changeGranularityIfRequired(const IDataPartStorage & data_part_storage);
 

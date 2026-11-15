@@ -1,0 +1,2 @@
+ALTER TABLE t\n    (UNLOCK SNAPSHOT \'snap1\' FROM S3(\'http://example.com\'))
+SYSTEM UNLOCK SNAPSHOT \'snap1\' FROM S3(\'http://example.com\')

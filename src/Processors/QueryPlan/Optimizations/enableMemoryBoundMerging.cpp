@@ -63,11 +63,11 @@ void enableMemoryBoundMerging(QueryPlan::Node & node)
             enforce_aggregation_in_order = true;
         }
     }
-    else if (auto * mergine_aggeregated = typeid_cast<MergingAggregatedStep *>(local_plan))
+    else if (auto * merging_aggeregated = typeid_cast<MergingAggregatedStep *>(local_plan))
     {
-        if (mergine_aggeregated->memoryBoundMergingWillBeUsed())
+        if (merging_aggeregated->memoryBoundMergingWillBeUsed())
         {
-            sort_description = mergine_aggeregated->getGroupBySortDescription();
+            sort_description = merging_aggeregated->getGroupBySortDescription();
         }
     }
 
@@ -77,15 +77,15 @@ void enableMemoryBoundMerging(QueryPlan::Node & node)
     for (auto & reading : reading_steps)
     {
         reading->enableMemoryBoundMerging();
-        if (enforce_aggregation_in_order)
-            reading->enforceAggregationInOrder();
+        if (enforce_aggregation_in_order || reading->hasSerializedPlan())
+            reading->enforceAggregationInOrder(sort_description);
     }
 
     for (auto & reading : async_reading_steps)
     {
         reading->enableMemoryBoundMerging();
         if (enforce_aggregation_in_order)
-            reading->enforceAggregationInOrder();
+            reading->enforceAggregationInOrder(sort_description);
     }
 
     root_mergine_aggeregated->applyOrder(sort_description);

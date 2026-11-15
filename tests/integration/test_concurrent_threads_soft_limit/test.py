@@ -26,6 +26,7 @@ node4 = cluster.add_instance(
     "node4",
     main_configs=["configs/config_limit_reached.xml"],
     user_configs=["configs/users.xml"],
+    cpu_limit=5
 )
 
 
@@ -70,7 +71,13 @@ def test_concurrent_threads_soft_limit_default(started_cluster):
         node1,
         "test_concurrent_threads_soft_limit_1",
         "ConcurrencyControlSlotsAcquired",
-        lambda x: x == 100,
+        lambda x: x >= 1 and x <= 100,
+    )
+    assert_profile_event(
+        node1,
+        "test_concurrent_threads_soft_limit_1",
+        "ConcurrencyControlSlotsAcquiredNonCompeting",
+        lambda x: x == 1,
     )
     assert_profile_event(
         node1,
@@ -78,12 +85,11 @@ def test_concurrent_threads_soft_limit_default(started_cluster):
         "ConcurrencyControlQueriesDelayed",
         lambda x: x == 0,
     )
-    assert (
-        node1.query(
-            "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_1' order by query_start_time_microseconds desc limit 1"
-        )
-        == "102\n"
-    )
+    s_count = node1.query(
+        "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_1' order by query_start_time_microseconds desc limit 1"
+    ).strip()
+    count = int(s_count) if s_count else 0
+    assert count >= 3 and count <= 102
 
 
 def test_use_concurrency_control_default(started_cluster):
@@ -115,6 +121,12 @@ def test_use_concurrency_control_default(started_cluster):
     assert_profile_event(
         node1,
         "test_use_concurrency_control",
+        "ConcurrencyControlSlotsAcquiredNonCompeting",
+        lambda x: x == 0,
+    )
+    assert_profile_event(
+        node1,
+        "test_use_concurrency_control",
         "ConcurrencyControlQueriesDelayed",
         lambda x: x == 0,
     )
@@ -136,13 +148,19 @@ def test_concurrent_threads_soft_limit_defined_50(started_cluster):
         node2,
         "test_concurrent_threads_soft_limit_2",
         "ConcurrencyControlSlotsDelayed",
-        lambda x: x == 50,
+        lambda x: x >= 49,
     )
     assert_profile_event(
         node2,
         "test_concurrent_threads_soft_limit_2",
         "ConcurrencyControlSlotsAcquired",
-        lambda x: x == 50,
+        lambda x: x >= 1 and x <= 50,
+    )
+    assert_profile_event(
+        node2,
+        "test_concurrent_threads_soft_limit_2",
+        "ConcurrencyControlSlotsAcquiredNonCompeting",
+        lambda x: x == 1,
     )
     assert_profile_event(
         node2,
@@ -150,12 +168,11 @@ def test_concurrent_threads_soft_limit_defined_50(started_cluster):
         "ConcurrencyControlQueriesDelayed",
         lambda x: x == 1,
     )
-    assert (
-        node2.query(
-            "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_2' order by query_start_time_microseconds desc limit 1"
-        )
-        == "52\n"
-    )
+    s_count = node2.query(
+        "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_2' order by query_start_time_microseconds desc limit 1"
+    ).strip()
+    count = int(s_count) if s_count else 0
+    assert count >= 3 and count <= 53
 
 
 def test_use_concurrency_control_soft_limit_defined_50(started_cluster):
@@ -186,6 +203,12 @@ def test_use_concurrency_control_soft_limit_defined_50(started_cluster):
     assert_profile_event(
         node2,
         "test_use_concurrency_control_2",
+        "ConcurrencyControlSlotsAcquiredNonCompeting",
+        lambda x: x == 0,
+    )
+    assert_profile_event(
+        node2,
+        "test_use_concurrency_control_2",
         "ConcurrencyControlQueriesDelayed",
         lambda x: x == 0,
     )
@@ -207,12 +230,18 @@ def test_concurrent_threads_soft_limit_defined_1(started_cluster):
         node3,
         "test_concurrent_threads_soft_limit_3",
         "ConcurrencyControlSlotsDelayed",
-        lambda x: x == 99,
+        lambda x: x == 98,
     )
     assert_profile_event(
         node3,
         "test_concurrent_threads_soft_limit_3",
         "ConcurrencyControlSlotsAcquired",
+        lambda x: x == 1,
+    )
+    assert_profile_event(
+        node3,
+        "test_concurrent_threads_soft_limit_3",
+        "ConcurrencyControlSlotsAcquiredNonCompeting",
         lambda x: x == 1,
     )
     assert_profile_event(
@@ -225,13 +254,13 @@ def test_concurrent_threads_soft_limit_defined_1(started_cluster):
         node3.query(
             "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_3' order by query_start_time_microseconds desc limit 1"
         )
-        == "3\n"
+        == "4\n"
     )
 
 
 # In config_limit_reached.xml there is concurrent_threads_soft_limit=10
 # Background query starts in a separate thread to reach this limit.
-# When this limit is reached the foreground query gets less than 5 queries despite the fact that it has settings max_threads=5
+# When this limit is reached the foreground query gets less than 6 threads despite the fact that it has settings max_threads=6
 def test_concurrent_threads_soft_limit_limit_reached(started_cluster):
     def background_query():
         try:
@@ -253,13 +282,13 @@ def test_concurrent_threads_soft_limit_limit_reached(started_cluster):
             count = int(s_count)
         else:
             count = 0
-        return count >= 10
+        return count >= 11
 
     while not limit_reached():
         time.sleep(0.1)
 
     node4.query(
-        "SELECT count(*) FROM numbers_mt(10000000) settings max_threads=5",
+        "SELECT count(*) FROM numbers_mt(10000000) settings max_threads=6",
         query_id="test_concurrent_threads_soft_limit_4",
     )
 
@@ -285,6 +314,12 @@ def test_concurrent_threads_soft_limit_limit_reached(started_cluster):
     assert_profile_event(
         node4,
         "test_concurrent_threads_soft_limit_4",
+        "ConcurrencyControlSlotsAcquiredNonCompeting",
+        lambda x: x == 1,
+    )
+    assert_profile_event(
+        node4,
+        "test_concurrent_threads_soft_limit_4",
         "ConcurrencyControlQueriesDelayed",
         lambda x: x == 1,
     )
@@ -295,6 +330,75 @@ def test_concurrent_threads_soft_limit_limit_reached(started_cluster):
         count = int(s_count)
     else:
         count = 0
-    assert count < 5
+    assert count < 6
     node4.query("KILL QUERY WHERE query_id = 'background_query' SYNC")
     background_thread.join()
+
+
+# A query that starts while the limit is reached gets only its non-competing slot. When the other
+# query finishes, the released slots are granted to it and it must start using them, even if its
+# pipeline never pushes new tasks to the executor's global queue (each stream is an independent
+# chain whose steps are slow, as in object storage scans).
+def test_concurrent_threads_soft_limit_upscale_after_release(started_cluster):
+    background_id = "background_query_upscale"
+    foreground_id = "test_concurrent_threads_soft_limit_5"
+    errors = {}
+
+    def run(name, query, query_id):
+        try:
+            node4.query(query, query_id=query_id)
+        except QueryRuntimeException as e:
+            errors[name] = e
+
+    def wait_for(condition, what, timeout=60):
+        deadline = time.monotonic() + timeout
+        while not condition():
+            assert time.monotonic() < deadline, f"Timed out waiting for {what}, errors: {errors}"
+            time.sleep(0.1)
+
+    def foreground_event(profile_event):
+        value = node4.query(
+            f"SELECT ProfileEvents['{profile_event}'] FROM system.processes WHERE query_id = '{foreground_id}'"
+        ).strip()
+        return int(value) if value else None
+
+    background = threading.Thread(
+        target=run,
+        args=("background", "SELECT count(*) FROM numbers_mt(1e11) SETTINGS max_threads=100", background_id),
+    )
+    # 8 streams; every step of a stream sleeps 1 s, so a thread that runs only local tasks pushes to the
+    # global queue only after more than 20 s. The query runs until it is killed.
+    foreground = threading.Thread(
+        target=run,
+        args=(
+            "foreground",
+            "SELECT count() FROM numbers_mt(1e9) WHERE NOT ignore(sleepEachRow(0.02)) "
+            "SETTINGS max_threads=8, max_block_size=50",
+            foreground_id,
+        ),
+    )
+    try:
+        background.start()
+        wait_for(
+            lambda: int(node4.query("SELECT sum(length(thread_ids)) FROM system.processes").strip() or 0) >= 11,
+            "the background query to take all slots",
+        )
+
+        foreground.start()
+        wait_for(lambda: foreground_event("ConcurrencyControlSlotsDelayed"), "the foreground query to wait for slots")
+
+        # Release all competing slots. The foreground query has to start threads for them at the next
+        # step (~1 s), long before its threads push to the global queue on their own.
+        node4.query(f"KILL QUERY WHERE query_id = '{background_id}' SYNC")
+        wait_for(
+            lambda: (foreground_event("ConcurrencyControlSlotsAcquired") or 0) >= 4,
+            "the foreground query to use the released slots",
+            timeout=8,
+        )
+    finally:
+        try:
+            node4.query(f"KILL QUERY WHERE query_id IN ('{background_id}', '{foreground_id}') SYNC")
+        finally:
+            for thread in (background, foreground):
+                if thread.ident is not None:
+                    thread.join()

@@ -14,7 +14,7 @@ class Logger;
 using LoggerPtr = std::shared_ptr<Logger>;
 }
 
-using LoggerPtr = std::shared_ptr<Poco::Logger>;
+using LoggerPtr = Poco::LoggerPtr;
 using LoggerRawPtr = Poco::Logger *;
 
 /** RAII wrappers around Poco/Logger.h.
@@ -64,7 +64,3 @@ LoggerRawPtr createRawLogger(const std::string & name, Poco::Channel * channel, 
   * Otherwise, returns false.
   */
 bool hasLogger(const std::string & name);
-
-void disableLogging();
-
-bool isLoggingEnabled();

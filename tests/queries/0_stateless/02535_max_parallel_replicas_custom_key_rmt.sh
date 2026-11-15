@@ -15,7 +15,8 @@ function run_with_custom_key {
 , parallel_replicas_mode ='$filter_type'\
 , parallel_replicas_custom_key='$2'\
 , parallel_replicas_for_non_replicated_merge_tree=1 \
-, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost'"
+, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost' \
+, serialize_query_plan=0"
             $CLICKHOUSE_CLIENT --query="$query"
         done
     done
@@ -50,6 +51,7 @@ run_count_with_custom_key_merge_tree "y"
 run_count_with_custom_key_merge_tree "cityHash64(y)"
 run_count_with_custom_key_merge_tree "cityHash64(y) + 1"
 
-$CLICKHOUSE_CLIENT --query="SELECT count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), 02535_custom_key_rmt_hash) as t1 JOIN 02535_custom_key_rmt_hash USING y" --allow_repeated_settings --parallel_replicas_custom_key="y" --send_logs_level="trace" 2>&1 | grep -Fac "JOINs are not supported with"
+# check that at least one 'JOINs are not supported' trace is there
+$CLICKHOUSE_CLIENT --query="SELECT count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), 02535_custom_key_rmt_hash) as t1 JOIN 02535_custom_key_rmt_hash USING y" --allow_repeated_settings --parallel_replicas_custom_key="y" --send_logs_level="trace" 2>&1 | grep -m 1 -Fa "JOINs are not supported with" | wc -l
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE 02535_custom_key_rmt_hash"

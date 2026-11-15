@@ -1,5 +1,5 @@
-#include "AggregateFunctionResample.h"
-#include "AggregateFunctionCombinatorFactory.h"
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionResample.h>
 
 namespace DB
 {
@@ -30,6 +30,15 @@ public:
         return DataTypes(arguments.begin(), arguments.end() - 1);
     }
 
+    VectorWithMemoryTracking<size_t> getVariantArgumentsToConvert(const DataTypes & arguments) const override
+    {
+        if (!arguments.empty() && isVariant(arguments.back()))
+            return {arguments.size() - 1};
+        return {};
+    }
+
+    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
+
     Array transformParameters(const Array & params) const override
     {
         if (params.size() < 3)
@@ -46,6 +55,10 @@ public:
         const Array & params) const override
     {
         WhichDataType which{arguments.back()};
+
+        if (params.size() < 3)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Incorrect number of parameters for aggregate function with {} suffix", getName());
 
         if (which.isNativeUInt() || which.isDate() || which.isDateTime() || which.isDateTime64())
         {
@@ -65,7 +78,8 @@ public:
 
         if (which.isNativeInt() || which.isEnum() || which.isInterval())
         {
-            Int64 begin, end;
+            Int64 begin = 0;
+            Int64 end = 0;
 
             // notice: UInt64 -> Int64 may lead to overflow
             if (!params[params.size() - 3].tryGet<Int64>(begin))
@@ -92,9 +106,13 @@ public:
 
 }
 
+void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorResample>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorResample>(), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumResample`), it partitions the data into intervals `[start, end)` of width `step` according to a resampling key column and aggregates each interval separately, returning an array of results. `start` must be less than `end`: a range that spans no interval throws an exception. The interval bounds and step are passed in the first parameter list; the nested aggregate function arguments and the resampling key are passed in the second.",
+        .syntax = "<aggregate_function>Resample(start, end, step)(<aggregate_function_arguments>, resampling_key)",
+        .related = {}});
 }
 
 }

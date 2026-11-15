@@ -1,6 +1,8 @@
 #include <IO/WriteBufferFromEncryptedFile.h>
 #include <Common/logger_useful.h>
 
+#include <algorithm>
+
 #if USE_SSL
 
 namespace DB
@@ -11,12 +13,15 @@ WriteBufferFromEncryptedFile::WriteBufferFromEncryptedFile(
     std::unique_ptr<WriteBufferFromFileBase> out_,
     const String & key_,
     const FileEncryption::Header & header_,
-    size_t old_file_size)
-    : WriteBufferDecorator<WriteBufferFromFileBase>(std::move(out_), buffer_size_, nullptr, 0)
+    size_t old_file_size,
+    bool use_adaptive_buffer_size_,
+    size_t adaptive_buffer_initial_size)
+    : WriteBufferDecorator<WriteBufferFromFileBase>(std::move(out_), adaptiveBufferInitialSize(use_adaptive_buffer_size_, adaptive_buffer_initial_size, buffer_size_), nullptr, 0)
     , header(header_)
     , flush_header(!old_file_size)
     , encryptor(header.algorithm, key_, header.init_vector)
 {
+    enableAdaptiveBufferGrowth(use_adaptive_buffer_size_, buffer_size_);
     encryptor.setOffset(old_file_size);
 }
 
@@ -27,7 +32,7 @@ WriteBufferFromEncryptedFile::~WriteBufferFromEncryptedFile()
         LOG_INFO(log, "WriteBufferFromEncryptedFile is not finalized in destructor");
 }
 
-void WriteBufferFromEncryptedFile::finalizeBefore()
+void WriteBufferFromEncryptedFile::finalFlushBefore()
 {
     /// If buffer has pending data - write it.
     next();
@@ -57,6 +62,8 @@ void WriteBufferFromEncryptedFile::nextImpl()
     }
 
     encryptor.encrypt(working_buffer.begin(), offset(), *out);
+
+    growAdaptiveBufferAfterFlush();
 }
 
 }

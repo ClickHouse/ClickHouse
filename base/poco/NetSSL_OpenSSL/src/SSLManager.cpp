@@ -14,10 +14,10 @@
 
 #include "Poco/Net/SSLManager.h"
 #include "Poco/Net/Context.h"
+#include "Poco/Net/DistrustedCertificates.h"
 #include "Poco/Net/Utility.h"
 #include "Poco/Net/PrivateKeyPassphraseHandler.h"
 #include "Poco/Net/RejectCertificateHandler.h"
-#include "Poco/Crypto/OpenSSLInitializer.h"
 #include "Poco/Net/SSLException.h"
 #include "Poco/SingletonHolder.h"
 #include "Poco/Delegate.h"
@@ -42,6 +42,7 @@ const bool        SSLManager::VAL_ENABLE_DEFAULT_CA(true);
 const std::string SSLManager::CFG_CIPHER_LIST("cipherList");
 const std::string SSLManager::CFG_CYPHER_LIST("cypherList");
 const std::string SSLManager::VAL_CIPHER_LIST("ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH");
+const std::string SSLManager::CFG_CIPHER_SUITES("cipherSuites");
 const std::string SSLManager::CFG_PREFER_SERVER_CIPHERS("preferServerCiphers");
 const std::string SSLManager::CFG_DELEGATE_HANDLER("privateKeyPassphraseHandler.name");
 const std::string SSLManager::VAL_DELEGATE_HANDLER("KeyConsoleHandler");
@@ -60,10 +61,6 @@ const std::string SSLManager::CFG_REQUIRE_TLSV1_2("requireTLSv1_2");
 const std::string SSLManager::CFG_DISABLE_PROTOCOLS("disableProtocols");
 const std::string SSLManager::CFG_DH_PARAMS_FILE("dhParamsFile");
 const std::string SSLManager::CFG_ECDH_CURVE("ecdhCurve");
-#ifdef OPENSSL_FIPS
-const std::string SSLManager::CFG_FIPS_MODE("openSSL.fips");
-const bool        SSLManager::VAL_FIPS_MODE(false);
-#endif
 
 
 SSLManager::SSLManager()
@@ -201,18 +198,33 @@ SSLManager::InvalidCertificateHandlerPtr SSLManager::clientCertificateHandler()
 
 int SSLManager::verifyCallback(bool server, int ok, X509_STORE_CTX* pStore)
 {
+	/// OpenSSL calls this for every certificate of the chain, with `ok` set to 1 if it has
+	/// no other errors, so this rejects a chain that contains a distrusted certificate at any
+	/// depth, whichever trust store (the system one, the configured one or the embedded one)
+	/// it was built from. The rejection is reported like any other verification error.
+	if (X509 * cert = X509_STORE_CTX_get_current_cert(pStore))
+	{
+		int distrusted = checkDistrustedCertificate(cert);
+		if (distrusted != X509_V_OK)
+		{
+			X509_STORE_CTX_set_error(pStore, distrusted);
+			ok = 0;
+		}
+	}
+
 	if (!ok)
 	{
-		X509* pCert = X509_STORE_CTX_get_current_cert(pStore);
-		X509Certificate x509(pCert, true);
 		int depth = X509_STORE_CTX_get_error_depth(pStore);
 		int err = X509_STORE_CTX_get_error(pStore);
+
 		std::string error(X509_verify_cert_error_string(err));
-		VerificationErrorArgs args(x509, depth, err, error);
+		VerificationErrorArgs args(depth, err, error);
+
 		if (server)
 			SSLManager::instance().ServerVerificationError.notify(&SSLManager::instance(), args);
 		else
 			SSLManager::instance().ClientVerificationError.notify(&SSLManager::instance(), args);
+
 		ok = args.getIgnoreError() ? 1 : 0;
 	}
 
@@ -220,7 +232,7 @@ int SSLManager::verifyCallback(bool server, int ok, X509_STORE_CTX* pStore)
 }
 
 
-int SSLManager::privateKeyPassphraseCallback(char* pBuf, int size, int flag, void* userData)
+int SSLManager::privateKeyPassphraseCallback(char* pBuf, int size, int, void*)
 {
 	std::string pwd;
 	SSLManager::instance().PrivateKeyPassphraseRequired.notify(&SSLManager::instance(), pwd);
@@ -239,17 +251,8 @@ void SSLManager::initDefaultContext(bool server)
 	if (server && _ptrDefaultServerContext) return;
 	if (!server && _ptrDefaultClientContext) return;
 
-	Poco::Crypto::OpenSSLInitializer openSSLInitializer;
 	initEvents(server);
 	Poco::Util::AbstractConfiguration& config = appConfig();
-
-#ifdef OPENSSL_FIPS
-	bool fipsEnabled = config.getBool(CFG_FIPS_MODE, VAL_FIPS_MODE);
-	if (fipsEnabled && !Poco::Crypto::OpenSSLInitializer::isFIPSEnabled())
-	{
-		Poco::Crypto::OpenSSLInitializer::enableFIPSMode(true);
-	}
-#endif
 
 	std::string prefix = server ? CFG_SERVER_PREFIX : CFG_CLIENT_PREFIX;
 
@@ -259,7 +262,10 @@ void SSLManager::initDefaultContext(bool server)
 	params.certificateFile = config.getString(prefix + CFG_CERTIFICATE_FILE, params.privateKeyFile);
 	params.caLocation = config.getString(prefix + CFG_CA_LOCATION, "");
 
-	if (server && params.certificateFile.empty() && params.privateKeyFile.empty())
+    bool keys_are_explicitly_set = !params.privateKeyFile.empty() && !params.certificateFile.empty();
+    bool acme_certificate_provided = config.has("acme");
+
+	if (server && !keys_are_explicitly_set && !acme_certificate_provided)
 		throw SSLException("Configuration error: no certificate file has been specified");
 
 	// optional options for which we have defaults defined
@@ -275,6 +281,7 @@ void SSLManager::initDefaultContext(bool server)
 	params.loadDefaultCAs = config.getBool(prefix + CFG_ENABLE_DEFAULT_CA, VAL_ENABLE_DEFAULT_CA);
 	params.cipherList = config.getString(prefix + CFG_CIPHER_LIST, VAL_CIPHER_LIST);
 	params.cipherList = config.getString(prefix + CFG_CYPHER_LIST, params.cipherList); // for backwards compatibility
+	params.cipherSuites = config.getString(prefix + CFG_CIPHER_SUITES, "");
 	bool requireTLSv1 = config.getBool(prefix + CFG_REQUIRE_TLSV1, false);
 	bool requireTLSv1_1 = config.getBool(prefix + CFG_REQUIRE_TLSV1_1, false);
 	bool requireTLSv1_2 = config.getBool(prefix + CFG_REQUIRE_TLSV1_2, false);
@@ -324,6 +331,8 @@ void SSLManager::initDefaultContext(bool server)
 			disabledProtocols |= Context::PROTO_TLSV1_1;
 		else if (*it == "tlsv1_2")
 			disabledProtocols |= Context::PROTO_TLSV1_2;
+		else if (*it == "tlsv1_3")
+			disabledProtocols |= Context::PROTO_TLSV1_3;
 	}
 	if (server)
 		_ptrDefaultServerContext->disableProtocols(disabledProtocols);
@@ -350,7 +359,9 @@ void SSLManager::initDefaultContext(bool server)
 	{
 		_ptrDefaultClientContext->enableSessionCache(cacheSessions);
 	}
-	bool extendedVerification = config.getBool(prefix + CFG_EXTENDED_VERIFICATION, false);
+	/// Only an outbound connection has a requested host name to check: on an accepted socket this
+	/// would run against the client's address, which a client certificate does not name.
+	bool extendedVerification = config.getBool(prefix + CFG_EXTENDED_VERIFICATION, !server);
 	if (server)
 		_ptrDefaultServerContext->enableExtendedCertificateVerification(extendedVerification);
 	else
@@ -461,16 +472,9 @@ Poco::Util::AbstractConfiguration& SSLManager::appConfig()
 }
 
 
-void initializeSSL()
-{
-	Poco::Crypto::initializeCrypto();
-}
-
-
 void uninitializeSSL()
 {
 	SSLManager::instance().shutdown();
-	Poco::Crypto::uninitializeCrypto();
 }
 
 

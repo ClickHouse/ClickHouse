@@ -42,9 +42,15 @@ def test_parallel_quorum_actually_parallel(started_cluster):
 
     p = Pool(10)
 
+    # The total sleep for the long insert (rows * seconds-per-row) must be larger
+    # than the time taken by the parallel inserts and assertions below. Otherwise
+    # the long insert can finish before the COUNT() == 2 assertions run, causing
+    # COUNT() to return 7 instead of 2. Sanitizer builds (`MSan`, `TSan`,
+    # `ASan + UBSan`) can slow client/server interaction by 10-20x, so use a
+    # generous total sleep duration (5 rows * 3s = 15s).
     def long_insert(node):
         node.query(
-            "INSERT INTO r SELECT number, toString(number) FROM numbers(5) where sleepEachRow(1) == 0",
+            "INSERT INTO r SELECT number, toString(number) FROM numbers(5) where sleepEachRow(3) == 0",
             settings=settings,
         )
 
@@ -72,7 +78,10 @@ def test_parallel_quorum_actually_parallel(started_cluster):
 def test_parallel_quorum_actually_quorum(started_cluster):
     for i, node in enumerate([node1, node2, node3]):
         node.query(
-            "CREATE TABLE q (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/q', '{num}') ORDER BY tuple()".format(
+            # node2 stays partitioned off node1/node3 (port 9009) for the whole test, so its
+            # GET_PART entries fail repeatedly and accumulate exponential fetch backoff. Disable
+            # it so node2 catches up promptly once the partition heals (see SYSTEM SYNC REPLICA).
+            "CREATE TABLE q (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/q', '{num}') ORDER BY tuple() SETTINGS max_postpone_time_for_failed_replicated_fetches_ms = 0".format(
                 num=i
             )
         )
@@ -169,5 +178,8 @@ def test_parallel_quorum_actually_quorum(started_cluster):
         p.close()
         p.join()
 
-    node2.query("SYSTEM SYNC REPLICA q", timeout=10)
+    # Generous barrier timeout: under the parallel sanitizer flaky-check the post-heal
+    # catch-up fetch can take several seconds. Correctness is still gated by the retrying
+    # assert below, so a real "node2 never syncs" bug fails there rather than being hidden.
+    node2.query("SYSTEM SYNC REPLICA q", timeout=60)
     assert_eq_with_retry(node2, "SELECT COUNT() FROM q", "3")

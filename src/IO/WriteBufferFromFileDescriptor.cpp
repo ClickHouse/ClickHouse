@@ -1,10 +1,11 @@
 #include <unistd.h>
 #include <cerrno>
-#include <cassert>
 #include <sys/stat.h>
+#include <algorithm>
 
 #include <Common/Throttler.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
@@ -21,8 +22,6 @@ namespace ProfileEvents
     extern const Event DiskWriteElapsedMicroseconds;
     extern const Event FileSync;
     extern const Event FileSyncElapsedMicroseconds;
-    extern const Event LocalWriteThrottlerBytes;
-    extern const Event LocalWriteThrottlerSleepMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -77,19 +76,14 @@ void WriteBufferFromFileDescriptor::nextImpl()
         {
             bytes_written += res;
             if (throttler)
-                throttler->add(res, ProfileEvents::LocalWriteThrottlerBytes, ProfileEvents::LocalWriteThrottlerSleepMicroseconds);
+                throttler->throttle(res);
         }
     }
 
     ProfileEvents::increment(ProfileEvents::DiskWriteElapsedMicroseconds, watch.elapsedMicroseconds());
     ProfileEvents::increment(ProfileEvents::WriteBufferFromFileDescriptorWriteBytes, bytes_written);
 
-    /// Increase buffer size for next data if adaptive buffer size is used and nextImpl was called because of end of buffer.
-    if (!available() && use_adaptive_buffer_size && memory.size() < adaptive_max_buffer_size)
-    {
-        memory.resize(std::min(memory.size() * 2, adaptive_max_buffer_size));
-        BufferBase::set(memory.data(), memory.size(), 0);
-    }
+    growAdaptiveBufferAfterFlush();
 }
 
 /// NOTE: This class can be used as a very low-level building block, for example
@@ -104,39 +98,24 @@ WriteBufferFromFileDescriptor::WriteBufferFromFileDescriptor(
     std::string file_name_,
     bool use_adaptive_buffer_size_,
     size_t adaptive_buffer_initial_size)
-    : WriteBufferFromFileBase(use_adaptive_buffer_size_ ? adaptive_buffer_initial_size : buf_size, existing_memory, alignment)
+    : WriteBufferFromFileBase(adaptiveBufferInitialSize(use_adaptive_buffer_size_, adaptive_buffer_initial_size, buf_size), existing_memory, alignment)
     , fd(fd_)
     , throttler(throttler_)
     , file_name(std::move(file_name_))
-    , use_adaptive_buffer_size(use_adaptive_buffer_size_)
-    , adaptive_max_buffer_size(buf_size)
 {
-}
-
-
-WriteBufferFromFileDescriptor::~WriteBufferFromFileDescriptor()
-{
-    try
-    {
-        if (!canceled)
-            finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    enableAdaptiveBufferGrowth(use_adaptive_buffer_size_, buf_size);
 }
 
 void WriteBufferFromFileDescriptor::finalizeImpl()
 {
     if (fd < 0)
     {
-        assert(!offset() && "attempt to write after close");
+        chassert(!offset(), "attempt to write after close");
         return;
     }
 
     use_adaptive_buffer_size = false;
-    next();
+    WriteBufferFromFileBase::finalizeImpl();
 }
 
 void WriteBufferFromFileDescriptor::sync()
@@ -179,7 +158,7 @@ void WriteBufferFromFileDescriptor::truncate(off_t length) // NOLINT
 
 off_t WriteBufferFromFileDescriptor::size() const
 {
-    struct stat buf;
+    struct stat buf{};
     int res = fstat(fd, &buf);
     if (-1 == res)
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSTAT, getFileName(), "Cannot execute fstat {}", getFileName());

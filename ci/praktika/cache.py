@@ -2,12 +2,12 @@ import dataclasses
 import json
 from pathlib import Path
 
-from praktika import Artifact, Job, Workflow
-from praktika._environment import _Environment
-from praktika.digest import Digest
-from praktika.s3 import S3
-from praktika.settings import Settings
-from praktika.utils import Utils
+from . import Artifact, Job, Workflow
+from ._environment import _Environment
+from .digest import Digest
+from .s3 import S3
+from .settings import Settings
+from .utils import Utils
 
 
 class Cache:
@@ -20,6 +20,11 @@ class Cache:
         sha: str
         pr_number: int
         branch: str
+        workflow: str = ""
+        # The workflow event that produced this record (Workflow.Event.*). It is
+        # the trust signal for reuse: a pull_request record is untrusted, so only
+        # pull_request workflows reuse it (see CacheRunnerHooks.configure).
+        event: str = ""
 
         def dump(self, path):
             with open(path, "w", encoding="utf8") as f:
@@ -39,40 +44,50 @@ class Cache:
         self.success = {}  # type Dict[str, Any]
 
     @classmethod
-    def push_success_record(cls, job_name, job_digest, sha):
+    def push_success_record(
+        cls, job_name, job_digest, sha, workflow_name, if_not_exist
+    ):
         type_ = Cache.CacheRecord.Type.SUCCESS
         record = Cache.CacheRecord(
             type=type_,
             sha=sha,
             pr_number=_Environment.get().PR_NUMBER,
             branch=_Environment.get().BRANCH,
+            workflow=workflow_name,
+            event=_Environment.get().EVENT_TYPE,
         )
         assert (
             Settings.CACHE_S3_PATH
-        ), f"Setting CACHE_S3_PATH must be defined with enabled CI Cache"
-        record_path = f"{Settings.CACHE_S3_PATH}/v{Settings.CACHE_VERSION}/{Utils.normalize_string(job_name)}/{job_digest}"
+        ), "Setting CACHE_S3_PATH must be defined with enabled CI Cache"
+        record_path = f"{Settings.CACHE_S3_PATH}/v{Settings.CACHE_VERSION}/{Utils.normalize_string(job_name)}/{job_digest}/{type_}"
         record_file = Path(Settings.TEMP_DIR) / type_
         record.dump(record_file)
-        S3.copy_file_to_s3(s3_path=record_path, local_path=record_file)
+        S3.put(
+            s3_path=record_path,
+            local_path=record_file,
+            if_none_matched=if_not_exist,
+            no_strict=True,
+        )
         record_file.unlink()
 
     def fetch_success(self, job_name, job_digest):
         type_ = Cache.CacheRecord.Type.SUCCESS
         assert (
             Settings.CACHE_S3_PATH
-        ), f"Setting CACHE_S3_PATH must be defined with enabled CI Cache"
+        ), "Setting CACHE_S3_PATH must be defined with enabled CI Cache"
         record_path = f"{Settings.CACHE_S3_PATH}/v{Settings.CACHE_VERSION}/{Utils.normalize_string(job_name)}/{job_digest}/{type_}"
         record_file_local_dir = (
             f"{Settings.CACHE_LOCAL_PATH}/{Utils.normalize_string(job_name)}/"
         )
         Path(record_file_local_dir).mkdir(parents=True, exist_ok=True)
 
-        if S3.head_object(record_path):
-            res = S3.copy_file_from_s3(
-                s3_path=record_path, local_path=record_file_local_dir
-            )
-        else:
-            res = None
+        # _skip_download_counter=True to avoid races for multithreaded downloads
+        res = S3.copy_file_from_s3(
+            s3_path=record_path,
+            local_path=record_file_local_dir,
+            _skip_download_counter=True,
+            no_strict=True,
+        )
 
         if res:
             print(f"Cache record found, job [{job_name}], digest [{job_digest}]")
@@ -93,9 +108,6 @@ if __name__ == "__main__":
                 runs_on=["some"],
                 command="python -m unittest ./ci/tests/example_1/test_example_produce_artifact.py",
                 provides=["greet"],
-                job_requirements=Job.Requirements(
-                    python_requirements_txt="./ci/requirements.txt"
-                ),
                 digest_config=Job.CacheDigestConfig(
                     # example: use glob to include files
                     include_paths=["./ci/tests/example_1/test_example_consume*.py"],
@@ -106,9 +118,6 @@ if __name__ == "__main__":
                 runs_on=["some"],
                 command="python -m unittest ./ci/tests/example_1/test_example_consume_artifact.py",
                 requires=["greet"],
-                job_requirements=Job.Requirements(
-                    python_requirements_txt="./ci/requirements.txt"
-                ),
                 digest_config=Job.CacheDigestConfig(
                     # example: use dir to include files recursively
                     include_paths=["./ci/tests/example_1"],

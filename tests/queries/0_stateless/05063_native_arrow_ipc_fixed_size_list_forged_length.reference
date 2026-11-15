@@ -1,0 +1,8 @@
+--- the valid stream ---
+[(NULL,0),(NULL,1),(NULL,2)]
+[(NULL,3),(NULL,4),(NULL,5)]
+[(NULL,6),(NULL,7),(NULL,8)]
+[(NULL,9),(NULL,10),(NULL,11)]
+[(NULL,12),(NULL,13),(NULL,14)]
+--- the forged stream ---
+rejected by the physical bound of the body

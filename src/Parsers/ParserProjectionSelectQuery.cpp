@@ -12,20 +12,23 @@ namespace DB
 {
 bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto select_query = std::make_shared<ASTProjectionSelectQuery>();
+    auto select_query = make_intrusive<ASTProjectionSelectQuery>();
     node = select_query;
 
     ParserKeyword s_with(Keyword::WITH);
     ParserKeyword s_select(Keyword::SELECT);
+    ParserKeyword s_where(Keyword::WHERE);
     ParserKeyword s_group_by(Keyword::GROUP_BY);
     ParserKeyword s_order_by(Keyword::ORDER_BY);
 
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
     ParserNotEmptyExpressionList exp_list_for_select_clause(true); /// Allows aliases without AS keyword.
-    ParserExpression order_expression_p;
+    ParserStorageOrderByExpressionList order_list_p(/*allow_order_*/ false);
+    ParserExpressionWithOptionalAlias exp_elem(false);
 
     ASTPtr with_expression_list;
     ASTPtr select_expression_list;
+    ASTPtr where_expression;
     ASTPtr group_expression_list;
     ASTPtr order_expression;
 
@@ -47,6 +50,13 @@ bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
             return false;
     }
 
+    /// WHERE expr
+    if (s_where.ignore(pos, expected))
+    {
+        if (!exp_elem.parse(pos, where_expression, expected))
+            return false;
+    }
+
     // If group by is specified, AggregatingMergeTree engine is used, and the group by keys are implied to be order by keys
     if (s_group_by.ignore(pos, expected))
     {
@@ -59,7 +69,7 @@ bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     if (s_order_by.ignore(pos, expected))
     {
         ASTPtr expr_list;
-        if (!ParserList(std::make_unique<ParserExpression>(), std::make_unique<ParserToken>(TokenType::Comma)).parse(pos, expr_list, expected))
+        if (!order_list_p.parse(pos, expr_list, expected))
             return false;
 
         if (expr_list->children.size() == 1)
@@ -68,7 +78,7 @@ bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
         }
         else
         {
-            auto function_node = std::make_shared<ASTFunction>();
+            auto function_node = make_intrusive<ASTFunction>();
             function_node->name = "tuple";
             function_node->arguments = expr_list;
             function_node->children.push_back(expr_list);
@@ -78,6 +88,7 @@ bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     select_query->setExpression(ASTProjectionSelectQuery::Expression::WITH, std::move(with_expression_list));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::SELECT, std::move(select_expression_list));
+    select_query->setExpression(ASTProjectionSelectQuery::Expression::WHERE, std::move(where_expression));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::GROUP_BY, std::move(group_expression_list));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::ORDER_BY, std::move(order_expression));
     return true;

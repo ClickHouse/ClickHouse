@@ -1,0 +1,50 @@
+#include <Processors/Transforms/ColumnPermuteTransform.h>
+#include <Common/VectorWithMemoryTracking.h>
+
+namespace DB
+{
+
+namespace
+{
+
+template <typename Container>
+void applyPermutation(Container & data, const VectorWithMemoryTracking<size_t> & permutation)
+{
+    Container res;
+    res.reserve(permutation.size());
+    for (size_t i : permutation)
+        res.push_back(data[i]);
+    data = std::move(res);
+}
+
+void permuteChunk(Chunk & chunk, const VectorWithMemoryTracking<size_t> & permutation)
+{
+    size_t num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    applyPermutation(columns, permutation);
+    chunk.setColumns(std::move(columns), num_rows);
+}
+
+}
+
+Block ColumnPermuteTransform::permute(const Block & block, const VectorWithMemoryTracking<size_t> & permutation)
+{
+    auto columns = block.getColumnsWithTypeAndName();
+    applyPermutation(columns, permutation);
+    return Block(columns);
+}
+
+ColumnPermuteTransform::ColumnPermuteTransform(SharedHeader header_, const VectorWithMemoryTracking<size_t> & permutation_)
+    : ISimpleTransform(header_, std::make_shared<const Block>(permute(*header_, permutation_)), false)
+    , permutation(permutation_)
+{
+}
+
+
+void ColumnPermuteTransform::transform(Chunk & chunk)
+{
+    permuteChunk(chunk, permutation);
+}
+
+
+}

@@ -1,7 +1,7 @@
 #include "config.h"
 
 #if USE_MONGODB
-#include "MongoDBSource.h"
+#include <Processors/Sources/MongoDBSource.h>
 
 #include <vector>
 
@@ -16,6 +16,8 @@
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
 #include <Common/BSONCXXHelper.h>
+#include <Common/config_version.h>
+#include <Common/logger_useful.h>
 #include <base/range.h>
 
 namespace DB
@@ -38,46 +40,46 @@ void MongoDBSource::insertValue(IColumn & column, const size_t & idx, const Data
     switch (type->getTypeId())
     {
         case TypeIndex::Int8:
-            assert_cast<ColumnInt8 &>(column).insertValue(BSONElementAsNumber<Int8, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnInt8 &>(column).insertValue(BSONElementAsNumber<Int8>(value.get_value(), name));
             break;
         case TypeIndex::UInt8:
-            assert_cast<ColumnUInt8 &>(column).insertValue(BSONElementAsNumber<UInt8, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnUInt8 &>(column).insertValue(BSONElementAsNumber<UInt8>(value.get_value(), name));
             break;
         case TypeIndex::Int16:
-            assert_cast<ColumnInt16 &>(column).insertValue(BSONElementAsNumber<Int16, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnInt16 &>(column).insertValue(BSONElementAsNumber<Int16>(value.get_value(), name));
             break;
         case TypeIndex::UInt16:
-            assert_cast<ColumnUInt16 &>(column).insertValue(BSONElementAsNumber<UInt16, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnUInt16 &>(column).insertValue(BSONElementAsNumber<UInt16>(value.get_value(), name));
             break;
         case TypeIndex::Int32:
-            assert_cast<ColumnInt32 &>(column).insertValue(BSONElementAsNumber<Int32, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnInt32 &>(column).insertValue(BSONElementAsNumber<Int32>(value.get_value(), name));
             break;
         case TypeIndex::UInt32:
-            assert_cast<ColumnUInt32 &>(column).insertValue(BSONElementAsNumber<UInt32, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnUInt32 &>(column).insertValue(BSONElementAsNumber<UInt32>(value.get_value(), name));
             break;
         case TypeIndex::Int64:
-            assert_cast<ColumnInt64 &>(column).insertValue(BSONElementAsNumber<Int64, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnInt64 &>(column).insertValue(BSONElementAsNumber<Int64>(value.get_value(), name));
             break;
         case TypeIndex::UInt64:
-            assert_cast<ColumnUInt64 &>(column).insertValue(BSONElementAsNumber<UInt64, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnUInt64 &>(column).insertValue(BSONElementAsNumber<UInt64>(value.get_value(), name));
             break;
         case TypeIndex::Int128:
-            assert_cast<ColumnInt128 &>(column).insertValue(BSONElementAsNumber<Int128, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnInt128 &>(column).insertValue(BSONElementAsNumber<Int128>(value.get_value(), name));
             break;
         case TypeIndex::UInt128:
-            assert_cast<ColumnUInt128 &>(column).insertValue(BSONElementAsNumber<UInt128, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnUInt128 &>(column).insertValue(BSONElementAsNumber<UInt128>(value.get_value(), name));
             break;
         case TypeIndex::Int256:
-            assert_cast<ColumnInt256 &>(column).insertValue(BSONElementAsNumber<Int256, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnInt256 &>(column).insertValue(BSONElementAsNumber<Int256>(value.get_value(), name));
             break;
         case TypeIndex::UInt256:
-            assert_cast<ColumnUInt256 &>(column).insertValue(BSONElementAsNumber<UInt256, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnUInt256 &>(column).insertValue(BSONElementAsNumber<UInt256>(value.get_value(), name));
             break;
         case TypeIndex::Float32:
-            assert_cast<ColumnFloat32 &>(column).insertValue(BSONElementAsNumber<Float32, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnFloat32 &>(column).insertValue(BSONElementAsNumber<Float32>(value.get_value(), name));
             break;
         case TypeIndex::Float64:
-            assert_cast<ColumnFloat64 &>(column).insertValue(BSONElementAsNumber<Float64, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnFloat64 &>(column).insertValue(BSONElementAsNumber<Float64>(value.get_value(), name));
             break;
         case TypeIndex::Date:
         {
@@ -85,7 +87,7 @@ void MongoDBSource::insertValue(IColumn & column, const size_t & idx, const Data
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date, got {} for column {}",
                                 bsoncxx::to_string(value.type()), name);
 
-            assert_cast<ColumnUInt16 &>(column).insertValue(DateLUT::instance().toDayNum(value.get_date().to_int64() / 1000).toUnderType());
+            assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(DateLUT::instance().toDayNum(value.get_date().to_int64() / 1000)));
             break;
         }
         case TypeIndex::Date32:
@@ -117,16 +119,24 @@ void MongoDBSource::insertValue(IColumn & column, const size_t & idx, const Data
         }
         case TypeIndex::UUID:
         {
-            if (value.type() != bsoncxx::type::k_string)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected string (UUID), got {} for column {}",
+            if (value.type() != bsoncxx::type::k_binary)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected uuid(binary subtype 4), got {} for column {}",
                                 bsoncxx::to_string(value.type()), name);
+            if (value.get_binary().sub_type != bsoncxx::binary_sub_type::k_uuid || value.get_binary().size != 16)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Binary of type {} cannot be parsed to UUID for column {}",
+                    bsoncxx::to_string(value.get_binary().sub_type), name);
 
-            assert_cast<ColumnUUID &>(column).insertValue(parse<UUID>(value.get_string().value.data()));
+            UInt128 uuid_number;
+            auto valBuf = ReadBufferFromMemory(value.get_binary().bytes, value.get_binary().size);
+            readBinaryBigEndian(uuid_number.items[0], valBuf);
+            readBinaryBigEndian(uuid_number.items[1], valBuf);
+
+            assert_cast<ColumnUUID &>(column).insertValue(UUID(std::move(uuid_number)));
             break;
         }
         case TypeIndex::String:
         {
-            assert_cast<ColumnString &>(column).insert(BSONElementAsString(value, json_format_settings));
+            assert_cast<ColumnString &>(column).insert(BSONElementAsString(value.get_value(), json_format_settings));
             break;
         }
         case TypeIndex::Array:
@@ -143,21 +153,39 @@ void MongoDBSource::insertValue(IColumn & column, const size_t & idx, const Data
     }
 }
 
+namespace
+{
+
+/// Identify ClickHouse in the MongoDB connection handshake, so that server operators can tell
+/// ClickHouse connections apart from other clients in mongod/mongos logs, `currentOp` output
+/// and monitoring tools (the driver reports itself as "mongoc / mongocxx / ClickHouse").
+/// See https://github.com/mongodb/specifications/blob/master/source/mongodb-handshake/handshake.md#wrapping-libraries
+mongocxx::client createClient(const mongocxx::uri & uri)
+{
+    mongocxx::client client{uri};
+    /// The metadata is sent with the initial `hello` command, so it has to be appended before the first operation.
+    client.append_metadata("ClickHouse", VERSION_STRING);
+    return client;
+}
+
+}
 
 MongoDBSource::MongoDBSource(
     const mongocxx::uri & uri,
     const std::string & collection_name,
     const bsoncxx::document::view_or_value & query,
     const mongocxx::options::find & options,
-    const Block & sample_block_,
+    SharedHeader sample_block_,
     const UInt64 & max_block_size_)
-    : ISource{sample_block_}
-    , client{uri}
+    : ISource{std::make_shared<const Block>(sample_block_->cloneEmpty())}
+    , client{createClient(uri)}
     , database{client.database(uri.database())}
     , collection{database.collection(collection_name)}
     , cursor{collection.find(query, options)}
-    , sample_block{sample_block_}
+    , sample_block{*sample_block_}
     , max_block_size{max_block_size_}
+    , db_json_format_settings{.json= {.max_depth = 0, .quote_64bit_integers = false}}
+    , json_format_settings{db_json_format_settings, 0, true, true}
 {
     for (const auto & idx : collections::range(0, sample_block.columns()))
     {
@@ -192,6 +220,8 @@ MongoDBSource::~MongoDBSource() = default;
 
 Chunk MongoDBSource::generate()
 {
+    LOG_TEST(getLogger("MongoDBSource"), "Generate a chunk");
+
     if (all_read)
         return {};
 
@@ -201,6 +231,13 @@ Chunk MongoDBSource::generate()
     size_t num_rows = 0;
     for (const auto & doc : cursor)
     {
+        /// Check before reading `doc`: the next `cursor.begin` does not advance, it returns the same document again.
+        if (num_rows == max_block_size)
+            break;
+
+        if (isCancelled())
+            break;
+
         for (auto idx : collections::range(0, size))
         {
             auto & sample_column = sample_block.getByPosition(idx);
@@ -214,7 +251,7 @@ Chunk MongoDBSource::generate()
                     const auto & type_nullable = assert_cast<const DataTypeNullable &>(*sample_column.type);
 
                     insertValue(column_nullable.getNestedColumn(), idx, type_nullable.getNestedType(), sample_column.name, value);
-                    column_nullable.getNullMapData().emplace_back(0);
+                    column_nullable.getNullMapData().emplace_back(false);
                 }
                 else
                     insertValue(*columns[idx], idx, sample_column.type, sample_column.name, value);
@@ -223,8 +260,7 @@ Chunk MongoDBSource::generate()
                 insertDefaultValue(*columns[idx], *sample_column.column);
         }
 
-        if (++num_rows == max_block_size)
-            break;
+        ++num_rows;
     }
     if (num_rows < max_block_size)
         all_read = true;

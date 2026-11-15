@@ -4,10 +4,11 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/VectorWithMemoryTracking.h>
 
-#include "IValueSource.h"
-#include "IArraySource.h"
-#include "IArraySink.h"
+#include <Functions/GatherUtils/IValueSource.h>
+#include <Functions/GatherUtils/IArraySource.h>
+#include <Functions/GatherUtils/IArraySink.h>
 
 /** These methods are intended for implementation of functions, that
   *  copy ranges from one or more columns to another column.
@@ -27,6 +28,11 @@
   * Sink - allows to build result column by copying Slices into it.
   */
 
+namespace DB
+{
+class ColumnReplicated;
+}
+
 namespace DB::GatherUtils
 {
 
@@ -40,10 +46,12 @@ enum class ArraySearchType : uint8_t
 };
 
 std::unique_ptr<IArraySource> createArraySource(const ColumnArray & col, bool is_const, size_t total_rows);
+/// A source that reads a lazily replicated array without materializing it, only for slice* algorithms
+std::unique_ptr<IArraySource> createArraySourceFromReplicated(const ColumnReplicated & col);
 std::unique_ptr<IValueSource> createValueSource(const IColumn & col, bool is_const, size_t total_rows);
 std::unique_ptr<IArraySink> createArraySink(ColumnArray & col, size_t column_size);
 
-ColumnArray::MutablePtr concat(const std::vector<std::unique_ptr<IArraySource>> & sources);
+ColumnArray::MutablePtr concat(const VectorWithMemoryTracking<std::unique_ptr<IArraySource>> & sources);
 
 ColumnArray::MutablePtr sliceFromLeftConstantOffsetUnbounded(IArraySource & src, size_t offset);
 ColumnArray::MutablePtr sliceFromLeftConstantOffsetBounded(IArraySource & src, size_t offset, ssize_t length);
@@ -63,27 +71,7 @@ void sliceHasSubstr(IArraySource & first, IArraySource & second, ColumnUInt8 & r
 void sliceHasStartsWith(IArraySource & first, IArraySource & second, ColumnUInt8 & result);
 void sliceHasEndsWith(IArraySource & first, IArraySource & second, ColumnUInt8 & result);
 
-inline void sliceHas(IArraySource & first, IArraySource & second, ArraySearchType search_type, ColumnUInt8 & result)
-{
-    switch (search_type)
-    {
-        case ArraySearchType::All:
-            sliceHasAll(first, second, result);
-            break;
-        case ArraySearchType::Any:
-            sliceHasAny(first, second, result);
-            break;
-        case ArraySearchType::Substr:
-            sliceHasSubstr(first, second, result);
-            break;
-        case ArraySearchType::StartsWith:
-            sliceHasStartsWith(first, second, result);
-            break;
-        case ArraySearchType::EndsWith:
-            sliceHasEndsWith(first, second, result);
-            break;
-    }
-}
+void sliceHas(IArraySource & first, IArraySource & second, ArraySearchType search_type, ColumnUInt8 & result);
 
 void push(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, bool push_front);
 

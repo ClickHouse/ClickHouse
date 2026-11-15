@@ -124,6 +124,18 @@ void HTTPSession::setTimeout(const Poco::Timespan& connectionTimeout, const Poco
 }
 
 
+void HTTPSession::setReceiveThrottler(const ThrottlerPtr& throttler)
+{
+	_receiveThrottler = throttler;
+	_socket.setReceiveThrottler(throttler);
+}
+
+void HTTPSession::setSendThrottler(const ThrottlerPtr& throttler)
+{
+	_sendThrottler = throttler;
+	_socket.setSendThrottler(throttler);
+}
+
 int HTTPSession::get()
 {
 	if (_pCurrent == _pEnd)
@@ -162,6 +174,37 @@ int HTTPSession::read(char* buffer, std::streamsize length)
 }
 
 
+int HTTPSession::getCharRaw()
+{
+	return get();
+}
+
+
+int HTTPSession::readRaw(char* buffer, std::streamsize length)
+{
+	return read(buffer, length);
+}
+
+
+int HTTPSession::writeRaw(const char* buffer, std::streamsize length)
+{
+	return write(buffer, length);
+}
+
+
+void HTTPSession::writeAllRaw(const char* buffer, std::streamsize length)
+{
+	std::streamsize offset = 0;
+	while (offset < length)
+	{
+		int written = write(buffer + offset, length - offset);
+		if (written <= 0)
+			throw MessageException("Failed to write to the socket");
+		offset += written;
+	}
+}
+
+
 int HTTPSession::write(const char* buffer, std::streamsize length)
 {
 	try
@@ -177,6 +220,53 @@ int HTTPSession::write(const char* buffer, std::streamsize length)
 	{
 		if (_sendDataHooks)
 			_sendDataHooks->atFail();
+		setException(exc);
+		throw;
+	}
+}
+
+
+int HTTPSession::fillBuffer()
+{
+	if (!_pBuffer)
+	{
+		_pBuffer = std::make_unique<char[]>(HTTP_DEFAULT_BUFFER_SIZE);
+		_pCurrent = _pEnd = _pBuffer.get();
+	}
+	const int unread = static_cast<int>(_pEnd - _pCurrent);
+	if (_pCurrent != _pBuffer.get())
+	{
+		std::memmove(_pBuffer.get(), _pCurrent, unread);
+		_pCurrent = _pBuffer.get();
+		_pEnd = _pCurrent + unread;
+	}
+	const int space = HTTP_DEFAULT_BUFFER_SIZE - unread;
+	if (space == 0)
+		return 0;
+	try
+	{
+		if (_receiveDataHooks)
+			_receiveDataHooks->atStart(space);
+		/// A negative result means that a non-blocking socket has nothing: `EAGAIN`, or
+		/// `ERR_SSL_WANT_READ` and `ERR_SSL_WANT_WRITE` for a TLS socket.
+		const int result = _socket.receiveBytes(_pEnd, space);
+		if (result < 0)
+		{
+			if (_receiveDataHooks)
+				_receiveDataHooks->atFail();
+			return 0;
+		}
+		if (_receiveDataHooks)
+			_receiveDataHooks->atFinish(result);
+		if (result == 0)
+			return -1;
+		_pEnd += result;
+		return result;
+	}
+	catch (Poco::Exception& exc)
+	{
+		if (_receiveDataHooks)
+			_receiveDataHooks->atFail();
 		setException(exc);
 		throw;
 	}
@@ -227,6 +317,8 @@ void HTTPSession::connect(const SocketAddress& address)
 	_socket.connect(address, _connectionTimeout);
 	_socket.setReceiveTimeout(_receiveTimeout);
 	_socket.setSendTimeout(_sendTimeout);
+	_socket.setReceiveThrottler(_receiveThrottler);
+	_socket.setSendThrottler(_sendThrottler);
 	_socket.setNoDelay(true);
 	// There may be leftover data from a previous (failed) request in the buffer,
 	// so we clear it.
@@ -273,6 +365,8 @@ StreamSocket HTTPSession::detachSocket()
 void HTTPSession::attachSocket(const StreamSocket& socket)
 {
 	_socket = socket;
+	_socket.setReceiveThrottler(_receiveThrottler);
+	_socket.setSendThrottler(_sendThrottler);
 }
 
 

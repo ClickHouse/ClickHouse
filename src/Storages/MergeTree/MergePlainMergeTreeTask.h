@@ -49,6 +49,8 @@ public:
         txn = std::move(txn_);
     }
 
+    void cancel() noexcept override;
+
 private:
     void prepare();
     void finish();
@@ -59,7 +61,7 @@ private:
         NEED_EXECUTE,
         NEED_FINISH,
 
-        SUCCESS
+        SUCCESS,
     };
 
     State state{State::NEED_PREPARE};
@@ -101,7 +103,15 @@ using MergePlainMergeTreeTaskPtr = std::shared_ptr<MergePlainMergeTreeTask>;
 
 [[ maybe_unused ]] static void executeHere(MergePlainMergeTreeTaskPtr task)
 {
-    while (task->executeStep()) {}
+    try
+    {
+        while (task->executeStep()) {}
+    }
+    catch (...)
+    {
+        task->cancel();
+        throw;
+    }
 }
 
 

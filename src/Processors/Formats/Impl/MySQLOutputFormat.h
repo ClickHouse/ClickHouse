@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Core/MySQL/PacketEndpoint.h>
+#include <Core/ResultColumnOrigin.h>
 #include <Interpreters/Context_fwd.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
@@ -19,13 +19,13 @@ struct FormatSettings;
 class MySQLOutputFormat final : public IOutputFormat, WithContext
 {
 public:
-    MySQLOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_);
+    MySQLOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_);
 
     String getName() const override { return "MySQLOutputFormat"; }
 
     void setContext(ContextPtr context_);
 
-    void flush() override;
+    void flushImpl() override;
 
 private:
     void consume(Chunk) override;
@@ -39,6 +39,8 @@ private:
     DataTypes data_types;
     Serializations serializations;
     bool use_binary_result_set = false;
+    /// Not owned, may be null. See `FormatSettings::mysql_wire`.
+    const ResultColumnOrigins * result_column_origins = nullptr;
 };
 
 }

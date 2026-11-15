@@ -1,34 +1,28 @@
 #include <Backups/BackupCoordinationLocal.h>
-#include <Common/Exception.h>
+
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/logger_useful.h>
-#include <Common/quoteString.h>
-#include <fmt/format.h>
 
 
 namespace DB
 {
 
-BackupCoordinationLocal::BackupCoordinationLocal(bool plain_backup_)
-    : log(getLogger("BackupCoordinationLocal")), file_infos(plain_backup_)
+BackupCoordinationLocal::BackupCoordinationLocal(
+    const BackupSettings & backup_settings_, bool allow_concurrent_backup_, BackupConcurrencyCounters & concurrency_counters_)
+    : log(getLogger("BackupCoordinationLocal"))
+    , concurrency_check(
+          /* is_restore = */ false, /* on_cluster = */ false, /* zookeeper_path = */ "", allow_concurrent_backup_, concurrency_counters_)
+    , file_infos(
+          BackupCoordinationFileInfos::Config{
+              !backup_settings_.deduplicate_files,
+              backup_settings_.data_file_name_generator,
+              *backup_settings_.data_file_name_prefix_length})
 {
 }
 
 BackupCoordinationLocal::~BackupCoordinationLocal() = default;
 
-void BackupCoordinationLocal::setStage(const String &, const String &)
-{
-}
-
-void BackupCoordinationLocal::setError(const Exception &)
-{
-}
-
-Strings BackupCoordinationLocal::waitForStage(const String &)
-{
-    return {};
-}
-
-Strings BackupCoordinationLocal::waitForStage(const String &, std::chrono::milliseconds)
+ZooKeeperRetriesInfo BackupCoordinationLocal::getOnClusterInitializationKeeperRetriesInfo() const
 {
     return {};
 }
@@ -97,6 +91,30 @@ Strings BackupCoordinationLocal::getReplicatedSQLObjectsDirs(const String & load
     return replicated_sql_objects.getDirectories(loader_zk_path, object_type, "");
 }
 
+void BackupCoordinationLocal::addReplicatedWorkloadEntitiesDir(const String & loader_zk_path, WorkloadEntityType entity_type, const String & dir_path)
+{
+    std::lock_guard lock{replicated_workload_entities_mutex};
+    replicated_workload_entities.addDirectory({loader_zk_path, entity_type, "", dir_path});
+}
+
+Strings BackupCoordinationLocal::getReplicatedWorkloadEntitiesDirs(const String & loader_zk_path, WorkloadEntityType entity_type) const
+{
+    std::lock_guard lock{replicated_workload_entities_mutex};
+    return replicated_workload_entities.getDirectories(loader_zk_path, entity_type, "");
+}
+
+void BackupCoordinationLocal::addReplicatedNamedCollectionsDir(const String & replication_id, const String & dir_path)
+{
+    std::lock_guard lock{replicated_named_collections_mutex};
+    replicated_named_collections.addDirectory({replication_id, "", dir_path});
+}
+
+Strings BackupCoordinationLocal::getReplicatedNamedCollectionsDirs(const String & replication_id) const
+{
+    std::lock_guard lock{replicated_named_collections_mutex};
+    return replicated_named_collections.getDirectories(replication_id, "");
+}
+
 void BackupCoordinationLocal::addKeeperMapTable(const String & table_zookeeper_root_path, const String & table_id, const String & data_path_in_backup)
 {
     std::lock_guard lock(keeper_map_tables_mutex);
@@ -109,6 +127,24 @@ String BackupCoordinationLocal::getKeeperMapDataPath(const String & table_zookee
     return keeper_map_tables.getDataPath(table_zookeeper_root_path);
 }
 
+void BackupCoordinationLocal::addRocksDBTable(const String & rocksdb_dir, const String & election_id, const String & data_path_in_backup)
+{
+    std::lock_guard lock(rocksdb_tables_mutex);
+    rocksdb_tables.addTable(rocksdb_dir, election_id, data_path_in_backup);
+}
+
+String BackupCoordinationLocal::getRocksDBDataPath(const String & rocksdb_dir) const
+{
+    std::lock_guard lock(rocksdb_tables_mutex);
+    return rocksdb_tables.getDataPath(rocksdb_dir);
+}
+
+String BackupCoordinationLocal::getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const
+{
+    std::lock_guard lock(rocksdb_tables_mutex);
+    return rocksdb_tables.getTableId(rocksdb_dir);
+}
+
 
 void BackupCoordinationLocal::addFileInfos(BackupFileInfos && file_infos_)
 {
@@ -116,16 +152,16 @@ void BackupCoordinationLocal::addFileInfos(BackupFileInfos && file_infos_)
     file_infos.addFileInfos(std::move(file_infos_), "");
 }
 
-BackupFileInfos BackupCoordinationLocal::getFileInfos() const
+const BackupFileInfos & BackupCoordinationLocal::getFileInfos() const
 {
     std::lock_guard lock{file_infos_mutex};
     return file_infos.getFileInfos("");
 }
 
-BackupFileInfos BackupCoordinationLocal::getFileInfosForAllHosts() const
+void BackupCoordinationLocal::forEachFileInfoForAllHosts(const std::function<void(const BackupFileInfo &)> & callback) const
 {
     std::lock_guard lock{file_infos_mutex};
-    return file_infos.getFileInfosForAllHosts();
+    file_infos.forEachFileInfoForAllHosts(callback);
 }
 
 bool BackupCoordinationLocal::startWritingFile(size_t data_file_index)
@@ -133,17 +169,6 @@ bool BackupCoordinationLocal::startWritingFile(size_t data_file_index)
     std::lock_guard lock{writing_files_mutex};
     /// Return false if this function was already called with this `data_file_index`.
     return writing_files.emplace(data_file_index).second;
-}
-
-
-bool BackupCoordinationLocal::hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const
-{
-    if (num_active_backups > 1)
-    {
-        LOG_WARNING(log, "Found concurrent backups: num_active_backups={}", num_active_backups);
-        return true;
-    }
-    return false;
 }
 
 }

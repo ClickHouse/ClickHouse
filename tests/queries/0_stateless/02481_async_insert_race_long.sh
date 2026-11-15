@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-fasttest, long
+# Tags: no-random-settings, no-fasttest, long, no-shared-merge-tree
+# no-shared-merge-tree: heavy-weight test which doesn't test shared merge tree
 
 set -e
 
@@ -43,11 +44,6 @@ function select1()
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS async_inserts_race"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE async_inserts_race (id UInt32, s String) ENGINE = MergeTree ORDER BY id"
-
-export -f insert1
-export -f insert2
-export -f insert3
-export -f select1
 
 TIMEOUT=10
 

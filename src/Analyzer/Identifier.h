@@ -3,12 +3,7 @@
 #include <vector>
 #include <string>
 
-#include <fmt/core.h>
 #include <fmt/format.h>
-
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/join.hpp>
-
 
 namespace DB
 {
@@ -23,32 +18,12 @@ public:
     Identifier() = default;
 
     /// Create Identifier from parts
-    explicit Identifier(const std::vector<std::string> & parts_)
-        : parts(parts_)
-        , full_name(boost::algorithm::join(parts, "."))
-    {
-    }
-
-    /// Create Identifier from parts
-    explicit Identifier(std::vector<std::string> && parts_)
-        : parts(std::move(parts_))
-        , full_name(boost::algorithm::join(parts, "."))
-    {
-    }
+    explicit Identifier(const std::vector<std::string> & parts_);
+    explicit Identifier(std::vector<std::string> && parts_);
 
     /// Create Identifier from full name, full name is split with '.' as separator.
-    explicit Identifier(const std::string & full_name_)
-        : full_name(full_name_)
-    {
-        boost::split(parts, full_name, [](char c) { return c == '.'; });
-    }
-
-    /// Create Identifier from full name, full name is split with '.' as separator.
-    explicit Identifier(std::string && full_name_)
-        : full_name(std::move(full_name_))
-    {
-        boost::split(parts, full_name, [](char c) { return c == '.'; });
-    }
+    explicit Identifier(const std::string & full_name_);
+    explicit Identifier(std::string && full_name_);
 
     const std::string & getFullName() const
     {
@@ -132,20 +107,7 @@ public:
         return parts.end();
     }
 
-    void popFirst(size_t parts_to_remove_size)
-    {
-        assert(parts_to_remove_size <= parts.size());
-
-        size_t parts_size = parts.size();
-        std::vector<std::string> result_parts;
-        result_parts.reserve(parts_size - parts_to_remove_size);
-
-        for (size_t i = parts_to_remove_size; i < parts_size; ++i)
-            result_parts.push_back(std::move(parts[i]));
-
-        parts = std::move(result_parts);
-        full_name = boost::algorithm::join(parts, ".");
-    }
+    void popFirst(size_t parts_to_remove_size);
 
     void popFirst()
     {
@@ -157,18 +119,7 @@ public:
         popFirst();
     }
 
-    void popLast(size_t parts_to_remove_size)
-    {
-        assert(parts_to_remove_size <= parts.size());
-
-        for (size_t i = 0; i < parts_to_remove_size; ++i)
-        {
-            size_t last_part_size = parts.back().size();
-            parts.pop_back();
-            bool is_not_last = !parts.empty();
-            full_name.resize(full_name.size() - (last_part_size + static_cast<size_t>(is_not_last)));
-        }
-    }
+    void popLast(size_t parts_to_remove_size);
 
     void popLast()
     {
@@ -244,6 +195,11 @@ public:
         return parts_end_it - parts_start_it;
     }
 
+    size_t getLength() const
+    {
+        return full_name_view.length();
+    }
+
     bool empty() const
     {
         return parts_start_it == parts_end_it;
@@ -297,36 +253,14 @@ public:
         return !isEmpty() && *(parts_end_it - 1) == part;
     }
 
-    void popFirst(size_t parts_to_remove_size)
-    {
-        assert(parts_to_remove_size <= getPartsSize());
-
-        for (size_t i = 0; i < parts_to_remove_size; ++i)
-        {
-            size_t part_size = parts_start_it->size();
-            ++parts_start_it;
-            bool is_not_last = parts_start_it != parts_end_it;
-            full_name_view.remove_prefix(part_size + is_not_last);
-        }
-    }
+    void popFirst(size_t parts_to_remove_size);
 
     void popFirst()
     {
         popFirst(1);
     }
 
-    void popLast(size_t parts_to_remove_size)
-    {
-        assert(parts_to_remove_size <= getPartsSize());
-
-        for (size_t i = 0; i < parts_to_remove_size; ++i)
-        {
-            size_t last_part_size = (parts_end_it - 1)->size();
-            --parts_end_it;
-            bool is_not_last = parts_start_it != parts_end_it;
-            full_name_view.remove_suffix(last_part_size + is_not_last);
-        }
-    }
+    void popLast(size_t parts_to_remove_size);
 
     void popLast()
     {

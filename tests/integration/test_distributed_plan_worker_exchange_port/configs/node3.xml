@@ -1,0 +1,14 @@
+<clickhouse>
+    <!-- This node's task-dispatch (interserver) port; matches its stateless_worker_port in the cluster. -->
+    <interserver_http_port>9011</interserver_http_port>
+    <distributed_query>
+        <!-- This node's own streaming-exchange listener; matches its streaming_exchange_port in the cluster. -->
+        <streaming_exchange_port>9225</streaming_exchange_port>
+        <streaming_exchange_listen_host>0.0.0.0</streaming_exchange_listen_host>
+        <temporary_files_storage>
+            <type>local</type>
+            <path>./local_object_storage/</path>
+            <endpoint_subpath>tmp_sub_path/</endpoint_subpath>
+        </temporary_files_storage>
+    </distributed_query>
+</clickhouse>

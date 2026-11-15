@@ -1,0 +1,6 @@
+SELECT number AS k, count() FROM numbers_mt(1000000) GROUP BY k LIMIT 5
+"rows_before_limit_at_least": 1000000
+SELECT number AS k, count() FROM numbers_mt(1000000) GROUP BY k LIMIT 5 OFFSET 3
+"rows_before_limit_at_least": 1000000
+SELECT number AS k FROM numbers_mt(1000000) GROUP BY k LIMIT 5
+"rows_before_limit_at_least": 1000000

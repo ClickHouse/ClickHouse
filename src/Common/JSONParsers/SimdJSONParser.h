@@ -4,21 +4,15 @@
 
 #if USE_SIMDJSON
 #    include <base/types.h>
-#    include <Common/Exception.h>
 #    include <base/defines.h>
 #    include <simdjson.h>
-#    include "ElementTypes.h"
+#    include <Common/JSONParsers/ElementTypes.h>
 #    include <Common/PODArray_fwd.h>
 #    include <Common/PODArray.h>
 #    include <charconv>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int CANNOT_ALLOCATE_MEMORY;
-}
 
 /// Format elements of basic types into string.
 /// The original implementation is mini_formatter in simdjson.h. But it is not public API, so we
@@ -124,7 +118,7 @@ public:
 
         // At least for long strings, the following should be fast. We could
         // do better by integrating the checks and the insertion.
-        buffer.insert(unescaped.data(), unescaped.data() + i);
+        buffer.insert(unescaped.data(), unescaped.data() + i); /// NOLINT(bugprone-suspicious-stringview-data-usage)
         // We caught a control character if we enter this loop (slow).
         // Note that we are do not restart from the beginning, but rather we continue
         // from the point where we encountered something that requires escaping.
@@ -214,6 +208,11 @@ public:
                 format.nullAtom();
                 break;
             }
+            /// Big integers are stored as raw digit strings; emit them quoted.
+            case simdjson::dom::element_type::BIGINT: {
+                format.string(value.get_bigint().value_unsafe());
+                break;
+            }
             case simdjson::dom::element_type::ARRAY: {
                 append(value.get_array().value_unsafe());
                 break;
@@ -275,6 +274,11 @@ struct SimdJSONParser
     class Array;
     class Object;
 
+    /// Store integers that do not fit in 64 bits as raw digit strings on the tape instead of
+    /// failing the whole document with `BIGINT_ERROR`, so they can be parsed into wider integer
+    /// types (Int128/UInt128/Int256/UInt256).
+    SimdJSONParser() { parser.number_as_string(true); }
+
     /// References an element in a JSON document, representing a JSON null, boolean, string, number,
     /// array or object.
     class Element
@@ -295,13 +299,21 @@ struct SimdJSONParser
                 case simdjson::dom::element_type::OBJECT: return ElementType::OBJECT;
                 case simdjson::dom::element_type::BOOL: return ElementType::BOOL;
                 case simdjson::dom::element_type::NULL_VALUE: return ElementType::NULL_VALUE;
+                /// Big integers are stored as raw digit strings; report as String so the numeric
+                /// extraction path parses them into wider integer types.
+                case simdjson::dom::element_type::BIGINT: return ElementType::STRING;
             }
         }
 
         ALWAYS_INLINE bool isInt64() const { return element.type() == simdjson::dom::element_type::INT64; }
         ALWAYS_INLINE bool isUInt64() const { return element.type() == simdjson::dom::element_type::UINT64; }
         ALWAYS_INLINE bool isDouble() const { return element.type() == simdjson::dom::element_type::DOUBLE; }
-        ALWAYS_INLINE bool isString() const { return element.type() == simdjson::dom::element_type::STRING; }
+        /// Expose a big integer as a string so `isString`-gated callers parse it into wider types.
+        ALWAYS_INLINE bool isString() const
+        {
+            return element.type() == simdjson::dom::element_type::STRING
+                || element.type() == simdjson::dom::element_type::BIGINT;
+        }
         ALWAYS_INLINE bool isArray() const { return element.type() == simdjson::dom::element_type::ARRAY; }
         ALWAYS_INLINE bool isObject() const { return element.type() == simdjson::dom::element_type::OBJECT; }
         ALWAYS_INLINE bool isBool() const { return element.type() == simdjson::dom::element_type::BOOL; }
@@ -311,7 +323,14 @@ struct SimdJSONParser
         ALWAYS_INLINE UInt64 getUInt64() const { return element.get_uint64().value_unsafe(); }
         ALWAYS_INLINE double getDouble() const { return element.get_double().value_unsafe(); }
         ALWAYS_INLINE bool getBool() const { return element.get_bool().value_unsafe(); }
-        ALWAYS_INLINE std::string_view getString() const { return element.get_string().value_unsafe(); }
+        ALWAYS_INLINE std::string_view getString() const
+        {
+            /// A big integer is stored on the tape as a raw digit string and must be read via
+            /// `get_bigint`; `get_string` works only for real JSON strings.
+            if (element.type() == simdjson::dom::element_type::BIGINT)
+                return element.get_bigint().value_unsafe();
+            return element.get_string().value_unsafe();
+        }
         ALWAYS_INLINE Array getArray() const;
         ALWAYS_INLINE Object getObject() const;
 
@@ -342,7 +361,7 @@ struct SimdJSONParser
         ALWAYS_INLINE Iterator begin() const { return array.begin(); }
         ALWAYS_INLINE Iterator end() const { return array.end(); }
         ALWAYS_INLINE size_t size() const { return array.size(); }
-        ALWAYS_INLINE Element operator[](size_t index) const { assert(index < size()); return array.at(index).value_unsafe(); }
+        ALWAYS_INLINE Element operator[](size_t index) const { chassert(index < size()); return array.at(index).value_unsafe(); }
 
     private:
         simdjson::dom::array array;
@@ -382,10 +401,20 @@ struct SimdJSONParser
             return true;
         }
 
+        bool findCaseInsensitive(std::string_view key, Element & result) const
+        {
+            auto x = object.at_key_case_insensitive(key);
+            if (x.error())
+                return false;
+
+            result = x.value_unsafe();
+            return true;
+        }
+
         /// Optional: Provides access to an object's element by index.
         KeyValuePair operator[](size_t index) const
         {
-            assert(index < size());
+            chassert(index < size());
             auto it = object.begin();
             while (index--)
                 ++it;
@@ -409,11 +438,7 @@ struct SimdJSONParser
     }
 
     /// Optional: Allocates memory to parse JSON documents faster.
-    void reserve(size_t max_size)
-    {
-        if (parser.allocate(max_size) != simdjson::error_code::SUCCESS)
-            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Couldn't allocate {} bytes when parsing JSON", max_size);
-    }
+    void reserve(size_t max_size);
 
 private:
     simdjson::dom::parser parser;

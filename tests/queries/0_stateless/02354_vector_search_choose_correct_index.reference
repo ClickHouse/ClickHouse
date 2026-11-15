@@ -1,0 +1,5 @@
+Searches on vec1 should use the vector index
+Skip
+Name: idx
+Description: vector_similarity GRANULARITY 100000000
+Searches on vec2 should be brute force

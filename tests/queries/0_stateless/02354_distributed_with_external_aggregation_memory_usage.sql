@@ -1,4 +1,4 @@
--- Tags: long, no-tsan, no-msan, no-asan, no-ubsan, no-debug, no-object-storage
+-- Tags: long, no-tsan, no-msan, no-asan, no-ubsan, no-debug, no-coverage, no-object-storage, no-random-merge-tree-settings, no-random-settings
 
 SET max_rows_to_read = '101M';
 
@@ -6,9 +6,13 @@ DROP TABLE IF EXISTS t_2354_dist_with_external_aggr;
 
 create table t_2354_dist_with_external_aggr(a UInt64, b String, c FixedString(100)) engine = MergeTree order by tuple() SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
-insert into t_2354_dist_with_external_aggr select number, toString(number) as s, toFixedString(s, 100) from numbers_mt(5e7);
+-- the 5G budget below was measured with single-threaded insert, and `max_insert_threads` defaults to
+-- the number of CPU cores since 26.8, which multiplies the write-side peak past the profile limit
+insert into t_2354_dist_with_external_aggr select number, toString(number) as s, toFixedString(s, 100) from numbers_mt(5e7)
+settings max_insert_threads = 1;
 
 set max_bytes_before_external_group_by = '2G',
+    max_bytes_ratio_before_external_group_by = 0,
     max_threads = 16,
     aggregation_memory_efficient_merge_threads = 16,
     distributed_aggregation_memory_efficient = 1,
