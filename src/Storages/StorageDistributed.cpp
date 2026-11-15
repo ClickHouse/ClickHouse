@@ -3011,9 +3011,9 @@ Every line after the header is a move: the partition ID (`partition_id` in `syst
 To move partition `202401` from shard 1 to shard 3:
 
 1. Add the line `202401 1 3 source`, wait until the tables on all servers load this version, and wait for the queries that started before.
-2. On shard 3, run `ALTER TABLE ... FETCH PARTITION ID '202401' FROM '<ZooKeeper path of the table on shard 1>'` and `ALTER TABLE ... ATTACH PARTITION ID '202401'`.
+2. On shard 3, run `ALTER TABLE ... FETCH PARTITION ID '202401' FROM '<ZooKeeper path of the table on shard 1>'` and `ALTER TABLE ... ATTACH PARTITION ID '202401'`. `ATTACH PARTITION` does not wait for the other replicas of the shard, with any `alter_sync`: run `SYSTEM SYNC REPLICA` on each of them, so that all replicas have the partition.
 3. Change the line to `202401 1 3 destination`, wait until the tables on all servers load this version, and wait for the queries that started before.
-4. On shard 1, run `ALTER TABLE ... DROP PARTITION ID '202401'`.
+4. On shard 1, run `ALTER TABLE ... DROP PARTITION ID '202401' SETTINGS alter_sync = 2`, so that all replicas of the shard drop the partition.
 5. Remove the line.
 
 A query uses the version of the moves that its server had loaded when the query started, and it can send its queries to the shards later. So a query that started before step 1 does not skip the copy on the destination, and a query that started before step 3 reads the copy on the source: steps 2 and 4 must not start while such queries run (see `system.processes` on all servers).
