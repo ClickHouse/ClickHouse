@@ -92,7 +92,7 @@ def forge(label, payload, children=(), version=VERSION, out_columns=()):
             print(label, "accepted")
             return
         code = int.from_bytes(f.read(4), "little")
-        print(label, {117: "INCORRECT_DATA", 48: "NOT_IMPLEMENTED"}.get(code, "other"))
+        print(label, {117: "INCORRECT_DATA", 48: "NOT_IMPLEMENTED"}.get(code, code))
 
 FILL = vu(1) + sb("x") + bytes([9]) + sb("") + NUL * 3 + b"\x01\x01" + NUL  # x ASC WITH FILL STEP 1
 H = [("x", U8), ("z", U8)]
