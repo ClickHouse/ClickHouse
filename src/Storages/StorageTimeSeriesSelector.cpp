@@ -397,6 +397,9 @@ namespace
                     tagNameToAST(matcher.label_name, column_name_by_tag_name), makeASTFunction("tuple", std::move(literals)));
             }
 
+            /// The group makes the anchors apply to every alternative, not only to the first and the last one.
+            if (value.contains('|'))
+                value = "^(?:" + value + ")$";
             if (!value.starts_with('^'))
                 value = '^' + value;
             if (!value.ends_with('$'))
