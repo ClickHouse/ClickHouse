@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/monitoring/metrics
 sidebarTitle: 'مرجع المقاييس'
 title: 'مرجع مقاييس ClickHouse Managed Postgres'
 description: 'القائمة الكاملة للمقاييس التي توفّرها نقطة نهاية Prometheus الخاصة بـ ClickHouse Managed Postgres'
-keywords: ['managed postgres', 'المقاييس', 'Prometheus', 'مرجع', 'observability']
+keywords: ['managed postgres', 'المقاييس', 'Prometheus', 'مرجع', 'observability', 'أحداث الانتظار', 'انتظار الأقفال']
 doc_type: 'reference'
 ---
 
@@ -27,7 +27,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 تضيف بعض المقاييس وسمًا للبُعد الذي تُفصّله (مثلًا،
 `mode` في مقاييس CPU، و`state` في مقاييس الاتصالات، و`database` في حجم
-قاعدة البيانات). وتُدرج هذه الوسوم إلى جانب كل مقياس.
+قاعدة البيانات، و`wait` في أحداث الانتظار). وتُدرج هذه الوسوم إلى جانب كل مقياس.
 
 ## مقياس المعلومات {#information-metric}
 
@@ -121,10 +121,31 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 | `PostgresServer_CacheHitRatio`     | مقياس لحظي |                   | نسبة إصابة الذاكرة المؤقتة: الكتل التي جرى تقديمها من الذاكرة المؤقتة مقابل إجمالي الكتل التي تم الوصول إليها، كنسبة مئوية. |
 | `PostgresServer_DatabaseSizeBytes` | مقياس لحظي | `database`        | حجم القرص لكل قاعدة بيانات، بالبايت. يشمل قاعدة `postgres` الافتراضية وأي قواعد بيانات أنشأها المستخدم.                     |
 
+## أحداث الانتظار {#wait-events}
+
+مقاييس من نوع مقياس مستمدة من عينات الانتظار التي يأخذها ClickHouse Managed Postgres على
+الخادم الرئيسي كل 30 ثانية. وهي العينات نفسها التي تستند إليها
+[مخططات الانتظار في رؤى الاستعلامات](/ar/products/managed-postgres/monitoring/query-insights#wait-charts).
+لا تظهر سلسلة البيانات إلا عند وجود ما يستدعي الإبلاغ عنه: فالخدمة الخاملة
+ليست لها سلاسل بيانات للانتظار، ولا يظهر `PostgresServer_LockWaitMaxSeconds`
+إلا عندما تكون إحدى الجلسات معطَّلة في انتظار تحرير قفل.
+
+| المقياس                               | النوع | تسميات إضافية | الوصف                                                                                                                                                                                                               |
+| ------------------------------------- | ----- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PostgresServer_ActiveSessionsByWait` | مقياس | `wait`        | عدد الجلسات النشطة في كل حدث انتظار، محسوبًا كمتوسط للعينات الحديثة التي رصدته. يمثّل `wait` حدث الانتظار بالصيغة `type:event`، مثل `Lock:relation` أو `IO:WalSync`، أو `None` للجلسات التي تعمل دون أي حدث انتظار. |
+| `PostgresServer_LockWaitMaxSeconds`   | مقياس |               | أطول مدة ظلت فيها إحدى الجلسات معطَّلة في انتظار تحرير قفل، بالثواني.                                                                                                                                               |
+
+لحساب عدد الجلسات المعطَّلة في انتظار الأقفال، اجمع أحداث الانتظار من نوع `Lock`:
+
+```promql
+sum by (postgres_service_name) (PostgresServer_ActiveSessionsByWait{wait=~"Lock:.*"})
+```
+
 ## صفحات ذات صلة {#related}
 
 * [نقطة نهاية Prometheus] — الإعداد والمصادقة والكشط
 * [لوحة المعلومات](/ar/products/managed-postgres/monitoring/dashboard) — المخططات المضمّنة في Cloud Console
+* [رؤى الاستعلامات](/ar/products/managed-postgres/monitoring/query-insights#wait-charts) — مخططات الانتظار وجدول Waits في Cloud Console
 * [دليل OpenAPI](/ar/products/managed-postgres/openapi) — إنشاء مفتاح API
   والعثور على معرّفات المؤسسة والخدمة
 

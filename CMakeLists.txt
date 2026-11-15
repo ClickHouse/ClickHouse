@@ -123,17 +123,6 @@ add_library(global-libs INTERFACE)
 include (cmake/sanitize.cmake)
 include (cmake/profile_optimization.cmake)
 
-option (ENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER "With Silk fibers, we may access the same TLS variable from the same fiber, and if executed on different OS threads, the same variable access will hit different memory locations, leading to very hard to catch bugs. This sanitizer helps catch that. Debug only." OFF)
-if (ENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER)
-    set (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN "${CMAKE_BINARY_DIR}/SilkThreadLocalStorageSanitizerPass.so")
-    execute_process (COMMAND ${CMAKE_COMMAND} -E env "CXX=${CMAKE_CXX_COMPILER}" bash "${CMAKE_SOURCE_DIR}/utils/silk-thread-local-storage-sanitizer/build.sh" "${SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN}" COMMAND_ERROR_IS_FATAL ANY)
-endif ()
-if (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN)
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fpass-plugin=${SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN}")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpass-plugin=${SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN}")
-    add_compile_definitions (SILK_THREAD_LOCAL_STORAGE_SANITIZER=1)
-endif ()
-
 option(ENABLE_COLORED_BUILD "Enable colors in compiler output" ON)
 
 set (CMAKE_COLOR_MAKEFILE ${ENABLE_COLORED_BUILD}) # works only for the makefile generator
@@ -363,10 +352,6 @@ else ()
     set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
 endif ()
 
-if (COMPILER_CACHE STREQUAL "chcache")
-    set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
-endif()
-
 option (ENABLE_BUILD_PATH_MAPPING "Enable remapping of file source paths in debug info, predefined preprocessor macros, and __builtin_FILE(). It's used to generate reproducible builds. See https://reproducible-builds.org/docs/build-path" ${ENABLE_BUILD_PATH_MAPPING_DEFAULT})
 
 if (ENABLE_BUILD_PATH_MAPPING)
@@ -382,8 +367,9 @@ if (ENABLE_BUILD_PROFILING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -ftime-trace")
 
     if (LINKER_NAME MATCHES "lld")
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--time-trace")
-        set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,--time-trace")
+        set (LINK_TIME_TRACE_GRANULARITY 50000 CACHE STRING "Minimum duration in microseconds of an event recorded in the linker time trace (lld --time-trace-granularity)")
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--time-trace -Wl,--time-trace-granularity=${LINK_TIME_TRACE_GRANULARITY}")
+        set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,--time-trace -Wl,--time-trace-granularity=${LINK_TIME_TRACE_GRANULARITY}")
     endif ()
 endif ()
 
@@ -606,6 +592,9 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
     # Link time optimization
     set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
     set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
+    # Name each C++ module after its object file, so that units without external definitions are split for
+    # ThinLTO instead of being optimized in one serial regular LTO module. The name must be unique in a link.
+    string (APPEND CMAKE_CXX_COMPILE_OBJECT " -funique-source-file-names -funique-source-file-identifier=<OBJECT>")
     set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
 
     if(LINKER_NAME MATCHES "lld")
@@ -837,11 +826,6 @@ endfunction (add_native_target)
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 
-# We can only check that SILK_THREAD_LOCAL_STORAGE_SANITIZER implies USE_SILK once we know whether silk is built
-if (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN AND NOT TARGET ch_contrib::silk_fibers)
-    message (FATAL_ERROR "SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN is set, but silk is not built in this configuration (disable with -DENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER=OFF)")
-endif ()
-
 # We can only include XRay flags and defines once we know that we're building LLVM
 if (ENABLE_XRAY)
     include (cmake/xray_instrumentation.cmake)
@@ -897,8 +881,6 @@ add_compile_definitions (FMT_DISALLOW_POINTERS=1 _LIBCPP_DISALLOW_PRINTING_POINT
 include (cmake/print_flags.cmake)
 
 if (ENABLE_RUST)
-    add_subdirectory (rust)
-
     # With LTO Rust adds few symbols with global visibility, the most common is
     # rust_eh_personality. And this leads to linking errors because multiple
     # Rust libraries contains the same symbol.
@@ -1020,20 +1002,6 @@ if (FUZZER)
 endif()
 
 include (cmake/sanitize_targets.cmake)
-
-if (COMPILER_CACHE STREQUAL "chcache" AND CHCACHE_EXECUTABLE_PATH STREQUAL "")
-    message(STATUS "Adding chcache as dependency to all other targets")
-    get_all_targets(all_targets)
-    set(chcache_targets _cargo-build_chcache cargo-build_chcache cargo-prebuild_chcache)
-
-    foreach(target ${all_targets})
-        if (target IN_LIST chcache_targets)
-            continue()
-        endif()
-
-        add_dependencies(${target} cargo-build_chcache)
-    endforeach()
-endif()
 
 # Build native targets if necessary
 get_property(NATIVE_BUILD_TARGETS GLOBAL PROPERTY NATIVE_BUILD_TARGETS)

@@ -399,7 +399,7 @@ public:
         const SinglePartIndexAnalysisParams & params,
         const IMergeTreeDataPartInfoForReader & part,
         const std::function<MergeTreeDataPartInfoForReaderPtr()> & get_part_for_skip_indexes,
-        const std::vector<size_t> * skip_index_order,
+        const VectorWithMemoryTracking<size_t> * skip_index_order,
         PartRangesForIndexAnalysis ranges,
         IndexAnalysisStats & stats,
         std::span<IndexAnalysisStat> skip_index_stats);
@@ -472,7 +472,7 @@ public:
     /// `index_sizes_scratch` is a buffer the caller reuses across parts.
     static SkipIndexOrder computeSkipIndexOrder(
         const IMergeTreeDataPartInfoForReader & part,
-        const std::vector<MergeTreeIndexWithCondition> & useful_indices,
+        const VectorWithMemoryTracking<MergeTreeIndexWithCondition> & useful_indices,
         std::vector<size_t> & index_sizes_scratch);
 
     /// Returns an error if the index depends on a column updated on the fly. A value update

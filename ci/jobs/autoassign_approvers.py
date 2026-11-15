@@ -23,7 +23,7 @@ from ci.praktika.utils import Shell, Utils
 CAN_BE_TESTED = "can be tested"
 
 # GitHub logins of the automated agents whose PRs always get the `can be tested` label.
-AGENT_AUTHORS = ["groeneai", "clickgapai"]
+AGENT_AUTHORS = ["groeneai", "clickgapai", "actueleai"]
 
 PR_FIELDS = "number,title,assignees,author,labels,isCrossRepository"
 
