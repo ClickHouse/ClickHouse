@@ -2,6 +2,7 @@
 -- for each address family with at least 10000 subnets. Results must not depend on it: check lookups with and without each index, including
 -- addresses around the range of IPv4-mapped addresses, which have their own index in a dictionary with IPv6 subnets.
 -- With a value, `RADIX_PREFIX` chooses the size of the index whatever the number of subnets. Without it, there is no index.
+-- Keep each indexed family just above the threshold and sample lookups so repeated sanitizer runs stay fast.
 
 DROP DICTIONARY IF EXISTS ip_trie_radix_v4;
 DROP DICTIONARY IF EXISTS ip_trie_radix_v6;
@@ -45,23 +46,23 @@ FROM numbers(1000);
 -- Kind 2: nested in them, a /24 for each even block, and a /32 in each thousandth block. More than enough subnets for an index.
 INSERT INTO ip_trie_radix_src
 SELECT 2, IPv4NumToString(toUInt32(16777216 + number * 256)) || '/24', 2000000 + number
-FROM numbers(240000) WHERE number % 2 = 0;
+FROM numbers(24000) WHERE number % 2 = 0;
 
 INSERT INTO ip_trie_radix_src
 SELECT 2, IPv4NumToString(toUInt32(16777216 + number * 256 + 1)) || '/32', 3000000 + number
-FROM numbers(240000) WHERE number % 1000 = 0;
+FROM numbers(24000) WHERE number % 1000 = 0;
 
--- Kind 3: more than enough IPv6 subnets for an index. A /32 for each value of the top 22 bits, nested in 2a00::/16 for the first ones,
+-- Kind 3: more than enough IPv6 subnets for an index. A /32 every ten values of the top 22 bits, nested in 2a00::/16 for the first ones,
 -- and a /48 in each thousandth of them.
 INSERT INTO ip_trie_radix_src VALUES (3, '2a00::/16', 400);
 
 INSERT INTO ip_trie_radix_src
 SELECT 3, format('{}:{}::/32', substring(hex(h), 1, 4), substring(hex(h), 5, 4)), 4000000 + number
-FROM (SELECT number, toUInt32(0x2A000000 + number * 1024) AS h FROM numbers(120000));
+FROM (SELECT number, toUInt32(0x2A000000 + number * 10240) AS h FROM numbers(12000));
 
 INSERT INTO ip_trie_radix_src
 SELECT 3, format('{}:{}:1::/48', substring(hex(h), 1, 4), substring(hex(h), 5, 4)), 5000000 + number
-FROM (SELECT number, toUInt32(0x2A000000 + number * 1024) AS h FROM numbers(120000) WHERE number % 1000 = 0);
+FROM (SELECT number, toUInt32(0x2A000000 + number * 10240) AS h FROM numbers(12000) WHERE number % 1000 = 0);
 
 -- Kind 4: subnets around the IPv4-mapped addresses.
 INSERT INTO ip_trie_radix_src VALUES (4, '::/0', 1), (4, '::ffff:0:0/96', 2);
@@ -189,8 +190,8 @@ SELECT
     address,
     multiIf(
         NOT covered, 0,
-        block < 240000 AND block % 1000 = 0 AND host = 1, 3000000 + block,
-        block < 240000 AND block % 2 = 0, 2000000 + block,
+        block < 24000 AND block % 1000 = 0 AND host = 1, 3000000 + block,
+        block < 24000 AND block % 2 = 0, 2000000 + block,
         1000000 + intDiv(block, 256)),
     if(covered, 1000000 + intDiv(block, 256), 0)
 FROM
@@ -203,9 +204,9 @@ FROM
         offset % 256 AS host
     FROM
     (
-        SELECT toUInt32(15777216 + number * 229) AS address FROM numbers(300000)
-        UNION ALL SELECT toUInt32(16777216 + number * 256000 + 1) FROM numbers(240)
-        UNION ALL SELECT toUInt32(16777216 + number * 256000 + 2) FROM numbers(240)
+        SELECT toUInt32(15777216 + number * 22900) AS address FROM numbers(3000)
+        UNION ALL SELECT toUInt32(16777216 + number * 256000 + 1) FROM numbers(24)
+        UNION ALL SELECT toUInt32(16777216 + number * 256000 + 2) FROM numbers(24)
         UNION ALL SELECT arrayJoin([0, 16777215, 16777216, 82313215, 82313216, 4294967295]::Array(UInt32))
     )
 );
@@ -216,8 +217,8 @@ INSERT INTO ip_trie_radix_queries_v6
 SELECT
     toIPv6(format('{}:{}:{}::5', substring(hex(h), 1, 4), substring(hex(h), 5, 4), hex(third))),
     multiIf(
-        on_boundary AND block < 120000 AND block % 1000 = 0 AND third = 1, 5000000 + block,
-        on_boundary AND block < 120000, 4000000 + block,
+        on_boundary AND block < 12000 AND block % 1000 = 0 AND third = 1, 5000000 + block,
+        on_boundary AND block < 12000, 4000000 + block,
         intDiv(h, 65536) = 0x2A00, 400,
         0)
 FROM
@@ -226,12 +227,14 @@ FROM
         h,
         third,
         toInt64(h) - 0x2A000000 AS offset,
-        offset >= 0 AND offset % 1024 = 0 AS on_boundary,
-        intDiv(offset, 1024) AS block
+        offset >= 0 AND offset % 10240 = 0 AS on_boundary,
+        intDiv(offset, 10240) AS block
     FROM
     (
-        SELECT toUInt32(0x2A000000 - 5000 + number * 307) AS h, toUInt16(number % 3) AS third FROM numbers(300000)
-        UNION ALL SELECT toUInt32(0x2A000000 + number * 1024000), toUInt16(number % 2) FROM numbers(120)
+        SELECT toUInt32(0x2A000000 - 5000 + number * 30700) AS h, toUInt16(number % 3) AS third FROM numbers(3000)
+        UNION ALL SELECT toUInt32(0x2A000000 + number * 10240000), toUInt16(number % 2) FROM numbers(12)
+        -- The last generated subnet and the first missing subnet beyond the range.
+        UNION ALL SELECT toUInt32(0x2A000000 + number * 10240), toUInt16(0) FROM numbers(11999, 2)
     )
 );
 

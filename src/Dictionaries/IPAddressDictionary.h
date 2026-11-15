@@ -36,9 +36,6 @@ public:
         DictionarySourcePtr source_ptr_,
         Configuration configuration_);
 
-    /// Throws if `value` is not an allowed size of the radix index, the value of the layout parameter `radix_prefix`.
-    static void checkRadixPrefix(UInt64 value);
-
     std::string getKeyDescription() const { return key_description; }
 
     std::string getTypeName() const override { return "Trie"; }

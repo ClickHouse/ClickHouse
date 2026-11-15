@@ -17,7 +17,7 @@
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Poco/String.h>
 #include <Dictionaries/DictionaryFactory.h>
-#include <Dictionaries/IPAddressDictionary.h>
+#include <Dictionaries/IPAddressDictionaryConfiguration.h>
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Common/DNSResolver.h>
@@ -323,7 +323,7 @@ void buildLayoutConfiguration(
                     "Parameter 'radix_prefix' of a dictionary of layout 'ip_trie' must be one of 8, 14, 16, 18, 20, 22, 24, got {}",
                     applyVisitor(FieldVisitorToString(), value_field));
             }
-            IPAddressDictionary::checkRadixPrefix(value_field.safeGet<UInt64>());
+            checkIPTrieRadixPrefix(value_field.safeGet<::UInt64>());
         }
 
         if (is_ssd_cache_layout)

@@ -1,5 +1,6 @@
 #include <Common/StackWithMemoryTracking.h>
 #include <Dictionaries/IPAddressDictionary.h>
+#include <Dictionaries/IPAddressDictionaryConfiguration.h>
 #include <Columns/ColumnFixedString.h>
 
 #include <Common/assert_cast.h>
@@ -27,7 +28,6 @@
 #include <Functions/FunctionHelpers.h>
 
 #include <algorithm>
-#include <array>
 #include <charconv>
 #include <limits>
 #include <ranges>
@@ -214,20 +214,10 @@ inline static void mapIPv4ToIPv6(UInt32 addr, uint8_t * buf)
 
 /// An index holds 2^bits + 1 positions of 4 bytes, from about 1 KiB for 8 bits to about 64 MiB for 24 bits.
 static constexpr size_t DEFAULT_RADIX_BITS = 16;
-static constexpr std::array<UInt64, 7> ALLOWED_RADIX_BITS = {8, 14, 16, 18, 20, 22, 24};
 
 /// With the default size, a dictionary with fewer subnets of an address family does not get an index for it: the index would take
 /// about as much memory as the subnets themselves, or more.
 static constexpr size_t RADIX_INDEX_MIN_SUBNETS = 10000;
-
-void IPAddressDictionary::checkRadixPrefix(UInt64 value)
-{
-    if (std::find(ALLOWED_RADIX_BITS.begin(), ALLOWED_RADIX_BITS.end(), value) == ALLOWED_RADIX_BITS.end())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Parameter 'radix_prefix' of a dictionary of layout 'ip_trie' must be one of 8, 14, 16, 18, 20, 22, 24, got {}",
-            value);
-}
 
 /// Indexes `count` sorted subnets located at `offset` in ip_column. `get_bucket` must not decrease with the position.
 template <typename GetBucket>
@@ -1383,7 +1373,7 @@ void registerDictionaryTrie(DictionaryFactory & factory)
             {
                 /// A dictionary created by a DDL query was already checked, but not one from a configuration file.
                 const UInt64 value = config.getUInt64(radix_prefix_key);
-                IPAddressDictionary::checkRadixPrefix(value);
+                checkIPTrieRadixPrefix(value);
                 radix_bits = static_cast<UInt8>(value);
             }
         }
