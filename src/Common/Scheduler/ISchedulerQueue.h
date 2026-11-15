@@ -63,6 +63,14 @@ public:
     /// NOTE: This is done for queues that are about to be destructed.
     virtual void purgeQueue() = 0;
 
+    /// Update the limit on the number of waiting requests (workload `max_waiting_queries`).
+    /// Excess requests over the new limit are failed. Must be positive.
+    virtual void updateQueueLimit(Int64 value) = 0;
+
+    /// For introspection: {number of waiting requests, sum of their costs}.
+    /// Exposed through the interface so callers do not need to downcast to a concrete queue type.
+    virtual std::pair<UInt64, Int64> getQueueLengthAndCost() = 0;
+
     /// For introspection
     ResourceCost getBudget() const
     {

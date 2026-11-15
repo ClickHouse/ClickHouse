@@ -15,7 +15,6 @@ node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/wide_parts_only.xml", "configs/no_compress_marks.xml", "configs/default_serialization_info.xml"],
     with_zookeeper=True,
-    use_old_analyzer=True,
 )
 
 

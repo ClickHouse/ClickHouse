@@ -1,4 +1,5 @@
 #include <Functions/AI/AIQuotaTracker.h>
+#include <Interpreters/ProcessList.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -7,23 +8,14 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LIMIT_EXCEEDED;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
-bool AIQuotaTracker::checkQuotas()
+bool AIQuotaTracker::quotasExceededLocked()
 {
     if (quota_exceeded)
         return true;
-
-    if (max_api_calls > 0 && api_calls >= max_api_calls)
-    {
-        if (throw_on_quota_exceeded)
-            throw Exception(ErrorCodes::LIMIT_EXCEEDED,
-                "AI API call limit reached: {} calls made, maximum: {}. "
-                "This is controlled by the 'ai_function_max_api_calls_per_query' setting",
-                api_calls, max_api_calls);
-        quota_exceeded = true;
-        return true;
-    }
 
     if (max_input_tokens > 0 && input_tokens >= max_input_tokens)
     {
@@ -50,13 +42,74 @@ bool AIQuotaTracker::checkQuotas()
     return false;
 }
 
-void AIQuotaTracker::recordAttempt()
+void AIQuotaTracker::throwIfCancelled() const
 {
-    ++api_calls;
+    if (!isCancelled())
+        return;
+
+    /// `checkTimeLimit` throws on `KILL QUERY` and when `max_execution_time` is exceeded.
+    /// Under `timeout_overflow_mode = 'break'`, it returns false instead of throwing.
+    /// A function cannot return fewer rows than it received, so throw in that case too.
+    if (auto status = query_status.lock(); status && !status->checkTimeLimit())
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in an AI function");
+
+    /// The query has finished, and a request it submitted is still queued.
+    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+}
+
+bool AIQuotaTracker::isCancelled() const
+{
+    if (cancelled)
+        return true;
+
+    auto status = query_status.lock();
+    if (status && !status->checkTimeLimitSoft())
+        cancelled = true;
+    return cancelled;
+}
+
+bool AIQuotaTracker::checkQuotas()
+{
+    throwIfCancelled();
+
+    std::lock_guard lock(mutex);
+    return quotasExceededLocked();
+}
+
+bool AIQuotaTracker::recordApiCall()
+{
+    throwIfCancelled();
+
+    std::lock_guard lock(mutex);
+
+    /// Don't start a new request once any quota is known-exhausted (e.g. another thread's response
+    /// just pushed the token budget over), even though the API-call count itself is still under its
+    /// own limit. This keeps token overshoot to the requests already in flight at that moment.
+    if (quotasExceededLocked())
+        return false;
+
+    if (max_api_calls == 0) /// 0 disables the API-call limit.
+        return true;
+
+    if (api_calls < max_api_calls)
+    {
+        ++api_calls;
+        return true;
+    }
+
+    if (throw_on_quota_exceeded)
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED,
+            "AI API call limit reached: {} calls made, maximum: {}. "
+            "This is controlled by the 'ai_function_max_api_calls_per_query' setting",
+            api_calls, max_api_calls);
+
+    quota_exceeded = true;
+    return false;
 }
 
 void AIQuotaTracker::recordTokens(UInt64 in_tokens, UInt64 out_tokens)
 {
+    std::lock_guard lock(mutex);
     input_tokens += in_tokens;
     output_tokens += out_tokens;
 }

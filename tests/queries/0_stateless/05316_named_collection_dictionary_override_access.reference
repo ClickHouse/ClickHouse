@@ -1,0 +1,16 @@
+Overriding a stored key in a dictionary source requires the secrets privilege
+Adding a missing key needs no secrets privilege
+100
+With the secrets privilege the override is allowed
+200
+200
+A NOT OVERRIDABLE key cannot be overridden even with the secrets privilege
+A dictionary created with an override by a privileged user loads in the background
+200
+200
+200
+A stored table whose override became NOT OVERRIDABLE is rejected when it is attached
+Override not allowed for 'connection_pool_size'
+BAD_ARGUMENTS
+Override not allowed for 'http_method'
+BAD_ARGUMENTS

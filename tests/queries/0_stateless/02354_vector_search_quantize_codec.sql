@@ -1,9 +1,9 @@
 -- The `Quantized(method, dimensions[, bits])` column codec stores a compact, data-independent quantized companion
 -- stream of a dense vector column, exposed as the readable subcolumn `<column>.quantized`. The full-precision data is
 -- stored verbatim (the codec is a no-op at the byte level), so reading the vector itself is unaffected.
--- The codec is gated behind `allow_experimental_codecs`.
+-- The codec is gated behind `enable_quantized_codec`.
 
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 
 DROP TABLE IF EXISTS quantize_codec;
 CREATE TABLE quantize_codec
@@ -30,7 +30,7 @@ SELECT 'full_precision_rows', count() FROM quantize_codec WHERE length(vec) = 64
 
 DROP TABLE quantize_codec;
 
--- Without `allow_experimental_codecs` the codec is rejected.
-SET allow_experimental_codecs = 0;
+-- Without `enable_quantized_codec` the codec is rejected.
+SET enable_quantized_codec = 0;
 CREATE TABLE quantize_codec_gated (id UInt32, vec Array(Float32) CODEC(Quantized('rabitq', 64)))
 ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }

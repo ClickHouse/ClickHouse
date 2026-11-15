@@ -11,7 +11,7 @@ En los ejemplos anteriores de carga de datos JSON se asume el uso de [`JSONEachR
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONEachRow)
 LIMIT 5
 ```
 
@@ -45,7 +45,7 @@ Compare el ejemplo anterior con la siguiente consulta, que lee los mismos datos 
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONAsObject)
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONAsObject)
 LIMIT 5
 ```
 
@@ -72,7 +72,7 @@ ENGINE = MergeTree
 ORDER BY tuple();
 
 INSERT INTO pypi SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONAsObject)
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONAsObject)
 LIMIT 5;
 
 SELECT *
@@ -93,7 +93,7 @@ El formato `JSONAsObject` también puede ser útil para leer JSON delimitado por
 
 ```sql
 SELECT count()
-FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz', 'JSONEachRow')
+FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz', NOSIGN, 'JSONEachRow')
 ```
 
 ```response
@@ -110,7 +110,7 @@ En cambio, `JSONAsObject` puede usarse en este caso, ya que el tipo `JSON` admit
 
 ```sql
 SELECT count()
-FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz', 'JSONAsObject')
+FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz', NOSIGN, 'JSONAsObject')
 ```
 
 ```response

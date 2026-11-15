@@ -1,9 +1,13 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/MapWithMemoryTracking.h>
 
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
+
+#include <functional>
 
 namespace DB
 {
@@ -13,17 +17,17 @@ struct PuffinBlob
     String type;
     Int64 snapshot_id = 0;
     Int64 sequence_number = 0;
-    std::vector<Int32> fields;
+    VectorWithMemoryTracking<Int32> fields;
     Int64 offset = 0;
     Int64 length = 0;
     String compression_codec;
-    std::map<String, String> properties;
+    MapWithMemoryTracking<String, String> properties;
 };
 
 struct PuffinFooter
 {
-    std::vector<PuffinBlob> blobs;
-    std::vector<UInt8> data;
+    VectorWithMemoryTracking<PuffinBlob> blobs;
+    VectorWithMemoryTracking<UInt8> data;
 };
 
 class PuffinMetadataInputFormat : public IInputFormat
@@ -76,6 +80,10 @@ public:
     explicit PuffinSchemaReader(ReadBuffer & in_);
     NamesAndTypesList readSchema() override;
 };
+
+/// Validates the `deletion-vector-v1` blob envelope (length, magic, CRC) and calls `on_position`
+/// for every deleted row position in ascending order.
+void forEachDeletionVectorPosition(std::string_view blob, const std::function<void(UInt64)> & on_position);
 
 class FormatFactory;
 void registerInputFormatPuffin(FormatFactory & factory);

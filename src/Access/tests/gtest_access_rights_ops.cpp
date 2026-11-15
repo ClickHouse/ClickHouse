@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include <Access/AccessRights.h>
 #include <Access/AccessRights.cpp>  // NOLINT(bugprone-suspicious-include)
+#include <Access/Common/AccessRightsElement.h>
+#include <Access/Common/AccessType.h>
 #include <IO/WriteBufferFromString.h>
 
 using namespace DB;
@@ -587,6 +589,163 @@ TEST(AccessRights, FilterDoesNotMutateOnPrefixSplit)
     ASSERT_EQ(root.dumpNodes(), nodes_before);
 }
 
+TEST(AccessRights, RevokeFilter)
+{
+    AccessRights root;
+    root.grant(AccessType::READ, "S3", "s3://foo/.*");
+    root.grant(AccessType::READ, "S3", "s3://bar/.*");
+
+    // Revoke exact filter leaves the rest
+    root.revoke(AccessType::READ, "S3", "s3://foo/.*");
+    auto filters = root.getFilters("S3");
+    ASSERT_EQ(filters.size(), 1);
+    ASSERT_EQ(filters[0].path, "s3://bar/.*");
+
+    // Revoke non-existent filter while another filter is granted throws
+    const AccessRights before = root;
+    ASSERT_THROW(root.revoke(AccessType::READ, "S3", "s3://baz/.*"), Exception);
+    ASSERT_EQ(root, before);
+
+    // Revoke non-existent filter of flags not granted with any filter does nothing
+    root.revoke(AccessType::WRITE, "S3", "s3://baz/.*");
+    ASSERT_EQ(root, before);
+
+    // Revoke the remaining filter leaves the tree empty
+    root.revoke(AccessType::READ, "S3", "s3://bar/.*");
+    ASSERT_TRUE(root.isEmpty());
+
+    // Revoke non-existent filter without other filters does nothing
+    root.revoke(AccessType::READ, "S3", "s3://baz/.*");
+    ASSERT_TRUE(root.isEmpty());
+
+    // Revoke flags granted only with other filters throws
+    root.grant(AccessType::READ, "S3", "s3://foo/.*");
+    root.grant(AccessType::WRITE, "S3", "s3://bar/.*");
+    ASSERT_THROW(root.revoke(AccessType::READ | AccessType::WRITE, "S3", "s3://foo/.*"), Exception);
+
+    // Revoke a prefix of a granted filter throws
+    root = {};
+    root.grant(AccessType::READ, "S3", "s3://foo/.*bar");
+    ASSERT_THROW(root.revoke(AccessType::READ, "S3", "s3://foo/.*"), Exception);
+    root = {};
+
+    // Revoke without filter removes whole subtree
+    root.grant(AccessType::READ, "S3", "s3://foo/.*");
+    root.grant(AccessType::READ, "S3", "s3://bar/.*");
+    root.revoke(AccessRightsElement{AccessType::READ, "S3"});
+    ASSERT_TRUE(root.isEmpty());
+
+    // Revoke one of multiple overlapping filters leaves the others intact
+    root.grant(AccessType::READ, "S3", "s3://foo/.*");
+    root.grant(AccessType::READ, "S3", "s3://foo/.*bar");
+    root.revoke(AccessType::READ, "S3", "s3://foo/.*");
+    filters = root.getFilters("S3");
+    ASSERT_EQ(filters.size(), 1);
+    ASSERT_EQ(filters[0].path, "s3://foo/.*bar");
+
+    // Revoke a filter with the grant option
+    root = {};
+    root.grantWithGrantOption(AccessType::READ, "S3", "s3://foo/.*");
+    root.revoke(AccessType::READ, "S3", "s3://foo/.*");
+    ASSERT_TRUE(root.isEmpty());
+}
+
+TEST(AccessRights, RevokeFilterUnderUnfilteredGrant)
+{
+    AccessRights root;
+
+    // Revoke filter from global grant throws
+    root.grant(AccessType::READ, "S3");
+    const AccessRights before = root;
+    ASSERT_THROW(root.revoke(AccessType::READ, "S3", "s3://foo/.*"), Exception);
+    ASSERT_EQ(root, before);
+
+    // Revoke filter from global parent grant throws
+    root = {};
+    root.grant(AccessType::READ);
+    ASSERT_THROW(root.revoke(AccessType::READ, "S3", "s3://foo/.*"), Exception);
+
+    // Revoke filter from global grants children throws
+    root = {};
+    root.grant(AccessType::READ, "S3");
+    auto read_write = AccessRightsElement{AccessType::READ|AccessType::WRITE, "S3"};
+    read_write.filter = "s3://foo/.*";
+    root.grant(read_write);
+    ASSERT_THROW(root.revoke(read_write), Exception);
+
+    // Revoke filter from sibling grant leaves the other grants intact
+    root = {};
+    root.grant(AccessType::WRITE, "S3");
+    root.grant(AccessType::READ, "S3", "s3://foo/.*");
+    root.revoke(AccessType::READ, "S3", "s3://foo/.*");
+    ASSERT_TRUE(root.getFilters("S3").empty());
+    ASSERT_TRUE(root.isGranted(AccessType::WRITE, "S3"));
+
+    // Revoke filter from unrelated grant leaves the other grants intact
+    root = {};
+    root.grant(AccessType::READ, "SQLITE");
+    root.grant(AccessType::READ, "S3", "s3://foo/.*");
+    root.revoke(AccessType::READ, "S3", "s3://foo/.*");
+    ASSERT_TRUE(root.getFilters("S3").empty());
+    ASSERT_TRUE(root.isGranted(AccessType::READ, "SQLITE"));
+
+    // Revoke filter from partially revoked grant leaves the other grants intact
+    root = {};
+    root.grant(AccessType::READ);
+    root.revoke(AccessType::READ, "S3");
+    const AccessRights with_partial_revoke = root;
+    root.revoke(AccessType::READ, "S3", "s3://foo/.*");
+    ASSERT_EQ(root, with_partial_revoke);
+}
+
+TEST(AccessRights, RevokeFilterGrantOption)
+{
+    AccessRights root;
+
+    // Revoke grant option from a specific filter
+    root.grantWithGrantOption(AccessType::READ, "S3", "s3://foo/.*");
+    root.grantWithGrantOption(AccessType::READ, "S3", "s3://bar/.*");
+    root.revokeGrantOption(AccessType::READ, "S3", "s3://foo/.*");
+    ASSERT_EQ(root.getFilters("S3").size(), 2);
+    auto grantable = root.getGrantableRights().getFilters("S3");
+    ASSERT_EQ(grantable.size(), 1);
+    ASSERT_EQ(grantable[0].path, "s3://bar/.*");
+
+    // Revoke grant option from a filter when there is also a global grant
+    root = {};
+    root.grant(AccessType::READ, "S3");
+    root.grantWithGrantOption(AccessType::READ, "S3", "s3://foo/.*");
+    root.revokeGrantOption(AccessType::READ, "S3", "s3://foo/.*");
+    ASSERT_TRUE(root.isGranted(AccessType::READ, "S3"));
+    ASSERT_TRUE(root.getGrantableRights().isEmpty());
+
+    // Partial revoke of filtered grant option is not allowed
+    root = {};
+    root.grantWithGrantOption(AccessType::READ, "S3");
+    ASSERT_THROW(root.revokeGrantOption(AccessType::READ, "S3", "s3://foo/.*"), Exception);
+
+    // Revoke grant option of a filter without it while another filter has it throws
+    root = {};
+    root.grantWithGrantOption(AccessType::READ, "S3", "s3://foo/.*");
+    root.grant(AccessType::READ, "S3", "s3://bar/.*");
+    ASSERT_THROW(root.revokeGrantOption(AccessType::READ, "S3", "s3://bar/.*"), Exception);
+}
+
+TEST(AccessRights, ElementWithNotGrantableFlags)
+{
+    AccessRights root;
+
+    // Grant on a table doesn't grant source filters
+    root.grant(AccessRightsElement{AccessType::ALL, "db", "tbl"});
+    ASSERT_FALSE(root.isGranted(AccessType::READ, "db", "tbl"));
+
+    // Revoke on a table doesn't produce partial revokes of source filters
+    root = {};
+    root.grantWithGrantOption(AccessType::ALL);
+    root.revoke(AccessRightsElement{AccessType::ALL, "db", "tbl"});
+    ASSERT_EQ(root.getGrantableRights(), root);
+}
+
 TEST(AccessRights, RevokeWithParameters)
 {
     AccessRights root;
@@ -623,7 +782,7 @@ TEST(AccessRights, RevokeWithParametersWithGrantOption)
     ASSERT_EQ(root.toString(), "GRANT SELECT, INTROSPECTION ON *.* WITH GRANT OPTION, GRANT CREATE USER ON * WITH GRANT OPTION, REVOKE CREATE USER ON system*");
 }
 
-TEST(AccessRights, ParialRevokeWithGrantOption)
+TEST(AccessRights, PartialRevokeWithGrantOption)
 {
     AccessRights root;
     root.grant(AccessType::SELECT);
@@ -636,6 +795,55 @@ TEST(AccessRights, ParialRevokeWithGrantOption)
     root.revoke(AccessType::SELECT, "default", "zookeeper");
     ASSERT_FALSE(root.isGrantedWildcard(AccessType::SELECT, "default", "zoo"));
     ASSERT_TRUE(root.isGranted(AccessType::SELECT, "default", "zoo"));
+}
+
+TEST(AccessRights, PartialRevokeGrantOptionWithSharedPrefix)
+{
+    /// Each arm pairs a grant-option-only revoke whose name shares a prefix with a plain revoke
+    /// (the shape that used to be dropped) with a control name that shares nothing.
+
+    /// Database level.
+    AccessRights root;
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.revoke(AccessType::SELECT, "db1");
+    root.revokeGrantOption(AccessType::SELECT, "db2");
+    root.revokeGrantOption(AccessType::SELECT, "zdb2");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, REVOKE SELECT ON db1.*, "
+                               "REVOKE GRANT OPTION SELECT ON db2.*, REVOKE GRANT OPTION SELECT ON zdb2.*");
+
+    /// Database level, grant-option name is a strict prefix of the plain one.
+    root = {};
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.revoke(AccessType::SELECT, "dbx");
+    root.revokeGrantOption(AccessType::SELECT, "db");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, REVOKE GRANT OPTION SELECT ON db.*, "
+                               "REVOKE SELECT ON dbx.*");
+
+    /// Table level.
+    root = {};
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.revoke(AccessType::SELECT, "d", "t1");
+    root.revokeGrantOption(AccessType::SELECT, "d", "t2");
+    root.revokeGrantOption(AccessType::SELECT, "d", "zt2");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, REVOKE SELECT ON d.t1, "
+                               "REVOKE GRANT OPTION SELECT ON d.t2, REVOKE GRANT OPTION SELECT ON d.zt2");
+
+    /// Column level.
+    root = {};
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.revoke(AccessType::SELECT, "d", "t", "c1");
+    root.revokeGrantOption(AccessType::SELECT, "d", "t", "c2");
+    root.revokeGrantOption(AccessType::SELECT, "d", "t", "zc2");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, REVOKE SELECT(c1) ON d.t, "
+                               "REVOKE GRANT OPTION SELECT(c2, zc2) ON d.t");
+
+    /// Wildcard grant-option revoke whose name is a strict prefix of the plain one.
+    root = {};
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.revoke(AccessType::SELECT, "dbx1");
+    root.revokeWildcardGrantOption(AccessType::SELECT, "db");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, REVOKE GRANT OPTION SELECT ON db*.*, "
+                               "REVOKE SELECT ON dbx1.*");
 }
 
 TEST(AccessRights, WildcardGrantEdgeCases)
@@ -1235,4 +1443,38 @@ TEST(AccessRights, MultipleAccessTypesPartialRevoke)
     // Wildcard checks
     ASSERT_FALSE(root.isGrantedWildcard(AccessType::SELECT, "readonl"));
     ASSERT_TRUE(root.isGrantedWildcard(AccessType::INSERT, "readonl"));
+}
+
+/// A per-authentication-method GRANTS clause (see CREATE/ALTER USER) is a token-style credential limit, and
+/// its serialized form is used as part of a session's privilege identity in the query-result cache and the
+/// asynchronous-insert queue keys. That serialization must be *precise*: the backward-compatibility widening
+/// that `formatElementsWithoutOptions(precise=false)` / `toString` apply for the benefit of old replicas
+/// collapses distinct source-level limits (e.g. `READ ON FILE` and `WRITE ON FILE`, which both fold to the
+/// whole `FILE` source when `enable_read_write_grants` is off) into one string. If the identity used that
+/// widened form, a read-only source token and a write-only source token would share a cache entry / flush
+/// bucket, so `AccessRightsElements::toStringPrecise` must keep them distinct.
+TEST(AccessRightsElementsSerialization, PreciseAvoidsBackwardCompatibleWidening)
+{
+    AccessRightsElements read_file;
+    read_file.emplace_back(AccessFlags(AccessType::READ), "FILE");
+    AccessRightsElements write_file;
+    write_file.emplace_back(AccessFlags(AccessType::WRITE), "FILE");
+
+    /// The backward-compatibility widening (used by the rest of the PR for old-replica compatibility) folds
+    /// both source limits to the same string. `makeBackwardCompatible` treats `enable_read_write_grants` as
+    /// off by default, so this holds regardless of whether a global context is present.
+    WriteBufferFromOwnString widened_read;
+    WriteBufferFromOwnString widened_write;
+    read_file.formatElementsWithoutOptions(widened_read, /*precise=*/false);
+    write_file.formatElementsWithoutOptions(widened_write, /*precise=*/false);
+    ASSERT_EQ(widened_read.str(), widened_write.str());
+
+    /// The precise serialization (used to derive credential identity) keeps them distinct.
+    ASSERT_NE(read_file.toStringPrecise(), write_file.toStringPrecise());
+
+    /// A deny-all clause (semantically empty) still has a stable precise form, and it must not collide with a
+    /// real source grant.
+    AccessRightsElements deny_all;
+    ASSERT_EQ(deny_all.toStringPrecise(), "USAGE ON *.*");
+    ASSERT_NE(deny_all.toStringPrecise(), read_file.toStringPrecise());
 }

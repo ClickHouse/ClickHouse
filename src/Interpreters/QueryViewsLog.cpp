@@ -1,6 +1,7 @@
 #include <Interpreters/QueryViewsLog.h>
 
 #include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
 #include <Columns/IColumn.h>
 #include <Common/DateLUTImpl.h>
 #include <Core/Block.h>
@@ -39,6 +40,8 @@ ColumnsDescription QueryViewsLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
+        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
+        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
         {"event_date", std::make_shared<DataTypeDate>(), "The date when the last event of the view happened."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "The date and time when the view finished execution."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "The date and time when the view finished execution with microseconds precision."},
@@ -81,6 +84,8 @@ void QueryViewsLogElement::appendToBlock(MutableColumns & columns) const
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
+    columns[i++]->insert(VERSION_STRING);
+    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType()); // event_date
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);

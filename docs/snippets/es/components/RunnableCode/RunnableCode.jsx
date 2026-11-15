@@ -350,7 +350,6 @@ export const RunnableCode = ({ children, run = false, showStats = true }) => {
                         textAlign: isNumericType(results.meta[ci].type) && results.meta.length > 1 ? "right" : "left",
                         borderBottom: `1px solid ${borderColor}`,
                         backgroundColor: ri === hoveredRow ? cellBgHover : ri % 2 === 0 ? "transparent" : bgColor,
-                        transition: "background-color 0.1s",
                         ...getCellBarStyle(cell, ci, ri)
                       }}
                     >

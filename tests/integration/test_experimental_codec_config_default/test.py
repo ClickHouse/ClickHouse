@@ -1,8 +1,8 @@
-"""An experimental codec (`ZXC`) set as a `<merge_tree>` config default must not enter tables
-of sessions that did not enable `allow_experimental_codecs`, neither on CREATE, nor on load
+"""A gated codec (`ZXC`) set as a `<merge_tree>` config default must not enter tables
+of sessions that did not set `enable_zxc_codec`, neither on CREATE, nor on load
 (short `ATTACH`), nor via `ALTER TABLE ... RESET SETTING` falling back to the config default.
 
-The default profile has `allow_experimental_codecs = 1` (the legitimate way for an operator
+The default profile has `enable_zxc_codec = 1` (the legitimate way for an operator
 to opt in to such a config default), and the tests run individual queries with the setting
 disabled to exercise the gate.
 """
@@ -15,12 +15,12 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/merge_tree.xml"],
-    user_configs=["configs/allow_experimental_codecs.xml"],
+    user_configs=["configs/enable_zxc_codec.xml"],
     stay_alive=True,
 )
 
-DISABLED = {"allow_experimental_codecs": 0}
-ENABLED = {"allow_experimental_codecs": 1}
+DISABLED = {"enable_zxc_codec": 0}
+ENABLED = {"enable_zxc_codec": 1}
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -37,7 +37,7 @@ def test_create_inheriting_config_default_is_gated(started_cluster):
         "CREATE TABLE t_create (x UInt64) ENGINE = MergeTree ORDER BY x",
         settings=DISABLED,
     )
-    assert "experimental" in error
+    assert "is in beta" in error
 
     node.query(
         "CREATE TABLE t_create (x UInt64) ENGINE = MergeTree ORDER BY x",
@@ -63,7 +63,7 @@ def test_reset_setting_to_config_default_is_gated(started_cluster):
         "ALTER TABLE t_reset RESET SETTING default_compression_codec",
         settings=DISABLED,
     )
-    assert "experimental" in error
+    assert "is in beta" in error
 
     node.query(
         "ALTER TABLE t_reset RESET SETTING default_compression_codec",
@@ -82,7 +82,7 @@ def test_attach_inheriting_config_default_is_gated(started_cluster):
     node.query("DETACH TABLE t_attach")
 
     error = node.query_and_get_error("ATTACH TABLE t_attach", settings=DISABLED)
-    assert "experimental" in error
+    assert "is in beta" in error
 
     node.query("ATTACH TABLE t_attach", settings=ENABLED)
     node.query("DROP TABLE t_attach SYNC")

@@ -83,7 +83,7 @@ Introduit dans : v1.1.0
 
 Renvoie un nombre `UInt32` aléatoire suivant une distribution uniforme.
 
-Cette fonction utilise un générateur congruentiel linéaire avec un état initial obtenu à partir du système, ce qui signifie que, bien qu&#39;il paraisse aléatoire, il ne l&#39;est pas réellement et peut être prévisible si l&#39;état initial est connu.
+Cette fonction utilise un générateur pseudo-aléatoire non cryptographique avec un état initial obtenu à partir du système, ce qui signifie que, bien qu&#39;il paraisse aléatoire, il ne l&#39;est pas réellement et peut être prévisible si l&#39;état initial est connu.
 Dans les cas où une véritable source d&#39;aléa est indispensable, envisagez d&#39;utiliser d&#39;autres méthodes, comme des appels système ou l&#39;intégration de bibliothèques externes.
 
 <Note>
@@ -126,7 +126,7 @@ Introduit dans : v1.1.0
 
 Renvoie un nombre `UInt64` aléatoire suivant une distribution uniforme.
 
-Utilise un générateur congruentiel linéaire avec un état initial obtenu à partir du système, ce qui signifie que, même s&#39;il semble aléatoire, il ne l&#39;est pas réellement et peut être prévisible si l&#39;état initial est connu.
+Utilise un générateur pseudo-aléatoire non cryptographique avec un état initial obtenu à partir du système, ce qui signifie que, même s&#39;il semble aléatoire, il ne l&#39;est pas réellement et peut être prévisible si l&#39;état initial est connu.
 Lorsque le caractère véritablement aléatoire est crucial, envisagez d&#39;utiliser d&#39;autres méthodes, comme des appels système ou l&#39;intégration de bibliothèques externes.
 
 <Note>

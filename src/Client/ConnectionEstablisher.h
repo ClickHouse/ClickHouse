@@ -2,7 +2,7 @@
 
 #include <Common/AsyncTaskExecutor.h>
 #include <Common/Epoll.h>
-#include <Common/Fiber.h>
+#include <Common/StackfulCoroutine.h>
 #include <Common/TimerDescriptor.h>
 #include <Common/PoolWithFailoverBase.h>
 #include <Client/ConnectionPool.h>
@@ -45,10 +45,10 @@ private:
     AsyncCallback async_callback = {};
 };
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 /// Class for nonblocking establishing connection to the replica.
-/// It runs establishing connection process in fiber and sets special
+/// It runs establishing connection process in coroutine and sets special
 /// read callback which is called when reading from socket blocks.
 /// When read callback is called, socket and receive timeout are added in epoll
 /// and execution returns to the main program.
@@ -119,7 +119,7 @@ private:
 
     /// In read callback we add socket file descriptor and timer descriptor with receive timeout
     /// in epoll, so we can return epoll file descriptor outside for polling.
-    Epoll epoll;
+    Epoll epoll{EpollNesting::Leaf};
     int socket_fd = -1;
     std::string socket_description;
 

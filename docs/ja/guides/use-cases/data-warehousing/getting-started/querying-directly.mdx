@@ -39,7 +39,7 @@ ClickHouse では、オブジェクトストレージ内のオープンテーブ
     <Info>
       **GCS のサポート**
 
-      これらの関数の S3 版は、Google Cloud Storage (GCS) でも使用できます。
+      これらの関数の S3 バリアントは、Google Cloud Storage (GCS) でも利用できます。
     </Info>
 
     **例：**
@@ -56,8 +56,8 @@ ClickHouse では、オブジェクトストレージ内のオープンテーブ
 
     ```response
     ┌─url────────────────────────────────────────────────┬─────cnt─┐
-    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 329万
-    │ http://kinopoisk.ru                                │ 1625250 │ -- 163万
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 3.29 million
+    │ http://kinopoisk.ru                                │ 1625250 │ -- 1.63 million
     │ http://bdsm_po_yers=0&with_video                   │  791465 │
     │ http://video.yandex                                │  582400 │
     │ http://smeshariki.ru/region                        │  514984 │
@@ -75,7 +75,7 @@ ClickHouse では、オブジェクトストレージ内のオープンテーブ
 
     ```sql
     icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
-    -- icebergCluster は icebergS3Cluster のエイリアスです
+    -- icebergCluster is an alias for icebergS3Cluster
 
     icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
     ```
@@ -97,7 +97,7 @@ ClickHouse では、オブジェクトストレージ内のオープンテーブ
 
     ### テーブルエンジン
 
-    クエリのたびにテーブル関数を使用する代わりに、[`Iceberg` テーブルエンジン](/ja/reference/engines/table-engines/integrations/iceberg)を使用して永続テーブルを作成することもできます。データは引き続きオブジェクトストレージに保存され、必要に応じて読み込まれます。ClickHouse にデータがコピーされることはありません。この方法の利点は、テーブル定義が ClickHouse に保存されるため、各ユーザーがストレージのパスや認証情報を個別に指定しなくても、ユーザーやセッションをまたいで共有できる点です。ストレージバックエンドごとにエンジンのバリアントが用意されており、`IcebergS3` (または `Iceberg` エイリアス) 、`IcebergAzure`、`IcebergHDFS`、`IcebergLocal` があります。
+    クエリのたびにテーブル関数を使用する代わりに、[`Iceberg` テーブルエンジン](/ja/reference/engines/table-engines/integrations/iceberg)を使用して永続テーブルを作成することもできます。データは引き続きオブジェクトストレージに保存され、必要に応じて読み込まれます。ClickHouse にデータがコピーされることはありません。この方法の利点は、テーブル定義が ClickHouse に保存されるため、各ユーザーがストレージのパスや認証情報を個別に指定しなくても、ユーザーやセッションをまたいで共有できる点です。ストレージバックエンドごとにエンジンのバリアントが用意されており、`IcebergS3` (または `Iceberg` エイリアス)、`IcebergAzure`、`IcebergHDFS`、`IcebergLocal` があります。
 
     テーブルエンジンとテーブル関数はいずれも、S3、AzureBlobStorage、HDFSストレージエンジンと同じキャッシュ機構を使用した[データキャッシュ](/ja/reference/engines/table-engines/integrations/iceberg#data-cache)をサポートしています。また、[メタデータキャッシュ](/ja/reference/engines/table-engines/integrations/iceberg#metadata-cache)はマニフェストファイルの情報をメモリに格納し、Icebergメタデータへの繰り返しアクセスを削減します。このキャッシュは、`use_iceberg_metadata_files_cache` 設定によってデフォルトで有効化されています。
 
@@ -186,8 +186,8 @@ ClickHouse では、オブジェクトストレージ内のオープンテーブ
 
     ```response
     ┌─URL────────────────────────────────────────────────┬─────cnt─┐
-    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 329万
-    │ http://kinopoisk.ru                                │ 1625250 │ -- 163万
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 3.29 million
+    │ http://kinopoisk.ru                                │ 1625250 │ -- 1.63 million
     │ http://bdsm_po_yers=0&with_video                   │  791465 │
     │ http://video.yandex                                │  582400 │
     │ http://smeshariki.ru/region                        │  514984 │
@@ -205,7 +205,7 @@ ClickHouse では、オブジェクトストレージ内のオープンテーブ
 
     ```sql
     deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
-    -- deltaLakeS3Cluster は deltaLakeCluster のエイリアスです
+    -- deltaLakeS3Cluster is an alias for deltaLakeCluster
 
     deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
     ```
@@ -213,7 +213,7 @@ ClickHouse では、オブジェクトストレージ内のオープンテーブ
     <Info>
       **GCS のサポート**
 
-      これらの関数では、Google Cloud Storage (GCS) に対して S3 バリアントを使用できます。
+      これらの関数の S3 バリアントは、Google Cloud Storage (GCS) でも利用できます。
     </Info>
 
     **例 (ClickHouse Cloud):**
@@ -336,7 +336,7 @@ ClickHouse では、オブジェクトストレージ内のオープンテーブ
 
     ```sql
     paimonS3Cluster(cluster_name, url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
-    -- paimonCluster は paimonS3Cluster のエイリアスです
+    -- paimonCluster is an alias for paimonS3Cluster
 
     paimonAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
 
@@ -345,7 +345,7 @@ ClickHouse では、オブジェクトストレージ内のオープンテーブ
 
     ### テーブルエンジン
 
-    現在、Paimon 用の専用テーブルエンジンは ClickHouse にはありません。Paimon テーブルをクエリするには、上記のテーブル関数を使用してください。
+    ClickHouse では、実験的な [`PaimonS3`、`PaimonAzure`、`PaimonHDFS`、`PaimonLocal` テーブルエンジン](/ja/reference/engines/table-engines/integrations/paimon)を提供しています。`allow_experimental_paimon_storage_engine = 1` で有効化します。
 
     ストレージバックエンドなどのサポート状況を含む対応機能については、[サポートマトリクス](/ja/guides/use-cases/data-warehousing/support-matrix#format-support)を参照してください。詳細なリファレンスについては、[`paimon` テーブル関数](/ja/reference/functions/table-functions/paimon)のドキュメントを参照してください。
   </Tab>

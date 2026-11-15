@@ -117,15 +117,12 @@ public:
                 using LeftConverter = typename LeftConverterType::Type;
                 using RightConverter = typename RightConverterType::Type;
 
-                auto first = LeftConverter::convert(arguments[0].column->convertToFullColumnIfConst());
-                auto second = RightConverter::convert(arguments[1].column->convertToFullColumnIfConst());
+                CorrectedGeometries<LeftConverter> first(arguments[0].column);
+                CorrectedGeometries<RightConverter> second(arguments[1].column);
 
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    boost::geometry::correct(first[i]);
-                    boost::geometry::correct(second[i]);
-
-                    res_data.emplace_back(boost::geometry::intersects(first[i], second[i]));
+                    res_data.emplace_back(boost::geometry::intersects(first.get(i), second.get(i)));
                 }
             });
 
@@ -167,9 +164,9 @@ REGISTER_FUNCTION(geometryIntersect)
                 SELECT geometryIntersectCartesian([(2., 2.), (2., 3.), (3., 3.), (3., 2.)]::Ring, [(1., 1.), (1., 4.), (4., 4.), (4., 1.)]::Ring)
         )",
             R"(
-                ┌─geometryIntersectCartesian(⋯)─┐
-                │                             1 │
-                └───────────────────────────────┘
+┌─geometryIntersectCartesian(CAST('[(2., 2.), (2., 3.), (3., 3.), (3., 2.)]', 'Ring'), CAST('[(1., 1.), (1., 4.), (4., 4.), (4., 1.)]', 'Ring'))─┐
+│                                                                                                                                              1 │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"}},
         .introduced_in = {26, 7},
         .category = FunctionDocumentation::Category::Geo});
@@ -195,9 +192,9 @@ REGISTER_FUNCTION(geometryIntersect)
                 SELECT geometryIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]], (4.36, 50.85))
         )",
             R"(
-                ┌─geometryIntersectSpherical(⋯)─┐
-                │                             1 │
-                └───────────────────────────────┘
+┌─geometryIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]], (4.36, 50.85))─┐
+│                                                                                                                                                                                                    1 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"}},
         .introduced_in = {26, 7},
         .category = FunctionDocumentation::Category::Geo});

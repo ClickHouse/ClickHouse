@@ -1,5 +1,5 @@
 ---
-description: 'Página que descreve o suporte transacional (ACID) no ClickHouse'
+description: 'Entenda as garantias de insert do ClickHouse e as transações experimentais, e quando usar o ClickHouse Managed Postgres para workloads transacionais.'
 slug: /guides/developer/transactional
 title: 'Suporte transacional (ACID)'
 doc_type: 'guide'
@@ -8,9 +8,17 @@ doc_type: 'guide'
 import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
-<div id="case-1-insert-into-one-partition-of-one-table-of-the-mergetree-family">
-  ## Caso 1: INSERT em uma partição, de uma tabela, da família MergeTree*
-</div>
+Esta página descreve as garantias de transação no banco de dados analítico ClickHouse, incluindo garantias de inserção e o suporte experimental a transações que abrangem várias instruções.
+
+<Tip>
+  **Procurando um banco de dados para workloads transacionais (OLTP)?**
+
+  Para aplicações que exigem leituras e gravações frequentes em registros individuais, use o [ClickHouse Managed Postgres](/pt-BR/products/managed-postgres/overview) como sistema de registro da sua aplicação e adicione o ClickHouse para analytics, replicando as alterações confirmadas com o ClickPipes. [Saiba como o Postgres e o ClickHouse funcionam juntos](/pt-BR/products/managed-postgres/overview#transactions-and-analytics).
+</Tip>
+
+Se você quer verificar a atomicidade, o isolamento ou a durabilidade das inserções no ClickHouse, continue com os casos abaixo.
+
+## Caso 1: INSERT em uma partição, de uma tabela, da família MergeTree* {#case-1-insert-into-one-partition-of-one-table-of-the-mergetree-family}
 
 Isso é transacional (ACID) se as linhas inseridas estiverem agrupadas e forem inseridas como um único bloco (consulte as Notas):
 
@@ -20,39 +28,29 @@ Isso é transacional (ACID) se as linhas inseridas estiverem agrupadas e forem i
 * Durabilidade: um INSERT bem-sucedido é gravado no sistema de arquivos antes de responder ao cliente, em uma única réplica ou em várias réplicas (controlado pela configuração `insert_quorum`), e o ClickHouse pode solicitar ao SO que sincronize os dados do sistema de arquivos na mídia de armazenamento (controlado pela configuração `fsync_after_insert`).
 * INSERT em várias tabelas com uma única instrução é possível se houver visões materializadas envolvidas (o INSERT do cliente é feito em uma tabela que tem visões materializadas associadas).
 
-<div id="case-2-insert-into-multiple-partitions-of-one-table-of-the-mergetree-family">
-  ## Caso 2: INSERT em múltiplas partições de uma tabela da família MergeTree*
-</div>
+## Caso 2: INSERT em múltiplas partições de uma tabela da família MergeTree* {#case-2-insert-into-multiple-partitions-of-one-table-of-the-mergetree-family}
 
 O mesmo que o Caso 1 acima, com este detalhe:
 
 * Se a tabela tiver muitas partições e o INSERT abranger muitas delas, então a inserção em cada partição será transacional por si só
 
-<div id="case-3-insert-into-one-distributed-table-of-the-mergetree-family">
-  ## Caso 3: INSERT em uma tabela distribuída da família MergeTree*
-</div>
+## Caso 3: INSERT em uma tabela distribuída da família MergeTree* {#case-3-insert-into-one-distributed-table-of-the-mergetree-family}
 
 O mesmo que o Caso 1 acima, com este detalhe:
 
 * O INSERT em uma tabela distribuída não é transacional como um todo, enquanto a inserção em cada shard é transacional
 
-<div id="case-4-using-a-buffer-table">
-  ## Caso 4: Usando uma tabela Buffer
-</div>
+## Caso 4: Usando uma tabela Buffer {#case-4-using-a-buffer-table}
 
 * inserções em tabelas Buffer não são atômicas, isoladas, consistentes nem duráveis
 
-<div id="case-5-using-async_insert">
-  ## Caso 5: Usando async_insert
-</div>
+## Caso 5: Usando async_insert {#case-5-using-async_insert}
 
 O mesmo que o Caso 1 acima, com este detalhe:
 
 * a atomicidade é garantida mesmo que `async_insert` esteja habilitado e `wait_for_async_insert` esteja definido como 1 (o padrão), mas, se `wait_for_async_insert` estiver definido como 0, a atomicidade não é garantida.
 
-<div id="notes">
-  ## Notas
-</div>
+## Notas {#notes}
 
 * as linhas inseridas pelo cliente em algum formato de dados são empacotadas em um único bloco quando:
   * o formato de inserção é baseado em linhas (como CSV, TSV, Values, JSONEachRow etc.) e os dados contêm menos de `max_insert_block_size` linhas (~1 000 000 por padrão) ou menos de `min_chunk_bytes_for_parallel_parsing` bytes (10 MB por padrão), caso o parsing paralelo esteja em uso (habilitado por padrão)
@@ -65,9 +63,7 @@ O mesmo que o Caso 1 acima, com este detalhe:
 * a &quot;consistência&quot; nos termos ACID não cobre a semântica de sistemas distribuídos; veja https://jepsen.io/consistency, que é controlada por diferentes configurações (`select_sequential_consistency`)
 * esta explicação não cobre um novo recurso de transações que permite ter transações completas em várias tabelas, visões materializadas, para múltiplos SELECTs etc. (veja a próxima seção sobre Transactions, Commit, and Rollback)
 
-<div id="transactions-commit-and-rollback">
-  ## Transações, Commit e Rollback
-</div>
+## Transações, Commit e Rollback {#transactions-commit-and-rollback}
 
 <ExperimentalBadge />
 
@@ -75,9 +71,9 @@ O mesmo que o Caso 1 acima, com este detalhe:
 
 Além da funcionalidade descrita no início deste documento, o ClickHouse oferece suporte experimental a transações, commit e rollback.
 
-<div id="requirements">
-  ### Requisitos
-</div>
+Para workloads de aplicação, considere o [ClickHouse Managed Postgres](/pt-BR/products/managed-postgres/overview#transactions-and-analytics).
+
+### Requisitos {#requirements}
 
 * Implante o ClickHouse Keeper ou o ZooKeeper para rastrear transações
 * Somente DB atomic (padrão)
@@ -89,23 +85,17 @@ Além da funcionalidade descrita no início deste documento, o ClickHouse oferec
   </clickhouse>
   ```
 
-<div id="notes-1">
-  ### Observações
-</div>
+### Observações {#notes-1}
 
 * Este é um recurso experimental, e é esperado que haja mudanças.
 * Se ocorrer uma exceção durante uma transação, você não poderá confirmar a transação. Isso inclui todas as exceções, inclusive exceções `UNKNOWN_FUNCTION` causadas por erros de digitação.
 * Transações aninhadas não são compatíveis; finalize a transação atual e inicie uma nova
 
-<div id="configuration">
-  ### Configuração
-</div>
+### Configuração {#configuration}
 
 Estes exemplos consideram um servidor ClickHouse de nó único com o ClickHouse Keeper habilitado.
 
-<div id="enable-experimental-transaction-support">
-  #### Ative o suporte experimental a transações
-</div>
+#### Ative o suporte experimental a transações {#enable-experimental-transaction-support}
 
 ```xml title=/etc/clickhouse-server/config.d/transactions.xml
 <clickhouse>
@@ -113,9 +103,7 @@ Estes exemplos consideram um servidor ClickHouse de nó único com o ClickHouse 
 </clickhouse>
 ```
 
-<div id="basic-configuration-for-a-single-clickhouse-server-node-with-clickhouse-keeper-enabled">
-  #### Configuração básica para um único nó do servidor ClickHouse com o ClickHouse Keeper habilitado
-</div>
+#### Configuração básica para um único nó do servidor ClickHouse com o ClickHouse Keeper habilitado {#basic-configuration-for-a-single-clickhouse-server-node-with-clickhouse-keeper-enabled}
 
 <Note>
   Consulte a documentação de [implantação](/pt-BR/guides/oss/deployment-and-scaling/terminology) para saber mais sobre como implantar o servidor ClickHouse e um quórum adequado de nós do ClickHouse Keeper. A configuração mostrada aqui é apenas para fins experimentais.
@@ -161,13 +149,9 @@ Estes exemplos consideram um servidor ClickHouse de nó único com o ClickHouse 
 </clickhouse>
 ```
 
-<div id="example">
-  ### Exemplo
-</div>
+### Exemplo {#example}
 
-<div id="verify-that-experimental-transactions-are-enabled">
-  #### Verifique se as transações experimentais estão habilitadas
-</div>
+#### Verifique se as transações experimentais estão habilitadas {#verify-that-experimental-transactions-are-enabled}
 
 Execute um `BEGIN TRANSACTION` ou `START TRANSACTION`, seguido de um `ROLLBACK`, para verificar se as transações experimentais estão habilitadas e se o ClickHouse Keeper também está habilitado, já que ele é usado para rastrear transações.
 
@@ -205,9 +189,7 @@ ROLLBACK
 Ok.
 ```
 
-<div id="create-a-table-for-testing">
-  #### Crie uma tabela para teste
-</div>
+#### Crie uma tabela para teste {#create-a-table-for-testing}
 
 <Tip>
   A criação de tabelas não é transacional. Execute esta consulta DDL fora de uma transação.
@@ -226,9 +208,7 @@ ORDER BY n
 Ok.
 ```
 
-<div id="begin-a-transaction-and-insert-a-row">
-  #### Inicie uma transação e insira uma linha
-</div>
+#### Inicie uma transação e insira uma linha {#begin-a-transaction-and-insert-a-row}
 
 ```sql
 BEGIN TRANSACTION
@@ -261,9 +241,7 @@ FROM mergetree_table
   Você pode consultar a tabela dentro de uma transação e ver que a linha foi inserida, embora a transação ainda não tenha sido confirmada.
 </Note>
 
-<div id="rollback-the-transaction-and-query-the-table-again">
-  #### Desfaça a transação e consulte a tabela novamente
-</div>
+#### Desfaça a transação e consulte a tabela novamente {#rollback-the-transaction-and-query-the-table-again}
 
 Verifique se a transação foi desfeita:
 
@@ -286,9 +264,7 @@ Ok.
 0 rows in set. Elapsed: 0.002 sec.
 ```
 
-<div id="complete-a-transaction-and-query-the-table-again">
-  #### Conclua uma transação e consulte a tabela novamente
-</div>
+#### Conclua uma transação e consulte a tabela novamente {#complete-a-transaction-and-query-the-table-again}
 
 ```sql
 BEGIN TRANSACTION
@@ -325,9 +301,7 @@ FROM mergetree_table
 └────┘
 ```
 
-<div id="transactions-introspection">
-  ### Introspecção de transações
-</div>
+### Introspecção de transações {#transactions-introspection}
 
 Você pode inspecionar as transações consultando a tabela `system.transactions`, mas observe que não é possível consultar essa
 tabela em uma sessão que esteja em uma transação. Abra uma segunda sessão do `clickhouse client` para consultar essa tabela.
@@ -348,8 +322,6 @@ is_readonly: 1
 state:       RUNNING
 ```
 
-<div id="more-details">
-  ## Mais detalhes
-</div>
+## Mais detalhes {#more-details}
 
 Consulte esta [meta issue](https://github.com/ClickHouse/ClickHouse/issues/48794) para ver testes muito mais abrangentes e acompanhar o andamento.

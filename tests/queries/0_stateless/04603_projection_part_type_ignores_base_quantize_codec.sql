@@ -5,7 +5,7 @@
 -- so it forces the base part to Wide. A projection that does not materialize that column must not be
 -- dragged to Wide by it: choosePartFormat must inspect the projection's columns, not the whole table.
 
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 
 DROP TABLE IF EXISTS t_proj_pq_format SYNC;
 
