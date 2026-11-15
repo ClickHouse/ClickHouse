@@ -15279,13 +15279,39 @@ ReservationPtr MergeTreeData::balancedReservation(
 
             if (!candidates.empty())
             {
-                // Random pick one disk from best candidates
-                std::shuffle(candidates.begin(), candidates.end(), thread_local_rng);
-                String selected_disk_name = candidates.front();
+                /// Among equally occupied disks, prefer the one with the most unreserved space: in a new partition
+                /// every disk is a candidate, and a random pick lets disks of one volume drift far apart in usage.
+                /// Disks with unknown unreserved space compare below every known value, as in `VolumeJBOD`.
+                /// Shuffle first: `max_element` returns the first maximum, so disks with equal unreserved space
+                /// are still picked at random.
+                struct Candidate
+                {
+                    DiskPtr disk;
+                    std::optional<UInt64> unreserved_space;
+                };
+                std::vector<Candidate> candidate_disks;
+                candidate_disks.reserve(candidates.size());
+                for (const auto & disk : disks)
+                {
+                    if (std::find(candidates.begin(), candidates.end(), disk->getName()) != candidates.end())
+                        candidate_disks.push_back({disk, disk->getUnreservedSpace()});
+                }
+                std::shuffle(candidate_disks.begin(), candidate_disks.end(), thread_local_rng);
+                DiskPtr selected_disk = std::ranges::max_element(candidate_disks, {}, &Candidate::unreserved_space)->disk;
+
                 WriteBufferFromOwnString log_str;
                 writeCString("\nbalancer: \n", log_str);
                 for (const auto & [disk_name, per_disk_parts] : disk_parts_for_logging)
                     writeString(fmt::format("  {}: [{}]\n", disk_name, fmt::join(per_disk_parts, ", ")), log_str);
+                writeCString("unreserved space of candidates:\n", log_str);
+                for (const auto & candidate : candidate_disks)
+                    writeString(
+                        fmt::format(
+                            "  {}: {}\n",
+                            candidate.disk->getName(),
+                            candidate.unreserved_space ? fmt::format("{}", ReadableSize(*candidate.unreserved_space)) : "unknown"),
+                        log_str);
+                writeString(fmt::format("selected: {}\n", selected_disk->getName()), log_str);
                 LOG_DEBUG(log, fmt::runtime(log_str.str()));
 
                 if (ttl_infos)
@@ -15296,9 +15322,9 @@ ReservationPtr MergeTreeData::balancedReservation(
                         time_of_move ? time_of_move : time(nullptr),
                         max_volume_index,
                         is_insert,
-                        getStoragePolicy()->getDiskByName(selected_disk_name));
+                        selected_disk);
                 else
-                    reserved_space = tryReserveSpace(part_size, getStoragePolicy()->getDiskByName(selected_disk_name));
+                    reserved_space = tryReserveSpace(part_size, selected_disk);
 
                 if (reserved_space)
                 {
