@@ -3013,7 +3013,7 @@ buckets: 4
 
 Every line after the header assigns an inclusive range of buckets to a shard number, as `shard_num` in [system.clusters](/reference/system-tables/clusters). The ranges go in order and cover all buckets. The table watches the node and uses a new version of the map as soon as it is written, for example with `INSERT INTO system.zookeeper`. A new version changes the shard only of the rows inserted after it: the existing rows stay where they are, so the shards of the moved buckets no longer match the map for them, as after a change of the shard weights. The loaded maps are shown in [system.distributed_bucket_maps](/reference/system-tables/distributed_bucket_maps).
 
-`optimize_skip_unused_shards` and `optimize_skip_unused_shards_rewrite_in` use the bucket map as well. `DROP TABLE` does not remove the map from ZooKeeper.
+`optimize_skip_unused_shards` and `optimize_skip_unused_shards_rewrite_in` use the bucket map as well. `DROP TABLE` does not remove the map from ZooKeeper. The `remote`, `remoteSecure`, `cluster` and `clusterAllReplicas` table functions do not accept `bucket_map_zookeeper_path`.
 
 ## Reading data {#distributed-reading-data}
 

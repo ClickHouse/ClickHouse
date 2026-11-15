@@ -63,6 +63,15 @@ echo '-- a new map splits the buckets evenly between the shards'
 $CLICKHOUSE_CLIENT --allow_experimental_distributed_bucket_map 1 -q "CREATE TABLE dist $DIST_DEFINITION SETTINGS bucket_map_zookeeper_path = '$MAP_PATH', bucket_map_buckets = 4"
 $CLICKHOUSE_CLIENT -q "SELECT value FROM system.zookeeper WHERE path = '$MAP_PARENT' AND name = 'bucket_map' FORMAT TSVRaw"
 
+echo '-- table functions do not take a bucket map and do not create it'
+for allow_experimental in 0 1; do
+    $CLICKHOUSE_CLIENT --allow_experimental_distributed_bucket_map $allow_experimental -q "SELECT * FROM cluster(test_cluster_two_shards_different_databases, shard_0.data, key, SETTINGS bucket_map_zookeeper_path = '${MAP_PARENT}/function_bucket_map', bucket_map_buckets = 4)" 2>&1 \
+        | grep -o -m1 'is not supported by table function'
+    $CLICKHOUSE_CLIENT --allow_experimental_distributed_bucket_map $allow_experimental -q "SELECT * FROM remote('127.0.0.{1,2}', shard_0.data, key, SETTINGS bucket_map_zookeeper_path = '${MAP_PARENT}/function_bucket_map', bucket_map_buckets = 4)" 2>&1 \
+        | grep -o -m1 'is not supported by table function'
+done
+$CLICKHOUSE_CLIENT -q "SELECT name FROM system.zookeeper WHERE path = '$MAP_PARENT' ORDER BY name"
+
 echo '-- a row goes to the shard of the bucket sharding_key % buckets'
 $CLICKHOUSE_CLIENT --distributed_foreground_insert 1 -q "INSERT INTO dist SELECT number FROM numbers(8)"
 shard_keys shard_0

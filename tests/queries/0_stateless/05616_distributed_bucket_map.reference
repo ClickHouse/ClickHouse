@@ -9,6 +9,12 @@ buckets: 4
 0 1 1
 2 3 2
 
+-- table functions do not take a bucket map and do not create it
+is not supported by table function
+is not supported by table function
+is not supported by table function
+is not supported by table function
+bucket_map
 -- a row goes to the shard of the bucket sharding_key % buckets
 shard_0	[0,1,4,5]
 shard_1	[2,3,6,7]
