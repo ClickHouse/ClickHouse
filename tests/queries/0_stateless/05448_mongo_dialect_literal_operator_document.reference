@@ -1,0 +1,8 @@
+-- an operator-shaped document is a document
+{"$add":[2,3]}
+-- also nested
+{"x":{"$add":[2,3]},"y":[{"$size":"$a"}]}
+-- a wrapper of a BSON type is the value it wraps
+{"id":"5f1d7f1c9d3b2a1c4e8b4567"}
+-- a wrapper of a BSON type without a counterpart is refused
+Code: 48. The BSON type '$timestamp' is not supported by an insert

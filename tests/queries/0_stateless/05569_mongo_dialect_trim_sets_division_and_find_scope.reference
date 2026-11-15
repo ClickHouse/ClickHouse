@@ -1,0 +1,22 @@
+-- $trim
+{"t":"x","l":"x\n ","r":"\t x"}
+{"t":"¢y¢","l":"¢y¢","r":"¢y¢"}
+-- sets with null
+{"eq":0,"eq_field":1,"u":[1,null,2],"d":[null]}
+-- $divide
+{"d":2.5,"f":0.5}
+{"d":2.5}
+{"d":2.5,"f":0.5}
+{"d":2.5}
+-- the filter of a find reads the input
+{"a":99}
+{"a":-1}
+{"a":-2}
+-- $toDate of a decimal
+{"t":1546300800000}
+-- the filter of a delete is a part of the query
+(TOO_BIG_AST)
+2
+-- the copies of the terms of $add
+a date and a number: ok
+(TOO_BIG_AST)

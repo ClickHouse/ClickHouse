@@ -1,0 +1,36 @@
+-- a null sort key orders first ascending and last descending
+1	1	\N	10
+1
+2
+3
+3
+2
+1
+-- and so does it for the accumulators that follow a sort
+1	10	30	[10,20,30]
+1	30	[30,20,10]
+-- a sortByCount over columns named _id and count
+y	2
+x	1
+-- integer conversions
+-2	2147483648	42	1	\N
+(CANNOT_CONVERT_TYPE)
+(CANNOT_PARSE_TEXT)
+(CANNOT_CONVERT_TYPE)
+-- a date converts into milliseconds
+1710027000123	1710027000123	1710027000123
+-- date arithmetic is in milliseconds
+2024-03-09 23:30:01.123	2024-03-09 23:30:01.124	2024-03-09 23:29:59.123	877	4.5	3.9
+2024-03-09 23:30:00.124
+-- the truth of an array element is decided by its type
+1	1	0	0	1
+-- an operator that takes a document refuses a scalar
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+-- pull keeps the elements that do not equal its value
+1	[1,2]
+2	[NULL,2]
+-- addToSet adds equal values once
+1	[1,2,3]
+2	[]

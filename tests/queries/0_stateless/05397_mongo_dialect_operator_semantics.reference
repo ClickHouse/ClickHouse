@@ -1,0 +1,37 @@
+-- a sort by a replaced field
+-2
+-1
+-2
+-1
+2	-2
+1	-1
+-- an empty stream
+2
+-- $toBool
+true	true	false	true	\N
+true	\N	false	true
+true	true	false	true
+-- $toDecimal of a double
+1.15
+-- $arrayElemAt with a computed index
+20	20	10
+40	50	30
+-- a variable named after a field
+[110,120]	[]
+[230,240,250]	[50]
+-- the date operators in UTC
+2026-01-01T00:00:00.000Z	2026-01-01 00	2025-12-31 19
+2026-01-01 00	0	19	2026
+-- null values of the accumulators
+1	\N	x	[NULL,'x']
+1	\N	[NULL]	[NULL]	[NULL]
+-- the index of $regexFind
+x	2	[]
+x	1	[]
+x	0	[]
+x	1	[]
+-- deeply nested operators that copy their argument
+larger than 100000 elements
+-- $addToSet with $each
+['a','a','b','c','d']
+45	44

@@ -140,6 +140,7 @@ Supported values:
 - `prql` — PRQL. Requires the experimental setting `enable_prql_dialect`.
 - `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `enable_polyglot_dialect`.
 - `promql` — PromQL (Prometheus Query Language) evaluated over a TimeSeries table, configured by the `promql_database`, `promql_table`, and `promql_evaluation_time` settings.
+- `mongo` — MongoDB shell syntax. Requires the experimental setting `enable_mongo_dialect`.
 - `clickhouse_json` — instead of SQL text, the query is interpreted as a JSON AST (the output of `parseQueryToJSON`). The `SET` query is still recognized in plain form so that the dialect can be switched back. Requires the experimental setting `enable_json_ast_dialect`.
 - `logsql` — LogsQL, the log query language of VictoriaLogs, translated into `SELECT` queries over the logs table configured by the `logsql_database` and `logsql_table` settings. Requires the experimental setting `enable_logsql_dialect`.
 - `trino` — Trino SQL: translates Trino syntax (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) and maps Trino function names to their ClickHouse equivalents. Requires the beta setting `enable_trino_dialect`.
@@ -11213,6 +11214,10 @@ Enable PRQL - an alternative to SQL.
 )", EXPERIMENTAL, allow_experimental_prql_dialect, \
         {"26.11", false, false, "Added an alias for setting `allow_experimental_prql_dialect`."}, \
         {"25.1", true, false, "A new setting"}) \
+    DECLARE(Bool, enable_mongo_dialect, false, R"(
+Enable the MongoDB query dialect - MongoDB shell syntax over any ClickHouse interface.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to enable the `mongo` value of the `dialect` setting, which interprets queries as MongoDB shell syntax."}) \
     DECLARE_WITH_ALIAS(Bool, enable_polyglot_dialect, false, R"(
 Enable polyglot SQL transpiler - transpiles SQL from 30+ dialects (MySQL, PostgreSQL, SQLite, Snowflake, DuckDB, etc.) into ClickHouse SQL.
 )", EXPERIMENTAL, allow_experimental_polyglot_dialect, \

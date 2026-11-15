@@ -1,0 +1,19 @@
+-- the truth of a value in a boolean operator
+1	true	false	false	false	true
+2	true	false	false	false	true
+3	false	true	true	false	true
+true	false	false	true	false	true
+-- the condition of cond, switch and filter
+1	no	s	[1,'','a']
+2	no	s	[1,'','a']
+3	yes	n	[1,'','a']
+-- toDate of a nullable number is milliseconds
+1	1970-01-01 00:00:01.000
+2	\N
+3	2019-01-01 00:00:00.000
+-- toLong of a decimal is exact
+9007199254740993	-9007199254740993	2	0
+(CANNOT_PARSE_TEXT)
+-- a request nested too deeply
+(TOO_DEEP_RECURSION)
+3
