@@ -1,3 +1,5 @@
+-- Tags: no-parallel, no-fasttest
+
 DROP TABLE IF EXISTS overwrite_cache;
 DROP TABLE IF EXISTS overwrite_cache_small;
 DROP TABLE IF EXISTS bad_lookup_alter;

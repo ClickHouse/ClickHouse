@@ -297,7 +297,7 @@ Columns buildSelectedColumns(
         ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::DEFAULT_THREAD_POOL);
         for (size_t position = 0; position < source_columns.size(); ++position)
         {
-            const auto source = source_columns[position];
+            const auto & source = source_columns[position];
             const bool keep = keep_uncompressed[position];
             runner.enqueueAndKeepTrack(
                 [shared_result, select_column, source, keep, position]
@@ -833,8 +833,8 @@ StorageOverwriteCache::StorageOverwriteCache(
     StorageInMemoryMetadata metadata;
     metadata.setColumns(std::move(columns_description_));
     metadata.setConstraints(std::move(constraints_));
-    metadata.setComment(std::move(comment_));
-    metadata.setSettingsChanges(std::move(settings_changes_));
+    metadata.setComment(comment_);
+    metadata.setSettingsChanges(settings_changes_);
     metadata.lookup_indexes = std::move(lookup_indexes_ast_);
     setInMemoryMetadata(metadata);
 

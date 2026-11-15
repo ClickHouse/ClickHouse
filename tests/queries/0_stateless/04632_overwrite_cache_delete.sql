@@ -1,3 +1,5 @@
+-- Tags: no-parallel, no-fasttest
+
 -- `DELETE` accepts exactly the predicates a `SELECT` accepts: a complete `KEYS` tuple, or one or more
 -- declared lookup indexes. Anything that would need a scan is rejected instead.
 

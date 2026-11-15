@@ -166,7 +166,7 @@ class OverwriteCacheGetResolver final : public IFunctionOverloadResolver, WithCo
 {
 public:
     OverwriteCacheGetResolver(String function_name_, bool or_null_, ContextPtr context_)
-        : WithContext(std::move(context_))
+        : WithContext(context_)
         , function_name(std::move(function_name_))
         , or_null(or_null_)
     {
