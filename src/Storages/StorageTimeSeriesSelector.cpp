@@ -682,6 +682,13 @@ namespace
         return wrapIntoSelectWithUnionQuery(std::move(select_query));
     }
 
+    /// The step of the buckets with the scale of the timestamp type.
+    Int64 getBucketStep(const DataTypePtr & table_timestamp_type, UInt64 bucket_step_seconds)
+    {
+        Int64 scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(tryGetDecimalScale(*table_timestamp_type).value_or(0));
+        return static_cast<Int64>(bucket_step_seconds) * scale_multiplier;
+    }
+
     /// Makes the conditions selecting the rows of a samples table with buckets of samples which can contain samples
     /// with timestamps in `time_range`: `bucket >= <the bucket of min_time> AND bucket <= <max_time>` for the primary key index,
     /// and `max_time >= <min_time> AND min_time <= <max_time>` to skip the rows whose samples are all outside of the range.
@@ -695,9 +702,7 @@ namespace
 
         if (time_range.min_time)
         {
-            /// The step of the buckets with the scale of the timestamp type.
-            Int64 scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(tryGetDecimalScale(*table_timestamp_type).value_or(0));
-            Int64 bucket_step = static_cast<Int64>(bucket_step_seconds) * scale_multiplier;
+            Int64 bucket_step = getBucketStep(table_timestamp_type, bucket_step_seconds);
 
             /// The same rounding as in TimeSeriesSink: towards negative infinity, so that a bucket starts at or before its samples.
             DateTime64 min_bucket{DateLUTImpl::roundDownToMultiple(time_range.min_time->value, bucket_step)};
@@ -878,7 +883,7 @@ namespace
     ///
     /// SELECT _CAST(id, 'UInt64') AS id, _CAST(samples, 'Array(Tuple(DateTime64(3), Float64))') AS samples
     /// FROM (select_query_from_samples_table)
-    /// WHERE notEmpty(samples)
+    /// WHERE notEmpty(samples)    -- if the time range is shorter than a bucket
     ///
     /// For a table of an earlier version storing one sample per row (`bucket_step_seconds` is zero):
     ///
@@ -887,6 +892,7 @@ namespace
     ///
     /// The requested columns (see `Configuration::ReturnColumns`) are made from this query by convertToReturnColumns().
     ASTPtr makeSelectQuery(ASTPtr select_query_from_samples_table,
+                           const TableTimeRange & time_range_to_filter_samples,
                            const DataTypePtr & table_id_type,
                            const DataTypePtr & table_timestamp_type,
                            const DataTypePtr & table_value_type,
@@ -918,10 +924,15 @@ namespace
             select_list.back()->setAlias(TimeSeriesColumnNames::Samples);
 
             /// WHERE notEmpty(samples)
-            /// The conditions of the inner query select the rows by `min_time` and `max_time`, so a row can match them
-            /// without having samples in the requested range.
-            select_query->setExpression(ASTSelectQuery::Expression::WHERE,
-                makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Samples)));
+            /// A row matching `min_time` and `max_time` has no samples in the range only if the range lies strictly between them,
+            /// so only a range shorter than a bucket needs the filter.
+            const auto & range = time_range_to_filter_samples;
+            if (range.min_time && range.max_time
+                && static_cast<Int128>(range.max_time->value) - range.min_time->value < getBucketStep(table_timestamp_type, bucket_step_seconds))
+            {
+                select_query->setExpression(ASTSelectQuery::Expression::WHERE,
+                    makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Samples)));
+            }
         }
         else
         {
@@ -1353,6 +1364,7 @@ void StorageTimeSeriesSelector::readImpl(
 
     ASTPtr select_query = makeSelectQuery(
         std::move(select_query_from_samples_table),
+        time_range_to_filter_samples,
         config.table_id_type,
         config.table_timestamp_type,
         config.table_value_type,
