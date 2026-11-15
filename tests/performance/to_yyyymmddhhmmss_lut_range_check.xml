@@ -1,0 +1,21 @@
+<!--
+`toYYYYMMDDhhmmss` over a `DateTime` or a `Date` column skips the check for timestamps outside the
+calendar lookup table, which neither of those two types can produce. The last two queries are
+controls: a `Date32` argument keeps the check, and `toMonday` reads the same lookup table without
+decomposing the timestamp, so neither should move.
+
+The queries are spelled out rather than substituted so that all five arms fit inside the 10-query
+sample the performance job takes at random.
+ -->
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, toYYYYMMDDhhmmss(t, 'Asia/Istanbul'))</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, toYYYYMMDDhhmmss(t, 'UTC'))</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDate('2017-01-01') + number % 1000 + rand() % 10 AS t, toYYYYMMDDhhmmss(t))</query>
+
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDate32('2017-01-01') + number % 1000 + rand() % 10 AS t, toYYYYMMDDhhmmss(t))</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, toMonday(t, 'Asia/Istanbul'))</query>
+</test>
