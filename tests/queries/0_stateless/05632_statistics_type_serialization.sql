@@ -2,6 +2,8 @@
 -- The estimates of a part are kept in memory when it is written, so `DETACH` / `ATTACH` makes them be read
 -- from the statistics file, and a merge always reads the statistics of the parts it merges.
 
+-- Explicit `minmax` statistics are deprecated and log a warning, which the test harness treats as a failure.
+SET send_logs_level = 'error';
 SET allow_statistics = 1;
 SET materialize_statistics_on_insert = 1;
 SET mutations_sync = 2;
