@@ -7,6 +7,7 @@ SET estimate_distinct_values_from_metadata = 1;
 SET query_plan_optimize_join_order_limit = 10;
 SET enable_parallel_replicas = 0;
 SET mutations_sync = 0;
+SET alter_sync = 0;
 
 DROP TABLE IF EXISTS t;
 
