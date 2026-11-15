@@ -20,8 +20,6 @@ namespace ErrorCodes
 static constexpr UInt64 SEED_GEN_A = 845897321;
 static constexpr UInt64 SEED_GEN_B = 217728422;
 
-static constexpr UInt64 MAX_BLOOM_FILTER_SIZE = 1 << 30;
-
 
 BloomFilterParameters::BloomFilterParameters(size_t filter_size_, size_t filter_hashes_, size_t seed_)
     : filter_size(filter_size_), filter_hashes(filter_hashes_), seed(seed_)
