@@ -1015,8 +1015,6 @@ The oldest supported serialization version is `21`. A sender does not serialize 
 
 Inside the plan stream, every step carries its settings as a settings list in the same encoding as the [Query packet's settings list](#setting) in the `STRINGS_WITH_FLAGS` form: zero or more `(String name, VarUInt flags, String value)` triples, terminated by an empty name. Only the settings that the step changed from their defaults are written. The writer sets only the `Important` flag (`0x01`), for a plan setting declared important. A receiver that does not know a setting name skips the entry with a warning if `Important` is not set, and rejects the plan with `UNKNOWN_SETTING` (code `115`) if it is set.
 
-From version `21` the plan stream carries the predicate of `indexHint`. An initiator whose query contains `indexHint` sends the original SQL query to a receiver below version `21` instead.
-
 ## Configuration {#configuration}
 
 This section covers the tunables that shape native protocol connections:

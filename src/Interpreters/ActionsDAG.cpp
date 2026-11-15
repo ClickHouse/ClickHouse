@@ -35,7 +35,6 @@
 #include <IO/SipHashingWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Core/ProtocolDefines.h>
 #include <IO/ReadHelpers.h>
 #include <Core/Defines.h>
 #include <Core/SortDescription.h>
@@ -5319,9 +5318,7 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
             if (index_hint_actions == IndexHintActions::Write)
                 column_flags |= 8;
             else if (!index_hint->getActions().getOutputs().empty())
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "The predicate of indexHint requires query plan serialization version >= {}; all nodes must be upgraded",
-                    DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_INDEX_HINT_ACTIONS);
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cannot serialize the predicate of indexHint in this query plan step");
         }
 
         writeIntBinary(column_flags, out);

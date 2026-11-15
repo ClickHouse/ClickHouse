@@ -256,8 +256,8 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HASH_JOIN_L
 /// name is not written: the older peer does not store `String` columns in the hash join row store, so the setting has
 /// no effect there.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_STORE_STRING_COLUMN_BYTES = 21;
-/// First global query-plan version whose `ActionsDAG`-carrying steps write the predicate of `indexHint`. Towards an
-/// older peer the predicate is refused, never dropped; a query containing `indexHint` is sent to it as SQL instead.
+/// First global query-plan version that writes the predicate of `indexHint`: version 1 of the steps that carry an
+/// `ActionsDAG`, and version 2 of `ReadFromMergeTree`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_INDEX_HINT_ACTIONS = 21;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
