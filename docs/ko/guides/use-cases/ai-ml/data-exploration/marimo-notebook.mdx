@@ -7,8 +7,6 @@ keywords: ['ML', 'Marimo', 'chDB', 'pandas']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 이 가이드에서는 ClickHouse 기반의 빠른 in-process SQL OLAP Engine인 [chDB](/ko/chdb/index)를 사용해 Marimo 노트북에서 ClickHouse Cloud의 데이터셋을 탐색하는 방법을 알아봅니다.
 
 **사전 요구 사항:**
@@ -44,15 +42,39 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 왼쪽 메뉴에서 `Data sources`를 클릭한 다음 `Predefined sample data`를 클릭합니다:
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/1.webp" alt="예시 데이터셋 추가" />
+<div className="ch-image-md">
+
+<Frame>
+
+![예시 데이터셋 추가](/images/use-cases/AI_ML/jupyter/1.webp)
+
+</Frame>
+
+</div>
 
 `UK property price paid data`(4GB) 카드에서 `Get started`를 선택합니다:
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/2.webp" alt="영국 실거래가 데이터셋 선택" />
+<div className="ch-image-md">
+
+<Frame>
+
+![영국 실거래가 데이터셋 선택](/images/use-cases/AI_ML/jupyter/2.webp)
+
+</Frame>
+
+</div>
 
 그런 다음 `Import dataset`을 클릭합니다:
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/3.webp" alt="영국 실거래가 데이터셋 가져오기" />
+<div className="ch-image-md">
+
+<Frame>
+
+![영국 실거래가 데이터셋 가져오기](/images/use-cases/AI_ML/jupyter/3.webp)
+
+</Frame>
+
+</div>
 
 ClickHouse는 `default` 데이터베이스에 `pp_complete` 테이블을 자동으로 생성하고, 2,892만 개의 가격 데이터 행으로 이 테이블을 채웁니다.
 
@@ -93,7 +115,15 @@ marimo edit clickhouse_exploration.py
 
 새 브라우저 창이 열리며 localhost:2718에 Marimo 인터페이스가 표시됩니다:
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/4.webp" alt="Marimo 인터페이스" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Marimo 인터페이스](/images/use-cases/AI_ML/Marimo/4.webp)
+
+</Frame>
+
+</div>
 
 Marimo 노트북은 순수 Python 파일로 저장되므로 버전 관리가 쉽고 다른 사용자와 공유하기도 편리합니다.
 
@@ -124,7 +154,15 @@ result
 
 방금 실행한 셀 바로 아래에 다음과 같은 결과가 표시됩니다:
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/5.webp" alt="Marimo hello world" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Marimo hello world](/images/use-cases/AI_ML/Marimo/5.webp)
+
+</Frame>
+
+</div>
 
 <div id="exploring-the-data">
   ## 데이터 탐색하기
@@ -206,7 +244,15 @@ fig
 
 어쩌면 당연한 일이지만, 런던의 부동산 가격은 시간이 지남에 따라 크게 상승했습니다.
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/6.webp" alt="Marimo 데이터 시각화" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Marimo 데이터 시각화](/images/use-cases/AI_ML/Marimo/6.webp)
+
+</Frame>
+
+</div>
 
 Marimo의 강점 중 하나는 반응형 실행 모델입니다. 여러 도시를 동적으로 선택할 수 있는 대화형 위젯을 만들어 보겠습니다.
 
@@ -267,7 +313,15 @@ fig_reactive
 
 이제 드롭다운에서 마을을 선택하면 차트가 실시간으로 업데이트됩니다:
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/7.webp" alt="Marimo 동적 차트" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Marimo 동적 차트](/images/use-cases/AI_ML/Marimo/7.webp)
+
+</Frame>
+
+</div>
 
 <div id="exploring-price-distributions">
   ### 대화형 박스플롯으로 가격 분포 살펴보기
@@ -343,7 +397,15 @@ fig_box
 있습니다.
 슬라이더를 움직이면 Marimo의 반응형 실행 기능 덕분에 플롯이 자동으로 갱신됩니다:
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/8.webp" alt="Marimo 동적 차트" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Marimo 동적 차트](/images/use-cases/AI_ML/Marimo/8.webp)
+
+</Frame>
+
+</div>
 
 <div id="summary">
   ## 요약

@@ -10,11 +10,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # the feature off and reports whether the aggregation thawed and whether it staged records. The cells cover a count,
 # a general aggregate and a String key and state, with the thaw allowed and disabled.
 #
-# The thaw verdict is remembered in the hash-table statistics, which the first cells switch off so that every run
-# measures. The last cell keeps them on and runs the same query four times in one process: the first run thaws and
-# records the verdict, the second is refused the adaptive aggregator, the third, with the thaw disabled, freezes its
-# tables anyway, and the fourth is refused again, because a run that may not thaw records no verdict. Each cell runs
-# in its own clickhouse-local process, so the counters in `system.events` belong to it alone.
+# The verdict of a run is remembered in the hash-table statistics, which the first cells switch off so that
+# every run measures. The last cell keeps them on and runs the same query four times in one process: the first
+# run thaws and records the verdict, the second is refused the adaptive aggregator, the third, with the thaw
+# disabled, freezes its tables anyway, and the fourth is refused again, because a run that may not thaw
+# records no verdict. Each cell runs in its own clickhouse-local process, so the counters in `system.events`
+# belong to it alone. The last cell runs on two threads: the verdict needs at least half of the threads whose
+# tables froze to thaw, and two UNION ALL lanes give each thread half of the input, so both thaw however the
+# threads are scheduled.
 
 SETTINGS="SET max_threads = 4, max_block_size = 8192, adaptive_aggregator_freeze_threshold = 128, enable_adaptive_aggregator = 1;
 SET max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0, optimize_injective_functions_in_group_by = 0;"
@@ -41,12 +44,13 @@ do
         "SELECT toString(number % 20000) AS k, min(toString(number)) AS s FROM numbers_mt(2000000) GROUP BY k"
 done
 
-QUERY="SELECT toUInt64(number % 20000) AS k, count() AS c FROM numbers_mt(2000000) GROUP BY k"
+QUERY="SELECT toUInt64(number % 20000) AS k, count() AS c
+    FROM (SELECT number FROM numbers(0, 1000000) UNION ALL SELECT number FROM numbers(1000000, 1000000)) GROUP BY k"
 COUNTERS="SELECT groupArray(value) FROM (SELECT event, coalesce(sum(value), 0) AS value FROM system.events
     WHERE event IN ('AdaptiveAggregationLocalFreezes', 'AdaptiveAggregationThaws') GROUP BY event ORDER BY event)"
 $CLICKHOUSE_LOCAL --query "
 $SETTINGS
-SET collect_hash_table_stats_during_aggregation = 1;
+SET collect_hash_table_stats_during_aggregation = 1, max_threads = 2;
 
 $QUERY FORMAT Null;
 CREATE TEMPORARY TABLE after_first ENGINE = Memory AS $COUNTERS;

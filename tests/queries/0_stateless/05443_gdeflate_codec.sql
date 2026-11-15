@@ -45,7 +45,7 @@ CREATE TABLE t_gdeflate_plain
     t64 DateTime64(3, 'UTC'), m Decimal64(2), f Float64, s String, n Nullable(UInt32), a Array(UInt16),
     lc LowCardinality(String), dz Int64
 )
-ENGINE = MergeTree ORDER BY k;
+ENGINE = Memory;
 
 INSERT INTO t_gdeflate SELECT
     number,
