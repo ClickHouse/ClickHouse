@@ -1,0 +1,13 @@
+-- a tie across separate inserts keeps the stored row
+first
+-- an identical row is still a no-op
+first
+-- a tie inside one block keeps the earlier row
+earlier
+-- a greater tie-break and a greater version still win over a tie
+tie-winner
+version-winner
+-- the same holds without tie-break columns
+first
+-- ignored rows are counted
+3

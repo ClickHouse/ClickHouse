@@ -64,6 +64,8 @@ struct StorageInMemoryMetadata
     TTLTableDescription table_ttl;
     /// SETTINGS expression. Supported for MergeTree, Buffer, Kafka, RabbitMQ.
     ASTPtr settings_changes;
+    /// Engine-specific lookup `INDEX (...)` declarations stored in `ASTStorage`.
+    ASTPtr lookup_indexes;
     /// SELECT QUERY. Supported for MaterializedView and View.
     SelectQueryDescription select;
     /// Materialized view REFRESH parameters.

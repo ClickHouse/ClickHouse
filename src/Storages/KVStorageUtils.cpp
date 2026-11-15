@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Utils.h>
+#include <IO/WriteBufferFromVector.h>
 #include <Common/assert_cast.h>
 
 #include <Parsers/ASTIdentifier.h>
@@ -132,16 +133,19 @@ bool traverseDAGFilterSingleColumn(
             return false;
 
         const auto * key = elem->children.at(0);
+        const auto * value = elem->children.at(1);
         while (key->type == ActionsDAG::ActionType::ALIAS)
             key = key->children.at(0);
+        while (value->type == ActionsDAG::ActionType::ALIAS)
+            value = value->children.at(0);
 
-        if (key->type != ActionsDAG::ActionType::INPUT)
-            return false;
+        if (key->type != ActionsDAG::ActionType::INPUT || key->result_name != primary_key)
+        {
+            std::swap(key, value);
+            if (key->type != ActionsDAG::ActionType::INPUT || key->result_name != primary_key)
+                return false;
+        }
 
-        if (key->result_name != primary_key)
-            return false;
-
-        const auto * value = elem->children.at(1);
         if (value->type != ActionsDAG::ActionType::COLUMN)
             return false;
 
@@ -289,86 +293,90 @@ bool traverseDAGFilter(
         const auto * left = elem->children.at(0);
         const auto * right = elem->children.at(1);
 
-        // Skip aliases
         while (left->type == ActionsDAG::ActionType::ALIAS)
             left = left->children.at(0);
+        while (right->type == ActionsDAG::ActionType::ALIAS)
+            right = right->children.at(0);
 
-        // Check if left side is tuple function with our key columns
-        if (left->type == ActionsDAG::ActionType::FUNCTION && left->function_base->getName() == "tuple")
+        const auto is_primary_key_tuple = [&](const ActionsDAG::Node * node)
         {
-            // Verify all tuple elements are our primary key columns in order
-            if (left->children.size() != primary_keys.size())
+            if (node->type != ActionsDAG::ActionType::FUNCTION || node->function_base->getName() != "tuple")
+                return false;
+            if (node->children.size() != primary_keys.size())
                 return false;
 
             for (size_t i = 0; i < primary_keys.size(); ++i)
             {
-                const auto * key_node = left->children.at(i);
+                const auto * key_node = node->children.at(i);
                 while (key_node->type == ActionsDAG::ActionType::ALIAS)
                     key_node = key_node->children.at(0);
 
                 if (key_node->type != ActionsDAG::ActionType::INPUT || key_node->result_name != primary_keys[i])
                     return false;
             }
-
-            // Extract tuple value from right side
-            if (right->type != ActionsDAG::ActionType::COLUMN)
-                return false;
-
-            auto value_field = right->column->getField();
-            if (value_field.getType() != Field::Types::Tuple)
-                return false;
-
-            const auto & tuple_value = value_field.safeGet<Tuple>();
-            if (tuple_value.size() != primary_keys.size())
-                return false;
-
-            // Convert each tuple element to the correct type, with the type of the element it comes
-            // from: without it a date-family literal is reinterpreted in the key's unit space.
-            const auto value_type = removeNullable(recursiveRemoveLowCardinality(right->result_type));
-            const auto * value_tuple_type = typeid_cast<const DataTypeTuple *>(value_type.get());
-
-            const IColumn * value_column = right->column.get();
-            if (const auto * column_const = typeid_cast<const ColumnConst *>(value_column))
-                value_column = &column_const->getDataColumn();
-            if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(value_column))
-                value_column = &column_nullable->getNestedColumn();
-            const auto * value_tuple_column = typeid_cast<const ColumnTuple *>(value_column);
-            const DataTypePtr value_unwrapped_type = removeNullable(right->result_type);
-            const auto * value_full_tuple_type = typeid_cast<const DataTypeTuple *>(value_unwrapped_type.get());
-            const bool per_element = value_tuple_column && value_full_tuple_type && value_tuple_column->tupleSize() == tuple_value.size()
-                && value_full_tuple_type->getElements().size() == tuple_value.size();
-
-            std::vector<Field> converted_values;
-            converted_values.reserve(tuple_value.size());
-            for (size_t i = 0; i < tuple_value.size(); ++i)
-            {
-                /// `=` compares the elements one by one.
-                if (per_element ? floatValuesMissKeyValues(
-                                      value_tuple_column->getColumnPtr(i),
-                                      value_full_tuple_type->getElement(i),
-                                      primary_key_types[i],
-                                      std::make_shared<DataTypeFloat64>())
-                                : floatValuesMissKeyValues(
-                                      right->column->cloneResized(1), right->result_type, primary_key_types[i], std::make_shared<DataTypeFloat64>()))
-                    return false;
-
-                DataTypePtr element_type;
-                if (value_tuple_type && i < value_tuple_type->getElements().size())
-                    element_type = removeNullable(recursiveRemoveLowCardinality(value_tuple_type->getElements()[i]));
-
-                auto converted = tryConvertFieldToType(tuple_value[i], *primary_key_types[i], element_type.get());
-                if (converted.isNull())
-                    return false;
-                converted_values.push_back(converted);
-            }
-
-            res->push_back(createTupleField(converted_values));
             return true;
+        };
+
+        if (!is_primary_key_tuple(left))
+        {
+            std::swap(left, right);
+            if (!is_primary_key_tuple(left))
+                return false;
         }
 
-        // Fall back to single-column handling for individual column equality
-        // This will be caught by AND handler below
-        return false;
+        if (right->type != ActionsDAG::ActionType::COLUMN)
+            return false;
+
+        auto value_field = right->column->getField();
+        if (value_field.getType() != Field::Types::Tuple)
+            return false;
+
+        const auto & tuple_value = value_field.safeGet<Tuple>();
+        if (tuple_value.size() != primary_keys.size())
+            return false;
+
+        // Convert each tuple element to the correct type, with the type of the element it comes
+        // from: without it a date-family literal is reinterpreted in the key's unit space.
+        const auto value_type = removeNullable(recursiveRemoveLowCardinality(right->result_type));
+        const auto * value_tuple_type = typeid_cast<const DataTypeTuple *>(value_type.get());
+
+        const IColumn * value_column = right->column.get();
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(value_column))
+            value_column = &column_const->getDataColumn();
+        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(value_column))
+            value_column = &column_nullable->getNestedColumn();
+        const auto * value_tuple_column = typeid_cast<const ColumnTuple *>(value_column);
+        const DataTypePtr value_unwrapped_type = removeNullable(right->result_type);
+        const auto * value_full_tuple_type = typeid_cast<const DataTypeTuple *>(value_unwrapped_type.get());
+        const bool per_element = value_tuple_column && value_full_tuple_type && value_tuple_column->tupleSize() == tuple_value.size()
+            && value_full_tuple_type->getElements().size() == tuple_value.size();
+
+        std::vector<Field> converted_values;
+        converted_values.reserve(tuple_value.size());
+        for (size_t i = 0; i < tuple_value.size(); ++i)
+        {
+            /// `=` compares the elements one by one.
+            if (per_element ? floatValuesMissKeyValues(
+                                  value_tuple_column->getColumnPtr(i),
+                                  value_full_tuple_type->getElement(i),
+                                  primary_key_types[i],
+                                  std::make_shared<DataTypeFloat64>())
+                            : floatValuesMissKeyValues(
+                                  right->column->cloneResized(1), right->result_type, primary_key_types[i], std::make_shared<DataTypeFloat64>()))
+                return false;
+
+            DataTypePtr element_type;
+            if (value_tuple_type && i < value_tuple_type->getElements().size())
+                element_type = removeNullable(recursiveRemoveLowCardinality(value_tuple_type->getElements()[i]));
+
+            auto converted = tryConvertFieldToType(tuple_value[i], *primary_key_types[i], element_type.get());
+            if (converted.isNull())
+                return false;
+            converted_values.push_back(converted);
+        }
+
+        res->push_back(createTupleField(converted_values));
+        return true;
     }
 
     // Handle tuple IN: (key1, key2) IN ((v1, v2), (v3, v4))
@@ -427,7 +435,7 @@ bool traverseDAGFilter(
             const auto & set_element_types = set->getElementsTypes();
 
             if (set_elements.empty())
-                return false;
+                return true;
 
             /// `IN` compares each key column with its set column in the type of that column.
             for (size_t col = 0; col < primary_keys.size() && col < set_element_types.size(); ++col)
@@ -477,7 +485,7 @@ bool traverseDAGFilter(
                 res->push_back(createTupleField(tuple_values));
             }
 
-            return !res->empty();
+            return true;
         }
 
         return false;
@@ -486,6 +494,18 @@ bool traverseDAGFilter(
     // Handle AND: key1 = v1 AND key2 = v2
     if (func_name == "and")
     {
+        /// A complete tuple predicate provides a bounded candidate set. Any other
+        /// conjuncts remain in the query filter and are applied to those candidates.
+        for (const auto * child : elem->children)
+        {
+            FieldVectorPtr child_res = std::make_shared<FieldVector>();
+            if (traverseDAGFilter(primary_keys, primary_key_types, child, context, child_res))
+            {
+                res->insert(res->end(), child_res->begin(), child_res->end());
+                return true;
+            }
+        }
+
         // Collect filters for each key column separately
         std::unordered_map<String, FieldVector> column_filters;
 
@@ -497,11 +517,11 @@ bool traverseDAGFilter(
                 FieldVectorPtr child_res = std::make_shared<FieldVector>();
                 if (traverseDAGFilterSingleColumn(primary_keys[i], primary_key_types[i], child, context, child_res))
                 {
-                    if (!child_res->empty())
-                    {
-                        for (const auto & val : *child_res)
-                            column_filters[primary_keys[i]].push_back(val);
-                    }
+                    /// An explicitly matched empty set makes the whole conjunction empty.
+                    if (child_res->empty())
+                        return true;
+                    for (const auto & val : *child_res)
+                        column_filters[primary_keys[i]].push_back(val);
                 }
             }
         }
@@ -651,6 +671,54 @@ std::vector<std::string> serializeKeysToRawString(
         ++rows_processed;
     }
     return result;
+}
+
+void serializeKeysToPackedBuffer(
+    FieldVector::const_iterator it,
+    FieldVector::const_iterator end,
+    const DataTypes & key_column_types,
+    PODArray<char> & data,
+    PODArray<UInt64> & offsets)
+{
+    if (key_column_types.empty())
+        return;
+
+    /// `offsets` is cumulative over the whole of `data`, so a partially described buffer would put bytes
+    /// no entry accounts for in front of the first key this call writes.
+    if (!offsets.empty() && offsets.back() != data.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "serializeKeysToPackedBuffer: key buffer holds {} bytes but its offsets end at {}",
+            data.size(),
+            offsets.back());
+    if (offsets.empty() && !data.empty())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "serializeKeysToPackedBuffer: key buffer holds {} bytes with no offsets", data.size());
+
+    /// `out.count()` is relative to where this call started appending, not to the start of `data`, so it
+    /// is offset by what `data` already held to keep `offsets` a cumulative array over the whole buffer.
+    const size_t base_offset = data.size();
+    WriteBufferFromVector<PODArray<char>> out(data, AppendModeTag{});
+    for (; it != end; ++it)
+    {
+        if (key_column_types.size() == 1)
+        {
+            key_column_types[0]->getDefaultSerialization()->serializeBinary(*it, out, {});
+        }
+        else if (it->getType() == Field::Types::Tuple)
+        {
+            const auto & tuple = it->safeGet<Tuple>();
+            const size_t num_elements = std::min(tuple.size(), key_column_types.size());
+            for (size_t i = 0; i < num_elements; ++i)
+                key_column_types[i]->getDefaultSerialization()->serializeBinary(tuple[i], out, {});
+        }
+        /// A field that is not a `Tuple` when multiple key columns are expected should not occur with
+        /// correct `getFilterKeys` usage; the iterator overload above drops such a key outright, which a
+        /// positional offset array cannot do without shifting every key after it. It serializes to
+        /// nothing instead, which the empty string an unmatchable key already amounts to.
+        offsets.push_back(base_offset + out.count());
+    }
+    out.finalize();
 }
 
 std::vector<std::string> serializeKeysToRawString(const ColumnWithTypeAndName & keys)

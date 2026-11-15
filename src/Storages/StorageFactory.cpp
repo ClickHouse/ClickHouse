@@ -191,6 +191,12 @@ void StorageFactory::checkEngineFeatures(
             "UNIQUE KEY clause",
             [](StorageFeatures features) { return features.supports_unique_key; });
 
+    if (storage_def->keys)
+        check_feature("KEYS clause", [](StorageFeatures features) { return features.supports_keys; });
+
+    if (storage_def->lookup_indexes)
+        check_feature("lookup INDEX clause", [](StorageFeatures features) { return features.supports_lookup_indexes; });
+
     if (storage_def->ttl_table)
         check_feature(
             "TTL clause",

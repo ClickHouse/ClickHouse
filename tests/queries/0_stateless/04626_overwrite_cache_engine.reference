@@ -1,0 +1,68 @@
+CREATE TABLE default.overwrite_cache
+(
+    `website_type` UInt8,
+    `user_id` UInt64,
+    `tag` LowCardinality(String),
+    `version` UInt64,
+    `tie` UInt64,
+    `payload` String
+)
+ENGINE = OverwriteCache(version)
+KEYS (website_type, user_id, tag)
+INDEX (tag), (website_type), (website_type, tag)
+SETTINGS max_memory_bytes = 10000000, equal_version_tiebreak_columns = 'tie'
+2	2	tie-winner
+1	100	tie-winner
+2	200	site-two
+1	100	tie-winner
+1	100	tie-winner
+tie-winner
+tie-winner
+tie-winner
+tie-winner
+tie-winner
+tie-winner
+CREATE TABLE default.overwrite_cache
+(
+    `website_type` UInt8,
+    `user_id` UInt64,
+    `tag` LowCardinality(String),
+    `version` UInt64,
+    `tie` UInt64,
+    `payload` String
+)
+ENGINE = OverwriteCache(version)
+KEYS (website_type, user_id, tag)
+INDEX (tag), (website_type), (website_type, tag), (user_id)
+SETTINGS max_memory_bytes = 10000000, equal_version_tiebreak_columns = 'tie'
+CREATE TABLE default.overwrite_cache
+(
+    `website_type` UInt8,
+    `user_id` UInt64,
+    `tag` LowCardinality(String),
+    `version` UInt64,
+    `tie` UInt64,
+    `payload` String
+)
+ENGINE = OverwriteCache(version)
+KEYS (website_type, user_id, tag)
+INDEX (tag), (website_type), (website_type, tag)
+SETTINGS max_memory_bytes = 10000000, equal_version_tiebreak_columns = 'tie'
+0
+0
+batch-new
+tie-winner
+1
+Nullable(String)
+1	1
+after-failure
+after-failure
+tie-winner
+batch-new
+tie-winner
+site-two
+indexed-row
+indexed-row
+tie-winner
+same-version-a
+0	0

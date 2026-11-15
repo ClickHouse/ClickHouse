@@ -18,6 +18,7 @@ namespace DB
 class ASTFunction;
 class ASTSetQuery;
 class ASTSelectWithUnionQuery;
+class ASTExpressionList;
 struct CreateQueryUUIDs;
 
 
@@ -25,6 +26,8 @@ class ASTStorage : public IAST
 {
 public:
     ASTFunction * engine = nullptr;
+    IAST * keys = nullptr;
+    ASTExpressionList * lookup_indexes = nullptr;
     IAST * partition_by = nullptr;
     IAST * primary_key = nullptr;
     IAST * order_by = nullptr;
@@ -46,13 +49,15 @@ public:
     /// came without an `ENGINE` onto the query context and drops the now-empty clause.
     bool isEmpty() const;
 
-    /// Rebuild `children` in canonical order (engine, partition_by, primary_key, order_by, ...).
+    /// Rebuild `children` in canonical order (engine, keys, partition_by, primary_key, order_by, ...).
     /// Needed after moving primary_key from columns_list because `set()` always appends.
     void normalizeChildrenOrder();
 
     void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
     {
         f(reinterpret_cast<IAST **>(&engine), nullptr);
+        f(&keys, nullptr);
+        f(reinterpret_cast<IAST **>(&lookup_indexes), nullptr);
         f(&partition_by, nullptr);
         f(&primary_key, nullptr);
         f(&order_by, nullptr);
@@ -66,8 +71,6 @@ protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };
 
-
-class ASTExpressionList;
 
 class ASTColumns : public IAST
 {

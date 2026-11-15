@@ -1,0 +1,38 @@
+-- a complete KEYS predicate deletes one row
+a-two
+-- a lookup-index predicate deletes every matching row
+b-one
+-- an extra predicate narrows an indexed delete
+b-one
+-- rows behind another index value are untouched
+c-one
+-- a predicate that needs a scan is rejected
+c-one
+-- deleting an absent key is a no-op
+1
+-- a deleted key can be inserted again, at any version
+a-one-again
+a-one-again
+2
+-- a resurrected row is replaced by a greater version as usual
+a-one-again
+a-one-newer
+-- the scalar lookup functions see the deletion
+1
+-- ALTER TABLE ... DELETE WHERE works the same way
+0
+-- other mutations stay unsupported
+-- a failed publication leaves every row in place
+one
+one
+two
+2
+two
+1
+64
+-- an IN list and an IN subquery both resolve keys
+60
+0
+-- a segment left at least half dead is compacted
+16
+1	1
