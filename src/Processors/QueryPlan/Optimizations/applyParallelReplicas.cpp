@@ -20,8 +20,10 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -334,6 +336,19 @@ static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::fu
         /// `ArrayJoinStep::serialize` writes the element filter fused into it from a `FilterStep` above.
         if (const auto & element_filter = array_join->getElementFilter())
             if (predicate(*element_filter))
+                return true;
+    }
+    else if (const auto * limit_range = typeid_cast<const LimitRangeStep *>(step))
+    {
+        /// The conditions of `LIMIT ... AFTER` and `LIMIT ... UNTIL` are serialized with the step.
+        if (predicate(limit_range->getConditions()))
+            return true;
+    }
+    else if (const auto * filling = typeid_cast<const FillingStep *>(step))
+    {
+        /// The `INTERPOLATE` expressions of `WITH FILL` are serialized with the step.
+        if (const auto & interpolate = filling->getInterpolateDescription())
+            if (predicate(interpolate->actions))
                 return true;
     }
     else if (const auto * source_with_filter = dynamic_cast<const SourceStepWithFilter *>(step))

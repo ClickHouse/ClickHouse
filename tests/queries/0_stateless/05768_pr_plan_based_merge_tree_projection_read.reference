@@ -10,6 +10,10 @@
 --- a nested IN set built from the projection
 10000
 10000
+--- a nested IN set in LIMIT AFTER, LIMIT UNTIL and INTERPOLATE
+145
+45
+9905
 --- a view over the projection
 10000	499950000
 10000

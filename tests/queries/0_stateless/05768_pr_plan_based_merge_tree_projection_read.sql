@@ -50,6 +50,22 @@ WHERE a IN (SELECT a FROM t_pr_projection_read WHERE a IN (SELECT a FROM mergeTr
 SELECT sum(a IN (SELECT a FROM t_pr_projection_read WHERE a IN (SELECT a FROM mergeTreeProjection(currentDatabase(), t_pr_projection_read, p))))
 FROM t_pr_projection_read;
 
+SELECT '--- a nested IN set in LIMIT AFTER, LIMIT UNTIL and INTERPOLATE';
+-- Eager index analysis would build the sets before the check, so it is turned off.
+SELECT sum(a) FROM t_pr_projection_read
+WHERE a IN (SELECT a FROM t_pr_projection_read ORDER BY a
+            LIMIT 10 AFTER a > 5 AND a IN (SELECT a FROM mergeTreeProjection(currentDatabase(), t_pr_projection_read, p)))
+SETTINGS use_index_for_in_with_subqueries = 0;
+SELECT sum(a) FROM t_pr_projection_read
+WHERE a IN (SELECT a FROM t_pr_projection_read ORDER BY a
+            LIMIT UNTIL a > 5 AND a IN (SELECT a FROM mergeTreeProjection(currentDatabase(), t_pr_projection_read, p)))
+SETTINGS use_index_for_in_with_subqueries = 0;
+SELECT sum(a) FROM t_pr_projection_read
+WHERE a IN (SELECT v FROM (SELECT a, a AS v FROM t_pr_projection_read WHERE a % 10 = 5 AND a < 100)
+            ORDER BY a WITH FILL
+            INTERPOLATE (v AS v + 1000 * (a IN (SELECT a FROM mergeTreeProjection(currentDatabase(), t_pr_projection_read, p)))))
+SETTINGS use_index_for_in_with_subqueries = 0;
+
 SELECT '--- a view over the projection';
 SELECT count(), sum(a) FROM v_pr_projection_read;
 SELECT count() FROM t_pr_projection_read WHERE a IN (SELECT a FROM v_pr_projection_read);
