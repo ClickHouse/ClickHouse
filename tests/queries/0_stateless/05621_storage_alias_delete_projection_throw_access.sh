@@ -20,7 +20,8 @@ GRANT ALTER ON ${CLICKHOUSE_DATABASE}.t_alias TO ${user};
 
 $CLICKHOUSE_CLIENT --user "${user}" -q "DELETE FROM ${CLICKHOUSE_DATABASE}.t_alias WHERE a = 1" 2>&1 | grep -o -m1 'ACCESS_DENIED'
 
-$CLICKHOUSE_CLIENT -q "GRANT ALTER ON ${CLICKHOUSE_DATABASE}.t_target TO ${user}"
+# The whole `ALTER` group that `StorageAlias` checks on the target is not grantable on a single table.
+$CLICKHOUSE_CLIENT -q "GRANT ALTER ON *.* TO ${user}"
 $CLICKHOUSE_CLIENT --user "${user}" -q "DELETE FROM ${CLICKHOUSE_DATABASE}.t_alias WHERE a = 1" 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED'
 
 $CLICKHOUSE_CLIENT -q "
