@@ -372,7 +372,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , min_insert_block_size_bytes_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_bytes_for_materialized_views])
     , configuration{configuration_}
     , format_settings(format_settings_)
-    , reschedule_processing_interval_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
     , log(getLogger(fmt::format("Storage{}Queue ({})", configuration->getEngineName(), table_id_.getFullTableName())))
     , can_be_moved_between_databases((*queue_settings_)[ObjectStorageQueueSetting::keeper_path].changed)
     , keep_data_in_keeper(keep_data_in_keeper_)
@@ -525,6 +524,10 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         streaming_tasks.emplace_back(std::move(task));
     }
     streaming_task_refresh_epochs.resize(task_count, 0);
+    {
+        std::lock_guard lock(mutex);
+        streaming_task_reschedule_intervals_ms.resize(task_count, polling_min_timeout_ms);
+    }
     max_files_override.reset();
 }
 
@@ -913,6 +916,8 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
     /// for them; a viewless table still claims, draining a pending permit so it cannot fire later.
     const bool deps_ready = num_views == 0 || dependencies_count > 0;
 
+    UInt64 & reschedule_processing_interval_ms = streaming_task_reschedule_intervals_ms.at(streaming_tasks_index);
+
     if (deps_ready && !stream_control.claimCycle(streaming_task_refresh_epochs.at(streaming_tasks_index)))
     {
         /// SYSTEM STOP/PAUSE blocks polling: skip processing. SYSTEM START wakes the task promptly
@@ -930,7 +935,6 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
             tryLogCurrentException(log);
         }
 
-        std::lock_guard lock(mutex);
         reschedule_processing_interval_ms = paused_reschedule_period;
     }
     else if (getContext()->getS3QueueDisableStreaming())
@@ -939,7 +943,6 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
         LOG_TRACE(log, "Streaming is disabled, rescheduling next check in {} ms", disabled_streaming_reschedule_period);
 
-        std::lock_guard lock(mutex);
         reschedule_processing_interval_ms = disabled_streaming_reschedule_period;
     }
     else
@@ -982,11 +985,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
     if (!shutdown_called)
     {
-        UInt64 reschedule_interval_ms = 0;
-        {
-            std::lock_guard lock(mutex);
-            reschedule_interval_ms = reschedule_processing_interval_ms;
-        }
+        const UInt64 reschedule_interval_ms = reschedule_processing_interval_ms;
 
         LOG_TRACE(log, "Reschedule processing thread in {} ms", reschedule_interval_ms);
         task->scheduleAfter(reschedule_interval_ms);

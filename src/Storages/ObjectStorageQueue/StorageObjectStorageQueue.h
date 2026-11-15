@@ -169,7 +169,6 @@ private:
 
     const std::optional<FormatSettings> format_settings;
 
-    UInt64 reschedule_processing_interval_ms TSA_GUARDED_BY(mutex);
 
     std::atomic<bool> startup_finished = false;
     std::atomic<bool> table_is_being_dropped = false;
@@ -180,6 +179,10 @@ private:
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> streaming_file_iterator;
     std::vector<BackgroundSchedulePoolTaskHolder> streaming_tasks;
     std::vector<UInt64> streaming_task_refresh_epochs;
+    /// The polling backoff of each streaming task, accessed only by that task (it never runs concurrently with itself).
+    /// It is per task, because with `parallel_inserts` the idle cycles of many tasks would otherwise
+    /// add up to one shared backoff, and a reset by the task which found files would not wake the others.
+    std::vector<UInt64> streaming_task_reschedule_intervals_ms;
     ObjectStorageQueueBatchSizeOverride max_files_override;
 
     LoggerPtr log;
