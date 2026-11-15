@@ -268,6 +268,9 @@ std::optional<Field> tryGetScalarSubqueryEmptyGroupValue(const QueryTreeNodePtr 
         Block block(std::move(aggregate_values));
         size_t num_rows = 1;
         actions.execute(block, num_rows);
+        /// `arrayJoin` can change the row count: without exactly one row there is no scalar value, so NULL stays.
+        if (num_rows != 1)
+            return {};
         return (*block.getByName(value_name).column)[0];
     }
     catch (const Exception & e)

@@ -226,3 +226,19 @@ FROM values('k UInt8', (1), (2)) AS o
 ORDER BY o.k
 SETTINGS correlated_subqueries_default_join_kind = 'left';
 
+
+-- arrayJoin can leave the empty-group evaluation without a row (no scalar value, so NULL) or with exactly one.
+SELECT o.k,
+    (SELECT arrayJoin(arrayFilter(x -> x != 0, [count()])) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS a,
+    (SELECT arrayJoin(range(count())) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS b,
+    (SELECT arrayJoin([count() + 100]) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS c
+FROM values('k UInt8', (1), (2)) AS o
+ORDER BY o.k;
+
+SELECT o.k,
+    (SELECT arrayJoin(arrayFilter(x -> x != 0, [count()])) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS a,
+    (SELECT arrayJoin(range(count())) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS b,
+    (SELECT arrayJoin([count() + 100]) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS c
+FROM values('k UInt8', (1), (2)) AS o
+ORDER BY o.k
+SETTINGS correlated_subqueries_default_join_kind = 'left';
