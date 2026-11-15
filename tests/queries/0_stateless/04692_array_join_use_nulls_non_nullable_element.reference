@@ -1,0 +1,11 @@
+nullable-able element
+\N	Nullable(UInt8)
+Array element
+[]	Array(UInt8)
+Map element
+{}	Map(String, UInt8)
+Tuple element
+\N	Nullable(Tuple(UInt8, String))
+non-empty
+[1,2]	Array(UInt8)
+[3]	Array(UInt8)
