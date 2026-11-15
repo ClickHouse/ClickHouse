@@ -1,0 +1,39 @@
+<test>
+    <!--
+      Precision-1 (sign-only) QBit distances at a realistic vector width. Only the sign bit plane is read. By default the
+      sign plane is compared against the reference vector at full precision; with `qbit_one_bit_symmetric_distance = 1`
+      the reference is reduced to its signs as well and the distance is derived from the Hamming distance between the two
+      sign planes (XOR + popcount over 128 bytes). Both paths are measured.
+    -->
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>func</name>
+            <values>
+                <value>L2DistanceTransposed</value>
+                <value>cosineDistanceTransposed</value>
+                <value>dotProductTransposed</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>symmetric</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>DROP TABLE IF EXISTS qbit_one_bit</create_query>
+    <create_query>CREATE TABLE qbit_one_bit (id UInt32, vec QBit(BFloat16, 1024)) ENGINE = MergeTree ORDER BY id</create_query>
+    <create_query>INSERT INTO qbit_one_bit SELECT number, arrayMap(i -> toBFloat16(randCanonical(i + number) - 0.5), range(1024)) FROM numbers_mt(100000) SETTINGS max_insert_threads = 8, max_threads = 8</create_query>
+    <create_query>OPTIMIZE TABLE qbit_one_bit FINAL</create_query>
+
+    <query>SELECT sum({func}(vec, arrayMap(i -> toBFloat16(sin(i)), range(1024)), 1)) FROM qbit_one_bit SETTINGS qbit_one_bit_symmetric_distance = {symmetric}</query>
+    <query>SELECT id FROM qbit_one_bit ORDER BY {func}(vec, arrayMap(i -> toBFloat16(sin(i)), range(1024)), 1) LIMIT 10 SETTINGS qbit_one_bit_symmetric_distance = {symmetric}</query>
+
+    <drop_query>DROP TABLE qbit_one_bit</drop_query>
+</test>

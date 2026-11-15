@@ -2,6 +2,7 @@
 -- because EPHEMERAL columns have no physical storage and cannot provide data on read.
 -- This would cause a type mismatch between the Block header and the actual column data.
 
+SET allow_reserved_column_names = 1;
 CREATE TABLE test_ephemeral_virtual_conflict
 (
     `key` UInt32,

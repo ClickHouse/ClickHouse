@@ -37,7 +37,7 @@ namespace JSON {
 ParserImpl::ParserImpl(const Handler::Ptr& pHandler, std::size_t bufSize):
 	_pJSON(new json_stream),
 	_pHandler(pHandler),
-	_depth(JSON_UNLIMITED_DEPTH),
+	_depth(JSON_DEFAULT_DEPTH),
 	_decimalPoint('.'),
 	_allowNullByte(true),
 	_allowComments(false)
@@ -53,6 +53,7 @@ ParserImpl::~ParserImpl()
 
 void ParserImpl::handle(const std::string& json)
 {
+	_currentDepth = 0;
 	if (!_allowNullByte && json.find("\\u0000") != json.npos)
 		throw JSONException("Null bytes in strings not allowed.");
 
@@ -139,6 +140,12 @@ void ParserImpl::stripComments(std::string& json)
 
 void ParserImpl::handleArray()
 {
+	// Enforce the configured depth limit (set via setDepth) to avoid a native-stack
+	// overflow on deeply nested input. _depth == JSON_UNLIMITED_DEPTH (-1) means no limit.
+	if (_depth != JSON_UNLIMITED_DEPTH && _currentDepth >= _depth)
+		throw JSONException("Maximum allowed JSON depth exceeded");
+	++_currentDepth;
+
 	json_type tok = json_peek(_pJSON);
 	while (tok != JSON_ARRAY_END && checkError())
 	{
@@ -148,11 +155,17 @@ void ParserImpl::handleArray()
 
 	if (tok == JSON_ARRAY_END) handle();
 	else throw JSONException("JSON array end not found");
+
+	--_currentDepth;
 }
 
 
 void ParserImpl::handleObject()
 {
+	if (_depth != JSON_UNLIMITED_DEPTH && _currentDepth >= _depth)
+		throw JSONException("Maximum allowed JSON depth exceeded");
+	++_currentDepth;
+
 	json_type tok = json_peek(_pJSON);
 	while (tok != JSON_OBJECT_END && checkError())
 	{
@@ -166,6 +179,8 @@ void ParserImpl::handleObject()
 
 	if (tok == JSON_OBJECT_END) handle();
 	else throw JSONException("JSON object end not found");
+
+	--_currentDepth;
 }
 
 

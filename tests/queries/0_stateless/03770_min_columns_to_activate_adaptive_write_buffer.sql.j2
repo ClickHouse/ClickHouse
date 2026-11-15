@@ -4,6 +4,8 @@
 
 -- Note, all tests avoids vertical merges (enable_vertical_merge_algorithm=0), since they write column by column and do not have excessive memory usage.
 
+SET optimize_trivial_insert_select = 0;
+
 {% for v in [0, 1] %}
 drop table if exists metric_log_{{ v }};
 

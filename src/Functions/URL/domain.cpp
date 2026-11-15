@@ -73,6 +73,7 @@ SELECT
     FunctionDocumentation documentation_domainRFC = {description_domainRFC, syntax_domainRFC, arguments_domainRFC, {}, returned_value_domainRFC, examples_domainRFC, introduced_in_domainRFC, category_domainRFC};
 
     factory.registerFunction<FunctionDomainRFC>(documentation_domainRFC);
+    factory.registerAlias("url_extract_host", "domainRFC", FunctionFactory::Case::Insensitive);
 }
 
 }

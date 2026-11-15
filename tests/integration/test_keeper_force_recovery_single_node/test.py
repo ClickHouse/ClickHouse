@@ -1,9 +1,7 @@
 import os
-import socket
 import time
 
 import pytest
-from kazoo.client import KazooClient, KazooRetry
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster

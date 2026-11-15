@@ -1,0 +1,48 @@
+W1 MergeTree, retyped by ALTER
+2	2
+3	3
+4	4
+W2 MergeTree, range
+1	2
+2	2
+4	4
+W3 MergeTree, IN and inequality
+1	2
+2	2
+3	44
+W4 MergeTree, bare columns
+1	2	1
+2	2	1
+4	4	3
+W5 Memory
+1	2
+2	2
+4	4
+W6 Parquet
+1	2
+2	2
+4	4
+W7 Parquet, row policy
+1	2
+2	2
+4	4
+W8 Merge
+1	2
+2	2
+4	4
+C1 converted column not selected
+1
+2
+4
+1
+2
+4
+C2 one condition
+1	2
+2	2
+3	44
+4	4
+C3 no split
+1	2
+2	2
+4	4

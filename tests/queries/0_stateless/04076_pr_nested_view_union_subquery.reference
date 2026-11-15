@@ -1,0 +1,5 @@
+-- plan check: outermost view sent to replicas
+dv_dashboard
+-- pipeline check: all tables use ReadPoolParallelReplicas
+4
+-- correctness

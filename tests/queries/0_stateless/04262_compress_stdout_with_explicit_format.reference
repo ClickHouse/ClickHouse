@@ -1,0 +1,6 @@
+from client with output-format
+Row 1:
+──────
+value: from client with vertical
+from local with output-format
+42

@@ -77,17 +77,25 @@ def test_attach_table_from_s3_plain_readonly(started_cluster):
 
     assert int(node1.query("select num from local_db.test_table limit 1")) == 5
 
-    # Copy local MergeTree data into minio bucket
-    table_data_path = os.path.join(node1.path, f"database/store")
-    minio = cluster.minio_client
-    upload_to_minio(
-        minio, cluster.minio_bucket, table_data_path, "data/disks/disk_s3_plain/store/"
-    )
-
-    # Drop the non-replicated table, we don't need it anymore
     table_uuid = node1.query(
         "SELECT uuid FROM system.tables WHERE database='local_db' AND table='test_table'"
     ).strip()
+
+    # Copy local MergeTree data into minio bucket. Scoped to this table: store/
+    # also holds the Atomic `system` database, whose parts a background flush can
+    # remove mid-walk.
+    table_data_path = os.path.join(
+        node1.path, "database/store", table_uuid[:3], table_uuid
+    )
+    minio = cluster.minio_client
+    upload_to_minio(
+        minio,
+        cluster.minio_bucket,
+        table_data_path,
+        f"data/disks/disk_s3_plain/store/{table_uuid[:3]}/{table_uuid}/",
+    )
+
+    # Drop the non-replicated table, we don't need it anymore
     node1.query("drop table local_db.test_table SYNC;")
 
     # Create a replicated database

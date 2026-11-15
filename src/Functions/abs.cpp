@@ -16,6 +16,11 @@ struct AbsImpl
 {
     using ResultType = std::conditional_t<is_decimal<A>, A, typename NumberTraits::ResultOfAbs<A>::Type>;
     static constexpr bool allow_string_or_fixed_string = false;
+    /// `NativeNumber` does not cover the 128- and 256-bit integers, for which `abs` returns the
+    /// unsigned counterpart, so they are listed explicitly.
+    static constexpr auto signature =
+        "(D : Decimal) -> D"
+        " OR (A : NativeNumber | UInt128 | Int128 | UInt256 | Int256) -> nativeNumber(maxBits(A), 0, anyFloating(A))";
 
     static NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
@@ -57,7 +62,7 @@ struct AbsImpl
         }
         else if (type->isDoubleTy() || type->isFloatTy())
         {
-            auto * func_fabs = llvm::Intrinsic::getDeclaration(b.GetInsertBlock()->getModule(), llvm::Intrinsic::fabs, {type});
+            auto * func_fabs = llvm::Intrinsic::getOrInsertDeclaration(b.GetInsertBlock()->getModule(), llvm::Intrinsic::fabs, {type});
             return b.CreateCall(func_fabs, {arg});
         }
         else
@@ -78,10 +83,17 @@ struct FunctionUnaryArithmeticMonotonicity<NameAbs>
     static bool has() { return true; }
     static IFunction::Monotonicity get(const IDataType &, const Field & left, const Field & right)
     {
-        Float64 left_float
-            = left.isNull() ? -std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), left);
-        Float64 right_float
-            = right.isNull() ? std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), right);
+        /// abs(NULL) = NULL stays at the bottom of the sort order instead of
+        /// following the numeric pattern, breaking monotonicity claims.
+        if (left.isNull() || right.isNull())
+            return {};
+
+        Float64 left_float = applyVisitor(FieldVisitorConvertToNumber<Float64>(), left);
+        Float64 right_float = applyVisitor(FieldVisitorConvertToNumber<Float64>(), right);
+
+        /// NaN breaks monotonicity logic (NaN comparisons are always false).
+        if (std::isnan(left_float) || std::isnan(right_float))
+            return {};
 
         if ((left_float < 0 && right_float > 0) || (left_float > 0 && right_float < 0))
             return {};

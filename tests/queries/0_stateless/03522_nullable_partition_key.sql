@@ -1,3 +1,5 @@
+SET optimize_on_insert = 1;
+
 CREATE TABLE t (c0 Nullable(Int)) ENGINE = MergeTree() ORDER BY (c0) PARTITION BY (c0) SETTINGS allow_nullable_key = 1;
 
 INSERT INTO TABLE t (c0) VALUES (NULL),(1);

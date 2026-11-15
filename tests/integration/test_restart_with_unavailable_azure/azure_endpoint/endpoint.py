@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from bottle import request, response, route, run
+from bottle import response, route, run
 
 
 @route("/<_bucket>/<_path:path>", ["GET", "POST", "PUT", "DELETE"])

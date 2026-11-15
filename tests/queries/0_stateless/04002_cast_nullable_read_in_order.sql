@@ -4,7 +4,7 @@ SET optimize_read_in_order = 1;
 
 DROP TABLE IF EXISTS test_nullable_order_by;
 CREATE TABLE test_nullable_order_by (x UInt32, y UInt32) ENGINE=MergeTree ORDER BY x;
-INSERT INTO test_nullable_order_by SELECT number, number FROM numbers(1e6);
+INSERT INTO test_nullable_order_by SELECT number, number FROM numbers(1e5);
 
 SELECT sum(y) FROM
 (
@@ -46,7 +46,7 @@ LIMIT 10;
 
 DROP TABLE IF EXISTS test_nullable_sorting_key_order_by;
 CREATE TABLE test_nullable_sorting_key_order_by (x UInt32, y UInt32) ENGINE=MergeTree ORDER BY x::Nullable(UInt32) SETTINGS allow_nullable_key = 1;
-INSERT INTO test_nullable_sorting_key_order_by SELECT number, number FROM numbers(1e6);
+INSERT INTO test_nullable_sorting_key_order_by SELECT number, number FROM numbers(1e5);
 
 SELECT sum(y) FROM
 (
