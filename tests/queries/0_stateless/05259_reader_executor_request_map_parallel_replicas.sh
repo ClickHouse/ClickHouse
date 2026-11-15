@@ -26,6 +26,7 @@ map_sizes=$($CLICKHOUSE_CLIENT --send_logs_level=test --use_reader_executor=1 --
     --cluster_for_parallel_replicas=test_cluster_one_shard_three_replicas_localhost \
     --merge_tree_min_rows_for_concurrent_read=20480 --merge_tree_min_bytes_for_concurrent_read=251658240 \
     --parallel_replicas_mark_segment_size=128 \
+    --use_statistics_for_sum_avg_aggregation=0 \
     -q "SELECT sum(k) FROM t_replicas" 2>&1 >/dev/null \
     | grep -o "Request map of [^ ]*/$file_name\.bin: [0-9]* bytes" | grep -o '[0-9]* bytes$' | grep -o '[0-9]*')
 

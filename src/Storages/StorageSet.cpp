@@ -387,7 +387,7 @@ void registerStorageSet(StorageFactory & factory)
         if (has_settings)
             set_settings.loadFromQuery(*args.storage_def);
 
-        DiskPtr disk = args.getContext()->getDisk(set_settings[SetSetting::disk]);
+        DiskPtr disk = args.getDisk(set_settings[SetSetting::disk]);
         return std::make_shared<StorageSet>(
             disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings[SetSetting::persistent]);
     }, SecretArgumentsSpec{}, StorageFactory::StorageFeatures{
@@ -395,6 +395,8 @@ void registerStorageSet(StorageFactory & factory)
         .has_builtin_setting_fn = SetSettings::hasBuiltin,
         /// `Set` accepts the format settings its settings class declares, but never reads them.
         .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<SetSettings, isFormatFactorySetting>,
+        .stores_data_on_disk = true,
+        .supports_temporary = true,
     },
     Documentation{
         .description = R"DOCS_MD(

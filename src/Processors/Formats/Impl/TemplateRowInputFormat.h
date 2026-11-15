@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Formats/RowInputFormatWithDiagnosticInfo.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ParsedTemplateFormatString.h>
@@ -59,7 +60,7 @@ private:
     const ParsedTemplateFormatString row_format;
 
     bool end_of_stream = false;
-    std::vector<size_t> always_default_columns;
+    VectorWithMemoryTracking<size_t> always_default_columns;
     const char default_csv_delimiter;
 
     const std::string row_between_delimiter;
@@ -90,7 +91,7 @@ public:
     ReturnType tryReadPrefixOrSuffix(size_t & input_part_beg, size_t input_part_end);
     bool checkForSuffix();
 
-    void setReadBuffer(PeekableReadBuffer & buf_) { buf = &buf_; }
+    void setReadBuffer(PeekableReadBuffer & buf_) { buf = &buf_; row_num = 0; }
 
     void skipDelimiter(size_t index);
     void skipRowEndDelimiter();

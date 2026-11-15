@@ -143,7 +143,9 @@ with engine.connect() as conn:
 
 驱动程序通过 SQLAlchemy 连接引发的错误，使用的是从 `clickhouse_connect.dbapi` 导出的 DB-API 类。这些类与 `clickhouse_connect.driver.exceptions` 中的对应类是同一个类对象，因此 SQLAlchemy 会将其包装为相应的 `sqlalchemy.exc.DBAPIError` 子类。`StreamFailureError` 属于 `OperationalError`，会被包装为 `sqlalchemy.exc.OperationalError`。
 
-SQL 执行遵循驱动程序的 [HTTP 重试策略](/zh/integrations/language-clients/python/driver-api#http-retries)。Native 格式的批量插入则遵循[插入重试策略](/zh/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication)。
+如果表不存在，列检查和表反射会引发 `sqlalchemy.exc.NoSuchTableError`。该异常同时继承自 `sqlalchemy.exc.NoResultFound`，因此现有的异常处理器仍能捕获它。其错误消息为 `Table <database>.<table_name> does not exist`。
+
+SQL 执行遵循驱动程序的 [HTTP 重试策略](/zh/integrations/language-clients/python/driver-api#http-retries)。Native 批量插入则遵循[插入重试策略](/zh/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication)。
 
 如果调用方的取消操作可能会中断显式调用的 `AsyncConnection.invalidate()`，请在自行管理的任务中执行失效操作，并等待该任务完成后再传播取消。这样 SQLAlchemy 便能完成连接记录的簿记工作：
 
@@ -441,6 +443,8 @@ ClickHouse 不支持递归 materialized CTE。若同时设置 `recursive=True` �
 ## DDL 与反射 {#sqlalchemy-ddl-reflection}
 
 ClickHouse Connect 提供 ClickHouse 数据类型、表引擎、字典结构、数据库 DDL 和表反射功能。
+
+出于兼容性考虑，`Inspector.get_table_names()` 会返回所有种类的视图。`MetaData.reflect()` 默认也会包含这些视图，并可通过 `only` 按名称选择某个视图。如需获取非物化视图，请使用 `Inspector.get_view_names()`；如需获取物化视图，请使用 `Inspector.get_materialized_view_names()`。这两个方法均接受 `schema` 参数，适用于 SQLAlchemy 1.4.40 及更高版本 (包括 2.x)。不支持通过 `Inspector.get_view_definition()` 检查视图定义。
 
 `clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes` 中的 `Nullable()` 和 `LowCardinality()` 接受 ClickHouse SQLAlchemy 类型的类或实例，并为类型检查器保留其具体类型。例如，`Nullable(String)` 返回一个 `String` 实例，可直接传给 `Column`。类型检查器会将 `[Nullable(String)]` 推断为 `list[String]`。如果该列表中还包含其他 ClickHouse 类型，请将其注解为 `list[ChSqlaType]`，并从 `clickhouse_connect.cc_sqlalchemy.datatypes.base` 导入 `ChSqlaType`。
 

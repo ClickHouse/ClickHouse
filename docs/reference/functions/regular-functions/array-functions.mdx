@@ -4560,6 +4560,169 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 [['a','c'],['b','d']]
 ```
 
+## arrayTreePreorder {#arrayTreePreorder}
+
+Introduced in: v26.11.0
+
+Lays out a tree (or a forest) stored as two arrays, node identifiers and parent identifiers, in depth-first preorder.
+
+Element `i` of `ids` and `parent_ids` describes input node `i` and its parent.
+The function returns a named tuple of four arrays. All of them are in preorder, and all positions are 1-based:
+element `k` describes the `k`-th node of the preorder.
+- `order[k]` — the input index of this node. Data arrays are brought into preorder with `arrayMap(i -> x[i], t.order)`.
+- `size[k]` — the number of nodes in the subtree of this node, including the node itself. The subtree is the contiguous range of positions `[k, k + size[k])`.
+- `parent[k]` — the preorder position of the node whose identifier equals the parent identifier of this node, or `0` if there is no such node.
+- `depth[k]` — the distance from this node to the root of its tree, `0` for the roots.
+
+Node `a` is an ancestor of node `b` if and only if `a < b AND b < a + size[a]`.
+Additive aggregates over a subtree are the difference of two prefix sums (see [`arrayCumSum`](#arrayCumSum)).
+Other aggregates over a subtree are available with [`arraySlice`](#arraySlice) of a data array reordered into preorder.
+
+The trees are written one by one, in the input order of their roots, and the children of each node are visited in the input order,
+so the result is deterministic. The time complexity is linear in the array size, and the depth of the tree is not limited.
+
+The function does not throw on the content of the arrays, and makes a valid forest from any input:
+- A node is a root if its parent identifier is `NULL` or is not present in `ids`, for example an empty string or an orphan node.
+- If the parent links make a cycle, the link of the node of the cycle which comes first in the input is cut, and this node becomes a root. Its `parent` keeps the position of its real parent, which is greater than its own position, so `parent[k] > k` shows that a cycle was cut at position `k`. A node which is its own parent gets `parent[k] = k`.
+- If `ids` has duplicate values, the children are attached to the first occurrence.
+
+The identifiers are compared by hashing. They cannot be or contain floating-point numbers (because `0.0` and `-0.0` are equal, but have different hashes),
+or `Dynamic`, `Variant` and `JSON` values (because a `NULL` inside them would be compared as an ordinary value, while a `NULL` of a `Nullable` type makes a root).
+
+The structure of the input follows from the result (see the examples below):
+- Is there a cycle: `arrayExists((p, k) -> p > k, t.parent, arrayEnumerate(t.parent))`.
+- Positions where the cycles were cut: `arrayFilter((k, p) -> p > k, arrayEnumerate(t.parent), t.parent)`.
+- Positions of the tree roots: `arrayFilter((k, d) -> d = 0, arrayEnumerate(t.depth), t.depth)`, and the number of trees is `countEqual(t.depth, 0)`.
+- Positions of the nodes whose parent identifier is not present: `arrayFilter((k, p) -> p = 0, arrayEnumerate(t.parent), t.parent)`.
+- Is the input one tree with a real root: `t.size[1] = length(ids) AND t.parent[1] <= 1`. It accepts both root conventions (a parent identifier which is not present gives `0`, a self-loop gives `1`), and rejects an array which is one big cycle.
+- Positions of the nodes of the cycle cut at position `r`: `arrayFilter(x -> x + t.size[x] > t.parent[r], range(r, t.parent[r] + 1))`. These are the nodes from `r` down to its real parent `t.parent[r]` whose subtree contains the real parent.
+- Duplicate identifiers: `arrayEnumerateUniq(ids) > 1`.
+
+To get the input index of the node at position `k`, use `t.order[k]`.
+
+**Syntax**
+
+```sql
+arrayTreePreorder(ids, parent_ids)
+```
+
+**Arguments**
+
+- `ids` — Node identifiers. Floating-point numbers, `Dynamic`, `Variant` and `JSON` are not supported. [`Array(T)`](/reference/data-types/array)
+- `parent_ids` — Parent identifiers, one per node. Must have the same size as `ids`. [`Array(T)`](/reference/data-types/array)
+
+**Returned value**
+
+Returns the tuple of the preorder layout. [`Tuple(order Array(UInt32), size Array(UInt32), parent Array(UInt32), depth Array(UInt32))`](/reference/data-types/tuple)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT arrayTreePreorder(['G2', 'A', 'T1', 'B', 'G1', 'G3'], ['B', '', 'B', 'A', 'A', 'A']) AS t
+```
+
+```response title=Response
+([2,4,1,3,5,6],[6,3,1,1,1,1],[0,1,2,2,1,1],[0,1,2,2,1,1])
+```
+
+**Cost and number of descendants of each agent span of a trace**
+
+```sql title=Query
+WITH
+    ['A', 'G1', 'B', 'G2', 'T1', 'G3'] AS ids,
+    ['', 'A', 'A', 'B', 'B', 'A'] AS parent_ids,
+    ['AGENT', 'GENERATION', 'AGENT', 'GENERATION', 'TOOL', 'GENERATION'] AS types,
+    [0, 2, 0, 3, 0, 1] AS costs,
+    arrayTreePreorder(ids, parent_ids) AS t,
+    arrayCumSum(arrayMap(i -> costs[i], t.order)) AS cum
+SELECT arrayMap(k -> (ids[t.order[k]], cum[k + t.size[k] - 1] - cum[k], t.size[k] - 1),
+    arrayFilter(k -> types[t.order[k]] = 'AGENT', arrayEnumerate(t.order))) AS res
+```
+
+```response title=Response
+[('A',6,5),('B',3,2)]
+```
+
+**Invalid input: a cycle C -> D -> E -> C, a node F below the cycle, an orphan G**
+
+```sql title=Query
+SELECT arrayTreePreorder(['A', 'B', 'C', 'D', 'E', 'F', 'G'], ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
+```
+
+```response title=Response
+([1,2,3,5,4,6,7],[2,1,4,2,1,1,1],[0,1,5,3,4,3,0],[0,1,0,1,2,1,0])
+```
+
+**Detect cycles and find where they were cut**
+
+```sql title=Query
+WITH
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
+    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
+SELECT
+    arrayExists((p, k) -> p > k, t.parent, arrayEnumerate(t.parent)) AS has_cycle,
+    arrayFilter((k, p) -> p > k, arrayEnumerate(t.parent), t.parent) AS cut_positions,
+    arrayMap(k -> ids[t.order[k]], cut_positions) AS cut_ids
+```
+
+```response title=Response
+┌─has_cycle─┬─cut_positions─┬─cut_ids─┐
+│         1 │ [3]           │ ['C']   │
+└───────────┴───────────────┴─────────┘
+```
+
+**Roots, number of trees, nodes whose parent is not found, check for one tree**
+
+```sql title=Query
+WITH
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
+    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
+SELECT
+    arrayMap(k -> ids[t.order[k]], arrayFilter((k, d) -> d = 0, arrayEnumerate(t.depth), t.depth)) AS roots,
+    countEqual(t.depth, 0) AS trees,
+    arrayMap(k -> ids[t.order[k]], arrayFilter((k, p) -> p = 0, arrayEnumerate(t.parent), t.parent)) AS parent_not_found,
+    t.size[1] = length(ids) AND t.parent[1] <= 1 AS is_one_tree
+```
+
+```response title=Response
+┌─roots─────────┬─trees─┬─parent_not_found─┬─is_one_tree─┐
+│ ['A','C','G'] │     3 │ ['A','G']        │           0 │
+└───────────────┴───────┴──────────────────┴─────────────┘
+```
+
+**Nodes of the cycle cut at position 3**
+
+```sql title=Query
+WITH
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
+    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t,
+    3 AS r
+SELECT arrayMap(k -> ids[t.order[k]], arrayFilter(x -> x + t.size[x] > t.parent[r], range(r, t.parent[r] + 1))) AS cycle
+```
+
+```response title=Response
+┌─cycle─────────┐
+│ ['C','E','D'] │
+└───────────────┘
+```
+
+**Duplicate identifiers: children are attached to the first occurrence**
+
+```sql title=Query
+WITH ['a', 'b', 'a', 'c'] AS ids
+SELECT
+    arrayFilter((id, n) -> n > 1, ids, arrayEnumerateUniq(ids)) AS duplicate_ids,
+    arrayTreePreorder(ids, ['', 'a', '', 'a']).order AS order
+```
+
+```response title=Response
+┌─duplicate_ids─┬─order─────┐
+│ ['a']         │ [1,2,4,3] │
+└───────────────┴───────────┘
+```
+
 ## arrayUnion {#arrayUnion}
 
 Introduced in: v24.10.0
@@ -4835,7 +4998,7 @@ Checks whether the input array is empty.
 An array is considered empty if it does not contain any elements.
 
 <Note>
-Can be optimized by enabling the [`optimize_functions_to_subcolumns` setting](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
+When the column isn't used anywhere else in the query, the function can read only the [size0](/reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`. This optimization is controlled by the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting, which is enabled by default.
 </Note>
 
 The function also works for Strings or UUIDs.
@@ -5891,7 +6054,7 @@ Checks whether the input array is non-empty.
 An array is considered non-empty if it contains at least one element.
 
 <Note>
-Can be optimized by enabling the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
+When the column isn't used anywhere else in the query, the function can read only the [size0](/reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`. This optimization is controlled by the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting, which is enabled by default.
 </Note>
 
 The function also works for Strings or UUIDs.

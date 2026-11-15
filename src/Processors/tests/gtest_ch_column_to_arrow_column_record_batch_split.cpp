@@ -1,6 +1,6 @@
 #include "config.h"
 
-#if USE_ARROW || USE_PARQUET
+#if USE_ARROW_LIBRARY
 
 #include <gtest/gtest.h>
 
@@ -54,7 +54,7 @@ std::shared_ptr<arrow::Table> convertToArrow(const DataTypePtr & type, MutableCo
     Columns columns;
     columns.emplace_back(std::move(column));
 
-    std::vector<Chunk> chunks;
+    Chunks chunks;
     chunks.emplace_back(std::move(columns), NUM_ROWS);
 
     CHColumnToArrowColumn converter(header_columns, "Arrow", settingsWithLimit(max_record_batch_bytes));

@@ -1,0 +1,12 @@
+-- parallel_replicas_local_plan = 0 in the SELECT
+100000
+-- parallel_replicas_prefer_local_replica = 0 in the SELECT
+100000
+-- max_execution_time_leaf = 0 in the INSERT, 100 in the SELECT
+100000
+-- agreeing settings use the local pipeline
+100000
+05394_control	3
+05394_leaf_timeout	4
+05394_local_plan	4
+05394_prefer_local	4

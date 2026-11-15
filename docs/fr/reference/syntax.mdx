@@ -9,9 +9,7 @@ doc_type: 'reference'
 Dans cette section, nous allons examiner la syntaxe SQL de ClickHouse.
 ClickHouse utilise une syntaxe basée sur SQL, mais propose également un certain nombre d’extensions et d’optimisations.
 
-<div id="query-parsing">
-  ## Analyse syntaxique des requêtes
-</div>
+## Analyse syntaxique des requêtes {#query-parsing}
 
 Il existe deux types de parseurs dans ClickHouse :
 
@@ -54,16 +52,12 @@ Le reste de cette section porte sur le parseur complet.
   Pour plus d’informations sur les parseurs de format, consultez la section [Formats](/fr/reference/formats/index).
 </Note>
 
-<div id="spaces">
-  ## Espaces
-</div>
+## Espaces {#spaces}
 
 * Il peut y avoir un nombre quelconque de caractères d’espacement entre les éléments syntaxiques (y compris au début et à la fin d’une requête).
 * Les caractères d’espacement comprennent l’espace, la tabulation, le saut de ligne, le retour chariot (CR) et le saut de page.
 
-<div id="comments">
-  ## Commentaires
-</div>
+## Commentaires {#comments}
 
 ClickHouse prend en charge les commentaires de style SQL et de style C :
 
@@ -87,9 +81,7 @@ SELECT
     # TODO: add hour/minute variants
 ```
 
-<div id="keywords">
-  ## Mots-clés
-</div>
+## Mots-clés {#keywords}
 
 Dans ClickHouse, les mots-clés peuvent être *sensibles à la casse* ou *insensibles à la casse* selon le contexte.
 
@@ -114,11 +106,9 @@ Par exemple, la requête suivante est valide si la table `table_name` possède u
 SELECT "FROM" FROM table_name
 ```
 
-<div id="identifiers">
-  ## Identifiants
-</div>
+## Identifiants {#identifiers}
 
-Les identifiants sont :
+Les identifiants sont :
 
 * Les noms de cluster, de base de données, de table, de partition et de colonne.
 * Les [fonctions](#functions).
@@ -127,14 +117,22 @@ Les identifiants sont :
 
 Les identifiants peuvent être entre guillemets ou non, bien que la seconde option soit préférable.
 
-Les identifiants non entre guillemets doivent correspondre à la regex `^[a-zA-Z_][0-9a-zA-Z_]*$` et ne peuvent pas être identiques à des [mots-clés](#keywords).
-Consultez le tableau ci-dessous pour voir des exemples d&#39;identifiants valides et invalides :
+Les identifiants non entre guillemets s&#39;écrivent avec des lettres ASCII, des chiffres, des traits de soulignement (`_`) et des signes dollar (`$`), selon les règles suivantes :
 
-| Identifiants valides                           | Identifiants invalides                 |
-| ---------------------------------------------- | -------------------------------------- |
-| `xyz`, `_internal`, `Id_with_underscores_123_` | `1x`, `tom@gmail.com`, `äußerst_schön` |
+* Un identifiant qui commence par une lettre ou par `_` correspond à la regex `^[a-zA-Z_][0-9a-zA-Z_$]*$`, par exemple `xyz` ou `a$b`.
+* Un identifiant peut commencer par `$` si le caractère suivant est une lettre, un chiffre ou `_`, par exemple `$doc` ou `$1`. Un `$` seul n&#39;est pas un identifiant.
+* Un identifiant peut commencer par un chiffre s&#39;il ne s&#39;agit pas d&#39;un [littéral numérique](#numeric), par exemple `1x` ou `2nd_col`, mais pas `1e5` ni `0x1F`. Un tel identifiant ne peut pas contenir `$`.
+* Si un identifiant commence par `$tag$`, où `tag` est composé d&#39;une ou plusieurs lettres, chiffres ou traits de soulignement, et que le même `$tag$` réapparaît plus loin dans la requête, le texte compris entre le premier `$tag$` et le second est alors analysé comme un [heredoc](#heredoc). Par exemple, `SELECT 1 AS $a$b, 2 AS $a$c` échoue. Mettez de tels identifiants entre guillemets : `` `$a$b` ``.
 
-Si vous souhaitez utiliser des identifiants identiques à des mots-clés ou inclure d&#39;autres symboles dans les identifiants, entourez-les de guillemets doubles ou d&#39;accents graves, par exemple : `"id"`, `` `id` ``.
+Un mot écrit de cette manière n&#39;est pas toujours interprété comme un identifiant : lorsque le contexte autorise également un [mot-clé](#keywords) ou un littéral, le mot peut être interprété comme tel. Par exemple, `SELECT 1 AS from` fonctionne, mais dans `SELECT 1 from`, le mot `from` introduit la clause `FROM`, et dans une expression, une colonne nommée `inf`, `nan`, `true` ou `false` est interprétée comme un littéral. Mettez de tels identifiants entre guillemets, par exemple `"from"` ou `` `inf` ``.
+
+Consultez le tableau ci-dessous pour voir des exemples d&#39;identifiants valides et invalides :
+
+| Identifiants valides                                                | Identifiants invalides                        |
+| ------------------------------------------------------------------- | --------------------------------------------- |
+| `xyz`, `_internal`, `Id_with_underscores_123_`, `a$b`, `$doc`, `1x` | `1a$b`, `$`, `tom@gmail.com`, `äußerst_schön` |
+
+Si vous souhaitez utiliser des identifiants identiques à des mots-clés ou inclure d&#39;autres symboles dans les identifiants, entourez-les de guillemets doubles ou d&#39;accents graves, par exemple : `"id"`, `` `id` ``.
 
 <Note>
   Les mêmes règles d&#39;échappement qui s&#39;appliquent aux identifiants entre guillemets s&#39;appliquent également aux littéraux de chaîne. Voir [String](#string) pour plus de détails.
@@ -149,9 +147,7 @@ Si vous souhaitez utiliser des identifiants identiques à des mots-clés ou incl
   Utilisez des traits de soulignement (`_`) ou un autre séparateur à la place des points dans les noms de colonnes, sauf si vous avez intentionnellement besoin de la sémantique `Nested`.
 </Tip>
 
-<div id="literals">
-  ## Littéraux
-</div>
+## Littéraux {#literals}
 
 Dans ClickHouse, un littéral est une valeur représentée directement dans une requête.
 En d&#39;autres termes, il s&#39;agit d&#39;une valeur fixe qui ne change pas pendant l&#39;exécution de la requête.
@@ -166,9 +162,7 @@ Les littéraux peuvent être :
 
 Nous examinons chacun d&#39;eux plus en détail dans les sections ci-dessous.
 
-<div id="string">
-  ### String
-</div>
+### String {#string}
 
 Les littéraux de chaîne de caractères doivent être entourés de guillemets simples. Les guillemets doubles ne sont pas pris en charge.
 
@@ -206,9 +200,7 @@ L’échappement fonctionne de l’une des manières suivantes :
   Dans les littéraux de chaîne de caractères, vous devez au minimum échapper `'` et `\` à l’aide des codes d’échappement `\'` (ou : `''`) et `\\`.
 </Note>
 
-<div id="numeric">
-  ### Numérique
-</div>
+### Numérique {#numeric}
 
 Les littéraux numériques sont analysés comme suit :
 
@@ -263,9 +255,7 @@ Les littéraux numériques suivants sont pris en charge :
   Les littéraux octaux ne sont pas pris en charge afin d&#39;éviter les erreurs d&#39;interprétation accidentelles.
 </Note>
 
-<div id="compound">
-  ### Composés
-</div>
+### Composés {#compound}
 
 Les tableaux se construisent avec `[]` : `[1, 2, 3]`. Les tuples se construisent avec `()` : `(1, 'Hello, world!', 2)`.
 Techniquement, il ne s&#39;agit pas de littéraux, mais respectivement d&#39;expressions utilisant l&#39;opérateur de création de tableau et l&#39;opérateur de création de tuple.
@@ -276,9 +266,7 @@ Un tableau doit contenir au moins un élément, et un tuple au moins deux.
   Les résultats d&#39;une requête peuvent inclure des tuples, mais les tuples ne peuvent pas être enregistrés dans une base de données (sauf pour les tables utilisant le moteur [Memory](/fr/reference/engines/table-engines/special/memory)).
 </Note>
 
-<div id="null">
-  ### NULL
-</div>
+### NULL {#null}
 
 `NULL` est utilisé pour indiquer qu&#39;une valeur est manquante.
 Pour stocker `NULL` dans un champ de table, celui-ci doit être de type [Nullable](/fr/reference/data-types/nullable).
@@ -291,9 +279,7 @@ Pour stocker `NULL` dans un champ de table, celui-ci doit être de type [Nullabl
   * Dans les requêtes, vous pouvez tester `NULL` à l&#39;aide des opérateurs [`IS NULL`](/fr/reference/functions/regular-functions/functions-for-nulls#isNull) et [`IS NOT NULL`](/fr/reference/functions/regular-functions/functions-for-nulls#isNotNull), ainsi que des fonctions associées `isNull` et `isNotNull`.
 </Note>
 
-<div id="heredoc">
-  ### Heredoc
-</div>
+### Heredoc {#heredoc}
 
 Un [heredoc](https://en.wikipedia.org/wiki/Here_document) permet de définir une chaîne (souvent sur plusieurs lignes) tout en conservant la mise en forme d’origine.
 Un heredoc se définit comme un littéral de chaîne personnalisé, placé entre deux symboles `$`.
@@ -316,9 +302,7 @@ SELECT $heredoc$SHOW CREATE VIEW my_view$heredoc$;
   * Vous pouvez utiliser un heredoc pour inclure des extraits de code SQL, HTML ou XML, etc.
 </Tip>
 
-<div id="defining-and-using-query-parameters">
-  ## Définition et utilisation des paramètres de requête
-</div>
+## Définition et utilisation des paramètres de requête {#defining-and-using-query-parameters}
 
 Les paramètres de requête vous permettent d’écrire des requêtes génériques contenant des placeholders abstraits au lieu d’identifiants concrets.
 Lorsqu’une requête avec des paramètres de requête est exécutée,
@@ -387,9 +371,7 @@ Un paramètre de requête peut être référencé dans une requête à l’aide 
   Ils sont principalement conçus pour fonctionner dans les instructions `SELECT` à la place d’identifiants ou de littéraux.
 </Note>
 
-<div id="functions">
-  ## Fonctions
-</div>
+## Fonctions {#functions}
 
 Les appels de fonction s’écrivent sous la forme d’un identifiant suivi d’une liste d’arguments (éventuellement vide) entre `()`.
 Contrairement au SQL standard, les parenthèses sont obligatoires, même lorsque la liste d’arguments est vide.
@@ -417,9 +399,7 @@ et les arguments de la première liste sont appelés &quot;paramètres&quot;.
   La syntaxe des fonctions d&#39;agrégation sans paramètres est la même que celle des fonctions régulières.
 </Note>
 
-<div id="operators">
-  ## Opérateurs
-</div>
+## Opérateurs {#operators}
 
 Les opérateurs sont transformés en leurs fonctions correspondantes lors de l’analyse syntaxique d’une requête, en tenant compte de leur priorité et de leur associativité.
 
@@ -435,9 +415,7 @@ est transformé en
 plus(plus(1, multiply(2, 3)), 4)`
 ```
 
-<div id="data-types-and-database-table-engines">
-  ## Types de données et moteurs de table de la base de données
-</div>
+## Types de données et moteurs de table de la base de données {#data-types-and-database-table-engines}
 
 Les types de données et les moteurs de table dans la requête `CREATE` s’écrivent de la même manière que les identifiants ou les fonctions.
 Autrement dit, ils peuvent comporter ou non une liste d’arguments entre parenthèses.
@@ -448,9 +426,7 @@ Pour plus d’informations, consultez les sections :
 * [Moteurs de table](/fr/reference/engines/table-engines/index)
 * [CREATE](/fr/reference/statements/create/index).
 
-<div id="expressions">
-  ## Expressions
-</div>
+## Expressions {#expressions}
 
 Une expression peut être l’un des éléments suivants :
 
@@ -470,9 +446,7 @@ Les fonctions et les opérateurs peuvent, à leur tour, prendre des expressions 
 Une expression constante est une expression dont le résultat est connu lors de l’analyse de la requête, c’est-à-dire avant l’exécution.
 Par exemple, les expressions portant sur des littéraux sont des expressions constantes.
 
-<div id="expression-aliases">
-  ## Alias d’expression
-</div>
+## Alias d’expression {#expression-aliases}
 
 Un alias est un nom défini par l’utilisateur pour une [expression](#expressions) dans une requête.
 
@@ -488,9 +462,7 @@ Les éléments de la syntaxe ci-dessus sont expliqués ci-dessous.
 | `expr`             | Toute expression prise en charge par ClickHouse.                                                                                                                                 | `SELECT column_name * 2 AS double FROM some_table`                      |                                                                                                                                                                      |
 | `alias`            | Nom de `expr`. Les alias doivent respecter la syntaxe des [identifiants](#identifiers).                                                                                          | `SELECT "table t".column_name FROM table_name AS "table t"`.            |                                                                                                                                                                      |
 
-<div id="notes-on-usage">
-  ### Notes sur l’utilisation
-</div>
+### Notes sur l’utilisation {#notes-on-usage}
 
 * Les alias sont globaux à une requête ou une sous-requête, et vous pouvez définir un alias dans n’importe quelle partie d’une requête pour n’importe quelle expression. Par exemple :
 
@@ -539,9 +511,7 @@ Cette substitution a provoqué l’exception.
   Vous pouvez modifier ce comportement par défaut en définissant [prefer&#95;column&#95;name&#95;to&#95;alias](/fr/reference/settings/session-settings/prefer#prefer_column_name_to_alias) sur `1`.
 </Note>
 
-<div id="asterisk">
-  ## Astérisque
-</div>
+## Astérisque {#asterisk}
 
 Dans une requête `SELECT`, un astérisque peut remplacer une expression.
 Pour plus d’informations, consultez la section [SELECT](/fr/reference/statements/select/index#asterisk).

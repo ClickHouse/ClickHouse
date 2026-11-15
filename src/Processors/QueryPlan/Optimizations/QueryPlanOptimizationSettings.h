@@ -24,8 +24,12 @@ struct BuiltSetsByHash;
 using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
 
 class QueryPlan;
+class ReadFromMergeTree;
 
 struct DistributedPlanLocalObject;
+
+/// The read of the single-node plan that a read of the plan with parallel replicas stands for, or nullptr.
+using FindSingleNodeRead = std::function<const ReadFromMergeTree *(const ReadFromMergeTree &)>;
 
 /// What the builder of the plan with parallel replicas for automatic parallel replicas produced. When
 /// it built nothing, `skip_reason` says which kind of reason stopped it, so that the optimization can
@@ -45,7 +49,8 @@ struct PlanWithParallelReplicas
     SkipReason skip_reason = SkipReason::None;
 };
 
-using QueryPlanWithParallelReplicasBuilder = std::function<PlanWithParallelReplicas(const BuiltSetsByHashPtr &, const LoggerPtr &)>;
+using QueryPlanWithParallelReplicasBuilder
+    = std::function<PlanWithParallelReplicas(const BuiltSetsByHashPtr &, const FindSingleNodeRead &, const LoggerPtr &)>;
 
 struct QueryPlanOptimizationSettings
 {
@@ -74,6 +79,9 @@ struct QueryPlanOptimizationSettings
 
     /// --- Zero-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool remove_redundant_sorting;
+
+    /// Execute `ORDER BY rand()` by `ShuffleStep` instead of `SortingStep` (at the end of the second pass).
+    bool use_shuffle_for_order_by_rand;
 
     /// --- First-pass optimizations
     bool lift_up_array_join;
@@ -323,8 +331,15 @@ struct QueryPlanOptimizationSettings
     mutable UInt64 join_reorder_next_cluster_id = 0;
 
     /// Takes the sets the single-node plan already filled, so the probe plan can adopt them instead
-    /// of re-running the same subqueries, and the logger to say why it could not build a plan on.
+    /// of re-running the same subqueries, the reads of the single-node plan, and the logger to say why
+    /// it could not build a plan on.
     QueryPlanWithParallelReplicasBuilder query_plan_with_parallel_replicas_builder;
+
+    /// Set only while the probe plan of automatic parallel replicas is optimized. That plan is optimized without
+    /// `query_plan_optimize_primary_key`, so its reads have no index conditions, and direct read from a text
+    /// index takes them from the single-node read instead: building them would execute the `IN` subqueries
+    /// the probe plan could not adopt.
+    FindSingleNodeRead find_single_node_read;
 
     bool enable_parallel_replicas = false;
 };
