@@ -5005,6 +5005,8 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
     catch (...) // Ok: wait for parallel tasks to finish before rethrowing
     {
         runner.waitForAllToFinishAndRethrowFirstError();
+        /// The exception may come from the synchronous conversion or from scheduling, with no task having failed.
+        throw;
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
@@ -5937,6 +5939,8 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
             catch (...) // Ok: wait for parallel tasks to finish before rethrowing
             {
                 runner.waitForAllToFinishAndRethrowFirstError();
+                /// A failure to schedule must not leave some variants unconverted.
+                throw;
             }
             runner.waitForAllToFinishAndRethrowFirstError();
         }
