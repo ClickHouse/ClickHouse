@@ -3,51 +3,55 @@ title: ClickHouse MySQL Cloud セットアップ
 ---
 
 <Steps>
-  <Step>
-    #### `Connect your app` を選択
-
+  <Step title={<> <code>Connect your app</code> を選択 </>} id="select-connect-your-app">
     ClickHouse Cloud サービスを作成したら、`Connect your app` 画面でドロップダウンから MySQL を選択します。
 
-    <Image size="lg" img="/images/_snippets/mysql1.webp" alt="MySQL インターフェイスの選択用ドロップダウンが表示された ClickHouse Cloud の認証情報画面" border />
+    <Frame>
+      <img src="/images/_snippets/mysql1.webp" alt="MySQL インターフェイス選択用のドロップダウンが表示された ClickHouse Cloud 認証情報画面" />
+    </Frame>
   </Step>
 
-  <Step>
-    #### MySQL インターフェイスを有効にする
-
-    このサービス専用の MySQL インターフェイスを有効にするには、スイッチをオンにします。
+  <Step title="MySQL インターフェイスを有効にする" id="enable-mysql-interface">
+    このサービスで MySQL インターフェイスを有効にするには、スイッチをオンにします。
     これにより、このサービスでポート `3306` が公開され、固有の MySQL ユーザー名を含む MySQL 接続画面が表示されます。
 
-    <Image size="lg" img="/images/_snippets/mysql2.webp" alt="MySQL インターフェイスを有効にするトグルと接続情報が表示された ClickHouse Cloud 画面" border />
+    <Frame>
+      <img src="/images/_snippets/mysql2.webp" alt="MySQL インターフェイスを有効にするトグルと接続詳細が表示された ClickHouse Cloud 画面" />
+    </Frame>
 
-    または、既存のサービスで MySQL インターフェイスを有効にするには、次の手順に従います。
+    また、既存のサービスで MySQL インターフェイスを有効にする場合は、次の手順に従います。
   </Step>
 
-  <Step>
-    #### `Connect` を選択
-
+  <Step title={<> <code>Connect</code> を選択 </>} id="select-connect">
     サービスが `Running` 状態であることを確認してから、MySQL インターフェイスを有効にしたいサービスをクリックします。
-    左側のメニューから「Connect」を選択します。
+    左側のメニューから &quot;Connect&quot; を選択します。
 
-    <Image size="lg" img="/images/_snippets/mysql3.webp" alt="Connect オプションが強調表示された ClickHouse Cloud サービスの接続画面" border />
+    <Frame>
+      <img src="/images/_snippets/mysql3.webp" alt="Connect オプションが強調表示された ClickHouse Cloud サービス接続画面" />
+    </Frame>
   </Step>
 
-  <Step>
-    #### `MySQL` を選択
-
+  <Step title={<> <code>MySQL</code> を選択 </>} id="choose-mysql">
     `Connect With` ドロップダウンから `MySQL` を選択します。
 
-    <Image size="md" img="/images/_snippets/mysql4.webp" alt="MySQL オプションの選択を表示した ClickHouse Cloud 接続画面" border />
+    <div className="ch-image-md">
+      <Frame>
+        <img src="/images/_snippets/mysql4.webp" alt="MySQL オプションの選択が表示された ClickHouse Cloud 接続画面" />
+      </Frame>
+    </div>
   </Step>
 
-  <Step>
-    #### MySQL インターフェイスを有効にする
-
-    このサービス専用の MySQL インターフェイスを有効にするには、スイッチをオンにします。
+  <Step title="MySQL インターフェイスを有効にする" id="enable-mysql-interface-existing-service">
+    このサービスで MySQL インターフェイスを有効にするには、スイッチをオンにします。
     これにより、このサービスでポート `3306` が公開され、固有の MySQL ユーザー名を含む MySQL 接続画面が表示されます。
   </Step>
 </Steps>
 
-<Image size="md" img="/images/_snippets/mysql5.webp" alt="接続情報が表示され、MySQL インターフェイスが有効になっている ClickHouse Cloud 接続画面" border />
+<div className="ch-image-md">
+  <Frame>
+    <img src="/images/_snippets/mysql5.webp" alt="MySQL インターフェイスが有効になり、接続詳細が表示された ClickHouse Cloud 接続画面" />
+  </Frame>
+</div>
 
 <div id="creating-multiple-mysql-users-in-clickhouse-cloud">
   ## ClickHouse Cloud で読み取り専用の MySQL ユーザーを作成する
@@ -56,7 +60,7 @@ title: ClickHouse MySQL Cloud セットアップ
 ClickHouse Cloud では、デフォルトユーザーと同じパスワードを共有する `mysql4<subdomain>` ユーザーが自動的に作成されます。
 `<subdomain>` の部分は、ClickHouse Cloud のホスト名の先頭部分に対応します。
 
-このユーザー名形式は、安全な接続を確立するものの、TLS ハンドシェイクに [SNI (Server Name Indication)](https://www.cloudflare.com/learning/ssl/what-is-sni) 情報を含めないツールとの互換性のために必要です。
+このユーザー名形式は、安全な接続を確立しても TLS ハンドシェイクに [SNI (Server Name Indication)](https://www.cloudflare.com/learning/ssl/what-is-sni) 情報を含めないツールとの互換性のために必要です。
 SNI 情報がないと、システムは適切な内部ルーティングを実行できないため、ユーザー名に埋め込まれたサブドメイン情報が必要なルーティング情報を補います。
 MySQL コンソールクライアントは、その一例です。
 
@@ -69,9 +73,7 @@ MySQL コンソールクライアントは、その一例です。
 </Note>
 
 <Steps>
-  <Step>
-    #### 読み取り専用の設定プロファイルを作成する
-
+  <Step title="読み取り専用の設定プロファイルを作成する" id="create-a-custom-settings-user">
     読み取り専用ユーザーに適用する [設定プロファイル](/ja/reference/statements/create/settings-profile) を作成し、
     `readonly` 設定を `1` にします。
 
@@ -80,9 +82,7 @@ MySQL コンソールクライアントは、その一例です。
     ```
   </Step>
 
-  <Step>
-    #### 新しい読み取り専用の MySQL ユーザーを作成する
-
+  <Step title="新しい読み取り専用の MySQL ユーザーを作成する" id="create-a-readonly-mysql-user">
     次の形式の名前で [ユーザーを作成](/ja/reference/statements/create/user) します。
 
     ```sql
@@ -98,9 +98,7 @@ MySQL コンソールクライアントは、その一例です。
     ```
   </Step>
 
-  <Step>
-    #### 新しいユーザーに必要なテーブルへのアクセス権限を付与する
-
+  <Step title="新しいユーザーに必要なテーブルへのアクセス権限を付与する" id="grant-the-new-user-the-necessary-permissions">
     必要なテーブルまたはデータベースを操作できるように、新しいユーザーに必要な権限を [付与](/ja/reference/statements/grant) します。
     たとえば、`system.query_log` のみにアクセスを許可する場合は次のとおりです。
 

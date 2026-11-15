@@ -1,6 +1,6 @@
 #include <Formats/PNGTerminalOutput.h>
 
-#if USE_LIBPNG && USE_SIMDUTF
+#if USE_SIMDUTF
 
 #include <algorithm>
 #include <array>
@@ -29,7 +29,7 @@ namespace ErrorCodes
 
 namespace
 {
-    /// libpng-encoded payloads are sent to the terminal in base64; Kitty requires chunks of at most 4096 bytes.
+    /// The encoded PNG is sent to the terminal in base64; Kitty requires chunks of at most 4096 bytes.
     constexpr size_t KITTY_CHUNK_SIZE = 4096;
 
     /// Number of levels per color channel in the fixed Sixel palette (6 levels -> 6*6*6 = 216 colors).

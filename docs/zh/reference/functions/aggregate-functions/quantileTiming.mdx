@@ -52,7 +52,7 @@ quantileTiming(level)(expr)
 
 **参数列表**
 
-* `expr` — 基于列值计算并返回 Float* 类型数值的表达式。如果向函数传入负值，则其行为未定义。如果值大于 30,000 (页面加载时间超过 30 秒) ，则按 30,000 处理。[`Float*`](/zh/reference/data-types/float)
+* `expr` — 基于列值计算的表达式，其结果可以是数值数据类型、`Date` 或 `DateTime`。如果向函数传入负值，则其行为未定义。如果值大于 30,000 (页面加载时间超过 30 秒) ，则按 30,000 处理。[`(U)Int*`](/zh/reference/data-types/int-uint) or [`Float*`](/zh/reference/data-types/float) or [`Date`](/zh/reference/data-types/date) or [`DateTime`](/zh/reference/data-types/datetime)
 
 **返回值**
 

@@ -30,9 +30,11 @@ Select "Connect" from the left menu:
 <Step title={<>Choose <code>MySQL</code></>} id="choose-mysql">
 Select `MySQL` from the `Connect With` drop down.
 
+<div className="ch-image-md">
 <Frame>
   <img src="/images/_snippets/mysql4.webp" alt="ClickHouse Cloud connection screen showing MySQL option selection" />
 </Frame>
+</div>
 
 </Step>
 <Step title="Enable the MySQL interface" id="enable-mysql-interface-existing-service">
@@ -41,9 +43,11 @@ This will expose port `3306` for this service and prompt you with your MySQL con
 </Step>
 </Steps>
 
+<div className="ch-image-md">
 <Frame>
   <img src="/images/_snippets/mysql5.webp" alt="ClickHouse Cloud connection screen with MySQL interface enabled showing connection details" />
 </Frame>
+</div>
 
 ## Creating a readonly MySQL user in ClickHouse Cloud {#creating-multiple-mysql-users-in-clickhouse-cloud}
 ClickHouse Cloud automatically creates a `mysql4<subdomain>` user that shares the same password as the default user.

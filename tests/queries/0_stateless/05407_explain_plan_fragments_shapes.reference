@@ -1,0 +1,127 @@
+-- uneven branches
+Query fragment 4 (main) · tasks=1
+GatherSend (final_result)
+  GatherReceive (exchange_3)
+
+Query fragment 3 (stage_3) · tasks=3
+GatherSend (exchange_3)
+  Expression ((Project names + Projection))
+    JoinLogical
+      ShuffleReceive (exchange_1)
+      ShuffleReceive (exchange_2)
+
+Query fragment 2 (stage_2) · tasks=3
+ShuffleSend (exchange_2)
+  Expression (Change column names to column identifiers)
+    ReadFromMergeTree (default.small)
+
+Query fragment 1 (stage_1) · tasks=3
+ShuffleSend (exchange_1)
+  Expression ((Change column names to column identifiers + (Project names + Projection)))
+    MergingAggregated (merge)
+      ShuffleReceive (exchange_0)
+
+Query fragment 0 (stage_0) · tasks=3
+ShuffleSend (exchange_0)
+  Aggregating (partial)
+    Expression ((Before GROUP BY + Change column names to column identifiers))
+      ReadFromMergeTree (default.big)
+
+Exchanges:
+  exchange_0: hash(modulo(__table2.bid, 5000_UInt16)), streaming, F0 -> F1, buckets 3 -> 3
+  exchange_1: hash(__table1.k), streaming, F1 -> F3, buckets 3 -> 3
+  exchange_2: hash(__table3.sid), streaming, F2 -> F3, buckets 3 -> 3
+  exchange_3: gather, streaming, F3 -> F4, buckets 3 -> 1
+Levels: [F0, F2] -> [F1] -> [F3] -> [F4]
+-- hash exchange on two keys
+Query fragment 3 (main) · tasks=1
+GatherSend (final_result)
+  Expression ((Project names + Projection))
+    MergingAggregated (merge)
+      GatherReceive (exchange_2)
+
+Query fragment 2 (stage_2) · tasks=3
+GatherSend (exchange_2)
+  Aggregating (partial)
+    Expression (Before GROUP BY)
+      JoinLogical
+        ShuffleReceive (exchange_0)
+        ShuffleReceive (exchange_1)
+
+Query fragment 1 (stage_1) · tasks=3
+ShuffleSend (exchange_1)
+  Expression (Calculate right join keys)
+    Expression (Change column names to column identifiers)
+      ReadFromMergeTree (default.small)
+
+Query fragment 0 (stage_0) · tasks=3
+ShuffleSend (exchange_0)
+  Expression (Calculate left join keys)
+    Expression (Change column names to column identifiers)
+      ReadFromMergeTree (default.big)
+
+Exchanges:
+  exchange_0: hash(__table1.bid, modulo(__table1.bid, 7_UInt8)), streaming, F0 -> F2, buckets 3 -> 3
+  exchange_1: hash(__table2.sid, modulo(__table2.sid, 7_UInt8)), streaming, F1 -> F2, buckets 3 -> 3
+  exchange_2: gather, streaming, F2 -> F3, buckets 3 -> 1
+Levels: [F0, F1] -> [F2] -> [F3]
+-- persisted exchanges
+Query fragment 2 (main) · tasks=1
+GatherSend (final_result)
+  GatherReceive (exchange_1)
+
+Query fragment 1 (stage_1) · tasks=3
+GatherSend (exchange_1)
+  Expression ((Project names + Projection))
+    MergingAggregated (merge)
+      ShuffleReceive (exchange_0)
+
+Query fragment 0 (stage_0) · tasks=3
+ShuffleSend (exchange_0)
+  Aggregating (partial)
+    Expression ((Before GROUP BY + Change column names to column identifiers))
+      ReadFromMergeTree (default.big)
+
+Exchanges:
+  exchange_0: hash(modulo(__table1.bid, 10_UInt8)), persisted, F0 -> F1, buckets 3 -> 3
+  exchange_1: gather, persisted, F1 -> F2, buckets 3 -> 1
+Levels: [F0] -> [F1] -> [F2]
+-- runtime filter merge stages are left out
+Query fragment 3 (main) · tasks=1
+GatherSend (final_result)
+  Expression ((Project names + Projection))
+    MergingAggregated (merge)
+      GatherReceive (exchange_2)
+
+Query fragment 2 (stage_2) · tasks=3
+GatherSend (exchange_2)
+  Aggregating (partial)
+    Expression (Before GROUP BY)
+      JoinLogical
+        ShuffleReceive (exchange_0)
+        ShuffleReceive (exchange_1)
+
+Query fragment 1 (stage_1) · tasks=3
+ShuffleSend (exchange_1)
+  BuildRuntimeFilter (Build runtime join filter on __table2.sid)
+    Expression (Change column names to column identifiers)
+      ReadFromMergeTree (default.small)
+
+Query fragment 0 (stage_0) · tasks=3
+ShuffleSend (exchange_0)
+  Filter ((Apply runtime join filter + Change column names to column identifiers))
+    ReadFromMergeTree (default.big)
+
+Exchanges:
+  exchange_0: hash(__table1.bid), streaming, F0 -> F2, buckets 3 -> 3
+  exchange_1: hash(__table2.sid), streaming, F1 -> F2, buckets 3 -> 3
+  exchange_2: gather, streaming, F2 -> F3, buckets 3 -> 1
+Levels: [F0, F1] -> [F2] -> [F3]
+-- no exchanges
+Query fragment 0 (main) · tasks=1
+GatherSend (final_result)
+  Expression ((Project names + Projection))
+    Filter ((WHERE + Change column names to column identifiers))
+      ReadFromMergeTree (default.small)
+
+Levels: [F0]

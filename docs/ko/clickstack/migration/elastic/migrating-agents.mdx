@@ -8,8 +8,6 @@ keywords: ['ClickStack']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <div id="migrating-agents-from-elastic">
   ## Elastic에서 에이전트 마이그레이션하기
 </div>
@@ -58,18 +56,24 @@ Beats 에이전트는 [Elastic Common Schema (ECS)](https://www.elastic.co/docs/
 
 Filebeat 에이전트가 Beats에서 지원하는 출력 대상인 Kafka로 데이터를 전송하도록 구성되어 있다면, Vector는 Kafka에서 해당 이벤트를 가져와 VRL로 스키마 변환을 적용한 뒤, OTLP를 통해 ClickStack과 함께 배포되는 OpenTelemetry Collector로 전달할 수 있습니다.
 
-또는 Vector는 Logstash에서 사용하는 Lumberjack protocol을 통한 이벤트 수신도 지원합니다. 이를 통해 Beats 에이전트가 데이터를 Vector로 직접 전송할 수 있으며, 이후 동일한 변환 과정을 적용한 뒤 OTLP를 통해 ClickStack OpenTelemetry collector로 전달할 수 있습니다.
+또는 Vector는 Logstash에서 사용하는 Lumberjack 프로토콜을 통한 이벤트 수신도 지원합니다. 이를 통해 Beats 에이전트가 데이터를 Vector로 직접 전송할 수 있으며, 이후 동일한 변환 과정을 적용한 뒤 OTLP를 통해 ClickStack OpenTelemetry collector로 전달할 수 있습니다.
 
 아래에서는 이 두 가지 아키텍처를 모두 보여줍니다.
 
-<Image img="/images/use-cases/observability/clickstack-migrating-agents.webp" alt="에이전트 마이그레이션" size="lg" background />
+<div className="ch-image-lg">
 
-다음 예시에서는 Lumberjack protocol을 통해 Filebeat에서 로그 이벤트를 수신하도록 Vector를 구성하는 초기 단계를 설명합니다. 또한 수신한 ECS 이벤트를 OTel 사양에 맞게 매핑하는 VRL도 제공합니다. 그런 다음 이를 OTLP를 통해 ClickStack OpenTelemetry collector로 전송합니다. Kafka에서 이벤트를 가져오는 경우에는 Vector Logstash source를 [Kafka source](https://vector.dev/docs/reference/configuration/sources/kafka/)로 대체하면 되며, 나머지 단계는 모두 동일합니다.
+<Frame>
+
+![에이전트 마이그레이션](/images/use-cases/observability/clickstack-migrating-agents.webp)
+
+</Frame>
+
+</div>
+
+다음 예시에서는 Lumberjack 프로토콜을 통해 Filebeat에서 로그 이벤트를 수신하도록 Vector를 구성하는 초기 단계를 설명합니다. 또한 수신한 ECS 이벤트를 OTel 사양에 맞게 매핑하는 VRL도 제공합니다. 그런 다음 이를 OTLP를 통해 ClickStack OpenTelemetry collector로 전송합니다. Kafka에서 이벤트를 가져오는 경우에는 Vector Logstash source를 [Kafka source](https://vector.dev/docs/reference/configuration/sources/kafka/)로 대체하면 되며, 나머지 단계는 모두 동일합니다.
 
 <Steps>
-  <Step>
-    ### Vector 설치
-
+  <Step title="Vector 설치" id="install-vector">
     [공식 설치 가이드](https://vector.dev/docs/setup/installation/)에 따라 Vector를 설치합니다.
 
     Elastic Stack OTel collector와 동일한 인스턴스에 설치할 수 있습니다.
@@ -77,9 +81,7 @@ Filebeat 에이전트가 Beats에서 지원하는 출력 대상인 Kafka로 데�
     [Vector를 프로덕션 환경으로 전환](https://vector.dev/docs/setup/going-to-prod/)할 때는 아키텍처 및 보안에 관한 모범 사례를 따르십시오.
   </Step>
 
-  <Step>
-    ### Vector 구성
-
+  <Step title="Vector 구성" id="configure-vector">
     Vector가 Logstash 인스턴스를 모방하여 Lumberjack 프로토콜을 통해 이벤트를 수신하도록 구성해야 합니다. Vector에 [`logstash` source](https://vector.dev/docs/reference/configuration/sources/logstash/)를 구성하면 이를 구현할 수 있습니다:
 
     ```yaml
@@ -88,8 +90,8 @@ Filebeat 에이전트가 Beats에서 지원하는 출력 대상인 Kafka로 데�
         type: logstash
         address: 0.0.0.0:5044
         tls:
-          enabled: false  # TLS를 사용하는 경우 true로 설정하십시오
-          # 아래 파일들은 https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs 의 단계를 따라 생성됩니다
+          enabled: false  # Set to true if you're using TLS
+          # The files below are generated from the steps at https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs
           # crt_file: logstash.crt
           # key_file: logstash.key
           # ca_file: ca.crt
@@ -116,29 +118,29 @@ Filebeat 에이전트가 Beats에서 지원하는 출력 대상인 Kafka로 데�
 
     <Accordion title="VRL - ECS를 OTel로 변환">
       ```javascript
-      # 루트 수준에서 무시할 키 정의
+      # Define keys to ignore at root level
       ignored_keys = ["@metadata"]
 
-      # 리소스 키 프리픽스 정의
+      # Define resource key prefixes
       resource_keys = ["host", "cloud", "agent", "service"]
 
-      # 리소스 및 로그 레코드 필드용 별도 객체 생성
+      # Create separate objects for resource and log record fields
       resource_obj = {}
       log_record_obj = {}
 
-      # 무시 목록에 없는 모든 루트 키를 해당 객체에 복사
+      # Copy all non-ignored root keys to appropriate objects
       root_keys = keys(.)
       for_each(root_keys) -> |_index, key| {
           if !includes(ignored_keys, key) {
               val, err = get(., [key])
               if err == null {
-                  # 리소스 필드 여부 확인
+                  # Check if this is a resource field
                   is_resource = false
                   if includes(resource_keys, key) {
                       is_resource = true
                   }
 
-                  # 해당 객체에 추가
+                  # Add to appropriate object
                   if is_resource {
                       resource_obj = set(resource_obj, [key], val) ?? resource_obj
                   } else {
@@ -148,11 +150,11 @@ Filebeat 에이전트가 Beats에서 지원하는 출력 대상인 Kafka로 데�
           }
       }
 
-      # 두 객체를 각각 플래튼(flatten) 처리
+      # Flatten both objects separately
       flattened_resources = flatten(resource_obj, separator: ".")
       flattened_logs = flatten(log_record_obj, separator: ".")
 
-      # 리소스 속성 처리
+      # Process resource attributes
       resource_attributes = []
       resource_keys_list = keys(flattened_resources)
       for_each(resource_keys_list) -> |_index, field_key| {
@@ -170,7 +172,7 @@ Filebeat 에이전트가 Beats에서 지원하는 출력 대상인 Kafka로 데�
           }
       }
 
-      # 로그 레코드 속성 처리
+      # Process log record attributes
       log_attributes = []
       log_keys_list = keys(flattened_logs)
       for_each(log_keys_list) -> |_index, field_key| {
@@ -188,14 +190,14 @@ Filebeat 에이전트가 Beats에서 지원하는 출력 대상인 Kafka로 데�
           }
       }
 
-      # timeUnixNano용 타임스탬프 가져오기 (나노초 단위로 변환)
+      # Get timestamp for timeUnixNano (convert to nanoseconds)
       timestamp_nano = if exists(.@timestamp) {
           to_unix_timestamp!(parse_timestamp!(.@timestamp, format: "%Y-%m-%dT%H:%M:%S%.3fZ"), unit: "nanoseconds")
       } else {
           to_unix_timestamp(now(), unit: "nanoseconds")
       }
 
-      # message/body 필드 가져오기
+      # Get message/body field
       body_value = if exists(.message) {
           to_string!(.message)
       } else if exists(.body) {
@@ -204,7 +206,7 @@ Filebeat 에이전트가 Beats에서 지원하는 출력 대상인 Kafka로 데�
           ""
       }
 
-      # OpenTelemetry 구조 생성
+      # Create the OpenTelemetry structure
       . = {
           "resourceLogs": [
               {
@@ -239,10 +241,10 @@ Filebeat 에이전트가 Beats에서 지원하는 출력 대상인 Kafka로 데�
     sinks:
       otlp:
         type: opentelemetry
-        inputs: [remap_filebeat] # remap transform에서 이벤트를 수신합니다 - 아래 참조
+        inputs: [remap_filebeat] # receives events from a remap transform - see below
         protocol:
-          type: http  # 포트 4317의 경우 "grpc"를 사용하세요
-          uri: http://localhost:4318/v1/logs # OTel collector의 logs 엔드포인트 
+          type: http  # Use "grpc" for port 4317
+          uri: http://localhost:4318/v1/logs # logs endpoint for the OTel collector 
           method: post
           encoding:
             codec: json
@@ -255,7 +257,15 @@ Filebeat 에이전트가 Beats에서 지원하는 출력 대상인 Kafka로 데�
 
     여기서 `YOUR_INGESTION_API_KEY`는 ClickStack에서 생성됩니다. ClickStack UI(HyperDX)의 `Team Settings → API Keys`에서 해당 키를 확인할 수 있습니다.
 
-    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="수집용 키" size="lg" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![수집용 키](/images/use-cases/observability/ingestion-keys.webp)
+
+    </Frame>
+
+    </div>
 
     최종 완성된 구성은 다음과 같습니다:
 
@@ -265,7 +275,7 @@ Filebeat 에이전트가 Beats에서 지원하는 출력 대상인 Kafka로 데�
         type: logstash
         address: 0.0.0.0:5044
         tls:
-          enabled: false  # TLS를 사용하는 경우 true로 설정하세요
+          enabled: false  # Set to true if you're using TLS
             #crt_file: /data/elasticsearch-9.0.1/logstash/logstash.crt
             #key_file: /data/elasticsearch-9.0.1/logstash/logstash.key
             #ca_file: /data/elasticsearch-9.0.1/ca/ca.crt
@@ -282,7 +292,7 @@ Filebeat 에이전트가 Beats에서 지원하는 출력 대상인 Kafka로 데�
         type: opentelemetry
         inputs: [remap_filebeat]
         protocol:
-          type: http  # 포트 4317을 사용하는 경우 "grpc"를 사용하세요
+          type: http  # Use "grpc" for port 4317
           uri: http://localhost:4318/v1/logs
           method: post
           encoding:
@@ -294,25 +304,23 @@ Filebeat 에이전트가 Beats에서 지원하는 출력 대상인 Kafka로 데�
     ```
   </Step>
 
-  <Step>
-    ### Filebeat 구성
-
+  <Step title="Filebeat 구성" id="configure-filebeat">
     기존 Filebeat 설치에서는 이벤트를 Vector로 전송하도록 설정만 수정하면 됩니다. 이를 위해 Logstash 출력을 구성해야 하며, 여기에서도 TLS를 선택적으로 설정할 수 있습니다.
 
     ```yaml
-    # ------------------------------ Logstash 출력 -------------------------------
+    # ------------------------------ Logstash Output -------------------------------
     output.logstash:
-      # Logstash 호스트
+      # The Logstash hosts
       hosts: ["localhost:5044"]
 
-      # 선택적 SSL. 기본값은 비활성화입니다.
-      # HTTPS 서버 검증을 위한 루트 인증서 목록
+      # Optional SSL. By default is off.
+      # List of root certificates for HTTPS server verifications
       #ssl.certificate_authorities: ["/etc/pki/root/ca.pem"]
 
-      # SSL 클라이언트 인증(authentication)을 위한 인증서
+      # Certificate for SSL client authentication
       #ssl.certificate: "/etc/pki/client/cert.pem"
 
-      # 클라이언트 인증서 키
+      # Client Certificate Key
       #ssl.key: "/etc/pki/client/cert.key"
     ```
   </Step>
@@ -336,24 +344,36 @@ Elastic Agent를 배포한 사용자는 여러 마이그레이션 경로 중에�
 </div>
 
 <Steps>
-  <Step>
-    #### Vector 설치 및 구성
-
+  <Step title="Vector 설치 및 구성" id="install-configure-vector">
     Filebeat에서 마이그레이션할 때 문서에 안내된 [동일한 단계](#install-vector)에 따라 Vector를 설치하고 구성합니다.
   </Step>
 
-  <Step>
-    #### Elastic Agent 구성
-
+  <Step title="Elastic Agent 구성" id="configure-elastic-agent">
     Elastic Agent는 Logstash 프로토콜인 Lumberjack을 통해 데이터를 전송하도록 구성해야 합니다. 이는 [지원되는 배포 패턴](https://www.elastic.co/docs/manage-data/ingest/ingest-reference-architectures/ls-networkbridge)이며, 중앙에서 구성하거나 Fleet 없이 배포하는 경우 [에이전트 설정 파일 `elastic-agent.yaml`을 통해](https://www.elastic.co/docs/reference/fleet/logstash-output) 구성할 수 있습니다.
 
     Kibana를 통한 중앙 구성은 [Fleet에 Output을 추가](https://www.elastic.co/docs/reference/fleet/fleet-settings#output-settings)하여 수행할 수 있습니다.
 
-    <Image img="/images/use-cases/observability/add-logstash-output.webp" alt="Logstash 출력 추가" size="md" />
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![Logstash 출력 추가](/images/use-cases/observability/add-logstash-output.webp)
+
+    </Frame>
+
+    </div>
 
     이 Output은 이후 [에이전트 policy](https://www.elastic.co/docs/reference/fleet/agent-policy)에서 사용할 수 있습니다. 그러면 해당 policy를 사용하는 모든 에이전트가 자동으로 데이터를 Vector로 전송하게 됩니다.
 
-    <Image img="/images/use-cases/observability/agent-output-settings.webp" alt="Agent 설정" size="md" />
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![Agent 설정](/images/use-cases/observability/agent-output-settings.webp)
+
+    </Frame>
+
+    </div>
 
     이를 위해서는 TLS를 통한 보안 통신을 구성해야 하므로, Vector 인스턴스가 Logstash 역할을 수행한다고 보고 [&quot;Logstash output에 대해 SSL/TLS 구성&quot;](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output) 가이드를 따를 것을 권장합니다.
 
@@ -391,7 +411,7 @@ EDOT collector와 함께 Elastic Agent를 실행하려면 [Elastic 공식 가이
 
 ```yaml
 exporters:
-  # Elasticsearch Managed OTLP Input으로 로그 및 메트릭을 전송하는 Exporter
+  # Exporter to send logs and metrics to Elasticsearch Managed OTLP Input
   otlp:
     endpoint: localhost:4317
     headers:
@@ -408,13 +428,21 @@ exporters:
 
 여기서 `YOUR_INGESTION_API_KEY`는 ClickStack에서 발급됩니다. 이 키는 ClickStack UI의 `Team Settings → API Keys`에서 확인할 수 있습니다.
 
-<Image img="/images/use-cases/observability/ingestion-keys.webp" alt="수집 키" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![수집 키](/images/use-cases/observability/ingestion-keys.webp)
+
+</Frame>
+
+</div>
 
 Vector가 상호 TLS를 사용하도록 구성되어 있고, 인증서와 키가 [&quot;Logstash 출력용 SSL/TLS 구성&quot;](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output) 가이드의 단계에 따라 생성된 경우 `otlp` exporter도 이에 맞게 구성해야 합니다. 예를 들면 다음과 같습니다.
 
 ```yaml
 exporters:
-  # Elasticsearch Managed OTLP Input으로 로그 및 메트릭을 전송하는 익스포터
+  # Exporter to send logs and metrics to Elasticsearch Managed OTLP Input
   otlp:
     endpoint: localhost:4317
     headers:

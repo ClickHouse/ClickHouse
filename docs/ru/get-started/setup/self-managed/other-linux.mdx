@@ -13,16 +13,12 @@ import Recommendations from '/snippets/ru/recommendations.mdx';
 > Для всех дистрибутивов Linux, где невозможно установить пакеты `deb` или `rpm`, рекомендуется использовать официальные предварительно скомпилированные архивы `tgz`.
 
 <Steps>
-  <Step>
-    ## Ознакомьтесь с рекомендациями
-
+  <Step title="Ознакомьтесь с рекомендациями" id="review-recommendations">
     <Recommendations />
   </Step>
 
-  <Step>
-    ## Скачайте и установите последнюю стабильную версию
-
-    Нужную версию можно скачать с помощью `curl` или `wget` из репозитория https://packages.clickhouse.com/tgz/.
+  <Step title="Скачайте и установите последнюю стабильную версию" id="install-latest-stable">
+    Нужную версию можно скачать с помощью `curl` или `wget` из репозитория [https://packages.clickhouse.com/tgz/](https://packages.clickhouse.com/tgz/).
     После этого скачанные архивы нужно распаковать и установить с помощью установочных скриптов.
 
     Ниже приведен пример установки последней стабильной версии.
@@ -34,9 +30,7 @@ import Recommendations from '/snippets/ru/recommendations.mdx';
     </Note>
   </Step>
 
-  <Step>
-    ## Получите последнюю версию ClickHouse
-
+  <Step title="Получите последнюю версию ClickHouse" id="get-latest-version">
     Получите последнюю версию ClickHouse из GitHub и сохраните ее в переменной `LATEST_VERSION`.
 
     ```bash
@@ -46,9 +40,7 @@ import Recommendations from '/snippets/ru/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## Определите архитектуру вашей системы
-
+  <Step title="Определите архитектуру вашей системы" id="detect-system-architecture">
     Определите архитектуру системы и задайте переменную ARCH соответствующим образом:
 
     ```bash
@@ -60,11 +52,9 @@ import Recommendations from '/snippets/ru/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## Скачайте tar-архивы для каждого компонента ClickHouse
-
-    Скачайте tar-архивы для каждого компонента ClickHouse. Цикл сначала пытается загрузить
-    пакеты для конкретной архитектуры, а затем переключается на универсальные.
+  <Step title="Скачайте tar-архивы для каждого компонента ClickHouse" id="download-tarballs">
+    Скачайте tar-архивы для каждого компонента ClickHouse. Цикл сначала пытается загрузить пакеты для конкретной архитектуры,
+    а затем переключается на универсальные.
 
     ```bash
     for PKG in clickhouse-common-static clickhouse-common-static-dbg clickhouse-server clickhouse-client clickhouse-keeper
@@ -75,9 +65,7 @@ import Recommendations from '/snippets/ru/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## Распакуйте и установите пакеты
-
+  <Step title="Распакуйте и установите пакеты" id="extract-and-install">
     Выполните приведенные ниже команды, чтобы распаковать и установить следующие пакеты:
 
     * `clickhouse-common-static`

@@ -1,16 +1,43 @@
 ---
 slug: /operations/overview
-sidebarTitle: 'Descripción general del rendimiento y las optimizaciones'
-description: 'Página de descripción general del rendimiento y las optimizaciones'
+sidebarTitle: 'Descripción general de rendimiento y optimizaciones'
+description: 'Página de descripción general de Rendimiento y optimizaciones'
 title: 'Rendimiento y optimizaciones'
-keywords: ['optimización del rendimiento', 'mejores prácticas', 'guía de optimización', 'rendimiento de ClickHouse', 'optimización de bases de datos']
+keywords: ['optimización del rendimiento', 'buenas prácticas', 'guía de optimización', 'rendimiento de ClickHouse', 'optimización de bases de datos']
 doc_type: 'reference'
+mode: wide
 ---
 
-import TableOfContents from '/snippets/es/_performance_optimizations_table_of_contents.mdx';
-
 Esta sección contiene consejos y buenas prácticas para mejorar el rendimiento con ClickHouse.
-Recomendamos a los usuarios leer primero [Conceptos fundamentales](/es/concepts/core-concepts/parts),
-que abarca los conceptos principales necesarios para mejorar el rendimiento.
+Recomendamos a los usuarios leer [Conceptos fundamentales](/es/concepts/core-concepts/parts) antes de esta sección,
+ya que cubre los conceptos principales necesarios para mejorar el rendimiento.
 
-<TableOfContents />
+<CardGroup cols={2}>
+  <Card title="Optimización de PREWHERE" icon="filter" href="/es/concepts/features/performance/prewhere">
+    Cómo `PREWHERE` reduce la E/S al filtrar datos antes de leer columnas innecesarias y cómo supervisar su eficacia.
+  </Card>
+
+  <Card title="Perfilado de asignaciones" icon="memory" href="/es/concepts/features/performance/allocation-profiling">
+    Perfila las asignaciones de memoria con jemalloc.
+  </Card>
+
+  <Card title="Perfilado de asignaciones para versiones anteriores a la 25.9" icon="clock-rotate-left" href="/es/concepts/features/performance/allocation-profiling-old">
+    Perfilado de asignaciones para versiones de ClickHouse anteriores a la 25.9.
+  </Card>
+
+  <Card title="Cachés" icon="hard-drive" href="/es/concepts/features/performance/caches/caches">
+    Tipos de caché, incluida la caché de consultas, la caché de condiciones de consulta y la caché de páginas en espacio de usuario.
+  </Card>
+
+  <Card title="Índices de omisión de datos" icon="forward" href="/es/concepts/features/performance/skip-indexes/skipping-indexes">
+    Cómo funcionan los índices de omisión de datos, con ejemplos.
+  </Card>
+
+  <Card title="Materialización diferida" icon="hourglass-half" href="/es/concepts/features/performance/lazy-materialization">
+    Retrasa la lectura de los datos de las columnas hasta que realmente se necesiten.
+  </Card>
+
+  <Card title="Resolución de problemas" icon="bug" href="/es/concepts/features/performance/troubleshoot/debugging-memory-issues">
+    Depuración de problemas de memoria, comprobación del hardware y el perfilador de consultas por muestreo.
+  </Card>
+</CardGroup>

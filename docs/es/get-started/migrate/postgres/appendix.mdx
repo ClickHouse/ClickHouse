@@ -6,8 +6,6 @@ description: 'Información adicional sobre la migración desde PostgreSQL'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <div id="postgres-vs-clickhouse-equivalent-and-different-concepts">
   ## Postgres vs ClickHouse: Conceptos equivalentes y diferentes
 </div>
@@ -40,7 +38,15 @@ ClickHouse usa ClickHouse Keeper (una implementación de ZooKeeper en C++; tambi
 
 El proceso de replicación en ClickHouse (1) comienza cuando se insertan datos en cualquier réplica. Estos datos, en su formato de inserción sin procesar, se (2) escriben en disco junto con sus sumas de verificación. Una vez escritos, la réplica (3) intenta registrar esta nueva parte de datos en Keeper asignándole un número de bloque único y registrando los detalles de la nueva parte. Las demás réplicas, al (4) detectar nuevas entradas en el registro de replicación, (5) descargan la parte de datos correspondiente mediante un protocolo HTTP interno y la verifican con las sumas de verificación registradas en ZooKeeper. Este método garantiza que todas las réplicas acaben teniendo datos consistentes y actualizados, a pesar de las diferencias en la velocidad de procesamiento o de posibles retrasos. Además, el sistema puede gestionar múltiples operaciones de forma concurrente, lo que optimiza los procesos de gestión de datos y permite escalar el sistema y hacerlo más robusto frente a diferencias de hardware.
 
-<Image img="/images/integrations/data-ingestion/dbms/postgres-replicas.webp" size="md" alt="Consistencia eventual" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Consistencia eventual](/images/integrations/data-ingestion/dbms/postgres-replicas.webp)
+
+</Frame>
+
+</div>
 
 Ten en cuenta que ClickHouse Cloud utiliza un [mecanismo de replicación optimizado para Cloud](https://clickhouse.com/blog/clickhouse-cloud-boosts-performance-with-sharedmergetree-and-lightweight-updates) adaptado a su arquitectura de separación entre almacenamiento y compute. Al almacenar los datos en object storage compartido, estos quedan disponibles automáticamente para todos los nodos de compute sin necesidad de replicarlos físicamente entre nodos. En su lugar, Keeper se usa únicamente para compartir metadatos (qué datos existen y dónde están en el object storage) entre los nodos de compute.
 
@@ -86,15 +92,15 @@ Para garantizar un enrutamiento coherente entre conexiones, por ejemplo, si util
   ## ClickHouse OSS
 </div>
 
-Para lograr este comportamiento en OSS, depende de la topología de tus segmentos y réplicas, y de si estás usando una [tabla distribuida](/es/reference/engines/table-engines/special/distributed) para ejecutar consultas.
+Lograr este comportamiento en OSS depende de la topología de tus segmentos y réplicas, y de si estás usando una [tabla distribuida](/es/reference/engines/table-engines/special/distributed) para ejecutar consultas.
 
-Cuando solo tienes un segmento y réplicas (algo habitual, ya que ClickHouse escala verticalmente), los usuarios seleccionan el nodo en la capa de cliente y consultan una réplica directamente, asegurándose de que se seleccione de forma determinista.
+Cuando solo tienes un segmento y réplicas (algo habitual, ya que ClickHouse escala verticalmente), los usuarios seleccionan el nodo en la capa cliente y consultan una réplica directamente, asegurándose de que esta se seleccione de forma determinista.
 
 Aunque es posible tener topologías con múltiples segmentos y réplicas sin una tabla distribuida, estas implementaciones avanzadas suelen contar con su propia infraestructura de enrutamiento. Por lo tanto, asumimos que las implementaciones con más de un segmento usan una tabla distribuida (las tablas distribuidas pueden usarse en implementaciones de un solo segmento, pero normalmente son innecesarias).
 
-En este caso, debes asegurarte de que el enrutamiento coherente de nodos se realice en función de una propiedad, por ejemplo `session_id` o `user_id`. Los ajustes [`prefer_localhost_replica=0`](/es/reference/settings/session-settings#prefer_localhost_replica), [`load_balancing=in_order`](/es/reference/settings/session-settings#load_balancing) deben [establecerse en la consulta](/es/concepts/features/configuration/settings/settings-query-level). Esto garantizará que se prioricen las réplicas locales de los segmentos y, en caso contrario, las réplicas se prioricen en el orden en que aparecen en la configuración, siempre que tengan el mismo número de errores; si el número de errores es mayor, la conmutación por error se realizará con selección aleatoria. [`load_balancing=nearest_hostname`](/es/reference/settings/session-settings#load_balancing) también puede usarse como alternativa para esta selección determinista de segmentos.
+En este caso, debes asegurarte de que el enrutamiento coherente de nodos se realice en función de una propiedad, por ejemplo `session_id` o `user_id`. Los ajustes [`prefer_localhost_replica=0`](/es/reference/settings/session-settings/prefer#prefer_localhost_replica), [`load_balancing=in_order`](/es/reference/settings/session-settings/load-balancing#load_balancing) deben [establecerse en la consulta](/es/concepts/features/configuration/settings/settings-query-level). Esto garantizará que se prioricen las réplicas locales de los segmentos y, en caso contrario, que las réplicas se prioricen en el orden en que aparecen en la configuración, siempre que tengan el mismo número de errores; si el número de errores es mayor, la conmutación por error se realizará con selección aleatoria. [`load_balancing=nearest_hostname`](/es/reference/settings/session-settings/load-balancing#load_balancing) también puede usarse como alternativa para esta selección determinista de segmentos.
 
-> Al crear una tabla Distributed, especificarás un cluster. Esta definición de cluster, especificada en config.xml, enumerará los segmentos (y sus réplicas), lo que permite a los usuarios controlar el orden en que se usan desde cada nodo. Con ello, puedes asegurarte de que la selección sea determinista.
+> Al crear una tabla distribuida, especificarás un cluster. Esta definición del cluster, especificada en config.xml, enumerará los segmentos (y sus réplicas), lo que permite a los usuarios controlar el orden en que se usan desde cada nodo. Con ello, puedes asegurarte de que la selección sea determinista.
 
 <div id="sequential-consistency">
   ## Consistencia secuencial
@@ -109,7 +115,7 @@ Esto se puede lograr de varias maneras (en orden de preferencia):
 
 1. **Leer/escribir en el mismo nodo** - Si estás usando el protocolo nativo, o una [sesión para realizar la escritura/lectura a través de HTTP](/es/concepts/features/interfaces/http#default-database), deberías estar conectado a la misma réplica: en este escenario, estás leyendo directamente desde el nodo en el que escribes, por lo que la lectura siempre será coherente.
 2. **Sincronizar réplicas manualmente** - Si escribes en una réplica y lees desde otra, puedes ejecutar `SYSTEM SYNC REPLICA LIGHTWEIGHT` antes de leer.
-3. **Habilitar la consistencia secuencial** - mediante la configuración de consulta [`select_sequential_consistency = 1`](/es/reference/settings/session-settings#select_sequential_consistency). En OSS, también debe especificarse la configuración `insert_quorum = 'auto'`.
+3. **Habilitar la consistencia secuencial** - mediante la configuración de consulta [`select_sequential_consistency = 1`](/es/reference/settings/session-settings/other#select_sequential_consistency). En OSS, también debe especificarse la configuración `insert_quorum = 'auto'`.
 
 <br />
 
@@ -207,6 +213,5 @@ La siguiente tabla muestra los tipos de datos de ClickHouse equivalentes para Po
 | `HSTORE`                 | [Map(K, V)](/es/reference/data-types/map), [Map](/es/reference/data-types/map)(K,[Variant](/es/reference/data-types/variant))                                                                   |
 | `UUID`                   | [UUID](/es/reference/data-types/uuid)                                                                                                                                                     |
 | `ARRAY<T>`               | [ARRAY(T)](/es/reference/data-types/array)                                                                                                                                                |
-| `JSON`                   | [String](/es/reference/data-types/string), [Variant](/es/reference/data-types/variant), [Nested](/es/reference/data-types/nested-data-structures/index), [Tuple](/es/reference/data-types/tuple)   |
 | `JSON`                   | [String](/es/reference/data-types/string), [Variant](/es/reference/data-types/variant), [Nested](/es/reference/data-types/nested-data-structures), [Tuple](/es/reference/data-types/tuple)         |
 | `JSONB`                  | [String](/es/reference/data-types/string)                                                                                                                                                 |

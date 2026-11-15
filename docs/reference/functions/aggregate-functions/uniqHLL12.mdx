@@ -17,8 +17,7 @@ Calculates the approximate number of different argument values, using the [Hyper
 We do not recommend using this function. In most cases, use the [uniq](/reference/functions/aggregate-functions/uniq) or [uniqCombined](/reference/functions/aggregate-functions/uniqCombined) function.
 </Warning>
 
-<details>
-<summary>Implementation details</summary>
+<Accordion title="Implementation details">
 This function calculates a hash for all parameters in the aggregate, then uses it in calculations.
 It uses the HyperLogLog algorithm to approximate the number of different argument values.
 
@@ -29,7 +28,7 @@ However, the result is fairly accurate for high-cardinality data sets (10K-100M)
 Starting from 100M, the estimation error increases, and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
 
 Provides a determinate result (it does not depend on the query processing order).
-</details>
+</Accordion>
     
 
 **Syntax**

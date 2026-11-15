@@ -12,7 +12,7 @@ INSERT INTO lhs VALUES (1), (2), (3), (1000001), (1000002), (1000003);
 INSERT INTO rhs SELECT * FROM numbers_mt(1e6);
 
 SET enable_parallel_replicas = 0; -- join swap/reordering disabled with parallel replicas
-SET enable_analyzer = 1, query_plan_join_swap_table = 'auto';
+SET query_plan_join_swap_table = 'auto';
 SET join_algorithm='hash';
 SET query_plan_optimize_join_order_limit = 10; -- cardinality estimation needed for size-based swap decision
 SET query_plan_optimize_join_order_randomize = 0;

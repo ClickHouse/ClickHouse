@@ -1,0 +1,20 @@
+UInt8	0	0	0	0	1	1	1
+UInt16	0	0	0	0	1	1	1
+UInt64	0	0	0	0	1	1	1
+Float64	0	0	0	0	1	1	1
+BFloat16	0	0	0	0	1	1	1
+Decimal32	0	0	0	0	1	1	1
+UInt256	0	0	0	0	1	1	1
+Nullable	0	0	0	0	1	1	1
+hasAny(materialize([-0.]), arrayReverse(arrayMap(x -> x / 1, range(20))))	3000
+hasAny(materialize([nan]), arrayPushBack(arrayMap(x -> x / 1, range(20)), nan))	3000
+hasAll(arrayPushBack(arrayMap(x -> x / 1, range(20)), nan), materialize([1., nan]))	3000
+hasAll(materialize(arrayMap(x -> x / 1, range(100))), arrayPushBack(arrayMap(x -> x / 1, range(70)), nan))	3000
+hasAny(arrayPushBack(range(20), NULL), materialize([1000, NULL]))	3000
+hasAny(materialize([1000]), arrayPushBack(range(20), NULL))	3000
+hasAll(arrayPushBack(range(20), NULL), materialize([3, NULL]))	3000
+hasAll(range(20), materialize([3, NULL]))	3000
+hasAll(materialize(range(toUInt64(200))), arrayPushBack(range(toUInt64(150)), NULL))	3000
+hasAll(materialize(arrayPushBack(range(toUInt64(200)), NULL)), arrayPushBack(range(toUInt64(150)), NULL))	3000
+hasAll(materialize(arrayMap(x -> toUInt64(x % 150), range(300))), arrayMap(x -> toUInt64(x % 150), range(600)))	3000
+hasAll(materialize(arrayMap(x -> toUInt64(x % 149), range(300))), arrayMap(x -> toUInt64(x % 150), range(600)))	3000

@@ -6,18 +6,20 @@ tags: ['Configuración', 'Clientes nativos e interfaces']
 keywords: ['Cliente de ClickHouse', 'Cambiar prompt']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
-{frontMatter.description}
-
-{/* truncate */}
-
 Si no te gusta cómo `clickhouse client` y clickhouse-local muestran el prompt en la ventana de tu terminal, puedes cambiarlo para añadirle un prefijo.
 En este artículo se explica cómo cambiar el prompt por el que quieras.
 
 El prompt predeterminado es el nombre de tu equipo, seguido de `:) `:
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/0_prompt.webp" size="md" alt="Prompt predeterminado del cliente de ClickHouse" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Prompt predeterminado del cliente de ClickHouse](/images/knowledgebase/change-the-prompt-in-clickhouse-client/0_prompt.webp)
+
+</Frame>
+
+</div>
 
 Estas son las variables que puedes usar en un prompt: `{user}`, `{host}`
 
@@ -35,7 +37,15 @@ clickhouse --prompt 👉
 
 Esto añadirá el emoji de dedo antes de la carita sonriente:
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/1_prompt.webp" size="md" alt="Prompt de cliente de ClickHouse con emoji de dedo" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Prompt de cliente de ClickHouse con emoji de dedo](/images/knowledgebase/change-the-prompt-in-clickhouse-client/1_prompt.webp)
+
+</Frame>
+
+</div>
 
 <div id="config-file---top-level">
   ## Archivo de configuración: nivel superior
@@ -53,7 +63,15 @@ Como alternativa, puedes proporcionar un prefijo para el `prompt` en un archivo 
 clickhouse
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/2_prompt.webp" size="md" alt="Prompt del cliente de ClickHouse con archivo de configuración" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Prompt del cliente de ClickHouse con archivo de configuración](/images/knowledgebase/change-the-prompt-in-clickhouse-client/2_prompt.webp)
+
+</Frame>
+
+</div>
 
 Podemos usar un archivo de configuración con cualquier nombre y pasarlo con la opción `-C`:
 
@@ -67,7 +85,15 @@ Podemos usar un archivo de configuración con cualquier nombre y pasarlo con la 
 clickhouse -C christmas.xml
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/3_prompt.webp" size="md" alt="Prompt del cliente de ClickHouse con emoji de árbol de Navidad" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Prompt del cliente de ClickHouse con emoji de árbol de Navidad](/images/knowledgebase/change-the-prompt-in-clickhouse-client/3_prompt.webp)
+
+</Frame>
+
+</div>
 
 ¿Prefieres que tus archivos de configuración estén en YAML?
 También funciona:
@@ -80,20 +106,26 @@ prompt: 🟡
 clickhouse -C christmas.yaml
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/4_prompt.webp" size="md" alt="prompt del cliente de ClickHouse con emoji de círculo amarillo" />
+<div className="ch-image-md">
 
-<div id="config-file---connections_credentials">
-  ## Archivo de configuración - connections_credentials
+<Frame>
+
+![prompt del cliente de ClickHouse con emoji de círculo amarillo](/images/knowledgebase/change-the-prompt-in-clickhouse-client/4_prompt.webp)
+
+</Frame>
+
 </div>
 
+## Archivo de configuración - connections_credentials {#config-file---connections_credentials}
+
 Como alternativa, puede especificar un prompt para cada conjunto de credenciales de conexión.
-Esto solo tiene sentido cuando se utiliza `clickhouse-client`.
+Esto solo tiene sentido cuando se utiliza clickhouse-client.
 
 ```xml
 <config>
     <connections_credentials>
         <connection>
-            <n>prod<n>
+            <n>prod</n>
             <hostname>127.0.0.1</hostname>
             <port>9000</port>
             <secure>0</secure>
@@ -101,7 +133,7 @@ Esto solo tiene sentido cuando se utiliza `clickhouse-client`.
             <prompt>\e[31m[PRODUCTION]\e[0m {user}@prod</prompt>
         </connection>
         <connection>
-            <n>dev<n>
+            <n>dev</n>
             <hostname>127.0.0.1</hostname>
             <port>9000</port>
             <secure>0</secure>
@@ -118,7 +150,15 @@ Luego podemos intentar conectarnos usando la conexión `dev`:
 clickhouse client -C connections.xml --connection dev
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/5_prompt.webp" size="md" alt="Prompt de cliente de ClickHouse con conexión de Development" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Prompt de cliente de ClickHouse con conexión de Development](/images/knowledgebase/change-the-prompt-in-clickhouse-client/5_prompt.webp)
+
+</Frame>
+
+</div>
 
 O la de `prod`:
 
@@ -126,7 +166,15 @@ O la de `prod`:
 clickhouse client -C connections.xml --connection prod
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/6_prompt.webp" size="md" alt="Indicador del cliente de ClickHouse con conexión de producción" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Prompt del cliente de ClickHouse con conexión de producción](/images/knowledgebase/change-the-prompt-in-clickhouse-client/6_prompt.webp)
+
+</Frame>
+
+</div>
 
 Y aquí tienes una versión en YAML:
 
@@ -153,7 +201,15 @@ Con la conexión `dev`:
 clickhouse client -C connections.yaml --connection dev
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/7_prompt.webp" size="md" alt="Prompt de cliente de ClickHouse con conexión Development mediante YAML" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Prompt de cliente de ClickHouse con conexión Development mediante YAML](/images/knowledgebase/change-the-prompt-in-clickhouse-client/7_prompt.webp)
+
+</Frame>
+
+</div>
 
 Y ahora `prod`:
 
@@ -161,4 +217,12 @@ Y ahora `prod`:
 clickhouse client -C connections.yaml --connection prod
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/8_prompt.webp" size="md" alt="Prompt de cliente de ClickHouse con una conexión de producción mediante YAML" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Prompt de cliente de ClickHouse con una conexión de producción mediante YAML](/images/knowledgebase/change-the-prompt-in-clickhouse-client/8_prompt.webp)
+
+</Frame>
+
+</div>
