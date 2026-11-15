@@ -83,6 +83,13 @@ public:
         return stream_settings;
     }
 
+    /// Replace the cursor of the STREAM modifier, e.g. by its subtree for a child of a composite table
+    void setStreamCursor(CursorTreeNodePtr cursor)
+    {
+        chassert(stream_settings.has_value());
+        stream_settings->cursor = std::move(cursor);
+    }
+
     /// Dump into buffer
     void dump(WriteBuffer & buffer) const;
 

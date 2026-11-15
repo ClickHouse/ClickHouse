@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <variant>
+#include <vector>
 
 namespace DB
 {
@@ -43,9 +44,17 @@ private:
     Data data;
 };
 
+/// The collapsed form of a cursor tree is a map from dotted paths of keys to values.
+/// A dot and a backslash inside a key are escaped by a backslash, so that a key may contain dots (e.g. a file name).
+String escapeCursorKey(const String & key);
+
 Map cursorTreeToMap(const CursorTreeNodePtr & ptr);
 CursorTreeNodePtr buildCursorTree(const Map & collapsed_tree);
 
 void mergeCursors(const CursorTreeNodePtr & into, const CursorTreeNodePtr & from);
+
+/// The subtree of `cursor` at `path`, or nullptr if `cursor` is nullptr or has no such subtree.
+/// Throws if `path` leads to a value instead of a subtree.
+CursorTreeNodePtr getCursorSubtree(const CursorTreeNodePtr & cursor, const std::vector<String> & path);
 
 }

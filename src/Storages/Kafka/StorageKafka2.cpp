@@ -1,4 +1,6 @@
 #include <Storages/Kafka/StorageKafka2.h>
+#include <Storages/Kafka/KafkaStreamSource.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 
 #include <Columns/IColumn.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -528,8 +530,52 @@ void StorageKafka2::read(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
+    if (query_info.isStream())
+    {
+        readStream(query_plan, column_names, storage_snapshot, query_info, query_context);
+        return;
+    }
+
     query_plan.addStep(std::make_unique<ReadFromStorageKafka2>(
         column_names, shared_from_this(), storage_snapshot, query_info, std::move(query_context)));
+}
+
+void StorageKafka2::readStream(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    const SelectQueryInfo & query_info,
+    ContextPtr query_context)
+{
+    if (shutdown_called)
+        throw Exception(ErrorCodes::ABORTED, "Table is detached");
+
+    const auto & stream_settings = *query_info.table_expression_modifiers->getStreamSettings();
+    if (stream_settings.watermark)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WATERMARK is not supported for STREAM from a table with engine Kafka");
+
+    auto modified_context = Context::createCopy(query_context);
+    modified_context->applySettingsChanges(settings_adjustments);
+
+    KafkaStreamSource::Params params{
+        .consumer_configuration = getConsumerConfiguration(0, {}),
+        .topics = topics,
+        .format_name = format_name,
+        .handle_error_mode = getHandleKafkaErrorMode(),
+        .schema_registry_skip_bytes = getSchemaRegistrySkipBytes(),
+        .poll_max_batch_size = getPollMaxBatchSize(),
+        .poll_timeout_ms = getPollTimeoutMillisecond(),
+        .max_block_size = getMaxBlockSize(),
+        .storage_id = getStorageID(),
+    };
+
+    auto source = std::make_shared<KafkaStreamSource>(
+        std::move(params), storage_snapshot, modified_context, column_names, stream_settings, log);
+    source->setStorageLimits(query_info.storage_limits);
+
+    auto step = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
+    step->setStepDescription("Read from Kafka STREAM");
+    query_plan.addStep(std::move(step));
 }
 
 StreamingHandleErrorMode StorageKafka2::getHandleKafkaErrorMode() const

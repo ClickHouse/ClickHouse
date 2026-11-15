@@ -9,6 +9,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserStreamSettings.h>
+#include <Core/Streaming/CursorTree.h>
 #include <Parsers/parseIntervalKind.h>
 
 namespace DB
@@ -48,7 +49,8 @@ bool parseCursorObject(IParser::Pos & pos, Expected & expected, Map & flat, cons
         if (!colon.ignore(pos, expected))
             return false;
 
-        const String new_path = path_prefix.empty() ? key : (path_prefix + "." + key);
+        const String escaped_key = escapeCursorKey(key);
+        const String new_path = path_prefix.empty() ? escaped_key : (path_prefix + "." + escaped_key);
 
         /// Peek at next token: `{` starts a nested object, integer is a leaf.
         if (pos->type == TokenType::OpeningCurlyBrace)

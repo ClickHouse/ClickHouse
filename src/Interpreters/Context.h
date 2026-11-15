@@ -41,6 +41,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <vector>
 
 
 namespace Poco::Net
@@ -350,10 +351,22 @@ class QueryMetadataCache;
 class CursorTreeNode;
 using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
 
+/// Holder of the cursor that a bounded streaming read (`STREAM BOUNDED`) advanced to.
+/// A read of a composite table (`Merge`, `Distributed`) gives each of its children a child holder,
+/// which places the child cursor under its own key path (e.g. database and table) in the parent.
 struct StreamingCursor
 {
     std::mutex mutex;
     CursorTreeNodePtr tree;
+
+    /// Merge the cursor of a finished read into this holder (or into the parent under `path`).
+    void merge(const CursorTreeNodePtr & cursor);
+
+    static std::shared_ptr<StreamingCursor> createChild(std::shared_ptr<StreamingCursor> parent, std::vector<String> path);
+
+private:
+    std::shared_ptr<StreamingCursor> parent;
+    std::vector<String> path;
 };
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
 using QueryMetadataCacheWeakPtr = std::weak_ptr<QueryMetadataCache>;

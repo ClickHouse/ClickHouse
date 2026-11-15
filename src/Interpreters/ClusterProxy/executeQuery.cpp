@@ -3,6 +3,10 @@
 #include <memory>
 #include <optional>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/Utils.h>
+#include <Core/Streaming/CursorTree.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <base/scope_guard.h>
@@ -139,6 +143,56 @@ namespace ErrorCodes
     extern const int UNEXPECTED_CLUSTER;
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace
+{
+
+/// The cursor of a `Distributed` table is a map: shard number -> the cursor of the table on the shard.
+/// Replace the cursor of the STREAM read of the distributed table in the query for a shard by its part for the shard.
+/// Returns whether the query has such a read.
+bool setStreamCursorForShard(const QueryTreeNodePtr & query_for_shard, const StorageID & main_table, bool is_table_function, UInt32 shard_num)
+{
+    auto * query_node = query_for_shard->as<QueryNode>();
+    if (!query_node)
+        return false;
+
+    bool has_stream = false;
+    for (const auto & table_expression : extractTableExpressions(query_node->getJoinTreeNodeTyped()))
+    {
+        std::optional<TableExpressionModifiers> modifiers;
+        if (auto * table_node = table_expression->as<TableNode>())
+        {
+            if (is_table_function || table_node->getStorageID().getDatabaseName() != main_table.getDatabaseName()
+                || table_node->getStorageID().getTableName() != main_table.getTableName())
+                continue;
+            modifiers = table_node->getTableExpressionModifiers();
+            if (!modifiers || !modifiers->hasStream())
+                continue;
+            modifiers->setStreamCursor(getCursorSubtree(modifiers->getStreamSettings()->cursor, {toString(shard_num)}));
+            table_node->setTableExpressionModifiers(*modifiers);
+        }
+        else if (auto * table_function_node = table_expression->as<TableFunctionNode>())
+        {
+            if (!is_table_function)
+                continue;
+            modifiers = table_function_node->getTableExpressionModifiers();
+            if (!modifiers || !modifiers->hasStream())
+                continue;
+            modifiers->setStreamCursor(getCursorSubtree(modifiers->getStreamSettings()->cursor, {toString(shard_num)}));
+            table_function_node->setTableExpressionModifiers(*modifiers);
+        }
+        else
+            continue;
+
+        if (modifiers->getStreamSettings()->watermark)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WATERMARK is not supported for STREAM from a distributed table");
+
+        has_stream = true;
+    }
+    return has_stream;
+}
+
 }
 
 namespace FailPoints
@@ -646,23 +700,44 @@ void executeQuery(
             optimizeShardingKeyRewriteIn(query_for_shard, std::move(visitor_data), query_info.table_expression->getAlias(), new_context);
         }
 
+        ContextPtr shard_context = new_context;
+        const bool is_stream = setStreamCursorForShard(query_for_shard, main_table, table_func_ptr != nullptr, shard_info.shard_num);
+        if (is_stream)
+        {
+            /// A bounded read of a local shard reports its final cursor under the shard number.
+            if (auto streaming_cursor = new_context->getStreamingCursor())
+            {
+                auto mutable_shard_context = Context::createCopy(new_context);
+                mutable_shard_context->setStreamingCursor(StreamingCursor::createChild(std::move(streaming_cursor), {toString(shard_info.shard_num)}));
+                shard_context = std::move(mutable_shard_context);
+            }
+        }
+
         // decide for each shard if parallel reading from replicas should be enabled
         // according to settings and number of replicas declared per shard
         const auto & addresses = cluster->getShardsAddresses().at(i);
         const bool parallel_replicas_enabled = addresses.size() > 1 && new_context->canUseTaskBasedParallelReplicas();
+
+        const size_t remote_shards_before = remote_shards.size();
 
         stream_factory.createForShard(
             shard_info,
             query_for_shard,
             main_table,
             table_func_ptr,
-            new_context,
+            shard_context,
             plans,
             remote_shards,
             static_cast<UInt32>(shards),
             parallel_replicas_enabled,
             shard_filter_generator,
             unavailable_shard_tracker);
+
+        /// A remote shard does not send back the cursor its bounded read advanced to, so fail rather than
+        /// let the caller (an incremental refresh) persist a cursor that misses the shard.
+        if (is_stream && remote_shards.size() != remote_shards_before && new_context->getStreamingCursor())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Reporting the final cursor of a bounded STREAM read from a remote shard is not supported");
     }
 
     if (!remote_shards.empty())

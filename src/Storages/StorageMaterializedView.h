@@ -16,6 +16,10 @@ namespace DB
 class CursorTreeNode;
 using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
 
+/// Throws if the table cannot be the source of an incremental refresh (`APPEND INCREMENTAL`), which reads it
+/// with `STREAM BOUNDED` and resumes every refresh from the cursor the previous one advanced to.
+void checkIncrementalRefreshSource(const StoragePtr & source);
+
 class StorageMaterializedView final : public StorageWithCommonVirtualColumns, WithMutableContext
 {
 public:

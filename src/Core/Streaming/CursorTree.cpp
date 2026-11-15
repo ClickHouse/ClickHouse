@@ -4,9 +4,7 @@
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
-#include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/join.hpp>
-#include <boost/algorithm/string/split.hpp>
 
 #include <variant>
 #include <vector>
@@ -28,11 +26,28 @@ static constexpr size_t MAX_CURSOR_TREE_DEPTH = 256;
 namespace
 {
 
+/// Splits a dotted path into unescaped keys, see `escapeCursorKey`.
+VectorWithMemoryTracking<String> splitCursorPath(const String & dotted_path)
+{
+    VectorWithMemoryTracking<String> path(1);
+    for (size_t i = 0; i < dotted_path.size(); ++i)
+    {
+        const char c = dotted_path[i];
+        if (c == '\\' && i + 1 < dotted_path.size())
+            path.back() += dotted_path[++i];
+        else if (c == '.')
+            path.emplace_back();
+        else
+            path.back() += c;
+    }
+    return path;
+}
+
 void collapseTreeImpl(MapWithMemoryTracking<String, Int64> & collapsed_tree, VectorWithMemoryTracking<String> & path, const CursorTreeNode * node)
 {
     for (const auto & [k, v] : *node)
     {
-        path.push_back(k);
+        path.push_back(escapeCursorKey(k));
 
         if (std::holds_alternative<Int64>(v))
             collapsed_tree[boost::algorithm::join(path, ".")] = std::get<Int64>(v);
@@ -169,6 +184,19 @@ CursorTreeNode::Data::const_iterator CursorTreeNode::end() const
 
 ///////////////////////////////////////////////////////////////////////////////////
 
+String escapeCursorKey(const String & key)
+{
+    String result;
+    result.reserve(key.size());
+    for (const char c : key)
+    {
+        if (c == '.' || c == '\\')
+            result += '\\';
+        result += c;
+    }
+    return result;
+}
+
 Map cursorTreeToMap(const CursorTreeNodePtr & ptr)
 {
     chassert(ptr != nullptr);
@@ -185,8 +213,7 @@ CursorTreeNodePtr buildCursorTree(const Map & collapsed_tree)
         const auto & dotted_path = tuple.at(0).safeGet<String>();
         const auto & value = tuple.at(1).safeGet<Int64>();
 
-        VectorWithMemoryTracking<String> path;
-        boost::split(path, dotted_path, boost::is_any_of("."));
+        const auto path = splitCursorPath(dotted_path);
 
         if (path.size() > MAX_CURSOR_TREE_DEPTH)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cursor path is too deep: {} components, the maximum is {}", path.size(), MAX_CURSOR_TREE_DEPTH);
@@ -216,6 +243,22 @@ void mergeCursors(const CursorTreeNodePtr & into, const CursorTreeNodePtr & from
             mergeCursors(into->getSubtreeOrCreate(key), std::get<CursorTreeNodePtr>(value));
         }
     }
+}
+
+CursorTreeNodePtr getCursorSubtree(const CursorTreeNodePtr & cursor, const std::vector<String> & path)
+{
+    CursorTreeNodePtr node = cursor;
+    for (const auto & key : path)
+    {
+        if (!node)
+            return nullptr;
+
+        if (node->hasValue(key))
+            throw Exception(ErrorCodes::INVALID_CURSOR_LOOKUP, "Cursor has a value instead of a subtree by key: '{}'", key);
+
+        node = node->hasSubtree(key) ? node->getSubtree(key) : nullptr;
+    }
+    return node;
 }
 
 }
