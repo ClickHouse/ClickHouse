@@ -33,3 +33,35 @@ FROM numbers(3) ORDER BY number SETTINGS optimize_inverse_dictionary_lookup = 1;
 
 DROP DICTIONARY d_float_signed_zero;
 DROP TABLE t_float_signed_zero;
+
+SELECT 'LowCardinality key';
+DROP DICTIONARY IF EXISTS d_lc_signed_zero;
+DROP TABLE IF EXISTS t_lc_signed_zero;
+
+CREATE TABLE t_lc_signed_zero (k String, v Float64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_lc_signed_zero VALUES ('a', 1.0), ('b', -0.0);
+
+CREATE DICTIONARY d_lc_signed_zero (k String, v Float64 DEFAULT -0.0)
+PRIMARY KEY k
+SOURCE(CLICKHOUSE(TABLE 't_lc_signed_zero'))
+LAYOUT(COMPLEX_KEY_HASHED())
+LIFETIME(0);
+
+SELECT k,
+    dictGet('d_lc_signed_zero', 'v', toLowCardinality(k)) IN (0.0) AS in_pos,
+    dictGet('d_lc_signed_zero', 'v', toLowCardinality(k)) IN (-0.0) AS in_neg,
+    dictGet('d_lc_signed_zero', 'v', toLowCardinality(k)) NOT IN (0.0) AS not_in_pos
+FROM (SELECT arrayJoin(['a', 'b', 'c']) AS k)
+ORDER BY k
+SETTINGS enable_analyzer = 1, rewrite_in_to_join = 0, optimize_inverse_dictionary_lookup = 0;
+
+SELECT k,
+    dictGet('d_lc_signed_zero', 'v', toLowCardinality(k)) IN (0.0) AS in_pos,
+    dictGet('d_lc_signed_zero', 'v', toLowCardinality(k)) IN (-0.0) AS in_neg,
+    dictGet('d_lc_signed_zero', 'v', toLowCardinality(k)) NOT IN (0.0) AS not_in_pos
+FROM (SELECT arrayJoin(['a', 'b', 'c']) AS k)
+ORDER BY k
+SETTINGS enable_analyzer = 1, rewrite_in_to_join = 0, optimize_inverse_dictionary_lookup = 1;
+
+DROP DICTIONARY d_lc_signed_zero;
+DROP TABLE t_lc_signed_zero;
