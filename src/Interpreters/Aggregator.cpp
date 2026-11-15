@@ -2010,11 +2010,12 @@ void NO_INLINE Aggregator::executeImplBatch(
         /// Only for a single-level table that fits in the cache, and states whose `emplaceKey` is `HashMethodBase`'s.
         static constexpr bool may_look_up_known_keys = !prefetch && !top_k && State::has_cheap_key_holder
             && !Method::low_cardinality_optimization && !requires { Method::Data::NUM_BUCKETS; };
-        [[maybe_unused]] size_t known_keys_end = 0;
+        [[maybe_unused]] size_t known_keys_from = key_end;
+        [[maybe_unused]] size_t known_keys_gap = 0;
         if constexpr (may_look_up_known_keys)
         {
             if (bytesForPrefetch(method.data) <= minBytesForPrefetch<typename Method::Data, State::has_mapped>(min_bytes_for_prefetch))
-                known_keys_end = key_end;
+                known_keys_from = key_start;
         }
 
         for (size_t i = key_start; i < key_end; ++i)
@@ -2088,10 +2089,19 @@ void NO_INLINE Aggregator::executeImplBatch(
 
                 if constexpr (may_look_up_known_keys)
                 {
-                    if (i + 1 < known_keys_end)
+                    if (i >= known_keys_from)
                     {
                         places[i] = aggregate_data;
-                        i = findRunOfKnownKeys(method.data, state, places.get(), i + 1, known_keys_end, *aggregates_pool) - 1;
+                        const size_t run_end = findRunOfKnownKeys(method.data, state, places.get(), i + 1, key_end, *aggregates_pool);
+                        /// A short run does not pay for the failed lookup of the new key after it, which `emplaceKey` repeats.
+                        if (run_end - i <= 8)
+                        {
+                            known_keys_gap = std::min<size_t>(2 * known_keys_gap + 1, 63);
+                            known_keys_from = run_end + known_keys_gap;
+                        }
+                        else
+                            known_keys_gap = 0;
+                        i = run_end - 1;
                         continue;
                     }
                 }

@@ -6,4 +6,5 @@
     <query>SELECT CounterID, sum(UserID) FROM hits_100m_single GROUP BY CounterID FORMAT Null</query>
     <query>SELECT RegionID, sum(UserID) FROM hits_100m_single GROUP BY RegionID FORMAT Null</query>
     <query>SELECT MobilePhoneModel, sum(UserID) FROM hits_100m_single GROUP BY MobilePhoneModel FORMAT Null</query>
+    <query>SELECT intDiv(number, 2) AS k, sum(number) FROM numbers(65536) GROUP BY k FORMAT Null</query>
 </test>
