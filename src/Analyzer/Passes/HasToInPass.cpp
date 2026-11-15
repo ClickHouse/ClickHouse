@@ -106,8 +106,14 @@ public:
             return;
 
         /// Rewrite has(const_array, elem) -> in(elem, const_array), notHas(const_array, elem) -> notIn(elem, const_array)
+        /// `transform_null_in` renames the `in` family during resolution, which every pass runs after.
+        const auto in_function_name = getInFunctionNameForPassCreatedNode(
+            has_function_node->getFunctionName() == "has" ? "in" : "notIn", second_arg_type, getContext());
+        if (!in_function_name)
+            return;
+
         std::swap(has_function_arguments_nodes[0], has_function_arguments_nodes[1]);
-        resolveOrdinaryFunctionNodeByName(*has_function_node, has_function_node->getFunctionName() == "has" ? "in" : "notIn", getContext());
+        resolveOrdinaryFunctionNodeByName(*has_function_node, *in_function_name, getContext());
     }
 };
 

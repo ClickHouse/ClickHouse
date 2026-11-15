@@ -7,8 +7,6 @@
 -- like `x IN (SELECT arrayJoin(groupArray(x)) ...)`.
 -- https://github.com/ClickHouse/ClickHouse/issues/37066
 
-SET enable_analyzer = 1;
-
 -- The two cases from the issue: scalar IN (subquery returning Array of the scalar type).
 SELECT count() FROM numbers(10) WHERE number IN (SELECT groupArray(number) FROM numbers(10));
 SELECT count() FROM numbers(10) WHERE toString(number) IN (SELECT groupArray(toString(number)) FROM numbers(10));
@@ -112,7 +110,7 @@ DROP TABLE t_04512_scalar;
 -- `x IN (subquery)` into a correlated `EXISTS` before the regular IN handling runs. Without
 -- flattening the array subquery there too, the rewrite would compare `x = <array>` and keep the
 -- reported bug alive whenever this setting is enabled.
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 SET rewrite_in_to_join = 1;
 SELECT count() FROM numbers(10) WHERE number IN (SELECT groupArray(number) FROM numbers(10));
 SELECT count() FROM numbers(10) WHERE number NOT IN (SELECT groupArray(number) FROM numbers(5));

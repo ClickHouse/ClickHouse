@@ -28,36 +28,42 @@ namespace ErrorCodes
 namespace
 {
 
-/// Resolves the codec to use for estimating the compressed size of a whole column.
+/// Resolves the codecs to use for estimating the compressed size of a whole column.
 ///
 /// The writer applies a column's `CODEC` per substream: it resolves the codec description against the
 /// substream's type and, for structural substreams (`Array` offsets, null map, ...), keeps only the
-/// generic codecs and ignores the type entirely. The estimation this codec feeds serializes the whole
+/// generic codecs and ignores the type entirely. The estimation these codecs feed serializes the whole
 /// column into a single buffer, so a type-specific codec can only be used when the column consists of a
 /// single stream carrying the column type itself, i.e. a plain numeric or date column. For every other
 /// column keep only the generic codecs - they dominate the ratio anyway - exactly as the writer does for
-/// structural substreams. Resolving a type-specific codec against a composite type is not just imprecise,
-/// it throws: `T64` on a `Tuple` or `GCD` on a `Nullable` is rejected by the factory.
-CompressionCodecPtr resolveCodecForWholeColumn(const ColumnDescription & description, const CompressionCodecPtr & default_codec)
+/// structural substreams.
+///
+/// Which of the two applies is not decided here - the metadata does not describe the sample on its own,
+/// so `estimateCompressedColumnSize` picks between them per block. Only the type-specific resolution has
+/// to happen here, because it can throw: `T64` on a `Tuple` or `GCD` on a `Nullable` is rejected by the
+/// factory, so it is attempted only for a type whose default serialization is a single stream of it.
+ColumnCodecs resolveCodecsForWholeColumn(const ColumnDescription & description, const CompressionCodecPtr & default_codec)
 {
-    size_t num_streams = 0;
-    bool stream_is_column_itself = false;
-    description.type->getDefaultSerialization()->enumerateStreams(
-        [&](const auto & substream_path)
-        {
-            ++num_streams;
-            const auto & substream_type = substream_path.back().data.type;
-            stream_is_column_itself = ISerialization::isSpecialCompressionAllowed(substream_path) && substream_type
-                && substream_type->equals(*description.type);
-        },
-        description.type);
-
     auto & factory = CompressionCodecFactory::instance();
-    if (num_streams == 1 && stream_is_column_itself)
-        return factory.get(description.codec, description.type.get(), default_codec);
-    return factory.get(description.codec, nullptr, default_codec, /*only_generic=*/true);
+    auto generic = factory.get(description.codec, nullptr, default_codec, /*only_generic=*/true);
+
+    if (!isSerializedAsSingleStreamOfColumnType(*description.type->getDefaultSerialization(), description.type))
+        return {.generic = std::move(generic)};
+
+    return {
+        .type_specific = factory.get(description.codec, description.type.get(), default_codec),
+        .type_specific_for = description.type,
+        .generic = std::move(generic)};
 }
 
+}
+
+NamesAndTypesList IndexReadTask::getNamesAndTypesList() const
+{
+    NamesAndTypesList res;
+    for (const auto & column : columns)
+        res.emplace_back(column.name, column.type);
+    return res;
 }
 
 String MergeTreeReadTaskColumns::dump() const
@@ -116,6 +122,20 @@ void MergeTreeReadTask::Readers::updateAllMarkRanges(const MarkRanges & ranges, 
         patches[i]->getReader()->updateAllMarkRanges(patches_ranges[i]);
 }
 
+void MergeTreeReadTask::Readers::updateReadRequestMap(const MarkRangesPtr & request_map, const std::vector<MarkRangesPtr> & patch_request_maps)
+{
+    main->updateReadRequestMap(request_map);
+
+    for (auto & reader : prewhere)
+        reader->updateReadRequestMap(request_map);
+
+    if (!patch_request_maps.empty() && patch_request_maps.size() != patches.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} patch request maps for {} patch readers", patch_request_maps.size(), patches.size());
+
+    for (size_t i = 0; i < patch_request_maps.size(); ++i)
+        patches[i]->getReader()->updateReadRequestMap(patch_request_maps[i]);
+}
+
 MergeTreeReadTask::MergeTreeReadTask(
     MergeTreeReadTaskInfoPtr info_,
     Readers readers_,
@@ -147,7 +167,7 @@ MergeTreeReadTask::MergeTreeReadTask(
         {
             const auto * description = metadata_columns.tryGet(name);
             if (description && description->codec)
-                resolved_codecs.emplace(name, resolveCodecForWholeColumn(*description, default_codec));
+                resolved_codecs.emplace(name, resolveCodecsForWholeColumn(*description, default_codec));
         }
 
         dataflow_cache_update_cb = [this, default_codec, column_codecs = std::move(resolved_codecs)](const ColumnsWithTypeAndName & columns,
@@ -174,7 +194,7 @@ MergeTreeReadTask::MergeTreeReadTask(
 }
 
 /// Returns pointer to the index if all columns in the read step belongs to the read step for that index.
-static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & index_read_tasks, const NamesAndTypesList & columns_to_read, const IMergeTreeDataPart & data_part)
+static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & index_read_tasks, const NamesAndTypesList & columns_to_read, const IMergeTreeDataPartInfoForReader & part_info)
 {
     if (index_read_tasks.empty())
         return nullptr;
@@ -221,7 +241,11 @@ static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & 
     const auto & index_task = index_read_tasks.at(index_for_step);
     const auto & index = index_task.index.index;
 
-    if (!index->getDeserializedFormat(data_part, index->getFileName()))
+    if (!index->getDeserializedFormat(*part_info.getDataPart(), index->getFileName()))
+        return nullptr;
+
+    /// Or if the index cannot be read in this part (e.g. pending patches).
+    if (!canReadTextIndexInPart(part_info.isProjectionPart() ? nullptr : part_info.getAlterConversions()))
         return nullptr;
 
     return &index_task;
@@ -231,7 +255,9 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     const MergeTreeReadTaskInfoPtr & read_info,
     const Extras & extras,
     const MarkRanges & ranges,
-    const std::vector<MarkRanges> & patches_ranges)
+    const std::vector<MarkRanges> & patches_ranges,
+    const MarkRangesPtr & read_request_map,
+    const std::vector<MarkRangesPtr> & patch_read_request_maps)
 {
     Readers new_readers;
 
@@ -245,6 +271,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             ranges,
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
+            extras.columns_cache,
             extras.mark_cache,
             is_prewhere ? nullptr : read_info->deserialization_prefixes_cache.get(),
             extras.reader_settings,
@@ -264,12 +291,13 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
         /// is present whenever the list is non-empty; skip the concrete access otherwise.
         const IndexReadTask * index_read_task = read_info->index_read_tasks.empty()
             ? nullptr
-            : getIndexReadTaskForReadStep(read_info->index_read_tasks, pre_columns_per_step, *read_info->data_part_info->getDataPart());
+            : getIndexReadTaskForReadStep(read_info->index_read_tasks, pre_columns_per_step, *read_info->data_part_info);
+
         if (index_read_task)
         {
             new_readers.prewhere.push_back(createMergeTreeReaderIndex(
                 new_readers.main.get(),
-                index_read_task->index,
+                *index_read_task,
                 pre_columns_per_step,
                 read_info->read_hints.index_granules));
         }
@@ -292,6 +320,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             patches_ranges[part_idx],
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
+            extras.columns_cache,
             extras.mark_cache,
             /*deserialization_prefixes_cache=*/ nullptr,
             extras.reader_settings,
@@ -306,6 +335,11 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             create_patch_reader(i),
             extras.patch_join_cache));
     }
+
+    const auto & map = read_request_map ? read_request_map : read_info->read_request_map;
+    const auto & patch_maps = patch_read_request_maps.empty() ? read_info->patch_read_request_maps : patch_read_request_maps;
+    if (map || !patch_maps.empty())
+        new_readers.updateReadRequestMap(map, patch_maps);
 
     return new_readers;
 }
@@ -396,7 +430,7 @@ void MergeTreeReadTask::initializeReadersChain(
 
     PrewhereExprInfo all_prewhere_actions;
 
-    if (index_build_context || lazy_materializing_rows)
+    if (index_build_context || lazy_materializing_rows || info->delete_bitmap)
         initializeIndexReader(index_build_context, lazy_materializing_rows);
 
     for (const auto & step : info->mutation_steps)
@@ -437,9 +471,10 @@ void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPt
         }
     }
 
-    if (index_read_result || lazy_materializing_rows)
+    if (index_read_result || lazy_materializing_rows || info->delete_bitmap)
     {
-        readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result), part_rows);
+        readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(
+            readers.main.get(), std::move(index_read_result), part_rows, info->delete_bitmap);
     }
 
 }
@@ -493,7 +528,7 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     UInt64 recommended_rows = estimateNumRows();
     UInt64 rows_to_read = std::max(static_cast<UInt64>(1), std::min(block_size_params.max_block_size_rows, recommended_rows));
 
-    auto read_result = readers_chain.read(rows_to_read, mark_ranges, patches_mark_ranges, dataflow_cache_update_cb);
+    auto read_result = readers_chain.read(rows_to_read, mark_ranges, patches_mark_ranges, dataflow_cache_update_cb, block_size_params.max_block_size_rows);
 
     /// All rows were filtered. Repeat.
     if (read_result.num_rows == 0)
@@ -525,8 +560,10 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
         {
             /// We may have columns that have other references, usually it is a constant column that has been created during analysis
             /// (that will not be const here anymore, i.e. after materialize()). The contract is - not to shrink if column is shared.
-            /// But if some subcolumns are shared, we'll clone them via IColumn::mutate() and then safely shrink
-            if (column->use_count() == 1)
+            /// But if some subcolumns are shared, we'll clone them via IColumn::mutate() and then safely shrink.
+            /// Shrinking reallocates the column, so don't do it if only a little memory would be freed (e.g. for small blocks).
+            static constexpr size_t min_bytes_to_free_by_shrinking = 4096;
+            if (column->use_count() == 1 && column->allocatedBytes() >= column->byteSize() + min_bytes_to_free_by_shrinking)
             {
                 auto mutable_column = IColumn::mutate(std::move(column));
                 mutable_column->shrinkToFit();
@@ -542,6 +579,7 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
         .unmatched_mark_ranges = readers.main->getMergeTreeReaderSettings().use_query_condition_cache
             ? read_result.computeUnmatchedMarkRanges()
             : MarkRanges{},
+        .query_condition_cache_attributable_marks = std::move(read_result.query_condition_cache_attributable_marks),
         .row_count = read_result.num_rows,
         .num_read_rows = num_read_rows,
         .num_read_bytes = num_read_bytes };
@@ -554,11 +592,19 @@ void MergeTreeReadTask::addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges
     prewhere_unmatched_marks.insert(prewhere_unmatched_marks.end(), mark_ranges_.begin(), mark_ranges_.end());
 }
 
-bool MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere() const
+void MergeTreeReadTask::addQueryConditionCacheAttributableMarks(const MarkRanges & mark_ranges_)
+{
+    query_condition_cache_attributable_marks.insert(query_condition_cache_attributable_marks.end(), mark_ranges_.begin(), mark_ranges_.end());
+}
+
+bool MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere(bool prewhere_filters_by_top_k_threshold) const
 {
     /// Only `prepared_index` (a `MergeTreeReaderIndex`) sits ahead of the PREWHERE readers in the
     /// reader chain and is able to skip whole marks via `canSkipMark`.
-    return readers.prepared_index && readers.prepared_index->canSkipAnyMark();
+    if (!readers.prepared_index)
+        return false;
+    return prewhere_filters_by_top_k_threshold ? readers.prepared_index->canSkipAnyMarkBesidesTopKPrimaryKey()
+                                               : readers.prepared_index->canSkipAnyMark();
 }
 
 bool MergeTreeReadTask::appliesMutationsBeforePrewhere() const

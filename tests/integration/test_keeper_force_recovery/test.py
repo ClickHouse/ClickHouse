@@ -201,6 +201,16 @@ def test_cluster_recovery(started_cluster):
 
         node_zks = node_zks[:nodes_left]
 
+        # A node answers `mntr` with "not serving" whenever it sees no live leader: also
+        # while it campaigns, and while newly elected but not yet heartbeating. Pin the
+        # role on the peer stopped last, so node1 hears a leader until quorum is gone.
+        last_stopped = nodes[CLUSTER_SIZE - 1]
+        start = time.time()
+        while not keeper_utils.is_leader(cluster, last_stopped):
+            assert time.time() - start < 60, f"{last_stopped.name} did not become leader"
+            keeper_utils.send_4lw_cmd(cluster, last_stopped, "rqld")
+            time.sleep(2)
+
         for node in nodes[nodes_left:CLUSTER_SIZE]:
             node.stop_clickhouse()
 

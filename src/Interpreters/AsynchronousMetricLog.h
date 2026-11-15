@@ -31,6 +31,8 @@ class AsynchronousMetricLog : public SystemLog<AsynchronousMetricLogElement>
 public:
     using SystemLog<AsynchronousMetricLogElement>::SystemLog;
 
+    static consteval size_t getDefaultFlushIntervalMilliseconds() { return 7000; }
+
     void addValues(const AsynchronousMetricValues &);
 
     /// This table is usually queried for a fixed metric name and a time range.

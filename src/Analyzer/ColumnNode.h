@@ -105,8 +105,29 @@ public:
 
     /** Get column source.
       * If column source is not valid null is returned.
+      * Only columns for which `mayHaveNoSource` holds are allowed to return null here,
+      * every other null source means a broken query tree.
       */
     TableExpressionNodePtr getColumnSourceOrNull() const;
+
+    /** Name of the virtual column that `GroupingFunctionsResolvePass` prepends to the arguments of the
+      * specialized `GROUPING` functions (`groupingForRollup`, `groupingForCube`, `groupingForGroupingSets`).
+      * It does not come from any table expression, it is materialized by the aggregation step itself.
+      */
+    static constexpr std::string_view GROUPING_SET_COLUMN_NAME = "__grouping_set";
+
+    /** The query tree invariant is that every column node has a source, with exactly one exception:
+      * the virtual `__grouping_set` column is deliberately constructed with an empty source
+      * (see `GroupingFunctionsResolvePass`), because it has no originating table expression.
+      *
+      * So a null source is legal if and only if this predicate holds; the invariant is checked after
+      * every pass by `ValidationChecker` in `QueryTreePassManager`, and asserted by the code that
+      * tolerates a null source.
+      */
+    bool mayHaveNoSource() const
+    {
+        return column.name == GROUPING_SET_COLUMN_NAME;
+    }
 
     void setColumnSource(const TableExpressionNodePtr & source_)
     {

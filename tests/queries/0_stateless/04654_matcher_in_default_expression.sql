@@ -4,7 +4,6 @@
 -- The guard is on the analyzer path only, so this SET is load-bearing: without it the old
 -- analyzer resolves the expression and reports the alias collision instead. A session SET
 -- also holds under the stress `compatibility` randomization, which a tag would not.
-SET enable_analyzer = 1;
 
 SELECT 'matcher in default expression';
 CREATE TABLE t_matcher_default (c0 Int DEFAULT tuple(1 AS a0, * + 2 AS a0)) ENGINE = Memory; -- { serverError UNKNOWN_IDENTIFIER }

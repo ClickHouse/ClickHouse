@@ -1,0 +1,18 @@
+Schema keeps the generated columns:
+a	Nullable(Int64)					
+b	Nullable(Int64)					
+c	Nullable(Int64)					
+Insert without a column list, and an explicit base-column list, both target only the base columns; SQLite computes the generated columns:
+a	b	c
+1	2	2
+2	3	4
+Generated columns are MATERIALIZED, so SELECT * returns only the base columns:
+a
+1
+2
+Explicitly writing into a generated column is rejected:
+Cannot insert column b, because it is MATERIALIZED column
+The rejected insert wrote nothing:
+a	b	c
+1	2	2
+2	3	4

@@ -2,13 +2,16 @@
 #include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
+#include <Core/FormatFactorySettings.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/SecretArguments.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/CurrentThread.h>
+#include <Common/HiddenSecret.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -46,6 +49,7 @@ namespace ErrorCodes
     DECLARE(Bool, commit_on_select, false, "Whether SELECT query from queue table (not materialized view, but direct select from a queue table) needs to commit data and apply after_processing action. See also profile level setting stream_like_engine_allow_direct_select, which needs to be enabled if you want to use direct SELECT queries. Always enabled for exclusive mode", 0) \
     DECLARE(Bool, deduplication_v2, true, "Deduplicate blocks in dependent materialized views using user token set as object_etag:chunk_offset", 0) \
     DECLARE(UInt32, persistent_processing_node_ttl_seconds, 6 * 60 * 60, "Cleanup period for abandoned processing nodes", 0) \
+    DECLARE(UInt32, processing_state_cache_ttl_seconds, 5 * 60, "How long a `Processing` file state which was read from keeper, i.e. the file is held by another processor, is trusted without rechecking keeper. Zero means to always recheck keeper. A `Processing` state set by a processor of this server is not affected: its owner updates it itself", 0) \
     DECLARE(UInt64, buckets, 0, "Number of buckets for Ordered mode parallel processing", 0) \
     DECLARE(UInt64, list_objects_batch_size, 1000, "Size of a list batch in object storage", 0) \
     DECLARE(UInt64, min_insert_block_size_rows_for_materialized_views, 0, "Override for profile setting min_insert_block_size_rows_for_materialized_views", 0) \
@@ -60,15 +64,15 @@ namespace ErrorCodes
     DECLARE(String, partition_component, "", "Name of the capture group from partition_regex to use as partition key. Required when using partitioning_mode='regex'. Example: 'hostname'", 0) \
     DECLARE(ObjectStorageQueueBucketingMode, bucketing_mode, ObjectStorageQueueBucketingMode::PATH, "Bucketing strategy for Ordered mode parallel processing: PATH (hash full file path, default), PARTITION (hash partition key, requires partitioning_mode != NONE)", 0) \
     DECLARE(UInt32, after_processing_retries, 10, "Number of retries for the after_processing action before giving up", 0) \
-    DECLARE(String, after_processing_move_uri, "", "S3 bucket URL to move processed files to", 0) \
+    DECLARE(String, after_processing_move_uri, "", "S3 bucket URL to move processed files to. Setting it requires the `WRITE` grant on the `S3` source (not limited to a URL filter), and `ALTER` also requires `SELECT` on the table. The URL must be allowed by `remote_url_allow_hosts`", 0) \
     DECLARE(String, after_processing_move_prefix, "", "Path prefix to move processed files to", 0) \
     DECLARE(Bool, after_processing_move_preserve_path, false, "If true, preserve the full source path under after_processing_move_prefix instead of using only the file name", 0) \
     DECLARE(String, after_processing_tag_key, "", "Tag key to tag processed files in the storage", 0) \
     DECLARE(String, after_processing_tag_value, "", "Tag value to tag processed files in the storage", 0) \
     DECLARE(String, after_processing_move_access_key_id, "", "S3 Access Key ID accompanying after_processing_move_uri", 0) \
     DECLARE(String, after_processing_move_secret_access_key, "", "S3 Secret Access Key accompanying after_processing_move_uri", 0) \
-    DECLARE(String, after_processing_move_connection_string, "", "Azure connection string to move processed files to", 0) \
-    DECLARE(String, after_processing_move_container, "", "Azure container accompanying after_processing_move_connection_string", 0) \
+    DECLARE(String, after_processing_move_connection_string, "", "Azure connection string to move processed files to. Setting it requires the `WRITE` grant on the `AZURE` source (not limited to a URL filter), and `ALTER` also requires `SELECT` on the table. The endpoint must be allowed by `remote_url_allow_hosts`", 0) \
+    DECLARE(String, after_processing_move_container, "", "Azure container accompanying after_processing_move_connection_string. Setting it requires the `WRITE` grant on the `AZURE` source (not limited to a URL filter), and `ALTER` also requires `SELECT` on the table", 0) \
     DECLARE(Bool, use_hive_partitioning, false, "DEPRECATED: Use partitioning_mode='hive' instead. Whether path contains hive partitioning and this engine should process such files with a separate processed files tracking per partition.", 0) \
 
 #define LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS(M, ALIAS) \
@@ -93,7 +97,8 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
     MutableColumnsAndConstraints & params,
     const std::string & table_name,
     const std::string & database_name,
-    const StorageObjectStorageQueue & storage) const
+    const StorageObjectStorageQueue & storage,
+    bool display_secrets) const
 {
     MutableColumns & res_columns = params.res_columns;
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
@@ -114,6 +119,16 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
     {
         return StorageObjectStorageQueue::isSettingChangeable(setting_name, (*this)[ObjectStorageQueueSetting::mode]);
     };
+    /// Hides what `SHOW CREATE TABLE` hides. A secret is hidden whole, as its masker renders SQL.
+    auto render_value = [&](const std::string & setting_name, const Field & value) -> String
+    {
+        if (!display_secrets)
+        {
+            if (auto masked = getSecretArgumentsFinder().renderSecretSetting(setting_name, value); masked && masked->contains(HIDDEN_SECRET))
+                return String(HIDDEN_SECRET);
+        }
+        return convertFieldToString(value);
+    };
 
     for (const auto & change : impl->all())
     {
@@ -122,7 +137,7 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
         res_columns[i++]->insert(database_name);
         res_columns[i++]->insert(table_name);
         res_columns[i++]->insert(name);
-        res_columns[i++]->insert(convertFieldToString(change.getValue()));
+        res_columns[i++]->insert(render_value(name, change.getValue()));
         res_columns[i++]->insert(change.getTypeName());
         res_columns[i++]->insert(is_changed(name));
         res_columns[i++]->insert(change.getDescription());
@@ -196,10 +211,11 @@ void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def, bool is
                     {
                         if (is_attach)
                         {
+                            /// `applyChanges` below applies the changes in order, so the last one wins.
                             LOG_WARNING(
                                 getLogger("StorageObjectStorageQueue"),
                                 "Storage {} has a duplicated setting {}. "
-                                "Will use the first declared setting's value",
+                                "Will use the last declared setting's value",
                                 storage_id.getNameForLogs(), change.name);
                         }
                         else

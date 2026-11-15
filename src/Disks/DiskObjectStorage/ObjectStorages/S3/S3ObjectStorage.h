@@ -9,6 +9,7 @@
 #include <memory>
 #include <IO/S3/S3Capabilities.h>
 #include <IO/S3Settings.h>
+#include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <IO/ReadBufferFromS3.h>
@@ -39,7 +40,7 @@ private:
         ObjectStorageKeyGeneratorPtr key_generator_,
         const String & disk_name_,
         bool for_disk_s3_ = true,
-        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] -> std::unique_ptr<const S3::Client>{ return nullptr; },
+        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = {},
         bool client_restricts_server_credentials_ = true)
         : uri(uri_)
         , disk_name(disk_name_)
@@ -102,6 +103,8 @@ public:
         bool with_tags,
         const std::optional<std::string> & start_after) const override;
 
+    bool supportsPrefixListing() const override { return true; }
+
     /// Uses `DeleteObjectRequest`.
     void removeObjectIfExists(const StoredObject & object) override;
 
@@ -152,6 +155,9 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
+    /// An object becomes visible only on the completion of `PutObject` or `CompleteMultipartUpload`.
+    bool supportsAtomicWrite() const override { return true; }
+
     ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
 
     bool isReadOnly() const override { return s3_settings.get()->request_settings[S3RequestSetting::read_only]; }
@@ -160,9 +166,13 @@ public:
     std::shared_ptr<const S3::Client> tryGetS3StorageClient() override;
 
     bool tryRefreshCredentialsViaCallback() override;
+    bool hasCredentialsRefreshCallback() const override { return static_cast<bool>(credentials_refresh_callback); }
 
     S3::URI getURI() const { return uri; }
     S3Settings getS3Settings() const { return *s3_settings.get(); }
+
+    ObjectStoragePtr cloneImpl() const override;
+
 private:
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists, StoredObjects * successful_objects = nullptr);

@@ -1,0 +1,25 @@
+-- runtime filters off
+MergingAggregated (merge)
+GatherExchange
+Aggregating (partial)
+ScatterExchange (any scatter)
+MergingAggregated (merge)
+GatherExchange
+Aggregating (partial)
+ScatterExchange (any)
+BroadcastExchange
+-- runtime filters on
+MergingAggregated (merge)
+GatherExchange
+Aggregating (partial)
+ScatterExchange (any scatter)
+MergingAggregated (merge)
+GatherExchange
+Aggregating (partial)
+ScatterExchange (any)
+BroadcastExchange
+-- the filter is the NULL bypass form
+1
+-- results
+991
+991

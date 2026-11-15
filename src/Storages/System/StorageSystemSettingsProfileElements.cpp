@@ -8,11 +8,13 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
+#include <Core/SettingsSecrets.h>
 #include <Access/AccessControl.h>
 #include <Access/Role.h>
 #include <Access/User.h>
 #include <Access/SettingsProfile.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
 #include <Common/SettingConstraintWritability.h>
 #include <base/range.h>
@@ -61,6 +63,8 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
     if (!access_control.doesSelectFromSystemDatabaseRequireGrant())
         context->checkAccess(AccessType::SHOW_SETTINGS_PROFILES);
 
+    const bool show_secrets = canDisplaySecrets(context);
+
     std::vector<UUID> ids = access_control.findAll<User>();
     boost::range::push_back(ids, access_control.findAll<Role>());
     boost::range::push_back(ids, access_control.findAll<SettingsProfile>());
@@ -96,6 +100,8 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
         if (element.value && !element.setting_name.empty())
         {
             String str = Settings::valueToStringUtil(element.setting_name, *element.value);
+            if (!show_secrets)
+                CoreSettings::maskSettingValue(element.setting_name, str);
             column_value.insertData(str.data(), str.length());
             column_value_null_map.push_back(false);
             inserted_value = true;
@@ -105,6 +111,8 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
         if (element.min_value && !element.setting_name.empty())
         {
             String str = Settings::valueToStringUtil(element.setting_name, *element.min_value);
+            if (!show_secrets)
+                CoreSettings::maskSettingValue(element.setting_name, str);
             column_min.insertData(str.data(), str.length());
             column_min_null_map.push_back(false);
             inserted_min = true;
@@ -114,6 +122,8 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
         if (element.max_value && !element.setting_name.empty())
         {
             String str = Settings::valueToStringUtil(element.setting_name, *element.max_value);
+            if (!show_secrets)
+                CoreSettings::maskSettingValue(element.setting_name, str);
             column_max.insertData(str.data(), str.length());
             column_max_null_map.push_back(false);
             inserted_max = true;
