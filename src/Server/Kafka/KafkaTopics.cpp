@@ -16,10 +16,14 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Formats/FormatFactory.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <Formats/NativeWriter.h>
+#include <IO/EmptyReadBuffer.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -33,6 +37,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/Streaming/Subscription/MergeTreeBoundsSubscription.h>
@@ -41,6 +46,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <mutex>
+#include <numeric>
 
 
 namespace DB
@@ -57,6 +63,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool enable_block_number_column;
     extern const MergeTreeSettingsBool enable_block_offset_column;
+    extern const MergeTreeSettingsString kafka_format;
 }
 
 namespace Kafka
@@ -73,6 +80,7 @@ void BrokerSettings::load(const Poco::Util::AbstractConfiguration & config, cons
     group_initial_rebalance_delay_ms = config.getUInt64(prefix + ".group_initial_rebalance_delay_ms", group_initial_rebalance_delay_ms);
     offsets_table = config.getString(prefix + ".offsets_table", offsets_table);
     topic_engine = config.getString(prefix + ".topic_engine", topic_engine);
+    format = config.getString(prefix + ".format", format);
     auto_create_topics = config.getBool(prefix + ".auto_create_topics", auto_create_topics);
     default_num_partitions = config.getInt(prefix + ".default_num_partitions", default_num_partitions);
 }
@@ -104,7 +112,7 @@ std::optional<Int32> Topic::partitionIndex(const String & partition_id) const
 namespace
 {
 
-TopicResolution makeTopic(const String & name, const StorageID & table_id, StoragePtr storage)
+TopicResolution makeTopic(const String & name, const StorageID & table_id, StoragePtr storage, const BrokerSettings & settings)
 {
     TopicResolution res;
     auto fail = [&](String message)
@@ -140,9 +148,6 @@ TopicResolution makeTopic(const String & name, const StorageID & table_id, Stora
     topic->value_type = get_type("value");
     topic->timestamp_type = get_type("timestamp");
     topic->headers_type = get_type("headers");
-
-    if (!topic->value_type)
-        return fail(fmt::format("Table {} has no column `value` to be a Kafka topic", table_id.getNameForLogs()));
 
     const auto & partition_key = metadata->getPartitionKey();
     if (!partition_key.column_names.empty())
@@ -180,6 +185,32 @@ TopicResolution makeTopic(const String & name, const StorageID & table_id, Stora
                 num_partitions = std::max<Int64>(num_partitions, static_cast<Int64>(*partition) + 1);
 
         topic->num_partitions = static_cast<Int32>(num_partitions);
+    }
+
+    /// A table without the column `value`, or with the setting `kafka_format`, has its rows serialized in the messages.
+    String format = (*merge_tree_settings)[MergeTreeSetting::kafka_format];
+    if (format.empty() && !(topic->value_type && isStringOrFixedString(removeNullable(removeLowCardinality(topic->value_type)))))
+        format = settings.format;
+
+    if (!format.empty())
+    {
+        const auto & format_factory = FormatFactory::instance();
+        if (!format_factory.isInputFormat(format) || !format_factory.isOutputFormat(format))
+            return fail(fmt::format("Format {} of the table {} is not an input and output format", format, table_id.getNameForLogs()));
+
+        topic->format = format;
+        topic->binary_format = format_factory.getContentType(format, std::nullopt) == "application/octet-stream";
+        topic->value_type = nullptr;
+
+        for (const auto & column : columns.getOrdinary())
+        {
+            if (column.name == topic->partition_column || column.name == "key" || column.name == "timestamp" || column.name == "headers")
+                continue;
+            topic->value_columns.push_back(column);
+        }
+
+        if (topic->value_columns.empty())
+            return fail(fmt::format("Table {} has no columns for the messages", table_id.getNameForLogs()));
     }
 
     res.topic = std::move(topic);
@@ -278,7 +309,7 @@ TopicResolution resolveTopic(const String & name, const BrokerSettings & setting
         return res;
     }
 
-    return makeTopic(name, storage->getStorageID(), storage);
+    return makeTopic(name, storage->getStorageID(), storage, settings);
 }
 
 std::vector<String> listTopics(const BrokerSettings & settings, ContextPtr context)
@@ -298,7 +329,7 @@ std::vector<String> listTopics(const BrokerSettings & settings, ContextPtr conte
         if (!storage)
             continue;
 
-        if (makeTopic(it->name(), storage->getStorageID(), storage).topic)
+        if (makeTopic(it->name(), storage->getStorageID(), storage, settings).topic)
             res.push_back(it->name());
     }
 
@@ -420,6 +451,21 @@ String nullableStringExpression(const DataTypePtr & type, const String & column)
     return fmt::format("CAST({} AS Nullable(String))", backQuote(column));
 }
 
+/// The value of a message: the column `value`, or the row serialized in the format of the topic.
+String valueExpression(const Topic & topic)
+{
+    if (topic.format.empty())
+        return nullableStringExpression(topic.value_type, "value");
+
+    String arguments;
+    for (const auto & column : topic.value_columns)
+        arguments += ", " + backQuote(column.name);
+
+    /// A text format ends a row with a newline, which is not a part of the message. A binary format may end with this byte.
+    return fmt::format("CAST({}({}{}) AS Nullable(String))",
+        topic.binary_format ? "formatRow" : "formatRowNoNewline", quoteString(topic.format), arguments);
+}
+
 void appendBatches(FetchPartitionResult & result, std::vector<Record> & records)
 {
     size_t begin = 0;
@@ -481,7 +527,7 @@ bool readPartitions(
     String query = fmt::format(
         "SELECT _partition_id, _block_number, _block_offset, {}, {}, {}, {} FROM {} STREAM BOUNDED CURSOR {{{}}} WHERE {}",
         nullableStringExpression(topic.key_type, "key"),
-        nullableStringExpression(topic.value_type, "value"),
+        valueExpression(topic),
         timestamp_expression,
         headers_expression,
         tableName(topic),
@@ -495,8 +541,9 @@ bool readPartitions(
     {
         Block block = original_block;
         removeSpecialColumnRepresentations(block);
+        /// The missing columns of a record are constants, e.g. `map()`.
         for (auto & column : block)
-            column.column = column.column->convertToFullColumnIfLowCardinality();
+            column.column = column.column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
 
         const auto & partition_ids = *block.getByPosition(0).column;
         const auto & block_numbers = *block.getByPosition(1).column;
@@ -675,8 +722,53 @@ void produce(
         if (batch.records.empty())
             continue;
 
-        const size_t num_rows = batch.records.size();
+        auto context = make_context();
         Block block;
+
+        /// The index of the record of every row: a message in a format may contain any number of rows.
+        std::vector<size_t> row_records;
+
+        if (topic.format.empty())
+        {
+            row_records.resize(batch.records.size());
+            std::iota(row_records.begin(), row_records.end(), 0);
+        }
+        else
+        {
+            Block header;
+            for (const auto & column : topic.value_columns)
+                header.insert({column.type->createColumn(), column.type, column.name});
+
+            EmptyReadBuffer empty_buf;
+            auto parser_shared_resources = FormatParserSharedResources::singleThreaded(context->getSettingsRef());
+            auto create_format = [&]
+            {
+                return FormatFactory::instance().getInput(
+                    topic.format, empty_buf, header, context, DEFAULT_BLOCK_SIZE, std::nullopt, parser_shared_resources);
+            };
+
+            /// Every message is parsed separately, as in the `Kafka` table engine.
+            StreamingFormatExecutor executor(header, std::move(create_format));
+            for (size_t i = 0; i < batch.records.size(); ++i)
+            {
+                const auto & value = batch.records[i].value;
+                if (!value)
+                    throw Error(ErrorCode::INVALID_RECORD, ErrorCodes::INCORRECT_DATA,
+                        "A record without a value cannot be written into the topic {} of the format {}", topic.name, topic.format);
+
+                ReadBufferFromString buf(*value);
+                size_t rows = executor.execute(buf);
+                row_records.insert(row_records.end(), rows, i);
+            }
+
+            auto result_columns = executor.getResultColumns();
+            for (size_t i = 0; i < header.columns(); ++i)
+                block.insert({std::move(result_columns[i]), header.getByPosition(i).type, header.getByPosition(i).name});
+        }
+
+        const size_t num_rows = row_records.size();
+        if (num_rows == 0)
+            continue;
 
         if (!topic.partition_column.empty())
         {
@@ -692,9 +784,9 @@ void produce(
             const bool nullable = target_type->isNullable();
             auto strings = ColumnString::create();
             auto null_map = ColumnUInt8::create();
-            for (const auto & record : batch.records)
+            for (size_t record_index : row_records)
             {
-                const std::optional<String> & value = get(record);
+                const std::optional<String> & value = get(batch.records[record_index]);
                 strings->insertData(value ? value->data() : "", value ? value->size() : 0);
                 null_map->insertValue(!value);
             }
@@ -714,8 +806,8 @@ void produce(
             auto column = type->createColumn();
             auto & data = assert_cast<ColumnDateTime64 &>(*column).getData();
             data.reserve(num_rows);
-            for (const auto & record : batch.records)
-                data.push_back(record.timestamp);
+            for (size_t record_index : row_records)
+                data.push_back(batch.records[record_index].timestamp);
             block.insert({std::move(column), type, "timestamp"});
         }
 
@@ -726,9 +818,9 @@ void produce(
             auto values = ColumnString::create();
             auto offsets = ColumnArray::ColumnOffsets::create();
             UInt64 offset = 0;
-            for (const auto & record : batch.records)
+            for (size_t record_index : row_records)
             {
-                for (const auto & [header_key, header_value] : record.headers)
+                for (const auto & [header_key, header_value] : batch.records[record_index].headers)
                 {
                     keys->insertData(header_key.data(), header_key.size());
                     values->insertData(header_value ? header_value->data() : "", header_value ? header_value->size() : 0);
@@ -759,7 +851,6 @@ void produce(
             out.finalize();
         }
 
-        auto context = make_context();
         if (batch.producer_id >= 0)
         {
             /// An idempotent producer retries a batch with the same sequence number.

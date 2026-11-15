@@ -60,6 +60,8 @@ The interface is configured in the `kafka_protocol` section:
         <group_initial_rebalance_delay_ms>3000</group_initial_rebalance_delay_ms>
         <!-- The table with the committed offsets of consumer groups, in the database above. -->
         <offsets_table>__consumer_offsets</offsets_table>
+        <!-- The format of the messages of the tables without the setting kafka_format and without a column value. -->
+        <format>JSONEachRow</format>
         <!-- The table engine of the topics created by clients. -->
         <topic_engine>MergeTree</topic_engine>
         <!-- Whether a metadata request of a client creates the missing topics, as auto.create.topics.enable of Kafka. -->
@@ -71,16 +73,35 @@ The interface is configured in the `kafka_protocol` section:
 
 ## Topics {#topics}
 
-A topic is a table of the `MergeTree` family with the settings `enable_block_number_column = 1` and `enable_block_offset_column = 1`, and a column `value`. The columns of a record are mapped by their names:
+A topic is a table of the `MergeTree` family with the settings `enable_block_number_column = 1` and `enable_block_offset_column = 1`. The table can have any structure: every row is a message, and the columns are serialized into the message in a format. The columns `key`, `timestamp`, and `headers`, if the table has them, are not a part of the message, but the key, the timestamp, and the headers of the record:
 
 | Column      | Kafka record field | Type                                                    |
 |-------------|--------------------|---------------------------------------------------------|
-| `value`     | value              | `String` or `Nullable(String)`, required                |
 | `key`       | key                | `String` or `Nullable(String)`, optional                |
 | `timestamp` | timestamp          | `DateTime64` or `DateTime`, optional                    |
 | `headers`   | headers            | `Map(String, String)`, optional                         |
 
+The format of the messages is set by the table setting `kafka_format`, for example `JSONEachRow`, `CSV`, `TSV`, `RowBinary`, `MsgPack`, `ProtobufSingle` (with `format_schema`), or `AvroConfluent`. Without this setting, the format is taken from the server setting `kafka_protocol.format`, `JSONEachRow` by default. A consumer receives the rows serialized with the function `formatRow` (without the trailing newline of the text formats), and the messages of a producer are parsed one by one, as by the `Kafka` table engine; a message may contain any number of rows. The format settings of the user apply. The columns missing in a message get the default values of their types.
+
+```sql
+CREATE TABLE orders
+(
+    order_id UInt64,
+    customer String,
+    amount Decimal(18, 2),
+    items Array(String),
+    timestamp DateTime64(3)
+)
+ENGINE = MergeTree
+ORDER BY order_id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, kafka_format = 'JSONEachRow';
+```
+
+A table with a column `value` of a string type and without the setting `kafka_format` stores every message as is: the column `value` is the value of the record, which can be any bytes or `NULL`.
+
 A table without a partition key is a topic with one partition. A table partitioned by a single integer column is a topic with the partitions numbered by the values of this column. The number of partitions is given by a constraint `CHECK column < N`, or is one more than the largest existing partition, if there is no such constraint.
+
+The table with the raw messages, as created by the `CreateTopics` request:
 
 ```sql
 CREATE TABLE events
@@ -102,7 +123,7 @@ SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
 
 The topic name is the name of the table in the database set by `kafka_protocol.database`, or `database.table` for a table in another database. A client can create and delete topics with the `CreateTopics` and `DeleteTopics` requests, which run `CREATE TABLE` and `DROP TABLE` queries. A table created this way has the structure shown above, and the `retention.ms` config of a topic becomes the table `TTL`.
 
-The other columns of the table get their default values when a producer writes into it, and the columns `key`, `timestamp` and `headers` are not stored if the table does not have them.
+If the table does not have the columns `key`, `timestamp`, or `headers`, these fields of the records written by producers are not stored, and the records read by consumers have no key, the timestamp `-1`, and no headers.
 
 ## Offsets {#offsets}
 

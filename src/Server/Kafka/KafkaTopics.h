@@ -2,6 +2,7 @@
 
 #include <Server/Kafka/KafkaProtocol.h>
 
+#include <Core/NamesAndTypes.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
@@ -65,6 +66,9 @@ struct BrokerSettings
     /// The table engine of the tables created by `CreateTopics`.
     String topic_engine = "MergeTree";
 
+    /// The format of the messages of the tables without a column `value` and without the table setting `kafka_format`.
+    String format = "JSONEachRow";
+
     /// Whether a Metadata request creates the missing topics, if the client allows it, as `auto.create.topics.enable` of Kafka.
     bool auto_create_topics = false;
     Int32 default_num_partitions = 1;
@@ -89,6 +93,12 @@ struct Topic
     DataTypePtr value_type;
     DataTypePtr timestamp_type;
     DataTypePtr headers_type;
+
+    /// Non-empty if the rows are serialized into the messages in this format; then `value_type` is null,
+    /// and the message contains `value_columns`.
+    String format;
+    bool binary_format = false;
+    NamesAndTypesList value_columns;
 
     String partitionId(Int32 partition) const;
     std::optional<Int32> partitionIndex(const String & partition_id) const;
