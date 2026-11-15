@@ -10,6 +10,8 @@ SELECT 'TSKV', * FROM format(TSKV, 'e Enum8(\'a\' = 1, \'b\' = 2)', 'e=\\N\n');
 SELECT 'CustomSeparated', * FROM format(CustomSeparated, 'e Enum8(\'a\' = 1, \'b\' = 2)', 'NULL\n') SETTINGS format_custom_escaping_rule = 'Quoted';
 SELECT 'MySQLDump', * FROM format(MySQLDump, 'e Enum8(\'a\' = 1, \'b\' = 2)', 'INSERT INTO `t` VALUES (NULL);\n');
 SELECT 'Values', * FROM format(Values, 't Tuple(n UInt8, e Enum8(\'a\' = 1, \'b\' = 2))', '(NULL)');
+SELECT 'Values without interpreter', * FROM format(Values, 'e Enum8(\'a\' = 1, \'b\' = 2)', '(NULL)') SETTINGS input_format_values_interpret_expressions = 0;
+SELECT 'Values without templates', * FROM format(Values, 'e Enum8(\'a\' = 1, \'b\' = 2)', '(NULL)') SETTINGS input_format_values_interpret_expressions = 0, input_format_values_deduce_templates_of_expressions = 0;
 SELECT 'BSONEachRow', * FROM format(BSONEachRow, 'e Enum8(\'a\' = 1, \'b\' = 2), a Array(Enum8(\'a\' = 1, \'b\' = 2))', x'130000000a6500046100080000000a30000000');
 SELECT 'Nothing', toTypeName(x), count() FROM format(JSONEachRow, 'x Nothing', '{"x": null}') GROUP BY 2;
 

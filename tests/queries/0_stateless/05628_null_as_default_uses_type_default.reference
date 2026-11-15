@@ -9,6 +9,8 @@ TSKV	a
 CustomSeparated	a
 MySQLDump	a
 Values	(0,'a')
+Values without interpreter	a
+Values without templates	a
 BSONEachRow	a	['a']
 Nothing	Nothing	1
 1	a	b
