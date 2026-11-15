@@ -153,11 +153,10 @@ ${CLICKHOUSE_CLIENT} --query "
 echo '--- per-entry pairing against the referenced Parquet file ---'
 for manifest in $(find "${PAIRED_PATH}/metadata" -maxdepth 1 -name '*.avro' -not -name 'snap-*.avro' -type f | sort); do
     # `lower_bounds`/`upper_bounds` hold raw little-endian bytes (`dumpValue` in `IcebergWrites.cpp`),
-    # so they are decoded with `reinterpretAsInt32`; both key columns are `Int32` here. An entry whose
-    # `score` is all-NULL legitimately has NO bounds at all: `canWriteStatistics` is all-or-nothing
-    # across the entry's columns and `ColumnNullable::getExtremes` yields NULL extremes for an
-    # all-NULL column, which `canDumpIcebergStats` rejects. That is pre-existing behaviour, so it is
-    # asserted here rather than fixed.
+    # so they are decoded with `reinterpretAsInt32`; both key columns are `Int32` here. Bounds are
+    # per-field: an entry keeps a bound for every column whose extreme is serializable and omits the
+    # rest. `ColumnNullable::getExtremes` yields NULL extremes for an all-NULL column, which
+    # `canDumpIcebergStats` rejects, so an all-NULL `score` contributes no bound while `id` still does.
     ${CLICKHOUSE_CLIENT} --query "
         WITH entries AS (
             SELECT
@@ -190,10 +189,9 @@ for manifest in $(find "${PAIRED_PATH}/metadata" -maxdepth 1 -name '*.avro' -not
     "
 done
 
-# The bounds above are present on one entry only, because the two all-NULL files legitimately carry no
-# bounds at all. This companion has no nullable column, so every entry carries bounds and the decoded
-# value of each is checked against the single row its own file holds. Without it the bounds half of
-# this change would be pinned on a single entry.
+# Only one entry above carries a `score` bound, because the other two files hold an all-NULL `score`.
+# This companion has no nullable column, so every entry carries a bound for both of its columns and the
+# decoded value of each is checked against the single row its own file holds.
 ${CLICKHOUSE_CLIENT} --query "
     ${ONE_ROW_PER_FILE}
     CREATE TABLE bounded (id Int32, v Int32)
@@ -235,16 +233,16 @@ done
 # The two scenarios above pin `record_count`, `null_value_counts` and the bounds to the file each
 # entry names, but not `column_sizes`, whose only other assertion is a cross-table `max()` inequality
 # that constrains no individual entry. Both of their fixtures also give every file the same per-file
-# sizes, so a permutation cannot move a size value there. This scenario gives each file a `String` of
-# a different width, which makes the sizes distinct and therefore permutation-sensitive. The values
-# are in-memory `IColumn::byteSize` sums, not Parquet file sizes, so they are deterministic:
-# `ColumnString::byteSize` is `chars.size() + offsets.size() * sizeof(offsets[0])`, and `insertData`
-# appends exactly `length` bytes with no terminator.
+# sizes, so a permutation cannot move a size value there. This scenario gives each file an
+# incompressible `String` of a different order of magnitude, which makes the sizes distinct and
+# therefore permutation-sensitive. `column_sizes` holds the post-compression size of the column chunk
+# inside the Parquet file, so the exact byte count is a property of the encoder; what is asserted is
+# that each entry's size follows the width of the row its own file holds and fits inside that file.
 ${CLICKHOUSE_CLIENT} --query "
     ${ONE_ROW_PER_FILE}
     CREATE TABLE sized (id Int32, s String)
     ENGINE = IcebergLocal('${SIZED_PATH}', 'Parquet') ORDER BY (id);
-    INSERT INTO sized SELECT number + 1, repeat('x', (number + 1) * 4) FROM numbers(3);
+    INSERT INTO sized SELECT number + 1, randomPrintableASCII(toUInt32(pow(10, number + 4))) FROM numbers(3);
 "
 
 echo '--- per-entry column_sizes describe only their own file ---'
@@ -252,8 +250,9 @@ for manifest in $(find "${SIZED_PATH}/metadata" -maxdepth 1 -name '*.avro' -not 
     ${CLICKHOUSE_CLIENT} --query "
         WITH entries AS (
             SELECT
-                replaceRegexpOne(tupleElement(data_file, 'file_path'), '^.*/', '')          AS base,
-                CAST(tupleElement(data_file, 'column_sizes'), 'Map(Int32, Int64)') AS entry_sizes
+                replaceRegexpOne(tupleElement(data_file, 'file_path'), '^.*/', '')  AS base,
+                CAST(tupleElement(data_file, 'column_sizes'), 'Map(Int32, Int64)')  AS entry_sizes,
+                tupleElement(data_file, 'file_size_in_bytes')                       AS entry_file_size
             FROM file('${manifest}', Avro)
         ),
         files AS (
@@ -267,8 +266,11 @@ for manifest in $(find "${SIZED_PATH}/metadata" -maxdepth 1 -name '*.avro' -not 
         SELECT
             'id=' || toString(f.own_id)
               || ' width=' || toString(f.own_width)
-              || ' id_size=' || toString(e.entry_sizes[1])
-              || ' s_size=' || toString(e.entry_sizes[2]) AS entry
+              || ' id_size_positive=' || if(e.entry_sizes[1] > 0, 'yes', 'no')
+              || ' s_size_follows_own_width=' || if(
+                     e.entry_sizes[2] > f.own_width / 2 AND e.entry_sizes[2] < f.own_width * 2, 'yes', 'no')
+              || ' sizes_fit_own_file=' || if(
+                     e.entry_sizes[1] + e.entry_sizes[2] <= e.entry_file_size, 'yes', 'no') AS entry
         FROM entries AS e INNER JOIN files AS f ON e.base = f.base
         ORDER BY f.own_id
         FORMAT TSV;

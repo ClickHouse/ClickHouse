@@ -1,0 +1,12 @@
+--- not in the table before the first query
+0
+--- the same connection_id for all requests
+True
+True
+--- idle between the requests
+HTTP	idle	1	default	system-connections-keep-alive-test	1
+--- the next request sets the client properties again
+True
+HTTP	idle	1	default	system-connections-keep-alive-test-2	1
+--- removed after the socket closes
+removed

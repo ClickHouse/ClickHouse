@@ -1,0 +1,17 @@
+built without positional arguments, inserted with them
+['1']
+1
+2
+built with positional arguments, inserted without them
+['b','sum(a)']
+1
+0	21
+1	21
+2	15
+0	21
+1	21
+2	15
+built with positional arguments resolved to a literal
+['1']
+1
+2

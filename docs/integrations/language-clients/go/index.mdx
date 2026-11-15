@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'Overview'
+sidebarTitle: 'Go'
 keywords: ['clickhouse', 'go', 'client', 'golang']
 slug: /integrations/go
 description: 'The Go clients for ClickHouse allows you to connect to ClickHouse using either the Go standard database/sql interface or an optimized native interface.'
@@ -214,7 +214,7 @@ mkdir my-clickhouse-app && cd my-clickhouse-app
 cat > go.mod <<-END
   module my-clickhouse-app
 
-  go 1.21
+  go 1.26
 
   require github.com/ClickHouse/clickhouse-go/v2 main
 END
@@ -258,6 +258,7 @@ The client supports:
 |  >= 2.3, < 2.41 |       1.18+     |
 |     >= 2.41    |      1.21+      |
 |     >= 2.43    |      1.24+      |
+|     >= 2.50    |      1.26+      |
 
 ## Best practices {#best-practices}
 

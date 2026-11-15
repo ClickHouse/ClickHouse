@@ -12,10 +12,10 @@ function create {
     $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS aggregating_00155"
     $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS replacing_00155"
 
-    $CLICKHOUSE_CLIENT --allow_deprecated_syntax_for_merge_tree=1 --query="CREATE TABLE summing_00155 (d Date DEFAULT today(), x UInt64, s UInt64 DEFAULT 1) ENGINE = SummingMergeTree(d, x, 8192)"
-    $CLICKHOUSE_CLIENT --allow_deprecated_syntax_for_merge_tree=1 --query="CREATE TABLE collapsing_00155 (d Date DEFAULT today(), x UInt64, s Int8 DEFAULT 1) ENGINE = CollapsingMergeTree(d, x, 8192, s)"
-    $CLICKHOUSE_CLIENT --allow_deprecated_syntax_for_merge_tree=1 --query="CREATE TABLE aggregating_00155 (d Date DEFAULT today(), x UInt64, s AggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree(d, x, 8192)"
-    $CLICKHOUSE_CLIENT --allow_deprecated_syntax_for_merge_tree=1 --query="CREATE TABLE replacing_00155 (d Date DEFAULT today(), x UInt64, s Int8 DEFAULT 1, v UInt64) ENGINE = ReplacingMergeTree(d, (x), 8192, v)"
+    $CLICKHOUSE_CLIENT --allow_deprecated_syntax_for_merge_tree=1 --query="CREATE TABLE summing_00155 (d Date DEFAULT '2000-01-01', x UInt64, s UInt64 DEFAULT 1) ENGINE = SummingMergeTree(d, x, 8192)"
+    $CLICKHOUSE_CLIENT --allow_deprecated_syntax_for_merge_tree=1 --query="CREATE TABLE collapsing_00155 (d Date DEFAULT '2000-01-01', x UInt64, s Int8 DEFAULT 1) ENGINE = CollapsingMergeTree(d, x, 8192, s)"
+    $CLICKHOUSE_CLIENT --allow_deprecated_syntax_for_merge_tree=1 --query="CREATE TABLE aggregating_00155 (d Date DEFAULT '2000-01-01', x UInt64, s AggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree(d, x, 8192)"
+    $CLICKHOUSE_CLIENT --allow_deprecated_syntax_for_merge_tree=1 --query="CREATE TABLE replacing_00155 (d Date DEFAULT '2000-01-01', x UInt64, s Int8 DEFAULT 1, v UInt64) ENGINE = ReplacingMergeTree(d, (x), 8192, v)"
 }
 
 
@@ -44,8 +44,8 @@ function test {
     $CLICKHOUSE_CLIENT $SETTINGS --query="INSERT INTO collapsing_00155 (x) SELECT number AS x FROM system.numbers LIMIT $2"
 
     $CLICKHOUSE_CLIENT --query="SYSTEM STOP MERGES aggregating_00155"
-    $CLICKHOUSE_CLIENT $SETTINGS --query="INSERT INTO aggregating_00155 (d, x, s) SELECT today() AS d, number AS x, sumState(materialize(toUInt64(1))) AS s FROM (SELECT number FROM system.numbers LIMIT $1) GROUP BY number"
-    $CLICKHOUSE_CLIENT $SETTINGS --query="INSERT INTO aggregating_00155 (d, x, s) SELECT today() AS d, number AS x, sumState(materialize(toUInt64(1))) AS s FROM (SELECT number FROM system.numbers LIMIT $2) GROUP BY number"
+    $CLICKHOUSE_CLIENT $SETTINGS --query="INSERT INTO aggregating_00155 (d, x, s) SELECT toDate('2000-01-01') AS d, number AS x, sumState(materialize(toUInt64(1))) AS s FROM (SELECT number FROM system.numbers LIMIT $1) GROUP BY number"
+    $CLICKHOUSE_CLIENT $SETTINGS --query="INSERT INTO aggregating_00155 (d, x, s) SELECT toDate('2000-01-01') AS d, number AS x, sumState(materialize(toUInt64(1))) AS s FROM (SELECT number FROM system.numbers LIMIT $2) GROUP BY number"
 
     $CLICKHOUSE_CLIENT --query="SYSTEM STOP MERGES replacing_00155"
     $CLICKHOUSE_CLIENT $SETTINGS --query="INSERT INTO replacing_00155 (x, v) SELECT number AS x, toUInt64(number % 3 == 0) FROM system.numbers LIMIT $1"

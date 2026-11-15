@@ -1,29 +1,41 @@
 ---
 sidebarTitle: 'Inatividade automática'
 slug: /cloud/features/autoscaling/idling
-description: 'Inatividade automática e inatividade adaptativa no ClickHouse Cloud'
+description: 'Entenda os custos da inatividade automática, os atrasos de conexão e a inatividade adaptativa no ClickHouse Cloud'
 keywords: ['inatividade', 'inatividade automática', 'inatividade adaptativa', 'economia de custos', 'pausa']
 title: 'Inatividade automática'
 doc_type: 'guide'
 ---
 
-<div id="automatic-idling">
-  ## Inatividade automática
-</div>
+## Automatic idling {#automatic-idling}
 
-Na página **Settings**, você também pode escolher se deseja permitir ou não a inatividade automática do seu serviço quando ele permanecer inativo por um determinado período (ou seja, quando o serviço não estiver executando nenhuma consulta enviada por usuários). A inatividade automática reduz o custo do seu serviço, já que você não é cobrado pelos recursos de computação quando o serviço está pausado.
+A inatividade automática pausa um serviço do ClickHouse Cloud após um período sem queries enviadas por usuários, sujeito às [condições de inatividade adaptativa](#adaptive-idling). Você pode habilitar a inatividade automática e configurar o tempo de inatividade na página **Settings** do service.
+
+## O que é cobrado enquanto o serviço está pausado? {#billing-while-paused}
+
+Você não é cobrado pelos recursos de computação enquanto o serviço está pausado. Armazenamento e backups continuam sendo cobrados; a inatividade não remove seus dados armazenados. Consulte [preços](/pt-BR/products/cloud/reference/billing/billing-overview) para detalhes de cobrança.
 
 <Warning>
   **Configure a lista de acesso por IP do seu serviço**
 
-  Ao criar um serviço no ClickHouse Cloud, a configuração padrão da lista de permissões de IP é &#39;Allow from anywhere&#39;. Recomendamos fortemente restringir o acesso a endereços ou intervalos de IP específicos o quanto antes. Serviços configurados como `Allow from anywhere` podem ser periodicamente movidos de um estado inativo para um estado ativo por rastreadores e scanners da internet que procuram IPs públicos, o que pode resultar em custos inesperados.
+  Ao criar um serviço do ClickHouse Cloud, a configuração padrão da lista de permissões de IP é &#39;Allow from anywhere&#39;. Recomendamos fortemente restringir o acesso a endereços ou intervalos de IP específicos o quanto antes. Serviços configurados como `Allow from anywhere` podem ser periodicamente movidos de um estado inativo para um estado ativo por rastreadores e scanners da internet que procuram IPs públicos, o que pode resultar em custos inesperados.
 </Warning>
 
-<div id="adaptive-idling">
-  ### Inatividade adaptativa
-</div>
+## O que acontece quando um cliente se conecta a um service pausado? {#connecting-to-a-paused-service}
 
-O ClickHouse Cloud implementa a inatividade adaptativa para evitar interrupções e, ao mesmo tempo, otimizar a redução de custos. O sistema avalia várias condições antes de colocar um serviço em estado de inatividade. A inatividade adaptativa substitui a configuração de duração da inatividade quando qualquer uma das condições listadas abaixo é atendida:
+Um service pausado precisa se tornar ativo antes de conseguir responder a queries. As connections com o service podem expirar enquanto ele estiver pausado. Aplicações que usam inatividade automática precisam tolerar esse atraso e tratar connection timeouts. Teste o comportamento de timeout e de retry do seu cliente com um service em inatividade antes de depender de inatividade automática em production.
+
+<Danger>
+  **Quando não usar inatividade automática**
+
+  A inatividade automática é adequada para services usados com pouca frequência e que podem tolerar um atraso antes de responder a queries. Não é recomendado para services que sustentam features voltadas ao cliente final e utilizadas com frequência. Desative a inatividade automática se sua aplicação não puder tolerar esse atraso.
+</Danger>
+
+## Quando um serviço pode entrar em inatividade? {#adaptive-idling}
+
+O ClickHouse Cloud implementa a inatividade adaptativa para permitir que a manutenção em segundo plano seja concluída e para ajustar a duração da inatividade com base no tempo de inicialização do servidor. Essas condições controlam **quando um serviço ativo pode ser pausado**; as durações abaixo não são uma predição ou garantia de quanto tempo um cliente aguardará ao se conectar a um serviço pausado.
+
+A inatividade adaptativa substitui a duração de inatividade configurada nos seguintes casos:
 
 * Quando o número de partes excede o limite máximo de partes ativas (padrão: 10.000), o serviço não entra em inatividade, para que a manutenção em segundo plano possa continuar
 * Quando há operações de merge em andamento, o serviço não entra em inatividade até que esses merges sejam concluídos, para evitar interromper uma consolidação crítica de dados
@@ -33,12 +45,8 @@ O ClickHouse Cloud implementa a inatividade adaptativa para evitar interrupçõe
   * Se o tempo de inicialização do servidor estiver entre 30 e 60 minutos, o tempo limite de inatividade será definido como 30 minutos.
   * Se o tempo de inicialização do servidor for superior a 60 minutos, o tempo limite de inatividade será definido como 1 hora
 
+## Qual trabalho em segundo plano é interrompido enquanto o serviço está pausado? {#background-work-while-paused}
+
 <Note>
   O serviço pode entrar em um estado de inatividade no qual suspende as atualizações de [refreshable materialized views](/pt-BR/concepts/features/materialized-views/refreshable-materialized-view), o consumo de [S3Queue](/pt-BR/reference/engines/table-engines/integrations/s3queue) e o agendamento de novos merges. As operações de merge em andamento serão concluídas antes que o serviço entre no estado de inatividade. Para garantir a operação contínua de refreshable materialized views e do consumo de S3Queue, desative a funcionalidade de estado de inatividade.
 </Note>
-
-<Danger>
-  **Quando não usar a inatividade automática**
-
-  Use a inatividade automática somente se o seu caso de uso puder tolerar um atraso antes de responder às consultas, pois, quando um serviço é pausado, as conexões com ele expiram. A inatividade automática é ideal para serviços usados com pouca frequência e em que um atraso pode ser tolerado. Ela não é recomendada para serviços que dão suporte a recursos voltados para o cliente e usados com frequência.
-</Danger>

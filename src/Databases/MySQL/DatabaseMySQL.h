@@ -127,6 +127,8 @@ private:
 
     void fetchLatestTablesStructureIntoCache(const std::map<String, UInt64> & tables_modification_time, ContextPtr context) const TSA_REQUIRES(mutex);
 
+    StoragePtr createStorage(const String & table_name, const ColumnsDescription & columns) const TSA_REQUIRES(mutex);
+
     ThreadFromGlobalPool thread;
 
     bool persistent = true;
