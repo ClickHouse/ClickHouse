@@ -615,11 +615,11 @@ void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMu
     context->removeWarningMessage(Context::WarningType::DB_ORDINARY_DEPRECATED);
 }
 
-LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context, bool async_load_system_database)
+LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context, bool async_load_system_database, bool persistent_system_database)
 {
     auto component_guard = Coordination::setCurrentComponent("loadMetadataSystem");
     loadSystemDatabaseImpl(context, DatabaseCatalog::SYSTEM_DATABASE,
-        context->getApplicationType() == Context::ApplicationType::SERVER ? "Atomic" : "Memory");
+        context->getApplicationType() == Context::ApplicationType::SERVER || persistent_system_database ? "Atomic" : "Memory");
     loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA, "Memory");
     loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE, "Memory");
 
