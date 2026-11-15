@@ -18,6 +18,7 @@
 #include <Common/checkStackSize.h>
 
 #include <stack>
+#include <Common/StackWithMemoryTracking.h>
 
 namespace DB
 {
@@ -152,7 +153,7 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         size_t next_child = 0;
     };
 
-    std::stack<Frame> stack;
+    StackWithMemoryTracking<Frame> stack;
     stack.push(Frame{.node = root});
     while (!stack.empty())
     {
@@ -270,7 +271,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         VectorWithMemoryTracking<Node *> children = {};
     };
 
-    std::stack<Frame> stack;
+    StackWithMemoryTracking<Frame> stack;
 
     QueryPlan plan;
     if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS)
@@ -346,7 +347,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
                 "Deserialized step {} has no output stream, but deserialized header is not empty : {}",
                 step_name, output_header->dumpStructure());
 
-        auto & node = plan.nodes.emplace_back(std::move(step), std::vector<Node *>(frame.children.begin(), frame.children.end()));
+        auto & node = plan.nodes.emplace_back(std::move(step), VectorWithMemoryTracking<Node *>(frame.children.begin(), frame.children.end()));
         frame.to_fill = &node;
 
         for (const auto & storage : ctx.storage_holders)
