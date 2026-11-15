@@ -1171,26 +1171,30 @@ void PostgreSQLReplicationHandler::checkPublicationReusableForUserManagedSnapsho
     /// filtered out of the replication stream and are not in the snapshot either. The system catalogs read under the
     /// imported snapshot show the publication as it was at the snapshot (unlike `pg_publication_tables`, which is
     /// computed from the latest catalog state), and every change of the publication replaces or adds catalog rows.
-    const auto current_rows = fetchPublicationCatalogRows(tx);
+    /// The effective membership of a table also depends on its partition ancestry (a published partitioned table
+    /// publishes its partitions, including the ones attached later) and on its schema (`FOR TABLES IN SCHEMA`), which
+    /// do not change the catalog rows of the publication: they are compared too.
+    const auto current_rows = fetchPublicationCatalogRows(tx, expected);
 
     postgres::Connection snapshot_connection(connection_info);
     pqxx::ReplicationTransaction snapshot_tx(snapshot_connection.getRef());
     snapshot_tx.exec(fmt::format("SET TRANSACTION SNAPSHOT {}", quoteStringPostgreSQL(user_provided_snapshot)));
-    const auto snapshot_rows = fetchPublicationCatalogRows(snapshot_tx);
+    const auto snapshot_rows = fetchPublicationCatalogRows(snapshot_tx, expected);
 
     if (current_rows != snapshot_rows)
         throw Exception(
             ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
             "Cannot start MaterializedPostgreSQL replication from the snapshot supplied for the user-managed replication "
-            "slot {}: the publication {} was changed after the snapshot was exported. The changes committed between the "
-            "snapshot and the change of the publication may be absent from both the snapshot and the replication stream. "
+            "slot {}: the publication {}, or the partition ancestry or the schema of a replicated table, was changed after "
+            "the snapshot was exported. The changes committed between the snapshot and that change may be absent from both the snapshot and the replication stream. "
             "Create a new replication slot and pass the snapshot exported for it (`materialized_postgresql_snapshot`) "
             "after the publication is ready. Startup will be retried",
             replication_slot, doubleQuoteString(publication_name));
 }
 
 
-std::set<String> PostgreSQLReplicationHandler::fetchPublicationCatalogRows(pqxx::transaction_base & tx) const
+std::set<String> PostgreSQLReplicationHandler::fetchPublicationCatalogRows(
+    pqxx::transaction_base & tx, const std::set<std::pair<String, String>> & source_tables) const
 {
     const String quoted_name = quoteStringPostgreSQL(publication_name);
     /// `xmin` is the transaction that wrote a row version, so it changes with every update of the row.
@@ -1207,6 +1211,35 @@ std::set<String> PostgreSQLReplicationHandler::fetchPublicationCatalogRows(pqxx:
             "SELECT 'schema:' || n.oid::text || ':' || n.xmin::text FROM pg_publication_namespace n "
             "JOIN pg_publication p ON n.pnpubid = p.oid WHERE p.pubname = {}",
             quoted_name);
+
+    /// The replicated relations, their schemas, and their whole ancestry in `pg_inherits` with the schemas of the
+    /// ancestors. `ALTER TABLE ... ATTACH PARTITION` or `DETACH PARTITION`, and `ALTER TABLE ... SET SCHEMA` of a
+    /// relation or of its ancestor, change the effective membership of the relation in the publication without changing
+    /// the catalog rows of the publication itself. The catalogs are queried directly (not through `regclass` or
+    /// `pg_partition_ancestors`, which read the latest catalog state), so that they are read under the snapshot of `tx`.
+    if (!source_tables.empty())
+    {
+        String names;
+        for (const auto & [schema, table] : source_tables)
+        {
+            if (!names.empty())
+                names += ", ";
+            names += fmt::format("({}, {})", quoteStringPostgreSQL(schema), quoteStringPostgreSQL(table));
+        }
+        query += fmt::format(
+            " UNION ALL ("
+            "WITH RECURSIVE source(relid) AS ("
+            "SELECT c.oid FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE (n.nspname, c.relname) IN ({0})), "
+            "ancestry(relid, child, parent) AS ("
+            "SELECT s.relid, i.inhrelid, i.inhparent FROM source s JOIN pg_inherits i ON i.inhrelid = s.relid "
+            "UNION ALL "
+            "SELECT a.relid, i.inhrelid, i.inhparent FROM ancestry a JOIN pg_inherits i ON i.inhrelid = a.parent) "
+            "SELECT 'source:' || c.oid::text || ':' || c.relnamespace::text FROM source s JOIN pg_class c ON c.oid = s.relid "
+            "UNION ALL "
+            "SELECT 'ancestor:' || a.relid::text || ':' || a.child::text || ':' || a.parent::text || ':' || c.relnamespace::text "
+            "FROM ancestry a JOIN pg_class c ON c.oid = a.parent)",
+            names);
+    }
 
     std::set<String> rows;
     for (const auto row : pqxx::result{tx.exec(query)})
@@ -1270,6 +1303,21 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         /// server was terminated, or the connection was lost) is not resumed by the next attach: the replication slot
         /// does not contain the rows committed before it was created.
         markAllSnapshotsIncomplete();
+
+        /// The new replication slot does not contain the changes before it was created, so a nested table that survives
+        /// from before (an earlier attempt of the initial synchronization that was retried after a lost connection, or
+        /// a replication slot that is lost) cannot be resumed: the rows deleted in PostgreSQL since it was loaded would
+        /// stay in it. The tables are loaded again from scratch.
+        for (const auto & [table_name, storage] : materialized_storages)
+        {
+            auto * materialized_storage = storage->as<StorageMaterializedPostgreSQL>();
+            if (materialized_storage->tryGetNested())
+            {
+                LOG_INFO(log, "Table {}.{} has a nested table, but the replication slot is created anew: the nested table "
+                         "will be dropped and loaded again", postgres_database, table_name);
+                dropNestedTable(materialized_storage);
+            }
+        }
 
         if (user_managed_slot)
         {
@@ -2365,9 +2413,20 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(const std::se
                         published_tables = fetchTablesFromPublication(tx);
                     }
 
+                    /// A table whose initial snapshot was interrupted (the server was terminated, possibly before its
+                    /// nested table was created) is still replicated: startSynchronization loads it from a new snapshot.
+                    /// Otherwise it would be silently dropped from replication, together with its snapshot position.
+                    std::set<String> incomplete_snapshots;
+                    for (const auto & [table_name, position] : loadSnapshotPositions())
+                    {
+                        if (!position.completed)
+                            incomplete_snapshots.insert(table_name);
+                    }
+
                     for (auto it = result_tables.begin(); it != result_tables.end();)
                     {
-                        if (nested_tables_on_disk.contains(*it))
+                        if (nested_tables_on_disk.contains(*it)
+                            || (incomplete_snapshots.contains(*it) && published_tables.contains(*it)))
                         {
                             ++it;
                             continue;

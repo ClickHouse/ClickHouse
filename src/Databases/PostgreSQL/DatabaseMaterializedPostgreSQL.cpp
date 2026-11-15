@@ -65,6 +65,7 @@ namespace FailPoints
     extern const char database_materialized_postgresql_pause_before_table_drop[];
     extern const char materialized_postgresql_pause_after_attach_table_nested_created[];
     extern const char materialized_postgresql_pause_before_detach_table_drop[];
+    extern const char materialized_postgresql_pause_before_tables_list_persisted[];
 }
 
 namespace ErrorCodes
@@ -563,6 +564,7 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
 
         bool added_to_replication = false;
         bool publication_added = false;
+        std::unique_lock membership_lock(membership_mutex, std::defer_lock);
         try
         {
             /// With `materialized_postgresql_schema_list` the attached table is not persisted in the database definition,
@@ -599,6 +601,9 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
             }
             added_to_replication = true;
 
+            /// Until the table is in `materialized_tables`: see `membership_mutex`.
+            membership_lock.lock();
+
             /// For a database with `materialized_postgresql_schema_list` the table list is not persisted, otherwise
             /// the stored definition would have both settings, and the next startup would fail with "Cannot have
             /// schema list and tables list at the same time". The attached table is replicated after restart anyway,
@@ -617,6 +622,8 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
                     addUnmaterializedTablesListChange(new_settings, table_name);
                 }
                 auto alter_query = createAlterSettingsQuery(new_settings);
+
+                FailPointInjection::pauseFailPoint(FailPoints::materialized_postgresql_pause_before_tables_list_persisted);
 
                 /// Executed without `tables_mutex`: the ALTER reaches `applySettingsChanges`, which takes
                 /// `handler_mutex`, and the two mutexes must always be taken in that order.
@@ -717,6 +724,9 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
         });
 
         checkSynchronizationStarted(table_name);
+
+        /// Until the table is removed from `materialized_tables`: see `membership_mutex`.
+        std::lock_guard membership_lock(membership_mutex);
 
         StoragePtr table_to_delete;
         SettingsChanges new_settings;

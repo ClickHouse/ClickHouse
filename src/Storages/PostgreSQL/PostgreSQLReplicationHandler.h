@@ -197,7 +197,8 @@ private:
     void checkPublicationReusableForUserManagedSnapshot(pqxx::nontransaction & tx);
     /// The rows of the publication in the system catalogs, as seen by `tx`, to compare the publication at the snapshot
     /// supplied for a user-managed replication slot with the current one.
-    std::set<String> fetchPublicationCatalogRows(pqxx::transaction_base & tx) const;
+    std::set<String> fetchPublicationCatalogRows(
+        pqxx::transaction_base & tx, const std::set<std::pair<String, String>> & source_tables) const;
 
     /// See `snapshot_positions_path`.
     struct SnapshotPosition

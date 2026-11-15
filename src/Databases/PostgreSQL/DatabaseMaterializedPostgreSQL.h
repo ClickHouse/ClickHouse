@@ -145,6 +145,13 @@ private:
 
     mutable std::mutex handler_mutex;
 
+    /// Serializes the changes of the set of replicated tables by `ATTACH TABLE` and `DETACH TABLE ... PERMANENTLY`:
+    /// the calculation of the new `materialized_postgresql_tables_list`, its persistence, and the update of
+    /// `materialized_tables`. Different tables have independent DDL guards, so two concurrent queries could otherwise
+    /// both read the old list, and the one that persists its list last would silently revert the other one.
+    /// It is taken before `handler_mutex` and `tables_mutex`.
+    std::mutex membership_mutex;
+
     BackgroundSchedulePoolTaskHolder startup_task;
     std::atomic<bool> shutdown_called = false;
 
