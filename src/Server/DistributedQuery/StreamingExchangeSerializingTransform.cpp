@@ -20,7 +20,7 @@ void StreamingExchangeSerializingTransform::transform(Chunk & chunk)
     size_t packet_offset = 0;
     {
         WriteBufferFromVector<ColumnString::Chars> out(chars);
-        packet_offset = StreamingExchangeProtocol::writeDataPacket(chunk, getInputPort().getSharedHeader(), out, codec);
+        packet_offset = StreamingExchangeProtocol::writeDataPacket(chunk, getInputPort().getSharedHeader(), out, codec, &type_cache);
         out.finalize();
     }
     StreamingExchangeProtocol::finishDataPacket(reinterpret_cast<char *>(chars.data()) + packet_offset, chars.size() - packet_offset);

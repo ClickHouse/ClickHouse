@@ -3,6 +3,7 @@ DROP TABLE IF EXISTS t_autopr_identical_subqueries;
 CREATE TABLE t_autopr_identical_subqueries (v UInt64) ENGINE = MergeTree ORDER BY v;
 INSERT INTO t_autopr_identical_subqueries SELECT number FROM numbers(10000);
 
+SET use_statistics_for_sum_avg_aggregation = 0;
 SET max_threads = 1;
 SET enable_join_runtime_filters = 0;
 SET query_plan_join_swap_table = 'false';

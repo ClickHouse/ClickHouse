@@ -34,8 +34,8 @@ Les paramètres d’agrégation externe (`max_bytes_before_external_group_by`, `
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "Nouveau paramètre. Active le déversement adaptatif des données en mémoire vers un stockage externe."}]}]} />
 
-Déclenche le processeur pour déverser de manière adaptative les données vers un stockage externe. Les jointures de hachage capables de déverser sont actuellement prises en charge, aussi bien
-`grace_hash` que le chemin adaptatif `hash` / `parallel_hash`.
+Permet aux processeurs éligibles d&#39;agrégation, de tri, de `DISTINCT` et de jointure par hachage de déverser de manière adaptative leurs données vers un stockage externe lorsque la requête subit une pression mémoire.
+Les jointures par hachage prises en charge incluent `grace_hash` ainsi que le chemin adaptatif `hash` / `parallel_hash`.
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -88,6 +88,16 @@ Ne prend effet qu’avec `make_distributed_plan = 1` : ce paramètre n’a à l
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Active une optimisation de requête qui analyse les résultats des fonctions et des sous-requêtes, puis réécrit la requête si elle contient des constantes
+
+## enable_elasticsearch {#enable_elasticsearch}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nouveau paramètre conditionnant l'activation de l'intégration expérimentale Elasticsearch (la table engine `Elasticsearch` et la fonction de table `elasticsearch`)."}]}]} />
+
+Active l&#39;intégration expérimentale Elasticsearch, à savoir la table engine `Elasticsearch` et la fonction de table `elasticsearch`.
 
 ## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
@@ -160,6 +170,23 @@ Active les fonctions d&#39;analyse de funnel.
 
 Propage les instructions WITH aux requêtes UNION et à toutes les sous-requêtes
 
+## enable_group_by_top_k_dynamic_filtering {#enable_group_by_top_k_dynamic_filtering}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nouveau paramètre : `GROUP BY key [ORDER BY key] LIMIT n` publie la frontière du tas top-K vers l'étape de lecture `MergeTree`, qui s'en sert pour filtrer les lignes et ignorer des granules. Une valeur de `compatibility` inférieure à 26.10 le désactive."}]}]} />
+
+Pour [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/fr/reference/settings/session-settings/enable#enable_group_by_top_k_optimization) : lorsque la première clé `GROUP BY` de tri est une colonne lue depuis une table `MergeTree`, l&#39;agrégation publie la frontière de son tas top-K vers l&#39;étape de lecture dès que le tas contient `LIMIT` clés. L&#39;étape de lecture écarte alors les lignes dont la clé se situe au-delà de cette frontière avant même la lecture des autres colonnes (`PREWHERE`), et ignore les granules entiers situés au-delà à l&#39;aide de la clé primaire ou d&#39;un index de saut `minmax` défini sur cette colonne.
+
+Cela s&#39;applique à `GROUP BY key ORDER BY key LIMIT n` ainsi qu&#39;à `GROUP BY key LIMIT n` sans `ORDER BY`, auquel cas n&#39;importe quel ensemble de `n` groupes constitue une réponse valide.
+
+Ce mécanisme ne s&#39;applique pas aux lectures avec `FINAL` ou avec des répliques parallèles : `FINAL` doit voir toutes les versions d&#39;une ligne, et la frontière n&#39;est pas transmise aux lectures effectuées sur les répliques distantes.
+
+Valeurs possibles :
+
+* 0 — Désactivé.
+* 1 — Activé.
+
 ## enable_group_by_top_k_optimization {#enable_group_by_top_k_optimization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -217,6 +244,16 @@ Valeurs possibles :
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1"},{"label": "Nouveau paramètre permettant de contrôler le cache de résolution des identifiants dans l’analyseur de requêtes"}]}]} />
 
 Active le cache de résolution des identifiants dans l’analyseur de requêtes. Le cache partage les nœuds d’alias résolus afin d’éviter une explosion de l’AST lorsque le même alias est utilisé plusieurs fois. Définissez-la sur false pour désactiver la mise en cache si vous suspectez des résultats incorrects.
+
+## enable_ipcrypt {#enable_ipcrypt}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre activant les fonctions expérimentales de chiffrement d'adresses IP."}]}]} />
+
+Active les fonctions expérimentales de chiffrement d&#39;adresses IP (`ipcryptEncrypt`, `ipcryptDecrypt`, `ipcryptPrefixEncrypt`, `ipcryptPrefixDecrypt`).
 
 ## enable_job_stack_trace {#enable_job_stack_trace}
 
@@ -417,6 +454,16 @@ Tous les serveurs participant à une requête distribuée doivent utiliser la m�
 
 Si la valeur est true, les données peuvent être analysées directement dans des colonnes avec une sérialisation personnalisée (par ex. Sparse), selon les indications de sérialisation obtenues depuis la table.
 
+## enable_pco_codec {#enable_pco_codec}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre permettant d'activer le codec de compression bêta `PCO`."}]}]} />
+
+Active le codec de compression `PCO`.
+
 ## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -543,6 +590,19 @@ Lorsqu’il est désactivé, toute expression de table utilisant le modificateur
 lors de la construction du plan. Il s’agit du paramètre de contrôle global de la
 fonctionnalité de requêtes en continu ; des capacités supplémentaires peuvent être régies par leurs propres paramètres.
 
+## enable_subcolumn_codecs {#enable_subcolumn_codecs}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nouveau paramètre permettant d'activer les déclarations de codecs pour les sous-colonnes."}]}]} />
+
+Permet de déclarer des codecs de compression pour les sous-colonnes d&#39;une colonne, comme les éléments d&#39;un `Tuple` ou les clés et valeurs d&#39;une `Map`,
+à l&#39;aide d&#39;entrées `CODEC name (...)` dans `CREATE TABLE` et de `ALTER TABLE ... MODIFY COLUMN name CODEC(...)`.
+Les tables qui comportent déjà de telles déclarations fonctionnent quelle que soit la valeur de ce paramètre, et ces déclarations peuvent toujours être supprimées.
+Une table comportant des codecs de sous-colonnes ne peut pas être rattachée par un serveur d&#39;une version antérieure.
+
 ## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge />
@@ -592,11 +652,11 @@ Permet de créer les types de données [Time](/fr/reference/data-types/time) et 
 
 ## enable_trino_dialect {#enable_trino_dialect}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nouveau paramètre activant la valeur `trino` du paramètre `dialect`, qui traduit la syntaxe SQL de Trino et fait correspondre les noms de fonctions Trino à leurs équivalents ClickHouse."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nouveau paramètre activant la valeur `trino` du paramètre `dialect`, qui traduit la syntaxe SQL de Trino et fait correspondre les noms de fonctions Trino à leurs équivalents ClickHouse."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "Le dialecte `trino` est passé en bêta."}]}]} />
 
 Active la valeur `trino` du paramètre `dialect`.
 
@@ -679,6 +739,16 @@ Valeurs possibles :
 
 * 0 - Désactivé
 * 1 - Activé
+
+## enable_xgboost {#enable_xgboost}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre conditionnant l'activation de l'intégration expérimentale XGBoost (la structure de dictionnaire `XGBOOST` et la fonction `predictXGBoost`)."}]}]} />
+
+Active l&#39;intégration expérimentale XGBoost : la structure de dictionnaire `XGBOOST` et la fonction `predictXGBoost`.
 
 ## enable_zxc_codec {#enable_zxc_codec}
 

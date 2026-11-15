@@ -270,7 +270,27 @@ for i := 0; i < 100; i++ {
 }
 ```
 
-[Full Example](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/async.go)
+[Full Example](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/async_native.go)
+
+### Async insert with a batch {#async-insert-batch}
+
+`WithAsync` also applies to batch inserts on the Native and HTTP protocols. A batch uses only the context that you give to `PrepareBatch`. `Send` sends the batch with the settings from that context.
+
+```go
+ctx := clickhouse.Context(context.Background(), clickhouse.WithAsync(true))
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example") // WithAsync must be on this context
+if err != nil {
+    return err
+}
+for i := 0; i < 100; i++ {
+    if err := batch.Append(uint64(i), "Golang SQL database driver", []uint8{1, 2, 3, 4, 5, 6, 7, 8, 9}, time.Now()); err != nil {
+        return err
+    }
+}
+return batch.Send()
+```
+
+[Full Example](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/async_native.go)
 
 ## Columnar insert {#columnar-insert}
 

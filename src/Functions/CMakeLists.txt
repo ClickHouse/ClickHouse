@@ -59,6 +59,7 @@ set(DBMS_FUNCTIONS
     generateSnowflakeID.cpp
     FunctionGenerateRandomStructure.cpp # FunctionGenerateRandomStructure::generateRandomDataType (Used by StorageGenerateRandom.cpp)
     extractKeyValuePairs.cpp # KeyValuePairExtractor (Used by HivePartitioningUtils.cpp)
+    indexHint.cpp # FunctionIndexHint::createImplied, FunctionIndexHint::tryGet (Used by LogicalExpressionOptimizerPass.cpp, ActionsDAG.cpp, filterPushDown.cpp...)
 )
 extract_into_parent_list(clickhouse_functions_sources dbms_sources ${DBMS_FUNCTIONS})
 extract_into_parent_list(clickhouse_functions_headers dbms_headers

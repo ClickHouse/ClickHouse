@@ -1,0 +1,173 @@
+---
+slug: /use-cases/observability/clickstack/anomaly-detection
+title: 'Alertas de detección de anomalías con ClickStack'
+sidebarTitle: 'Detección de anomalías'
+description: 'Reciba una alerta cuando una métrica salga de su rango esperado, sin necesidad de definir un umbral fijo, mediante la detección de anomalías en ClickStack.'
+doc_type: 'guide'
+keywords: ['ClickStack', 'observabilidad', 'alertas', 'detección de anomalías', 'z-score', 'valor de referencia', 'umbrales dinámicos', 'desviación estándar']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<Info>
+  **Beta: solo Managed ClickStack**
+
+  Las alertas de detección de anomalías están en Beta y disponibles en Managed ClickStack. No están disponibles en ClickStack Open Source. El comportamiento y los valores predeterminados pueden cambiar mientras la funcionalidad esté en Beta.
+</Info>
+
+Las alertas de detección de anomalías le avisan cuando un valor se sale de su rango esperado, en lugar de cuando supera un número fijo. ClickStack aprende el rango esperado a partir del historial reciente de la serie, por lo que no necesita saber de antemano qué significa &quot;demasiados errores&quot; o &quot;demasiado lento&quot; para cada servicio.
+
+Use la detección de anomalías cuando:
+
+* El umbral adecuado varía según el servicio, el endpoint o el cliente, y agrupa la alerta por esa dimensión.
+* Los valores normales fluctúan a lo largo del día, de modo que cualquier umbral fijo genera demasiado ruido en horas pico o no detecta nada fuera de ellas.
+* Le importan más los cambios repentinos, como picos de errores, saltos de latencia o tráfico que cae a cero, que los niveles absolutos.
+
+Use una [alerta de umbral estático](/es/clickstack/features/alerts) cuando exista un límite estricto que quiera aplicar siempre, como &quot;latencia p99 superior a 2 segundos&quot; o &quot;cualquier fallo de pago&quot;.
+
+## Alertas compatibles {#supported-alerts}
+
+La detección de anomalías es un modo de detección que se aplica a una alerta existente, no un tipo de alerta independiente. Está disponible en:
+
+* [Alertas de búsqueda](/es/clickstack/features/alerts#search-alerts), que puntúan el recuento de eventos coincidentes.
+* [Alertas de gráficos del panel](/es/clickstack/features/alerts#dashboard-alerts) en gráficos creados con el creador de gráficos.
+
+La detección de anomalías no está disponible para las [alertas de gráficos basadas en SQL](/es/clickstack/features/alerts#sql-based-alerts). Si cambia al modo SQL un gráfico que tiene una alerta de anomalías, ClickStack convierte la alerta en una alerta de umbral estático. Para conservar la detección de anomalías, vuelva a cambiar el gráfico al creador de gráficos.
+
+## Creación de una alerta de anomalías {#creating-an-anomaly-alert}
+
+<Steps>
+  <Step title="Abrir el editor de alertas" id="open-alert-editor">
+    Abra el editor de alertas de una búsqueda guardada o de un gráfico del panel de control, como se describe en [Alertas](/es/clickstack/features/alerts#types-of-alerts).
+  </Step>
+
+  <Step title="Seleccionar la detección de anomalías" id="select-anomaly-detection">
+    En **Alert type**, seleccione **Anomaly detection**. El valor predeterminado es **Static threshold**.
+  </Step>
+
+  <Step title="Configurar la condición" id="configure-condition">
+    La condición se lee como una frase: **Alert when z-score is at least** `3` **when value is** `outside expected range` **compared to the past** `2 hours` **checked every** `5 minute`.
+
+    <Image img="/images/clickstack/anomaly-detection/anomaly-alert-condition.webp" alt="Detección de anomalías seleccionada como tipo de alerta, con los controles de puntuación z, dirección, valor de referencia e intervalo, un resumen en lenguaje sencillo y el resultado de la prueba retrospectiva" size="lg" />
+
+    * **z-score is at least** (predeterminado: `3`): cuántas desviaciones estándar debe alejarse un valor del valor esperado para considerarse anómalo. El mínimo es 0,5 y las flechas lo modifican en pasos de 0,5. Cuanto más bajo sea el valor, mayor será la sensibilidad y más a menudo se activará la alerta.
+    * **When value is** (predeterminado: `outside expected range`): la dirección en la que se genera la alerta: `above expected`, `below expected` u `outside expected range`. Use `above expected` para recuentos de errores y latencia, y `below expected` para el caudal o los registros de usuarios.
+    * **Compared to the past** (predeterminado: 2 horas): cuánto historial utiliza ClickStack para medir la variación normal: 30 minutos, o 1, 2, 4, 6, 12 o 24 horas. Un valor de referencia más amplio ofrece un rango más estable, pero tarda más en adaptarse a una nueva normalidad.
+    * **Checked every** (predeterminado: 5 minutos): con qué frecuencia se evalúa la alerta: 5, 15 o 30 minutos, o 1 hora. Las alertas de anomalías no admiten intervalos más cortos ni más largos.
+
+    Debajo de la condición, ClickStack resume lo que hará la alerta; por ejemplo: «Every 5 minutes, values are compared to their typical range from the past 2 hours. Notifies when values rise above the expected range, once per incident.»
+
+    <Tip>
+      En series con picos, es preferible usar `above expected` o `below expected` en lugar de `outside expected range`. Tras un pico breve, el valor esperado se queda rezagado y permanece alto durante unos minutos, por lo que la vuelta a la normalidad también puede considerarse anómala. Con `outside expected range`, un único pico puede generar dos notificaciones.
+    </Tip>
+  </Step>
+
+  <Step title="Revisar la prueba retrospectiva y la vista previa" id="review-preview">
+    La línea situada bajo el resumen es una prueba retrospectiva: vuelve a aplicar los ajustes actuales sobre el historial reciente e indica cuántas veces habría notificado la alerta; por ejemplo: «Would have notified 6 times in the past 24 hours, firing on 12 of 288 checks.» En las alertas de búsqueda, la prueba retrospectiva abarca las últimas 24 horas. En las alertas de gráficos del panel, abarca el intervalo de tiempo seleccionado en el gráfico, con un máximo de 24 horas. El recuento se muestra en amarillo cuando la alerta notificaría más de 10 veces al día.
+
+    El **Anomaly detection chart**, situado debajo del formulario, representa el mismo rango:
+
+    * La línea continua es la serie.
+    * La línea discontinua es el valor de referencia esperado.
+    * El área sombreada es la zona de disparo de la alerta. Cualquier valor que caiga en ella, fuera del rango esperado, activa la alerta.
+    * Los marcadores **Notify** indican dónde la alerta habría enviado una notificación.
+
+    <Image img="/images/clickstack/anomaly-detection/anomaly-alert-preview.webp" alt="Gráfico de detección de anomalías que muestra una serie de 24 horas con el valor de referencia esperado, la zona sombreada de disparo de la alerta y un marcador Notify en cada uno de los seis picos" size="lg" />
+
+    Cuando la alerta está agrupada, la prueba retrospectiva muestra los totales de todas las series. Seleccione **Show breakdown by series** para ver qué series habrían generado más notificaciones. En el ejemplo siguiente, una sola serie dispersa acumula más del 40 % de las notificaciones, lo que aconseja excluirla o crear una alerta independiente para ella.
+
+    <Image img="/images/clickstack/anomaly-detection/anomaly-backtest-breakdown.webp" alt="Desglose de la prueba retrospectiva que enumera los episodios de notificación por servicio para una alerta de anomalías agrupada" size="md" />
+
+    Ajuste el z-score, la dirección y el valor de referencia hasta que la prueba retrospectiva refleje lo que quiere que se le notifique. Si la alerta fuera a notificar muchas veces al día, aumente el z-score o restrinja la dirección.
+  </Step>
+
+  <Step title="Elegir un canal de notificación y guardar" id="save-anomaly-alert">
+    Elija un webhook u otro canal, como con cualquier otra alerta. Consulte [Añadir un webhook](/es/clickstack/features/alerts#add-webhook). Guarde la alerta para que empiece a evaluarse.
+  </Step>
+</Steps>
+
+### Advertencias de idoneidad {#suitability-warnings}
+
+Algunas series no son adecuadas para la detección de anomalías. Antes de guardar, aparece una advertencia debajo del gráfico de vista previa, aunque no impide guardar:
+
+| Advertencia                                                     | Causa                                                                                                                                                       | Qué hacer                                                                      |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Todavía no hay suficiente historial para un valor de referencia | La serie es nueva o la mayor parte del rango de la vista previa no tiene datos de referencia.                                                               | Espere a que haya más datos o use un umbral estático hasta que haya historial. |
+| La mayoría de los buckets de tiempo están vacíos             | Más de la mitad de los minutos transcurridos desde que la serie empezó a tener datos están vacíos, es decir, aproximadamente menos de un evento por minuto. | Amplíe la búsqueda, elimine un group-by o use un umbral estático.              |
+| Esta serie es casi plana                                        | La serie apenas varía, por lo que fluctuaciones mínimas generan z-scores extremos.                                                                    | Use un umbral estático o aumente el z-score.                              |
+
+<Image img="/images/clickstack/anomaly-detection/anomaly-suitability-warning.webp" alt="Gráfico de detección de anomalías de una serie dispersa con una advertencia de que la mayoría de los intervalos de tiempo están vacíos" size="lg" />
+
+## Cómo funciona la detección de anomalías {#how-it-works}
+
+En cada evaluación, ClickStack puntúa la ventana de evaluación bucket por bucket. Cada bucket abarca 60 segundos.
+
+Para cada bucket:
+
+1. **Valor esperado.** ClickStack calcula la media móvil de los 7 buckets que finalizaron una ventana de evaluación antes. Los valores esperados nunca son negativos.
+2. **Dispersión.** ClickStack calcula en ClickHouse la desviación estándar de la serie a lo largo del valor de referencia que haya seleccionado en **Compared to the past**. El valor de referencia nunca es inferior a una ventana de evaluación.
+3. **z-score.** El z-score es `(value − expected) / standard deviation`.
+4. **Decisión.** El bucket se activa cuando el z-score supera el umbral configurado en la dirección configurada y, además, el valor difiere del valor esperado en al menos un 5 % de este, o en 0,01 cuando el valor esperado es 0. Este mínimo del 5 % evita que las series casi constantes se activen por fluctuaciones insignificantes.
+
+El rango esperado es `expected ± z-score × standard deviation`, ampliado por el mínimo del 5 %. En la versión preliminar, todo lo que queda fuera de él se sombrea como zona de activación de la alerta.
+
+Una ventana de evaluación se activa si se activa cualquiera de sus buckets.
+
+### Buckets vacíos {#empty-buckets}
+
+La forma en que ClickStack trata un minuto sin datos depende de la agregación:
+
+* **Recuentos y sumas** (incluidas las alertas de búsqueda): un bucket vacío se evalúa como cero. Esto significa que una alerta con dirección `below expected` o `outside expected range` se activa cuando el tráfico se detiene por completo.
+* **Promedios, percentiles, mínimo, máximo, proporciones y fuentes de métricas**: un bucket vacío indica que no había nada que medir, por lo que se omite en lugar de evaluarse como cero.
+
+Un bucket que no cuenta con suficiente historial previo no se evalúa, de modo que una serie completamente nueva no se activa hasta disponer de un valor de referencia.
+
+### Alertas agrupadas {#grouped-alerts}
+
+Cuando una alerta se agrupa por un campo, como `ServiceName`, cada grupo constituye una serie independiente con su propio rango esperado y su propio estado de alerta. ClickStack puntúa hasta 100 series por alerta y prioriza las series con más datos. Una serie que ya está en estado de alerta se sigue puntuando hasta que se resuelve, aunque quede fuera de las 100 primeras.
+
+### Notificaciones y resolución {#notifications}
+
+Las alertas de anomalías envían una notificación por incidente y por serie:
+
+* Cuando una serie empieza a dispararse, ClickStack envía una notificación y marca la serie como en alerta.
+* Mientras la serie siga disparándose en evaluaciones posteriores, no se envían más notificaciones.
+* Cuando una ventana de evaluación no tiene buckets disparados, la serie se resuelve y ClickStack envía una notificación de resolución.
+
+Si se omitieron varias evaluaciones, por ejemplo, durante una interrupción del servicio, la siguiente evaluación procesa las ventanas pendientes y, aun así, envía como máximo una notificación de disparo por serie.
+
+ClickStack espera 30 segundos tras el cierre de una ventana antes de evaluarla, para que se contabilicen los datos que llegan con retraso.
+
+Las notificaciones describen la anomalía en lugar de un umbral. Por ejemplo:
+
+* Título: `Alert for "Checkout errors" - value 142 is above the expected range (z-score 4.4)`
+* Cuerpo: `Value 142 is above the expected range — z-score 4.4 vs sensitivity 3; expected 120 ± 5 (expected range 105 to 135).`
+
+Los nombres y mensajes personalizados de las alertas pueden hacer referencia al bucket que activó la notificación mediante `{{anomaly.value}}`, `{{anomaly.expectedValue}}`, `{{anomaly.expectedStddev}}`, `{{anomaly.lowerBound}}`, `{{anomaly.upperBound}}` y `{{anomaly.zScore}}`. Estos valores solo se definen en las notificaciones de disparo. Las notificaciones de resolución no los incluyen, así que enciérrelos en `{{#if anomaly}}...{{/if}}` si utiliza el mismo nombre o mensaje para ambos tipos de notificación.
+
+## Monitorización de alertas de anomalías {#monitoring}
+
+En la página **Alerts**, establezca **Filter by type** en **Anomaly** para mostrar solo las alertas de anomalías. Cada fila describe la condición, por ejemplo, «If value is above expected with z-score at least 3».
+
+<Image img="/images/clickstack/anomaly-detection/anomaly-alerts-list.webp" alt="Página Alerts filtrada por alertas de anomalías, que muestra una alerta con su condición y su historial de evaluación reciente" size="lg" />
+
+Seleccione una alerta para abrir su página de detalles. Debajo del resumen de la condición, que incluye el intervalo y el valor de referencia, ClickStack muestra cuántas veces se activó la alerta durante el periodo de historial conservado, por ejemplo, «Fired 2 times in the past 2 days.». Seleccione el rango para visualizarlo en el gráfico y en el historial de evaluación.
+
+<Image img="/images/clickstack/anomaly-detection/anomaly-alert-detail.webp" alt="Página de detalles de una alerta de anomalía que muestra el resumen de la condición y cuántas veces se activó la alerta en los últimos 2 días" size="lg" />
+
+La tabla **Evaluation History** muestra cada comprobación con su estado, el valor más reciente y el número de series que estaban en alerta. Las filas que incluyen una duración de notificación corresponden a comprobaciones en las que se envió una notificación, tanto al activarse la alerta como al resolverse.
+
+<Image img="/images/clickstack/anomaly-detection/anomaly-alert-history.webp" alt="Historial de evaluación de una alerta de anomalía, con estados Alert y Ok para cada comprobación de 5 minutos" size="lg" />
+
+Si una alerta permanece en estado de alerta durante 20 o más ventanas consecutivas, la página de detalles indica que probablemente la serie presenta un nuevo comportamiento normal y no una anomalía. Aumente el z-score o actualice la alerta para que se compare con un valor de referencia más adecuado.
+
+## Prueba retrospectiva con MCP {#backtesting-with-mcp}
+
+Con el [servidor MCP de ClickStack](/es/clickstack/mcp), un asistente de IA puede hacer una prueba retrospectiva de los ajustes de detección de anomalías antes de que usted los guarde. La herramienta `clickstack_backtest_anomaly_alert` vuelve a aplicar una configuración sobre un historial de hasta 24 horas e informa, para cada serie, de las notificaciones que se habrían enviado, junto con advertencias sobre la calidad de los datos. La herramienta es de solo lectura.
+
+## Consejos de ajuste {#tuning-tips}
+
+* **La alerta genera demasiado ruido:** aumente el z-score en incrementos de 0.5 o cambie la dirección de `outside expected range` al lado que le interese.
+* **La alerta no detectó un incidente real:** reduzca el z-score o acorte el valor de referencia para que el rango refleje el comportamiento reciente.
+* **La alerta se activa durante todo el día tras un despliegue:** la serie tiene una nueva normalidad, y los valores de referencia más largos tardan más en adaptarse que los más cortos.
+* **Series de bajo volumen:** agrupe por menos dimensiones o defina la alerta sobre una búsqueda más amplia, de modo que cada serie tenga al menos un evento por minuto.

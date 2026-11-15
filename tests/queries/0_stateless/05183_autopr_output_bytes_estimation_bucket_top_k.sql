@@ -22,6 +22,8 @@ SET max_threads=4;
 -- `optimize_aggregation_in_order` is pinned off to keep both queries on the unordered pipeline, and
 -- `group_by_two_level_threshold` decides single- vs two-level aggregation, which the Top-K conversion
 -- is a property of.
+-- The bucket top-K pass refuses a serialized plan, so pin the setting for the distributed-plan suite.
+SET serialize_query_plan = 0;
 SET query_plan_enable_optimizations=1, query_plan_push_down_limit=1, query_plan_aggregation_bucket_top_k=1;
 SET optimize_aggregation_in_order=0, group_by_two_level_threshold=1000;
 

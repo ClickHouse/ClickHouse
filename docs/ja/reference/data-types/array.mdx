@@ -10,11 +10,9 @@ doc_type: 'reference'
 
 `T` 型の要素からなる配列です。配列のインデックスは 1 から始まります。`T` には、Arrayを含む任意のデータ型を指定できます。
 
-<div id="creating-an-array">
-  ## Arrayの作成
-</div>
+## 配列の作成 {#creating-an-array}
 
-関数を使ってArrayを作成できます:
+関数を使って配列を作成できます:
 
 ```sql
 array(T)
@@ -26,7 +24,10 @@ array(T)
 []
 ```
 
-Array の作成例:
+SQL標準、PostgreSQL、Trinoの配列コンストラクタ構文もサポートされており、`ARRAY[1, 2]` は `[1, 2]` と同じ意味になります。
+データ型は `ARRAY(T)` と記述することもできます。
+
+配列 の作成例:
 
 ```sql
 SELECT array(1, 2) AS x, toTypeName(x)
@@ -48,9 +49,7 @@ SELECT [1, 2] AS x, toTypeName(x)
 └───────┴────────────────────┘
 ```
 
-<div id="working-with-data-types">
-  ## データ型の扱い
-</div>
+## データ型の扱い {#working-with-data-types}
 
 配列をその場で作成する場合、ClickHouse は、指定されたすべての引数を格納できる最も狭いデータ型を、引数の型として自動的に決定します。[Nullable](/ja/reference/data-types/nullable) またはリテラルの [NULL](/ja/reference/settings/formats/input-format#input_format_null_as_default) 値が含まれている場合、配列要素の型も [Nullable](/ja/reference/data-types/nullable) になります。
 
@@ -79,9 +78,7 @@ Received exception from server (version 1.1.54388):
 Code: 386. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString and some of them are not.
 ```
 
-<div id="array-size">
-  ## Arrayのサイズ
-</div>
+## Arrayのサイズ {#array-size}
 
 配列全体を読み取らなくても、`size0` サブカラムを使って配列のサイズを調べることができます。多次元配列では、求めたい次元を `N` として、`sizeN-1` を使用できます。
 
@@ -101,9 +98,7 @@ SELECT arr.size0, arr.size1, arr.size2 FROM t_arr;
 └───────────┴───────────┴───────────┘
 ```
 
-<div id="reading-nested-subcolumns-from-array">
-  ## Array からネストされたサブカラムを読み出す
-</div>
+## Array からネストされたサブカラムを読み出す {#reading-nested-subcolumns-from-array}
 
 `Array` 内のネストされた型 `T` にサブカラムがある場合 (たとえば [名前付きタプル](/ja/reference/data-types/tuple) の場合) 、`Array(T)` 型からも同じサブカラム名でそのサブカラムを読み出せます。サブカラムの型は、元のサブカラムの型を要素とする `Array` になります。
 
