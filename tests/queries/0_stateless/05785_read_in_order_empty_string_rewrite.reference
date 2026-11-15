@@ -34,6 +34,9 @@ ReadType: InOrder
 10
 20
 30
+10
+20
+30
 --- shortened PK: LowCardinality(String)
 ReadType: InOrder
 10

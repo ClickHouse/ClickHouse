@@ -74,6 +74,7 @@ SELECT trim(explain) FROM (EXPLAIN PLAN actions = 1, indexes = 1, pretty = 0 SEL
 SELECT id FROM t_short_str WHERE tenant = 1 AND s = '' ORDER BY id ASC LIMIT 3;
 SELECT id FROM t_short_str WHERE tenant = 1 AND s = '' ORDER BY id DESC LIMIT 2;
 SELECT id FROM t_short_str WHERE tenant = 1 AND s = '' ORDER BY id ASC LIMIT 3 SETTINGS read_in_order_two_level_merge_threshold = 1;
+SELECT id FROM t_short_str WHERE tenant = 1 AND s = '' ORDER BY id ASC LIMIT 3 SETTINGS read_in_order_two_level_merge_threshold = 1, optimize_move_to_prewhere = 0;
 
 SELECT '--- shortened PK: LowCardinality(String)';
 CREATE TABLE t_short_lc (tenant UInt64, s LowCardinality(String), id UInt64) ENGINE = MergeTree ORDER BY (tenant, s, id) PRIMARY KEY tenant;
