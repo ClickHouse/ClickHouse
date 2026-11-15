@@ -2508,9 +2508,8 @@ bool floatValuesMissKeyValues(
     return !castValuesAreTheOnlyMatches<Float64>(*compared_floats, *converted_cast_values, *converted_below, *converted_above);
 }
 
-/// The type the comparison with a value of `input_type` converts a constant of `constant_type` to: a `Tuple` element by
-/// element, a pair of date types to their least supertype. A `DateTime` and a `Date32` meet in a zone-less `DateTime64(0)`,
-/// which reads the date in the session time zone, not in the zone of the `DateTime`.
+/// The type the comparison with a value of `input_type` converts a constant of `constant_type` to. A `DateTime` and a
+/// `Date32` meet in a zone-less `DateTime64(0)`, which reads the date in the session time zone, not in the `DateTime`'s.
 static DataTypePtr getComparisonTypeOfConstant(const DataTypePtr & input_type, const DataTypePtr & constant_type)
 {
     const auto input = removeLowCardinalityAndNullable(input_type);
