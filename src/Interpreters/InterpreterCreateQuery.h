@@ -40,6 +40,7 @@ public:
     static ASTPtr formatColumns(const NamesAndTypesList & columns);
     static ASTPtr formatColumns(const NamesAndTypesList & columns, const NamesAndAliases & alias_columns);
     static ASTPtr formatColumns(const ColumnsDescription & columns);
+    static ASTPtr formatLookupIndices(const IndicesDescription & lookup_indices);
     /// `CODEC name (...)` entries for the subcolumn codecs of the columns.
     static ASTPtr formatCodecDeclarations(const ColumnsDescription & columns);
     static ASTPtr formatIndices(const IndicesDescription & indices);
@@ -112,6 +113,7 @@ private:
     struct TableProperties
     {
         ColumnsDescription columns;
+        IndicesDescription lookup_indices;
         IndicesDescription indices;
         ConstraintsDescription constraints;
         ProjectionsDescription projections;

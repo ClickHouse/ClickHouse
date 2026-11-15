@@ -4,6 +4,8 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/misc.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/MergeTree/MergeTreeIndexTableLookup.h>
+#include <Common/quoteString.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
@@ -240,7 +242,16 @@ IndexDescription IndexDescription::getIndexFromAST(
     if (index_type->parameters && !index_type->parameters->children.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Index type cannot have parameters");
 
-    if (index_definition->granularity == 0)
+    /// The flag can come from a declaration in the JSON AST dialect, so it is validated against the type
+    /// rather than trusted: a granule-based skip index must not lose the granularity check below.
+    if (index_definition->is_lookup_index && !isLookupIndexType(index_type->name))
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Index {} of type '{}' cannot be a lookup index", backQuoteIfNeed(index_definition->name), index_type->name);
+
+    /// Lookup indexes are table-wide in-memory structures and carry no GRANULARITY
+    /// (it is meaningless for them and the parser rejects the clause), so their zero
+    /// granularity is expected. The check below guards only granule-based skip indexes.
+    if (!index_definition->is_lookup_index && index_definition->granularity == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index GRANULARITY must be a positive integer");
 
     IndexDescription result;

@@ -1,0 +1,7 @@
+join before	10
+join before	10
+set before	1	0
+set before	1	0
+plain after	20
+join after	20
+set after	0	1

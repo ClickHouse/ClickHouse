@@ -350,6 +350,21 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
         return;
     }
 
+    /// The same for `LOOKUP INDEX`, which is not supported for `ReplicatedMergeTree`: the table's
+    /// metadata published to Keeper would carry lookup indices that older replicas silently drop.
+    if (create_query.columns_list && create_query.columns_list->lookup_indices
+        && !create_query.columns_list->lookup_indices->children.empty())
+    {
+        LOG_ERROR(
+            log,
+            "Not converting table {} to replicated: experimental `LOOKUP INDEX` is not supported for ReplicatedMergeTree. "
+            "Drop the lookup indices with `ALTER TABLE ... DROP LOOKUP INDEX`; the {} flag is kept, so the conversion "
+            "runs on the next start.",
+            backQuote(qualified_name.getFullName()),
+            CONVERT_TO_REPLICATED_FLAG_NAME);
+        return;
+    }
+
     const bool ordinary_database = getUUID() == UUIDHelpers::Nil;
     if (ordinary_database)
     {

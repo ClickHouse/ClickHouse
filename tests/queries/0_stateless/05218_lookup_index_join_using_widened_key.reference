@@ -1,0 +1,40 @@
+using: exact key type
+1	a
+2	b
+using: nullable left key, inner
+1	a
+2	b
+using: nullable left key, left
+1	a
+2	b
+4	
+\N	
+using: nullable left key, left, join_use_nulls
+1	a
+2	b
+4	\N
+\N	\N
+using: nullable left key, any
+1	a
+2	b
+4	
+\N	
+using: low cardinality left key, inner
+1	a
+2	b
+using: low cardinality left key, left
+1	a
+2	b
+4	
+using: three tables, nullable middle
+1	a
+2	b
+using: three tables, nullable first
+1	a
+2	b
+using: nullable left key, direct only
+1	a
+2	b
+using: low cardinality left key, direct only
+1	a
+2	b

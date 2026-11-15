@@ -27,6 +27,8 @@
 namespace DB
 {
 
+class IStorage;
+using StoragePtr = std::shared_ptr<IStorage>;
 class ColumnsDescription;
 
 /// Dump query plan
@@ -155,5 +157,10 @@ bool optimizePlanForExists(QueryPlan & query_plan);
 QueryPlanStepPtr projectOnlyUsedColumns(
     const SharedHeader & stream_header,
     const ColumnIdentifiers & used_column_identifiers);
+
+/// Returns true if an `additional_table_filters` entry applies to the given table expression.
+/// The lookup-index fast paths read the storage with an empty `SelectQueryInfo` and therefore
+/// bypass these filters, so they must fall back to the regular plan when this returns true.
+bool hasAdditionalTableFilterForStorage(const StoragePtr & storage, const String & table_expression_alias, const ContextPtr & query_context);
 
 }
