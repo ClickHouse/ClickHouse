@@ -88,6 +88,13 @@ private:
     /// Source header for the tags pipeline WITHOUT the `id` column.
     Block tags_header_before_id;
 
+    /// Source headers of the tags and time ranges pipelines, which are finished after each block and created again when needed.
+    Block tags_header;
+    Block time_ranges_header;
+
+    /// Number of the blocks consumed so far.
+    size_t input_block_number = 0;
+
     /// Type of the `id` column in the tags target table.
     DataTypePtr id_type;
 
@@ -119,7 +126,7 @@ private:
     TimeSeriesDeduplicationCachePtr tags_deduplication_cache;
     TimeSeriesDeduplicationCachePtr metric_families_deduplication_cache;
 
-    /// Rows of the "tags" and "metric families" tables which this insert is going to write, they are marked as written when the insert is finished.
+    /// Rows of the "tags" and "metric families" tables which this insert is going to write, they are marked as written once they are committed.
     TimeSeriesDeduplicationCache::PendingRows pending_tags;
     TimeSeriesDeduplicationCache::PendingRows pending_metric_families;
 };
