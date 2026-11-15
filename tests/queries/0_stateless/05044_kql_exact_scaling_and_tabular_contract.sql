@@ -16,7 +16,7 @@ SELECT kqlRangeCount(toInt256(-9007199254740995), toInt256(-9007199254740993), t
 SELECT kqlRangeCount(1, 7, 2);
 SELECT kqlRangeCount(toDecimal64('0.1', 1), toDecimal64('0.3', 1), toDecimal64('0.1', 1));
 
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 print '-- the same exactness through the KQL surface --';

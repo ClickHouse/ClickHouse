@@ -54,9 +54,12 @@ namespace S3
 #    include <aws/core/client/SpecifiedRetryableErrorsRetryStrategy.h>
 #    include <aws/core/utils/json/JsonSerializer.h>
 #    include <aws/core/utils/UUID.h>
+#    include <aws/core/utils/DateTime.h>
 #    include <aws/core/http/HttpClientFactory.h>
 
 #    include <aws/core/utils/HashingUtils.h>
+#    include <aws/core/utils/StringUtils.h>
+#    include <aws/core/utils/memory/stl/AWSStringStream.h>
 #    include <aws/core/platform/FileSystem.h>
 
 #    include <Common/logger_useful.h>
@@ -65,6 +68,7 @@ namespace S3
 #    include <Common/ProfileEvents.h>
 #    include <IO/S3/PocoHTTPClient.h>
 #    include <IO/S3/Client.h>
+#    include <Common/Silk/FiberScheduler.h>
 
 #    include <fstream>
 
@@ -75,7 +79,6 @@ namespace S3
 #    include <Poco/Net/HTTPClientSession.h>
 #    include <Poco/Net/HTTPRequest.h>
 #    include <Poco/Net/HTTPResponse.h>
-#    include <Poco/StreamCopier.h>
 
 namespace ProfileEvents
 {
@@ -96,6 +99,7 @@ namespace ErrorCodes
     extern const int AWS_ERROR;
     extern const int GCP_ERROR;
     extern const int ACCESS_DENIED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace S3
@@ -453,12 +457,12 @@ String getAvailabilityZoneOrException(bool is_zone_id)
         token_request.set(AWSEC2MetadataClient::EC2_IMDS_TOKEN_TTL_HEADER, AWSEC2MetadataClient::EC2_IMDS_TOKEN_TTL_DEFAULT_VALUE);
         token_request.setContentLength(0);
 
-        token_session.sendRequest(token_request);
+        sendHTTPRequest(token_session, token_request)->finalize();
 
         Poco::Net::HTTPResponse token_response;
-        std::istream & token_rs = token_session.receiveResponse(token_response);
+        auto token_body = receiveHTTPResponse(token_session, token_response);
         if (token_response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK)
-            Poco::StreamCopier::copyToString(token_rs, token_str);
+            readStringUntilEOF(token_str, *token_body);
         else
             LOG_WARNING(
                 logger,
@@ -474,14 +478,14 @@ String getAvailabilityZoneOrException(bool is_zone_id)
 
     if (!token_str.empty())
         request.set(AWSEC2MetadataClient::EC2_IMDS_TOKEN_HEADER, token_str);
-    session.sendRequest(request);
+    sendHTTPRequest(session, request)->finalize();
 
     Poco::Net::HTTPResponse response;
-    std::istream & rs = session.receiveResponse(response);
+    auto response_body = receiveHTTPResponse(session, response);
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
         throw DB::Exception(ErrorCodes::AWS_ERROR, "Failed to get AWS availability zone. HTTP response code: {}", response.getStatus());
     String response_data;
-    Poco::StreamCopier::copyToString(rs, response_data);
+    readStringUntilEOF(response_data, *response_body);
     return response_data;
 }
 }
@@ -508,12 +512,12 @@ static String getGCPAvailabilityZoneOrException()
     Poco::Net::HTTPResponse response;
     request.set("Metadata-Flavor", "Google");
 
-    session.sendRequest(request);
-    std::istream & rs = session.receiveResponse(response);
+    sendHTTPRequest(session, request)->finalize();
+    auto response_body = receiveHTTPResponse(session, response);
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
         throw DB::Exception(ErrorCodes::GCP_ERROR, "Failed to get GCP availability zone. HTTP response code: {}", response.getStatus());
     String response_data;
-    Poco::StreamCopier::copyToString(rs, response_data);
+    readStringUntilEOF(response_data, *response_body);
     Strings zone_info;
     boost::split(zone_info, response_data, boost::is_any_of("/"));
     /// We expect GCP returns a string as "projects/123456789/zones/us-central1a".
@@ -633,6 +637,8 @@ AWSInstanceProfileCredentialsProvider::AWSInstanceProfileCredentialsProvider(con
 
 Aws::Auth::AWSCredentials AWSInstanceProfileCredentialsProvider::GetAWSCredentials()
 {
+    if (Silk::isInsideFiber())
+        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "EC2 instance metadata credentials are not implemented for fibers");
     refreshIfExpired();
     Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
     return GetAWSCredentialsImpl();
@@ -794,6 +800,14 @@ AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::AwsAuthSTSAssumeRoleWebIdent
     aws_client_configuration.scheme = Aws::Http::Scheme::HTTPS;
     aws_client_configuration.region = std::move(tmp_region);
 
+    /// The SDK resolver `EndpointResolver::EndpointSource` also falls back to the global `AWS_ENDPOINT_URL`.
+    /// On-prem setups sometimes point that at MinIO. So read only the STS-specific variable here.
+    if (auto sts_endpoint = Aws::Environment::GetEnv("AWS_ENDPOINT_URL_STS"); !sts_endpoint.empty())
+    {
+        LOG_INFO(logger, "Using STS endpoint {} from AWS_ENDPOINT_URL_STS", sts_endpoint);
+        aws_client_configuration.endpointOverride = std::move(sts_endpoint);
+    }
+
     /// Use ClickHouse's retry strategy so the STS web-identity client stays bounded and respects query
     /// cancellation / max_execution_time (its ShouldRetry checks isQueryCanceled), instead of the AWS SDK
     /// strategy which is not cancellation-aware.
@@ -807,16 +821,28 @@ AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::AwsAuthSTSAssumeRoleWebIdent
 
 Aws::Auth::AWSCredentials AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::GetAWSCredentials()
 {
-    Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
+    std::lock_guard lock(get_aws_credentials_mutex);
     if (!IsSetNeedRefresh() && !areCredentialsEmptyOrExpired(credentials, expiration_window_seconds))
         return credentials;
 
-    guard.UpgradeToWriterLock();
-    if (!IsSetNeedRefresh() && !areCredentialsEmptyOrExpired(credentials, expiration_window_seconds)) // double-checked lock to avoid refreshing twice
-        return credentials;
-
+    Silk::ThreadModeScope thread_mode;
     Reload();
     return credentials;
+}
+
+void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::SetNeedRefresh()
+{
+    last_loaded_ms.store(0, std::memory_order_relaxed);
+}
+
+bool AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::IsTimeToRefresh(long reload_frequency) // NOLINT(google-runtime-int)
+{
+    return Aws::Utils::DateTime::Now().Millis() - last_loaded_ms.load(std::memory_order_relaxed) > reload_frequency;
+}
+
+bool AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::IsSetNeedRefresh()
+{
+    return last_loaded_ms.load(std::memory_order_relaxed) == 0;
 }
 
 void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::Reload()
@@ -837,7 +863,7 @@ void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::Reload()
     Aws::Internal::STSCredentialsClient::STSAssumeRoleWithWebIdentityRequest request{session_name, role_arn, token};
 
     auto result = client->GetAssumeRoleWithWebIdentityCredentials(request);
-    AWSCredentialsProvider::Reload();
+    last_loaded_ms.store(Aws::Utils::DateTime::Now().Millis(), std::memory_order_relaxed);
 
     LOG_INFO(logger, "Got {}credentials from STS",
              result.creds.IsEmpty() ? "empty " : ((result.creds == credentials) ? "same " : ""));
@@ -857,6 +883,8 @@ SSOCredentialsProvider::SSOCredentialsProvider(DB::S3::PocoHTTPClientConfigurati
 
 Aws::Auth::AWSCredentials SSOCredentialsProvider::GetAWSCredentials()
 {
+    if (Silk::isInsideFiber())
+        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "SSO credentials are not implemented for fibers");
     refreshIfExpired();
     Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
     return credentials;
@@ -980,6 +1008,13 @@ Aws::String SSOCredentialsProvider::loadAccessTokenFile(const Aws::String & sso_
     return "";
 }
 
+Aws::Auth::AWSCredentials GeneralHTTPCredentialsProvider::GetAWSCredentials()
+{
+    if (Silk::isInsideFiber())
+        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "ECS container credentials are not implemented for fibers");
+    return Aws::Auth::GeneralHTTPCredentialsProvider::GetAWSCredentials();
+}
+
 S3CredentialsProviderChain::S3CredentialsProviderChain(
         const DB::S3::PocoHTTPClientConfiguration & configuration,
         const Aws::Auth::AWSCredentials & credentials,
@@ -1030,7 +1065,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.s3_slow_all_threads_after_network_error,
                 configuration.s3_slow_all_threads_after_retryable_error,
                 configuration.enable_s3_requests_logging,
-                configuration.for_disk_s3,
+                configuration.group,
                 configuration.opt_disk_name,
                 configuration.request_throttler);
             AddProvider(
@@ -1049,7 +1084,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.s3_slow_all_threads_after_network_error,
                 configuration.s3_slow_all_threads_after_retryable_error,
                 configuration.enable_s3_requests_logging,
-                configuration.for_disk_s3,
+                configuration.group,
                 configuration.opt_disk_name,
                 configuration.request_throttler);
             AddProvider(std::make_shared<SSOCredentialsProvider>(
@@ -1071,7 +1106,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
 
         if (!relative_uri.empty())
         {
-            AddProvider(std::make_shared<Aws::Auth::TaskRoleCredentialsProvider>(relative_uri.c_str()));
+            AddProvider(std::make_shared<GeneralHTTPCredentialsProvider>(relative_uri.c_str()));
             LOG_INFO(logger, "Added ECS metadata service credentials provider with relative path: [{}] to the provider chain.",
                     relative_uri);
         }
@@ -1080,7 +1115,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
             auto token = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN);
             const auto token_path = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN_FILE);
 
-            AddProvider(std::make_shared<Aws::Auth::GeneralHTTPCredentialsProvider>(
+            AddProvider(std::make_shared<GeneralHTTPCredentialsProvider>(
                 relative_uri,
                 absolute_uri,
                 token,
@@ -1101,7 +1136,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.s3_slow_all_threads_after_network_error,
                 configuration.s3_slow_all_threads_after_retryable_error,
                 configuration.enable_s3_requests_logging,
-                configuration.for_disk_s3,
+                configuration.group,
                 configuration.opt_disk_name,
                 configuration.request_throttler,
                 Aws::Http::SchemeMapper::ToString(Aws::Http::Scheme::HTTP));
@@ -1139,23 +1174,69 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
     }
 }
 
-AssumeRoleRequest::AssumeRoleRequest(std::string role_arn_, std::string role_session_name_, std::string external_id_)
-    : role_arn(std::move(role_arn_)), role_session_name(std::move(role_session_name_)), external_id(std::move(external_id_))
+Aws::Auth::AWSCredentials S3CredentialsProviderChain::GetAWSCredentials()
+{
+    auto has_key_pair = [](const Aws::Auth::AWSCredentials & credentials)
+    {
+        return !credentials.GetAWSAccessKeyId().empty() && !credentials.GetAWSSecretKey().empty();
+    };
+
+    std::lock_guard lock(mutex);
+    if (cached_provider)
+    {
+        auto credentials = cached_provider->GetAWSCredentials();
+        if (has_key_pair(credentials))
+            return credentials;
+    }
+
+    for (const auto & provider : GetProviders())
+    {
+        auto credentials = provider->GetAWSCredentials();
+        if (has_key_pair(credentials))
+        {
+            cached_provider = provider;
+            return credentials;
+        }
+    }
+
+    return {};
+}
+
+void S3CredentialsProviderChain::SetNeedRefresh()
+{
+    for (const auto & provider : GetProviders())
+        provider->SetNeedRefresh();
+
+    std::lock_guard lock(mutex);
+    cached_provider.reset();
+}
+
+AssumeRoleRequest::AssumeRoleRequest(std::string role_arn_, std::string role_session_name_, std::string external_id_, std::string policy_)
+    : role_arn(std::move(role_arn_))
+    , role_session_name(std::move(role_session_name_))
+    , external_id(std::move(external_id_))
+    , policy(std::move(policy_))
 {
 }
 
 Aws::Http::HeaderValueCollection AssumeRoleRequest::GetHeaders() const
 {
-    return {{Aws::Http::HeaderValuePair(Aws::Http::CONTENT_TYPE_HEADER, Aws::AMZN_XML_CONTENT_TYPE)}};
+    return {{Aws::Http::HeaderValuePair(Aws::Http::CONTENT_TYPE_HEADER, Aws::FORM_CONTENT_TYPE)}};
 }
 
-void AssumeRoleRequest::AddQueryStringParameters(Aws::Http::URI & uri) const
+Aws::String AssumeRoleRequest::SerializePayload() const
 {
-    uri.AddQueryStringParameter("RoleArn", role_arn);
-    uri.AddQueryStringParameter("RoleSessionName", role_session_name);
+    Aws::StringStream ss;
+    ss << "Action=AssumeRole&Version=2011-06-15";
+    ss << "&RoleArn=" << Aws::Utils::StringUtils::URLEncode(role_arn.c_str());
+    ss << "&RoleSessionName=" << Aws::Utils::StringUtils::URLEncode(role_session_name.c_str());
     /// ExternalId is optional; STS rejects an empty value, so only send it when configured.
     if (!external_id.empty())
-        uri.AddQueryStringParameter("ExternalId", external_id);
+        ss << "&ExternalId=" << Aws::Utils::StringUtils::URLEncode(external_id.c_str());
+    /// Policy is optional.
+    if (!policy.empty())
+        ss << "&Policy=" << Aws::Utils::StringUtils::URLEncode(policy.c_str());
+    return ss.str();
 }
 
 AssumeRoleResult::AssumeRoleResult(Aws::AmazonWebServiceResult<Aws::Utils::Xml::XmlDocument> result)
@@ -1229,9 +1310,36 @@ AWSAssumeRoleClient::AWSAssumeRoleClient(
     if (client_configuration.region != "aws-global")
         endpoint_str += client_configuration.region + ".";
 
-    endpoint_str += "amazonaws.com?Action=AssumeRole&Version=2011-06-15";
+    endpoint_str += "amazonaws.com";
 
     endpoint.SetURL(endpoint_str);
+}
+
+std::shared_ptr<AWSAssumeRoleClient> AWSAssumeRoleClient::create(
+    const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
+    const DB::S3::PocoHTTPClientConfiguration & client_configuration,
+    const std::string & sts_endpoint_override)
+{
+    /// The STS AssumeRole client uses the AWS SDK's own retry loop, so give it ClickHouse's bounded,
+    /// cancellation-aware retry strategy and per-attempt timeout (never longer than the caller's) so an
+    /// AssumeRole against a slow/unreachable STS endpoint stays bounded and respects query cancellation.
+    auto sts_client_configuration = client_configuration;
+
+    /// At most 3 retries.
+    auto sts_retry_strategy = sts_client_configuration.retry_strategy;
+    sts_retry_strategy.max_retries = std::min(sts_retry_strategy.max_retries, static_cast<unsigned int>(3));
+    sts_client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(sts_retry_strategy);
+
+    /// Keep the caller's timeouts only if they are set and within the caps.
+    static constexpr auto connect_cap_ms = static_cast<decltype(sts_client_configuration.connectTimeoutMs)>(DEFAULT_CONNECT_TIMEOUT_MS);
+    static constexpr auto request_cap_ms
+        = static_cast<decltype(sts_client_configuration.requestTimeoutMs)>(DEFAULT_CREDENTIAL_REQUEST_TIMEOUT_MS);
+    if (sts_client_configuration.connectTimeoutMs <= 0 || sts_client_configuration.connectTimeoutMs > connect_cap_ms)
+        sts_client_configuration.connectTimeoutMs = connect_cap_ms;
+    if (sts_client_configuration.requestTimeoutMs <= 0 || sts_client_configuration.requestTimeoutMs > request_cap_ms)
+        sts_client_configuration.requestTimeoutMs = request_cap_ms;
+
+    return std::make_shared<AWSAssumeRoleClient>(credentials_provider, sts_client_configuration, sts_endpoint_override);
 }
 
 AssumeRoleOutcome AWSAssumeRoleClient::assumeRole(const AssumeRoleRequest & request) const
@@ -1259,22 +1367,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleCredentia
     const DB::S3::PocoHTTPClientConfiguration & client_configuration,
     const std::string & sts_endpoint_override)
 {
-    /// The STS AssumeRole client uses the AWS SDK's own retry loop, so give it ClickHouse's bounded,
-    /// cancellation-aware retry strategy and per-attempt timeout (never longer than the caller's) so an
-    /// AssumeRole against a slow/unreachable STS endpoint stays bounded and respects query cancellation.
-    auto sts_client_configuration = client_configuration;
-    auto sts_retry_strategy = sts_client_configuration.retry_strategy;
-    sts_retry_strategy.max_retries = std::min(sts_retry_strategy.max_retries, static_cast<decltype(sts_retry_strategy.max_retries)>(3));
-    sts_client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(sts_retry_strategy);
-    static constexpr auto connect_cap_ms = static_cast<decltype(sts_client_configuration.connectTimeoutMs)>(DEFAULT_CONNECT_TIMEOUT_MS);
-    static constexpr auto request_cap_ms
-        = static_cast<decltype(sts_client_configuration.requestTimeoutMs)>(DEFAULT_CREDENTIAL_REQUEST_TIMEOUT_MS);
-    if (sts_client_configuration.connectTimeoutMs <= 0 || sts_client_configuration.connectTimeoutMs > connect_cap_ms)
-        sts_client_configuration.connectTimeoutMs = connect_cap_ms;
-    if (sts_client_configuration.requestTimeoutMs <= 0 || sts_client_configuration.requestTimeoutMs > request_cap_ms)
-        sts_client_configuration.requestTimeoutMs = request_cap_ms;
-
-    auto client = std::make_shared<AWSAssumeRoleClient>(credentials_provider, sts_client_configuration, sts_endpoint_override);
+    auto client = AWSAssumeRoleClient::create(credentials_provider, client_configuration, sts_endpoint_override);
     auto session_name = session_name_.empty() ? "ClickHouseSession" : std::move(session_name_);
     return CredentialsProviderCache::instance().getOrSet(
         AwsAuthSTSAssumeRoleCredentialsProvider::CacheKey{
@@ -1302,6 +1395,8 @@ AwsAuthSTSAssumeRoleCredentialsProvider::AwsAuthSTSAssumeRoleCredentialsProvider
 
 Aws::Auth::AWSCredentials AwsAuthSTSAssumeRoleCredentialsProvider::GetAWSCredentials()
 {
+    if (Silk::isInsideFiber())
+        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "STS AssumeRole credentials are not implemented for fibers");
     /// Honor `SetNeedRefresh()` like sibling providers (Web-Identity, SSO) do.
     /// Without this, external callers (e.g. `S3::Client` on auth retries, or the
     /// delta-kernel `ExpiredToken` retry path) can't force a re-AssumeRole even
@@ -1322,7 +1417,7 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
 {
     LOG_INFO(logger, "Credentials are empty or expired, attempting to renew with AssumeRole");
 
-    AssumeRoleRequest request(role_arn, session_name, external_id);
+    AssumeRoleRequest request(role_arn, session_name, external_id, /* policy_ */ "");
     auto outcome = client->assumeRole(request);
     if (!outcome.IsSuccess())
     {
@@ -1381,9 +1476,10 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
         /// `gcp_oauth` mints a bearer token from an explicit ADC triple if given, otherwise from the server's
         /// GCP metadata service. Matched case-insensitively, the same as PocoHTTPClientFactory.
         const bool uses_gcp_oauth = boost::iequals(configuration.http_client, "gcp_oauth");
-        const bool has_explicit_gcp_adc = !configuration.google_adc_client_id.empty()
+        const bool has_explicit_gcp_adc = (!configuration.google_adc_client_id.empty()
             && !configuration.google_adc_client_secret.empty()
-            && !configuration.google_adc_refresh_token.empty();
+            && !configuration.google_adc_refresh_token.empty())
+            || !configuration.google_service_account_key.empty();
 
         /// `role_arn`-based STS assume-role stays allowed even under the restriction: the target role must
         /// explicitly trust the identity the server runs under, and only the assumed role's credentials ever
@@ -1403,7 +1499,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
                         DB::ErrorCodes::ACCESS_DENIED,
                         "S3 access from user queries is not allowed to use `http_client = gcp_oauth` without an "
                         "explicit Google Application Default Credentials triple (google_adc_client_id, "
-                        "google_adc_client_secret, google_adc_refresh_token), because it would otherwise mint a "
+                        "google_adc_client_secret, google_adc_refresh_token) or google_service_account_key, because it would otherwise mint a "
                         "token from the server's GCP metadata service. " S3_SERVER_CREDENTIALS_HINT);
             }
         }

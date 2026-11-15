@@ -15,9 +15,7 @@ doc_type: 'reference'
 | -- | -- | -- |
 | ✔  | ✔  |    |
 
-<div id="description">
-  ## 説明
-</div>
+## 説明 {#description}
 
 `JSON` フォーマットは、JSON フォーマットでデータを読み取り、出力します。
 
@@ -40,14 +38,12 @@ doc_type: 'reference'
 * ASCII 制御文字はエスケープされます。具体的には、バックスペース、フォームフィード、ラインフィード、キャリッジリターン、水平タブはそれぞれ `\b`、`\f`、`\n`、`\r`、`\t` に置き換えられ、00-1F の範囲にある残りのバイトも `\uXXXX` シーケンスで表されます。
 * 無効な UTF-8 シーケンスは置換文字 � に変換されるため、出力テキストは有効な UTF-8 シーケンスのみで構成されます。
 
-JavaScript との互換性のため、Int64 と UInt64 の整数はデフォルトで二重引用符で囲まれます。
-引用符を外すには、設定パラメータ [`output_format_json_quote_64bit_integers`](/ja/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) を `0` に設定します。
+64 ビット以上の整数 (`Int64`、`UInt64`、`Int128` など) は、デフォルトでは引用符なしで出力されます。
+JavaScript との互換性のため、設定パラメーター [`output_format_json_quote_64bit_integers`](/ja/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) を `1` に設定すると、これらの整数をダブルクォートで囲むことができます。
 
 ClickHouse は [NULL](/ja/reference/syntax) をサポートしており、JSON 出力では `null` として表示されます。出力で `+nan`、`-nan`、`+inf`、`-inf` の値を有効にするには、[output&#95;format&#95;json&#95;quote&#95;denormals](/ja/reference/settings/formats/output-format#output_format_json_quote_denormals) を `1` に設定します。
 
-<div id="example-usage">
-  ## 使用例
-</div>
+## 使用例 {#example-usage}
 
 例:
 
@@ -105,16 +101,12 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-<div id="format-settings">
-  ## フォーマット設定
-</div>
+## フォーマット設定 {#format-settings}
 
 JSON入力フォーマットでは、設定 [`input_format_json_validate_types_from_metadata`](/ja/reference/settings/formats/input-format#input_format_json_validate_types_from_metadata) が `1` に設定されている場合、
 入力データ内のメタデータに含まれる型が、テーブル内の対応するカラムの型と比較されます。
 
-<div id="see-also">
-  ## 関連項目
-</div>
+## 関連項目 {#see-also}
 
 * [JSONEachRow](/ja/reference/formats/JSON/JSONEachRow) フォーマット
 * [output&#95;format&#95;json&#95;array&#95;of&#95;rows](/ja/reference/settings/formats/output-format#output_format_json_array_of_rows) 設定

@@ -244,6 +244,25 @@ public:
             writeBinary(this->data(place).denominator, buf);
     }
 
+    /// final: AggregateFunctionAvg is not final (AggregateFunctionSumCount derives from it), so the
+    /// batch loop can only devirtualize these if the methods themselves are.
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const final
+    {
+        return sizeof(Numerator) + (std::is_unsigned_v<Denominator> ? VAR_UINT_MAX_SIZE : sizeof(Denominator));
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> /* version */) const final
+    {
+        writeBinaryLittleEndian(this->data(place).numerator, dst);
+
+        if constexpr (std::is_unsigned_v<Denominator>)
+            dst = writeVarUInt(this->data(place).denominator, dst);
+        else
+            writeBinary(this->data(place).denominator, dst);
+
+        return dst;
+    }
+
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         readBinaryLittleEndian(this->data(place).numerator, buf);
@@ -535,6 +554,15 @@ public:
             this->data(place).denominator += (row_end - row_begin) - countBytesInFilter(null_map, row_begin, row_end);
         }
         increment(place, sum_data.get());
+    }
+
+    void setSumAndCount(AggregateDataPtr __restrict place, const Field & sum, UInt64 count) const override
+    {
+        if constexpr (is_decimal<Numerator>)
+            increment(place, sum.safeGet<DecimalField<Numerator>>().getValue());
+        else
+            increment(place, sum.safeGet<Numerator>());
+        this->data(place).denominator += count;
     }
 
     String getName() const override { return "avg"; }

@@ -1,0 +1,24 @@
+{
+  "version": 3,
+  "id": 0,
+  "fields": [
+    {
+      "id": 0,
+      "name": "id",
+      "type": "BIGINT NOT NULL"
+    },
+    {
+      "id": 1,
+      "name": "d",
+      "type": "DATE"
+    }
+  ],
+  "highestFieldId": 1,
+  "partitionKeys": [],
+  "primaryKeys": [],
+  "options": {
+    "file.format": "orc"
+  },
+  "comment": null,
+  "timeMillis": 1793403398887
+}

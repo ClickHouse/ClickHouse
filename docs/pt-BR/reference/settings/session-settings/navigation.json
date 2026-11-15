@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "Session Settings",
+  "group": "Configurações de sessão",
   "pages": [
     "pt-BR/reference/settings/session-settings/additional",
     "pt-BR/reference/settings/session-settings/aggregate",
@@ -35,6 +35,7 @@
     "pt-BR/reference/settings/session-settings/cluster",
     "pt-BR/reference/settings/session-settings/cluster-table",
     "pt-BR/reference/settings/session-settings/collect-hash",
+    "pt-BR/reference/settings/session-settings/columns-cache",
     "pt-BR/reference/settings/session-settings/compatibility",
     "pt-BR/reference/settings/session-settings/compatibility-ignore",
     "pt-BR/reference/settings/session-settings/compile",
@@ -115,6 +116,7 @@
     "pt-BR/reference/settings/session-settings/log",
     "pt-BR/reference/settings/session-settings/log-queries",
     "pt-BR/reference/settings/session-settings/log-query",
+    "pt-BR/reference/settings/session-settings/logsql",
     "pt-BR/reference/settings/session-settings/low-cardinality",
     "pt-BR/reference/settings/session-settings/materialize",
     "pt-BR/reference/settings/session-settings/materialize-statistics-on-insert",
@@ -257,6 +259,7 @@
     "pt-BR/reference/settings/session-settings/vector-search",
     "pt-BR/reference/settings/session-settings/wait-for",
     "pt-BR/reference/settings/session-settings/webassembly-udf",
+    "pt-BR/reference/settings/session-settings/weight-lowering",
     "pt-BR/reference/settings/session-settings/write-through-distributed-cache",
     "pt-BR/reference/settings/session-settings/other"
   ],

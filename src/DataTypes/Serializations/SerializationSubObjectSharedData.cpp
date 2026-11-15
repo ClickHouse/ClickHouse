@@ -68,14 +68,14 @@ struct DeserializeBinaryBulkStateSubObjectSharedData : public ISerialization::De
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> bucket_map_states;
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> bucket_structure_states;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateSubObjectSharedData>(*this);
-        new_state->map_state = map_state ? map_state->clone() : nullptr;
+        new_state->map_state = map_state ? map_state->clone(context) : nullptr;
         for (size_t bucket = 0; bucket != bucket_map_states.size(); ++bucket)
-            new_state->bucket_map_states[bucket] = bucket_map_states[bucket] ? bucket_map_states[bucket]->clone() : nullptr;
+            new_state->bucket_map_states[bucket] = bucket_map_states[bucket] ? bucket_map_states[bucket]->clone(context) : nullptr;
         for (size_t bucket = 0; bucket != bucket_structure_states.size(); ++bucket)
-            new_state->bucket_structure_states[bucket] = bucket_structure_states[bucket] ? bucket_structure_states[bucket]->clone() : nullptr;
+            new_state->bucket_structure_states[bucket] = bucket_structure_states[bucket] ? bucket_structure_states[bucket]->clone(context) : nullptr;
         return new_state;
     }
 };
@@ -313,6 +313,7 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         std::vector<std::shared_ptr<SerializationObjectSharedData::PathsDataChunks>> bucket_paths_data_chunks(buckets);
         /// We need to remember offset and limit from each chunk to know which rows to insert in the result.
         std::vector<std::pair<size_t, size_t>> chunks_offset_and_limit;
+        std::shared_ptr<SerializationObjectSharedData::ChunkStructures> first_bucket_chunk_structures;
         for (size_t bucket = 0; bucket != buckets; ++bucket)
         {
             settings.path.push_back(Substream::Bucket);
@@ -326,10 +327,16 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             /// Init offset and limit for each chunk.
             if (bucket == 0)
             {
+                first_bucket_chunk_structures = chunk_structures;
                 chunks_offset_and_limit.reserve(chunk_structures->size());
                 for (size_t chunk_idx = 0; chunk_idx != chunk_structures->size(); ++chunk_idx)
                     chunks_offset_and_limit.emplace_back((*chunk_structures)[chunk_idx].offset, (*chunk_structures)[chunk_idx].limit);
             }
+            else
+            {
+                SerializationObjectSharedData::checkChunksMatchFirstBucket(*chunk_structures, *first_bucket_chunk_structures, bucket);
+            }
+
             settings.path.pop_back();
         }
 

@@ -44,14 +44,14 @@ doc_type: 'مرجع'
 
 حقول الإعدادات:
 
-| الإعداد                | الوصف                                                                                                                                                      |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `db`                   | اسم قاعدة البيانات. احذفه إذا كان اسم قاعدة البيانات محددًا في معلمات `<connection_string>`.                                                               |
-| `table`                | اسم الجدول والمخطط إذا وُجد.                                                                                                                               |
-| `connection_string`    | سلسلة الاتصال.                                                                                                                                             |
-| `invalidate_query`     | استعلام للتحقق من حالة القاموس. اختياري. اقرأ المزيد في قسم [Refreshing dictionary data using LIFETIME](/ar/reference/statements/create/dictionary/lifetime). |
-| `background_reconnect` | أعد الاتصال بالنسخة المتماثلة في الخلفية إذا فشل الاتصال. اختياري.                                                                                         |
-| `query`                | استعلام مخصص. اختياري.                                                                                                                                     |
+| الإعداد                | الوصف                                                                                                                                                                                  |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `db`                   | اسم قاعدة البيانات. احذفه إذا كان اسم قاعدة البيانات محددًا في معلمات `<connection_string>`.                                                                                           |
+| `table`                | اسم الجدول والمخطط إذا وُجد.                                                                                                                                                           |
+| `connection_string`    | سلسلة الاتصال.                                                                                                                                                                         |
+| `invalidate_query`     | استعلام للتحقق من حالة القاموس. اختياري. اقرأ المزيد في قسم [Refreshing dictionary data using LIFETIME](/ar/reference/statements/create/dictionary/lifetime).                             |
+| `background_reconnect` | أعد الاتصال بالنسخة المتماثلة في الخلفية إذا فشل الاتصال. اختياري.                                                                                                                     |
+| `query`                | استعلام مخصص. اختياري. تُؤخذ أعمدته حسب موضعها، لذا يجب أن يُرجعها [بالترتيب الذي يتوقعه القاموس](/ar/reference/statements/create/dictionary/sources/overview#custom-query-column-order). |
 
 <Note>
   لا يمكن استخدام الحقلين `table` و`query` معًا. ويجب التصريح بأحد الحقلين `table` أو `query`.
@@ -61,9 +61,7 @@ doc_type: 'مرجع'
 
 إذا واجهت مشكلات في الترميز عند استخدام Oracle، فراجع عنصر [FAQ](/ar/resources/support-center/knowledge-base/integrations/oracle-odbc) المقابل.
 
-<div id="known-vulnerability-of-the-odbc-dictionary-functionality">
-  ### الثغرة الأمنية المعروفة في وظيفة قاموس ODBC
-</div>
+### الثغرة الأمنية المعروفة في وظيفة قاموس ODBC {#known-vulnerability-of-the-odbc-dictionary-functionality}
 
 <Note>
   عند الاتصال بقاعدة البيانات عبر معلمة الاتصال `Servername` في برنامج تشغيل ODBC، يمكن استبدالها. في هذه الحالة، تُرسَل القيمتان `USERNAME` و`PASSWORD` من `odbc.ini` إلى الخادم البعيد، وقد تتعرضان للاختراق.
@@ -92,9 +90,7 @@ SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 
 سيرسل برنامج تشغيل ODBC القيمتين `USERNAME` و`PASSWORD` من `odbc.ini` إلى `some-server.com`.
 
-<div id="example-of-connecting-postgresql">
-  ### مثال على الاتصال بـ PostgreSQL
-</div>
+### مثال على الاتصال بـ PostgreSQL {#example-of-connecting-postgresql}
 
 نظام التشغيل Ubuntu.
 
@@ -181,9 +177,7 @@ $ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
 
 قد تحتاج إلى تعديل `odbc.ini` لتحديد المسار الكامل للمكتبة في برنامج التشغيل `DRIVER=/usr/local/lib/psqlodbcw.so`.
 
-<div id="example-of-connecting-ms-sql-server">
-  ### مثال على الاتصال بـ MS SQL Server
-</div>
+### مثال على الاتصال بـ MS SQL Server {#example-of-connecting-ms-sql-server}
 
 نظام التشغيل Ubuntu.
 

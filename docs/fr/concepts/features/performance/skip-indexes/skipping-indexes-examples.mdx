@@ -28,9 +28,7 @@ ClickHouse prend en charge six types de skip index :
 
 Chaque section fournit des exemples avec un jeu de données d’exemple et montre comment vérifier l’utilisation des index lors de l’exécution des requêtes.
 
-<div id="minmax-index">
-  ## MinMax index
-</div>
+## MinMax index {#minmax-index}
 
 L’index `minmax` convient le mieux aux prédicats de plage sur des données peu triées ou sur des colonnes corrélées à `ORDER BY`.
 
@@ -60,9 +58,7 @@ SELECT count() FROM events WHERE ts >= now() - 3600;
 
 Consultez un [exemple concret](/fr/concepts/best-practices/using-data-skipping-indices#example) avec `EXPLAIN` et l’élagage.
 
-<div id="set-index">
-  ## Index `set`
-</div>
+## Index `set` {#set-index}
 
 Utilisez l’index `set` lorsque la cardinalité locale (par bloc) est faible ; il n’est pas utile si chaque bloc contient de nombreuses valeurs distinctes.
 
@@ -78,9 +74,7 @@ SELECT * FROM events WHERE user_id IN (101, 202);
 
 Un processus de création/matérialisation, ainsi que l’effet avant/après, sont présentés dans le [guide de fonctionnement de base](/fr/concepts/features/performance/skip-indexes/skipping-indexes#basic-operation).
 
-<div id="textindex-for-full-text-search">
-  ## Index de texte (text) pour la recherche en texte intégral
-</div>
+## Index de texte (text) pour la recherche en texte intégral {#textindex-for-full-text-search}
 
 `text` est un index inversé sur des données textuelles tokenisées.
 Conçu spécifiquement pour les charges de travail de recherche en texte intégral, il permet une recherche de tokens et de termes efficace et déterministe.
@@ -99,9 +93,7 @@ Consultez [ici](/fr/guides/use-cases/observability/build-your-own/schema-design#
 
 L’index de texte est entièrement déterministe et offre un réglage fin de la tokenisation et du traitement du texte, au prix d’une consommation de stockage légèrement supérieure à celle des index basés sur des bloom filters,
 
-<div id="generic-bloom-filter-scalar">
-  ## Filtre de Bloom générique (scalaire)
-</div>
+## Filtre de Bloom générique (scalaire) {#generic-bloom-filter-scalar}
 
 L’index `bloom_filter` est bien adapté aux recherches d’égalité et d’appartenance `IN` de type &quot;aiguille dans une botte de foin&quot;. Il accepte un paramètre facultatif correspondant au taux de faux positifs (par défaut : 0.025).
 
@@ -115,9 +107,7 @@ EXPLAIN indexes = 1
 SELECT * FROM events WHERE value IN (7, 42, 99);
 ```
 
-<div id="n-gram-bloom-filter-ngrambf-v1-for-substring-search">
-  ## Filtre de Bloom à n-grammes (ngrambf_v1) pour la recherche de sous-chaînes *(Déprécié)*
-</div>
+## Filtre de Bloom à n-grammes (ngrambf_v1) pour la recherche de sous-chaînes *(Déprécié)* {#n-gram-bloom-filter-ngrambf-v1-for-substring-search}
 
 <Note>
   L’utilisation des index `ngrambf_v1` pour la recherche en texte intégral est dépréciée dans les versions de ClickHouse `>= 26.2` au profit des index `text` (voir [ici](/fr/reference/engines/table-engines/mergetree-family/textindexes) pour plus de détails).
@@ -157,9 +147,7 @@ SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) AS k; -- ~13
 
 Consultez la [documentation des paramètres](/fr/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) pour obtenir des recommandations complètes sur le réglage.
 
-<div id="token-bloom-filter-tokenbf-v1-for-word-based-search">
-  ## Filtre Bloom de tokens (tokenbf_v1) pour la recherche par mots *(Déprécié)*
-</div>
+## Filtre Bloom de tokens (tokenbf_v1) pour la recherche par mots *(Déprécié)* {#token-bloom-filter-tokenbf-v1-for-word-based-search}
 
 <Note>
   L&#39;utilisation des index `tokenbf_v1` pour la recherche en texte intégral est dépréciée dans les versions de ClickHouse `>= 26.2`, au profit des index `text` (voir [ici](/fr/reference/engines/table-engines/mergetree-family/textindexes) pour plus de détails).
@@ -182,9 +170,7 @@ SELECT count() FROM logs WHERE hasToken(lower(msg), 'exception');
 
 Voir des exemples d’observabilité et des conseils sur `token` vs `ngram` [ici](/fr/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search).
 
-<div id="add-indexes-during-create-table-multiple-examples">
-  ## Ajouter des index au moment du CREATE TABLE (plusieurs exemples)
-</div>
+## Ajouter des index au moment du CREATE TABLE (plusieurs exemples) {#add-indexes-during-create-table-multiple-examples}
 
 Les index de saut de données prennent également en charge les expressions composites ainsi que les types `Map`/`Tuple`/`Nested`. Cela est illustré dans l&#39;exemple ci-dessous :
 
@@ -205,9 +191,7 @@ ENGINE = MergeTree
 ORDER BY u64;
 ```
 
-<div id="materializing-on-existing-data-and-verifying">
-  ## Matérialisation sur les données existantes et vérification
-</div>
+## Matérialisation sur les données existantes et vérification {#materializing-on-existing-data-and-verifying}
 
 Vous pouvez ajouter un index aux parts de données existantes avec `MATERIALIZE`, puis examiner l’élagage à l’aide de `EXPLAIN` ou des logs de trace, comme ci-dessous :
 
@@ -223,9 +207,7 @@ SET send_logs_level = 'trace';
 
 Cet [exemple pratique de minmax](/fr/concepts/best-practices/using-data-skipping-indices#example) montre la structure de la sortie EXPLAIN et le nombre d’éléments élagués.
 
-<div id="when-use-and-when-to-avoid">
-  ## Quand utiliser et quand éviter les index de saut
-</div>
+## Quand utiliser et quand éviter les index de saut {#when-use-and-when-to-avoid}
 
 **Utilisez les index de saut lorsque :**
 
@@ -244,11 +226,9 @@ Cet [exemple pratique de minmax](/fr/concepts/best-practices/using-data-skipping
   Si une valeur apparaît ne serait-ce qu’une seule fois dans un bloc de données, ClickHouse doit lire l’intégralité du bloc. Testez les index sur des jeux de données réalistes et ajustez la granularité ainsi que les paramètres propres au type en fonction de mesures de performances réelles.
 </Info>
 
-<div id="temporarily-ignore-or-force-indexes">
-  ## Ignorer temporairement des index ou en imposer l’utilisation
-</div>
+## Ignorer temporairement des index ou en imposer l’utilisation {#temporarily-ignore-or-force-indexes}
 
-Désactivez des index spécifiques par leur nom pour des requêtes individuelles lors des tests et du dépannage. Il existe également des paramètres permettant d’imposer l’utilisation des index si nécessaire. Voir [`ignore_data_skipping_indices`](/fr/reference/settings/session-settings/ignore#ignore_data_skipping_indices).
+Désactivez des index spécifiques par leur nom pour des requêtes individuelles lors des tests et du dépannage. Il existe également des paramètres permettant d’imposer l’utilisation des index si nécessaire. Voir [`ignore_data_skipping_indexes`](/fr/reference/settings/session-settings/ignore#ignore_data_skipping_indexes).
 
 ```sql
 -- Ignore an index by name
@@ -257,17 +237,13 @@ WHERE hasToken(lower(msg), 'exception')
 SETTINGS ignore_data_skipping_indices = 'msg_token';
 ```
 
-<div id="notes-and-caveats">
-  ## Notes et limites
-</div>
+## Notes et limites {#notes-and-caveats}
 
 * Les index de saut ne sont pris en charge que sur les [tables de la famille MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree) ; l’élagage s’effectue au niveau des granules/blocs.
 * Les index basés sur des filtres de Bloom sont probabilistes (les faux positifs entraînent des lectures supplémentaires, mais n’excluent pas de données valides).
 * Les filtres de Bloom et les autres index de saut doivent être validés à l’aide de `EXPLAIN` et du traçage ; ajustez la granularité pour trouver un équilibre entre l’élagage et la taille de l’index.
 
-<div id="related-docs">
-  ## Documentation connexe
-</div>
+## Documentation connexe {#related-docs}
 
 * [Guide des index de saut de données](/fr/concepts/features/performance/skip-indexes/skipping-indexes)
 * [Guide des bonnes pratiques](/fr/concepts/best-practices/using-data-skipping-indices)
