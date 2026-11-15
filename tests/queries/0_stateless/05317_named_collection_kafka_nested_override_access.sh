@@ -113,6 +113,9 @@ expect_error ACCESS_DENIED "CREATE TABLE ${table} (value String) ENGINE = Kafka(
 expect_error ACCESS_DENIED "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_broker}, \`kafka.metadata_broker_list\` = '127.0.0.1:3')"
 expect_error ACCESS_DENIED "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_broker}, \`kafka.consumer.bootstrap_servers\` = '127.0.0.1:3')"
 
+# A zero byte in a key is rejected, librdkafka would see only the part before it.
+expect_error BAD_ARGUMENTS "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_broker}, concat('kafka.metadata_broker_list', char(0), 'ignored') = '127.0.0.1:3')"
+
 # A flattened setting without a stored nested equivalent is an addition.
 ${CLICKHOUSE_CLIENT} --user "$user" --query "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc}) SETTINGS kafka_sasl_mechanism = 'PLAIN'"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${table}"
@@ -135,6 +138,7 @@ expect_error BAD_ARGUMENTS "CREATE TABLE ${table} (value String) ENGINE = Kafka(
 # A locked flat setting and a nested key.
 ${CLICKHOUSE_CLIENT} --query "GRANT SHOW NAMED COLLECTIONS SECRETS ON ${nc_broker_locked} TO $user"
 expect_error BAD_ARGUMENTS "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_broker_locked}, \`kafka.metadata_broker_list\` = '127.0.0.1:3')"
+expect_error BAD_ARGUMENTS "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_broker_locked}, concat('kafka.metadata_broker_list', char(0), 'ignored') = '127.0.0.1:3')"
 # The `topic.` prefix of a topic property.
 ${CLICKHOUSE_CLIENT} --query "GRANT SHOW NAMED COLLECTIONS SECRETS ON ${nc_prefix_locked} TO $user"
 expect_error BAD_ARGUMENTS "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_prefix_locked}) SETTINGS kafka_compression_level = 1"
