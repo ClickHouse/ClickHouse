@@ -10,6 +10,12 @@ FROM numbers(1) SETTINGS max_threads = 1, max_memory_usage = '64Mi';
 SELECT length(arrayReverse(materialize(arrayWithConstant(10000000, tuple(toUInt8(1))))))
 FROM numbers(1) SETTINGS max_threads = 1, max_memory_usage = '64Mi';
 
+SELECT length(arrayReverse(materialize([arrayWithConstant(1000000, CAST([], 'Array(FixedString(128))'))])))
+FROM numbers(1) SETTINGS max_threads = 1, max_memory_usage = '64Mi';
+
+SELECT length(arrayReverse(materialize([map(1, arrayWithConstant(1000000, CAST([], 'Array(FixedString(128))')))])))
+FROM numbers(1) SETTINGS max_threads = 1, max_memory_usage = '64Mi';
+
 SELECT length([materialize(arrayWithConstant(5000000, toUInt8(1))), materialize(arrayWithConstant(5000000, toUInt8(1)))])
 FROM numbers(1) SETTINGS max_threads = 1, max_memory_usage = '64Mi';
 
