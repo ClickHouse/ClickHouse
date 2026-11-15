@@ -1,0 +1,74 @@
+<test>
+    <!-- Pin max_threads so the per-chunk pruning ratio, and therefore the win, does not depend on the
+         runner's core count. -->
+    <settings>
+        <max_threads>16</max_threads>
+    </settings>
+
+    <create_query>CREATE TABLE t_wtkp (p UInt64, o UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <!-- Wide rows: the sort and the partition scatter copy every column of every row, so the rows the
+         prefilter removes cost more the wider they are. -->
+    <create_query>CREATE TABLE t_wtkp_wide (p UInt64, o UInt64, c1 UInt64, c2 UInt64, c3 UInt64, c4 UInt64, c5 UInt64, c6 UInt64, s String) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <!-- One row per partition: nothing can be pruned, so this prices the prefilter's own hashing and
+         comparisons, and pins that its profitability check turns it off. -->
+    <create_query>CREATE TABLE t_wtkp_unique (p UInt64, o UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <!-- Partitions no larger than the bound: every row is forwarded, so this prices the same per-row work
+         on a shape where the transform can never help. -->
+    <create_query>CREATE TABLE t_wtkp_small (p UInt64, o UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <!-- Variable-length keys at high cardinality: nothing is copied, so this prices only the extra
+         comparison and hashing work on String keys. -->
+    <create_query>CREATE TABLE t_wtkp_str (p String, o String) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <!-- Table PARTITION BY matching the window's PARTITION BY, so the per-partition window optimization
+         runs together with the prefilter and a lost interaction shows up as a regression here. -->
+    <create_query>CREATE TABLE t_wtkp_mt (p UInt64, o UInt64) ENGINE = MergeTree ORDER BY o PARTITION BY p % 16</create_query>
+    <!-- Sorting key equal to the window's own sort description, the only shape read-in-order can serve here,
+         so that arm really reaches the FinishSorting the prefilter declines on. -->
+    <create_query>CREATE TABLE t_wtkp_ord (p UInt64, o UInt64) ENGINE = MergeTree ORDER BY (p, o)</create_query>
+
+    <fill_query>INSERT INTO t_wtkp SELECT number % 100, cityHash64(number) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>INSERT INTO t_wtkp_wide SELECT number % 100, cityHash64(number), number, number * 2, number * 3, number * 5, number * 7, number * 11, toString(number) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>INSERT INTO t_wtkp_unique SELECT number, cityHash64(number) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>INSERT INTO t_wtkp_small SELECT number % 2000000, cityHash64(number) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>INSERT INTO t_wtkp_str SELECT toString(number % 200000), toString(cityHash64(number)) FROM numbers_mt(5000000)</fill_query>
+    <fill_query>INSERT INTO t_wtkp_mt SELECT number % 100, cityHash64(number) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>INSERT INTO t_wtkp_ord SELECT number % 100, cityHash64(number) FROM numbers_mt(10000000)</fill_query>
+
+    <!-- WIN: the top-N-per-group shape of TPC-DS query_67. -->
+    <query>SELECT p, o, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk &lt;= 10 FORMAT Null</query>
+
+    <!-- WIN: the row_number() deduplication idiom. -->
+    <query>SELECT p, o FROM (SELECT p, o, row_number() OVER (PARTITION BY p ORDER BY o DESC) AS rn FROM t_wtkp) WHERE rn &lt;= 1 FORMAT Null</query>
+
+    <!-- WIN: wide rows. -->
+    <query>SELECT * FROM (SELECT *, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_wide) WHERE rk &lt;= 10 FORMAT Null</query>
+
+    <!-- TAX: one row per partition, nothing to prune. -->
+    <query>SELECT p, o, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_unique) WHERE rk &lt;= 10 FORMAT Null</query>
+
+    <!-- TAX: partitions smaller than the bound, every row forwarded. -->
+    <query>SELECT p, o, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_small) WHERE rk &lt;= 10 FORMAT Null</query>
+
+    <!-- TAX: String partition and order keys at high cardinality. -->
+    <query>SELECT p, o, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_str) WHERE rk &lt;= 10 FORMAT Null</query>
+
+    <!-- NOT OPTIMIZED: an aggregate window function, so the prefilter must decline and this query must not
+         change at all. -->
+    <query>SELECT p, s FROM (SELECT p, sum(o) OVER (PARTITION BY p ORDER BY o DESC) AS s, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk &lt;= 10 FORMAT Null</query>
+
+    <!-- Pass-ordering control: the per-partition window optimization must survive the prefilter. -->
+    <query>SELECT p, o, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p % 16 ORDER BY o DESC) AS rk FROM t_wtkp_mt) WHERE rk &lt;= 10 FORMAT Null</query>
+
+    <!-- Ordering-preserved control: with the storage order reused the sort becomes a FinishSorting, the
+         prefilter declines, and the query must not regress. The window matches the sorting key in both
+         columns and direction, which is what read-in-order needs; a DESC order or a key that does not start
+         with the partition column leaves a full sort and the prefilter running. -->
+    <query>SELECT p, o, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o) AS rk FROM t_wtkp_ord) WHERE rk &lt;= 10 SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_wtkp</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_wtkp_wide</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_wtkp_unique</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_wtkp_small</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_wtkp_str</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_wtkp_mt</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_wtkp_ord</drop_query>
+</test>

@@ -689,6 +689,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"query_plan_top_k_through_array_join", trueOrFalseSetting},
        {"query_plan_top_k_through_join", trueOrFalseSetting},
        {"query_plan_use_shuffle_for_order_by_rand", trueOrFalseSetting},
+       {"query_plan_window_top_k_prefilter", trueOrFalseSetting},
        {"read_in_order_use_buffering", trueOrFalseSetting},
        {"read_in_order_use_virtual_row", trueOrFalseSetting},
        {"read_in_order_use_virtual_row_per_block", trueOrFalseSetting},
