@@ -33,6 +33,7 @@ from pyiceberg.types import (
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.client import QueryRuntimeException
+from helpers.test_tools import TSV
 from helpers.s3_tools import get_file_contents, list_s3_objects
 from helpers.resource_soak import QueryLog, ResourceSampler, soak_iterations
 

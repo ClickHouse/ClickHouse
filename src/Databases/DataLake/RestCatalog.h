@@ -187,7 +187,7 @@ public:
     class AllowedNamespaces
     {
     public:
-        AllowedNamespaces() {}
+        AllowedNamespaces() = default;
         explicit AllowedNamespaces(const std::string & namespaces_);
 
         /// Check if nested namespaces (nested=true) or tables (nested=false) are allowed in namespace
