@@ -1,0 +1,79 @@
+full wide base	0
+full wide projection	0
+0	0	0
+1	0	0
+full wide stored	0
+full wide source	0
+full compact base	0
+full compact projection	0
+0	0	0
+1	0	0
+full compact stored	0
+partial wide base	1
+partial wide projection	1
+0	0	0
+1	1	1
+partial wide stored	0
+partial wide source	1
+partial compact base	1
+partial compact projection	1
+0	0	0
+1	1	1
+partial compact stored	0
+recomputed base	0
+recomputed projection	0
+0	0	0
+1	0	0
+recomputed stored	0
+rollup wide base	4
+rollup wide projection	4
+0	0	0
+1	4	4
+2	0	0
+rollup wide stored	0
+rollup compact base	4
+rollup compact projection	4
+0	0	0
+1	4	4
+2	0	0
+rollup compact stored	0
+rollup set wide	0	2	2
+rollup set wide	1	0	3
+rollup set wide	2	1	1
+rollup set wide stored	0
+rollup set compact	0	2	2
+rollup set compact	1	0	3
+rollup set compact	2	1	1
+rollup set compact stored	0
+through alias	0	20	2
+through alias	2	30	3
+through alias stored	['id','m','n.a','ts']
+through ephemeral	0	20	2
+through ephemeral	2	30	3
+through ephemeral stored	['id','n.a','ts','x']
+partly stored default	0	20	2
+partly stored default	2	7	3
+partly stored default	3	7	1
+partly stored default stored	['id','n.a','ts','x']
+default source wide base	4
+default source wide projection	4
+0	2	2
+1	2	2
+default source wide stored	['id','m','n.a','ts']
+default source compact base	4
+default source compact projection	4
+0	2	2
+1	2	2
+default source compact stored	['id','m','n.a','ts']
+default source unread wide	0	[1,2]	2
+default source unread wide	1	[1,2]	2
+default source unread wide stored	['id','n.a','ts']
+default source unread compact	0	[1,2]	2
+default source unread compact	1	[1,2]	2
+default source unread compact stored	['id','n.a','ts']
+default source index	0	[1,2]	2
+default source index	1	[1,2]	2
+default source index stored	['id','n.a','ts']
+text index	8	[16,17,18,19,20,21,22,23]
+text index parts	1	1
+text index stored	['id','n.a','ts']

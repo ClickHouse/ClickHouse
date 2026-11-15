@@ -6,6 +6,8 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnArray.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Common/quoteString.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
@@ -49,7 +51,8 @@ VectorWithMemoryTracking<VectorWithMemoryTracking<TTLTransform::DependentMateria
     const MergeTreeData & storage,
     const StorageMetadataPtr & metadata_snapshot,
     const NameSet & reset_columns,
-    const NameSet & columns_to_leave_alone)
+    const NameSet & columns_to_leave_alone,
+    const UnorderedMapWithMemoryTracking<String, String> & shared_offsets_dependencies)
 {
     const auto & storage_columns = metadata_snapshot->getColumns();
     const auto context = storage.getContext();
@@ -80,8 +83,13 @@ VectorWithMemoryTracking<VectorWithMemoryTracking<TTLTransform::DependentMateria
 
         size_t level = 0;
         for (const auto & dependency : materialized_dependencies.findNode(name)->dependencies)
-            if (dependency != name && dependents.contains(dependency))
-                level = std::max(level, self(dependency, self) + 1);
+        {
+            /// An omitted array also depends on the column that writes its shared offsets stream.
+            auto it = shared_offsets_dependencies.find(dependency);
+            const auto & source = it == shared_offsets_dependencies.end() ? dependency : it->second;
+            if (source != name && dependents.contains(source))
+                level = std::max(level, self(source, self) + 1);
+        }
 
         level_of[name] = level;
         return level;
@@ -121,6 +129,73 @@ VectorWithMemoryTracking<VectorWithMemoryTracking<TTLTransform::DependentMateria
     return levels;
 }
 
+NameSet TTLTransform::getResetColumns(const StorageMetadataPtr & metadata_snapshot, const NamesAndTypesList & expired_columns_)
+{
+    NameSet reset_columns;
+    for (const auto & [name, description] : metadata_snapshot->getColumnTTLs())
+        reset_columns.insert(name);
+    for (const auto & expired_column : expired_columns_)
+        reset_columns.insert(expired_column.name);
+    return reset_columns;
+}
+
+TTLTransform::EvaluatedExpressions TTLTransform::getEvaluatedExpressions(
+    const MergeTreeData & storage,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeDataPartTTLInfos & ttl_infos,
+    const NamesAndTypesList & expired_columns_,
+    time_t current_time,
+    bool force)
+{
+    EvaluatedExpressions result;
+    const auto expired_column_names = expired_columns_.getNameSet();
+    result.columns_with_evaluated_defaults = expired_column_names;
+
+    /// `TTLDeleteAlgorithm` and `TTLColumnAlgorithm` evaluate nothing until the minimum bound of their rule is due,
+    /// as `ITTLAlgorithm::isMinTTLExpired` states. The bounds are the ones this transform reads from the new part.
+    auto is_due = [&](const MergeTreeDataPartTTLInfo * info) { return force || (info && info->min && info->min <= current_time); };
+    auto find_info = [](const TTLInfoMap & infos, const String & key) -> const MergeTreeDataPartTTLInfo *
+    {
+        auto it = infos.find(key);
+        return it == infos.end() ? nullptr : &it->second;
+    };
+    auto add_columns_read_by = [&](const TTLDescription & description)
+    {
+        for (const auto & column : description.expression_columns)
+            result.columns_read_by_due_ttls.insert(column.name);
+        for (const auto & column : description.where_expression_columns)
+            result.columns_read_by_due_ttls.insert(column.name);
+    };
+
+    if (metadata_snapshot->hasRowsTTL() && is_due(&ttl_infos.table_ttl))
+        add_columns_read_by(metadata_snapshot->getRowsTTL());
+
+    for (const auto & where_ttl : metadata_snapshot->getRowsWhereTTLs())
+        if (is_due(find_info(ttl_infos.rows_where_ttl, where_ttl.result_column)))
+            add_columns_read_by(where_ttl);
+
+    /// No `TTLColumnAlgorithm` is built for an expired column.
+    for (const auto & [name, description] : metadata_snapshot->getColumnTTLs())
+    {
+        if (!expired_column_names.contains(name) && is_due(find_info(ttl_infos.columns_ttl, name)))
+        {
+            add_columns_read_by(description);
+            result.columns_with_evaluated_defaults.insert(name);
+        }
+    }
+
+    /// The dependents are recomputed whether the TTL is due or not. The dependency on a shared offsets
+    /// source only orders their levels, it does not add a dependent.
+    const auto reset_columns = getResetColumns(metadata_snapshot, expired_columns_);
+    if (reset_columns.empty())
+        return result;
+
+    for (const auto & level : analyzeDependentMaterializedColumns(storage, metadata_snapshot, reset_columns, expired_column_names, {}))
+        for (const auto & dependent : level)
+            result.columns_with_evaluated_defaults.insert(dependent.name);
+    return result;
+}
+
 SharedHeader TTLTransform::addExpiredColumnsToBlock(const SharedHeader & header, const NamesAndTypesList & expired_columns_)
 {
     if (expired_columns_.empty())
@@ -148,7 +223,9 @@ TTLTransform::TTLTransform(
     const NamesAndTypesList & expired_columns_,
     time_t current_time_,
     bool force_,
-    bool ttl_delete_applied_by_merge_)
+    bool ttl_delete_applied_by_merge_,
+    const NameSet & columns_with_reader_defaults_,
+    const NameSet & expired_arrays_)
     : IAccumulatingTransform(header_, addExpiredColumnsToBlock(header_, expired_columns_))
     , ttl_delete_applied_by_merge(ttl_delete_applied_by_merge_)
     , data_part(data_part_)
@@ -177,6 +254,8 @@ TTLTransform::TTLTransform(
             getExpressions(where_ttl, subqueries_for_sets, context), where_ttl,
             old_ttl_infos.rows_where_ttl[where_ttl.result_column], current_time_, force_));
 
+    first_rewrite_algorithm = algorithms.size();
+
     /// `consume` adds the expired columns to the block before the algorithms run.
     for (const auto & group_by_ttl : metadata_snapshot_->getGroupByTTLs())
         algorithms.emplace_back(std::make_unique<TTLAggregationAlgorithm>(
@@ -203,6 +282,14 @@ TTLTransform::TTLTransform(
 
     for (const auto & expired_column : expired_columns)
     {
+        /// These columns were filled by each source reader before evaluating missing sibling defaults.
+        if (columns_with_reader_defaults_.contains(expired_column.name))
+        {
+            chassert(header_->has(expired_column.name));
+            chassert(expired_arrays_.contains(expired_column.name));
+            continue;
+        }
+
         auto [default_expression, default_column_name] = build_default_expr(expired_column.name);
         expired_columns_data.emplace(
             expired_column.name, ExpiredColumnData{expired_column.type, std::move(default_expression), std::move(default_column_name)});
@@ -219,23 +306,40 @@ TTLTransform::TTLTransform(
 
     const auto expired_columns_map = expired_columns.getNameToTypeMap();
 
+    ISerialization::StreamFileNameSettings stream_settings;
+    stream_settings.share_nested_offsets = true;
+    const ISerialization::SubstreamPath offsets_path{{ISerialization::Substream::ArraySizes}};
+    /// The reader fills only the expired arrays that an expression reads, but the merged part reconstructs
+    /// every one of them from the offsets of the same sibling, so all of them decide whether it is kept.
+    for (const auto & name : expired_arrays_)
+    {
+        const auto offsets_stream = ISerialization::getFileNameForStream(name, offsets_path, stream_settings);
+        /// The first non-expired output array writes the shared offsets stream. Its computed default is not a
+        /// source for row TTLs: it is used here only when preparing the post-TTL output.
+        for (const auto & column : storage_columns.getAllPhysical())
+        {
+            if (expired_columns_map.contains(column.name) || !header_->has(column.name) || !isArray(column.type))
+                continue;
+            if (ISerialization::getFileNameForStream(column.name, offsets_path, stream_settings) == offsets_stream)
+            {
+                if (columns_with_reader_defaults_.contains(name))
+                    shared_offsets_sources.emplace(name, column.name);
+                shared_offsets_writers.insert(column.name);
+                break;
+            }
+        }
+    }
+
     /// The columns this transform resets to their default.
-    NameSet reset_columns;
-    for (const auto & [name, description] : column_ttls)
-        reset_columns.insert(name);
-    for (const auto & expired_column : expired_columns)
-        reset_columns.insert(expired_column.name);
+    const NameSet reset_columns = getResetColumns(metadata_snapshot_, expired_columns);
 
     VectorWithMemoryTracking<VectorWithMemoryTracking<DependentMaterializedColumn>> recompute_levels;
     NameSet recomputed_columns;
     if (!reset_columns.empty())
     {
-        NameSet expired_column_names;
-        for (const auto & expired_column : expired_columns)
-            expired_column_names.insert(expired_column.name);
-
         recompute_levels
-            = analyzeDependentMaterializedColumns(storage_, metadata_snapshot_, reset_columns, expired_column_names);
+            = analyzeDependentMaterializedColumns(
+                storage_, metadata_snapshot_, reset_columns, expired_columns.getNameSet(), shared_offsets_sources);
 
         for (const auto & level : recompute_levels)
             for (const auto & dependent : level)
@@ -306,6 +410,8 @@ void TTLTransform::recomputeDependentColumns(Block & block, const VectorWithMemo
     if (block.empty())
         return;
 
+    refreshSharedOffsetsColumns(block);
+
     /// The expressions read the post-TTL columns, so this restores the invariant the `MATERIALIZED`
     /// expression states. A mutation may read only a part of the columns, so a dependent whose inputs
     /// (or the dependent itself) are not in the block is left to the merge that has them.
@@ -322,7 +428,33 @@ void TTLTransform::recomputeDependentColumns(Block & block, const VectorWithMemo
 
         auto recomputed = ITTLAlgorithm::executeExpressionAndGetColumn(dependent.expression, block, dependent.result_column_name);
         if (recomputed)
+        {
             block.getByName(dependent.name).column = recomputed->convertToFullColumnIfConst();
+            refreshSharedOffsetsColumns(block, dependent.name);
+        }
+    }
+}
+
+void TTLTransform::refreshSharedOffsetsColumns(Block & block, const String & source_column)
+{
+    if (block.empty())
+        return;
+
+    for (const auto & [name, source] : shared_offsets_sources)
+    {
+        if ((!source_column.empty() && source != source_column) || !block.has(name) || !block.has(source))
+            continue;
+
+        const auto & source_array = assert_cast<const ColumnArray &>(*block.getByName(source).column);
+        const auto & offsets = source_array.getOffsets();
+        auto & column = block.getByName(name);
+        if (assert_cast<const ColumnArray &>(*column.column).getOffsetsPtr() == source_array.getOffsetsPtr())
+            continue;
+
+        const auto & array_type = assert_cast<const DataTypeArray &>(*column.type);
+        auto nested = array_type.getNestedType()->createColumnConstWithDefaultValue(offsets.empty() ? 0 : offsets.back())
+            ->convertToFullColumnIfConst();
+        column.column = ColumnArray::create(nested, source_array.getOffsetsPtr());
     }
 }
 
@@ -337,10 +469,25 @@ void TTLTransform::executeAlgorithms(Block & block)
             recomputeDependentColumns(block, recompute_stages[next_stage].columns);
 
         algorithms[i]->execute(block);
+        /// Preserve reader-filled values through all row TTL predicates, then normalize each rewritten output,
+        /// including rows that `TTLAggregationAlgorithm` flushes from `generate`.
+        if (i >= first_rewrite_algorithm)
+            refreshSharedOffsetsColumns(block);
     }
 
     for (; next_stage < recompute_stages.size(); ++next_stage)
         recomputeDependentColumns(block, recompute_stages[next_stage].columns);
+
+    refreshSharedOffsetsColumns(block);
+    for (const auto & source : shared_offsets_writers)
+    {
+        if (!block.has(source))
+            continue;
+
+        const auto & offsets = assert_cast<const ColumnArray &>(*block.getByName(source).column).getOffsets();
+        if (!offsets.empty() && offsets.back() != 0)
+            shared_offsets_columns_to_keep.insert(source);
+    }
 }
 
 void TTLTransform::consume(Chunk chunk)
@@ -399,6 +546,11 @@ void TTLTransform::finalize()
     data_part->ttl_infos = {};
     for (const auto & algorithm : algorithms)
         algorithm->finalize(data_part);
+
+    /// A fully expired source can still have a nonempty `DEFAULT`. Keep the already-written column so
+    /// removing it does not discard offsets used by omitted arrays and their materialized consumers.
+    for (const auto & source : shared_offsets_columns_to_keep)
+        data_part->expired_columns.erase(source);
 
     if (delete_algorithm)
     {

@@ -11,6 +11,7 @@
 
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Disks/SingleDiskVolume.h>
@@ -20,6 +21,8 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CoalescingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
@@ -325,6 +328,154 @@ static String getColumnNameInStorage(const String & column_name, const NameSet &
 
     /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
     return String(Nested::getColumnFromSubcolumn(column_name, storage_columns));
+}
+
+namespace
+{
+
+bool hasStoredDefault(const ColumnDescription & column)
+{
+    const auto & default_desc = column.default_desc;
+    return default_desc.expression
+        && (default_desc.kind == ColumnDefaultKind::Default || default_desc.kind == ColumnDefaultKind::Materialized);
+}
+
+/// The columns whose `DEFAULT` or `MATERIALIZED` expression a merge may evaluate: the reader of a source part
+/// fills a column that the part does not store or that a pending mutation drops, and `TTLTransform` evaluates
+/// @columns_with_defaults_evaluated_by_ttl. The expression of any other column is never evaluated, as every
+/// source part already stores its value.
+NameSet getColumnsWithDefaultsEvaluatedByMerge(
+    const StorageInMemoryMetadata & metadata,
+    const MergeTreeData::DataPartsVector & parts,
+    const std::vector<AlterConversionsPtr> & alter_conversions,
+    const NameSet & columns_with_defaults_evaluated_by_ttl,
+    bool share_nested_offsets)
+{
+    /// Mirrors `injectRequiredColumns`, which decides what the reader of a part fills.
+    auto is_missing_in_some_part = [&](const String & name)
+    {
+        for (size_t i = 0; i < parts.size(); ++i)
+        {
+            const auto * conversions = i < alter_conversions.size() ? alter_conversions[i].get() : nullptr;
+            String name_in_part = name;
+            if (conversions && conversions->isColumnRenamed(name_in_part))
+                name_in_part = conversions->getColumnOldName(name_in_part);
+
+            if (!parts[i]->getColumnPosition(name_in_part)
+                || (conversions && conversions->isColumnDropped(name_in_part, share_nested_offsets)))
+                return true;
+        }
+        return false;
+    };
+
+    NameSet result;
+    for (const auto & column : metadata.getColumns())
+    {
+        if (!hasStoredDefault(column))
+            continue;
+
+        if (columns_with_defaults_evaluated_by_ttl.contains(column.name) || is_missing_in_some_part(column.name))
+            result.insert(column.name);
+    }
+
+    return result;
+}
+
+/// The columns that the expressions evaluated by a merge may read: the TTL rules that are evaluated, the skip
+/// indices that are built, the projections that are rebuilt and the `DEFAULT` and `MATERIALIZED` expressions of
+/// @columns_with_evaluated_defaults. A `DELETE` rule or a column TTL counts only through @columns_read_by_due_ttls,
+/// the other rules of the table always. An `ALIAS` or `EPHEMERAL` column, which is not stored, stands for the columns
+/// its expression reads, a subcolumn for its column and a flattened `Nested` for all of its arrays. A stored column
+/// stands for itself: its own default is evaluated only if it is in @columns_with_evaluated_defaults too. The ASTs are
+/// walked syntactically, so an identifier that is not a column of the table (a lambda argument, a column of a subquery)
+/// at worst adds a column that is then read for nothing.
+class ColumnsReadByMergeExpressions
+{
+public:
+    ColumnsReadByMergeExpressions(
+        const StorageInMemoryMetadata & metadata,
+        const NameSet & columns_with_evaluated_defaults,
+        const NameSet & columns_read_by_due_ttls,
+        const std::vector<const IndicesDescription *> & built_indices,
+        const std::vector<ProjectionDescriptionRawPtr> & rebuilt_projections)
+        : columns(metadata.getColumns())
+    {
+        if (const auto & table_ttl = metadata.getTableTTLs().definition_ast)
+        {
+            for (const auto & element : table_ttl->children)
+            {
+                const auto * ttl_element = element->as<ASTTTLElement>();
+                if (!ttl_element || ttl_element->mode != TTLMode::DELETE)
+                    addIdentifiers(*element);
+            }
+        }
+
+        for (const auto & name : columns_read_by_due_ttls)
+            addColumn(name);
+
+        for (const auto & column : columns)
+            if (hasStoredDefault(column) && columns_with_evaluated_defaults.contains(column.name))
+                addIdentifiers(*column.default_desc.expression);
+
+        for (const auto * indices : built_indices)
+            for (const auto & index : *indices)
+                for (const auto & name : index.expression->getRequiredColumns())
+                    addColumn(name);
+
+        for (const auto * projection : rebuilt_projections)
+            for (const auto & name : projection->getRequiredColumns())
+                addColumn(name);
+    }
+
+    bool contains(const String & column_name) const { return result.contains(column_name); }
+
+private:
+    void addIdentifiers(const IAST & ast)
+    {
+        if (const auto * identifier = ast.as<ASTIdentifier>())
+            addColumn(identifier->name());
+
+        /// The `GROUP BY` keys and the `SET` assignments of a TTL rule are not among its children.
+        if (const auto * ttl_element = ast.as<ASTTTLElement>())
+        {
+            for (const auto & key : ttl_element->group_by_key)
+                addIdentifiers(*key);
+            for (const auto & assignment : ttl_element->group_by_assignments)
+                addIdentifiers(*assignment);
+        }
+
+        for (const auto & child : ast.children)
+            addIdentifiers(*child);
+    }
+
+    void addColumn(const String & name)
+    {
+        if (const auto * column = columns.tryGet(name))
+        {
+            const auto & default_desc = column->default_desc;
+            if (default_desc.kind != ColumnDefaultKind::Alias && default_desc.kind != ColumnDefaultKind::Ephemeral)
+                result.insert(name);
+            else if (default_desc.expression && expanded_columns.insert(name).second)
+                addIdentifiers(*default_desc.expression);
+        }
+        else if (auto column_or_subcolumn = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+        {
+            addColumn(column_or_subcolumn->getNameInStorage());
+        }
+        else
+        {
+            const String prefix = name + '.';
+            for (const auto & nested_column : columns)
+                if (nested_column.name.starts_with(prefix))
+                    addColumn(nested_column.name);
+        }
+    }
+
+    const ColumnsDescription & columns;
+    NameSet result;
+    NameSet expanded_columns;
+};
+
 }
 
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
@@ -799,7 +950,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         NameSet columns_present_in_parts;
         columns_present_in_parts.reserve(global_ctx->storage_columns.size());
-
         /// Collect all column names that actually exist in the source parts
         for (const auto & part : global_ctx->future_part->parts)
         {
@@ -3394,12 +3544,14 @@ public:
         const NamesAndTypesList & expired_columns_,
         time_t current_time,
         bool force_,
-        bool ttl_delete_applied_by_merge_)
+        bool ttl_delete_applied_by_merge_,
+        const NameSet & columns_with_reader_defaults_,
+        const NameSet & expired_arrays_)
         : ITransformingStep(input_header_, TTLTransform::addExpiredColumnsToBlock(input_header_, expired_columns_), getTraits())
     {
         transform = std::make_shared<TTLTransform>(
             context_, input_header_, storage_, metadata_snapshot_, data_part_, expired_columns_, current_time, force_,
-            ttl_delete_applied_by_merge_);
+            ttl_delete_applied_by_merge_, columns_with_reader_defaults_, expired_arrays_);
 
         /// Build sets eagerly here rather than via addCreatingSetsStep.
         /// If they were built inside the merge pipeline, the subquery progress (rows read)
@@ -3672,6 +3824,62 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
     Names merging_column_names = global_ctx->merging_columns.getNames();
     merging_column_names.append_range(global_ctx->merging_subcolumns);
+    NameSet columns_with_reader_defaults;
+    NameSet expired_arrays;
+    if (global_ctx->metadata_snapshot->hasAnyTTL()
+        && global_ctx->chosen_merge_algorithm == MergeAlgorithm::Horizontal
+        && (*merge_tree_settings)[MergeTreeSetting::share_nested_offsets])
+    {
+        /// Read expired arrays for TTL evaluation using each part's own offsets, before missing sibling defaults
+        /// are evaluated. Keep them out of `merging_columns`, so the writer still leaves them expired and unwritten.
+        /// Only the arrays that an expression of the merge reads are worth it: the default of any other one is
+        /// never looked at, and reading it would allocate a value for every element of the stored sibling.
+        /// All of them still decide whether `TTLTransform` keeps the sibling that writes their offsets.
+        std::optional<ColumnsReadByMergeExpressions> columns_read_by_expressions;
+        for (const auto & column : global_ctx->merging_columns_expired_by_ttl)
+        {
+            if (!isArray(column.type))
+                continue;
+
+            expired_arrays.insert(column.name);
+            if (std::find(merging_column_names.begin(), merging_column_names.end(), column.name) == merging_column_names.end())
+            {
+                if (!columns_read_by_expressions)
+                {
+                    const auto evaluated_by_ttl = TTLTransform::getEvaluatedExpressions(
+                        *global_ctx->data,
+                        global_ctx->metadata_snapshot,
+                        global_ctx->new_data_part->ttl_infos,
+                        global_ctx->merging_columns_expired_by_ttl,
+                        global_ctx->time_of_merge,
+                        ctx->force_ttl);
+
+                    /// A horizontal merge builds every index in `merging_skip_indexes` and `text_indexes_to_merge`. A text
+                    /// index that it merges from the files of the source parts instead reads no expired array: no source
+                    /// part stores the array, so `isPartTypeCompatible` refuses the copy of an index over it in each part.
+                    columns_read_by_expressions.emplace(
+                        *global_ctx->metadata_snapshot,
+                        getColumnsWithDefaultsEvaluatedByMerge(
+                            *global_ctx->metadata_snapshot,
+                            global_ctx->future_part->parts,
+                            global_ctx->alter_conversions,
+                            evaluated_by_ttl.columns_with_evaluated_defaults,
+                            /* share_nested_offsets = */ true),
+                        evaluated_by_ttl.columns_read_by_due_ttls,
+                        std::vector<const IndicesDescription *>{&global_ctx->merging_skip_indexes, &global_ctx->text_indexes_to_merge},
+                        global_ctx->projections_to_rebuild);
+                }
+
+                if (!columns_read_by_expressions->contains(column.name))
+                    continue;
+
+                merging_column_names.push_back(column.name);
+            }
+
+            columns_with_reader_defaults.insert(column.name);
+        }
+    }
+
     for (const auto * projection : global_ctx->projections_to_merge)
     {
         /// If projection needs part offset mapping, add _part_index column to build this mapping
@@ -3917,7 +4125,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             global_ctx->merging_columns_expired_by_ttl,
             global_ctx->time_of_merge,
             ctx->force_ttl,
-            global_ctx->vertical_ttl_delete);
+            global_ctx->vertical_ttl_delete,
+            columns_with_reader_defaults,
+            expired_arrays);
 
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));
