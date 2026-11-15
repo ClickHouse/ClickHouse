@@ -486,15 +486,17 @@ ExpiredFiles collectExpiredStatisticsFiles(const Poco::JSON::Object::Ptr & metad
     return result;
 }
 
-/// Erases from `files` the statistics files that an entry of `metadata` still references.
-void eraseStatisticsFilesReferencedBy(const Poco::JSON::Object::Ptr & metadata, ExpiredFiles & files)
+/// The statistics files that the entries of `metadata` for the snapshots not in `expired_snapshot_ids` reference.
+std::vector<Iceberg::IcebergPathFromMetadata> collectRetainedStatisticsPaths(
+    const Poco::JSON::Object::Ptr & metadata, const std::set<Int64> & expired_snapshot_ids)
 {
-    std::set<Iceberg::IcebergPathFromMetadata> referenced_paths;
-    forEachStatisticsEntry(metadata, [&](Int64, Iceberg::IcebergPathFromMetadata path)
+    std::vector<Iceberg::IcebergPathFromMetadata> paths;
+    forEachStatisticsEntry(metadata, [&](Int64 snapshot_id, Iceberg::IcebergPathFromMetadata path)
     {
-        referenced_paths.insert(std::move(path));
+        if (!expired_snapshot_ids.contains(snapshot_id))
+            paths.push_back(std::move(path));
     });
-    std::erase_if(files, [&](const ExpiredFile & file) { return referenced_paths.contains(file.path); });
+    return paths;
 }
 
 void removeExpiredStatisticsEntries(Poco::JSON::Object::Ptr metadata, const std::set<Int64> & expired_snapshot_ids)
@@ -792,12 +794,16 @@ ExpireSnapshotsResult expireSnapshots(
 
         auto expired_statistics_files = collectExpiredStatisticsFiles(metadata, partition.expired_snapshot_ids);
 
-        /// The files of the expired snapshots that none of `retained_snapshots` references. Also drops from
-        /// `expired_statistics_files` the Puffin files that a retained snapshot uses or that the result already lists.
-        auto collect_expired_files = [&](const Poco::JSON::Array::Ptr & retained_snapshots)
+        /// The files of the expired snapshots that none of `retained_snapshots` and `retained_statistics_paths`
+        /// references. Also drops from `expired_statistics_files` the Puffin files that a retained snapshot uses or
+        /// that the result already lists.
+        auto collect_expired_files = [&](const Poco::JSON::Array::Ptr & retained_snapshots,
+                                         const std::vector<Iceberg::IcebergPathFromMetadata> & retained_statistics_paths)
         {
             auto retained = collectSnapshotReferencedFiles(
                 retained_snapshots, object_storage, persistent_table_components, context, log, current_schema_id);
+            /// A Puffin file can hold both deletion vectors and statistics.
+            retained.data_file_paths.insert(retained_statistics_paths.begin(), retained_statistics_paths.end());
             auto files = collectExpiredFiles(
                 partition.expired_manifest_list_paths, retained, object_storage, persistent_table_components, context, log,
                 current_schema_id);
@@ -820,7 +826,8 @@ ExpireSnapshotsResult expireSnapshots(
         /// A transactional catalog returns the snapshots it retains only with the commit.
         ExpiredFiles expired_files;
         if (!catalog_commits_metadata || options.dry_run)
-            expired_files = collect_expired_files(partition.retained_snapshots);
+            expired_files = collect_expired_files(
+                partition.retained_snapshots, collectRetainedStatisticsPaths(metadata, partition.expired_snapshot_ids));
 
         if (options.dry_run)
         {
@@ -852,8 +859,8 @@ ExpireSnapshotsResult expireSnapshots(
             /// reference the files of the expired snapshots.
             expired_files = collect_expired_files(
                 committed_metadata->has(Iceberg::f_snapshots) ? committed_metadata->getArray(Iceberg::f_snapshots)
-                                                              : Poco::JSON::Array::Ptr(new Poco::JSON::Array));
-            eraseStatisticsFilesReferencedBy(committed_metadata, expired_statistics_files);
+                                                              : Poco::JSON::Array::Ptr(new Poco::JSON::Array),
+                collectRetainedStatisticsPaths(committed_metadata, {}));
         }
         else
         {

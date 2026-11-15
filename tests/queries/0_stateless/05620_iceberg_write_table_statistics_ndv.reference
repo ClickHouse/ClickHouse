@@ -33,3 +33,12 @@ deleted_position_delete_files_count	1
 deleted_statistics_files_count	0
 failed_deletions_count	0
 32
+expire_snapshots keeps a deletion vector file of an expired snapshot that holds the statistics of a retained snapshot
+deleted_position_delete_files_count	0
+deleted_statistics_files_count	0
+dry_run	1
+deleted_position_delete_files_count	0
+deleted_statistics_files_count	0
+dry_run	0
+statistics entries: 1
+statistics files: 1
