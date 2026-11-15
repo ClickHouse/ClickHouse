@@ -215,8 +215,9 @@ std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimatePlainParq
 
     /// An iterator of its own, so that the read lists the files with the filter it ends up with.
     const ActionsDAG::Node * predicate = filter_actions_dag ? filter_actions_dag->getOutputs().at(0) : nullptr;
+    const auto query_settings = configuration->getQuerySettings(context);
     auto iterator = StorageObjectStorageSource::createFileIterator(
-        configuration, configuration->getQuerySettings(context), object_storage, storage_snapshot->metadata, /*distributed_processing=*/ false,
+        configuration, query_settings, object_storage, storage_snapshot->metadata, /*distributed_processing=*/ false,
         context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr,
         /*file_progress_callback=*/ {}, /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ false);
 
@@ -269,8 +270,21 @@ std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimatePlainParq
     for (const auto & object_info : files)
     {
         auto & object = object_info->relative_path_with_metadata;
+        /// The files the read skips, as `StorageObjectStorageSource::createReader` skips them.
         if (!object.metadata)
-            object.metadata = getObjectMetadataForRead(*object_storage, object, /*with_tags=*/ false);
+        {
+            if (query_settings.ignore_non_existent_file)
+            {
+                auto metadata = tryGetObjectMetadataForRead(*object_storage, object, /*with_tags=*/ false);
+                if (!metadata)
+                    continue;
+                object.metadata = std::move(*metadata);
+            }
+            else
+                object.metadata = getObjectMetadataForRead(*object_storage, object, /*with_tags=*/ false);
+        }
+        if (query_settings.skip_empty_files && object.metadata->size_bytes == 0 && object.metadata->is_size_known)
+            continue;
         auto buf = createReadBuffer(object, object_storage, context, log, read_settings, /*allow_page_cache=*/ true);
         const auto summary = summarizeParquetFile(*buf, object, read_format_settings, context, target_names, max_dictionary_pages_per_column_and_file);
         total_rows += summary.rows;
@@ -316,7 +330,7 @@ std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimatePlainParq
         /// values, so the largest estimate from a dictionary counts them. Otherwise, the compressed size.
         std::optional<UInt64> distinct_values;
         if (target.fully_dictionary_encoded && target.max_dictionary_values)
-            distinct_values = *target.max_dictionary_values;
+            distinct_values = target.max_dictionary_values;
         else if (settings[Setting::estimate_distinct_values_from_metadata])
             distinct_values = estimateDistinctValuesFromCompressedSize(target.rows, target.compressed_bytes);
         if (!distinct_values)
