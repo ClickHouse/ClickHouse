@@ -119,6 +119,12 @@ namespace
         return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "resources");
     }
 
+    /// Whether a specified name corresponds to the system table with the user template queries.
+    bool isSystemTemplateQueriesTableName(const QualifiedTableName & table_name)
+    {
+        return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "template_queries");
+    }
+
     /// Engine name if the database is skipped by the restore, so neither it nor any table under it
     /// is created; empty otherwise.
     String getSkippedDatabaseEngine(const ASTPtr & create_database_query, const ContextPtr & context)
@@ -436,6 +442,12 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                         if (restore_settings.create_workloads_and_resources == RestoreWorkloadsAndResourcesCreationMode::kReplace)
                             required_access.emplace_back(AccessType::DROP_RESOURCE);
                     }
+                }
+                else if (isSystemTemplateQueriesTableName(table_name))
+                {
+                    /// Restoring user template queries adds rows, as an INSERT into the table does.
+                    if (table_info.has_data && restore_settings.shouldRestoreTableData())
+                        required_access.emplace_back(AccessType::INSERT, table_name.database, table_name.table);
                 }
                 /// Privileges required to restore ACL system tables are checked separately
                 /// (see access_restore_task->getRequiredAccess() below).

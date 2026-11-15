@@ -1,0 +1,4 @@
+INSERT ON system.template_queries
+0
+05407_backup_kept	test	new	SELECT 3	0
+05407_backup_lost	test	Tab\there	SELECT 2\nFROM system.one	0
