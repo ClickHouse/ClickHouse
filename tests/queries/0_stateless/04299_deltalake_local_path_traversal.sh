@@ -21,12 +21,15 @@ cat > "${TABLE_DIR}/_delta_log/00000000000000000000.json" <<EOF
 EOF
 
 # The path-containment invariant must hold for the Delta reader.
+# `Parquet` is the only data file format `DeltaLake` accepts; the path
+# containment check fires while the log is parsed, before any data file is
+# opened, so the format does not affect what is being tested here.
 ${CLICKHOUSE_LOCAL} -q \
-    "SELECT * FROM deltaLakeLocal('${TABLE_DIR}', 'RawBLOB') LIMIT 100 FORMAT TabSeparated" 2>&1 \
+    "SELECT * FROM deltaLakeLocal('${TABLE_DIR}', 'Parquet') LIMIT 100 FORMAT TabSeparated" 2>&1 \
     | grep -q 'PATH_ACCESS_DENIED' && echo "GOT ACCESS DENIED ERROR"
 
 ${CLICKHOUSE_LOCAL} -q \
-    "SELECT * FROM deltaLakeLocal('${TABLE_DIR}', 'RawBLOB') LIMIT 100 FORMAT TabSeparated" 2>&1 \
+    "SELECT * FROM deltaLakeLocal('${TABLE_DIR}', 'Parquet') LIMIT 100 FORMAT TabSeparated" 2>&1 \
     | grep -q 'TOP_SECRET_CONTENTS' && echo "LEAKED" || echo "NO LEAK"
 
 rm -rf "${TABLE_DIR}" "${SECRET_FILE}"

@@ -67,8 +67,8 @@ public:
                          case_sensitiveness);
     }
 
-    /// Throws an exception if not found.
-    TableFunctionPtr get(const ASTPtr & ast_function, ContextPtr context) const;
+    /// Throws an exception if not found. `mode` is that of the `CREATE TABLE ... AS f(...)` definition, if any.
+    TableFunctionPtr get(const ASTPtr & ast_function, ContextPtr context, LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE) const;
 
     /// Returns nullptr if not found.
     TableFunctionPtr tryGet(const std::string & name, ContextPtr context) const;

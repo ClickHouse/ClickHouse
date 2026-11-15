@@ -201,7 +201,9 @@ def test_local_iceberg_path_traversal(started_cluster_iceberg_no_spark):
 
     path_for_query = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}"
     error = instance.query_and_get_error(
-        f"SELECT * FROM icebergLocal(local, path = '{path_for_query}', format='RawBLOB')",
+        # No `format` override: the manifest already records `RAWBLOB` for the
+        # corrupted entry, and an explicit non-Iceberg format is rejected up front.
+        f"SELECT * FROM icebergLocal(local, path = '{path_for_query}')",
         settings=NOCACHE,
     )
     _assert_delete_path_access_denied(error)
