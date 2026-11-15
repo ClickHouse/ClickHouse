@@ -1807,7 +1807,7 @@ Has no effect on ReplicatedMergeTree tables: they already validate, detach and r
 Possible values:
 - true, false
 )", 0, \
-        {"26.10", false, false, "New setting. For non-replicated MergeTree: when a merge or read fails with a data-corruption error, validate checksums of the suspicious part in the background and detach it with the broken_ prefix if the corruption is confirmed, instead of retrying the failed merge indefinitely."}) \
+        {"26.11", false, false, "New setting. For non-replicated MergeTree: when a merge or read fails with a data-corruption error, validate checksums of the suspicious part in the background and detach it with the broken_ prefix if the corruption is confirmed, instead of retrying the failed merge indefinitely."}) \
     DECLARE(UInt64, shared_merge_tree_max_suspicious_broken_parts, 0, R"(
 Max broken parts for SMT, if more - deny automatic detach.
 )", 0, \
