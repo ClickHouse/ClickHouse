@@ -4,7 +4,6 @@
 -- the shipped AST, and the aggregate function name the initiator expects in the remote block is then
 -- absent from it.
 
-SET enable_analyzer = 1;
 SET transform_null_in = 1;
 SET optimize_rewrite_has_to_in = 1;
 SET optimize_inverse_dictionary_lookup = 1;

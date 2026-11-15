@@ -138,6 +138,10 @@ They help to:
 
 See ["named collections"](/concepts/features/configuration/server-config/named-collections) for further details.
 
+The SQL-created named collections themselves can also be exported to a backup and restored from
+it through the `system.named_collections` table; see
+["Backing up and restoring named collections"](/concepts/features/backup-restore/named-collections).
+
 ## Backing up system, log or access management tables {#system-backups}
 
 System tables can also be included in your backup and restore workflows, but their
@@ -164,6 +168,13 @@ This functionality only works for configurations managed through SQL commands
 (referred to as ["SQL-driven Access Control and Account Management"](/concepts/features/security/access-rights#enabling-access-control)). 
 Access configurations defined in ClickHouse server configuration files (e.g. `users.xml`)
 aren't included in backups and can't be restored through this method.
+
+<Note>
+In ClickHouse versions before 26.10, row policies, settings profiles and quotas restored with `RESTORE` are
+listed in `system.row_policies`, `system.settings_profiles` and `system.quotas`, but aren't applied to queries
+right away. Run [`SYSTEM RELOAD USERS`](/reference/statements/system#reload-users) after the restore completes
+to apply them.
+</Note>
 
 ## General syntax {#syntax}
 
@@ -214,6 +225,9 @@ The clause is scoped to the element it is written on:
 ```sql
 BACKUP DATABASE mydb EXCEPT DATA FROM TABLES events, metrics TO Disk('backups', 'mydb/')
 ```
+
+In this list, back-quote a table or database named `table`, `dictionary`, `view`, `database` or `all`: after a
+comma, an unquoted one is read as the start of the next element.
 
 - On a single-object element (`TABLE`, `DICTIONARY`, `VIEW`, `TEMPORARY TABLE`) the element's own object is
   the only one in scope, so the clause must name it and nothing else. Give every table its own element and

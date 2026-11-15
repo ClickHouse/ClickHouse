@@ -1,6 +1,5 @@
 -- Tags: no-parallel-replicas, no-shared-merge-tree
 
-SET enable_analyzer = 1; -- streaming queries require the analyzer; the old-analyzer lane turns it off by default
 SET enable_streaming_queries = 1;
 SET use_skip_indexes_on_data_read = 0;
 

@@ -9,7 +9,6 @@ SET min_filtered_ratio_for_lazy_final = 0;     -- avoid fallback to regular FINA
 SET query_plan_direct_read_from_text_index = 1; -- exercise the direct read (randomized in CI)
 SET use_skip_indexes_if_final = 1;             -- the direct read needs skip indexes under FINAL
 SET use_skip_indexes_if_final_exact_mode = 1;  -- must stay in sync with the setting above
-SET enable_analyzer = 1;                       -- lazy FINAL requires the analyzer
 
 DROP TABLE IF EXISTS tab;
 
@@ -87,5 +86,56 @@ SELECT count() FROM tab;                            -- 3: the tombstone is still
 SELECT count() FROM tab FINAL WHERE str = 'bar';    -- 0: deleted row is dropped
 SELECT count() FROM tab FINAL WHERE str = 'baz';    -- 1: survivor
 SELECT count() FROM tab FINAL PREWHERE str = 'bar'; -- 0: same via PREWHERE
+
+DROP TABLE tab;
+
+SELECT 'Nullable sorting key: lazy FINAL falls back to a regular FINAL read here too';
+CREATE TABLE tab
+(
+    id Nullable(UInt64),
+    version UInt64,
+    str String,
+    INDEX idx(str) TYPE text(tokenizer = array)
+)
+ENGINE = ReplacingMergeTree(version) ORDER BY id
+SETTINGS allow_nullable_key = 1;
+
+SYSTEM STOP MERGES tab;
+INSERT INTO tab VALUES (1, 1, 'aaa'), (2, 1, 'bbb');
+INSERT INTO tab VALUES (2, 2, 'bbb_updated'), (3, 1, 'ccc');
+INSERT INTO tab VALUES (10, 1, 'zzz');
+
+SELECT count() FROM tab FINAL WHERE str = 'ccc';                      -- 1: survivor
+SELECT count() FROM tab FINAL PREWHERE str = 'bbb' WHERE str = 'bbb'; -- 1: `PREWHERE` is evaluated before `FINAL`
+SELECT count() FROM tab FINAL PREWHERE str = 'zzz' WHERE str = 'zzz'; -- 1: survivor
+
+-- 1: the text index is still read directly
+SELECT countIf(explain ILIKE '%__text_index%') > 0
+FROM (EXPLAIN actions = 1, pretty = 1 SELECT count() FROM tab FINAL PREWHERE str = 'zzz' WHERE str = 'zzz');
+
+DROP TABLE tab;
+
+SELECT 'Sorting key mixing ASC and DESC columns: lazy FINAL falls back to a regular FINAL read here too';
+CREATE TABLE tab
+(
+    id UInt64,
+    k2 UInt64,
+    version UInt64,
+    str String,
+    INDEX idx(str) TYPE text(tokenizer = array)
+)
+ENGINE = ReplacingMergeTree(version) ORDER BY (id, k2 DESC);
+
+SYSTEM STOP MERGES tab;
+INSERT INTO tab VALUES (1, 0, 1, 'aaa'), (2, 0, 1, 'bbb');
+INSERT INTO tab VALUES (2, 0, 2, 'bbb_updated'), (3, 0, 1, 'ccc');
+INSERT INTO tab VALUES (10, 0, 1, 'zzz');
+
+SELECT count() FROM tab FINAL WHERE str = 'ccc';                      -- 1: survivor
+SELECT count() FROM tab FINAL PREWHERE str = 'bbb' WHERE str = 'bbb'; -- 1: `PREWHERE` is evaluated before `FINAL`
+
+-- 1: the text index is still read directly
+SELECT countIf(explain ILIKE '%__text_index%') > 0
+FROM (EXPLAIN actions = 1, pretty = 1 SELECT count() FROM tab FINAL PREWHERE str = 'bbb' WHERE str = 'bbb');
 
 DROP TABLE tab;

@@ -1,8 +1,6 @@
 -- Division by a constant zero must return NULL from the *OrNull functions no matter which projection consumes the value.
 -- See https://github.com/ClickHouse/ClickHouse/issues/116500
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS test;
 DROP TABLE IF EXISTS sink;
 DROP VIEW IF EXISTS v;

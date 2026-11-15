@@ -1,15 +1,18 @@
 #include <span>
+#include <Compression/CompressionCodecFirstApplicable.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionCodecNone.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/registerCompressionCodecs.h>
 #include <Core/Settings.h>
+#include <DataTypes/IDataType.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Common/StringUtils.h>
 #include <Poco/String.h>
 #include <Common/typeid_cast.h>
 
@@ -30,6 +33,23 @@ namespace ErrorCodes
     extern const int OPENSSL_ERROR;
 }
 
+std::pair<String, ASTPtr> CompressionCodecFactory::getCodecNameAndArguments(const ASTPtr & element)
+{
+    if (const auto * identifier = element->as<ASTIdentifier>())
+        return {identifier->name(), nullptr};
+    if (const auto * function = element->as<ASTFunction>())
+        return {function->name, function->arguments};
+    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for compression codec: {}", element->formatForErrorMessage());
+}
+
+const CompressionCodecFamilyProperties & CompressionCodecFactory::getFamilyProperties(const String & family_name) const
+{
+    const String * canonical_family_name = tryGetCanonicalFamilyName(family_name);
+    if (!canonical_family_name)
+        throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", family_name);
+    return family_name_with_properties.at(*canonical_family_name);
+}
+
 CompressionCodecPtr CompressionCodecFactory::getDefaultCodec() const
 {
     return default_codec;
@@ -45,26 +65,35 @@ bool CompressionCodecFactory::isDefaultCodec(const ASTPtr & codec)
     if (!func || func->name != "CODEC" || !func->arguments || func->arguments->children.size() != 1)
         return false;
     const auto * ident = func->arguments->children[0]->as<ASTIdentifier>();
-    return ident && ident->name() == DEFAULT_CODEC_NAME;
+    return ident && equalsCaseInsensitive(ident->name(), DEFAULT_CODEC_NAME);
 }
 
 
 CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std::optional<int> level) const
 {
+    checkCodecIsNotColumnLevelOnly(family_name);
+
     if (level)
     {
         auto level_literal = make_intrusive<ASTLiteral>(static_cast<UInt64>(*level));
-        return get(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), level_literal)), {});
+        return get(makeASTFunction("CODEC", makeASTFunction(family_name, level_literal)), {});
     }
 
-    auto identifier = make_intrusive<ASTIdentifier>(Poco::toUpper(family_name));
+    auto identifier = make_intrusive<ASTIdentifier>(family_name);
     return get(makeASTFunction("CODEC", identifier), {});
 }
 
 CompressionCodecPtr CompressionCodecFactory::get(const String & compression_codec) const
 {
     ParserCodec codec_parser;
-    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    auto ast = parseQuery(codec_parser, "(" + compression_codec + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    checkCodecChainIsNotColumnLevelOnly(ast);
+    /// A codec given as a string (e.g. `default_compression_codec`) has no data type, and `FirstApplicable` in it is
+    /// selected again for the type of every column, where the restrictions of lossy codecs are not checked.
+    if (CompressionCodecFirstApplicable::isInChain(ast))
+        for (const auto & element : ast->as<const ASTFunction &>().arguments->children)
+            if (CompressionCodecFirstApplicable::isFirstApplicable(element))
+                validateFirstApplicableAlternative(element, /*settings=*/ nullptr, /*reject_lossy=*/ true);
     return CompressionCodecFactory::instance().get(ast, nullptr);
 }
 
@@ -80,24 +109,23 @@ CompressionCodecPtr CompressionCodecFactory::get(
         codecs.reserve(func->arguments->children.size());
         for (const auto & inner_codec_ast : func->arguments->children)
         {
-            String codec_family_name;
-            ASTPtr codec_arguments;
-            if (const auto * family_name = inner_codec_ast->as<ASTIdentifier>())
-            {
-                codec_family_name = family_name->name();
-                codec_arguments = {};
-            }
-            else if (const auto * ast_func = inner_codec_ast->as<ASTFunction>())
-            {
-                codec_family_name = ast_func->name;
-                codec_arguments = ast_func->arguments;
-            }
-            else
-                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for compression codec");
+            const auto [codec_family_name, codec_arguments] = getCodecNameAndArguments(inner_codec_ast);
 
             CompressionCodecPtr codec;
-            if (codec_family_name == DEFAULT_CODEC_NAME)
+            if (equalsCaseInsensitive(codec_family_name, DEFAULT_CODEC_NAME))
+            {
                 codec = current_default;
+                /// E.g. `default_compression_codec = 'FirstApplicable(PCO, ZSTD(3))'`: select for the data type.
+                if (column_type && codec->dependsOnDataType())
+                    codec = get(codec->getFullCodecDescription(), column_type);
+            }
+            else if (CompressionCodecFirstApplicable::isFirstApplicable(inner_codec_ast))
+            {
+                codec = CompressionCodecFirstApplicable::create(inner_codec_ast, column_type, current_default, only_generic);
+                /// No generic codec to keep for a structural substream.
+                if (!codec)
+                    continue;
+            }
             else
                 codec = getImpl(codec_family_name, codec_arguments, column_type);
 
@@ -240,21 +268,42 @@ VectorWithMemoryTracking<std::pair<String, Documentation>> CompressionCodecFacto
 
 CompressionCodecPtr CompressionCodecFactory::getImpl(const String & family_name, const ASTPtr & arguments, const IDataType * column_type) const
 {
-    if (family_name == "Multiple")
+    if (equalsCaseInsensitive(family_name, "Multiple"))
         throw Exception(ErrorCodes::UNKNOWN_CODEC, "Codec Multiple cannot be specified directly");
 
-    const auto family_and_creator = family_name_with_codec.find(family_name);
-
-    if (family_and_creator == family_name_with_codec.end())
+    const String * canonical_family_name = tryGetCanonicalFamilyName(family_name);
+    if (!canonical_family_name)
         throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", family_name);
 
+    const auto family_and_creator = family_name_with_codec.find(*canonical_family_name);
+
     return family_and_creator->second(arguments, column_type);
+}
+
+const String * CompressionCodecFactory::tryGetCanonicalFamilyName(const String & family_name) const
+{
+    if (const auto exact = family_name_with_codec.find(family_name); exact != family_name_with_codec.end())
+        return &exact->first;
+
+    const auto it = lowercase_family_name_to_canonical.find(Poco::toLower(family_name));
+    if (it == lowercase_family_name_to_canonical.end())
+        return nullptr;
+    return &it->second;
+}
+
+bool CompressionCodecFactory::isDeclarativeCodec(const String & family_name) const
+{
+    const String * canonical_family_name = tryGetCanonicalFamilyName(family_name);
+    if (!canonical_family_name)
+        return false;
+    return family_name_with_properties.at(*canonical_family_name).is_declarative;
 }
 
 void CompressionCodecFactory::registerCompressionCodecWithType(
     const String & family_name,
     std::optional<uint8_t> byte_code,
     CreatorWithType creator,
+    CompressionCodecFamilyProperties properties,
     std::source_location source)
 {
     if (creator == nullptr)
@@ -264,7 +313,12 @@ void CompressionCodecFactory::registerCompressionCodecWithType(
     if (!family_name_with_codec.emplace(family_name, creator).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressionCodecFactory: the codec family name '{}' is not unique", family_name);
 
+    if (!lowercase_family_name_to_canonical.emplace(Poco::toLower(family_name), family_name).second)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "CompressionCodecFactory: the codec family name '{}' differs only in case from another one", family_name);
+
     family_name_with_source.emplace(family_name, source.file_name());
+    family_name_with_properties.emplace(family_name, properties);
 
     if (byte_code)
         if (!family_code_with_codec.emplace(*byte_code, creator).second)
@@ -273,12 +327,17 @@ void CompressionCodecFactory::registerCompressionCodecWithType(
                             std::to_string(*byte_code));
 }
 
-void CompressionCodecFactory::registerCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, Creator creator, std::source_location source)
+void CompressionCodecFactory::registerCompressionCodec(
+    const String & family_name,
+    std::optional<uint8_t> byte_code,
+    Creator creator,
+    CompressionCodecFamilyProperties properties,
+    std::source_location source)
 {
     registerCompressionCodecWithType(family_name, byte_code, [family_name, creator](const ASTPtr & ast, const IDataType * /* data_type */)
     {
         return creator(ast);
-    }, source);
+    }, properties, source);
 }
 
 void CompressionCodecFactory::registerSimpleCompressionCodec(
@@ -292,7 +351,7 @@ void CompressionCodecFactory::registerSimpleCompressionCodec(
         if (ast)
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS, "Compression codec {} cannot have arguments", family_name);
         return creator();
-    }, source);
+    }, {}, source);
 }
 
 
@@ -329,6 +388,10 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecSZ3(*this);
 #endif
     registerCodecZXC(*this);
+    registerCodecGDeflate(*this);
+#if USE_PCO
+    registerCodecPco(*this);
+#endif
 
     default_codec = get("ZSTD", 3);
 }
@@ -337,6 +400,14 @@ CompressionCodecFactory & CompressionCodecFactory::instance()
 {
     static CompressionCodecFactory ret;
     return ret;
+}
+
+size_t roundCompressBlockSizeToWholeValues(size_t block_size, const IDataType & type)
+{
+    if (!type.isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+        return block_size;
+    const size_t value_size = type.getSizeOfValueInMemory();
+    return std::max(value_size, block_size - block_size % value_size);
 }
 
 }

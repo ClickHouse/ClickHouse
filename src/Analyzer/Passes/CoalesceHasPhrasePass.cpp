@@ -8,6 +8,8 @@
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -53,6 +55,10 @@ std::optional<ParsedHasPhrase> tryParseHasPhrase(const QueryTreeNodePtr & node)
 
     const auto & arguments = function_node->getArguments().getNodes();
     if (arguments.size() < 2 || arguments.size() > 3)
+        return {};
+
+    /// `hasAnyPhrases` and `hasAllPhrases` take only a String or FixedString input, while `hasPhrase` also takes an array.
+    if (!isStringOrFixedString(removeNullable(recursiveRemoveLowCardinality(arguments[0]->getResultType()))))
         return {};
 
     const auto * phrase_constant = arguments[1]->as<ConstantNode>();

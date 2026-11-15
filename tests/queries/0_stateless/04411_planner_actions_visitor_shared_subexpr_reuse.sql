@@ -1,10 +1,9 @@
 -- Guards planner action-DAG reuse of shared/repeated subexpressions under the analyzer.
--- With enable_analyzer = 1, WITH-clause aliases are shared by pointer in the query tree (a DAG),
+-- WITH-clause aliases are shared by pointer in the query tree (a DAG),
 -- and PlannerActionsVisitor::visitFunction reuses an action node whose name already exists in the
 -- single actions scope instead of re-traversing it. This test checks correctness (results unchanged)
 -- for (a) nested alias chains referencing the previous alias multiple times and (b) identical
 -- repeated subexpressions that are not aliased (common-subexpression reuse via the name key).
-SET enable_analyzer = 1;
 
 -- Query 1: nested if(...) alias chain over a non-constant value column. Each alias references the
 -- previous one several times, so col2 reuses the shared col1 node and col3 reuses the shared col2

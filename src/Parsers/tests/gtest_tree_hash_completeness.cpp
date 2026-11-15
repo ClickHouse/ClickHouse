@@ -384,6 +384,10 @@ TEST(TreeHashCompleteness, CreateDropAndShowMembersAreSignificant)
     like_with_flag_byte += "'";
     EXPECT_NE(hashOf(like_with_flag_byte), hashOf("TRUNCATE TABLES FROM db NOT LIKE 'x'"));
 
+    EXPECT_NE(hashOf("SHOW TABLES"), hashOf("SHOW TABLES LIKE ''"));
+    EXPECT_EQ(hashOfJSONRoundTrip("SHOW TABLES WHERE name = 'x' LIMIT 1"),
+              hashOf("SHOW TABLES WHERE name = 'x' LIMIT 1"));
+
     EXPECT_NE(hashOf("SHOW COLUMNS FROM t"), hashOf("SHOW COLUMNS FROM u"));
     EXPECT_NE(hashOf("SHOW COLUMNS FROM t"), hashOf("SHOW COLUMNS FROM t LIMIT 1"));
     EXPECT_NE(hashOf("SHOW COLUMNS FROM t"), hashOf("SHOW COLUMNS FROM t LIKE ''"));

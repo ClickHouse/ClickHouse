@@ -31,6 +31,7 @@ Contains information about clusters available in the config file and the servers
 - `estimated_recovery_time` ([UInt32](/reference/data-types/int-uint)) — Seconds remaining until the replica error count is zeroed and it is considered to be back to normal.
 - `database_shard_name` ([String](/reference/data-types/string)) — The name of the `Replicated` database shard (for clusters that belong to a `Replicated` database).
 - `database_replica_name` ([String](/reference/data-types/string)) — The name of the `Replicated` database replica (for clusters that belong to a `Replicated` database).
+- `replica_group` ([String](/reference/data-types/string)) — The replica group of the node (for clusters that belong to a `Replicated` database), published by the database replica from the `replica_group_name` server configuration.
 - `is_shared_catalog_cluster` ([UInt8](/reference/data-types/int-uint)) — Bool indicating if the cluster belongs to shared catalog.
 - `is_active` ([Nullable(UInt8)](/reference/data-types/nullable)) — The status of the Replicated database replica (for clusters that belong to a Replicated database): 1 means 'replica is online', 0 means 'replica is offline', NULL means 'unknown'.
 - `unsynced_after_recovery` ([Nullable(UInt8)](/reference/data-types/nullable)) — Indicates if a Replicated database replica has replication lag more than max_replication_lag_to_enqueue after creating or recovering the replica.
@@ -66,6 +67,7 @@ slowdowns_count:         0
 estimated_recovery_time: 0
 database_shard_name:
 database_replica_name:
+replica_group:
 is_active:               NULL
 
 Row 2:
@@ -86,6 +88,7 @@ slowdowns_count:         0
 estimated_recovery_time: 0
 database_shard_name:
 database_replica_name:
+replica_group:
 is_active:               NULL
 ```
 

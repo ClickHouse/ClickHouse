@@ -79,7 +79,6 @@ def test_parallel_replicas_with_view(start_cluster):
     nodes[2].query("SYSTEM SYNC REPLICA t2")
 
     settings = {
-        "enable_analyzer": 1,
         "enable_parallel_replicas": 1,
         "cluster_for_parallel_replicas": "parallel_replicas",
         "max_parallel_replicas": 3,

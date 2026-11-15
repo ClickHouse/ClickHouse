@@ -8,9 +8,7 @@ doc_type: 'reference'
 
 import CloudDetails from '/snippets/ar/_snippet_dictionary_in_cloud.mdx';
 
-<div id="storing-dictionaries-in-memory">
-  ## أنواع تخطيط القاموس
-</div>
+## أنواع تخطيط القاموس {#storing-dictionaries-in-memory}
 
 توجد عدة طرق لتخزين القواميس في الذاكرة، ولكل منها مفاضلات بين استخدام CPU وRAM.
 
@@ -21,11 +19,11 @@ import CloudDetails from '/snippets/ar/_snippet_dictionary_in_cloud.mdx';
 | [sparse&#95;hashed](/ar/reference/statements/create/dictionary/layouts/hashed#sparse_hashed)                                     | يشبه `hashed`، لكنه يضحّي ببعض CPU مقابل تقليل استخدام الذاكرة.                                                                                           |
 | [complex&#95;key&#95;hashed](/ar/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed)                       | يشبه `hashed`، للمفاتيح المركبة.                                                                                                                          |
 | [complex&#95;key&#95;sparse&#95;hashed](/ar/reference/statements/create/dictionary/layouts/hashed#complex_key_sparse_hashed)     | يشبه `sparse_hashed`، للمفاتيح المركبة.                                                                                                                   |
-| [hashed&#95;array](/ar/reference/statements/create/dictionary/layouts/hashed-array)                                              | تُخزَّن السمات في مصفوفات مع جدول hash يربط المفاتيح بفهارس المصفوفات. وهو فعّال من حيث الذاكرة عند وجود عدد كبير من السمات.                              |
+| [hashed&#95;array](/ar/reference/statements/create/dictionary/layouts/hashed-array)                                              | تُخزَّن السمات في مصفوفات مع جدول hash يربط المفاتيح بفهارس المصفوفات. وهو فعّال من حيث الذاكرة عند وجود عدد كبير من السمات.                              |
 | [complex&#95;key&#95;hashed&#95;array](/ar/reference/statements/create/dictionary/layouts/hashed-array#complex_key_hashed_array) | يشبه `hashed_array`، للمفاتيح المركبة.                                                                                                                    |
 | [range&#95;hashed](/ar/reference/statements/create/dictionary/layouts/range-hashed)                                              | جدول hash مع ranges مرتبة. يدعم عمليات lookup حسب المفتاح + نطاق التاريخ/الوقت.                                                                           |
 | [complex&#95;key&#95;range&#95;hashed](/ar/reference/statements/create/dictionary/layouts/range-hashed#complex_key_range_hashed) | يشبه `range_hashed`، للمفاتيح المركبة.                                                                                                                    |
-| [cache](/ar/reference/statements/create/dictionary/layouts/cache)                                                                | cache ثابتة الحجم داخل الذاكرة. لا تُخزَّن إلا المفاتيح التي يكثر الوصول إليها.                                                                           |
+| [cache](/ar/reference/statements/create/dictionary/layouts/cache)                                                                | cache ثابتة الحجم داخل الذاكرة. لا تُخزَّن إلا المفاتيح التي يكثر الوصول إليها.                                                                           |
 | [complex&#95;key&#95;cache](/ar/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed)                        | يشبه `cache`، للمفاتيح المركبة.                                                                                                                           |
 | [ssd&#95;cache](/ar/reference/statements/create/dictionary/layouts/ssd-cache)                                                    | يشبه `cache`، لكنه يخزّن البيانات على SSD مع index داخل الذاكرة.                                                                                          |
 | [complex&#95;key&#95;ssd&#95;cache](/ar/reference/statements/create/dictionary/layouts/ssd-cache#complex_key_ssd_cache)          | يشبه `ssd_cache`، للمفاتيح المركبة.                                                                                                                       |
@@ -43,9 +41,11 @@ import CloudDetails from '/snippets/ar/_snippet_dictionary_in_cloud.mdx';
   لا يُنصح بتخطيطات التخزين المؤقت بسبب احتمال ضعف الأداء وصعوبة ضبط المَعلمات — راجع [cache](/ar/reference/statements/create/dictionary/layouts/cache) للتفاصيل.
 </Tip>
 
-<div id="specify-dictionary-layout">
-  ## تحديد تخطيط القاموس
-</div>
+<Note>
+  لا تصلح التخطيطات المعتمدة على التخزين المؤقت للإثراء الموثوق وقت الإدراج، لأن عناصرها المُحمَّاة مسبقًا تبقى محلية على كل خادم، وتُفقد عند إعادة تشغيل الخادم أو استبداله. ويزيد التوسع التلقائي في ClickHouse Cloud واستبدال العُقد المُدار من احتمال حدوث ذلك. لذا استخدم بدلًا منها تخطيطًا مُحمَّلًا بالكامل؛ راجع [قواميس التخزين المؤقت في مسارات الإدخال](/ar/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path).
+</Note>
+
+## تحديد تخطيط القاموس {#specify-dictionary-layout}
 
 <CloudDetails />
 
@@ -139,9 +139,7 @@ import CloudDetails from '/snippets/ar/_snippet_dictionary_in_cloud.mdx';
   </Tab>
 </Tabs>
 
-<div id="improve-performance">
-  ## تحسين أداء القاموس
-</div>
+## تحسين أداء القاموس {#improve-performance}
 
 هناك عدة طرق لتحسين أداء القاموس:
 

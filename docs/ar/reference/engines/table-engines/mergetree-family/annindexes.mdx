@@ -33,17 +33,13 @@ LIMIT <N>
 ويمكن استخدام أي من [دوال المسافة](/ar/reference/functions/regular-functions/distance-functions) المتاحة لهذا الغرض.
 ويحدّد `<N>` عدد الجيران المطلوب إرجاعهم.
 
-<div id="exact-nearest-neighbor-search">
-  ## البحث الدقيق عن المتجهات
-</div>
+## البحث الدقيق عن المتجهات {#exact-nearest-neighbor-search}
 
 يمكن إجراء البحث الدقيق عن المتجهات باستخدام استعلام SELECT المذكور أعلاه كما هو.
 ويكون زمن تنفيذ مثل هذه الاستعلامات متناسبًا عمومًا مع عدد المتجهات المخزّنة، وعدد عناصر المتجه (= البُعد)، وعرض البتات لعناصر المتجه.
 ونظرًا لأن ClickHouse يجري فحص brute-force لجميع المتجهات، فإن زمن التنفيذ يعتمد أيضًا على عدد الخيوط التي يستخدمها الاستعلام (راجع الإعداد [max&#95;threads](/ar/reference/settings/session-settings/max-threads#max_threads)).
 
-<div id="exact-nearest-neighbor-search-example">
-  ### مثال
-</div>
+### مثال {#exact-nearest-neighbor-search-example}
 
 ```sql
 CREATE TABLE tab
@@ -73,13 +69,9 @@ LIMIT 3;
    └────┴─────────┘
 ```
 
-<div id="approximate-nearest-neighbor-search">
-  ## البحث التقريبي عن المتجهات
-</div>
+## البحث التقريبي عن المتجهات {#approximate-nearest-neighbor-search}
 
-<div id="vector-similarity-index">
-  ### فهارس تشابه المتجهات
-</div>
+### فهارس تشابه المتجهات {#vector-similarity-index}
 
 يوفّر ClickHouse فهرسًا خاصًا لـ &quot;تشابه المتجهات&quot; لتنفيذ بحث تقريبي عن المتجهات.
 
@@ -88,9 +80,7 @@ LIMIT 3;
   إذا واجهت أي مشكلات، يُرجى فتح بلاغ في [مستودع ClickHouse](https://github.com/clickhouse/clickhouse/issues).
 </Note>
 
-<div id="creating-a-vector-similarity-index">
-  #### إنشاء فهرس لتشابه المتجهات
-</div>
+#### إنشاء فهرس لتشابه المتجهات {#creating-a-vector-similarity-index}
 
 يمكن إنشاء فهرس لتشابه المتجهات على جدول جديد كما يلي:
 
@@ -214,9 +204,7 @@ Memory consumption = 3072 + 512 = 3584 MB
 
 لا تأخذ الصيغة أعلاه في الحسبان الذاكرة الإضافية التي تتطلبها فهارس تشابه المتجهات لتخصيص بُنى بيانات وقت التشغيل، مثل المخازن المؤقتة المخصّصة مسبقًا وذاكرات التخزين المؤقت.
 
-<div id="using-a-vector-similarity-index">
-  #### استخدام فهرس تشابه المتجهات
-</div>
+#### استخدام فهرس تشابه المتجهات {#using-a-vector-similarity-index}
 
 <Note>
   لاستخدام فهارس تشابه المتجهات، يجب أن تكون قيمة الإعداد [compatibility](/ar/reference/settings/session-settings/compatibility#compatibility) هي `''` (القيمة الافتراضية)، أو `'25.1'` أو إصدارًا أحدث.
@@ -425,9 +413,7 @@ Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
   قد يرجع الاستعلام الذي يُشغَّل دون إعادة التقييم (`vector_search_with_rescoring = 0`) ومع تفعيل النسخ المتماثلة المتوازية، تلقائيًا إلى إعادة التقييم.
 </Note>
 
-<div id="performance-tuning">
-  #### ضبط الأداء
-</div>
+#### ضبط الأداء {#performance-tuning}
 
 **ضبط الضغط**
 
@@ -578,9 +564,7 @@ result = chclient.query(
 في هذا المثال، يُرسَل المتجه المرجعي كما هو في صيغة ثنائية، ويُعاد تفسيره على الخادم كمصفوفة من القيم العائمة.
 يوفّر ذلك وقت CPU على جانب الخادم، ويجنّب حدوث تضخّم في سجلات الخادم و`system.query_log`.
 
-<div id="administration">
-  #### الإدارة والمراقبة
-</div>
+#### الإدارة والمراقبة {#administration}
 
 يمكن الحصول على حجم فهارس تشابه المتجهات على القرص من [system.data&#95;skipping&#95;indices](/ar/reference/system-tables/data_skipping_indices):
 
@@ -598,9 +582,15 @@ WHERE type = 'vector_similarity';
 └──────────┴───────┴──────┴──────────────────────────┘
 ```
 
-<div id="differences-to-regular-skipping-indexes">
-  #### الاختلافات عن فهارس تخطي البيانات العادية
-</div>
+#### الصفوف المحذوفة {#deleted-rows}
+
+يُبنى فهرس تشابه المتجهات عند كتابة جزء البيانات أو دمجه أو تعديله، ولا يعلم بالصفوف التي تُحذف لاحقًا عبر [`DELETE` الخفيف](/ar/reference/statements/delete) أو عبر تعديل `ALTER TABLE ... DELETE` لا يزال قيد الانتظار.
+لذا سيظل الفهرس يعيد هذه الصفوف بوصفها نتائج مرشّحة، ثم تُستبعد بعد القراءة، ما قد يؤدي إلى أن يعيد الاستعلام عددًا من الصفوف أقل من `LIMIT N` أو أن يُغفل أقرب الجيران المتبقين.
+وللحفاظ على صحة النتائج، لا يستخدم ClickHouse فهرس تشابه المتجهات مع أجزاء البيانات التي تحتوي على صفوف محذوفة، بل يقرأ هذه الأجزاء كاملةً (بحث دقيق) بدلًا من ذلك.
+ويعود استخدام الفهرس لجزء البيانات بعد أن تعيد عملية دمج أو تعديل كتابته، كما هو الحال مثلًا بعد تنفيذ `OPTIMIZE TABLE ... FINAL`.
+وعند ضبط الإعداد `apply_deleted_mask = 0`، يعيد الاستعلام الصفوف المحذوفة حذفًا خفيفًا، ولذا يظل الفهرس مستخدمًا ما لم يُصفِّ الاستعلام النتائج صراحةً حسب `_row_exists`.
+
+#### الاختلافات عن فهارس تخطي البيانات العادية {#differences-to-regular-skipping-indexes}
 
 مثل جميع [فهارس تخطي البيانات](/ar/concepts/features/performance/skip-indexes/skipping-indexes) العادية، تُنشأ فهارس تشابه المتجهات على مستوى الحبيبات، وتتألف كل كتلة مفهرسة من `GRANULARITY = [N]` حبيبات (`[N]` = 1 افتراضيًا في فهارس تخطي البيانات العادية).
 على سبيل المثال، إذا كانت دقة حبيبات الفهرس الأساسي للجدول 8192 (الإعداد `index_granularity = 8192`) وكانت `GRANULARITY = 2`، فستحتوي كل كتلة مفهرسة على 16384 صفًا.
@@ -626,9 +616,7 @@ WHERE type = 'vector_similarity';
 ويُوصى عمومًا باستخدام قيمة `GRANULARITY` كبيرة لفهارس تشابه المتجهات، واللجوء إلى قيم `GRANULARITY` أصغر فقط عند ظهور مشكلات مثل الاستهلاك المفرط للذاكرة من قِبل بُنى تشابه المتجهات.
 إذا لم يتم تحديد `GRANULARITY` لفهارس تشابه المتجهات، فإن القيمة الافتراضية هي 100 مليون.
 
-<div id="approximate-nearest-neighbor-search-example">
-  #### مثال
-</div>
+#### مثال {#approximate-nearest-neighbor-search-example}
 
 الاستعلامات:
 
@@ -666,18 +654,14 @@ LIMIT 3;
 * [dbpedia](/ar/get-started/sample-datasets/dbpedia)
 * [hackernews](/ar/get-started/sample-datasets/hacker-news-vector-search)
 
-<div id="vector-search-with-quantized-codecs">
-  ### البحث المتجهي باستخدام مرمّزات المُكمّاة
-</div>
+### البحث المتجهي باستخدام مرمّزات المُكمّاة {#vector-search-with-quantized-codecs}
 
 <ExperimentalBadge />
 
 لتمكين مرمّز `Quantized`، شغِّل أولاً `SET enable_quantized_codec = 1`.
 إذا واجهت أي مشكلات، يُرجى فتح بلاغ في [مستودع ClickHouse](https://github.com/clickhouse/clickhouse/issues).
 
-<div id="quantized-codecs-introduction">
-  #### المقدمة
-</div>
+#### المقدمة {#quantized-codecs-introduction}
 
 يجيب [فهرس تشابه المتجهات](#vector-similarity-index) عن استعلام أقرب جار باجتياز رسم بياني، ويكون أداؤه ممتازًا عندما يمكن الاحتفاظ بالرسم البياني في الذاكرة.
 لكن هناك شرطان يحدّان من قابلية استخدامه:
@@ -702,9 +686,7 @@ LIMIT 3;
 * **موزع.** في cluster مُجزأ، يتوزع العمل على الأجهزة؛ إذ يفحص كل shard شريحته الخاصة بالتوازي، ويقوم المنسق بدمج القوائم المختصرة.
 * **لا توجد تكاليف إنشاء إضافية.** تُنتج الشيفرات المكمّاة أثناء كتابة المتجهات. لا يوجد فهرس إضافي لإنشائه أو ضبطه أو إعادة بنائه، لذا يصبح الجدول جاهزًا للبحث بمجرد وصول بياناته.
 
-<div id="quantized-codecs-declaring">
-  #### تطبيق المرمّز
-</div>
+#### تطبيق المرمّز {#quantized-codecs-declaring}
 
 حدِّد المرمّز `Quantized(...)` لعمود من النوع `Array(Float32)` (أو `Array(Float64)` / `Array(BFloat16)`).
 
@@ -722,9 +704,7 @@ ORDER BY ...;
 
 لا يمكن إضافة المرمّز أو تغييره لاحقًا باستخدام `ALTER TABLE`.
 
-<div id="quantized-codecs-methods">
-  #### طرق التكميم
-</div>
+#### طرق التكميم {#quantized-codecs-methods}
 
 لكل طريقة تكميم مفاضلات مختلفة بين الحجم والدقة. الوسيط `dimensions` هو طول المتجه.
 
@@ -736,9 +716,7 @@ ORDER BY ...;
 
 يتطلب `rabitq` و `turboquant` أن تكون `dimensions` من مضاعفات 8.
 
-<div id="quantized-codecs-searching">
-  #### استخدام مرمّز
-</div>
+#### استخدام مرمّز {#quantized-codecs-searching}
 
 يُستخدم مرمّز تلقائيًا مع الصيغة المعتادة لاستعلامات أعلى `k` (انظر [البحث الدقيق](#exact-nearest-neighbor-search)):
 
@@ -760,9 +738,7 @@ SETTINGS vector_search_use_quantized_codes = 1;
 تؤدي المضاعفات الأكبر إلى تحسين الاسترجاع مقابل زيادة إعادة التقييم.
 القيمة الافتراضية هي `1` (من دون فرط أخذ العينات)، وعادةً ما يلزم رفعها (مثلًا إلى `10`) لتحقيق استرجاع جيد.
 
-<div id="approximate-nearest-neighbor-search-qbit">
-  ### البت المُكمَّم (QBit)
-</div>
+### البت المُكمَّم (QBit) {#approximate-nearest-neighbor-search-qbit}
 
 من الأساليب الشائعة لتسريع [البحث المتجهي الدقيق](/ar/reference/data-types/float) استخدام [نوع بيانات الفاصلة العائمة](/ar/reference/data-types/float) الأقل دقة.
 فعلى سبيل المثال، إذا خُزِّنت المتجهات بصيغة `Array(BFloat16)` بدلًا من `Array(Float32)`، فسينخفض حجم البيانات إلى النصف، ومن المتوقع أن تنخفض أزمنة تنفيذ الاستعلامات بنسبة مماثلة.
@@ -789,9 +765,7 @@ column_name QBit(element_type, dimension[, stride])
 * `dimension` – عدد العناصر في كل متجه
 * `stride` – اختياري. وهو قاسم لـ`dimension` يُقسِّم الأبعاد إلى `dimension / stride` مجموعات متجاورة تُخزَّن في تدفقات منفصلة، بحيث تؤدي عملية البحث التي تقتصر على الأبعاد الأولى فقط إلى قراءة عدد أقل من التدفقات (وهو ما يفيد مع تضمينات Matryoshka). والقيمة الافتراضية هي `dimension`، وفي هذه الحالة يكون النوع مطابقًا على مستوى البايت لنوع `QBit` غير المستخدِم لـ`stride`. راجع [صفحة نوع البيانات `QBit`](/ar/reference/data-types/qbit) للتفاصيل.
 
-<div id="qbit-create">
-  #### إنشاء جدول `QBit` وإدراج البيانات فيه
-</div>
+#### إنشاء جدول `QBit` وإدراج البيانات فيه {#qbit-create}
 
 ```sql
 CREATE TABLE fruit_animal (
@@ -809,9 +783,7 @@ INSERT INTO fruit_animal VALUES
     ('horse', [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
 ```
 
-<div id="qbit-search">
-  #### البحث المتجهي باستخدام `QBit`
-</div>
+#### البحث المتجهي باستخدام `QBit` {#qbit-search}
 
 لنبحث عن أقرب الجيران إلى متجه يمثّل الكلمة &#39;lemon&#39; باستخدام مسافة L2. تحدد المعلمة الثالثة في دالة المسافة مقدار الدقة بالبتات؛ فكلما ارتفعت القيم زادت الدقة، لكنها تتطلب حسابات أكثر.
 
@@ -861,18 +833,14 @@ ORDER BY distance;
 
 لاحظ أنه مع التكميم إلى 12 بتًا، نحصل على تقريب جيد للمسافات مع تنفيذ الاستعلام بسرعة أكبر. ويظل الترتيب النسبي متسقًا إلى حدّ كبير، مع بقاء &#39;apple&#39; أقرب تطابق.
 
-<div id="qbit-performance">
-  #### اعتبارات الأداء
-</div>
+#### اعتبارات الأداء {#qbit-performance}
 
 تنبع فائدة الأداء في `QBit` من تقليل عمليات الإدخال/الإخراج، إذ يلزم قراءة كمية أقل من البيانات من التخزين عند استخدام دقة أقل. بالإضافة إلى ذلك، عندما يحتوي `QBit` على بيانات `Float32`، وإذا كانت معلَمة `precision` تساوي 16 أو أقل، فستكون هناك فوائد إضافية ناتجة عن تقليل العمليات الحسابية. وتتحكم معلَمة `precision` مباشرةً في المفاضلة بين الدقة والسرعة:
 
 * **دقة أعلى** (أقرب إلى عرض البيانات الأصلي): نتائج أكثر دقة، واستعلامات أبطأ
 * **دقة أقل**: استعلامات أسرع مع نتائج تقريبية، وانخفاض في استخدام الذاكرة
 
-<div id="references">
-  ### المراجع
-</div>
+### المراجع {#references}
 
 المدونات:
 
