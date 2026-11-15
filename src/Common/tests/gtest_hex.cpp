@@ -43,8 +43,6 @@ TEST(HexTest, HexingIntegral)
 
 TEST(HexTest, HexingWideInteger512)
 {
-    using UInt512 = wide::integer<512, unsigned>;
-
     /// Build a 512-bit value from four 128-bit chunks.
     UInt128 chunk0 = (UInt128{0x0123456789abcdef} << 64) | 0xfedcba9876543210;
     UInt128 chunk1 = (UInt128{0x1020304050607080} << 64) | 0x90a0b0c0d0e0f000;

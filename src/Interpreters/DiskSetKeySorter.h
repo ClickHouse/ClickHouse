@@ -16,7 +16,7 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
 /// Sorts the keys of a set on disk and drops their repeats, in memory while tracked query memory stays within
 /// the spill threshold of the set, and in runs written to temporary files once it does not. `Key` is an
-/// unsigned integer of 8 to 256 bits.
+/// unsigned integer of 8 to 512 bits.
 ///
 /// Keys arrive in any order and collect in a buffer. Once the buffer holds `bytes_in_run` bytes, it is sorted
 /// as a whole and its repeats are dropped: by radix sort for keys of up to 64 bits and by comparisons for

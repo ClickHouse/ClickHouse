@@ -230,6 +230,7 @@ template class DiskSetImpl<UInt32>;
 template class DiskSetImpl<UInt64>;
 template class DiskSetImpl<UInt128>;
 template class DiskSetImpl<UInt256>;
+template class DiskSetImpl<UInt512>;
 
 template size_t estimateDiskSetMemory<UInt8>(size_t, size_t);
 template size_t estimateDiskSetMemory<UInt16>(size_t, size_t);
@@ -237,5 +238,6 @@ template size_t estimateDiskSetMemory<UInt32>(size_t, size_t);
 template size_t estimateDiskSetMemory<UInt64>(size_t, size_t);
 template size_t estimateDiskSetMemory<UInt128>(size_t, size_t);
 template size_t estimateDiskSetMemory<UInt256>(size_t, size_t);
+template size_t estimateDiskSetMemory<UInt512>(size_t, size_t);
 
 }

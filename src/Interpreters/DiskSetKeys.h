@@ -23,7 +23,7 @@ namespace DB
 ///
 /// So a fixed-size key, such as a number, a date, a short `FixedString` or a tuple of them, is converted to
 /// a disk key of the same width in a way that keeps the sort order (see `encodeFixedSizeKeys`). These are the
-/// keys of the methods `key8` to `key64`, `keys32` to `keys256`, `nullable_keys128` and `nullable_keys256`.
+/// keys of the methods `key8` to `key64`, `keys32` to `keys512`, `nullable_keys128` to `nullable_keys512`.
 ///
 /// A string, the key of the methods `key_string` and `key_fixed_string`, does not fit a disk key of a fixed
 /// width. Its disk key keeps the order of its first 4 bytes, and a hash of the whole string tells apart the

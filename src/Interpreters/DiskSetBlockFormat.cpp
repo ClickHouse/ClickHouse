@@ -189,5 +189,7 @@ template class DiskSetBlockFormat<UInt128>::Encoder;
 template class DiskSetBlockFormat<UInt128>::Decoder;
 template class DiskSetBlockFormat<UInt256>::Encoder;
 template class DiskSetBlockFormat<UInt256>::Decoder;
+template class DiskSetBlockFormat<UInt512>::Encoder;
+template class DiskSetBlockFormat<UInt512>::Decoder;
 
 }

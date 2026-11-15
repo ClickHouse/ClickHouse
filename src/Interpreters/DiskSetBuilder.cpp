@@ -243,5 +243,7 @@ template std::unique_ptr<DiskSetBuilder>
 createDiskSetBuilder<UInt128>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, size_t, size_t, QueryStatusPtr);
 template std::unique_ptr<DiskSetBuilder>
 createDiskSetBuilder<UInt256>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, size_t, size_t, QueryStatusPtr);
+template std::unique_ptr<DiskSetBuilder>
+createDiskSetBuilder<UInt512>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, size_t, size_t, QueryStatusPtr);
 
 }

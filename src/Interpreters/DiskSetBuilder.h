@@ -51,7 +51,7 @@ public:
         size_t max_bytes_before_external_set, size_t max_block_size, size_t key_bytes, size_t buffer_size);
 };
 
-/// Creates a builder of a `DiskSet` of `Key` keys, where `Key` is an unsigned integer of 8 to 256 bits.
+/// Creates a builder of a `DiskSet` of `Key` keys, where `Key` is an unsigned integer of 8 to 512 bits.
 /// `tmp_data` holds the runs of the sorter, which use its codec, and the finished set, whose file is not
 /// compressed (see `DiskSetImpl::createFileScope`). `limits` are the size limits of the set.
 /// `max_bytes_before_external_set` is the spill threshold of the set: the builder writes a run of buffered
