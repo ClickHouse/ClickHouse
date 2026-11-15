@@ -208,7 +208,7 @@ bool BloomFilter::contains(const BloomFilter & bf)
     return true;
 }
 
-UInt64 BloomFilter::isEmpty() const
+bool BloomFilter::isEmpty() const
 {
     for (size_t i = 0; i < words; ++i)
         if (filter[i] != 0)
