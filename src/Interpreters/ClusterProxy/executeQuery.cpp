@@ -3,6 +3,11 @@
 #include <memory>
 #include <optional>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/Utils.h>
+#include <Core/Streaming/CursorTree.h>
+#include <Core/Streaming/Settings.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <base/scope_guard.h>
@@ -139,6 +144,59 @@ namespace ErrorCodes
     extern const int UNEXPECTED_CLUSTER;
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace
+{
+
+/// The cursor of a `Distributed` table is a map: shard number -> the cursor of the table on the shard.
+/// Returns the modifiers of the STREAM read for a shard: with the part of the cursor for the shard.
+std::optional<TableExpressionModifiers> getStreamModifiersForShard(const std::optional<TableExpressionModifiers> & modifiers, UInt32 shard_num)
+{
+    if (!modifiers || !modifiers->hasStream())
+        return {};
+
+    StreamSettings stream_settings = *modifiers->getStreamSettings();
+    if (stream_settings.watermark)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WATERMARK is not supported for STREAM from a distributed table");
+
+    /// A shard without an entry is read from the beginning.
+    const String key = toString(shard_num);
+    stream_settings.cursor = stream_settings.cursor && stream_settings.cursor->hasSubtree(key) ? stream_settings.cursor->getSubtree(key) : nullptr;
+
+    return TableExpressionModifiers(
+        modifiers->hasFinal(), modifiers->getSampleSizeRatio(), modifiers->getSampleOffsetRatio(), std::move(stream_settings));
+}
+
+/// Replace the cursor of the STREAM read of the distributed table in the query for a shard by its part for the shard.
+void setStreamCursorForShard(const QueryTreeNodePtr & query_for_shard, const StorageID & main_table, bool is_table_function, UInt32 shard_num)
+{
+    auto * query_node = query_for_shard->as<QueryNode>();
+    if (!query_node)
+        return;
+
+    for (const auto & table_expression : extractTableExpressions(query_node->getJoinTreeNodeTyped()))
+    {
+        if (auto * table_node = table_expression->as<TableNode>())
+        {
+            if (is_table_function)
+                continue;
+            const auto & storage_id = table_node->getStorageID();
+            if (storage_id.database_name != main_table.database_name || storage_id.table_name != main_table.table_name)
+                continue;
+            if (auto modifiers = getStreamModifiersForShard(table_node->getTableExpressionModifiers(), shard_num))
+                table_node->setTableExpressionModifiers(*modifiers);
+        }
+        else if (auto * table_function_node = table_expression->as<TableFunctionNode>())
+        {
+            if (!is_table_function)
+                continue;
+            if (auto modifiers = getStreamModifiersForShard(table_function_node->getTableExpressionModifiers(), shard_num))
+                table_function_node->setTableExpressionModifiers(*modifiers);
+        }
+    }
+}
+
 }
 
 namespace FailPoints
@@ -645,6 +703,9 @@ void executeQuery(
             };
             optimizeShardingKeyRewriteIn(query_for_shard, std::move(visitor_data), query_info.table_expression->getAlias(), new_context);
         }
+
+        if (query_info.isStream())
+            setStreamCursorForShard(query_for_shard, main_table, table_func_ptr != nullptr, shard_info.shard_num);
 
         // decide for each shard if parallel reading from replicas should be enabled
         // according to settings and number of replicas declared per shard

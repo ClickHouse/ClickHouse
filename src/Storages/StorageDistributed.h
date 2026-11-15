@@ -83,6 +83,8 @@ public:
 
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
+    /// The query for every shard is sent with STREAM, and the table on the shard checks that it supports it.
+    bool supportsStreaming() const override { return true; }
     bool supportsPrewhere() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
     /// Distributed only serializes the query to shards; it never reads columns locally, so rewriting

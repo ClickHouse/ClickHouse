@@ -2934,6 +2934,17 @@ When the `max_parallel_replicas` option is enabled, query processing is parallel
 
 To learn more about how distributed `in` and `global in` queries are processed, refer to [this](/reference/statements/in#distributed-subqueries) documentation.
 
+## Streaming queries {#streaming-queries}
+
+A streaming query (`SELECT ... FROM distributed_table STREAM`, an experimental feature enabled by `enable_streaming_queries`) sends the query with `STREAM` to every shard. The cursor of a `Distributed` table is a map from the shard number to the cursor of the table on that shard, and can be reconstructed from the `_shard_num` virtual column and the cursor virtual columns of the underlying table:
+
+```sql
+SELECT _shard_num, _partition_id, _block_number, _block_offset, * FROM distributed_table
+STREAM CURSOR {'1': {'all': {'block_number': 5, 'block_offset': 99}}, '2': {'all': {'block_number': 7, 'block_offset': 0}}}
+```
+
+A shard without an entry in the cursor is read from the beginning. The cursor of a `ReplicatedMergeTree` table does not depend on the replica, so the read can be resumed on any replica of a shard. `WATERMARK` is not supported, and a `Distributed` table cannot be the source of an incremental refresh (`APPEND INCREMENTAL`).
+
 ## Virtual columns {#virtual-columns}
 
 #### _Shard_num {#_shard_num}
