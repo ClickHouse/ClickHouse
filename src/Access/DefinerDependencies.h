@@ -22,7 +22,8 @@ public:
     /// Get the global instance
     static DefinerDependencies & instance();
 
-    /// Add a dependency of an object on a definer
+    /// Add a dependency of an object on a definer. An object has exactly one definer, so
+    /// re-registering an object moves it to `definer` and releases the one it had before.
     void addDependency(const String & definer, const StorageID & object_id);
 
     /// Remove all dependencies for a specific object (when it is dropped)
@@ -36,6 +37,10 @@ public:
 
 private:
     DefinerDependencies() = default;
+
+    /// Releases `object_uuid` from its definer, collecting an auto-created `<user>:definer`
+    /// account that no object references any more. Call with `mutex` held.
+    void unregisterObject(const UUID & object_uuid);
 
     std::unordered_map<String, std::unordered_set<UUID>> definer_to_objects;
 

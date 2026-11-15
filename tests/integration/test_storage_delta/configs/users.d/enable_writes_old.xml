@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_experimental_delta_lake_writes>1</allow_experimental_delta_lake_writes>
+        </default>
+    </profiles>
+</clickhouse>

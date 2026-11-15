@@ -10,7 +10,7 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/ar/clickpipes/_iam_authentication.mdx";
 
 يوضح لك هذا الدليل خطوة بخطوة كيفية تهيئة Amazon RDS MySQL لنسخ البيانات إلى ClickHouse Cloud باستخدام [MySQL ClickPipe](/ar/integrations/clickpipes/mysql/index). للاطلاع على الأسئلة الشائعة المتعلقة بـ MySQL CDC، راجع [صفحة الأسئلة الشائعة لـ MySQL](/ar/integrations/clickpipes/mysql/faq).
 
@@ -18,35 +18,41 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## تمكين الاحتفاظ بالسجل الثنائي
 </div>
 
-السجل الثنائي هو مجموعة من ملفات السجل التي تتضمن معلومات عن التعديلات التي تطرأ على البيانات في مثيل خادم MySQL، وتُعد ملفات السجل الثنائي مطلوبة لعملية النسخ المتماثل. لتهيئة الاحتفاظ بالسجل الثنائي في RDS MySQL، يجب [تمكين التسجيل الثنائي](#enable-binlog-logging) و[زيادة فترة الاحتفاظ بـ binlog](#binlog-retention-interval).
+السجل الثنائي هو مجموعة من ملفات السجل التي تحتوي على معلومات حول تعديلات البيانات التي أُجريت على مثيل خادم MySQL، وملفات السجل الثنائي مطلوبة للنسخ المتماثل. لتهيئة الاحتفاظ بالسجل الثنائي في RDS MySQL، يجب عليك [تمكين binary logging](#enable-binlog-logging) و[زيادة مدة الاحتفاظ بالـ binlog](#binlog-retention-interval).
 
-<div id="enable-binlog-logging">
-  ### 1. تمكين التسجيل الثنائي عبر النسخ الاحتياطي التلقائي
-</div>
+<Steps>
+  <Step title="تمكين binary logging عبر النسخ الاحتياطي التلقائي" id="enable-binlog-logging">
+    تحدد ميزة النسخ الاحتياطية التلقائية ما إذا كان binary logging ممكّنًا أم معطّلًا في MySQL. يمكن تهيئة النسخ الاحتياطية التلقائية لمثيلك في RDS Console بالانتقال إلى **Modify** &gt; **Additional configuration** &gt; **Backup** وتحديد مربع الاختيار **Enable automated backups** (إذا لم يكن محددًا بالفعل).
 
-تحدّد ميزة النسخ الاحتياطي التلقائي ما إذا كان التسجيل الثنائي مفعّلًا في MySQL أم لا. ويمكن تهيئة النسخ الاحتياطية التلقائية لمثيلك من خلال RDS Console بالانتقال إلى **Modify** &gt; **Additional configuration** &gt; **Backup** وتحديد مربع الاختيار **Enable automated backups** (إذا لم يكن محددًا بالفعل).
+    <div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="تمكين النسخ الاحتياطية التلقائية في RDS" size="lg" border />
+    <Frame>
 
-نوصي بضبط **فترة الاحتفاظ بالنسخ الاحتياطية** على قيمة طويلة نسبيًا، بحسب سيناريو النسخ المتماثل لديك.
+    ![تمكين النسخ الاحتياطية التلقائية في RDS](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp)
 
-<div id="binlog-retention-interval">
-  ### 2. زيادة مدة الاحتفاظ بالـ binlog
-</div>
+    </Frame>
 
-<Warning>
-  إذا حاولت ClickPipes استئناف النسخ المتماثل وكانت ملفات binlog المطلوبة قد حُذفت بسبب قيمة الاحتفاظ بالـ binlog المُعدّة، فسينتقل ClickPipe إلى حالة خطأ وستلزم إعادة المزامنة.
-</Warning>
+    </div>
 
-يحذف Amazon RDS، افتراضيًا، السجل الثنائي بأسرع وقت ممكن (أي *الحذف المؤجل*). نوصي بزيادة مدة الاحتفاظ بالـ binlog إلى **72 ساعة** على الأقل لضمان توفر ملفات السجل الثنائي لعمليات النسخ المتماثل في حالات الفشل. لتعيين مدة احتفاظ للسجل الثنائي ([`binlog retention hours`](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration-usage-notes.binlog-retention-hours))، استخدم الإجراء [`mysql.rds_set_configuration`](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration):
+    نوصي بضبط **Backup retention period** على قيمة طويلة بشكل معقول، وفقًا لحالة استخدام النسخ المتماثل.
+  </Step>
 
-[//]: # "ملاحظة: يوصي معظم موفري CDC بأقصى مدة احتفاظ في RDS (7 أيام/168 ساعة). ونظرًا إلى أن ذلك يؤثر في استخدام القرص، فإننا نوصي، من باب التحوّط، بحد أدنى قدره 3 أيام/72 ساعة."
+  <Step title="زيادة مدة الاحتفاظ بالـ binlog" id="binlog-retention-interval">
+    <Warning>
+      إذا حاولت ClickPipes استئناف النسخ المتماثل وكانت ملفات binlog المطلوبة قد حُذفت بسبب قيمة الاحتفاظ بالـ binlog المُعدّة، فسينتقل ClickPipe إلى حالة خطأ وستلزم إعادة المزامنة.
+    </Warning>
 
-```text
-mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
-```
+    يحذف Amazon RDS، افتراضيًا، السجل الثنائي بأسرع وقت ممكن (أي *الحذف المؤجل*). نوصي بزيادة مدة الاحتفاظ بالـ binlog إلى **72 ساعة** على الأقل لضمان توفر ملفات السجل الثنائي لعمليات النسخ المتماثل في حالات الفشل. لتعيين مدة احتفاظ للسجل الثنائي ([`binlog retention hours`](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration-usage-notes.binlog-retention-hours))، استخدم الإجراء [`mysql.rds_set_configuration`](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration):
 
-إذا لم يتم ضبط هذا الإعداد أو تم ضبطه على فترة زمنية قصيرة جدًا، فقد يؤدي ذلك إلى حدوث فجوات في سجلات السجل الثنائي، مما يحدّ من قدرة ClickPipes على استئناف النسخ المتماثل.
+    [//]: # "ملاحظة: يوصي معظم موفري CDC بأقصى مدة احتفاظ في RDS (7 أيام/168 ساعة). ونظرًا إلى أن ذلك يؤثر في استخدام القرص، فإننا نوصي، من باب التحوّط، بحد أدنى قدره 3 أيام/72 ساعة."
+
+    ```text
+    mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
+    ```
+
+    إذا لم يتم ضبط هذا الإعداد أو تم ضبطه على فترة زمنية قصيرة جدًا، فقد يؤدي ذلك إلى حدوث فجوات في سجلات السجل الثنائي، مما يحدّ من قدرة ClickPipes على استئناف النسخ المتماثل.
+  </Step>
+</Steps>
 
 <div id="binlog-settings">
   ## اضبط إعدادات binlog
@@ -58,27 +64,67 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
   إذا كان لديك عنقود MySQL، فيمكن العثور على المعلمات أدناه في مجموعة المعلمات الخاصة بـ [DB cluster](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_WorkingWithParamGroups.CreatingCluster.html) بدلًا من مجموعة معلمات مثيل DB.
 </Tip>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp" alt="مكان العثور على مجموعة المعلمات في RDS" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![مكان العثور على مجموعة المعلمات في RDS](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 انقر على رابط مجموعة المعلمات، وسيأخذك ذلك إلى صفحتها المخصصة. ينبغي أن ترى زر **Edit** في أعلى اليمين.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp" alt="تحرير مجموعة المعلمات" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![تحرير مجموعة المعلمات](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp)
+
+</Frame>
+
+</div>
 
 يلزم ضبط المعلمات التالية على النحو الآتي:
 
 1. اضبط `binlog_format` على `ROW`.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp" alt="تنسيق binlog إلى ROW" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![تنسيق binlog إلى ROW](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp)
+
+</Frame>
+
+</div>
 
 2. اضبط `binlog_row_metadata` على `FULL`
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp" alt="البيانات الوصفية لصفوف binlog إلى FULL" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![البيانات الوصفية لصفوف binlog إلى FULL](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp)
+
+</Frame>
+
+</div>
 
 3. اضبط `binlog_row_image` على `FULL`
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp" alt="صورة صف binlog إلى FULL" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![صورة صف binlog إلى FULL](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -105,7 +151,15 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
 7. انقر على **Save Changes** في الزاوية العلوية اليمنى.
 8. أعد تشغيل المثيل لتطبيق التغييرات.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/enable_gtid.webp" alt="تم تمكين GTID" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![تم تمكين GTID](/images/integrations/data-ingestion/clickpipes/mysql/enable_gtid.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -138,6 +192,12 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
    ```
 
+<div id="iam-authentication">
+  ### استخدام مصادقة IAM (اختياري)
+</div>
+
+<IAMAuthentication engine="mysql" service="rds" />
+
 <div id="configure-network-access">
   ## إعداد الوصول إلى الشبكة
 </div>
@@ -146,11 +206,27 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
   ### التحكم في الوصول المستند إلى عناوين IP
 </div>
 
-لتقييد حركة المرور الواردة إلى مثيل Aurora MySQL لديك، أضف [عناوين IP الثابتة الخاصة بـ NAT المذكورة في الوثائق](/ar/integrations/clickpipes/home#list-of-static-ips) إلى **Inbound rules** في مجموعة أمان RDS الخاصة بك.
+لتقييد حركة المرور إلى مثيل Aurora MySQL لديك، أضف [عناوين IP الثابتة لـ NAT الموثقة](/ar/integrations/clickpipes/networking/static-ips) إلى **Inbound rules** في مجموعة أمان RDS الخاصة بك.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="أين يمكن العثور على مجموعة الأمان في RDS MySQL؟" size="lg" border />
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="حرّر Inbound rules لمجموعة الأمان المذكورة أعلاه" size="lg" border />
+<Frame>
+
+![أين يمكن العثور على مجموعة الأمان في RDS MySQL؟](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![حرّر Inbound rules لمجموعة الأمان المذكورة أعلاه](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+
+</Frame>
+
+</div>
 
 <div id="private-access-via-aws-privatelink">
   ### الوصول الخاص عبر AWS PrivateLink
@@ -162,4 +238,4 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
   ## الخطوات التالية
 </div>
 
-الآن، بعد أن تم إعداد مثيل Amazon RDS MySQL لديك لنسخ binlog المتماثل والاتصال بأمان بـ ClickHouse Cloud، يمكنك [إنشاء أول MySQL ClickPipe لك](/ar/integrations/clickpipes/mysql/index#create-your-clickpipe). وللاطلاع على الأسئلة الشائعة حول MySQL CDC، راجع [صفحة الأسئلة الشائعة الخاصة بـ MySQL](/ar/integrations/clickpipes/mysql/faq).
+الآن، بعد تهيئة مثيل Amazon RDS MySQL لديك للنسخ المتماثل عبر binlog والاتصال بشكل آمن بـ ClickHouse Cloud، يمكنك [إنشاء أول MySQL ClickPipe](/ar/integrations/clickpipes/mysql/index#create-your-clickpipe). وللاطلاع على الأسئلة الشائعة حول MySQL CDC، راجع [صفحة الأسئلة الشائعة الخاصة بـ MySQL](/ar/integrations/clickpipes/mysql/faq).

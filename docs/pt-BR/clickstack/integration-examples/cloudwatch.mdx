@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['AWS', 'CloudWatch', 'OTEL', 'ClickStack', 'logs']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/pt-BR/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -50,9 +48,7 @@ Se quiser testar a integração antes de configurar seu ambiente de produção, 
 </Note>
 
 <Steps>
-  <Step>
-    #### Obter a API key do ClickStack
-
+  <Step title="Obter a API key do ClickStack" id="get-api-key">
     O OpenTelemetry Collector envia dados para o endpoint OTLP do ClickStack, que requer autenticação.
 
     1. Abra o HyperDX na URL do seu ClickStack (por exemplo, http://localhost:8080)
@@ -60,7 +56,15 @@ Se quiser testar a integração antes de configurar seu ambiente de produção, 
     3. Acesse **Configurações da equipe → API Keys**
     4. Copie sua **API key de ingestão**
 
-    <Image img="/images/clickstack/api-key.webp" alt="API key do ClickStack" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![API key do ClickStack](/images/clickstack/api-key.webp)
+
+    </Frame>
+
+    </div>
 
     Salve isso em uma variável de ambiente:
 
@@ -69,21 +73,19 @@ Se quiser testar a integração antes de configurar seu ambiente de produção, 
     ```
   </Step>
 
-  <Step>
-    #### Configurar as credenciais da AWS
-
+  <Step title="Configurar as credenciais da AWS" id="configure-aws">
     Exporte suas credenciais da AWS como variáveis de ambiente. O método depende do tipo de autenticação usado:
 
     **Para usuários do AWS SSO (recomendado para a maioria das organizações):**
 
     ```bash
-    # Fazer login no SSO
+    # Login to SSO
     aws sso login --profile YOUR_PROFILE_NAME
 
-    # Exportar credenciais para variáveis de ambiente
+    # Export credentials to environment variables
     eval $(aws configure export-credentials --profile YOUR_PROFILE_NAME --format env)
 
-    # Verificar se as credenciais funcionam
+    # Verify credentials work
     aws sts get-caller-identity
     ```
 
@@ -96,7 +98,7 @@ Se quiser testar a integração antes de configurar seu ambiente de produção, 
     export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
     export AWS_REGION="us-east-1"
 
-    # Verificar se as credenciais funcionam
+    # Verify credentials work
     aws sts get-caller-identity
     ```
 
@@ -124,9 +126,7 @@ Se quiser testar a integração antes de configurar seu ambiente de produção, 
     Substitua `YOUR_ACCOUNT_ID` pelo ID da sua conta na AWS.
   </Step>
 
-  <Step>
-    #### Configure o receiver do CloudWatch
-
+  <Step title="Configure o receiver do CloudWatch" id="configure-receiver">
     Crie um arquivo `otel-collector-config.yaml` com a configuração do receiver do CloudWatch.
 
     <Accordion title="Descubra os grupos de logs disponíveis na sua conta">
@@ -258,9 +258,7 @@ Se quiser testar a integração antes de configurar seu ambiente de produção, 
     </Note>
   </Step>
 
-  <Step>
-    #### Inicie o coletor
-
+  <Step title="Inicie o coletor" id="start-collector">
     Crie um arquivo `docker-compose.yaml`:
 
     ```yaml
@@ -294,9 +292,7 @@ Se quiser testar a integração antes de configurar seu ambiente de produção, 
     ```
   </Step>
 
-  <Step>
-    #### Verifique os logs no HyperDX
-
+  <Step title="Verifique os logs no HyperDX" id="verify-logs">
     Quando o coletor estiver em execução:
 
     1. Abra o HyperDX em http://localhost:8080 (ou na URL do seu ClickStack)
@@ -304,7 +300,15 @@ Se quiser testar a integração antes de configurar seu ambiente de produção, 
     3. Aguarde 1 a 2 minutos para que os logs apareçam (dependendo do seu intervalo de polling)
     4. Pesquise logs dos seus grupos de logs do CloudWatch
 
-    <Image img="/images/clickstack/cloudwatch/log-search-view.webp" alt="Visualização de pesquisa de logs" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Visualização de pesquisa de logs](/images/clickstack/cloudwatch/log-search-view.webp)
+
+    </Frame>
+
+    </div>
 
     Procure estes atributos principais nos logs:
 
@@ -313,20 +317,26 @@ Se quiser testar a integração antes de configurar seu ambiente de produção, 
     * `ResourceAttributes['cloudwatch.log.stream']`: O nome do fluxo de logs
     * `Body`: O conteúdo da mensagem de log
 
-    <Image img="/images/clickstack/cloudwatch/error-log-column-values.webp" alt="Valores da coluna de logs de erro" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Valores da coluna de logs de erro](/images/clickstack/cloudwatch/error-log-column-values.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 </Steps>
 
 <div id="demo-dataset">
-  ## Dataset de demonstração
+  ## Conjunto de dados de demonstração
 </div>
 
-Para usuários que desejam testar a integração com o CloudWatch Logs antes de configurar o ambiente de produção na AWS, fornecemos um dataset de exemplo com logs pré-gerados que mostram padrões realistas de vários serviços da AWS.
+Para usuários que desejam testar a integração com os logs do CloudWatch antes de configurar o ambiente de produção na AWS, fornecemos um dataset de exemplo com logs pré-gerados que mostram padrões realistas de vários serviços da AWS.
 
 <Steps>
-  <Step>
-    #### Baixe o dataset de exemplo
-
+  <Step title="Baixe o dataset de exemplo" id="download-sample">
     ```bash
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/aws/cloudwatch/cloudwatch-logs.jsonl
     ```
@@ -338,9 +348,7 @@ Para usuários que desejam testar a integração com o CloudWatch Logs antes de 
     * **Jobs em segundo plano**: processamento em lote com padrões de retry
   </Step>
 
-  <Step>
-    #### Inicie o ClickStack
-
+  <Step title="Inicie o ClickStack" id="start-clickstack">
     Se o ClickStack ainda não estiver em execução:
 
     ```bash
@@ -352,9 +360,7 @@ Para usuários que desejam testar a integração com o CloudWatch Logs antes de 
     Aguarde alguns instantes até o ClickStack iniciar completamente.
   </Step>
 
-  <Step>
-    #### Importe o dataset de demonstração
-
+  <Step title="Importe o conjunto de dados de demonstração" id="import-demo-data">
     ```bash
     docker exec -i clickstack clickhouse-client --query="
       INSERT INTO default.otel_logs FORMAT JSONEachRow
@@ -364,9 +370,7 @@ Para usuários que desejam testar a integração com o CloudWatch Logs antes de 
     Isso importa os logs diretamente para a tabela de logs do ClickStack.
   </Step>
 
-  <Step>
-    #### Verifique os dados de demonstração
-
+  <Step title="Verifique os dados de demonstração" id="verify-demo-logs">
     Depois da importação:
 
     1. Abra o HyperDX em http://localhost:8080 e faça login (crie uma conta, se necessário)
@@ -376,7 +380,15 @@ Para usuários que desejam testar a integração com o CloudWatch Logs antes de 
 
     Você deverá ver logs de vários grupos de logs do CloudWatch.
 
-    <Image img="/images/clickstack/cloudwatch/demo-search-view.webp" alt="Visualização de busca de demonstração" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Visualização de busca de demonstração](/images/clickstack/cloudwatch/demo-search-view.webp)
+
+    </Frame>
+
+    </div>
 
     <Info>
       **Exibição de fuso horário**
@@ -393,32 +405,52 @@ Para usuários que desejam testar a integração com o CloudWatch Logs antes de 
 Para ajudar você a monitorar os logs do CloudWatch com o ClickStack, fornecemos um dashboard pré-configurado com visualizações essenciais.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">Baixe</TrackedLink> a configuração do dashboard
+  <Step title="Baixe a configuração do dashboard" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">Baixe o arquivo de configuração do dashboard</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Importe o dashboard
-
+  <Step title="Importe o dashboard" id="import-dashboard">
     1. Abra o HyperDX e navegue até a seção Dashboards
     2. Clique em **Import Dashboard** no canto superior direito, no menu de reticências
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Botão Import dashboard" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Botão Import dashboard](/images/clickstack/import-dashboard.webp)
+
+    </Frame>
+
+    </div>
 
     3. Faça upload do arquivo `cloudwatch-logs-dashboard.json` e clique em **Finish Import**
 
-    <Image img="/images/clickstack/cloudwatch/finish-import.webp" alt="Caixa de diálogo Finish import" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Caixa de diálogo Finish import](/images/clickstack/cloudwatch/finish-import.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
-  <Step>
-    #### Visualize o dashboard
-
+  <Step title="Visualize o dashboard" id="created-dashboard">
     O dashboard será criado com todas as visualizações pré-configuradas:
 
-    <Image img="/images/clickstack/cloudwatch/logs-dashboard.webp" alt="Dashboard do CloudWatch Logs" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Dashboard do CloudWatch Logs](/images/clickstack/cloudwatch/logs-dashboard.webp)
+
+    </Frame>
+
+    </div>
 
     <Note>
-      Para o dataset de demonstração, defina o intervalo de tempo como **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)** (ajuste com base no seu fuso horário local). Por padrão, o dashboard importado não terá um intervalo de tempo especificado.
+      Para o conjunto de dados de demonstração, defina o intervalo de tempo como **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)** (ajuste com base no seu fuso horário local). Por padrão, o dashboard importado não terá um intervalo de tempo especificado.
     </Note>
   </Step>
 </Steps>
@@ -558,9 +590,9 @@ groups:
 * Filtre grupos de logs com muito ruído removendo-os da configuração do collector para reduzir o volume de ingestão
 
 <div id="going-to-production">
-  ## Colocando em produção
+  ## Preparando para produção
 </div>
 
-Este guia demonstra como executar o OpenTelemetry Collector localmente com Docker Compose para testes. Para implantações em produção, execute o collector em uma infraestrutura com acesso à AWS (EC2 com funções do IAM, EKS com IRSA ou ECS com funções de tarefa) para eliminar a necessidade de gerenciar chaves de acesso. Implante os collectors na mesma região da AWS que seus grupos de logs do CloudWatch para reduzir a latência e os custos.
+Este guia mostra como executar o OpenTelemetry Collector localmente com Docker Compose para testes. Para implantações em produção, execute o collector em uma infraestrutura com acesso à AWS (EC2 com IAM roles, EKS com IRSA ou ECS com task roles) para eliminar a necessidade de gerenciar chaves de acesso. Implante os collectors na mesma região da AWS que seus grupos de logs do CloudWatch para reduzir a latência e os custos.
 
 Consulte [Ingestão com OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para ver padrões de implantação em produção e exemplos de configuração do collector.

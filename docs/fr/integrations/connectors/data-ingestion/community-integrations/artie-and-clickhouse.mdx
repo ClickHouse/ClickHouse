@@ -7,8 +7,6 @@ title: 'Connecter Artie à ClickHouse'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
 
 <a href="https://www.artie.com/" target="_blank">Artie</a> est une plateforme de streaming de données en temps réel entièrement gérée qui réplique les données de production dans ClickHouse, afin de rendre possibles des analyses orientées client, des processus opérationnels et de l’IA agentique en production.
@@ -26,32 +24,42 @@ Nous offrons aux entreprises le type de pipelines de streaming et le niveau d’
 Des leaders comme ClickUp, Substack et Alloy utilisent Artie non seulement pour résoudre les problèmes de pipeline actuels, mais aussi pour pérenniser leur stack de données à mesure que leur stratégie IA s’accélère.
 
 <Steps>
-  <Step>
-    ## Créer un compte Artie
-
+  <Step title="Créer un compte Artie" id="1-create-an-artie-account">
     Rendez-vous sur <a href="https://www.artie.com/contact" target="_blank">artie.com/contact</a> et remplissez le formulaire pour demander l’accès.
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/artie/artie_signup.webp" size="md" border alt="Page d’inscription Artie" />
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![Page d’inscription Artie](/images/integrations/data-ingestion/etl-tools/artie/artie_signup.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
-  <Step>
-    ## Trouver vos identifiants ClickHouse
-
+  <Step title="Trouver vos identifiants ClickHouse" id="2-find-your-clickhouse-credentials">
     Après avoir créé un service dans ClickHouse Cloud, recherchez les paramètres requis suivants :
 
     <ConnectionDetails />
   </Step>
 
-  <Step>
-    ## Créer un nouveau pipeline dans Artie
-
+  <Step title="Créer un nouveau pipeline dans Artie" id="3-create-a-new-pipeline-in-artie">
     Rendez-vous sur Artie avec les informations recueillies aux étapes précédentes et créez un nouveau pipeline en suivant un processus en 3 étapes.
 
     1. **Connectez votre source** - Configurez votre base de données source (Postgres, MySQL, Events API, etc.)
     2. **Choisissez les tables que vous souhaitez répliquer** - Sélectionnez les tables à synchroniser vers ClickHouse
     3. **Connectez votre destination** - Saisissez vos identifiants ClickHouse
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/artie/artie_edit_pipeline.webp" size="lg" border alt="Interface Edit Pipeline d’Artie" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Interface Edit Pipeline d’Artie](/images/integrations/data-ingestion/etl-tools/artie/artie_edit_pipeline.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 </Steps>
 
@@ -67,12 +75,36 @@ Si vous avez des questions, veuillez consulter notre <a href="https://www.artie.
 
 Portail d’analyse
 
-<Image img="/images/integrations/data-ingestion/etl-tools/artie/analytics.webp" size="md" border alt="Portail d’analyse" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Portail d’analyse](/images/integrations/data-ingestion/etl-tools/artie/analytics.webp)
+
+</Frame>
+
+</div>
 
 Supervision spécifique aux pipelines et aux tables
 
-<Image img="/images/integrations/data-ingestion/etl-tools/artie/monitor.webp" size="md" border alt="Supervision intégrée" />
+<div className="ch-image-md">
 
-Notifications quotidiennes de modification du schéma
+<Frame>
 
-<Image img="/images/integrations/data-ingestion/etl-tools/artie/schema_notification.webp" size="md" border alt="Notification de schéma" />
+![Supervision intégrée](/images/integrations/data-ingestion/etl-tools/artie/monitor.webp)
+
+</Frame>
+
+</div>
+
+Notifications quotidiennes des modifications du schéma
+
+<div className="ch-image-md">
+
+<Frame>
+
+![Notification de schéma](/images/integrations/data-ingestion/etl-tools/artie/schema_notification.webp)
+
+</Frame>
+
+</div>

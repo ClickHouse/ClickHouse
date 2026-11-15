@@ -11,8 +11,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Há cenários em que seria útil adicionar tabelas específicas a um pipe. Isso se torna uma necessidade comum à medida que sua carga de trabalho transacional ou analítica cresce.
 
 <div id="add-tables-steps">
@@ -23,12 +21,20 @@ Isso pode ser feito seguindo estas etapas:
 
 1. [Pause](/pt-BR/integrations/clickpipes/mysql/pause-and-resume) o pipe.
 2. Clique em Edit Table settings.
-3. Localize a tabela. Para isso, pesquise por ela na barra de busca.
+3. Localize sua tabela — isso pode ser feito pesquisando por ela na barra de busca.
 4. Selecione a tabela clicando na caixa de seleção.
 
 <br />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp)
+
+</Frame>
+
+</div>
 
 5. Clique em update.
 6. Após a atualização bem-sucedida, o pipe terá os status `Setup`, `Snapshot` e `Running`, nessa ordem. A carga inicial da tabela pode ser acompanhada na aba **Tables**.

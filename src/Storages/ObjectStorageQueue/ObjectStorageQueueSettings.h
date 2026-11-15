@@ -17,6 +17,7 @@ struct StorageID;
 /// List of available types supported in ObjectStorageQueueSettings object
 #define OBJECT_STORAGE_QUEUE_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, ArrowCompression) \
+    M(CLASS_NAME, ArrowUnsupportedTypes) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, CapnProtoEnumComparingMode) \
     M(CLASS_NAME, Char) \
@@ -63,7 +64,8 @@ struct ObjectStorageQueueSettings
         MutableColumnsAndConstraints & params,
         const std::string & table_name,
         const std::string & database_name,
-        const StorageObjectStorageQueue & storage) const;
+        const StorageObjectStorageQueue & storage,
+        bool display_secrets) const;
 
     void loadFromQuery(ASTStorage & storage_def, bool is_attach, const StorageID & storage_id);
 

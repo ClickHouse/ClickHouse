@@ -1,34 +1,34 @@
 ---
-description: 'توثيق ODBC bridge'
+description: 'توثيق ODBC Bridge'
 slug: /operations/utilities/odbc-bridge
 title: 'clickhouse-odbc-bridge'
-doc_type: 'reference'
+doc_type: 'مرجع'
 ---
 
-خادم HTTP بسيط يعمل كوكيل لبرنامج تشغيل ODBC. وكان الدافع الرئيسي
-هو احتمال حدوث أعطال segfault أو أعطال أخرى في تطبيقات ODBC، قد
-تؤدي إلى تعطّل عملية clickhouse-server بالكامل.
+خادم HTTP بسيط يعمل كوسيط لبرنامج تشغيل ODBC. كان الدافع الرئيسي
+هو احتمال حدوث أخطاء segfault أو أعطال أخرى في تطبيقات ODBC، مما قد
+يؤدي إلى تعطل عملية clickhouse-server بالكامل.
 
 تعمل هذه الأداة عبر HTTP، وليس عبر الأنابيب أو الذاكرة المشتركة أو TCP، لأن:
 
 * تنفيذها أسهل
-* استكشاف أخطائها أسهل
+* تصحيحها أسهل
 * يمكن تنفيذ jdbc-bridge بالطريقة نفسها
 
 <div id="usage">
   ## الاستخدام
 </div>
 
-يستخدم `clickhouse-server` هذه الأداة داخل دالة الجدول odbc وStorageODBC.
-ومع ذلك، يمكن استخدامها كأداة مستقلة من سطر الأوامر باستخدام المعلمات التالية
-في URL لطلب POST:
+يستخدم `clickhouse-server` هذه الأداة داخل table function‏ odbc وStorageODBC.
+ومع ذلك، يمكن استخدامها كأداة مستقلة من سطر الأوامر باستخدام
+المعلمات التالية في URL الخاص بطلب POST:
 
 * `connection_string` -- سلسلة اتصال ODBC.
-* `sample_block` -- وصف الأعمدة بتنسيق ClickHouse NamesAndTypesList، بحيث يكون الاسم بين backticks،
-  ويكون النوع كسلسلة نصية. يُفصل بين الاسم والنوع بمسافة، وتُفصل الصفوف
+* `sample_block` -- وصف الأعمدة بتنسيق ClickHouse NamesAndTypesList، مع وضع الاسم بين backticks،
+  وكتابة النوع كسلسلة نصية. يُفصل بين الاسم والنوع بمسافة، وتُفصل الصفوف
   بأسطر جديدة.
-* `max_block_size` -- معلمة اختيارية تحدد الحجم الأقصى لكتلة واحدة.
-  يُرسَل الاستعلام في متن طلب POST. ويُعاد الرد بتنسيق RowBinary format.
+* `max_block_size` -- معلمة اختيارية، تحدد الحجم الأقصى للكتلة الواحدة.
+  يُرسَل الاستعلام في جسم طلب POST. وتُعاد الاستجابة بتنسيق RowBinary format.
 
 <div id="example">
   ## مثال:

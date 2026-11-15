@@ -138,13 +138,22 @@ public:
     virtual Packet receivePacket() = 0;
     virtual UInt64 receivePacketType() = 0;
 
-    /// If not connected yet, or if connection is broken - then connect. If cannot connect - throw an exception.
+    /// If not connected yet - then connect. If cannot connect - throw an exception.
+    /// Does not ping an already-established connection: a connection that the server has closed
+    /// while it was idle in the pool is detected and recovered when the query is sent.
     virtual void forceConnected(const ConnectionTimeouts & timeouts) = 0;
 
     virtual bool isConnected() const = 0;
 
-    /// Check if connection is still active with ping request.
+    /// Check if connection is still active with ping request. The round trip also synchronizes the
+    /// client with the server: after it returns, everything the server has already sent (including
+    /// a close) has been observed. Use it to recover from a protocol desynchronization.
     virtual bool checkConnected(const ConnectionTimeouts & /*timeouts*/) = 0;
+
+    /// The same, but without a round trip. It only reports a failure that is already visible on the
+    /// socket, so it must not be used to recover from a desynchronization - only to skip a
+    /// connection that is known to be unusable before sending the next request.
+    virtual bool checkConnectedWithoutRoundTrip() = 0;
 
     /** Disconnect.
       * This may be used, if connection is left in unsynchronised state

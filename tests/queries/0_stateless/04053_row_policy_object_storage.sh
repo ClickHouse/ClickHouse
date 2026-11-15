@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-fasttest
+# Tags: no-replicated-database
 
 # Regression test: row policy on a URL table with Parquet format caused
 # "Logical error: 'prewhere_info'" because updateFormatPrewhereInfo asserted

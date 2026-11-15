@@ -11,9 +11,7 @@ doc_type: 'guide'
 > Ce guide explique comment utiliser le ClickHouse MCP server avec Ollama.
 
 <Steps>
-  <Step>
-    ## Installer Ollama
-
+  <Step title="Installer Ollama" id="install-ollama">
     Ollama est une bibliothèque qui permet d’exécuter de grands modèles de langage (LLM) sur votre propre machine.
     Elle propose un [large choix de modèles](https://ollama.com/library) et est facile à utiliser.
 
@@ -84,9 +82,7 @@ doc_type: 'guide'
     Nous pouvons voir dans cette sortie que le modèle qwen3 par défaut compte un peu plus de 8 milliards de paramètres.
   </Step>
 
-  <Step>
-    ## Installer MCPHost
-
+  <Step title="Installer MCPHost" id="install-mcphost">
     Au moment de la rédaction de ce document (juillet 2025), il n’existe pas de fonctionnalité native pour utiliser Ollama avec des serveurs MCP.
     Cependant, il est possible d’utiliser [MCPHost](https://github.com/mark3labs/mcphost) pour exécuter des modèles Ollama avec des serveurs MCP.
 
@@ -100,9 +96,7 @@ doc_type: 'guide'
     Le binaire sera installé dans `~/go/bin`, nous devons donc nous assurer que ce répertoire est bien dans notre `PATH`.
   </Step>
 
-  <Step>
-    ## Configuration du serveur MCP ClickHouse
-
+  <Step title="Configuration du serveur MCP ClickHouse" id="configure-clickhouse-mcp-server">
     Vous pouvez configurer des serveurs MCP avec MCPHost dans des fichiers YAML ou JSON.
     MCPHost recherchera les fichiers de configuration dans votre répertoire personnel dans l’ordre suivant :
 
@@ -150,9 +144,7 @@ doc_type: 'guide'
     </Note>
   </Step>
 
-  <Step>
-    ## Exécuter MCPHost
-
+  <Step title="Exécuter MCPHost" id="running-mcphost">
     Une fois le serveur MCP ClickHouse configuré, vous pouvez lancer MCPHost avec la commande suivante :
 
     ```bash

@@ -9,6 +9,7 @@
 #include <Storages/Kafka/KafkaConsumer2.h>
 #include <Storages/Kafka/Kafka_fwd.h>
 #include <Storages/Kafka/KeeperHandlingConsumer.h>
+#include <Storages/IStreamingStorage.h>
 #include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -46,7 +47,13 @@ class ThreadStatus;
 /// offsets, it also stores the number of messages (intent size) it tried to insert from
 /// each topic. By storing the intent sizes it is possible to retry the same batch of
 /// messages in case of any errors and giving deduplication a chance to deduplicate
-/// blocks.
+/// blocks. When an intent is replayed, exactly the intended number of messages is
+/// consumed: not more (the batch never grows past the intent, even if the usual stop
+/// conditions would allow it), and not less (a batch that ends short of the intent is
+/// discarded and replayed later instead of being inserted with a different hash).
+/// A commit updates the committed offset and removes the intent in a single Keeper
+/// transaction, so a stale intent, whose batch was already committed, cannot be left
+/// behind.
 ///
 /// To not complicate things too much, the current implementation makes sure to fetch
 /// messages only from a single topic-partition on a single thread at a time by
@@ -56,7 +63,7 @@ class ThreadStatus;
 ///
 /// For the committed offsets we try to mimic the same behavior as Kafka does: if the last
 /// read offset is `n`, then we save the offset `n + 1`, same as Kafka does.
-class StorageKafka2 final : public IStorage, WithContext
+class StorageKafka2 final : public IStreamingStorage, WithContext
 {
     using KafkaInterceptors = KafkaInterceptors<StorageKafka2>;
     friend KafkaInterceptors;
@@ -136,6 +143,7 @@ private:
     {
         BackgroundSchedulePoolTaskHolder holder;
         std::atomic<bool> stream_cancelled{false};
+        UInt64 last_seen_refresh_epoch = 0;
         explicit TaskContext(BackgroundSchedulePoolTaskHolder && task_)
             : holder(std::move(task_))
         {
@@ -166,6 +174,10 @@ private:
     const size_t num_consumers; /// total number of consumers
     LoggerPtr log;
     const SettingsChanges settings_adjustments;
+
+    /// Partition affinity settings, enabled when both are > 0.
+    UInt64 partition_shard_num = 0;
+    UInt64 shard_count = 0;
     /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
     /// In this case we still need to be able to shutdown() properly.
     size_t num_created_consumers = 0; /// number of actually created consumers.
@@ -183,7 +195,9 @@ private:
     std::list<std::shared_ptr<ThreadStatus>> thread_statuses;
     /// If named_collection is specified.
     String collection_name;
-    std::atomic<bool> shutdown_called = false;
+
+    void scheduleStreamingTasksImpl() override;
+
     /// Number of background streaming threads currently consuming for materialized views.
     /// Prevents direct SELECTs from using consumers concurrently with MV streaming.
     /// Uses a counter instead of a boolean because with thread_per_consumer=1,
@@ -204,6 +218,8 @@ private:
     void activateAndReschedule();
     void partialShutdown();
 
+    void parsePartitionAffinitySettings();
+
     void assertActive() const;
     KafkaConsumer2Ptr createKafkaConsumer(size_t consumer_number);
     // Returns full consumer related configuration, also the configuration
@@ -218,6 +234,7 @@ private:
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
+    UInt64 getLocksRefreshPolls() const;
     size_t getSchemaRegistrySkipBytes() const;
 
     enum class StallKind : uint8_t
@@ -226,14 +243,14 @@ private:
         LongStall,
     };
 
-    std::optional<StallKind> streamToViews(size_t idx);
+    std::optional<StallKind> streamToViews(size_t idx, UInt64 cycle_epoch);
 
     /// KeeperHandlingConsumer has to be acquired before polling it
     KeeperHandlingConsumerPtr acquireConsumer(size_t idx);
     void releaseConsumer(KeeperHandlingConsumerPtr && consumer_ptr);
     void cleanConsumers();
 
-    std::optional<size_t> streamFromConsumer(KeeperHandlingConsumer & consumer_info, const Stopwatch & watch);
+    std::optional<size_t> streamFromConsumer(KeeperHandlingConsumer & consumer_info, const Stopwatch & watch, UInt64 cycle_epoch);
 
     // Returns true if this is the first replica
     bool createTableIfNotExists();

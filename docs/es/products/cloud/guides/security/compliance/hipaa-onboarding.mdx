@@ -7,10 +7,9 @@ doc_type: 'guide'
 keywords: ['hipaa', 'cumplimiento', 'atención médica', 'seguridad', 'protección de datos']
 ---
 
-import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
-import EnterprisePlanFeatureBadge from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/es/components/Image.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <EnterprisePlanFeatureBadge feature="HIPAA" />
 
@@ -25,9 +24,7 @@ Esta página describe el proceso para habilitar la implementación de servicios 
 </div>
 
 <Steps>
-  <Step>
-    ### Suscríbase a los servicios Enterprise
-
+  <Step title="Suscríbase a los servicios Enterprise" id="sign-up-for-enterprise">
     1. Seleccione el nombre de su organización en la esquina inferior izquierda de la consola.
     2. Haga clic en **Facturación**.
     3. Revise su **Plan** en la esquina superior izquierda.
@@ -35,16 +32,22 @@ Esta página describe el proceso para habilitar la implementación de servicios 
     5. Seleccione **Cambiar a Enterprise**.
   </Step>
 
-  <Step>
-    ### Habilite HIPAA para su organización
-
+  <Step title="Habilite HIPAA para su organización" id="enable-hipaa">
     1. Seleccione el nombre de su organización en la esquina inferior izquierda de la consola.
-    2. Haga clic en **Detalles de la organización**.
+    2. Haga clic en **Configuración de la organización**.
     3. Active la opción **Habilitar HIPAA**.
 
     <br />
 
-    <Image img="/images/cloud/security/compliance/hipaa_1.webp" size="md" alt="Solicite la habilitación de HIPAA" background="black" />
+    <div className="ch-image-md ch-image-background-black">
+
+    <Frame>
+
+    ![Solicite la habilitación de HIPAA](/images/cloud/security/compliance/hipaa_1.webp)
+
+    </Frame>
+
+    </div>
 
     <br />
 
@@ -52,7 +55,15 @@ Esta página describe el proceso para habilitar la implementación de servicios 
 
     <br />
 
-    <Image img="/images/cloud/security/compliance/hipaa_2.webp" size="md" alt="Enviar una solicitud de BAA" background="black" />
+    <div className="ch-image-md ch-image-background-black">
+
+    <Frame>
+
+    ![Enviar una solicitud de BAA](/images/cloud/security/compliance/hipaa_2.webp)
+
+    </Frame>
+
+    </div>
 
     <br />
 
@@ -60,26 +71,40 @@ Esta página describe el proceso para habilitar la implementación de servicios 
 
     <br />
 
-    <Image img="/images/cloud/security/compliance/hipaa_3.webp" size="md" alt="HIPAA habilitado" background="black" />
+    <div className="ch-image-md ch-image-background-black">
+
+    <Frame>
+
+    ![HIPAA habilitado](/images/cloud/security/compliance/hipaa_3.webp)
+
+    </Frame>
+
+    </div>
 
     <br />
   </Step>
 
-  <Step>
-    ### Implemente servicios en regiones compatibles con HIPAA
-
+  <Step title="Despliegue servicios en regiones compatibles con HIPAA" id="deploy-hipaa-services">
     1. Seleccione **Nuevo servicio** en la esquina superior izquierda de la pantalla de inicio de la consola
     2. Cambie el **Tipo de región** a **Compatible con HIPAA**
 
     <br />
 
-    <Image img="/images/cloud/security/compliance/hipaa_4.webp" size="md" alt="Desplegar en una región compatible con HIPAA" background="black" />
+    <div className="ch-image-md ch-image-background-black">
+
+    <Frame>
+
+    ![Desplegar en una región compatible con HIPAA](/images/cloud/security/compliance/hipaa_4.webp)
+
+    </Frame>
+
+    </div>
 
     <br />
 
     3. Introduzca un nombre para el servicio y complete la información restante
 
-    Para obtener una lista completa de los proveedores cloud y servicios compatibles con HIPAA, consulte nuestra página de [regiones cloud compatibles](/es/products/cloud/reference/supported-regions).
+    Para obtener una lista completa de los proveedores de nube y servicios compatibles con HIPAA, consulte nuestra página de [regiones cloud compatibles](/es/products/cloud/reference/supported-regions).
   </Step>
 </Steps>
 

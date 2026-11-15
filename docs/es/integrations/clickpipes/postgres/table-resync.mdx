@@ -14,27 +14,23 @@ Hay situaciones en las que puede ser útil volver a sincronizar tablas específi
 
 Aunque la opción de resincronizar tablas individuales con solo hacer clic en un botón aún está en desarrollo, esta guía comparte los pasos para hacerlo hoy en un Postgres ClickPipe.
 
-<div id="removing-table">
-  ### 1. Eliminar la tabla del pipe
-</div>
+<Steps>
+  <Step title="Eliminar la tabla del pipe" id="removing-table">
+    Para ello, puede seguir la [guía para eliminar tablas](/es/integrations/clickpipes/postgres/remove-table).
+  </Step>
 
-Para hacerlo, siga la [guía para eliminar tablas](/es/integrations/clickpipes/postgres/remove-table).
+  <Step title="Truncar o eliminar la tabla en ClickHouse" id="truncate-drop-table">
+    Este paso sirve para evitar la duplicación de datos cuando volvamos a añadir esta tabla en el siguiente paso. Puede hacerlo yendo a la pestaña **SQL Console** en ClickHouse Cloud y ejecutando una consulta.
+    Tenga en cuenta que contamos con una validación que bloquea la adición de tablas si la tabla ya existe en ClickHouse y no está vacía.
 
-<div id="truncate-drop-table">
-  ### 2. Haz TRUNCATE o DROP de la tabla en ClickHouse
-</div>
+    Como alternativa, si necesita conservar la tabla anterior, puede simplemente cambiarle el nombre. Esto también es útil cuando la tabla es muy grande y la operación `drop` puede tardar algún tiempo.
 
-Este paso sirve para evitar la duplicación de datos cuando volvamos a agregar esta tabla en el siguiente paso. Puedes hacerlo yendo a la pestaña **SQL Console** de ClickHouse Cloud y ejecutando una consulta.
-Ten en cuenta que contamos con una validación que bloquea la adición de la tabla si ya existe en ClickHouse y no está vacía.
+    ```sql
+    RENAME TABLE table_A TO table_A_bak;
+    ```
+  </Step>
 
-Como alternativa, si necesitas conservar la tabla anterior, puedes simplemente cambiarle el nombre. Esto también resulta útil cuando la tabla es muy grande y la operación de DROP puede tardar algún tiempo.
-
-```sql
-RENAME TABLE table_A TO table_A_bak;
-```
-
-<div id="add-table-again">
-  ### 3. Vuelva a añadir la tabla al ClickPipe
-</div>
-
-Para ello, siga la [guía para añadir una tabla](/es/integrations/clickpipes/postgres/add-table).
+  <Step title="Volver a añadir la tabla al ClickPipe" id="add-table-again">
+    Para ello, puede seguir la [guía para añadir tablas](/es/integrations/clickpipes/postgres/add-table).
+  </Step>
+</Steps>

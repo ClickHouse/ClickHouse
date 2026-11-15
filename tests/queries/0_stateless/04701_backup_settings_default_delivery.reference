@@ -1,0 +1,40 @@
+BACKUP_CREATED
+-- RESTORE: a restore-specific reset must be delivered, not merely accepted.
+RESTORED
+1	0
+RESTORED
+0	10
+RESTORED
+0	10
+-- Alias pairs address one field, so defaulting either spelling must drop the other's override.
+BACKUP_CREATED
+BACKUP_CREATED
+BACKUP_CREATED
+BACKUP_CREATED
+1	STANDARD_IA
+1	STANDARD_IA
+0	
+0	
+RESTORED
+RESTORED
+1	1
+0	0
+-- `async` decides whether the client waits, so resetting it must change the returned status.
+BACKUP_CREATED
+CREATING_BACKUP
+CREATING_BACKUP
+BACKUP_CREATED
+CREATING_BACKUP
+0	1
+1	0
+0	1
+-- `compression` has no effect from a SETTINGS clause, so both forms are refused here too.
+shapes the HTTP response body
+shapes the HTTP response body
+shapes the HTTP response body
+BACKUP_CREATED
+-- `base_backup` keeps the meaning each clause gives it today: a backup name on its own, a reset
+-- once the clause holds a defaulted item, which is where the field is cleared.
+BACKUP_ENGINE_NOT_FOUND
+BACKUP_CREATED
+BACKUP_CREATED

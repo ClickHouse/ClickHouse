@@ -8,8 +8,6 @@ sidebarTitle: '第1部'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 > これは、PostgreSQL から ClickHouse への移行ガイドの**第1部**です。実践的な例を用いて、リアルタイムレプリケーション (CDC (変更データキャプチャ) ) のアプローチで移行を効率的に進める方法を解説します。ここで取り上げる概念の多くは、PostgreSQL から ClickHouse への手動による大規模データ転送にも適用できます。
 
 <div id="dataset">
@@ -18,7 +16,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 Postgres から ClickHouse への典型的な移行例を示すサンプルデータセットとして、[こちら](/ja/get-started/sample-datasets/stackoverflow)で説明している Stack Overflow データセットを使用します。これには、2008 年から 2024 年 4 月までに Stack Overflow で発生したすべての `post`、`vote`、`user`、`comment`、`badge` が含まれています。このデータの PostgreSQL スキーマを以下に示します。
 
-<Image img="/images/migrations/postgres-stackoverflow-schema.webp" size="lg" alt="PostgreSQL Stack Overflow スキーマ" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![PostgreSQL Stack Overflow スキーマ](/images/migrations/postgres-stackoverflow-schema.webp)
+
+</Frame>
+
+</div>
 
 *PostgreSQL でテーブルを作成するための DDL コマンドは、[こちら](https://pastila.nl/?001c0102/eef2d1e4c82aab78c4670346acb74d83#TeGvJWX9WTA1V/5dVVZQjg==)から入手できます。*
 
@@ -185,8 +191,8 @@ INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', '
 INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', 'posts', 'postgres', '<password') WHERE CreationDate > ( SELECT (max(CreationDate) FROM stackoverflow.posts)
 ```
 
-> ClickHouse は、`=`, `!=`, `>`,`>=`, `<`, `<=`, IN などの単純な `WHERE` 句を PostgreSQL サーバーにプッシュダウンします。そのため、変更セットの特定に使うカラムに索引を作成しておくことで、増分ロードをより効率的に行えます。
+> ClickHouse は、`=`, `!=`, `>`,`>=`, `<`, `<=`, IN などの単純な `WHERE` 句を PostgreSQL サーバーにプッシュダウンできます。そのため、変更セットの特定に使うカラムに索引を作成しておくことで、増分ロードをより効率化できます。
 
-> クエリレプリケーションの使用時に `UPDATE` 操作を検出する方法の 1 つは、[`XMIN` system column](https://www.postgresql.org/docs/9.1/ddl-system-columns.html) (トランザクション ID) をウォーターマークとして利用することです。このカラムの変化はデータの変更を示すため、宛先テーブルに反映できます。この方法を使用する場合は、`XMIN` の値が周回する可能性があること、また比較にはテーブル全体のスキャンが必要になるため、変更の追跡がより複雑になることに注意してください。
+> クエリレプリケーションの使用時に UPDATE 操作を検出する方法の 1 つとして、[`XMIN` system column](https://www.postgresql.org/docs/9.1/ddl-system-columns.html) (トランザクション ID) をウォーターマークとして使う方法があります。このカラムの値が変化した場合は変更があったことを示すため、その変更を宛先テーブルに適用できます。この方法を採用する場合は、`XMIN` の値が周回する可能性があること、また比較にはフルテーブルスキャンが必要になるため、変更の追跡がより複雑になる点に注意してください。
 
-[パート 2 はこちら](/ja/get-started/migrate/postgres/migration-guide/migration-guide-part2)
+[第2部はこちら](/ja/get-started/migrate/postgres/migration-guide/migration-guide-part2)

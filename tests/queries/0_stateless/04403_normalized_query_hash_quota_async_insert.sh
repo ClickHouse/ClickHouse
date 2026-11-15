@@ -22,8 +22,11 @@ user="u_04403_${CLICKHOUSE_DATABASE}"
 quota="q_04403_${CLICKHOUSE_DATABASE}"
 table="t_04403_${CLICKHOUSE_DATABASE}"
 
-# shellcheck disable=SC2086  # CLICKHOUSE_CLIENT must be word-split.
-check_exceeded() { ${CLICKHOUSE_CLIENT} --user "${user}" --async_insert 1 --wait_for_async_insert 1 --send_logs_level=none -q "$1" 2>&1 | grep -m1 -o QUOTA_EXCEEDED || echo allowed; }
+# Pin the busy wait: the quota accounting does not depend on how long inserts are batched.
+async_insert_opts="--async_insert 1 --wait_for_async_insert 1 --async_insert_use_adaptive_busy_timeout 0 --async_insert_busy_timeout_ms 1"
+
+# shellcheck disable=SC2086  # CLICKHOUSE_CLIENT and the options must be word-split.
+check_exceeded() { ${CLICKHOUSE_CLIENT} --user "${user}" ${async_insert_opts} --send_logs_level=none -q "$1" 2>&1 | grep -m1 -o QUOTA_EXCEEDED || echo allowed; }
 
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}"
 ${CLICKHOUSE_CLIENT} -q "DROP QUOTA IF EXISTS ${quota}"
