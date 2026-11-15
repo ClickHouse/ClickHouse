@@ -190,6 +190,9 @@ namespace ErrorCodes
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int INCORRECT_INDEX;
     extern const int ILLEGAL_PREWHERE;
+    extern const int SYNTAX_ERROR;
+    extern const int INVALID_TEMPLATE_FORMAT;
+    extern const int TYPE_MISMATCH;
     extern const int CANNOT_APPEND_TO_FILE;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int CANNOT_DETECT_FORMAT;
@@ -2036,15 +2039,20 @@ bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
 
 namespace
 {
-    /// Creating the input format may also open and read files other than the input file: the file of
-    /// `input_format_record_errors_file_path`, an external template of the `Template` format, a format
-    /// schema. Their errors belong to the configuration of the query, not to the input file, which must
-    /// not be skipped because of them. The input file is already open at this point, so a failure to
-    /// open or to stat a file comes from such another file. A read or seek error is attributed to the
-    /// input file only if it names that file. Errors of other kinds are classified by `isBrokenFileError`.
+    /// Creating the input format may also open and read files other than the input file, and run
+    /// queries: the file of `input_format_record_errors_file_path`, a template of the `Template` format,
+    /// a format schema, which may come from a query (`format_schema_source = 'query'`). Their errors
+    /// belong to the configuration of the query, not to the input file, which must not be skipped
+    /// because of them. So an error is attributed to the input file only if:
+    /// - it is a read or seek error that names the input file. A failure to open or to stat a file never
+    ///   is: the input file is already open at this point;
+    /// - or the format reads the input while it is created (`reads_input`), e.g. the footer of a `Parquet`
+    ///   file. Such formats have no external configuration of this kind. The other formats read the input
+    ///   only while the data is read, after the start of the input has been read separately.
+    /// Errors attributed to the input file are then classified by `isBrokenFileError`.
     /// Only for the errors thrown while the format is created: the errors thrown while the pipeline is
     /// executed are copied to `Exception` by the executor, which loses the path of an `ErrnoException`.
-    bool isErrorOfInputFileWhileCreatingFormat(const Exception & e, const ReadBuffer & input)
+    bool isErrorOfInputFileWhileCreatingFormat(const Exception & e, const ReadBuffer & input, bool reads_input)
     {
         const int code = e.code();
         if (code == ErrorCodes::FILE_DOESNT_EXIST
@@ -2063,7 +2071,20 @@ namespace
             return path && !input_file_name.empty() && *path == input_file_name;
         }
 
-        return true;
+        return reads_input;
+    }
+
+    /// Errors that input formats raise on broken data while reading it - a malformed type name in a
+    /// `Native` file, data that does not match the template of the `Template` format, a column of an
+    /// unexpected type. While the format is created, the same codes come from its configuration (a
+    /// template, a schema), so they are skippable only while the data is read, when the format only
+    /// parses the input: the conditions of the query are not evaluated by it, and the errors of the
+    /// transforms after it are tracked by `RowTransformTrackingErrors`.
+    bool isBrokenDataErrorWhileReading(int code)
+    {
+        return code == ErrorCodes::SYNTAX_ERROR
+            || code == ErrorCodes::INVALID_TEMPLATE_FORMAT
+            || code == ErrorCodes::TYPE_MISMATCH;
     }
 
     /// Errors that `engine_file_skip_failed_data_files` may skip: those caused by a file that
@@ -2108,19 +2129,21 @@ Chunk StorageFileSource::generate()
     const bool is_one_format = Poco::toLower(storage->format_name) == "one";
 
     /// Rethrows the in-flight exception unless `engine_file_skip_failed_data_files` is enabled
-    /// and the error can be attributed to a broken file. Must be invoked from within a `catch` block.
-    auto rethrow_unless_skippable = [&](int error_code)
+    /// and the error can be attributed to a broken file. `while_reading_data` - the error was thrown
+    /// while the data was read by the pipeline. Must be invoked from within a `catch` block.
+    auto rethrow_unless_skippable = [&](int error_code, bool while_reading_data)
     {
-        if (!isBrokenFileError(error_code) || !getContext()->getSettingsRef()[Setting::engine_file_skip_failed_data_files])
+        const bool broken_file = isBrokenFileError(error_code) || (while_reading_data && isBrokenDataErrorWhileReading(error_code));
+        if (!broken_file || !getContext()->getSettingsRef()[Setting::engine_file_skip_failed_data_files])
             throw;
     };
 
     /// Common handler for `engine_file_skip_failed_data_files`: rethrows the in-flight exception
     /// unless it can be skipped, otherwise logs a warning and resets reader state so the outer
     /// loop can advance to the next file. Must be invoked from within a `catch` block.
-    auto skip_or_rethrow = [&](int error_code)
+    auto skip_or_rethrow = [&](int error_code, bool while_reading_data)
     {
-        rethrow_unless_skippable(error_code);
+        rethrow_unless_skippable(error_code, while_reading_data);
         LOG_WARNING(storage->log, "Skipping file {} due to an error: {}", current_path, getCurrentExceptionMessage(false));
         /// The rows of a skipped file do not contribute to the `ORDER BY ... LIMIT` threshold.
         checkTopKQueryConditionCacheKeyHolds(/*still_holds=*/ false);
@@ -2178,7 +2201,7 @@ Chunk StorageFileSource::generate()
     /// next archive. Must be invoked from within a `catch` block.
     auto skip_archive_or_rethrow = [&](int error_code)
     {
-        rethrow_unless_skippable(error_code);
+        rethrow_unless_skippable(error_code, /*while_reading_data=*/ false);
         LOG_WARNING(storage->log, "Skipping archive {} due to an error: {}", current_path, getCurrentExceptionMessage(false));
         file_enumerator = nullptr;
         archive_reader.reset();
@@ -2401,7 +2424,7 @@ Chunk StorageFileSource::generate()
                 }
                 catch (const Exception & e)
                 {
-                    skip_or_rethrow(e.code());
+                    skip_or_rethrow(e.code(), /*while_reading_data=*/ false);
                     continue;
                 }
                 current_file_size = file_stat.st_size;
@@ -2477,7 +2500,7 @@ Chunk StorageFileSource::generate()
                 }
                 catch (const Exception & e)
                 {
-                    skip_or_rethrow(e.code());
+                    skip_or_rethrow(e.code(), /*while_reading_data=*/ false);
                     continue;
                 }
 
@@ -2645,7 +2668,34 @@ Chunk StorageFileSource::generate()
 
             /// Format construction may itself read file metadata/content (e.g. a Parquet footer)
             /// and fail on a broken file, so it is protected by the same skip handling as reading,
-            /// except for the errors of other files it opens - see `isErrorOfInputFileWhileCreatingFormat`.
+            /// except for the errors of its configuration - see `isErrorOfInputFileWhileCreatingFormat`.
+            bool format_reads_input_while_created = false;
+            if (getContext()->getSettingsRef()[Setting::engine_file_skip_failed_data_files])
+            {
+                /// Whether the format has a random-access creator, which reads the input while the format
+                /// is created, even when seeks are not allowed.
+                FormatSettings format_settings_for_check = storage->format_settings ? *storage->format_settings : getFormatSettings(getContext());
+                format_settings_for_check.seekable_read = true;
+                format_reads_input_while_created
+                    = FormatFactory::instance().checkIfFormatIsRandomAccessInput(storage->format_name, getContext(), format_settings_for_check);
+
+                if (!format_reads_input_while_created)
+                {
+                    /// Other formats may only peek at the start of the input while they are created, so read
+                    /// it in advance: a broken start of the file, e.g. a corrupted compressed stream, is
+                    /// skipped here.
+                    try
+                    {
+                        read_buf->eof();
+                    }
+                    catch (const Exception & e)
+                    {
+                        skip_or_rethrow(e.code(), /*while_reading_data=*/ false);
+                        continue;
+                    }
+                }
+            }
+
             try
             {
                 if (object_with_metadata.has_value())
@@ -2715,9 +2765,9 @@ Chunk StorageFileSource::generate()
             }
             catch (const Exception & e)
             {
-                if (!isErrorOfInputFileWhileCreatingFormat(e, *read_buf))
+                if (!isErrorOfInputFileWhileCreatingFormat(e, *read_buf, format_reads_input_while_created))
                     throw;
-                skip_or_rethrow(e.code());
+                skip_or_rethrow(e.code(), /*while_reading_data=*/ false);
                 continue;
             }
 
@@ -2737,7 +2787,7 @@ Chunk StorageFileSource::generate()
             /// file - e.g. `CANNOT_PARSE_TEXT` from a conversion in a default expression.
             if (row_transform_failed->load())
                 throw;
-            skip_or_rethrow(e.code());
+            skip_or_rethrow(e.code(), /*while_reading_data=*/ true);
             continue;
         }
         if (pulled)
