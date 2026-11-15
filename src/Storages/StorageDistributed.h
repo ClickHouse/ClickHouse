@@ -205,7 +205,7 @@ private:
     /// Used by StorageSystemDistributionQueue
     std::vector<DistributedAsyncInsertDirectoryQueue::Status> getDirectoryQueueStatuses() const;
 
-    static IColumn::Selector createSelector(const Cluster::SlotToShard & slot_to_shard, const ColumnWithTypeAndName & result);
+    IColumn::Selector createSelector(const Cluster::SlotToShard & slot_to_shard, const ColumnWithTypeAndName & result) const;
     /// Apply the following settings:
     /// - optimize_skip_unused_shards
     /// - force_optimize_skip_unused_shards

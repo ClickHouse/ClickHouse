@@ -775,7 +775,7 @@ IColumn::Selector DistributedSink::createSelector(const Block & source_block) co
 
     const auto & key_column = current_block_with_sharding_key_expr.getByName(storage.getShardingKeyColumnName());
 
-    return StorageDistributed::createSelector(*slot_to_shard, key_column);
+    return storage.createSelector(*slot_to_shard, key_column);
 }
 
 

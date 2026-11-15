@@ -2247,9 +2247,19 @@ void StorageDistributed::checkShardingKeySetsAreBuilt() const
             "Sharding expression cannot contain IN with a subquery or a non-Set table, because its set is never built");
 }
 
-IColumn::Selector StorageDistributed::createSelector(const Cluster::SlotToShard & slot_to_shard, const ColumnWithTypeAndName & result)
+IColumn::Selector StorageDistributed::createSelector(const Cluster::SlotToShard & slot_to_shard, const ColumnWithTypeAndName & result) const
 {
     const IColumn * column = result.column.get();
+
+    /// `createBlockSelector` narrows a signed key differently for constant and ordinary columns.
+    /// With a bucket map the key is always a sign-extended UInt64, as in `shardContains` of the `IN` rewrite.
+    if (bucket_map_watcher && isNativeInteger(removeLowCardinality(result.type)))
+    {
+        IColumn::Selector selector(column->size());
+        for (size_t i = 0; i < selector.size(); ++i)
+            selector[i] = slot_to_shard[static_cast<UInt64>(column->getInt(i)) % slot_to_shard.size()];
+        return selector;
+    }
 
 /// NOLINTBEGIN(readability-else-after-return)
 // If result.type is DataTypeLowCardinality, do shard according to its dictionaryType
@@ -2990,7 +3000,7 @@ If the server ceased to exist or had a rough restart (for example, due to a hard
 This is an experimental feature. Enable it with the [`allow_experimental_distributed_bucket_map`](/reference/settings/session-settings/allow-experimental#allow_experimental_distributed_bucket_map) setting.
 </Note>
 
-With the `bucket_map_zookeeper_path` setting, the table selects shards with a bucket map stored in ZooKeeper instead of the shard weights. A row goes to the bucket `sharding_key % buckets`, and then to the shard the bucket is assigned to. The number of buckets is fixed, so assigning a bucket to another shard does not change the shard of the rows of the other buckets. The map is shared by all `Distributed` tables with the same path, for example by the tables of the same name on all servers of the cluster.
+With the `bucket_map_zookeeper_path` setting, the table selects shards with a bucket map stored in ZooKeeper instead of the shard weights. A row goes to the bucket `sharding_key % buckets`, and then to the shard the bucket is assigned to. A negative sharding key is taken as an unsigned 64-bit number, `reinterpretAsUInt64(toInt64(sharding_key))`. The number of buckets is fixed, so assigning a bucket to another shard does not change the shard of the rows of the other buckets. The map is shared by all `Distributed` tables with the same path, for example by the tables of the same name on all servers of the cluster.
 
 When the table is created and the map does not exist, the map is created with `bucket_map_buckets` buckets split into ranges of almost equal size, one range for every shard of the cluster. The map is a text node:
 
