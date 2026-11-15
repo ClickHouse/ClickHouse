@@ -1329,6 +1329,15 @@ def test_structured_output_leading_whitespace(started_cluster):
     assert result.strip() == "bug\t1\tThe checkout page crashes"
 
 
+def test_no_structured_output_keeps_whitespace(started_cluster):
+    """A bare-text reply from a provider that ignores `response_format` keeps its whitespace."""
+    result = instance.query(
+        "SELECT hex(aiClassify(' bug ', [' bug '], map('credentials', 'ai_mock_no_structured_output'))), "
+        "hex(aiExtract('  the page\\n', 'the page', map('credentials', 'ai_mock_no_structured_output')))",
+    )
+    assert result == "2062756720\t202074686520706167650A\n"
+
+
 # ---------------------------------------------------------------------------
 # aiTranslate
 # ---------------------------------------------------------------------------

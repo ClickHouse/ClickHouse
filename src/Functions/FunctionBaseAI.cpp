@@ -625,7 +625,11 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
             String & response = ai_response->result;
             if (response_format) /// Some models output whitespace around a structured reply
-                response = String(trimWhitespace(response));
+            {
+                std::string_view trimmed = trimWhitespace(response);
+                if (trimmed.starts_with('{'))
+                    response = String(trimmed);
+            }
             insertProcessedResult(*result_col, postProcessResponse(response));
             ++rows_processed;
         }
