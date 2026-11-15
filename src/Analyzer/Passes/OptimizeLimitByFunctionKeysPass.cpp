@@ -33,9 +33,7 @@ public:
         if (!query->hasLimitBy())
             return;
 
-        /// A `GROUP BY` key is not a function of other ones in subtotals: it can have a default value there.
-        const bool has_subtotals = query->isGroupByWithRollup() || query->isGroupByWithCube() || query->isGroupByWithGroupingSets();
-        removeKeysThatAreFunctionsOfOtherKeys(query->getLimitBy().getNodes(), has_subtotals ? getGroupByKeys(*query) : QueryTreeNodes{});
+        removeKeysThatAreFunctionsOfOtherKeys(query->getLimitBy().getNodes());
     }
 };
 

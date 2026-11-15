@@ -4,6 +4,8 @@
 #include <Analyzer/Resolve/IdentifierLookup.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -23,6 +25,12 @@ struct ScopeAliases
 
     /// Cloned resolved expressions with aliases that must be removed
     QueryTreeNodes node_to_remove_aliases;
+
+    /// Nodes of copied expressions whose aliases must not be written to AST, unless the second node is set and keeps its alias
+    std::vector<std::pair<QueryTreeNodePtr, QueryTreeNodePtr>> nodes_to_hide_aliases;
+
+    /// Aliases that are resolved by name again when the query is converted to AST and analyzed by another server
+    std::unordered_set<std::string> alias_names_used_in_ast;
 
     UnorderedMapWithMemoryTracking<std::string, DataTypePtr> alias_name_to_expression_type;
 

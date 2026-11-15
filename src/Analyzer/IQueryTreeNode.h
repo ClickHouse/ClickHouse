@@ -92,6 +92,9 @@ struct ConvertToASTOptions
 
     /// Set CTE name in ASTSubquery field.
     bool set_subquery_cte_name = true;
+
+    /// Write the aliases hidden with `IQueryTreeNode::hideAlias`.
+    bool write_hidden_aliases = false;
 };
 
 class IQueryTreeNode : public TypePromotion<IQueryTreeNode>
@@ -196,12 +199,19 @@ public:
             original_alias = std::move(alias);
 
         alias = std::move(alias_value);
+        alias_is_hidden = false;
     }
 
     /// Remove node alias
     void removeAlias()
     {
         alias = {};
+    }
+
+    /// Do not write the alias to AST. The alias is still a part of the tree hash and is compared in `isEqual`.
+    void hideAlias()
+    {
+        alias_is_hidden = true;
     }
 
     /// Returns true if the expression was parenthesized in the original query
@@ -335,6 +345,7 @@ private:
     ASTPtr original_ast;
     /// If the expression has extra parentheses around it in the original query
     bool parenthesized = false;
+    bool alias_is_hidden = false;
 };
 
 class ITableExpressionNode : public IQueryTreeNode

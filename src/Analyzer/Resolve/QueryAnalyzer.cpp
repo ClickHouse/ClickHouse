@@ -264,25 +264,86 @@ void removeAliasesRecursive(QueryTreeNodePtr & node)
         removeAliasesRecursive(child);
 }
 
-/// Aliases of a resolved expression are removed at the end of `resolveQuery` if they are registered for that.
-/// Registers the same ones of its copy: the two must stay equal, and a query printed for another server must not have
-/// different expressions with the same alias.
-void registerAliasesOfCopy(
-    const QueryTreeNodePtr & node,
-    const QueryTreeNodePtr & copy,
-    const std::unordered_map<const IQueryTreeNode *, ScopeAliases *> & registered)
+/// The result of these functions depends on the names of the arguments, which are built from aliases.
+bool usesNamesOfArguments(const IQueryTreeNode & node)
 {
-    if (!node)
-        return;
+    const auto * function_node = node.as<FunctionNode>();
+    if (!function_node || !function_node->isOrdinaryFunction())
+        return false;
 
-    if (auto it = registered.find(node.get()); it != registered.end())
+    const auto & function_name = function_node->getFunctionName();
+    if (function_name == "tuple")
     {
-        it->second->node_to_remove_aliases.push_back(copy);
-        return;
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(function_node->getResultType().get());
+        return tuple_type && tuple_type->hasExplicitNames();
     }
 
-    for (const auto [child, child_copy] : std::views::zip(node->getChildren(), copy->getChildren()))
-        registerAliasesOfCopy(child, child_copy, registered);
+    return function_name == "formatRow" || function_name == "formatRowNoNewline";
+}
+
+/// Registers the nodes of an expression whose aliases must not be written to AST. If the expression is a copy of `original`,
+/// it has to be written like `original`. The aliases that another server resolves again are kept.
+void registerAliasesToHide(const QueryTreeNodePtr & expression, const QueryTreeNodePtr & original, ScopeAliases & aliases)
+{
+    enum Position : uint8_t
+    {
+        /// The alias is hidden.
+        OTHER,
+        /// The alias is hidden if the original node loses it.
+        LIKE_ORIGINAL,
+        /// The alias is kept.
+        IN_ARGUMENT_NAME,
+    };
+
+    struct Frame
+    {
+        QueryTreeNodePtr copy;
+        QueryTreeNodePtr original;
+        Position position;
+    };
+
+    std::vector<Frame> frames{original ? Frame{expression, original, LIKE_ORIGINAL} : Frame{expression, expression, OTHER}};
+    /// A node can have several parents.
+    std::unordered_set<const IQueryTreeNode *> visited_nodes[3];
+    auto & registered = aliases.nodes_to_hide_aliases;
+    const size_t first_registered = registered.size();
+
+    while (!frames.empty())
+    {
+        auto frame = std::move(frames.back());
+        frames.pop_back();
+
+        if (!frame.copy || !visited_nodes[frame.position].insert(frame.copy.get()).second)
+            continue;
+
+        /// The name of an expression without an alias consists of the names of its children.
+        auto children_position = frame.position;
+        if (frame.copy->hasAlias())
+        {
+            if (frame.position == IN_ARGUMENT_NAME || aliases.alias_names_used_in_ast.contains(frame.copy->getAlias()))
+                children_position = LIKE_ORIGINAL;
+            else
+                registered.emplace_back(frame.copy, frame.position == LIKE_ORIGINAL ? frame.original : nullptr);
+        }
+
+        if (isQueryOrUnionNode(frame.copy))
+            continue;
+
+        if (usesNamesOfArguments(*frame.copy))
+            children_position = IN_ARGUMENT_NAME;
+
+        const auto & copy_children = frame.copy->getChildren();
+        const auto & original_children = frame.original->getChildren();
+        for (size_t i = 0; i < copy_children.size(); ++i)
+            frames.push_back({copy_children[i], original_children[i], children_position});
+    }
+
+    const auto is_kept_elsewhere = [&](const auto & nodes)
+    {
+        return visited_nodes[IN_ARGUMENT_NAME].contains(nodes.first.get())
+            || (!nodes.second && visited_nodes[LIKE_ORIGINAL].contains(nodes.first.get()));
+    };
+    registered.erase(std::remove_if(registered.begin() + first_registered, registered.end(), is_kept_elsewhere), registered.end());
 }
 
 /// Hides lambda argument names in the scopes they belong to and restores them on destruction.
@@ -965,8 +1026,6 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
     if (positional_arguments_already_resolved)
         return;
 
-    std::unordered_map<const IQueryTreeNode *, ScopeAliases *> registered;
-
     auto & node_list_typed = node_list->as<ListNode &>();
 
     for (auto & node : node_list_typed.getNodes())
@@ -1018,12 +1077,7 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
         *node_to_replace = projection_nodes[pos]->clone();
         if (auto it = resolved_expressions.find(projection_nodes[pos]); it != resolved_expressions.end())
         {
-            if (registered.empty())
-                for (auto * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
-                    for (const auto & node_to_remove_aliases : current_scope->aliases.node_to_remove_aliases)
-                        registered.emplace(node_to_remove_aliases.get(), &current_scope->aliases);
-
-            registerAliasesOfCopy(projection_nodes[pos], *node_to_replace, registered);
+            registerAliasesToHide(*node_to_replace, projection_nodes[pos], scope.aliases);
             resolved_expressions[*node_to_replace] = it->second;
         }
     }
@@ -4996,6 +5050,9 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
 
         resolveExpressionNode(interpolation_to_resolve, interpolate_scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
+        /// It has copies of the expressions that it refers to by aliases.
+        registerAliasesToHide(interpolation_to_resolve, nullptr, scope.aliases);
+
         /// a fill row is computed from one previous row, it cannot multiply rows
         assertNoArrayJoinOutside(interpolation_to_resolve, ready_columns, ErrorCodes::UNSUPPORTED_METHOD, "in INTERPOLATE");
     }
@@ -6710,6 +6767,9 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             if (settings[Setting::analyzer_compatibility_join_using_top_level_identifier] && is_outermost_join())
                 result_left_table_expression = try_resolve_identifier_from_query_projection(identifier_full_name, join_node_typed.getLeftTableExpressionNodeTyped(), scope);
 
+            if (result_left_table_expression)
+                scope.aliases.alias_names_used_in_ast.insert(identifier_full_name);
+
             /// Such a USING key cannot ship to a remote server (a remote server re-resolves the key only from a top-level
             /// projection alias), so disable parallel replicas for such a query.
             if (result_left_table_expression && non_top_level_alias_matched)
@@ -7626,7 +7686,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         visitor.visit(query_node_typed.getOrderByNode());
 
     if (query_node_typed.hasInterpolate())
+    {
         visitor.visit(query_node_typed.getInterpolate());
+
+        for (const auto & interpolate_node : query_node_typed.getInterpolate()->as<ListNode &>().getNodes())
+            scope.aliases.alias_names_used_in_ast.insert(interpolate_node->as<InterpolateNode &>().getExpressionName());
+    }
 
     if (query_node_typed.hasLimitByLimit())
         visitor.visit(query_node_typed.getLimitByLimit());
@@ -8109,6 +8174,29 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     for (auto & [_, node] : scope.aliases.alias_name_to_lambda_node)
         node->removeAlias();
+
+    /// A positional argument must be written to AST like the projection expression it is copied from. Otherwise another server
+    /// finds different definitions of one alias, or resolves a column name to an alias that the projection does not have.
+    /// TODO: Remove these aliases. Now it would let query tree passes match positional keys with other expressions,
+    /// and some passes do it incorrectly, for example for `SELECT toYear(d) AS y, any(y = 2024) FROM t GROUP BY y`.
+    {
+        /// The body of a lambda function keeps its aliases. Their definitions can become different: `x -> (x + 1 AS y) * y`.
+        std::unordered_map<String, std::pair<QueryTreeNodePtr, QueryTreeNodePtr>> first_definitions;
+        NameSet differently_written_aliases;
+        for (const auto & [node, original_node] : scope.aliases.nodes_to_hide_aliases)
+        {
+            if (!original_node || !original_node->hasAlias())
+                continue;
+
+            const auto & [first, first_original] = first_definitions.try_emplace(node->getAlias(), node, original_node).first->second;
+            if (first_original != original_node && first->isEqual(*node) && !first_original->isEqual(*original_node))
+                differently_written_aliases.insert(node->getAlias());
+        }
+
+        for (const auto & [node, original_node] : scope.aliases.nodes_to_hide_aliases)
+            if (!original_node || !original_node->hasAlias() || differently_written_aliases.contains(node->getAlias()))
+                node->hideAlias();
+    }
 
     /// Nested aliases can repeat between different projection expressions
     /// (SELECT tuple(1 AS x), tuple(2 AS x) -- see the check for duplicated aliases above),
