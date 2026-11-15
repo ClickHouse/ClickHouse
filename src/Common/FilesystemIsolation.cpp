@@ -600,9 +600,8 @@ std::vector<std::string> getMountPointsInside(const std::string & path)
     return mount_points;
 }
 
-/// Remounts the bind mount at `path` with `MS_REMOUNT | MS_BIND | flags`, and sets `errno` if it fails. Making a mount
-/// read-only fails with `EBUSY` while anything has write access to it, even a read through it that updates the access
-/// time, and the new mounts are reachable from outside through `/proc/<pid>/root`, so that is waited out for a while.
+/// Sets `errno` on failure. Making a mount read-only fails with `EBUSY` while anything has write access to it, even a
+/// read through it that updates the access time, and new mounts are reachable from outside through `/proc/<pid>/root`.
 bool remountBind(const char * path, unsigned long flags) // NOLINT(google-runtime-int)
 {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
