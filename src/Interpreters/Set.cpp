@@ -1009,11 +1009,6 @@ void NO_INLINE Set::executeImplCase(
     /// the last-element cache compares the key with the previous row's before probing the hash
     /// table, and `HashMethodHashed` additionally compares the raw key bytes before even
     /// calculating the hash.
-    ///
-    /// Since LLVM 23 a reference argument is known to be dereferenceable only at function entry, so after the calls
-    /// above the loads of the hash table fields (`buf`, `mask`, `has_zero`), which are conditional on the consecutive-keys
-    /// and zero-key checks, could no longer be hoisted and were repeated on every row. The assumption hoists them again.
-    __builtin_assume_dereferenceable(&method.data, sizeof(method.data));
     for (size_t i = 0; i < rows; ++i)
     {
         if (has_null_map && (*null_map)[i])

@@ -66,9 +66,7 @@ public:
     bool isLarge() const { return roaring_bitmap != nullptr; }
     bool isSmall() const { return roaring_bitmap == nullptr; }
 
-    /// Inlined into the per-element loops of `bitmapBuild` and `groupBitmap`; clang 23 stopped doing that on its own
-    /// and paid a call per inserted element.
-    ALWAYS_INLINE void add(T value)
+    void add(T value)
     {
         if (isSmall())
         {

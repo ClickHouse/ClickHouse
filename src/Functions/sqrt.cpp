@@ -7,7 +7,7 @@ namespace
 {
 
 struct SqrtName { static constexpr auto name = "sqrt"; };
-using FunctionSqrt = FunctionMathUnary<UnaryFunctionVectorized<SqrtName, sqrt, true>>;
+using FunctionSqrt = FunctionMathUnary<UnaryFunctionVectorized<SqrtName, sqrt>>;
 
 }
 

@@ -11,8 +11,6 @@ struct MinusImpl
     using ResultType = typename NumberTraits::ResultOfSubtraction<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
-    /// See `PlusImpl::no_vectorize`.
-    static constexpr bool no_vectorize = sizeof(ResultType) > 16;
 
     /// Documentation-only — see `PlusImpl::signature_documentation`.
     static constexpr auto signature_documentation = "(Any, Any) -> Any";

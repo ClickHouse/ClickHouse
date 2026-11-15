@@ -55,10 +55,7 @@ MULTITARGET_FUNCTION_X86_V4(
                 for (auto & partial_sum : partial_sums)
                     sum += partial_sum;
 
-                /// Tail: process remaining elements that don't fill a full unroll block.
-                /// clang 22 unrolled it by 4 on its own and clang 23 does not, which made `dotProduct` of 150-element
-                /// `BFloat16` arrays 15% slower on the x86 CI machines; the order of the additions stays the same.
-                _Pragma("clang loop vectorize(disable) unroll_count(4)")
+                /// Tail: process remaining elements that don't fill a full unroll block
                 for (; i < array_size; ++i)
                     sum += static_cast<ResultType>(data_x[prev + i]) * static_cast<ResultType>(data_y[prev + i]);
 
