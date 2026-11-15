@@ -465,7 +465,7 @@ bool shouldIgnoreQuota(const TableNode & table_node)
     return false;
 }
 
-NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage, const StorageSnapshotPtr & storage_snapshot, const NameSet & column_names_allowed_to_select)
+NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage, const StorageSnapshotPtr & storage_snapshot, const NameSet & column_names_allowed_to_select, const ContextPtr & query_context)
 {
     /** We need to read at least one column to find the number of rows.
       * We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
@@ -523,6 +523,14 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
             filtered_by_allowed_columns = true;
             column_names_and_types = std::move(allowed_columns);
         }
+    }
+
+    if (const auto * snapshot_data = dynamic_cast<const MergeTreeData::SnapshotData *>(storage_snapshot->data.get());
+        snapshot_data && snapshot_data->parts)
+    {
+        auto stored_columns = MergeTreeData::getColumnsStoredInAllParts(column_names_and_types, *snapshot_data->parts, snapshot_data->mutations_snapshot, query_context);
+        if (!stored_columns.empty())
+            column_names_and_types = std::move(stored_columns);
     }
 
     /// A table expression can resolve to no columns at all, for example a table function over a
@@ -862,7 +870,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
         {
             const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
             const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
-            additional_column_to_read = chooseSmallestColumnToReadFromStorage(storage, storage_snapshot, columns_names_allowed_to_select);
+            additional_column_to_read = chooseSmallestColumnToReadFromStorage(storage, storage_snapshot, columns_names_allowed_to_select, query_context);
         }
         else if (query_node || union_node)
         {

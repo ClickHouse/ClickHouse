@@ -666,7 +666,7 @@ public:
         virtual MutationCommands getOnFlyMutationCommandsForPart(const DataPartPtr & part) const = 0;
         virtual PatchParts getPatchesForPart(const DataPartPtr & part) const = 0;
         virtual std::shared_ptr<IMutationsSnapshot> cloneEmpty() const = 0;
-        /// Columns changed on the fly by patches, data mutations and alter mutations of the whole snapshot.
+        /// Columns changed on the fly by patches, data, alter and metadata mutations of the whole snapshot.
         virtual NameSet getColumnsChangedOnFly() const = 0;
 
         virtual bool hasPatchParts() const = 0;
@@ -1339,6 +1339,12 @@ public:
     }
 
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;
+
+    /// The columns of `columns` that every part of `parts` stores, preferring those no pending mutation changes and
+    /// resolving pending drops and renames of the others as the reader does. Elsewhere the read computes the column's
+    /// default, which can read other columns and throw.
+    static NamesAndTypesList getColumnsStoredInAllParts(
+        const NamesAndTypesList & columns, const RangesInDataParts & parts, const MutationsSnapshotPtr & mutations_snapshot, const ContextPtr & query_context);
 
     IndexSizeByName getSecondaryIndexSizes() const override
     {
