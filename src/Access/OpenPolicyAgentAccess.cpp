@@ -114,7 +114,7 @@ String makeAccessJSON(const AccessRightsElement & el, UserPtr user)
             if (!el.columns.empty())
             {
                 Poco::JSON::Array columns;
-                for (auto & column_name : el.columns)
+                for (const auto & column_name : el.columns)
                     columns.add(column_name);
                 access.set("columns", columns);
             }
