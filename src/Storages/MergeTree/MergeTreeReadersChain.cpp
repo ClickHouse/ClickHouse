@@ -497,8 +497,15 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     /// but `contaminated` true): they carry the contamination to the mark without being counted as read, which
     /// matters when another fragment of the same granule was cleanly emptied by the user predicate. Feeding is
     /// in mark order; `feedPrewhereGranuleMark` OR-s the flags of a granule split across blocks.
+    /// A granule whose rest was skipped unread (see below) is `contaminated` too.
     if (prewhere_granule_stats_enabled)
     {
+        /// The rest of the pending granule was skipped unread (`canSkipMark`, e.g. by the top-K threshold), so the
+        /// user predicate did not reject the whole granule. This block may read no rows at all, so check it here.
+        if (prewhere_pending_mark && read_result.in_progress_start_mark == prewhere_pending_mark
+            && !read_result.raw_rows_per_granule.empty() && read_result.raw_rows_per_granule.front() == 0)
+            prewhere_pending_contaminated = true;
+
         /// Feed this block's granules only when tracking ran (it does whenever any row reached PREWHERE in this
         /// block). When it did not, the per-granule vectors are empty; a pending mark from an earlier block is
         /// still finalized below once the cursor passes it.
