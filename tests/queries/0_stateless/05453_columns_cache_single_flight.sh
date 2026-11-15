@@ -43,7 +43,8 @@ function start_claimant()
     $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $PAUSE"
     $CLICKHOUSE_CLIENT --query_id "$1" --query "$QUERY$2" &
     claimant_pid=$!
-    $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $PAUSE PAUSE"
+    # Bounded, so that a first read that claims nothing fails the test at once instead of hanging it.
+    timeout 120 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $PAUSE PAUSE" || echo "query $1 did not pause after a claim"
 }
 
 function finish_claimant()
