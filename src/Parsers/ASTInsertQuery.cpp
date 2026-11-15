@@ -9,6 +9,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -348,13 +349,14 @@ void ASTInsertQuery::tryFindInputFunction(const ASTPtr & ast, ASTPtr & input_fun
     for (const auto & child : ast->children)
         tryFindInputFunction(child, input_function);
 
-    if (const auto * table_function_ast = ast->as<ASTFunction>())
+    if (const auto * table_expression = ast->as<ASTTableExpression>(); table_expression && table_expression->table_function)
     {
-        if (table_function_ast->name == "input")
+        const auto * table_function_ast = table_expression->table_function->as<ASTFunction>();
+        if (table_function_ast && table_function_ast->name == "input")
         {
             if (input_function)
                 throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "You can use the `input` function only once in a query.");
-            input_function = ast;
+            input_function = table_expression->table_function;
         }
     }
 }
