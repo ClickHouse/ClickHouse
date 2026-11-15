@@ -751,7 +751,7 @@ def test_move_workload():
     """
     )
     node.query(
-        f"""
+        """
         drop table if exists data;
         create table data (key UInt64 CODEC(NONE), value String CODEC(NONE)) engine=MergeTree() order by tuple()
             ttl now() - 1 TO VOLUME 'cold'
@@ -762,26 +762,26 @@ def test_move_workload():
 
     reads_before = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/sys_moves/%' and type='request_queue'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/sys_moves/%' and type='request_queue'"
         ).strip()
     )
     writes_before = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/sys_moves/%' and type='request_queue'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/sys_moves/%' and type='request_queue'"
         ).strip()
     )
 
-    node.query(f"insert into data select number, randomString(1000) from numbers(1e4)")
+    node.query("insert into data select number, randomString(1000) from numbers(1e4)")
     wait_for_parts_on_disk("data", "s3_no_fake_tx_2")
 
     reads_after = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/sys_moves/%' and type='request_queue'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/sys_moves/%' and type='request_queue'"
         ).strip()
     )
     writes_after = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/sys_moves/%' and type='request_queue'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/sys_moves/%' and type='request_queue'"
         ).strip()
     )
 
@@ -800,7 +800,7 @@ def test_move_workload_override():
     """
     )
     node.query(
-        f"""
+        """
         drop table if exists prod_data;
         drop table if exists dev_data;
         create table prod_data (key UInt64 CODEC(NONE), value String CODEC(NONE)) engine=MergeTree() order by tuple()
@@ -815,48 +815,48 @@ def test_move_workload_override():
 
     prod_reads_before = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/prod_moves/%' and type='request_queue'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/prod_moves/%' and type='request_queue'"
         ).strip()
     )
     prod_writes_before = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/prod_moves/%' and type='request_queue'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/prod_moves/%' and type='request_queue'"
         ).strip()
     )
     dev_reads_before = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/dev_moves/%' and type='request_queue'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/dev_moves/%' and type='request_queue'"
         ).strip()
     )
     dev_writes_before = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/dev_moves/%' and type='request_queue'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/dev_moves/%' and type='request_queue'"
         ).strip()
     )
 
-    node.query(f"insert into prod_data select number, randomString(1000) from numbers(1e4)")
-    node.query(f"insert into dev_data select number, randomString(1000) from numbers(1e4)")
+    node.query("insert into prod_data select number, randomString(1000) from numbers(1e4)")
+    node.query("insert into dev_data select number, randomString(1000) from numbers(1e4)")
     wait_for_parts_on_disk("prod_data", "s3_no_fake_tx_2")
     wait_for_parts_on_disk("dev_data", "s3_no_fake_tx_2")
 
     prod_reads_after = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/prod_moves/%' and type='request_queue'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/prod_moves/%' and type='request_queue'"
         ).strip()
     )
     prod_writes_after = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/prod_moves/%' and type='request_queue'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/prod_moves/%' and type='request_queue'"
         ).strip()
     )
     dev_reads_after = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/dev_moves/%' and type='request_queue'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/dev_moves/%' and type='request_queue'"
         ).strip()
     )
     dev_writes_after = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/dev_moves/%' and type='request_queue'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/dev_moves/%' and type='request_queue'"
         ).strip()
     )
 

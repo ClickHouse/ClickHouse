@@ -1085,7 +1085,7 @@ instead.
 
 **See Also**
 - [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
-)", 0,
+)", 0, \
         {"26.11", "", "", "New setting"}) \
     DECLARE(Milliseconds, background_task_preferred_step_execution_time_ms, 50, R"(
 Target time to execution of one step of merge or mutation. Can be exceeded if
