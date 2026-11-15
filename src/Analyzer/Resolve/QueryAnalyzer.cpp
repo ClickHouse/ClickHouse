@@ -87,7 +87,10 @@
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <memory>
+#include <optional>
 #include <ranges>
+#include <unordered_set>
+#include <vector>
 
 namespace DB
 {
@@ -162,6 +165,92 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// Inserts CTE nodes into `ctes_in_resolve_process` (and optionally `cte_definitions_in_resolve_process`)
+/// using precomputed `QueryTreeNodePtrWithHash` keys, and erases those precomputed keys on scope exit
+/// so cleanup survives nested `unordered_set` rehashes and neither traverses the tree nor throws.
+class CTEInResolveProcessGuard
+{
+public:
+    explicit CTEInResolveProcessGuard(
+        QueryTreeNodePtrWithHashSet & ctes_in_resolve_process_,
+        std::unordered_set<const IQueryTreeNode *> * cte_definitions_in_resolve_process_ = nullptr) noexcept
+        : ctes_in_resolve_process(ctes_in_resolve_process_)
+        , cte_definitions_in_resolve_process(cte_definitions_in_resolve_process_)
+    {
+    }
+
+    CTEInResolveProcessGuard(const CTEInResolveProcessGuard &) = delete;
+    CTEInResolveProcessGuard & operator=(const CTEInResolveProcessGuard &) = delete;
+
+    void insert(const QueryTreeNodePtr & cte_node)
+    {
+        if (!cte_node)
+            return;
+
+        if (single_cte_key.has_value())
+            extra_cte_keys.reserve(extra_cte_keys.size() + 1);
+        if (cte_definitions_in_resolve_process && single_cte_def != nullptr)
+            extra_cte_defs.reserve(extra_cte_defs.size() + 1);
+
+        QueryTreeNodePtrWithHash cte_with_hash{cte_node};
+        if (auto [_, inserted] = ctes_in_resolve_process.insert(cte_with_hash); inserted)
+        {
+            if (!single_cte_key.has_value())
+                single_cte_key.emplace(std::move(cte_with_hash));
+            else
+                extra_cte_keys.push_back(std::move(cte_with_hash));
+        }
+
+        if (cte_definitions_in_resolve_process)
+        {
+            if (auto [_, inserted] = cte_definitions_in_resolve_process->insert(cte_node.get()); inserted)
+            {
+                if (single_cte_def == nullptr)
+                    single_cte_def = cte_node.get();
+                else
+                    extra_cte_defs.push_back(cte_node.get());
+            }
+        }
+    }
+
+    void insertRange(const QueryTreeNodes & cte_nodes)
+    {
+        if (cte_nodes.size() > 1)
+        {
+            extra_cte_keys.reserve(cte_nodes.size() - 1);
+            if (cte_definitions_in_resolve_process)
+                extra_cte_defs.reserve(cte_nodes.size() - 1);
+        }
+
+        for (const auto & cte_node : cte_nodes)
+            insert(cte_node);
+    }
+
+    ~CTEInResolveProcessGuard() noexcept
+    {
+        if (single_cte_key.has_value())
+            ctes_in_resolve_process.erase(*single_cte_key);
+        for (const auto & cte_key : extra_cte_keys)
+            ctes_in_resolve_process.erase(cte_key);
+
+        if (cte_definitions_in_resolve_process)
+        {
+            if (single_cte_def != nullptr)
+                cte_definitions_in_resolve_process->erase(single_cte_def);
+            for (const auto * cte_def : extra_cte_defs)
+                cte_definitions_in_resolve_process->erase(cte_def);
+        }
+    }
+
+private:
+    QueryTreeNodePtrWithHashSet & ctes_in_resolve_process;
+    std::unordered_set<const IQueryTreeNode *> * cte_definitions_in_resolve_process = nullptr;
+    std::optional<QueryTreeNodePtrWithHash> single_cte_key;
+    const IQueryTreeNode * single_cte_def = nullptr;
+    std::vector<QueryTreeNodePtrWithHash> extra_cte_keys;
+    std::vector<const IQueryTreeNode *> extra_cte_defs;
+};
 
 /// A `MATERIALIZED` CTE is materialized once, so its body cannot be correlated.
 /// Must run for every reference: clones of one body can resolve differently.
@@ -4019,12 +4108,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                         ///
                         /// In this example argument of function `in` is being resolve here. If CTE `test1` is not forbidden,
                         /// `test1` is resolved to CTE (not to the table) in `initializeQueryJoinTreeNode` function.
-                        ctes_in_resolve_process.insert(original_cte_node);
-                        cte_definitions_in_resolve_process.insert(original_cte_node.get());
-                        SCOPE_EXIT({
-                            ctes_in_resolve_process.erase(original_cte_node);
-                            cte_definitions_in_resolve_process.erase(original_cte_node.get());
-                        });
+                        CTEInResolveProcessGuard cte_resolve_guard(ctes_in_resolve_process, &cte_definitions_in_resolve_process);
+                        cte_resolve_guard.insert(original_cte_node);
 
                         if (subquery_node)
                             resolveQuery(resolved_identifier_node, subquery_scope);
@@ -4046,8 +4131,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
                         if (!mat_subquery_is_resolved)
                         {
-                            ctes_in_resolve_process.insert(resolved_identifier_node);
-                            SCOPE_EXIT(ctes_in_resolve_process.erase(resolved_identifier_node));
+                            CTEInResolveProcessGuard cte_resolve_guard(ctes_in_resolve_process);
+                            cte_resolve_guard.insert(resolved_identifier_node);
 
                             IdentifierResolveScope & mat_subquery_scope = createIdentifierResolveScope(mat_subquery, &scope);
                             mat_subquery_scope.subquery_depth = scope.subquery_depth + 1;
@@ -7092,18 +7177,8 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         {
             QueryTreeNodePtr original_cte_node = try_get_original_cte_node(join_tree_node);
 
-            if (original_cte_node)
-            {
-                ctes_in_resolve_process.insert(original_cte_node);
-                cte_definitions_in_resolve_process.insert(original_cte_node.get());
-            }
-            SCOPE_EXIT({
-                if (original_cte_node)
-                {
-                    ctes_in_resolve_process.erase(original_cte_node);
-                    cte_definitions_in_resolve_process.erase(original_cte_node.get());
-                }
-            });
+            CTEInResolveProcessGuard cte_resolve_guard(ctes_in_resolve_process, &cte_definitions_in_resolve_process);
+            cte_resolve_guard.insert(original_cte_node);
 
             resolveExpressionNode(join_tree_node, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/, true /*ignore_alias=*/);
             break;
@@ -7141,18 +7216,8 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                 {
                     auto & subquery = table_node->getMaterializedCTESubquery();
 
-                    for (const auto & cte_map_node : cte_map_nodes)
-                    {
-                        ctes_in_resolve_process.insert(cte_map_node);
-                        cte_definitions_in_resolve_process.insert(cte_map_node.get());
-                    }
-                    SCOPE_EXIT({
-                        for (const auto & cte_map_node : cte_map_nodes)
-                        {
-                            ctes_in_resolve_process.erase(cte_map_node);
-                            cte_definitions_in_resolve_process.erase(cte_map_node.get());
-                        }
-                    });
+                    CTEInResolveProcessGuard cte_resolve_guard(ctes_in_resolve_process, &cte_definitions_in_resolve_process);
+                    cte_resolve_guard.insertRange(cte_map_nodes);
 
                     IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(subquery, &scope);
                     subquery_scope.subquery_depth = scope.subquery_depth + 1;
@@ -7189,18 +7254,8 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     /// then reuse the existing storage.
                     auto & subquery = table_node->getMaterializedCTESubquery();
 
-                    for (const auto & cte_map_node : cte_map_nodes)
-                    {
-                        ctes_in_resolve_process.insert(cte_map_node);
-                        cte_definitions_in_resolve_process.insert(cte_map_node.get());
-                    }
-                    SCOPE_EXIT({
-                        for (const auto & cte_map_node : cte_map_nodes)
-                        {
-                            ctes_in_resolve_process.erase(cte_map_node);
-                            cte_definitions_in_resolve_process.erase(cte_map_node.get());
-                        }
-                    });
+                    CTEInResolveProcessGuard cte_resolve_guard(ctes_in_resolve_process, &cte_definitions_in_resolve_process);
+                    cte_resolve_guard.insertRange(cte_map_nodes);
 
                     resolveExpressionNode(subquery, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/, true /*ignore_alias=*/);
 

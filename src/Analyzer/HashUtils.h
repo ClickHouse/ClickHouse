@@ -33,7 +33,7 @@ struct QueryTreeNodeWithHash
 template <typename T, bool compare_aliases>
 inline bool operator==(const QueryTreeNodeWithHash<T, compare_aliases> & lhs, const QueryTreeNodeWithHash<T, compare_aliases> & rhs)
 {
-    return lhs.hash == rhs.hash && lhs.node->isEqual(*rhs.node, {.compare_aliases = compare_aliases});
+    return lhs.hash == rhs.hash && (lhs.node == rhs.node || lhs.node->isEqual(*rhs.node, {.compare_aliases = compare_aliases}));
 }
 
 template <typename T, bool compare_aliases>
@@ -67,7 +67,7 @@ using ColumnNodePtrWithHashSet = std::unordered_set<ColumnNodePtrWithHash>;
 template <typename T, bool compare_aliases>
 struct std::hash<DB::QueryTreeNodeWithHash<T, compare_aliases>>
 {
-    size_t operator()(const DB::QueryTreeNodeWithHash<T, compare_aliases> & node_with_hash) const
+    size_t operator()(const DB::QueryTreeNodeWithHash<T, compare_aliases> & node_with_hash) const noexcept
     {
         return node_with_hash.hash.low64;
     }
