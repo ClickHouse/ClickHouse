@@ -887,14 +887,14 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
                 parent_snapshot_id = current_snapshot_id;
         }
 
+        // Like the other writers, name the metadata files of every catalog-backed table `<N>-<uuid>.metadata.json`,
+        // with the UUID derived from the base metadata file, see `FileNamesGenerator`.
         FileNamesGenerator filename_generator(
             persistent_components.path_resolver.getTableLocation(),
-            catalog_writes_metadata_file,
+            /* use_uuid_in_metadata */ catalog != nullptr,
             compression_method,
             write_format);
-
-        Int32 new_metadata_version = last_version + 1;
-        filename_generator.setVersion(new_metadata_version);
+        filename_generator.setBaseMetadataFile(last_version, metadata_file_path);
 
         auto metadata_info = filename_generator.generateMetadataPathWithInfo();
         auto storage_metadata_name = persistent_components.path_resolver.resolve(metadata_info.path);
