@@ -7,6 +7,9 @@
 
         The second query groups by plain String copies of the same keys as a control: it takes the
         same serialized method without the cache and must not change.
+
+        The third query groups by one LowCardinality key with count() alone, which counts the rows of
+        each dictionary position; the fourth is its String control.
     -->
     <settings>
         <max_insert_threads>8</max_insert_threads>
@@ -51,6 +54,9 @@
         FORMAT Null
         SETTINGS max_threads = 8
     </query>
+
+    <query>SELECT metric, count() FROM t_lc_group_by GROUP BY metric FORMAT Null SETTINGS max_threads = 8</query>
+    <query>SELECT metric_plain, count() FROM t_lc_group_by GROUP BY metric_plain FORMAT Null SETTINGS max_threads = 8</query>
 
     <drop_query>DROP TABLE IF EXISTS t_lc_group_by</drop_query>
 </test>

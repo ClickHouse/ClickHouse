@@ -10,6 +10,7 @@
 #include <Interpreters/SetSpillable.h>
 
 #include <unordered_set>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -75,7 +76,7 @@ struct SkipIndexReadInput
     size_t part_starting_offset_in_query = 0;
 };
 using RangesByIndex = std::unordered_map<size_t, SkipIndexReadInput>;
-using ProjectionRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
+using ProjectionRangesByIndex = UnorderedMapWithMemoryTracking<size_t, RangesInDataParts>;
 class MergeTreeIndexReadResultPool;
 using MergeTreeIndexReadResultPoolPtr = std::shared_ptr<MergeTreeIndexReadResultPool>;
 
@@ -144,8 +145,7 @@ public:
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
         MergeTreeIndexBuildContextPtr merge_tree_index_build_context_ = {},
-        LazyMaterializingRowsPtr lazy_materializing_rows_ = {},
-        const ColumnsDescription * columns_ = nullptr);
+        LazyMaterializingRowsPtr lazy_materializing_rows_ = {});
 
     String getName() const;
     std::span<ISpillable * const> getSpillables() const { return set_spillables.get(); }
@@ -176,8 +176,7 @@ public:
         const ExpressionActionsSettings & actions_settings,
         bool enable_multiple_prewhere_read_steps,
         bool force_short_circuit_execution,
-        bool read_ahead_prewhere_columns,
-        const ColumnsDescription * columns = nullptr);
+        bool read_ahead_prewhere_columns);
 
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
 

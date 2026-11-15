@@ -125,9 +125,7 @@ ORDER BY EventDate ASC
 对于 3 月 17 日之后的每一天，统计由在 3 月 17 日访问过该网站的用户贡献的页面浏览量占比。
 `IN` 子句中的子查询始终只会在单个服务器上执行一次。不存在相关子查询。
 
-<div id="null-processing">
-  ## NULL 处理
-</div>
+## NULL 处理 {#null-processing}
 
 在请求处理过程中，`IN` 运算符认为，与 [NULL](/zh/reference/settings/formats/input-format#input_format_null_as_default) 进行运算的结果始终为 `0`，无论 `NULL` 位于运算符左侧还是右侧。如果 [transform&#95;null&#95;in = 0](/zh/reference/settings/session-settings/other#transform_null_in)，则任何数据集中都不会包含 `NULL` 值；它们彼此不对应，也无法比较。
 
@@ -162,9 +160,45 @@ FROM t_null
 └───────────────────────┘
 ```
 
-<div id="distributed-subqueries">
-  ## Distributed 子查询
-</div>
+## 使用外部内存的 IN {#in-in-external-memory}
+
+当 `IN` 基于子查询或表构建的集合过大、无法保存在内存中时，可以将其写入磁盘。此后的查找操作需要从磁盘读取该集合，这会带来额外的磁盘 I/O，
+并可能导致查询变慢。值列表 (例如 `IN (1, 2, 3)`) 以及使用 `Set` 引擎的表始终
+保留在内存中。
+
+以下两个设置控制何时开始溢写：
+
+* `max_bytes_before_external_set` 设置以字节为单位的查询总内存阈值。默认值为 `0`
+  (已禁用) 。
+* `max_bytes_ratio_before_external_set` 设置服务器或用户限制下可用内存的比例，该可用内存在执行开始时测量。默认值为 `0.5`，即可用内存的一半；
+  若两种限制均不适用，则该设置不起作用。
+
+若两个阈值同时适用，则取较小者。只有当集合占用至少
+16 MiB (若阈值更小，则为该阈值) 时，才会将其写入磁盘。例如，以下查询会在集合
+占用至少 16 MiB 时将其写入磁盘：
+
+```sql
+SELECT count()
+FROM numbers(10000000)
+WHERE number IN (SELECT number * 3 FROM numbers(10000000))
+SETTINGS max_bytes_before_external_set = 16777216;
+```
+
+集合通常在查询的其余部分占用大量内存之前就已构建完成。即使集合在构建期间一直驻留在内存中，之后在查询使用它时仍可能被写入磁盘：一旦查询内存加上集合位于磁盘上时仍保留在内存中的部分 (例如其布隆过滤器) 超过阈值，该集合就会被写入磁盘，并释放其大部分内存供查询的其余部分使用，例如在集合构建完成后持续增长的聚合。
+
+`max_memory_usage` 不影响该比率。若要根据查询内存限制来配置溢写，请设置一个低于该限制的绝对阈值。这些阈值并不会限制内存使用量，因此请为其他查询处理以及落盘本身预留空间。
+
+位于磁盘上的集合会在内存中保留其键的布隆过滤器，这样在查找不在集合中的键时即可跳过磁盘读取。`max_bytes_for_external_set_bloom_filter` 用于限制该过滤器占用的内存，默认值为 128 MiB。
+
+位于磁盘上的集合还会在内存中缓存查找时读取的块，这样之后查找位于同一块中的键时就无需再次读取磁盘。`max_bytes_for_external_set_cache` 用于限制该缓存占用的内存，默认值为 128 MiB。
+
+在构建期间被写入磁盘的集合无法利用主键或数据跳过索引。使用
+`GLOBAL IN` 时，用于将子查询结果发送到远程服务器的临时表会保留在内存中，而远程服务器基于该临时表构建的集合则可以被写入磁盘。
+
+如果集合在构建期间被写入磁盘，则会先读取完整个子查询，再检查集合的大小限制：`max_rows_in_set` 统计其中不同键的数量，而 `max_bytes_in_set` 按每个键在集合中的宽度进行统计 (1 到 32 字节，例如 `UInt64` 为 8 字节，`String` 为 16 字节) ，但不包括查找所使用的内存，例如布隆过滤器和缓存。当 `set_overflow_mode = 'break'` 时，集合会按照其在磁盘上存储键的顺序保留靠前的键，直至达到限制，而不是保留子查询前几行中的键。
+对于由数值、日期和较短的 `FixedString` 值构成的键 (无论是单独使用还是位于元组中) ，保留的是最小的那些键。其他键 (例如 `String`) 则构成一个任意子集。
+
+## Distributed 子查询 {#distributed-subqueries}
 
 对于带有子查询的 `IN` 运算符 (与 `JOIN` 运算符类似) ，有两种选项：普通的 `IN` / `JOIN` 和 `GLOBAL IN` / `GLOBAL JOIN`。两者在分布式查询处理中的执行方式上存在差异。
 
@@ -268,9 +302,7 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL 
 
 在 `GLOBAL IN` 子句中指定本地表也是合理的，例如，当该本地表仅在请求方服务器上可用，而你希望远程服务器也能使用其中的数据时。
 
-<div id="distributed-subqueries-and-max_rows_in_set">
-  ### 分布式子查询与 max_rows_in_set
-</div>
+### 分布式子查询与 max_rows_in_set {#distributed-subqueries-and-max_rows_in_set}
 
 你可以使用 [`max_rows_in_set`](/zh/reference/settings/session-settings/max-rows#max_rows_in_set) 和 [`max_bytes_in_set`](/zh/reference/settings/session-settings/max-bytes#max_bytes_in_set) 来控制分布式查询期间传输的数据量。
 
@@ -282,9 +314,7 @@ SELECT * FROM table1 WHERE col1 GLOBAL IN (SELECT col1 FROM table2 WHERE <some_p
 
 如果 `some_predicate` 的选择性不够高，就会返回大量数据并引发性能问题。在这种情况下，最好限制通过网络传输的数据量。另外请注意，[`set_overflow_mode`](/zh/reference/settings/session-settings/other#set_overflow_mode) 默认设置为 `throw`，这意味着当达到这些阈值时会抛出异常。
 
-<div id="distributed-subqueries-and-max_parallel_replicas">
-  ### 分布式子查询与 max_parallel_replicas
-</div>
+### 分布式子查询与 max_parallel_replicas {#distributed-subqueries-and-max_parallel_replicas}
 
 当 [max&#95;parallel&#95;replicas](#distributed-subqueries-and-max_parallel_replicas) 大于 1 时，分布式查询会进一步改写。
 

@@ -179,8 +179,7 @@ static PrewhereExprInfo buildPrewhereActions(
     const PrewhereInfoPtr & prewhere_info,
     const IndexReadTasks & index_read_tasks,
     const ExpressionActionsSettings & actions_settings,
-    const MergeTreeReaderSettings & reader_settings,
-    const StorageSnapshotPtr & storage_snapshot)
+    const MergeTreeReaderSettings & reader_settings)
 {
     return MergeTreeSelectProcessor::getPrewhereActions(
         row_level_filter,
@@ -189,8 +188,7 @@ static PrewhereExprInfo buildPrewhereActions(
         actions_settings,
         reader_settings.enable_multiple_prewhere_read_steps,
         reader_settings.force_short_circuit_execution,
-        reader_settings.read_ahead_prewhere_columns,
-        &storage_snapshot->metadata->getColumns());
+        reader_settings.read_ahead_prewhere_columns);
 }
 
 MergeTreeReadPoolBase::MergeTreeReadPoolBase(
@@ -222,7 +220,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
           storage_snapshot_,
           getColumnsCacheIfEnabled(context_, pool_settings_.use_columns_cache)))
     , prewhere_actions(buildPrewhereActions(
-          row_level_filter_, prewhere_info_, index_read_tasks_, actions_settings_, reader_settings_, storage_snapshot_))
+          row_level_filter_, prewhere_info_, index_read_tasks_, actions_settings_, reader_settings_))
     , column_names(column_names_)
     , pool_settings(pool_settings_)
     , block_size_params(block_size_params_)
@@ -266,7 +264,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
           getColumnsCacheIfEnabled(context_, pool_settings_.use_columns_cache)))
     , prewhere_actions(buildPrewhereActions(
           /*row_level_filter=*/ nullptr, prewhere_info_, /*index_read_tasks=*/ {},
-          actions_settings_, reader_settings_, storage_snapshot_))
+          actions_settings_, reader_settings_))
     , column_names(column_names_)
     , pool_settings(pool_settings_)
     , block_size_params(block_size_params_)

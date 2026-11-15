@@ -6,6 +6,7 @@ from ci.jobs.scripts.docker_server.docker_library import (
     changed_tests as changed_docker_tests,
 )
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
+from ci.jobs.scripts.workflow_hooks.review_threads import KV_PIPELINE_LIMITED
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -214,6 +215,12 @@ def check():
         print("Not a bug fix PR - skip")
         return True
 
+    if Labels.CI_SKIP_NEW_TESTS_CHECK in labels:
+        print(
+            f"Label `{Labels.CI_SKIP_NEW_TESTS_CHECK}` is set - new tests are not required"
+        )
+        return True
+
     changed_files = Info().get_changed_files()
     has_unit = has_new_unit_tests(changed_files)
     has_ft = has_new_functional_tests(changed_files)
@@ -232,6 +239,17 @@ def check():
     # HEAD and is fixed on the PR). The presence of an additional unit
     # test alongside FT/IT does not relax this requirement either.
     if has_ft or has_it:
+        # The unresolved-review-threads gate skips the per-arch Bugfix Validation
+        # jobs, so there is no result to judge yet. Defer the verdict to the full
+        # run: the gate keeps the merge blocked until it happens. Failing here
+        # would also make `Finish Workflow` fail for another reason than the
+        # gate, which `retry_infra_failures.yml` would then retry.
+        if Info().get_kv_data(KV_PIPELINE_LIMITED):
+            print(
+                "The pipeline was limited by unresolved review threads, so the per-arch "
+                "Bugfix Validation jobs did not run - the check is deferred to the full run"
+            )
+            return True
         states = per_arch_validation_states()
         if any_bugfix_validation_passed(states):
             print(

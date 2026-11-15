@@ -29,7 +29,7 @@ INSERT INTO test_table_2 SELECT number, number FROM numbers(10);
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs INNER JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE lhs.id = 5
-SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0, enable_parallel_replicas = 0
 ;
 
 SELECT '--';
@@ -42,7 +42,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs INNER JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE rhs.id = 5
-SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0, enable_parallel_replicas = 0
 ;
 
 SELECT '--';
@@ -55,7 +55,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs INNER JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE lhs.id = 5 AND rhs.id = 6
-SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0, enable_parallel_replicas = 0
 ;
 
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs INNER JOIN test_table_2 AS rhs ON lhs.id = rhs.id
@@ -66,7 +66,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs LEFT JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE lhs.id = 5
-SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0, enable_parallel_replicas = 0
 ;
 
 SELECT '--';
@@ -79,7 +79,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs LEFT JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE rhs.id = 5
-SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0, enable_parallel_replicas = 0
 ;
 
 SELECT '--';
@@ -92,7 +92,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs RIGHT JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE lhs.id = 5
-SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0, enable_parallel_replicas = 0
 ;
 
 SELECT '--';
@@ -105,7 +105,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs RIGHT JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE rhs.id = 5
-SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0, enable_parallel_replicas = 0
 ;
 
 SELECT '--';
@@ -118,7 +118,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs FULL JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE lhs.id = 5
-SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0, enable_parallel_replicas = 0
 ;
 
 SELECT '--';
@@ -131,7 +131,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs FULL JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE rhs.id = 5
-SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0, enable_parallel_replicas = 0
 ;
 
 SELECT '--';
@@ -144,7 +144,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs FULL JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE lhs.id = 5 AND rhs.id = 6
-SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0, enable_parallel_replicas = 0
 ;
 
 SELECT '--';

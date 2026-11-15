@@ -39,7 +39,9 @@ public:
     /// current_range_last_mark is the end mark of the contiguous mark range being read
     /// (<= the last mark of the current read task; equal to it when the task is one
     /// contiguous range). It bounds caching of deserialized columns, which must not
-    /// span the gaps between ranges of a multi-range task. 0 means unknown.
+    /// span the gaps between ranges of a multi-range task. 0 means unknown. A call with
+    /// `continue_reading == false` and the same `current_range_last_mark` seeks forward
+    /// within that range, after rows were skipped.
     /// `res_columns` are the columns the reader fills. `shared_columns`, of the same size, are the
     /// columns it shares with the columns cache instead, which must not be modified: for every
     /// position at most one of the two is set.
@@ -82,6 +84,9 @@ public:
         const NameSet & previous_step_columns = {}) const;
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
+
+    /// Whether `fillMissingColumns` may leave a requested column to `evaluateMissingDefaults`.
+    bool mayEvaluateMissingDefaults() const;
 
     /// If part metadata is not equal to storage metadata,
     /// then try to perform conversions of columns.
@@ -332,6 +337,8 @@ private:
 
     /// The same as above but with converted Arrays to subcolumns of Nested.
     NamesAndTypesList converted_requested_columns;
+
+    mutable std::optional<bool> may_evaluate_missing_defaults;
 
     /// String value filters from `settings.string_value_filters` for the columns that pass all
     /// the applicability checks, keyed by the column name in the part. Filled in the constructor.

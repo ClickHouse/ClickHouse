@@ -1,18 +1,23 @@
 #include <DataTypes/IDataType.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Columns/ColumnConst.h>
 #include <Common/assert_cast.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
-#include <Storages/MergeTree/HypotheticalProjection.h>
+#include <Storages/MergeTree/WhatIf/HypotheticalProjection.h>
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsLogical.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -25,13 +30,13 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
+    extern const SettingsBool apply_deleted_mask;
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsBool apply_patch_parts;
     extern const SettingsBool force_index_by_date;
     extern const SettingsBool force_primary_key;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 select_sequential_consistency;
-    extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsUInt64 max_projection_rows_to_use_projection_index;
     extern const SettingsUInt64 min_table_rows_to_use_projection_index;
@@ -84,7 +89,8 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
 
     if (reading->isParallelReadingEnabled())
     {
-        bool support_projection = query_settings[Setting::parallel_replicas_local_plan]
+        /// The replicas leave what a projection answers without reading to the initiator's local plan.
+        bool support_projection = ClusterProxy::canUseLocalPlanForParallelReplicas(reading->getContext())
             && query_settings[Setting::parallel_replicas_support_projection];
 
         if (!support_projection)
@@ -102,13 +108,17 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
     if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())
         return std::unexpected("the table has unmaterialized mutations or patch parts");
 
+    /// A projection part rebuilt by a lightweight delete does not store the deleted rows.
+    if (!query_settings[Setting::apply_deleted_mask] && mutations_snapshot->hasLightweightDeletedMask())
+        return std::unexpected("setting apply_deleted_mask is disabled and the table has lightweight-deleted rows");
+
     return {};
 }
 
 void rejectProjections(
-    std::unordered_map<String, String> & reject_reasons,
-    const std::vector<const ProjectionDescription *> & projections,
-    const std::vector<const ProjectionDescription *> & kept,
+    UnorderedMapWithMemoryTracking<String, String> & reject_reasons,
+    const VectorWithMemoryTracking<const ProjectionDescription *> & projections,
+    const VectorWithMemoryTracking<const ProjectionDescription *> & kept,
     const String & reason)
 {
     for (const auto * projection : projections)
@@ -116,7 +126,7 @@ void rejectProjections(
             reject_reasons.try_emplace(projection->name, reason);
 }
 
-void filterProjectionCandidates(std::vector<const ProjectionDescription *> & projections, const String & preferred_name)
+void filterProjectionCandidates(VectorWithMemoryTracking<const ProjectionDescription *> & projections, const String & preferred_name)
 {
     auto is_preferred = [&](const auto * projection) { return projection->name == preferred_name; };
     if (std::ranges::none_of(projections, is_preferred))
@@ -235,6 +245,8 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
             return false;
 
         filter_nodes.push_back(filter_expression);
+        optimize_constant_columns_after_filter = FilterStep::combineOptimizeConstantColumnsAfterFilter(
+            optimize_constant_columns_after_filter, filter->getOptimizeConstantColumnsAfterFilter());
         return true;
     }
 
@@ -295,7 +307,7 @@ bool QueryDAG::build(QueryPlan::Node & node)
 }
 
 size_t filterPartsByProjection(
-    ReadFromMergeTree::AnalysisResult & reading_select_result, const std::unordered_set<const IMergeTreeDataPart *> & valid_parts)
+    ReadFromMergeTree::AnalysisResult & reading_select_result, const UnorderedSetWithMemoryTracking<const IMergeTreeDataPart *> & valid_parts)
 {
     size_t filtered_parts = 0;
     auto & parts_with_ranges = reading_select_result.parts_with_ranges;
@@ -470,6 +482,7 @@ bool analyzeProjectionCandidate(
         {
             candidate.parent_parts.emplace(part_with_ranges.data_part.get());
             parent_parts_sum_marks += part_with_ranges.getMarksCount();
+            candidate.parent_rows += part_with_ranges.getRowsCount();
         }
     }
 
@@ -495,7 +508,7 @@ bool analyzeProjectionCandidate(
     if (!projection_result_ptr->isUsable())
         return false;
 
-    std::unordered_set<const IMergeTreeDataPart *> valid_parts = candidate.parent_parts;
+    UnorderedSetWithMemoryTracking<const IMergeTreeDataPart *> valid_parts = candidate.parent_parts;
     for (auto & part : projection_result_ptr->parts_with_ranges)
         valid_parts.emplace(part.data_part->getParentPart());
 
@@ -519,6 +532,26 @@ bool analyzeProjectionCandidate(
     return true;
 }
 
+void recordHypotheticalOutcome(
+    HypotheticalProjection & hypothetical, const UseProjectionsResult & result, const ProjectionCandidate * candidate, bool chosen)
+{
+    auto & outcome = hypothetical.outcome;
+    if (auto it = result.projection_reject_reasons.find(hypothetical.projection.name); it != result.projection_reject_reasons.end())
+        outcome.reason = it->second;
+    if (candidate && candidate->stat)
+    {
+        outcome.marks = candidate->sum_marks;
+        outcome.rows = candidate->selected_rows + candidate->parent_rows;
+        outcome.chosen = chosen;
+        if (!candidate->stat->description.empty())
+            outcome.reason = candidate->stat->description;
+        if (candidate->merge_tree_projection_select_result_ptr)
+            for (const auto & part : candidate->merge_tree_projection_select_result_ptr->parts_with_ranges)
+                outcome.ranges[part.parent_part->name] = part.ranges;
+    }
+    outcome.forced = outcome.forced && outcome.chosen;
+}
+
 void filterPartsAndCollectProjectionCandidates(
     ReadFromMergeTree & reading,
     const ProjectionDescription & projection,
@@ -530,7 +563,7 @@ void filterPartsAndCollectProjectionCandidates(
     const ContextPtr & context)
 {
     RangesInDataParts projection_parts;
-    std::unordered_set<const IMergeTreeDataPart *> valid_parts;
+    UnorderedSetWithMemoryTracking<const IMergeTreeDataPart *> valid_parts;
 
     /// Route a drifted projection part (see projectionPartHasRequiredColumns) to a parent read rather
     /// than evaluating the filter over it, which would prune the wrong parent rows. Only the filter
