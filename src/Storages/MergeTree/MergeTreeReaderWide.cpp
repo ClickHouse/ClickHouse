@@ -335,7 +335,8 @@ void MergeTreeReaderWide::setSelectedRows(const PaddedPODArray<UInt64> & rows)
     for (size_t pos = 0; pos < columns_to_read.size(); ++pos, ++requested_column)
     {
         const bool is_virtual = !metadata.getColumns().has(requested_column->name) && metadata.virtuals.has(requested_column->name);
-        if (!is_virtual && (isColumnSkipped(pos) || isColumnAbsentFromPart(pos) || isColumnPartiallyRead(pos)))
+        if (!is_virtual && (isColumnSkipped(pos) || isColumnAbsentFromPart(pos)
+            || partially_read_columns.contains(columns_to_read[pos].name)))
             return;
     }
 
