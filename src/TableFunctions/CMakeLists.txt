@@ -24,7 +24,7 @@ add_library(clickhouse_table_functions ${clickhouse_table_functions_headers} ${c
 target_link_libraries(clickhouse_table_functions PRIVATE clickhouse_parsers clickhouse_storages_system dbms)
 
 if (TARGET ch_contrib::hivemetastore)
-    target_link_libraries(clickhouse_table_functions PRIVATE ch_contrib::hivemetastore ch_contrib::hdfs ch_contrib::parquet)
+    target_link_libraries(clickhouse_table_functions PRIVATE ch_contrib::hivemetastore ch_contrib::hdfs ch_contrib::parquet_format)
 endif ()
 
 if (TARGET ch_contrib::azure_sdk)
