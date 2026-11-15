@@ -79,7 +79,11 @@ BlockIO InterpreterCreateSettingsProfileQuery::execute()
 
     std::optional<RolesOrUsersSet> roles_from_query;
     if (query.to_roles)
+    {
         roles_from_query = RolesOrUsersSet{*query.to_roles, access_control, getContext()->getUserID()};
+        if (access_control.doesForbidSQLAccessEntitiesTargetingUsersConfig())
+            roles_from_query->throwIfTargetingUsersFromUsersConfig(access_control);
+    }
 
 
     IAccessStorage * storage = &access_control;

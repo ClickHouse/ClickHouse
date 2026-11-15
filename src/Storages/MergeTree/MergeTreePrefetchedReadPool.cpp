@@ -13,6 +13,7 @@
 #include <Common/logger_useful.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 
@@ -301,7 +302,11 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, Merge
         /// readers are potentially long, and refinement of a non-prefetched task may block.
         if (thread_task->isValidReadersFuture())
         {
-            thread_task->readers_future->wait();
+            {
+                /// Park the CPU lease while waiting for the prefetch (outside the pool mutex)
+                CPULeaseParkGuard cpu_park;
+                thread_task->readers_future->wait();
+            }
             if (thread_task->pruned_by_refiner)
                 continue;
         }
@@ -520,13 +525,13 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
 
         LOG_TRACE(
             log,
-            "Part: {}, sum_marks: {}, approx mark size: {}, prefetch_step_bytes: {}, prefetch_step_marks: {}, (ranges: {})",
+            "Part: {}, sum_marks: {}, approx mark size: {}, prefetch_step_bytes: {}, prefetch_step_marks: {}, ranges: {}",
             getPartNameForLogging(parts_ranges[i].data_part),
             part_stat.sum_marks,
             part_stat.approx_size_of_mark,
             settings[Setting::filesystem_prefetch_step_bytes].value,
             part_stat.prefetch_step_marks,
-            toString(parts_ranges[i].ranges));
+            parts_ranges[i].ranges.size());
     }
 
     const size_t min_marks_per_thread = (sum_marks - 1) / threads + 1;

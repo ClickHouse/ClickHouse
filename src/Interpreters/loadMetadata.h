@@ -11,7 +11,10 @@ namespace DB
 /// It returns tasks that are still in progress if `async_load_system_database = true` otherwise it wait for all jobs to be done.
 /// Background operations in system tables may slowdown loading of the rest tables,
 /// so we startup system tables after all databases are loaded.
-[[nodiscard]] LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context, bool async_load_system_database = false);
+/// If the `system` database does not exist yet, it is created with the `Atomic` engine in the server, or if
+/// `persistent_system_database = true`, and with the `Memory` engine otherwise.
+[[nodiscard]] LoadTaskPtrs loadMetadataSystem(
+    ContextMutablePtr context, bool async_load_system_database = false, bool persistent_system_database = false);
 
 /// Load tables from databases and add them to context. Databases 'system' and 'information_schema' are ignored.
 /// Use separate function to load system tables.

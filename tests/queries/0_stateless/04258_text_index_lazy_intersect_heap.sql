@@ -1,4 +1,4 @@
--- Exercises the leapfrog AND (`intersectLeapfrog` in MergeTreeIndexTextPostingListCursor.cpp)
+-- Exercises the leapfrog AND (`intersectLeapfrog` in `PostingListCursor.cpp`)
 -- with more than 8 cursors through the production reader path. It used to be served by a separate
 -- min-heap variant; a single loop led by the sparsest cursor now handles every cursor count.
 

@@ -151,8 +151,14 @@ std::string HTTPSClientSession::proxyRequestPrefix() const
 
 void HTTPSClientSession::proxyAuthenticate(HTTPRequest& request)
 {
-	/// This is called only for a request sent through a proxy without a `CONNECT` tunnel.
-	/// In that case `connect` establishes TLS with the proxy itself (the peer name is the proxy host),
+	/// `sendRequest` calls this for every request when a proxy is configured, including requests
+	/// sent inside a `CONNECT` tunnel. In the tunnel the credentials were already sent with `CONNECT`
+	/// (see `proxyConnect`), and the request goes over TLS to the target, so adding
+	/// `Proxy-Authorization` here would leak the proxy credentials to the target server.
+	if (isProxyTunnel())
+		return;
+
+	/// Without a tunnel `connect` establishes TLS with the proxy itself (the peer name is the proxy host),
 	/// so the credentials go to the proxy over TLS and never reach the target.
 	proxyAuthenticateImpl(request);
 }

@@ -21,7 +21,7 @@ void EmbeddedDictionaries::handleException(const bool throw_on_error) const
 {
     const auto exception_ptr = std::current_exception();
 
-    tryLogCurrentException(log, "Cannot load dictionary! You must resolve this manually.");
+    tryLogCurrentException(log, "Cannot load dictionary. You must resolve this manually.");
 
     if (throw_on_error)
         std::rethrow_exception(exception_ptr);

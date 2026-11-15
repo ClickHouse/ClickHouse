@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Processors/Merges/Algorithms/RowFilterInfo.h>
@@ -76,15 +77,15 @@ private:
     /// Sources whose initial chunk is a virtual row (so their real data has not been
     /// requested yet), ordered by the virtual row sort key, i.e. in the order the merge
     /// will need them.
-    std::vector<size_t> deferred_sources_in_merge_order;
+    VectorWithMemoryTracking<size_t> deferred_sources_in_merge_order;
     /// Position in `deferred_sources_in_merge_order` of the next source to prefetch.
     size_t next_deferred_source_pos = 0;
     /// Number of issued prefetches whose real data has not arrived yet.
     size_t prefetches_in_flight = 0;
     /// Per-source deferral state.
-    std::vector<SourceDeferralState> source_deferral_state;
+    VectorWithMemoryTracking<SourceDeferralState> source_deferral_state;
     /// Sources to report for read-ahead with the next `merge` status.
-    std::vector<size_t> sources_to_prefetch;
+    VectorWithMemoryTracking<size_t> sources_to_prefetch;
     /// Whether the merge has actually advanced past a source: it asked for a source other
     /// than the one that last delivered real data, or a source was exhausted without any.
     /// Read-ahead is only started after this: as long as the merge keeps asking the same
@@ -101,7 +102,7 @@ private:
     /// Per source, the rows to keep in the chunk above, or nullptr when that chunk is not
     /// filtered. Valid for exactly as long as the chunk, so it is refreshed whenever one arrives
     /// and dropped when one is passed through whole.
-    std::vector<const IColumnFilter *> source_row_filter_masks;
+    VectorWithMemoryTracking<const IColumnFilter *> source_row_filter_masks;
 
     SortingQueueStrategy sorting_queue_strategy;
 
@@ -129,7 +130,7 @@ private:
     void insertChunk(size_t source_num);
 
     /// Per-input pending virtual-row boundary (empty when none), used for debug checks to ensure virtual rows are placed correctly.
-    std::vector<Columns> virtual_row_boundary;
+    VectorWithMemoryTracking<Columns> virtual_row_boundary;
 };
 
 }

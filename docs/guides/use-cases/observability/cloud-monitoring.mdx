@@ -7,9 +7,9 @@ doc_type: 'guide'
 keywords: ['observability', 'monitoring', 'cloud', 'metrics', 'system health']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 import ObservabilityIntegrations from '/snippets/_observability_integration_options.mdx';
 import DirectIntegrations from '/snippets/_direct_observability_integration_options.mdx';
+
 import CommunityMonitoring from '/snippets/_community_monitoring.mdx';
 
 This guide provides enterprise teams evaluating ClickHouse Cloud with comprehensive information on monitoring and observability capabilities for production deployments. Enterprise customers frequently ask about out-of-the-box monitoring features, integration with existing observability stacks including tools like Datadog and AWS CloudWatch, and how ClickHouse’s monitoring compares to self-hosted deployments.
@@ -24,13 +24,29 @@ ClickHouse Cloud provides comprehensive monitoring through built-in dashboard in
 Accessing these metrics doesn't issue a query to the underlying service and won't wake idle services. 
 </Note>
 
-<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="Advanced dashboard"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Advanced dashboard](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 Users looking to extend these visualizations can use the dashboards feature in ClickHouse Cloud, querying system tables directly.
 
 - **Native advanced dashboard**: An alternative dashboard interface accessible through "You can still access the native advanced dashboard" within the Monitoring section. This opens in a separate tab with authentication and provides an alternative UI for system and service health monitoring. This dashboard allows advanced analytics, where you can modify the underlying SQL queries.
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="Advanced dashboard"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Advanced dashboard](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 Both dashboards offer immediate visibility into service health and performance without external dependencies, distinguishing them from external debugging-focused tools like ClickStack.
 

@@ -82,6 +82,8 @@ public:
     UInt64 getFileSize(const String & file_name) override;
     std::unique_ptr<WriteBuffer> writeFile(const String & file_name) override;
     std::unique_ptr<WriteBuffer> writeFileIfNotExists(const String & file_name) override;
+    /// `writeFileIfNotExists` writes with `If-None-Match: *`, so it cannot replace an existing blob.
+    bool supportsAtomicCreateIfNotExists() const override { return true; }
 
     void copyDataToFile(
         const String & path_in_backup,
@@ -89,9 +91,20 @@ public:
         UInt64 start_pos,
         UInt64 length) override;
 
-    void copyFileFromDisk(
+    bool copyFileFromDiskNatively(
         const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
         override;
+
+    bool copyFileFromBlobPath(
+        const String & path_in_backup,
+        DiskPtr src_disk,
+        const String & src_blob_key,
+        const String & src_blob_namespace,
+        bool copy_encrypted,
+        UInt64 start_pos,
+        UInt64 length,
+        UInt64 src_object_size,
+        const CreateReadBufferFunction & create_fallback_read_buffer) override;
 
     void copyFile(const String & destination, const String & source, size_t size) override;
 

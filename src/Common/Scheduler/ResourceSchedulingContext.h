@@ -84,6 +84,8 @@ public:
     {
     }
 
+    ~ResourceSchedulingContext();
+
     /// Immutable per-query config (from query settings at query start).
     const UInt64 start_ns; /// Monotonic query start (`clock_gettime_ns()`), for age
     const Float64 weight; /// Base fair weight (non-positive → 1.0)
@@ -93,13 +95,18 @@ public:
     const Float64 weight_lowering_io_bytes; /// Attained IO-bytes threshold (0 = disabled)
     const Priority priority; /// `priority` scheduler order (`workload_priority`): lower = higher, 0 neutral, negatives outrank it
 
+    /// Filesystem cache readers carrying this context's links, zero on destruction. Counted in debug and sanitizer builds only.
+    std::atomic<size_t> bound_cached_readers{0};
+
     /// Allocate the per-resource slots (one per attached leaf). Called once by the classifier after
     /// attaching to all resources, before any request is enqueued; never resized, so a `resourceState()`
     /// pointer stays valid for the context's lifetime (a `unique_ptr<T[]>` rather than a growable
     /// vector because `ResourceQueryState` holds a non-movable `std::atomic`).
     void initResourceStates(size_t count_)
     {
-        per_resource = std::make_unique<ResourceQueryState[]>(count_);
+        /// No array for zero slots: a zero-size `new[]` may return 8-byte aligned storage, which UBSan flags for this type.
+        if (count_ > 0)
+            per_resource = std::make_unique<ResourceQueryState[]>(count_);
         count = count_;
     }
 

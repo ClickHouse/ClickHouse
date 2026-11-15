@@ -1,0 +1,4 @@
+rows	1000
+normal_marks_codec	1
+alter_added_pco	0
+alter_codec	CODEC(PCO(8))

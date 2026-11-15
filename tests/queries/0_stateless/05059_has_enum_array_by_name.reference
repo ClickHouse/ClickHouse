@@ -25,3 +25,7 @@ a FixedString needle
 1	0	2
 the same over a materialized array
 1	0	2
+a Nullable(FixedString) needle
+1	0	2
+a NULL element
+1	3	2	2

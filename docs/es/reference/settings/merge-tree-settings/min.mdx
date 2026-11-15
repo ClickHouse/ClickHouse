@@ -13,14 +13,14 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas configuraciones están disponibles en [system.merge&#95;tree&#95;settings](/es/reference/system-tables/merge_tree_settings) y se autogeneran a partir del código fuente de ClickHouse.
 
-## min_absolute_delay_to_close
+## min_absolute_delay_to_close {#min_absolute_delay_to_close}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Retraso absoluto mínimo para cerrar, dejar de atender solicitudes y no
 devolver Ok durante la comprobación de estado.
 
-## min_columns_to_activate_adaptive_write_buffer
+## min_columns_to_activate_adaptive_write_buffer {#min_columns_to_activate_adaptive_write_buffer}
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -37,7 +37,7 @@ Valores posibles:
 * 0 - deshabilitado
 * 1 - siempre habilitado
 
-## min_compress_block_size
+## min_compress_block_size {#min_compress_block_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -48,7 +48,7 @@ escribir la siguiente marca. También puede especificar esta configuración en l
 El valor especificado cuando se crea la tabla sobrescribe el valor global
 de esta configuración.
 
-## min_index_granularity_bytes
+## min_index_granularity_bytes {#min_index_granularity_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -57,7 +57,7 @@ Tamaño mínimo permitido de los gránulos de datos en bytes.
 Sirve como protección para evitar crear accidentalmente tablas con un
 `index_granularity_bytes` demasiado bajo.
 
-## min_marks_to_honor_max_concurrent_queries
+## min_marks_to_honor_max_concurrent_queries {#min_marks_to_honor_max_concurrent_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -78,7 +78,7 @@ Valores posibles:
 <min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
 ```
 
-## min_merge_bytes_to_use_direct_io
+## min_merge_bytes_to_use_direct_io {#min_merge_bytes_to_use_direct_io}
 
 <SettingsInfoBlock type="UInt64" default_value="10737418240" />
 
@@ -89,7 +89,7 @@ los `min_merge_bytes_to_use_direct_io` bytes, ClickHouse lee y escribe los
 datos en el disco de almacenamiento mediante la interfaz de E/S directa (opción `O_DIRECT`).
 Si `min_merge_bytes_to_use_direct_io = 0`, la E/S directa se deshabilita.
 
-## min_partition_age_to_force_merge_seconds
+## min_partition_age_to_force_merge_seconds {#min_partition_age_to_force_merge_seconds}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -137,7 +137,7 @@ Valores posibles:
 
 * Entero positivo.
 
-## min_parts_to_merge_at_once
+## min_parts_to_merge_at_once {#min_parts_to_merge_at_once}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -145,7 +145,7 @@ Cantidad mínima de partes de datos que el selector de merge puede elegir para f
 (configuración de nivel experto; no la cambie si no entiende lo que hace).
 0 - deshabilitado. Funciona con los selectores de merge Simple y StochasticSimple.
 
-## min_replicated_logs_to_keep
+## min_replicated_logs_to_keep {#min_replicated_logs_to_keep}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -156,5 +156,53 @@ antes de limpiarlo.
 Posibles valores:
 
 * Cualquier entero positivo.
+
+## min_unreserved_disk_space_for_merge {#min_unreserved_disk_space_for_merge}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nueva configuración que reserva parte del espacio en disco no reservado para evitar que las fusiones en segundo plano dejen sin espacio a las inserciones."}]}]} />
+
+Reserva la cantidad especificada de espacio en disco no reservado (en bytes) para
+evitar que las fusiones en segundo plano dejen sin espacio a las inserciones. Esta cantidad se resta
+del espacio libre. A partir del espacio restante, y con un margen de seguridad adicional,
+se calcula el límite del tamaño total de las partes de origen de una fusión, de modo que incluso
+la mayor fusión permitida quede muy por debajo del espacio disponible. El límite disminuye
+a medida que se llena el disco y llega a cero cuando el espacio libre se reduce a la cantidad
+reservada; en ese momento no se selecciona ninguna fusión en segundo plano. (0 significa que está deshabilitada)
+
+A diferencia de `keep_free_space_bytes`, ClickHouse puede seguir utilizando el espacio protegido:
+solo queda excluido de la planificación de fusiones. Esta configuración no limita las mutaciones,
+que pueden consumir ese espacio, ni afecta a los discos con espacio ilimitado
+(como el almacenamiento de objetos).
+
+Las fusiones iniciadas mediante [OPTIMIZE](/es/reference/statements/optimize) con `FINAL` o
+con una `PARTITION` explícita ignoran esta configuración. Las fusiones que eliminan partes
+completamente expiradas se seleccionan siempre que el límite sea superior a cero,
+independientemente de su tamaño; si el límite es cero, no se selecciona ninguna.
+Cada fusión reserva al menos 1 MiB, por lo que una fusión iniciada cuando quedan menos
+de 1 MiB por encima del espacio protegido puede consumir hasta 1 MiB de ese espacio.
+Una réplica `ReplicatedMergeTree` también ejecuta las eliminaciones en cola cuando su
+propio límite es cero, si el único TTL de la tabla es un TTL de filas sin `WHERE`.
+Si el TTL incluye `GROUP BY` o `WHERE`, o si se trata de un TTL de columna,
+esa eliminación reescribe las filas restantes: `ReplicatedMergeTree` la pospone
+en función del tamaño de sus partes, pero `MergeTree` no lo hace y puede
+escribirlas en el espacio protegido.
+
+Cuando el límite llega a cero, un `OPTIMIZE` sin modificadores no asigna ninguna fusión:
+no tiene efecto o genera `CANNOT_ASSIGN_OPTIMIZE` con `optimize_throw_if_noop = 1`.
+Use `FINAL` o una `PARTITION` explícita para realizar una fusión que utilice el espacio
+protegido. En `ReplicatedMergeTree`, esa excepción solo se registra en la entrada
+del log de replicación si la configuración tiene un valor distinto de cero en la réplica
+que pone la fusión en cola. Por tanto, un `OPTIMIZE` puesto en cola mientras el valor
+era 0 sigue sujeto a la holgura.
+
+`ALTER TABLE ... MODIFY SETTING` no se replica, así que asigne el mismo valor a todas
+las réplicas: una réplica con una holgura mayor vuelve a aplicarla a las fusiones
+asignadas en otras réplicas y puede posponerlas indefinidamente. Mantenga el valor en `0`
+hasta que todas las réplicas ejecuten una versión que reconozca esta configuración:
+una réplica con una versión anterior no puede interpretar las entradas del log
+correspondientes a las fusiones exentas y deja de recuperar las entradas posteriores
+de la tabla, incluidas las de las inserciones normales.
 
 {/*AUTOGENERATED_END*/}
