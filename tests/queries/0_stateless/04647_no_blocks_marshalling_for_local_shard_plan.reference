@@ -21,4 +21,4 @@
 -- BlocksMarshalling steps for a Buffer table: total, buffer-reading steps
 2	2
 -- BlocksMarshalling steps for a serialized plan: total, above ReadFromRemote, ReadFromRemote steps
-1	0	1
+0	0	1
