@@ -2,6 +2,7 @@
 #if USE_AVRO
 
 #include <chrono>
+#include <filesystem>
 #include <unordered_set>
 
 #include <Common/Exception.h>
@@ -120,11 +121,26 @@ OrphanScanResult findOrphanFiles(
 {
     OrphanScanResult scan;
 
+    /// A filesystem names `a//b` and `a/./b` as `a/b`; an object key is a byte string.
+    const auto storage_type = object_storage->getType();
+    const bool is_filesystem = storage_type == ObjectStorageType::Local || storage_type == ObjectStorageType::HDFS;
+    std::unordered_set<String> normalized_reachable;
+    if (is_filesystem)
+        for (const auto & reachable_path : reachable)
+            normalized_reachable.insert(std::filesystem::path(reachable_path).lexically_normal().string());
+
+    auto is_reachable = [&](const String & path)
+    {
+        if (is_filesystem)
+            return normalized_reachable.contains(std::filesystem::path(path).lexically_normal().string());
+        return reachable.contains(path);
+    };
+
     for (const auto & file_ptr : actual_files)
     {
         const String & path = file_ptr->relative_path;
 
-        if (reachable.contains(path))
+        if (is_reachable(path))
             continue;
 
         std::optional<ObjectMetadata> fetched_metadata;
