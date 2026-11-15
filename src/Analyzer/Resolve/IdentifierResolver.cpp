@@ -1076,8 +1076,8 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
     {
         /** The carriers of this scope are probed in the order in which the parent lookup tries them, see
           * `QueryAnalyzer::tryResolveIdentifier`: lambda arguments, then expression aliases, then the join tree -
-          * the `ARRAY JOIN` outputs, which wrap the rest of the join tree, before the columns of the table
-          * expressions - and only then the names of the table expressions. With `prefer_column_name_to_alias`,
+          * its columns and `ARRAY JOIN` outputs, in the order `tryResolveIdentifierFromJoinTreeNode` tries them -
+          * and only then the names of the table expressions. With `prefer_column_name_to_alias`,
           * the expression aliases come after the columns of the join tree.
           *
           * The first group that binds the identifier decides: `READABLE` hides the name, `BLOCKS` keeps it visible,
@@ -1216,56 +1216,6 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
 
         if (join_tree_is_visible)
         {
-            /// Combines the readings of the carriers of one group: a readable carrier takes precedence over a blocking one.
-            auto combine = [](OuterReading & accumulated, OuterReading reading)
-            {
-                if (reading == OuterReading::READABLE || (reading == OuterReading::BLOCKS && accumulated == OuterReading::ABSENT))
-                    accumulated = reading;
-            };
-
-            /** An `ARRAY JOIN` expression of the enclosing query gives the identifier a reading, when its name
-              * is a prefix of the identifier and the rest of the identifier is a subcolumn of it. The prefix is
-              * matched the same way `tryResolveIdentifierFromArrayJoin` does, so a compound alias such as `t.val`
-              * counts too. The `ARRAY JOIN` wraps the table expressions it is applied to, so its outputs take
-              * precedence over their columns and names.
-              */
-            OuterReading array_join_reading = OuterReading::ABSENT;
-            for (const auto & outer_table_expression_node : outer_scope->registered_table_expression_nodes)
-            {
-                const auto * array_join_node = outer_table_expression_node->as<ArrayJoinNode>();
-                if (!array_join_node || !table_expression_is_visible(array_join_node))
-                    continue;
-
-                for (const auto & array_join_expression : array_join_node->getJoinExpressions())
-                {
-                    const auto * array_join_column = array_join_expression->as<ColumnNode>();
-                    if (!array_join_column)
-                        continue;
-
-                    const auto & alias_or_name = array_join_column->hasAlias() ? array_join_column->getAlias() : array_join_column->getColumnName();
-                    auto prefix_size = getCompoundIdentifierPrefixSize(identifier, alias_or_name);
-                    if (!prefix_size)
-                        continue;
-
-                    IdentifierView rest(identifier);
-                    rest.popFirst(*prefix_size);
-                    DataTypePtr type = array_join_column->getResultType();
-                    if (!rest.empty())
-                        type = type->tryGetSubcolumnType(rest.getFullName());
-                    combine(array_join_reading, outerReadingOfType(type, identifier_lookup));
-                }
-            }
-
-            switch (array_join_reading)
-            {
-                case OuterReading::READABLE:
-                    return true;
-                case OuterReading::BLOCKS:
-                    return false;
-                case OuterReading::ABSENT:
-                    break;
-            }
-
             /** The whole identifier can name a column of the enclosing query, e.g. a `Tuple` column `t` with an
               * element `val` gives `t.val` a reading there. Only a column the identifier can be read from
               * counts, so an unrelated column with the same name as the table does not hide it.
@@ -1277,7 +1227,13 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
               * `tryResolveIdentifierFromCrossJoin`, the sides are not ambiguous when they bind equal columns:
               * the identifier names the same column of two equal table expressions (e.g. two references to one
               * table, or two equal subqueries), or, for an unqualified identifier, the columns are equated by a
-              * top-level `equals` conjunct of the `ON` condition of an `INNER JOIN`.
+              * top-level `equals` or `isNotDistinctFrom` conjunct of the `ON` condition of an `INNER JOIN`.
+              *
+              * An `ARRAY JOIN` expression gives the identifier a reading when its name is a prefix of the identifier
+              * and the rest of the identifier is a subcolumn of it. The prefix is matched the same way
+              * `tryResolveIdentifierFromArrayJoin` does, so a compound alias such as `t.val` counts too. As there,
+              * the outputs of an `ARRAY JOIN` take precedence over the columns of the subtree it wraps, unless that
+              * subtree is already ambiguous, and they take part in the `JOIN` above it like any other column.
               */
             const bool prefer_left_table = outer_scope->joins_count == 1
                 && outer_scope->context->getSettingsRef()[Setting::single_join_prefer_left_table];
@@ -1299,7 +1255,7 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
             };
 
             /// Whether the column `identifier` of `left.source` and of `right.source` are equated by a top-level
-            /// `equals` conjunct of the `ON` condition of an `INNER JOIN`, see `innerJoinKeyColumnsAreEquated`.
+            /// `equals` or `isNotDistinctFrom` conjunct of the `ON` condition of an `INNER JOIN`, see `innerJoinKeyColumnsAreEquated`.
             auto sides_are_equated_inner_join_keys = [&](const JoinNode & join_node, const JoinTreeBinding & left, const JoinTreeBinding & right)
             {
                 if (!identifier.isShort() || !left.source || !right.source
@@ -1327,7 +1283,8 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
                     {
                         conjuncts.insert(conjuncts.end(), arguments.begin(), arguments.end());
                     }
-                    else if (function_node->getFunctionName() == "equals" && arguments.size() == 2)
+                    else if ((function_node->getFunctionName() == "equals" || function_node->getFunctionName() == "isNotDistinctFrom")
+                        && arguments.size() == 2)
                     {
                         if ((is_column_of(arguments[0], left.source) && is_column_of(arguments[1], right.source))
                             || (is_column_of(arguments[0], right.source) && is_column_of(arguments[1], left.source)))
@@ -1388,7 +1345,47 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
                 }
 
                 if (const auto * array_join_node = node->as<ArrayJoinNode>())
-                    return join_tree_reading(array_join_node->getTableExpressionNode());
+                {
+                    auto inner = join_tree_reading(array_join_node->getTableExpressionNode());
+                    if (inner.reading == JoinTreeReading::AMBIGUOUS
+                        || !outer_scope->registered_table_expression_nodes.contains(node)
+                        || !table_expression_is_visible(array_join_node))
+                        return inner;
+
+                    /// The readings of the outputs of one `ARRAY JOIN`: a readable one takes precedence over a blocking one.
+                    OuterReading array_join_reading = OuterReading::ABSENT;
+                    for (const auto & array_join_expression : array_join_node->getJoinExpressions())
+                    {
+                        const auto * array_join_column = array_join_expression->as<ColumnNode>();
+                        if (!array_join_column)
+                            continue;
+
+                        const auto & alias_or_name = array_join_column->hasAlias() ? array_join_column->getAlias() : array_join_column->getColumnName();
+                        auto prefix_size = getCompoundIdentifierPrefixSize(identifier, alias_or_name);
+                        if (!prefix_size)
+                            continue;
+
+                        IdentifierView rest(identifier);
+                        rest.popFirst(*prefix_size);
+                        DataTypePtr type = array_join_column->getResultType();
+                        if (!rest.empty())
+                            type = type->tryGetSubcolumnType(rest.getFullName());
+
+                        OuterReading reading = outerReadingOfType(type, identifier_lookup);
+                        if (reading == OuterReading::READABLE || (reading == OuterReading::BLOCKS && array_join_reading == OuterReading::ABSENT))
+                            array_join_reading = reading;
+                    }
+
+                    switch (array_join_reading)
+                    {
+                        case OuterReading::READABLE:
+                            return {JoinTreeReading::READABLE, nullptr};
+                        case OuterReading::BLOCKS:
+                            return {JoinTreeReading::BLOCKS, nullptr};
+                        case OuterReading::ABSENT:
+                            return inner;
+                    }
+                }
 
                 if (!table_expression_is_visible(node.get()))
                     return {};
