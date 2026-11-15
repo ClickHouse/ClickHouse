@@ -43,6 +43,7 @@ MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, SharedHeader header_, c
     sequence_id = settings_.mysql_wire.sequence_id ? settings_.mysql_wire.sequence_id : &dummy_sequence_id;
     /// Switch between Text (COM_QUERY) and Binary (COM_EXECUTE_STMT) ResultSet
     use_binary_result_set = settings_.mysql_wire.binary_protocol;
+    result_column_origins = settings_.mysql_wire.result_column_origins;
 
     const auto & header = getPort(PortKind::Main).getHeader();
     data_types = header.getDataTypes();
@@ -67,10 +68,15 @@ void MySQLOutputFormat::writePrefix()
     {
         packet_endpoint->sendPacket(LengthEncodedNumber(header.columns()), false);
 
+        const ResultColumnOrigins * origins = result_column_origins;
+        if (origins && origins->size() != header.columns())
+            origins = nullptr;
+
         for (size_t i = 0; i < header.columns(); ++i)
         {
             const auto & column_name = header.getColumnsWithTypeAndName()[i].name;
-            packet_endpoint->sendPacket(getColumnDefinition(column_name, data_types[i]), false);
+            const ResultColumnOrigin * origin = origins ? &(*origins)[i] : nullptr;
+            packet_endpoint->sendPacket(getColumnDefinition(column_name, data_types[i], origin), false);
         }
 
         if (!(client_capabilities & Capability::CLIENT_DEPRECATE_EOF) && !use_binary_result_set)

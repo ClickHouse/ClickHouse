@@ -143,6 +143,8 @@ void InitialAllRangesAnnouncement::serialize(
         writeIntBinary(min_marks_per_request, out);
     if (initiator_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID)
         writeStringBinary(stream_id, out);
+    if (initiator_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANALYZED_RANGES_REQUEST)
+        writeBinary(wants_analyzed_ranges, out);
 }
 
 
@@ -183,7 +185,13 @@ InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffe
     String stream_id;
     if (replica_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID)
         readStringBinary(stream_id, in);
-    return InitialAllRangesAnnouncement{mode, description, replica_num, mark_segment_size, min_marks_per_request, std::move(stream_id)};
+
+    bool wants_analyzed_ranges = false;
+    if (replica_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANALYZED_RANGES_REQUEST)
+        readBinary(wants_analyzed_ranges, in);
+
+    return InitialAllRangesAnnouncement{
+        mode, description, replica_num, mark_segment_size, min_marks_per_request, std::move(stream_id), wants_analyzed_ranges};
 }
 
 

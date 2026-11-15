@@ -58,9 +58,11 @@ struct TableZnodeInfo
     /// `validate_substitutions` rejects a {database}/{table} value that would not stay a single safe
     /// ZooKeeper path component. It must be requested only for a freshly supplied definition: enabling
     /// it while merely re-deriving the path of an existing table (a short ATTACH, a Replicated-database
-    /// recovery replay, a RESTORE) would break that table. Converting a MergeTree table to a
-    /// replicated engine counts as fresh: the path is minted from the server's template at
-    /// conversion time rather than read back from the table's own metadata.
+    /// recovery replay, a restore of a definition that kept its own engine arguments) would break that
+    /// table. What decides it is the origin of the value being judged, not the statement's mode:
+    /// a value minted from the server's `default_replica_path` template is freshly supplied even
+    /// during a RESTORE, because it is expanded against the name that statement supplies. Converting a
+    /// MergeTree table to a replicated engine counts as fresh for the same reason.
     static TableZnodeInfo resolve(
         const String & requested_path, const String & requested_replica_name,
         const StorageID & table_id, const ASTCreateQuery & query, LoadingStrictnessLevel mode,

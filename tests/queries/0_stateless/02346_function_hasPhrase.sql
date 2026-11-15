@@ -87,13 +87,13 @@ SELECT hasPhrase(['a', '', 'b'], 'a b');
 SELECT hasPhrase(['a', NULL, 'b'], 'a b');
 SELECT '-- Array(FixedString) input';
 SELECT hasPhrase([toFixedString('aa', 2), toFixedString('bb', 2)], ['aa', 'bb']);
-SELECT '-- a FixedString input needs a tokenizer that splits at its zero padding';
+SELECT '-- a FixedString keeps its zero padding, which some tokenizers put inside a token';
 SELECT hasPhrase(toFixedString('abc', 6), 'abc', 'ngrams(3)');
 SELECT hasPhrase(toFixedString('a b', 8), 'a b');
-SELECT hasPhrase(toFixedString('aa', 4), 'aa', 'array'); -- { serverError BAD_ARGUMENTS }
-SELECT hasPhrase([toFixedString('aa', 4)], ['aa'], 'array'); -- { serverError BAD_ARGUMENTS }
-SELECT hasPhrase(toFixedString('a b', 8), 'a b', 'splitByString([\' \'])'); -- { serverError BAD_ARGUMENTS }
-SELECT hasPhrase([toFixedString('a b', 8)], ['a', 'b'], $$splitByRegexp(' ')$$); -- { serverError BAD_ARGUMENTS }
+SELECT hasPhrase(toFixedString('quick brown', 16), 'quick brown', $$splitByRegexp('\\W+')$$);
+SELECT '-- the padding joins the last token of these, so nothing matches';
+SELECT hasPhrase(toFixedString('a b', 8), 'a b', 'splitByString([\' \'])');
+SELECT hasPhrase([toFixedString('aa', 4)], ['aa'], 'array');
 SELECT '-- Array phrase: elements are tokens';
 SELECT hasPhrase(['a b', 'c'], ['a b', 'c']);
 SELECT hasPhrase('the quick brown fox jumps', ['quick', 'brown']);

@@ -17,40 +17,57 @@ SHOW TABLES FROM information_schema;
 
 ```text
 ┌─name────────────────────┐
+│ CHARACTER_SETS          │
 │ COLLATIONS              │
 │ COLUMNS                 │
+│ COLUMN_PRIVILEGES       │
+│ ENGINES                 │
 │ KEY_COLUMN_USAGE        │
 │ REFERENTIAL_CONSTRAINTS │
 │ SCHEMATA                │
-| STATISTICS              |
+│ SCHEMA_PRIVILEGES       │
+│ STATISTICS              │
 │ TABLES                  │
+│ TABLE_PRIVILEGES        │
+│ USER_PRIVILEGES         │
 │ VIEWS                   │
+│ character_sets          │
+│ collations              │
+│ column_privileges       │
 │ columns                 │
+│ engines                 │
 │ key_column_usage        │
 │ referential_constraints │
+│ schema_privileges       │
 │ schemata                │
-| statistics              |
+│ statistics              │
+│ table_privileges        │
 │ tables                  │
+│ user_privileges         │
 │ views                   │
 └─────────────────────────┘
 ```
 
 `INFORMATION_SCHEMA` には、次のビューが含まれます。
 
+* [CHARACTER&#95;SETS](#character_sets)
 * [COLUMNS](#columns)
+* [COLUMN&#95;PRIVILEGES](#column_privileges)
 * [COLLATIONS](#collations)
+* [ENGINES](#engines)
 * [KEY&#95;COLUMN&#95;USAGE](#key_column_usage)
 * [REFERENTIAL&#95;CONSTRAINTS](#referential_constraints)
 * [SCHEMATA](#schemata)
+* [SCHEMA&#95;PRIVILEGES](#schema_privileges)
 * [STATISTICS](#statistics)
 * [TABLES](#tables)
+* [TABLE&#95;PRIVILEGES](#table_privileges)
+* [USER&#95;PRIVILEGES](#user_privileges)
 * [VIEWS](#views)
 
 他のデータベースとの互換性のため、`INFORMATION_SCHEMA.columns` のような大文字と小文字を区別しない同等のビューも提供されています。同様に、これらのビュー内のすべてのカラムについても、小文字 (たとえば `table_name`) と大文字 (`TABLE_NAME`) の両方のバリアントが提供されています。
 
-<div id="columns">
-  ## COLUMNS
-</div>
+## COLUMNS {#columns}
 
 [system.columns](/ja/reference/system-tables/columns) システムテーブルから読み取られたカラムと、ClickHouse ではサポートされていない、または意味を持たない (常に `NULL`) ものの、標準上は必要とされるカラムが含まれます。
 
@@ -142,9 +159,7 @@ domain_schema:            ᴺᵁᴸᴸ
 domain_name:              ᴺᵁᴸᴸ
 ```
 
-<div id="schemata">
-  ## SCHEMATA
-</div>
+## SCHEMATA {#schemata}
 
 [system.databases](/ja/reference/system-tables/databases) システムテーブルから読み取られるカラムと、ClickHouse ではサポートされていない、または意味をなさない (常に `NULL`) ものの、標準上必要なカラムが含まれます。
 
@@ -186,9 +201,7 @@ default_character_set_name:    ᴺᵁᴸᴸ
 sql_path:                      ᴺᵁᴸᴸ
 ```
 
-<div id="tables">
-  ## TABLES
-</div>
+## TABLES {#tables}
 
 [system.tables](/ja/reference/system-tables/tables) システムテーブルから読み取られるカラムが含まれます。
 
@@ -236,9 +249,7 @@ table_collation: utf8mb4_0900_ai_ci
 table_comment:   
 ```
 
-<div id="views">
-  ## VIEWS
-</div>
+## VIEWS {#views}
 
 テーブルエンジン [View](/ja/reference/engines/table-engines/special/view) を使用している場合、[system.tables](/ja/reference/system-tables/tables) システムテーブルから読み取られるカラムが含まれます。
 
@@ -297,9 +308,7 @@ is_trigger_deletable:       NO
 is_trigger_insertable_into: NO
 ```
 
-<div id="key_column_usage">
-  ## KEY_COLUMN_USAGE
-</div>
+## KEY_COLUMN_USAGE {#key_column_usage}
 
 制約が適用されている [system.tables](/ja/reference/system-tables/tables) システムテーブルのカラムが含まれます。
 
@@ -356,9 +365,7 @@ referenced_table_name:         ᴺᵁᴸᴸ
 referenced_column_name:        ᴺᵁᴸᴸ
 ```
 
-<div id="referential_constraints">
-  ## REFERENTIAL_CONSTRAINTS
-</div>
+## REFERENTIAL_CONSTRAINTS {#referential_constraints}
 
 外部キーに関する情報が含まれます。現在は空の結果 (行は返されません) を返しますが、これは Tableau Online のようなサードパーティ製ツールとの互換性を確保するのに最低限十分です。
 
@@ -376,15 +383,11 @@ referenced_column_name:        ᴺᵁᴸᴸ
 * `table_name` ([String](/ja/reference/data-types/string)) — 現在は使用されていません。
 * `referenced_table_name` ([String](/ja/reference/data-types/string)) — 現在は使用されていません。
 
-<div id="statistics">
-  ## STATISTICS
-</div>
+## STATISTICS {#statistics}
 
 テーブルの索引に関する情報を提供します。現在は空の結果 (行は返されません) を返しますが、これは Tableau Online のようなサードパーティ製ツールとの互換性を確保するには十分です。
 
-<div id="collations">
-  ## COLLATIONS
-</div>
+## COLLATIONS {#collations}
 
 使用可能な照合順序に関する情報を提供します。[system.collations](/ja/reference/system-tables/collations) の照合順序に加え、MySQL 互換性のための 2 行が含まれます。`utf8mb4_0900_ai_ci` は、MySQL プロトコルがハンドシェイク時、`SCHEMATA.DEFAULT_COLLATION_NAME`、および `TABLES.TABLE_COLLATION` で通知する照合順序です。`binary` は、MySQL プロトコルが結果セットのメタデータ内の数値カラムやその他の非文字列カラムに設定する疑似照合順序です。これにより、通知された照合順序に従ってこのビューを参照する MySQL 対応クライアントは、これらの照合順序を見つけられます。
 
@@ -397,3 +400,76 @@ referenced_column_name:        ᴺᵁᴸᴸ
 * `is_compiled` ([Nullable](/ja/reference/data-types/nullable)([String](/ja/reference/data-types/string))) — 照合順序がサーバーにコンパイルされているかどうか (両方の MySQL 互換性行では `Yes`、それ以外は `NULL`) 。MySQL 互換性のために提供されます。
 * `sortlen` ([Nullable](/ja/reference/data-types/nullable)([UInt64](/ja/reference/data-types/int-uint))) — 最小ソート長 (`utf8mb4_0900_ai_ci` では `0`、`binary` では `1`、それ以外は `NULL`) 。MySQL 互換性のために提供されます。
 * `pad_attribute` ([Nullable](/ja/reference/data-types/nullable)([String](/ja/reference/data-types/string))) — パディング属性 (`NO PAD` または `PAD SPACE`) 。両方の MySQL 互換性行では `NO PAD`、それ以外は `NULL` です。MySQL 互換性のために提供されます。
+
+## CHARACTER_SETS {#character_sets}
+
+MySQL ツールとの互換性を保つため、文字セット (`utf8`、`utf8mb4`、`ascii`、`binary`) の静的な一覧を提供します。ClickHouse 自体は UTF-8 を使用します。
+
+カラム:
+
+* `character_set_name` ([String](/ja/reference/data-types/string)) — 文字セット名。
+
+## ENGINES {#engines}
+
+利用可能なテーブルエンジンに関する情報を提供します。この情報は [system.table&#95;engines](/ja/reference/system-tables/table_engines) システムテーブルから取得されます。MySQL との互換性のために提供されています。
+
+カラム:
+
+* `engine` ([String](/ja/reference/data-types/string)) — テーブルエンジン名。
+* `support` ([String](/ja/reference/data-types/string)) — [default&#95;table&#95;engine](/operations/settings/settings#default_table_engine) に設定されているエンジンの場合は `DEFAULT`、それ以外は `YES`。
+
+## USER_PRIVILEGES {#user_privileges}
+
+グローバル権限に関する情報を提供します。この情報は [system.grants](/ja/reference/system-tables/grants) システムテーブル(データベースが指定されていない行)から読み取られます。
+
+`*_PRIVILEGES` ビューには、ワイルドカードを含まない通常の(取り消しではない)権限のみが表示されます。部分的な取り消し、ワイルドカードによる権限付与(例: `GRANT SELECT ON db_prefix*.*`)、およびパラメータ化された権限種別における特定の名前付きオブジェクトへの権限(例: `GRANT TABLE ENGINE ON TinyLog`)は、MySQL 互換のフォーマットでは表現できないため表示されません。そのため、部分的な取り消しによって制限されている被付与者であっても、制限のない権限が付与されているものとして表示されます。パラメータ化された種別の `ON *` 権限は、通常のグローバル権限として表示されます。正確な情報は `system.grants` を参照してください。MySQL とは異なり、これらのビューにはすべてのユーザーとロールの権限が表示され、参照するには `system.grants` へのアクセス権が必要です。アクセス権がない場合、クエリは `ACCESS_DENIED` 例外で失敗します。ClickHouse は権限を付与したユーザーを記録しないため、`GRANTOR` カラムは存在しません。
+
+カラム:
+
+* `grantee` ([String](/ja/reference/data-types/string)) — 権限が付与されたユーザーまたはロール。MySQL フォーマット `'name'@'%'` で表されます。MySQL にはロールに相当するものがないため、ロールもユーザーと同じ形式で表示されます。
+* `table_catalog` ([String](/ja/reference/data-types/string)) — 常に `def`。
+* `privilege_type` ([String](/ja/reference/data-types/string)) — 権限の名前(例: `SELECT`、`ALTER UPDATE`)。完全な一覧は [system.privileges](/ja/reference/system-tables/privileges) を参照してください。
+* `is_grantable` ([String](/ja/reference/data-types/string)) — 権限が `WITH GRANT OPTION` 付きで付与されている場合は `YES`、それ以外の場合は `NO`。
+* `grantee_type` ([String](/ja/reference/data-types/string)) — `USER` または `ROLE`。非標準のカラムです。ClickHouse ではユーザーとロールに同じ名前を付けられるため、このカラムでそうした被付与者を区別します。
+
+## SCHEMA_PRIVILEGES {#schema_privileges}
+
+データベースレベルの権限に関する情報を提供します。この情報は [system.grants](/ja/reference/system-tables/grants) システムテーブルのうち、データベースが指定されテーブルが指定されていない行から読み取られます。すべての `*_PRIVILEGES` ビューに共通する制限事項については、[USER&#95;PRIVILEGES](#user_privileges) を参照してください。
+
+カラム:
+
+* `grantee` ([String](/ja/reference/data-types/string)) — 権限が付与されているユーザーまたはロール。MySQL フォーマット `'name'@'%'` で表されます。
+* `table_catalog` ([String](/ja/reference/data-types/string)) — 常に `def`。
+* `table_schema` ([String](/ja/reference/data-types/string)) — データベース名。
+* `privilege_type` ([String](/ja/reference/data-types/string)) — 権限名。
+* `is_grantable` ([String](/ja/reference/data-types/string)) — 権限が `WITH GRANT OPTION` 付きで付与されている場合は `YES`、それ以外の場合は `NO`。
+* `grantee_type` ([String](/ja/reference/data-types/string)) — `USER` または `ROLE`。標準外のカラムです。ClickHouse ではユーザーとロールに同じ名前を付けられるため、このカラムでそうした被付与者を区別します。
+
+## TABLE_PRIVILEGES {#table_privileges}
+
+テーブルレベルの権限に関する情報を提供します。この情報は [system.grants](/ja/reference/system-tables/grants) システムテーブルのうち、テーブルが指定され、カラムが指定されていない行から読み取られます。すべての `*_PRIVILEGES` ビューに共通する制限事項については、[USER&#95;PRIVILEGES](#user_privileges) を参照してください。
+
+カラム:
+
+* `grantee` ([String](/ja/reference/data-types/string)) — 権限が付与されているユーザーまたはロール。MySQL フォーマット (`'name'@'%'`) で表されます。
+* `table_catalog` ([String](/ja/reference/data-types/string)) — 常に `def` です。
+* `table_schema` ([String](/ja/reference/data-types/string)) — データベース名。
+* `table_name` ([String](/ja/reference/data-types/string)) — テーブル名。
+* `privilege_type` ([String](/ja/reference/data-types/string)) — 権限名。
+* `is_grantable` ([String](/ja/reference/data-types/string)) — 権限が `WITH GRANT OPTION` 付きで付与されている場合は `YES`、それ以外の場合は `NO`。
+* `grantee_type` ([String](/ja/reference/data-types/string)) — `USER` または `ROLE`。非標準のカラムです。ClickHouse ではユーザーとロールに同じ名前を付けられるため、このカラムを使って両者を区別します。
+
+## COLUMN_PRIVILEGES {#column_privileges}
+
+column-level の権限に関する情報を提供します。この情報は [system.grants](/ja/reference/system-tables/grants) システムテーブル (カラムが指定されている行。カラムごとに 1 行) から読み取られます。すべての `*_PRIVILEGES` ビューに共通する制限事項については、[USER&#95;PRIVILEGES](#user_privileges) を参照してください。
+
+カラム:
+
+* `grantee` ([String](/ja/reference/data-types/string)) — 権限が付与されているユーザーまたはロール。MySQL フォーマット (`'name'@'%'`) で表されます。
+* `table_catalog` ([String](/ja/reference/data-types/string)) — 常に `def`。
+* `table_schema` ([String](/ja/reference/data-types/string)) — データベース名。
+* `table_name` ([String](/ja/reference/data-types/string)) — テーブル名。
+* `column_name` ([String](/ja/reference/data-types/string)) — カラム名。
+* `privilege_type` ([String](/ja/reference/data-types/string)) — 権限名。
+* `is_grantable` ([String](/ja/reference/data-types/string)) — 権限が `WITH GRANT OPTION` 付きで付与されている場合は `YES`、それ以外の場合は `NO`。
+* `grantee_type` ([String](/ja/reference/data-types/string)) — `USER` または `ROLE`。非標準のカラムです。ClickHouse ではユーザーとロールに同じ名前を付けられるため、このカラムを使って両者を区別します。

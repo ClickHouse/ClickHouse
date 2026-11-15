@@ -31,7 +31,8 @@ for i in $(seq 1 10); do
     inserts+="INSERT INTO test_variant_distinct VALUES ([1,2,$i], NULL);"
     inserts+="INSERT INTO test_variant_distinct VALUES (NULL, $i);"
 done
-echo "$inserts" | $CH_CLIENT -n
+# Synchronous inserts: with async_insert each INSERT waits for its async insert queue flush.
+echo "$inserts" | $CH_CLIENT --async_insert=0 -n
 
 # Run concurrent queries from multiple connections to trigger the race.
 # The permute optimization (ORDER BY) corrupts shared non-active variant

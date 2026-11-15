@@ -10,7 +10,6 @@
 -- evaluated on a group the step would otherwise discard (see the exception-semantics test
 -- below). OFFSET and negative LIMIT BY forms are intentionally NOT pushed.
 
-SET enable_analyzer = 1;
 SET query_plan_filter_push_down = 1;
 
 DROP TABLE IF EXISTS t_04366;

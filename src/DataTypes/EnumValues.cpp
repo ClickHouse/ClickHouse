@@ -114,8 +114,8 @@ void EnumValues<T>::buildLookupStructures(ValidationMode validation_mode)
     }
     else
     {
-        /// Enum16: use direct lookup if range is small enough
-        use_direct_value_lookup = (range <= DIRECT_LOOKUP_THRESHOLD);
+        /// Enum16: use direct lookup if the range is small or dense. Indexes must stay below `INVALID_INDEX`.
+        use_direct_value_lookup = range <= DIRECT_LOOKUP_THRESHOLD || (range <= 2 * n && n < INVALID_INDEX);
     }
 
     if (use_direct_value_lookup)

@@ -1,0 +1,11 @@
+invalid_compression_codec
+a	Nullable(String)					
+Hello World!
+a	Nullable(String)					
+Hello World!
+a	Nullable(String)					
+Hello World!
+mixed_case_bloom_filter
+dataColumn	Nullable(Int32)					
+0
+0

@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <Formats/FormatSettings.h>
 #include <cstdlib>
 #include <memory>
 #include <optional>
@@ -107,6 +108,8 @@ private:
             ParserCodec codec_parser;
             auto ast
                 = parseQuery(codec_parser, "(" + codec.value() + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            /// The aggregate compresses the serialized values directly, so a declarative codec would measure nothing.
+            CompressionCodecFactory::instance().checkCodecChainIsNotDeclarative(ast);
             return CompressionCodecFactory::instance().get(ast, argument_types[0]);
         }
         return CompressionCodecFactory::instance().getDefaultCodec();

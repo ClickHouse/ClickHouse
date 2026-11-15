@@ -2,7 +2,7 @@
 sidebarTitle: 'Introduction'
 description: 'Import and export data from Postgres to a wide variety of data formats and object stores.'
 slug: '/cloud/managed-postgres/extensions/chdb'
-title: 'chdb Extension reference documentation'
+title: 'chdb Extensions documentation'
 doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extension', 'chdb', 'Parquet', 'CSV', 'TSV']
 ---
@@ -148,8 +148,8 @@ A helper that dies triggers an error only in the backend that started it,
 leaving other sessions untouched.
 
 <Important>
-For each query, the helper connects to a new temporary chDB database on disck
-to execute it. As a consequence, each query currently runs in completae
+For each query, the helper connects to a new temporary chDB database on disk
+to execute it. As a consequence, each query currently runs in complete
 isolation from all other queries. Don't create a table and expect to query it
 in a subsequent query.
 </Important>

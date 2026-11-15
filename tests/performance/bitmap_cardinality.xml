@@ -62,14 +62,14 @@
         SELECT 'sparse_b', groupBitmapState(toUInt32(number * 100 + 15000000)) FROM numbers(300000)
     </fill_query>
 
-    <!-- Same container keys on both sides, no shared element. -->
+    <!-- Same two container keys on both sides, no shared element. The four 8 KiB bitsets fit in the L1 cache. -->
     <fill_query>
         INSERT INTO bitmap_cardinality_operands
-        SELECT 'evens', groupBitmapState(toUInt32(number * 2)) FROM numbers(1500000)
+        SELECT 'evens', groupBitmapState(toUInt32(number * 2)) FROM numbers(65536)
     </fill_query>
     <fill_query>
         INSERT INTO bitmap_cardinality_operands
-        SELECT 'odds', groupBitmapState(toUInt32(number * 2 + 1)) FROM numbers(1500000)
+        SELECT 'odds', groupBitmapState(toUInt32(number * 2 + 1)) FROM numbers(65536)
     </fill_query>
 
     <!-- Stays in the small-set representation, whose threshold is 32 elements. -->
@@ -94,11 +94,11 @@
     </fill_query>
     <fill_query>
         INSERT INTO bitmap_cardinality_operands_u64
-        SELECT 'evens', groupBitmapState(toUInt64(number * 2)) FROM numbers(1500000)
+        SELECT 'evens', groupBitmapState(toUInt64(number * 2)) FROM numbers(65536)
     </fill_query>
     <fill_query>
         INSERT INTO bitmap_cardinality_operands_u64
-        SELECT 'odds', groupBitmapState(toUInt64(number * 2 + 1)) FROM numbers(1500000)
+        SELECT 'odds', groupBitmapState(toUInt64(number * 2 + 1)) FROM numbers(65536)
     </fill_query>
     <!-- Spread over 64 high-32 keys, so the per-key merge walks many sub-bitmaps. -->
     <fill_query>
@@ -163,7 +163,7 @@
             (SELECT bm FROM bitmap_cardinality_operands WHERE name = 'evens') AS a,
             (SELECT bm FROM bitmap_cardinality_operands WHERE name = 'odds') AS b
         SELECT sum(bitmapHasAny(materialize(a), b))
-        FROM numbers(2000)
+        FROM numbers(46000)
         FORMAT Null
     </query>
 
@@ -223,7 +223,7 @@
             (SELECT bm FROM bitmap_cardinality_operands_u64 WHERE name = 'evens') AS a,
             (SELECT bm FROM bitmap_cardinality_operands_u64 WHERE name = 'odds') AS b
         SELECT sum(bitmapHasAny(materialize(a), b))
-        FROM numbers(2000)
+        FROM numbers(46000)
         FORMAT Null
     </query>
 

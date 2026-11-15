@@ -12,9 +12,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # `LIMIT` is satisfied by the local part of the `UNION ALL`. The remote part returns no rows at all
 # (the `sleep` in its `WHERE` filters everything out), so the 6 rows it reads are reported only when
 # its connection is drained, after the data path of the query has already finished. `interactive_delay`
-# keeps the remote server from sending its progress before the end of its query, an asynchronous
-# socket keeps the initiator from blocking on the connection until then, and a single thread fixes
-# the order of the draining and of the finalization of the output format.
+# (one hour) keeps the remote server from sending its progress and from noticing the `Cancel` that the
+# initiator sends once `LIMIT` is satisfied, before the end of its query: a cancelled query does not
+# report the rows it has read. An asynchronous socket keeps the initiator from blocking on the
+# connection until then, and a single thread fixes the order of the draining and of the finalization
+# of the output format.
 #
 # `rows_before_limit_at_least` is checked together with `rows_read`: the final value of its counter
 # is picked up from the same place, when the whole pipeline has finished, both for the output format
@@ -27,7 +29,7 @@ QUERY="SELECT number FROM
     SELECT number FROM remote('127.0.0.3', view(SELECT number FROM numbers(6) WHERE sleep(0.5) = 1))
 )
 LIMIT 5
-SETTINGS prefer_localhost_replica = 0, async_socket_for_remote = 1, use_concurrency_control = 0, max_threads = 1, interactive_delay = 1000000"
+SETTINGS prefer_localhost_replica = 0, async_socket_for_remote = 1, use_concurrency_control = 0, max_threads = 1, interactive_delay = 3600000000"
 
 for format in JSON JSONCompact XML
 do
