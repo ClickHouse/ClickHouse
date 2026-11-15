@@ -79,20 +79,16 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be MultiPoint", getName());
             else
             {
-                auto first = LeftConverter::convert(arguments[0].column->convertToFullColumnIfConst());
-                auto second = RightConverter::convert(arguments[1].column->convertToFullColumnIfConst());
+                CorrectedGeometries<LeftConverter> first(arguments[0].column);
+                CorrectedGeometries<RightConverter> second(arguments[1].column);
 
                 /// We are not interested in some pitfalls in third-party libraries
                 /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    /// Orient the polygons correctly.
-                    boost::geometry::correct(first[i]);
-                    boost::geometry::correct(second[i]);
-
                     MultiPolygon<Point> polygons_union{};
                     /// Main work here.
-                    boost::geometry::union_(first[i], second[i], polygons_union);
+                    boost::geometry::union_(first.get(i), second.get(i), polygons_union);
 
                     serializer.add(polygons_union);
                 }
@@ -159,10 +155,10 @@ Calculates a union (OR) of polygons.
     {
         "Usage example",
         R"(
-SELECT wkt(polygonsUnionSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]], [[[(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]]]))
+SELECT wkt(arrayMap(a -> arrayMap(b -> arrayMap(c -> (round(c.1, 6), round(c.2, 6)), b), a), polygonsUnionSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]], [[[(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]]])))
         )",
         R"(
-MULTIPOLYGON(((4.36661 50.8434,4.36623 50.8408,4.34496 50.8333,4.33807 50.8487,4.34669 50.8583,4.35268 50.8567,4.36136 50.8652,4.36131 50.8651,4.39045 50.8565,4.38303 50.8429,4.36661 50.8434)))
+MULTIPOLYGON(((4.366605 50.843374,4.366227 50.840809,4.344961 50.833264,4.338074 50.848677,4.346693 50.858306,4.35268 50.856658,4.361358 50.865182,4.361315 50.865128,4.390454 50.856487,4.38303 50.842885,4.366605 50.843374)))
         )"
     }
     };

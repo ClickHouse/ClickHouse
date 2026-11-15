@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
@@ -218,7 +219,8 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
 /// reach the sorter and therefore the running TopK threshold, but their per-execution contents are
 /// not part of the query condition cache key. Run this pass after runtime filters are in place: for
 /// a TopK read with such a filter above it, disable the TopK PREWHERE cache (reuse and write) and
-/// drop the TopK-salted WHERE key that the earlier walk may have attached.
+/// drop the TopK-salted WHERE key that the earlier walk may have attached. For a TopN read of
+/// object storage, disable its TopK cache key.
 /// `__topKFilter` itself is deliberately allowed: its plan salt is part of those keys.
 void disableTopKQueryConditionCacheUnderNonDeterministicFilters(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings)
 {
@@ -228,7 +230,12 @@ void disableTopKQueryConditionCacheUnderNonDeterministicFilters(const Stack & st
     const auto & frame = stack.back();
 
     auto * read_from_merge_tree = dynamic_cast<ReadFromMergeTree *>(frame.node->step.get());
-    if (!read_from_merge_tree || !read_from_merge_tree->isSelectedForTopKFilterOptimization())
+    auto * read_from_object_storage = typeid_cast<ReadFromObjectStorageStep *>(frame.node->step.get());
+    if (read_from_merge_tree && !read_from_merge_tree->isSelectedForTopKFilterOptimization())
+        return;
+    if (read_from_object_storage && !read_from_object_storage->isSelectedForTopKFilterOptimization())
+        return;
+    if (!read_from_merge_tree && !read_from_object_storage)
         return;
 
     /// The `FilterStep` directly above the read is the one that `updateQueryConditionCache` tags
@@ -256,6 +263,14 @@ void disableTopKQueryConditionCacheUnderNonDeterministicFilters(const Stack & st
 
     if (!has_non_deterministic_filter)
         return;
+
+    /// A TopN read of object storage keeps its key in the step itself (see
+    /// `ReadFromObjectStorageStep::makeTopKQueryConditionCacheKey`), and no `FilterStep` is tagged for it.
+    if (read_from_object_storage)
+    {
+        read_from_object_storage->disableTopKQueryConditionCache();
+        return;
+    }
 
     read_from_merge_tree->disableTopKPrewhereQueryConditionCache();
     if (tagged_filter_step)

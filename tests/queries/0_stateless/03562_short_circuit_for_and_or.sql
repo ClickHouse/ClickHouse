@@ -4,7 +4,6 @@ CREATE TABLE test_03562 (id UInt32) ENGINE = Memory;
 
 insert into test_03562 select number from numbers(10000);
 
-set enable_analyzer = 1;
 set enable_function_early_short_circuit = 1;
 set optimize_trivial_count_query = 0; -- The test asserts on `read_rows` of count subqueries; the trivial count optimization on `Memory` tables would serve them from metadata.
 

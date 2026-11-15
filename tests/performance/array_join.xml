@@ -1,4 +1,6 @@
 <test>
+    <create_query>CREATE TABLE array_join_sorted (id UInt64, tags Array(String), payload String) ENGINE = MergeTree ORDER BY id</create_query>
+    <fill_query>INSERT INTO array_join_sorted SELECT number, arrayMap(i -> concat('t', toString(i)), range(number % 4)), repeat('p', 100) FROM numbers(10000000)</fill_query>
     <create_query>CREATE TABLE array_join_wide_chain (A Array(String), B Array(String), C Array(String)) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <fill_query>INSERT INTO array_join_wide_chain SELECT arrayMap(i -> concat('a', toString(number), '_', toString(i)), range(100)), arrayMap(i -> concat('b', toString(number), '_', toString(i)), range(100)), arrayMap(i -> concat('c', toString(number), '_', toString(i)), range(100)) FROM numbers(100000)</fill_query>
 
@@ -23,5 +25,11 @@
     <query>SELECT a, b, c FROM array_join_wide_chain ARRAY JOIN A AS a ARRAY JOIN B AS b ARRAY JOIN C AS c LIMIT 31 SETTINGS max_threads = 1 FORMAT Null</query>
     <query>SELECT a, b, c FROM array_join_wide_chain LEFT ARRAY JOIN A AS a LEFT ARRAY JOIN B AS b LEFT ARRAY JOIN C AS c LIMIT 31 SETTINGS max_threads = 1 FORMAT Null</query>
 
+    <!-- LEFT ARRAY JOIN keeps the row count, so reading in order stops early for the function form too. -->
+    <query>SELECT id, arrayJoin(emptyArrayToSingle(tags)) AS tag, payload FROM array_join_sorted ORDER BY id LIMIT 10 OFFSET 1000000 SETTINGS max_threads = 1 FORMAT Null</query>
+    <!-- a selective filter is fused into LEFT ARRAY JOIN, so the eager passenger is copied only for the elements it keeps -->
+    <query>SELECT id, arrayJoin(emptyArrayToSingle(tags)) AS tag, payload FROM array_join_sorted WHERE tag = 't2' SETTINGS max_threads = 1, enable_lazy_columns_replication = 0 FORMAT Null</query>
+
     <drop_query>DROP TABLE IF EXISTS array_join_wide_chain</drop_query>
+    <drop_query>DROP TABLE IF EXISTS array_join_sorted</drop_query>
 </test>

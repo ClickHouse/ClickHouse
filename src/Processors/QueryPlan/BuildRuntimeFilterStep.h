@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/RuntimeFilterBuildOptions.h>
 
 #include <optional>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -73,6 +74,11 @@ public:
     QueryPlanStepPtr clone() const override;
 
     void describeActions(FormatSettings & settings) const override;
+
+    /// The step passes its input through and reads its key, which it finds by name, so the name has to be there once.
+    bool canRemoveUnusedColumns() const override;
+    UnneededInputPositions getUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions, const VectorWithMemoryTracking<PrunedInput> & inputs) override;
 
 private:
     void updateOutputHeader() override;

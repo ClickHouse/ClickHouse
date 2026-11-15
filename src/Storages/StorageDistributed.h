@@ -136,6 +136,8 @@ public:
     void drop() override;
 
     bool storesDataOnDisk() const override { return data_volume != nullptr; }
+    /// The local background `INSERT` queue is a transient send buffer, not data of this table.
+    bool hasUnreplicatedTableDataOnDisk() const override { return false; }
     Strings getDataPaths() const override;
 
     ActionLock getActionLock(StorageActionBlockType type) override;
@@ -253,7 +255,7 @@ private:
 
     const DistributedSettings & getDistributedSettingsRef() const { return *distributed_settings; }
 
-    void delayInsertOrThrowIfNeeded() const;
+    void delayInsertOrThrowIfNeeded(const std::function<bool()> & is_cancelled) const;
 
     std::optional<QueryPipeline>
     distributedWriteFromClusterStorage(IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context) const;

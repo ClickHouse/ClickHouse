@@ -35,7 +35,7 @@ INSERT INTO small SELECT number * 100 FROM numbers(100);
 
 # The bucket counts are pinned so that the filter has a single merge task.
 QUERY="SELECT count() FROM big, small WHERE bid = sid SETTINGS
-    enable_analyzer = 1, enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_parallel_replicas = 0,
+    enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_parallel_replicas = 0,
     make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0,
     distributed_plan_join_runtime_filters = 1,
     distributed_plan_default_reader_bucket_count = 4, distributed_plan_default_shuffle_join_bucket_count = 4,

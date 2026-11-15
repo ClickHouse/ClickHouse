@@ -18,22 +18,22 @@ INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t VALUES (1, 0);
 
 -- The same expression as a plain `SELECT`.
 SELECT (WITH src AS (SELECT 7 AS id) SELECT (SELECT max(id) FROM src SETTINGS enable_global_with_statement = DEFAULT))
-    SETTINGS enable_analyzer = 1, enable_global_with_statement = 0;
+    SETTINGS enable_global_with_statement = 0;
 
 UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.u
     SET v = (WITH src AS (SELECT 7 AS id) SELECT (SELECT max(id) FROM src SETTINGS enable_global_with_statement = DEFAULT))
-    WHERE id = 1 SETTINGS enable_analyzer = 1, enable_global_with_statement = 0;
+    WHERE id = 1 SETTINGS enable_global_with_statement = 0;
 SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.u WHERE id = 1;
 
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
     UPDATE v = (WITH src AS (SELECT 7 AS id) SELECT (SELECT max(id) FROM src SETTINGS enable_global_with_statement = DEFAULT))
-    WHERE id = 1 SETTINGS mutations_sync = 2, enable_analyzer = 1, enable_global_with_statement = 0;
+    WHERE id = 1 SETTINGS mutations_sync = 2, enable_global_with_statement = 0;
 SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
 
 -- Without the reset the setting stays disabled and the identifier names the table (2).
 UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.u
     SET v = (WITH src AS (SELECT 7 AS id) SELECT (SELECT max(id) FROM src))
-    WHERE id = 2 SETTINGS enable_analyzer = 1, enable_global_with_statement = 0;
+    WHERE id = 2 SETTINGS enable_global_with_statement = 0;
 SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.u WHERE id = 2;
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

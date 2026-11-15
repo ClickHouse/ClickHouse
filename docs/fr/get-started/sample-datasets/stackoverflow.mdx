@@ -8,15 +8,21 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Ce jeu de données contient l’ensemble des données `Posts`, `Users`, `Votes`, `Comments`, `Badges`, `PostHistory` et `PostLinks` de Stack Overflow.
 
 Vous pouvez soit télécharger des versions Parquet des données préparées à l’avance, couvrant l’ensemble des données jusqu’en avril 2024, soit télécharger les données les plus récentes au format XML et les charger. Stack Overflow fournit périodiquement des mises à jour de ces données — historiquement, tous les 3 mois.
 
 Le diagramme suivant présente le schéma des tables disponibles au format Parquet.
 
-<Image img="/images/getting-started/example-datasets/stackoverflow.webp" alt="Schéma Stack Overflow" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Schéma Stack Overflow](/images/getting-started/example-datasets/stackoverflow.webp)
+
+</Frame>
+
+</div>
 
 Une description du schéma de ces données est disponible [ici](https://meta.stackexchange.com/questions/2677/database-schema-documentation-for-the-public-data-dump-and-sede).
 

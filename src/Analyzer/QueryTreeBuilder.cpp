@@ -63,6 +63,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_shuffle_query;
     extern const SettingsBool any_join_distinct_right_table_keys;
     extern const SettingsJoinStrictness join_default_strictness;
     extern const SettingsBool enable_order_by_all;
@@ -83,10 +84,21 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_QUERY_PARAMETER;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
 {
+
+/// An `Identifier` query parameter that was never substituted: an empty name part, with the parameter as a child.
+void throwIfQueryParameter(const ASTIdentifier & identifier)
+{
+    if (!identifier.isParam())
+        return;
+
+    const auto & parameter = static_cast<const IAST &>(identifier).children.front()->as<ASTQueryParameter &>();
+    throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Query parameter {} was not set", backQuote(parameter.name));
+}
 
 /// Column names from the `name (col1, col2, ...)` alias list of a CTE/table expression
 /// Duplicates are rejected, they would collapse columns during identifier resolution
@@ -241,56 +253,33 @@ void applyQueryLevelSettings(
     set_query.changes.removeSetting("limit");
     set_query.changes.removeSetting("offset");
 
-    /// A nested `SETTINGS` clause (a subquery, a CTE, a view's inner query) used to be applied to
-    /// the per-node context unchecked, letting a user override `readonly`, `CONST` and `MIN`/`MAX`
-    /// constraints - e.g. `additional_table_filters`, which the Planner reads from this context.
-    /// Clamp it instead of throwing, as done for other settings crossing execution contexts
-    /// (`getSQLSecurityOverriddenContext`, secondary queries, DDL replay): violating changes are
-    /// dropped, out-of-bounds values are clamped, so a view whose inner clause violates the
-    /// reader's constraints keeps working. A top-level clause still throws
-    /// (`applySettingsFromQuery`). Clamp a copy: the node keeps the clause as written, so the tree's
-    /// AST and hash are unchanged, and every node executing the subquery clamps it against its own
-    /// constraints. `SETTINGS name = DEFAULT` is parsed into `default_settings`, not into `changes`, and is
-    /// clamped separately below.
-    if (!set_query.changes.empty())
-    {
-        /// One change at a time, so that each is clamped against the context as the preceding changes
-        /// left it. Clamping the whole clause as a batch checks every change against the context as it
-        /// was before the clause, and drops a change that "does not change" that pre-clause value - so
-        /// `SETTINGS use_query_cache = 1, use_query_cache = 0` would drop the trailing `0` and leave the
-        /// subquery with `1`, while the clause reads last-wins everywhere else.
-        for (const auto & change : set_query.changes)
-        {
-            SettingsChanges single_change{change};
-            updated_context->clampToSettingsConstraints(single_change, SettingSource::QUERY);
-            updated_context->applySettingsChanges(single_change);
-        }
-        settings_changes.insert(settings_changes.end(), set_query.changes.begin(), set_query.changes.end());
-    }
-
-    /// `SETTINGS x = DEFAULT` is parsed into `default_settings`, not `changes`. Reset those settings
-    /// to their default values in the subquery scope as well, so that the reset actually takes effect
-    /// for the subquery (e.g. a table function such as `obfuscate` reading the effective setting),
-    /// consistent with how `changes` are applied here and with how top-level query settings are
-    /// handled by `InterpreterSetQuery`.
-    if (!set_query.default_settings.empty())
-    {
-        default_settings.insert(default_settings.end(), set_query.default_settings.begin(), set_query.default_settings.end());
-
-        /// A reset is an assignment of the declared default, so it can violate the reader's constraints
-        /// exactly like an explicit assignment - without this, an inner `SETTINGS max_threads = DEFAULT`
-        /// or `additional_table_filters = DEFAULT` would escape a `readonly`, `CONST` or `MIN` / `MAX`
-        /// constraint that the same clause could not escape by writing the value out. The top-level path
-        /// throws (`checkSettingsConstraintsForSettingsReset` in `InterpreterSetQuery`); here, as for the
-        /// `changes` above, clamp instead: a forbidden reset is dropped, a reset past a bound becomes an
-        /// assignment of the clamped value. The node keeps the clause as written, so the tree's AST and
-        /// hash are unchanged.
-        auto allowed_resets = set_query.default_settings;
-        SettingsChanges clamped_resets;
-        updated_context->clampSettingsConstraintsForSettingsReset(allowed_resets, clamped_resets, SettingSource::QUERY);
-        updated_context->resetSettingsToDefaultValue(allowed_resets);
-        updated_context->applySettingsChanges(clamped_resets);
-    }
+    /// A nested `SETTINGS` clause (a subquery, a CTE, a view's inner query) is clamped to the session's
+    /// settings constraints, as done for other settings crossing execution contexts
+    /// (`getSQLSecurityOverriddenContext`, secondary queries, DDL replay): violating changes are dropped,
+    /// out-of-bounds values are clamped, so a view whose inner clause violates the reader's constraints
+    /// keeps working. A top-level clause still throws (`applySettingsFromQuery`). An unknown name or an
+    /// uncastable value throws as for a top-level clause, on every server that executes the query. The
+    /// node records the effective `changes`: the ones that survive, with their clamped values and the
+    /// literals as written, so `toAST`, the tree hash, the `Planner` and the shards receiving the
+    /// subquery see what was applied. The changes are clamped one at a time, so that each is clamped
+    /// against the context as the preceding changes left it - the last-wins reading the clause has
+    /// everywhere else.
+    ///
+    /// `SETTINGS x = DEFAULT` is parsed into `default_settings`, not `changes`. Those settings are reset
+    /// in the subquery scope as well, so that the reset actually takes effect for the subquery (e.g. a
+    /// table function such as `obfuscate` reading the effective setting). A reset is an assignment of
+    /// the declared default, so it can violate the reader's constraints exactly like an explicit
+    /// assignment - without clamping, an inner `SETTINGS max_threads = DEFAULT` would escape a
+    /// `readonly`, `CONST` or `MIN` / `MAX` constraint that the same clause could not escape by writing
+    /// the value out. The top-level path throws (`checkSettingsConstraintsForSettingsReset` in
+    /// `InterpreterSetQuery`); here a forbidden reset is dropped, and a reset past a bound becomes an
+    /// assignment of the clamped value. The node keeps the resets as written.
+    ///
+    /// The sequence is shared with `ApplyWithSubqueryVisitor` and the query result cache check
+    /// (`Context::applyNestedQuerySettingsClamped`).
+    auto effective_changes = updated_context->applyNestedQuerySettingsClamped(set_query.changes, set_query.default_settings);
+    settings_changes.insert(settings_changes.end(), effective_changes.begin(), effective_changes.end());
+    default_settings.insert(default_settings.end(), set_query.default_settings.begin(), set_query.default_settings.end());
 
     if (!set_query.query_parameters.empty())
     {
@@ -305,6 +294,10 @@ void applyQueryLevelSettings(
             query_parameters_map.insert_or_assign(parameter_name, parameter_value);
         updated_context->addQueryParameters(query_parameters_map);
     }
+
+    /// The clause of a query inside the body of a `SQL SECURITY DEFINER` / `NONE` view must not turn parallel replicas back on.
+    if (updated_context->isSQLSecurityOverriddenBody())
+        updated_context->restrictParallelReplicasInSQLSecurityOverriddenBody();
 }
 
 QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
@@ -323,7 +316,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     /// A `SETTINGS` clause of a UNION is query-level: it applies to the whole union, not to a single
     /// arm. The grammar gives it two shapes - `ASTQueryWithOutput::settings_ast` for the top-level
     /// query, and, for every other position (a subquery, a table function argument, a CTE), the last
-    /// arm's own `SETTINGS` clause, which is where `ParserSelectQuery` leaves a trailing clause. Both
+    /// arm's own `SETTINGS` clause, which is where `ParserSelectQuery` leaves a trailing clause (possibly
+    /// nested into `INTERSECT` / `EXCEPT`, see `ASTSelectIntersectExceptQuery::getTrailingSettings`). Both
     /// are applied to the union's context, and that context is the one every arm is built from, so a
     /// nested `(SELECT ... UNION ALL SELECT ... SETTINGS x = ...)` shapes ALL of its arms - the same
     /// contract `InterpreterSetQuery::applySettingsFromQuery` implements for a directly executed
@@ -341,8 +335,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     };
 
     apply_settings(select_with_union_query_typed.settings_ast);
-    if (auto * last_select = select_lists.children.back()->as<ASTSelectQuery>())
-        apply_settings(last_select->settings());
+    apply_settings(ASTSelectIntersectExceptQuery::getTrailingSettings(select_lists.children.back()));
 
     auto union_node = std::make_shared<UnionNode>(
         std::move(updated_context),
@@ -405,9 +398,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     std::vector<String> default_settings;
     NameToNameVector query_parameters;
 
-    if (auto * last_select = select_lists.back()->as<ASTSelectQuery>())
+    if (auto trailing_settings = ASTSelectIntersectExceptQuery::getTrailingSettings(select_lists.back()))
     {
-        if (auto * set_query = last_select->settings() ? last_select->settings()->as<ASTSetQuery>() : nullptr)
+        if (auto * set_query = trailing_settings->as<ASTSetQuery>())
             applyQueryLevelSettings(*set_query, updated_context, settings_changes, default_settings, query_parameters);
     }
 
@@ -446,6 +439,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     const auto & select_query_typed = select_query->as<ASTSelectQuery &>();
 
     auto updated_context = Context::createCopy(context);
+    if (select_query_typed.is_view_inner_query)
+        updated_context->setIsViewInnerQuery(true);
     auto select_settings = select_query_typed.settings();
     SettingsChanges settings_changes;
     std::vector<String> default_settings;
@@ -456,6 +451,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
             select_settings->as<ASTSetQuery &>(), updated_context, settings_changes, default_settings, query_parameters);
 
     const auto enable_order_by_all = updated_context->getSettingsRef()[Setting::enable_order_by_all];
+    const auto allow_experimental_shuffle_query = updated_context->getSettingsRef()[Setting::allow_experimental_shuffle_query];
 
     auto current_query_tree = std::make_shared<QueryNode>(
         std::move(updated_context), std::move(settings_changes), std::move(default_settings), std::move(query_parameters));
@@ -473,6 +469,11 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     current_query_tree->setIsGroupByWithGroupingSets(select_query_typed.group_by_with_grouping_sets);
     current_query_tree->setIsGroupByAll(select_query_typed.group_by_all);
     current_query_tree->setIsLimitByAll(select_query_typed.limit_by_all);
+
+    if (select_query_typed.shuffle && !allow_experimental_shuffle_query)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for `SHUFFLE` is disabled (turn on setting `allow_experimental_shuffle_query`)");
+
+    current_query_tree->setIsShuffle(select_query_typed.shuffle);
     current_query_tree->setIsLimitAfterAll(select_query_typed.limit_after_all);
     /// order_by_all flag in AST is set w/o consideration of `enable_order_by_all` setting
     /// since SETTINGS section has not been parsed yet, - so, check the setting here
@@ -739,11 +740,13 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
 
     if (const auto * ast_identifier = expression->as<ASTIdentifier>())
     {
+        throwIfQueryParameter(*ast_identifier);
         auto identifier = Identifier(ast_identifier->name_parts);
         result = std::make_shared<IdentifierNode>(std::move(identifier));
     }
     else if (const auto * table_identifier = expression->as<ASTTableIdentifier>())
     {
+        throwIfQueryParameter(*table_identifier);
         auto identifier = Identifier(table_identifier->name_parts);
         result = std::make_shared<IdentifierNode>(std::move(identifier));
     }
@@ -755,6 +758,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     else if (const auto * qualified_asterisk = expression->as<ASTQualifiedAsterisk>())
     {
         auto & qualified_identifier = qualified_asterisk->qualifier->as<ASTIdentifier &>();
+        throwIfQueryParameter(qualified_identifier);
         auto column_transformers = buildColumnTransformers(qualified_asterisk->transformers, context);
         result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), std::move(column_transformers));
     }
@@ -786,6 +790,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Lambda {} argument is not identifier",
                             function->formatForErrorMessage());
+
+                    throwIfQueryParameter(*lambda_argument_identifier);
 
                     if (lambda_argument_identifier->name_parts.size() > 1)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -890,6 +896,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
         for (auto & column_list_child : columns_list_matcher->column_list->children)
         {
             auto & column_list_identifier = column_list_child->as<ASTIdentifier &>();
+            throwIfQueryParameter(column_list_identifier);
             column_list_identifiers.emplace_back(Identifier{column_list_identifier.name_parts});
         }
 
@@ -899,12 +906,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     else if (const auto * qualified_columns_regexp_matcher = expression->as<ASTQualifiedColumnsRegexpMatcher>())
     {
         auto & qualified_identifier = qualified_columns_regexp_matcher->qualifier->as<ASTIdentifier &>();
+        throwIfQueryParameter(qualified_identifier);
         auto column_transformers = buildColumnTransformers(qualified_columns_regexp_matcher->transformers, context);
         result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), qualified_columns_regexp_matcher->getPattern(), std::move(column_transformers));
     }
     else if (const auto * qualified_columns_list_matcher = expression->as<ASTQualifiedColumnsListMatcher>())
     {
         auto & qualified_identifier = qualified_columns_list_matcher->qualifier->as<ASTIdentifier &>();
+        throwIfQueryParameter(qualified_identifier);
 
         Identifiers column_list_identifiers;
         column_list_identifiers.reserve(qualified_columns_list_matcher->column_list->children.size());
@@ -912,6 +921,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
         for (auto & column_list_child : qualified_columns_list_matcher->column_list->children)
         {
             auto & column_list_identifier = column_list_child->as<ASTIdentifier &>();
+            throwIfQueryParameter(column_list_identifier);
             column_list_identifiers.emplace_back(Identifier{column_list_identifier.name_parts});
         }
 
@@ -1080,6 +1090,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             if (table_expression.database_and_table_name)
             {
                 auto & table_identifier_typed = table_expression.database_and_table_name->as<ASTTableIdentifier &>();
+                throwIfQueryParameter(table_identifier_typed);
                 auto storage_identifier = Identifier(table_identifier_typed.name_parts);
                 QueryTreeNodePtr table_identifier_node;
 
@@ -1346,7 +1357,11 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
                 except_column_names.reserve(except_transformer->children.size());
 
                 for (auto & except_transformer_child : except_transformer->children)
-                    except_column_names.push_back(except_transformer_child->as<ASTIdentifier &>().full_name);
+                {
+                    const auto & except_identifier = except_transformer_child->as<ASTIdentifier &>();
+                    throwIfQueryParameter(except_identifier);
+                    except_column_names.push_back(except_identifier.full_name);
+                }
 
                 column_transformers.emplace_back(std::make_shared<ExceptColumnTransformerNode>(std::move(except_column_names), except_transformer->is_strict));
             }

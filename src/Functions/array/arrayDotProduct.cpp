@@ -55,7 +55,10 @@ MULTITARGET_FUNCTION_X86_V4(
                 for (auto & partial_sum : partial_sums)
                     sum += partial_sum;
 
-                /// Tail: process remaining elements that don't fill a full unroll block
+                /// Tail: process remaining elements that don't fill a full unroll block.
+                /// clang 22 unrolled it by 4 on its own and clang 23 does not, which made `dotProduct` of 150-element
+                /// `BFloat16` arrays 15% slower on the x86 CI machines; the order of the additions stays the same.
+                _Pragma("clang loop vectorize(disable) unroll_count(4)")
                 for (; i < array_size; ++i)
                     sum += static_cast<ResultType>(data_x[prev + i]) * static_cast<ResultType>(data_y[prev + i]);
 
@@ -270,7 +273,7 @@ private:
                 || (std::is_same_v<LeftType, BFloat16> && std::is_same_v<ResultType, Float32>)))
         {
             /// SIMD-optimized path: one batched call over all rows keeps the load stream continuous.
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
             if (isArchSupported(TargetArch::x86_64_v4))
                 dotProductBatchImpl_x86_64_v4<ResultType, LeftType>(data_x.data(), data_y.data(), offsets_x.data(), result_data.data(), input_rows_count);
             else
@@ -356,7 +359,7 @@ private:
                 || (std::is_same_v<LeftType, BFloat16> && std::is_same_v<ResultType, Float32>)))
         {
             /// SIMD-optimized path: one batched call over all rows keeps the column load stream continuous.
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
             if (isArchSupported(TargetArch::x86_64_v4))
                 dotProductConstBatchImpl_x86_64_v4<ResultType, LeftType>(data_x.data(), data_y.data(), array_size, result.data(), input_rows_count);
             else

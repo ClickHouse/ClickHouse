@@ -5,6 +5,8 @@
             <insert_keeper_max_retries>1</insert_keeper_max_retries>
             <insert_keeper_retry_initial_backoff_ms>0</insert_keeper_retry_initial_backoff_ms>
             <insert_keeper_retry_max_backoff_ms>0</insert_keeper_retry_max_backoff_ms>
+            <!-- The global context takes its settings from this profile; background Keeper users must not be limited by it. -->
+            <get_zookeeper_lock_acquire_timeout_ms>300</get_zookeeper_lock_acquire_timeout_ms>
         </default>
     </profiles>
 </clickhouse>

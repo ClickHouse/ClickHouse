@@ -76,6 +76,9 @@ private:
         if (etag_validated_on_read && !captured->etag.empty())
             return;
 
+        if (captured->is_from_table_records)
+            return;
+
         /// A mutable file is only admitted to the lazy plan when the reread is pinned to the
         /// captured ETag (see `ReadFromObjectStorageStep::canUseLazyMaterialization`). Reaching
         /// this point means the storage returned no ETag for the object, so the GET cannot be
@@ -229,6 +232,7 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
     /// would restore the original row order incorrectly.
     FormatSettings modified_format_settings = format_settings ? *format_settings : getFormatSettings(context);
     modified_format_settings.parquet.preserve_order = true;
+    modified_format_settings.vortex.preserve_order = true;
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), /*num_streams_=*/ 1);
 

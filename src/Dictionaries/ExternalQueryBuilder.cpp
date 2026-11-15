@@ -5,6 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Databases/removeWhereConditionPlaceholder.h>
 
@@ -207,6 +208,11 @@ void ExternalQueryBuilder::composeLoadAllQuery(WriteBuffer & out) const
 
 std::string ExternalQueryBuilder::composeUpdateQuery(const std::string & update_field, const std::string & time_point) const
 {
+    return composeUpdateQueryWithBound(update_field, "'" + time_point + "'");
+}
+
+std::string ExternalQueryBuilder::composeUpdateQueryWithBound(const std::string & update_field, const std::string & bound) const
+{
     WriteBufferFromOwnString out;
 
     if (query.empty())
@@ -218,7 +224,7 @@ std::string ExternalQueryBuilder::composeUpdateQuery(const std::string & update_
         else
             writeString(" WHERE ", out);
 
-        composeUpdateCondition(update_field, time_point, out);
+        composeUpdateCondition(update_field, bound, out);
 
         writeChar(';', out);
 
@@ -231,14 +237,14 @@ std::string ExternalQueryBuilder::composeUpdateQuery(const std::string & update_
     if (condition_position == std::string::npos)
     {
         writeString(" WHERE ", out);
-        composeUpdateCondition(update_field, time_point, out);
+        composeUpdateCondition(update_field, bound, out);
         writeString(";", out);
 
         return out.str();
     }
 
     WriteBufferFromOwnString condition_value_buffer;
-    composeUpdateCondition(update_field, time_point, condition_value_buffer);
+    composeUpdateCondition(update_field, bound, condition_value_buffer);
     const auto & condition_value = condition_value_buffer.str();
 
     auto query_copy = query;
@@ -502,12 +508,11 @@ void ExternalQueryBuilder::composeKeyTuple(const Columns & key_columns, size_t r
     writeString(")", out);
 }
 
-void ExternalQueryBuilder::composeUpdateCondition(const std::string & update_field, const std::string & time_point, WriteBuffer & out)
+void ExternalQueryBuilder::composeUpdateCondition(const std::string & update_field, const std::string & bound, WriteBuffer & out)
 {
     writeString(update_field, out);
-    writeString(" >= '", out);
-    writeString(time_point, out);
-    writeChar('\'', out);
+    writeString(" >= ", out);
+    writeString(bound, out);
 }
 
 void ExternalQueryBuilder::composeIdsCondition(const VectorWithMemoryTracking<UInt64> & ids, WriteBuffer & out) const

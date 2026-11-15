@@ -183,7 +183,7 @@ TablesFilter extractTablesFilter(const ActionsDAG::Node * predicate, const Strin
 
     /// An exact set of names is the most useful thing a database can be told, so look for it
     /// first; it also subsumes the plain `col = '…'` case.
-    if (auto names = VirtualColumnUtils::extractConstantStringValuesForColumn(predicate, table_name_column, context, MAX_NAMES))
+    if (auto names = VirtualColumnUtils::extractConstantValuesForColumn<String>(predicate, table_name_column, context, MAX_NAMES))
         return TablesFilter::createIn(*names);
 
     return extractLikeFilter(predicate, table_name_column);
@@ -197,7 +197,7 @@ std::function<bool(const String &)> extractNameFilter(
 
     buildSetsForInSubqueries(predicate, context);
 
-    auto names = VirtualColumnUtils::extractConstantStringValuesForColumn(predicate, column_name, context, MAX_NAMES);
+    auto names = VirtualColumnUtils::extractConstantValuesForColumn<String>(predicate, column_name, context, MAX_NAMES);
     if (!names)
         return {};
 

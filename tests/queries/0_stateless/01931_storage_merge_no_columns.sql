@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 drop table if exists data;
 create table data (key Int) engine=MergeTree() order by key;
