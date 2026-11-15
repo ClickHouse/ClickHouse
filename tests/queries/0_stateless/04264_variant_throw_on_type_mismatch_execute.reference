@@ -31,11 +31,11 @@ dynamic: single variant with nulls
 dynamic: multiple variants
 1
 \N
-0
+\N
 0
 47
 \N
-5
+\N
 15
 variant: throws with default setting
 dynamic: throws with default setting
