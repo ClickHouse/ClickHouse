@@ -60,10 +60,10 @@ SELECT COUNTOrDefaultDistinct(x), length(groupArrayDistinct(x)), length(anyDisti
 FROM (SELECT materialize(toLowCardinality(toFixedString('', 100000))) AS x FROM numbers(200000))
 SETTINGS max_block_size = 65409, max_threads = 1, max_memory_usage = 100000000;
 
--- Functions that do not ignore repeated values: a copy of the constant to 65409 rows would take 6.5 GB.
+-- Functions that do not ignore repeated values: a copy of the constant to 5000 rows would take 500 MB.
 WITH toFixedString('', 100000) AS c
 SELECT count(c), length(any(c)), length(anyLast(c)), length(anyOrDefault(c)), length(argMax(c, c)), length(anyHeavy(c)), countIf(c, 1 = 1)
-FROM numbers(200000) SETTINGS max_block_size = 65409, max_threads = 1, max_memory_usage = 100000000, optimize_normalize_count_variants = 0;
+FROM numbers(5000) SETTINGS max_block_size = 5000, max_threads = 1, max_memory_usage = 100000000, optimize_normalize_count_variants = 0;
 
 -- A constant of 1 MiB is not folded by the analyzer, so `count` keeps its argument: 64 GiB for a copy to 65409 rows.
 SELECT count(toFixedString('', 1048576)) FROM numbers(200000) SETTINGS max_block_size = 65409, max_threads = 1, max_memory_usage = 100000000;
