@@ -1,6 +1,9 @@
 #pragma once
 
+#include <Common/Documentation.h>
 #include <Parsers/IParser.h>
+
+#include <map>
 
 
 namespace DB
@@ -36,6 +39,11 @@ public:
     }
 
     bool parse(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+    /// The embedded documentation of the SQL statements (or clauses) parsed by this parser.
+    /// A parser can document more than one statement.
+    /// Example: `ParserDropQuery` documents `DROP`, `DETACH` and `TRUNCATE`.
+    virtual std::map<String, Documentation> getDocumentation() const { return {}; }
 
 protected:
     virtual bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) = 0;

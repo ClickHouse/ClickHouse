@@ -1,0 +1,9 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT arrayConcat(arrayMap(x -&gt; number + x, range(32))) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT arrayConcat(arrayMap(x -&gt; toString(number + x), range(16))) FROM numbers(500000) FORMAT Null</query>
+    <query>SELECT arrayConcat(arrayMap(x -&gt; number + x, range(32)), arrayMap(x -&gt; number + x + 32, range(1))) FROM numbers(1000000) FORMAT Null</query>
+</test>

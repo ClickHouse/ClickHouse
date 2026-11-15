@@ -1,5 +1,7 @@
 #include <Common/JemallocCacheArena.h>
 
+#include "config.h"
+
 #if USE_JEMALLOC
 
 #include <jemalloc/jemalloc.h>
@@ -11,6 +13,8 @@
 
 #include <fmt/format.h>
 #include <string>
+#include <atomic>
+#include <cstdint>
 
 namespace ProfileEvents
 {
@@ -31,29 +35,61 @@ namespace ErrorCodes
 namespace DB::JemallocCacheArena
 {
 
+std::atomic<bool> enabled{true};
+
 namespace
 {
+
+/// Published after `arenas.create` succeeds; -1 while the arena does not exist.
+/// Lets read-only inspection paths see the index without materializing the arena.
+std::atomic<int64_t> created_index{-1};
 
 unsigned createArena()
 {
     unsigned arena_index = 0;
     size_t arena_index_size = sizeof(arena_index);
-    int err = mallctl("arenas.create", &arena_index, &arena_index_size, nullptr, 0);
+    int err = je_mallctl("arenas.create", &arena_index, &arena_index_size, nullptr, 0);
     if (err)
         throw DB::Exception(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "JemallocCacheArena: Failed to create jemalloc arena, error: {}", err);
+    created_index.store(arena_index, std::memory_order_relaxed);
     return arena_index;
 }
 
 }
 
+void setEnabled(bool value)
+{
+    chassert(created_index.load(std::memory_order_relaxed) < 0 || value);
+    enabled.store(value, std::memory_order_relaxed);
+}
+
+bool isEnabled()
+{
+    return enabled.load(std::memory_order_relaxed);
+}
+
 unsigned getArenaIndex()
 {
+    if (!enabled.load(std::memory_order_relaxed))
+        return 0;
+
     static unsigned index = createArena();
     return index;
 }
 
+std::optional<unsigned> tryGetCreatedArenaIndex()
+{
+    int64_t index = created_index.load(std::memory_order_relaxed);
+    if (index < 0)
+        return std::nullopt;
+    return static_cast<unsigned>(index);
+}
+
 void purge()
 {
+    if (!enabled.load(std::memory_order_relaxed))
+        return;
+
     static Jemalloc::MibCache<unsigned> purge_mib(fmt::format("arena.{}.purge", getArenaIndex()).c_str());
 
     Stopwatch watch;
@@ -69,7 +105,10 @@ void purge()
 namespace DB::JemallocCacheArena
 {
 
+void setEnabled(bool) {}
+bool isEnabled() { return false; }
 unsigned getArenaIndex() { return 0; }
+std::optional<unsigned> tryGetCreatedArenaIndex() { return std::nullopt; }
 void purge() {}
 
 }

@@ -27,10 +27,10 @@ $CLICKHOUSE_CLIENT \
   --query_id "${query_id}" \
   --max_parallel_replicas 3 \
   --cluster_for_parallel_replicas "test_cluster_one_shard_three_replicas_localhost" \
+  --automatic_parallel_replicas_mode 0 \
   --enable_parallel_replicas 1 \
   --parallel_replicas_for_non_replicated_merge_tree 1 \
   --parallel_replicas_min_number_of_rows_per_replica 0 \
-  --parallel_replicas_only_with_analyzer 0 \
   --query "
   SELECT 1 FROM nested
   GROUP BY 1 WITH ROLLUP
@@ -65,10 +65,10 @@ $CLICKHOUSE_CLIENT \
   --query_id "${query_id}" \
   --max_parallel_replicas 3 \
   --cluster_for_parallel_replicas "test_cluster_one_shard_three_replicas_localhost" \
+  --automatic_parallel_replicas_mode 0 \
   --enable_parallel_replicas 1 \
   --parallel_replicas_for_non_replicated_merge_tree 1 \
   --parallel_replicas_min_number_of_rows_per_replica 0 \
-  --parallel_replicas_only_with_analyzer 0 \
   --query "SELECT * FROM (SELECT year, month, day, count(*) FROM days GROUP BY year, month, day WITH ROLLUP) ORDER BY 1, 2, 3";
 
 were_parallel_replicas_used $query_id

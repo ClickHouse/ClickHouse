@@ -1,3 +1,4 @@
+SET automatic_parallel_replicas_mode = 0;
 set max_threads = 16;
 set max_parallel_replicas = 3;
 set cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';

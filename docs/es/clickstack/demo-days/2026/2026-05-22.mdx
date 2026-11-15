@@ -1,0 +1,102 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-05-22
+title: 'Demo days - 2026-05-22'
+sidebarTitle: '2026-05-22'
+description: 'Demo days de ClickStack del 2026-05-22'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="clickcannon-data-generation-update">
+  ## Actualización de la generación de datos de ClickCannon
+</div>
+
+*Demo a cargo de [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Zljd07_4uF4" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+[ClickCannon](https://github.com/clickhouse/clickcannon) es la herramienta que usamos internamente para ejercicios de dimensionamiento: genera grandes volúmenes de datos de OpenTelemetry mientras ejecuta consultas concurrentes para estimar los recursos que los clientes necesitan para una carga de trabajo concreta de ingesta y consultas. En OpenHouse la anunciamos públicamente, y Spencer presentó la iteración más reciente.
+
+En lugar de preconfigurar los datos en disco, ahora puedes configurar el generador directamente. Actívalo y define cuántos hilos, cuántas filas por bloque, cuántas filas por segundo en total y algunas restricciones de memoria. Ya no hace falta preparar primero dos terabytes de datos de prueba en disco, que era lo que antes hacía que la herramienta fuera difícil de compartir.
+
+Vamos a remitir a más usuarios a ClickCannon para sus propios ejercicios de dimensionamiento. El repositorio está en [https://github.com/clickhouse/clickcannon](https://github.com/clickhouse/clickcannon).
+
+<div id="date-input-for-full-screen-tiles-and-source-scoped-filters">
+  ## Entrada de fecha para tiles en pantalla completa y filtros con alcance por source
+</div>
+
+*Demo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Mop1EYtGwKc" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Se incorporaron al mismo tiempo dos mejoras relacionadas del dashboard. Cuando pones un solo tile en pantalla completa, ahora tienes un selector de tiempo específico y un selector de granularidad independientes del intervalo de tiempo del dashboard. Eso significa que puedes acercarte a un historial amplio de una métrica concreta (por ejemplo, un gráfico del dashboard del clúster de ClickHouse) sin forzar la actualización de todos los demás tiles del dashboard. El nombre del dashboard ahora también aparece en el título de la pestaña del navegador.
+
+La segunda mejora es el alcance por source para los filtros del dashboard. Los filtros pueden limitarse para que solo se propaguen a tiles respaldados por sources específicas, en lugar de aplicarse globalmente a todos los tiles. En un dashboard con sources mixtas que combina, por ejemplo, logs y trazas, puedes evitar que un filtro afecte a un tile al que no corresponde.
+
+**PR relacionados:** [#2302](https://github.com/hyperdxio/hyperdx/pull/2302) feat: mejoras menores del dashboard, [#2331](https://github.com/hyperdxio/hyperdx/pull/2331) feat: añadir alcance por source a los filtros del dashboard
+
+<div id="text-index-recognised-on-lower-body">
+  ## Índice de texto reconocido en lower(Body)
+</div>
+
+*Demo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/l0GpNBP859o" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Una corrección pequeña, pero real, para la búsqueda que no distingue entre mayúsculas y minúsculas. Si tu source tiene un índice de texto definido sobre `lower(Body)` sin un argumento `preprocessor`, antes el planner de consultas generaba una condición `hasAllTokens(Body, ...)`. Como esa expresión no coincidía con la expresión del índice, el índice de texto no se utilizaba y la consulta volvía a un escaneo.
+
+Ahora la consulta se genera como `hasAllTokens(lower(Body), ...)`, que sí coincide con la expresión del índice. La búsqueda que no distingue entre mayúsculas y minúsculas en los sources configurados de esta manera ahora se acelera correctamente mediante el índice de texto.
+
+**PR relacionadas:** [#2326](https://github.com/hyperdxio/hyperdx/pull/2326) feat: compatibilidad con índice de texto en lower(Body) sin `preprocessor`
+
+<div id="simpler-event-deltas-experience">
+  ## Experiencia más sencilla de Event Deltas
+</div>
+
+*Demo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BrIHHFz_Aw8" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Antes, Event Deltas requería un paso adicional. Había que hacer clic en un botón para entrar en el modo de comparación antes de arrastrar una selección en el mapa de calor. Ese paso ha desaparecido: las barras de distribución aparecen de inmediato al cargar y, en cuanto arrastras una región en el mapa de calor, cambian al modo de comparación entre selección y fondo. Haz clic fuera de la selección y volverán a la vista de todos los spans.
+
+El cambio original llegó a OSS hace algunas semanas, pero faltaba una parte en Managed ClickStack. Ahora esa diferencia ya se ha corregido, así que el flujo simplificado es el mismo en ambas ediciones.
+
+**PR relacionadas:** [#1899](https://github.com/hyperdxio/hyperdx/pull/1899) feat: modo de distribución de atributos siempre activo
+
+<div id="dashboard-table-of-contents-and-bulk-collapse">
+  ## Tabla de contenido del dashboard y colapsado masivo
+</div>
+
+*Demo de [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Pojo5zf_hrE" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Una vez que los dashboards superan unas pocas secciones (que es precisamente lo que queremos, porque así es como se organiza un dashboard grande), navegar por ellos se vuelve engorroso. Tom añadió una tabla de contenido en la barra lateral derecha que enumera todas las secciones y te permite ir directamente a cada una. También hay un control para colapsar y expandir todo de forma masiva que oculta de una sola vez el contenido de todas las secciones, para que puedas revisar la estructura de un dashboard largo sin tener que recorrerlo entero.
+
+Sigue en fase de borrador, pero ya es útil en los dashboards con varias secciones que incluimos para las vistas de clúster de ClickHouse y Kubernetes.
+
+**PR relacionadas:** [#2350](https://github.com/hyperdxio/hyperdx/pull/2350) feat(dashboard): add Table of Contents right rail with bulk collapse/expand
+
+<div id="column-resize-persisted-across-sessions">
+  ## El cambio de tamaño de las columnas se conserva entre sesiones
+</div>
+
+*Demo de [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/7l-Rz1tFlq8" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Un reporte de un cliente de ayer: cuando cambias el tamaño de una columna en una tabla de resultados, ese tamaño debería conservarse. Ahora ya es así. Los anchos de las columnas se almacenan en el almacenamiento local, con una clave por ID de tabla, por lo que cada tabla mantiene una disposición de columnas independiente. Si cierras el navegador y vuelves más tarde, las columnas siguen tal como las dejaste. Añadir o quitar una columna de la tabla tampoco restablece los anchos de las demás columnas.
+
+**PR relacionadas:** [#2327](https://github.com/hyperdxio/hyperdx/pull/2327) fix: persist column widths in search results table

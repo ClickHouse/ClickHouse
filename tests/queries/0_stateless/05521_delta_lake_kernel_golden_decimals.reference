@@ -1,0 +1,59 @@
+basic-decimal-table	4	0	0
+basic-decimal-table-legacy	4	0	0
+decimal-various-scale-precision	3	0	0
+124-decimal-decode-bug	1	0	0
+125-iterator-bug	5	0	0
+parquet-decimal-dictionaries	1000000	11513063338046526454	(0,0,0,0)	(999999,4,3,1)
+parquet-decimal-dictionaries-v2	1000000	11513063338046526454	(0,0,0,0)	(999999,4,3,1)
+parquet-decimal-type	99998	6489571932169742512	(0,0,0,0)	(99997,9999.7,99997.99997,999999999399991.99997)
+Values
+decimal_4_0	Nullable(Decimal(4, 0))
+decimal_7_0	Nullable(Decimal(7, 0))
+decimal_7_6	Nullable(Decimal(7, 6))
+decimal_12_0	Nullable(Decimal(12, 0))
+decimal_12_6	Nullable(Decimal(12, 6))
+decimal_15_0	Nullable(Decimal(15, 0))
+decimal_15_6	Nullable(Decimal(15, 6))
+decimal_15_12	Nullable(Decimal(15, 12))
+decimal_18_0	Nullable(Decimal(18, 0))
+decimal_18_6	Nullable(Decimal(18, 6))
+decimal_18_12	Nullable(Decimal(18, 12))
+decimal_25_0	Nullable(Decimal(25, 0))
+decimal_25_6	Nullable(Decimal(25, 6))
+decimal_25_12	Nullable(Decimal(25, 12))
+decimal_25_18	Nullable(Decimal(25, 18))
+decimal_25_24	Nullable(Decimal(25, 24))
+decimal_35_0	Nullable(Decimal(35, 0))
+decimal_35_6	Nullable(Decimal(35, 6))
+decimal_35_12	Nullable(Decimal(35, 12))
+decimal_35_18	Nullable(Decimal(35, 18))
+decimal_35_24	Nullable(Decimal(35, 24))
+decimal_35_30	Nullable(Decimal(35, 30))
+decimal_38_0	Nullable(Decimal(38, 0))
+decimal_38_6	Nullable(Decimal(38, 6))
+decimal_38_12	Nullable(Decimal(38, 12))
+decimal_38_18	Nullable(Decimal(38, 18))
+decimal_38_24	Nullable(Decimal(38, 24))
+decimal_38_30	Nullable(Decimal(38, 30))
+decimal_38_36	Nullable(Decimal(38, 36))
+-13	0	\N	0	-0.000098	-157	-3.346	-0.002162	0	-22641	-5.19	0	-0.000013	-0.000000031661	-24199	\N	0	-0.000161	-0.000000259176	-0.000000000136744	-22827907	-32805.309	-17	-0.027994	-0.000024695819	-0.000000004614771	-0.000000000009718032	-0.000000000000026626087	-0.000000000000000029546424
+4	0	\N	0	0.000062	481	3.302	0.001469	0	7998	10.994	0	0.000021	0.000000005925	234942	\N	0	0.000161	0.000000165519	0.000000000152896	14797356	8083.687	26	0.021882	0.000032950993	0.000000012783803	0.000000000002395564	0.000000000000029414203	0.000000000000000003241836
+\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+-2342342.23423	-999.99	-99999.99999	-9999999999.9999999999
+0.00004	0	0	0
+234	1	2	3
+2342222.23454	111.11	22222.22222	3333333333.3333333333
+-2342342.23423	-999.99	-99999.99999	-9999999999.9999999999
+0.00004	0	0	0
+234	1	2	3
+2342222.23454	111.11	22222.22222	3333333333.3333333333
+1000000
+0	200000
+1	200000
+2	200000
+3	200000
+4	200000
+0	0	0	0
+1	0.1	1.00001	10000300003.00001
+12345	1234.5	12345.12345	123453703537035.12345
+99997	9999.7	99997.99997	999999999399991.99997

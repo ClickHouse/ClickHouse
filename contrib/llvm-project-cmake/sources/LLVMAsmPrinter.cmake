@@ -1,0 +1,30 @@
+# Source files for LLVMAsmPrinter
+set(LLVMASMPRINTER_SOURCES
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/AccelTable.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/AddressPool.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/AIXException.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/ARMException.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/AsmPrinter.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/AsmPrinterDwarf.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/AsmPrinterInlineAsm.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/CodeViewDebug.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/DbgEntityHistoryCalculator.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/DebugHandlerBase.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/DebugLocStream.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/DIE.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/DIEHash.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/DwarfCFIException.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/DwarfCompileUnit.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/DwarfDebug.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/DwarfExpression.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/DwarfFile.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/DwarfStringPool.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/DwarfUnit.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/EHStreamer.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/ErlangGCPrinter.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/OcamlGCPrinter.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/PseudoProbePrinter.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/WasmException.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/WinCFGuard.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/AsmPrinter/WinException.cpp
+)

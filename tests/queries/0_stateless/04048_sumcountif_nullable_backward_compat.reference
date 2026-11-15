@@ -1,0 +1,5 @@
+non_nullable_hex	0A0000000000000004
+nullable_hex	0A0000000000000004
+old_format_works	(10,4)
+return_type	Tuple(UInt64, UInt64)
+sumcount_fixed	(10,4)

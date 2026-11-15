@@ -124,12 +124,26 @@ protected:
      */
     virtual bool find(const Point & point, size_t & polygon_index) const = 0;
 
+    /** Returns the number of bytes allocated by the lookup index built on top of the polygons.
+     *  Overridden by subclasses that build an index. Used by `calculateBytesAllocated` to make
+     *  `system.dictionaries.bytes_allocated` reflect the actual footprint, including the index.
+     */
+    [[nodiscard]] virtual size_t getIndexBytesAllocated() const { return 0; }
+
     VectorWithMemoryTracking<Polygon> polygons;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
     const Configuration configuration;
+
+    /** Computes `bytes_allocated`, including index bytes via the virtual
+      * `getIndexBytesAllocated`. Must be invoked from a *concrete* subclass'
+      * constructor, after that subclass' index members have been built —
+      * calling it from the base constructor would dispatch through the base
+      * vtable and miss the override.
+      */
+    void calculateBytesAllocated();
 
 private:
     /** Helper functions for loading the data from the configuration.
@@ -139,8 +153,6 @@ private:
     void setup();
     void blockToAttributes(const Block & block);
     void loadData();
-
-    void calculateBytesAllocated();
 
     /** Checks whether a given attribute exists and returns its index */
     size_t getAttributeIndex(const std::string & attribute_name) const;

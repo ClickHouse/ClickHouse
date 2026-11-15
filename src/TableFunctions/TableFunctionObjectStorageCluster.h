@@ -5,7 +5,6 @@
 #include <TableFunctions/ITableFunctionCluster.h>
 #include <TableFunctions/TableFunctionObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
-#include <Common/CurrentThread.h>
 
 
 namespace DB
@@ -17,6 +16,8 @@ class StorageS3Settings;
 class StorageAzureBlobSettings;
 class StorageS3Configuration;
 class StorageAzureConfiguration;
+
+ContextPtr getQueryOrGlobalContext();
 
 /**
 * Class implementing s3/hdfs/azureBlobStorageCluster(...) table functions,
@@ -49,13 +50,6 @@ protected:
     bool hasStaticStructure() const override { return Base::getConfiguration(getQueryOrGlobalContext())->structure != "auto"; }
     bool needStructureHint() const override { return Base::getConfiguration(getQueryOrGlobalContext())->structure == "auto"; }
     void setStructureHint(const ColumnsDescription & structure_hint_) override { Base::structure_hint = structure_hint_; }
-private:
-    static ContextPtr getQueryOrGlobalContext()
-    {
-        if (auto query_context = CurrentThread::getQueryContext(); query_context != nullptr)
-            return query_context;
-        return Context::getGlobalContextInstance();
-    }
 };
 
 #if USE_AWS_S3

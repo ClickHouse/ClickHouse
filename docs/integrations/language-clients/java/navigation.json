@@ -1,0 +1,12 @@
+{
+  "expanded": true,
+  "group": "Java",
+  "icon": "/images/integrations/logos/java.svg",
+  "pages": [
+    "integrations/language-clients/java/client",
+    "integrations/language-clients/java/jdbc",
+    "integrations/language-clients/java/r2dbc",
+    "integrations/language-clients/java/date-time-guide"
+  ],
+  "root": "integrations/language-clients/java/index"
+}
