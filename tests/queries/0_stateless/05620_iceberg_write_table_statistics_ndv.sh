@@ -116,8 +116,8 @@ open(path, 'wb').write(out + b'PFA1' + payload + struct.pack('<i', len(payload))
 EOF
 }
 
-for corruption in zero_theta; do
-    echo "a delete on a parent sketch with a ${corruption//_/ } commits without statistics"
+for corruption in zero_theta truncated; do
+    echo "a delete on a ${corruption//_/ } parent sketch commits without statistics"
     local_query "CREATE TABLE t_${corruption} (id Int64, s String) ENGINE = IcebergLocal('${WORK_DIR}/t_${corruption}/');
         INSERT INTO t_${corruption} SELECT number, toString(number % 10) FROM numbers(1000);"
     corrupt_id_sketch "t_${corruption}" "${corruption}"

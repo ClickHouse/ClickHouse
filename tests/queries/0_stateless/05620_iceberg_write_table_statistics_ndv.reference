@@ -6,7 +6,10 @@ nor does the next insert, whose parent has rows but no sketches
 no statistics
 a parent blob kept from an earlier snapshot is not unioned
 id:2000/2000
-a delete on a parent sketch with a zero theta commits without statistics
+a delete on a zero theta parent sketch commits without statistics
+990
+no statistics
+a delete on a truncated parent sketch commits without statistics
 990
 no statistics
 a delete keeps the parent's sketches

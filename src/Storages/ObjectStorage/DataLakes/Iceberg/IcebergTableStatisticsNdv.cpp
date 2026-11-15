@@ -65,14 +65,30 @@ struct ParentSketches
 
 datasketches::compact_theta_sketch deserializeParentSketch(const String & bytes)
 {
-    auto sketch = datasketches::compact_theta_sketch::deserialize(bytes.data(), bytes.size());
-    /// A zero theta, or hashes not below theta, give an estimate that the `ndv` property cannot hold as UInt64.
-    /// A union of checked sketches keeps its distinct hashes below theta, so its estimate is below 2^63.
-    const double estimate = sketch.get_estimate();
-    if (!(estimate < 0x1p64))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid theta sketch: theta {}, {} hashes, estimate {}",
-            sketch.get_theta64(), sketch.get_num_retained(), estimate);
-    return sketch;
+    try
+    {
+        auto sketch = datasketches::compact_theta_sketch::deserialize(bytes.data(), bytes.size());
+        /// A zero theta, or hashes not below theta, give an estimate that the `ndv` property cannot hold as UInt64.
+        /// A union of checked sketches keeps its distinct hashes below theta, so its estimate is below 2^63.
+        const double estimate = sketch.get_estimate();
+        if (!(estimate < 0x1p64))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid theta sketch: theta {}, {} hashes, estimate {}",
+                sketch.get_theta64(), sketch.get_num_retained(), estimate);
+        return sketch;
+    }
+    catch (const Exception &)
+    {
+        throw;
+    }
+    catch (const std::bad_alloc &)
+    {
+        throw;
+    }
+    catch (const std::exception & e)
+    {
+        /// `datasketches` throws `std::logic_error`s on malformed input, which logging the exception takes for a bug.
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize theta sketch: {}", e.what());
+    }
 }
 
 /// The NDV statistics file of a snapshot that a commit adds to the table metadata.
