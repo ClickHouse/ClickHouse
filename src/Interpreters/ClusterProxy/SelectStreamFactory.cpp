@@ -79,6 +79,15 @@ bool joinKeepsRowsOfTable(const ASTTableJoin & join, bool table_is_on_the_left)
     return isInnerOrRight(join.kind) && (join.strictness == JoinStrictness::All || join.strictness == JoinStrictness::Unspecified);
 }
 
+bool hasPartitionIdColumn(const ASTPtr & ast)
+{
+    const auto * identifier = ast->as<ASTIdentifier>();
+    if (identifier && identifier->shortName() == "_partition_id")
+        return true;
+
+    return std::ranges::any_of(ast->children, hasPartitionIdColumn);
+}
+
 /// Adds a condition on `_partition_id` to `WHERE` of every `SELECT` of the query for a shard that reads `table`, to skip `partitions`.
 /// A setting of the query could be rejected or dropped by the constraints of the user. Returns whether the table is found.
 bool skipPartitionsInQueryForShard(const ASTPtr & ast, const StorageID & table, const Strings & partitions)
@@ -191,7 +200,8 @@ void SelectStreamFactory::createForShardImpl(
     UInt32 shard_count,
     bool parallel_replicas_enabled,
     AdditionalShardFilterGenerator shard_filter_generator,
-    const UnavailableShardTrackerPtr & unavailable_shard_tracker) const
+    const UnavailableShardTrackerPtr & unavailable_shard_tracker,
+    const StorageID * table_filtered_by_partition_id) const
 {
     ContextPtr context_without_parallel_replicas;
 
@@ -218,7 +228,7 @@ void SelectStreamFactory::createForShardImpl(
         }
 
         local_plans.emplace_back(createLocalPlan(
-            query_ast, *header, local_context, processed_stage, shard_info.shard_num, shard_count));
+            query_ast, *header, local_context, processed_stage, shard_info.shard_num, shard_count, false, {}, table_filtered_by_partition_id));
     };
 
     // If lazy is true, a lazy pipe will be created. It will try to use the local replica and, if not possible, will use DelayedSource for reading from remote replica.
@@ -235,7 +245,8 @@ void SelectStreamFactory::createForShardImpl(
         if (settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
         {
             query_plan = createLocalPlan(
-                query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, true, shard_info.default_database);
+                query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, true, shard_info.default_database,
+                table_filtered_by_partition_id);
 
             shard_header = query_plan->getCurrentHeader();
         }
@@ -400,6 +411,8 @@ void SelectStreamFactory::createForShard(
     removeGroupingFunctionSpecializations(query_tree_for_ast);
 
     auto query_ast = queryNodeToDistributedSelectQuery(query_tree_for_ast);
+    /// A query that reads `_partition_id` itself keeps the access check of the column.
+    const bool check_partition_id = !partitions_to_skip || hasPartitionIdColumn(query_ast);
     if (partitions_to_skip && !skipPartitionsInQueryForShard(query_ast, main_table, *partitions_to_skip))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Cannot find table {} in the query for a shard while its partitions are moved between shards", main_table.getNameForLogs());
@@ -416,7 +429,8 @@ void SelectStreamFactory::createForShard(
         shard_count,
         parallel_replicas_enabled,
         std::move(shard_filter_generator),
-        unavailable_shard_tracker);
+        unavailable_shard_tracker,
+        check_partition_id ? nullptr : &main_table);
 }
 
 

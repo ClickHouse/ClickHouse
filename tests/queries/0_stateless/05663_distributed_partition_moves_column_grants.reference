@@ -1,0 +1,8 @@
+-- a user with a grant on one column reads the table without a move
+78
+-- and reads it while the second shard skips a partition
+72
+9
+-- a query that reads _partition_id itself needs the grant on the local table
+ACCESS_DENIED
+66
