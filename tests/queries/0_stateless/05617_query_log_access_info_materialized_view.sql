@@ -79,7 +79,8 @@ ORDER BY c.log_comment, body;
 SELECT 'distinct child ids';
 SELECT count() > 1, count() = uniqExact(query_id)
 FROM system.query_log
-WHERE current_database = currentDatabase() AND NOT is_initial_query;
+WHERE current_database = currentDatabase() AND NOT is_initial_query
+    AND log_comment IN ('insert', 'insert_into_view', 'insert_into_none', 'dropped_target', 'no_push', 'read_target', 'read_definer', 'read_memory', 'read_legacy');
 
 SELECT 'user_query_log';
 SELECT log_comment

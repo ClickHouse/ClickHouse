@@ -4064,7 +4064,7 @@ Unlike the query log table itself, `system.user_query_log` can be read without a
 
 Only top-level rows (`is_initial_query = 1`) are returned. Child rows, such as the queries a distributed query sends to other servers and what runs under the identity of `SQL SECURITY DEFINER` and `NONE` views, are omitted.
 
-A row policy that exposes `system.query_log` by `initial_user` also exposes those child rows, so add `is_initial_query = 1` to it or use `system.user_query_log`.
+A row policy that exposes `system.query_log` rows by user (`user`, `initial_user` or `authenticated_user`) also exposes those child rows, so add `is_initial_query = 1` to it or use `system.user_query_log`.
 
 This is only supported when the query log is stored locally. If `query_log.engine` is configured as `Distributed` or any other engine that delegates reads to another server, `system.user_query_log` refuses to read from it and throws an exception, because the required access check cannot be enforced across a ClickHouse-protocol server boundary. In that case, disable the table with `query_log.enable_user_query_log = 0`.
 

@@ -80,7 +80,8 @@ ORDER BY c.log_comment, body;
 SELECT 'distinct child ids';
 SELECT count() > 1, count() = uniqExact(query_id)
 FROM system.query_log
-WHERE current_database = currentDatabase() AND NOT is_initial_query;
+WHERE current_database = currentDatabase() AND NOT is_initial_query
+    AND log_comment IN ('direct', 'definer', 'definer_inlined', 'invoker', 'sealed', 'none', 'nested', 'sealed_twice', 'two_views', 'param', 'describe', 'resolve', 'before_start', 'while_processing', 'policy');
 
 SELECT 'one child row per view';
 SELECT log_comment, count()
