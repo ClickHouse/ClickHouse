@@ -257,7 +257,7 @@ TEST(DeletionVectorTransform, EverythingIsDeleted)
 /// Irregular gaps mix the short and long spans that regular strides keep apart.
 TEST(DeletionVectorTransform, RandomizedAgainstPerRowLookup)
 {
-    std::mt19937_64 random(20250805);
+    std::mt19937_64 random(20250805); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp): deterministic seed for reproducible test
 
     for (size_t iteration = 0; iteration < 300; ++iteration)
     {

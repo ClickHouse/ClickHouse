@@ -193,7 +193,7 @@ TEST(DeletionVectorBitmap, BatchBoundaries)
 
 TEST(DeletionVectorBitmap, SparseAndDenseMatchContains)
 {
-    std::mt19937_64 rng(20260805);
+    std::mt19937_64 rng(20260805); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp): deterministic seed for reproducible test
     for (UInt64 stride : {UInt64(1), UInt64(2), UInt64(3), UInt64(97)})
     {
         Bitmap bitmap;
@@ -248,7 +248,7 @@ TEST(DeletionVectorBitmap, SerializationMatchesLegacy)
     checkSerializationMatchesLegacy(
         {0, 1, 4294967295, 4294967296, 4294967297, 8589934592, 18446744073709551615ULL}, "across the 32-bit boundary");
 
-    std::mt19937_64 rng(20260805);
+    std::mt19937_64 rng(20260805); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp): deterministic seed for reproducible test
     std::vector<UInt64> random_values;
     for (int i = 0; i < 20000; ++i)
         random_values.push_back(rng() % (1ULL << 40));
