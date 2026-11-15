@@ -1108,14 +1108,22 @@ bool MetadataStorageFromPlainRewritableObjectStorage::loadRemoteLayout(
     fs.applyLayout(std::move(remote_layout), std::move(backups_of_targets));
     previous_refresh.restart();
 
-    if (remove_orphaned_objects && (!tombstones.empty() || !malformed_markers.empty() || !blob_removals.empty()))
-    {
-        /// A directory object without a logical path may be a directory of a pending removal whose `prefix.path` was
-        /// being rewritten when the process died (`LocalObjectStorage` writes to the final key directly). It cannot be
-        /// moved back, so the pending markers stay: their removals are not known to be rolled back completely.
-        /// The same for a directory object that was listed but could not be read: its references are unknown.
-        const bool keep_pending_markers = has_unreadable_directories.load();
+    const bool has_leftovers = !tombstones.empty() || !malformed_markers.empty() || !blob_removals.empty();
 
+    /// A directory object without a logical path may be a directory of a pending removal whose `prefix.path` was
+    /// being rewritten when the process died (`LocalObjectStorage` writes to the final key directly). It cannot be
+    /// moved back, so the pending markers stay: their removals are not known to be rolled back completely.
+    /// The same for a directory object that was listed but could not be read. And the references of such a directory
+    /// are unknown, so a blob that looks unreferenced (of a committed removal, or of a blob removal marker) may still be
+    /// linked from it. The inventory of the references is incomplete, so nothing is reclaimed on this load: the leftovers
+    /// stay hidden while their markers exist, and the next start retries.
+    if (remove_orphaned_objects && has_leftovers && has_unreadable_directories.load())
+    {
+        LOG_WARNING(log, "Some directory objects could not be read, so the objects left by unfinished operations are not "
+            "removed on this start, because some of them may still be referenced from these directories");
+    }
+    else if (remove_orphaned_objects && has_leftovers)
+    {
         StoredObjects marker_objects;
         marker_objects.reserve(tombstones.size() + malformed_markers.size());
         /// Nothing on the disk has these names, otherwise the load would have failed above.
@@ -1127,16 +1135,13 @@ bool MetadataStorageFromPlainRewritableObjectStorage::loadRemoteLayout(
             if (kept_backups.contains(removed_name))
                 continue;
             pending_removals += pending_original_path.has_value();
-            if (pending_original_path.has_value() && keep_pending_markers)
-                continue;
             marker_objects.emplace_back(layout->constructTombstoneMarkerKey(removed_name));
         }
 
         /// A blob that no live directory links is unreachable: the operation that dropped its last link was committed.
         /// A linked one is kept: the process died before the operation rewrote `prefix.path`, or the operation was undone.
-        /// An unreadable directory object may be the one that links the blob, so then nothing is decided.
         size_t removed_blobs = 0;
-        if (reclaim_removed_blobs && !keep_pending_markers)
+        if (reclaim_removed_blobs)
         {
             for (const auto & [marker_name, blob_key] : blob_removals)
             {

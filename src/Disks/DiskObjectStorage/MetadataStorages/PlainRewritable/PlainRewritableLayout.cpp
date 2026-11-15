@@ -135,6 +135,19 @@ std::string PlainRewritableLayout::makeBlobRemovalTombstoneContent(const std::st
     return fmt::format("{}{}\n", BLOB_REMOVAL_TOMBSTONE_PREFIX, blob_key);
 }
 
+bool PlainRewritableLayout::isValidBlobKey(std::string_view blob_key)
+{
+    if (blob_key.empty() || blob_key.starts_with('/') || blob_key.contains('\n') || blob_key.contains('\0'))
+        return false;
+
+    std::vector<std::string> parts;
+    splitInto<'/'>(parts, blob_key);
+    if (parts.front() == METADATA_DIRECTORY_TOKEN)
+        return false;
+
+    return std::none_of(parts.begin(), parts.end(), [](const std::string & part) { return part == "." || part == ".."; });
+}
+
 PlainRewritableLayout::TombstoneMarker PlainRewritableLayout::parseTombstoneMarkerContent(std::string_view content, std::string_view removed_name)
 {
     using Kind = TombstoneMarker::Kind;
@@ -170,6 +183,10 @@ PlainRewritableLayout::TombstoneMarker PlainRewritableLayout::parseTombstoneMark
         if (lines.size() != 3 || lines[0].empty() || lines[1].empty() || !tryParse(pending_replace.size, lines[2]))
             return {};
 
+        /// The backup is copied over the target, so the target must be a file of this disk, see `isValidBlobKey`.
+        if (lines[1].contains('/') || !isValidBlobKey(lines[0] + "/" + lines[1]))
+            return {};
+
         pending_replace.directory_remote_path = std::move(lines[0]);
         pending_replace.file_name = std::move(lines[1]);
         return {.kind = Kind::PendingReplace, .pending_original_path = {}, .pending_replace = std::move(pending_replace), .blob_key = {}};
@@ -182,7 +199,9 @@ PlainRewritableLayout::TombstoneMarker PlainRewritableLayout::parseTombstoneMark
             return {};
         blob_key.remove_suffix(1);
 
-        if (blob_key.empty() || blob_key.contains('\n'))
+        /// The blob of a marker is deleted, so a key that would name an object outside of the blobs of this disk
+        /// (in another prefix, or in `__meta`) is never taken from a damaged or forged marker.
+        if (!isValidBlobKey(blob_key))
             return {};
 
         return {.kind = Kind::BlobRemoval, .pending_original_path = {}, .pending_replace = {}, .blob_key = std::string(blob_key)};
