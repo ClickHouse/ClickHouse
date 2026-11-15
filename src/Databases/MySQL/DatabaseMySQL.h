@@ -118,7 +118,7 @@ private:
 
     void cleanOutdatedTables();
 
-    /// The cache is shared by all queries, so it is filled with the settings of the database, not of the query.
+    /// The cache is shared by all queries, so it is filled with the global context, not the query's.
     void fetchTablesIntoLocalCache() const TSA_REQUIRES(mutex);
 
     std::map<String, UInt64> fetchTablesWithModificationTime(ContextPtr local_context) const;

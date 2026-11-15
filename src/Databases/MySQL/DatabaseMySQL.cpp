@@ -139,7 +139,7 @@ DatabaseMySQL::DatabaseMySQL(
     try
     {
         /// Test that the database is working fine; it will also fetch tables.
-        /// Not on the server's own metadata replay: startup must not wait for the remote server.
+        /// Server startup must not wait for the remote server.
         if (!is_metadata_replay)
             empty(); // NOLINT(bugprone-standalone-empty)
     }
