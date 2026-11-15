@@ -94,6 +94,27 @@ public:
         nested_func->merge(place, rhs, arena);
     }
 
+    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    {
+        if (!this->haveSameDefinition(rhs))
+            return false;
+
+        chassert(rhs.getNestedFunction() != nullptr);
+
+        return nested_func->canMergeStateFromDifferentVariant(*rhs.getNestedFunction());
+    }
+
+    void mergeStateFromDifferentVariant(
+        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
+    {
+        chassert(rhs.getNestedFunction() != nullptr);
+
+        nested_func->mergeStateFromDifferentVariant(place, *rhs.getNestedFunction(), rhs_place, arena);
+    }
+
+    /// Can `nested` merge the states of `argument_func`, which `-Merge` reads as its argument?
+    static bool canMergeStatesOf(const IAggregateFunction & nested, const IAggregateFunction & argument_func);
+
     bool isAbleToParallelizeMerge() const override { return nested_func->isAbleToParallelizeMerge(); }
     bool canOptimizeEqualKeysRanges() const override { return nested_func->canOptimizeEqualKeysRanges(); }
 
