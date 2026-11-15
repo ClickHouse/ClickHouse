@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Interpreters/ExpressionActionsSettings.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 
 #include <algorithm>
@@ -17,6 +18,10 @@ NameSet injectRequiredColumns(
     const StorageSnapshotPtr & storage_snapshot,
     bool with_subcolumns,
     Names & columns);
+
+/// Whether the virtual columns of a text index can be read from the index in a part (direct read).
+/// Otherwise they are computed by their default expressions.
+bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions);
 
 PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column);
 
@@ -48,7 +53,7 @@ MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
 
 struct MergeTreeBlockSizePredictor
 {
-    MergeTreeBlockSizePredictor(const DataPartPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation);
+    MergeTreeBlockSizePredictor(const MergeTreeDataPartInfoForReaderPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation);
 
     /// Reset some values for correct statistics calculating
     void startBlock();
@@ -103,7 +108,7 @@ struct MergeTreeBlockSizePredictor
     static double calculateDecay() { return 1. - std::pow(TARGET_WEIGHT, 1. / NUM_UPDATES_TO_TARGET_WEIGHT); }
 
 protected:
-    DataPartPtr data_part;
+    MergeTreeDataPartInfoForReaderPtr data_part;
 
     struct ColumnInfo
     {
@@ -124,6 +129,12 @@ protected:
     double max_size_per_row_dynamic = 0;
 
     size_t number_of_rows_in_part;
+
+    /// Columns with values of a fixed size that are read from the part, with the size of a value.
+    /// Together with the initial `dynamic_columns_infos` this is the estimation of all columns read from the part.
+    /// Columns that are read only by `PREWHERE` steps are absent from the result block, so when the estimation
+    /// is reinitialized in `update` they are taken from here instead of being dropped.
+    std::vector<std::pair<String, size_t>> fixed_columns_from_part;
 
     bool is_initialized_in_update = false;
     bool allow_subcolumns_sizes_calculation = false;

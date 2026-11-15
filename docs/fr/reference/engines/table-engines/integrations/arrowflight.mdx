@@ -11,9 +11,7 @@ doc_type: 'reference'
 Le moteur de table ArrowFlight permet à ClickHouse de lire des jeux de données distants et d’y écrire via le protocole [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html).
 Cette intégration permet à ClickHouse d’interagir avec des serveurs externes compatibles avec Flight dans un format Arrow colonnaire, avec des performances élevées.
 
-<div id="creating-a-table">
-  ## Créer une table
-</div>
+## Créer une table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
@@ -31,9 +29,7 @@ Si `username` et `password` ne sont pas renseignés, l’authentification n’es
 
 La liste des colonnes est facultative : si elle n’est pas renseignée, le schéma est inféré à partir du serveur Arrow Flight distant via `GetSchema`.
 
-<div id="named-collections">
-  ## Collections nommées
-</div>
+## Collections nommées {#named-collections}
 
 Le moteur prend en charge les [collections nommées](/fr/concepts/features/configuration/server-config/named-collections) pour stocker des paramètres de connexion :
 
@@ -56,15 +52,12 @@ Paramètres de la collection nommée :
 | `ssl_ca`                   | Non                               | `""`       | Chemin vers le fichier du certificat de l’autorité de certification pour la validation TLS. |
 | `ssl_override_hostname`    | Non                               | `""`       | Remplacer le nom d’hôte vérifié lors de la validation TLS.                                  |
 
-<div id="settings">
-  ## Paramètres
-</div>
+## Paramètres {#settings}
 
-* `arrow_flight_request_descriptor_type` — Contrôle la façon dont le nom du jeu de données est envoyé au serveur Flight. Valeurs possibles : `path` (par défaut, l’envoie sous forme de descripteur PATH) ou `command` (l’envoie sous forme de descripteur CMD avec `SELECT * FROM <dataset>`). Utilisez `command` pour les serveurs Flight qui attendent des commandes SQL (par exemple, Dremio).
+* `arrow_flight_request_descriptor_type` — Contrôle la façon dont le nom du jeu de données est envoyé au serveur Flight. Valeurs possibles : `path` (par défaut, l’envoie sous forme de descripteur PATH) ou `command` (l’envoie sous forme de descripteur CMD avec `SELECT * FROM <dataset>`). Utilisez `command` pour les serveurs Flight qui attendent des commandes SQL (par exemple, Dremio).
+* `arrow_flight_request_timeout_sec` — Délai d’expiration, en secondes, d’une requête Arrow Flight individuelle, `300` par défaut. Il s’applique à l’ensemble de la requête : pour un `SELECT`, il couvre la totalité du flux de résultats, et pas seulement l’attente du premier lot d’enregistrements. `0` désactive le délai d’expiration ; dans ce cas, un serveur Flight qui accepte une requête sans jamais y répondre bloque la requête jusqu’à la fermeture de la connexion.
 
-<div id="usage-example">
-  ## Exemple d’utilisation
-</div>
+## Exemple d’utilisation {#usage-example}
 
 Lecture de données depuis un serveur Arrow Flight distant :
 
@@ -93,18 +86,14 @@ Insertion de données dans un serveur Arrow Flight distant :
 INSERT INTO remote_flight_data VALUES (4, 'qux', 99.9);
 ```
 
-<div id="notes">
-  ## Remarques
-</div>
+## Remarques {#notes}
 
 * Si des colonnes sont spécifiées dans l’instruction `CREATE TABLE`, elles doivent correspondre au schéma renvoyé par le serveur Flight.
 * Si les colonnes sont omises, le schéma est déduit automatiquement depuis le serveur distant.
 * La lecture (`SELECT`) et l’écriture (`INSERT`) sont toutes deux prises en charge.
 * Le paramètre `arrow_flight_request_descriptor_type` détermine si le nom du jeu de données est envoyé sous forme de descripteur PATH ou de descripteur CMD encapsulant une requête `SELECT *`.
 
-<div id="see-also">
-  ## Voir aussi
-</div>
+## Voir aussi {#see-also}
 
 * [table function arrowFlight](/fr/reference/functions/table-functions/arrowflight)
 * [Interface Arrow Flight](/fr/concepts/features/interfaces/arrowflight)

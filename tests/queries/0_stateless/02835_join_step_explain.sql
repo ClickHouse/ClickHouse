@@ -2,7 +2,6 @@
 -- no-parallel-replicas - because explain produced different plan
 
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
-SET enable_analyzer = 1;
 SET parallel_hash_join_threshold = 0;
 SET enable_join_runtime_filters = 0;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test

@@ -2,6 +2,7 @@
 
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingFieldASTFunction.h>
+#include <Core/SettingFieldDataType.h>
 #include <Core/SettingsFields.h>
 
 
@@ -15,6 +16,7 @@ struct TimeSeriesSettingsImpl;
 #define TIMESERIES_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, ASTFunction) \
     M(CLASS_NAME, Bool) \
+    M(CLASS_NAME, DataType) \
     M(CLASS_NAME, Map) \
     M(CLASS_NAME, UInt64) \
 
@@ -46,6 +48,28 @@ struct TimeSeriesSettings
     void applyChanges(const SettingsChanges & changes);
 
     static bool hasBuiltin(std::string_view name);
+
+    /// Whether the setting was explicitly set, even if to its default value.
+    bool isChanged(std::string_view name) const;
+
+    /// Whether the table has the "recent samples" target.
+    bool isRecentSamplesTargetEnabled() const;
+
+    /// Whether the table has the "time ranges" target.
+    bool isTimeRangesTargetEnabled() const;
+
+    /// Whether the "samples" and "recent samples" tables store buckets of samples: a row keeps the samples of one time series
+    /// within one time bucket (tables of version MIN_WITH_BUCKETED_SAMPLES or later, see TimeSeriesVersion.h).
+    /// The tables of earlier versions store one sample per row.
+    bool hasBucketedSamples() const;
+
+    /// Whether the "tags" table stores the columns `min_time` and `max_time`: tables of earlier versions
+    /// with the `store_min_time_and_max_time` setting enabled (see TimeSeriesVersion.h).
+    bool hasMinTimeAndMaxTimeInTagsTable() const;
+
+    /// Whether the generated sorting key of the inner "tags" table contains `min_time` and `max_time`:
+    /// they are stored in that table but not aggregated.
+    bool hasMinTimeAndMaxTimeInTagsSortingKey() const;
 
 private:
     std::unique_ptr<TimeSeriesSettingsImpl> impl;

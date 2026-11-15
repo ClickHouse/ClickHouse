@@ -30,21 +30,25 @@ public:
 
     const MergeTreePartInfo & getPartInfo() const override { return data_part->info; }
 
+    const MergeTreePartition & getPartition() const override { return data_part->partition; }
+
     Int64 getMinDataVersion() const override
     {
         return data_part->info.isPatch()
-            ? data_part->getSourcePartsSet().getMinDataVersion()
+            ? data_part->getPatchPartIndex().getMinDataVersion()
             : data_part->info.getDataVersion();
     }
 
     Int64 getMaxDataVersion() const override
     {
         return data_part->info.isPatch()
-            ? data_part->getSourcePartsSet().getMaxDataVersion()
+            ? data_part->getPatchPartIndex().getMaxDataVersion()
             : data_part->info.getDataVersion();
     }
 
     IndexPtr getIndexPtr() const override { return data_part->getIndex(); }
+
+    MergeTreePartMinMaxIndexPtr getMinMaxIndex() const override { return data_part->getMinMaxIndex(); }
 
     DataPartStoragePtr getDataPartStorage() const override { return data_part->getDataPartStoragePtr(); }
 
@@ -78,9 +82,13 @@ public:
         return data_part->getColumnSizes();
     }
 
+    CompressionCodecPtr getDefaultCompressionCodec() const override { return data_part->default_codec; }
+
     ColumnSize getSubcolumnSize(const String & subcolumn_name) const override { return data_part->getSubcolumnSize(subcolumn_name); }
 
     const MergeTreeDataPartChecksums & getChecksums() const override { return data_part->checksums; }
+
+    const SecondaryIndexColumnTypes & getSecondaryIndexColumnTypes() const override { return data_part->getSecondaryIndexColumnTypes(); }
 
     void reportBroken() override { data_part->storage.reportBrokenPart(data_part); }
 
@@ -96,7 +104,16 @@ public:
 
     SerializationPtr getSerialization(const NameAndTypePair & column) const override { return data_part->getSerialization(column.name); }
 
+    SerializationPtr tryGetSerialization(const String & column_name) const override { return data_part->tryGetSerialization(column_name); }
+
+    SerializationPtr tryGetSubcolumnSerialization(const String & column_name, const String & subcolumn_name) const override
+    {
+        return data_part->tryGetSubcolumnSerialization(column_name, subcolumn_name);
+    }
+
     String getTableName() const override { return data_part->storage.getStorageID().getNameForLogs(); }
+
+    UUID getTableUUID() const override { return data_part->storage.getStorageID().uuid; }
 
     MergeTreeSettingsPtr getStorageSettings() const override { return data_part->storage.getSettings(); }
 

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstddef>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -12,6 +14,7 @@
 
 #include <boost/core/noncopyable.hpp>
 
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 #include <IO/ReadBuffer.h>
@@ -19,6 +22,7 @@
 #include <Processors/Chunk.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/IMergingTransform.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <Interpreters/TableJoin.h>
 
 namespace Poco { class Logger; }
@@ -46,6 +50,22 @@ struct JoinKeyRow
     Columns row;
 };
 
+struct MatchedRows
+{
+    size_t left = 0;
+    size_t right = 0;
+
+    size_t & side(size_t source_num) { return source_num == 0 ? left : right; }
+};
+
+struct MatchedRanges
+{
+    JoinKeyRow left;
+    JoinKeyRow right;
+
+    JoinKeyRow & side(size_t source_num) { return source_num == 0 ? left : right; }
+};
+
 /// Remembers previous key if it was joined in previous block
 class AnyJoinState : boost::noncopyable
 {
@@ -62,6 +82,10 @@ public:
 
     /// for LEFT/RIGHT join use previously joined row from other table.
     Chunk value;
+
+    bool count_matches = false;
+    /// key of the last equal range of each side that found a partner on the other side
+    MatchedRanges matched;
 };
 
 /// Accumulate blocks with same key and cross-join them
@@ -150,8 +174,8 @@ private:
         }
         return true;
     }
-    std::vector<Range> left;
-    std::vector<Range> right;
+    VectorWithMemoryTracking<Range> left;
+    VectorWithMemoryTracking<Range> right;
 
     size_t lidx = 0;
     size_t ridx = 0;
@@ -185,7 +209,7 @@ public:
     constexpr static bool has_null_maps = true;
 
     FullMergeJoinCursor() = default;
-    explicit FullMergeJoinCursor(std::vector<size_t> key_indices_, bool is_asof_);
+    explicit FullMergeJoinCursor(VectorWithMemoryTracking<size_t> key_indices_, bool is_asof_);
 
     FullMergeJoinCursor(FullMergeJoinCursor &&) = default;
     FullMergeJoinCursor & operator=(FullMergeJoinCursor &&) noexcept = default;
@@ -199,6 +223,7 @@ public:
 
     absl::InlinedVector<ColumnPtr, 4> sort_columns;
     absl::InlinedVector<ColumnPtr, 4> null_maps;
+    SortedKeyRuns key_runs;
     ColumnPtr asof_column = nullptr;
     size_t pos = 0;
     size_t rows = 0;
@@ -216,7 +241,7 @@ private:
     Chunk current_chunk;
     bool received_all_blocks = false;
 
-    std::vector<size_t> key_indices;
+    VectorWithMemoryTracking<size_t> key_indices;
     bool is_asof = false;
 };
 
@@ -231,7 +256,8 @@ public:
                        JoinStrictness strictness_,
                        const TableJoin::JoinOnClause & on_clause_,
                        SharedHeaders & input_headers,
-                       size_t max_block_size_);
+                       size_t max_block_size_,
+                       JoinAnalyzeMode analyze_mode_ = JoinAnalyzeMode::None);
 
     MergeJoinAlgorithm(JoinPtr join_ptr, SharedHeaders & input_headers, size_t max_block_size_);
 
@@ -244,6 +270,9 @@ public:
 
     void logElapsed(double seconds);
     MergedStats getMergedStats() const override;
+
+    /// Participation counters for EXPLAIN ANALYZE -- total and matched rows per side
+    JoinAnalysisCounters getJoinAnalysisCounters() const;
 
 private:
     std::optional<Status> handleAnyJoinState();
@@ -268,7 +297,7 @@ private:
     SharedHeaders input_headers;
 
     /// For `USING` join key columns should have values from right side instead of defaults
-    std::unordered_map<size_t, size_t> left_to_right_key_remap;
+    UnorderedMapWithMemoryTracking<size_t, size_t> left_to_right_key_remap;
 
     std::array<FullMergeJoinCursor, 2> cursors;
     ASOFJoinInequality asof_inequality = ASOFJoinInequality::None;
@@ -280,6 +309,7 @@ private:
 
     JoinKind kind;
     JoinStrictness strictness;
+    JoinAnalyzeMode analyze_mode;
 
     size_t max_block_size;
     int null_direction_hint = 1;
@@ -289,6 +319,9 @@ private:
         size_t num_blocks[2] = {0, 0};
         size_t num_rows[2] = {0, 0};
         size_t num_bytes[2] = {0, 0};
+
+        /// Rows of each side that found a partner on the other side.
+        MatchedRows matched_rows;
 
         size_t max_blocks_loaded = 0;
     };
@@ -322,6 +355,8 @@ public:
     String getName() const override { return "MergeJoinTransform"; }
 
     void setAsofInequality(ASOFJoinInequality asof_inequality_) { algorithm.setAsofInequality(asof_inequality_); }
+
+    JoinAnalysisCounters getJoinAnalysisCounters() const { return algorithm.getJoinAnalysisCounters(); }
 
 protected:
     void onFinish() override;

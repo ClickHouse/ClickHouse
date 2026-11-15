@@ -6,9 +6,7 @@ slug: /integrations/data-ingestion/kafka/kafka-table-engine-named-collections
 doc_type: 'guide'
 ---
 
-<div id="introduction">
-  ## Введение
-</div>
+## Введение {#introduction}
 
 В этом руководстве мы рассмотрим, как подключить ClickHouse к Kafka с помощью именованных коллекций. Использование файла конфигурации для именованных коллекций дает несколько преимуществ:
 
@@ -18,9 +16,7 @@ doc_type: 'guide'
 
 Это руководство было протестировано на Apache Kafka 3.4.1 и ClickHouse 24.5.1.
 
-<div id="assumptions">
-  ## Предварительные условия
-</div>
+## Предварительные условия {#assumptions}
 
 В этом документе предполагается, что у вас есть:
 
@@ -28,24 +24,19 @@ doc_type: 'guide'
 2. Настроенный и работающий кластер ClickHouse.
 3. Базовые знания SQL и понимание конфигурации ClickHouse и Kafka.
 
-<div id="prerequisites">
-  ## Предварительные требования
-</div>
+## Предварительные требования {#prerequisites}
 
 Убедитесь, что у пользователя, создающего именованную коллекцию, есть необходимые разрешения на доступ:
 
 ```xml
 <access_management>1</access_management>
 <named_collection_control>1</named_collection_control>
-<show_named_collections>1</show_named_collections>
 <show_named_collections_secrets>1</show_named_collections_secrets>
 ```
 
 Подробнее о том, как включить управление доступом, см. в [руководстве по управлению пользователями](/ru/concepts/features/security/access-rights).
 
-<div id="configuration">
-  ## Конфигурация
-</div>
+## Конфигурация {#configuration}
 
 Добавьте следующий раздел в файл ClickHouse `config.xml`:
 
@@ -98,32 +89,24 @@ doc_type: 'guide'
 </named_collections>
 ```
 
-<div id="configuration-notes">
-  ### Примечания по конфигурации
-</div>
+### Примечания по конфигурации {#configuration-notes}
 
 1. Скорректируйте адреса Kafka и связанные параметры в соответствии с конфигурацией вашего кластера Kafka.
 2. Раздел перед `<kafka>` содержит параметры движка ClickHouse Kafka. Полный список параметров см. в разделе [параметров движка ClickHouse Kafka](/ru/reference/engines/table-engines/integrations/kafka).
 3. Раздел внутри `<kafka>` содержит расширенные параметры конфигурации Kafka. Дополнительные параметры см. в [конфигурации librdkafka](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).
 4. В этом примере используются протокол безопасности `SASL_SSL` и механизм `PLAIN`. Скорректируйте эти параметры в соответствии с конфигурацией вашего кластера Kafka.
 
-<div id="creating-tables-and-databases">
-  ## Создание таблиц и баз данных
-</div>
+## Создание таблиц и баз данных {#creating-tables-and-databases}
 
 Создайте необходимые базы данных и таблицы в кластере ClickHouse. Если ClickHouse запущен на одном узле, опустите часть SQL-команды, относящуюся к кластеру, и используйте любой другой движок вместо `ReplicatedMergeTree`.
 
-<div id="create-the-database">
-  ### Создайте базу данных
-</div>
+### Создайте базу данных {#create-the-database}
 
 ```sql
 CREATE DATABASE kafka_testing ON CLUSTER LAB_CLICKHOUSE_CLUSTER;
 ```
 
-<div id="create-kafka-tables">
-  ### Создайте таблицы Kafka
-</div>
+### Создайте таблицы Kafka {#create-kafka-tables}
 
 Создайте первую таблицу Kafka для первого кластера Kafka:
 
@@ -149,9 +132,7 @@ CREATE TABLE kafka_testing.second_kafka_table ON CLUSTER STAGE_CLICKHOUSE_CLUSTE
 ENGINE = Kafka(cluster_2);
 ```
 
-<div id="create-replicated-tables">
-  ### Создайте реплицированные таблицы
-</div>
+### Создайте реплицированные таблицы {#create-replicated-tables}
 
 Создайте таблицу для первой таблицы Kafka:
 
@@ -177,9 +158,7 @@ CREATE TABLE kafka_testing.second_replicated_table ON CLUSTER STAGE_CLICKHOUSE_C
 ORDER BY id;
 ```
 
-<div id="create-materialized-views">
-  ### Создайте materialized views
-</div>
+### Создайте materialized views {#create-materialized-views}
 
 Создайте materialized view для вставки данных из первой таблицы Kafka в первую реплицированную таблицу:
 
@@ -203,9 +182,7 @@ SELECT
 FROM second_kafka_table;
 ```
 
-<div id="verifying-the-setup">
-  ## Проверка настройки
-</div>
+## Проверка настройки {#verifying-the-setup}
 
 Теперь вы должны увидеть соответствующие группы consumer group в ваших кластерах Kafka:
 
@@ -222,9 +199,7 @@ SELECT * FROM first_replicated_table LIMIT 10;
 SELECT * FROM second_replicated_table LIMIT 10;
 ```
 
-<div id="note">
-  ### Примечание
-</div>
+### Примечание {#note}
 
 В этом руководстве в оба топика Kafka поступают одни и те же данные. В вашем случае они будут различаться. Вы можете добавить сколько угодно кластеров Kafka.
 
