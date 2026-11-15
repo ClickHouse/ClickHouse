@@ -80,6 +80,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -9914,11 +9915,26 @@ IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns, 
 }
 
 NamesAndTypesList MergeTreeData::getColumnsStoredInAllParts(
-    const NamesAndTypesList & columns, const RangesInDataParts & parts, const MutationsSnapshotPtr & mutations_snapshot, const ContextPtr & query_context)
+    const NamesAndTypesList & columns,
+    const ColumnsDescription & table_columns,
+    const RangesInDataParts & parts,
+    const MutationsSnapshotPtr & mutations_snapshot,
+    const ContextPtr & query_context)
 {
     NameSet changed_on_fly;
     if (mutations_snapshot)
         changed_on_fly = mutations_snapshot->getColumnsChangedOnFly();
+
+    /// A pending data mutation recalculates on read a MATERIALIZED column whose expression reads a changed column.
+    if (mutations_snapshot && mutations_snapshot->hasDataMutations())
+    {
+        MaterializedColumnDependencies dependencies(table_columns, query_context);
+        NameSet recalculated;
+        for (const auto & column : table_columns.getMaterialized())
+            if (!dependencies.findColumnsToRecalculate(column.name, changed_on_fly).empty())
+                recalculated.insert(column.name);
+        changed_on_fly.merge(recalculated);
+    }
 
     /// A pending mutation of a column or of its Nested parent can change what a part stores under its name.
     auto is_changed = [&](const String & name_in_storage)

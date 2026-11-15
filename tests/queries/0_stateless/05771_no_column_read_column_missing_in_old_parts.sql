@@ -97,3 +97,13 @@ ALTER TABLE t_renamed RENAME COLUMN s TO t, ADD COLUMN n UInt8 DEFAULT toUInt8(t
 SELECT count() FROM t_renamed SETTINGS query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
 SELECT count() FROM t_renamed SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
 DROP TABLE t_renamed;
+
+DROP TABLE IF EXISTS t_recalculated;
+CREATE TABLE t_recalculated (k UInt8, s String, m UInt64 MATERIALIZED toUInt64(s)) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP MERGES t_recalculated;
+INSERT INTO t_recalculated (k, s) SELECT 0, toString(number) FROM numbers(1000);
+ALTER TABLE t_recalculated UPDATE k = k, s = concat(s, 'x') WHERE 1 SETTINGS mutations_sync = 0;
+SELECT count() FROM t_recalculated SETTINGS apply_mutations_on_fly = 1, query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+SELECT count() FROM t_recalculated SETTINGS apply_mutations_on_fly = 1, query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+DROP TABLE t_recalculated;

@@ -4371,7 +4371,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     /// as the planner chooses it. The table's column sizes do not describe projection parts.
     if (all_column_names.empty() && !result.parts_with_ranges.empty() && !projection_parts_exist)
     {
-        auto columns = MergeTreeData::getColumnsStoredInAllParts(metadata_snapshot->getColumns().getAllPhysical(), result.parts_with_ranges, mutations_snapshot, context_);
+        const auto & table_columns = metadata_snapshot->getColumns();
+        auto columns = MergeTreeData::getColumnsStoredInAllParts(
+            table_columns.getAllPhysical(), table_columns, result.parts_with_ranges, mutations_snapshot, context_);
         if (!columns.empty())
             result.column_names_to_read = {ExpressionActions::getCheapestColumnToRead(columns, data.getColumnSizes()).name};
     }

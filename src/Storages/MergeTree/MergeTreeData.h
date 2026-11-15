@@ -1344,7 +1344,11 @@ public:
     /// resolving pending drops and renames of the others as the reader does. Elsewhere the read computes the column's
     /// default, which can read other columns and throw.
     static NamesAndTypesList getColumnsStoredInAllParts(
-        const NamesAndTypesList & columns, const RangesInDataParts & parts, const MutationsSnapshotPtr & mutations_snapshot, const ContextPtr & query_context);
+        const NamesAndTypesList & columns,
+        const ColumnsDescription & table_columns,
+        const RangesInDataParts & parts,
+        const MutationsSnapshotPtr & mutations_snapshot,
+        const ContextPtr & query_context);
 
     IndexSizeByName getSecondaryIndexSizes() const override
     {
