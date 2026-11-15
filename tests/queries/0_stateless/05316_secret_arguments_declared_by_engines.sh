@@ -26,6 +26,7 @@ CREATE TABLE test_rabbitmq (key UInt64) ENGINE = RabbitMQ(rabbitmq1, rabbitmq_pa
 CREATE TABLE test_rabbitmq (key UInt64) ENGINE = RabbitMQ(rabbitmq1, rabbitmq_address = 'amqp://example.com:5672/vhost')
 CREATE TABLE test_rabbitmq_settings (key UInt64) ENGINE = RabbitMQ SETTINGS rabbitmq_password = 'plain_settings_password'
 CREATE TABLE test_kafka (key UInt64) ENGINE = Kafka(kafka1, kafka_sasl_password = 'plain_password')
+CREATE TABLE test_kafka (key UInt64) ENGINE = Kafka(kafka1, `kafka.consumer.sasl_password` = 'plain_password', `kafka.sasl.oauthbearer.client.secret` = 'plain_client_secret', `kafka.ssl_key_pem` = 'plain_key_pem', `kafka.producer.kafka_topic.ssl_key_password` = 'plain_key_password', `kafka.kafka_sports.football.sasl.password` = 'plain_topic_password', `kafka.fetch_min_bytes` = '1')
 CREATE TABLE test_kafka (key UInt64) ENGINE = Kafka('broker:9092', 'topic', 'group', 'JSONEachRow')
 CREATE TABLE test_kafka (key UInt64) ENGINE = Kafka(kafka_sasl_password = 'plain_first_password', 'clickhouse')
 CREATE TABLE test_kafka_settings (key UInt64) ENGINE = Kafka SETTINGS kafka_sasl_password = 'plain_settings_password'

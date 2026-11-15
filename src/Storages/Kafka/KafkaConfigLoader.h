@@ -55,5 +55,9 @@ struct KafkaConfigLoader
 
     template <typename TKafkaStorage>
     static cppkafka::Configuration getProducerConfiguration(TKafkaStorage & storage, const ProducerConfigParams & params);
+
+    /// Sensitive properties must not be shown in cleartext: neither in the logs, whose records can reach
+    /// clients that set `send_logs_level`, nor in the table definition.
+    static bool isSensitiveProperty(std::string_view name);
 };
 }

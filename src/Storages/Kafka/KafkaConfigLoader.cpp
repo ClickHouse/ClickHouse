@@ -640,12 +640,7 @@ void updateConfigurationFromConfig(
 
 }
 
-namespace
-{
-
-/// Sensitive properties must not be logged in cleartext: the log records can reach not only the
-/// server log, but also clients that set `send_logs_level`.
-bool isSensitiveProperty(std::string_view name)
+bool KafkaConfigLoader::isSensitiveProperty(std::string_view name)
 {
     /// The properties librdkafka marks with the _RK_SENSITIVE flag or stores as pointers, plus a
     /// substring safety net for properties unknown to the vendored librdkafka version.
@@ -659,13 +654,16 @@ bool isSensitiveProperty(std::string_view name)
     return sensitive_properties.contains(name) || name.contains("password") || name.contains("secret");
 }
 
+namespace
+{
+
 /// Log all properties of a Kafka client configuration, replacing the values of sensitive
 /// properties, e.g. `sasl.password` or `sasl.oauthbearer.client.secret`, with `[HIDDEN]`.
 void logConfigProperties(const cppkafka::Configuration & conf, const LoggerPtr & log, std::string_view client_type)
 {
     for (const auto & property : conf.get_all())
         LOG_TRACE(log, "{} set property {}:{}", client_type, property.first,
-            isSensitiveProperty(property.first) ? HIDDEN_SECRET : std::string_view(property.second));
+            KafkaConfigLoader::isSensitiveProperty(property.first) ? HIDDEN_SECRET : std::string_view(property.second));
 }
 
 }

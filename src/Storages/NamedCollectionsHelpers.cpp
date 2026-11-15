@@ -54,7 +54,7 @@ namespace
         auto literal_key = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[0], context);
         auto key = checkAndGetLiteralArgument<String>(literal_key, "key");
         /// Libraries that receive the key as a C string would see only the part before the zero byte.
-        if (key.find('\0') != String::npos)
+        if (key.contains('\0'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key cannot contain a zero byte");
 
         ASTPtr literal_value;

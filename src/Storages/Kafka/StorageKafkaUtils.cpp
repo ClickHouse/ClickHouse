@@ -13,6 +13,7 @@
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/SecretArgumentsSpec.h>
 #include <Storages/Kafka/Kafka_fwd.h>
 #include <Interpreters/Context.h>
@@ -20,6 +21,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
+#include <Storages/Kafka/KafkaConfigLoader.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/StorageKafka2.h>
@@ -375,6 +377,30 @@ void registerStorageKafka(StorageFactory & factory)
             /// secret and makes the collection name optional, so a named argument can be the first one.
             .secret_settings = Kafka::SETTINGS_TO_HIDE,
             .settings_as_arguments = true,
+            /// Kafka(named_collection, `kafka.consumer.sasl_password` = '...'): a nested override sets a librdkafka
+            /// property, written with `_` or `.` and possibly in a per-topic section.
+            .custom = [](FunctionSecretArgumentsFinder & finder)
+            {
+                for (size_t i = 0; i < finder.function->arguments->size(); ++i)
+                {
+                    const auto equals_func = finder.function->arguments->at(i)->getFunction();
+                    if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments() || equals_func->arguments->size() != 2)
+                        continue;
+
+                    String key;
+                    if (!FunctionSecretArgumentsFinder::tryGetStringFromArgument(*equals_func->arguments->at(0), &key) || !key.starts_with("kafka."))
+                        continue;
+                    std::ranges::replace(key, '_', '.');
+                    for (size_t dot = key.find('.'); dot != String::npos; dot = key.find('.', dot + 1))
+                    {
+                        if (KafkaConfigLoader::isSensitiveProperty(std::string_view(key).substr(dot + 1)))
+                        {
+                            finder.markSecretArgument(i, /* argument_is_named= */ true);
+                            break;
+                        }
+                    }
+                }
+            },
         },
         StorageFactory::StorageFeatures{
             .supports_settings = true,
