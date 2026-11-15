@@ -8,8 +8,6 @@ sidebarTitle: '第 1 部分'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 > 这是关于从 PostgreSQL 迁移到 ClickHouse 的指南的 **第 1 部分**。本文通过一个实际示例，演示如何采用实时复制 (CDC，变更数据捕获) 的方法高效完成迁移。文中介绍的许多概念同样适用于将数据从 PostgreSQL 手动批量迁移到 ClickHouse 的场景。
 
 <div id="dataset">
@@ -18,7 +16,15 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 作为用于展示从 Postgres 迁移到 ClickHouse 典型流程的示例数据集，我们使用[此处](/zh/get-started/sample-datasets/stackoverflow)记录的 Stack Overflow 数据集。该数据集包含 Stack Overflow 从 2008 年到 2024 年 4 月期间产生的所有 `post`、`vote`、`user`、`comment` 和 `badge`。该数据的 PostgreSQL schema 如下所示：
 
-<Image img="/images/migrations/postgres-stackoverflow-schema.webp" size="lg" alt="PostgreSQL Stack Overflow schema" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![PostgreSQL Stack Overflow schema](/images/migrations/postgres-stackoverflow-schema.webp)
+
+</Frame>
+
+</div>
 
 *用于在 PostgreSQL 中创建这些表的 DDL 命令可在[此处](https://pastila.nl/?001c0102/eef2d1e4c82aab78c4670346acb74d83#TeGvJWX9WTA1V/5dVVZQjg==)获取。*
 

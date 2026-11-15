@@ -41,6 +41,7 @@ Janelas de upgrade programadas estão disponíveis em todos os canais de lançam
   * Os rollouts são automatizados e ocorrem gradualmente ao longo de várias semanas
   * Serviços com janelas de upgrade programadas são atualizados durante a janela agendada na semana seguinte ao fim do rollout do canal (a partir de segunda-feira às 00:00 UTC)
   * A conclusão do rollout pode ser adiada devido a pausas no rollout (por exemplo, congelamentos em feriados) ou ao monitoramento de integridade
+  * A [data de EOL](https://clickhouse.com/legal/support-services-policy) ocorre, no mínimo, 60 dias após a conclusão do rollout no canal Slow. Para versões cuja data de término no canal Slow ainda não foi agendada, a data de EOL é `TBD`.
 
   Para testes antecipados antes dos upgrades em produção, use o canal Fast ou Regular para serviços que não sejam de produção e o canal Slow para serviços de produção.
 </Warning>
@@ -50,7 +51,7 @@ Janelas de upgrade programadas estão disponíveis em todos os canais de lançam
 {
 changelog_link: 'https://clickhouse.com/docs/changelogs/26.8',
 version: '26.8',
-fast_start_date: '2026-10-12',
+fast_start_date: '2026-10-19',
 fast_end_date: 'A definir',
 regular_start_date: 'A definir',
 regular_end_date: 'A definir',
@@ -84,7 +85,7 @@ regular_start_date: '2026-08-03',
 regular_end_date: '2026-09-21',
 slow_start_date: '2026-09-28',
 slow_end_date: '2026-09-28',
-eol_date: '2026-11-27',
+eol_date: '2026-11-27 (estimada)',
 fast_progress: 'green',
 regular_progress: 'green',
 slow_progress: 'green',
@@ -98,7 +99,7 @@ regular_start_date: 'Completed',
 regular_end_date: 'Completed',
 slow_start_date: 'Completed',
 slow_end_date: 'Completed',
-eol_date: '2026-09-20',
+eol_date: '2026-10-04',
 fast_progress: 'green',
 regular_progress: 'green',
 slow_progress: 'green',
@@ -119,3 +120,14 @@ slow_progress: 'green',
 },
 ]}
 />
+
+## Datas de end-of-life do ClickHouse Private e do ClickHouse Government {#private-and-government-eol}
+
+A tabela abaixo lista as datas de end-of-life (EOL) das versões principais do ClickHouse distribuídas no ClickHouse Private e no ClickHouse Government.
+
+| Versão | Lançamento | Data de EOL           | Status      |
+| ------ | ---------- | --------------------- | ----------- |
+| 26.4   | 2026-10-09 | 2026-11-27 (estimada) | Com suporte |
+| 26.2   | 2026-08-07 | 2026-10-04            | End-of-life |
+
+As versões anteriores já estão em end-of-life. As datas de EOL marcadas como estimadas estão sujeitas a alterações.

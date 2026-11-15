@@ -6,8 +6,6 @@ tags: ['الأخطاء والاستثناءات']
 keywords: ['OOM', 'تجاوز حد الذاكرة']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <div id="troubleshooting-out-of-memory-issues">
   ## تجاوز حد الذاكرة للاستعلام
 </div>
@@ -66,7 +64,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 على القرص إذا لم يتسعا في الذاكرة، ما يتيح
 ربط الجداول الكبيرة.
 
-<Image img="/images/knowledgebase/memory-limit-exceeded-for-query.webp" size="md" alt="خوارزميات JOIN" />
+<div className="ch-image-md">
+
+<Frame>
+
+![خوارزميات JOIN](/images/knowledgebase/memory-limit-exceeded-for-query.webp)
+
+</Frame>
+
+</div>
 
 منذ الإصدار 20.3، يدعم ClickHouse القيمة auto لإعداد `join_algorithm`.
 وهذا يوجّه ClickHouse إلى تطبيق نهج JOIN تكيّفي، حيث تُفضَّل خوارزمية hash-join

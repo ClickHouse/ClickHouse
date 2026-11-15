@@ -1,39 +1,40 @@
 ---
-title: 可配置 Backup 命令行客户端
+title: 可配置 备份 命令行客户端
 ---
 
-本页介绍如何通过 [ClickHouse 命令行客户端](/zh/products/cloud/features/cli) (`clickhousectl`) 在命令行中查看和修改 ClickHouse Cloud 服务的 Backup 计划。相关命令均为非交互式；指定 `--json` 时，`clickhousectl` 会以 JSON 格式输出。
+本页介绍如何通过 [ClickHouse 命令行客户端](/zh/concepts/features/interfaces/cli) (`clickhousectl`) 在命令行中查看和修改 ClickHouse Cloud 服务的 备份 计划。除可选的 `--interactive` 登录外，相关命令均为非交互式。指定 `--json` 时，`clickhousectl` 会以 JSON 格式输出；由编码 agent 运行时，也会自动输出 JSON。
 
-可配置 Backup 适用于 Scale 和 Enterprise 计划。
+可配置 备份 适用于 Scale 和 Enterprise 计划。
 
 ## 前置条件 {#prerequisites}
 
 安装 ClickHouse 命令行客户端：
 
 ```bash
-curl https://clickhouse.com/cli | sh
+curl -fsSL https://clickhouse.com/cli | sh
 ```
 
-你还需要 `jq`。
+该脚本会安装 `~/.local/bin/clickhousectl` 以及别名 `chctl`。请确保 `~/.local/bin` 已加入 `PATH`。
 
-更改 Backup 配置属于写操作，需要使用 [API key 身份验证](/zh/products/cloud/features/admin-features/api/openapi)；OAuth 登录仅具有只读权限：
+此外还需要安装 `jq`。
+
+更改备份配置属于写操作，需要使用 [API key](/zh/products/cloud/features/admin-features/api/openapi)；通过浏览器登录 (`clickhousectl cloud auth login`) 仅具有只读权限。请使用该 key 登录；使用 `--interactive` 时，系统会提示您输入 key 和 secret，这样 secret 就不会留存在命令行环境的历史记录中：
 
 ```bash
-clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+clickhousectl cloud auth login --interactive
 ```
 
-或者，设置 `CLICKHOUSE_CLOUD_API_KEY` 和 `CLICKHOUSE_CLOUD_API_SECRET` 环境变量。使用 `clickhousectl cloud auth status` 进行验证：确认**当前生效**的凭据是权限范围为 `read/write` 的那一个。此前通过 `auth login` 保存的凭据优先级高于环境变量；此时 `Env vars` 行虽然仍会显示权限范围为 `read/write`，但会被标记为未生效 (`Configured (inactive, outranked by credentials file)`) ，下文的写入命令实际会使用已保存的凭据运行。如果希望使用环境变量，请先运行 `clickhousectl cloud auth logout`。
+或者，也可以传入 `--api-key` 和 `--api-secret`，或设置 `CLICKHOUSE_CLOUD_API_KEY` 和 `CLICKHOUSE_CLOUD_API_SECRET` 环境变量；编码 agent 或脚本应使用环境变量方式。登录时会验证该密钥并输出其对应的身份；可随时运行 `clickhousectl cloud auth whoami` 查看当前生效的凭证。先前通过 `auth login` 保存的凭证优先级高于环境变量：如果 `clickhousectl cloud auth status` 显示环境变量未生效，则说明系统正在使用已保存的凭证，此时请运行 `clickhousectl cloud auth logout --api-keys`，以改用环境变量。
 
 ## 查找服务 ID {#find-the-service-id}
 
 备份配置按服务分别设置。请通过名称查找该服务的 ID：
 
 ```bash
-CH_ID=$(clickhousectl cloud service list --json \
-  | jq -r '.[] | select(.name=="<service-name>") | .id')
+CH_ID=$(clickhousectl cloud service get --name "<service-name>" --json | jq -r .id)
 ```
 
-如果您隶属于多个组织，则无法自动识别所属组织，此命令将失败并报错 `Multiple organizations found. Specify --org-id to choose one.`。可使用 `clickhousectl cloud org list` 列出您的组织，并在此命令以及下文的每个 `backup-config` 命令中传入 `--org-id <org-id>`。
+如果您隶属于多个组织，则无法自动识别所属组织，此命令将失败并报错 ``Multiple organizations found. Specify --org-id or --org-name to choose one. Use `clickhousectl cloud org list` to see your organizations.``。可使用 `clickhousectl cloud org list` 列出您的组织，并在此命令以及下文的每个 `backup-config` 命令中传入 `--org-id <org-id>` (或 `--org-name <name>`) 。
 
 ## 查看当前的 备份配置 {#read-the-current-backup-configuration}
 
@@ -54,7 +55,7 @@ clickhousectl cloud service backup-config get "$CH_ID" --json
 
 ## 更改保留期与频率 {#change-retention-and-frequency}
 
-`backup-config update` 接受与控制台表单相同的设置——保留期 (`--backup-retention-period-hours`) 、频率 (`--backup-period-hours`) 和开始时间 (`--backup-start-time`) ——并打印出最终的配置。省略的参数将沿用其当前值：
+`backup-config update` 接受与控制台表单相同的设置——保留期 (`--backup-retention-period-hours`) 、频率 (`--backup-period-hours`) 和开始时间 (`--backup-start-time`) ——并打印出最终的配置。API 允许的保留期为 24–1080 小时，且须为整天数 (即 24 的倍数) ；频率可设为 6、8、12、16、20、24、36 或 48 小时。省略的参数将沿用其当前值：
 
 ```bash
 clickhousectl cloud service backup-config update "$CH_ID" \
@@ -85,9 +86,9 @@ clickhousectl cloud service backup-config get "$CH_ID" --json
 }
 ```
 
-## 设置 Backup 开始时间 {#set-a-backup-start-time}
+## 设置 备份 开始时间 {#set-a-backup-start-time}
 
-`--backup-start-time` 接受一个以 UTC 表示的每日开始时间，且必须为整点 (`HH:00`) 。开始时间会对频率施加约束：Backup 周期必须为 `24` 或 `48` 小时，可在同一条命令中一并传入，也可以是该服务上已保存的值。自 `clickhousectl 0.4.2` 起，格式与周期规则都会在客户端校验，且在任何 API 调用之前完成。非整点的时间——或未补零的时间，例如 `2:00`——会被 argument parser 拒绝，并以退出码 `2` 退出：
+`--backup-start-time` 接受一个以 UTC 表示的每日开始时间，且必须为整点 (`HH:00`) 。开始时间会对频率施加约束：备份 周期必须为 `24` 或 `48` 小时，可在同一条命令中一并传入，也可以是该服务上已保存的值。clickhousectl 会在发送更新之前同时校验格式与周期规则。非整点的时间——或未补零的时间，例如 `2:00`——会被 argument parser 拒绝，并以退出码 `2` 退出：
 
 ```bash
 clickhousectl cloud service backup-config update "$CH_ID" --backup-start-time 02:30 --json
@@ -103,7 +104,7 @@ error: invalid value '02:30' for '--backup-start-time <BACKUP_START_TIME>': inva
 Error: --backup-period-hours must be 24 or 48 when --backup-start-time is set
 ```
 
-`--backup-period-hours` 可以省略，此时该服务会沿用其现有周期——但已存储的周期本身必须为 `24` 或 `48`。若服务仍使用默认 schedule，其周期即为 `24`，因此只需指定开始时间即可。上面的服务在上一步中已被设置为 `12`，因此省略周期会失败：`clickhousectl` 会先读取已存储的 configuration，然后以退出码 `1` 拒绝执行，同样不会调用 API：
+`--backup-period-hours` 可以省略，此时该服务会沿用其现有周期——但已存储的周期本身必须为 `24` 或 `48`。若服务仍使用默认调度，其周期即为 `24`，因此只需指定开始时间即可。上面的服务在上一步中已被设置为 `12`，因此省略周期会失败：`clickhousectl` 会先读取已存储的 configuration，然后以退出码 `1` 拒绝执行，同样是在发送更新请求之前：
 
 ```bash
 clickhousectl cloud service backup-config update "$CH_ID" --backup-start-time 03:00 --json

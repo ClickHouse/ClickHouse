@@ -6,6 +6,7 @@
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
 {

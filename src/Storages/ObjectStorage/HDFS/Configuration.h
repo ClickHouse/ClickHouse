@@ -64,14 +64,11 @@ public:
     void setRawPath(const Path & p) override { path = p; }
     const String & getRawURI() const override { return url; }
 
-    const Paths & getPaths() const override { return paths; }
-    void setPaths(const Paths & paths_) override
-    {
-        paths = paths_;
-    }
-
     String getNamespace() const override { return ""; }
     String getDataSourceDescription() const override { return url; }
+
+    /// The object storages created from now on reject writes and removals.
+    void setReadOnly() { read_only = true; }
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
 
     void check(ContextPtr context) override;
@@ -80,6 +77,13 @@ public:
 
     void addStructureAndFormatToArgsIfNeeded(
         ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) override;
+
+protected:
+    const Paths & getPathsImpl() const override TSA_REQUIRES_SHARED(paths_mutex) { return paths; }
+    void setPathsImpl(const Paths & paths_) override TSA_REQUIRES(paths_mutex)
+    {
+        paths = paths_;
+    }
 
 private:
     void initializeFromParsedArguments(const HDFSStorageParsedArguments & parsed_arguments);
@@ -90,7 +94,8 @@ private:
 
     String url;
     Path path;
-    Paths paths;
+    Paths paths TSA_GUARDED_BY(paths_mutex);
+    bool read_only = false;
 };
 }
 

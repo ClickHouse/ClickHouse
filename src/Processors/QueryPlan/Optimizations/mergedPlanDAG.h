@@ -18,8 +18,10 @@ namespace DB::QueryPlanOptimizations
 /// A step that passes its input through unchanged and only reads a column of it, such as
 /// `BuildRuntimeFilter`, is looked through: it adds nothing to the DAG but the column it reads.
 ///
+/// An `ARRAY JOIN` is looked through as well: it repeats the rows as a join does, and its elements are values of the DAG.
+///
 /// The walk stops at any step whose expressions the DAG cannot represent - an aggregation, a window, an
-/// exchange, but also an `arrayJoin`, which changes the number of rows. Such a step becomes a source:
+/// exchange, but also an `arrayJoin` in an expression, which changes the number of rows. Such a step becomes a source:
 /// its output header turns into the DAG's inputs and the subtree below it is left alone, so the columns
 /// above it can still be deferred even though nothing below it can. That is also what keeps a caller
 /// inside one distributed fragment.
@@ -75,9 +77,9 @@ struct MergedPlanDAG
     std::vector<Source> sources;
     PaddedSides padded_sides;
 
-    /// The values with a join above their own computation point, whatever its kind. Letting one of these
-    /// cross the `LIMIT` means a column every join above it replicates, and a hash join copies into its
-    /// build side, over every row that reaches there.
+    /// The values with a join above their own computation point, whatever its kind, an `ARRAY JOIN` included. Letting one
+    /// of these cross the `LIMIT` means a column every join above it replicates, and a hash join copies into its build
+    /// side, over every row that reaches there.
     NodeSet nodes_with_join_above;
 
     /// The nearest padded side above a node's own computation point, for the nodes that have one. Kept
@@ -130,8 +132,8 @@ struct MergedPlanDAG
 };
 
 /// Whether the walk of `buildMergedPlanDAG` can go through the step of this node, as far as the step alone tells: an
-/// expression, a filter, a runtime filter or a join of two inputs, which can prune its columns and computes no
-/// `arrayJoin`. The walk can still stop at such a step, where the DAG built for it does not reproduce its header, so
+/// expression, a filter, a runtime filter, an `ARRAY JOIN` or a join of two inputs, which can prune its columns and
+/// computes no `arrayJoin` in an expression. The walk can still stop at such a step, where the DAG built for it does not reproduce its header, so
 /// this is what a cheap check of the plan before the walk can rely on, not what the walk does.
 bool canEnterStep(const QueryPlan::Node & node);
 

@@ -90,7 +90,7 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSe
     /// `optimizePrimaryKeyConditionAndLimit`).
     ///
     /// The `arrayJoin` function call appears in the SELECT clause, while the `ARRAY JOIN`
-    /// clause is stored separately in `arrayJoinExpressionList()` (the clause itself is
+    /// clause is a separate element of the TABLES list, checked below (the clause itself is
     /// already an array-join operation, regardless of what its expressions contain).
     /// Both forms must reject pushdown.
     /// The function may sit in any clause, e.g. only in WHERE through a WITH alias, and still multiply the rows.
@@ -110,14 +110,13 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSe
     /// and it also descends into the bodies of SQL UDFs.
     if (expressionContainsArrayJoin(query_info.query))
         return false;
-    if (query.arrayJoinExpressionList().first)
-        return false;
 
     /// With a `JOIN` the outer `LIMIT` counts joined rows, not rows of this source: an `INNER` join
     /// (or any join that filters) can drop the first rows of the source, so stopping it after
     /// `limit + offset` rows loses the rows that would have matched later. The source may sit on
     /// either side of the join, and a comma join is represented as a join as well.
-    if (query.hasJoin())
+    /// Every `JOIN` and `ARRAY JOIN` clause is a separate element of the TABLES list.
+    if (query.tables() && query.tables()->children.size() > 1)
         return false;
 
     /// Just ignore some minor cases, such as:

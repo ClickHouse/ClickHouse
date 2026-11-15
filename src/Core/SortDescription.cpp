@@ -3,6 +3,7 @@
 #include <Core/SortDescription.h>
 #include <Analyzer/TableQualifiers.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/JSONBuilder.h>
