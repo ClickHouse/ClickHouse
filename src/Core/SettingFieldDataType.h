@@ -35,8 +35,6 @@ struct SettingFieldDataType
     [[nodiscard]] String toString() const;
     void parseFromString(const String & str);
 
-    void writeBinary(WriteBuffer & out) const;
-    void readBinary(ReadBuffer & in);
 };
 
 }

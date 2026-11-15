@@ -372,6 +372,21 @@ llvm::Value * nativeCastWithDecimalScale(llvm::IRBuilderBase & b, const ValueWit
     return nativeCastWithDecimalScale(b, value.type, value.value, to_type);
 }
 
+llvm::Value * compileIntegerComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, bool is_signed)
+{
+    // a > b ? 1 : (a < b ? -1 : 0);
+
+    auto * lhs_greater_than_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), 1);
+    auto * lhs_less_than_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), -1);
+    auto * lhs_equals_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), 0);
+
+    auto * lhs_greater_than_rhs = is_signed ? b.CreateICmpSGT(lhs, rhs) : b.CreateICmpUGT(lhs, rhs);
+    auto * lhs_less_than_rhs = is_signed ? b.CreateICmpSLT(lhs, rhs) : b.CreateICmpULT(lhs, rhs);
+    auto * if_lhs_less_than_rhs_result = b.CreateSelect(lhs_less_than_rhs, lhs_less_than_rhs_result, lhs_equals_rhs_result);
+
+    return b.CreateSelect(lhs_greater_than_rhs, lhs_greater_than_rhs_result, if_lhs_less_than_rhs_result);
+}
+
 llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builder, const DataTypePtr & column_type, const IColumn & column, size_t index)
 {
     if (const auto * constant = typeid_cast<const ColumnConst *>(&column))

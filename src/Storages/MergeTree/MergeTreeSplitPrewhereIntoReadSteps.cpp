@@ -51,11 +51,6 @@ DataTypesWithConstInfo getArgumentTypesWithConstInfo(const ActionsDAG::NodeRawCo
     return types;
 }
 
-bool isTopKFilter(const ActionsDAG::Node * node)
-{
-    return node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->getName() == "__topKFilter";
-}
-
 /// Fills the info of an input column. A virtual column of an index is resolved to the name of the index whose reader fills it.
 void resolveNodeInfo(NodeInfo & node_info, const String & column_name, const IndexReadTasks * index_read_tasks)
 {
@@ -390,12 +385,17 @@ bool tryBuildPrewhereSteps(
             num_attributed_steps = condition_groups.size();
 
         const bool same_columns = !condition_groups.empty() && nodes_info[condition_groups.back().front()].readsSameColumns(node_info);
-        /// `__topKFilter` is the first condition (see `buildTopKDynamicFilterPrewhere`). In its own step the condition runs only
-        /// on the rows the threshold passes once it is selective, because the `__topKFilter` step's filter stays optional.
-        const bool follows_top_k_filter = same_columns && read_ahead_columns && isTopKFilter(condition_groups.back().front())
-            && canBeMovedToTheFrontOfAndChain(node);
+        /// A synthesized dynamic filter (`__topKFilter` of `ORDER BY ... LIMIT`, a join runtime filter `__applyFilter`)
+        /// must never share a step with a user query predicate, even when they read the same columns. In one step the
+        /// two are evaluated together on the same block, so the step's rejections cannot be split between them: counting
+        /// the whole step toward the PREWHERE-effectiveness events would attribute the dynamic filter's rejections to
+        /// PREWHERE, and excluding it would drop the user predicate's (issue #131263). Keeping each in its own step lets
+        /// it be attributed on its own (see `is_query_prewhere`). The shared column is still read once (see
+        /// `group_read_step`), and a leading `__topKFilter` in its own step keeps its filter optional once it is selective.
+        const bool crosses_dynamic_filter_boundary = !condition_groups.empty()
+            && isDynamicRuntimePrewhereFilter(node) != isDynamicRuntimePrewhereFilter(condition_groups.back().front());
 
-        if (same_columns && !node_info.may_throw && !is_first_unattributed && !follows_top_k_filter)
+        if (same_columns && !node_info.may_throw && !is_first_unattributed && !crosses_dynamic_filter_boundary)
         {
             condition_groups.back().push_back(node);
             continue;

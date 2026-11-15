@@ -30,8 +30,11 @@ enum class NameHeaderType : uint32_t
 enum class DynamicTableTag : int64_t
 {
     Null = 0,
+    NEEDED = 1,
     STRTAB = 5,
     SYMTAB = 6,
+    RPATH = 15,
+    RUNPATH = 29,
     GNU_HASH = 0x6ffffef5,
 };
 

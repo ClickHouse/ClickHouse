@@ -1923,6 +1923,9 @@ void NO_INLINE Aggregator::executeImplBatch(
         }
         else
         {
+            /// See the comment in `Set::executeImplCase`: without this the hash table fields are reloaded on every row.
+            __builtin_assume_dereferenceable(&method.data, sizeof(method.data));
+            __builtin_assume_dereferenceable(&state, sizeof(state));
             for (size_t i = row_begin; i < row_end; ++i)
             {
                 auto find_result = state.findKey(method.data, i, *aggregates_pool);
@@ -2094,6 +2097,9 @@ void NO_INLINE Aggregator::executeImplBatch(
     }
     else
     {
+        /// See the comment in `Set::executeImplCase`: without this the hash table fields are reloaded on every row.
+        __builtin_assume_dereferenceable(&method.data, sizeof(method.data));
+        __builtin_assume_dereferenceable(&state, sizeof(state));
         for (size_t i = key_start; i < key_end; ++i)
         {
             AggregateDataPtr aggregate_data = nullptr;

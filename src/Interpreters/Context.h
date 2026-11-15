@@ -126,6 +126,8 @@ class ColumnsCache;
 using ColumnsCachePtr = std::shared_ptr<ColumnsCache>;
 struct ColumnsCacheWriteBudget;
 using ColumnsCacheWriteBudgetPtr = std::shared_ptr<ColumnsCacheWriteBudget>;
+class QueryMaxThreadsSnapshot;
+using QueryMaxThreadsSnapshotPtr = std::shared_ptr<QueryMaxThreadsSnapshot>;
 class IcebergMetadataFilesCache;
 class PaimonMetadataFilesCache;
 class ParquetMetadataCache;
@@ -750,6 +752,8 @@ protected:
     /// makeQueryContext and shared across all of the query's read pools so the
     /// columns-cache write budgets apply per query rather than per pool.
     ColumnsCacheWriteBudgetPtr columns_cache_write_budget;
+
+    QueryMaxThreadsSnapshotPtr query_max_threads_snapshot;
 
 public:
     /// Some counters for current query execution.
@@ -2308,6 +2312,10 @@ public:
     /// Per-query shared accounting for columns cache writes (see ColumnsCacheWriteBudget).
     /// Shared across all read pools of the query so the write budgets apply per query.
     ColumnsCacheWriteBudgetPtr getColumnsCacheWriteBudget() const;
+
+    const QueryMaxThreadsSnapshotPtr & getQueryMaxThreadsSnapshot() const;
+    /// For a query context made for a part of the query of `from`.
+    void shareQueryMaxThreadsSnapshot(const Context & from);
 
     void setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions);
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock(const UUID & table_uuid) const;
