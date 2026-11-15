@@ -60,7 +60,8 @@ mv "${base}/outside/v.1" "${base}/outside/u"
 read_table file_log_2
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_2"
 
-# After an attach, a.csv takes over the file of b.csv while b.csv leads to no file, which then gets the old file of a.csv back.
+# After an attach, a.csv takes over the file of b.csv while b.csv leads to no file, which then gets the old file of a.csv
+# back. As for any name that led to no file, b.csv reads it from the start (its inode number may belong to a new file).
 mkdir -p "${base}/dir3"
 printf '600\n601\n' > "${base}/outside/p"
 printf '700\n701\n' > "${base}/outside/q"
@@ -69,6 +70,7 @@ ln -s "${base}/outside/q" "${base}/dir3/b.csv"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_3 (a UInt64) ENGINE = FileLog('${base}/dir3/', 'CSV')"
 read_table file_log_3
 ${CLICKHOUSE_CLIENT} -q "DETACH TABLE file_log_3"
+echo 602 >> "${base}/outside/p"
 echo 702 >> "${base}/outside/q"
 ${CLICKHOUSE_CLIENT} -q "ATTACH TABLE file_log_3"
 mv "${base}/outside/p" "${base}/outside/t"

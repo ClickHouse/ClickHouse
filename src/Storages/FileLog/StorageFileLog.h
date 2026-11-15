@@ -223,7 +223,7 @@ private:
     std::optional<UInt64> getInodeToRead(const String & file_name, const FileContext & file_ctx) const;
 
     /// A file that is read under a name that no longer leads to it goes to `file_name` with its offset instead, and that
-    /// name gets the file of `file_name` and is retried if it leads to a file.
+    /// name gets the file of `file_name` and is retried.
     void takeOverFile(const String & file_name, FileContext & file_ctx, UInt64 inode);
 
     void threadFunc();

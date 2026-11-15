@@ -638,9 +638,7 @@ void StorageFileLog::takeOverFile(const String & file_name, FileContext & file_c
     other_ctx.inode = file_ctx.inode;
     other_ctx.reader.reset();
     other_ctx.status = FileStatus::NO_CHANGE;
-    /// A failed open drops the offset, so a name that leads to no file is not retried.
-    struct stat other_stat{};
-    other_ctx.open_failed = stat(getFullDataPath(other_meta.file_name).c_str(), &other_stat) == 0;
+    other_ctx.open_failed = true;
     std::swap(meta.file_name, other_meta.file_name);
     file_ctx.inode = inode;
 }
