@@ -37,11 +37,17 @@ CORE_BLOCKING_JOB_NAMES = [
     )
 ] + [
     job.name
+    for job in JobConfigs.unittest_jobs
+]
+
+# Starts right after its build, like the gate, but is not part of it: its coverage-based
+# selection grows with the PR, and on the largest PRs it ran 100-160 minutes, which delayed
+# stage 2 by up to an hour. It was the only failing gate job on 2.1% of PR commits, and stage 2
+# has integration jobs of its own (the full `arm_binary` run and the other targeted ones).
+UNGATED_INTEGRATION_JOB_NAMES = [
+    job.name
     for job in JobConfigs.integration_test_targeted_pr_jobs
     if "_asan_ubsan, db disk, targeted" in job.name
-] + [
-    job.name
-    for job in JobConfigs.unittest_jobs
 ]
 
 STYLE_AND_FAST_TESTS = [
@@ -102,9 +108,10 @@ workflow = Workflow.Config(
             job.set_run_after(REGULAR_BUILD_NAMES)
             for job in JobConfigs.release_build_jobs_with_examples
         ],
+        # The other cross-compiled builds run in the merge queue, see `MERGE_QUEUE_SPECIAL_BUILD_TYPES`.
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.special_build_jobs
+            for job in JobConfigs.special_build_pr_jobs
         ],
         # Gated like the regular builds rather than like the special ones: it is the only job
         # that compiles the standalone parser at all, and it needs no build artifact, so there
@@ -122,7 +129,9 @@ workflow = Workflow.Config(
         *[j.set_allow_failure() for j in JobConfigs.stateless_tests_targeted_pr_jobs],
         *[
             job.set_run_after(
-                CORE_BLOCKING_JOB_NAMES if job.name not in CORE_BLOCKING_JOB_NAMES else []
+                CORE_BLOCKING_JOB_NAMES
+                if job.name not in UNGATED_INTEGRATION_JOB_NAMES
+                else []
             )
             for job in INTEGRATION_TARGETED_JOBS
         ],
@@ -167,7 +176,7 @@ workflow = Workflow.Config(
         ],
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.functional_tests_jobs_azure
+            for job in JobConfigs.functional_tests_azure_targeted_pr_jobs
         ],
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
@@ -254,8 +263,6 @@ workflow = Workflow.Config(
         ),
         # TODO: stabilize and remove set_allow_failure
         JobConfigs.build_profile_diff_job.set_allow_failure(),
-        JobConfigs.sqllogic_test_master_job.set_run_after(CORE_BLOCKING_JOB_NAMES),
-        JobConfigs.sqlstorm_test_job.set_run_after(CORE_BLOCKING_JOB_NAMES),
         JobConfigs.docs_examples_job.set_run_after(CORE_BLOCKING_JOB_NAMES),
         # Keeper stress (PR): 3 no-fault scenarios (prod-mix, read-multi, write-multi),
         # default backend only, 15 min each. Runs when src/Coordination or stress test files change.
@@ -297,6 +304,7 @@ workflow = Workflow.Config(
         can_be_tested,
         "python3 ./ci/jobs/scripts/workflow_hooks/ci_links.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/review_threads.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/pr_labels_and_category.py",
         configure_performance_shards,
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
@@ -308,6 +316,7 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/feature_docs.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/new_tests_check.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/can_be_merged.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/can_be_merged.py --review-threads",
         "python3 ./ci/jobs/scripts/workflow_hooks/check_report_messages.py",
     ],
     job_aliases={
@@ -334,6 +343,9 @@ _SINGLE_ARCH_SKIPPED_ARTIFACTS = {
     if job.name in PR_SINGLE_ARCH_SKIPPED_BUILDS
     for artifact in job.provides
 }
+assert len(UNGATED_INTEGRATION_JOB_NAMES) == 1, (
+    "the ASan targeted integration job is not found by its name"
+)
 assert len(_SINGLE_ARCH_SKIPPED_ARTIFACTS) == len(PR_SINGLE_ARCH_SKIPPED_BUILDS), (
     "every build in PR_SINGLE_ARCH_SKIPPED_BUILDS must be in the PR workflow"
 )

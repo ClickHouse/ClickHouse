@@ -51,6 +51,8 @@ Esta tabela pode ser usada para monitoramento. A tabela contém uma linha para c
 * `throttling_us` ([Nullable(Int64)](/pt-BR/reference/data-types/nullable)) — Somente para nós `bandwidth_limit`. Número total de microssegundos em que este nó permaneceu no estado de throttling.
 * `tokens` ([Nullable(Float64)](/pt-BR/reference/data-types/nullable)) — Somente para nós `bandwidth_limit`. Número de tokens atualmente disponíveis no throttler de bucket de tokens.
 * `allocated` ([Nullable(Int64)](/pt-BR/reference/data-types/nullable)) — Somente para nós space-shared. Quantidade de resource atualmente alocada sob este nó.
+* `reclaimable` ([Nullable(Int64)](/pt-BR/reference/data-types/nullable)) — Somente para nós space-shared. Memória disponível para novas solicitações de spill sob este nó. Para cada alocação, as solicitações pendentes são subtraídas da memória recuperável informada por ela, e o resultado é limitado a um mínimo de zero antes da soma.
+* `reclaiming` ([Nullable(Int64)](/pt-BR/reference/data-types/nullable)) — Somente para nós space-shared. Memória solicitada para spill, mas ainda não concluída sob este nó, incluindo solicitações que ainda não começaram a ser executadas. A conclusão dá baixa na quantidade solicitada, independentemente da quantidade efetivamente liberada.
 * `allocations` ([Nullable(UInt64)](/pt-BR/reference/data-types/nullable)) — Somente para nós space-shared. Número atual de alocações de resource em execução sob este nó.
 * `updates` ([Nullable(UInt64)](/pt-BR/reference/data-types/nullable)) — Somente para nós space-shared. Número total de atualizações propagadas por este nó.
 * `increases` ([Nullable(UInt64)](/pt-BR/reference/data-types/nullable)) — Somente para nós space-shared. Número total de solicitações de aumento aprovadas por este nó.
@@ -59,6 +61,8 @@ Esta tabela pode ser usada para monitoramento. A tabela contém uma linha para c
 * `removes` ([Nullable(UInt64)](/pt-BR/reference/data-types/nullable)) — Somente para nós space-shared. Número total de alocações removidas deste nó.
 * `killers` ([Nullable(UInt64)](/pt-BR/reference/data-types/nullable)) — Somente para nós space-shared. Número total de remoções de cache iniciadas por este nó devido a solicitações de aumento.
 * `victims` ([Nullable(UInt64)](/pt-BR/reference/data-types/nullable)) — Somente para nós space-shared. Número total de alocações removidas deste nó.
+* `spills` ([Nullable(UInt64)](/pt-BR/reference/data-types/nullable)) — Somente para nós space-shared. Número total de solicitações de spill emitidas por este nó porque seu limite flexível de memória foi excedido.
+* `soft_limit` ([Nullable(Int64)](/pt-BR/reference/data-types/nullable)) — Somente para nós `allocation_limit`. Limite flexível de memória efetivo acima do qual se solicita que as alocações recuperáveis façam spill (o menor entre `max_memory_before_spill` e `max_memory_to_spill_ratio * max_memory`). Valores iguais ou superiores ao limite rígido indicam que o spill está desabilitado.
 * `rejects` ([Nullable(UInt64)](/pt-BR/reference/data-types/nullable)) — Somente para nós `allocation_queue`. Número total de alocações de resource rejeitadas por este nó.
 * `pending` ([Nullable(UInt64)](/pt-BR/reference/data-types/nullable)) — Somente para nós `allocation_queue`. Número atual de alocações de resource pendentes neste nó.
 

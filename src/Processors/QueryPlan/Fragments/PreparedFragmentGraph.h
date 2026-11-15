@@ -6,6 +6,7 @@
 
 #include <string_view>
 #include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -31,7 +32,7 @@ struct PreparedFragmentGraph
 
     /// By descending id. The cutter numbers the stages in post-order, so a fragment comes before the fragments it reads,
     /// and the fragment that produces the result (`main`) comes first. Empty for a single node.
-    std::vector<const QueryFragment *> print_order;
+    VectorWithMemoryTracking<const QueryFragment *> print_order;
 
     /// With `pretty`, one registry for all fragments, so that a column, a runtime filter or a set has the same name in
     /// every fragment and in the `Exchanges` section. The names are built over the fragments joined at their exchanges,

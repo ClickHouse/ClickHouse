@@ -445,7 +445,7 @@ resource "clickhouse_udf_attachment" "production" {
 }
 ```
 
-上記の必須属性に加えて、`clickhouse_udf` リソースは `format`、`pool_size`、`max_command_execution_time`、`command_read_timeout`、`command_write_timeout`、`send_chunk_header`、`sandbox_type`、`sandbox_version`、`return_name`、`fail_on_build_error` も受け付けます。完全なスキーマについては、[リソースのドキュメント](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md)を参照してください。
+上記の必須属性に加えて、`clickhouse_udf` リソースは `format`、`pool_size`、`max_command_execution_time`、`command_read_timeout`、`command_write_timeout`、`send_chunk_header`、`sandbox_type`、`return_name`、`fail_on_build_error` も受け付けます。完全なスキーマについては、[リソースのドキュメント](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md)を参照してください。
 
 新しいバージョンを本番環境に反映する前に開発用サービスでテストするには、一方のアタッチメントは最新バージョンに追従させ、もう一方は変数でバージョンを固定します。開発用のアタッチメントは新しいビルドのたびに自動的に追従し、本番用のアタッチメントは `var.prod_udf_version` を変更したときにのみ更新されます。
 

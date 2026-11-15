@@ -6,8 +6,6 @@ keywords: ['دمج الأجزاء']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <div id="what-are-part-merges-in-clickhouse">
   ## ما هي دمج الأجزاء في ClickHouse؟
 </div>
@@ -26,7 +24,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يوضح المخطط التالي بإيجاز عملية الدمج في الخلفية:
 
-<Image img="/images/managing-data/core-concepts/merges_01.webp" size="lg" alt="دمج الأجزاء" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![دمج الأجزاء](/images/managing-data/core-concepts/merges_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -69,7 +75,15 @@ ORDER BY name ASC;
 
 في ClickHouse 24.10، أُضيفت [لوحة معلومات لدمج الأجزاء](https://presentations.clickhouse.com/2024-release-24.10/index.html#17) جديدة إلى [لوحات معلومات المراقبة](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards) المضمنة. وهي متاحة في كلٍّ من OSS وCloud عبر معالج HTTP ‏`/merges`، ويمكن استخدامها لتصوير جميع دمج الأجزاء لجدولنا التجريبي:
 
-<Image img="/images/managing-data/core-concepts/merges-dashboard.webp" size="lg" alt="دمج الأجزاء" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![دمج الأجزاء](/images/managing-data/core-concepts/merges-dashboard.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -87,7 +101,15 @@ ORDER BY name ASC;
 
 يستخدم خادم ClickHouse عدة [خيوط دمج](/ar/reference/settings/server-settings/settings/background#background_pool_size) في الخلفية لتنفيذ دمج الأجزاء بشكل متزامن:
 
-<Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="دمج الأجزاء" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![دمج الأجزاء](/images/managing-data/core-concepts/merges_02.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -121,7 +143,15 @@ ORDER BY name ASC;
 
 يوضح المخطط أدناه كيف يقوم [خيط دمج](/ar/concepts/core-concepts/merges#concurrent-merges) واحد يعمل في الخلفية في ClickHouse بدمج الأجزاء (افتراضيًا، من دون [الدمج العمودي](/ar/concepts/core-concepts/merges#memory-optimized-merges)):
 
-<Image img="/images/managing-data/core-concepts/merges_03.webp" size="lg" alt="دمج الأجزاء" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![دمج الأجزاء](/images/managing-data/core-concepts/merges_03.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -157,7 +187,15 @@ ORDER BY name ASC;
 
 يوضح المخطط أدناه كيفية دمج الأجزاء في جدول [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree) من النوع القياسي:
 
-<Image img="/images/managing-data/core-concepts/merges_04.webp" size="lg" alt="دمج الأجزاء" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![دمج الأجزاء](/images/managing-data/core-concepts/merges_04.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -171,7 +209,15 @@ ORDER BY name ASC;
 
 تعمل دمج الأجزاء في جدول [ReplacingMergeTree](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree) بصورة مشابهة لـ [عمليات الدمج القياسية](/ar/concepts/core-concepts/merges#standard-merges)، لكن لا يُحتفَظ إلا بأحدث إصدار من كل صف، بينما تُهمَل الإصدارات الأقدم:
 
-<Image img="/images/managing-data/core-concepts/merges_05.webp" size="lg" alt="دمج الأجزاء" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![دمج الأجزاء](/images/managing-data/core-concepts/merges_05.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -189,7 +235,15 @@ ORDER BY name ASC;
 
 تُلخَّص البيانات الرقمية تلقائيًا أثناء دمج الأجزاء في جدول [SummingMergeTree](/ar/reference/engines/table-engines/mergetree-family/summingmergetree):
 
-<Image img="/images/managing-data/core-concepts/merges_06.webp" size="lg" alt="دمج الأجزاء" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![دمج الأجزاء](/images/managing-data/core-concepts/merges_06.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -203,7 +257,15 @@ ORDER BY name ASC;
 
 يُعد مثال جدول `SummingMergeTree` الوارد أعلاه صيغة متخصصة من جدول [AggregatingMergeTree](/ar/reference/engines/table-engines/mergetree-family/aggregatingmergetree)، ويتيح [التحويل التلقائي التزايدي للبيانات](https://www.youtube.com/watch?v=QDAJTKZT8y4) من خلال تطبيق أيٍ من دوال [التجميع](/ar/reference/functions/aggregate-functions/reference-index) البالغ عددها [90+] أثناء دمج الأجزاء:
 
-<Image img="/images/managing-data/core-concepts/merges_07.webp" size="lg" alt="دمج الأجزاء" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![دمج الأجزاء](/images/managing-data/core-concepts/merges_07.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
