@@ -14,6 +14,7 @@ nc_locked="${nc}_locked"
 nc_topic="${nc}_topic"
 nc_topic_locked="${nc}_topic_locked"
 nc_alias="${nc}_alias"
+nc_dot_locked="${nc}_dot_locked"
 user="${nc}_user"
 table="${nc}_table"
 
@@ -27,6 +28,7 @@ function cleanup()
         DROP NAMED COLLECTION IF EXISTS ${nc_topic};
         DROP NAMED COLLECTION IF EXISTS ${nc_topic_locked};
         DROP NAMED COLLECTION IF EXISTS ${nc_alias};
+        DROP NAMED COLLECTION IF EXISTS ${nc_dot_locked};
     "
 }
 trap cleanup EXIT
@@ -62,6 +64,9 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
         \`kafka.consumer.kafka_topic.name\` = 'topic',
         \`kafka.consumer.kafka_topic.sasl_mechanisms\` = 'SCRAM-SHA-256',
         \`kafka.producer.compression_type\` = 'zstd';
+    CREATE NAMED COLLECTION ${nc_dot_locked} AS
+        kafka_broker_list = '127.0.0.1:2', kafka_topic_list = 'sports.football', kafka_group_name = 'group', kafka_format = 'JSONEachRow',
+        \`kafka.kafka_sports.football.security_protocol\` = 'SASL_SSL' NOT OVERRIDABLE;
 "
 
 function expect_error()
@@ -105,3 +110,6 @@ ${CLICKHOUSE_CLIENT} --query "GRANT SHOW NAMED COLLECTIONS SECRETS ON ${nc_locke
 expect_error BAD_ARGUMENTS "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_locked}) SETTINGS kafka_security_protocol = 'PLAINTEXT'"
 ${CLICKHOUSE_CLIENT} --query "GRANT SHOW NAMED COLLECTIONS SECRETS ON ${nc_topic_locked} TO $user"
 expect_error BAD_ARGUMENTS "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_topic_locked}) SETTINGS kafka_security_protocol = 'PLAINTEXT'"
+# The legacy section of a topic with a dot in its name.
+${CLICKHOUSE_CLIENT} --query "GRANT SHOW NAMED COLLECTIONS SECRETS ON ${nc_dot_locked} TO $user"
+expect_error BAD_ARGUMENTS "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_dot_locked}) SETTINGS kafka_security_protocol = 'PLAINTEXT'"

@@ -140,16 +140,43 @@ namespace
 
             KafkaProperty property{String(key.substr(prefix.size())), false};
             /// Per-topic sections (`kafka_topic*.<property>` and legacy `kafka_<topic>.<property>`) set the same property.
-            if (const auto dot = property.name.find('.'); dot != String::npos && property.name.starts_with("kafka"))
+            const auto dot = property.name.find('.');
+            const bool is_topic_section = dot != String::npos && property.name.starts_with("kafka");
+            if (is_topic_section)
                 property.name = property.name.substr(dot + 1);
             /// `log_level` is the only librdkafka property with an underscore.
             if (property.name != "log_level")
                 std::ranges::replace(property.name, '_', '.');
             /// librdkafka aliases of the properties set by the flat settings.
-            if (property.name == "sasl.mechanisms")
-                property.name = "sasl.mechanism";
-            else if (property.name == "compression.type")
-                property.name = "compression.codec";
+            static constexpr auto aliases = std::to_array<std::pair<std::string_view, std::string_view>>({
+                {"sasl.mechanisms", "sasl.mechanism"},
+                {"compression.type", "compression.codec"},
+            });
+            for (const auto & [alias, name] : aliases)
+            {
+                if (property.name == alias)
+                    property.name = name;
+            }
+            /// The name of a legacy topic can contain dots (`kafka_sports.football.<property>`), so the rest of
+            /// the topic name is left before the property. Match the properties of the flat settings by suffix.
+            if (is_topic_section)
+            {
+                const auto ends_with_property = [&](std::string_view name)
+                {
+                    return property.name.size() > name.size() && property.name.ends_with(name)
+                        && property.name[property.name.size() - name.size() - 1] == '.';
+                };
+                for (const auto & [setting, name] : flat_settings)
+                {
+                    if (ends_with_property(name))
+                        property.name = name;
+                }
+                for (const auto & [alias, name] : aliases)
+                {
+                    if (ends_with_property(alias))
+                        property.name = name;
+                }
+            }
             return property;
         }
         return std::nullopt;
