@@ -86,6 +86,8 @@ public:
                             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse ULID: non-ASCII character");
                     }
 
+                    /// `ulid_decode` reads exactly 26 bytes, validated above; no null terminator is needed.
+                    // NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage)
                     if (ulid_decode(reinterpret_cast<unsigned char *>(destination), value.data()) != 0)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse ULID {}", value);
                 }
