@@ -48,7 +48,10 @@ $CLICKHOUSE_CLIENT --send_logs_level=error -q "
         keeper_path = '/clickhouse/${CLICKHOUSE_DATABASE}/05618_s3queue',
         mode = 'unordered',
         after_processing = 'keep',
-        processing_threads_num = 4;
+        processing_threads_num = 4,
+        polling_min_timeout_ms = 100,
+        polling_max_timeout_ms = 1000,
+        polling_backoff_ms = 100;
     CREATE MATERIALIZED VIEW mv TO dst AS SELECT x FROM queue;
 "
 
