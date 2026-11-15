@@ -259,6 +259,15 @@ void buildLayoutConfiguration(
                     layout->layout_type);
             }
 
+            /// The SQL parser only accepts an omitted value immediately before the closing bracket.
+            if (param != layout->parameters->children.back())
+            {
+                throw DB::Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Dictionary layout parameter '{}' without a value must be the last parameter",
+                    pair->first);
+            }
+
             AutoPtr<Element> parameter_without_value(doc->createElement(pair->first));
             layout_type_element->appendChild(parameter_without_value);
             continue;
@@ -623,6 +632,9 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
     for (const auto & child : children)
     {
         const ASTPair * pair = child->as<const ASTPair>();
+        if (pair->value_omitted)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary source parameter '{}' must have a value", pair->first);
+
         AutoPtr<Element> current_xml_element(doc->createElement(pair->first));
         root->appendChild(current_xml_element);
 

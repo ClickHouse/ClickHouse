@@ -6,6 +6,7 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/SecretArguments.h>
 
 namespace DB
@@ -57,6 +58,14 @@ void ASTPair::readJSON(const Poco::JSON::Object & json)
     auto child = r.readChild("second");
     if (!child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'second' in ASTPair during AST JSON deserialization");
+
+    if (value_omitted)
+    {
+        const auto * literal = child->as<ASTLiteral>();
+        if (!literal || !literal->value.isNull())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "An omitted ASTPair value must be a NULL literal during AST JSON deserialization");
+    }
 
     /// `ParserKeyValuePair` puts the value in brackets exactly when it is a list of pairs.
     const auto * list = child->as<ASTExpressionList>();
