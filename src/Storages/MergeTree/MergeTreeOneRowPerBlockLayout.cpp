@@ -84,6 +84,35 @@ MergeTreeDataPartChecksum getOneRowPerBlockMarkerChecksum(const String & content
     return MergeTreeDataPartChecksum(hashing.count(), hashing.getHash());
 }
 
+Names getStaleOneRowPerBlockMarkers(const IMergeTreeDataPart & part)
+{
+    NameSet current_markers;
+    for (const auto & column : part.getColumns())
+    {
+        if (!canHaveOneRowPerBlockLayout(column.type))
+            continue;
+
+        const auto data_file_name = getStreamFileName(part, column, ISerialization::Substream::ArrayElements);
+        const auto sizes_file_name = getStreamFileName(part, column, ISerialization::Substream::ArraySizes);
+        if (!data_file_name || !sizes_file_name)
+            continue;
+
+        const auto data_it = part.checksums.files.find(*data_file_name);
+        const auto sizes_it = part.checksums.files.find(*sizes_file_name);
+        if (data_it == part.checksums.files.end() || sizes_it == part.checksums.files.end())
+            continue;
+
+        const String stream_name = data_file_name->substr(0, data_file_name->size() - strlen(DATA_FILE_EXTENSION));
+        current_markers.insert(getOneRowPerBlockMarkerName(stream_name, data_it->second, sizes_it->second));
+    }
+
+    Names stale_markers;
+    for (const auto & [file_name, _] : part.checksums.files)
+        if (file_name.ends_with(ONE_ROW_PER_BLOCK_MARKER_EXTENSION) && !current_markers.contains(file_name))
+            stale_markers.push_back(file_name);
+    return stale_markers;
+}
+
 bool declaredCodecStoresDataVerbatim(const ASTPtr & codec_desc)
 {
     const auto * codec_func = codec_desc ? codec_desc->as<ASTFunction>() : nullptr;

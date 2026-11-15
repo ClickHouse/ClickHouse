@@ -71,6 +71,12 @@ String makeOneRowPerBlockMarker(
 /// The checksum of a marker file with `content`, as recorded in the checksums of the part.
 MergeTreeDataPartChecksum getOneRowPerBlockMarkerChecksum(const String & content);
 
+/// The markers in the checksums of `part` that are not named after its current files of array elements and array sizes.
+/// A mutation that hardlinks files from the source part removes them, so that which markers a part has depends only on its
+/// files, not on the history of mutations that produced them: replicas that execute the same mutations in other batches
+/// must get the same checksums.
+Names getStaleOneRowPerBlockMarkers(const IMergeTreeDataPart & part);
+
 /// Returns the layout of `column` in `part`, or `std::nullopt`, in which case the column must be read with the usual
 /// readers.
 ///

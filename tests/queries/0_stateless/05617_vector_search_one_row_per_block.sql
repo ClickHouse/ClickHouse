@@ -22,6 +22,8 @@ DROP TABLE IF EXISTS tab_adaptive;
 DROP TABLE IF EXISTS tab_merged;
 DROP TABLE IF EXISTS tab_resized;
 DROP TABLE IF EXISTS tab_long_name;
+DROP TABLE IF EXISTS tab_separate_mutations;
+DROP TABLE IF EXISTS tab_combined_mutations;
 DROP TABLE IF EXISTS tab_lz4;
 
 -- 64 `Float32` elements are 256 bytes, so every row is one block.
@@ -230,6 +232,32 @@ SETTINGS min_bytes_for_wide_part = 0, max_file_name_length = 255;
 INSERT INTO tab_long_name SELECT number, arrayMap(j -> toFloat32(number * 100 + j), range(64)) FROM numbers(2000)
 SETTINGS merge_tree_use_one_row_per_block_layout = 0;
 
+-- The records of a part depend only on its files, not on the mutations that produced them: replicas that execute the same
+-- mutations in other batches must get the same checksums. The same two updates, as two mutations and as one.
+CREATE TABLE tab_separate_mutations
+(
+    id UInt32,
+    vec Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0;
+
+CREATE TABLE tab_combined_mutations AS tab_separate_mutations;
+
+INSERT INTO tab_separate_mutations SELECT number, arrayMap(j -> toFloat32(number + j), range(64)) FROM numbers(2000);
+INSERT INTO tab_combined_mutations SELECT number, arrayMap(j -> toFloat32(number + j), range(64)) FROM numbers(2000);
+OPTIMIZE TABLE tab_separate_mutations FINAL;
+OPTIMIZE TABLE tab_combined_mutations FINAL;
+
+ALTER TABLE tab_separate_mutations UPDATE vec = arrayMap(v -> v + 1, vec) WHERE 1 SETTINGS mutations_sync = 2;
+ALTER TABLE tab_separate_mutations UPDATE vec = arrayMap(v -> v + 1, vec) WHERE 1 SETTINGS mutations_sync = 2;
+ALTER TABLE tab_combined_mutations UPDATE vec = arrayMap(v -> v + 1, vec) WHERE 1, UPDATE vec = arrayMap(v -> v + 1, vec) WHERE 1
+SETTINGS mutations_sync = 2;
+
+SELECT 'same files after separate and combined mutations',
+    (SELECT arraySort(groupArray(hash_of_all_files)) FROM system.parts WHERE database = currentDatabase() AND table = 'tab_separate_mutations' AND active)
+    = (SELECT arraySort(groupArray(hash_of_all_files)) FROM system.parts WHERE database = currentDatabase() AND table = 'tab_combined_mutations' AND active);
+
 SELECT 'long column name, setting on';
 SELECT id, vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv[1] FROM tab_long_name ORDER BY sipHash64(id) LIMIT 5
 SETTINGS merge_tree_use_one_row_per_block_layout = 1, log_comment = '05617_long_name_on';
@@ -279,4 +307,6 @@ DROP TABLE tab_adaptive;
 DROP TABLE tab_merged;
 DROP TABLE tab_resized;
 DROP TABLE tab_long_name;
+DROP TABLE tab_separate_mutations;
+DROP TABLE tab_combined_mutations;
 DROP TABLE tab_lz4;
