@@ -526,6 +526,24 @@ bool RegexpMaskedTokenizer::nextInString(const char * data, size_t length, size_
     return found;
 }
 
+void RegexpMaskedTokenizer::stringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens) const
+{
+    forEachSpan(data, length, [&](const TokenSpan & span)
+    {
+        tokens.emplace_back(data + span.offset, span.length);
+        return false;
+    });
+}
+
+void RegexpMaskedTokenizer::stringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const
+{
+    forEachSpan(data, length, [&](const TokenSpan & span)
+    {
+        bloom_filter.add(data + span.offset, span.length);
+        return false;
+    });
+}
+
 bool RegexpMaskedTokenizer::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t & /*pos*/, String & /*token*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RegexpMaskedTokenizer::nextInStringLike is not implemented");

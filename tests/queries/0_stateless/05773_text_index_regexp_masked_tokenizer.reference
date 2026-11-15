@@ -7,6 +7,7 @@ tokens
 ['user','alice','session','sess_9f2c1a7b3d4e5f60','took','1.5GB']
 ['a','10.0.0.1','b','c']
 []
+1	1
 Rejected definitions
 Index with all built-in masks
 [1,9]

@@ -743,8 +743,13 @@ struct RegexpMaskedTokenizer final : public ITokenizerHelper<RegexpMaskedTokeniz
     /// Canonical: equal descriptions mean equal tokenizers, and the description is parseable by `TokenizerFactory`.
     String getDescription() const override;
 
+    /// Scans from `pos` anew on each call, so a loop over it can be quadratic: use `forEachSpan` or the methods below.
     bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
+
+    /// One `forEachSpan` pass each, which keeps the scan state of the masks between tokens (unlike `nextInString`).
+    void stringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens) const override;
+    void stringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const override;
 
     /// A mask match depends on the text outside of a `LIKE` fragment, so fragments cannot be tokenized.
     bool supportsStringLike() const override { return false; }

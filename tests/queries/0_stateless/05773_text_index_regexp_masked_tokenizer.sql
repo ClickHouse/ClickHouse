@@ -15,6 +15,8 @@ SELECT tokens('[04/Nov/2026:10:15:30 +0000] read /var/lib/clickhouse/x.bin, 0x7f
 SELECT tokens('user=alice session=sess_9f2c1a7b3d4e5f60 took 1.5GB', 'regexpMasked(custom_masks = [''sess_[0-9a-f]{16}''])');
 SELECT tokens('a, 10.0.0.1, b c', 'regexpMasked(splitByString(['', '', '' '']))');
 SELECT tokens('', 'regexpMasked');
+-- A long needle whose every token starts a would-be path: tokenizing it must stay linear.
+SELECT hasAllTokens('a', repeat('a.', 100000), 'regexpMasked'), hasAnyTokens('b', repeat('a.', 100000) || '/b/', 'regexpMasked');
 
 SELECT 'Rejected definitions';
 

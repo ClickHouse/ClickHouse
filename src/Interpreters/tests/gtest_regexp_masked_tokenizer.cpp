@@ -1,3 +1,4 @@
+#include <Interpreters/BloomFilter.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
 #include <Interpreters/TokenMasks.h>
@@ -281,9 +282,12 @@ TEST(RegexpMaskedTokenizer, Properties)
             for (const auto & span : spans)
                 tokens.emplace_back(input.substr(span.offset, span.length));
 
-            /// The three ways to get the tokens agree.
+            /// The ways to get the tokens agree.
             EXPECT_EQ(getTokens(masked, input), tokens);
             EXPECT_EQ(getTokensWithNextInString(masked, input), tokens);
+            VectorWithMemoryTracking<String> string_tokens;
+            tokenizer->stringToTokens(input.data(), input.size(), string_tokens);
+            EXPECT_EQ(std::vector<String>(string_tokens.begin(), string_tokens.end()), tokens);
 
             /// Without masks, the tokens are the base tokens.
             if (no_masks)
@@ -561,5 +565,15 @@ TEST(RegexpMaskedTokenizer, LinearTime)
         size_t count = 0;
         masked.forEachSpan(input.data(), input.size(), [&](const TokenSpan &) { ++count; return false; });
         EXPECT_EQ(count, expected_count);
+
+        /// The entry points used for needles (`hasAllTokens`, `hasPhrase`, index conditions), through the interface.
+        const ITokenizer & tokenizer_interface = *tokenizer;
+        VectorWithMemoryTracking<String> tokens;
+        tokenizer_interface.stringToTokens(input.data(), input.size(), tokens);
+        EXPECT_EQ(tokens.size(), expected_count);
+
+        BloomFilter bloom_filter(BloomFilterParameters(1024, 3, 0));
+        tokenizer_interface.stringToBloomFilter(input.data(), input.size(), bloom_filter);
+        EXPECT_TRUE(bloom_filter.find("a", 1));
     }
 }
