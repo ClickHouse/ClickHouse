@@ -424,7 +424,7 @@ See the settings tab in the Cloud console for a list of all service sizes.
     DECLARE(UInt64, max_threads_min_free_memory_per_thread, 1_GiB, R"(
 Lowers `max_threads` when the server is under memory pressure, to avoid starting highly-parallel queries that are likely to hit the memory limit.
 
-Free memory is computed as the server's `max_server_memory_usage` minus the memory currently tracked by the global memory tracker. If that free memory is less than `max_threads` multiplied by this value, `max_threads` is reduced to the largest N such that `N * value <= free_memory`, with a minimum of `1`.
+Free memory is computed as the server's `max_server_memory_usage` minus the memory currently tracked by the global memory tracker. If that free memory is less than `max_threads` multiplied by this value, `max_threads` is reduced to the largest N such that `N * value <= free_memory`, with a minimum of `1`. Free memory is taken once per query, when its plan is built, so that all parts of the query are planned with the same number of threads.
 
 Set to `0` to disable this limit.
 
@@ -449,6 +449,8 @@ Respect the server's concurrency control (see the `concurrent_threads_soft_limit
 Choose the parallelism of a query (the number of streams and threads it is planned with) from the fair share of CPU slots of the server's concurrency control, instead of the number of CPU cores. The fair share is the slot limit (see the `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores` global server settings) divided evenly between the currently running pipelines and the new query.
 
 This way, when many queries run concurrently, each of them is planned with fewer streams: it uses less memory and spends less CPU on merging the partial results of its threads (e.g. aggregation states), which increases the total throughput. A query that is planned while the server is idle uses all CPU cores as before.
+
+The fair share is taken once per query, when its plan is built, so that all parts of the query (subqueries, sets, joined tables) are planned with the same number of streams.
 
 It only applies if `max_threads` is `auto` (not set explicitly) and `use_concurrency_control` is enabled.
 )", 0, \
@@ -1023,6 +1025,12 @@ Expired time for HSTS. 0 means disable HSTS.
 Whether to count extreme values (the minimums and maximums in columns of a query result). Accepts 0 or 1. By default, 0 (disabled).
 For more information, see the section "Extreme values".
 )", IMPORTANT) \
+    DECLARE(Bool, use_lz4_library_decompression, false, R"(
+Use the upstream `LZ4` library to decompress native ClickHouse blocks, including data compressed with `LZ4HC` or a codec chain containing `LZ4`.
+Disabled by default: ClickHouse's adaptive `LZ4` decoder is used. Both decoders read the same stored data; changing this setting does not require rewriting data parts.
+The setting applies to decompression performed in the query's context. Outside a query, the global context's setting is used, or ClickHouse's decoder if no context exists.
+)", 0, \
+        {"26.11", false, false, "New setting: optionally use the upstream `LZ4` library decoder instead of ClickHouse's adaptive decoder."}) \
     DECLARE(Bool, use_uncompressed_cache, false, R"(
 Whether to use a cache of uncompressed blocks. Accepts 0 or 1. By default, 0 (disabled).
 Using the uncompressed cache (only for tables in the MergeTree family) can significantly reduce latency and increase throughput when working with a large number of short queries. Enable this setting for users who send frequent short requests. Also pay attention to the [uncompressed_cache_size](/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
@@ -12779,14 +12787,14 @@ NameToNameMap readQueryParameters(ReadBuffer & in)
     return parameters;
 }
 
-void Settings::write(WriteBuffer & out, SettingsWriteFormat format) const
+void Settings::write(WriteBuffer & out) const
 {
-    impl->write(out, format);
+    impl->write(out);
 }
 
-void Settings::read(ReadBuffer & in, SettingsWriteFormat format)
+void Settings::read(ReadBuffer & in)
 {
-    impl->read(in, format);
+    impl->read(in);
 }
 
 void Settings::writeEmpty(WriteBuffer & out)

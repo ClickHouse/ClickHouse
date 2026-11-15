@@ -162,8 +162,9 @@ InterpreterInsertQuery::InterpreterInsertQuery(
     }
 
     const Settings & settings = getContext()->getSettingsRef();
-    max_threads = getEffectiveMaxThreads(settings);
-    max_insert_threads = getMaxThreadsForAvailableMemory(
+    max_threads = getEffectiveMaxThreads(*getContext());
+    max_insert_threads = limitThreadsByFreeMemory(
+        *getContext(),
         std::min(std::max<size_t>(1, settings[Setting::max_insert_threads]), max_threads),
         settings[Setting::max_insert_threads_min_free_memory_per_thread]);
 }
