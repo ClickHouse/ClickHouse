@@ -1,0 +1,79 @@
+3
+=== local
+--- identity_scalar
+1	x
+3	z
+--- identity_tuple
+1	x
+3	z
+--- bucket_expr
+1	apple
+3	cherry
+--- truncate_literal
+2	apricot
+3	banana
+4	blueberry
+--- truncate_expr
+1	apple
+3	banana
+4	blueberry
+--- year
+3	2025-01-10
+4	2025-12-31
+--- month
+3	2025-02-10
+4	2025-03-15
+--- day
+3	2025-05-02
+4	2025-05-03
+--- hour
+3	2025-05-19 11:00:00.000000
+4	2025-05-19 12:00:00.000000
+--- multi_column
+1	banana	p2
+2	apple	p3
+2	banana	p4
+3	cherry	p5
+1	banana	p2
+2	apple	p3
+3	cherry	p5
+--- arity_mismatch
+=== s3
+--- identity_scalar
+1	x
+3	z
+--- identity_tuple
+1	x
+3	z
+--- bucket_expr
+1	apple
+3	cherry
+--- truncate_literal
+2	apricot
+3	banana
+4	blueberry
+--- truncate_expr
+1	apple
+3	banana
+4	blueberry
+--- year
+3	2025-01-10
+4	2025-12-31
+--- month
+3	2025-02-10
+4	2025-03-15
+--- day
+3	2025-05-02
+4	2025-05-03
+--- hour
+3	2025-05-19 11:00:00.000000
+4	2025-05-19 12:00:00.000000
+--- multi_column
+1	banana	p2
+2	apple	p3
+2	banana	p4
+3	cherry	p5
+1	banana	p2
+2	apple	p3
+3	cherry	p5
+--- arity_mismatch

@@ -64,9 +64,9 @@ static String trimAndEscape(std::string_view name, size_t max_length = 128)
     if (name.size() > max_length)
     {
         name = name.substr(0, max_length);
-        return escapeForFileName(std::string(name)) + "...";
+        return escapeForFileName(name) + "...";
     }
-    return escapeForFileName(std::string(name));
+    return escapeForFileName(name);
 }
 
 static UInt256 calculateHash(std::string_view data [[maybe_unused]])

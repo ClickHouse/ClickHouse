@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['filtres IP', 'liste d’accès IP']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <div id="setting-ip-filters">
   ## Configuration des filtres IP
 </div>
@@ -64,7 +62,15 @@ La notation Classless Inter-domain Routing (CIDR) vous permet de définir des pl
 
 Cette capture d’écran montre une liste d’accès qui autorise le trafic provenant d’une plage d’adresses IP, décrite comme « NY Office range » :
 
-<Image img="/images/cloud/security/ip-filtering-after-provisioning.webp" size="md" alt="Liste d’accès existante dans ClickHouse Cloud" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Liste d’accès existante dans ClickHouse Cloud](/images/cloud/security/ip-filtering-after-provisioning.webp)
+
+</Frame>
+
+</div>
 
 <div id="possible-actions">
   ### Actions possibles
@@ -74,7 +80,15 @@ Cette capture d’écran montre une liste d’accès qui autorise le trafic prov
 
 Cet exemple ajoute une seule adresse IP, avec la description `London server` :
 
-<Image img="/images/cloud/security/ip-filter-add-single-ip.webp" size="md" alt="Ajout d’une seule IP à la liste d’accès dans ClickHouse Cloud" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Ajout d’une seule IP à la liste d’accès dans ClickHouse Cloud](/images/cloud/security/ip-filter-add-single-ip.webp)
+
+</Frame>
+
+</div>
 
 2. Supprimer une entrée existante
 
