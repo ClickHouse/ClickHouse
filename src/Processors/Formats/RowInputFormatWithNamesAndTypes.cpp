@@ -362,6 +362,7 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::resetParser()
     column_mapping->not_presented_columns.clear();
     column_mapping->names_of_columns.clear();
     end_of_stream = false;
+    is_header_detected = false;
 }
 
 template <typename FormatReaderImpl>

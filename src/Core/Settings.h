@@ -5,7 +5,6 @@
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsTierType.h>
-#include <Core/SettingsWriteFormat.h>
 #include <base/types.h>
 #include <Common/FlatStringMap.h>
 #include <Common/SettingsChanges.h>
@@ -207,9 +206,9 @@ struct Settings
     void dumpToMapColumn(IColumn * column, bool changed_only, bool show_secrets) const;
     FlatStringMap changedToFlatMap(bool show_secrets) const;
 
-    void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
-    void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT);
-    /// Equivalent to Settings().write(out, <any format>) but faster.
+    void write(WriteBuffer & out) const;
+    void read(ReadBuffer & in);
+    /// Equivalent to Settings().write(out) but faster.
     static void writeEmpty(WriteBuffer & out);
 
     void addToProgramOptions(boost::program_options::options_description & options);
@@ -231,7 +230,7 @@ private:
 };
 
 /// Query parameters are transported as raw (name, value) string pairs using the Custom-setting
-/// wire encoding (SettingsWriteFormat::STRINGS_WITH_FLAGS), but bypassing Settings::set/read and
+/// wire encoding (strings with flags), but bypassing Settings::set/read and
 /// the builtin-setting accessor entirely, so a parameter name colliding with a builtin setting or
 /// alias can never be value-normalized, alias-resolved, or misquoted (issue #85768).
 void writeQueryParameters(const NameToNameMap & parameters, WriteBuffer & out);

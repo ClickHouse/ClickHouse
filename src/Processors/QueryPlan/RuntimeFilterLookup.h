@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/ColumnWithTypeAndName.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Range.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
@@ -470,7 +471,7 @@ struct RuntimeFilterIndexAnalysisDescriptor
     /// `key_column_name` is then only a display name.
     bool is_global_row_index = false;
 };
-using RuntimeFilterIndexAnalysisDescriptors = std::vector<RuntimeFilterIndexAnalysisDescriptor>;
+using RuntimeFilterIndexAnalysisDescriptors = VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor>;
 
 /// The `buildRuntimeRangePredicate` DAG of the JOIN runtime filters every row of a read passes, built once all of them are.
 /// Shared by everything that prunes the read by them: the data files of an Iceberg table and the Parquet row groups.
@@ -508,7 +509,7 @@ bool runtimeFilterKeySupportsMinMaxRange(const DataTypePtr & type);
 /// AND the descriptors into one pruning predicate; nullptr if none (fail-open).
 const ActionsDAG::Node * buildRuntimeRangePredicate(
     const IRuntimeFilterLookup & lookup,
-    const std::vector<RuntimeFilterIndexAnalysisDescriptor> & descriptors,
+    const VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> & descriptors,
     ActionsDAG & dag,
     const ContextPtr & context);
 
