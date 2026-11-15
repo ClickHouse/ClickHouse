@@ -103,6 +103,7 @@ public:
     std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> getMatchedBuckets() const override;
     VectorWithMemoryTracking<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override;
     bool isTopKFilterApplied() const override;
+    bool isJoinRuntimeFilterApplied() const override;
     bool isMinMaxFromStatisticsApplied() const override { return min_max_from_statistics; }
 
     void cacheFilterColumnStatistics() override;
