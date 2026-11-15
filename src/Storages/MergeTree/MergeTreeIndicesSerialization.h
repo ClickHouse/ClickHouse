@@ -41,6 +41,8 @@ struct MergeTreeIndexSubstream
         TextIndexDictionary,
         TextIndexPostings,
         TextIndexPositions,
+        VectorIndexLists,
+        VectorIndexVectors,
     };
 
     Type type;
@@ -53,7 +55,9 @@ struct MergeTreeIndexSubstream
     {
         /// Text index postings and positions are not compressed by write buffer,
         /// because the compression is implicitly applied during building them.
-        return type != Type::TextIndexPostings && type != Type::TextIndexPositions;
+        /// The lists and the vectors of `ivf` are read at byte offsets.
+        return type != Type::TextIndexPostings && type != Type::TextIndexPositions && type != Type::VectorIndexLists
+            && type != Type::VectorIndexVectors;
     }
 };
 

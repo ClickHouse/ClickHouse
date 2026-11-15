@@ -350,6 +350,9 @@ add_contrib (librtcx-cmake librtcx)
 # No base folder: nvcomp is not vendored, see contrib/nvcomp-cmake/CMakeLists.txt.
 add_contrib (nvcomp-cmake)
 add_contrib (cudf-cmake cudf) # requires: everything above, plus flatbuffers, xxHash, zlib, zstd
+add_contrib (raft-cmake raft) # requires: rapids-logger, rmm, cccl
+add_contrib (cutlass-cmake cutlass)
+add_contrib (cuvs-cmake cuvs) # requires: raft, cutlass, cuCollections, kvikio, librtcx, nvtx
 
 # Must come after every member of the Rust workspace.
 add_contrib (rust-contrib-workspace)

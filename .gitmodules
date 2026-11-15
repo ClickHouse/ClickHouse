@@ -481,3 +481,12 @@
 	path = contrib/gdeflate
 	url = https://github.com/ClickHouse/libdeflate.git
 	branch = gdeflate
+[submodule "contrib/cuvs"]
+	path = contrib/cuvs
+	url = https://github.com/rapidsai/cuvs.git
+[submodule "contrib/raft"]
+	path = contrib/raft
+	url = https://github.com/NVIDIA/raft.git
+[submodule "contrib/cutlass"]
+	path = contrib/cutlass
+	url = https://github.com/NVIDIA/cutlass.git

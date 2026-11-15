@@ -1,0 +1,22 @@
+t_L2Distance L2Distance: recall at least 0.9: 1, index used: 1
+t_cosineDistance cosineDistance: recall at least 0.9: 1, index used: 1
+-- The index read back from disk
+t_L2Distance L2Distance: recall at least 0.9: 1, index used: 1
+-- The index built anew by a merge of two parts
+1
+t_merged L2Distance: recall at least 0.9: 1, index used: 1
+-- All lists probed: the search is exact
+1
+-- vectorSearch: all the queries at once, against an exact search of each
+t_L2Distance	1	1
+t_merged	1	1
+-- Invalid arguments
+INCORRECT_QUERY
+INCORRECT_QUERY
+INCORRECT_DATA
+INCORRECT_DATA
+-- vectorSearch needs an index of the method 'ivf'
+BAD_ARGUMENTS
+-- The experimental setting
+SUPPORT_IS_DISABLED
+SUPPORT_IS_DISABLED

@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
+#include <Storages/MergeTree/MergeTreeIndexVectorSimilarityIvf.h>
 
 #if USE_USEARCH
 
@@ -671,6 +672,10 @@ MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(
 MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
+#if USE_GPU
+    if (args[0].safeGet<String>() == "ivf")
+        return ivfIndexCreator(std::move(metadata_snapshot), index, args);
+#endif
     UInt64 dimensions = args[2].safeGet<UInt64>();
 
     /// Default parameters:
@@ -697,6 +702,13 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snaps
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* attach */, const MergeTreeSettings & /*settings*/)
 {
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
+#if USE_GPU
+    if (!args.empty() && args[0].getType() == Field::Types::String && args[0].safeGet<String>() == "ivf")
+    {
+        ivfIndexValidator(index, args);
+        return;
+    }
+#endif
     const bool has_three_args = (args.size() == 3);
     const bool has_six_args = (args.size() == 6);
 
