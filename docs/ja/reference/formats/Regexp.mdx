@@ -23,13 +23,13 @@ doc_type: 'reference'
 
 **使用方法**
 
-[format&#95;regexp](/ja/reference/settings/formats#format_regexp) 設定で指定した正規表現が、インポートされたデータの各行に適用されます。正規表現内のサブパターン数は、インポートするデータセットのカラム数と一致している必要があります。
+[format&#95;regexp](/ja/reference/settings/formats/format-regexp#format_regexp) 設定で指定した正規表現が、インポートされたデータの各行に適用されます。正規表現内のサブパターン数は、インポートするデータセットのカラム数と一致している必要があります。
 
 インポートされたデータの各行は、改行文字 `'\n'` または DOS 形式の改行 `"\r\n"` で区切られている必要があります。
 
-一致した各サブパターンの内容は、[format&#95;regexp&#95;escaping&#95;rule](/ja/reference/settings/formats#format_regexp_escaping_rule) 設定に従って、対応するデータ型のメソッドで解析されます。
+一致した各サブパターンの内容は、[format&#95;regexp&#95;escaping&#95;rule](/ja/reference/settings/formats/format-regexp#format_regexp_escaping_rule) 設定に従って、対応するデータ型のメソッドで解析されます。
 
-正規表現が行に一致せず、かつ [format&#95;regexp&#95;skip&#95;unmatched](/ja/reference/settings/formats#format_regexp_escaping_rule) が 1 に設定されている場合、その行は黙ってスキップされます。それ以外の場合は、例外がスローされます。
+正規表現が行に一致せず、かつ [format&#95;regexp&#95;skip&#95;unmatched](/ja/reference/settings/formats/format-regexp#format_regexp_skip_unmatched) が 1 に設定されている場合、その行は黙ってスキップされます。それ以外の場合は、例外がスローされます。
 
 <div id="example-usage">
   ## 使用例

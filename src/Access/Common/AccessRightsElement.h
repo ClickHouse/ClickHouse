@@ -55,9 +55,10 @@ struct AccessRightsElement
     bool anyParameter() const { return parameter.empty(); }
     bool hasFilter() const { return !filter.empty(); }
 
-    auto toTuple() const { return std::tie(access_flags, default_database, database, table, columns, parameter, wildcard, grant_option, is_partial_revoke); }
+    auto toTuple() const { return std::tie(access_flags, default_database, database, table, columns, parameter, filter, wildcard, grant_option, is_partial_revoke); }
     friend bool operator==(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() == right.toTuple(); }
     friend bool operator!=(const AccessRightsElement & left, const AccessRightsElement & right) { return !(left == right); }
+    friend bool operator<(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() < right.toTuple(); }
 
     bool sameDatabaseAndTableAndParameter(const AccessRightsElement & other) const
     {
@@ -113,7 +114,13 @@ struct AccessRightsElement
 
     void formatColumnNames(WriteBuffer & buffer) const;
     void formatFilter(WriteBuffer & buffer) const;
-    void formatONClause(WriteBuffer & buffer) const;
+
+    /// When `precise` is set, the backward-compatibility rewrites that widen a grant for the benefit of
+    /// older replicas (`USER_NAME` scopes collapsed to `*.*`, `READ`/`WRITE` sources folded into `SOURCES`)
+    /// are bypassed, so the element is rendered exactly. This is required for per-authentication-method
+    /// `GRANTS` clauses, where widening would break the fail-close contract, and where the rewrites bring no
+    /// compatibility benefit anyway because older replicas do not understand the clause at all.
+    void formatONClause(WriteBuffer & buffer, bool precise = false) const;
 };
 
 
@@ -125,6 +132,11 @@ public:
     using Base::Base;
 
     bool empty() const;
+
+    /// Whether the list literally contains no elements. This differs from empty(), which is semantic
+    /// and also returns true when the elements grant no access (e.g. a single `USAGE ON *.*`). Use this
+    /// to tell "no clause was written" apart from "the clause was written but grants nothing".
+    bool structurallyEmpty() const { return Base::empty(); }
     bool sameDatabaseAndTableAndParameter() const;
     bool sameDatabaseAndTable() const;
     bool sameOptions() const;
@@ -147,7 +159,17 @@ public:
     /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
     String toString() const;
     String toStringWithoutOptions() const;
-    void formatElementsWithoutOptions(WriteBuffer & buffer) const;
+
+    /// See `AccessRightsElement::formatONClause`: `precise` bypasses the backward-compatibility widening,
+    /// which is mandatory for per-authentication-method `GRANTS` clauses.
+    void formatElementsWithoutOptions(WriteBuffer & buffer, bool precise = false) const;
+
+    /// Precise serialization without the backward-compatibility widening, matching `SHOW CREATE USER` and
+    /// `system.users.auth_grants`. Use this (never `toString`) to derive a stable identity for an
+    /// auth-method `GRANTS` limit — e.g. as part of the async-insert queue key or the query-result-cache
+    /// key — because the widening in `toString`/`toStringWithoutOptions` collapses distinct source-level
+    /// limits such as `READ ON FILE` and `WRITE ON FILE` into one under `enable_read_write_grants = 0`.
+    String toStringPrecise() const;
 };
 
 }

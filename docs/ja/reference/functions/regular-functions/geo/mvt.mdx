@@ -23,7 +23,7 @@ doc_type: 'reference'
 `WHERE` 句でその範囲内に絞り込み、索引を使用できます。
 
 Point、line、polygon のジオメトリがサポートされており、`Geometry` 型と具体的な Geo 型 (`Point`,
-`LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`) も含まれます。
+`MultiPoint`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`) も含まれます。
 
 結果として得られるバイト列は完全なタイルであり、`FORMAT RawBLOB` を使って HTTPインターフェイス 経由で直接返すことができます。
 
@@ -51,7 +51,7 @@ Polygon の座標は、検証前に `2^30` の window に制限されます。�
 世界全体のピクセル幅にちょうど相当します。そのため、現実的なタイルではジオメトリは検証されますがクリップされることはなく、
 この制限が影響するのは `zoom` または `extent` が極端な値の場合だけです。
 
-出力ジオメトリの型は入力に応じて決まります。`Point` は `Point` を返します。`LineString` または `MultiLineString` は
+出力ジオメトリの型は入力に応じて決まります。`Point` は `Point` を返します。`MultiPoint` は `MultiPoint` を返します。`LineString` または `MultiLineString` は
 `MultiLineString` を返します。`Ring`、`Polygon`、`MultiPolygon` は `MultiPolygon` を返します (クリッピングによりジオメトリが
 複数のパーツに分割される場合があります) 。
 
@@ -63,7 +63,7 @@ MVTEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]])
 
 **引数**
 
-* `geometry` — 経度/緯度 (度単位) の Geometry。経度は `[-180, 180]` に、緯度は Web Mercator の範囲 `[-85.05112878, 85.05112878]` に収まるように丸められます。[`Point`](/ja/reference/data-types/geo) / [`LineString`](/ja/reference/data-types/geo) / [`MultiLineString`](/ja/reference/data-types/geo) / [`Ring`](/ja/reference/data-types/geo) / [`Polygon`](/ja/reference/data-types/geo) / [`MultiPolygon`](/ja/reference/data-types/geo) / [`Geometry`](/ja/reference/data-types/geo)。
+* `geometry` — 経度/緯度 (度単位) の Geometry。経度は `[-180, 180]` に、緯度は Web Mercator の範囲 `[-85.05112878, 85.05112878]` に収まるように丸められます。[`Point`](/ja/reference/data-types/geo) / [`MultiPoint`](/ja/reference/data-types/geo) / [`LineString`](/ja/reference/data-types/geo) / [`MultiLineString`](/ja/reference/data-types/geo) / [`Ring`](/ja/reference/data-types/geo) / [`Polygon`](/ja/reference/data-types/geo) / [`MultiPolygon`](/ja/reference/data-types/geo) / [`Geometry`](/ja/reference/data-types/geo)。
 * `zoom` — Slippy-map のズームレベル。範囲は `[0, 32]` です。[`UInt8`](/ja/reference/data-types/int-uint)。
 * `tile_x` — タイルの列インデックス。範囲は `[0, 2^zoom - 1]` です。[`UInt32`](/ja/reference/data-types/int-uint)。
 * `tile_y` — タイルの行インデックス。範囲は `[0, 2^zoom - 1]` です。[`UInt32`](/ja/reference/data-types/int-uint)。

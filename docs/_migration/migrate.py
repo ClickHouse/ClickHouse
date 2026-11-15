@@ -910,6 +910,13 @@ def transform_imports(text: str, lk: Lookups, issues: list[str], source_docu_pat
             return ""
         return f"import {spec} from '{target_url}';"
 
+    def _named_badge_spec(spec: str, exported_name: str) -> str:
+        if not re.fullmatch(r"\w+", spec):
+            return spec
+        if spec == exported_name:
+            return f"{{ {exported_name} }}"
+        return f"{{ {exported_name} as {spec} }}"
+
     def replace(m: re.Match) -> str:
         spec = m.group("spec").strip()
         src = m.group("src")
@@ -1021,17 +1028,25 @@ def transform_imports(text: str, lk: Lookups, issues: list[str], source_docu_pat
                 folder = THIS_REPO / "snippets" / "components" / n / f"{n}.jsx"
                 flat = THIS_REPO / "snippets" / "components" / f"{n}.jsx"
                 mintlify_spec = spec
-                if "/badges/" in src and re.fullmatch(r"\w+", spec):
+                if "/badges/" in src:
                     # Mintlify's MDX compiler requires page badges to use their
                     # named exports. A default import can render the badge and
                     # silently omit every sibling that follows it.
-                    mintlify_spec = f"{{ {n} }}" if spec == n else f"{{ {n} as {spec} }}"
+                    mintlify_spec = _named_badge_spec(spec, n)
                 if folder.exists():
                     return f'import {mintlify_spec} from "/snippets/components/{n}/{n}.jsx";'
                 if flat.exists():
                     return f'import {mintlify_spec} from "/snippets/components/{n}.jsx";'
             issues.append(f"unmapped @theme import: {src}")
             return f"{{/* MIGRATE: unmapped import {src!r} */}}"
+
+        # Structured documentation already uses the migrated snippet path, so
+        # it bypasses the @theme rewrite above. Normalize those badge imports
+        # too, otherwise each docs regeneration changes them back to default
+        # imports and silently hides the content following the badge.
+        if src.startswith("/snippets/components/") and src.endswith("Badge.jsx"):
+            exported_name = Path(src).stem
+            return f'import {_named_badge_spec(spec, exported_name)} from "{src}";'
 
         # @site/src/components/<...>/<Name>  -> /snippets/components/<Name>/<Name>.jsx
         # @site/src/theme/<...>/<Name>       -> same lookup pattern (mirrors @theme/<Name>)
@@ -1923,6 +1938,11 @@ def rewrite_links(text: str, source_docu_file: str | None, lk: Lookups, issues: 
         line_prefix = text[line_start:idx].lstrip()
         return line_prefix.startswith("[//]:")
 
+    fenced_spans: list[tuple[int, int]] = []
+
+    def is_fenced_at(idx: int) -> bool:
+        return any(start <= idx < end for start, end in fenced_spans)
+
     def rewrite_one(href: str) -> str:
         # Strip stale MIGRATE markers and any trailing markdown title attribute.
         href = marker_re.sub("", href)
@@ -1982,7 +2002,7 @@ def rewrite_links(text: str, source_docu_file: str | None, lk: Lookups, issues: 
         return rewritten, None
 
     def md_repl(m):
-        if is_comment_line_at(m.start()):
+        if is_comment_line_at(m.start()) or is_fenced_at(m.start()):
             return m.group(0)
         href, marker = _split_marker(rewrite_one(m.group("href")))
         link = f"[{m.group('text')}]({href})"
@@ -1991,7 +2011,7 @@ def rewrite_links(text: str, source_docu_file: str | None, lk: Lookups, issues: 
         return link
 
     def html_repl(m):
-        if is_comment_line_at(m.start()):
+        if is_comment_line_at(m.start()) or is_fenced_at(m.start()):
             return m.group(0)
         href, marker = _split_marker(rewrite_one(m.group(2)))
         attr = f'{m.group(1)}"{href}"'
@@ -1999,7 +2019,9 @@ def rewrite_links(text: str, source_docu_file: str | None, lk: Lookups, issues: 
             attr += f"{{/* MIGRATE: {marker} */}}"
         return attr
 
+    fenced_spans = _fenced_spans(text)
     text = LINK_RE.sub(md_repl, text)
+    fenced_spans = _fenced_spans(text)
     text = HREF_ATTR_RE.sub(html_repl, text)
     # Markdown reference-style link definitions: `[label]: <url>` or
     # `[label]: url` at the start of a line. Skip the special `[//]: # `
@@ -2009,13 +2031,14 @@ def rewrite_links(text: str, source_docu_file: str | None, lk: Lookups, issues: 
         re.MULTILINE,
     )
     def ref_repl(m):
-        if m.group("label").strip() == "//":
+        if m.group("label").strip() == "//" or is_fenced_at(m.start()):
             return m.group(0)
         href, marker = _split_marker(rewrite_one(m.group("href")))
         line = f'{m.group("indent")}[{m.group("label")}]: {href}'
         if marker:
             line += f"  {{/* MIGRATE: {marker} */}}"
         return line
+    fenced_spans = _fenced_spans(text)
     text = REF_DEF_RE.sub(ref_repl, text)
     # Strip any orphaned MIGRATE markers left outside a link's closing `)` from
     # previous migration runs. These appear as `](url){/* MIGRATE: ... */}...`

@@ -28,8 +28,8 @@ keywords: ['compact parts', 'wide parts', 'full storage', 'packed storage', 'par
 
 يُحدَّد نوع الجزء بواسطة إعدادات الجدول التالية:
 
-* [`min_bytes_for_wide_part`](/ar/reference/settings/merge-tree-settings#min_bytes_for_wide_part): الحد الأدنى لعدد البايتات اللازم لكي يستخدم الجزء تنسيق Wide
-* [`min_rows_for_wide_part`](/ar/reference/settings/merge-tree-settings#min_rows_for_wide_part): الحد الأدنى لعدد الصفوف اللازم لكي يستخدم الجزء تنسيق Wide
+* [`min_bytes_for_wide_part`](/ar/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part): الحد الأدنى لعدد البايتات اللازم لكي يستخدم الجزء تنسيق Wide
+* [`min_rows_for_wide_part`](/ar/reference/settings/merge-tree-settings/min-rows#min_rows_for_wide_part): الحد الأدنى لعدد الصفوف اللازم لكي يستخدم الجزء تنسيق Wide
 
 إذا كان عدد البايتات أو الصفوف في جزء البيانات أقل من قيمة الإعداد المقابل، فسيُخزَّن الجزء بتنسيق `Compact`؛ وإلا فسيستخدم تنسيق `Wide`.
 
@@ -71,10 +71,10 @@ keywords: ['compact parts', 'wide parts', 'full storage', 'packed storage', 'par
 
 تحدد تنسيقات التخزين كيفية تخزين ملفات الجزء فعليًا على القرص.
 
-| التنسيق    | الوصف                                  | التوفّر             |
-| ---------- | -------------------------------------- | ------------------- |
-| **Full**   | يُخزَّن كل ملف على حدة داخل دليل الجزء | مفتوح المصدر وCloud |
-| **Packed** | تُجمَّع جميع الملفات في ملف أرشيف واحد | مفتوح المصدر وCloud |
+| التنسيق    | الوصف                                                                                       | التوفّر             |
+| ---------- | ------------------------------------------------------------------------------------------- | ------------------- |
+| **Full**   | يُخزَّن كل ملف على حدة داخل دليل الجزء                                                      | مفتوح المصدر وCloud |
+| **Packed** | تُجمَّع معظم ملفات الجزء في ملف أرشيف واحد (تُكتب إسقاط وبعض ملفات الخدمة بشكل منفصل) | مفتوح المصدر وCloud |
 
 <div id="full-storage">
   ### التخزين الكامل
@@ -86,7 +86,7 @@ keywords: ['compact parts', 'wide parts', 'full storage', 'packed storage', 'par
   ### التخزين بنمط Packed
 </div>
 
-في التخزين بنمط Packed، تُجمَّع جميع ملفات الأجزاء في أرشيف واحد. ويؤدي ذلك إلى تقليل عدد عمليات الملفات بشكل كبير، وهو أمر بالغ الأهمية في التخزين البعيد مثل S3، حيث يرتبط بكل طلب زمن انتقال وتكلفة.
+في التخزين بنمط Packed، تُجمَّع معظم ملفات الأجزاء في أرشيف واحد. وتظل الإسقاطات وعدد قليل من ملفات الخدمة - `txn_version.txt` و`delete-on-destroy.txt` و`invalidated_system_columns.txt` - مكتوبة بشكل منفصل، لأنه يمكن إنشاؤها أو إعادة كتابتها بعد كتابة الجزء نفسه. ويؤدي ذلك إلى تقليل عدد عمليات الملفات بشكل كبير، وهو أمر بالغ الأهمية في التخزين البعيد مثل S3، حيث يرتبط بكل طلب زمن انتقال وتكلفة.
 
 **فوائد التخزين بنمط Packed:**
 
@@ -96,21 +96,21 @@ keywords: ['compact parts', 'wide parts', 'full storage', 'packed storage', 'par
 * أداء أفضل للأجزاء الصغيرة في التخزين البعيد
 
 <div id="when-packed-storage-is-used">
-  ### عند استخدام تخزين Packed
+  ### عند استخدام التخزين بنمط Packed
 </div>
 
-يستخدم الجزء تخزين Packed إذا تحقق **أي** من هذه الشروط:
+يستخدم الجزء التخزين بنمط Packed إذا تحقق **أي** من هذه الشروط:
 
-* البايتات غير المضغوطة &lt; [`min_bytes_for_full_part_storage`](/ar/reference/settings/merge-tree-settings#min_bytes_for_full_part_storage)
-* عدد الصفوف &lt; [`min_rows_for_full_part_storage`](/ar/reference/settings/merge-tree-settings#min_rows_for_full_part_storage)
-* مستوى الدمج &lt; [`min_level_for_full_part_storage`](/ar/reference/settings/merge-tree-settings#min_level_for_full_part_storage)
+* البايتات غير المضغوطة &lt; [`min_bytes_for_full_part_storage`](/ar/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_full_part_storage)
+* عدد الصفوف &lt; [`min_rows_for_full_part_storage`](/ar/reference/settings/merge-tree-settings/min-rows#min_rows_for_full_part_storage)
+* مستوى الدمج &lt; [`min_level_for_full_part_storage`](/ar/reference/settings/merge-tree-settings/min-level#min_level_for_full_part_storage)
 
-تخزين Packed اختياري: فجميع الإعدادات الثلاثة قيمتها الافتراضية هي `0`، لذا تستخدم الأجزاء التخزين الكامل ما لم ترفع قيمة أحدها.
+التخزين بنمط Packed اختياري: فجميع الإعدادات الثلاثة قيمتها الافتراضية هي `0`، لذا تستخدم الأجزاء التخزين الكامل ما لم ترفع قيمة أحدها.
 
 <Info>
   **التوافق مع الرجوع إلى إصدار أقدم**
 
-  بمجرد كتابة جزء باستخدام تخزين Packed، لن تعود إصدارات ClickHouse التي لا تدعم تخزين Packed قادرة على قراءته. لذلك، فإن تمكين تخزين Packed يمنع الرجوع إلى مثل هذا الإصدار، لذا لا تفعّله إلا عندما تكون واثقًا من أنك لن تحتاج إلى التراجع.
+  بمجرد كتابة جزء باستخدام التخزين بنمط Packed، لن تعود إصدارات ClickHouse التي لا تدعم التخزين بنمط Packed قادرة على قراءته. لذلك، فإن تمكين التخزين بنمط Packed يمنع الرجوع إلى مثل هذا الإصدار، لذا لا تفعّله إلا عندما تكون واثقًا من أنك لن تحتاج إلى التراجع.
 </Info>
 
 يمكن استخدام الإعداد `min_level_for_full_part_storage` لتحسين الأداء والتكلفة معًا على مستوى تخزين الكائنات، ولا سيما للجداول التي تتلقى عمليات إدراج مستمرة.
@@ -120,15 +120,15 @@ keywords: ['compact parts', 'wide parts', 'full storage', 'packed storage', 'par
 
 * عندما تتلقى الجداول إدخالًا منتظمًا للبيانات، تُدمج الأجزاء الأولية سريعًا، ما يجعل تخزينها بصيغة الجزء الكامل منذ البداية أمرًا غير مجدٍ
 * يمنع ضبط هذه المعلمة طلبات S3 PUT المكلفة أثناء عمليات الإدراج. فعلى سبيل المثال، أظهر أحد التحليلات أن عمليات الإدراج التي تُنشئ أجزاء كاملة بلغ متوسطها 31.3 طلب PUT لكل عملية إدراج، بينما بلغ متوسط تلك التي تُنشئ أجزاء Packed فقط 2.22 طلب PUT لكل عملية إدراج
-* تصبح عمليات الإدراج أسرع، خاصةً في الجداول التي تحتوي على عدد كبير من الأعمدة، لأن تخزين Packed يكتب جميع البيانات في ملف واحد بدلًا من إنشاء ملفات منفصلة لكل عمود.
+* تصبح عمليات الإدراج أسرع، خاصةً في الجداول التي تحتوي على عدد كبير من الأعمدة، لأن التخزين بنمط Packed يكتب جميع البيانات في ملف واحد بدلًا من إنشاء ملفات منفصلة لكل عمود.
 
 التكوين الموصى به:
 
 اضبط `min_level_for_full_part_storage = 2` لعمليات النشر التي تستخدم تخزين الكائنات.
 وهذا يضمن ما يلي:
 
-* تستخدم الأجزاء ذات المستوى 0 (عمليات الإدراج الأولية) تخزين Packed
-* تواصل الأجزاء ذات المستوى 1 استخدام تخزين Packed
+* تستخدم الأجزاء ذات المستوى 0 (عمليات الإدراج الأولية) التخزين بنمط Packed
+* تواصل الأجزاء ذات المستوى 1 استخدام التخزين بنمط Packed
 * لا تستخدم صيغة التخزين الكامل إلا الأجزاء عند المستوى 2 وما فوق
 
 <Tip>
@@ -153,6 +153,10 @@ keywords: ['compact parts', 'wide parts', 'full storage', 'packed storage', 'par
 </div>
 
 يمكنك التحقق من نوع الجزء ونوع تخزينه للأجزاء الموجودة باستخدام جدول [`system.parts`](/ar/reference/system-tables/parts):
+
+<Note>
+  في ClickHouse مفتوح المصدر، يُتاح `part_storage_type` بواسطة `system.parts` بدءًا من الإصدار 26.9. في الإصدار 26.8 والإصدارات الأقدم، احذف `part_storage_type` من الاستعلام، واجمع ورتّب حسب `part_type` فقط.
+</Note>
 
 ```sql
 SELECT

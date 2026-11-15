@@ -52,5 +52,4 @@ export const VersionHistory = ({ rows = [] }) => {
     </details>
   );
 };
-
 export default VersionHistory;

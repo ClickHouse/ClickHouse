@@ -15,7 +15,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -35,16 +34,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto * arg = arguments[0].get();
-        if (!WhichDataType(arg).isUInt64())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(), 1, getName());
-
-        return std::make_shared<DataTypeUInt8>();
+        return "(UInt64) -> UInt8";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -113,7 +105,7 @@ Verifies whether the number is a valid [H3](https://h3geo.org/docs/core-library/
         },
         {
             "Check invalid H3 index",
-            "SELECT h3IsValid(12345) AS isValid",
+            "SELECT h3IsValid(toUInt64(12345)) AS isValid",
             R"(
 ┌─isValid─┐
 │       0 │

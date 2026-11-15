@@ -169,7 +169,7 @@ void registerInputFormatForm(FormatFactory & factory)
         const FormatSettings & settings)
     {
         return std::make_shared<FormRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params),settings);
-    });
+    }, /*supports_reset_parser=*/ true);
 
     factory.setDocumentation("Form", Documentation{
         .description = R"DOCS_MD(
@@ -214,6 +214,11 @@ void registerFormSchemaReader(FormatFactory & factory)
     factory.registerSchemaReader("Form", [](ReadBuffer & buffer, const FormatSettings & settings)
     {
         return std::make_shared<FormSchemaReader>(buffer, settings);
+    });
+    factory.registerAdditionalInfoForSchemaCacheGetter("Form", [](const FormatSettings & settings)
+    {
+        /// Raw matches the rule readRowAndGetNamesAndDataTypesForFormRow infers with.
+        return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::Raw);
     });
 }
 
