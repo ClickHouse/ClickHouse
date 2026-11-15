@@ -1988,17 +1988,23 @@ void restoreEmptyGroupDefaultForScalarSubquery(
     const auto & result_node = dag.findInOutputs(correlated_subquery.action_node_name);
     auto result_type = result_node.result_type;
 
-    /// Wrapped in the result's Nullable type so ifNull keeps the declared Nullable(T) result type the outer query expects.
     auto default_column = result_type->createColumnConst(0, empty_group_value);
-    const auto & default_node = dag.materializeNode(dag.addColumn(std::move(default_column), result_type, "__empty_group_default_" + correlated_subquery.action_node_name));
+    const auto & default_node = dag.addColumn(std::move(default_column), result_type, "__empty_group_default_" + correlated_subquery.action_node_name);
 
-    auto if_null_function = FunctionFactory::instance().get("ifNull", planner_context->getQueryContext());
-    const auto & restored_node = dag.addFunction(if_null_function, {&result_node, &default_node}, correlated_subquery.action_node_name);
+    /// multiIf copies the constant only into the selected rows; `if` (and so `ifNull`) reserves its size for every row.
+    const auto & context = planner_context->getQueryContext();
+    const auto & is_null_node = dag.addFunction(FunctionFactory::instance().get("isNull", context), {&result_node}, {});
+    const auto * restored_node = &dag.addFunction(FunctionFactory::instance().get("multiIf", context), {&is_null_node, &default_node, &result_node}, {});
+    /// multiIf drops LowCardinality from its result type.
+    if (restored_node->result_type->getName() == result_type->getName())
+        restored_node = &dag.addAlias(*restored_node, correlated_subquery.action_node_name);
+    else
+        restored_node = &dag.addCast(*restored_node, result_type, correlated_subquery.action_node_name, context);
 
     ActionsDAG::NodeRawConstPtrs new_outputs;
     new_outputs.reserve(dag.getOutputs().size());
     for (const auto * output : dag.getOutputs())
-        new_outputs.push_back(output->result_name == correlated_subquery.action_node_name ? &restored_node : output);
+        new_outputs.push_back(output->result_name == correlated_subquery.action_node_name ? restored_node : output);
     dag.getOutputs() = std::move(new_outputs);
 
     auto expression_step = std::make_unique<ExpressionStep>(header, std::move(dag));

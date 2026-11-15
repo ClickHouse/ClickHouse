@@ -81,6 +81,13 @@ SELECT o.k,
 FROM values('k UInt8', (1), (2)) AS o
 ORDER BY o.k;
 
+-- The restored column is still a LowCardinality column, not only typed as one.
+SELECT o.k,
+    dumpColumnStructure((SELECT toLowCardinality(toString(count())) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k))
+        LIKE 'LowCardinality(Nullable(String)), LowCardinality(%'
+FROM values('k UInt8', (1), (2)) AS o
+ORDER BY o.k;
+
 -- A non-deterministic or side-effecting function cannot be evaluated once for every empty group, so the restore
 -- is not applied.
 SELECT count()
@@ -88,7 +95,7 @@ FROM (EXPLAIN actions = 1 SELECT o.k,
     (SELECT count() + rand() FROM values('k UInt8', (1), (2)) AS i WHERE i.k = o.k),
     (SELECT count() + sleep(0) FROM values('k UInt8', (1), (2)) AS i WHERE i.k = o.k)
     FROM values('k UInt8', (1), (2)) AS o)
-WHERE explain ILIKE '%ifNull(%rand()%' OR explain ILIKE '%ifNull(%sleep(%';
+WHERE explain ILIKE '%multiIf(%rand()%' OR explain ILIKE '%multiIf(%sleep(%';
 
 -- An expression that would throw over an empty group must not fail a query without empty groups.
 SELECT o.k, (SELECT intDiv(100, count()) FROM values('k UInt8', (1), (2)) AS i WHERE i.k = o.k) AS d
@@ -105,6 +112,15 @@ SELECT o.k, (SELECT length(repeat(repeat('a', 1000), if(count() = 0, 1000000, 1)
 FROM values('k UInt8', (1), (2)) AS o
 ORDER BY o.k
 SETTINGS max_memory_usage = 100000000; -- { serverError MEMORY_LIMIT_EXCEEDED }
+
+-- A 1 MB empty-group value is copied only into the one empty group's row, not into the 1000 matched ones.
+SELECT sum(length(c))
+FROM (SELECT (SELECT repeat('x', if(count() = 0, 1000000, 1)) FROM numbers(1000) AS i WHERE i.number = o.number) AS c FROM numbers(1001) AS o)
+SETTINGS max_memory_usage = 100000000, max_threads = 1, max_block_size = 1000;
+
+SELECT sum(length(c))
+FROM (SELECT (SELECT repeat('x', if(count() = 0, 1000000, 1)) FROM numbers(1000) AS i WHERE i.number = o.number) AS c FROM numbers(1001) AS o)
+SETTINGS max_memory_usage = 100000000, max_threads = 1, max_block_size = 1000, correlated_subqueries_default_join_kind = 'left';
 
 -- count(<Nullable column>) over a MergeTree table: optimize_functions_to_subcolumns would rewrite it to
 -- sum(not(col.null)), but not in a correlated subquery, so the empty group is 0 with either setting.
@@ -185,29 +201,29 @@ SELECT o.k, (SELECT count() FROM values('k Nullable(Int32)', (NULL), (NULL), (5)
 FROM values('k Nullable(Int32)', (NULL), (5)) AS o
 ORDER BY o.k NULLS LAST;
 
--- [count()] cannot be made Nullable, so the restore is not applied. Assert the restore's ifNull wrapper is
+-- [count()] cannot be made Nullable, so the restore is not applied. Assert the restore's multiIf wrapper is
 -- present for count() but absent for [count()], which pins the Nullable-result guard (a plain result oracle
 -- cannot: an unmatched Array is already join-filled with []).
 SELECT count() > 0
 FROM (EXPLAIN actions = 1 SELECT o.k, (SELECT count() FROM values('k UInt8', (1), (2)) AS i WHERE i.k = o.k) FROM values('k UInt8', (1), (2)) AS o)
-WHERE explain ILIKE '%ifNull(%count()%';
+WHERE explain ILIKE '%multiIf(%count()%';
 
 SELECT count()
 FROM (EXPLAIN actions = 1 SELECT o.k, (SELECT [count()] FROM values('k UInt8', (1), (2)) AS i WHERE i.k = o.k) FROM values('k UInt8', (1), (2)) AS o)
-WHERE explain ILIKE '%ifNull(%array(count())%';
+WHERE explain ILIKE '%multiIf(%array(count())%';
 
 -- countOrNull() inherits count()'s returns_default_when_only_null but already returns a Nullable result, so it
--- can legitimately be NULL over a non-empty group; the restore must not apply (no ifNull wrapper in the plan).
+-- can legitimately be NULL over a non-empty group; the restore must not apply (no multiIf wrapper in the plan).
 SELECT count()
 FROM (EXPLAIN actions = 1 SELECT o.k, (SELECT countOrNull() FROM values('k UInt8', (1), (2)) AS i WHERE i.k = o.k) FROM values('k UInt8', (1), (2)) AS o)
-WHERE explain ILIKE '%ifNull(%countOrNull%';
+WHERE explain ILIKE '%multiIf(%countOrNull%';
 
 -- A composite (Tuple) result inherits returns_default_when_only_null (quantilesExactTuple) but its empty value
 -- ([0],[0]) is not the type default ([],[]), so the restore must not apply (only plain-number results are). The
--- empty group keeps the natural join-fill; assert no ifNull wrapper is added for it.
+-- empty group keeps the natural join-fill; assert no multiIf wrapper is added for it.
 SELECT count()
 FROM (EXPLAIN actions = 1 SELECT o.k, (SELECT quantilesExactTuple(0.5)(i.t) FROM (SELECT 2 AS k, (5, 6)::Tuple(UInt64, UInt64) AS t) AS i WHERE i.k = o.k) FROM values('k UInt8', (1), (2)) AS o)
-WHERE explain ILIKE '%ifNull(%quantilesExactTuple%';
+WHERE explain ILIKE '%multiIf(%quantilesExactTuple%';
 
 -- Lambdas and constant IN sets in the projection are built by the planner's own actions visitor, so their
 -- empty-group value is restored too, with both decorrelation join kinds.
