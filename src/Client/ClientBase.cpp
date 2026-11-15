@@ -2541,8 +2541,15 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
                 break;
 
             case Protocol::Server::EndOfStream:
-                onEndOfStream();
-                return false;
+            {
+                const auto * create = parsed_query->as<ASTCreateQuery>();
+                if (create && create->if_not_exists && create->has_as_insert && !received_sample)
+                {
+                    onEndOfStream();
+                    return false;
+                }
+                [[fallthrough]];
+            }
 
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
@@ -2618,7 +2625,7 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
                                                          : (parsed_create_query ? parsed_create_query->insert_data : nullptr);
 
     const bool has_infile = parsed_insert_query && parsed_insert_query->infile;
-    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
+    bool have_data_in_stdin = !has_infile && !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
 
     if ((!inline_data_begin && !has_infile) && !have_data_in_stdin)
     {
