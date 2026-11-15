@@ -1,0 +1,247 @@
+---
+slug: /cloud/managed-postgres/guides/phoenix
+sidebarTitle: 'Phoenix (Ecto)'
+title: 'Use o Phoenix com o ClickHouse Managed Postgres'
+description: 'Conecte uma aplicação Phoenix ao ClickHouse Managed Postgres com Ecto e Postgrex via TLS verificado, execute migrações e disponibilize um recurso JSON'
+keywords: ['managed postgres', 'phoenix', 'elixir', 'ecto', 'postgrex', 'mix', 'pgbouncer', 'tls', 'migrations']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-phoenix-beta" />
+
+[Phoenix](https://www.phoenixframework.org/) é um framework web para Elixir que usa o [Ecto](https://ecto.hexdocs.pm/) e o driver [Postgrex](https://postgrex.hexdocs.pm/) para se comunicar com o PostgreSQL. Neste guia, você vai criar uma aplicação Phoenix, conectá-la ao ClickHouse Managed Postgres por meio de TLS verificado, executar uma migração do Ecto e expor um recurso JSON `todos`.
+
+## Pré-requisitos {#prerequisites}
+
+* Elixir 1.15 ou superior e Erlang/OTP. Este guia foi testado com Elixir 1.20.4, Erlang/OTP 29, Phoenix 1.8.15, `ecto_sql` 3.14.0 e Postgrex 0.22.4.
+* Uma conta no ClickHouse Cloud
+
+## Crie um serviço ClickHouse Managed Postgres {#create-service}
+
+No console do ClickHouse Cloud, clique em **New service** e selecione **Postgres**. A instância estará pronta em poucos minutos. Consulte o [guia de início rápido](/pt-BR/products/managed-postgres/quickstart) para ver o passo a passo completo.
+
+## Obtenha os detalhes de conexão {#connection-details}
+
+Abra o seu serviço e clique em **Connect** na barra lateral esquerda. O modal exibe seu nome de usuário, senha, servidor e porta, além de um seletor **Directly** / **via PgBouncer**. Mantenha **Directly** selecionado e ative **Use SSL**. Copie a senha e o hostname do servidor e, em seguida, clique em **Download CA certificate**.
+
+O certificado da CA é exclusivo do seu serviço. Você também pode baixá-lo depois em **Settings → CA Certificate**.
+
+**Conexão direta ou PgBouncer?** Uma aplicação Phoenix é um processo de longa duração, e o Ecto mantém seu próprio pool de conexões (`pool_size`, dez por padrão). Neste guia, a conexão com o Postgres é feita diretamente pela porta `5432`. Se o total de conexões de várias instâncias da aplicação se aproximar do limite de conexões do Postgres, consulte [Usando o PgBouncer](#pgbouncer).
+
+## Crie um app Phoenix {#create-app}
+
+Instale o gerador de projetos Phoenix e crie um app. O Postgres é o banco de dados padrão:
+
+```bash
+mix archive.install hex phx_new
+mix phx.new hello --install
+cd hello
+```
+
+<Tip>
+  **Vai adicionar a um app existente?**
+
+  Pule o `mix phx.new`. Se o seu app usa SQLite, que é o padrão de `mix phx.new --database sqlite3`, migre-o primeiro para Postgres:
+
+  * Em `mix.exs`, substitua `{:ecto_sqlite3, ">= 0.0.0"}` por `{:postgrex, ">= 0.0.0"}` e, em seguida, execute `mix deps.get`.
+  * Em `lib/<your_app>/repo.ex`, altere `adapter: Ecto.Adapters.SQLite3` para `adapter: Ecto.Adapters.Postgres`.
+
+  Depois, siga para [Configure a conexão com o banco de dados](#configure-connection). O `mix ecto.migrate` cria suas tabelas existentes no Postgres, mas não copia os dados do SQLite. Atualize o `config/test.exs` antes de executar `mix test`.
+</Tip>
+
+## Configure a conexão com o banco de dados {#configure-connection}
+
+Mova o certificado de CA que você baixou para o diretório `priv` da aplicação e renomeie-o para `ca-certificate.pem`. O arquivo baixado tem o nome do seu serviço, por exemplo, `your-service-ca-certificate.pem`:
+
+```bash
+mv ~/Downloads/your-service-ca-certificate.pem priv/ca-certificate.pem
+```
+
+O certificado da CA não é sigiloso, então você pode fazer commit dele junto com sua aplicação. Os arquivos em `priv` também são incluídos nos lançamentos.
+
+Em `config/dev.exs`, substitua as linhas `username`, `password`, `hostname` e `database` da configuração de `Hello.Repo` por `url` e `ssl`:
+
+```elixir title="config/dev.exs"
+config :hello, Hello.Repo,
+  url: System.get_env("DATABASE_URL"),
+  ssl: [cacertfile: Path.expand("../priv/ca-certificate.pem", __DIR__)],
+  stacktrace: true,
+  show_sensitive_data_on_connection_error: true,
+  pool_size: 10
+```
+
+Quando `ssl` é uma keyword list, o Postgrex ativa a verificação de certificados (`verify: :verify_peer`) e a verificação do hostname, além de enviar o hostname da URL como nome do servidor TLS. Basta fornecer o certificado da CA. `ssl: true` não funciona, porque valida o certificado do servidor com base no repositório de CAs do seu sistema operacional, que não contém a CA do seu serviço.
+
+Defina `DATABASE_URL` apontando para o seu serviço, com um novo nome de banco de dados. Este guia usa `guide_phoenix`:
+
+```bash
+export DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_phoenix"
+```
+
+<Warning>
+  Não inclua a string de consulta em `DATABASE_URL`. O Ecto ignora os parâmetros `sslmode` e `sslrootcert` da URL exibida no modal **Connect**. Sem a configuração `ssl`, o Postgrex não usa TLS nem verifica o servidor.
+</Warning>
+
+Crie o banco de dados:
+
+```bash
+mix ecto.create
+```
+
+```text
+The database for Hello.Repo has been created
+```
+
+O `mix ecto.create` se conecta ao banco de dados padrão `postgres` com as mesmas configurações de TLS para executar `CREATE DATABASE`.
+
+## Gere um recurso JSON e execute a migração {#migrations}
+
+Gere um contexto, um schema, uma migração e um controller JSON para as tarefas (todos):
+
+```bash
+mix phx.gen.json Todos Todo todos title:string done:boolean
+```
+
+Em `lib/hello_web/router.ex`, descomente o scope `/api` e adicione o recurso a ele:
+
+```elixir title="lib/hello_web/router.ex"
+  scope "/api", HelloWeb do
+    pipe_through :api
+
+    resources "/todos", TodoController, except: [:new, :edit]
+  end
+```
+
+Aplique a migração. Em um app existente, isso também cria as demais tabelas do seu app no novo banco de dados:
+
+```bash
+mix ecto.migrate
+```
+
+```text
+14:54:14.507 [info] == Running 20261001145404 Hello.Repo.Migrations.CreateTodos.change/0 forward
+14:54:14.507 [info] create table todos
+14:54:14.601 [info] == Migrated 20261001145404 in 0.0s
+```
+
+O Ecto registra as migrações aplicadas na tabela `schema_migrations` e, nas execuções seguintes, roda apenas as novas.
+
+## Executar e verificar {#verify}
+
+Verifique se a conexão está criptografada. A consulta lê `pg_stat_ssl` referente à conexão atual:
+
+```bash
+mix run -e 'IO.inspect(Hello.Repo.query!("SELECT ssl, version, cipher FROM pg_stat_ssl WHERE pid = pg_backend_pid()").rows)'
+```
+
+```text
+[debug] QUERY OK db=43.9ms decode=2.0ms queue=646.0ms idle=0.0ms
+SELECT ssl, version, cipher FROM pg_stat_ssl WHERE pid = pg_backend_pid() []
+[[true, "TLSv1.3", "TLS_AES_256_GCM_SHA384"]]
+```
+
+Inicie o servidor na porta `3116`:
+
+```bash
+PORT=3116 mix phx.server
+```
+
+```text
+[info] Access HelloWeb.Endpoint at http://localhost:3116
+```
+
+Em um segundo terminal, crie duas tarefas, marque a primeira como concluída e exclua a segunda:
+
+```bash
+curl -X POST http://localhost:3116/api/todos -H "Content-Type: application/json" -d '{"todo": {"title": "Try Phoenix"}}'
+curl -X POST http://localhost:3116/api/todos -H "Content-Type: application/json" -d '{"todo": {"title": "Write a migration"}}'
+curl -X PATCH http://localhost:3116/api/todos/1 -H "Content-Type: application/json" -d '{"todo": {"done": true}}'
+curl -X DELETE http://localhost:3116/api/todos/2
+```
+
+A requisição `PATCH` retorna o item de tarefa (todo) atualizado:
+
+```json
+{"data":{"id":1,"done":true,"title":"Try Phoenix"}}
+```
+
+Abra `http://localhost:3116/api/todos` no navegador para listar as tarefas restantes:
+
+```json
+{"data":[{"id":1,"done":true,"title":"Try Phoenix"}]}
+```
+
+Para ver os dados no console, abra o **SQL Console** na barra lateral esquerda do seu serviço, expanda `guide_phoenix` e, em seguida, `public` e clique na tabela `todos`. O schema `public` também contém `schema_migrations`:
+
+| id | title       | done | inserted&#95;at     | updated&#95;at      |
+| -- | ----------- | ---- | ------------------- | ------------------- |
+| 1  | Try Phoenix | true | 2026-10-01 14:54:33 | 2026-10-01 14:54:34 |
+
+## Configurar o ambiente de produção {#production}
+
+Em produção, o Phoenix lê as configurações do banco de dados em `config/runtime.exs`. Na configuração `Hello.Repo`, dentro de `if config_env() == :prod do`, substitua a linha `# ssl: true,` pelo caminho do certificado da CA:
+
+```elixir title="config/runtime.exs"
+  config :hello, Hello.Repo,
+    ssl: [cacertfile: Application.app_dir(:hello, "priv/ca-certificate.pem")],
+    url: database_url,
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
+    # For machines with several cores, consider starting multiple pools of `pool_size`
+    # pool_count: 4,
+    socket_options: maybe_ipv6
+```
+
+`Application.app_dir` resolve o caminho dentro da sua compilação ou do seu lançamento, de modo que a configuração funciona independentemente do diretório em que a aplicação é iniciada. Defina `DATABASE_URL` no seu ambiente de implantação, novamente sem string de consulta.
+
+Se a sua aplicação começou com SQLite, o `config/runtime.exs` lê `DATABASE_PATH`. Substitua a variável `database_path` e a respectiva chamada `config :hello, Hello.Repo` por:
+
+```elixir title="config/runtime.exs"
+  config :hello, Hello.Repo,
+    url: System.fetch_env!("DATABASE_URL"),
+    ssl: [cacertfile: Application.app_dir(:hello, "priv/ca-certificate.pem")],
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10")
+```
+
+Aplicações criadas com `--database sqlite3` também executam as migrações pendentes quando um lançamento é iniciado, por meio do processo filho `Ecto.Migrator` em `lib/<your_app>/application.ex`. Isso continua funcionando com o Postgres.
+
+## Usando o PgBouncer {#pgbouncer}
+
+Se as instâncias da sua aplicação, somadas, abrirem conexões diretas demais, conecte-se pelo [PgBouncer](/pt-BR/products/managed-postgres/connection#pgbouncer) incluído no pacote. Selecione **via PgBouncer** no modal **Connect**, use a porta `6432` em `DATABASE_URL` e adicione `prepare: :unnamed` à configuração do repo, tanto em `config/dev.exs` quanto em `config/runtime.exs`:
+
+```elixir title="config/dev.exs"
+config :hello, Hello.Repo,
+  url: System.get_env("DATABASE_URL"),
+  ssl: [cacertfile: Path.expand("../priv/ca-certificate.pem", __DIR__)],
+  prepare: :unnamed,
+  stacktrace: true,
+  show_sensitive_data_on_connection_error: true,
+  pool_size: 10
+```
+
+O PgBouncer é executado no modo de pooling de transações:
+
+* **Prepared statements**: por padrão, o Ecto executa toda consulta como um prepared statement nomeado, e o PgBouncer incluído oferece suporte a instruções nomeadas. O Postgrex libera as instruções com uma mensagem `Close` no nível do protocolo, nunca com o comando SQL `DEALLOCATE`. Ainda assim, com o padrão `prepare: :named`, dois problemas surgem ao passar pelo PgBouncer:
+
+  * Uma consulta cujo texto SQL tenha cerca de 4 KB pode travar até atingir o tempo limite. O chamador recebe `DBConnection.ConnectionError` após aproximadamente um minuto.
+  * Depois que uma migração altera o tipo de uma coluna, as consultas que leem essa coluna continuam falhando com `cached plan must not change result type`, mesmo após reiniciar a aplicação, porque o PgBouncer reutiliza o prepared statement no servidor.
+
+  Com `prepare: :unnamed`, o Postgrex prepara cada consulta novamente a cada execução, e os dois problemas desaparecem. Em contrapartida, cada consulta exige uma ida e volta de rede adicional.
+* **Migrações**: o `mix ecto.migrate` funciona pelo PgBouncer com o bloqueio de migração padrão do Ecto, que bloqueia a tabela `schema_migrations` dentro de uma transação. Não defina `migration_lock: :pg_advisory_lock` em uma conexão com o PgBouncer. O advisory lock no nível da sessão pode ser liberado em outra conexão Postgres, o que falha com `failed to release advisory lock` e deixa o bloqueio ativo, fazendo com que execuções posteriores, inclusive na porta `5432`, fiquem aguardando sua liberação. Para executar migrações pela conexão direta, defina uma `DATABASE_URL` com a porta `5432` no comando `mix ecto.migrate`.
+* **Estado da sessão**: instruções `SET`, como um `SET search_path` em um callback `after_connect`, se aplicam apenas à conexão Postgres da transação atual. Um `search_path` na opção `parameters` do Postgrex falha com `unsupported startup parameter: search_path`. `LISTEN` e `NOTIFY`, usados pelo `Postgrex.Notifications`, exigem uma conexão direta.
+
+Consulte o [FAQ](/pt-BR/products/managed-postgres/faq#prepared-statement-errors) para saber mais sobre prepared statements e o PgBouncer.
+
+## Solução de problemas {#troubleshooting}
+
+* **`CLIENT ALERT: Fatal - Unknown CA`**: `cacertfile` não aponta para o certificado da CA do seu serviço, ou você definiu `ssl: true`. Baixe o certificado novamente em **Settings → CA Certificate**. Cada serviço tem a própria CA.
+* **`CLIENT ALERT: Fatal - Bad Certificate` com `hostname_check_failed`**: o host em `DATABASE_URL` não corresponde ao certificado do servidor, por exemplo, porque você usou um endereço IP. Use o hostname exibido no modal **Connect**.
+* **`Invalid CA certificate file ... no such file or directory`**: o caminho de `cacertfile` está incorreto. Verifique se o arquivo `priv/ca-certificate.pem` existe.
+
+## Próximos passos {#next-steps}
+
+* [Conexão](/pt-BR/products/managed-postgres/connection): strings de conexão, PgBouncer e TLS
+* [Configurações](/pt-BR/products/managed-postgres/settings): parâmetros do Postgres e do PgBouncer, como `max_connections`
+* [Réplicas de leitura](/pt-BR/products/managed-postgres/read-replicas): direcione leituras para uma réplica com os [repositórios de réplica](https://ecto.hexdocs.pm/replicas-and-dynamic-repositories.html) do Ecto
+* [Sincronizar com o ClickHouse](/pt-BR/products/managed-postgres/sync-to-clickhouse/clickpipes): replique suas tabelas do Phoenix no ClickHouse para fins de analytics

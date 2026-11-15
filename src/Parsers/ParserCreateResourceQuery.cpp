@@ -36,6 +36,8 @@ bool parseOneOperation(ASTCreateResourceQuery::Operation & operation, IParser::P
         mode = ResourceAccessMode::WorkerThread;
     else if (ParserKeyword(Keyword::QUERY).ignore(pos, expected))
         mode = ResourceAccessMode::Query;
+    else if (ParserKeyword(Keyword::MEMORY_RESERVATION).ignore(pos, expected))
+        mode = ResourceAccessMode::MemoryReservation;
     else
         return false;
 

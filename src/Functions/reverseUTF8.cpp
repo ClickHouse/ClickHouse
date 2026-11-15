@@ -87,7 +87,12 @@ struct NameReverseUTF8
 {
     static constexpr auto name = "reverseUTF8";
 };
-using FunctionReverseUTF8 = FunctionStringToString<ReverseUTF8Impl, NameReverseUTF8, true>;
+/// Not injective: a byte that announces a multi-byte sequence with fewer bytes remaining than the
+/// sequence needs is reversed as a single byte, so `reverseUTF8('a\xC2')` and `reverseUTF8('\xC2a')`
+/// are the same two bytes. Claiming injectivity let `optimize_injective_functions_in_group_by` and
+/// `optimize_injective_functions_inside_uniq` group and count by the argument, returning one group
+/// per argument instead of one per result value.
+using FunctionReverseUTF8 = FunctionStringToString<ReverseUTF8Impl, NameReverseUTF8, false>;
 
 }
 

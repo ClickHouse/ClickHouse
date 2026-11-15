@@ -1,0 +1,79 @@
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+		{
+			"number": 95
+		},
+		{
+			"number": 96
+		},
+		{
+			"number": 97
+		},
+		{
+			"number": 98
+		},
+		{
+			"number": 99
+		}
+	],
+
+	"rows": 5,
+
+	"rows_before_limit_at_least": 100
+}
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+		{
+			"number": 0
+		},
+		{
+			"number": 1
+		},
+		{
+			"number": 2
+		},
+		{
+			"number": 3
+		},
+		{
+			"number": 4
+		},
+		{
+			"number": 5
+		},
+		{
+			"number": 6
+		},
+		{
+			"number": 7
+		},
+		{
+			"number": 8
+		},
+		{
+			"number": 9
+		}
+	],
+
+	"rows": 10,
+
+	"rows_before_limit_at_least": 100
+}

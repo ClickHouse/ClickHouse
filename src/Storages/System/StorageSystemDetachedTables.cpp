@@ -1,6 +1,8 @@
 #include <Storages/System/StorageSystemDetachedTables.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Access/ContextAccess.h>
+#include <Common/Exception.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -16,6 +18,7 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/System/StorageSystemTables.h>
+#include <Storages/System/extractTablesFilter.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
 
@@ -24,6 +27,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 namespace
 {
@@ -78,7 +86,21 @@ protected:
                 = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             if (!detached_tables_it || !detached_tables_it->isValid())
-                detached_tables_it = database->getDetachedTablesIterator(context, {}, false);
+            {
+                try
+                {
+                    /// The names that survived `getFilteredTables` are exactly the ones this
+                    /// source can emit, so hand them to the database as the enumeration filter.
+                    detached_tables_it = database->getDetachedTablesIterator(
+                        context, [this](const String & name) { return detached_tables.contains(name); }, false);
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::NOT_IMPLEMENTED)
+                        continue;
+                    throw;
+                }
+            }
 
             for (; rows_count < max_block_size && detached_tables_it->isValid(); detached_tables_it->next())
             {
@@ -241,7 +263,8 @@ void ReadFromSystemDetachedTables::applyFilters(ActionDAGNodes added_filter_node
         predicate = filter_actions_dag->getOutputs().at(0);
 
     filtered_databases_column = detail::getFilteredDatabases(predicate, context);
-    filtered_tables_column = detail::getFilteredTables(predicate, filtered_databases_column, context, true);
+    filtered_tables_column = detail::getFilteredTables(
+        predicate, filtered_databases_column, context, true, extractTablesFilter(predicate, "table", context));
 }
 
 void ReadFromSystemDetachedTables::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -256,3 +279,6 @@ void ReadFromSystemDetachedTables::initializePipeline(QueryPipelineBuilder & pip
     pipeline.init(std::move(pipe));
 }
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDetachedTables) }

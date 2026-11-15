@@ -7,12 +7,11 @@
 
 namespace DB::PrometheusQueryToSQL
 {
-    using PQT = PrometheusQueryTree;
-    using Node = PQT::Node;
-    using NodeType = PQT::NodeType;
-    using ScalarType = PQT::ScalarType;
-    using TimestampType = PQT::TimestampType;
-    using DurationType = PQT::DurationType;
+    using Node = PrometheusQueryTree::Node;
+    using NodeType = PrometheusQueryTree::NodeType;
+    using ScalarType = PrometheusQueryTree::ScalarType;
+    using TimestampType = PrometheusQueryTree::TimestampType;
+    using DurationType = PrometheusQueryTree::DurationType;
 
     using ResultType = PrometheusQueryResultType;
 

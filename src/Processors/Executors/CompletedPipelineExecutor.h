@@ -22,7 +22,10 @@ public:
     /// If returns true, query would be cancelled.
     void setCancelCallback(std::function<bool()> is_cancelled, size_t interactive_timeout_ms_);
 
+    void initialize();
     void execute();
+    void cancel();
+
     struct Data;
 
 private:

@@ -1,0 +1,4 @@
+wide rows batch smaller than narrow ones	1
+wide batches unchanged by a preceding narrow query	1
+no batch spans more than one block	1
+short block passed whole	1

@@ -43,6 +43,13 @@ public:
     bool isExternalDatabase() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
+    /// Like `File` and `URL`, the requested names go straight to the Parquet/ORC reader, which cannot
+    /// serve synthesised subcolumns such as `.null`/`.size0`/`.keys` as standalone inputs. The reader
+    /// also binds flattened names up to case (`input_format_parquet_case_insensitive_column_matching`),
+    /// so a physical `M.keys` column would shadow a rewritten `m.keys`. Only the tuple element rewrite
+    /// is allowed; its guard in `FunctionToSubcolumnsPass` handles the case-insensitive collision.
+    bool supportsOptimizationToSubcolumns() const override { return false; }
+    bool supportsOptimizationToTupleElementSubcolumns() const override { return true; }
 
     void read(
         QueryPlan & query_plan,
@@ -89,7 +96,7 @@ private:
 
     void initMinMaxIndexExpression();
 
-    HiveFiles collectHiveFiles(
+    HiveFilesWithSkipSplits collectHiveFiles(
         size_t max_threads,
         const ActionsDAG * filter_actions_dag,
         const HiveTableMetadataPtr & hive_table_metadata,
@@ -97,7 +104,7 @@ private:
         const ContextPtr & context_,
         PruneLevel prune_level = PruneLevel::Max) const;
 
-    HiveFiles collectHiveFilesFromPartition(
+    HiveFilesWithSkipSplits collectHiveFilesFromPartition(
         const Apache::Hadoop::Hive::Partition & partition,
         const ActionsDAG * filter_actions_dag,
         const HiveTableMetadataPtr & hive_table_metadata,
@@ -105,7 +112,7 @@ private:
         const ContextPtr & context_,
         PruneLevel prune_level = PruneLevel::Max) const;
 
-    HiveFilePtr getHiveFileIfNeeded(
+    HiveFileWithSkipSplits getHiveFileIfNeeded(
         const FileInfo & file_info,
         const FieldVector & fields,
         const ActionsDAG * filter_actions_dag,

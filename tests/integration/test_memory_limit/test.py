@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import logging
 import time
 from multiprocessing.dummy import Pool
 

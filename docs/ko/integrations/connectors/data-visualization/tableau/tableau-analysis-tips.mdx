@@ -1,0 +1,70 @@
+---
+sidebarTitle: '분석 팁'
+slug: /integrations/tableau/analysis-tips
+keywords: ['clickhouse', 'tableau', '온라인', 'mysql', '연결', '통합', 'ui']
+description: 'ClickHouse 공식 커넥터 사용 시 Tableau 분석 팁입니다.'
+title: '분석 팁'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+<div id="median-and-percentile-functions">
+  ## MEDIAN() 및 PERCENTILE() 함수
+</div>
+
+* Live 모드에서는 MEDIAN() 및 PERCENTILE() 함수가 connector v0.1.3 릴리스부터 [ClickHouse `quantile()()` 함수](/ko/reference/functions/aggregate-functions/quantile)를 사용합니다. 이로 인해 계산 속도는 크게 빨라지지만, 샘플링을 사용합니다. 정확한 계산 결과가 필요하면 [quantileExact()()](/ko/reference/functions/aggregate-functions/quantileExact)를 기반으로 하는 `MEDIAN_EXACT()` 및 `PERCENTILE_EXACT()` 함수를 사용하십시오.
+* Extract 모드에서는 MEDIAN() 및 PERCENTILE()이 항상 정확하지만(대신 느림) `MEDIAN_EXACT()` 및 `PERCENTILE_EXACT()`를 사용할 수 없습니다.
+
+<div id="additional-functions-for-calculated-fields-in-live-mode">
+  ## Live 모드에서 계산된 필드에 사용할 수 있는 추가 함수
+</div>
+
+ClickHouse에는 데이터 분석에 사용할 수 있는 함수가 매우 많으며, Tableau가 지원하는 함수보다 훨씬 더 다양합니다. 사용자의 편의를 위해 Calculated Fields를 생성할 때 Live 모드에서 사용할 수 있는 새 함수를 추가했습니다. 안타깝게도 Tableau 인터페이스에서는 이러한 함수에 설명을 추가할 수 없으므로, 여기에서 설명을 제공합니다.
+
+* **[`-If` 집계 컴비네이터](/ko/reference/functions/aggregate-functions/combinators#-if)** *(v0.2.3에 추가됨)* - 집계 계산에서 바로 행 수준 필터를 적용할 수 있습니다. `SUM_IF(), AVG_IF(), COUNT_IF(), MIN_IF() & MAX_IF()` 함수가 추가되었습니다.
+* **`BAR([my_int], [min_val_int], [max_val_int], [bar_string_length_int])`** *(v0.2.1에 추가됨)* — 단조로운 막대 차트 대신 `BAR()` 함수를 사용하십시오(ClickHouse의 [`bar()`](/ko/reference/functions/regular-functions/other-functions#bar)에 해당). 예를 들어, 이 계산 필드는 보기 좋은 막대를 String으로 반환합니다:
+  ```text
+  BAR([my_int], [min_val_int], [max_val_int], [bar_string_length_int]) + "  " + FORMAT_READABLE_QUANTITY([my_int])
+  ```
+  ```text
+  == BAR() ==
+  ██████████████████▊  327.06 million
+  █████  88.02 million
+  ███████████████  259.37 million
+  ```
+* **`COUNTD_UNIQ([my_field])`** *(v0.2.0에 추가)* — 인수의 서로 다른 값의 대략적인 개수를 계산합니다. [uniq()](/ko/reference/functions/aggregate-functions/uniq)에 해당합니다. `COUNTD()`보다 훨씬 빠릅니다.
+* **`DATE_BIN('day', 10, [my_datetime_or_date])`** *(v0.2.1에 추가됨)* — ClickHouse의 [`toStartOfInterval()`](/ko/reference/functions/regular-functions/date-time-functions#toStartOfInterval)에 해당합니다. Date 또는 Date &amp; Time 값을 지정된 인터벌의 시작으로 내림하며, 예시는 다음과 같습니다:
+  ```text
+   == my_datetime_or_date == | == DATE_BIN('day', 10, [my_datetime_or_date]) ==
+      28.07.2004 06:54:50    |              21.07.2004 00:00:00
+      17.07.2004 14:01:56    |              11.07.2004 00:00:00
+      14.07.2004 07:43:00    |              11.07.2004 00:00:00
+  ```
+* **`FORMAT_READABLE_QUANTITY([my_integer])`** *(v0.2.1에 추가됨)* — 접미사(천, 백만, 십억 등)가 붙은 반올림된 숫자를 문자열로 반환합니다. 큰 숫자를 사람이 읽기 쉬운 형태로 표시할 때 유용합니다. [`formatReadableQuantity()`](/ko/reference/functions/regular-functions/other-functions#formatReadableQuantity)와 동일합니다.
+* **`FORMAT_READABLE_TIMEDELTA([my_integer_timedelta_sec], [optional_max_unit])`** *(v0.2.1에 추가됨)* — 초 단위 시간 차이를 받습니다. 시간 차이를 (년, 월, 일, 시, 분, 초) 기준의 문자열로 반환합니다. `optional_max_unit`은 표시할 최대 단위입니다. 허용되는 값: `seconds`, `minutes`, `hours`, `days`, `months`, `years`. [`formatReadableTimeDelta()`](/ko/reference/functions/regular-functions/other-functions#formatReadableTimeDelta)와 동일합니다.
+* **`GET_SETTING([my_setting_name])`** *(v0.2.1에서 추가됨)* — 사용자 지정 설정의 현재 값을 반환합니다. [`getSetting()`](/ko/reference/functions/regular-functions/other-functions#getSetting)과 동일한 기능을 합니다.
+* **`HEX([my_string])`** *(v0.2.1에 추가됨)* — 인수의 16진수 표현이 포함된 문자열을 반환합니다. [`hex()`](/ko/reference/functions/regular-functions/encoding-functions#hex)와 같습니다.
+* **`KURTOSIS([my_number])`** — 수열의 표본 첨도를 계산합니다. [`kurtSamp()`](/ko/reference/functions/aggregate-functions/kurtSamp)와 같습니다.
+* **`KURTOSISP([my_number])`** — 값 시퀀스의 첨도를 계산합니다. [`kurtPop()`](/ko/reference/functions/aggregate-functions/kurtPop)과 동일한 함수입니다.
+* **`MEDIAN_EXACT([my_number])`** *(v0.1.3에 추가됨)* — 숫자 데이터 시퀀스의 중앙값을 정확하게 구합니다. [`quantileExact(0.5)(...)`](/ko/reference/functions/aggregate-functions/quantileExact)와 동일합니다.
+* **`MOD([my_number_1], [my_number_2])`** — 나눗셈의 나머지를 계산합니다. 인수가 부동소수점 수인 경우 소수점 이하를 버린 뒤 먼저 정수로 변환합니다. [`modulo()`](/ko/reference/functions/regular-functions/arithmetic-functions#modulo)와 동일합니다.
+* **`PERCENTILE_EXACT([my_number], [level_float])`** *(v0.1.3에 추가됨)* — 숫자 데이터 시퀀스의 백분위수를 정확히 계산합니다. 권장되는 level 범위는 [0.01, 0.99]입니다. [`quantileExact()()`](/ko/reference/functions/aggregate-functions/quantileExact)와 동일합니다.
+* **`PROPER([my_string])`** *(v0.2.5에 추가됨)* - 텍스트 문자열에서 각 단어의 첫 글자는 대문자로, 나머지 글자는 소문자로 변환합니다. 공백과 구두점 같은 영숫자가 아닌 문자도 구분자 역할을 합니다. 예시:
+  ```text
+  PROPER("PRODUCT name") => "Product Name"
+  ```
+  ```text
+  PROPER("darcy-mae") => "Darcy-Mae"
+  ```
+* **`RAND()`** *(v0.2.1에 추가됨)* — 예를 들어 `3446222955`와 같은 정수형(UInt32) 값을 반환합니다. [`rand()`](/ko/reference/functions/regular-functions/random-functions#rand)와 동일합니다.
+* **`RANDOM()`** *(v0.2.1에 추가됨)* — 0과 1 사이의 부동소수점 값을 반환하는 비공식 [`RANDOM()`](https://kb.tableau.com/articles/issue/random-function-produces-inconsistent-results) Tableau 함수입니다.
+* **`RAND_CONSTANT([optional_field])`** *(v0.2.1에 추가됨)* — 랜덤 값을 갖는 상수 컬럼을 생성합니다. `{RAND()}`의 Fixed LOD와 비슷하지만 더 빠릅니다. [`randConstant()`](/ko/reference/functions/regular-functions/random-functions#randConstant)와 동일합니다.
+* **`REAL([my_number])`** — 필드를 부동소수점(Float64) 타입으로 변환합니다. 자세한 내용은 [`여기`](/ko/reference/data-types/decimal#operations-and-result-type)를 참조하십시오.
+* **`SHA256([my_string])`** *(v0.2.1에 추가됨)* — 문자열의 SHA-256 hash를 계산하고, 결과 바이트 집합을 문자열(FixedString)로 반환합니다. 예를 들어 `HEX()` 함수와 함께 사용하면 편리하며, `HEX(SHA256([my_string]))`처럼 사용할 수 있습니다. [`SHA256()`](/ko/reference/functions/regular-functions/hash-functions#SHA256)와 동일합니다.
+* **`SKEWNESS([my_number])`** — 값 시퀀스의 표본 왜도(sample skewness)를 계산합니다. [`skewSamp()`](/ko/reference/functions/aggregate-functions/skewSamp)와 동일합니다.
+* **`SKEWNESSP([my_number])`** — 값 시퀀스의 왜도를 계산합니다. [`skewPop()`](/ko/reference/functions/aggregate-functions/skewPop)과 동일합니다.
+* **`TO_TYPE_NAME([field])`** *(v0.2.1에 추가됨)* — 전달된 인수의 ClickHouse type name을 담은 문자열을 반환합니다. [`toTypeName()`](/ko/reference/functions/regular-functions/other-functions#toTypeName)과 동일합니다.
+* **`TRUNC([my_float])`** — `FLOOR([my_float])` 함수와 동일합니다. [`trunc()`](/ko/reference/functions/regular-functions/rounding-functions#trunc)과 같습니다.
+* **`UNHEX([my_string])`** *(v0.2.1에 추가됨)* — `HEX()`와 반대되는 연산을 수행합니다. [`unhex()`](/ko/reference/functions/regular-functions/encoding-functions#unhex)와 동일합니다.

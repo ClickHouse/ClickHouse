@@ -1,9 +1,10 @@
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
+#include <Interpreters/FileCache/Metadata.h>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
-
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -28,7 +29,7 @@ IFileCachePriority::Entry::Entry(
     : key(key_)
     , offset(offset_)
     , key_metadata(key_metadata_)
-    , size(size_)
+    , size(key_metadata_ && key_metadata_->useRealDiskSize() ? key_metadata_->alignFileSize(size_) : size_)
     , state(initial_state)
 {
 }
@@ -38,7 +39,6 @@ IFileCachePriority::Entry::Entry(const Entry & other)
     , offset(other.offset)
     , key_metadata(other.key_metadata)
     , size(other.size.load())
-    , hits(other.hits.load())
 {
 }
 
@@ -48,6 +48,14 @@ std::string IFileCachePriority::Entry::toString(const std::string & prefix) cons
         "{}{}:{}:{} (state: {})",
         prefix, key, offset, size.load(),
         magic_enum::enum_name(state.load(std::memory_order_relaxed)));
+}
+
+KeyMetadataPtr IFileCachePriority::Entry::getKeyMetadata() const
+{
+    auto locked = key_metadata.lock();
+    if (!locked)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Key metadata is expired for entry {}", toString());
+    return locked;
 }
 
 void IFileCachePriority::check(const CacheStateGuard::Lock & lock) const
@@ -68,27 +76,6 @@ std::unordered_map<std::string, IFileCachePriority::UsageStat> IFileCachePriorit
         ErrorCodes::NOT_IMPLEMENTED,
         "getUsageStatPerClient() is not implemented for {} policy",
         magic_enum::enum_name(getType()));
-}
-
-void IFileCachePriority::removeEntries(
-    const std::vector<InvalidatedEntryInfo> & entries,
-    const CachePriorityGuard::WriteLock & lock)
-{
-    if (entries.empty())
-        return;
-
-    for (const auto & [entry, it] : entries)
-    {
-        /// We store `entry` shared pointer in addition to `it`
-        /// (which is an iterator pointing to the same entry)
-        /// because `it` could become invalid,
-        /// so we use `entry` to check validity of the iterator.
-        const auto entry_state = entry->getState();
-        chassert(entry_state == Entry::State::Invalidated || entry_state == Entry::State::Removed,
-                 fmt::format("Unexpected state: {}", magic_enum::enum_name(entry_state)));
-        if (entry_state != Entry::State::Removed)
-            it->remove(lock);
-    }
 }
 
 IFileCachePriority::IPriorityDump::IPriorityDump() = default;
