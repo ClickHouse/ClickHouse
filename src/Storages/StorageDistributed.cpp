@@ -930,8 +930,10 @@ bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
 
 std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const
 {
+    /// A moved partition is not on the shard of its sharding key, so a table with partition moves does not use the key for reads.
     bool optimize_sharding_key_aggregation = settings[Setting::optimize_skip_unused_shards] && settings[Setting::optimize_distributed_group_by_sharding_key]
-        && hasShardingKeyForReads() && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic);
+        && hasShardingKeyForReads() && !partition_moves_watcher
+        && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic);
 
     QueryProcessingStage::Enum default_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
     if (settings[Setting::distributed_push_down_limit])
@@ -2216,7 +2218,8 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
     ClusterPtr cluster = getCluster();
     const Settings & settings = local_context->getSettingsRef();
 
-    bool sharding_key_is_usable = !sharding_key_has_unbuilt_set
+    /// A moved partition is not on the shard of its sharding key, and stays there after the move is removed.
+    bool sharding_key_is_usable = !partition_moves_watcher && !sharding_key_has_unbuilt_set
         && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic);
 
     if (hasShardingKeyForReads() && sharding_key_is_usable)
@@ -2231,6 +2234,9 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
     {
         if (!hasShardingKeyForReads())
             throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS, "No sharding key");
+        if (partition_moves_watcher)
+            throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS,
+                "Shards of a table with `partition_moves_zookeeper_path` cannot be skipped: a moved partition is not on the shard of its sharding key");
         checkShardingKeySetsAreBuilt();
         if (!sharding_key_is_usable)
             throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS, "Sharding key is not deterministic");
@@ -3007,6 +3013,8 @@ To move partition `202401` from shard 1 to shard 3:
 5. Remove the line.
 
 The destination must not have the partition before the move, and no rows may be inserted into the partition on either shard during the move: rows inserted on the source after the copy are dropped with it. So move partitions that no longer receive inserts. Only `SELECT` queries through the `Distributed` table skip the copies; the `remote` and `cluster` table functions read both.
+
+A moved partition is not on the shard that the sharding key gives, during the move and after it. So a table with `partition_moves_zookeeper_path` does not use the sharding key for reads: [`optimize_skip_unused_shards`](/reference/settings/session-settings/optimize-skip#optimize_skip_unused_shards), `optimize_skip_unused_shards_rewrite_in` and `optimize_distributed_group_by_sharding_key` have no effect, every query is sent to all shards, and a query with [`force_optimize_skip_unused_shards`](/reference/settings/session-settings/force-optimize#force_optimize_skip_unused_shards) fails. The settings that rely on the placement of rows without checking it, such as `distributed_group_by_no_merge` and `parallel_distributed_insert_select = 2`, must not be used if the query depends on the sharding key.
 
 When the `max_parallel_replicas` option is enabled, query processing is parallelized across all replicas within a single shard. For more information, see the section [max_parallel_replicas](/reference/settings/session-settings/max#max_parallel_replicas).
 
