@@ -1,0 +1,44 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>cardinality</name>
+            <values>
+                <value>1000</value>
+                <value>100000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Top-K: ORDER BY user ASC, ts DESC LIMIT N BY user -->
+    <query>
+        SELECT number % {cardinality} AS user, number AS ts
+        FROM numbers_mt(10000000)
+        ORDER BY user ASC, ts DESC LIMIT 10 BY user
+        FORMAT NULL
+    </query>
+
+    <!-- Timestamp bucketing: LIMIT N BY toStartOfHour(ts), user_id -->
+    <query>
+        SELECT toStartOfHour(toDateTime(number % 86400)) AS hr,
+               number % {cardinality} AS user, number AS v
+        FROM numbers_mt(10000000)
+        LIMIT 10 BY hr, user
+        FORMAT NULL
+    </query>
+
+    <!-- Nullable BY key with ~10% nulls. -->
+    <query>
+        SELECT if(number % 10 = 0, NULL, number % {cardinality}) AS k, number AS v
+        FROM numbers_mt(10000000)
+        LIMIT 10 BY k
+        FORMAT NULL
+    </query>
+
+    <!-- Very low cardinality: 4 groups -->
+    <query>
+        SELECT number % 4 AS k, number AS v
+        FROM numbers_mt(10000000)
+        ORDER BY v LIMIT 10 BY k
+        FORMAT NULL
+    </query>
+</test>

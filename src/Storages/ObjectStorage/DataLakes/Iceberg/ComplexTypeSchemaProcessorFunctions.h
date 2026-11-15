@@ -4,7 +4,6 @@
 #include <variant>
 #include <vector>
 
-#include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Interpreters/ActionsDAG.h>
 

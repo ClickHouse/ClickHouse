@@ -4,7 +4,7 @@
 -- not the standalone Array(Nullable(T)) serialization.
 
 SET allow_suspicious_low_cardinality_types = 1;
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 DROP TABLE IF EXISTS t_nested_null_sub;
 CREATE TABLE t_nested_null_sub (c0 Nested(c1 LowCardinality(IPv4), c2 Nullable(Tuple())), c3 DateTime64(4) NULL) ENGINE = Log;

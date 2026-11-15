@@ -1,0 +1,65 @@
+-- two replicas: a Wide part fetched by the second replica
+r2 parts	Wide	1	40
+r2 json	1
+r2 json.a	1
+r2 json.c.size0	1
+r2 (json.b, json.a)	1
+r2 WHERE x >= 9 AND x < 30 json	1
+r2 WHERE x >= 9 AND x < 30 json.a	1
+r2 WHERE x >= 9 AND x < 30 json.c.size0	1
+r2 WHERE x >= 9 AND x < 30 (json.b, json.a)	1
+1
+1
+-- the type with SHARED set lazily through Keeper, Compact parts of both layouts on both replicas
+p type on both replicas	JSON(SHARED a UInt64, SHARED b String, SHARED c Array(UInt8))	JSON(SHARED a UInt64, SHARED b String, SHARED c Array(UInt8))
+p1 layout	20	0
+p1 layout	20	1
+p1 json	1
+p1 json.a	1
+p1 json.c.size0	1
+p1 (json.b, json.a)	1
+p2 json	1
+p2 json.a	1
+p2 json.c.size0	1
+p2 (json.b, json.a)	1
+1
+1
+-- BACKUP and RESTORE, both part types
+restored substreams equal	1	1
+rb_w json	1
+rb_w json.a	1
+rb_w json.c.size0	1
+rb_w (json.b, json.a)	1
+rb_c json	1
+rb_c json.a	1
+rb_c json.c.size0	1
+rb_c (json.b, json.a)	1
+1
+1
+-- DETACH and ATTACH: the table, a partition, a part
+d attached table parts	4	40
+d attached table json	1
+d attached table json.a	1
+d attached table json.c.size0	1
+d attached table (json.b, json.a)	1
+d without partition 1	20	3800
+d attached partition json	1
+d attached partition json.a	1
+d attached partition json.c.size0	1
+d attached partition (json.b, json.a)	1
+d without a part	30
+d attached part json	1
+d attached part json.a	1
+d attached part json.c.size0	1
+d attached part (json.b, json.a)	1
+1
+-- MOVE PARTITION between tables of the same type; the plain type rejected
+d after the move	0
+d2 moved json	1
+d2 moved json.a	1
+d2 moved json.c.size0	1
+d2 moved (json.b, json.a)	1
+Code: 122
+Code: 122
+dp untouched	0
+1

@@ -1,0 +1,19 @@
+=== a SET handler with the default (GET) methods is rejected ===
+BAD_ARGUMENTS
+=== a SET ROLE handler with the default (GET) methods is rejected ===
+BAD_ARGUMENTS
+=== a USE handler mixing GET with a mutating method is rejected ===
+BAD_ARGUMENTS
+=== transaction control handlers with safe methods are rejected ===
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+=== a SET handler with only mutating methods is accepted ===
+['POST']
+=== the SET handler is not served over GET or HEAD ===
+404
+404
+=== over POST with a session_id, the SET persists into the session ===
+65411
+=== ALTER cannot swap a safe-method handler's query to SET ===
+BAD_ARGUMENTS

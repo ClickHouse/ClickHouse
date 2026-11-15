@@ -10,7 +10,6 @@ import logging
 import os
 import sys
 import time
-from pathlib import Path
 
 import grpc
 import psycopg2
@@ -22,7 +21,7 @@ from requests.exceptions import ConnectionError
 from urllib3.util.retry import Retry
 
 from helpers.client import Client, QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, run_and_check
+from helpers.cluster import ClickHouseCluster
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 grpc_protocol_pb2_dir = os.path.join(script_dir, "grpc_protocol_pb2")
@@ -309,10 +308,14 @@ def test_change_listen_host(cluster, zk):
     localhost_client = Client(
         host="127.0.0.1", port=9000, command="/usr/bin/clickhouse"
     )
+    # Clear LLVM_PROFILE_FILE so this manually-launched clickhouse process
+    # does not race with the server over the same profraw merge-pool slots.
     localhost_client.command = [
         "docker",
         "exec",
         "-i",
+        "-e",
+        "LLVM_PROFILE_FILE=",
         instance.docker_id,
     ] + localhost_client.command
     try:
@@ -338,10 +341,14 @@ def test_reload_via_client(cluster, zk):
     localhost_client = Client(
         host="127.0.0.1", port=9000, command="/usr/bin/clickhouse"
     )
+    # Clear LLVM_PROFILE_FILE so this manually-launched clickhouse process
+    # does not race with the server over the same profraw merge-pool slots.
     localhost_client.command = [
         "docker",
         "exec",
         "-i",
+        "-e",
+        "LLVM_PROFILE_FILE=",
         instance.docker_id,
     ] + localhost_client.command
 

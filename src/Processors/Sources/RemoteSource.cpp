@@ -82,7 +82,7 @@ ISource::Status RemoteSource::prepare()
         return Status::Finished;
     }
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     if (async_query_sending && !was_query_sent && fd < 0)
     {
         startup_event_fd.write();
@@ -114,7 +114,7 @@ ISource::Status RemoteSource::prepare()
 
 int RemoteSource::schedule()
 {
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     return (fd < 0 ? startup_event_fd.fd : fd);
 #else
     return fd;

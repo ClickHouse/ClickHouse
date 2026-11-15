@@ -25,9 +25,7 @@ namespace ProfileEvents
     extern const Event DictCacheRequestTimeNs;
     extern const Event DictCacheRequests;
     extern const Event DictCacheLockWriteNs;
-    extern const Event DictCacheLockWriteHoldNs;
     extern const Event DictCacheLockReadNs;
-    extern const Event DictCacheLockReadHoldNs;
 }
 
 namespace CurrentMetrics
@@ -79,7 +77,7 @@ CacheDictionary<dictionary_key_type>::~CacheDictionary()
 template <DictionaryKeyType dictionary_key_type>
 size_t CacheDictionary<dictionary_key_type>::getElementCount() const
 {
-    const ProfiledSharedLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs, ProfileEvents::DictCacheLockReadHoldNs};
+    const ProfiledSharedLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
     return cache_storage_ptr->getSize();
 }
 
@@ -89,21 +87,21 @@ size_t CacheDictionary<dictionary_key_type>::getBytesAllocated() const
     /// In case of existing string arena we check the size of it.
     /// But the same appears in setAttributeValue() function, which is called from update() function
     /// which in turn is called from another thread.
-    const ProfiledSharedLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs, ProfileEvents::DictCacheLockReadHoldNs};
+    const ProfiledSharedLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
     return cache_storage_ptr->getBytesAllocated();
 }
 
 template <DictionaryKeyType dictionary_key_type>
 double CacheDictionary<dictionary_key_type>::getLoadFactor() const
 {
-    const ProfiledSharedLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs, ProfileEvents::DictCacheLockReadHoldNs};
+    const ProfiledSharedLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
     return cache_storage_ptr->getLoadFactor();
 }
 
 template <DictionaryKeyType dictionary_key_type>
 std::exception_ptr CacheDictionary<dictionary_key_type>::getLastException() const
 {
-    const ProfiledSharedLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs, ProfileEvents::DictCacheLockReadHoldNs};
+    const ProfiledSharedLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
     return last_exception;
 }
 
@@ -125,7 +123,7 @@ ColumnPtr CacheDictionary<dictionary_key_type>::getColumn(
         DefaultOrFilter default_or_filter) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
+    chassert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     if (is_short_circuit)
     {
@@ -161,7 +159,7 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
     */
 
     bool is_short_circuit = std::holds_alternative<RefFilter>(defaults_or_filter);
-    assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
+    chassert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
 
     if (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
@@ -180,7 +178,7 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
         default_mask= &std::get<RefFilter>(defaults_or_filter).get();
 
     {
-        const ProfiledSharedLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs, ProfileEvents::DictCacheLockReadHoldNs};
+        const ProfiledSharedLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
         result_of_fetch_from_storage = cache_storage_ptr->fetchColumnsForKeys(keys, request, default_mask);
     }
 
@@ -291,7 +289,7 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
     FetchResult result_of_fetch_from_storage;
 
     {
-        const ProfiledSharedLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs, ProfileEvents::DictCacheLockReadHoldNs};
+        const ProfiledSharedLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
         result_of_fetch_from_storage = cache_storage_ptr->fetchColumnsForKeys(keys, request, /*default_mask*/ nullptr);
     }
 
@@ -373,7 +371,7 @@ ColumnPtr CacheDictionary<dictionary_key_type>::getHierarchy(
 {
     if (dictionary_key_type == DictionaryKeyType::Simple)
     {
-        size_t keys_found;
+        size_t keys_found = 0;
         auto result = getKeysHierarchyDefaultImplementation(this, key_column, key_type, keys_found);
         query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -390,7 +388,7 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::isInHierarchy(
 {
     if (dictionary_key_type == DictionaryKeyType::Simple)
     {
-        size_t keys_found;
+        size_t keys_found = 0;
         auto result = getKeysIsInHierarchyDefaultImplementation(this, key_column, in_key_column, key_type, keys_found);
         query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -547,7 +545,7 @@ Pipe CacheDictionary<dictionary_key_type>::read(const Names & column_names, size
 
     {
         /// Write lock on storage
-        const ProfiledExclusiveLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs, ProfileEvents::DictCacheLockWriteHoldNs};
+        const ProfiledExclusiveLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
         {
             auto keys = cache_storage_ptr->getCachedSimpleKeys();
@@ -700,7 +698,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
 
             {
                 /// Lock for cache modification
-                ProfiledExclusiveLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs, ProfileEvents::DictCacheLockWriteHoldNs};
+                ProfiledExclusiveLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
                 cache_storage_ptr->insertColumnsForKeys(found_keys_in_source, fetched_columns_during_update);
                 cache_storage_ptr->insertDefaultKeys(not_found_keys_in_source);
 
@@ -714,7 +712,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
         catch (...)
         {
             /// Lock just for last_exception safety
-            ProfiledExclusiveLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs, ProfileEvents::DictCacheLockWriteHoldNs};
+            ProfiledExclusiveLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
             ++error_count;
             last_exception = std::current_exception();
             backoff_end_time = now + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));

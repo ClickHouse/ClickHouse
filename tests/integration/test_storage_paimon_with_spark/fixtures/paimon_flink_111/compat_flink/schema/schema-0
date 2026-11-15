@@ -1,0 +1,25 @@
+{
+  "version" : 3,
+  "id" : 0,
+  "fields" : [ {
+    "id" : 0,
+    "name" : "id",
+    "type" : "INT NOT NULL"
+  }, {
+    "id" : 1,
+    "name" : "val",
+    "type" : "STRING"
+  }, {
+    "id" : 2,
+    "name" : "dt",
+    "type" : "DATE"
+  } ],
+  "highestFieldId" : 2,
+  "partitionKeys" : [ ],
+  "primaryKeys" : [ ],
+  "options" : {
+    "file.format" : "parquet"
+  },
+  "comment" : "",
+  "timeMillis" : 1785914121428
+}
