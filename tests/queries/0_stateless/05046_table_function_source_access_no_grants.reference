@@ -1,0 +1,32 @@
+=== arming: the user cannot see either source table ===
+0
+0
+=== structure, no grants ===
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+=== the seams ask for naming the source, and for describing it ===
+grant SHOW TABLES ON
+grant SHOW TABLES ON
+grant SHOW COLUMNS ON
+=== select, no grants ===
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+=== alias, SHOW COLUMNS on the alias but not on its target ===
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+cannot be used to create a table
+cannot be used to create a table
+=== create as table function, no grants on the source ===
+cannot be used to create a table

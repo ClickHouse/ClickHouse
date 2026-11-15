@@ -1,7 +1,9 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
-SET enable_analyzer = 1;
+-- The subquery query result cache is not used with plan-based parallel replicas:
+-- https://github.com/ClickHouse/ClickHouse/issues/131463
+SET parallel_replicas_plan_based = 0;
 
 SYSTEM DROP QUERY CACHE;
 
@@ -54,6 +56,7 @@ SYSTEM DROP QUERY CACHE;
 
 -- Test 7: Multiple subqueries with query_cache_for_subqueries
 SELECT * FROM (SELECT number FROM numbers(3)) AS a, (SELECT number FROM numbers(3)) AS b
+ORDER BY ALL
 SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
 SELECT count(*) FROM system.query_cache WHERE is_subquery = 1;
 -- Expected: >= 1
