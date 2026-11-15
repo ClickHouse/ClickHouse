@@ -112,7 +112,7 @@ String KinesisSink::generatePartitionKey(const String & record_data)
 
     char hex[33];
     for (int i = 0; i < MD5_DIGEST_LENGTH; ++i)
-        snprintf(hex + i * 2, 3, "%02x", digest[i]);
+        (void)snprintf(hex + i * 2, 3, "%02x", digest[i]);
     hex[32] = '\0';
 
     return String(hex);

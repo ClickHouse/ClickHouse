@@ -348,7 +348,7 @@ KinesisConsumerPtr StorageKinesis::popConsumer(std::chrono::milliseconds timeout
     }
     else
     {
-        if (!semaphore.tryWait(static_cast<long>(timeout.count())))
+        if (!semaphore.tryWait(static_cast<Int64>(timeout.count())))
             return nullptr;
     }
 
