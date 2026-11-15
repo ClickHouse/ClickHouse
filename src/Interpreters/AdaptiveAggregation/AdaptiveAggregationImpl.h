@@ -341,6 +341,14 @@ public:
     ALWAYS_INLINE void incrementCount(size_t i) { ++multiplicities[i]; }
     ALWAYS_INLINE void incrementLastCount() { ++multiplicities.back(); }
 
+    /// Counts a skipped row that repeats the keys and arguments of the last record: the thaw evidence charges it as
+    /// that record (see `Aggregator::accountStagedBatch`).
+    ALWAYS_INLINE void addRepeatOfLast()
+    {
+        chassert(!empty());
+        repeated_records.push_back(static_cast<UInt32>(size() - 1));
+    }
+
     /// Marks the block's keys as constant, before the misses are added: their columns hold a single row, from which every
     /// key is read, while the arguments of each record stay at its source row. The records then share the kept bytes of
     /// the key.
@@ -363,6 +371,8 @@ public:
     const PaddedPODArray<UInt64> & getKeySizes() const { return key_sizes; }
     const PaddedPODArray<char> & getKeys() const { return keys; }
     const PaddedPODArray<UInt32> & getMultiplicities() const { return multiplicities; }
+    /// One entry per skipped row, the index of the record it repeats, in ascending order.
+    const PaddedPODArray<UInt32> & getRepeatedRecords() const { return repeated_records; }
 
     void clear()
     {
@@ -371,6 +381,7 @@ public:
         key_sizes.clear();
         keys.clear();
         multiplicities.clear();
+        repeated_records.clear();
         keys_are_const = false;
     }
 
@@ -399,15 +410,18 @@ private:
     PaddedPODArray<UInt64> key_sizes;
     PaddedPODArray<char> keys;
     PaddedPODArray<UInt32> multiplicities;
+    PaddedPODArray<UInt32> repeated_records;
     bool keys_are_const = false;
 };
 
 /// What `Aggregator::appendDelayedRecords` staged for a batch, for the accounting of the batch (see
-/// `Aggregator::accountStagedBatch`): the bytes of the keys, and the bytes of the whole records as the buffer holds them.
+/// `Aggregator::accountStagedBatch`): the bytes of the keys, the bytes of the whole records as the buffer holds them, and
+/// the bytes that the skipped repeats of its records would have staged.
 struct AdaptiveStagedBytes
 {
     size_t key_bytes = 0;
     size_t record_bytes = 0;
+    size_t repeat_bytes = 0;
 };
 
 /// Per-transform context of the adaptive aggregation: the thread's lifecycle phase and its

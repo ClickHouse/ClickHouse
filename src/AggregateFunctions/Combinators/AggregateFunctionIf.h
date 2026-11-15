@@ -234,6 +234,8 @@ public:
         return nested_func->isLargeMergePair(place, rhs);
     }
     bool canOptimizeEqualKeysRanges() const override { return nested_func->canOptimizeEqualKeysRanges(); }
+    /// The condition is a compared argument: a repeated row adds what the previous one added, or nothing.
+    bool ignoresRepeatedValues() const override { return nested_func->ignoresRepeatedValues(); }
 
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
     {
