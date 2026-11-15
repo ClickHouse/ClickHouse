@@ -1642,9 +1642,7 @@ static bool readsInputNamedIn(const ActionsDAG::Node & root, const NameSet & nam
     return false;
 }
 
-/// A key expression is always deterministic, so an expression that calls `rand` or `blockSize` never
-/// computes a key, even when a column is named like it.
-static bool hasNonDeterministicFunction(const ActionsDAG::Node & root)
+bool KeyCondition::hasNonDeterministicFunction(const ActionsDAG::Node & root)
 {
     static constexpr auto is_non_deterministic = [](const IFunctionBase & function) { return !function.isDeterministicInScopeOfQuery(); };
 

@@ -22,6 +22,8 @@ minmax, rand > 2	1
 primary key, rand > 2	1
 primary key, rand NOT IN	1
 primary key, rand % 2 = 0	1
+set, blockSize() + 1 > 1, bulk	8000
+set, blockSize() + 1 > 1, per granule	8000
 -- text index on map keys: 4000 rows have the key, about 40 of the others pass through rand
 map element	1
 map subcolumn	1
