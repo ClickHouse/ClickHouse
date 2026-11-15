@@ -8,6 +8,7 @@
 #include <Disks/DiskObjectStorage/Replication/BlobCopierThread.h>
 #include <Disks/IDisk.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/FileCache/FileCache_fwd.h>
 
 #include <base/scope_guard.h>
 

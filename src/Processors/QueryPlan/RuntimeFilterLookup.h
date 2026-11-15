@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/ColumnWithTypeAndName.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Range.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
@@ -15,6 +16,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -469,6 +471,29 @@ struct RuntimeFilterIndexAnalysisDescriptor
     /// `key_column_name` is then only a display name.
     bool is_global_row_index = false;
 };
+using RuntimeFilterIndexAnalysisDescriptors = VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor>;
+
+/// The `buildRuntimeRangePredicate` DAG of the JOIN runtime filters every row of a read passes, built once all of them are.
+/// Shared by everything that prunes the read by them: the data files of an Iceberg table and the Parquet row groups.
+class RuntimeFilterPruningPredicate
+{
+public:
+    RuntimeFilterPruningPredicate(RuntimeFilterIndexAnalysisDescriptors descriptors_, RuntimeFilterLookupPtr lookup_, ContextPtr context_);
+
+    /// nullopt while some filter is not built; then the predicate, or nullptr if no filter gives an `IN` set or a range.
+    std::optional<std::shared_ptr<const ActionsDAG>> tryGet() const;
+
+    const RuntimeFilterIndexAnalysisDescriptors & getDescriptors() const { return descriptors; }
+
+private:
+    const RuntimeFilterIndexAnalysisDescriptors descriptors;
+    const RuntimeFilterLookupPtr lookup;
+    const ContextPtr context;
+
+    mutable std::mutex mutex;
+    mutable bool built TSA_GUARDED_BY(mutex) = false;
+    mutable std::shared_ptr<const ActionsDAG> predicate_dag TSA_GUARDED_BY(mutex);
+};
 
 /// Display name of the `_part_starting_offset + _part_offset` key of a global row index descriptor.
 inline constexpr std::string_view runtime_filter_global_row_index_key_name = "_part_starting_offset + _part_offset";
@@ -484,7 +509,7 @@ bool runtimeFilterKeySupportsMinMaxRange(const DataTypePtr & type);
 /// AND the descriptors into one pruning predicate; nullptr if none (fail-open).
 const ActionsDAG::Node * buildRuntimeRangePredicate(
     const IRuntimeFilterLookup & lookup,
-    const std::vector<RuntimeFilterIndexAnalysisDescriptor> & descriptors,
+    const VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> & descriptors,
     ActionsDAG & dag,
     const ContextPtr & context);
 

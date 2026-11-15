@@ -3,7 +3,7 @@
   "dropdowns": [
     {
       "dropdown": "ClickHouse Observability",
-      "icon": "/images/icons/icon-clickhouse-cloud.svg",
+      "icon": "/images/icons/icon-clickhouse-observability.svg",
       "pages": [
         "clickstack/observability/index",
         {
@@ -380,7 +380,7 @@
     },
     {
       "dropdown": "ClickStack (OSS)",
-      "icon": "/images/clickstack/clickstack-mark.svg",
+      "icon": "/images/clickstack/clickstack-icon-dark.svg",
       "pages": [
         "clickstack",
         {

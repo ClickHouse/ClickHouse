@@ -10,8 +10,6 @@ integration:
    - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -30,7 +28,15 @@ ClickHouse に直接接続できるため、自然言語でデータについて
   ## Dot を ClickHouse に接続する
 </div>
 
-<Image size="md" img="/images/integrations/data-visualization/dot_01.webp" alt="Dot で ClickHouse 接続を設定する（ライトモード）" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Dot で ClickHouse 接続を設定する（ライトモード）](/images/integrations/data-visualization/dot_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -43,7 +49,15 @@ ClickHouse に直接接続できるため、自然言語でデータについて
    * **Database**: 必要に応じてデフォルトのスキーマを設定
 4. **Connect** をクリックします。
 
-<Image img="/images/integrations/data-visualization/dot_02.webp" alt="ClickHouse に接続する" size="sm" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![ClickHouse に接続する](/images/integrations/data-visualization/dot_02.webp)
+
+</Frame>
+
+</div>
 
 Dot は **クエリプッシュダウン** を使用します。大規模で負荷の高い集計処理は ClickHouse が担い、Dot は正確で信頼できる結果を返します。
 

@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse の Kusto Query Language (KQL)'
-description: '実験的な KQL ダイアレクトでサポートされる機能と、意図的にサポートされていない機能'
+description: 'ベータ版の KQL ダイアレクトでサポートされる機能と、意図的にサポートされていない機能'
 keywords: ['KQL', 'Kusto', 'ダイアレクト']
 sidebarTitle: 'Kusto Query Language (KQL)'
 slug: /guides/kusto-query-language
@@ -8,7 +8,7 @@ doc_type: 'guide'
 ---
 
 ClickHouse では、SQL の代わりに [Kusto Query Language](https://learn.microsoft.com/en-us/kusto/query/)
-のサブセットを解析できます。このダイアレクトは**実験的**で、デフォルトでは無効です。
+のサブセットをパースできます。このダイアレクトは**ベータ**版で、デフォルトでは無効です。
 
 ```sql
 SET allow_experimental_kusto_dialect = 1;

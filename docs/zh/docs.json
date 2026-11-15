@@ -39,7 +39,7 @@
           "item": "部署"
         },
         {
-          "$ref": "./products/cloud/navigation.json"
+        "$ref": "./products/cloud/navigation.json"
         },
         {
           "item": "BYOC",
@@ -56,11 +56,16 @@
           "$ref": "./clickstack/navigation.json"
         },
         {
+          "$ref": "./agents/navigation.json"
+        },
+        {
           "href": "https://langfuse.com/docs",
+          "icon": "/images/icons/logo-langfuse.svg",
           "item": "AI 工程"
         },
         {
           "href": "https://docs.runreveal.com/",
+          "icon": "/images/integrations/logos/runreveal.webp",
           "item": "安全"
         },
         {

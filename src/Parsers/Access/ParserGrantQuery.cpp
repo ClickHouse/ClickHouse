@@ -434,20 +434,25 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `CREATE DATABASE`
     - `CREATE DICTIONARY`
     - `CREATE FUNCTION`
-    - `CREATE RESOURCE`
     - `CREATE TABLE`
     - `CREATE VIEW`
-    - `CREATE WORKLOAD`
+  - `CREATE RESOURCE`
+  - `CREATE WORKLOAD`
   - [`dictGet`](#dictget)
   - [`displaySecretsInShowAndSelect`](#displaysecretsinshowandselect)
   - [`DROP`](#drop)
     - `DROP DATABASE`
     - `DROP DICTIONARY`
     - `DROP FUNCTION`
-    - `DROP RESOURCE`
     - `DROP TABLE`
     - `DROP VIEW`
-    - `DROP WORKLOAD`
+  - `DROP RESOURCE`
+  - `DROP WORKLOAD`
+  - `HANDLER ADMIN`
+    - `ALTER HANDLER`
+    - `CREATE HANDLER`
+    - `DROP HANDLER`
+    - `SHOW HANDLERS`
   - [`INSERT`](#insert)
   - [`INTROSPECTION`](#introspection)
     - `addressToLine`
