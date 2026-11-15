@@ -68,6 +68,8 @@ then
     exit 1
 fi
 
+# Sets `profile` to the startup file that should get the PATH line,
+# and `extra_profile` to a second one when a single file cannot cover every shell.
 detect_shell_profile() {
     target_os="$1"
     user_shell=""
@@ -76,34 +78,44 @@ detect_shell_profile() {
     fi
 
     profile=""
+    extra_profile=""
 
     case "${user_shell}" in
         zsh)
-            if [ -f "${HOME}/.zshrc" ]; then
-                profile="${HOME}/.zshrc"
-            elif [ -f "${HOME}/.zprofile" ]; then
-                profile="${HOME}/.zprofile"
+            # zsh falls back to the home directory only when ZDOTDIR is unset, not when it is empty.
+            zsh_dir="${ZDOTDIR-${HOME}}"
+            if [ -f "${zsh_dir}/.zshrc" ]; then
+                profile="${zsh_dir}/.zshrc"
+            elif [ -f "${zsh_dir}/.zprofile" ]; then
+                profile="${zsh_dir}/.zprofile"
             else
-                profile="${HOME}/.zshrc"
+                profile="${zsh_dir}/.zshrc"
             fi
             ;;
         bash)
-            if [ -f "${HOME}/.bashrc" ]; then
-                profile="${HOME}/.bashrc"
-            elif [ -f "${HOME}/.bash_profile" ]; then
-                profile="${HOME}/.bash_profile"
-            elif [ -f "${HOME}/.profile" ]; then
-                profile="${HOME}/.profile"
+            # A login shell reads only the first of these that exists.
+            login_profile=""
+            for name in .bash_profile .bash_login .profile; do
+                if [ -f "${HOME}/${name}" ]; then
+                    login_profile="${HOME}/${name}"
+                    break
+                fi
+            done
+            if [ "${target_os}" = "Darwin" ]; then
+                # Terminals on macOS start login shells.
+                profile="${login_profile:-${HOME}/.bash_profile}"
             else
-                if [ "${target_os}" = "Darwin" ]; then
-                    profile="${HOME}/.bash_profile"
-                else
-                    profile="${HOME}/.bashrc"
+                # Terminals start non-login shells, which read only .bashrc; an ssh login reads it
+                # only if the login file sources it.
+                profile="${HOME}/.bashrc"
+                login_profile="${login_profile:-${HOME}/.profile}"
+                if ! grep -E -q '^[^#]*(\.|source)[[:space:]]+[^#]*\.bashrc' "${login_profile}" 2>/dev/null; then
+                    extra_profile="${login_profile}"
                 fi
             fi
             ;;
         fish)
-            profile="${HOME}/.config/fish/config.fish"
+            profile="${XDG_CONFIG_HOME:-${HOME}/.config}/fish/config.fish"
             ;;
         *)
             if [ -f "${HOME}/.zshrc" ]; then
@@ -123,8 +135,21 @@ detect_shell_profile() {
             fi
             ;;
     esac
+}
 
-    echo "${profile}"
+# Whether the file has a line, not commented out, that puts ~/.local/bin into PATH.
+path_in_profile() {
+    [ -f "$1" ] && grep -v '^[[:space:]]*#' "$1" | grep -i 'path' \
+        | grep -F -q -e "${HOME}/.local/bin" -e '$HOME/.local/bin' -e '${HOME}/.local/bin' -e '~/.local/bin'
+}
+
+add_path_to_profile() {
+    mkdir -p "$(dirname "$1")"
+    if [ -f "$1" ] && [ -n "$(tail -c 1 "$1" 2>/dev/null)" ]; then
+        echo "" >> "$1"
+    fi
+    echo "# Added by ClickHouse installer" >> "$1"
+    printf '%s\n' "${path_line}" >> "$1"
 }
 
 clickhouse_download_filename_prefix="clickhouse"
@@ -229,20 +254,34 @@ then
                 case ":$PATH:" in
                     *":${chctl_install_dir}:"*) ;;
                     *)
-                        profile_file=$(detect_shell_profile "${OS}")
-                        pretty_profile=$(echo "${profile_file}" | sed "s|^${HOME}|~|")
-                        user_shell=""
-                        if [ -n "${SHELL}" ]; then
-                            user_shell=$(basename "${SHELL}")
+                        detect_shell_profile "${OS}"
+                        profile_file="${profile}"
+                        # Keep only the files that still need the line.
+                        if [ -n "${extra_profile}" ] && path_in_profile "${extra_profile}"; then
+                            extra_profile=""
+                        fi
+                        if [ -n "${extra_profile}" ] && path_in_profile "${profile_file}"; then
+                            profile_file="${extra_profile}"
+                            extra_profile=""
+                        fi
+                        pretty_profile="~/${profile_file#"${HOME}/"}"
+                        if [ "${pretty_profile}" = "~/${profile_file}" ]; then
+                            pretty_profile="${profile_file}"
+                        fi
+                        pretty_profiles="${pretty_profile}"
+                        if [ -n "${extra_profile}" ]; then
+                            pretty_profiles="${pretty_profile} and ~/${extra_profile#"${HOME}/"}"
                         fi
 
+                        # The line refers to $HOME literally, so a home path with special characters is not expanded again.
+                        case "${user_shell}" in
+                            fish) path_line='set -gx PATH "$HOME/.local/bin" $PATH' ;;
+                            *) path_line='export PATH="$HOME/.local/bin:$PATH"' ;;
+                        esac
+
                         in_profile=0
-                        if [ -f "${profile_file}" ]; then
-                            if grep -F -q "${chctl_install_dir}" "${profile_file}" 2>/dev/null \
-                               || grep -F -q "\$HOME/.local/bin" "${profile_file}" 2>/dev/null \
-                               || grep -F -q "~/.local/bin" "${profile_file}" 2>/dev/null; then
-                                in_profile=1
-                            fi
+                        if path_in_profile "${profile_file}"; then
+                            in_profile=1
                         fi
 
                         if [ "${in_profile}" = "1" ]; then
@@ -255,32 +294,23 @@ then
                             asked=0
                             if [ -z "${NONINTERACTIVE}" ] && ( : < /dev/tty ) 2>/dev/null; then
                                 echo
-                                printf "Do you want to add '%s' to PATH in %s? [Y/n] " "${chctl_install_dir}" "${pretty_profile}" > /dev/tty
+                                printf "Do you want to add '%s' to PATH in %s? [Y/n] " "${chctl_install_dir}" "${pretty_profiles}" > /dev/tty
                                 if read -r reply < /dev/tty 2>/dev/null; then
                                     asked=1
                                     case "${reply}" in
                                         [yY]*|"")
-                                            mkdir -p "$(dirname "${profile_file}")"
-                                            if [ -f "${profile_file}" ] && [ -n "$(tail -c 1 "${profile_file}" 2>/dev/null)" ]; then
-                                                echo "" >> "${profile_file}"
+                                            add_path_to_profile "${profile_file}"
+                                            if [ -n "${extra_profile}" ]; then
+                                                add_path_to_profile "${extra_profile}"
                                             fi
-                                            echo "# Added by ClickHouse installer" >> "${profile_file}"
-                                            case "${user_shell}" in
-                                                fish)
-                                                    echo "set -gx PATH \"${chctl_install_dir}\" \$PATH" >> "${profile_file}"
-                                                    ;;
-                                                *)
-                                                    echo "export PATH=\"${chctl_install_dir}:\$PATH\"" >> "${profile_file}"
-                                                    ;;
-                                            esac
-                                            echo "Added export PATH=\"${chctl_install_dir}:\$PATH\" to ${pretty_profile}"
+                                            echo "Added ${path_line} to ${pretty_profiles}"
                                             echo "Run 'source ${pretty_profile}' or restart your shell to update PATH."
                                             ;;
                                         *)
-                                            echo "Skipped updating ${pretty_profile}."
+                                            echo "Skipped updating ${pretty_profiles}."
                                             echo "You can manually add it by running:"
                                             echo
-                                            echo "  export PATH=\"${chctl_install_dir}:\$PATH\""
+                                            echo "  ${path_line}"
                                             ;;
                                     esac
                                 fi
@@ -291,9 +321,9 @@ then
                                 echo "NOTE: ${chctl_install_dir} is not in your PATH."
                                 echo "Add it by running:"
                                 echo
-                                echo "  export PATH=\"${chctl_install_dir}:\$PATH\""
+                                echo "  ${path_line}"
                                 echo
-                                echo "You may want to add that line to your shell profile (${pretty_profile})."
+                                echo "You may want to add that line to your shell profile (${pretty_profiles})."
                             fi
                         fi
                         ;;
