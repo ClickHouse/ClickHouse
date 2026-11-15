@@ -1,4 +1,6 @@
 #!/usr/bin/expect -f
+# Tags: no-fasttest
+# no-fasttest: Too slow for fast test (~10s), covered by regular stateless runs.
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]

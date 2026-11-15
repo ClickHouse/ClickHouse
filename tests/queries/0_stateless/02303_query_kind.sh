@@ -7,10 +7,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 CLICKHOUSE_LOCAL="$CLICKHOUSE_LOCAL --explain_query_plan_default=legacy"
-opts=(
-    "--enable_analyzer=1"
-)
-
 function run_query()
 {
     echo "clickhouse-client $*"
@@ -19,5 +15,5 @@ function run_query()
     echo "clickhouse-local $*"
     $CLICKHOUSE_LOCAL "$@"
 }
-run_query "${opts[@]}" --query_kind secondary_query -q "explain plan header=1 select toString(dummy) as dummy from system.one group by dummy"
-run_query "${opts[@]}" --query_kind initial_query -q "explain plan header=1 select toString(dummy) as dummy from system.one group by dummy"
+run_query --query_kind secondary_query -q "explain plan header=1 select toString(dummy) as dummy from system.one group by dummy"
+run_query --query_kind initial_query -q "explain plan header=1 select toString(dummy) as dummy from system.one group by dummy"

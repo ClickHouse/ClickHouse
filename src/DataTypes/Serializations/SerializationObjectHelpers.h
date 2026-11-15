@@ -4,6 +4,9 @@
 #include <Columns/ColumnObject.h>
 #include <Common/PODArray.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Core/MergeTreeSerializationEnums.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <Formats/MarkInCompressedFile.h>
 
 namespace DB
 {
@@ -87,5 +90,14 @@ std::pair<ColumnPtr, DataTypePtr> createPathsIndexes(const std::unordered_map<st
 
 /// Deserialize up to limit indexes from the read buffer and collect corresponding paths to the paths_column.
 void deserializeIndexesAndCollectPaths(IColumn & paths_column, ReadBuffer & istr, VectorWithMemoryTracking<String> && paths, size_t limit);
+
+/// Write a mark as a delta of the compressed offset from the previous mark of the same stream.
+void writeMarkDelta(const MarkInCompressedFile & mark, size_t previous_compressed_offset, WriteBuffer & buf);
+MarkInCompressedFile readMarkDelta(size_t previous_compressed_offset, ReadBuffer & buf);
+
+/// Settings for the data of one path inside a chunk of the shared data or a granule of the typed shared data: serialized
+/// like a column of a Compact part, with a fresh state per unit and no statistics. The caller sets the getters.
+ISerialization::SerializeBinaryBulkSettings getObjectPathDataSerializationSettings(
+    const ISerialization::SerializeBinaryBulkSettings & settings, MergeTreeObjectSharedDataSerializationVersion nested_shared_data_version);
 
 }

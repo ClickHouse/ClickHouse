@@ -7,6 +7,7 @@ from helpers.iceberg_utils import (
     write_iceberg_from_df,
     default_upload_directory,
 )
+from helpers.test_tools import assert_eq_with_retry
 
 _ASYNC_CACHE_REFRESH_CONFIG_PATH = "/etc/clickhouse-server/config.d/iceberg_async_cache_refresh.xml"
 
@@ -260,30 +261,39 @@ def test_async_metadata_refresh(started_cluster_iceberg_with_spark, storage_type
         "SELECT value FROM system.events WHERE name = 'S3ReadRequestsCount' SETTINGS system_events_show_zero_values=1"
     ))
 
-    write_iceberg_from_df(
-        spark,
-        generate_data(spark, 100, 200),
-        TABLE_NAME,
-        mode="append",
-    )
-    default_upload_directory(
-        started_cluster_iceberg_with_spark,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        "",
-    )
-    # the fresh metadata won't get pulled at SELECT, so we see stale data
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} SETTINGS iceberg_metadata_staleness_ms=600000")) == 100
-    # Wait for the background async refresher to pick up the new metadata (2 periods of ASYNC_METADATA_REFRESH_PERIOD_MS)
-    time.sleep(ASYNC_METADATA_REFRESH_PERIOD_MS/1000 * 2)
+    # Hold the refresher before it reads the latest metadata, so the next SELECT must see stale data
+    instance.query("SYSTEM ENABLE FAILPOINT iceberg_metadata_prefetch_pause")
+    try:
+        instance.query("SYSTEM WAIT FAILPOINT iceberg_metadata_prefetch_pause PAUSE")
+        write_iceberg_from_df(
+            spark,
+            generate_data(spark, 100, 200),
+            TABLE_NAME,
+            mode="append",
+        )
+        default_upload_directory(
+            started_cluster_iceberg_with_spark,
+            storage_type,
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            "",
+        )
+        # the fresh metadata won't get pulled at SELECT, so we see stale data
+        assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} SETTINGS iceberg_metadata_staleness_ms=600000")) == 100
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT iceberg_metadata_prefetch_pause")
 
+    # we don't pull fresh metadata at SELECT, but the data gets up to date because of the async refresh
+    assert_eq_with_retry(
+        instance,
+        f"SELECT count() FROM {TABLE_NAME} SETTINGS iceberg_metadata_staleness_ms=600000",
+        "200",
+        retry_count=60,
+    )
     # we expect some background activity against S3
     s3_reads_after = int(instance.query(
         "SELECT value FROM system.events WHERE name = 'S3ReadRequestsCount' SETTINGS system_events_show_zero_values=1"
     ))
     assert s3_reads_after > s3_reads_before
-    # we don't pull fresh metadata at SELECT, but the data is up to date because of the async refresh
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} SETTINGS iceberg_metadata_staleness_ms=600000")) == 200
 
 
 @pytest.mark.parametrize("storage_type", ["s3"])

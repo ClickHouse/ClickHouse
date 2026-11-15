@@ -1,7 +1,13 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
+
+UInt64 getETagHash(const String & etag)
+{
+    return etag.empty() ? 0 : sipHash64(etag);
+}
 
 size_t getTotalSize(const StoredObjects & objects)
 {

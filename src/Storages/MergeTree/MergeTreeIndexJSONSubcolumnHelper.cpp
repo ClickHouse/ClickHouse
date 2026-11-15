@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/TypeTree.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
@@ -94,16 +95,18 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const String & column_name,
     const Block & header,
     const String & json_function_name,
-    const JSONIndexArgumentTypes & json_argument_types)
+    const JSONIndexArgumentTypes & json_argument_types,
+    const IsShadowingJSONSubcolumn & is_shadowing_subcolumn)
 {
-    return tryMatchJSONSubcolumnToIndex(column_name, header.getNames(), json_function_name, json_argument_types);
+    return tryMatchJSONSubcolumnToIndex(column_name, header.getNames(), json_function_name, json_argument_types, is_shadowing_subcolumn);
 }
 
 std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const String & column_name,
     const Names & index_columns,
     const String & json_function_name,
-    const JSONIndexArgumentTypes & json_argument_types)
+    const JSONIndexArgumentTypes & json_argument_types,
+    const IsShadowingJSONSubcolumn & is_shadowing_subcolumn)
 {
     /// Scan the index columns, not the dot positions of the name: the name can embed a folded
     /// constant, so its length is unbounded while `index_columns` is not.
@@ -140,7 +143,7 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
         matched = true;
     }
 
-    if (!matched)
+    if (!matched || (is_shadowing_subcolumn && is_shadowing_subcolumn(name, matched_json_column)))
         return std::nullopt;
 
     /// Sub-object (^) and combined literal+sub-object (@) access cannot use the index: such
@@ -169,18 +172,20 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const RPNBuilderTreeNode & node,
     const Block & header,
     const String & json_function_name,
-    const JSONIndexArgumentTypes & json_argument_types)
+    const JSONIndexArgumentTypes & json_argument_types,
+    const IsShadowingJSONSubcolumn & is_shadowing_subcolumn)
 {
-    return tryMatchNodeToJSONIndex(node, header.getNames(), json_function_name, json_argument_types);
+    return tryMatchNodeToJSONIndex(node, header.getNames(), json_function_name, json_argument_types, is_shadowing_subcolumn);
 }
 
 std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const RPNBuilderTreeNode & node,
     const Names & index_columns,
     const String & json_function_name,
-    const JSONIndexArgumentTypes & json_argument_types)
+    const JSONIndexArgumentTypes & json_argument_types,
+    const IsShadowingJSONSubcolumn & is_shadowing_subcolumn)
 {
-    auto json_info = tryMatchJSONSubcolumnToIndex(node.getColumnName(), index_columns, json_function_name, json_argument_types);
+    auto json_info = tryMatchJSONSubcolumnToIndex(node.getColumnName(), index_columns, json_function_name, json_argument_types, is_shadowing_subcolumn);
 
     /// Try CAST unwrapping: CAST(json.path, 'Type') or _CAST(json.path, 'Type')
     if (!json_info && node.isFunction())
@@ -189,7 +194,7 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
         auto fname = func.getFunctionName();
         if ((fname == "CAST" || fname == "_CAST") && func.getArgumentsSize() == 2)
             json_info = tryMatchJSONSubcolumnToIndex(
-                func.getArgumentAt(0).getColumnName(), index_columns, json_function_name, json_argument_types);
+                func.getArgumentAt(0).getColumnName(), index_columns, json_function_name, json_argument_types, is_shadowing_subcolumn);
     }
 
     return json_info;
@@ -225,12 +230,18 @@ bool isJSONPathFilterSafe(
         /// Only the outermost type reaches the conversion below: `convertFieldToType` recurses into the
         /// elements of a composite without theirs, so a nested `Enum` label, or an alternative that may
         /// hold one, is absent from the converted value.
+        /// The outermost type is not in question here: an `Enum` there is the `enum_source`, and a
+        /// `Variant` or `Dynamic` there was ruled out above. Only what is below it is lost.
         bool nested_source_type_lost = false;
-        unwrapped_value_type->forEachChild([&](const IDataType & nested)
+        const size_t num_children = unwrapped_value_type->getNumberOfChildren();
+        for (size_t i = 0; i < num_children && !nested_source_type_lost; ++i)
         {
-            const WhichDataType which_nested(nested);
-            nested_source_type_lost |= which_nested.isEnum() || which_nested.isVariant() || which_nested.isDynamic();
-        });
+            nested_source_type_lost = anyInTypeTree(*unwrapped_value_type->getChild(i), [](const IDataType & nested)
+            {
+                const WhichDataType which_nested(nested);
+                return which_nested.isEnum() || which_nested.isVariant() || which_nested.isDynamic();
+            });
+        }
         if (nested_source_type_lost)
             return false;
     }
