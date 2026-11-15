@@ -299,7 +299,8 @@ private:
         Names required_column_names,
         Names & column_names_as_aliases,
         bool & is_smallest_column_requested,
-        Aliases & aliases) const;
+        Aliases & aliases,
+        const String * row_count_only_column) const;
 
     /// An object of this helper class is created
     ///  when processing a Merge table data source (subordinary table)
@@ -314,6 +315,8 @@ private:
         ///  SELECT x from T  if  T has row policy  y=42
         ///  required y in data pipeline
         void extendNames(Names &) const;
+
+        bool readsColumn(const String & column_name) const;
 
         /// Use storage facilities to filter data
         ///  optimization
