@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -124,15 +125,24 @@ OrphanScanResult findOrphanFiles(
     /// A filesystem names `a//b` and `a/./b` as `a/b`; an object key is a byte string.
     const auto storage_type = object_storage->getType();
     const bool is_filesystem = storage_type == ObjectStorageType::Local || storage_type == ObjectStorageType::HDFS;
+    const String key_prefix = object_storage->getCommonKeyPrefix();
+    /// The local storage opens a relative key as `resolvePathRelativelyToBase` maps it, from the current directory.
+    auto normalize = [&](const String & path)
+    {
+        std::filesystem::path file(path);
+        if (storage_type == ObjectStorageType::Local && file.is_relative())
+            file = std::filesystem::absolute(resolvePathRelativelyToBase(path, key_prefix));
+        return file.lexically_normal().string();
+    };
     std::unordered_set<String> normalized_reachable;
     if (is_filesystem)
         for (const auto & reachable_path : reachable)
-            normalized_reachable.insert(std::filesystem::path(reachable_path).lexically_normal().string());
+            normalized_reachable.insert(normalize(reachable_path));
 
     auto is_reachable = [&](const String & path)
     {
         if (is_filesystem)
-            return normalized_reachable.contains(std::filesystem::path(path).lexically_normal().string());
+            return normalized_reachable.contains(normalize(path));
         return reachable.contains(path);
     };
 

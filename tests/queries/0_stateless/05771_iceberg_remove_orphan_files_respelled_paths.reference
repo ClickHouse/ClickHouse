@@ -9,3 +9,9 @@ deleted_data_files_count 1
 deleted_manifest_lists_count 0
 data/orphan-dot.parquet absent
 [1,2]
+--- the table path is relative to user_files
+deleted_data_files_count 1
+deleted_manifest_files_count 0
+deleted_manifest_lists_count 0
+data/orphan-relative.parquet absent
+[1,2]
