@@ -2411,7 +2411,7 @@ void Aggregator::prepareAggregateInstructions(
             {
                 const auto * column_const = typeid_cast<const ColumnConst *>(columns.at(aggregates_positions[i][j]).get());
                 if (column_const)
-                    row_bytes += column_const->getDataColumn().byteSize();
+                    row_bytes += recursiveRemoveLowCardinality(column_const->getDataColumnPtr())->byteSize();
                 else
                     all_constant = false;
             }

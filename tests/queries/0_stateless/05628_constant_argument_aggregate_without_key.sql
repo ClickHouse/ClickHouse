@@ -70,6 +70,11 @@ SELECT count(toFixedString('', 1048576)) FROM numbers(200000) SETTINGS max_block
 SELECT length(anyOrDefault(toFixedString(CAST('' AS LowCardinality(Nullable(FixedString(12)))), 1048576))) FROM numbers(200000)
 SETTINGS max_block_size = 65409, max_threads = 1, max_memory_usage = 100000000;
 
+-- A row of the constant takes 1 MB without `LowCardinality`: 5 GB for a copy to 5000 rows.
+SELECT count(c), length(any(c))
+FROM (SELECT CAST(arrayWithConstant(1000, repeat('x', 1000)) AS Array(LowCardinality(String))) AS c FROM numbers(5000))
+SETTINGS max_block_size = 5000, max_threads = 1, max_memory_usage = 100000000, optimize_normalize_count_variants = 0;
+
 -- A constant of about 1 KB is added in five copies of about 1000 rows, the last one partial.
 SELECT 'String, copies', tuple(count(c), length(any(c)), length(anyLast(c)), length(anyOrDefault(c)), length(argMax(c, c)), length(groupArray(c)),
     length(groupConcat(c)), countIf(c, 1 = 1), length(topK(1)(c))) AS r,
