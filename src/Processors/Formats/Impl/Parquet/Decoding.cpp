@@ -803,12 +803,7 @@ struct PlainStringDecoder : public PageDecoder
                     num_pass += filter[filter_offset + i];
                 if (num_pass == 0)
                 {
-                    for (size_t i = 0; i < num_values; ++i)
-                    {
-                        UInt32 x = 0;
-                        memcpy(&x, data, 4);
-                        data += 4 + size_t(x);
-                    }
+                    skip(num_values);
                     return;
                 }
                 chars_buf.reserve(num_pass * 32); // rough estimate
