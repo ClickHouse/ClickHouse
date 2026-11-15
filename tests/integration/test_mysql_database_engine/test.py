@@ -1047,8 +1047,7 @@ def test_restart_server(started_cluster):
 
 
 def test_restart_server_with_unreachable_mysql(started_cluster):
-    # A MySQL database engine pointing at an unreachable host must not block server startup:
-    # the table list is fetched lazily on access, not during startup metadata loading.
+    # Startup metadata loading must not connect to MySQL: tables are fetched on first access.
     with contextlib.closing(
         MySQLNodeInstance(
             started_cluster,
@@ -1059,51 +1058,45 @@ def test_restart_server_with_unreachable_mysql(started_cluster):
         mysql_node.query("DROP DATABASE IF EXISTS test_unreachable_mysql")
         clickhouse_node.query("DROP DATABASE IF EXISTS test_unreachable_mysql")
 
-        # Create the remote schema first so the non-attach CREATE DATABASE -- which connects
-        # and selects the schema during mysql_real_connect -- succeeds and the engine attaches.
         mysql_node.query("CREATE DATABASE test_unreachable_mysql DEFAULT CHARACTER SET 'utf8'")
         mysql_node.query(
-            "CREATE TABLE `test_unreachable_mysql`.`test_table` ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;"
+            "CREATE TABLE `test_unreachable_mysql`.`test_table` ( `id` int(11) NOT NULL, `n` int(11) NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;"
         )
-        # connect_timeout * connection_max_tries (~180s) exceeds the 120s start window below, so
-        # without the fix a connect during startup metadata loading makes the server fail to start.
+        mysql_node.query("INSERT INTO `test_unreachable_mysql`.`test_table` VALUES (1, NULL)")
+        # connect_timeout * connection_max_tries (180 s) exceeds the 120 s start window below.
         clickhouse_node.query(
             f"CREATE DATABASE test_unreachable_mysql ENGINE = MySQL('mysql80:3306', 'test_unreachable_mysql', 'root', '{mysql_pass}') "
             "SETTINGS connect_timeout = 60, connection_max_tries = 3"
         )
-        assert "test_unreachable_mysql" in clickhouse_node.query("SHOW DATABASES")
         assert "test_table" in clickhouse_node.query("SHOW TABLES FROM test_unreachable_mysql")
 
+        # Shutdown lists the tables of every database, so stop while MySQL is still reachable.
+        clickhouse_node.stop_clickhouse()
         with PartitionManager() as pm:
-            # DROP (not REJECT) silently black-holes packets so a connect hangs until timeout
-            # instead of failing fast, which is what a startup connect must not do. Only the
-            # restart needs this; the access path below switches to a fast-failing reset.
+            # DROP black-holes the packets, so a connect hangs until connect_timeout.
             pm.partition_instances(clickhouse_node, mysql_node, action="DROP")
-
-            start = time.time()
-            # With the fix startup does not connect, so the restart succeeds within the window.
-            # Without it, startup blocks ~180s on the unreachable host, overruns the 120s start
-            # window, and restart_clickhouse raises "Cannot start ClickHouse".
-            clickhouse_node.restart_clickhouse(stop_start_wait_sec=120)
-            elapsed = time.time() - start
+            clickhouse_node.start_clickhouse(start_wait_sec=120)
 
             assert clickhouse_node.query("SELECT 1").strip() == "1"
-            # The database is still attached after restart; its table list was not needed to start.
             assert "test_unreachable_mysql" in clickhouse_node.query("SHOW DATABASES")
-            assert elapsed < 110, f"server restart took {elapsed:.1f}s, startup blocked on unreachable MySQL host"
+            # The server log is rotated on start (rotateOnOpen), so it holds only this server's lines.
+            assert int(clickhouse_node.count_in_log("Connecting to test_unreachable_mysql@")) == 0
 
-            # Swap the silent black-hole for a TCP reset before the access path, which retries
-            # connect_timeout * connection_max_tries and would otherwise cost ~180s under DROP.
+            # A TCP reset makes the first access fail fast instead of waiting for connect_timeout.
             pm.heal_all()
             pm.partition_instances(
                 clickhouse_node, mysql_node, action="REJECT --reject-with tcp-reset"
             )
-            # Accessing the database now forces a live fetch, which fails while the host is
-            # unreachable -- proving the fetch is lazy (on access), not done at startup.
             clickhouse_node.query_and_get_error("SHOW TABLES FROM test_unreachable_mysql")
 
-        # Once connectivity is restored, the lazy fetch on access succeeds.
-        assert "test_table" in clickhouse_node.query("SHOW TABLES FROM test_unreachable_mysql")
+        # The first successful fetch fills the cache shared by all queries: its types must not depend on the query settings.
+        for use_nulls in (0, 1):
+            assert (
+                clickhouse_node.query(
+                    f"SELECT toTypeName(n), n FROM test_unreachable_mysql.test_table SETTINGS external_table_functions_use_nulls = {use_nulls}"
+                )
+                == "Nullable(Int32)\t\\N\n"
+            )
 
         clickhouse_node.query("DROP DATABASE test_unreachable_mysql")
         mysql_node.query("DROP DATABASE test_unreachable_mysql")
