@@ -3,12 +3,15 @@
 #include <Processors/Formats/Impl/ORC/RLE.h>
 #include <Processors/Formats/Impl/ORC/Vector.h>
 
-#include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 class DateLUTImpl;
 
 namespace DB::ORC
 {
+
+/// The positions from the row indexes of the columns at the beginning of a row group, by column id.
+using RowGroupPositions = UnorderedMapWithMemoryTracking<UInt64, PositionProvider>;
 
 /// Access to the streams of one stripe for the column readers.
 class StripeStreams
@@ -19,7 +22,7 @@ public:
     virtual const Proto::ColumnEncoding & getEncoding(UInt64 column_id) const = 0;
     /// Returns nullptr if the stripe does not have this stream.
     virtual std::unique_ptr<InputByteStream> getStream(UInt64 column_id, Proto::StreamKind kind) const = 0;
-    virtual const std::vector<bool> & getSelectedColumns() const = 0;
+    virtual const VectorWithMemoryTracking<bool> & getSelectedColumns() const = 0;
     /// The time zones for TIMESTAMP (not TIMESTAMP_INSTANT) columns.
     virtual const DateLUTImpl & getWriterTimezone() const = 0;
     virtual const DateLUTImpl & getReaderTimezone() const = 0;
@@ -51,7 +54,7 @@ public:
     virtual size_t skip(size_t num_values);
 
     /// Moves to the beginning of a row group, by the positions from the row indexes of the columns.
-    virtual void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions);
+    virtual void seekToRowGroup(RowGroupPositions & positions);
 
 protected:
     const UInt64 column_id;

@@ -8,7 +8,8 @@
 
 #include <type_traits>
 #include <unordered_map>
-#include <unordered_set>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace DB
 {
@@ -78,9 +79,16 @@ enum class FilterResult
 
 [[nodiscard]] FilterResult getFilterResult(const ColumnWithTypeAndName & column);
 
+/// True if the subtree can produce totals, also through a remote server, the query result cache or a nested plan.
+[[nodiscard]] bool canProduceTotals(QueryPlan::Node & root);
+
 [[nodiscard]] bool dagContainsNonReadySet(const ActionsDAG & dag);
 
 [[nodiscard]] bool dagContainsNonDeterministicFunction(const ActionsDAG & dag);
+
+[[nodiscard]] bool dagReadsUnspecifiedValueUnderNull(const ActionsDAG & dag);
+
+[[nodiscard]] bool nodeReadsUnspecifiedValueUnderNull(const ActionsDAG::Node * root);
 
 /// True when the expression holds a function that is non-deterministic within the query (`rand`), stateful
 /// (`rowNumberInAllBlocks`, `aiEmbed`), or has observable side effects (`sleep`), so an observer can see how
@@ -92,7 +100,7 @@ enum class FilterResult
 [[nodiscard]] bool canHoistGatherThroughStep(const IQueryPlanStep & step);
 
 /// Columns of each node's output that are a constant there, or below it where a filter pushed down from above can read them.
-using ConstantColumns = std::unordered_map<const QueryPlan::Node *, NameSet>;
+using ConstantColumns = UnorderedMapWithMemoryTracking<const QueryPlan::Node *, NameSet>;
 
 [[nodiscard]] ConstantColumns collectConstantColumns(const QueryPlan::Node & root);
 
@@ -117,7 +125,7 @@ using ConstantColumns = std::unordered_map<const QueryPlan::Node *, NameSet>;
     const NameSet & not_null_columns = {});
 
 /// `Nullable` inputs of the expression `root` which make it NULL when they are NULL.
-[[nodiscard]] std::unordered_set<const ActionsDAG::Node *> collectNullPropagatingInputs(const ActionsDAG::Node * root);
+[[nodiscard]] UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> collectNullPropagatingInputs(const ActionsDAG::Node * root);
 
 /// Collect the input columns of `join` which cannot be NULL in a row the join keeps for the side that discards
 /// its unmatched rows, because a null-rejecting condition of the `ON` clause would not hold for a NULL there.

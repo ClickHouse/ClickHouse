@@ -479,50 +479,9 @@ MemoryWorker::MemoryWorker(
             /// file names and v2 uses a hierarchy.
             if (version == ICgroupsReader::CgroupsVersion::V2)
             {
-                /// In cgroup v2, every ancestor cgroup has its own `memory.max` and
-                /// `memory.current`. We pair them at the same level so the computed
-                /// per-level `available_i = max_i - current_i` reflects sibling
-                /// consumption inside an ancestor: using the leaf's `memory.current`
-                /// against an ancestor's `memory.max` would ignore other children of
-                /// that ancestor and let us exceed its budget.
-                fs::path current = fs::path(cgroup_path);
-                while (current != default_cgroups_mount.parent_path())
-                {
-                    fs::path max_path = current / "memory.max";
-                    fs::path current_path = current / "memory.current";
-                    fs::path stat_path = current / "memory.stat";
-                    if (fs::exists(max_path) && fs::exists(current_path))
-                    {
-                        CgroupMemoryLevel level;
-                        level.max_path = max_path.string();
-                        level.current_path = current_path.string();
-                        /// `memory.stat` lets us discount reclaimable page cache/slab from
-                        /// `memory.current`. If it is missing, the level falls back to treating
-                        /// the raw `memory.current` as usage (stricter, never over-budget).
-                        if (fs::exists(stat_path))
-                            level.stat_path = stat_path.string();
-                        try
-                        {
-                            level.max_buf = std::make_unique<ReadBufferFromFile>(level.max_path);
-                            level.current_buf = std::make_unique<ReadBufferFromFile>(level.current_path);
-                            if (!level.stat_path.empty())
-                                level.stat_buf = std::make_unique<ReadBufferFromFile>(level.stat_path);
-                        }
-                        catch (...)
-                        {
-                            /// Keep the level (with its paths) but leave the buffers null:
-                            /// `readAvailableForDynamicLimit` retries the open on each tick and
-                            /// fails the tick closed until it succeeds, instead of silently
-                            /// dropping this (possibly tighter) ancestor and overestimating headroom.
-                            level.max_buf.reset();
-                            level.current_buf.reset();
-                            level.stat_buf.reset();
-                            tryLogCurrentException(log, fmt::format("Cannot open cgroup memory files at '{}'", current.string()));
-                        }
-                        cgroup_memory_levels.push_back(std::move(level));
-                    }
-                    current = current.parent_path();
-                }
+                cgroup_memory_levels = openCgroupsV2MemoryLevels(cgroup_path);
+                cgroups_v2_lookup.emplace();
+                cgroups_v2_lookup->dir = cgroup_path;
             }
             else
             {
@@ -562,6 +521,7 @@ MemoryWorker::MemoryWorker(
             /// fall back to the jemalloc source and host-wide `/proc/meminfo` instead.
             cgroups_reader.reset();
             cgroup_memory_levels.clear();
+            cgroups_v2_lookup.reset();
             source = MemoryUsageSource::None;
         }
 #endif
@@ -582,6 +542,108 @@ MemoryWorker::MemoryWorker(
         rss_update_period_ms = os_memory_usage_tick_ms;
 #endif
 }
+
+#if defined(OS_LINUX)
+std::vector<MemoryWorker::CgroupMemoryLevel> MemoryWorker::openCgroupsV2MemoryLevels(const std::string & cgroup_path)
+{
+    /// In cgroup v2, every ancestor cgroup has its own `memory.max` and
+    /// `memory.current`. We pair them at the same level so the computed
+    /// per-level `available_i = max_i - current_i` reflects sibling
+    /// consumption inside an ancestor: using the leaf's `memory.current`
+    /// against an ancestor's `memory.max` would ignore other children of
+    /// that ancestor and let us exceed its budget.
+    std::vector<CgroupMemoryLevel> levels;
+    fs::path current = fs::path(cgroup_path);
+    while (current != default_cgroups_mount.parent_path())
+    {
+        fs::path max_path = current / "memory.max";
+        fs::path current_path = current / "memory.current";
+        fs::path stat_path = current / "memory.stat";
+        if (fs::exists(max_path) && fs::exists(current_path))
+        {
+            CgroupMemoryLevel level;
+            level.max_path = max_path.string();
+            level.current_path = current_path.string();
+            /// `memory.stat` lets us discount reclaimable page cache/slab from
+            /// `memory.current`. If it is missing, the level falls back to treating
+            /// the raw `memory.current` as usage (stricter, never over-budget).
+            if (fs::exists(stat_path))
+                level.stat_path = stat_path.string();
+            try
+            {
+                level.max_buf = std::make_unique<ReadBufferFromFile>(level.max_path);
+                level.current_buf = std::make_unique<ReadBufferFromFile>(level.current_path);
+                if (!level.stat_path.empty())
+                    level.stat_buf = std::make_unique<ReadBufferFromFile>(level.stat_path);
+            }
+            catch (...)
+            {
+                /// Keep the level (with its paths) but leave the buffers null:
+                /// `readAvailableForDynamicLimit` retries the open on each tick and
+                /// fails the tick closed until it succeeds, instead of silently
+                /// dropping this (possibly tighter) ancestor and overestimating headroom.
+                level.max_buf.reset();
+                level.current_buf.reset();
+                level.stat_buf.reset();
+                tryLogCurrentException(log, fmt::format("Cannot open cgroup memory files at '{}'", current.string()));
+            }
+            levels.push_back(std::move(level));
+        }
+        current = current.parent_path();
+    }
+    return levels;
+}
+
+bool MemoryWorker::lookUpCgroupsV2MemoryFiles()
+{
+    std::optional<std::string> dir;
+    std::shared_ptr<ICgroupsReader> reader;
+    std::vector<CgroupMemoryLevel> levels;
+    bool failed = false;
+    try
+    {
+        dir = getCgroupsV2PathContainingFile("memory.current");
+        if (dir == cgroups_v2_lookup->dir && !cgroups_v2_lookup->reopen)
+            return false;
+
+        if (dir)
+        {
+            reader = ICgroupsReader::createCgroupsReader(ICgroupsReader::CgroupsVersion::V2, *dir);
+            levels = openCgroupsV2MemoryLevels(*dir);
+        }
+    }
+    catch (...)
+    {
+        /// Handled as if no cgroup was visible, so the lookup is retried in `cgroups_v2_lookup_period`, not on the next tick.
+        tryLogCurrentException(log, "Cannot look up the cgroup memory files");
+        dir.reset();
+        reader.reset();
+        levels.clear();
+        failed = true;
+    }
+#if !USE_JEMALLOC && HAS_MEMORY_STATISTICS_OS
+    if (!dir && !os_memory_statistics)
+        os_memory_statistics = std::make_unique<MemoryStatisticsOS>();
+#endif
+
+    const bool replaced = cgroups_reader || reader;
+    cgroups_reader = std::move(reader);
+    cgroup_memory_levels = std::move(levels);
+
+    if (dir != cgroups_v2_lookup->dir && !failed)
+    {
+        if (dir)
+            LOG_INFO(log, "Reopened the cgroup memory files from '{}', the nearest cgroup with memory.current now (was '{}')",
+                *dir, cgroups_v2_lookup->dir.value_or(""));
+        else
+            LOG_INFO(log, "No cgroup has memory.current anymore (was '{}'), reading the resident memory from {} instead",
+                cgroups_v2_lookup->dir.value_or(""), USE_JEMALLOC ? "jemalloc" : "the OS");
+    }
+    cgroups_v2_lookup->dir = std::move(dir);
+    cgroups_v2_lookup->reopen = false;
+    return replaced;
+}
+#endif
 
 void MemoryWorker::setReleasableCache(std::shared_ptr<IMemoryReleasableCache> cache)
 {
@@ -792,6 +854,10 @@ void MemoryWorker::setDynamicHardLimitSettings(Int64 ceiling, double ratio)
 std::optional<uint64_t> MemoryWorker::readAvailableForDynamicLimit()
 {
 #if defined(OS_LINUX)
+    /// Fail closed while no cgroup is visible: a cgroup limit outside of the view may still bind.
+    if (cgroups_v2_lookup && !cgroups_v2_lookup->dir)
+        return std::nullopt;
+
     /// When running in a cgroup with a finite limit, the host-wide `/proc/meminfo` is
     /// the wrong source: the cgroup may be much smaller than the host, and other
     /// processes in the cgroup count toward our budget. Use the cgroup view instead,
@@ -989,6 +1055,17 @@ void MemoryWorker::updateResidentMemoryThread()
 
             Stopwatch total_watch;
 
+            bool cgroups_reopened = false;
+#if defined(OS_LINUX)
+            static constexpr std::chrono::milliseconds cgroups_v2_lookup_period{1000};
+            if (cgroups_v2_lookup
+                && (cgroups_v2_lookup->reopen || getCurrentTimeMs() - cgroups_v2_lookup->time >= cgroups_v2_lookup_period))
+            {
+                cgroups_v2_lookup->time = getCurrentTimeMs();
+                cgroups_reopened = lookUpCgroupsV2MemoryFiles();
+            }
+#endif
+
             const MemoryUsage memory_usage = getMemoryUsage(first_run);
 
             /// Speculatively reserve growth headroom on top of the observed RSS.
@@ -1024,7 +1101,8 @@ void MemoryWorker::updateResidentMemoryThread()
             /// upward would change no limit decision and could only publish a misleadingly
             /// large value.
             const Int64 current_hard_limit = total_memory_tracker.getHardLimit();
-            if (!first_run && rss_speculative_reserve_ratio > 0.0 && current_hard_limit > 0)
+            /// After a reopen `prev_resident` was read from another cgroup or source, so the difference is not growth.
+            if (!first_run && !cgroups_reopened && rss_speculative_reserve_ratio > 0.0 && current_hard_limit > 0)
             {
                 /// `total_memory_tracker.get()` can legitimately go negative (the lazy
                 /// correction below handles this via `MemoryTracker::updateAllocated`).
@@ -1255,6 +1333,10 @@ void MemoryWorker::updateResidentMemoryThread()
         catch (...)
         {
             tryLogCurrentException(log, "Failed to update resident memory");
+#if defined(OS_LINUX)
+            if (cgroups_v2_lookup)
+                cgroups_v2_lookup->reopen = true;
+#endif
         }
     }
 }

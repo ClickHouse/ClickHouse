@@ -82,7 +82,7 @@ def _iter_elements(parent, source_dir, stack, tag):
 
 
 def test_has_shell_query(test_path):
-    """Whether a test contains a `<query type="shell">`, including via `<include>`.
+    """Whether a test contains a `<query type="shell">` that is not disabled, including via `<include>`.
 
     Profile collection runs each test against a single instrumented server started
     without an HTTP port, invoking perf.py without `--binary` / `--http-port`. Shell
@@ -99,7 +99,7 @@ def test_has_shell_query(test_path):
         return False
     source_dir = os.path.dirname(os.path.abspath(test_path))
     return any(
-        q.get("type") == "shell"
+        q.get("type") == "shell" and q.get("disabled", "0") in ("0", "false", "")
         for q in _iter_elements(root, source_dir, {os.path.realpath(test_path)}, "query")
     )
 
@@ -172,17 +172,24 @@ def iceberg_code_changed(changed_files):
     return any(_relative(f).startswith(ICEBERG_PERFORMANCE_PATHS) for f in changed_files)
 
 
+def changed_tests(changed_files, perf_dir):
+    """The added or changed test files of `perf_dir` that still exist."""
+    prefix = _relative(perf_dir).rstrip("/") + "/"
+    tests = set()
+    for f in changed_files:
+        name = _relative(f).removeprefix(prefix)
+        if "/" not in name and name.endswith(".xml") and os.path.exists(os.path.join(perf_dir, name)):
+            tests.add(name)
+    return sorted(tests)
+
+
 def changed_iceberg_tests(changed_files, perf_dir):
     """The added or changed test files of `perf_dir` that the Iceberg
     configuration runs: a pull request that adds a test runs it in the
     configuration, so that the test does not break it."""
-    prefix = _relative(perf_dir).rstrip("/") + "/"
     skip_list = iceberg_skip_list(perf_dir)
-    tests = []
-    for f in changed_files:
-        name = _relative(f).removeprefix(prefix)
-        if "/" in name or not name.endswith(".xml") or not os.path.exists(os.path.join(perf_dir, name)):
-            continue
-        if test_runs_with_table_engine(os.path.join(perf_dir, name), skip_list):
-            tests.append(name)
-    return sorted(set(tests))
+    return [
+        name
+        for name in changed_tests(changed_files, perf_dir)
+        if test_runs_with_table_engine(os.path.join(perf_dir, name), skip_list)
+    ]
