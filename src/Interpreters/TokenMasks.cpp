@@ -294,7 +294,8 @@ struct FirstBytesInfo
 class FirstBytesWalker : public re2::Regexp::Walker<FirstBytesInfo>
 {
 public:
-    explicit FirstBytesWalker(bool latin1_) : latin1(latin1_) {}
+    /// `re2::Regexp::Walker` leaves its `max_visits_` uninitialized until `Walk` sets it.
+    explicit FirstBytesWalker(bool latin1_) : latin1(latin1_) {} // NOLINT(clang-analyzer-optin.cplusplus.UninitializedObject)
 
     bool has_assertion = false;
 
@@ -505,7 +506,7 @@ ByteSetLookup TokenMasks::getFirstBytes(const re2::RE2 & pattern)
     if (walker.has_assertion)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Mask '{}' contains an anchor or a word-boundary assertion (`^`, `$`, `\\A`, `\\z`, `\\b`, `\\B`), which is not supported",
+            R"(Mask '{}' contains an anchor or a word-boundary assertion (`^`, `$`, `\A`, `\z`, `\b`, `\B`), which is not supported)",
             pattern.pattern());
 
     return toByteSetLookup(info.bytes);

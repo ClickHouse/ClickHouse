@@ -143,7 +143,7 @@ const std::vector<String> & corpus()
         "at fe80::1:2 and ::1",
         "127.0.0.1 - - [04/Nov/2026:10:15:30 +0000] \"GET /index.html HTTP/1.1\" 200 512",
         "Nov  5 10:15:30 host sshd[123]: Accepted",
-        "C:\\Users\\x\\file.txt and read/write TCP/IP 10/20 11/15/2026",
+        R"(C:\Users\x\file.txt and read/write TCP/IP 10/20 11/15/2026)",
         "\xD0\x9F\xD1\x80\xD0\xB8 10.0.0.1x 50%x \xE5\x8F\xAB",
     };
     return strings;
@@ -156,7 +156,7 @@ const std::vector<String> & tokenizerDefinitions()
         "regexpMasked(masks = [])",
         "regexpMasked(masks = ['ip', 'number'])",
         "regexpMasked(custom_masks = ['sess_[0-9a-f]{16}', 'x+:+'])",
-        "regexpMasked(masks = [], custom_masks = ['[a-z]+\\\\.[a-z]+', '\\\\d+\\\\s+\\\\d+'])",
+        R"(regexpMasked(masks = [], custom_masks = ['[a-z]+\\.[a-z]+', '\\d+\\s+\\d+']))",
         "regexpMasked(splitByString)",
         "regexpMasked(splitByString([' ', ',']))",
         "regexpMasked(splitByString([', ', ' ', '::']), custom_masks = ['a,'])",
@@ -260,7 +260,7 @@ TEST(RegexpMaskedTokenizer, Rules)
 
 TEST(RegexpMaskedTokenizer, Properties)
 {
-    std::mt19937 rng(42);
+    std::mt19937 rng(42); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp): deterministic test data
     std::vector<String> inputs = corpus();
     for (size_t i = 0; i < 3000; ++i)
         inputs.push_back(randomString(rng, 30));
@@ -343,7 +343,7 @@ TEST(RegexpMaskedTokenizer, Properties)
 
 TEST(RegexpMaskedTokenizer, CaseInsensitive)
 {
-    std::mt19937 rng(7);
+    std::mt19937 rng(7); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp): deterministic test data
     std::vector<String> inputs = corpus();
     for (size_t i = 0; i < 3000; ++i)
         inputs.push_back(randomString(rng, 30));
@@ -467,7 +467,7 @@ TEST(RegexpMaskedTokenizer, Description)
         EXPECT_EQ(makeTokenizer(description)->getDescription(), description) << definition;
     }
 
-    const auto description = makeTokenizer("regexpMasked(custom_masks = ['it\\'s\\\\d+'])")->getDescription();
+    const auto description = makeTokenizer(R"(regexpMasked(custom_masks = ['it\'s\\d+']))")->getDescription();
     EXPECT_EQ(description, "regexpMasked(splitByNonAlpha, masks = ['timestamp', 'ip', 'uuid', 'hex', 'number', 'path', 'url'], custom_masks = ['it\\'s\\\\d+'])");
     EXPECT_EQ(makeTokenizer(description)->getDescription(), description);
 }
@@ -518,7 +518,7 @@ TEST(RegexpMaskedTokenizer, BuiltinMasksMatchTheirRegexps)
         ASSERT_TRUE(patterns.back().second->ok()) << spec.pattern;
     }
 
-    std::mt19937 rng(1);
+    std::mt19937 rng(1); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp): deterministic test data
     std::vector<String> inputs = corpus();
     for (size_t i = 0; i < 5000; ++i)
         inputs.push_back(randomString(rng, 40));
