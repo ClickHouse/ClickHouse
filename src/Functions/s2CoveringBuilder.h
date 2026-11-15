@@ -46,7 +46,7 @@ std::optional<S2Point> boostPointToS2Point(const SphericalPoint & point);
 /// If `remove_closing_vertex` is true and the last vertex equals the first,
 /// the closing vertex is removed (S2Loop does not want it).
 template <typename PointRange>
-std::optional<std::vector<S2Point>> convertBoostPointsToS2Points(const PointRange & points, bool remove_closing_vertex);
+std::optional<std::vector<S2Point>> convertBoostPointsToS2Points(const PointRange & points, bool remove_closing_vertex); /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 /// ── Native S2 type conversion helpers ───────────────────────────────────────
 

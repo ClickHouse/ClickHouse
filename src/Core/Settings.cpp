@@ -3604,11 +3604,11 @@ Additionally, exact equality predicates of the form `nullIf(key, sentinel) = con
     DECLARE(Bool, enable_s2_index_pruning, false, R"(
 Allow `s2RectContains`, `s2CapContains`, and `s2CellsIntersect` to be used as key conditions for primary key index pruning. When the key column stores S2 cell identifiers, this enables granule-level spatial filtering so that non-matching granules are skipped during reads. At parse time the query region is decomposed into a tight `S2CellUnion` covering; at eval time each granule's `[cell_min, cell_max]` Hilbert-curve interval is tested directly against the covering, bypassing the common-ancestor over-approximation.
 )", 0, \
-        {"26.10", false, false, "New setting to enable S2 spatial functions as primary key conditions for granule-level index pruning."}) \
+        {"26.11", false, false, "New setting to enable S2 spatial functions as primary key conditions for granule-level index pruning."}) \
     DECLARE(UInt64, s2_max_covering_cells, 8, R"(
 Maximum number of S2 cells used to approximate the query region when `enable_s2_index_pruning` is enabled. Higher values produce tighter coverings (fewer false-positive granules) at the cost of slightly more comparisons per granule. Has no effect for `s2CellsIntersect`, which always uses a single-cell exact covering regardless of this setting.
 )", 0, \
-        {"26.10", 8, 8, "New setting to control the maximum number of S2 cells used to approximate the query region for `enable_s2_index_pruning`."}) \
+        {"26.11", 8, 8, "New setting to control the maximum number of S2 cells used to approximate the query region for `enable_s2_index_pruning`."}) \
     DECLARE(Bool, joined_subquery_requires_alias, true, R"(
 Force joined subqueries and table functions to have aliases for correct name qualification.
 )", 0) \
@@ -5569,7 +5569,7 @@ operate in spherical coordinates (longitude/latitude in degrees), consistent wit
 When false, they operate in Cartesian (flat/planar) coordinates. The explicit `geo*Cartesian` and
 `geo*Spherical` function variants are not affected by this setting.
 )", 0, \
-        {"26.10", true, true, "New setting. Controls whether ST_* geo functions use spherical (default) or Cartesian coordinates."}) \
+        {"26.11", true, true, "New setting. Controls whether ST_* geo functions use spherical (default) or Cartesian coordinates."}) \
     DECLARE(UInt64, max_wkb_geometry_elements, 1'000'000, R"(
 Maximum number of points, rings, or polygons allowed in a single WKB geometry element during parsing by `readWKB` and related functions. This protects against excessive memory allocations from malformed WKB data. Set to 0 to use the hard-coded limit (100 million).
 )", 0, \

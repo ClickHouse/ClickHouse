@@ -278,7 +278,7 @@ struct DecodedGeometry
         MultiPolygon
     };
 
-    Kind kind;
+    Kind kind = Kind::Point;
     std::variant<SphericalPoint, SphericalRing, SphericalLineString, SphericalMultiLineString, SphericalPolygon, SphericalMultiPolygon> value;
 };
 
@@ -295,7 +295,7 @@ struct GeometryDecodeCache
         Geometry
     };
 
-    Kind kind;
+    Kind kind = Kind::Point;
     size_t rows = 0;
 
     /// For single-type columns (Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon):
@@ -981,10 +981,10 @@ std::optional<ActionsDAG> ProjectionIndexS2::tryRewriteFilterForQuery(const Acti
             if (!isSourceColumnNode(fn->children[0], params.source_column))
                 continue;
 
-            Float64 xmin;
-            Float64 ymin;
-            Float64 xmax;
-            Float64 ymax;
+            Float64 xmin = 0;
+            Float64 ymin = 0;
+            Float64 xmax = 0;
+            Float64 ymax = 0;
             if (!tryGetConstantFloat64(fn->children[1], xmin)
                 || !tryGetConstantFloat64(fn->children[2], ymin)
                 || !tryGetConstantFloat64(fn->children[3], xmax)
@@ -1011,7 +1011,7 @@ std::optional<ActionsDAG> ProjectionIndexS2::tryRewriteFilterForQuery(const Acti
             else
                 continue;
 
-            Float64 dist;
+            Float64 dist = 0;
             if (!tryGetConstantFloat64(fn->children[2], dist) || dist < 0)
                 continue;
 

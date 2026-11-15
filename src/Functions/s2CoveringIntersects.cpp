@@ -190,7 +190,7 @@ private:
         const auto & data = col_data->getData();
         size_t arr_end = col_array->getOffsets()[0];
 
-        std::vector<S2CellId> cells;
+        std::vector<S2CellId> cells; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
         cells.reserve(arr_end);
         for (size_t i = 0; i < arr_end; ++i)
         {

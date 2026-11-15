@@ -95,9 +95,9 @@ SphericalMultiPolygon simplifyMultiPolygon(const SphericalMultiPolygon & multi, 
 }
 
 /// Extract cell IDs from an S2CellUnion into a vector.
-std::vector<UInt64> extractCellIds(const S2CellUnion & covering)
+std::vector<UInt64> extractCellIds(const S2CellUnion & covering) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
-    std::vector<UInt64> ids;
+    std::vector<UInt64> ids; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
     ids.reserve(covering.size());
     for (const auto & cell : covering)
         ids.push_back(cell.id());

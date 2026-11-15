@@ -135,11 +135,11 @@ public:
 
                         auto intersects_box = [&](Float64 box_xmin, Float64 box_xmax)
                         {
-                            Point min_corner;
+                            Point min_corner{};
                             boost::geometry::set<0>(min_corner, box_xmin);
                             boost::geometry::set<1>(min_corner, ymin);
 
-                            Point max_corner;
+                            Point max_corner{};
                             boost::geometry::set<0>(max_corner, box_xmax);
                             boost::geometry::set<1>(max_corner, ymax);
 

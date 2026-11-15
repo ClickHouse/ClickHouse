@@ -39,12 +39,12 @@ std::optional<S2Point> boostPointToS2Point(const SphericalPoint & point)
 /// Explicit instantiation for the two types used: SphericalRing and SphericalLineString.
 /// Both are boost point sequences that share the same underlying model.
 template <typename PointRange>
-std::optional<std::vector<S2Point>> convertBoostPointsToS2Points(const PointRange & points, bool remove_closing_vertex)
+std::optional<std::vector<S2Point>> convertBoostPointsToS2Points(const PointRange & points, bool remove_closing_vertex) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     if (points.empty())
         return std::nullopt;
 
-    std::vector<S2Point> result;
+    std::vector<S2Point> result; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
     result.reserve(points.size());
 
     for (const auto & vertex : points)
@@ -63,8 +63,8 @@ std::optional<std::vector<S2Point>> convertBoostPointsToS2Points(const PointRang
 }
 
 /// Explicit template instantiations for the types used by callers.
-template std::optional<std::vector<S2Point>> convertBoostPointsToS2Points(const SphericalRing & points, bool remove_closing_vertex);
-template std::optional<std::vector<S2Point>> convertBoostPointsToS2Points(const SphericalLineString & points, bool remove_closing_vertex);
+template std::optional<std::vector<S2Point>> convertBoostPointsToS2Points(const SphericalRing & points, bool remove_closing_vertex); /// STYLE_CHECK_ALLOW_STD_CONTAINERS
+template std::optional<std::vector<S2Point>> convertBoostPointsToS2Points(const SphericalLineString & points, bool remove_closing_vertex); /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 /// ── Native S2 type conversion helpers ───────────────────────────────────────
 
@@ -116,7 +116,7 @@ std::unique_ptr<S2Polygon> tryConvertPolygonToS2Polygon(const SphericalPolygon &
     if (!outer_loop)
         return nullptr;
 
-    std::vector<std::unique_ptr<S2Loop>> loops;
+    std::vector<std::unique_ptr<S2Loop>> loops; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     /// The outer loop must be CCW (Normalize already ensured ≤ 2π).
     /// For InitOriented, interior is on the left side of edges, so CCW = shell.

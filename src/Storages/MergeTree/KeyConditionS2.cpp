@@ -170,7 +170,7 @@ bool tryAnalyzeS2Covering(
     {
         Field cell_val;
         DataTypePtr cell_type;
-        size_t key_arg_idx;
+        size_t key_arg_idx = 0;
 
         if (func.getArgumentAt(0).tryGetConstant(cell_val, cell_type))
             key_arg_idx = 1;
