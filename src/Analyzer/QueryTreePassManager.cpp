@@ -366,6 +366,9 @@ void addQueryTreePasses(
     manager.addPass(std::make_unique<LikePerfectAffixRewritePass>());
     manager.addPass(std::make_unique<LogicalExpressionOptimizerPass>());
 
+    /// Once more, to remove the elements after the keys that cannot be calculated from the keys after the passes above.
+    manager.addPass(std::make_unique<TruncateOrderByAfterGroupByKeysPass>());
+
     manager.addPass(std::make_unique<CrossToInnerJoinPass>());
     manager.addPass(std::make_unique<ShardNumColumnToFunctionPass>());
 

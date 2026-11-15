@@ -38,4 +38,11 @@ QueryTreeNodes getGroupByKeys(const QueryNode & query_node);
 /// Under `group_by_use_nulls` the analyzer replaces a key there with a copy converted to `Nullable`, not equal to the key.
 bool isGroupByKeyAfterAggregation(const QueryTreeNodePtr & node, const QueryTreeNodes & group_by_keys);
 
+/// Equal expressions can have different names in the planner, for example because it adds a cast to the name of a constant that is folded
+/// from an expression: `intDiv(x, 86400)` and `intDiv(x, 24 * 3600)`. Returns true if the names of equal expressions are the same.
+bool areConstantsWrittenAlike(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs);
+
+/// Returns true if `node` can be calculated after the aggregation from the keys as they are written.
+bool canBeCalculatedFromKeys(const QueryTreeNodePtr & node, const QueryTreeNodes & group_by_keys);
+
 }
