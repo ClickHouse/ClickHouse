@@ -69,7 +69,9 @@ SELECT
     (SELECT sum(cityHash64(k, u)) FROM (SELECT toUInt64(number % 300) AS k, uniqExactForEach([number % 1000, number % 7]) AS u FROM numbers_mt(200000) GROUP BY k) SETTINGS enable_parallel_single_level_merge = 0)
   = (SELECT sum(cityHash64(k, u)) FROM (SELECT toUInt64(number % 300) AS k, uniqExactForEach([number % 1000, number % 7]) AS u FROM numbers_mt(200000) GROUP BY k) SETTINGS enable_parallel_single_level_merge = 1);
 
--- The string hash table cannot be indexed, so its tables, which never freeze here, merge source by source.
+-- The string hash table keeps its keys in submaps by their length, and the empty key in a slot of its own.
+-- Its tables, which never freeze here, are indexed like any other, so a partition reads its cells from every
+-- submap of every index.
 SELECT 'string keys, short, long and empty';
 SELECT
     (SELECT sum(cityHash64(k, u)) FROM (SELECT if(number % 11 = 0, '', concat('k', toString(number % 700), if(number % 3 = 0, '_long_enough_to_leave_the_packed_sub_tables', ''))) AS k, uniqExact(number % 300) AS u FROM numbers_mt(200000) GROUP BY k) SETTINGS enable_parallel_single_level_merge = 0, enable_packed_string_keys_in_aggregation = 0)
