@@ -43,4 +43,11 @@ void serializeAggregateDescriptionsWithoutArguments(
     const AggregateDescriptions & aggregates, WriteBuffer & out, bool for_cache_key = false, const Block * input_header = nullptr);
 void deserializeAggregateDescriptionsWithoutArguments(AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity);
 
+/// The aggregate functions of a deserialized query plan are resolved from the types written in the plan,
+/// but they are executed on the columns of the step's input, found by name. The plan may come from an
+/// untrusted client, so check that they agree, or a function would interpret a column of another type.
+/// With `only_merge` the input has the states of the aggregates (named by `column_name`), otherwise
+/// their arguments. Throws `INCORRECT_DATA`.
+void checkDeserializedAggregatesMatchHeader(const AggregateDescriptions & aggregates, const Block & header, bool only_merge);
+
 }

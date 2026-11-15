@@ -394,6 +394,7 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
 
     AggregateDescriptions aggregates;
     deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
+    checkDeserializedAggregatesMatchHeader(aggregates, *ctx.input_headers.front(), /*only_merge=*/ true);
 
     SortDescription group_by_sort_description;
     deserializeSortDescription(group_by_sort_description, ctx.in, ctx.version, ctx.max_type_complexity);

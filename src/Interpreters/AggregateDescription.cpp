@@ -8,6 +8,8 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/JSONBuilder.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Parsers/NullsAction.h>
 
@@ -18,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 void AggregateDescription::explain(WriteBuffer & out, const std::string & prefix, size_t additonal_indent) const
@@ -302,6 +305,52 @@ void deserializeAggregateDescriptionsWithoutArguments(AggregateDescriptions & ag
         AggregateFunctionProperties properties;
         aggregate.function = AggregateFunctionFactory::instance().get(
             function_name, NullsAction::EMPTY, argument_types, aggregate.parameters, properties);
+    }
+}
+
+void checkDeserializedAggregatesMatchHeader(const AggregateDescriptions & aggregates, const Block & header, bool only_merge)
+{
+    for (const auto & aggregate : aggregates)
+    {
+        if (only_merge)
+        {
+            const auto * column = header.findByName(aggregate.column_name);
+            if (!column)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "The state of aggregate function {} is not in the input of a deserialized query plan step", aggregate.column_name);
+
+            const auto * state_type = typeid_cast<const DataTypeAggregateFunction *>(column->type.get());
+            if (!state_type || !state_type->getFunction()->haveSameStateRepresentation(*aggregate.function))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "The state of aggregate function {} has type {} in the input of a deserialized query plan step, "
+                    "which is not a state of {}",
+                    aggregate.column_name, column->type->getName(), aggregate.function->getName());
+            continue;
+        }
+
+        /// `AggregateFunctionFactory` resolves functions for the types without `LowCardinality`,
+        /// and the `Aggregator` removes it from the argument columns accordingly.
+        const auto & argument_types = aggregate.function->getArgumentTypes();
+        if (argument_types.size() != aggregate.argument_names.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Aggregate function {} of a deserialized query plan step has {} argument types for {} arguments",
+                aggregate.column_name, argument_types.size(), aggregate.argument_names.size());
+
+        for (size_t i = 0; i < argument_types.size(); ++i)
+        {
+            const auto & name = aggregate.argument_names[i];
+            const auto * column = header.findByName(name);
+            if (!column)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Argument {} of aggregate function {} is not in the input of a deserialized query plan step",
+                    name, aggregate.column_name);
+
+            if (!recursiveRemoveLowCardinality(column->type)->equals(*recursiveRemoveLowCardinality(argument_types[i])))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Argument {} of aggregate function {} has type {} in the input of a deserialized query plan step, "
+                    "but the function is resolved for {}",
+                    name, aggregate.column_name, column->type->getName(), argument_types[i]->getName());
+        }
     }
 }
 

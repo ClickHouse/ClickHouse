@@ -1584,6 +1584,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
 
     AggregateDescriptions aggregates;
     deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
+    checkDeserializedAggregatesMatchHeader(aggregates, *ctx.input_headers.front(), only_merge);
 
     UInt64 stats_key = 0;
     if (has_stats_key)
