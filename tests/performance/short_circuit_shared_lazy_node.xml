@@ -1,0 +1,11 @@
+<test>
+    <!-- A subexpression with several uses inside a lazily executed argument of `and` is computed once. -->
+    <query>SELECT count() FROM numbers_mt(300000000) WHERE number % 2 = 0 AND length(repeat(toString(number), 10)) + position(repeat(toString(number), 10), '7') + countSubstrings(repeat(toString(number), 10), '1') > 25 FORMAT Null</query>
+
+    <!-- A subexpression used by the first argument of `multiIf` or `or` and by a lazily executed one is computed once. -->
+    <query>SELECT count() FROM numbers_mt(300000000) WHERE number % 2 = 0 AND multiIf(cityHash64(repeat(toString(number), 10)) % 10 = 0, 1, position(repeat(toString(number), 10), '7') > 0, 2, 3) = 2 FORMAT Null</query>
+    <query>SELECT count() FROM numbers_mt(300000000) WHERE number % 2 = 0 AND (cityHash64(repeat(toString(number), 10)) % 10 = 0 OR position(repeat(toString(number), 10), '7') > 0) FORMAT Null</query>
+
+    <!-- A chain of nodes, each shared by both branches of the next one, in a branch of `multiIf` that is never executed. -->
+    <query>WITH cityHash64(toString(number)) AS r, length(repeat(toString(number + 1), 10)) AS a0, if(cityHash64(number) != 0, a0 + 1, a0 + 2) AS a1, if(cityHash64(number) != 0, a1 + 1, a1 + 2) AS a2, if(cityHash64(number) != 0, a2 + 1, a2 + 2) AS a3, if(cityHash64(number) != 0, a3 + 1, a3 + 2) AS a4, if(cityHash64(number) != 0, a4 + 1, a4 + 2) AS a5, if(cityHash64(number) != 0, a5 + 1, a5 + 2) AS a6, if(cityHash64(number) != 0, a6 + 1, a6 + 2) AS a7, if(cityHash64(number) != 0, a7 + 1, a7 + 2) AS a8, if(cityHash64(number) != 0, a8 + 1, a8 + 2) AS a9, if(cityHash64(number) != 0, a9 + 1, a9 + 2) AS a10, if(cityHash64(number) != 0, a10 + 1, a10 + 2) AS a11, if(cityHash64(number) != 0, a11 + 1, a11 + 2) AS a12 SELECT sum(if(cityHash64(number) != 0, multiIf(r > 0, toUInt64(1), r > 1, a12, toUInt64(0)), toUInt64(0))) FROM numbers(10000000) SETTINGS compile_expressions = 0, optimize_multiif_to_if = 0, short_circuit_function_evaluation_reorder_arguments = 0 FORMAT Null</query>
+</test>
