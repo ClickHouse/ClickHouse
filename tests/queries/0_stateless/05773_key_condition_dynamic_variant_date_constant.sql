@@ -13,6 +13,9 @@ DROP TABLE IF EXISTS t_nullable;
 DROP TABLE IF EXISTS t_d32;
 DROP TABLE IF EXISTS t_mm;
 DROP TABLE IF EXISTS t_stats;
+DROP TABLE IF EXISTS t_tuple;
+DROP TABLE IF EXISTS t_str;
+DROP TABLE IF EXISTS t_u64;
 
 CREATE TABLE t_pk (dt DateTime('Europe/Moscow')) ENGINE = MergeTree ORDER BY dt
 SETTINGS index_granularity = 1, auto_statistics_types = '';
@@ -67,9 +70,39 @@ SETTINGS use_statistics_for_part_pruning = 1, min_marks_per_part_to_load_statist
 SELECT count() FROM t_stats WHERE dt = CAST(toDate32('2024-01-02') AS Variant(Date32, String))
 SETTINGS use_statistics_for_part_pruning = 1, min_marks_per_part_to_load_statistics = 0;
 
+SELECT '-- composite member';
+-- The member keeps the types nested in it: here a `Tuple(Dynamic)` holding a `Date32`.
+CREATE TABLE t_tuple (k Tuple(DateTime('UTC'))) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 1, auto_statistics_types = '';
+INSERT INTO t_tuple SELECT tuple(toDateTime('2024-01-02 00:00:00', 'UTC') + number * 86400) FROM numbers(3);
+SELECT (SELECT count() FROM t_tuple WHERE k = CAST(tuple(CAST(toDate32('2024-01-02') AS Dynamic)) AS Dynamic)) AS pruned,
+       (SELECT countIf(k = CAST(tuple(CAST(toDate32('2024-01-02') AS Dynamic)) AS Dynamic)) FROM t_tuple) AS honest;
+SELECT (SELECT count() FROM t_tuple WHERE k = CAST(tuple(CAST(toDate32('2024-01-02') AS Dynamic)) AS Dynamic(max_types = 0))) AS pruned,
+       (SELECT countIf(k = CAST(tuple(CAST(toDate32('2024-01-02') AS Dynamic)) AS Dynamic(max_types = 0))) FROM t_tuple) AS honest;
+SELECT (SELECT count() FROM t_tuple WHERE k = CAST(tuple(CAST(toDate32('2024-01-02') AS Dynamic)) AS Variant(Tuple(Dynamic), String))) AS pruned,
+       (SELECT countIf(k = CAST(tuple(CAST(toDate32('2024-01-02') AS Dynamic)) AS Variant(Tuple(Dynamic), String))) FROM t_tuple) AS honest;
+
+SELECT '-- custom-named wrapper';
+SELECT count() FROM t_pk
+WHERE dt = CAST(CAST(toDate32('2024-01-02') AS Variant(Date32, String)) AS SimpleAggregateFunction(anyLast, Variant(Date32, String)));
+
+SELECT '-- pattern operand';
+-- `like` does not accept an `Enum8` pattern, so the query throws instead of pruning every granule.
+CREATE TABLE t_str (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 1, auto_statistics_types = '';
+INSERT INTO t_str VALUES ('b'), ('c');
+SELECT count() FROM t_str WHERE s LIKE CAST(CAST('a' AS Enum8('a' = 1)) AS Dynamic); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- incomparable member';
+CREATE TABLE t_u64 (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, auto_statistics_types = '';
+INSERT INTO t_u64 VALUES (1), (2), (3);
+SELECT count() FROM t_u64 WHERE k != CAST(toDate32('2024-01-02') AS Variant(Date32, String)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 DROP TABLE t_pk;
 DROP TABLE t_src;
 DROP TABLE t_nullable;
 DROP TABLE t_d32;
 DROP TABLE t_mm;
 DROP TABLE t_stats;
+DROP TABLE t_tuple;
+DROP TABLE t_str;
+DROP TABLE t_u64;

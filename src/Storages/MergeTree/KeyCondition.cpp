@@ -45,6 +45,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/transformTypesRecursively.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVariant.h>
@@ -59,6 +60,7 @@
 #include <Interpreters/Set.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <base/itoa.h>
@@ -2329,26 +2331,37 @@ static bool tryNormalizeTextConstantForZonelessDateTimeInput(
     return true;
 }
 
-/// The type of the value in row 0 of `column`, which must not be NULL: the active member of a `Variant` or
-/// a `Dynamic`, `type` for any other type. `ColumnDynamic::getTypeAt` also resolves the shared variant.
-static DataTypePtr getActiveMemberType(const IColumn & column, const DataTypePtr & type)
+/// Row 0 of `column`, which must not be NULL, as a one-row column of the type of its value: the active member of
+/// a `Variant` or a `Dynamic`, `column` itself for any other type.
+static ColumnWithTypeAndName getActiveMember(const IColumn & column, const DataTypePtr & type)
 {
     if (isDynamic(type))
     {
-        auto member_type = assert_cast<const ColumnDynamic &>(column).getTypeAt(0);
-        chassert(member_type);
-        return member_type;
+        const auto & dynamic_column = assert_cast<const ColumnDynamic &>(column);
+        const auto & variant_column = dynamic_column.getVariantColumn();
+        if (variant_column.globalDiscriminatorAt(0) != dynamic_column.getSharedVariantDiscriminator())
+            return getActiveMember(variant_column, dynamic_column.getVariantInfo().variant_type);
+
+        ReadBufferFromMemory buf(dynamic_column.getSharedVariant().getDataAt(variant_column.offsetAt(0)));
+        auto member_type = decodeDataType(buf);
+        auto member_column = member_type->createColumn();
+        member_type->getDefaultSerialization()->deserializeBinary(*member_column, buf, {});
+        return {std::move(member_column), member_type, ""};
     }
 
     if (isVariant(type))
     {
         const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
-        const auto discriminator = assert_cast<const ColumnVariant &>(column).globalDiscriminatorAt(0);
+        const auto & variant_column = assert_cast<const ColumnVariant &>(column);
+        const auto discriminator = variant_column.globalDiscriminatorAt(0);
         chassert(discriminator < variant_type.getVariants().size());
-        return variant_type.getVariant(discriminator);
+        return {
+            variant_column.getVariantByGlobalDiscriminator(discriminator).cut(variant_column.offsetAt(0), 1),
+            variant_type.getVariant(discriminator),
+            ""};
     }
 
-    return type;
+    return {column.getPtr(), type, ""};
 }
 
 /// Identifies a `FixedString` constant, including an active `Variant` or `Dynamic` member.
@@ -2361,7 +2374,7 @@ static bool isFixedStringConstant(
     if (value.getType() != Field::Types::String)
         return false;
 
-    const auto value_type = removeLowCardinalityAndNullable(getActiveMemberType(column, type));
+    const auto value_type = removeLowCardinalityAndNullable(getActiveMember(column, type).type);
     if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(value_type.get()))
     {
         chassert(value.safeGet<String>().size() == fixed_string_type->getN());
@@ -5693,17 +5706,23 @@ void KeyCondition::extractBinaryComparisonAtoms(
         return;
     }
 
-    /// The adaptor for a `Dynamic` or `Variant` argument compares the key with the constant's active member.
-    if (!rewritten_constant)
+    /// A comparison whose adaptor executes per member of the constant compares the key with the constant's active member.
+    if (!reverseComparisonOperator(func_name).empty())
     {
         const auto & function = *func.getFunctionBase();
-        if ((isDynamic(constant.type) && typeid_cast<const FunctionBaseDynamicAdaptor *>(&function))
-            || (isVariant(constant.type) && !constant.type->hasCustomName()
-                && typeid_cast<const FunctionBaseVariantAdaptor *>(&function)))
+        const auto * dynamic_adaptor = typeid_cast<const FunctionBaseDynamicAdaptor *>(&function);
+        const auto * variant_adaptor = typeid_cast<const FunctionBaseVariantAdaptor *>(&function);
+        if ((dynamic_adaptor && dynamic_adaptor->getDynamicArgumentIndex() == const_arg_pos)
+            || (variant_adaptor && variant_adaptor->getVariantArgumentIndex() == const_arg_pos))
         {
             const auto & data_column = assert_cast<const ColumnConst &>(*constant.column).getDataColumn();
-            const auto member_type = removeLowCardinality(getActiveMemberType(data_column, constant.type));
-            constant = {member_type->createColumnConst(1, const_value), member_type, constant.name};
+            const auto member = getActiveMember(data_column, constant.type);
+            const auto member_type = removeLowCardinality(member.type);
+
+            /// Without a common type with the key, comparing the member throws or returns NULL at execution.
+            const auto & key_type = function.getArgumentTypes()[1 - const_arg_pos];
+            if (tryGetLeastSupertype(DataTypes{key_type, member_type}))
+                constant = {ColumnConst::create(member.column->convertToFullColumnIfLowCardinality(), 1), member_type, constant.name};
         }
     }
 
