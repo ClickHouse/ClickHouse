@@ -324,12 +324,25 @@ def coverage_cohort(jobs, read_manifest):
             or not 1 <= plan["shard"] <= 16
         ):
             raise ValueError("Coverage manifest has an unexpected shard assignment")
-        group = groups[coverage_identity(manifest)]
+        identity = coverage_identity(manifest)
+        group = groups[identity]
         group.setdefault(plan["shard"], (job, manifest))
         if len(group) == 16:
             # Descending start time minimizes the age of the oldest shard. A
             # partial newer collection cannot displace a complete older one.
             selected = [group[n] for n in range(1, 17)]
+            if not any(
+                state["status"] == "collected"
+                for _, shard_manifest in selected
+                for state in shard_manifest["tests"].values()
+            ):
+                # Nothing was collected, so an older collection is used.
+                superseded.extend(
+                    {**shard_job, "reason": "Coverage collection covered no test"}
+                    for shard_job, _ in selected
+                )
+                del groups[identity]
+                continue
             return [j for j, _ in selected], [m for _, m in selected], superseded
     raise ValueError("No complete compatible performance coverage within 72 hours")
 
