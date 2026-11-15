@@ -52,7 +52,6 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/SettingsEnums.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
