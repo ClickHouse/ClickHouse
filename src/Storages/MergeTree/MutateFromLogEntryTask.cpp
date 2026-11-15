@@ -180,7 +180,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     Strings mutation_ids;
     commands = std::make_shared<MutationCommands>(storage.queue.getMutationCommands(source_part, new_part_info.mutation, mutation_ids));
     LOG_TRACE(log, "Mutating part {} with mutation commands from {} mutations ({}): {}",
-              entry.new_part_name, commands->size(), fmt::join(mutation_ids, ", "), commands->toString(true));
+              entry.new_part_name, commands->size(), fmt::join(mutation_ids, ", "), commands->ast(true)->formatForLogging());
 
     /// mutation_ids can be empty here.
     mutation_ids_for_log = mutation_ids;
@@ -290,7 +290,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
 bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
-    new_part = mutate_task->getFuture().get();
+    new_part = mutate_task->takeResultPart();
 
     auto & data_part_storage = new_part->getDataPartStorage();
 

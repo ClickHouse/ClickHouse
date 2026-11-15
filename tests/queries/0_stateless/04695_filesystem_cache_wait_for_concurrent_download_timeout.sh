@@ -56,6 +56,7 @@ $CLICKHOUSE_CLIENT --max_threads 1 \
     --remote_filesystem_read_prefetch 0 \
     --allow_prefetched_read_pool_for_remote_filesystem 0 \
     --filesystem_cache_allow_background_download 0 \
+    --use_statistics_for_sum_avg_aggregation 0 \
     --query "SELECT sum(a) FROM t_download_wait_timeout" &
 
 # The failpoint pauses every cache write on the server, so the first pause is not necessarily the
@@ -80,6 +81,7 @@ $CLICKHOUSE_CLIENT --query_id "$waiter_query_id" --max_threads 1 \
     --filesystem_cache_allow_background_download 0 \
     --use_uncompressed_cache 0 \
     --filesystem_cache_wait_for_concurrent_download_timeout_milliseconds 100 \
+    --use_statistics_for_sum_avg_aggregation 0 \
     --query "SELECT sum(a) FROM t_download_wait_timeout"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT file_segment_pause_before_write"

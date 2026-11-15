@@ -1,0 +1,24 @@
+ranking with an aggregate under the default frame, block size 1: 16498222632538730239
+ranking with an aggregate under the default frame, block size 2: 16498222632538730239
+ranking with an aggregate under the default frame, block size 3: 16498222632538730239
+ranking with an aggregate under the default frame, block size 5: 16498222632538730239
+ranking with an aggregate under the default frame, block size 8: 16498222632538730239
+ranking with an aggregate under the default frame, block size 65505: 16498222632538730239
+ranking with an aggregate under a range offset frame, block size 1: 8946532678518425312
+ranking with an aggregate under a range offset frame, block size 2: 8946532678518425312
+ranking with an aggregate under a range offset frame, block size 3: 8946532678518425312
+ranking with an aggregate under a range offset frame, block size 5: 8946532678518425312
+ranking with an aggregate under a range offset frame, block size 8: 8946532678518425312
+ranking with an aggregate under a range offset frame, block size 65505: 8946532678518425312
+ranking with an aggregate under a groups frame, block size 1: 3887300799756318377
+ranking with an aggregate under a groups frame, block size 2: 3887300799756318377
+ranking with an aggregate under a groups frame, block size 3: 3887300799756318377
+ranking with an aggregate under a groups frame, block size 5: 3887300799756318377
+ranking with an aggregate under a groups frame, block size 8: 3887300799756318377
+ranking with an aggregate under a groups frame, block size 65505: 3887300799756318377
+groups frame without ties, block size 1: 3323502046637320723
+groups frame without ties, block size 2: 3323502046637320723
+groups frame without ties, block size 3: 3323502046637320723
+groups frame without ties, block size 5: 3323502046637320723
+groups frame without ties, block size 8: 3323502046637320723
+groups frame without ties, block size 65505: 3323502046637320723

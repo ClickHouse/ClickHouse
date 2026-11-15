@@ -6,8 +6,6 @@ keywords: ['compression', 'codec', 'encodage', 'modes']
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Le protocole ClickHouse prend en charge la compression des **blocs de données** avec sommes de contrôle.
 Utilisez `LZ4` si vous ne savez pas quel mode choisir.
 &#96;&#96;
@@ -46,7 +44,15 @@ D’après les [tests de performance de Facebook](https://facebook.github.io/zst
 | mode                | byte    | Mode de compression                                                                                      |
 | compressed&#95;data | binary  | Bloc de données compressées                                                                              |
 
-<Image img="/images/data-compression/ch_compression_block.webp" size="md" alt="Schéma illustrant la structure du bloc de compression de ClickHouse" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Schéma illustrant la structure du bloc de compression de ClickHouse](/images/data-compression/ch_compression_block.webp)
+
+</Frame>
+
+</div>
 
 L’en-tête est constitué de (raw&#95;size + data&#95;size + mode), et la taille brute correspond à len(header + compressed&#95;data).
 

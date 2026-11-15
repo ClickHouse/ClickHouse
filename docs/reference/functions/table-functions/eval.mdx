@@ -8,10 +8,10 @@ doc_type: 'reference'
 
 The `eval` table function evaluates its argument to a query string, then executes that string as a single `SELECT` query.
 
-This table function is experimental and disabled by default. Enable it with the `allow_experimental_eval_table_function` setting:
+This table function is experimental and disabled by default. Enable it with the `enable_eval_table_function` setting:
 
 ```sql
-SET allow_experimental_eval_table_function = 1;
+SET enable_eval_table_function = 1;
 ```
 
 ## Syntax {#syntax}
@@ -112,4 +112,4 @@ Result:
 ## Related {#related}
 
 - [`view` table function](/reference/functions/table-functions/view)
-- `allow_experimental_eval_table_function` setting
+- `enable_eval_table_function` setting

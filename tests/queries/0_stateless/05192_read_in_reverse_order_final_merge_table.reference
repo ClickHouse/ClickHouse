@@ -1,0 +1,54 @@
+plan: both children read in reverse order
+Ok
+Ok
+reverse order
+4	12
+3	11
+3	0
+2	2
+1	10
+1	1
+0	0
+4	12
+3	11
+3	0
+same result without the optimization
+1
+direct order
+Ok
+Ok
+0	0
+1	1
+1	10
+setting disabled
+Ok
+Ok
+4	12
+3	11
+3	0
+mixed engines: not in reverse order
+Ok
+Ok
+6	60
+5	50
+3	0
+descending sorting key: ORDER BY x ASC reads in reverse order
+Ok
+0	0
+1	1
+descending sorting key: ORDER BY x DESC reads in order
+Ok
+3	0
+2	2
+large: reverse order
+Ok
+Ok
+14999	3
+14998	3
+14997	4
+14996	3
+14995	3
+1000	14499500	3333
+large: same result without the optimization
+1
+1

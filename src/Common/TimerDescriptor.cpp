@@ -127,7 +127,7 @@ void TimerDescriptor::drain() const
 
     /// Due to a bug in Linux Kernel, reading from timerfd in non-blocking mode can be still blocking.
     /// Avoid it with polling.
-    Epoll epoll;
+    Epoll epoll{EpollNesting::Leaf};
     epoll.add(timer_fd);
     epoll_event event{};
     event.data.fd = -1;
@@ -376,6 +376,12 @@ void TimerDescriptor::setRelative(uint64_t usec) const
         reset();
         return;
     }
+
+    /// `timerfd_settime` clears a pending expiration, so a freshly armed timer never reads as
+    /// already alarmed. Drop the byte an earlier expiration left in the pipe to match that.
+    /// `disarm` takes the mutex the timer thread writes under, so nothing can expire into the pipe
+    /// between the drain and the arm below.
+    reset();
 
     TimerThread::instance().arm(wakeup_fd, usec);
 }

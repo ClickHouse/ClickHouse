@@ -3,6 +3,7 @@
 name: CreateReleaseBranch
 concurrency:
   group: CreateRelease
+  queue: max
 on:
   workflow_dispatch:
     inputs:

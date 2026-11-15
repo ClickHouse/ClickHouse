@@ -1,3 +1,4 @@
+-- Tags: no-parallel, no-fasttest
 -- Plan-based parallel replicas marks a coordinated read for serialization without attaching callbacks,
 -- then clones the fragment again to build the initiator's local arm. The clone must reproduce that state
 -- instead of resolving the callbacks from the context, which on an initiator holds none.
@@ -10,7 +11,6 @@ DROP TABLE IF EXISTS t_clone_marked;
 CREATE TABLE t_clone_marked (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_clone_marked SELECT number, number % 10 FROM numbers(100000);
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;

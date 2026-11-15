@@ -10,22 +10,18 @@ doc_type: 'guide'
 import CommunityMonitoring from '/snippets/zh/_community_monitoring.mdx';
 import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
-<div id="direct-datadog">
-  ## Datadog 集成
-</div>
+## Datadog 集成 {#direct-datadog}
 
 要在 Datadog 中监控您的 ClickHouse 部署，ClickHouse 提供了多种适用于不同部署模式的集成方案。每种方案各有权衡，其中一些由 ClickHouse 维护，另一些由 Datadog 维护。以下按推荐顺序列出这些集成。
 
-| 集成                                                                                  | 文档                                                                                             | 部署          | 信号                   |
-| ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----------- | -------------------- |
-| [ClickHouse Cloud Datadog API 集成](#clickhouse-cloud-datadog-api-integration) *(推荐)* | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse-cloud/)                | Cloud       | 指标                   |
-| [ClickHouse Cloud Prometheus 集成](#clickhouse-cloud-prometheus-integration)          | [clickhouse.com/docs](/zh/products/cloud/features/monitoring/prometheus)                          | Cloud       | 指标                   |
-| [ClickHouse Datadog Agent 集成](#clickhouse-datadog-agent-integration)                | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse/?tab=host)             | OSS / Cloud | 日志、指标                |
-| [ClickHouse Datadog DBM](#clickhouse-datadog-dbm)                                   | [datadoghq.com](https://www.datadoghq.com/product-preview/database-monitoring-for-clickhouse/) | OSS / Cloud | 日志、指标、Query Insights |
+| 集成                                                                                | 文档                                                                                             | 部署          | 信号                   |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----------- | -------------------- |
+| [ClickHouse Cloud Prometheus 集成](#clickhouse-cloud-prometheus-integration) *(推荐)* | [clickhouse.com/docs](/zh/products/cloud/features/monitoring/prometheus)                          | Cloud       | 指标                   |
+| [ClickHouse Cloud Datadog API 集成](#clickhouse-cloud-datadog-api-integration)      | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse-cloud/)                | Cloud       | 指标                   |
+| [ClickHouse Datadog Agent 集成](#clickhouse-datadog-agent-integration)              | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse/?tab=host)             | OSS / Cloud | 日志、指标                |
+| [ClickHouse Datadog DBM](#clickhouse-datadog-dbm)                                 | [datadoghq.com](https://www.datadoghq.com/product-preview/database-monitoring-for-clickhouse/) | OSS / Cloud | 日志、指标、Query Insights |
 
-<div id="clickhouse-cloud-datadog-api-integration">
-  ### ClickHouse Cloud Datadog API 集成
-</div>
+### ClickHouse Cloud Datadog API 集成 {#clickhouse-cloud-datadog-api-integration}
 
 <PrivatePreviewBadge />
 
@@ -40,9 +36,7 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 有关引导设置步骤，请参阅 [Datadog 的 ClickHouse Cloud 集成指南](https://docs.datadoghq.com/integrations/clickhouse-cloud/)。
 
-<div id="clickhouse-cloud-prometheus-integration">
-  ### ClickHouse Cloud Prometheus 集成
-</div>
+### ClickHouse Cloud Prometheus 集成 {#clickhouse-cloud-prometheus-integration}
 
 这是从 ClickHouse Cloud 收集服务级和组织级遥测数据最常见、最通用的方式。
 
@@ -52,9 +46,7 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 * Datadog 会将这些指标视为 **自定义指标**
 * **不会** 阻止服务进入空闲状态
 
-<div id="clickhouse-datadog-agent-integration">
-  ### ClickHouse Datadog Agent 集成
-</div>
+### ClickHouse Datadog Agent 集成 {#clickhouse-datadog-agent-integration}
 
 这是将数据从 OSS ClickHouse 服务接入 Datadog 的最常见方式。它也适用于 ClickHouse Cloud，但有一些注意事项。
 
@@ -68,9 +60,7 @@ Datadog Agent 会定期轮询 ClickHouse 实例，并收集指标和日志。此
 * 需要使用 `datadog-cluster-agent`，而不是 `datadog-agent`
 * **会导致服务无法进入空闲状态**
 
-<div id="clickhouse-datadog-dbm">
-  ### ClickHouse Datadog DBM
-</div>
+### ClickHouse Datadog DBM {#clickhouse-datadog-dbm}
 
 ClickHouse 的数据库监控 (DBM) 由 Datadog 开发和维护。其工作原理是配置 Datadog Agent，从 ClickHouse 实例收集系统表数据，从而提供类似 ClickHouse Cloud 控制台原生提供的查询级性能洞察。ClickHouse 不参与此集成——如有任何问题，请联系 Datadog，而不是 ClickHouse。
 
@@ -80,9 +70,7 @@ ClickHouse 的数据库监控 (DBM) 由 Datadog 开发和维护。其工作原�
 
 <CommunityMonitoring />
 
-<div id="billing-usage-api">
-  ## 计费与使用情况 API
-</div>
+## 计费与使用情况 API {#billing-usage-api}
 
 Billing &amp; Usage API 可用于以编程方式访问您的 Cloud 组织的计费和使用记录。这对于构建自定义成本监控仪表盘，或将计费数据集成到现有财务报告工作流中非常有用。
 

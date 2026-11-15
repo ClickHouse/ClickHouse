@@ -1,0 +1,20 @@
+The result type is Float64, also for Nullable features
+Float64
+Float64
+Float64
+A NULL feature is predicted like a NaN feature, i.e. as a missing value
+1
+1
+1
+A non-NULL value of a Nullable feature is predicted like the plain value
+1
+1
+Constant features give a constant result, equal to the per-row prediction
+1
+0
+1000
+Prediction parameters work with constant and non-constant features, and must be constant
+1
+1
+1
+A non-numeric feature is still rejected

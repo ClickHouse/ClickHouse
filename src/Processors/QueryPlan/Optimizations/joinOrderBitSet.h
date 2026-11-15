@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/joinOrderCommon.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -10,16 +11,16 @@ std::optional<JoinKind> isValidJoinOrder(
     const BitSet & left_mask,
     const BitSet & right_mask);
 
-std::vector<JoinActionRef *> getApplicableExpressions(
+VectorWithMemoryTracking<JoinActionRef *> getApplicableExpressions(
     QueryGraph & query_graph,
     const BitSet & left,
     const BitSet & right);
 
-double computeSelectivity(
+SelectivityEstimate computeSelectivity(
     const QueryGraph & query_graph,
     const PlanMemo & dp_table,
     SelectivityCache & expression_selectivity,
-    const std::vector<JoinActionRef *> & edges,
+    const VectorWithMemoryTracking<JoinActionRef *> & edges,
     const BitSet & left,
     const BitSet & right);
 

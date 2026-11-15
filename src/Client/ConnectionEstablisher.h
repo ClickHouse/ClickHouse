@@ -119,7 +119,7 @@ private:
 
     /// In read callback we add socket file descriptor and timer descriptor with receive timeout
     /// in epoll, so we can return epoll file descriptor outside for polling.
-    Epoll epoll;
+    Epoll epoll{EpollNesting::Leaf};
     int socket_fd = -1;
     std::string socket_description;
 

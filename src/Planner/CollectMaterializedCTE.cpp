@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -149,7 +150,7 @@ void addBuildSubqueriesForMaterializedCTEsIfNeeded(
     // is always materialized before the CTE at level N-1 that depends on it.
     for (const auto & cte_level : materialized_ctes)
     {
-        std::vector<MaterializedCTEPtr> ctes;
+        VectorWithMemoryTracking<MaterializedCTEPtr> ctes;
         ctes.reserve(cte_level.size());
 
         for (const auto & cte_node : cte_level)
@@ -183,6 +184,9 @@ void addBuildSubqueriesForMaterializedCTEsIfNeeded(
                 cte_planner.buildQueryPlanIfNeeded();
 
                 auto cte_plan = std::move(cte_planner).extractQueryPlan();
+                /// The CTE plan is kept aside until `optimize`, after the distributed-plan decision, so its
+                /// contexts have to follow this plan's decision from here.
+                query_plan.takeContextsFrom(cte_plan);
 
                 auto step = std::make_unique<MaterializingCTEStep>(
                     cte_plan.getCurrentHeader(),

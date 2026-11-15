@@ -271,6 +271,7 @@ void DataPartStorageOnDiskBase::setRelativePath(const std::string & path)
         std::lock_guard lock(skip_indices_packed_mutex);
         skip_indices_packed_probed = false;
         skip_indices_packed_reader.reset();
+        skip_indices_packed_unsupported = false;
     }
 }
 
@@ -1010,9 +1011,9 @@ void DataPartStorageOnDiskBase::clearDirectory(
     /// Sometimes we add something to checksums.files before actually writing checksums and columns on disk.
     /// Also sometimes we write checksums.txt and columns.txt in arbitrary order, so this check becomes complex...
     bool incomplete_temporary_part = is_temp && (!disk->existsFile(fs::path(dir) / "checksums.txt") || !disk->existsFile(fs::path(dir) / "columns.txt"));
-    if (checksums.empty() || incomplete_temporary_part)
+    if (checksums.empty() || incomplete_temporary_part || disk->prefersRecursiveRemoval())
     {
-        /// If the part is not completely written, we cannot use fast path by listing files.
+        /// The fast path by listing files cannot be used for an incomplete part and is not faster on this disk.
         try
         {
             disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
@@ -1237,7 +1238,10 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndic
         Expect404ResponseScope scope;
         try
         {
-            skip_indices_packed_reader = std::make_shared<PackedFilesReader>(disk, packed_path, ReadSettings{});
+            auto buf = disk->readFile(packed_path, ReadSettings{}.adjustBufferSize(4096));
+            auto index = readSkipIndicesPackedIndex(*buf, packed_path);
+            skip_indices_packed_unsupported = !index;
+            skip_indices_packed_reader = std::make_shared<PackedFilesReader>(index ? std::move(*index) : PackedFilesIO::Index{});
         }
         catch (const Exception &)
         {
@@ -1249,6 +1253,23 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndic
 
     skip_indices_packed_probed = true;
     return skip_indices_packed_reader;
+}
+
+std::optional<PackedFilesIO::Index> DataPartStorageOnDiskBase::readSkipIndicesPackedIndex(ReadBuffer & in, const String & archive_path)
+{
+    /// An empty buffer is left to readIndex, which reports the truncated archive.
+    if (!in.eof())
+    {
+        const auto version = static_cast<UInt8>(*in.position());
+        if (version > PackedFilesIO::MAX_VERSION)
+        {
+            LOG_DEBUG(getLogger("DataPartStorageOnDiskBase"),
+                "Skip indices archive {} has format version {}, newer than the supported {}. Skip indices stored in it will not be used",
+                archive_path, static_cast<UInt32>(version), static_cast<UInt32>(PackedFilesIO::MAX_VERSION));
+            return std::nullopt;
+        }
+    }
+    return PackedFilesReader::readIndex(in);
 }
 
 void DataPartStorageOnDiskBase::seedSkipIndicesPackedReader(const PackedFilesIO::Index & index) const
@@ -1282,6 +1303,14 @@ bool DataPartStorageOnDiskBase::isFileInPackedSkipIndicesArchive(const std::stri
 bool DataPartStorageOnDiskBase::hasSkipIndicesPackedArchive() const
 {
     return getSkipIndicesPackedReader() != nullptr;
+}
+
+bool DataPartStorageOnDiskBase::hasUnsupportedSkipIndicesPackedArchive() const
+{
+    if (!getSkipIndicesPackedReader())
+        return false;
+    std::lock_guard lock(skip_indices_packed_mutex);
+    return skip_indices_packed_unsupported;
 }
 
 void DataPartStorageOnDiskBase::copyArchiveEntryTo(
