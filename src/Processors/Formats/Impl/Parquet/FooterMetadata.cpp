@@ -593,7 +593,7 @@ private:
         columns.push_back(std::move(column));
     }
 
-    const VectorWithMemoryTracking<parq::SchemaElement> & schema;
+    const decltype(parq::FileMetaData::schema) & schema;
     VectorWithMemoryTracking<FooterMetadata::Column> & columns;
     size_t pos = 0;
 };
