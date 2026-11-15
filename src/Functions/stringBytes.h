@@ -57,13 +57,14 @@ public:
         const ColumnString::Chars & data = col_str->getChars();
         const ColumnString::Offsets & offsets = col_str->getOffsets();
 
+        Impl impl;
         size_t prev_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * data_ptr = data.data() + prev_offset;
             const size_t size = offsets[i] - prev_offset;
 
-            vec_res[i] = Impl::process(data_ptr, size);
+            vec_res[i] = impl.process(data_ptr, size);
             prev_offset = offsets[i];
         }
 

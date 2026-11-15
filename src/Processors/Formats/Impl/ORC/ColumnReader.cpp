@@ -1,11 +1,14 @@
 #include <Processors/Formats/Impl/ORC/ColumnReader.h>
+#include <Processors/Formats/Impl/ORC/Timezone.h>
 
+#include <base/arithmeticOverflow.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/DateLUT.h>
 
+#include <algorithm>
 #include <bit>
 
 
@@ -72,7 +75,7 @@ public:
         rle.next(reinterpret_cast<char *>(data.data()), num_values, batch.hasNulls ? batch.notNull.data() : nullptr);
     }
 
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    void seekToRowGroup(RowGroupPositions & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         rle.seek(positions.at(column_id));
@@ -112,7 +115,7 @@ public:
         rle->next(data.data(), num_values, batch.hasNulls ? batch.notNull.data() : nullptr);
     }
 
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    void seekToRowGroup(RowGroupPositions & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         rle->seek(positions.at(column_id));
@@ -147,20 +150,26 @@ public:
         auto & data = typeid_cast<NumericVectorBatch<ItemType> &>(batch).prepareColumn(num_values);
         ItemType * out = data.data();
 
-        if (!not_null)
-        {
-            stream->readBytes(reinterpret_cast<char *>(out), num_values * sizeof(ItemType));
-            if constexpr (std::endian::native == std::endian::big)
-                for (size_t i = 0; i < num_values; ++i)
-                    out[i] = std::bit_cast<ItemType>(std::byteswap(std::bit_cast<Bits>(out[i])));
-            return;
-        }
+        /// The stream has only the non-null values: read them at once to the beginning of the column.
+        size_t num_present = num_values;
+        if (not_null)
+            num_present = std::count_if(not_null, not_null + num_values, [](char c) { return c != 0; });
 
-        for (size_t i = 0; i < num_values; ++i)
-            out[i] = not_null[i] ? read() : 0;
+        stream->readBytes(reinterpret_cast<char *>(out), num_present * sizeof(ItemType));
+        if constexpr (std::endian::native == std::endian::big)
+            for (size_t i = 0; i < num_present; ++i)
+                out[i] = std::bit_cast<ItemType>(std::byteswap(std::bit_cast<Bits>(out[i])));
+
+        if (!not_null)
+            return;
+
+        /// Move the values to their rows from the back: the k-th value goes to a row i >= k, so it is not overwritten before it is moved.
+        size_t next_value = num_present;
+        for (size_t i = num_values; i-- > 0;)
+            out[i] = not_null[i] ? out[--next_value] : 0;
     }
 
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    void seekToRowGroup(RowGroupPositions & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         stream->seek(positions.at(column_id));
@@ -169,26 +178,17 @@ public:
 private:
     using Bits = std::conditional_t<sizeof(ItemType) == 8, UInt64, UInt32>;
 
-    ItemType read()
-    {
-        Bits bits = 0;
-        for (size_t b = 0; b < sizeof(ItemType); ++b)
-            bits |= static_cast<Bits>(stream->readByte()) << (b * 8);
-        return std::bit_cast<ItemType>(bits);
-    }
-
     std::unique_ptr<InputByteStream> stream;
 };
 
-/// Converts the lengths in `offsets` into the end offsets (as in `ColumnString` and `ColumnArray`)
-/// and returns the total length. The lengths of the null values are zeros.
-UInt64 lengthsToEndOffsets(UInt64 * offsets, size_t num_values, UInt64 column_id)
+/// Converts the lengths in `offsets` into the end offsets (as in `ColumnString` and `ColumnArray`), starting
+/// from `total`, and returns the total length. The lengths of the null values are zeros.
+UInt64 lengthsToEndOffsets(UInt64 * offsets, size_t num_values, UInt64 column_id, UInt64 total = 0)
 {
-    UInt64 total = 0;
     for (size_t i = 0; i < num_values; ++i)
     {
         /// The lengths are non-negative, a negative one is huge as unsigned.
-        if (offsets[i] > static_cast<UInt64>(std::numeric_limits<Int64>::max()) || __builtin_add_overflow(total, offsets[i], &total)
+        if (offsets[i] > static_cast<UInt64>(std::numeric_limits<Int64>::max()) || common::addOverflow(total, offsets[i], total)
             || total > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid length {} in ORC column {}", static_cast<Int64>(offsets[i]), column_id);
         offsets[i] = total;
@@ -200,14 +200,28 @@ UInt64 lengthsToEndOffsets(UInt64 * offsets, size_t num_values, UInt64 column_id
 ColumnString::MutablePtr readStrings(
     IntRleDecoder & length_rle, InputByteStream & blob_stream, size_t num_values, const char * not_null, UInt64 column_id)
 {
+    /// The buffers grow as the data is decoded: a malformed count or length must not allocate memory
+    /// before the streams prove to contain the data.
+    static constexpr size_t MIN_STEP = 64 * 1024;
     auto column = ColumnString::create();
     auto & offsets = column->getOffsets();
-    offsets.resize(num_values);
-    length_rle.next(offsets.data(), num_values, not_null);
-    UInt64 total = lengthsToEndOffsets(offsets.data(), num_values, column_id);
+    UInt64 total = 0;
+    while (offsets.size() < num_values)
+    {
+        size_t done = offsets.size();
+        size_t step = std::min(num_values - done, std::max(MIN_STEP, done));
+        offsets.resize(done + step);
+        length_rle.next(offsets.data() + done, step, not_null ? not_null + done : nullptr);
+        total = lengthsToEndOffsets(offsets.data() + done, step, column_id, total);
+    }
     auto & chars = column->getChars();
-    chars.resize(total);
-    blob_stream.readBytes(reinterpret_cast<char *>(chars.data()), total);
+    while (chars.size() < total)
+    {
+        size_t done = chars.size();
+        size_t step = std::min<UInt64>(total - done, std::max(MIN_STEP, done));
+        chars.resize(done + step);
+        blob_stream.readBytes(reinterpret_cast<char *>(chars.data() + done), step);
+    }
     return column;
 }
 
@@ -272,7 +286,7 @@ public:
         readIndex(dynamic_cast<EncodedStringVectorBatch &>(batch), num_values, incoming_mask);
     }
 
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    void seekToRowGroup(RowGroupPositions & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         rle->seek(positions.at(column_id));
@@ -332,7 +346,7 @@ public:
         string_batch.column = readStrings(*length_rle, *blob_stream, num_values, batch.hasNulls ? batch.notNull.data() : nullptr, column_id);
     }
 
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    void seekToRowGroup(RowGroupPositions & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         auto & provider = positions.at(column_id);
@@ -353,6 +367,8 @@ public:
         , writer_timezone(is_instant ? DateLUT::instance("UTC") : stripe.getWriterTimezone())
         , reader_timezone(is_instant ? DateLUT::instance("UTC") : stripe.getReaderTimezone())
         , same_timezone(&writer_timezone == &reader_timezone || writer_timezone.getTimeZone() == reader_timezone.getTimeZone())
+        , writer_offset_of(writer_timezone)
+        , reader_offset_of(reader_timezone)
     {
         /// The base of the seconds is 2015-01-01 00:00:00 in the time zone of the writer.
         static constexpr Int64 UTC_2015_01_01 = 1420070400;
@@ -388,37 +404,44 @@ public:
             if (not_null && !not_null[i])
                 continue;
 
+            const Int64 encoded_nanos = nanos[i];
             /// The lowest 3 bits are the number of the trailing zeros (minus one) that are removed.
             UInt64 zeros = nanos[i] & 0x7;
             /// An arithmetic shift, as in the reference implementation: some writers (the Arrow
             /// adapter) store negative nanoseconds for the timestamps before the epoch.
             nanos[i] >>= 3;
-            if (zeros != 0)
-                for (UInt64 j = 0; j <= zeros; ++j)
-                    nanos[i] *= 10;
+            if (zeros != 0 && common::mulOverflow(nanos[i], POWERS_OF_TEN_FOR_NANOS[zeros + 1], nanos[i]))
+                throwInvalidTimestamp(seconds[i], encoded_nanos);
+            if (nanos[i] < -999'999'999 || nanos[i] > 999'999'999)
+                throwInvalidTimestamp(seconds[i], encoded_nanos);
 
-            Int64 writer_time = static_cast<Int64>(static_cast<UInt64>(seconds[i]) + static_cast<UInt64>(epoch_offset));
-            if (writer_time < 0 && nanos[i] > 999999)
-                writer_time -= 1;
+            Int64 writer_time = 0;
+            if (common::addOverflow(seconds[i], epoch_offset, writer_time))
+                throwInvalidTimestamp(seconds[i], encoded_nanos);
+            if (writer_time < 0 && nanos[i] > 999999 && common::subOverflow(writer_time, Int64{1}, writer_time))
+                throwInvalidTimestamp(seconds[i], encoded_nanos);
 
             if (!same_timezone)
             {
                 /// Keep the same wall clock time when the writer and the reader time zones differ.
-                Int64 writer_offset = writer_timezone.timezoneOffset(writer_time);
-                Int64 reader_offset = reader_timezone.timezoneOffset(writer_time);
+                Int64 writer_offset = writer_offset_of(writer_time);
+                Int64 reader_offset = reader_offset_of(writer_time);
                 if (writer_offset != reader_offset)
                 {
                     /// If the adjustment crosses a DST boundary, the offset has to be reevaluated.
-                    Int64 adjusted_time = writer_time + writer_offset - reader_offset;
-                    Int64 adjusted_reader_offset = reader_timezone.timezoneOffset(adjusted_time);
-                    writer_time = writer_time + writer_offset - adjusted_reader_offset;
+                    Int64 adjusted_time = 0;
+                    if (common::addOverflow(writer_time, writer_offset - reader_offset, adjusted_time))
+                        throwInvalidTimestamp(seconds[i], encoded_nanos);
+                    Int64 adjusted_reader_offset = reader_offset_of(adjusted_time);
+                    if (common::addOverflow(writer_time, writer_offset - adjusted_reader_offset, writer_time))
+                        throwInvalidTimestamp(seconds[i], encoded_nanos);
                 }
             }
             seconds[i] = writer_time;
         }
     }
 
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    void seekToRowGroup(RowGroupPositions & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         auto & provider = positions.at(column_id);
@@ -427,9 +450,18 @@ public:
     }
 
 private:
+    static constexpr Int64 POWERS_OF_TEN_FOR_NANOS[9] = {1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000};
+
+    [[noreturn]] void throwInvalidTimestamp(Int64 seconds, Int64 encoded_nanos) const
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid timestamp in ORC column {}: seconds={}, encoded nanoseconds={}", column_id, seconds, encoded_nanos);
+    }
+
     const DateLUTImpl & writer_timezone;
     const DateLUTImpl & reader_timezone;
     const bool same_timezone;
+    const TimezoneOffset writer_offset_of;
+    const TimezoneOffset reader_offset_of;
     Int64 epoch_offset = 0;
     std::unique_ptr<IntRleDecoder> seconds_rle;
     std::unique_ptr<IntRleDecoder> nanos_rle;
@@ -489,7 +521,7 @@ public:
         return num_values;
     }
 
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    void seekToRowGroup(RowGroupPositions & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         auto & provider = positions.at(column_id);
@@ -648,7 +680,7 @@ public:
         value_decoder->next(decimal_batch.values.data(), num_values, batch.hasNulls ? batch.notNull.data() : nullptr);
     }
 
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    void seekToRowGroup(RowGroupPositions & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         value_decoder->seek(positions.at(column_id));
@@ -752,7 +784,7 @@ public:
         nextImpl<true>(batch, num_values, incoming_mask);
     }
 
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    void seekToRowGroup(RowGroupPositions & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         for (auto & child : children)
@@ -775,7 +807,7 @@ private:
         }
     }
 
-    std::vector<std::unique_ptr<ColumnReader>> children;
+    VectorWithMemoryTracking<std::unique_ptr<ColumnReader>> children;
 };
 
 /// Reads the lengths of the lists or maps as the end offsets, returns the total number of the children.
@@ -844,7 +876,7 @@ public:
         nextImpl<true>(batch, num_values, incoming_mask);
     }
 
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    void seekToRowGroup(RowGroupPositions & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         rle->seek(positions.at(column_id));
@@ -917,7 +949,7 @@ public:
         nextImpl<true>(batch, num_values, incoming_mask);
     }
 
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    void seekToRowGroup(RowGroupPositions & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         rle->seek(positions.at(column_id));
@@ -1006,7 +1038,7 @@ public:
         nextImpl<true>(batch, num_values, incoming_mask);
     }
 
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    void seekToRowGroup(RowGroupPositions & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         rle.seek(positions.at(column_id));
@@ -1055,8 +1087,8 @@ private:
 
     ByteRleDecoder rle;
     const size_t num_children;
-    std::vector<std::unique_ptr<ColumnReader>> children;
-    std::vector<UInt64> counts;
+    VectorWithMemoryTracking<std::unique_ptr<ColumnReader>> children;
+    VectorWithMemoryTracking<UInt64> counts;
 };
 
 }
@@ -1109,7 +1141,7 @@ size_t ColumnReader::skip(size_t num_values)
     return num_values;
 }
 
-void ColumnReader::seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions)
+void ColumnReader::seekToRowGroup(RowGroupPositions & positions)
 {
     if (not_null_decoder)
     {

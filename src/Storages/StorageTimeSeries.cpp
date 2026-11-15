@@ -397,6 +397,14 @@ bool StorageTimeSeries::isInnerTable(ViewTarget::Kind target_kind) const
 }
 
 
+bool StorageTimeSeries::hasInnerRequiredTables() const
+{
+    return isInnerTable(ViewTarget::Samples)
+        || isInnerTable(ViewTarget::Tags)
+        || isInnerTable(ViewTarget::MetricFamilies);
+}
+
+
 void StorageTimeSeries::createOrDropTagsDeduplicationCache()
 {
     std::lock_guard lock{caches_mutex};
@@ -528,7 +536,7 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
 {
     checkTimeSeriesVersionIsSupported(*this);
 
-    if (!hasInnerTables())
+    if (!hasInnerRequiredTables())
     {
         throw Exception(ErrorCodes::INCORRECT_QUERY, "TimeSeries table {} targets only existing tables. Execute the statement directly on it.",
                         getStorageID().getNameForLogs());
@@ -652,7 +660,7 @@ bool StorageTimeSeries::optimize(
 {
     checkTimeSeriesVersionIsSupported(*this);
 
-    if (!hasInnerTables())
+    if (!hasInnerRequiredTables())
     {
         throw Exception(ErrorCodes::INCORRECT_QUERY, "TimeSeries table {} targets only existing tables. Execute the statement directly on it.",
                         getStorageID().getNameForLogs());
@@ -1113,8 +1121,8 @@ generic codecs and can otherwise dominate the on-disk size of the samples table.
 creates itself get the codec of the timestamps, `CODEC(Delta, T64, ZSTD(3))`: they dominate the size of the rows with few samples.
 Tables of [version](#schema-versioning) 10 and earlier store one sample per row in the columns `timestamp` and `value`, and the columns the engine
 created itself got the same codecs: `timestamp CODEC(Delta, T64, ZSTD(3))` and `value CODEC(ALP, ZSTD(3))`.
-The engine enables `ALP` and the codecs for subcolumns for its inner samples and recent samples tables without requiring the settings
-`enable_alp_codec` and [enable_subcolumn_codecs](/reference/settings/session-settings/enable#enable_subcolumn_codecs) to be set.
+The engine enables the codecs for subcolumns for its inner samples and recent samples tables without requiring the setting
+[enable_subcolumn_codecs](/reference/settings/session-settings/enable#enable_subcolumn_codecs) to be set.
 See also [Adjusting types of columns](#adjusting-column-types).
 
 Queries reading a time range use the `bucket` column to select granules by the primary key `(id, bucket)`, and the `min_time` and `max_time`
