@@ -17,7 +17,7 @@ second
 4
 5
 6
---- the data is replaced
+--- the data is replaced by a mutation
 ABORTED
 ABORTED
 --- a stream that falls behind max_rows_to_keep

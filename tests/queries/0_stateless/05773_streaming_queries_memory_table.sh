@@ -39,8 +39,8 @@ read_until "$fifo_1" "6" | sort
 echo "second"
 read_until "$fifo_2" "6" | sort
 
-echo "--- the data is replaced"
-$STREAMING_CLIENT -q "TRUNCATE TABLE m"
+echo "--- the data is replaced by a mutation"
+$STREAMING_CLIENT -q "ALTER TABLE m UPDATE v = v + 1 WHERE 1"
 read_until "$fifo_1" "ABORTED" | grep -o -m1 "ABORTED"
 read_until "$fifo_2" "ABORTED" | grep -o -m1 "ABORTED"
 cleanup "$fifo_1" "$pid_1" > /dev/null

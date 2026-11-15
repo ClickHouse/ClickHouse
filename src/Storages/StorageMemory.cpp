@@ -1089,7 +1089,7 @@ A streaming query (`SELECT ... FROM memory_table STREAM`, an experimental featur
 SELECT * FROM memory_table STREAM WHERE level = 'Error'
 ```
 
-The query fails if the data of the table is replaced while it runs (by `TRUNCATE`, a mutation or a restore), and with `TOO_SLOW` if the blocks it has not read yet are removed by `max_rows_to_keep` or `max_bytes_to_keep`. `CURSOR` and `WATERMARK` are not supported.
+The query fails if the data of the table is replaced while it runs (by a mutation or a restore), and with `TOO_SLOW` if the blocks it has not read yet are removed by `max_rows_to_keep` or `max_bytes_to_keep`. Like any other `SELECT`, a streaming query holds the table, so `TRUNCATE` and `DROP` wait for it to finish (up to `lock_acquire_timeout`). `CURSOR` and `WATERMARK` are not supported.
 
 ## Examples {#examples}
 ```sql
