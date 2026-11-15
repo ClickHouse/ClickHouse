@@ -1,6 +1,8 @@
 #include <Processors/Formats/Impl/ORC/Proto.h>
+#include <Processors/Formats/Impl/ORC/Statistics.h>
 
 #include <Common/Exception.h>
+#include <Common/UTF8Helpers.h>
 
 #include <bit>
 #include <cstring>
@@ -102,7 +104,7 @@ void WireReader::skip(WireType wire_type)
     throw Exception(ErrorCodes::INCORRECT_DATA, "Unsupported protobuf wire type {} in ORC metadata", static_cast<int>(wire_type));
 }
 
-bool WireReader::readRepeatedVarint(WireType wire_type, std::vector<UInt64> & out)
+bool WireReader::readRepeatedVarint(WireType wire_type, VectorWithMemoryTracking<UInt64> & out)
 {
     if (wire_type == LENGTH_DELIMITED)
     {
@@ -152,7 +154,7 @@ void WireWriter::writeBytes(UInt32 field, std::string_view value)
     out.append(value);
 }
 
-void WireWriter::writePackedVarint(UInt32 field, const std::vector<UInt64> & values)
+void WireWriter::writePackedVarint(UInt32 field, const VectorWithMemoryTracking<UInt64> & values)
 {
     if (values.empty())
         return;
@@ -162,7 +164,7 @@ void WireWriter::writePackedVarint(UInt32 field, const std::vector<UInt64> & val
     writeBytes(field, packed);
 }
 
-void WireWriter::writePackedFixed64(UInt32 field, const std::vector<UInt64> & values)
+void WireWriter::writePackedFixed64(UInt32 field, const VectorWithMemoryTracking<UInt64> & values)
 {
     if (values.empty())
         return;
@@ -232,6 +234,12 @@ std::string_view readBytesField(WireReader & r, WireType t)
     return r.readBytes();
 }
 
+void checkCount(size_t count, size_t max_count, std::string_view what)
+{
+    if (count >= max_count)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many {} in ORC metadata, at most {} expected", what, max_count);
+}
+
 template <typename F>
 void parseMessage(std::string_view data, F && handle_field)
 {
@@ -286,18 +294,74 @@ DoubleStatistics parseDoubleStatistics(std::string_view data)
     return res;
 }
 
+/// The field numbers of the `StringStatistics` message in `orc_proto.proto`.
+namespace StringStatisticsField
+{
+    constexpr UInt32 MINIMUM = 1;
+    constexpr UInt32 MAXIMUM = 2;
+    constexpr UInt32 SUM = 3;
+    constexpr UInt32 LOWER_BOUND = 4;
+    constexpr UInt32 UPPER_BOUND = 5;
+}
+
+/// The Java writer of Apache ORC (`ColumnStatisticsImpl`) converts the statistics to strings, which replaces invalid
+/// UTF-8 with U+FFFD: in the values, and in the bounds where it increments U+FFFE and U+10FFFF into invalid UTF-8.
+/// Such a statistic can be on the wrong side of the values, but the part before the first U+FFFD is unchanged.
+constexpr std::string_view REPLACEMENT_CHARACTER = "\xEF\xBF\xBD";
+
+/// The value without its last UTF-8 character.
+std::string_view withoutLastCharacter(std::string_view value)
+{
+    size_t end = value.size();
+    while (end > 0 && value.size() - end < 3 && UTF8::isContinuationOctet(static_cast<UInt8>(value[end - 1])))
+        --end;
+    return value.substr(0, end > 0 ? end - 1 : 0);
+}
+
 StringStatistics parseStringStatistics(std::string_view data)
 {
     StringStatistics res;
     parseMessage(data, [&](WireReader & r, UInt32 field, WireType type)
     {
+        /// Long values (written by old writers) are kept only as truncated bounds, to not hold copies of them.
+        /// The values with U+FFFD are cut before it into bounds. A repeated field replaces the previous one.
+        auto set_lower = [&](std::string_view value, bool exact)
+        {
+            res.minimum.reset();
+            res.lower_bound.reset();
+            if (size_t pos = value.find(REPLACEMENT_CHARACTER); pos != std::string_view::npos)
+            {
+                value = value.substr(0, pos);
+                exact = false;
+            }
+            if (exact && value.size() <= MAX_STRING_STATISTICS_SIZE)
+                res.minimum = std::string(value);
+            else
+                res.lower_bound = std::string(truncateStringLowerBound(value));
+        };
+        auto set_upper = [&](std::string_view value, bool exact)
+        {
+            res.maximum.reset();
+            res.upper_bound.reset();
+            if (size_t pos = value.find(REPLACEMENT_CHARACTER); pos != std::string_view::npos)
+                res.upper_bound = truncateStringUpperBound(value.substr(0, pos));
+            else if (!exact)
+                /// The Java writer copies a bound from the value except the last character, which it computes from
+                /// the value, also from invalid UTF-8, into any character. Increment the copied part instead.
+                res.upper_bound = truncateStringUpperBound(withoutLastCharacter(value));
+            else if (value.size() <= MAX_STRING_STATISTICS_SIZE)
+                res.maximum = std::string(value);
+            else
+                res.upper_bound = truncateStringUpperBound(value);
+        };
+
         switch (field)
         {
-            case 1: res.minimum = std::string(readBytesField(r, type)); return true;
-            case 2: res.maximum = std::string(readBytesField(r, type)); return true;
-            case 3: res.sum = readSignedVarintField(r, type); return true;
-            case 4: res.lower_bound = std::string(readBytesField(r, type)); return true;
-            case 5: res.upper_bound = std::string(readBytesField(r, type)); return true;
+            case StringStatisticsField::MINIMUM: set_lower(readBytesField(r, type), true); return true;
+            case StringStatisticsField::MAXIMUM: set_upper(readBytesField(r, type), true); return true;
+            case StringStatisticsField::LOWER_BOUND: set_lower(readBytesField(r, type), false); return true;
+            case StringStatisticsField::UPPER_BOUND: set_upper(readBytesField(r, type), false); return true;
+            case StringStatisticsField::SUM: res.sum = readSignedVarintField(r, type); return true;
             default: return false;
         }
     });
@@ -358,8 +422,8 @@ TimestampStatistics parseTimestampStatistics(std::string_view data)
             case 2: res.maximum = readSignedVarintField(r, type); return true;
             case 3: res.minimum_utc = readSignedVarintField(r, type); return true;
             case 4: res.maximum_utc = readSignedVarintField(r, type); return true;
-            case 5: res.minimum_nanos = static_cast<Int32>(readVarintField(r, type)); return true;
-            case 6: res.maximum_nanos = static_cast<Int32>(readVarintField(r, type)); return true;
+            case 5: res.minimum_nanos = readVarintField(r, type); return true;
+            case 6: res.maximum_nanos = readVarintField(r, type); return true;
             default: return false;
         }
     });
@@ -527,11 +591,11 @@ std::string serializeStringStatistics(const StringStatistics & s)
 {
     std::string out;
     WireWriter w(out);
-    if (s.minimum) w.writeBytes(1, *s.minimum);
-    if (s.maximum) w.writeBytes(2, *s.maximum);
-    if (s.sum) w.writeSignedVarint(3, *s.sum);
-    if (s.lower_bound) w.writeBytes(4, *s.lower_bound);
-    if (s.upper_bound) w.writeBytes(5, *s.upper_bound);
+    if (s.minimum) w.writeBytes(StringStatisticsField::MINIMUM, *s.minimum);
+    if (s.maximum) w.writeBytes(StringStatisticsField::MAXIMUM, *s.maximum);
+    if (s.sum) w.writeSignedVarint(StringStatisticsField::SUM, *s.sum);
+    if (s.lower_bound) w.writeBytes(StringStatisticsField::LOWER_BOUND, *s.lower_bound);
+    if (s.upper_bound) w.writeBytes(StringStatisticsField::UPPER_BOUND, *s.upper_bound);
     return out;
 }
 
@@ -564,8 +628,8 @@ std::string serializeTimestampStatistics(const TimestampStatistics & s)
     if (s.minimum_utc) w.writeSignedVarint(3, *s.minimum_utc);
     if (s.maximum_utc) w.writeSignedVarint(4, *s.maximum_utc);
     /// `int32` fields: negative values are sign-extended to 64 bits.
-    if (s.minimum_nanos) w.writeVarint(5, static_cast<UInt64>(static_cast<Int64>(*s.minimum_nanos)));
-    if (s.maximum_nanos) w.writeVarint(6, static_cast<UInt64>(static_cast<Int64>(*s.maximum_nanos)));
+    if (s.minimum_nanos) w.writeVarint(5, *s.minimum_nanos);
+    if (s.maximum_nanos) w.writeVarint(6, *s.maximum_nanos);
     return out;
 }
 
@@ -710,14 +774,16 @@ std::string ColumnStatistics::serialize() const
     return out;
 }
 
-void RowIndex::parse(std::string_view data)
+void RowIndex::parse(std::string_view data, size_t max_entries)
 {
     parseMessage(data, [&](WireReader & r, UInt32 field, WireType type)
     {
         if (field != 1)
             return false;
+        std::string_view entry_data = readBytesField(r, type);
+        checkCount(entry.size(), max_entries, "row index entries");
         auto & e = entry.emplace_back();
-        parseMessage(readBytesField(r, type), [&](WireReader & rr, UInt32 f, WireType t)
+        parseMessage(entry_data, [&](WireReader & rr, UInt32 f, WireType t)
         {
             switch (f)
             {
@@ -746,12 +812,13 @@ std::string RowIndex::serialize() const
     return out;
 }
 
-void BloomFilterIndex::parse(std::string_view data)
+void BloomFilterIndex::parse(std::string_view data, size_t max_entries)
 {
     parseMessage(data, [&](WireReader & r, UInt32 field, WireType type)
     {
         if (field != 1)
             return false;
+        checkCount(bloom_filter.size(), max_entries, "bloom filters");
         BloomFilter bf;
         parseMessage(readBytesField(r, type), [&](WireReader & rr, UInt32 f, WireType t)
         {
@@ -786,14 +853,20 @@ void BloomFilterIndex::parse(std::string_view data)
     });
 }
 
-void StripeFooter::parse(std::string_view data)
+void StripeFooter::parse(std::string_view data, size_t max_columns)
 {
     parseMessage(data, [&](WireReader & r, UInt32 field, WireType type)
     {
         switch (field)
         {
             case 1: streams.push_back(parseStream(readBytesField(r, type))); return true;
-            case 2: columns.push_back(parseColumnEncoding(readBytesField(r, type))); return true;
+            case 2:
+            {
+                std::string_view encoding_data = readBytesField(r, type);
+                checkCount(columns.size(), max_columns, "column encodings");
+                columns.push_back(parseColumnEncoding(encoding_data));
+                return true;
+            }
             case 3: writer_timezone = std::string(readBytesField(r, type)); return true;
             case 4: readBytesField(r, type); ++encryption_variants; return true;
             default: return false;
@@ -829,18 +902,22 @@ std::string StripeFooter::serialize() const
     return out;
 }
 
-void Metadata::parse(std::string_view data)
+void Metadata::parse(std::string_view data, size_t max_stripes, size_t max_columns)
 {
     parseMessage(data, [&](WireReader & r, UInt32 field, WireType type)
     {
         if (field != 1)
             return false;
+        std::string_view stripe_data = readBytesField(r, type);
+        checkCount(stripe_stats.size(), max_stripes, "stripe statistics");
         StripeStatistics stats;
-        parseMessage(readBytesField(r, type), [&](WireReader & rr, UInt32 f, WireType t)
+        parseMessage(stripe_data, [&](WireReader & rr, UInt32 f, WireType t)
         {
             if (f != 1)
                 return false;
-            stats.col_stats.emplace_back().parse(readBytesField(rr, t));
+            std::string_view column_data = readBytesField(rr, t);
+            checkCount(stats.col_stats.size(), max_columns, "column statistics");
+            stats.col_stats.emplace_back().parse(column_data);
             return true;
         });
         stripe_stats.push_back(std::move(stats));
@@ -865,6 +942,8 @@ std::string Metadata::serialize() const
 
 void Footer::parse(std::string_view data)
 {
+    /// The statistics are parsed after the types, to limit their number by the number of columns.
+    VectorWithMemoryTracking<std::string_view> statistics_data;
     parseMessage(data, [&](WireReader & r, UInt32 field, WireType type)
     {
         switch (field)
@@ -875,7 +954,7 @@ void Footer::parse(std::string_view data)
             case 4: types.push_back(parseType(readBytesField(r, type))); return true;
             case 5: metadata.push_back(parseUserMetadataItem(readBytesField(r, type))); return true;
             case 6: number_of_rows = readVarintField(r, type); return true;
-            case 7: statistics.emplace_back().parse(readBytesField(r, type)); return true;
+            case 7: statistics_data.push_back(readBytesField(r, type)); return true;
             case 8: row_index_stride = readUInt32Field(r, type); return true;
             case 9: writer = readUInt32Field(r, type); return true;
             case 10: readBytesField(r, type); has_encryption = true; return true;
@@ -883,6 +962,12 @@ void Footer::parse(std::string_view data)
             default: return false;
         }
     });
+    if (statistics_data.size() > types.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many column statistics in ORC footer: {}, the file has {} columns",
+            statistics_data.size(), types.size());
+    statistics.resize(statistics_data.size());
+    for (size_t i = 0; i < statistics_data.size(); ++i)
+        statistics[i].parse(statistics_data[i]);
 }
 
 std::string Footer::serialize() const

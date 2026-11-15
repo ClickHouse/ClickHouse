@@ -53,7 +53,9 @@ using FunctionDivideLegacy = BinaryArithmeticOverloadResolver<DivideFloatingImpl
 class FunctionDivideExactBase final : public IFunctionBase
 {
 public:
-    explicit FunctionDivideExactBase(FunctionBasePtr implementation_) : implementation(std::move(implementation_))
+    FunctionDivideExactBase(FunctionBasePtr implementation_, bool allow_constant_folding_)
+        : implementation(std::move(implementation_))
+        , allow_constant_folding(allow_constant_folding_)
     {
     }
 
@@ -86,7 +88,7 @@ public:
 
     bool isSuitableForConstantFolding() const override
     {
-        return implementation->isSuitableForConstantFolding();
+        return allow_constant_folding && implementation->isSuitableForConstantFolding();
     }
     ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
@@ -126,6 +128,7 @@ public:
 
 private:
     FunctionBasePtr implementation;
+    bool allow_constant_folding;
 };
 
 class FunctionDivideExact final : public IFunctionOverloadResolver
@@ -161,7 +164,12 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
     {
-        return std::make_shared<FunctionDivideExactBase>(delegate(arguments)->build(arguments));
+        /// Keep a potentially throwing integer division as an expression until execution.
+        /// Folding it while resolving an unselected `if`, `multiIf`, or `CASE` branch defeats
+        /// short-circuit evaluation. Valid constant pairs remain foldable, while a selected or
+        /// top-level invalid pair still throws at execution.
+        return std::make_shared<FunctionDivideExactBase>(
+            delegate(arguments)->build(arguments), !constantExactIntegerDivisionCanThrow(arguments));
     }
 
 private:

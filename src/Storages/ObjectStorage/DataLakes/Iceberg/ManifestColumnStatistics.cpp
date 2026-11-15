@@ -82,7 +82,8 @@ ManifestColumnStatistics::ManifestColumnStatistics(
     const ColumnsDescription & columns,
     const IcebergSchemaProcessor & schema_processor_,
     Int32 schema_id,
-    ContextPtr context)
+    ContextPtr context,
+    const std::unordered_map<Int32, UInt64> & table_distinct_values)
     : schema_processor(schema_processor_)
     , statistics_builder(std::move(context))
 {
@@ -94,7 +95,8 @@ ManifestColumnStatistics::ManifestColumnStatistics(
 
         auto nested_type = removeLowCardinalityAndNullable(column->type);
         if (const auto type_id = nested_type->getTypeId();
-            type_id == TypeIndex::Tuple || type_id == TypeIndex::Map || type_id == TypeIndex::Array || type_id == TypeIndex::Variant)
+            type_id == TypeIndex::Tuple || type_id == TypeIndex::Map || type_id == TypeIndex::Array || type_id == TypeIndex::Variant
+            || type_id == TypeIndex::Nothing)
             continue;
 
         /// Represents unchanged column id across all schemas
@@ -102,7 +104,10 @@ ManifestColumnStatistics::ManifestColumnStatistics(
         if (!field_id)
             continue;
 
-        targets.push_back(Target{name, *field_id, column->type, std::move(nested_type)});
+        std::optional<UInt64> distinct_values;
+        if (const auto it = table_distinct_values.find(*field_id); it != table_distinct_values.end())
+            distinct_values = it->second;
+        targets.push_back(Target{name, *field_id, column->type, std::move(nested_type), distinct_values});
     }
     distinct_values_inputs.resize(targets.size());
 }
@@ -259,11 +264,19 @@ std::optional<UInt64> ManifestColumnStatistics::estimateDistinctValues(
     /// gaps looks more selective than it is. A range above the rows (sparse keys, timestamps) counts nothing.
     else if (range_width && *range_width <= non_null_rows)
         num_distinct_values = *range_width;
+    else if (target.table_distinct_values)
+        num_distinct_values = *target.table_distinct_values;
     else
         return std::nullopt;
 
     /// A distinct count excludes NULL, as for MergeTree statistics, and 0 would make a join a cross product.
     return std::clamp<UInt64>(num_distinct_values, 1, std::max<UInt64>(non_null_rows, 1));
+}
+
+void ManifestColumnStatistics::subtractDeletedRows(UInt64 rows)
+{
+    chassert(rows <= total_rows);
+    total_rows -= std::min(rows, total_rows);
 }
 
 void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate)

@@ -1670,6 +1670,29 @@ def test_create_new_files_on_insert(started_cluster):
     instance.query("drop table test_multiple_inserts")
 
 
+def test_create_new_files_on_insert_multipart_gcs(started_cluster):
+    instance = started_cluster.instances["dummy"]
+    # The S3 client deduces the GCS provider from the endpoint, so reach MinIO under the GCS host name.
+    instance.exec_in_container(
+        ["bash", "-c", f"echo '{started_cluster.minio_ip} storage.googleapis.com' >> /etc/hosts"],
+        privileged=True,
+        user="root",
+    )
+    bucket = started_cluster.minio_bucket
+    name = f"gcs_new_file_{generate_random_string()}"
+    url = f"http://storage.googleapis.com:{started_cluster.minio_port}/{bucket}/{name}"
+    settings = {"s3_max_single_part_upload_size": 1048576}
+    for path, partition_by in [(f"{url}.csv", ""), (f"{url}_{{_partition_id}}.csv", "PARTITION BY 'p'")]:
+        insert = f"INSERT INTO FUNCTION s3('{path}', 'minio', '{minio_secret_key}', 'CSV', 's String') {partition_by} SELECT repeat('a', 1000) FROM numbers(2000)"
+        instance.query(insert, settings=settings)
+        instance.query(insert, settings={**settings, "s3_create_new_file_on_insert": 1})
+
+    result = instance.query(
+        f"SELECT _file, count() FROM s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{name}*.csv', 'minio', '{minio_secret_key}', 'CSV', 's String') GROUP BY _file ORDER BY _file"
+    )
+    assert result == f"{name}.1.csv\t2000\n{name}.csv\t2000\n{name}_p.1.csv\t2000\n{name}_p.csv\t2000\n"
+
+
 def test_format_detection(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
@@ -3012,6 +3035,41 @@ def test_page_cache(started_cluster):
     ).split('\t')
     assert 0 < int(misses)
     assert 0 < int(gets)
+
+
+def test_cache_key_includes_storage(started_cluster):
+    # The same key with the same content, so the same ETag, in another bucket or behind another endpoint:
+    # the filesystem cache and the page cache must not serve it the entry filled by the first object.
+    instance = started_cluster.instances["dummy"]
+    table_name = f"test_cache_key_includes_storage-{uuid.uuid4()}"
+    host = f"{started_cluster.minio_host}:{started_cluster.minio_port}"
+    ip = f"{started_cluster.minio_ip}:{started_cluster.minio_port}"
+
+    for bucket in [started_cluster.minio_bucket, started_cluster.minio_bucket_2]:
+        instance.query(
+            f"insert into function s3('http://{host}/{bucket}/{table_name}.tsv', auto, 'x UInt64') select number from numbers(100) SETTINGS s3_truncate_on_insert=1"
+        )
+
+    urls = [
+        f"http://{host}/{started_cluster.minio_bucket}/{table_name}.tsv",
+        f"http://{ip}/{started_cluster.minio_bucket}/{table_name}.tsv",
+        f"http://{host}/{started_cluster.minio_bucket_2}/{table_name}.tsv",
+    ]
+    for settings in ["filesystem_cache_name = 'cache1', enable_filesystem_cache=1", "use_page_cache_for_object_storage=1"]:
+        for url in urls:
+            query_id = f"{table_name}-{uuid.uuid4()}"
+            assert "100\n" == instance.query(
+                f"select sum(ignore(*) + 1) from s3('{url}', 'TSV', 'x UInt64') SETTINGS {settings}",
+                query_id=query_id,
+            )
+
+            instance.query("SYSTEM FLUSH LOGS")
+
+            assert 0 < int(
+                instance.query(
+                    f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+                )
+            )
 
 
 def test_archive(started_cluster):

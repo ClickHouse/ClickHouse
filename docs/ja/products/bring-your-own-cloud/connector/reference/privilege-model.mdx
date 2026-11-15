@@ -7,7 +7,6 @@ doc_type: 'reference'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/ja/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -15,7 +14,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 ## アイデンティティ {#identities}
 
-<Image img="/images/cloud/reference/byoc-connector-identity-model.svg" size="lg" alt="ClickHouse Connector identity model" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse Connector identity model](/images/cloud/reference/byoc-connector-identity-model.svg)
+
+</Frame>
+
+</div>
 
 * **コネクタの mTLS クライアント証明書**は、組織 ID をコモンネームとして持ち、すべてのデーモンをコネクタエンドポイントに対して認証します。`clicklink clctl instances create` も、エンドポイントを呼び出す際に同じ証明書と HMAC キーを使用します。
 * **`pcm_scraper` と `pcm_troubleshooter`** は、scraper と troubleshooter が接続する際に使用する読み取り専用の ClickHouse ユーザーです。executor には ClickHouse ユーザーがありません。

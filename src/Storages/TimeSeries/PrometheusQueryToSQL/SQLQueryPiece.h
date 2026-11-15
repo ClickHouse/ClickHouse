@@ -55,8 +55,7 @@ enum class StoreMethod
     /// Data are stored in two columns:
     /// - `group` (UInt64),
     /// - `samples` (Array(Tuple(timestamp, value)): the samples of a time series sorted by timestamp, where `timestamp` has
-    ///   the type of the timestamps in the TimeSeries table (or `ConverterContext::result_timestamp_type` after applying an offset)
-    ///   and `value` has the type of the values in the table (Float64 or Float32)).
+    ///   the type of the timestamps in the TimeSeries table and `value` has the type of the values in the table (Float64 or Float32)).
     /// A row usually holds one time bucket of the samples table.
     /// SAMPLES is produced by selectors over a table storing buckets of samples.
     SAMPLES,
