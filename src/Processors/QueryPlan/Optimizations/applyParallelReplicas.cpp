@@ -23,8 +23,10 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -207,9 +209,10 @@ static bool subtreeIsShippable(const QueryPlan::Node * node)
 }
 
 /// True if `predicate` holds for any `ActionsDAG` a step in this subtree hands to its `serialize` - a
-/// filter, an expression, a join's `ON` conditions, a `HAVING` over totals, a filter fused into `ARRAY JOIN`, or a
-/// source step's row-level filter and PREWHERE. Only those DAGs are visited, because only they reach a replica; a step which
-/// serializes a DAG not listed here would escape every check built on this walk. Child plans are walked
+/// filter, an expression, a join's `ON` conditions, a `HAVING` over totals, a filter fused into `ARRAY JOIN`, the
+/// boundaries of `LIMIT ... AFTER`/`UNTIL`, `INTERPOLATE`, or a source step's row-level filter and PREWHERE.
+/// Only those DAGs are visited, because only they reach a replica; a step which serializes a DAG not listed
+/// here would escape every check built on this walk. Child plans are walked
 /// too, so a subplan held by a step (`ReadFromMerge`) is not invisible.
 static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::function<bool(const ActionsDAG &)> & predicate);
 
@@ -341,6 +344,17 @@ static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::fu
         /// `ArrayJoinStep::serialize` writes the element filter fused into it from a `FilterStep` above.
         if (const auto & element_filter = array_join->getElementFilter())
             if (predicate(*element_filter))
+                return true;
+    }
+    else if (const auto * limit_range = typeid_cast<const LimitRangeStep *>(step))
+    {
+        if (predicate(limit_range->getConditions()))
+            return true;
+    }
+    else if (const auto * filling = typeid_cast<const FillingStep *>(step))
+    {
+        if (const auto & interpolate = filling->getInterpolateDescription())
+            if (predicate(interpolate->actions))
                 return true;
     }
     else if (const auto * source_with_filter = dynamic_cast<const SourceStepWithFilter *>(step))
