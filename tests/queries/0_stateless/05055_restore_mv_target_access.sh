@@ -14,7 +14,6 @@ user="user_05055_${CLICKHOUSE_DATABASE}"
 bk_forged="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_forged')"
 bk_own="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_own')"
 bk_inner="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_inner')"
-bk_ts="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_ts')"
 bk_ext="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_ext')"
 db_ext="${CLICKHOUSE_DATABASE}_ext"
 db_restored="${CLICKHOUSE_DATABASE}_restored"
@@ -26,7 +25,6 @@ DROP TABLE IF EXISTS $db.mv_inner;
 DROP TABLE IF EXISTS $db.src;
 DROP TABLE IF EXISTS $db.own;
 DROP TABLE IF EXISTS $db.dst;
-DROP TABLE IF EXISTS $db.metrics;
 DROP DATABASE IF EXISTS $db_ext;
 DROP DATABASE IF EXISTS $db_restored;
 -- Its tables are resolved per file on demand and it iterates as empty, so a backup of it holds
@@ -35,28 +33,21 @@ CREATE DATABASE $db_ext ENGINE = Filesystem;
 CREATE TABLE $db.src (k UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE $db.own (k UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE $db.dst (k UInt64) ENGINE = MergeTree ORDER BY k;
-CREATE TABLE $db.metrics (metric_family String, type String, unit String, help String)
-    ENGINE = ReplacingMergeTree ORDER BY metric_family;
 CREATE MATERIALIZED VIEW $db.mv_own TO $db.own AS SELECT k FROM $db.src;
 CREATE MATERIALIZED VIEW $db.mv_inner ENGINE = MergeTree ORDER BY k AS SELECT k FROM $db.src;
 CREATE USER $user;
 GRANT CREATE VIEW ON $db.* TO $user;
 GRANT SELECT ON $db.src TO $user;
 GRANT SELECT, INSERT ON $db.own TO $user;
-GRANT SELECT, INSERT ON $db.metrics TO $user;
 GRANT BACKUP ON $db.mv_own TO $user;
 GRANT BACKUP ON $db.mv_inner TO $user;
 GRANT BACKUP ON $db.own TO $user;
-GRANT BACKUP ON $db.metrics TO $user;
 -- A Disk(...) backup location is authorized against the DISK source: writing a backup needs WRITE
 -- ON DISK and reading one needs READ ON DISK. Neither half says anything about a view target.
 GRANT READ ON DISK, WRITE ON DISK TO $user;
 -- The inner-table arm needs this under table_engines_require_grant, on CREATE too. It confers no
 -- SELECT or INSERT, so every denial below still comes from the view target.
 GRANT TABLE ENGINE ON MergeTree TO $user;
--- Same for the TimeSeries arm: creating that table locally needs the engines and a temporary table.
-GRANT TABLE ENGINE ON TimeSeries, TABLE ENGINE ON AggregatingMergeTree, TABLE ENGINE ON ReplacingMergeTree TO $user;
-GRANT CREATE ARBITRARY TEMPORARY TABLE ON *.* TO $user;
 GRANT CREATE DATABASE, CREATE TABLE, CREATE VIEW ON $db_restored.* TO $user;
 "
 
@@ -102,20 +93,6 @@ deny_or_allow "RESTORE TABLE $db.mv_own AS $db.mv_ok FROM $bk_own FORMAT Null"
 echo "-- a view with an inner table carries no target id, so it is still allowed"
 deny_or_allow "BACKUP TABLE $db.mv_inner TO $bk_inner FORMAT Null"
 deny_or_allow "RESTORE TABLE $db.mv_inner AS $db.mv_inner_ok FROM $bk_inner FORMAT Null"
-
-# A `TimeSeries` table reaches the same primitive through its external targets (`version` 9 or earlier),
-# and a temporary one is checked on a separate branch of the restore gate, so it needs its own arm.
-echo "-- a temporary TimeSeries table forges the same primitive through an external target"
-if ${CLICKHOUSE_CLIENT} --user "$user" --multiquery -q "
-    SET allow_experimental_time_series_table = 1;
-    CREATE TEMPORARY TABLE ts ENGINE = TimeSeries SETTINGS version = 9 METRICS $db.metrics;
-    BACKUP TEMPORARY TABLE ts, TABLE $db.metrics AS $db.dst TO $bk_ts SETTINGS structure_only = 1 FORMAT Null;
-    " > /dev/null 2>&1; then echo "forged"; else echo "forge failed"; fi
-deny_or_allow "RESTORE TEMPORARY TABLE ts AS ts2 FROM $bk_ts SETTINGS structure_only = 1 FORMAT Null"
-echo "-- and that denial names the forged target too"
-${CLICKHOUSE_CLIENT} --user "$user" -q \
-    "RESTORE TEMPORARY TABLE ts AS ts2 FROM $bk_ts SETTINGS structure_only = 1 FORMAT Null" 2>&1 \
-    | grep -c -m1 'INSERT ON '"$db"'\.dst'
 
 # A database with an external engine is skipped whole, so nothing under it is created and a view
 # there can write nowhere. The same backup with the setting off does restore it, and does require

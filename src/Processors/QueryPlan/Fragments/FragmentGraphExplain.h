@@ -3,18 +3,25 @@
 #include <Processors/QueryPlan/Fragments/FragmentGraph.h>
 
 #include <cstddef>
+#include <memory>
 
 namespace DB
 {
 
 class WriteBuffer;
 
-/// The text outputs of a `FragmentGraph`. The graph is only the model of the fragments and the exchanges; these functions
+namespace JSONBuilder
+{
+class JSONMap;
+}
+
+/// The outputs of a `FragmentGraph`. The graph is only the model of the fragments and the exchanges; these functions
 /// consume it and write the `EXPLAIN` output. `explainAsFragments` is defined in `FragmentGraphExplain.cpp`, `explainAsTree`
-/// in `FragmentGraphTree.cpp`. Both build a `PreparedFragmentGraph`, so they print the same `Exchanges` and `Levels`
-/// sections and name the exchange keys the same way.
+/// in `FragmentGraphTree.cpp` and `explainAsFragmentsJSON` in `FragmentGraphJSON.cpp`. The two text outputs build a
+/// `PreparedFragmentGraph`, so they print the same `Exchanges` and `Levels` sections and name the exchange keys the same
+/// way. The JSON output uses the names of the plan, as `json = 1` does.
 ///
-/// A graph with one `SingleNode` fragment (a plan that was not cut) is followed in both outputs by an empty line and
+/// A graph with one `SingleNode` fragment (a plan that was not cut) is followed in both text outputs by an empty line and
 /// `Not distributed: <reason>` when the fragment has a `fallback_reason`, and has no `Exchanges` and `Levels` sections.
 
 /// `EXPLAIN PLAN fragments = 1`.
@@ -54,5 +61,15 @@ void explainAsTree(
     WriteBuffer & buf,
     const ExplainPlanOptions & options,
     size_t max_step_description_length);
+
+/// `EXPLAIN PLAN fragments = 1, json = 1`: the element of the one-element array of the `json = 1` document; the caller
+/// wraps and formats it, with the keys in camelCase (`JSONBuilder::FormatSettings::camel_case_keys`). Defined in
+/// `FragmentGraphJSON.cpp`. Names are not prettified, as in `json = 1`.
+///
+/// A single node yields `{"Plan": ...}`, as `json = 1` does, with `"Fallback Reason"` when the fragment has one. A cut
+/// plan yields `Result Fragment`, the id of the fragment that produces the result, then `Fragments` and `Exchanges` by
+/// ascending id, and `Levels` (see `computeLevels`). The plan of a fragment is flat: `Root` and `Steps`, from
+/// `QueryPlan::explainPlanSteps`. The send and receive steps of an exchange have `Exchange Id`.
+std::unique_ptr<JSONBuilder::JSONMap> explainAsFragmentsJSON(const FragmentGraph & graph, const ExplainPlanOptions & options);
 
 }
