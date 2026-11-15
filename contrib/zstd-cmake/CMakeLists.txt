@@ -76,6 +76,7 @@ SET(Headers
         "${LIBRARY_DIR}/common/allocations.h"
         "${LIBRARY_DIR}/common/bits.h"
         "${LIBRARY_DIR}/common/bitstream.h"
+        "${LIBRARY_DIR}/common/bmi2.h"
         "${LIBRARY_DIR}/common/compiler.h"
         "${LIBRARY_DIR}/common/cpu.h"
         "${LIBRARY_DIR}/common/debug.h"

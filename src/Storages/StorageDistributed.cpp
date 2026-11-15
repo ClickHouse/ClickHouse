@@ -2,6 +2,7 @@
 #include <Storages/StorageDistributed.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 
 #include <Databases/IDatabase.h>
 #include <Databases/LoadingStrictnessLevel.h>
@@ -24,6 +25,7 @@
 #include <Storages/Distributed/DistributedSink.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageDummy.h>
@@ -194,6 +196,7 @@ namespace Setting
     extern const SettingsBool prefer_global_in_and_join;
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsBool enable_global_with_statement;
+    extern const SettingsMap additional_table_filters;
 }
 
 namespace DistributedSetting
@@ -957,8 +960,8 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
             return {};
     }
 
-    // ORDER BY
-    if (query_node.hasOrderBy())
+    // ORDER BY, SHUFFLE
+    if (query_node.hasOrderBy() || query_node.isShuffle())
         return default_stage;
 
     // LIMIT
@@ -1699,6 +1702,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     auto & select = query.select->as<ASTSelectWithUnionQuery &>();
 
     StoragePtr src_storage;
+    bool src_is_table_function = false;
 
     /// Distributed write only works in the most trivial case INSERT ... SELECT
     /// without any unions or joins on the right side
@@ -1715,6 +1719,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
             if (joined_tables.tablesCount() == 1)
             {
                 src_storage = joined_tables.getLeftTableStorage();
+                src_is_table_function = joined_tables.isLeftTableFunction();
             }
         }
     }
@@ -1722,8 +1727,21 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     if (!src_storage)
         return {};
 
+    /// This is the only place source SELECT access is enforced in this case
+    /// (table functions have been already checked in ITableFunction::execute)
+    const auto src_id = src_storage->getStorageID();
+    if (!src_is_table_function
+        && !local_context->getAccess()->isGranted(AccessType::SELECT, src_id.database_name, src_id.table_name))
+        return {};
+    if (getEffectiveRowPolicyFilter(*src_storage, local_context))
+        return {};
+    /// It is not easy to match this table only, analyzer also do not do it
+    if (!settings[Setting::additional_table_filters].value.empty())
+        return {};
+
     if (auto src_distributed = std::dynamic_pointer_cast<StorageDistributed>(src_storage))
     {
+        src_distributed->checkLocalShardAccess(AccessType::SELECT, local_context);
         return distributedWriteBetweenDistributedTables(*src_distributed, query, local_context);
     }
     if (auto src_storage_cluster = std::dynamic_pointer_cast<IStorageCluster>(src_storage))
@@ -2381,7 +2399,7 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
     relative_data_path = new_path_to_table_data;
 }
 
-void StorageDistributed::delayInsertOrThrowIfNeeded() const
+void StorageDistributed::delayInsertOrThrowIfNeeded(const std::function<bool()> & is_cancelled) const
 {
     if (!(*distributed_settings)[DistributedSetting::bytes_to_throw_insert] &&
         !(*distributed_settings)[DistributedSetting::bytes_to_delay_insert])
@@ -2405,10 +2423,12 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
         const size_t step_ms = static_cast<size_t>(std::min<double>(1., static_cast<double>((*distributed_settings)[DistributedSetting::max_delay_to_insert]) * 1'000 * 0.05));
         UInt64 delayed_ms = 0;
 
+        /// Nothing is left to throttle once the INSERT is cancelled or the server shuts down, and throwing then would
+        /// drop rows that a Buffer or an asynchronous insert flush has already acknowledged.
         do {
             delayed_ms += step_ms;
             std::this_thread::sleep_for(std::chrono::milliseconds(step_ms));
-        } while (*totalBytes(getContext()) > (*distributed_settings)[DistributedSetting::bytes_to_delay_insert] && delayed_ms < (*distributed_settings)[DistributedSetting::max_delay_to_insert]*1000);
+        } while (!is_cancelled() && !getContext()->isShutdownCalled() && *totalBytes(getContext()) > (*distributed_settings)[DistributedSetting::bytes_to_delay_insert] && delayed_ms < (*distributed_settings)[DistributedSetting::max_delay_to_insert]*1000);
 
         ProfileEvents::increment(ProfileEvents::DistributedDelayedInserts);
         ProfileEvents::increment(ProfileEvents::DistributedDelayedInsertsMilliseconds, delayed_ms);
@@ -2419,7 +2439,7 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
             formatReadableSizeWithBinarySuffix(new_total_bytes),
             delayed_ms);
 
-        if (new_total_bytes > (*distributed_settings)[DistributedSetting::bytes_to_delay_insert])
+        if (new_total_bytes > (*distributed_settings)[DistributedSetting::bytes_to_delay_insert] && !is_cancelled() && !getContext()->isShutdownCalled())
         {
             ProfileEvents::increment(ProfileEvents::DistributedRejectedInserts);
             throw Exception(ErrorCodes::DISTRIBUTED_TOO_MANY_PENDING_BYTES,
@@ -2614,7 +2634,7 @@ void registerStorageDistributed(StorageFactory & factory)
         if (engine_args.size() >= 5)
         {
             engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], local_context);
-            storage_policy = checkAndGetLiteralArgument<String>(engine_args[4], "storage_policy");
+            storage_policy = args.getStoragePolicy(checkAndGetLiteralArgument<String>(engine_args[4], "storage_policy"))->getName();
         }
 
         /// TODO: move some arguments from the arguments to the SETTINGS.

@@ -1,0 +1,150 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-10-01
+title: '演示日 - 2026-10-01'
+sidebarTitle: '2026-10-01'
+description: 'ClickStack 演示日（2026-10-01）'
+doc_type: 'guide'
+keywords: ['ClickStack', '演示日']
+---
+
+## 仪表盘加载指示器与实时尾随时间范围 {#dashboard-loading-indicators-and-live-tail-ranges}
+
+*演示者：[@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+这两项改动均来自开源贡献：加载指示器由 [@Harshul1484](https://github.com/Harshul1484) 贡献，实时尾随相关改动由 [@krishs01](https://github.com/krishs01) 贡献。两者都源于过去几周用户在仓库中提交的 议题。
+
+此前，刷新仪表盘时，用户往往无法清楚了解当前状态。部分卡片会被加载动画遮挡，另一些卡片则继续显示之前的数据，看不出查询是否正在运行。在网络连接较慢或查询量较大时，您无法判断看到的是否为最新结果。折线图和堆叠条形图等时间图表在重新拉取时已有脉动效果，但数值、条形图、饼图和表格卡片只检查 `isLoading`，而在 react-query 显示占位数据期间，该值始终为 `false`。
+
+现在，这些卡片会继续显示之前的数据，并以脉动效果提示，直到重新拉取完成。这一改动分多个小型 PR 陆续合入：首先是数值、条形图和饼图卡片，然后是表格、热力图，以及 Services 仪表盘上的列表条形图和直方图。表格还需要额外修复，因为 `useOffsetPaginatedQuery` 仅在实时模式下保留之前的行，导致刷新期间整个卡片消失。搜索和事件模式卡片，以及 Kubernetes 仪表板上的 Pods、Nodes 和 Namespaces 表，仍沿用旧的行为，相关 PR 尚在审核中。
+
+在实时尾随方面，时间选择器此前会将一小时以上的所有预设置灰，却不说明原因。此外，控制这些预设的开关标签为 &quot;Relative Time&quot;，而应用其他地方统一称之为实时尾随。
+
+现在 3h 和 6h 预设已可使用，开关也更名为 **Live tail ranges**。仍处于禁用状态的预设在鼠标悬停时会显示 &quot;Not available for Live Tail&quot; 工具提示。12h 及以上的范围仍保持禁用，因为每次刷新都会重新查询整个时间窗口。按默认 10 秒的刷新时间间隔计算，这意味着每 10 秒就要扫描 12 到 24 小时的数据。
+
+**相关 PR：** [#3211](https://github.com/hyperdxio/hyperdx/pull/3211) 仪表盘刷新时让数值、条形图和饼图卡片显示脉动效果，[#3212](https://github.com/hyperdxio/hyperdx/pull/3212) 仪表盘刷新时保留表格卡片中的行，[#3221](https://github.com/hyperdxio/hyperdx/pull/3221) 仪表盘刷新时保留热力图卡片，[#3229](https://github.com/hyperdxio/hyperdx/pull/3229) 列表条形图和直方图刷新时显示脉动效果，[#3224](https://github.com/hyperdxio/hyperdx/pull/3224) 仪表盘刷新时保留搜索和模式卡片 (审核中) ，[#3228](https://github.com/hyperdxio/hyperdx/pull/3228) 页面刷新时保留 Kubernetes 仪表板中的表 (审核中) ，[#3219](https://github.com/hyperdxio/hyperdx/pull/3219) 为 3h 和 6h 启用实时尾随、重命名开关并为禁用项添加工具提示
+
+## 议题模板与 Needs Feedback 流程 {#issue-templates-and-the-needs-feedback-flow}
+
+*演示者：[@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=118" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+这项变更针对的是代码仓库，而非产品本身。此前，用户可以在 HyperDX 代码仓库中提交正文格式不限的议题。现在，新议题必须基于缺陷报告模板或功能请求模板创建，空白议题已被禁用。后续我们会根据需要添加更多模板。
+
+缺陷报告模板会要求预先提供调试信息。应用中已有 **Help → Copy debug info** 操作，可一键复制前端和后端版本、部署模式、浏览器以及会话 ID，并自动剔除 API 密钥和查询参数。将这些信息粘贴到议题中，可以省去一轮来回询问。对于采集器和命令行客户端相关的议题，该字段填写 `N/A` 即可。
+
+新议题还会自动添加 `Needs Feedback` 标签，表示该议题仍在讨论中，暂不适合提交 PR。待各方就范围达成一致后，维护者会将标签改为 `Accepting PR`，此时即可有人认领。
+
+该流程已记录在 `CONTRIBUTING.md` 中。目前它只是一项约定，在 PR 层面并无强制机制。其目的是避免大家在议题和解决思路尚未达成共识之前，就花时间着手修复。我们可能会根据实际效果对其进一步完善。
+
+**相关 PR：** [#3239](https://github.com/hyperdxio/hyperdx/pull/3239) Add debug-info ask and Needs Feedback 议题 flow
+
+## 在一个图表中使用多个 PromQL 表达式 {#multiple-promql-expressions-on-one-chart}
+
+*演示者：[@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=191" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+此前，PromQL 仅支持在时间序列图表中使用，且每个卡片只能包含一个表达式。现在，您可以在同一个时间序列图表中添加多个 PromQL 表达式，并为每个表达式分别设置别名。在演示中，我们利用这一功能将 p50、p95 和 p99 延迟绘制在同一图表中。
+
+编辑器下方的查询预览现在会显示每个表达式所生成的 PromQL，且其中的变量均已替换。而此前，预览只会显示第一个表达式。借助这一改进，您可以在保存前确认每个查询的实际解析结果。
+
+列表中的第一个 PR 是促成这一功能的重构工作：它将 PromQL 编辑器以及图表构建器中的数据系列控件提取为共享组件，从而可以为每个表达式复用这些组件。
+
+**相关 PR：** [#3145](https://github.com/hyperdxio/hyperdx/pull/3145) 提取 PromQL 函数、PromqlExpressionEditor 和 ChartSeriesControls，[#3146](https://github.com/hyperdxio/hyperdx/pull/3146) 在一个图表中绘制多个 PromQL 表达式
+
+## PromQL 数值图、饼图和表格图表 {#promql-number-pie-and-table-charts}
+
+*演示者：[@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=241" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+*本片段音质欠佳，敬请谅解。下文已涵盖演示中展示的全部内容。*
+
+除时间序列图表外，PromQL 现已支持数值图、饼图、条形图和表格图表。其中变化最大的是数值图。此前，所有 PromQL 查询都是范围查询，会在所选时间范围内按步长逐一求值，图表再按时间和数据系列名称显示第一个结果。现在，您可以选择即时查询 (仅在范围末尾求值一次) 或范围查询。这与 Grafana stat 卡片的工作方式一致。
+
+对于范围查询，您还需选择一个归约函数：last、min、max、avg、sum 或 count。归约在客户端执行，会将每个数据系列的样本归约为单个值。如果结果仍包含多个值 (无论来自多个数据系列还是未归约的样本) ，图表都会显示警告，提示数值卡片只能显示单个值，表达式需要进行聚合。
+
+对于范围查询，数值图还支持显示迷你线图，且直接复用为数值拉取的结果。这些查询现在与时间序列查询一样遵循仪表盘的时间范围和粒度，因此数值和迷你线图可以共用同一份查询结果。
+
+饼图和条形图同样提供即时查询和范围查询选项及归约函数，并支持图例模板。对于每个数据系列返回多个样本的即时查询，归约函数同样适用。例如，`up[5m]` 会返回一个矩阵，该矩阵会先沿时间维度归约为即时向量，再以扇区或条形图显示。数值图也会应用同样的归约。
+
+表格显示原始查询结果。每个样本对应一行，每个标签对应一列。如果存在 `__name__` 和 Timestamp，它们会显示在最前面的列中。对于范围查询，这意味着每个步长上的每个样本都会单独成行，并附带时间戳。上述所有图表类型均支持数值格式化。
+
+**相关 PR：** [#3169](https://github.com/hyperdxio/hyperdx/pull/3169) 支持基于即时查询和范围查询的 PromQL 数值卡片，[#3178](https://github.com/hyperdxio/hyperdx/pull/3178) 支持在 PromQL 数值图上显示迷你线图，[#3238](https://github.com/hyperdxio/hyperdx/pull/3238) 支持 PromQL 表格图表，[#3253](https://github.com/hyperdxio/hyperdx/pull/3253) 支持 PromQL 饼图和条形图
+
+## Markdown 卡片中的仪表盘变量 {#dashboard-variables-in-markdown-tiles}
+
+*演示者：[@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=345" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+此前，仪表盘变量只能在查询中使用，无法用于 Markdown 卡片。现在，您可以在 Markdown 中引用这些变量，链接中也同样适用。在变量选择器中更改值后，文本和链接目标都会随之更新。演示中就利用了这一功能，将所选值传递到另一个页面。
+
+变量值默认采用新的 `markdown` 格式，该格式会对 Markdown 字符进行转义。此外，Markdown 卡片会拦截脚本和原始 HTML。如果需要未经转义的值 (例如在代码块中) ，可以改用其他格式，例如 `${var:csv}`。
+
+编辑器会标记出无效的变量引用，MCP 仪表盘校验和提示词也已同步更新。
+
+**相关 PR：** [#3246](https://github.com/hyperdxio/hyperdx/pull/3246) 在 Markdown 卡片中替换变量
+
+## PromQL 宏 {#promql-macros}
+
+*演示者：[@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=376" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+PromQL 现已支持三个与 Grafana 兼容的宏，它们基于仪表盘的时间范围和粒度。`$__interval` 返回图表或仪表盘的粒度，`$__range` 返回图表日期范围的长度 (以秒为单位) 。`$__rate_interval` 的值为 `max(4 × 15s, $__interval)`，可为 rate 计算提供覆盖多个抓取时间间隔的窗口。目前，该宏默认抓取时间间隔为 15 秒。
+
+这些宏会与变量一同替换，因此您可以在生成的 PromQL 预览中查看其解析后的值。编辑器的自动补全也会提示这些宏。在底层实现上，该功能复用了现有 SQL 宏机制的大部分逻辑。
+
+**相关 PR：** [#3244](https://github.com/hyperdxio/hyperdx/pull/3244) 支持 PromQL 宏
+
+## 在搜索页面中选择行 {#selecting-rows-on-the-search-page}
+
+*演示者：[@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=398" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+这是一项根据用户请求新增的小功能。现在，您可以通过复选框在搜索结果中逐行选择，也可以按住 Shift 单击来选择一个范围。选中若干行后，即可使用 **Download CSV**、**Copy CSV** 和 **Copy JSON** 操作，也可以清除当前选择。导出内容会包含表中当前显示的所有列，因此无需导出整个结果集，就能从 ClickStack 中取出少量行。
+
+复选框会在鼠标悬停时显示，这是 [@MikeShi42](https://github.com/MikeShi42) 后续做的改进。复选框默认隐藏，鼠标悬停在某一行上时才会淡入显示。获得键盘焦点时复选框同样会显示，避免按 Tab 键时跳到看不见的控件上。只要有任意一行被选中，所有复选框都会保持可见，方便您判断该在哪里按住 Shift 单击。在触控设备上，复选框始终可见。
+
+鼠标悬停时，复选框列的宽度保持不变，因此表格不会来回跳动。该列宽度也已从 24px 收窄至 18px，并且复选框带有工具提示，说明如何按住 Shift 单击来选择范围。
+
+**相关 PR：** [#3140](https://github.com/hyperdxio/hyperdx/pull/3140) Support search row multi-select download and copy，[#3164](https://github.com/hyperdxio/hyperdx/pull/3164) Reveal search row-selection checkboxes on hover
+
+## 行详情面板中的物化列和别名列 {#materialized-and-alias-columns-in-the-row-details-panel}
+
+*演示者：[@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=435" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+这是来自 [@BilalAtique](https://github.com/BilalAtique) 的一项开源贡献，起因是有议题提出希望在行详情面板中显示计算列。该面板通过 `SELECT *` 拉取每一行，而除非启用了 `asterisk_include_materialized_columns` 和 `asterisk_include_alias_columns`，否则 `SELECT *` 不会返回 `MATERIALIZED` 和 `ALIAS` 列。因此，您在日志表中添加的物化列，以及标准 `otel_logs` 表中的 `*AttributeItems` 别名列，此前都无法显示。
+
+现在，Column Values 视图的齿轮菜单中新增了 **Show materialized and alias columns** 选项。该选项默认关闭，并与其他面板偏好设置一同保存在本地存储中。开启后，所有使用 `*` 的行查询都会加上这两个设置。配置了 Known Columns List 的 source 不受影响。
+
+此外，行查找现在也会应用 source 自身的查询设置，且其优先级高于该开关。如果 source 已启用这两个设置，即使该选项处于关闭状态，这些列也会显示；如果 source 设置了 `asterisk_include_alias_columns = 0`，即使开启该选项，别名列也依然隐藏。
+
+有几点需要注意：如果连接所用的用户无权修改这些设置 (例如设置了 `readonly = 1`，或设置配置文件将其标记为 `CONST`) ，行查询将会失败；如果某个别名无法针对该行求值，查询同样会失败。此时面板会显示 ClickHouse 返回的错误，并提供 **Hide materialized and alias columns** 操作，用于关闭该选项。
+
+`__hdx_materialized_*` 列也会被一并拉取，但在查看器中仍保持隐藏。本次变更未提供针对这些列的开关。
+
+**相关 PR：** [#3234](https://github.com/hyperdxio/hyperdx/pull/3234) 将 source 查询设置应用于行侧面板的行查找，[#3231](https://github.com/hyperdxio/hyperdx/pull/3231) 新增在行详情面板中显示 MATERIALIZED 和 ALIAS 列的选项
+
+## 按键名标记 Map 属性列 {#map-attribute-columns-labelled-by-their-key}
+
+*演示者：[@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=495" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+这是另一项开源贡献，来自 [@DevShoaib78](https://github.com/DevShoaib78)。此前，从筛选条件侧边栏或行侧面板将 `host.arch` 等 Map 属性添加为列时，结果表中显示的是 ClickHouse 自动派生的名称，例如 `arrayElement(ResourceAttributes, 'host.arch')`。
+
+现在，搜索页面上的这两种操作采用相同的逻辑，会将表达式连同别名一起添加到 `SELECT` 中：`ResourceAttributes['host.arch'] AS "host.arch"`。这样，列标题就会显示为 `host.arch`。您可以在 `SELECT` 输入框中查看和编辑该别名。手动编写的 SQL 不会被重写，因此现有的已保存的搜索、告警和仪表盘均不受影响。
+
+如果添加别名可能改变查询语义，则会跳过别名。这包括两种情况：一是键与表中某列同名 (因为 ClickHouse 在 `WHERE` 和 `ORDER BY` 中会先解析别名、再解析列) ；二是名称已在 `SELECT` 中使用 (例如来自两个不同 Map 的相同键) 。此外，如果键中包含 `"` 或 `\`，同样不会添加别名。
+
+侧面板、筛选条件侧边栏和嵌套筛选分组在检查某列是否已显示时，现在无论表达式是否带有别名都能正确识别，因此不会再提示添加表中已有的列。
+
+**相关 PR：** [#3163](https://github.com/hyperdxio/hyperdx/pull/3163) 按键名而非 arrayElement(...) 标记 Map 属性列

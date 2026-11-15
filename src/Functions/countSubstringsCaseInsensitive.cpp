@@ -26,7 +26,7 @@ REGISTER_FUNCTION(CountSubstringsCaseInsensitive)
         {"needle", "Substring to be searched.", {"String"}},
         {"start_pos", "Optional. Position (1-based) in `haystack` at which the search starts.", {"UInt*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of occurrences of the neddle in the haystack.", {"UInt64"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of occurrences of the needle in the haystack.", {"UInt64"}};
     FunctionDocumentation::Examples examples =
     {
     {

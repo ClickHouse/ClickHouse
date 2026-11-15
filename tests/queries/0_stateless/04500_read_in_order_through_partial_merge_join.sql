@@ -1,6 +1,8 @@
--- PartialMergeJoin re-sorts left blocks by the join key, so read-in-order must not be
--- propagated through it. Otherwise Aggregating/Distinct-in-order consume a stream they
--- wrongly believe is sorted by the group/distinct key and mis-group rows. Issues #110662, #109216.
+-- Read-in-order through PartialMergeJoin. The classic probe re-sorts left blocks by the join
+-- key, so read-in-order used to be blocked for it (issues #110662, #109216). Now the plan pins
+-- the join to the order-preserving probe (`keepLeftPipelineInOrder`), which matches over a
+-- sorted copy of the key columns and emits the output in the original row order, so
+-- Aggregating/Distinct-in-order consume a correctly sorted stream and the left read is InOrder.
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
@@ -44,14 +46,17 @@ SELECT count() FROM (
     SETTINGS join_algorithm = 'partial_merge', optimize_distinct_in_order = 1, max_threads = 1
 );
 
--- The left ReadFromMergeTree under a PartialMergeJoin must NOT read in order.
+-- The left ReadFromMergeTree under a pinned PartialMergeJoin reads in order.
+-- The read-in-order gates are pinned on because the test runner randomizes them.
 SET explain_query_plan_default = 'legacy';
 SELECT trim(explain) FROM (
     EXPLAIN PLAN actions = 1
     SELECT l.k, count() FROM t2 AS l LEFT JOIN t1 AS r ON l.n = r.n
     WHERE l.k < 10 GROUP BY l.k ORDER BY l.k
     SETTINGS join_algorithm = 'partial_merge', query_plan_join_swap_table = 'false',
-             optimize_aggregation_in_order = 1, max_threads = 1
+             optimize_aggregation_in_order = 1, max_threads = 1,
+             enable_analyzer = 1, optimize_read_in_order = 1, query_plan_read_in_order = 1,
+             query_plan_read_in_order_through_join = 1, enable_parallel_replicas = 0
 ) WHERE explain LIKE '%ReadType%';
 
 -- #110662 (no-aggregation manifestation): a plain top-level ORDER BY over a partial_merge
@@ -60,7 +65,7 @@ SELECT trim(explain) FROM (
 -- spans 0..499, so a correctly sorted stream emits exactly [0, 1, ..., 499] == range(500).
 -- The read-in-order gates are pinned on (and swap off) so the defective path is always exercised;
 -- otherwise a run that randomizes them off would sort correctly and pass without testing the fix.
-SELECT groupArray(k) = range(500) FROM (
+SELECT groupArray(materialize(k)) = range(500) FROM (
     SELECT l.k AS k FROM t2 AS l LEFT JOIN t2 AS r ON l.n = r.n ORDER BY l.k
 ) SETTINGS join_algorithm = 'partial_merge', max_threads = 1,
            optimize_read_in_order = 1, query_plan_read_in_order_through_join = 1, query_plan_join_swap_table = 'false';

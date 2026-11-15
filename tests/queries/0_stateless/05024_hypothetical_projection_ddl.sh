@@ -77,7 +77,7 @@ $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_c ON t_hypo_proj_drift (SELECT a, c ORDER BY c);
     ALTER TABLE t_hypo_proj_drift DROP COLUMN c SETTINGS mutations_sync = 2;
     EXPLAIN WHATIF SELECT a FROM t_hypo_proj_drift WHERE b = 1;
-" 2>&1 | grep -oE 'reason: +Hypothetical projection can no longer be added to this table' | awk '{$1=$1; print}'
+" 2>&1 | grep -oE 'reason: +Hypothetical projection no longer matches the table' | awk '{$1=$1; print}'
 
 # the same MergeTree projection gates the real ADD PROJECTION enforces
 echo "--- commit_order needs the same gates as a real projection ---"
@@ -95,7 +95,7 @@ $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_co ON t_hypo_proj_co INDEX b TYPE commit_order;
     ALTER TABLE t_hypo_proj_co MODIFY SETTING allow_commit_order_projection = 0;
     EXPLAIN WHATIF SELECT a FROM t_hypo_proj_co WHERE b = 1;
-" 2>&1 | grep -oE 'reason: +Hypothetical projection can no longer be added to this table' | awk '{$1=$1; print}'
+" 2>&1 | grep -oE 'reason: +Hypothetical projection no longer matches the table' | awk '{$1=$1; print}'
 
 # allow_non_metadata_alters gates data-modifying ALTERs; ADD PROJECTION is metadata-only, so a
 # valid definition must still be accepted with it off

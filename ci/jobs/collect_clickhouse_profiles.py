@@ -99,7 +99,7 @@ SERVER_READINESS_POLL_S = 2
 # is honoured and the job fails fast (dumping the server log) instead.
 SERVER_READINESS_PROBE_TIMEOUT_S = 15
 
-LLVM_VERSION = "22"
+LLVM_VERSION = "23"
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -392,6 +392,10 @@ def run_performance_tests(server_dir, port, runs, max_queries, time_budget_s):
         # TODO: opt into S3 coverage by provisioning the endpoint via s3_service.ensure and dropping this skip.
         if test_discovery.test_requires_s3(f"{repo_path}/tests/performance/{test_file}"):
             print(f"  Skipping {test_name}: uses the job-local S3 endpoint, which profile collection does not provision")
+            continue
+        # SIGKILL bypasses failpoint cleanup, and later tests reuse this server.
+        if test_discovery.test_has_failpoint(f"{repo_path}/tests/performance/{test_file}"):
+            print(f"  Skipping {test_name}: server-wide failpoints cannot be cleaned up after a hard timeout")
             continue
         remaining = deadline - time.monotonic()
         if remaining <= 0:

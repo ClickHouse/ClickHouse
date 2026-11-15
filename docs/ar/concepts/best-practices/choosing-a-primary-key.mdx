@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 > نستخدم مصطلح &quot;مفتاح الترتيب&quot; بالتبادل للإشارة إلى &quot;المفتاح الأساسي&quot; في هذه الصفحة. ومن الناحية الدقيقة، [يختلف المفهومان في ClickHouse](/ar/reference/engines/table-engines/mergetree-family/mergetree#choosing-a-primary-key-that-differs-from-the-sorting-key)، لكن لأغراض هذا المستند يمكن للقراء استخدامهما بالتبادل، بحيث يشير مفتاح الترتيب إلى الأعمدة المحددة في `ORDER BY` للجدول.
 
 لاحظ أن المفتاح الأساسي في ClickHouse يعمل [بشكل مختلف جدًا](/ar/get-started/migrate/postgres/migration-guide/migration-guide-part3#primary-ordering-keys-in-clickhouse) عمّا قد يتوقعه من اعتاد على مصطلحات مشابهة في قواعد بيانات OLTP مثل Postgres.
@@ -122,7 +120,15 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 
 يوضح الرسم المتحرك التالي كيفية إنشاء فهرس أساسي متناثر محسَّن لجدول منشورات Stack Overflow. وبدلًا من فهرسة الصفوف الفردية، يستهدف الفهرس كتلًا من الصفوف:
 
-<Image img="/images/bestpractices/create_primary_key.webp" size="lg" alt="المفتاح الأساسي" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![المفتاح الأساسي](/images/bestpractices/create_primary_key.webp)
+
+</Frame>
+
+</div>
 
 إذا تكرر الاستعلام نفسه على جدول يستخدم مفتاح الترتيب هذا:
 
@@ -170,7 +176,15 @@ WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
 
 بالإضافة إلى ذلك، نعرض بصريًا كيف يستبعد الفهرس المتناثر جميع كتل الصفوف التي لا يمكن أن تحتوي على أي نتائج مطابقة لاستعلام المثال الخاص بنا:
 
-<Image img="/images/bestpractices/primary_key.webp" size="lg" alt="المفتاح الأساسي" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![المفتاح الأساسي](/images/bestpractices/primary_key.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   ستُرتَّب جميع الأعمدة في الجدول استنادًا إلى قيمة مفتاح الترتيب المحدد، سواء أكانت مُدرجة في المفتاح نفسه أم لا. على سبيل المثال، إذا استُخدم `CreationDate` كمفتاح، فسيطابق ترتيب القيم في جميع الأعمدة الأخرى ترتيب القيم في العمود `CreationDate`. ويمكن تحديد عدة مفاتيح ترتيب — وعندها سيكون الترتيب وفق الدلالات نفسها لعبارة `ORDER BY` في استعلام `SELECT`.
