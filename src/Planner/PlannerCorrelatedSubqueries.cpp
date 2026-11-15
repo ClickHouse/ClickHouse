@@ -425,9 +425,7 @@ QueryPlan buildCorrelatedDomainPlan(DecorrelationContext & context)
     context.uses_in_memory_buffer = referencedInputUsesInMemoryBuffer(context);
     context.uses_correlated_domain = true;
 
-    /// One referenced root serves every correlated subquery decorrelated against the same input. It
-    /// cannot be shared when the result is buffered (useMemoryBufferForCommonSubplanResult replaces
-    /// the referenced step), nor when a correlated column exists only in the root grown so far.
+    /// The shared root is reused only if it already provides every correlated column.
     QueryPlan::Node * reference_root = nullptr;
     if (context.shared_input_root && !context.uses_in_memory_buffer)
     {
