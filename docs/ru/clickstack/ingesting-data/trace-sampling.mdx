@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'сэмплирование трасс', 'tail-сэмплирование', 'коэффициент выборки', 'взвешенные агрегации', 'OpenTelemetry', 'SampleRate']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Сервисы с высокой пропускной способностью могут генерировать миллионы спанов в секунду. Хранить каждый спан дорого, поэтому команды обычно используют [процессор tail-sampling](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/tailsamplingprocessor) в OpenTelemetry Collector, чтобы сохранять только один из N спанов. Каждый сохранённый спан содержит атрибут `SampleRate`, в котором записано значение N.
 
 После сэмплирования данных наивные агрегации дают неверный результат: `count()` возвращает в N раз меньше событий, чем произошло на самом деле, `sum()` и `avg()` оказываются смещёнными, а процентильные значения сдвигаются. Панели мониторинга показывают заниженные значения числа запросов, пропускной способности и частоты ошибок, что вводит в заблуждение.
@@ -51,6 +49,14 @@ greatest(toUInt64OrZero(toString(expr)), 1)
 
 Например, если ваш процессор tail-sampling OpenTelemetry записывает это значение в `SpanAttributes['SampleRate']`:
 
-<Image img="/images/clickstack/trace-sampling-source-settings.webp" alt="Поле Sample Rate Expression в настройках источника ClickStack" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Поле Sample Rate Expression в настройках источника ClickStack](/images/clickstack/trace-sampling-source-settings.webp)
+
+</Frame>
+
+</div>
 
 После настройки все графики, панели мониторинга, оповещения и панели мониторинга сервисов автоматически применяют агрегации с учетом коэффициента выборки. Изменять отдельные запросы не нужно.

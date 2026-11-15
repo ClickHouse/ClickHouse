@@ -1,6 +1,9 @@
 #include "config.h"
+#include <Databases/DataLake/DataLakeConstants.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
+#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <TableFunctions/TableFunctionObjectStorageCluster.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
@@ -115,7 +118,7 @@ s3Cluster(cluster_name, named_collection[, option=value [,..]])
 | `session_token`                       | Session token to use with the given keys. Optional when passing keys.                                                                                                                                 |
 | `format`                              | The [format](/reference/formats/index) of the file.                                                                                                                                                         |
 | `structure`                           | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                          |
-| `compression_method`                  | Parameter is optional. Supported values: `none`, `gzip` or `gz`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`. By default, it will autodetect compression method by file extension.                 |
+| `compression_method`                  | Parameter is optional. Supported values: `none`, `gzip` or `gz`, `deflate`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`, `lz4`, `bz2`, `snappy`. By default, it will autodetect compression method by file extension. For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default). |
 | `headers`                             | Parameter is optional. Allows headers to be passed in the S3 request. Pass in the format `headers(key=value)` e.g. `headers('x-amz-request-payer' = 'requester')`. See [here](/reference/functions/table-functions/s3#accessing-requester-pays-buckets) for example of use. |
 | `extra_credentials`                   | Optional. `roleARN` can be passed via this parameter. See [here](/products/cloud/guides/data-sources/accessing-s3-data-securely#access-your-s3-bucket-with-the-clickhouseaccess-role) for an example.                                          |
 
@@ -128,7 +131,7 @@ Arguments can also be passed using [named collections](/concepts/features/config
 | `no_sign_request`              | disabled by default.                                                                                                                                                                                                              |
 | `expiration_window_seconds`    | default value is 120.                                                                                                                                                                                                             |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified structure for reading or writing data in the specified file.
 
@@ -178,6 +181,7 @@ For details on optimizing the performance of the s3 function see [our detailed g
 - [S3 engine](/reference/engines/table-engines/integrations/s3)
 - [s3 table function](/reference/functions/table-functions/s3)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        s3TableFunctionSecretArguments(true),
         {.allow_readonly = false}
     );
 #endif
@@ -205,10 +209,10 @@ azureBlobStorageCluster(cluster_name, connection_string|storage_account_url, con
 | `account_name`      | if storage_account_url is used, then account name can be specified here                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `account_key`       | if storage_account_url is used, then account key can be specified here                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `format`            | The [format](/reference/formats/index) of the file.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `compression`       | Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension. (same as setting to `auto`).                                                                                                                                                                                                                                                                                                                                               |
+| `compression`       | Supported values: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. By default, it will autodetect compression by file extension. (same as setting to `auto`). For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).                                                                                                                                                      |
 | `structure`         |  Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified structure for reading or writing data in the specified file.
 
@@ -234,6 +238,7 @@ See [azureBlobStorage](/reference/functions/table-functions/azureBlobStorage#usi
 - [AzureBlobStorage engine](/reference/engines/table-engines/integrations/azureBlobStorage)
 - [azureBlobStorage table function](/reference/functions/table-functions/azureBlobStorage)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        azureTableFunctionSecretArguments(true),
         {.allow_readonly = false}
     );
 #endif
@@ -258,7 +263,7 @@ hdfsCluster(cluster_name, URI, format, structure)
 | `format`       | The [format](/reference/formats/index) of the file.                                                                                                                                                                                                                                                |
 | `structure`    | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                    |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified structure for reading data in the specified file.
 
@@ -296,6 +301,7 @@ If your listing of files contains number ranges with leading zeros, use the cons
 - [HDFS engine](/reference/engines/table-engines/integrations/hdfs)
 - [HDFS table function](/reference/functions/table-functions/hdfs)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        SecretArgumentsSpec{},
         {.allow_readonly = false}
     );
 #endif
@@ -313,9 +319,10 @@ void registerTableFunctionIcebergCluster(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionIcebergLocalCluster>(
         {
             .description = R"(The table function can be used to read the Iceberg table stored on shared storage in parallel for many nodes in a specified cluster.)",
-            .examples{{IcebergLocalClusterDefinition::name, "SELECT * FROM icebergLocalCluster(cluster, filename, format, [,compression])", ""}},
+            .syntax = "icebergLocalCluster(cluster, filename, format, [,compression])",
             .category = FunctionDocumentation::Category::TableFunction
         },
+        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {.allow_readonly = false}
     );
 
@@ -368,15 +375,17 @@ SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/c
 - [Iceberg engine](/reference/engines/table-engines/integrations/iceberg)
 - [Iceberg table function](/reference/functions/table-functions/iceberg)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        DataLake::withSecretSettings(s3TableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 
     factory.registerFunction<TableFunctionIcebergS3Cluster>(
         {
             .description = R"(The table function can be used to read the Iceberg table stored on S3 object store in parallel for many nodes in a specified cluster.)",
-            .examples{{IcebergS3ClusterDefinition::name, "SELECT * FROM icebergS3Cluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])", ""}},
+            .syntax = "icebergS3Cluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])",
             .category = FunctionDocumentation::Category::TableFunction
         },
+        DataLake::withSecretSettings(s3TableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 #endif
@@ -385,9 +394,10 @@ SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/c
     factory.registerFunction<TableFunctionIcebergAzureCluster>(
         {
             .description = R"(The table function can be used to read the Iceberg table stored on Azure object store in parallel for many nodes in a specified cluster.)",
-            .examples{{IcebergAzureClusterDefinition::name, "SELECT * FROM icebergAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])", ""}},
+            .syntax = "icebergAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])",
             .category = FunctionDocumentation::Category::TableFunction
         },
+        DataLake::withSecretSettings(azureTableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 #endif
@@ -396,9 +406,10 @@ SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/c
     factory.registerFunction<TableFunctionIcebergHDFSCluster>(
         {
             .description = R"(The table function can be used to read the Iceberg table stored on HDFS virtual filesystem in parallel for many nodes in a specified cluster.)",
-            .examples{{IcebergHDFSClusterDefinition::name, "SELECT * FROM icebergHDFSCluster(cluster, uri, [format], [structure], [compression_method])", ""}},
+            .syntax = "icebergHDFSCluster(cluster, uri, [format], [structure], [compression_method])",
             .category = FunctionDocumentation::Category::TableFunction
         },
+        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {.allow_readonly = false}
     );
 #endif
@@ -412,7 +423,7 @@ void registerTableFunctionPaimonCluster(TableFunctionFactory & factory)
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionPaimonCluster>(
         {.description = R"DOCS_MD(
-import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <ExperimentalBadge />
 
@@ -452,15 +463,17 @@ A table with the specified structure for reading data from cluster in the specif
 
 - [Paimon table function](/reference/functions/table-functions/paimon)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        DataLake::withSecretSettings(s3TableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 
     factory.registerFunction<TableFunctionPaimonS3Cluster>(
         {
             .description = R"(The table function can be used to read the Paimon table stored on S3 object store in parallel for many nodes in a specified cluster.)",
-            .examples{{PaimonS3ClusterDefinition::name, "SELECT * FROM paimonS3Cluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])", ""}},
+            .syntax = "paimonS3Cluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])",
             .category = FunctionDocumentation::Category::TableFunction
         },
+        DataLake::withSecretSettings(s3TableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 #endif
@@ -469,9 +482,10 @@ A table with the specified structure for reading data from cluster in the specif
     factory.registerFunction<TableFunctionPaimonAzureCluster>(
         {
             .description = R"(The table function can be used to read the Paimon table stored on Azure object store in parallel for many nodes in a specified cluster.)",
-            .examples{{PaimonAzureClusterDefinition::name, "SELECT * FROM paimonAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])", ""}},
+            .syntax = "paimonAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])",
             .category = FunctionDocumentation::Category::TableFunction
         },
+        DataLake::withSecretSettings(azureTableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 #endif
@@ -480,9 +494,10 @@ A table with the specified structure for reading data from cluster in the specif
     factory.registerFunction<TableFunctionPaimonHDFSCluster>(
         {
             .description = R"(The table function can be used to read the Paimon table stored on HDFS virtual filesystem in parallel for many nodes in a specified cluster.)",
-            .examples{{PaimonHDFSClusterDefinition::name, "SELECT * FROM paimonHDFSCluster(cluster, uri, [format], [structure], [compression_method])", ""}},
+            .syntax = "paimonHDFSCluster(cluster, uri, [format], [structure], [compression_method])",
             .category = FunctionDocumentation::Category::TableFunction
         },
+        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {.allow_readonly = false}
     );
 #endif
@@ -522,7 +537,7 @@ deltaLakeAzureCluster(cluster_name, named_collection[, option=value [,..]])
 - Description of all other arguments coincides with description of arguments in equivalent [deltaLake](/reference/functions/table-functions/deltalake) table function.
 - An optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified structure for reading data from cluster in the specified Delta Lake table in S3.
 
@@ -539,14 +554,16 @@ A table with the specified structure for reading data from cluster in the specif
 - [deltaLake engine](/reference/engines/table-engines/integrations/deltalake)
 - [deltaLake table function](/reference/functions/table-functions/deltalake)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        DataLake::withSecretSettings(s3TableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
     factory.registerFunction<TableFunctionDeltaLakeS3Cluster>(
         {
             .description = R"(The table function can be used to read the DeltaLake table stored on S3 object store in parallel for many nodes in a specified cluster.)",
-            .examples{{DeltaLakeS3ClusterDefinition::name, "SELECT * FROM deltaLakeS3Cluster(cluster, url, access_key_id, secret_access_key)", ""}},
+            .syntax = "deltaLakeS3Cluster(cluster, url, access_key_id, secret_access_key)",
             .category = FunctionDocumentation::Category::TableFunction
         },
+        DataLake::withSecretSettings(s3TableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 #endif
@@ -555,9 +572,10 @@ A table with the specified structure for reading data from cluster in the specif
     factory.registerFunction<TableFunctionDeltaLakeAzureCluster>(
         {
             .description = R"(The table function can be used to read the DeltaLake table stored on Azure object store in parallel for many nodes in a specified cluster.)",
-            .examples{{DeltaLakeAzureClusterDefinition::name, "SELECT * FROM deltaLakeAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])", ""}},
+            .syntax = "deltaLakeAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])",
             .category = FunctionDocumentation::Category::TableFunction
         },
+        DataLake::withSecretSettings(azureTableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 #endif
@@ -589,10 +607,10 @@ hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,form
 | `aws_access_key_id`, `aws_secret_access_key` | Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. These parameters are optional. If credentials are not specified, they are used from the ClickHouse configuration. For more information see [Using S3 for Data Storage](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3). |
 | `format`                                     | The [format](/reference/formats/index) of the file.                                                                                                                                                                                                                                                                                                                                        |
 | `structure`                                  | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                         |
-| `compression`                                | Parameter is optional. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, compression will be autodetected by the file extension.                                                                                                                                                                                                                   |
+| `compression`                                | Parameter is optional. Supported values: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. By default, compression will be autodetected by the file extension. For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).                          |
 | `extra_credentials`                          | Parameter is optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.                                                                                                                                                                                                                     |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified structure for reading data from cluster in the specified Hudi table in S3.
 
@@ -609,6 +627,7 @@ A table with the specified structure for reading data from cluster in the specif
 - [Hudi engine](/reference/engines/table-engines/integrations/hudi)
 - [Hudi table function](/reference/functions/table-functions/hudi)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        DataLake::withSecretSettings(s3TableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 }

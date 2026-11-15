@@ -27,29 +27,31 @@ doc_type: 'reference'
 
 下表比较了支持的 ORC 数据类型，以及它们在 `INSERT` 和 `SELECT` 查询中对应的 ClickHouse [数据类型](/zh/reference/data-types/index)。
 
-| ORC 数据类型 (`INSERT`)                   | ClickHouse 数据类型                                                                     | ORC 数据类型 (`SELECT`) |
-| ------------------------------------- | ----------------------------------------------------------------------------------- | ------------------- |
-| `Boolean`                             | [Bool](/zh/reference/data-types/boolean)                                               | `Boolean`           |
-| `Tinyint`                             | [Int8/UInt8](/zh/reference/data-types/int-uint)/[Enum8](/zh/reference/data-types/enum)    | `Tinyint`           |
-| `Smallint`                            | [Int16/UInt16](/zh/reference/data-types/int-uint)/[Enum16](/zh/reference/data-types/enum) | `Smallint`          |
-| `Int`                                 | [Int32/UInt32](/zh/reference/data-types/int-uint)                                      | `Int`               |
-| `Bigint`                              | [Int64/UInt64](/zh/reference/data-types/int-uint)                                      | `Bigint`            |
-| `Float`                               | [Float32](/zh/reference/data-types/float)                                              | `Float`             |
-| `Double`                              | [Float64](/zh/reference/data-types/float)                                              | `Double`            |
-| `Decimal`                             | [Decimal](/zh/reference/data-types/decimal)                                            | `Decimal`           |
-| `Date`                                | [Date32](/zh/reference/data-types/date32)                                              | `Date`              |
-| `Timestamp`                           | [DateTime64](/zh/reference/data-types/datetime64)                                      | `Timestamp`         |
-| `String`, `Varchar`, `Binary`          | [String](/zh/reference/data-types/string)                                              | `String`             |
-| `Char`                                 | [FixedString](/zh/reference/data-types/fixedstring)                                    | `String`             |
-| `List`                                | [Array](/zh/reference/data-types/array)                                                | `List`              |
-| `Struct`                              | [Tuple](/zh/reference/data-types/tuple)                                                | `Struct`            |
-| `Map`                                 | [Map](/zh/reference/data-types/map)                                                    | `Map`               |
-| `Int`                                 | [IPv4](/zh/reference/data-types/int-uint)                                              | `Int`               |
-| `Binary`                              | [IPv6](/zh/reference/data-types/ipv6)                                                  | `Binary`            |
-| `Binary`                              | [Int128/UInt128/Int256/UInt256](/zh/reference/data-types/int-uint)                     | `Binary`            |
-| `Binary`                              | [Decimal256](/zh/reference/data-types/decimal)                                         | `Binary`            |
+| ORC 数据类型 (`INSERT`)           | ClickHouse 数据类型                                                                     | ORC 数据类型 (`SELECT`) |
+| ----------------------------- | ----------------------------------------------------------------------------------- | ------------------- |
+| `Boolean`                     | [Bool](/zh/reference/data-types/boolean)                                               | `Boolean`           |
+| `Tinyint`                     | [Int8/UInt8](/zh/reference/data-types/int-uint)/[Enum8](/zh/reference/data-types/enum)    | `Tinyint`           |
+| `Smallint`                    | [Int16/UInt16](/zh/reference/data-types/int-uint)/[Enum16](/zh/reference/data-types/enum) | `Smallint`          |
+| `Int`                         | [Int32/UInt32](/zh/reference/data-types/int-uint)                                      | `Int`               |
+| `Bigint`                      | [Int64/UInt64](/zh/reference/data-types/int-uint)                                      | `Bigint`            |
+| `Float`                       | [Float32](/zh/reference/data-types/float)                                              | `Float`             |
+| `Double`                      | [Float64](/zh/reference/data-types/float)                                              | `Double`            |
+| `Decimal`                     | [Decimal](/zh/reference/data-types/decimal)                                            | `Decimal`           |
+| `Date`                        | [Date32](/zh/reference/data-types/date32)                                              | `Date`              |
+| `Timestamp`                   | [DateTime64](/zh/reference/data-types/datetime64)                                      | `Timestamp`         |
+| `String`, `Varchar`, `Binary` | [String](/zh/reference/data-types/string)                                              | `String`            |
+| `Char`                        | [FixedString](/zh/reference/data-types/fixedstring)                                    | `String`            |
+| `List`                        | [Array](/zh/reference/data-types/array)                                                | `List`              |
+| `Struct`                      | [Tuple](/zh/reference/data-types/tuple)                                                | `Struct`            |
+| `Map`                         | [Map](/zh/reference/data-types/map)                                                    | `Map`               |
+| `Int`                         | [IPv4](/zh/reference/data-types/int-uint)                                              | `Int`               |
+| `Binary`                      | [IPv6](/zh/reference/data-types/ipv6)                                                  | `Binary`            |
+| `Binary`                      | [Int128/UInt128/Int256/UInt256](/zh/reference/data-types/int-uint)                     | `Binary`            |
+| `Binary`                      | [Decimal256](/zh/reference/data-types/decimal)                                         | `Binary`            |
+| `Union`                       | [Variant](/zh/reference/data-types/variant)                                            | `Union`             |
 
 * 不支持其他类型。
+* ORC `Union` 列会被读取为由 union 的分支类型构成的 [Variant](/zh/reference/data-types/variant)，而 `Variant` 列会被写入为由其分支类型构成的 ORC `Union`。请注意，`Variant` 会对其分支类型排序，因此分支顺序可能与 ORC 文件不同。不支持包含重复分支类型的 union (例如 `uniontype<int,int>`) 。
 * `Array` 可以嵌套，也可以接受 `Nullable` 类型的值作为参数。`Tuple` 和 `Map` 类型同样可以嵌套。
 * ClickHouse 表列的数据类型不必与对应的 ORC 数据字段一致。插入数据时，ClickHouse 会根据上表解释数据类型，然后将数据[转换](/zh/reference/functions/regular-functions/type-conversion-functions#CAST)为 ClickHouse 表列设置的数据类型。
 
@@ -112,13 +114,13 @@ FORMAT ORC
   ## 格式设置
 </div>
 
-| 设置                                                                                                                                                                                     | 描述                                            | 默认值     |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ------- |
-| [`output_format_orc_string_as_string`](/zh/reference/settings/formats#output_format_orc_string_as_string)                                                                                  | 对 String 列使用 ORC String 类型，而非 Binary。         | `true`   |
-| [`output_format_orc_compression_method`](/zh/reference/settings/formats#output_format_orc_compression_method)                                                                             | 输出 ORC 格式使用的压缩方法。默认值                          | `zstd`  |
-| [`input_format_orc_case_insensitive_column_matching`](/zh/reference/settings/formats#input_format_orc_case_insensitive_column_matching)                                                    | 匹配 ORC 列与 ClickHouse 列时忽略大小写。                 | `false`  |
-| [`input_format_orc_allow_missing_columns`](/zh/reference/settings/formats#input_format_orc_allow_missing_columns)                                                                          | 读取 ORC 数据时允许列缺失。                              | `true`   |
-| [`input_format_orc_skip_columns_with_unsupported_types_in_schema_inference`](/zh/reference/settings/formats#input_format_orc_skip_columns_with_unsupported_types_in_schema_inference)      | 对 ORC 格式执行 schema inference 时，允许跳过类型不受支持的列。   | `false`  |
+| 设置                                                                                                                                                                                              | 描述                                          | 默认值     |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ------- |
+| [`output_format_orc_string_as_string`](/zh/reference/settings/formats/output-format#output_format_orc_string_as_string)                                                                            | 对 String 列使用 ORC String 类型，而非 Binary。       | `true`  |
+| [`output_format_orc_compression_method`](/zh/reference/settings/formats/output-format#output_format_orc_compression_method)                                                                        | 输出 ORC 格式使用的压缩方法。默认值                        | `zstd`  |
+| [`input_format_orc_case_insensitive_column_matching`](/zh/reference/settings/formats/input-format#input_format_orc_case_insensitive_column_matching)                                               | 匹配 ORC 列与 ClickHouse 列时忽略大小写。               | `false` |
+| [`input_format_orc_allow_missing_columns`](/zh/reference/settings/formats/input-format#input_format_orc_allow_missing_columns)                                                                     | 读取 ORC 数据时允许列缺失。                            | `true`  |
+| [`input_format_orc_skip_columns_with_unsupported_types_in_schema_inference`](/zh/reference/settings/formats/input-format#input_format_orc_skip_columns_with_unsupported_types_in_schema_inference) | 对 ORC 格式执行 schema inference 时，允许跳过类型不受支持的列。 | `false` |
 
 要与 Hadoop 交换数据，可以使用 [HDFS 表引擎](/zh/reference/engines/table-engines/integrations/hdfs)。
 

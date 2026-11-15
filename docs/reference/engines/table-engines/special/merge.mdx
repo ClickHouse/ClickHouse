@@ -41,6 +41,16 @@ It is possible to create two `Merge` tables that will endlessly try to read each
 
 The typical way to use the `Merge` engine is for working with a large number of `TinyLog` tables as if with a single table.
 
+## Access rights {#access-rights}
+
+Reading from a `Merge` table requires the [`SELECT`](/reference/statements/grant#select) privilege on the `Merge` table and, on each underlying table that is read, on the columns that the query reads.
+
+Data is read only from the matched tables that the current user can see, that is, has the [`SHOW TABLES`](/reference/statements/grant#show) privilege on. Any privilege on a table implies `SHOW TABLES` on it. A matched table that the user cannot see is skipped without an error or a warning. A matched table that the user can see but has no `SELECT` privilege on makes the query fail with `ACCESS_DENIED`.
+
+When a `Merge` table is created without a column list, its structure is derived only from the matched tables that the user who creates it can see, and the user needs the [`SHOW COLUMNS`](/reference/statements/grant#show) privilege on the tables it is derived from.
+
+To read all matched tables, grant the `SELECT` privilege on each of them. To make a query fail instead of skipping a matched table that the user has no `SELECT` privilege on, grant the `SHOW TABLES` privilege on that table.
+
 ## Examples {#examples}
 
 **Example 1**
@@ -98,7 +108,7 @@ SELECT * FROM WatchLog;
 
 - `_table` — The name of the table from which data was read. Type: [String](/reference/data-types/string).
 
-    If you filter on `_table`, (for example `WHERE _table='xyz'`) only tables which satisfy the filter condition are read.
+    If you filter on `_table`, (for example `WHERE _table='xyz'`) only tables which satisfy the filter condition are read. A table that itself reads from other tables (`Distributed`, `Merge`, `Buffer`, `Alias`) returns rows carrying the name of the table that actually produced them, so such tables are always read and the filter is applied to their rows.
 
 - `_database` — Contains the name of the database from which data was read. Type: [String](/reference/data-types/string).
 

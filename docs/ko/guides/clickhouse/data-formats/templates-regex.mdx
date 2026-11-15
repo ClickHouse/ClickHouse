@@ -248,7 +248,7 @@ SELECT * FROM error_log LIMIT 5
 └─────────────────────┴─────────┴─────────────┴──────────────────────────────┴──────────┘
 ```
 
-기본적으로 ClickHouse는 일치하지 않는 행이 있으면 오류를 발생시킵니다. 대신 일치하지 않는 행을 건너뛰려면 [format&#95;regexp&#95;skip&#95;unmatched](/ko/reference/settings/formats#format_regexp_skip_unmatched) 옵션을 활성화하세요:
+기본적으로 ClickHouse는 일치하지 않는 행이 있으면 오류를 발생시킵니다. 대신 일치하지 않는 행을 건너뛰려면 [format&#95;regexp&#95;skip&#95;unmatched](/ko/reference/settings/formats/format-regexp#format_regexp_skip_unmatched) 옵션을 활성화하세요:
 
 ```sql
 SET format_regexp_skip_unmatched = 1;

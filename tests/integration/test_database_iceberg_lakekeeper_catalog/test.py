@@ -264,7 +264,7 @@ def create_clickhouse_iceberg_database(
     node.query(
         f"""
 DROP DATABASE IF EXISTS {name};
-SET allow_experimental_database_iceberg=true;
+SET allow_database_iceberg=true;
 CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
@@ -309,7 +309,7 @@ def test_hide_sensitive_info(started_cluster):
         node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
         try:
             node.query(
-                f"""SET allow_experimental_database_iceberg=true;
+                f"""SET allow_database_iceberg=true;
 CREATE DATABASE {CATALOG_NAME} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
 SETTINGS {",".join((k + "=" + repr(v) for k, v in settings.items()))}"""
             )
@@ -431,7 +431,7 @@ def test_static_credentials_when_vended_credentials_disabled(started_cluster):
                 aws_access_key_id = 'minio',
                 aws_secret_access_key = '{secret_access_key}'
             """,
-            settings={"allow_experimental_database_iceberg": 1},
+            settings={"allow_database_iceberg": 1},
         )
 
     # A wrong static pair must fail the read: the catalog-vended refresh
@@ -456,6 +456,60 @@ def test_static_credentials_when_vended_credentials_disabled(started_cluster):
     node.query(f"DROP DATABASE IF EXISTS {db_name}")
 
 
+def test_create_without_engine_arguments_vended_credentials(started_cluster):
+    """A pathless CREATE lets the catalog choose the location and write the first metadata file."""
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_vended_{uuid.uuid4().hex[:8]}"
+    namespace = f"{test_ref}_namespace"
+    table_name = f"{test_ref}_table"
+    db_name = f"{test_ref}_db"
+
+    node.query(
+        f"""
+        CREATE DATABASE {db_name}
+        ENGINE = DataLakeCatalog('{BASE_URL}')
+        SETTINGS
+            catalog_type = 'rest',
+            warehouse = 'demo',
+            storage_endpoint = 'http://minio1:9001/warehouse-rest',
+            vended_credentials = 1
+        """,
+        settings={"allow_database_iceberg": 1},
+    )
+    try:
+        node.query(
+            f"CREATE TABLE {db_name}.`{namespace}.{table_name}` (id Int64, data String) ENGINE = IcebergS3",
+            settings={"allow_experimental_database_iceberg": 1},
+        )
+        node.query(
+            f"CREATE TABLE IF NOT EXISTS {db_name}.`{namespace}.{table_name}` (id Int64, data String) ENGINE = IcebergS3",
+            settings={"allow_experimental_database_iceberg": 1},
+        )
+        with pytest.raises(QueryRuntimeException) as exc:
+            node.query(
+                f"CREATE TABLE {db_name}.`{namespace}.{table_name}` (id Int64, data String) ENGINE = IcebergS3",
+                settings={"allow_experimental_database_iceberg": 1},
+            )
+        assert "already exists" in str(exc.value), str(exc.value)
+
+        node.query(
+            f"INSERT INTO {db_name}.`{namespace}.{table_name}` VALUES (1, 'a'), (2, 'b')",
+            settings={"allow_insert_into_iceberg": 1},
+        )
+        result = node.query(
+            f"SELECT id, data FROM {db_name}.`{namespace}.{table_name}` ORDER BY id FORMAT TSV"
+        )
+        assert result == "1\ta\n2\tb\n", f"unexpected result:\n{result}"
+
+        catalog = load_catalog_impl(started_cluster)
+        table = catalog.load_table(f"{namespace}.{table_name}")
+        assert table.metadata_location.startswith("s3://warehouse-rest/"), table.metadata_location
+        assert table.metadata.location.startswith("s3://warehouse-rest/"), table.metadata.location
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db_name}")
+
+
 def test_invalid_auth_header_format(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -463,7 +517,7 @@ def test_invalid_auth_header_format(started_cluster):
     with pytest.raises(Exception) as err:
         node.query(
             f"""
-            SET allow_experimental_database_iceberg = 1;
+            SET allow_database_iceberg = 1;
             CREATE DATABASE {CATALOG_NAME}
             ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', 'dummy')
             SETTINGS
@@ -474,3 +528,48 @@ def test_invalid_auth_header_format(started_cluster):
         )
     assert "Invalid auth header format" in str(err.value)
 
+
+@pytest.mark.parametrize("depth", [1, 2])
+def test_namespace_writes(started_cluster, depth):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    namespace = (f"writes_{uuid.uuid4().hex}", "raw")[:depth]
+    db = "namespace_writes"
+    table = f"{db}.`{'.'.join(namespace)}.events`"
+    identifier = namespace + ("events",)
+    settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    if depth > 1:
+        catalog.create_namespace(namespace[:1])
+    create_clickhouse_iceberg_database(started_cluster, node, db)
+    try:
+        node.query(
+            f"CREATE TABLE {table} (id Int32) ENGINE = Iceberg",
+            settings=settings,
+        )
+        assert identifier in catalog.list_tables(namespace)
+        assert "events" in node.query(f"SHOW TABLES FROM {db}")
+
+        node.query(f"INSERT INTO {table} VALUES (1)", settings=settings)
+        node.query(
+            f"ALTER TABLE {table} ADD COLUMN data Nullable(String)",
+            settings=settings,
+        )
+        assert "data" in catalog.load_table(identifier).schema().column_names
+        node.query(f"INSERT INTO {table} VALUES (2, 'new')", settings=settings)
+
+        metadata = catalog.load_table(identifier).metadata
+        assert len(metadata.snapshots) == 2
+        current = metadata.current_snapshot_id
+        expired = next(s.snapshot_id for s in metadata.snapshots if s.snapshot_id != current)
+        node.query(
+            f"ALTER TABLE {table} EXECUTE expire_snapshots("
+            f"snapshot_ids = [{expired}])",
+            settings={**settings, "allow_experimental_expire_snapshots": 1},
+        )
+        assert [s.snapshot_id for s in catalog.load_table(identifier).metadata.snapshots] == [current]
+        assert node.query(f"SELECT id, data FROM {table} ORDER BY id") == "1\t\\N\n2\tnew\n"
+        node.query(f"DROP TABLE {table}", settings=settings)
+        assert identifier not in catalog.list_tables(namespace)
+    finally:
+        node.query(f"DROP DATABASE {db}")

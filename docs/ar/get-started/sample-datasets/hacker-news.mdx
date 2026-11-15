@@ -451,8 +451,8 @@ keywords: ['مجموعة بيانات مثال', 'hacker news', 'بيانات ن
 وسيؤدي الاستدلال على الأنواع في ملف Parquet حتمًا إلى مخطط يختلف قليلًا عن المخطط الخاص بملف CSV.
 
 <Steps>
-  <Step title="إدراج البيانات" id="insert-the-data">
-    نفّذ الاستعلام التالي لقراءة البيانات نفسها بتنسيق Parquet، باستخدام الدالة url مرة أخرى لقراءة البيانات البعيدة:
+  <Step title="أدرِج البيانات" id="insert-the-data">
+    شغّل query التالية لقراءة البيانات نفسها بتنسيق Parquet، باستخدام دالة `url` مرة أخرى لقراءة البيانات عن بُعد:
 
     ```sql
     DROP TABLE IF EXISTS hackernews;
@@ -462,26 +462,31 @@ keywords: ['مجموعة بيانات مثال', 'hacker news', 'بيانات ن
     ORDER BY id
     SETTINGS allow_nullable_key = 1 EMPTY AS
     SELECT *
-    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet')
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet');
 
     INSERT INTO hackernews SELECT *
-    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet')
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet');
     ```
 
     <Info>
-      **المفاتيح ذات القيمة NULL مع Parquet**
+      **مفاتيح NULL في Parquet**
 
-      بحكم تنسيق Parquet، علينا أن نقبل أن المفاتيح قد تكون `NULL`،
-      حتى إن لم تكن موجودة في البيانات.
+      يستنتج النظام مخططًا يجعل الأعمدة من النوع `Nullable`، لذا يلزم `allow_nullable_key` رغم أن مجموعة البيانات هذه لا تحتوي على
+      أي معرّفات NULL.
     </Info>
 
-    شغّل الأمر التالي لعرض المخطط المُستنتَج:
+    شغّل الأمر التالي لعرض المخطط المستنتج:
+
+    ```sql title="Query"
+    DESCRIBE TABLE hackernews;
+    ```
 
     ```response title="Response"
     ┌─name────────┬─type───────────────────┬
     │ id          │ Nullable(Int64)        │
     │ deleted     │ Nullable(UInt8)        │
     │ type        │ Nullable(String)       │
+    │ by          │ Nullable(String)       │
     │ time        │ Nullable(Int64)        │
     │ text        │ Nullable(String)       │
     │ dead        │ Nullable(UInt8)        │
@@ -496,10 +501,12 @@ keywords: ['مجموعة بيانات مثال', 'hacker news', 'بيانات ن
     └─────────────┴────────────────────────┴
     ```
 
-    كما فعلنا سابقًا مع ملف CSV، يمكنك تحديد المخطط يدويًا لمزيد من التحكم في الأنواع المختارة وإدراج
-    البيانات مباشرةً من S3:
+    تستخدم الخطوات المتبقية أسماء أعمدة أوضح، مثل `author` و`comment`، لذا تابع باستخدام مخطط مُحدَّد يدويًا.
+    احذف أولًا الجدول المُستنتَج، ثم أنشئ الجدول وأدرج البيانات مباشرةً من حاوية S3 العامة:
 
     ```sql
+    DROP TABLE IF EXISTS hackernews;
+
     CREATE TABLE hackernews
     (
         `id` UInt64,
@@ -524,6 +531,7 @@ keywords: ['مجموعة بيانات مثال', 'hacker news', 'بيانات ن
     INSERT INTO hackernews
     SELECT * FROM s3(
             'https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet',
+            NOSIGN,
             'Parquet',
             'id UInt64,
              deleted UInt8,
@@ -543,103 +551,121 @@ keywords: ['مجموعة بيانات مثال', 'hacker news', 'بيانات ن
     ```
   </Step>
 
-  <Step title="أضف فهرس تخطٍّ لتسريع الاستعلامات" id="add-skipping-index">
-    لمعرفة كم تعليقًا يذكر &quot;ClickHouse&quot;، شغّل الاستعلام التالي:
+  <Step title="أضِف فهرسًا نصيًا لتسريع البحث" id="add-skipping-index">
+    لمعرفة عدد التعليقات التي تشير إلى &quot;ClickHouse&quot;، نفِّذ الاستعلام التالي:
 
     ```sql title="Query"
     SELECT count(*)
     FROM hackernews
-    WHERE hasToken(lower(comment), 'ClickHouse');
+    WHERE hasAnyTokens(lower(comment), 'clickhouse');
     ```
 
     ```response title="Response" highlight={1}
-    1 row in set. Elapsed: 0.843 sec. Processed 28.74 million rows, 9.75 GB (34.08 million rows/s., 11.57 GB/s.)
     ┌─count()─┐
-    │     516 │
+    │    1145 │
     └─────────┘
+
+    1 row in set. Elapsed: 3.251 sec. Processed 28.74 million rows, 9.60 GB (8.84 million rows/s., 2.95 GB/s.)
     ```
 
-    بعد ذلك، ستنشئ [فهرسًا](/ar/reference/engines/table-engines/mergetree-family/textindexes) معكوسًا على العمود &quot;comment&quot;
-    لتسريع تنفيذ هذا الاستعلام.
-    لاحظ أن التعليقات المكتوبة بأحرف صغيرة ستُفهرس للعثور على المصطلحات بغضّ النظر عن حالة الأحرف.
+    بعد ذلك، أنشئ [فهرسًا نصيًا](/ar/reference/engines/table-engines/mergetree-family/textindexes) للعمود `comment`
+    لتسريع هذا الاستعلام. يستخدم الفهرس النصي فهرسًا معكوسًا يربط الرموز المميزة بالصفوف التي تحتوي عليها.
+    يقسّم محلّل الرموز `splitByNonAlpha` النص عند المحارف غير الأبجدية الرقمية. يستخدم الفهرس والاستعلامات `lower(comment)`
+    مع مصطلحات بحث بأحرف صغيرة، بحيث لا تتأثر المطابقة بحالة الأحرف. يجب أن يتطابق تعبير الاستعلام مع التعبير المفهرس.
 
     شغّل الأوامر التالية لإنشاء الفهرس:
 
     ```sql
-    ALTER TABLE hackernews ADD INDEX comment_idx(lower(comment)) TYPE inverted;
-    ALTER TABLE hackernews MATERIALIZE INDEX comment_idx;
+    ALTER TABLE hackernews
+        ADD INDEX comment_idx lower(comment)
+        TYPE text(tokenizer = splitByNonAlpha);
+
+    ALTER TABLE hackernews
+        MATERIALIZE INDEX comment_idx
+        SETTINGS mutations_sync = 2;
     ```
 
-    تستغرق عملية تجسيد الفهرس بعض الوقت (للتحقق مما إذا كان الفهرس قد أُنشئ، استخدم جدول النظام `system.data_skipping_indices`).
+    تقوم عملية المادية بإنشاء الفهرس للبيانات الموجودة. ينتظر الإعداد `mutations_sync` حتى تكتمل عملية المادية.
+    يمكنك التحقق من تعريف الفهرس في جدول `system.data_skipping_indices`.
 
-    شغّل الاستعلام مرة أخرى بعد إنشاء الفهرس:
+    شغّل الاستعلام نفسه مرة أخرى بعد اكتمال مادية الفهرس:
 
     ```sql title="Query"
     SELECT count(*)
     FROM hackernews
-    WHERE hasToken(lower(comment), 'clickhouse');
+    WHERE hasAnyTokens(lower(comment), 'clickhouse');
     ```
 
-    لاحظ أن الاستعلام لا يستغرق الآن سوى 0.248 ثانية مع الفهرس، بعد أن كان يستغرق 0.843 ثانية سابقًا من دونه:
-
     ```response title="Response" highlight={1}
-    1 row in set. Elapsed: 0.248 sec. Processed 4.54 million rows, 1.79 GB (18.34 million rows/s., 7.24 GB/s.)
     ┌─count()─┐
     │    1145 │
     └─────────┘
+
+    1 row in set. Elapsed: 0.019 sec. Processed 4.48 million rows, 4.48 MB (232.23 million rows/s., 232.23 MB/s.)
     ```
 
-    يمكن استخدام عبارة [`EXPLAIN`](/ar/reference/statements/explain) لفهم سبب تحسين
-    إضافة هذا الفهرس لأداء الاستعلام بنحو 3.4 مرة.
+    تظل النتيجة نفسها لأن الفهرس يغيّر طريقة عثور ClickHouse على الصفوف المطابقة، وليس الصفوف التي تُعدّ مطابقة. يعالج الاستعلام المفهرس
+    بيانات أقل بكثير ويكتمل أسرع بكثير.
+    استخدم [`EXPLAIN`](/ar/reference/statements/explain) للتأكد من أن ClickHouse يخطط لاستخدام الفهرس:
 
-    ```response text="Query"
+    ```sql title="Query"
     EXPLAIN indexes = 1
     SELECT count(*)
     FROM hackernews
-    WHERE hasToken(lower(comment), 'clickhouse')
+    WHERE hasAnyTokens(lower(comment), 'clickhouse');
     ```
 
     ```response title="Response"
-    ┌─explain─────────────────────────────────────────┐
-    │ Expression ((Projection + Before ORDER BY))     │
-    │   Aggregating                                   │
-    │     Expression (Before GROUP BY)                │
-    │       Filter (WHERE)                            │
-    │         ReadFromMergeTree (default.hackernews)  │
-    │         Indexes:                                │
-    │           PrimaryKey                            │
-    │             Condition: true                     │
-    │             Parts: 4/4                          │
-    │             Granules: 3528/3528                 │
-    │           Skip                                  │
-    │             Name: comment_idx                   │
-    │             Description: inverted GRANULARITY 1 │
-    │             Parts: 4/4                          │
-    │             Granules: 554/3528                  │
-    └─────────────────────────────────────────────────┘
+    Output: count()
+
+    Aggregating
+    │  Keys:
+    │  Aggregates: count()
+    │  Skip merging: 0
+    └──Filter
+       │  Filter column: __text_index_comment_idx_hasAnyTokens_7b9491bd22343c822f64c95a9bda20f9
+       └──ReadFromMergeTree (default.hackernews)
+             Read type: Default
+             Parts: 4 | Granules: 547
+             Output: __text_index_comment_idx_hasAnyTokens_7b9491bd22343c822f64c95a9bda20f9
+             Indexes:
+               PrimaryKey
+                 Condition: true
+                 Parts: 4/4
+                 Granules: 3527/3527
+               Skip
+                 Name: comment_idx
+                 Description: text GRANULARITY 100000000
+                 Condition: (mode: Any; tokens: ["clickhouse"])
+                 Parts: 4/4
+                 Granules: 547/3527
+               Ranges: 437
     ```
 
-    لاحظ كيف أتاح الفهرس تخطّي عدد كبير من الحبيبات
-    لتسريع الاستعلام.
+    يوضح الإدخال `comment_idx` أن ClickHouse يخطط لاستخدام فهرس النص. في هذا المثال، تختار الخطة 547 من أصل 3527
+    وحدة حبيبية، ما يقلل بدرجة كبيرة كمية البيانات التي يجري فحصها.
 
-    ومن الممكن الآن أيضًا البحث بكفاءة عن مصطلح واحد أو عن مجموعة من المصطلحات كلها:
+    يمكنك أيضًا البحث عن أي رمز مميز أو جميع الرموز المميزة المتعددة. تطابق هذه الدوال الرموز المميزة الكاملة التي ينتجها محلل الرموز المميزة الخاص بالفهرس.
+    استخدم `hasAnyTokens` عندما يلزم تطابق رمز مميز واحد على الأقل:
 
     ```sql title="Query"
     SELECT count(*)
     FROM hackernews
-    WHERE multiSearchAny(lower(comment), ['oltp', 'olap']);
+    WHERE hasAnyTokens(lower(comment), 'oltp olap');
     ```
 
     ```response title="Response"
     ┌─count()─┐
-    │    2177 │
+    │    2020 │
     └─────────┘
     ```
+
+    استخدم `hasAllTokens` عندما يلزم تطابق جميع الوحدات النصية، بأي ترتيب:
 
     ```sql title="Query"
     SELECT count(*)
     FROM hackernews
-    WHERE hasToken(lower(comment), 'avx') AND hasToken(lower(comment), 'sve');
+    WHERE hasAllTokens(lower(comment), 'avx sve');
     ```
 
     ```response title="Response"

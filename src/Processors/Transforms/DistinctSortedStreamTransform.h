@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/SetVariants.h>
@@ -64,6 +65,7 @@ private:
     const SortDescription sorted_columns_descr;
     ColumnNumbers sorted_columns_pos;
     ColumnRawPtrs sorted_columns; // used during processing
+    SortedKeyRuns key_runs; // runs of the sorting prefix in the current chunk
 
     ColumnNumbers other_columns_pos;
     Sizes other_columns_sizes;

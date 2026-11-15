@@ -1,9 +1,11 @@
-from ci.praktika.info import Info
-from ci.praktika.utils import Shell
+from pathlib import Path
 
-# Build types whose master-HEAD binaries the bugfix-validation runners download
+from ci.praktika.info import Info
+from ci.praktika.utils import Shell, Utils
+
+# Build types whose master binaries the bugfix-validation runners download
 # from S3. The set must match the runner architecture: an x86 binary cannot be
-# executed on an ARM runner (and vice versa), so the master-HEAD side of the
+# executed on an ARM runner (and vice versa), so the master side of the
 # check would fail to install. `BUGFIX_BUILD_TYPES` is the x86 default; pick the
 # matching set with `bugfix_build_types(job_name)`.
 BUGFIX_BUILD_TYPES = ["amd_asan_ubsan", "amd_tsan", "amd_msan", "amd_debug"]
@@ -23,20 +25,56 @@ def bugfix_build_types(job_name):
 
 
 def find_master_builds(build_types=None):
-    """Find S3 URLs for all build types from a recent master commit.
+    """Find S3 URLs for all build types from the newest built master commit of the tested tree.
 
     Verifies that artifacts for every requested build type exist before
     returning, so that a commit with a partial build set is skipped.
     """
     build_types = build_types if build_types is not None else BUGFIX_BUILD_TYPES
-    commits = Info().get_kv_data("master_commits") or []
+    info = Info()
+    # A master binary newer than the tested tree can reject its test configs at startup, so walk
+    # the tree's own master parent chain. A synced private PR tests a private master, whose
+    # commits have no public builds: it keeps the latest public master commits.
+    key = (
+        "master_track_commits_sha"
+        if info.repo_name == "ClickHouse/ClickHouse"
+        else "master_commits"
+    )
+    commits = info.get_kv_data(key) or []
+    # Artifacts live under the normalized workflow name:
+    #   REFs/master/<sha>/<workflow>/build_<bt>/clickhouse
+    workflow = Utils.normalize_string("MasterCI")
     for sha in commits:
         urls = {
-            bt: f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/build_{bt}/clickhouse"
+            bt: f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/{workflow}/build_{bt}/clickhouse"
             for bt in build_types
         }
+        # curl's native --retry only retries transient failures (5xx, timeouts,
+        # refused connections), not a genuine 404, so a partially-built older
+        # commit is still skipped fast while a transient S3 5xx on the newest
+        # commit is retried instead of silently falling back to an older binary.
         if all(
-            Shell.check(f"curl -sfI {url} > /dev/null") for url in urls.values()
+            Shell.check(f"curl -sfI --retry 5 --retry-connrefused {url} > /dev/null")
+            for url in urls.values()
         ):
             return urls
     return None
+
+
+def download_master_builds(build_urls, bt_paths, is_local_run=False):
+    """Download the reference master-HEAD binaries listed in `build_urls`.
+
+    Retries each download so a transient S3 5xx does not abort the whole job;
+    `find_master_builds` already probed that the artifact exists, so a failure
+    here is treated as transient. Still strict: a persistent failure raises
+    after exhausting retries. Shared by the functional- and integration-test
+    bugfix-validation callers so the retry lives in one place.
+    """
+    for bt, url in build_urls.items():
+        bt_path = bt_paths[bt]
+        if not is_local_run or not Path(bt_path).is_file():
+            print(f"NOTE: Downloading {bt} build to [{bt_path}]")
+            Shell.run(
+                f"wget -nv -O {bt_path} {url}", verbose=True, strict=True, retries=5
+            )
+            Shell.run(f"chmod +x {bt_path}", verbose=True)

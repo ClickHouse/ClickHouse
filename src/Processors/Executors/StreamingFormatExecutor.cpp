@@ -1,6 +1,5 @@
 #include <Columns/IColumn.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
-#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 
 #include <base/scope_guard.h>
 #include <Common/FailPoint.h>
@@ -22,27 +21,44 @@ namespace FailPoints
 
 StreamingFormatExecutor::StreamingFormatExecutor(
     const Block & header_,
-    InputFormatPtr format_,
+    FormatCreator create_format_,
     ErrorCallback on_error_,
     size_t total_bytes_,
     size_t total_chunks_,
-    SimpleTransformPtr adding_defaults_transform_,
+    TransformCreator create_adding_defaults_transform_,
     CancelCallback is_cancelled_)
     : header(header_)
-    , format(std::move(format_))
+    , create_format(std::move(create_format_))
     , on_error(std::move(on_error_))
-    , adding_defaults_transform(std::move(adding_defaults_transform_))
+    , create_adding_defaults_transform(std::move(create_adding_defaults_transform_))
     , is_cancelled(std::move(is_cancelled_))
-    , port(format->getPort().getHeader(), format.get())
     , result_columns(header.cloneEmptyColumns())
     , checkpoints(result_columns.size())
     , total_bytes(total_bytes_)
     , total_chunks(total_chunks_)
 {
-    connect(format->getPort(), port);
+    createFormat();
 
     for (size_t i = 0; i < result_columns.size(); ++i)
         checkpoints[i] = result_columns[i]->getCheckpoint();
+}
+
+void StreamingFormatExecutor::createFormat()
+{
+    auto new_format = create_format();
+    SimpleTransformPtr new_adding_defaults_transform;
+    if (create_adding_defaults_transform)
+        new_adding_defaults_transform = create_adding_defaults_transform(*new_format);
+    port.emplace(new_format->getPort().getHeader(), new_format.get());
+    connect(new_format->getPort(), *port);
+    adding_defaults_transform = std::move(new_adding_defaults_transform);
+    format = std::move(new_format);
+}
+
+void StreamingFormatExecutor::resetParser()
+{
+    if (format->supportsResetParser())
+        format->resetParser();
 }
 
 MutableColumns StreamingFormatExecutor::getResultColumns()
@@ -54,9 +70,9 @@ MutableColumns StreamingFormatExecutor::getResultColumns()
 
 void StreamingFormatExecutor::setQueryParameters(const NameToNameMap & parameters)
 {
-    /// Query parameters make sense only for format Values.
-    if (auto * values_format = typeid_cast<ValuesBlockInputFormat *>(format.get()))
-        values_format->setQueryParameters(parameters);
+    if (!format)
+        createFormat();
+    format->setQueryParameters(parameters);
 }
 
 void StreamingFormatExecutor::preallocateResultColumns(size_t num_bytes, const Chunk & chunk)
@@ -86,12 +102,23 @@ void StreamingFormatExecutor::preallocateResultColumns(size_t num_bytes, const C
 
 size_t StreamingFormatExecutor::execute(ReadBuffer & buffer, size_t num_bytes)
 {
+    if (!format)
+        createFormat();
+
     format->setReadBuffer(buffer);
 
     /// Format destructor can touch read buffer (for example when we use PeekableReadBuffer),
     /// but we cannot control lifetime of provided read buffer. To avoid heap use after free
     /// we call format->resetReadBuffer() method that resets all buffers inside format.
-    SCOPE_EXIT(format->resetReadBuffer());
+    SCOPE_EXIT({
+        format->resetReadBuffer();
+        if (!format->supportsResetParser())
+        {
+            port.reset();
+            adding_defaults_transform.reset();
+            format.reset();
+        }
+    });
     return execute(num_bytes);
 }
 
@@ -103,7 +130,7 @@ size_t StreamingFormatExecutor::execute(size_t num_bytes)
     try
     {
         size_t new_rows = 0;
-        port.setNeeded();
+        port->setNeeded();
         while (true)
         {
             FailPointInjection::pauseFailPoint(FailPoints::async_insert_flush_pause_in_executor);
@@ -120,11 +147,11 @@ size_t StreamingFormatExecutor::execute(size_t num_bytes)
                     break;
 
                 case IProcessor::Status::Finished:
-                    format->resetParser();
+                    resetParser();
                     return new_rows;
 
                 case IProcessor::Status::PortFull:
-                    new_rows += insertChunk(port.pull(), num_bytes);
+                    new_rows += insertChunk(port->pull(), num_bytes);
                     break;
 
                 case IProcessor::Status::NeedData:
@@ -136,21 +163,23 @@ size_t StreamingFormatExecutor::execute(size_t num_bytes)
     }
     catch (Exception & e)
     {
-        format->resetParser();
+        resetParser();
         /// Cancellation aborts the whole execution; it is not a recoverable per-input parse error.
-        if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
+        /// A cancelled `QueryStatus` reports an arbitrary exception, so ask the callback rather than
+        /// match on the code, which for a callback-less caller `on_error` must keep handling.
+        if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || (is_cancelled && is_cancelled()))
             throw;
         return on_error(result_columns, checkpoints, e);
     }
     catch (std::exception & e)
     {
-        format->resetParser();
+        resetParser();
         auto exception = Exception(Exception::CreateFromSTDTag{}, e);
         return on_error(result_columns, checkpoints, exception);
     }
     catch (...) // Ok: wrap unknown exception and pass to on_error callback
     {
-        format->resetParser();
+        resetParser();
         auto exception = Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception while executing StreamingFormatExecutor with format {}", format->getName());
         return on_error(result_columns, checkpoints, exception);
     }

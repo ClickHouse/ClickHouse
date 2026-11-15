@@ -5,6 +5,8 @@
 #include <Core/UUID.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/FailPoint.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
@@ -28,6 +30,73 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
 }
 
+namespace FailPoints
+{
+    extern const char patch_part_index_write_empty[];
+}
+
+namespace
+{
+
+/// Stands for the writer of the columns finished by `finalizeDataFiles`, so that the finalization of the part adds what they
+/// left: their checksums, substreams, granularity, primary index and marks.
+class FinishedColumnsWriter final : public IMergeTreeDataPartWriter
+{
+public:
+    FinishedColumnsWriter(
+        const MergeTreeMutableDataPartPtr & part,
+        const MergeTreeSettingsPtr & storage_settings_,
+        const NamesAndTypesList & columns_list_,
+        const StorageMetadataPtr & metadata_snapshot_,
+        const MergeTreeWriterSettings & settings_,
+        MergedBlockOutputStream::FinishedColumns finished_,
+        std::optional<Columns> index_ = {},
+        PlainMarksByName cached_marks_ = {},
+        PlainMarksByName cached_index_marks_ = {})
+        : IMergeTreeDataPartWriter(
+              part->name,
+              part->getSerializations().toSerializationByName(),
+              part->getDataPartStoragePtr(),
+              part->index_granularity_info,
+              storage_settings_,
+              columns_list_,
+              metadata_snapshot_,
+              settings_,
+              finished_.index_granularity)
+        , finished(std::move(finished_))
+    {
+        if (index_)
+            for (auto & column : *index_)
+                index_columns.push_back(IColumn::mutate(std::move(column)));
+        cached_marks = std::move(cached_marks_);
+        cached_index_marks = std::move(cached_index_marks_);
+    }
+
+    void write(const Block &, const IColumnPermutation *, Block *) override
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write into the finished columns of part {}", data_part_name);
+    }
+
+    void finalizeIndexGranularity() override { }
+    void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet &) override
+    {
+        checksums.add(MergeTreeDataPartChecksums(finished.checksums));
+    }
+    void finish(bool) override { }
+    void cancel() noexcept override { }
+    size_t getNumberOfOpenStreams() const override { return 0; }
+    const Block & getColumnsSample() const override { return columns_sample; }
+    const ColumnsSubstreams & getColumnsSubstreams() const override { return finished.columns_substreams; }
+
+    const MergedBlockOutputStream::FinishedColumns & getFinishedColumns() const { return finished; }
+
+private:
+    MergedBlockOutputStream::FinishedColumns finished;
+    Block columns_sample;
+};
+
+}
+
 MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeMutableDataPartPtr & data_part,
     MergeTreeSettingsPtr data_settings,
@@ -42,7 +111,9 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     bool blocks_are_granules_size,
     const WriteSettings & write_settings_,
     WrittenOffsetSubstreams * written_offset_substreams,
-    bool try_adaptive_codec)
+    bool try_adaptive_codec,
+    StreamBaseManifestPtr stream_base_manifest,
+    std::optional<FinishedColumns> finished_columns)
     : IMergedBlockOutputStream(
           std::move(data_settings), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, reset_columns_)
     , columns_list(columns_list_)
@@ -66,16 +137,39 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         blocks_are_granules_size,
         try_adaptive_codec);
 
+    writer_settings.stream_base_manifest = std::move(stream_base_manifest);
+
     data_part_storage->createDirectories();
 
     /// NOTE do not pass context for writing to system.transactions_info_log,
     /// because part may have temporary name (with temporary block numbers). Will write it later.
     data_part->version->setAndStoreCreationTID(tid, nullptr);
 
+    /// Finished by `finalizeDataFiles` of an earlier attempt.
+    if (finished_columns)
+    {
+        rows_count = finished_columns->index_granularity->getTotalRows();
+        /// Only the columns of this stream.
+        for (auto & [name, info] : new_serialization_infos)
+            info->replaceData(*finished_columns->serialization_infos.at(name));
+        finished_columns->serialization_infos = new_serialization_infos.clone();
+        /// A resumed part has no primary index in memory: it is loaded from the file.
+        auto finished_writer_settings = writer_settings;
+        finished_writer_settings.save_primary_index_in_memory = false;
+        writer = std::make_unique<FinishedColumnsWriter>(
+            data_part,
+            storage_settings,
+            columns_list,
+            metadata_snapshot,
+            finished_writer_settings,
+            std::move(*finished_columns));
+        return;
+    }
+
     writer = createMergeTreeDataPartWriter(data_part->getType(),
         data_part->name,
         data_part->storage.getLogName(),
-        data_part->getSerializations(),
+        data_part->getSerializations().toSerializationByName(),
         data_part_storage,
         data_part->index_granularity_info,
         storage_settings,
@@ -205,6 +299,36 @@ void MergedBlockOutputStream::finalizeIndexGranularity()
     writer->finalizeIndexGranularity();
 }
 
+const MergedBlockOutputStream::FinishedColumns & MergedBlockOutputStream::finalizeDataFiles(const MergeTreeMutableDataPartPtr & part, bool sync)
+{
+    if (const auto * finished = dynamic_cast<const FinishedColumnsWriter *>(writer.get()))
+        return finished->getFinishedColumns();
+
+    MergeTreeDataPartChecksums checksums;
+    NameSet removed;
+    writer->fillChecksums(checksums, removed);
+    for (const auto & name : removed)
+        checksums.files.erase(name);
+    auto columns_substreams = writer->getColumnsSubstreams();
+    auto index_granularity = writer->getIndexGranularity();
+    writer->finish(sync);
+    FinishedColumns finished{
+        .serialization_infos = new_serialization_infos,
+        .checksums = std::move(checksums),
+        .columns_substreams = std::move(columns_substreams),
+        .index_granularity = std::move(index_granularity),
+    };
+    auto index = writer->releaseIndexColumns();
+    /// Keep the marks for prewarming the caches once the part is committed.
+    auto marks = writer->releaseCachedMarks();
+    auto index_marks = writer->releaseCachedIndexMarks();
+    writer = std::make_unique<FinishedColumnsWriter>(
+        part, storage_settings, columns_list, metadata_snapshot, writer_settings, std::move(finished),
+        std::move(index), std::move(marks), std::move(index_marks));
+
+    return static_cast<FinishedColumnsWriter*>(writer.get())->getFinishedColumns();
+}
+
 MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     const MergeTreeMutableDataPartPtr & new_part,
     const GatheredData & gathered_data,
@@ -249,6 +373,14 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
 
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
+
+    /// Everything assigned onto the part below (checksums, index granularity, primary index, TTL infos,
+    /// column sizes) lives as long as the part and is freed by a background thread, so it must not be
+    /// charged to the query writing it; see `IMergeTreeDataPart::setColumns` for why that would drift
+    /// onto the per-user tracker permanently. Reset before the finalizer, which is the query's own work.
+    /// Deliberately starts after `finalizePartOnDisk` above: the blocker is thread-wide and the block
+    /// write must stay accounted.
+    MemoryTrackerBlockerInThread not_charged_to_the_query;
 
     {
         /// The checksums map lives on the part for its whole lifetime: copy it into the part under the
@@ -303,6 +435,8 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         if (new_part->index_granularity)
             new_part->index_granularity = new_part->index_granularity->clone();
     }
+
+    not_charged_to_the_query.reset();
 
     auto finalizer = std::make_unique<Finalizer::Impl>(*writer, new_part, files_to_remove_after_sync, sync);
     finalizer->written_files = std::move(written_files);
@@ -365,13 +499,23 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not initialized for new non-empty part {}", new_part->name);
             }
 
-            /// Every patch part must have `source_parts.dat` on disk: `loadSourcePartsSet`
+            /// Every patch part must have `source_parts.dat` on disk: `loadPatchPartIndex`
             /// throws `CORRUPTED_DATA` otherwise, including for empty covering parts.
             if (new_part->info.isPatch())
             {
-                write_hashed_file(SourcePartsSetForPatch::FILENAME, [&](auto & buffer)
+                /// Writes an index without source parts, which is the corruption shape the load path
+                /// rejects: a patch part that holds rows but names no part it patches. Only for tests.
+                bool write_empty_index = false;
+                fiu_do_on(FailPoints::patch_part_index_write_empty, { write_empty_index = true; });
+
+                write_hashed_file(PatchPartIndex::FILENAME, [&](auto & buffer)
                 {
-                    new_part->getSourcePartsSet().writeBinary(buffer);
+                    const auto & patch_part_index = new_part->getPatchPartIndex();
+
+                    if (write_empty_index)
+                        patch_part_index.cloneEmpty().writeBinary(buffer);
+                    else
+                        patch_part_index.writeBinary(buffer);
                 });
             }
         }
@@ -455,7 +599,10 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     {
         write_plain_file(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, [&](auto & buffer)
         {
-            writeText(default_codec->getFullCodecDesc()->formatWithSecretsOneLine(), buffer);
+            if (new_part->default_codec_is_approximate)
+                writeText(IMergeTreeDataPart::UNKNOWN_DEFAULT_COMPRESSION_CODEC, buffer);
+            else
+                writeText(default_codec->getFullCodecDescription()->formatWithSecretsOneLine(), buffer);
         });
     }
     else
