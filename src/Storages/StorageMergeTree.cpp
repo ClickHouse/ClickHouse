@@ -916,7 +916,7 @@ void StorageMergeTree::alter(
                     throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after mutation registered");
                 });
 
-                setPropertiesAndResetSerializationHints(new_metadata, old_metadata, local_context);
+                setPropertiesAndResetSerializationHints(new_metadata, old_metadata, false, local_context);
             }
             catch (...)
             {
@@ -939,7 +939,7 @@ void StorageMergeTree::alter(
                             addPreparedMutationEntry(std::move(*prepared));
                             mutation_registered = true;
                         }
-                        setPropertiesAndResetSerializationHints(new_metadata, old_metadata, local_context);
+                        setPropertiesAndResetSerializationHints(new_metadata, old_metadata, false, local_context);
                     }
                     catch (...)
                     {
@@ -1042,7 +1042,7 @@ void StorageMergeTree::alter(
                                     background_operations_assignee.trigger();
                                 }
                             }
-                            setPropertiesAndResetSerializationHints(new_metadata, old_metadata, local_context);
+                            setPropertiesAndResetSerializationHints(new_metadata, old_metadata, false, local_context);
                         }
                         catch (...)
                         {

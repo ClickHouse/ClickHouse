@@ -2083,6 +2083,7 @@ protected:
     void setPropertiesAndResetSerializationHints(
         const StorageInMemoryMetadata & new_metadata,
         const StorageInMemoryMetadata & old_metadata,
+        bool attach = false,
         ContextPtr local_context = nullptr);
 
     void checkMinMaxIndexForJSON(const IndexDescription & index) const;

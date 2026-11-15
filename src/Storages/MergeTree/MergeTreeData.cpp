@@ -15395,11 +15395,12 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & lock)
 void MergeTreeData::setPropertiesAndResetSerializationHints(
     const StorageInMemoryMetadata & new_metadata,
     const StorageInMemoryMetadata & old_metadata,
+    bool attach,
     ContextPtr local_context)
 {
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
-    checkProperties(new_metadata, old_metadata, /*attach=*/false, /*allow_empty_sorting_key=*/false, allow_nullable_key, local_context);
+    checkProperties(new_metadata, old_metadata, attach, /*allow_empty_sorting_key=*/false, allow_nullable_key, local_context);
 
     auto owned_metadata = std::make_unique<const StorageInMemoryMetadata>(new_metadata);
     /// Materialised up front: nothing between the publish and the hints swap may allocate.
