@@ -1,0 +1,59 @@
+Nullable arguments skip NULLs, return NULL only if all arguments are NULL
+5	Nullable(UInt32)
+5	Nullable(UInt32)
+\N	Nullable(UInt32)
+\N	Nullable(UInt32)
+Mixed Nullable and non-Nullable arguments
+3	Nullable(UInt32)
+7	Nullable(UInt32)
+Three and four arguments
+1	UInt32
+3	UInt32
+1	UInt32
+4	UInt32
+Type promotion across arguments
+-1	Int64
+100000	Int64
+-5	Float64
+-5	Nullable(Int32)
+NaN loses against numbers and NULLs lose against NaN
+1	1
+1	2
+nan	Nullable(Float64)
+nan	Nullable(Float64)
+1	1
+BFloat16: NaN before and after finite values, variadic and Nullable
+1	2	BFloat16
+1	2	BFloat16
+nan	nan
+1.5	1.5	Nullable(BFloat16)
+nan	Nullable(BFloat16)
+Infinities
+-inf	inf
+Big integers
+7	Nullable(UInt128)
+-1	Nullable(Int256)
+Only-NULL arguments are ignored
+3	Nullable(UInt32)
+5	Nullable(UInt32)
+Legacy NULL behavior
+\N	Nullable(UInt32)
+2	Nullable(UInt32)
+\N	Nullable(Nothing)
+All NULL combinations over four Nullable arguments
+1	1	Nullable(UInt32)
+3	97	Nullable(UInt32)
+5	15	Nullable(UInt32)
+7	93	Nullable(UInt32)
+9	50	Nullable(UInt32)
+11	89	Nullable(UInt32)
+12	12	Nullable(UInt32)
+13	50	Nullable(UInt32)
+15	85	Nullable(UInt32)
+18	94	Nullable(UInt32)
+36	50	Nullable(UInt32)
+42	86	Nullable(UInt32)
+50	50	Nullable(UInt32)
+50	90	Nullable(UInt32)
+98	98	Nullable(UInt32)
+\N	\N	Nullable(UInt32)

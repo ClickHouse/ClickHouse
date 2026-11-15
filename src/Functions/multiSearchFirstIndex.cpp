@@ -36,33 +36,33 @@ REGISTER_FUNCTION(MultiSearchFirstIndex)
         "Usage example",
         "SELECT multiSearchFirstIndex('ClickHouse Database', ['Click', 'Database', 'Server']);",
         R"(
-┌─multiSearchF⋯ 'Server'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndex('ClickHouse Database', ['Click', 'Database', 'Server'])─┐
+│                                                                             1 │
+└───────────────────────────────────────────────────────────────────────────────┘
         )"
     },
     {
         "Case-sensitive behavior",
         "SELECT multiSearchFirstIndex('ClickHouse Database', ['CLICK', 'Database', 'Server']);",
         R"(
-┌─multiSearchF⋯ 'Server'])─┐
-│                        2 │
-└──────────────────────────┘
+┌─multiSearchFirstIndex('ClickHouse Database', ['CLICK', 'Database', 'Server'])─┐
+│                                                                             2 │
+└───────────────────────────────────────────────────────────────────────────────┘
         )"
     },
     {
         "No match found",
         "SELECT multiSearchFirstIndex('Hello World', ['goodbye', 'test']);",
         R"(
-┌─multiSearchF⋯', 'test'])─┐
-│                        0 │
-└──────────────────────────┘
+┌─multiSearchFirstIndex('Hello World', ['goodbye', 'test'])─┐
+│                                                         0 │
+└───────────────────────────────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMultiSearchFirstIndex>(documentation);
 }

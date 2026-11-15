@@ -33,7 +33,7 @@ void StorageFromMergeTreeDataPart::read(
     size_t num_streams)
 {
     query_plan.addStep(MergeTreeDataSelectExecutor(storage).readFromParts(
-        parts,
+        std::make_shared<RangesInDataParts>(parts),
         mutations_snapshot,
         column_names,
         storage_snapshot,
@@ -43,12 +43,6 @@ void StorageFromMergeTreeDataPart::read(
         num_streams,
         nullptr,
         analysis_result_ptr));
-}
-
-StorageSnapshotPtr
-StorageFromMergeTreeDataPart::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
-{
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
 }
 
 }

@@ -5,7 +5,6 @@ import json
 import socket
 import ssl
 import logging
-import signal
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
@@ -151,10 +150,9 @@ def start_server(server_address, data_path, schema, cert_path, address_family, t
         HTTPServer.address_family = socket.AF_INET6
     httpd = HTTPServer(server_address, TSVHTTPHandler)
     if schema == "https":
-        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        #ssl_context.load_cert_chain(cert_path)
-        ssl_context.load_verify_locations(cert_path)
-        httpd.socket = ssl_context.wrap_socket(httpd.socket, server_side=True)
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(certfile=cert_path)
+        httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
     logging.info("Starting serving on %s", httpd.server_address)
     httpd.serve_forever()
     # Never reaches here

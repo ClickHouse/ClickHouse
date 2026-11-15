@@ -14,7 +14,10 @@
 #include <Poco/Net/HTTPStream.h>
 #include <Poco/Net/NetException.h>
 
+#include <Common/NetException.h>
+#include <Common/checkSSLReturnCode.h>
 #include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
 
 #if USE_SSL
 #include <Poco/Net/SecureStreamSocketImpl.h>
@@ -26,11 +29,18 @@ static constexpr UInt64 HTTP_MAX_CHUNK_SIZE = 100ULL << 30;
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SOCKET_TIMEOUT;
+}
+
 HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session, const ProfileEvents::Event & read_event)
     : max_uri_size(context->getMaxUriSize())
     , max_fields_number(context->getMaxFields())
     , max_field_name_size(context->getMaxFieldNameSize())
     , max_field_value_size(context->getMaxFieldValueSize())
+    , max_request_header_size(context->getMaxRequestHeaderSize())
 {
     response.attachRequest(this);
 
@@ -41,14 +51,37 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
 
     auto receive_timeout = context->getReceiveTimeout();
     auto send_timeout = context->getSendTimeout();
+    auto headers_read_timeout = context->getHeadersReadTimeout();
 
     session.socket().setReceiveTimeout(receive_timeout);
     session.socket().setSendTimeout(send_timeout);
 
-    auto in = std::make_unique<ReadBufferFromPocoSocket>(session.socket(), read_event);
+    auto socket_in = std::make_unique<ReadBufferFromPocoSocket>(session.socket(), read_event);
     socket = session.socket().impl();
 
-    readRequest(*in);  /// Try parse according to RFC7230
+    {
+        /// Bounds the request line, the URI and the headers. Clearing it restores the body timeouts,
+        /// which is also what the error response is written with, so it has to happen while unwinding.
+        /// It can fail there: macOS rejects `setsockopt` on a connection the peer has reset.
+        if (headers_read_timeout > Poco::Timespan(0))
+            socket_in->setHandshakeTimeout(headers_read_timeout.totalMilliseconds());
+        SCOPE_EXIT_SAFE({ socket_in->clearHandshakeTimeout(); });
+
+        try
+        {
+            readRequest(*socket_in);  /// Try parse according to RFC7230
+        }
+        catch (const NetException & e)
+        {
+            /// Writing the error response would start the timed-out TLS handshake over, on the body timeouts.
+            if (e.code() != ErrorCodes::SOCKET_TIMEOUT || secureHandshakePending(socket))
+                throw;
+            /// `HTTPServerConnection` answers 400 to this; a `DB` exception escapes its handlers.
+            throw Poco::Net::MessageException("Timeout exceeded while reading HTTP headers");
+        }
+    }
+
+    auto in = std::move(socket_in);
 
     /// If a client crashes, most systems will gracefully terminate the connection with FIN just like it's done on close().
     /// So we will get 0 from recv(...) and will not be able to understand that something went wrong (well, we probably
@@ -65,7 +98,9 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     else if (hasContentLength())
     {
         size_t content_length = getContentLength();
-        stream = std::make_shared<LimitReadBuffer>(std::move(in), LimitReadBuffer::Settings{.read_no_less = content_length, .read_no_more = content_length, .expect_eof = true});
+        /// No `expect_eof`: `Content-Length` already defines where the body ends, and with keep-alive
+        /// the socket legitimately holds the bytes of the next request.
+        stream = std::make_shared<LimitReadBuffer>(std::move(in), LimitReadBuffer::Settings{.read_no_less = content_length, .read_no_more = content_length});
         stream_is_bounded = true;
     }
     else if (getMethod() != HTTPRequest::HTTP_GET && getMethod() != HTTPRequest::HTTP_HEAD && getMethod() != HTTPRequest::HTTP_DELETE)
@@ -85,21 +120,7 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
 
 bool HTTPServerRequest::checkPeerConnected() const
 {
-    try
-    {
-        char b;
-        if (!socket->receiveBytes(&b, 1, MSG_DONTWAIT | MSG_PEEK))
-            return false;
-    }
-    catch (Poco::TimeoutException &) // NOLINT(bugprone-empty-catch)
-    {
-    }
-    catch (...)
-    {
-        return false;
-    }
-
-    return true;
+    return socket->connectionOpen();
 }
 
 #if USE_SSL
@@ -130,7 +151,7 @@ X509Certificate HTTPServerRequest::peerCertificate() const
 
 void HTTPServerRequest::readRequest(ReadBuffer & in)
 {
-    char ch;
+    char ch = 0;
     std::string method;
     std::string uri;
     std::string version;
@@ -173,13 +194,26 @@ void HTTPServerRequest::readRequest(ReadBuffer & in)
 
     skipToNextLineOrEOF(in);
 
-    readHeaders(*this, in, max_fields_number, max_field_name_size, max_field_value_size);
+    readHeaders(*this, in, max_fields_number, max_field_name_size, max_field_value_size, max_request_header_size);
 
     skipToNextLineOrEOF(in);
 
     setMethod(method);
     setURI(uri);
     setVersion(version);
+}
+
+std::string HTTPServerRequest::toStringForLogging() const
+{
+    return fmt::format(
+        "Method: {}, Address: {}, User-Agent: {}{}, Content Type: {}, Transfer Encoding: {}, X-Forwarded-For: {}",
+        getMethod(),
+        clientAddress().toString(),
+        get("User-Agent", "(none)"),
+        (hasContentLength() ? fmt::format(", Length: {}", getContentLength()) : ""),
+        getContentType(),
+        getTransferEncoding(),
+        get("X-Forwarded-For", "(none)"));
 }
 
 }

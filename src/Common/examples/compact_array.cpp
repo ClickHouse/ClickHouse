@@ -7,11 +7,15 @@
 #include <stdexcept>
 #include <cstdlib>
 #include <unistd.h>
+#include <Examples/clickhouse_examples.h>
 
 
 namespace fs = std::filesystem;
 
-static std::string createTmpPath(const std::string & filename)
+namespace
+{
+
+std::string createTmpPath(const std::string & filename)
 {
     char pattern[] = "/tmp/fileXXXXXX";
     char * dir = mkdtemp(pattern);
@@ -37,32 +41,35 @@ struct Test
             Store store;
 
             for (size_t i = 0; i < bucket_count; ++i)
-                store[i] = Generator::execute(i, width);
+                store.set(i, Generator::execute(i, width));
+
+            for (size_t i = 0; i < bucket_count; ++i)
+            {
+                if (store.get(i) != Generator::execute(i, width))
+                    throw std::runtime_error("Stored value differs from the generated one");
+            }
 
             filename = createTmpPath("compact_array.bin");
 
             {
                 DB::WriteBufferFromFile wb(filename);
-                wb.write(reinterpret_cast<const char *>(&store), sizeof(store));
+                auto state = store.getSerializableState();
+                wb.write(reinterpret_cast<const char *>(state.data()), state.size());
                 wb.close();
             }
 
             {
                 DB::ReadBufferFromFile rb(filename);
-                typename Store::Reader reader(rb);
-                while (reader.next())
+                Store restored_store;
+                auto state = restored_store.getSerializableState();
+                rb.readStrict(reinterpret_cast<char *>(state.data()), state.size());
+
+                for (size_t i = 0; i < bucket_count; ++i)
                 {
-                    const auto & data = reader.get();
-                    if (data.second != store[data.first])
+                    if (restored_store[i] != store[i])
                         throw std::runtime_error("Found discrepancy");
                 }
             }
-        }
-        catch (const Poco::Exception & ex)
-        {
-            std::cout << "Test width=" << width << " bucket_count=" << bucket_count << " failed "
-                << "(Error: " << ex.what() << ": " << ex.displayText() << ")\n";
-            ok = false;
         }
         catch (const std::runtime_error & ex)
         {
@@ -70,7 +77,7 @@ struct Test
                 << "(Error: " << ex.what() << ")\n";
             ok = false;
         }
-        catch (...)
+        catch (...) // Ok: test reports unknown failure
         {
             std::cout << "Test width=" << width << " bucket_count=" << bucket_count << " failed\n";
             ok = false;
@@ -221,7 +228,7 @@ struct Generator1
 {
     static UInt8 execute(size_t, size_t width)
     {
-        return (1 << width) - 1;
+        return static_cast<UInt8>((1 << width) - 1);
     }
 };
 
@@ -229,7 +236,7 @@ struct Generator2
 {
     static UInt8 execute(size_t i, size_t width)
     {
-        return (i >> 1) & ((1 << width) - 1);
+        return static_cast<UInt8>((i >> 1) & ((1 << width) - 1));
     }
 };
 
@@ -237,11 +244,11 @@ struct Generator3
 {
     static UInt8 execute(size_t i, size_t width)
     {
-        return (i * 17 + 31) % (1ULL << width);
+        return static_cast<UInt8>((i * 17 + 31) % (1ULL << width));
     }
 };
 
-static void runTests()
+void runTests()
 {
     std::cout << "Test set 1\n";
     TestSet<Generator1>::execute();
@@ -251,7 +258,9 @@ static void runTests()
     TestSet<Generator3>::execute();
 }
 
-int main()
+}
+
+int mainEntryExampleCompactArray(int, char **)
 {
     runTests();
     return 0;

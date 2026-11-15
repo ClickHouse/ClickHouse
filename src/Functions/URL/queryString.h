@@ -17,10 +17,10 @@ struct ExtractQueryString
         res_data = data;
         res_size = 0;
 
-        Pos pos = data;
-        Pos end = pos + size;
+        Pos end = data + size;
+        Pos pos = find_first_symbols<'?'>(data, end);
 
-        if (end != (pos = find_first_symbols<'?'>(pos, end)))
+        if (pos != end)
         {
             Pos fragment = find_first_symbols<'#'>(pos, end);
 

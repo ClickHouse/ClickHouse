@@ -2,8 +2,9 @@
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+
+#include <type_traits>
 
 namespace DB
 {
@@ -56,7 +57,6 @@ template <typename T> WriteBuffer & operator<< (XMLManipWriteBuffer buf,        
 
 inline  WriteBuffer & operator<< (EscapeManipWriteBuffer buf, const String & x)   { writeEscapedString(x, buf); return buf; }
 inline  WriteBuffer & operator<< (EscapeManipWriteBuffer buf, std::string_view x) { writeEscapedString(x, buf); return buf; }
-inline  WriteBuffer & operator<< (EscapeManipWriteBuffer buf, StringRef x)        { writeEscapedString(x.toView(), buf); return buf; }
 inline  WriteBuffer & operator<< (EscapeManipWriteBuffer buf, const char * x)     { writeEscapedString(x, strlen(x), buf); return buf; }
 
 inline WriteBuffer & operator<< (QuoteManipWriteBuffer buf,       const char * x) { writeAnyQuotedString<'\''>(x, x + strlen(x), buf.get()); return buf; }
@@ -64,7 +64,6 @@ inline WriteBuffer & operator<< (DoubleQuoteManipWriteBuffer buf, const char * x
 inline WriteBuffer & operator<< (BinaryManipWriteBuffer buf,      const char * x) { writeStringBinary(x, buf.get()); return buf; }
 
 inline  WriteBuffer & operator<< (XMLManipWriteBuffer buf, std::string_view x) { writeXMLStringForTextElementOrAttributeValue(x, buf); return buf; }
-inline  WriteBuffer & operator<< (XMLManipWriteBuffer buf, StringRef x)        { writeXMLStringForTextElementOrAttributeValue(x.toView(), buf); return buf; }
 inline  WriteBuffer & operator<< (XMLManipWriteBuffer buf, const char * x)     { writeXMLStringForTextElementOrAttributeValue(std::string_view(x), buf); return buf; }
 
 /// The manipulator calls the WriteBuffer method `next` - this makes the buffer reset. For nested buffers, the reset is not recursive.
@@ -73,9 +72,20 @@ enum FlushManip { flush };
 inline WriteBuffer & operator<< (WriteBuffer & buf, FlushManip) { buf.next(); return buf; }
 
 
-template <typename T> ReadBuffer & operator>> (ReadBuffer & buf, T & x)              { readText(x, buf);     return buf; }
-template <> inline    ReadBuffer & operator>> (ReadBuffer & buf, String & x)         { readString(x, buf);   return buf; }
-template <> inline    ReadBuffer & operator>> (ReadBuffer & buf, char & x)           { readChar(x, buf);     return buf; }
+/// The reading operators find readText, readString, readChar and the rest by argument-dependent lookup,
+/// so a file that uses them includes IO/ReadHelpers.h.
+void assertString(const char * s, ReadBuffer & buf);
+
+template <typename T> ReadBuffer & operator>> (ReadBuffer & buf, T & x)
+{
+    if constexpr (std::is_same_v<T, String>)
+        readString(x, buf);
+    else if constexpr (std::is_same_v<T, char>)
+        readChar(x, buf);
+    else
+        readText(x, buf);
+    return buf;
+}
 
 /// If you specify a string literal for reading, this will mean - make sure there is a sequence of bytes and skip it.
 inline ReadBuffer & operator>> (ReadBuffer & buf, const char * x)     { assertString(x, buf); return buf; }

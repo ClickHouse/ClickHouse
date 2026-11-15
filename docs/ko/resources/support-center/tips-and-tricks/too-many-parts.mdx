@@ -1,0 +1,81 @@
+---
+slug: /tips-and-tricks/too-many-parts
+sidebarTitle: 'Too many parts'
+doc_type: 'guide'
+keywords: [
+  'clickhouse 파트 과다',
+  'too many parts 오류',
+  'clickhouse 삽입 배칭',
+  '파트 폭증 문제',
+  'clickhouse 머지 성능',
+  '배치 삽입 최적화',
+  'clickhouse async inserts',
+  '소규모 삽입 문제',
+  'clickhouse 파트 관리',
+  '삽입 성능 최적화',
+  'clickhouse 배칭 전략',
+  '데이터베이스 삽입 패턴'
+]
+title: '교훈 - Too many parts 문제'
+description: 'Too many parts 문제의 해결 및 예방'
+---
+
+*이 가이드는 커뮤니티 밋업에서 얻은 인사이트 모음의 일부입니다. 더 많은 실제 해결 방법과 인사이트는 [특정 문제별로 찾아보기](/ko/resources/support-center/tips-and-tricks/community-wisdom)에서 확인할 수 있습니다.*
+*성능 최적화 팁이 더 필요하시면 [성능 최적화](/ko/resources/support-center/tips-and-tricks/performance-optimization) 커뮤니티 인사이트 가이드를 확인하세요.*
+
+<div id="understanding-the-problem">
+  ## 문제 이해하기
+</div>
+
+ClickHouse는 심각한 성능 저하를 방지하기 위해 &quot;Too many parts&quot; 오류를 발생시킵니다. 작은 파트는 여러 문제를 유발합니다. 쿼리 시 더 많은 파일을 읽고 머지해야 하므로 쿼리 성능이 저하되고, 각 파트의 메타데이터를 메모리에 유지해야 하므로 메모리 사용량이 증가합니다. 또한 더 작은 데이터 블록은 압축 효율이 낮고, 파일 핸들과 seek 작업이 늘어나 I/O 오버헤드가 커지며, 백그라운드 머지가 느려져 머지 스케줄러의 작업 부담도 증가합니다.
+
+**관련 문서**
+
+* [MergeTree 엔진](/ko/reference/engines/table-engines/mergetree-family/mergetree)
+* [파트](/ko/concepts/core-concepts/parts)
+* [파트 시스템 테이블](/ko/reference/system-tables/parts)
+
+<div id="recognize-parts-problem">
+  ## 문제를 조기에 파악하기
+</div>
+
+이 쿼리는 모든 활성 테이블의 파트 수와 크기를 분석해 테이블 단편화를 모니터링합니다. 파트가 과도하게 많거나 지나치게 작아 머지 최적화가 필요할 수 있는 테이블을 식별합니다. 단편화 문제가 쿼리 성능에 영향을 미치기 전에 발견할 수 있도록 이 쿼리를 정기적으로 사용하십시오.
+
+```sql runnable editable
+-- 챌린지: 실제 데이터베이스 및 테이블 이름으로 대체하여 프로덕션 환경에서 사용하십시오
+-- 실험: 시스템 환경에 맞게 파트 수 임계값(1000, 500, 100)을 조정하십시오
+SELECT 
+    database,
+    table,
+    count() as total_parts,
+    sum(rows) as total_rows,
+    round(avg(rows), 0) as avg_rows_per_part,
+    min(rows) as min_rows_per_part,
+    max(rows) as max_rows_per_part,
+    round(sum(bytes_on_disk) / 1024 / 1024, 2) as total_size_mb,
+    CASE 
+        WHEN count() > 1000 THEN 'CRITICAL - Too many parts (>1000)'
+        WHEN count() > 500 THEN 'WARNING - Many parts (>500)'
+        WHEN count() > 100 THEN 'CAUTION - Getting many parts (>100)'
+        ELSE 'OK - Reasonable part count'
+    END as parts_assessment,
+    CASE 
+        WHEN avg(rows) < 1000 THEN 'POOR - Very small parts'
+        WHEN avg(rows) < 10000 THEN 'FAIR - Small parts'
+        WHEN avg(rows) < 100000 THEN 'GOOD - Medium parts'
+        ELSE 'EXCELLENT - Large parts'
+    END as part_size_assessment
+FROM system.parts
+WHERE active = 1
+  AND database NOT IN ('system', 'information_schema')
+GROUP BY database, table
+ORDER BY total_parts DESC
+LIMIT 20;
+```
+
+<div id="video-sources">
+  ## 동영상 자료
+</div>
+
+* [ClickHouse의 빠르고 동시적이며 일관된 비동기 INSERT](https://www.youtube.com/watch?v=AsMPEfN5QtM) - ClickHouse 팀원이 async inserts와 Too many parts 문제를 설명합니다
+* [대규모 프로덕션 환경의 ClickHouse](https://www.youtube.com/watch?v=liTgGiTuhJE) - 관측성 플랫폼의 실제 배칭 전략

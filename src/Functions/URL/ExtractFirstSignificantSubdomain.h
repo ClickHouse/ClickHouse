@@ -10,9 +10,9 @@ namespace DB
 
 struct FirstSignificantSubdomainDefaultLookup
 {
-    bool operator()(StringRef host) const
+    bool operator()(std::string_view host) const
     {
-        return tldLookup::isValid(host.data, host.size);
+        return tldLookup::isValid(host.data(), host.size());
     }
 };
 
@@ -33,12 +33,18 @@ struct ExtractFirstSignificantSubdomain
         res_data = data;
         res_size = 0;
 
-        Pos tmp;
-        size_t domain_length;
+        Pos tmp = nullptr;
+        size_t domain_length = 0;
         ExtractDomain<without_www, conform_rfc>::execute(data, size, tmp, domain_length);
 
         if (domain_length == 0)
             return;
+
+        if constexpr (conform_rfc)
+        {
+            if (tmp > data && tmp[-1] == '[' && tmp + domain_length < data + size && tmp[domain_length] == ']')
+                return;
+        }
 
         if (out_domain_end)
             *out_domain_end = tmp + domain_length;
@@ -82,7 +88,7 @@ struct ExtractFirstSignificantSubdomain
         }
 
         size_t host_len = static_cast<size_t>(end_of_level_domain - last_periods[1] - 1);
-        StringRef host{last_periods[1] + 1, host_len};
+        std::string_view host{last_periods[1] + 1, host_len};
         if (lookup(host))
         {
             res_data += last_periods[2] + 1 - begin;
@@ -103,12 +109,22 @@ struct ExtractFirstSignificantSubdomain
         res_data = data;
         res_size = 0;
 
-        Pos tmp;
-        size_t domain_length;
+        Pos tmp = nullptr;
+        size_t domain_length = 0;
         ExtractDomain<without_www, conform_rfc>::execute(data, size, tmp, domain_length);
 
         if (domain_length == 0)
             return;
+
+        if constexpr (conform_rfc)
+        {
+            /// getURLHostRFC() returns a bracketed IP-literal host without its brackets; detect
+            /// that from the original text around it (rather than the host's own shape, e.g.
+            /// looking for ':', which misses IPvFuture forms like "v1.a" that have none). An IP
+            /// address is not a DNS name, so it has no significant subdomain to extract.
+            if (tmp > data && tmp[-1] == '[' && tmp + domain_length < data + size && tmp[domain_length] == ']')
+                return;
+        }
 
         if (out_domain_end)
             *out_domain_end = tmp + domain_length;
@@ -124,13 +140,13 @@ struct ExtractFirstSignificantSubdomain
         const auto * end = begin + domain_length;
         std::array<const char *, 2> last_periods{};
         last_periods[0] = begin - 1;
-        StringRef excluded_host{};
+        std::string_view excluded_host{};
 
         const auto * pos = find_first_symbols<'.'>(begin, end);
         while (pos < end)
         {
             size_t host_len = static_cast<size_t>(end - pos - 1);
-            StringRef host{pos + 1, host_len};
+            std::string_view host{pos + 1, host_len};
             TLDType tld_type = lookup(host);
             switch (tld_type)
             {
@@ -142,7 +158,7 @@ struct ExtractFirstSignificantSubdomain
                     return;
                 case TLDType::TLD_ANY:
                 {
-                    StringRef regular_host{last_periods[0] + 1, static_cast<size_t>(end - 1 - last_periods[0])};
+                    std::string_view regular_host{last_periods[0] + 1, static_cast<size_t>(end - 1 - last_periods[0])};
                     if (last_periods[1] && excluded_host != regular_host)
                     {
                         /// Return TLD_REGULAR + 1

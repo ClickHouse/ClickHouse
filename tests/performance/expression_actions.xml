@@ -1,0 +1,14 @@
+<test>
+    <settings>
+        <max_block_size>3000000</max_block_size>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT sin(sin(sin(sin(sin(number))))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT sin(sin(sin(sin(sin(sin(sin(sin(sin(sin(number)))))))))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT sin(sin(sin(sin(sin(sin(sin(sin(sin(sin(sin(sin(sin(sin(sin(sin(sin(sin(sin(number))))))))))))))))))) FROM numbers(3000000) FORMAT Null</query>
+
+    <query>SELECT cos(cos(cos(cos(cos(number))))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT cos(cos(cos(cos(cos(cos(cos(cos(cos(cos(number)))))))))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT cos(cos(cos(cos(cos(cos(cos(cos(cos(cos(cos(cos(cos(cos(cos(cos(cos(cos(number)))))))))))))))))) FROM numbers(3000000) FORMAT Null</query>
+</test>

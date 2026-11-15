@@ -1,21 +1,28 @@
 #pragma once
 #include <Storages/PartitionedSink.h>
-#include <Processors/Formats/IOutputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
-class StorageObjectStorageSink : public SinkToStorage
+
+class IOutputFormat;
+using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
+
+class StorageObjectStorageSink final : public SinkToStorage
 {
 public:
     StorageObjectStorageSink(
         const std::string & path_,
         ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationPtr configuration,
         const std::optional<FormatSettings> & format_settings_,
         SharedHeader sample_block_,
-        ContextPtr context);
+        ContextPtr context,
+        const String & format,
+        const String & compression_method,
+        FormatFilterInfoPtr format_filter_info = nullptr,
+        bool fail_if_exists = false);
 
     ~StorageObjectStorageSink() override;
 
@@ -41,7 +48,7 @@ private:
     void cancelBuffers();
 };
 
-class PartitionedStorageObjectStorageSink : public PartitionedSink
+class PartitionedStorageObjectStorageSink final : public PartitionedSink
 {
 public:
     PartitionedStorageObjectStorageSink(
@@ -53,6 +60,11 @@ public:
 
     SinkPtr createSinkForPartition(const String & partition_id) override;
 
+    /// Returns the object path of the last object written by `createSinkForPartition`.
+    /// This is the final resolved path (after any rewrite by `checkAndGetNewFileOnInsertIfNeeded`),
+    /// not the partition id passed to `createSinkForPartition`.
+    const String & getLastWrittenObjectPath() const { return last_written_object_path; }
+
 private:
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationPtr configuration;
@@ -61,6 +73,7 @@ private:
     const std::optional<FormatSettings> format_settings;
     SharedHeader sample_block;
     const ContextPtr context;
+    String last_written_object_path;
 };
 
 }

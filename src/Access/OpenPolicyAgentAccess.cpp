@@ -2,6 +2,7 @@
 #include <Access/OpenPolicyAgentAccess.h>
 #include <Access/User.h>
 #include <Interpreters/Context.h>
+#include <IO/ReadHelpers.h>
 #include <Common/Exception.h>
 #include <Common/config_version.h>
 
@@ -30,7 +31,7 @@ public:
     using Result = bool;
     static constexpr const char * granted_json_field = "result";
 
-    bool parse(const Poco::Net::HTTPResponse & response, std::istream * body_stream) const
+    bool parse(const Poco::Net::HTTPResponse & response, ReadBuffer * body) const
     {
         if (response.getStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK)
         {
@@ -38,7 +39,7 @@ public:
             return false;
         }
 
-        if (!body_stream)
+        if (!body)
         {
             LOG_DEBUG(getLogger("OPA"), "No response body");
             return false;
@@ -48,7 +49,9 @@ public:
         try
         {
             Poco::JSON::Parser parser;
-            const Poco::Dynamic::Var json = parser.parse(*body_stream);
+            String body_text;
+            readStringUntilEOF(body_text, *body);
+            const Poco::Dynamic::Var json = parser.parse(body_text);
             if (json.isEmpty())
             {
                 LOG_DEBUG(getLogger("OPA"), "Response is not a JSON");

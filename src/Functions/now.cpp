@@ -1,12 +1,14 @@
 #include <ctime>
 #include <Core/Field.h>
-#include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Interpreters/Context.h>
+#include <Common/ErrnoException.h>
 
 namespace DB
 {
@@ -26,7 +28,7 @@ namespace
 {
 
 /// Get the current time. (It is a constant, it is evaluated once for the entire query.)
-class ExecutableFunctionNow : public IExecutableFunction
+class ExecutableFunctionNow final : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionNow(time_t time_) : time_value(time_) {}
@@ -44,7 +46,7 @@ private:
     time_t time_value;
 };
 
-class FunctionBaseNow : public IFunctionBase
+class FunctionBaseNow final : public IFunctionBase
 {
 public:
     explicit FunctionBaseNow(time_t time_, DataTypes argument_types_, DataTypePtr return_type_)
@@ -83,7 +85,7 @@ private:
     DataTypePtr return_type;
 };
 
-class NowOverloadResolver : public IFunctionOverloadResolver
+class NowOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "now";
@@ -94,28 +96,25 @@ public:
 
     bool isVariadic() const override { return true; }
 
+    bool allowsOmittingParentheses() const override { return true; }
+
     size_t getNumberOfArguments() const override { return 0; }
     static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<NowOverloadResolver>(context); }
     explicit NowOverloadResolver(ContextPtr context)
         : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
     {}
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.size() > 1)
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0 or 1", getName());
-        }
-        if (arguments.size() == 1 && !isStringOrFixedString(arguments[0].type))
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
-                getName());
-        }
-        if (arguments.size() == 1)
-        {
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, allow_nonconst_timezone_arguments));
-        }
-        return std::make_shared<DataTypeDateTime>();
+        /// Same pattern as snowflakeToDateTime: const-tz captures into the return type,
+        /// non-const-tz (only when allowed by the flag) yields a tz-less DateTime.
+        if (allow_nonconst_timezone_arguments)
+            return
+                "(const tz StringOrFixedString) -> DateTime(tz)"
+                " OR ([StringOrFixedString]) -> DateTime";
+        return
+            "(const tz StringOrFixedString) -> DateTime(tz)"
+            " OR () -> DateTime";
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
@@ -124,12 +123,13 @@ public:
         {
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0 or 1", getName());
         }
-        if (arguments.size() == 1 && !isStringOrFixedString(arguments[0].type))
+        /// `getReturnTypeImpl` is called on a `LowCardinality`-stripped type, so strip it here too:
+        /// otherwise `now(toLowCardinality('UTC'))` is rejected.
+        if (arguments.size() == 1 && !isStringOrFixedString(recursiveRemoveLowCardinality(arguments[0].type)))
         {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
                 getName());
         }
-
         timespec spec{};
         if (clock_gettime(CLOCK_REALTIME, &spec))
             throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
@@ -175,14 +175,23 @@ SELECT now('Asia/Istanbul')
 ┌─now('Asia/Istanbul')─┐
 │  2020-10-17 10:42:23 │
 └──────────────────────┘
+        )"},
+        {"SQL standard syntax without parentheses", R"(
+SELECT NOW, CURRENT_TIMESTAMP
+        )",
+        R"(
+┌─────────────────NOW─┬───CURRENT_TIMESTAMP─┐
+│ 2020-10-17 07:42:19 │ 2020-10-17 07:42:19 │
+└─────────────────────┴─────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<NowOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_timestamp", NowOverloadResolver::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("localtimestamp", NowOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }
 
 }

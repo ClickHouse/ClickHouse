@@ -1,0 +1,15 @@
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.high_cardinality_primary_key_set)
+        Indexes:
+          PrimaryKey
+            Keys:
+              u
+              d
+            Condition: ((u, d) in 2-element set)
+            Parts: 1/1
+            Granules: 2/100
+            Search Algorithm: generic exclusion search
+          Ranges: 1

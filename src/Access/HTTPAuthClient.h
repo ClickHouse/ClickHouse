@@ -1,23 +1,32 @@
 #pragma once
-#include <IO/ConnectionTimeouts.h>
-#include <IO/HTTPCommon.h>
-
-#include <base/sleep.h>
-#include <Poco/Net/HTTPBasicCredentials.h>
-#include <Poco/Net/OAuth20Credentials.h>
 
 #include <set>
 
+#include <base/sleep.h>
+#include <Common/Exception.h>
+#include <Common/HTTPFieldLess.h>
+#include <IO/ConnectionTimeouts.h>
+#include <IO/HTTPCommon.h>
+#include <IO/WriteHelpers.h>
+
+#include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/Net/OAuth20Credentials.h>
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 struct HTTPAuthClientParams
 {
     Poco::URI uri;
     ConnectionTimeouts timeouts;
-    size_t max_tries;
-    size_t retry_initial_backoff_ms;
-    size_t retry_max_backoff_ms;
+    size_t max_tries{};
+    size_t retry_initial_backoff_ms{};
+    size_t retry_max_backoff_ms{};
     std::vector<String> forward_headers;
 
     static HTTPAuthClientParams createDefault(const String & uri_, size_t max_tries_);
@@ -51,12 +60,13 @@ public:
             bool last_attempt = attempt + 1 >= max_tries;
             try
             {
-                std::ostream & os = session->sendRequest(request);
+                auto request_body = sendHTTPRequest(*session, request);
                 if (!request_data.empty())
-                    os << request_data;
+                    writeString(request_data, *request_body);
+                request_body->finalize();
 
-                auto & body_stream = session->receiveResponse(response);
-                return parser.parse(response, &body_stream);
+                auto body = receiveHTTPResponse(*session, response);
+                return parser.parse(response, body.get());
             }
             catch (const Poco::Exception &) // TODO: make retries smarter
             {
@@ -72,28 +82,14 @@ public:
 
     const Poco::URI & getURI() const { return uri; }
 
-    struct ci_less
-    {
-        bool operator()(const std::string & a, const std::string & b) const
-        {
-            return std::lexicographical_compare(
-                a.begin(), a.end(),
-                b.begin(), b.end(),
-                [](unsigned char ac, unsigned char bc)
-                {
-                    return std::tolower(ac) < std::tolower(bc);
-                });
-        }
-    };
-
-    const std::set<String, ci_less> & getForwardHeaders() const { return forward_headers; }
+    const std::set<String, HTTPFieldLess> & getForwardHeaders() const { return forward_headers; }
 
 private:
     const ConnectionTimeouts timeouts;
     const size_t max_tries;
     const size_t retry_initial_backoff_ms;
     const size_t retry_max_backoff_ms;
-    const std::set<String, ci_less> forward_headers;
+    const std::set<String, HTTPFieldLess> forward_headers;
     const Poco::URI uri;
     TResponseParser parser;
 };
@@ -107,8 +103,9 @@ public:
 
     using HTTPAuthClientBase<TResponseParser>::HTTPAuthClientBase;
     using Result = HTTPAuthClientBase<TResponseParser>::Result;
+    using Headers = std::map<String, String, HTTPFieldLess>;
 
-    Result authenticateBasic(const String & user_name, const String & password, const std::unordered_map<String, String> & headers = {}, const String & data = {}) const
+    Result authenticateBasic(const String & user_name, const String & password, const Headers & headers = {}, const String & data = {}) const
     {
         auto request_type = data.empty() ? Poco::Net::HTTPRequest::HTTP_GET : Poco::Net::HTTPRequest::HTTP_POST;
 
@@ -126,7 +123,7 @@ public:
         return this->authenticateRequest(request, data);
     }
 
-    Result authenticateBearer(const String & token, const std::unordered_map<String, String> & headers = {}, const String & data = {}) const
+    Result authenticateBearer(const String & token, const Headers & headers = {}, const String & data = {}) const
     {
         auto request_type = data.empty() ? Poco::Net::HTTPRequest::HTTP_GET : Poco::Net::HTTPRequest::HTTP_POST;
 
@@ -145,12 +142,17 @@ public:
     }
 
 private:
-    void setHeaders(Poco::Net::HTTPRequest & request, const std::unordered_map<String, String> & headers) const
+    void setHeaders(Poco::Net::HTTPRequest & request, const Headers & headers) const
     {
         for (const auto & [name, value] : headers)
         {
-            if (this->getForwardHeaders().contains(name))
-                request.add(name, value);
+            if (!this->getForwardHeaders().contains(name))
+                continue;
+            /// Poco writes header values verbatim, so a line break would let the value inject extra headers
+            /// (e.g. an `Authorization` placed before ours) into the request to the authentication server.
+            if (value.find_first_of(std::string_view("\r\n\0", 3)) != std::string::npos)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Forwarded HTTP header \"{}\" contains CR, LF or NUL", name);
+            request.add(name, value);
         }
     }
 };

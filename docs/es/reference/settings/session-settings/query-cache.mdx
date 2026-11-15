@@ -1,0 +1,173 @@
+---
+title: 'configuración de sesión de query_cache_*'
+sidebarTitle: 'query_cache_*'
+toc_max_heading_level: 2
+description: 'Configuración de sesión de ClickHouse del grupo generado query_cache_*.'
+doc_type: 'referencia'
+---
+
+{/*INICIO_AUTOGENERADO*/}
+
+import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
+import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHistory.jsx";
+
+Estas configuraciones están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
+
+## query_cache_compress_entries {#query_cache_compress_entries}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Comprime las entradas de la [caché de consultas](/es/concepts/features/performance/caches/query-cache). Reduce el consumo de memoria de la caché de consultas a costa de ralentizar las inserciones y las lecturas desde ella.
+
+Valores posibles:
+
+* 0 - Deshabilitado
+* 1 - Habilitado
+
+## query_cache_for_subqueries {#query_cache_for_subqueries}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "Nueva configuración para habilitar la propagación de `use_query_cache` a todas las subconsultas. Sin esta opción, las subconsultas solo se almacenan en caché si se activa explícitamente en cada subconsulta con `SETTINGS use_query_cache = true`."}]}]} />
+
+Si está activado, los resultados de las subconsultas pueden escribirse en la [caché de consultas](/es/concepts/features/performance/caches/query-cache) y leerse desde ella. Esto permite propagar `use_query_cache` a todas las subconsultas.
+
+Posibles valores:
+
+* 0 - Desactivado
+* 1 - Activado
+
+## query_cache_max_entries {#query_cache_max_entries}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+El número máximo de resultados de consulta que el usuario actual puede almacenar en la [caché de consultas](/es/concepts/features/performance/caches/query-cache) en memoria. 0 significa que no hay límite.
+
+Este límite no se aplica a la caché de consultas en disco (configuración `query_cache_on_disk_cache_name`), cuyas entradas están limitadas, en su lugar, por el tamaño de la caché del sistema de archivos subyacente.
+
+Posibles valores:
+
+* Entero positivo &gt;= 0.
+
+## query_cache_max_size_in_bytes {#query_cache_max_size_in_bytes}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+La cantidad máxima de memoria (en bytes) que el usuario actual puede asignar a la [caché de consultas](/es/concepts/features/performance/caches/query-cache) en memoria. 0 significa que no hay límite.
+
+Este límite no se aplica a la caché de consultas en disco (configuración `query_cache_on_disk_cache_name`), cuyas entradas están limitadas por el tamaño de la caché del sistema de archivos subyacente.
+
+Valores posibles:
+
+* Entero positivo &gt;= 0.
+
+## query_cache_min_query_duration {#query_cache_min_query_duration}
+
+<SettingsInfoBlock type="Milisegundos" default_value="0" />
+
+Duración mínima, en milisegundos, que debe ejecutarse una consulta para que su resultado se almacene en la [caché de consultas](/es/concepts/features/performance/caches/query-cache).
+
+Posibles valores:
+
+* Entero positivo &gt;= 0.
+
+## query_cache_min_query_runs {#query_cache_min_query_runs}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+Número mínimo de veces que debe ejecutarse una consulta `SELECT` antes de que su resultado se almacene en la [caché de consultas](/es/concepts/features/performance/caches/query-cache).
+
+Valores posibles:
+
+* Entero positivo &gt;= 0.
+
+## query_cache_nondeterministic_function_handling {#query_cache_nondeterministic_function_handling}
+
+<SettingsInfoBlock type="QueryResultCacheNondeterministicFunctionHandling" default_value="throw" />
+
+Controla cómo la [caché de consultas](/es/concepts/features/performance/caches/query-cache) gestiona las consultas `SELECT` con funciones no deterministas como `rand()` o `now()`.
+
+Valores posibles:
+
+* `'throw'` - Lanza una excepción y no almacena en caché el resultado de la consulta.
+* `'save'` - Almacena en caché el resultado de la consulta.
+* `'ignore'` - No almacena en caché el resultado de la consulta y no lanza ninguna excepción.
+
+## query_cache_on_disk_cache_name {#query_cache_on_disk_cache_name}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "Nueva configuración para almacenar en disco las entradas de la caché de consultas, en la caché del sistema de archivos indicada."}]}]} />
+
+Nombre de una caché del sistema de archivos (una entrada de la sección `filesystem_caches` de la configuración del servidor) que almacena en disco las entradas de la [caché de consultas](/es/concepts/features/performance/caches/query-cache). Si se especifica un nombre (y [use&#95;query&#95;cache](/es/reference/settings/session-settings/use-query#use_query_cache) está habilitado), los resultados de las consultas también se almacenan en caché en la caché del sistema de archivos especificada (y se sirven desde ella). La caché de consultas en disco ofrece más espacio que la caché de consultas en memoria, se conserva tras los reinicios del servidor y funciona de forma independiente de la caché de consultas en memoria: las configuraciones [enable&#95;reads&#95;from&#95;query&#95;cache&#95;on&#95;disk](/es/reference/settings/session-settings/enable#enable_reads_from_query_cache_on_disk) y [enable&#95;writes&#95;to&#95;query&#95;cache&#95;on&#95;disk](/es/reference/settings/session-settings/enable#enable_writes_to_query_cache_on_disk) la controlan por separado de la caché de consultas en memoria. Las entradas almacenadas en la caché del sistema de archivos son entradas normales de dicha caché: no están protegidas contra su eliminación y se desalojan según las mismas reglas que cualquier otro dato que contenga. `SYSTEM CLEAR FILESYSTEM CACHE '<name>'` las elimina junto con todo lo demás de la caché del sistema de archivos, mientras que `SYSTEM CLEAR QUERY CACHE` elimina las entradas de la caché de consultas en disco de la caché del sistema de archivos indicada por esta configuración y deja intactos el resto de los datos. Se recomienda utilizar una caché del sistema de archivos dedicada para los resultados de las consultas.
+
+Valores posibles:
+
+* Cadena vacía: la caché de consultas en disco está deshabilitada
+* El nombre de una caché del sistema de archivos preconfigurada
+
+## query_cache_on_disk_codec {#query_cache_on_disk_codec}
+
+<SettingsInfoBlock type="String" default_value="ZSTD(3)" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "ZSTD(3)"},{"label": "Nueva configuración para controlar el códec de compresión de las entradas de la caché de consultas en disco."}]}]} />
+
+Códec de compresión de las entradas de la [caché de consultas](/es/concepts/features/performance/caches/query-cache) almacenadas en disco (consulte [query&#95;cache&#95;on&#95;disk&#95;cache&#95;name](/es/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name)). Solo afecta a la escritura; la lectura no depende de esta configuración, ya que los datos comprimidos son autodescriptivos.
+
+## query_cache_share_between_users {#query_cache_share_between_users}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Si está activado, otros usuarios pueden leer el resultado de las consultas `SELECT` almacenado en la [caché de consultas](/es/concepts/features/performance/caches/query-cache).
+No se recomienda habilitar esta configuración por motivos de seguridad.
+
+Valores posibles:
+
+* 0 - Deshabilitado
+* 1 - Habilitado
+
+## query_cache_squash_partial_results {#query_cache_squash_partial_results}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Compacta bloques de resultados parciales en bloques de tamaño [max&#95;block&#95;size](/es/reference/settings/session-settings/max#max_block_size). Reduce el rendimiento de las inserciones en la [caché de consultas](/es/concepts/features/performance/caches/query-cache), pero mejora la capacidad de compresión de las entradas de caché (véase [query&#95;cache&#95;compress-entries](/es/reference/settings/session-settings/query-cache#query_cache_compress_entries)).
+
+Valores posibles:
+
+* 0 - Deshabilitado
+* 1 - Habilitado
+
+## query_cache_system_table_handling {#query_cache_system_table_handling}
+
+<SettingsInfoBlock type="QueryResultCacheSystemTableHandling" default_value="throw" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "throw"},{"label": "La caché de consultas ya no almacena los resultados de las consultas sobre tablas del sistema"}]}]} />
+
+Controla cómo la [caché de consultas](/es/concepts/features/performance/caches/query-cache) gestiona las consultas `SELECT` sobre tablas del sistema, es decir, tablas de las bases de datos `system.*` e `information_schema.*`.
+
+Valores posibles:
+
+* `'throw'` - Genera una excepción y no almacena el resultado de la consulta en caché.
+* `'save'` - Almacena el resultado de la consulta en caché.
+* `'ignore'` - No almacena el resultado de la consulta en caché ni genera una excepción.
+
+## query_cache_tag {#query_cache_tag}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": ""},{"label": "Nueva opción de configuración para etiquetar los ajustes de la caché de consultas."}]}]} />
+
+Una cadena que actúa como etiqueta para las entradas de la [caché de consultas](/es/concepts/features/performance/caches/query-cache).
+La caché de consultas considera distintas las mismas consultas cuando tienen etiquetas diferentes.
+
+Valores posibles:
+
+* Cualquier cadena
+
+## query_cache_ttl {#query_cache_ttl}
+
+<SettingsInfoBlock type="Segundos" default_value="60" />
+
+Transcurrido este tiempo en segundos, las entradas de la [caché de consultas](/es/concepts/features/performance/caches/query-cache) quedan obsoletas.
+
+Valores posibles:
+
+* Entero positivo &gt;= 0.
+
+{/*AUTOGENERATED_END*/}

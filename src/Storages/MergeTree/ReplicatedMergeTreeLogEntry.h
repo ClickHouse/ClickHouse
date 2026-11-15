@@ -3,7 +3,6 @@
 #include <Common/CopyableAtomic.h>
 #include <Common/ZooKeeper/Types.h>
 #include <base/types.h>
-#include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
@@ -11,6 +10,7 @@
 #include <Poco/Timestamp.h>
 
 #include <condition_variable>
+#include <Core/UUID.h>
 
 
 namespace DB
@@ -66,7 +66,7 @@ struct ReplicatedMergeTreeLogEntryData
     /// Part range for DROP_RANGE and CLEAR_COLUMN
     String new_part_name;
     MergeTreeDataPartFormat new_part_format;
-    String block_id;                        /// For parts of level zero, the block identifier for deduplication (node name in /blocks/).
+    std::vector<std::string> deduplication_block_ids;       /// For parts of level zero, the block identifier for deduplication (node name in /blocks/ or /deduplication_hashes/ or /async_blocks/).
     mutable String actual_new_part_name;    /// GET_PART could actually fetch a part covering 'new_part_name'.
     mutable std::unordered_set<String> replace_range_actual_new_part_names;     /// Same as above, but for REPLACE_RANGE
     UUID new_part_uuid = UUIDHelpers::Nil;
@@ -76,6 +76,10 @@ struct ReplicatedMergeTreeLogEntryData
     bool deduplicate = false; /// Do deduplicate on merge
     Strings deduplicate_by_columns = {}; // Which columns should be checked for duplicates, empty means 'all' (default).
     bool cleanup = false;
+    /// MERGE_PARTS only: the merge was explicitly ordered by OPTIMIZE ... FINAL / OPTIMIZE ... PARTITION,
+    /// whose part selection ignores min_unreserved_disk_space_for_merge; the executing queue must ignore
+    /// the headroom too, or such an entry is postponed forever (see #80006).
+    bool bypass_min_unreserved_space = false;
     MergeType merge_type = MergeType::Regular;
     String column_name;
     String index_name;
@@ -93,7 +97,7 @@ struct ReplicatedMergeTreeLogEntryData
         Strings src_part_names; // as in from_table
         Strings new_part_names;
         Strings part_names_checksums;
-        int columns_version;
+        int columns_version{};
 
         void writeText(WriteBuffer & out) const;
         void readText(ReadBuffer & in);
@@ -169,7 +173,7 @@ struct ReplicatedMergeTreeLogEntry : public ReplicatedMergeTreeLogEntryData, std
 {
     using Ptr = std::shared_ptr<ReplicatedMergeTreeLogEntry>;
 
-    std::condition_variable execution_complete; /// Awake when currently_executing becomes false.
+    std::condition_variable_any execution_complete; /// Awake when currently_executing becomes false.
 
     static Ptr parse(const String & s, const Coordination::Stat & stat, MergeTreeDataFormatVersion format_version);
 };

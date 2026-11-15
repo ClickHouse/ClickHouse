@@ -14,13 +14,13 @@ String ASTSetRoleQuery::getID(char) const
 
 ASTPtr ASTSetRoleQuery::clone() const
 {
-    auto res = std::make_shared<ASTSetRoleQuery>(*this);
+    auto res = make_intrusive<ASTSetRoleQuery>(*this);
 
     if (roles)
-        res->roles = std::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
+        res->roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
 
     if (to_users)
-        res->to_users = std::static_pointer_cast<ASTRolesOrUsersSet>(to_users->clone());
+        res->to_users = boost::static_pointer_cast<ASTRolesOrUsersSet>(to_users->clone());
 
     return res;
 }
@@ -46,5 +46,14 @@ void ASTSetRoleQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
 
     ostr << " TO ";
     to_users->format(ostr, settings);
+
+    formatOnCluster(ostr, settings);
+}
+
+
+void ASTSetRoleQuery::replaceCurrentUserTag(const String & current_user_name) const
+{
+    if (to_users)
+        to_users->replaceCurrentUserTag(current_user_name);
 }
 }

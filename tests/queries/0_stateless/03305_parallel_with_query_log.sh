@@ -28,6 +28,6 @@ $CLICKHOUSE_CLIENT -q "$query" --query_id=${query_id_2} --max_threads=2
 
 $CLICKHOUSE_CLIENT -m -q "
     SYSTEM FLUSH LOGS query_log;
-    SELECT '1', length(thread_ids) FROM system.query_log WHERE event_date >= yesterday() AND current_database = '$CLICKHOUSE_DATABASE' AND query_id = '${query_id_1}' AND type = 'QueryFinish';
-    SELECT '2', length(thread_ids) > 1 FROM system.query_log WHERE event_date >= yesterday() AND current_database = '$CLICKHOUSE_DATABASE' AND query_id = '${query_id_2}' AND type = 'QueryFinish';
+    SELECT '1', length(thread_ids) FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = '$CLICKHOUSE_DATABASE' AND query_id = '${query_id_1}' AND type = 'QueryFinish';
+    SELECT '2', length(thread_ids) > 1 FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = '$CLICKHOUSE_DATABASE' AND query_id = '${query_id_2}' AND type = 'QueryFinish';
 "

@@ -1,0 +1,26 @@
+============ runtime filters disabled =========
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Expression (Post Join Actions)
+        FilledJoin (Filled JOIN)
+          Expression (Left Join Actions)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.t1)
+21	22	23	2000
+31	32	33	3000
+41	42	43	4000
+51	52	53	5000
+============ runtime filters enabled =========
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Expression (Post Join Actions)
+        FilledJoin (Filled JOIN)
+          Expression (Left Join Actions)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.t1)
+21	22	23	2000
+31	32	33	3000
+41	42	43	4000
+51	52	53	5000

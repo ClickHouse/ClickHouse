@@ -7,7 +7,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
-#include <Common/typeid_cast.h>
 
 #include <constants.h>
 #include <h3api.h>
@@ -17,7 +16,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
 extern const int ARGUMENT_OUT_OF_BOUND;
 }
@@ -25,7 +23,7 @@ extern const int ARGUMENT_OUT_OF_BOUND;
 namespace
 {
 
-class FunctionH3NumHexagons : public IFunction
+class FunctionH3NumHexagons final : public IFunction
 {
 public:
     static constexpr auto name = "h3NumHexagons";
@@ -38,16 +36,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto * arg = arguments[0].get();
-        if (!WhichDataType(arg).isUInt8())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt8",
-                arg->getName(), 1, getName());
-
-        return std::make_shared<DataTypeInt64>();
+        return "(UInt8) -> Int64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -84,8 +75,9 @@ public:
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
                     toString(resolution), getName(), MAX_H3_RES);
-            Int64 res = getNumCells(resolution);
-            dst_data[row] = res;
+            int64_t num_cells = 0;
+            getNumCells(resolution, &num_cells);
+            dst_data[row] = num_cells;
         }
 
         return dst;
@@ -120,7 +112,7 @@ Returns the number of unique [H3](#h3-index) indices at the given resolution.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3NumHexagons>(documentation);
 }
 

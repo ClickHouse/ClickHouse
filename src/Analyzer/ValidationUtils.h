@@ -1,9 +1,17 @@
 #pragma once
 
-#include <Analyzer/IQueryTreeNode.h>
+#include <Interpreters/Context_fwd.h>
+
+#include <memory>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
 
 namespace DB
 {
+
+class IQueryTreeNode;
+using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 
 /// Validate PREWHERE, WHERE, HAVING in query node
 void validateFilters(const QueryTreeNodePtr & query_node);
@@ -34,6 +42,12 @@ void assertNoFunctionNodes(const QueryTreeNodePtr & node,
     std::string_view exception_function_name,
     std::string_view exception_place_message);
 
+/// throws on arrayJoin that the step runs itself: outside aggregate and window functions and outside the ready columns
+void assertNoArrayJoinOutside(const QueryTreeNodePtr & node,
+    const std::vector<QueryTreeNodePtr> & ready_columns,
+    int exception_code,
+    std::string_view exception_place_message);
+
 /** Validate tree size. If size of tree is greater than max size throws exception.
   * Additionally for each node in tree, update node to tree size map.
   */
@@ -41,10 +55,12 @@ void validateTreeSize(const QueryTreeNodePtr & node,
     size_t max_size,
     std::unordered_map<QueryTreeNodePtr, size_t> & node_to_tree_size);
 
+void validateSubqueryDepth(const QueryTreeNodePtr & node, size_t initial_subquery_depth, size_t max_subquery_depth);
+
 /**
   * Validate that correlated subqueries do not present in the context of distributed query.
   */
-void validateCorrelatedSubqueries(const QueryTreeNodePtr & node);
+void validateCorrelatedSubqueries(const QueryTreeNodePtr & node, const ContextPtr & context);
 
 /**
   * Validate that if correlated subquery appears in the FROM clause then it uses columns from outer query.

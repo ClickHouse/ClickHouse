@@ -48,6 +48,10 @@ public:
 
         int rc = deflateInit2(&zstr, compression_level, Z_DEFLATED, window_bits, 8, Z_DEFAULT_STRATEGY);
 
+        if (rc == Z_STREAM_ERROR)
+            throw Exception(ErrorCodes::ZLIB_DEFLATE_FAILED, "Compression level {} is out of range for {}",
+                compression_level, toContentEncodingName(compression_method));
+
         if (rc != Z_OK)
             throw Exception(ErrorCodes::ZLIB_DEFLATE_FAILED, "deflateInit2 failed: {}; zlib version: {}", zError(rc), ZLIB_VERSION);
     }
@@ -60,10 +64,10 @@ private:
     /// Flush all pending data and write zlib footer to the underlying buffer.
     /// After the first call to this function, subsequent calls will have no effect and
     /// an attempt to write to this buffer will result in exception.
-    void finalizeBefore() override;
-    void finalizeAfter() override;
+    void finalFlushBefore() override;
+    void finalFlushAfter() override;
 
-    z_stream zstr;
+    z_stream zstr{};
     bool compress_empty = true;
 };
 
