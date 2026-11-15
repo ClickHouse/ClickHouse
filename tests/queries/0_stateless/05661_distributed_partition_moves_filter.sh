@@ -29,8 +29,8 @@ $CLICKHOUSE_CLIENT -m -q "
     DROP DATABASE IF EXISTS shard_1;
     CREATE DATABASE shard_0;
     CREATE DATABASE shard_1;
-    CREATE TABLE shard_0.data (d Date, x UInt64) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY x;
-    CREATE TABLE shard_1.data (d Date, x UInt64) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY x;
+    CREATE TABLE shard_0.data (d Date, x UInt64) ENGINE = ReplacingMergeTree PARTITION BY toYYYYMM(d) ORDER BY x;
+    CREATE TABLE shard_1.data (d Date, x UInt64) ENGINE = ReplacingMergeTree PARTITION BY toYYYYMM(d) ORDER BY x;
     INSERT INTO shard_0.data SELECT '2024-01-15', number FROM numbers(1, 3);
     INSERT INTO shard_1.data SELECT '2024-02-15', number FROM numbers(10, 3);
 "
@@ -60,9 +60,23 @@ JOINED="(SELECT number AS x FROM numbers(1, 2)) AS r USING (x)"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM dist AS l INNER JOIN $JOINED"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM dist AS l LEFT JOIN $JOINED"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM dist AS l RIGHT JOIN $JOINED" 2>&1 \
-    | grep -o -m1 'JOIN is not supported for a `Distributed` table while its partitions are moved between shards'
+    | grep -o -m1 'This JOIN is not supported for table'
+
+echo '-- the copy is skipped wherever the table is in the query for the shard'
+$CLICKHOUSE_CLIENT -q "CREATE VIEW v AS SELECT * FROM dist"
+$CLICKHOUSE_CLIENT -q "SELECT count(), sum(x) FROM v"
+$CLICKHOUSE_CLIENT -q "SELECT count(), sum(x) FROM v WHERE x != 1"
+$CLICKHOUSE_CLIENT -q "SELECT count(), sum(x) FROM (SELECT x FROM dist)"
+$CLICKHOUSE_CLIENT -q "SELECT count(), sum(x) FROM dist FINAL"
+$CLICKHOUSE_CLIENT -q "SELECT count(), sum(t.x) FROM dist AS t WHERE t.x > 0"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM (SELECT number AS x FROM numbers(1, 2)) AS l INNER JOIN dist AS r USING (x)"
+for distributed_product_mode in local global; do
+    $CLICKHOUSE_CLIENT --distributed_product_mode $distributed_product_mode -q "SELECT count() FROM dist AS a INNER JOIN dist AS b USING (x)"
+    $CLICKHOUSE_CLIENT --distributed_product_mode $distributed_product_mode -q "SELECT count() FROM dist WHERE x IN (SELECT x FROM dist WHERE x < 11)"
+done
 
 $CLICKHOUSE_CLIENT -m -q "
+    DROP VIEW v;
     DROP TABLE dist;
     DROP DATABASE shard_0;
     DROP DATABASE shard_1;

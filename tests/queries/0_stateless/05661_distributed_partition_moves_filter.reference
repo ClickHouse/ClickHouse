@@ -18,4 +18,15 @@
 -- the copy is skipped before a join that keeps the rows of the left table
 2
 6
-JOIN is not supported for a `Distributed` table while its partitions are moved between shards
+This JOIN is not supported for table
+-- the copy is skipped wherever the table is in the query for the shard
+6	39
+5	38
+6	39
+6	39
+6	39
+2
+6
+4
+6
+4

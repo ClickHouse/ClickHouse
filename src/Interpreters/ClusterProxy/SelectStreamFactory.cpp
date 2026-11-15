@@ -53,7 +53,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ALL_REPLICAS_ARE_STALE;
-    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -68,41 +67,76 @@ namespace ClusterProxy
 namespace
 {
 
-/// Makes the query for a shard skip `partitions` of the table that it reads, the first one in `FROM`,
-/// with a condition on `_partition_id` in `WHERE`. A setting of the query could be rejected or dropped by the constraints of the user.
-void skipPartitionsInQueryForShard(const ASTPtr & query_ast, const Strings & partitions)
+/// Whether a condition on a table in `WHERE` keeps the same rows as a filter of the table before the join.
+bool joinKeepsRowsOfTable(const ASTTableJoin & join, bool table_is_on_the_left)
 {
-    auto & select_query = query_ast->as<ASTSelectQuery &>();
-    const auto & tables = select_query.tables()->children;
+    if (isCrossOrComma(join.kind))
+        return true;
 
-    /// After other kinds of JOIN a condition in `WHERE` is not the same as a filter of the left table.
-    for (const auto & element : tables)
+    if (table_is_on_the_left)
+        return isLeft(join.kind) || (isInner(join.kind) && join.strictness != JoinStrictness::Any);
+
+    return isInnerOrRight(join.kind) && (join.strictness == JoinStrictness::All || join.strictness == JoinStrictness::Unspecified);
+}
+
+/// Adds a condition on `_partition_id` to `WHERE` of every `SELECT` of the query for a shard that reads `table`, to skip `partitions`.
+/// A setting of the query could be rejected or dropped by the constraints of the user. Returns whether the table is found.
+bool skipPartitionsInQueryForShard(const ASTPtr & ast, const StorageID & table, const Strings & partitions)
+{
+    bool found = false;
+
+    auto * select_query = ast->as<ASTSelectQuery>();
+    if (auto tables = select_query ? select_query->tables() : nullptr)
     {
-        const auto & table_join = element->as<ASTTablesInSelectQueryElement &>().table_join;
-        if (!table_join)
-            continue;
+        const Strings table_name = table.database_name.empty() ? Strings{table.table_name} : Strings{table.database_name, table.table_name};
+        const auto & elements = tables->children;
 
-        auto kind = table_join->as<ASTTableJoin &>().kind;
-        if (!isInnerOrLeft(kind) && !isCrossOrComma(kind))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "{} JOIN is not supported for a `Distributed` table while its partitions are moved between shards", toString(kind));
+        for (size_t i = 0; i < elements.size(); ++i)
+        {
+            const auto & table_expression = elements[i]->as<ASTTablesInSelectQueryElement &>().table_expression;
+            if (!table_expression || !table_expression->as<ASTTableExpression &>().database_and_table_name)
+                continue;
+
+            const auto & identifier = table_expression->as<ASTTableExpression &>().database_and_table_name->as<ASTTableIdentifier &>();
+            if (identifier.shortName() != table.table_name)
+                continue;
+
+            if (identifier.name_parts != table_name)
+            {
+                /// A name with and a name without a database are the same table or not, depending on the shard.
+                if (identifier.name_parts.size() == 1 || table.database_name.empty())
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Cannot tell if table {} in the query for a shard is table {} while its partitions are moved between shards",
+                        identifier.name(), table.getNameForLogs());
+                continue;
+            }
+
+            for (size_t j = std::max<size_t>(i, 1); j < elements.size(); ++j)
+            {
+                const auto & table_join = elements[j]->as<ASTTablesInSelectQueryElement &>().table_join;
+                if (table_join && !joinKeepsRowsOfTable(table_join->as<ASTTableJoin &>(), j > i))
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "This JOIN is not supported for table {} while its partitions are moved between shards", table.getNameForLogs());
+            }
+
+            Strings column = identifier.tryGetAlias().empty() ? identifier.name_parts : Strings{identifier.tryGetAlias()};
+            column.push_back("_partition_id");
+
+            ASTPtr filter = makeASTFunction("notIn",
+                make_intrusive<ASTIdentifier>(std::move(column)), make_intrusive<ASTLiteral>(Array(partitions.begin(), partitions.end())));
+
+            if (auto where = select_query->where())
+                filter = makeASTFunction("and", where, filter);
+
+            select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(filter));
+            found = true;
+        }
     }
 
-    const auto & table_expression = tables.front()->as<ASTTablesInSelectQueryElement &>().table_expression->as<ASTTableExpression &>();
-    if (!table_expression.database_and_table_name)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a table in the query for a shard to skip its partitions");
-    const auto & table = table_expression.database_and_table_name->as<ASTTableIdentifier &>();
+    for (const auto & child : ast->children)
+        found |= skipPartitionsInQueryForShard(child, table, partitions);
 
-    Strings column = table.tryGetAlias().empty() ? table.name_parts : Strings{table.tryGetAlias()};
-    column.push_back("_partition_id");
-
-    ASTPtr filter = makeASTFunction("notIn",
-        make_intrusive<ASTIdentifier>(std::move(column)), make_intrusive<ASTLiteral>(Array(partitions.begin(), partitions.end())));
-
-    if (auto where = select_query.where())
-        filter = makeASTFunction("and", where, filter);
-
-    select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(filter));
+    return found;
 }
 
 }
@@ -366,8 +400,9 @@ void SelectStreamFactory::createForShard(
     removeGroupingFunctionSpecializations(query_tree_for_ast);
 
     auto query_ast = queryNodeToDistributedSelectQuery(query_tree_for_ast);
-    if (partitions_to_skip)
-        skipPartitionsInQueryForShard(query_ast, *partitions_to_skip);
+    if (partitions_to_skip && !skipPartitionsInQueryForShard(query_ast, main_table, *partitions_to_skip))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot find table {} in the query for a shard while its partitions are moved between shards", main_table.getNameForLogs());
 
     createForShardImpl(
         shard_info,
