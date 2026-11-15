@@ -5,17 +5,22 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
+#include <DataTypes/Serializations/SerializationDynamicElement.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationObject.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
 #include <DataTypes/Serializations/SerializationString.h>
+#include <DataTypes/Serializations/SerializationTuple.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
+#include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
 
 using namespace DB;
@@ -117,6 +122,80 @@ TEST(SerializationIsColumnCompatible, ObjectRequiresColumnObject)
 
     EXPECT_TRUE(serialization->isColumnCompatible(*type->createColumn()));
     EXPECT_FALSE(serialization->isColumnCompatible(*ColumnString::create()));
+}
+
+/// A `v.JSON` subcolumn of Variant reads into a Nullable(JSON) column: the element serialization
+/// fills the extraction's null map itself and passes only the nested column to SerializationObject.
+TEST(SerializationIsColumnCompatible, VariantElementUnwrapsExtractionNullable)
+{
+    const auto json_type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=2, a.b UInt32)");
+    const auto nullable_json_type = DataTypeFactory::instance().get("Nullable(JSON(max_dynamic_types=10, max_dynamic_paths=2, a.b UInt32))");
+    const auto serialization = SerializationVariantElement::create(
+        json_type->getDefaultSerialization(), "JSON", /*variant_discriminator=*/0, /*num_variants=*/2,
+        /*nullable_added_by_extraction=*/true);
+
+    /// The column of the subcolumn type and the serialization-created one are both ColumnNullable.
+    EXPECT_TRUE(serialization->isColumnCompatible(*nullable_json_type->createColumn()));
+    EXPECT_TRUE(serialization->isColumnCompatible(*nullable_json_type->createColumn(*serialization)));
+    /// Forwarding the outer column to the nested requirement would reject the columns above.
+    EXPECT_FALSE(serialization->isColumnCompatible(*nullableString()));
+}
+
+TEST(SerializationIsColumnCompatible, VariantElementSelectedNullMapRequiresColumnUInt8)
+{
+    const auto serialization = SerializationVariantElement::create(
+        SerializationString::create(), "Tuple(a Nullable(UInt32))", /*variant_discriminator=*/0, /*num_variants=*/1,
+        /*nullable_added_by_extraction=*/false, /*selected_subcolumn_is_null_map=*/true);
+
+    EXPECT_TRUE(serialization->isColumnCompatible(*ColumnUInt8::create()));
+    EXPECT_FALSE(serialization->isColumnCompatible(*ColumnString::create()));
+}
+
+/// A `d.JSON` subcolumn of Dynamic delegates to SerializationVariantElement with the same column.
+TEST(SerializationIsColumnCompatible, DynamicElementUnwrapsExtractionNullable)
+{
+    const auto json_type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=2, a.b UInt32)");
+    const auto nullable_json_type = DataTypeFactory::instance().get("Nullable(JSON(max_dynamic_types=10, max_dynamic_paths=2, a.b UInt32))");
+    const auto serialization = SerializationDynamicElement::create(
+        json_type->getDefaultSerialization(), SerializationString::create(), "JSON", /*nested_subcolumn=*/"",
+        /*is_null_map_subcolumn=*/false, /*nullable_added_by_extraction=*/true);
+
+    EXPECT_TRUE(serialization->isColumnCompatible(*nullable_json_type->createColumn()));
+    EXPECT_TRUE(serialization->isColumnCompatible(*nullable_json_type->createColumn(*serialization)));
+    EXPECT_FALSE(serialization->isColumnCompatible(*nullableString()));
+}
+
+TEST(SerializationIsColumnCompatible, DynamicElementNullMapRequiresColumnUInt8)
+{
+    const auto serialization = SerializationDynamicElement::create(
+        SerializationString::create(), SerializationString::create(), "Int64", /*nested_subcolumn=*/"",
+        /*is_null_map_subcolumn=*/true, /*nullable_added_by_extraction=*/false);
+
+    EXPECT_TRUE(serialization->isColumnCompatible(*ColumnUInt8::create()));
+    EXPECT_FALSE(serialization->isColumnCompatible(*nullableString()));
+}
+
+/// A part can store a tuple element sparsely; a plain tuple of the type's columns would reach
+/// SerializationSparse's unchecked cast through SerializationTuple's in-place element reads.
+TEST(SerializationIsColumnCompatible, TupleChecksNestedElements)
+{
+    SerializationTuple::ElementSerializations element_serializations;
+    element_serializations.push_back(std::static_pointer_cast<const SerializationNamed>(
+        SerializationNamed::create(SerializationSparse::create(SerializationString::create()), "s", ISerialization::Substream::TupleElement)));
+    element_serializations.push_back(std::static_pointer_cast<const SerializationNamed>(
+        SerializationNamed::create(SerializationString::create(), "t", ISerialization::Substream::TupleElement)));
+    const auto serialization = SerializationTuple::create(std::move(element_serializations), /*has_explicit_names=*/true);
+
+    const auto plain_tuple = ColumnTuple::create(Columns{ColumnString::create(), ColumnString::create()});
+    EXPECT_FALSE(serialization->isColumnCompatible(*plain_tuple));
+
+    /// The tuple the readers create through the serialization is accepted.
+    const auto wrapped_tuple = serialization->wrapColumnForDeserialization(plain_tuple->cloneEmpty());
+    EXPECT_TRUE(serialization->isColumnCompatible(*wrapped_tuple));
+
+    EXPECT_FALSE(serialization->isColumnCompatible(*ColumnString::create()));
+    /// A tuple of a wrong width is a mistake of its own.
+    EXPECT_FALSE(serialization->isColumnCompatible(*ColumnTuple::create(Columns{ColumnString::create()})));
 }
 
 }

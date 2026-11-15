@@ -542,4 +542,22 @@ MutableColumnPtr SerializationVariantElement::wrapColumnForDeserialization(Mutab
     return nested_serialization->wrapColumnForDeserialization(std::move(column));
 }
 
+bool SerializationVariantElement::isColumnCompatible(const IColumn & column) const
+{
+    /// Mirrors deserializeBinaryBulkWithMultipleStreams: the null map of the element is filled
+    /// here as a UInt8 column; a Nullable added by the extraction is filled here from the
+    /// discriminators and peeled off, and only the nested column is appended to by the nested
+    /// serialization, like in the wrap above.
+    if (selected_subcolumn_is_null_map)
+        return typeid(column) == typeid(ColumnUInt8);
+
+    if (nullable_added_by_extraction && isColumnNullable(column))
+    {
+        const auto & nullable = assert_cast<const ColumnNullable &>(column);
+        return nested_serialization->isColumnCompatible(nullable.getNestedColumn());
+    }
+
+    return nested_serialization->isColumnCompatible(column);
+}
+
 }

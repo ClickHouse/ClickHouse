@@ -952,4 +952,20 @@ MutableColumnPtr SerializationTuple::wrapColumnForDeserialization(MutableColumnP
     return ColumnTuple::create(std::move(wrapped));
 }
 
+bool SerializationTuple::isColumnCompatible(const IColumn & column) const
+{
+    /// A plain tuple of the data type's columns does not fit when an element serialization
+    /// deserializes into a column of a specific class (e.g. a sparse element needs a
+    /// ColumnSparse, see SerializationSparse): elements are read into in place, unwrapped.
+    const auto * tuple_column = typeid_cast<const ColumnTuple *>(&column);
+    if (!tuple_column || tuple_column->tupleSize() != elems.size())
+        return false;
+
+    for (size_t i = 0; i != elems.size(); ++i)
+        if (!elems[i]->isColumnCompatible(tuple_column->getColumn(i)))
+            return false;
+
+    return true;
+}
+
 }
