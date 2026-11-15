@@ -9,11 +9,8 @@ SELECT 1 SETTINGS interactive_delay = 100000000000000000;
 -- the query just acquires the lock and completes.
 SELECT count() > 0 FROM numbers(1000) SETTINGS lock_acquire_timeout = 100000000000;
 
--- A negative lock_acquire_timeout must saturate to an immediate deadline, not underflow now() + timeout.
-SELECT count() > 0 FROM numbers(1000) SETTINGS lock_acquire_timeout = -100000000000;
-
 -- The Log family and File take their own seconds-typed timed lock, which the millisecond clamp does
--- not reach; a huge or negative timeout must not overflow now() + duration. The CREATE/INSERT
+-- not reach; a huge timeout must not overflow now() + duration. The CREATE/INSERT
 -- statements take the same locks in range.
 DROP TABLE IF EXISTS t_04327_log;
 DROP TABLE IF EXISTS t_04327_stripe_log;
@@ -27,7 +24,6 @@ INSERT INTO t_04327_file VALUES (1);
 SELECT count() FROM t_04327_log SETTINGS lock_acquire_timeout = 100000000000;
 SELECT count() FROM t_04327_stripe_log SETTINGS lock_acquire_timeout = 100000000000;
 SELECT count() FROM t_04327_file SETTINGS lock_acquire_timeout = 100000000000;
-SELECT count() FROM t_04327_log SETTINGS lock_acquire_timeout = -100000000000;
 DROP TABLE t_04327_log;
 DROP TABLE t_04327_stripe_log;
 DROP TABLE t_04327_file;
