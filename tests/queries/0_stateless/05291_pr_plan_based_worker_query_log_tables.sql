@@ -8,7 +8,6 @@ DROP TABLE IF EXISTS t_pr_worker_access SYNC;
 CREATE TABLE t_pr_worker_access (a UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_pr_worker_access SELECT number FROM numbers(1000);
 
-SET enable_analyzer = 1;
 SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',

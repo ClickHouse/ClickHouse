@@ -1587,18 +1587,23 @@ ColumnPtr FunctionArrayElement<mode>::executeArgument(
         builder.initSink(index_data.size());
 
     ColumnPtr res;
-    bool matched = tryEachType(
-                       ElementTypesWithFastPath{},
-                       [&]<typename T>() { return (res = executeNumber<IndexType, T>(arguments, result_type, index_data, builder)) != nullptr; })
-        || (res = executeConst<IndexType>(arguments, result_type, index_data, builder, input_rows_count))
-        || (res = executeString<IndexType>(arguments, index_data, builder))
-        || tryEachType(
-               ElementTypesWithFastPath{},
-               [&]<typename T>() { return (res = executeArrayNumber<IndexType, T>(arguments, result_type, index_data, builder)) != nullptr; })
-        || (res = executeArrayString<IndexType>(arguments, index_data, builder))
-        || (res = executeGeneric<IndexType>(arguments, index_data, builder));
+    tryEachType(
+        ElementTypesWithFastPath{},
+        [&]<typename T>() { return (res = executeNumber<IndexType, T>(arguments, result_type, index_data, builder)) != nullptr; });
+    if (!res)
+        res = executeConst<IndexType>(arguments, result_type, index_data, builder, input_rows_count);
+    if (!res)
+        res = executeString<IndexType>(arguments, index_data, builder);
+    if (!res)
+        tryEachType(
+            ElementTypesWithFastPath{},
+            [&]<typename T>() { return (res = executeArrayNumber<IndexType, T>(arguments, result_type, index_data, builder)) != nullptr; });
+    if (!res)
+        res = executeArrayString<IndexType>(arguments, index_data, builder);
+    if (!res)
+        res = executeGeneric<IndexType>(arguments, index_data, builder);
 
-    if (!matched)
+    if (!res)
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
 
@@ -1877,12 +1882,20 @@ template <typename DataColumn>
 struct MatcherStringConst
 {
     const DataColumn & data;
-    const String & index;
+    /// A copy of the key with 15 readable bytes after it, as `memequalSmallAllowOverflow15` requires.
+    /// A `memcmp` of a variable length is a call to `bcmp`, which dispatches on the length through
+    /// a jump table for every element of every array (`get_map_value`).
+    PaddedPODArray<char> index;
+
+    MatcherStringConst(const DataColumn & data_, const String & index_)
+        : data(data_), index(index_.data(), index_.data() + index_.size())
+    {
+    }
 
     bool match(size_t row_data, size_t /* row_index */) const
     {
         auto data_ref = data.getDataAt(row_data);
-        return index.size() == data_ref.size() && memcmp(index.data(), data_ref.data(), data_ref.size()) == 0;
+        return memequalSmallAllowOverflow15(index.data(), index.size(), data_ref.data(), data_ref.size());
     }
 };
 
@@ -3560,10 +3573,11 @@ ColumnPtr FunctionArrayElement<mode>::perform(
     ArrayImpl::NullMapBuilder<mode> & builder,
     size_t input_rows_count) const
 {
-    ColumnPtr res;
-    if ((res = executeTuple(arguments, builder, input_rows_count)))
+    ColumnPtr res = executeTuple(arguments, builder, input_rows_count);
+    if (res)
         return res;
-    if ((res = executeMap2(arguments, input_rows_count)))
+    res = executeMap2(arguments, input_rows_count);
+    if (res)
         return res;
     if (!isColumnConst(*arguments[1].column))
     {
@@ -3593,17 +3607,21 @@ ColumnPtr FunctionArrayElement<mode>::perform(
             }
         }
 
-        bool matched = tryEachType(
-                           ElementTypesWithFastPath{},
-                           [&]<typename T>() { return (res = executeNumberConst<T>(arguments, result_type, index, builder)) != nullptr; })
-            || (res = executeStringConst(arguments, index, builder))
-            || tryEachType(
-                   ElementTypesWithFastPath{},
-                   [&]<typename T>() { return (res = executeArrayNumberConst<T>(arguments, result_type, index, builder)) != nullptr; })
-            || (res = executeArrayStringConst(arguments, index, builder))
-            || (res = executeGenericConst(arguments, index, builder));
+        tryEachType(
+            ElementTypesWithFastPath{},
+            [&]<typename T>() { return (res = executeNumberConst<T>(arguments, result_type, index, builder)) != nullptr; });
+        if (!res)
+            res = executeStringConst(arguments, index, builder);
+        if (!res)
+            tryEachType(
+                ElementTypesWithFastPath{},
+                [&]<typename T>() { return (res = executeArrayNumberConst<T>(arguments, result_type, index, builder)) != nullptr; });
+        if (!res)
+            res = executeArrayStringConst(arguments, index, builder);
+        if (!res)
+            res = executeGenericConst(arguments, index, builder);
 
-        if (!matched)
+        if (!res)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column {} of first argument of function {}",

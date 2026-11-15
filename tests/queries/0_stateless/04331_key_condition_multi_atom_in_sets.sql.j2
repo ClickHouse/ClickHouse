@@ -1,0 +1,70 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- no-random-settings, no-random-merge-tree-settings: the selected marks and EXPLAIN output may differ with
+-- random settings.
+
+SET explain_query_plan_default = 'legacy';
+
+{#- Each check prints the predicate, the count with index analysis, the count of a full scan and the marks
+    selected by index analysis; with `condition`, it also prints the key condition. -#}
+{% macro check(table, predicate, condition = false) -%}
+SELECT '{{ predicate | replace("\\", "\\\\") | replace("'", "\\'") }}', (SELECT count() FROM {{ table }} WHERE {{ predicate }}),
+    (SELECT count() FROM {{ table }} WHERE {{ predicate }} SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0),
+    (SELECT sum(marks) FROM (EXPLAIN ESTIMATE SELECT 1 FROM {{ table }} WHERE {{ predicate }}))
+    {%- if condition %}, (SELECT arrayStringConcat(groupArray(trimLeft(explain)), ' | ') FROM (EXPLAIN indexes = 1 SELECT 1 FROM {{ table }} WHERE {{ predicate }}) WHERE trimLeft(explain) LIKE 'Condition:%'){% endif %}
+FORMAT TSVRaw;
+{%- endmacro %}
+
+CREATE TABLE test_in_main (ts DateTime('UTC')) ENGINE = MergeTree ORDER BY (toYYYYMM(ts), toDate(ts), ts)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+-- 6 days spanning a month boundary, 4 rows per day.
+INSERT INTO test_in_main SELECT toDateTime('2026-03-30 00:00:00', 'UTC') + INTERVAL intDiv(number, 4) DAY + INTERVAL (number % 4) * 6 HOUR FROM numbers(24);
+
+-- Literal IN list.
+{{ check('test_in_main', "ts IN (toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-04-02 12:00:00', 'UTC'))", condition = true) }}
+-- Subquery set.
+{{ check('test_in_main', "ts IN (SELECT toDateTime('2026-03-31 06:00:00', 'UTC'))") }}
+-- Set elements collapsing to one value after the toDate transform.
+{{ check('test_in_main', "ts IN (toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-03-31 12:00:00', 'UTC'))") }}
+-- globalIn behaves like IN on a local table.
+{{ check('test_in_main', "ts GLOBAL IN (toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-04-02 12:00:00', 'UTC'))") }}
+-- has(const_array, key).
+{{ check('test_in_main', "has([toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-04-02 12:00:00', 'UTC')], ts)") }}
+-- Empty sets on the multi-expression key.
+{{ check('test_in_main', "ts IN (SELECT toDateTime('2026-03-31 06:00:00', 'UTC') WHERE 0)") }}
+{{ check('test_in_main', "ts NOT IN (SELECT toDateTime('2026-03-31 06:00:00', 'UTC') WHERE 0)") }}
+{{ check('test_in_main', "has([], ts)") }}
+-- NOT IN on the multi-expression key.
+{{ check('test_in_main', "ts NOT IN (toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-04-02 12:00:00', 'UTC'))", condition = true) }}
+
+-- No direct key column for ts: only wrapped set atoms are possible.
+CREATE TABLE test_in_wrapped (ts DateTime('UTC')) ENGINE = MergeTree ORDER BY (toDate(ts), toYYYYMM(ts))
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_in_wrapped SELECT toDateTime('2026-03-30 00:00:00', 'UTC') + INTERVAL intDiv(number, 4) DAY + INTERVAL (number % 4) * 6 HOUR FROM numbers(24);
+{{ check('test_in_wrapped', "ts IN (toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-04-02 12:00:00', 'UTC'))", condition = true) }}
+
+-- Set elements that cannot be cast to the key type are dropped from the set.
+CREATE TABLE test_in_uint8 (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_in_uint8 SELECT number FROM numbers(10);
+{{ check('test_in_uint8', "x IN (1, 10000000000)", condition = true) }}
+
+-- NULL in the set with a Nullable key.
+CREATE TABLE test_in_nullable (x Nullable(UInt8)) ENGINE = MergeTree ORDER BY x
+SETTINGS allow_nullable_key = 1, index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_in_nullable VALUES (1), (2), (NULL);
+SET transform_null_in = 1;
+{{ check('test_in_nullable', "x IN (1, NULL)", condition = true) }}
+SET transform_null_in = 0;
+
+-- Packed Tuple-typed key column compared against an unpacked set.
+CREATE TABLE test_in_packed (tup Tuple(UInt8, UInt8)) ENGINE = MergeTree ORDER BY tup
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_in_packed VALUES ((1, 2)), ((3, 4)), ((5, 6));
+{{ check('test_in_packed', "tup IN ((1, 2), (3, 4))", condition = true) }}
+
+-- LHS tuple where both elements are key columns.
+CREATE TABLE test_in_lhs_tuple (a UInt8, b UInt8, c UInt8) ENGINE = MergeTree ORDER BY (a, b)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_in_lhs_tuple SELECT intDiv(number, 4), number % 4, number % 4 FROM numbers(16);
+{{ check('test_in_lhs_tuple', "(a, b) IN ((1, 2), (3, 0))", condition = true) }}
+-- LHS tuple where only the first element is a key column (the second is plain data).
+{{ check('test_in_lhs_tuple', "(a, c) IN ((1, 2), (3, 0))", condition = true) }}

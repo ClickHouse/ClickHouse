@@ -25,7 +25,9 @@ class FuzzerLogParser:
     # checked, so a marker that follows the match (a real failure quoting a query)
     # keeps the match.
     QUERY_TEXT_MARKERS = ("(in query:", "(query:")
-    # What follows the query quoted by the crash record of `SignalHandlers.cpp`.
+    # What precedes and what follows the query quoted by the crash record of
+    # `SignalHandlers.cpp`, "... (query_id: {}) (query: {}) Received signal {} ({})".
+    CRASH_RECORD_QUERY_START = ") (query: "
     CRASH_RECORD_QUERY_END = ") Received signal "
     # How many matching lines to consider before giving up on finding a failure that
     # is not a quoted query.
@@ -300,7 +302,7 @@ class FuzzerLogParser:
             i += 1
         return depth, False
 
-    def quoted_query_ends(self, query_lines):
+    def quoted_query_ends(self, query_lines, is_crash_record):
         # Whether the query quoted by `query_lines` (its text in the marker line, then
         # the following lines of the record, then the current line's text before the
         # match) ends before their end: at a ")" closing the marker's parenthesis at
@@ -309,6 +311,13 @@ class FuzzerLogParser:
         # comment may span lines, so its state is carried from line to line, and a
         # ")" that ends a line inside a comment belongs to the comment, e.g.
         # "-- Selecting (e.g. x)".
+        # The crash record keeps the query's raw newlines, so a line of its query may
+        # end with ")" anywhere, e.g. "SELECT tuple(1)"; only " Received signal "
+        # ends it. It follows the query's raw text, which may end inside a comment.
+        if is_crash_record:
+            return any(
+                self.CRASH_RECORD_QUERY_END in query_text for query_text in query_lines
+            )
         depth = 0
         for query_text in query_lines:
             depth, in_line_comment = self.scan_comments(query_text, depth)
@@ -343,7 +352,9 @@ class FuzzerLogParser:
                 query_lines = (
                     [line[min(markers) :]] + lines[:index][::-1] + [text_before_match]
                 )
-                return not self.quoted_query_ends(query_lines)
+                return not self.quoted_query_ends(
+                    query_lines, self.CRASH_RECORD_QUERY_START in line
+                )
             if self.is_log_record_start(line):
                 return False
         return False

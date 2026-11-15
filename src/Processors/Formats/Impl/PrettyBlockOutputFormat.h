@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -33,6 +34,8 @@ public:
 
     String getName() const override { return "PrettyBlockOutputFormat"; }
 
+    void checkBackgroundError() override;
+
 protected:
     void consume(Chunk) override;
     void consumeTotals(Chunk) override;
@@ -46,7 +49,7 @@ protected:
     FormatSettings format_settings;
 
     using Widths = PODArray<size_t>;
-    using WidthsPerColumn = std::vector<Widths>;
+    using WidthsPerColumn = VectorWithMemoryTracking<Widths>;
 
     void write(Chunk chunk, PortKind port_kind);
     void writeChunk(const Chunk & chunk, PortKind port_kind);
@@ -114,8 +117,14 @@ private:
     std::condition_variable mono_chunk_condvar;
     std::optional<ThreadFromGlobalPool> thread;
     std::atomic_bool finish{false};
+    /// An exception from `writingThread`, rethrown by the writing methods. Protected by `writing_mutex`.
+    std::exception_ptr background_exception;
+    /// Whether `background_exception` is set, to check it without taking `writing_mutex`.
+    std::atomic_bool has_background_exception{false};
     void writingThread();
     void stopThread();
+    void onCancel() noexcept override;
+    void rethrowBackgroundExceptionIfAny();
 };
 
 }

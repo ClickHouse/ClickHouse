@@ -81,9 +81,11 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 # The part has ~3750 granules, ~375 of them survive the index analysis. Without a task-wide
 # right bound of read requests this query issues about a hundred requests (one per bound
 # advance) for the column read by the step after PREWHERE, versus a few with the bound.
+# Requests cut to one buffer fill while the connection group of the disks is at or above
+# disk_connections_soft_limit (a state of the whole server) are not counted.
 ${CLICKHOUSE_CLIENT} -m --query "
 SELECT
-    ProfileEvents['S3ReadRequestsCount'] < 20 AS few_read_requests
+    ProfileEvents['S3ReadRequestsCount'] < 20 + ProfileEvents['ReadBufferFromS3RequestsCut'] AS few_read_requests
 FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryFinish'
     AND current_database = currentDatabase()
@@ -95,7 +97,7 @@ WHERE event_date >= yesterday() AND type = 'QueryFinish'
 ${CLICKHOUSE_CLIENT} -m --query "
 SELECT
     ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 3000 AS refiner_dropped_marks,
-    ProfileEvents['S3ReadRequestsCount'] < 20 AS few_read_requests
+    ProfileEvents['S3ReadRequestsCount'] < 20 + ProfileEvents['ReadBufferFromS3RequestsCut'] AS few_read_requests
 FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryFinish'
     AND current_database = currentDatabase()

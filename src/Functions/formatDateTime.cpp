@@ -26,6 +26,7 @@
 #include <Common/Concepts.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <base/TypeList.h>
 #include <base/find_symbols.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
@@ -47,7 +48,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
@@ -1034,49 +1034,14 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
         if constexpr (support_integer == SupportInteger::Yes)
-        {
-            if (arguments.size() != 1 && arguments.size() != 2 && arguments.size() != 3)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Number of arguments for function {} doesn't match: passed {}, should be 1, 2 or 3",
-                    getName(), arguments.size());
-            if (arguments.size() == 1 && !isInteger(arguments[0].type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of function {} when arguments size is 1. Should be integer",
-                    arguments[0].type->getName(), getName());
-            if (arguments.size() > 1 && !(isInteger(arguments[0].type) || isDate(arguments[0].type) || isDateTime(arguments[0].type) || isDate32(arguments[0].type) || isDateTime64(arguments[0].type)))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "Illegal type {} of first argument of function {} when arguments size is 2 or 3. "
-                                "Should be a integer or a date with time",
-                                arguments[0].type->getName(), getName());
-        }
+            return
+                "(Integer) -> DateTime"
+                " OR (Integer | Date | Date32 | DateTime | DateTime64, const String, [String]) -> String";
         else
-        {
-            if (arguments.size() != 2 && arguments.size() != 3)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
-                    getName(), arguments.size());
-            if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDate32(arguments[0].type) && !isDateTime64(arguments[0].type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of function {}. Should be a date or a date with time",
-                    arguments[0].type->getName(), getName());
-        }
-
-        if (arguments.size() == 2 && !WhichDataType(arguments[1].type).isString())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of second argument of function {}. Must be String.",
-                arguments[1].type->getName(), getName());
-
-        if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isString())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of third argument of function {}. Must be String.",
-                arguments[2].type->getName(), getName());
-
-        if (arguments.size() == 1)
-            return std::make_shared<DataTypeDateTime>();
-        return std::make_shared<DataTypeString>();
+            return "(Date | Date32 | DateTime | DateTime64, const String, [String]) -> String";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -1094,7 +1059,8 @@ public:
                     [&](const auto & type)
                     {
                         using FromDataType = std::decay_t<decltype(type)>;
-                        if (!(res = executeType<FromDataType>(arguments, result_type, input_rows_count)))
+                        res = executeType<FromDataType>(arguments, result_type, input_rows_count);
+                        if (!res)
                             throw Exception(
                                 ErrorCodes::ILLEGAL_COLUMN,
                                 "Illegal column {} of function {}, must be Integer, Date, Date32, DateTime or DateTime64.",
@@ -1103,10 +1069,8 @@ public:
                         return true;
                     }))
             {
-                if (!((res = executeType<DataTypeDate>(arguments, result_type, input_rows_count))
-                      || (res = executeType<DataTypeDate32>(arguments, result_type, input_rows_count))
-                      || (res = executeType<DataTypeDateTime>(arguments, result_type, input_rows_count))
-                      || (res = executeType<DataTypeDateTime64>(arguments, result_type, input_rows_count))))
+                res = executeDateOrDateTime(arguments, result_type, input_rows_count);
+                if (!res)
                     throw Exception(
                         ErrorCodes::ILLEGAL_COLUMN,
                         "Illegal column {} of function {}, must be Integer or DateTime.",
@@ -1116,15 +1080,25 @@ public:
         }
         else
         {
-            if (!((res = executeType<DataTypeDate>(arguments, result_type, input_rows_count))
-                || (res = executeType<DataTypeDate32>(arguments, result_type, input_rows_count))
-                || (res = executeType<DataTypeDateTime>(arguments, result_type, input_rows_count))
-                || (res = executeType<DataTypeDateTime64>(arguments, result_type, input_rows_count))))
+            res = executeDateOrDateTime(arguments, result_type, input_rows_count);
+            if (!res)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Illegal column {} of function {}, must be Date or DateTime.",
                     arguments[0].column->getName(), getName());
         }
 
+        return res;
+    }
+
+    /// Tries Date, Date32, DateTime and DateTime64 in order; returns nullptr if none matches.
+    ColumnPtr executeDateOrDateTime(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    {
+        ColumnPtr res;
+        TypeListUtils::forEach(TypeList<DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeDateTime64>{}, [&]<typename DataType>(TypeList<DataType>)
+        {
+            if (!res)
+                res = executeType<DataType>(arguments, result_type, input_rows_count);
+        });
         return res;
     }
 
@@ -1367,7 +1341,7 @@ public:
                         break;
                     }
 
-                    // Month as a integer number:
+                    // Month as an integer number:
                     // - if formatdatetime_format_without_leading_zeros = true: prints without leading zero, i.e. 1-12
                     // - otherwise: print with leading zeros: i.e. 01-12
                     case 'c':
@@ -1540,7 +1514,7 @@ public:
                         break;
                     }
 
-                    // Month as a integer number (01-12)
+                    // Month as an integer number (01-12)
                     case 'm':
                     {
                         Instruction<T> instruction;
@@ -2156,7 +2130,7 @@ The example column in the table below shows formatting result for `2018-01-02 22
 | %T | ISO 8601 time format (HH:MM:SS), equivalent to %H:%i:%S | 22:33:44 |
 | %u | ISO 8601 weekday as number with Monday as 1 (1-7) | 2 |
 | %V | ISO 8601 week number (01-53) | 01 |
-| %w | weekday as a integer number with Sunday as 0 (0-6), or with the day set by [`week_functions_starting_day`](/reference/settings/session-settings/week-functions#week_functions_starting_day) as 0 | 2 |
+| %w | weekday as an integer number with Sunday as 0 (0-6), or with the day set by [`week_functions_starting_day`](/reference/settings/session-settings/week-functions#week_functions_starting_day) as 0 | 2 |
 | %W | full weekday name (Monday-Sunday) | Monday |
 | %y | Year, last two digits (00-99) | 18 |
 | %Y | Year | 2018 |
@@ -2334,6 +2308,7 @@ SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd
     FunctionDocumentation documentation_formatDateTimeInJodaSyntax = {description_formatDateTimeInJodaSyntax, syntax_formatDateTimeInJodaSyntax, arguments_formatDateTimeInJodaSyntax, {}, returned_value_formatDateTimeInJodaSyntax, examples_formatDateTimeInJodaSyntax, introduced_in_formatDateTimeInJodaSyntax, category_formatDateTimeInJodaSyntax};
 
     factory.registerFunction<FunctionWithLowCardinalityFastPath<FunctionFormatDateTimeInJodaSyntax>>(documentation_formatDateTimeInJodaSyntax);
+    factory.registerAlias("FORMAT_DATETIME", FunctionFormatDateTimeInJodaSyntax::name, FunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description description_fromUnixTimestampInJodaSyntax = R"(
 This function converts a Unix timestamp to a calendar date and a time of a day.

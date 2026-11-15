@@ -52,6 +52,7 @@ public:
         if (child.get() == child_)
         {
             child_active = false; // deactivate
+            flushThroughputOnDeactivation();
             child->setParentNode(nullptr); // detach
             child.reset();
         }
@@ -86,9 +87,10 @@ public:
                 SCHED_DBG("{} -- acquired(cost={}, requests={}/{}, cost={}/{})",
                     getPath(), request->cost, requests, max_requests, cost, max_cost);
             }
-            incrementDequeued(request->cost);
+            incrementDequeued(request->cost, active());
             return {request, active()};
         }
+        flushThroughputOnDeactivation();
         return {nullptr, false};
     }
 
@@ -142,6 +144,7 @@ public:
                 // Drop any activation a concurrent finishRequest queued under the old limit; otherwise it
                 // would re-activate us under the new (lower) limit and admit one request over the bound.
                 cancelActivation();
+                flushThroughputOnDeactivation();
             }
         }
     }

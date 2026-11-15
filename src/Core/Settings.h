@@ -5,7 +5,6 @@
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsTierType.h>
-#include <Core/SettingsWriteFormat.h>
 #include <base/types.h>
 #include <Common/FlatStringMap.h>
 #include <Common/SettingsChanges.h>
@@ -54,6 +53,7 @@ class WriteBuffer;
     M(CLASS_NAME, ArrowFlightDescriptorType) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, BoolAuto) \
+    M(CLASS_NAME, BoolForce) \
     M(CLASS_NAME, CapnProtoEnumComparingMode) \
     M(CLASS_NAME, Char) \
     M(CLASS_NAME, DateTimeInputFormat) \
@@ -132,6 +132,7 @@ class WriteBuffer;
     M(CLASS_NAME, DecorrelationJoinKind) \
     M(CLASS_NAME, JoinOrderAlgorithm) \
     M(CLASS_NAME, JoinOrderConflictDetector) \
+    M(CLASS_NAME, HashJoinLayout) \
     M(CLASS_NAME, DeduplicateInsertSelectMode) \
     M(CLASS_NAME, DeduplicateInsertMode) \
     M(CLASS_NAME, FileLikeEngineDefaultPartitionStrategy) \
@@ -178,6 +179,10 @@ struct Settings
     /// `compatibility` itself instead of being forced to the sender's derived values.
     void resetSettingsChangedByCompatibility();
 
+    /// Reset to its default every setting whose value was set only by the `compatibility` setting when
+    /// `is_allowed` refuses that value, so that `compatibility` leaves such a setting as it is.
+    void resetSettingsChangedByCompatibility(const std::function<bool(std::string_view name, const Field & value)> & is_allowed);
+
     /// Keep the values that the `compatibility` setting derived but clear their `changed` flags (and forget
     /// they were compatibility-derived). The resulting object still selects e.g. the client-side network codec
     /// from the derived values, while serialization to a server skips them — the server re-derives them from
@@ -204,9 +209,9 @@ struct Settings
     void dumpToMapColumn(IColumn * column, bool changed_only, bool show_secrets) const;
     FlatStringMap changedToFlatMap(bool show_secrets) const;
 
-    void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
-    void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT);
-    /// Equivalent to Settings().write(out, <any format>) but faster.
+    void write(WriteBuffer & out) const;
+    void read(ReadBuffer & in);
+    /// Equivalent to Settings().write(out) but faster.
     static void writeEmpty(WriteBuffer & out);
 
     void addToProgramOptions(boost::program_options::options_description & options);
@@ -228,7 +233,7 @@ private:
 };
 
 /// Query parameters are transported as raw (name, value) string pairs using the Custom-setting
-/// wire encoding (SettingsWriteFormat::STRINGS_WITH_FLAGS), but bypassing Settings::set/read and
+/// wire encoding (strings with flags), but bypassing Settings::set/read and
 /// the builtin-setting accessor entirely, so a parameter name colliding with a builtin setting or
 /// alias can never be value-normalized, alias-resolved, or misquoted (issue #85768).
 void writeQueryParameters(const NameToNameMap & parameters, WriteBuffer & out);
