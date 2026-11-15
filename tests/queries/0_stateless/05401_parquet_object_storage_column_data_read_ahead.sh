@@ -10,10 +10,10 @@
 # it keeps one small row group ahead (_gaps.parquet: ~9 KB chunks of x between ~64 KB chunks of an unread
 # column), but not with max_download_threads = 1 (m). One stream with max_parsing_threads = 16 and
 # max_download_threads = 2 is the same case throughout (with two streams, the one left when the other
-# finishes gets a larger share and reads ahead normally): it reads no row group ahead that admission would
-# read together with the next ones (l, _adj.parquet: adjacent ~16 KB row groups), since reading it alone
-# would split that request, nor a read above remote_read_min_bytes_for_seek (n: ~9 KB chunks of
-# _gaps_1.parquet over a 4 KB threshold).
+# finishes gets a larger share and reads ahead normally): it keeps _gaps_1.parquet's row groups ahead (o), but
+# reads no row group ahead that admission would read together with the next ones (l, _adj.parquet: adjacent
+# ~16 KB row groups, read in a few requests), since reading it alone would split that request, nor a read above
+# remote_read_min_bytes_for_seek (n: the same ~9 KB chunks over a 4 KB threshold).
 # Local files are not read ahead. The columns cache is off: the columns it serves have no column data to read.
 # With max_parsing_threads = 16 four decoders admit row groups concurrently while reading ahead.
 # Read-ahead takes at most the column data stage's share (0.2) of the memory the query may still use:
@@ -61,6 +61,7 @@ $CLICKHOUSE_CLIENT --query "$query FROM $local_files SETTINGS $settings, max_dow
 settings_16="max_threads = 1, max_parsing_threads = 16, input_format_parquet_memory_low_watermark = 0, input_format_parquet_memory_high_watermark = 4294967296, input_format_parquet_enable_row_group_prefetch = 1, enable_parallel_replicas = 0, use_page_cache_for_object_storage = 0, use_columns_cache = 0"
 $CLICKHOUSE_CLIENT --query "$query FROM $s3_files SETTINGS $settings_16, max_download_threads = 16, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_g_s3_16_decoders'"
 $CLICKHOUSE_CLIENT --query "SELECT count(), sum(x) FROM s3(s3_conn, filename = '${CLICKHOUSE_TEST_UNIQUE_NAME}_gaps_1.parquet', format = 'Parquet', structure = 'x UInt64') SETTINGS $settings_16, max_download_threads = 2, remote_read_min_bytes_for_seek = 4096, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_n_s3_1_stream_large_reads'"
+$CLICKHOUSE_CLIENT --query "SELECT count(), sum(x) FROM s3(s3_conn, filename = '${CLICKHOUSE_TEST_UNIQUE_NAME}_gaps_1.parquet', format = 'Parquet', structure = 'x UInt64') SETTINGS $settings_16, max_download_threads = 2, remote_read_min_bytes_for_seek = 32768, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_o_s3_1_stream_small_reads'"
 
 big_file="s3(s3_conn, filename = '${CLICKHOUSE_TEST_UNIQUE_NAME}_big.parquet', format = 'Parquet')"
 $CLICKHOUSE_CLIENT --query "SELECT count(), sum(x) FROM $big_file SETTINGS $settings, max_download_threads = 4, max_memory_usage = 32000000, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_d_s3_limit_32mb'"
@@ -78,6 +79,12 @@ $CLICKHOUSE_CLIENT --query "
     FROM system.query_log
     WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish'
         AND log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_k_s3_2_streams_2'
+    SETTINGS enable_parallel_replicas = 0"
+$CLICKHOUSE_CLIENT --query "
+    SELECT ProfileEvents['S3GetObject'] < 10
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish'
+        AND log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_l_s3_1_stream_adjacent'
     SETTINGS enable_parallel_replicas = 0"
 $CLICKHOUSE_CLIENT --query "
     SELECT substring(log_comment, length('${CLICKHOUSE_TEST_UNIQUE_NAME}_') + 1) AS read, ProfileEvents['ParquetColumnDataReadAheadRowGroups'] > 0
