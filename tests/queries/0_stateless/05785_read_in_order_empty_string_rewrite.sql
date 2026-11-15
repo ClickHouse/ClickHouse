@@ -4,6 +4,7 @@
 -- value, so `ORDER BY` on the next sorting-key column can read in order, including when `s` is in
 -- the sorting key outside a shortened `PRIMARY KEY` and `optimize_functions_to_subcolumns` is on.
 
+SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
 SET optimize_read_in_order = 1;
 SET optimize_empty_string_comparisons = 1;
@@ -90,7 +91,7 @@ SELECT id FROM t_short_null WHERE tenant = 1 AND s = '' ORDER BY id ASC LIMIT 3 
 
 SELECT '--- controls';
 SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT id FROM t_short_str WHERE tenant = 1 AND s = '' ORDER BY id LIMIT 2) WHERE explain LIKE '%s.size%';
-SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT countIf(s = '') FROM t_short_str ORDER BY length(s)) WHERE explain LIKE '%s.size%';
+SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT s = '' FROM t_short_str ORDER BY length(s)) WHERE explain LIKE '%s.size%';
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT sum(length(s)) FROM t_short_str WHERE tenant = 1 AND s != '') WHERE explain LIKE '%s.size%';
 SELECT sum(length(s)) FROM t_short_str WHERE tenant = 1 AND s != '';
 SELECT trim(explain) FROM (EXPLAIN PLAN actions = 1, indexes = 1, pretty = 0 SELECT id FROM t_short_str WHERE tenant = 1 AND s != '' ORDER BY id ASC LIMIT 2) WHERE explain LIKE '%ReadType%';
