@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ko/components/Image.jsx";
 
 import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
@@ -122,7 +121,15 @@ scrape_configs:
 사용량, 상태별 연결, 트랜잭션 및 롤백 비율, Tuple 활동, I/O, 데이터베이스별 스토리지,
 그리고 교착 상태를 표시합니다.
 
-<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="ClickHouse Managed Postgres 서비스의 Grafana 대시보드" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Managed Postgres 서비스의 Grafana 대시보드](/images/managed-postgres/monitoring/grafana-dashboard.webp)
+
+</Frame>
+
+</div>
 
 <div id="import-dashboard">
   ### 대시보드 가져오기

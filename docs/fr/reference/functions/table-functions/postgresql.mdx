@@ -57,7 +57,7 @@ Les requêtes `SELECT` côté PostgreSQL s’exécutent sous la forme de `COPY (
 
 Les clauses `WHERE` simples, telles que `=`, `!=`, `>`, `>=`, `<`, `<=` et `IN`, sont exécutées sur le serveur PostgreSQL.
 
-Toutes les jointures, agrégations, opérations de tri, conditions `IN [ array ]` et la contrainte d’échantillonnage `LIMIT` sont exécutées dans ClickHouse, uniquement une fois la requête PostgreSQL terminée.
+Toutes les jointures, agrégations, opérations de tri et conditions `IN [ array ]` sont exécutées dans ClickHouse une fois la requête PostgreSQL terminée. La contrainte d’échantillonnage `LIMIT` n’est transmise à PostgreSQL que lorsque cela ne présente aucun risque et que [external&#95;storage&#95;push&#95;down&#95;limit](/fr/reference/settings/session-settings/external-storage#external_storage_push_down_limit) est activé ; dans le cas contraire, elle est exécutée dans ClickHouse.
 
 ## Utilisation d’une requête à la place d’un nom de table {#passing-a-query}
 
