@@ -16,6 +16,7 @@ NINJA_SOURCE_DIR = f"{TEMP}/ninja-src"
 NINJA_BUILD_DIR = f"{TEMP}/ninja-build"
 NINJA_LOG_SHARE_DIR = "share/clickhouse-build"
 JEMALLOC_VERSION = "5.4.0"
+JEMALLOC_URL = "https://github.com/jemalloc/jemalloc/releases/download/5.4.0/jemalloc-5.4.0.tar.bz2"
 JEMALLOC_SHA256 = "200776fac271093e7c2f21edd6d62657ecd2be578d9328633f2a86bfa6ef4f1d"
 JEMALLOC_SOURCE_DIR = f"{TEMP}/jemalloc-{JEMALLOC_VERSION}"
 JEMALLOC_LIBRARY = f"{JEMALLOC_SOURCE_DIR}/lib/libjemalloc_pic.a"
@@ -198,10 +199,7 @@ def main():
         results.append(
             Result.from_commands_run(
                 name=f"Download jemalloc {JEMALLOC_VERSION}",
-                command=(
-                    f"curl -fsSL -o {jemalloc_tarball}"
-                    f" https://github.com/jemalloc/jemalloc/releases/download/{JEMALLOC_VERSION}/jemalloc-{JEMALLOC_VERSION}.tar.bz2"
-                ),
+                command=f"curl -fsSL -o {jemalloc_tarball} {JEMALLOC_URL}",
                 retries=3,
             )
         )
