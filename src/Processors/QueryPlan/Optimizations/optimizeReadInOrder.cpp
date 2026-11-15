@@ -439,7 +439,7 @@ bool isSingleElementZeroIntegerSet(const ActionsDAG::Node & set_node)
         return false;
 
     const auto & element_types = set->getElementsTypes();
-    const auto columns = set_from_tuple->getUniqueKeyColumns();
+    const Columns columns = set_from_tuple->getKeyColumns();
     if (columns.size() != 1 || element_types.size() != 1)
         return false;
 
