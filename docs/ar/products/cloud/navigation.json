@@ -252,39 +252,6 @@
       "group": "أدوات الذكاء الاصطناعي والوكلاء",
       "pages": [
         "ar/products/cloud/features/ai-ml/index",
-        {
-          "group": "Agents",
-          "pages": [
-            "ar/products/cloud/features/ai-ml/agents/index",
-            "ar/products/cloud/features/ai-ml/agents/quickstart",
-            "ar/products/cloud/features/ai-ml/agents/chat",
-            {
-              "group": "منشئ الوكلاء",
-              "pages": [
-                "ar/products/cloud/features/ai-ml/agents/builder/index",
-                "ar/products/cloud/features/ai-ml/agents/builder/model-parameters",
-                "ar/products/cloud/features/ai-ml/agents/builder/code-interpreter",
-                "ar/products/cloud/features/ai-ml/agents/builder/web-search",
-                "ar/products/cloud/features/ai-ml/agents/builder/image-generation",
-                "ar/products/cloud/features/ai-ml/agents/builder/vision",
-                "ar/products/cloud/features/ai-ml/agents/builder/mcp-servers",
-                "ar/products/cloud/features/ai-ml/agents/builder/skills",
-                "ar/products/cloud/features/ai-ml/agents/builder/subagents"
-              ]
-            },
-            "ar/products/cloud/features/ai-ml/agents/prompts",
-            "ar/products/cloud/features/ai-ml/agents/memory",
-            "ar/products/cloud/features/ai-ml/agents/marketplace",
-            "ar/products/cloud/features/ai-ml/agents/sharing-and-access",
-            {
-              "group": "Assistant",
-              "pages": [
-                "ar/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
-                "ar/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer"
-              ]
-            }
-          ]
-        },
         "ar/products/cloud/features/ai-ml/langfuse",
         {
           "expanded": false,

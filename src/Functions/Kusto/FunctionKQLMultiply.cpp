@@ -2,10 +2,12 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/Kusto/KQLExactArithmetic.h>
 #include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
@@ -21,6 +23,7 @@ namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int BAD_ARGUMENTS;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -32,18 +35,15 @@ namespace
   * `Interval` here, which the ordinary `multiply` does not take. An interval stores a plain
   * count of its unit, so the scaling reads the count as a number, multiplies, and puts the
   * result back into the same interval type. Anything without an interval multiplies as usual.
+  *
+  * The choice depends only on the argument types, so it is made by the overload resolver below
+  * while the query is analysed: the arguments without an interval get the ordinary `multiply`
+  * built there, and this function, which needs no context, scales an interval.
   */
-class FunctionKQLMultiply final : public IFunction, WithContext
+class FunctionKQLMultiplyInterval final : public IFunction
 {
 public:
     static constexpr auto name = "kqlMultiply";
-
-    explicit FunctionKQLMultiply(ContextPtr context_)
-        : WithContext(context_)
-    {
-    }
-
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionKQLMultiply>(std::move(context_)); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
@@ -58,31 +58,21 @@ public:
         const DataTypePtr left_nested = removeNullable(left);
         const DataTypePtr right_nested = removeNullable(right);
 
-        if (isInterval(left_nested) || isInterval(right_nested))
-        {
-            const DataTypePtr & interval = isInterval(left_nested) ? left_nested : right_nested;
-            const DataTypePtr & scale = isInterval(left_nested) ? right_nested : left_nested;
-            if (!isNumber(scale))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Function {} scales a timespan by a number, but the arguments have types {} and {}",
-                    getName(),
-                    left->getName(),
-                    right->getName());
-            return left->isNullable() || right->isNullable() ? makeNullable(interval) : interval;
-        }
-
-        return FunctionFactory::instance().get("multiply", getContext())->build(arguments)->getResultType();
+        const DataTypePtr & interval = isInterval(left_nested) ? left_nested : right_nested;
+        const DataTypePtr & scale = isInterval(left_nested) ? right_nested : left_nested;
+        if (!isInterval(interval) || !isNumber(scale))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} scales a timespan by a number, but the arguments have types {} and {}",
+                getName(),
+                left->getName(),
+                right->getName());
+        return left->isNullable() || right->isNullable() ? makeNullable(interval) : interval;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const bool left_is_interval = isInterval(removeNullable(arguments[0].type));
-        if (!left_is_interval && !isInterval(removeNullable(arguments[1].type)))
-        {
-            auto multiply = FunctionFactory::instance().get("multiply", getContext())->build(arguments);
-            return multiply->execute(arguments, multiply->getResultType(), input_rows_count, /*dry_run=*/false);
-        }
 
         const ColumnWithTypeAndName & interval = arguments[left_is_interval ? 0 : 1];
         const ColumnWithTypeAndName & scale = arguments[left_is_interval ? 1 : 0];
@@ -144,6 +134,49 @@ public:
     }
 };
 
+/// Picks the function while the query is analysed, so that nothing needs the context during
+/// execution: the context the function is created with can be a temporary one that is gone
+/// by then, for example the one of the local plan of parallel replicas.
+class FunctionKQLMultiplyOverloadResolver final : public IFunctionOverloadResolver, WithContext
+{
+public:
+    static constexpr auto name = "kqlMultiply";
+
+    explicit FunctionKQLMultiplyOverloadResolver(ContextPtr context_) : WithContext(context_) { }
+
+    static FunctionOverloadResolverPtr create(ContextPtr context_)
+    {
+        return std::make_unique<FunctionKQLMultiplyOverloadResolver>(std::move(context_));
+    }
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
+    {
+        return delegate(arguments);
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return delegate(arguments)->getResultType();
+    }
+
+private:
+    FunctionBasePtr delegate(const ColumnsWithTypeAndName & arguments) const
+    {
+        if (arguments.size() != 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires exactly 2 arguments", getName());
+
+        if (isInterval(removeLowCardinalityAndNullable(arguments[0].type)) || isInterval(removeLowCardinalityAndNullable(arguments[1].type)))
+            return FunctionToOverloadResolverAdaptor(std::make_shared<FunctionKQLMultiplyInterval>()).build(arguments);
+
+        return FunctionFactory::instance().get("multiply", getContext())->build(arguments);
+    }
+};
+
 }
 
 REGISTER_FUNCTION(KQLMultiply)
@@ -167,7 +200,7 @@ directly from SQL.
         .category = FunctionDocumentation::Category::Arithmetic,
     };
 
-    factory.registerFunction<FunctionKQLMultiply>(documentation);
+    factory.registerFunction<FunctionKQLMultiplyOverloadResolver>(documentation);
 }
 
 }

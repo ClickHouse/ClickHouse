@@ -8,8 +8,6 @@ doc_type: 'guide'
 
 import IntroClickPipe from '/snippets/pt-BR/_intro.mdx';
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 <IntroClickPipe />
 
 ## Pré-requisitos {#pre-requisites}
@@ -24,11 +22,27 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
   <Step title="Selecione a fonte de dados" id="1-select-the-data-source">
     **1.** No ClickHouse Cloud, selecione **Fontes de dados** no menu de navegação principal e clique em **Criar ClickPipe**.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Selecionar importações" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Selecionar importações](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+    </Frame>
+
+    </div>
 
     **2.** Clique no bloco **BigQuery**.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="Selecionar o bloco BigQuery" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Selecionar o bloco BigQuery](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
   <Step title="Configure a conexão do seu ClickPipe" id="2-setup-your-clickpipe-connection">
@@ -36,11 +50,27 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
     **1.** Faça o upload do arquivo de chave `.json` da service account criada para o ClickPipes. Verifique se ela tem o conjunto mínimo de [permissões](/pt-BR/integrations/clickpipes/bigquery/overview#permissions) necessárias.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp" alt="Fazer upload da chave da service account" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Fazer upload da chave da service account](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp)
+
+    </Frame>
+
+    </div>
 
     **2.** Selecione o **modo de replicação**: [somente carga inicial](/pt-BR/integrations/clickpipes/bigquery/overview#initial-load), **carga inicial + CDC** ou **somente CDC**. Para um modo com CDC, escolha um [método baseado em consultas ou eventos](/pt-BR/integrations/clickpipes/bigquery/overview#cdc).
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/select-replication-mode.png" alt="Opções de modo de replicação do BigQuery: somente carga inicial, carga inicial mais CDC e somente CDC" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Opções de modo de replicação do BigQuery: somente carga inicial, carga inicial mais CDC e somente CDC](/images/integrations/data-ingestion/clickpipes/bigquery/select-replication-mode.png)
+
+    </Frame>
+
+    </div>
 
     **3.** Se for realizar uma carga inicial, informe o caminho do bucket do GCS usado para armazenar temporariamente os dados.
 
@@ -50,7 +80,15 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
   <Step title="Configure seu ClickPipe" id="3-configure-your-clickpipe">
     Defina os valores a seguir para as fases selecionadas. As configurações de carga inicial se aplicam apenas à importação dos dados existentes pelo ClickPipe; as configurações de CDC se aplicam apenas à replicação contínua das alterações.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/configure-pipe.png" alt="Configurações do ClickPipe para BigQuery: intervalo de sincronização, carga inicial e CDC" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Configurações do ClickPipe para BigQuery: intervalo de sincronização, carga inicial e CDC](/images/integrations/data-ingestion/clickpipes/bigquery/configure-pipe.png)
+
+    </Frame>
+
+    </div>
 
     | Configuração                                    | O que controla                                                                                                                                                                                                                                                                                                                                     |
     | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -68,7 +106,15 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
     **2.** Selecione as tabelas de origem. Em **Configurações de coluna**, você pode alterar o nome de cada tabela de destino e escolher quais colunas serão replicadas. Apenas os conjuntos de dados aos quais a service account tem acesso aparecem na lista.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/select-table-settings.png" alt="Selecione uma tabela de origem do BigQuery e configure o nome da tabela de destino, o watermark de CDC, a sorting key e as configurações avançadas" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Selecione uma tabela de origem do BigQuery e configure o nome da tabela de destino, o watermark de CDC, a sorting key e as configurações avançadas](/images/integrations/data-ingestion/clickpipes/bigquery/select-table-settings.png)
+
+    </Frame>
+
+    </div>
 
     **3.** Defina a opção de CDC para cada tabela. A captura de tela mostra as configurações da replicação baseada em consultas. Selecione uma **coluna de watermark de CDC** do tipo `TIMESTAMP`, inclua-a entre as colunas replicadas e atualize seu valor sempre que a linha for alterada. Para a replicação baseada em eventos, selecione [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) ou [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes). [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) exige `enable_change_history = TRUE` na tabela de origem.
 
@@ -89,6 +135,14 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
   <Step title="Conclua a configuração" id="7-complete-setup">
     Clique em **Criar ClickPipe** para concluir a configuração. Você será redirecionado à página Overview, onde poderá acompanhar o progresso da carga inicial e acessar os detalhes dos seus ClickPipes do BigQuery.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp" alt="Permissões" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Permissões](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 </Steps>
