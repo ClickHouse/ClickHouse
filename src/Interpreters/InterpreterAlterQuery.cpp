@@ -49,6 +49,7 @@
 #include <Storages/StorageKeeperMap.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -250,8 +251,12 @@ bool hasCommands(const CommandSegments & segments)
 ContextMutablePtr createMutationContext(const StoragePtr & table, const ContextPtr & context)
 {
     auto mutation_context = Context::createCopy(context);
-    if (table->isMergeTree())
-        mutation_context->setCurrentDatabase(table->getStorageID().getDatabaseName());
+    if (!resolveStorageProxy(table)->isMergeTree())
+        return mutation_context;
+    String database = table->getStorageID().getDatabaseName();
+    if (auto alias = castStorage<StorageAlias>(table, DeferredTable::Load))
+        database = alias->getTargetChain().back().first;
+    mutation_context->setCurrentDatabase(database);
     return mutation_context;
 }
 
@@ -455,7 +460,7 @@ std::optional<BlockIO> tryRewriteToLightweightUpdate(CommandSegments & segments,
     LOG_DEBUG(getLogger("InterpreterAlterQuery"), "Will execute query '{}' as a lightweight update", query_ptr->formatForErrorMessage());
 
     BlockIO res;
-    res.pipeline = table->updateLightweight(mutation_commands, context);
+    res.pipeline = table->updateLightweight(mutation_commands, createMutationContext(table, context));
     res.pipeline.addStorageHolder(table);
     return res;
 }
@@ -534,11 +539,12 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 /// fails to analyze.
                 MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, *mutation_commands, context);
                 MutationsInterpreter::Settings mutation_settings(false);
-                auto validation_context = createMutationContext(table, context);
+                auto mutation_context = createMutationContext(table, context);
+                auto validation_context = Context::createCopy(mutation_context);
                 validation_context->setAnalyzingBackgroundExpressions(true);
                 MutationsInterpreter(table, metadata_snapshot, *mutation_commands, validation_context, mutation_settings).validate();
                 context->onQueryExecutionStarted();
-                table->mutate(*mutation_commands, context);
+                table->mutate(*mutation_commands, mutation_context);
             }
         }
         else if (auto * partition_commands = std::get_if<PartitionCommands>(&segment))
