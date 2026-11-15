@@ -16,6 +16,28 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+/// static_cast, not bg::convert: its boost::numeric_cast throws on a last-ulp overshoot of FLT_MAX.
+template <typename DstPolygon, typename SrcPolygon>
+void convertPolygon(const SrcPolygon & src, DstPolygon & dst)
+{
+    using DstCoord = bg::coordinate_type_t<DstPolygon>;
+    auto convert_ring = [](const auto & src_ring, auto & dst_ring)
+    {
+        dst_ring.reserve(src_ring.size());
+        for (const auto & point : src_ring)
+            dst_ring.emplace_back(static_cast<DstCoord>(point.x()), static_cast<DstCoord>(point.y()));
+    };
+    convert_ring(src.outer(), dst.outer());
+    dst.inners().resize(src.inners().size());
+    for (size_t i = 0; i < src.inners().size(); ++i)
+        convert_ring(src.inners()[i], dst.inners()[i]);
+}
+
+}
+
 FinalCell::FinalCell(const VectorWithMemoryTracking<size_t> & polygon_ids_, const VectorWithMemoryTracking<Polygon> &, const Box &, bool is_last_covered_):
 polygon_ids(polygon_ids_)
 {
@@ -31,28 +53,25 @@ const FinalCell * FinalCell::find(Coord, Coord) const
     return this;
 }
 
-inline void shift(Point & point, Coord val)
+size_t FinalCell::getBytesAllocated() const
 {
-    point.x(point.x() + val);
-    point.y(point.y() + val);
+    return sizeof(*this) + polygon_ids.capacity() * sizeof(size_t);
 }
 
 FinalCellWithSlabs::FinalCellWithSlabs(const VectorWithMemoryTracking<size_t> & polygon_ids_, const VectorWithMemoryTracking<Polygon> & polygons_, const Box & box_, bool is_last_covered_)
 {
-    auto extended = box_;
-    shift(extended.min_corner(), -GridRoot<FinalCellWithSlabs>::kEps);
-    shift(extended.max_corner(), GridRoot<FinalCellWithSlabs>::kEps);
-    Polygon tmp_poly;
+    const BoxF64 extended = toBoxF64(box_, static_cast<Float64>(GridRoot<FinalCellWithSlabs>::kEps));
+    PolygonF64 tmp_poly;
     bg::convert(extended, tmp_poly);
     VectorWithMemoryTracking<Polygon> intersections;
     if (is_last_covered_)
         first_covered = polygon_ids_.back();
     for (size_t i = 0; i + is_last_covered_ < polygon_ids_.size(); ++i)
     {
-        VectorWithMemoryTracking<Polygon> intersection;
+        VectorWithMemoryTracking<PolygonF64> intersection;
         bg::intersection(tmp_poly, polygons_[polygon_ids_[i]], intersection);
-        for (auto & polygon : intersection)
-            intersections.emplace_back(std::move(polygon));
+        for (const auto & piece : intersection)
+            convertPolygon(piece, intersections.emplace_back());
         while (corresponding_ids.size() < intersections.size())
             corresponding_ids.push_back(polygon_ids_[i]);
     }
@@ -65,6 +84,11 @@ const FinalCellWithSlabs * FinalCellWithSlabs::find(Coord, Coord) const
     return this;
 }
 
+size_t FinalCellWithSlabs::getBytesAllocated() const
+{
+    return sizeof(*this) + index.getBytesAllocated() + corresponding_ids.capacity() * sizeof(size_t);
+}
+
 SlabsPolygonIndex::SlabsPolygonIndex(
     const VectorWithMemoryTracking<Polygon> & polygons)
     : log(getLogger("SlabsPolygonIndex")),
@@ -73,9 +97,25 @@ SlabsPolygonIndex::SlabsPolygonIndex(
     indexBuild(polygons);
 }
 
+size_t SlabsPolygonIndex::getBytesAllocated() const
+{
+    size_t total = sorted_x.capacity() * sizeof(Coord)
+                 + all_edges.capacity() * sizeof(Edge)
+                 + edges_index_tree.capacity() * sizeof(VectorWithMemoryTracking<EdgeLine>);
+    for (const auto & node : edges_index_tree)
+        total += node.capacity() * sizeof(EdgeLine);
+    return total;
+}
+
 VectorWithMemoryTracking<Coord> SlabsPolygonIndex::uniqueX(const VectorWithMemoryTracking<Polygon> & polygons)
 {
+    size_t total_points = 0;
+    for (const auto & poly : polygons)
+        total_points += bg::num_points(poly);
+
     VectorWithMemoryTracking<Coord> all_x;
+    all_x.reserve(total_points);
+
     for (const auto & poly : polygons)
     {
         for (const auto & point : poly.outer())
@@ -124,7 +164,6 @@ void SlabsPolygonIndex::indexBuild(const VectorWithMemoryTracking<Polygon> & pol
     {
         n = sorted_x.size() - 1;
     }
-    edges_index_tree.resize(2 * n);
 
     /** Map of interesting edge ids to the index of left x, the index of right x */
     VectorWithMemoryTracking<size_t> edge_left(m, n);
@@ -151,6 +190,8 @@ void SlabsPolygonIndex::indexBuild(const VectorWithMemoryTracking<Polygon> & pol
         }
     }
 
+    edges_index_tree.resize(2 * n);
+
     for (size_t i = 0; i != all_edges.size(); ++i)
     {
         size_t l = edge_left[i];
@@ -158,7 +199,7 @@ void SlabsPolygonIndex::indexBuild(const VectorWithMemoryTracking<Polygon> & pol
         if (l == n || sorted_x[l] != all_edges[i].l.x() || sorted_x[r] != all_edges[i].r.x())
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Error occurred while building polygon index. Edge {}  is [{}, {}] but found [{}, {}]. l = {}, r = {}",
+                "Error occurred while building polygon index. Edge {} is [{}, {}] but found [{}, {}]. l = {}, r = {}",
                 i, all_edges[i].l.x(), all_edges[i].r.x(), sorted_x[l], sorted_x[r], l, r);
         }
 

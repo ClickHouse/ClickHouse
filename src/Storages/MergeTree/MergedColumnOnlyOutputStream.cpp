@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteSettings.h>
@@ -17,7 +16,10 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     CompressionCodecPtr default_codec,
     MergeTreeIndexGranularityPtr index_granularity_ptr,
     size_t part_uncompressed_bytes,
-    WrittenOffsetSubstreams * written_offset_substreams)
+    WrittenOffsetSubstreams * written_offset_substreams,
+    bool try_adaptive_codec,
+    PackedFilesWriter * external_packed_skip_indices_writer,
+    StreamBaseManifestPtr stream_base_manifest)
     : IMergedBlockOutputStream(
           std::move(data_settings),
           data_part->getDataPartStoragePtr(),
@@ -32,26 +34,30 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || prewarm_caches.primary_index_cache;
 
     /// Granularity is never recomputed while writing only columns.
+    /// Only merges and mutations write columns separately.
     MergeTreeWriterSettings writer_settings(
         data_part->storage.getContext()->getSettingsRef(),
-        data_part->storage.getContext()->getWriteSettings(),
+        getWriteSettingsForMergeOrMutation(data_part->storage.getContext()->getWriteSettings(), data_part->storage.supportsReplication()),
         storage_settings,
         data_part,
         data_part->index_granularity_info.mark_type.adaptive,
         /*rewrite_primary_key=*/ false,
         save_marks_in_cache,
         save_primary_index_in_memory,
-        /*blocks_are_granules_size=*/ false);
+        /*blocks_are_granules_size=*/ false,
+        try_adaptive_codec);
+
+    writer_settings.external_packed_skip_indices_writer = external_packed_skip_indices_writer;
+    writer_settings.stream_base_manifest = std::move(stream_base_manifest);
 
     writer = createMergeTreeDataPartWriter(
         data_part->getType(),
-        data_part->name, data_part->storage.getLogName(), data_part->getSerializations(),
+        data_part->name, data_part->storage.getLogName(), data_part->getSerializations().toSerializationByName(),
         data_part_storage, data_part->index_granularity_info,
         storage_settings,
         columns_list_,
         data_part->getColumnPositions(),
         metadata_snapshot_,
-        data_part->storage.getVirtualsPtr(),
         indices_to_recalc,
         data_part->getMarksFileExtension(),
         default_codec,
@@ -65,7 +71,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     if (!block.rows())
         return;
 
-    writer->write(block, nullptr);
+    writer->write(block, nullptr, nullptr);
     new_serialization_infos.add(block);
 }
 
@@ -83,14 +89,6 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(M
 
     for (const auto & filename : checksums_to_remove)
         all_checksums.files.erase(filename);
-
-    for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
-    {
-        checksums.addFile(
-            projection_name + ".proj",
-            projection_part->checksums.getTotalSizeOnDisk(),
-            projection_part->checksums.getTotalChecksumUInt128());
-    }
 
     auto columns = new_part->getColumns();
     auto serialization_infos = new_part->getSerializationInfos();

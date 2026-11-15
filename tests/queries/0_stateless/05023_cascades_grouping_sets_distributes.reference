@@ -1,0 +1,36 @@
+-- the plan splits the grouping sets aggregation into partial and merge
+Expression (Project names)
+  Sorting
+    Expression ((Before ORDER BY + Projection))
+      MergingAggregated
+        GatherExchange
+          Aggregating
+            Expression ((Before GROUP BY + Change column names to column identifiers))
+              ReadFromMergeTree (ParallelRead default.t_gs_cascades)
+-- results
+	0	1	249500	500
+	0	2	499500	1000
+	1	1	250000	500
+k0	0	1	166833	334
+k1	0	1	166167	333
+k2	0	1	166500	333
+-- same result from the non-distributed baseline
+	0	1	249500	500
+	0	2	499500	1000
+	1	1	250000	500
+k0	0	1	166833	334
+k1	0	1	166167	333
+k2	0	1	166500	333
+-- memory-efficient setting on: no duplicate groups
+0
+0
+0
+-- the split still happens under distributed_plan_force_shuffle_aggregation
+Expression (Project names)
+  Sorting
+    Expression ((Before ORDER BY + Projection))
+      MergingAggregated
+        GatherExchange
+          Aggregating
+            Expression ((Before GROUP BY + Change column names to column identifiers))
+              ReadFromMergeTree (ParallelRead default.t_gs_cascades)

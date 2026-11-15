@@ -1,0 +1,147 @@
+---
+slug: /best-practices/select-data-types
+sidebarTitle: '데이터 타입 선택'
+title: '데이터 타입 선택'
+description: 'ClickHouse에서 데이터 타입을 선택하는 방법을 설명합니다'
+keywords: ['데이터 타입']
+doc_type: 'reference'
+---
+
+import NullableColumns from '/snippets/ko/_avoid_nullable_columns.mdx';
+
+ClickHouse의 쿼리 성능이 뛰어난 핵심 이유 중 하나는 효율적인 데이터 압축입니다. 디스크에 저장되는 데이터가 적을수록 I/O 오버헤드가 줄어들어 쿼리와 삽입 성능이 더 빨라집니다. ClickHouse의 컬럼 지향 아키텍처는 유사한 데이터를 자연스럽게 인접한 위치에 배치하므로, 압축 알고리즘과 코덱이 데이터 크기를 크게 줄일 수 있습니다. 이러한 압축 효과를 극대화하려면 적절한 데이터 타입을 신중하게 선택하는 것이 중요합니다.
+
+ClickHouse의 압축 효율은 주로 순서 지정 키, 데이터 타입, 코덱이라는 세 가지 요소에 좌우되며, 이들은 모두 테이블 스키마를 통해 정의됩니다. 최적의 데이터 타입을 선택하면 저장 효율과 쿼리 성능이 즉시 향상됩니다.
+
+몇 가지 간단한 지침만으로도 스키마를 크게 개선할 수 있습니다.
+
+* **엄격한 타입 사용:** 항상 컬럼에 맞는 올바른 데이터 타입을 선택하십시오. 숫자 및 날짜 필드에는 범용 String 타입 대신 적절한 숫자 및 날짜 타입을 사용해야 합니다. 이렇게 하면 필터링과 집계에서 올바른 의미를 보장할 수 있습니다.
+
+* **널 허용 컬럼 피하기:** 널 허용 컬럼은 null 값을 추적하기 위한 별도의 컬럼을 유지해야 하므로 추가 오버헤드가 발생합니다. 빈 값과 null 상태를 명확히 구분해야 하는 경우에만 널 허용을 사용하십시오. 그렇지 않다면 기본값이나 0에 해당하는 값으로 충분한 경우가 대부분입니다. 필요한 경우가 아니라면 이 타입을 피해야 하는 이유에 대한 자세한 내용은 [널 허용 컬럼 피하기](/ko/concepts/best-practices/select-data-type#avoid-nullable-columns)를 참조하십시오.
+
+* **숫자 정밀도 최소화:** 예상되는 데이터 범위를 수용할 수 있으면서도 비트 폭이 가장 작은 숫자 타입을 선택하십시오. 예를 들어 음수 값이 필요 없고 범위가 0–65535에 들어간다면 [Int32보다 UInt16 사용](/ko/reference/data-types/int-uint)을 선택하십시오.
+
+* **날짜 및 시간 정밀도 최적화:** 쿼리 요구 사항을 충족하는 범위에서 가장 거친 단위의 date 또는 datetime 타입을 선택하십시오. 날짜만 저장하는 필드에는 Date 또는 Date32를 사용하고, 밀리초 이상의 세밀한 정밀도가 꼭 필요하지 않다면 DateTime64보다 DateTime을 우선 사용하십시오.
+
+* **LowCardinality 및 특수 타입 활용:** 고유값이 대략 10,000개보다 적은 컬럼에는 LowCardinality 타입을 사용하여 딕셔너리 인코딩으로 저장 공간을 크게 줄이십시오. 마찬가지로 FixedString은 컬럼 값이 정확히 고정 길이 문자열인 경우에만(예: 국가 코드 또는 통화 코드) 사용하고, 가능한 값의 집합이 유한한 컬럼에는 효율적인 저장과 내장 데이터 검증을 위해 Enum 타입을 사용하는 것이 좋습니다.
+
+* **데이터 검증을 위한 Enum:** Enum 타입은 열거형 타입을 효율적으로 인코딩하는 데 사용할 수 있습니다. Enum은 저장해야 하는 고유값 수에 따라 8비트 또는 16비트일 수 있습니다. 삽입 시점의 검증 기능이 필요하거나(선언되지 않은 값은 거부됨), Enum 값의 자연스러운 정렬 순서를 활용하는 쿼리를 수행하려는 경우 사용을 고려하십시오. 예를 들어 사용자 응답을 담는 피드백 컬럼은 Enum(&#39;:(&#39; = 1, &#39;:|&#39; = 2, &#39;:)&#39; = 3)일 수 있습니다.
+
+<div id="example">
+  ## 예시
+</div>
+
+ClickHouse는 타입 최적화를 간소화할 수 있는 기본 제공 도구를 제공합니다. 예를 들어, 스키마 추론은 초기 타입을 자동으로 식별할 수 있습니다. 공개적으로 Parquet 포맷으로 제공되는 Stack Overflow 데이터셋을 살펴보겠습니다. [`DESCRIBE`](/ko/reference/statements/describe-table) 명령으로 간단한 스키마 추론을 실행하면 최적화되지 않은 초기 스키마를 확인할 수 있습니다.
+
+<Note>
+  기본적으로 ClickHouse는 이를 해당하는 널 허용 타입으로 매핑합니다. 스키마가 일부 샘플 행만을 기반으로 하기 때문에 이 방식이 더 적절합니다.
+</Note>
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name───────────────────────┬─type──────────────────────────────┐
+│ Id                         │ Nullable(Int64)                   │
+│ PostTypeId                 │ Nullable(Int64)                   │
+│ AcceptedAnswerId           │ Nullable(Int64)                   │
+│ CreationDate               │ Nullable(DateTime64(3, 'UTC'))    │
+│ Score                      │ Nullable(Int64)                   │
+│ ViewCount                  │ Nullable(Int64)                   │
+│ Body                       │ Nullable(String)                  │
+│ OwnerUserId                │ Nullable(Int64)                   │
+│ OwnerDisplayName           │ Nullable(String)                  │
+│ LastEditorUserId           │ Nullable(Int64)                   │
+│ LastEditorDisplayName      │ Nullable(String)                  │
+│ LastEditDate               │ Nullable(DateTime64(3, 'UTC'))    │
+│ LastActivityDate           │ Nullable(DateTime64(3, 'UTC'))    │
+│ Title                      │ Nullable(String)                  │
+│ Tags                       │ Nullable(String)                  │
+│ AnswerCount                │ Nullable(Int64)                   │
+│ CommentCount               │ Nullable(Int64)                   │
+│ FavoriteCount              │ Nullable(Int64)                   │
+│ ContentLicense             │ Nullable(String)                  │
+│ ParentId                   │ Nullable(String)                  │
+│ CommunityOwnedDate         │ Nullable(DateTime64(3, 'UTC'))    │
+│ ClosedDate                 │ Nullable(DateTime64(3, 'UTC'))    │
+└────────────────────────────┴───────────────────────────────────┘
+
+22 rows in set. Elapsed: 0.130 sec.
+```
+
+<Note>
+  아래에서는 stackoverflow/parquet/posts 폴더의 모든 파일을 읽기 위해 glob pattern *.parquet를 사용합니다.
+</Note>
+
+posts 테이블에 앞서 정의한 간단한 규칙을 적용하면 각 컬럼에 가장 적합한 유형을 식별할 수 있습니다:
+
+| 컬럼                      | 숫자형 여부 | 최소, 최대                                                       | 고유값      | NULL 수 | 설명                                                                           | 최적화된 타입                                                                                                                                                      |
+| ----------------------- | ------ | ------------------------------------------------------------ | -------- | ------ | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PostTypeId`            | 예      | 1, 8                                                         | 8        | 아니요    |                                                                              | `Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8)` |
+| `AcceptedAnswerId`      | 예      | 0, 78285170                                                  | 12282094 | 예      | NULL과 0 값을 구분                                                                | UInt32                                                                                                                                                       |
+| `CreationDate`          | 아니요    | 2008-07-31 21:42:52.667000000, 2024-03-31 23:59:17.697000000 | *        | 아니요    | 밀리초 세분화 수준은 필요하지 않으므로 DateTime을 사용합니다                                        | DateTime                                                                                                                                                     |
+| `Score`                 | 예      | -217, 34970                                                  | 3236     | 아니요    |                                                                              | Int32                                                                                                                                                        |
+| `ViewCount`             | 예      | 2, 13962748                                                  | 170867   | 아니요    |                                                                              | UInt32                                                                                                                                                       |
+| `Body`                  | 아니요    | -                                                            | *        | 아니요    |                                                                              | String                                                                                                                                                       |
+| `OwnerUserId`           | 예      | -1, 4056915                                                  | 6256237  | 예      |                                                                              | Int32                                                                                                                                                        |
+| `OwnerDisplayName`      | 아니요    | -                                                            | 181251   | 예      | NULL을 빈 문자열로 취급                                                              | String                                                                                                                                                       |
+| `LastEditorUserId`      | 예      | -1, 9999993                                                  | 1104694  | 예      | 0은 사용되지 않는 값이므로 NULL 값으로 사용할 수 있습니다                                          | Int32                                                                                                                                                        |
+| `LastEditorDisplayName` | 아니요    | *                                                            | 70952    | 예      | NULL은 빈 문자열로 간주합니다. LowCardinality를 테스트했지만 이점은 없었습니다                         | String                                                                                                                                                       |
+| `LastEditDate`          | 아니요    | 2008-08-01 13:24:35.051000000, 2024-04-06 21:01:22.697000000 | -        | 아니오    | 밀리초 세분화 수준은 필요하지 않으므로 DateTime을 사용합니다                                        | DateTime                                                                                                                                                     |
+| `LastActivityDate`      | 아니오    | 2008-08-01 12:19:17.417000000, 2024-04-06 21:01:22.697000000 | *        | 없음     | 밀리초 단위가 필요하지 않으므로 DateTime을 사용합니다                                            | DateTime                                                                                                                                                     |
+| `Title`                 | 아니요    | -                                                            | *        | 아니요    | NULL은 빈 문자열로 간주합니다                                                           | String                                                                                                                                                       |
+| `Tags`                  | 아니요    | -                                                            | *        | 아니요    | NULL은 빈 문자열로 간주합니다                                                           | String                                                                                                                                                       |
+| `AnswerCount`           | 예      | 0, 518                                                       | 216      | 아니요    | NULL과 0을 동일한 것으로 간주                                                          | UInt16                                                                                                                                                       |
+| `CommentCount`          | 예      | 0, 135                                                       | 100      | 아니요    | NULL과 0을 동일한 값으로 간주                                                          | UInt8                                                                                                                                                        |
+| `FavoriteCount`         | 예      | 0, 225                                                       | 6        | 예      | NULL과 0을 같게 간주                                                               | UInt8                                                                                                                                                        |
+| `ContentLicense`        | 아니요    | -                                                            | 3        | 아니요    | LowCardinality가 FixedString보다 더 뛰어난 성능을 제공합니다                                | LowCardinality(String)                                                                                                                                       |
+| `ParentId`              | 아니요    | *                                                            | 20696028 | 예      | Null을 빈 문자열로 처리                                                              | String                                                                                                                                                       |
+| `CommunityOwnedDate`    | 아니오    | 2008-08-12 04:59:35.017000000, 2024-04-01 05:36:41.380000000 | -        | 예      | NULL 값에는 기본값으로 1970-01-01 사용을 고려하십시오. 밀리초 세분화 수준은 필요하지 않으므로 DateTime을 사용하십시오 | DateTime                                                                                                                                                     |
+| `ClosedDate`            | 아니요    | 2008-09-04 20:56:44, 2024-04-06 18:49:25.393000000           | *        | 예      | NULL 값에는 기본값으로 1970-01-01 사용을 고려하십시오. 밀리초 단위는 필요하지 않으므로 DateTime을 사용하십시오     | DateTime                                                                                                                                                     |
+
+<Info>
+  **팁**
+
+  컬럼의 타입을 식별하려면 해당 컬럼의 숫자 범위와 고유값 수를 파악해야 합니다. 모든 컬럼의 범위와 고유값 수를 확인하려면 간단한 쿼리 `SELECT * APPLY min, * APPLY max, * APPLY uniq FROM table FORMAT Vertical`를 사용할 수 있습니다. 이 작업은 비용이 많이 들 수 있으므로 더 작은 데이터 부분 집합에서 수행하는 것을 권장합니다.
+</Info>
+
+이렇게 하면 다음과 같이 타입 기준으로 최적화된 스키마가 생성됩니다:
+
+```sql
+CREATE TABLE posts
+(
+   Id Int32,
+   PostTypeId Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 
+   'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+   AcceptedAnswerId UInt32,
+   CreationDate DateTime,
+   Score Int32,
+   ViewCount UInt32,
+   Body String,
+   OwnerUserId Int32,
+   OwnerDisplayName String,
+   LastEditorUserId Int32,
+   LastEditorDisplayName String,
+   LastEditDate DateTime,
+   LastActivityDate DateTime,
+   Title String,
+   Tags String,
+   AnswerCount UInt16,
+   CommentCount UInt8,
+   FavoriteCount UInt8,
+   ContentLicense LowCardinality(String),
+   ParentId String,
+   CommunityOwnedDate DateTime,
+   ClosedDate DateTime
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+```
+
+<div id="avoid-nullable-columns">
+  ## 널 허용 컬럼 피하기
+</div>
+
+<NullableColumns />

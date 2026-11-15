@@ -1,0 +1,5 @@
+<clickhouse>
+    <remote_url_allow_hosts>
+        <s3_bucket>minio1:9001/root</s3_bucket>
+    </remote_url_allow_hosts>
+</clickhouse>

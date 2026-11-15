@@ -1,0 +1,32 @@
+--- Parquet on S3
+[[0], [1], [2]] read fewer rows: True
+OK
+OK
+OK
+OK
+OK
+--- query condition cache
+0
+2
+4
+100000
+--- Iceberg
+[[0], [1], [2]] read fewer rows: True
+OK
+OK
+--- Iceberg: a file written before the sort column got its name
+99999	4
+99998	3
+99997	2
+OK
+OK
+--- Iceberg: equality deletes
+998	name_8
+997	name_7
+996	name_6
+OK
+OK
+OK
+--- Iceberg: sorted by an identity partition column
+OK
+OK

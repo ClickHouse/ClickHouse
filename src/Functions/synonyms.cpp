@@ -27,11 +27,10 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int SUPPORT_IS_DISABLED;
 }
 
-class FunctionSynonyms : public IFunction
+class FunctionSynonyms final : public IFunction
 {
 public:
     static constexpr auto name = "synonyms";
@@ -58,15 +57,12 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
-        if (!isString(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[1]->getName(), getName());
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+        /// The extension name (argument 0) is always constant: it is listed in
+        /// `getArgumentsThatAreAlwaysConstant` and `executeImpl` rejects anything but a
+        /// `ColumnConst` before reading it once.
+        return "(const String, String) -> Array(String)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -94,14 +90,14 @@ public:
         /// Create and fill the result array.
         const DataTypePtr & elem_type = static_cast<const DataTypeArray &>(*result_type).getNestedType();
 
-        auto out = ColumnArray::create(elem_type->createColumn());
-        IColumn & out_data = out->getData();
-        IColumn::Offsets & out_offsets = out->getOffsets();
+        auto out_data_column = elem_type->createColumn();
+        auto out_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
+        IColumn & out_data = *out_data_column;
+        IColumn::Offsets & out_offsets = out_offsets_column->getData();
 
         const ColumnString::Chars & data = word_col->getChars();
         const ColumnString::Offsets & offsets = word_col->getOffsets();
         out_data.reserve(input_rows_count);
-        out_offsets.resize(input_rows_count);
 
         IColumn::Offset current_offset = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
@@ -120,13 +116,21 @@ public:
             out_offsets[i] = current_offset;
         }
 
-        return out;
+        return ColumnArray::create(std::move(out_data_column), std::move(out_offsets_column));
     }
 };
 
 REGISTER_FUNCTION(Synonyms)
 {
     FunctionDocumentation::Description description = R"(
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+<Warning>
+This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
+Set `allow_experimental_nlp_functions = 1` to enable it.
+</Warning>
+
 Finds synonyms of a given word.
 
 There are two types of synonym extensions:
@@ -146,7 +150,7 @@ The thesaurus must contain a WordNet sense index.
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns array of synonyms for the given word.", {"Array(String)"}};
     FunctionDocumentation::Examples examples = {
-        {"Find synonyms", "SELECT synonyms('list', 'important')", "['important','big','critical','crucial']"}
+        {"Find synonyms", "SET allow_experimental_nlp_functions = 1;\nSELECT synonyms('en', 'important')", "['important','big','critical','crucial','essential']"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::NLP;

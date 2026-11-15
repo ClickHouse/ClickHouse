@@ -1,5 +1,8 @@
--- Tags: no-random-merge-tree-settings
+-- Tags: no-random-merge-tree-settings, no-parallel-replicas
+-- Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
 -- add_minmax_index_for_numeric_columns=0: Would use the index and not the projection that we want to test (id2 = 3)
+SET explain_query_plan_default = 'legacy';
+SET optimize_use_projections = 1;
 
 DROP TABLE IF EXISTS t0;
 

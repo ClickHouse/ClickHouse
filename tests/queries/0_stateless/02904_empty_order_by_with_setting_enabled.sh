@@ -26,7 +26,7 @@ ${CLICKHOUSE_CLIENT} --query="
     DROP TABLE IF EXISTS test_empty_order_by;
     CREATE TABLE test_empty_order_by(a UInt8, b String) ENGINE = MergeTree() PRIMARY KEY (a) SETTINGS index_granularity = 8192;
     SHOW CREATE TABLE test_empty_order_by;
-" 2>&1 \ | grep -F -q "ORDER BY a" && echo 'OK' || echo 'FAIL'
+" 2>&1 \ | grep -F -q "ORDER BY (a)" && echo 'OK' || echo 'FAIL'
 
 # setting enabled and order by in table definition (no primary key)
 ${CLICKHOUSE_CLIENT} --query="

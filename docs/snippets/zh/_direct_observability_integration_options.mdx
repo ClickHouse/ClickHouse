@@ -1,0 +1,47 @@
+---
+title: 直接可观测性集成方案
+---
+
+<div id="direct-grafana">
+  ### 直接集成 Grafana 插件
+</div>
+
+Grafana 的 ClickHouse 数据源插件支持直接通过系统表对 ClickHouse 中的数据进行可视化和分析。这种方式非常适合用于性能监控，以及创建自定义仪表盘以开展更细致的系统分析。
+有关插件安装和配置的详细信息，请参阅 ClickHouse [数据源插件](/zh/integrations/connectors/data-visualization/grafana/index)。如需了解如何使用包含预构建仪表盘和告警规则的 Prometheus-Grafana mix-in 搭建完整的监控方案，请参阅[使用新的 Prometheus-Grafana mix-in 监控 ClickHouse](https://clickhouse.com/blog/monitor-with-new-prometheus-grafana-mix-in)。
+
+<div id="direct-datadog">
+  ### Datadog 直接集成
+</div>
+
+Datadog 为其 agent 提供了一个 ClickHouse Monitoring 插件，可直接查询系统表。该集成借助 `clusterAllReplicas` 功能提供具备集群感知能力的全面数据库监控。
+
+<Note>
+  由于该集成与为优化成本而设计的空闲机制以及 Cloud proxy 层的运行限制不兼容，因此不建议在 ClickHouse Cloud 部署中使用。
+</Note>
+
+<div id="system-tables">
+  ### 直接使用系统表
+</div>
+
+你可以直接连接到 ClickHouse 系统表，尤其是直接查询 `system.query_log`，以便深入分析查询性能。团队可通过 SQL 控制台或 clickhouse client 识别慢查询、分析资源使用情况，并跟踪整个组织内的使用模式。
+
+**查询性能分析**
+
+你可以使用系统表中的查询日志来进行查询性能分析。
+
+**示例查询**：查找所有集群副本中耗时最长的前 5 个查询：
+
+```sql
+SELECT
+    type,
+    event_time, 
+    query_duration_ms,
+    query,
+    read_rows,
+    tables
+FROM clusterAllReplicas(default, system.query_log)
+WHERE event_time >= (now() - toIntervalMinute(60)) AND type='QueryFinish'
+ORDER BY query_duration_ms DESC
+LIMIT 5
+FORMAT VERTICAL
+```
