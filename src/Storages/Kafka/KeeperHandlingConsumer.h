@@ -51,6 +51,7 @@ public:
         String currentKey() const;
         String currentPayload() const;
         boost::optional<cppkafka::MessageTimestamp> currentTimestamp() const;
+        UInt64 currentTimestamp64() const;
         const cppkafka::Message::HeaderListType & currentHeaderList() const;
 
     private:
@@ -152,6 +153,7 @@ private:
         zkutil::EphemeralNodeHolderPtr lock;
         std::optional<int64_t> committed_offset;
         std::optional<uint64_t> intent_size;
+        std::optional<uint64_t> timestamp;
     };
 
     using TopicPartitionLocks = std::
@@ -219,7 +221,7 @@ private:
     void rollbackToCommittedOffsetsNoThrow() noexcept;
 
     void saveCommittedOffset(int64_t new_offset);
-    void saveIntentSize(const KafkaConsumer2::TopicPartition & topic_partition, const std::optional<int64_t> & offset, uint64_t intent);
+    void saveIntentSizeAndTimestamp(const KafkaConsumer2::TopicPartition & topic_partition, const std::optional<int64_t> & offset, uint64_t intent, uint64_t timestamp);
     /// Drops the intent of a batch that was abandoned before its insert started. Callable while an
     /// exception is propagating, where a throw would terminate the server.
     void discardIntentSizeNoThrow() noexcept;

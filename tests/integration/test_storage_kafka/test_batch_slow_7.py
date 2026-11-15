@@ -6,6 +6,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 import helpers.kafka.common as k
+import pandas as pd
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -46,6 +47,7 @@ def kafka_setup_teardown():
 
 
 # Tests
+
 
 @pytest.mark.parametrize(
     "create_query_generator",
@@ -88,8 +90,91 @@ def test_kafka_consumer_reschedule_logging(kafka_cluster, create_query_generator
     instance.wait_for_log_line(f"{kafka_table}.*Committed offset 50")
 
     # Check that the log shows the correct reschedule interval
-    instance.wait_for_log_line(f"{kafka_table}.*Rescheduling in {test_reschedule_ms} ms")
+    instance.wait_for_log_line(
+        f"{kafka_table}.*Rescheduling in {test_reschedule_ms} ms"
+    )
 
     # Verify messages consumed
     result = int(instance.query(f"SELECT count() FROM test.{kafka_table}_destination"))
     assert result == 50
+
+
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [k.generate_old_create_table_query, k.generate_new_create_table_query],
+)
+def test_system_kafka_consumers_timestamp(kafka_cluster, create_query_generator):
+    suffix = k.random_string(6)
+    kafka_table = f"kafka_{suffix}"
+
+    admin_client = k.get_admin_client(kafka_cluster)
+    topic_name = "system_kafka_consumers_timestamp" + k.get_topic_postfix(
+        create_query_generator
+    )
+
+    with k.kafka_topic(admin_client, topic_name, num_partitions=6):
+
+        k.kafka_produce(
+            kafka_cluster,
+            topic_name,
+            ["1|foo", "2|bar", "42|answer", "100|multi\n101|row\n103|message"],
+        )
+
+        instance.query(f"""
+            DROP TABLE IF EXISTS test.{kafka_table} SYNC;
+            DROP TABLE IF EXISTS test.{kafka_table}_view SYNC;
+
+            {create_query_generator(
+                kafka_table,
+                "a UInt64, b String",
+                topic_list=topic_name,
+                consumer_group=topic_name,
+                format="CSV",
+                settings={
+                    "format_csv_delimiter":"|",
+                    "kafka_commit_on_select": 1,
+                    "kafka_flush_interval_ms": 200,
+                    "kafka_poll_timeout_ms": 100,
+                }
+            )};
+
+            CREATE MATERIALIZED VIEW test.{kafka_table}_view ENGINE=MergeTree ORDER BY tuple() AS SELECT * FROM test.{kafka_table};
+            """)
+        instance.query_with_retry(
+            f"SELECT count() FROM test.{kafka_table}_view",
+            check_callback=lambda res: int(res) == 6,
+            # retry_count=120
+        )
+
+        res = instance.query(f"SELECT count() FROM test.{kafka_table}_view")
+        assert int(res) == 6
+
+        latency_array = instance.query(
+            f"""
+            SELECT now()::UInt64, arrayMap(x -> now() - x, assignments.create_time), assignments.current_offset
+            FROM system.kafka_consumers WHERE database='test' and table='{kafka_table}';
+            """,
+            parse=True,
+        ).to_dict("records")[0]
+
+        now = int(list(latency_array.values())[0])
+        timestamps = pd.eval(list(latency_array.values())[1])
+        offsets = pd.eval(list(latency_array.values())[2])
+        # logging.info(f"offsets {offsets}")
+        # logging.info(f"timestamps {timestamps}")
+
+        total_offset = 0
+        for i in range(len(offsets)):
+            if offsets[i] > 0:
+                total_offset += offsets[i]
+                # non zero timestamp
+                assert timestamps[i] < 100
+            else:
+                # no messages in this TopicPartition, timestamp is zero
+                assert timestamps[i] > 100
+
+        # We sent 4 messages
+        assert total_offset == 4
+
+        instance.query_with_retry(f"DROP TABLE test.{kafka_table}_view SYNC")
+        instance.query(f"DROP TABLE test.{kafka_table}")

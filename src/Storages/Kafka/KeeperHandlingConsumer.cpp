@@ -69,6 +69,11 @@ boost::optional<cppkafka::MessageTimestamp> KeeperHandlingConsumer::MessageInfo:
     return kafka_consumer.currentTimestamp();
 }
 
+UInt64 KeeperHandlingConsumer::MessageInfo::currentTimestamp64() const
+{
+    return kafka_consumer.currentTimestamp64();
+}
+
 const cppkafka::Message::HeaderListType & KeeperHandlingConsumer::MessageInfo::currentHeaderList() const
 {
     return kafka_consumer.currentHeaderList();
@@ -423,7 +428,8 @@ KeeperHandlingConsumer::createLocksInfoIfFree(const TopicPartition & partition_t
         LockedTopicPartitionInfo lock_info{
             EphemeralNodeHolder::create(lock_file_path, *keeper, replica_name),
             getNumber(*keeper, topic_partition_path / commit_file_name),
-            getNumber(*keeper, topic_partition_path / intent_file_name)};
+            getNumber(*keeper, topic_partition_path / intent_file_name),
+            0};
 
         LOG_TRACE(
             log,
@@ -607,7 +613,7 @@ void KeeperHandlingConsumer::rollbackToCommittedOffsetsNoThrow() noexcept
     }
 }
 
-void KeeperHandlingConsumer::saveIntentSize(const KafkaConsumer2::TopicPartition & topic_partition, const std::optional<int64_t> & offset, const uint64_t intent)
+void KeeperHandlingConsumer::saveIntentSizeAndTimestamp(const KafkaConsumer2::TopicPartition & topic_partition, const std::optional<int64_t> & offset, const uint64_t intent, uint64_t timestamp)
 {
     // offset is used only for debugging purposes in tests, because it greatly helps understanding failures and it is
     // not expensive to get it.
@@ -621,7 +627,9 @@ void KeeperHandlingConsumer::saveIntentSize(const KafkaConsumer2::TopicPartition
 
     {
         std::lock_guard lock(topic_partition_locks_mutex);
-        getTopicPartitionLockLocked(topic_partition).intent_size = intent;
+        auto & tp = getTopicPartitionLockLocked(topic_partition);
+        tp.intent_size = intent;
+        tp.timestamp = timestamp;
     }
 
     const auto partition_prefix = getTopicPartitionPath(topic_partition);
@@ -772,6 +780,8 @@ std::optional<KeeperHandlingConsumer::OffsetGuard> KeeperHandlingConsumer::poll(
     ReadBufferPtr buf;
     uint64_t consumed_messages = 0;
     int64_t last_read_offset = 0;
+    uint64_t timestamp = 0;
+
     try
     {
         while (true)
@@ -802,6 +812,7 @@ std::optional<KeeperHandlingConsumer::OffsetGuard> KeeperHandlingConsumer::poll(
             {
                 ++consumed_messages;
                 last_read_offset = message_info.currentOffset();
+                timestamp = message_info.currentTimestamp64();
             }
             /// Each `consume` call returns at most one message and pulls at most `messages_left_in_intent` messages
             /// into the consumer, so a replay cannot run past the intent.
@@ -833,7 +844,7 @@ std::optional<KeeperHandlingConsumer::OffsetGuard> KeeperHandlingConsumer::poll(
                     return std::nullopt;
                 }
 
-                saveIntentSize(topic_partition, committed_offset, consumed_messages);
+                saveIntentSizeAndTimestamp(topic_partition, committed_offset, consumed_messages, timestamp);
                 return OffsetGuard(*this, last_read_offset + 1, /* replays_existing_intent = */ intent_size.has_value());
             }
         }
@@ -850,22 +861,27 @@ std::optional<KeeperHandlingConsumer::OffsetGuard> KeeperHandlingConsumer::poll(
 
 StorageKafkaUtils::ConsumerStatistics KeeperHandlingConsumer::getStat() const
 {
-    using CommittedOffsetAndIntentSize = std::pair<int64_t, std::optional<uint64_t>>;
-    using CommittedOffsetAndIntentSizes = std::unordered_map<
+    struct TopPartInfo
+    {
+        int64_t committed_offset = 0;
+        std::optional<uint64_t> intent_size;
+        UInt64 timestamp = 0;
+    };
+    using TopPartInfos = std::unordered_map<
         KafkaConsumer2::TopicPartition,
-        CommittedOffsetAndIntentSize,
+        TopPartInfo,
         KafkaConsumer2::TopicPartitionHash,
         KafkaConsumer2::TopicPartitionEquality>;
-    CommittedOffsetAndIntentSizes committed_offsets_and_intent_sizes;
+    TopPartInfos committed_offsets_and_intent_sizes;
     KafkaConsumer2::Stat consumer_stat;
     {
         std::lock_guard lock(topic_partition_locks_mutex);
         for (const auto & [topic_partition, info] : permanent_locks)
             committed_offsets_and_intent_sizes[topic_partition]
-                = {info.committed_offset.value_or(KafkaConsumer2::INVALID_OFFSET), info.intent_size};
+                = {info.committed_offset.value_or(KafkaConsumer2::INVALID_OFFSET), info.intent_size, info.timestamp.value_or(0)};
         for (const auto & [topic_partition, info] : tmp_locks)
             committed_offsets_and_intent_sizes[topic_partition]
-                = {info.committed_offset.value_or(KafkaConsumer2::INVALID_OFFSET), info.intent_size};
+                = {info.committed_offset.value_or(KafkaConsumer2::INVALID_OFFSET), info.intent_size, info.timestamp.value_or(0)};
         // TODO(antaljanosbenjamin): make sure this is still safe even if the consumer is being closed, maybe it can be
         // by protecting that in `StorageKafka2` similarly to how it is done in StorageKafka
         consumer_stat = kafka_consumer->getStat();
@@ -881,7 +897,7 @@ StorageKafkaUtils::ConsumerStatistics KeeperHandlingConsumer::getStat() const
     /// that case the committed offset is the current offset. See comment in `prepareToPoll`.
     for (const auto & [topic_partition, committed_offset_and_intent_size] : committed_offsets_and_intent_sizes)
     {
-        int64_t offset = committed_offset_and_intent_size.first;
+        int64_t offset = committed_offset_and_intent_size.committed_offset;
         if (auto it = consumer_stat.current_offsets.find(topic_partition); it != consumer_stat.current_offsets.end())
             offset = it->second;
 
@@ -889,7 +905,8 @@ StorageKafkaUtils::ConsumerStatistics KeeperHandlingConsumer::getStat() const
             .topic_str = topic_partition.topic,
             .partition_id = topic_partition.partition_id,
             .current_offset = offset,
-            .intent_size = committed_offset_and_intent_size.second,
+            .intent_size = committed_offset_and_intent_size.intent_size,
+            .timestamp = committed_offset_and_intent_size.timestamp,
         });
     }
 

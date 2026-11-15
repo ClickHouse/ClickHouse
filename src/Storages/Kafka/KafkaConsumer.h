@@ -4,6 +4,7 @@
 #include <IO/ReadBuffer.h>
 #include <Storages/Kafka/IKafkaExceptionInfoSink.h>
 #include <Storages/Kafka/StorageKafkaUtils.h>
+#include <Storages/Kafka/SimpleTopicPartition.h>
 #include <boost/circular_buffer.hpp>
 #include <cppkafka/cppkafka.h>
 #include <Common/CurrentMetrics.h>
@@ -88,7 +89,8 @@ public:
     String currentKey() const { return current[-1].get_key(); }
     auto currentOffset() const { return current[-1].get_offset(); }
     auto currentPartition() const { return current[-1].get_partition(); }
-    auto currentTimestamp() const { return current[-1].get_timestamp(); }
+    boost::optional<cppkafka::MessageTimestamp> currentTimestamp() const;
+    void memorizeCurrentTimestamp(UInt64 ts64) const;
     const auto & currentHeaderList() const { return current[-1].get_header_list(); }
     const cppkafka::Buffer & currentPayload() const { return current[-1].get_payload(); }
     void setExceptionInfo(const std::string & text, bool with_stacktrace) override;
@@ -173,6 +175,10 @@ private:
     std::atomic<bool> in_use = false;
     /// Last used time (for TTL)
     std::atomic<UInt64> last_used_usec = 0;
+
+    mutable std::mutex timestamp_mutex;
+    using TimestampPerTopicPartition = std::unordered_map<SimpleTopicPartition, UInt64, SimpleTopicPartitionHash, SimpleTopicPartitionEquality>;
+    mutable TimestampPerTopicPartition TSA_GUARDED_BY(timestamp_mutex) timestamp_per_topic_partition;
 
     void doPoll();
     void cleanUnprocessed();

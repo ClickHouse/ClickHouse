@@ -38,11 +38,6 @@ static constexpr auto DRAIN_TIMEOUT_MS = 5000ms;
 static constexpr auto GET_KAFKA_METADATA_TIMEOUT_MS = 1000ms;
 static constexpr size_t DRAIN_REMOVED_PARTITION_BATCH_SIZE = 1024;
 
-bool KafkaConsumer2::TopicPartition::operator<(const TopicPartition & other) const
-{
-    return std::tie(topic, partition_id) < std::tie(other.topic, other.partition_id);
-}
-
 KafkaConsumer2::KafkaConsumer2(
     LoggerPtr log_,
     size_t max_batch_size,
@@ -471,12 +466,20 @@ void KafkaConsumer2::resetIfStopped()
     }
 }
 
-std::size_t KafkaConsumer2::TopicPartitionHash::operator()(const TopicPartition & tp) const
+UInt64 KafkaConsumer2::currentTimestamp64() const
 {
-    SipHash s;
-    s.update(tp.topic);
-    s.update(tp.partition_id);
-    return s.get64();
+    assert(current[-1]);
+    const auto & mts = current[-1].get_timestamp();
+    if (mts.has_value())
+    {
+        if (mts->get_type() == cppkafka::MessageTimestamp::CREATE_TIME)
+        {
+            auto ts = mts->get_timestamp();
+            UInt64 ts64 = std::chrono::duration_cast<std::chrono::seconds>(ts).count();
+            return ts64;
+        }
+    }
+    return {};
 }
 
 }
