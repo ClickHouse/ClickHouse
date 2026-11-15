@@ -234,6 +234,8 @@ CONFIRM_END_RESERVE_SEC = 180
 CIDB_UPLOAD_RETRY_INTERVAL_SEC = 60
 # Pause between the log export flushes of a nightly run.
 NIGHTLY_FLUSH_INTERVAL_SEC = 900
+# Total time of the profile runs of the changed queries in one shard (like `profile_seconds_left` in compare.sh).
+PROFILE_BUDGET_SEC = 600
 
 ch_uploads_dir = f"{perf_wd}/analyze/ch-uploads"
 flamegraph_upload_path = f"{ch_uploads_dir}/flamegraph-stacks.tsv"
@@ -1550,8 +1552,10 @@ class CHServer:
     @classmethod
     def run_test(
         cls, test_file, runs=None, max_queries=0, pr_number=0, results_path=f"{temp_dir}/perf_wd/", long=False,
-        table_engine=None,
+        table_engine=None, profile_seconds=10,
     ):
+        """Run one test XML with perf.py. Returns whether the test tore down cleanly, and the seconds
+        perf.py spent in the profile runs of the queries whose time changed (its `profile-total` line)."""
         test_name = test_file.split("/")[-1].removesuffix(".xml")
         sw = Utils.Stopwatch()
         # --runs ("at least N runs per query") is passed only when explicitly
@@ -1566,7 +1570,7 @@ class CHServer:
                 --binary {perf_left}/clickhouse {perf_right}/clickhouse \
                 --http-port {cls.LEFT_SERVER_HTTP_PORT} {cls.RIGHT_SERVER_HTTP_PORT} \
                 {runs_arg} --max-queries {max_queries} --soft-max-queries \
-                --profile-seconds 10 \
+                --profile-seconds {profile_seconds} \
                 --pr-number {pr_number} \
                 --stop-merges \
                 {f'--table-engine {table_engine} ' if table_engine else ''}{test_file}{' --long' if long else ''}",
@@ -1592,7 +1596,8 @@ class CHServer:
             f.write(out)
         with open(f"{results_path}/wall-clock-times.tsv", "a") as f:
             f.write(f"{test_name}\t{duration}\n")
-        return clean
+        profile_total = sum(float(line.split("\t")[1]) for line in lines if line.startswith("profile-total\t"))
+        return clean, profile_total
 
     def terminate(self):
         print("Terminate ClickHouse process")
@@ -3698,15 +3703,21 @@ def main():
 
         def run_tests():
             last_flush = time.monotonic()
+            # Every query whose time changed gets about 10 seconds of profile runs. A change that moves
+            # most queries (e.g. a new cache) would otherwise spend hours on profiles and run the
+            # shard into the job timeout, losing the whole report: profile only until the budget is spent.
+            profile_seconds_left = PROFILE_BUDGET_SEC
             for test in test_files:
-                clean = CHServer.run_test(
+                clean, profile_total = CHServer.run_test(
                     "./tests/performance/" + test,
                     max_queries=0 if nightly or test in all_query_tests else 10,
                     pr_number=info.pr_number,
                     results_path=perf_wd,
                     long=nightly,
                     table_engine=TABLE_ENGINE,
+                    profile_seconds=10 if profile_seconds_left > 0 else 0,
                 )
+                profile_seconds_left -= profile_total
                 cleanup_user_files()
                 writes_s3 = TABLE_ENGINE == "iceberg_s3" or (nightly and f"./tests/performance/{test}" in s3_paths)
                 # After a complete teardown; a failed S3 cleanup is an error record and ends the batch, the report still runs.
