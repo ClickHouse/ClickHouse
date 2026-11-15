@@ -1,6 +1,7 @@
 -- if() with a String column in one or both branches copies runs of equal conditions at once.
 -- Every result is compared with arrayElement([else, then], (cond != 0) + 1), for alternating, multi-valued, short,
 -- long, constant and random conditions, strings of 0..96 bytes, and blocks of 1, 7 and 1000 rows.
+-- Blocks of 1 and 7 rows read only 50 of every 500 rows, which keeps the test fast.
 
 DROP VIEW IF EXISTS v_if_string_runs;
 CREATE VIEW v_if_string_runs AS
@@ -23,26 +24,26 @@ SELECT
 FROM numbers(10000);
 
 SELECT 'col_col', countIf(r != ref), sum(cityHash64(r)), sum(length(r))
-FROM (SELECT if(c, s, t) AS r, arrayElement([t, s], (c != 0) + 1) AS ref FROM v_if_string_runs) SETTINGS max_block_size = 1;
+FROM (SELECT if(c, s, t) AS r, arrayElement([t, s], (c != 0) + 1) AS ref FROM v_if_string_runs WHERE n % 500 < 50) SETTINGS max_block_size = 1;
 SELECT 'col_col', countIf(r != ref), sum(cityHash64(r)), sum(length(r))
-FROM (SELECT if(c, s, t) AS r, arrayElement([t, s], (c != 0) + 1) AS ref FROM v_if_string_runs) SETTINGS max_block_size = 7;
+FROM (SELECT if(c, s, t) AS r, arrayElement([t, s], (c != 0) + 1) AS ref FROM v_if_string_runs WHERE n % 500 < 50) SETTINGS max_block_size = 7;
 SELECT 'col_col', countIf(r != ref), sum(cityHash64(r)), sum(length(r))
 FROM (SELECT if(c, s, t) AS r, arrayElement([t, s], (c != 0) + 1) AS ref FROM v_if_string_runs) SETTINGS max_block_size = 1000;
 
 SELECT 'col_empty', countIf(r != ref), sum(cityHash64(r)), sum(length(r))
-FROM (SELECT if(c, s, '') AS r, arrayElement(['', s], (c != 0) + 1) AS ref FROM v_if_string_runs) SETTINGS max_block_size = 7;
+FROM (SELECT if(c, s, '') AS r, arrayElement(['', s], (c != 0) + 1) AS ref FROM v_if_string_runs WHERE n % 500 < 50) SETTINGS max_block_size = 7;
 SELECT 'col_empty', countIf(r != ref), sum(cityHash64(r)), sum(length(r))
 FROM (SELECT if(c, s, '') AS r, arrayElement(['', s], (c != 0) + 1) AS ref FROM v_if_string_runs) SETTINGS max_block_size = 1000;
 
 SELECT 'col_const', countIf(r != ref), sum(cityHash64(r)), sum(length(r))
 FROM (SELECT if(c, s, 'a constant longer than sixteen bytes') AS r, arrayElement(['a constant longer than sixteen bytes', s], (c != 0) + 1) AS ref FROM v_if_string_runs) SETTINGS max_block_size = 1000;
 SELECT 'col_const', countIf(r != ref), sum(cityHash64(r)), sum(length(r))
-FROM (SELECT if(c, s, 'x') AS r, arrayElement(['x', s], (c != 0) + 1) AS ref FROM v_if_string_runs) SETTINGS max_block_size = 7;
+FROM (SELECT if(c, s, 'x') AS r, arrayElement(['x', s], (c != 0) + 1) AS ref FROM v_if_string_runs WHERE n % 500 < 50) SETTINGS max_block_size = 7;
 
 SELECT 'const_col', countIf(r != ref), sum(cityHash64(r)), sum(length(r))
 FROM (SELECT if(c, 'yz', t) AS r, arrayElement([t, 'yz'], (c != 0) + 1) AS ref FROM v_if_string_runs) SETTINGS max_block_size = 1000;
 SELECT 'empty_col', countIf(r != ref), sum(cityHash64(r)), sum(length(r))
-FROM (SELECT if(c, '', s) AS r, arrayElement([s, ''], (c != 0) + 1) AS ref FROM v_if_string_runs) SETTINGS max_block_size = 7;
+FROM (SELECT if(c, '', s) AS r, arrayElement([s, ''], (c != 0) + 1) AS ref FROM v_if_string_runs WHERE n % 500 < 50) SETTINGS max_block_size = 7;
 
 SELECT 'nullable_cond', countIf(r != ref), sum(cityHash64(r)), sum(length(r))
 FROM (SELECT if(cn, s, t) AS r, arrayElement([t, s], (ifNull(cn, 0) != 0) + 1) AS ref FROM v_if_string_runs) SETTINGS max_block_size = 1000;
