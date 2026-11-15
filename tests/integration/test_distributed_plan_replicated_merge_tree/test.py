@@ -72,6 +72,8 @@ INITIATOR = node1
 # version to the next without indicating a real regression in this feature.
 DISTRIBUTED_SETTINGS = ", ".join([
     "make_distributed_plan = 1",
+    # The workers are replicas, so the reads of `ReplicatedMergeTree` tables distribute.
+    "distributed_plan_workers_have_local_tables = 1",
     "enable_parallel_replicas = 0",
     "distributed_plan_default_shuffle_join_bucket_count = 3",
     "distributed_plan_default_reader_bucket_count = 3",

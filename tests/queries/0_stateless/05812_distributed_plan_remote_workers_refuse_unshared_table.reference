@@ -1,0 +1,13 @@
+-- Remote workers, fallback off: the plan throws.
+-- Remote workers, fallback on: the query runs locally.
+499500
+-- Local execution: the plan distributes.
+499500
+-- Remote workers that hold the local tables: the plan distributes.
+499500
+-- The fallback reason of the remote run.
+make_distributed_plan does not support a distributed read on remote workers of the table {db}.t_unshared, which is not shared
+-- Which runs had worker tasks (their rows have `<initial query id>::<task>` as query id).
+05812_local	1
+05812_remote	0
+05812_remote_have_tables	1

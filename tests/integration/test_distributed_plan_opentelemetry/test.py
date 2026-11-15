@@ -29,6 +29,8 @@ INITIATOR = node1
 DISTRIBUTED_SETTINGS = ", ".join(
     [
         "make_distributed_plan = 1",
+        # The workers hold the tables, so the reads of `MergeTree` tables distribute.
+        "distributed_plan_workers_have_local_tables = 1",
         "enable_parallel_replicas = 0",
         # A plan that cannot be distributed must fail loudly, not run locally and leave no dispatch spans.
         "distributed_plan_fallback_to_local_execution = 0",
