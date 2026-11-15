@@ -33,7 +33,7 @@ SELECT count() FROM icebergLocalCluster('test_cluster_two_shards_localhost', cur
     WHERE t.a = n.k AND t.a % 2 = 0 AND indexHint(t.a IN (SELECT number FROM numbers(10)));
 SYSTEM FLUSH LOGS query_log;
 -- The replica queries run in `default`, so they are matched through the initiator's query_id.
-SELECT count() > 0, countIf(Settings['cluster_table_function_pushed_down_filter'] != '') = count() FROM system.query_log
+SELECT count() > 0, countIf(Settings['cluster_table_function_pushed_down_filter'] != '') = count(), sum(result_rows) < 1000 FROM system.query_log
     WHERE event_date >= yesterday() AND type = 'QueryFinish' AND NOT is_initial_query
         AND initial_query_id IN (
             SELECT query_id FROM system.query_log
