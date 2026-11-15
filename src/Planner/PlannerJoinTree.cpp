@@ -1364,10 +1364,11 @@ void pushOrderByIntoView(
     if (storage->getStorageID().database_name == "_table_function")
         return;
 
-    /// A sealed view hides rows from the outer query. The pushed-down `ORDER BY ... LIMIT` would run
+    /// A sealed view not read by its definer hides rows from the outer query. The pushed-down `ORDER BY ... LIMIT` would run
     /// below that boundary, so the amount of data read would depend on the rows the view hides.
     if (const auto * view = typeid_cast<const StorageView *>(storage.get());
-        view && view->isSealed(*storage_snapshot->metadata, query_context))
+        view && view->isSealed(*storage_snapshot->metadata, query_context)
+        && !view->isReadByDefiner(*storage_snapshot->metadata, query_context))
         return;
 
     /// `SAMPLE` / `FINAL` applied to the view in the outer query (e.g.
@@ -2261,6 +2262,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             custom_key_ast,
                             table_expression_query_info.table_expression,
                             query_context,
+                            planner_context->isViewSourceInSubqueries(),
                             /*check_access_rights=*/ true);
 
                         planner_context->getMutableQueryContext()->setSetting("distributed_group_by_no_merge", 2);
@@ -2573,6 +2575,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                     additional_filter_ast,
                                     table_expression_query_info.table_expression,
                                     query_context,
+                                    planner_context->isViewSourceInSubqueries(),
                                     /*check_access_rights=*/ true);
 
                                 auto & outer_query_node = table_expression_query_info.query_tree->as<QueryNode &>();
@@ -2605,6 +2608,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                     table_expression_query_info.additional_filter_ast,
                                     std::static_pointer_cast<ITableExpressionNode>(dist_table_node),
                                     inner_context,
+                                    planner_context->isViewSourceInSubqueries(),
                                     /*check_access_rights=*/ true);
                             }
 
@@ -2623,6 +2627,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                     custom_key_ast,
                                     std::static_pointer_cast<ITableExpressionNode>(dist_table_node),
                                     inner_context,
+                                    planner_context->isViewSourceInSubqueries(),
                                     /*check_access_rights=*/ true);
                             }
 
@@ -2864,6 +2869,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 custom_key_ast,
                                 table_expression_query_info.table_expression,
                                 query_context,
+                                planner_context->isViewSourceInSubqueries(),
                                 /*check_access_rights=*/ true);
 
                             planner_context->getMutableQueryContext()->setSetting("prefer_localhost_replica", Field{0});

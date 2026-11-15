@@ -126,7 +126,7 @@ void removeKeysThatAreFunctionsOfOtherKeys(QueryTreeNodes & keys)
 }
 
 QueryTreeNodes unwrapInjectiveFunctionsInKeys(
-    const QueryTreeNodes & keys, bool allow_suspicious_types, const QueryTreeNodePtrWithHashSet * keys_to_keep)
+    const QueryTreeNodes & keys, bool allow_suspicious_types, const QueryTreeNodePtrWithHashIgnoreAliasesSet * keys_to_keep)
 {
     QueryTreeNodes new_keys;
     new_keys.reserve(keys.size());

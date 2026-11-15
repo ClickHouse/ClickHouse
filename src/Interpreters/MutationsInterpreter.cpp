@@ -2413,7 +2413,8 @@ void MutationsInterpreter::Source::read(
             mutation_settings.apply_deleted_mask,
             createFilterDAGForStage(first_stage),
             false,
-            false,
+            /*prefetch_begin_of_range=*/ false,
+            /*allow_remote_fs_prefetch=*/ canPrefetchInMergeOrMutation(*data, {part}, required_columns, context_),
             context_,
             getLogger("MutationsInterpreter"));
     }

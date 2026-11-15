@@ -78,6 +78,7 @@
 #include <Common/IPv6ToBinary.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
+#include <Common/digits10.h>
 #include <Common/quoteString.h>
 #include <base/wide_integer_to_string.h>
 
@@ -5276,16 +5277,22 @@ struct ToStringMonotonicity
         if (left.getType() == Field::Types::UInt64
             && right.getType() == Field::Types::UInt64)
         {
-            return (left.safeGet<Int64>() == 0 && right.safeGet<Int64>() == 0)
-                || (floor(log10(left.safeGet<UInt64>())) == floor(log10(right.safeGet<UInt64>())))
+            /// 0 stays apart from 1..9: a `Bool` renders 0 and 1 as configurable strings.
+            const UInt64 left_value = left.safeGet<UInt64>();
+            const UInt64 right_value = right.safeGet<UInt64>();
+            return (left_value == 0 && right_value == 0)
+                || (left_value > 0 && right_value > 0 && common::digits10(left_value) == common::digits10(right_value))
                 ? positive : not_monotonic;
         }
 
         if (left.getType() == Field::Types::Int64
             && right.getType() == Field::Types::Int64)
         {
-            return (left.safeGet<Int64>() == 0 && right.safeGet<Int64>() == 0)
-                || (left.safeGet<Int64>() > 0 && right.safeGet<Int64>() > 0 && floor(log10(left.safeGet<Int64>())) == floor(log10(right.safeGet<Int64>())))
+            const Int64 left_value = left.safeGet<Int64>();
+            const Int64 right_value = right.safeGet<Int64>();
+            return (left_value == 0 && right_value == 0)
+                || (left_value > 0 && right_value > 0
+                    && common::digits10(static_cast<UInt64>(left_value)) == common::digits10(static_cast<UInt64>(right_value)))
                 ? positive : not_monotonic;
         }
 
