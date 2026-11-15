@@ -7,14 +7,16 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function run_with_custom_key {
     echo "query='$1' with custom_key='$2'"
-    for filter_type in 'default' 'range'; do
+    for filter_type in 'custom_key_sampling' 'custom_key_range'; do
         for max_replicas in {1..3}; do
             echo "filter_type='$filter_type' max_replicas=$max_replicas"
             query="$1 SETTINGS max_parallel_replicas=$max_replicas\
+, enable_parallel_replicas='1' \
+, parallel_replicas_mode ='$filter_type'\
 , parallel_replicas_custom_key='$2'\
-, parallel_replicas_custom_key_filter_type='$filter_type'\
 , parallel_replicas_for_non_replicated_merge_tree=1 \
-, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost'"
+, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost' \
+, serialize_query_plan=0"
             $CLICKHOUSE_CLIENT --query="$query"
         done
     done
@@ -49,6 +51,7 @@ run_count_with_custom_key_merge_tree "y"
 run_count_with_custom_key_merge_tree "cityHash64(y)"
 run_count_with_custom_key_merge_tree "cityHash64(y) + 1"
 
-$CLICKHOUSE_CLIENT --query="SELECT count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), 02535_custom_key_rmt_hash) as t1 JOIN 02535_custom_key_rmt_hash USING y" --allow_repeated_settings --parallel_replicas_custom_key="y" --send_logs_level="trace" 2>&1 | grep -Fac "JOINs are not supported with"
+# check that at least one 'JOINs are not supported' trace is there
+$CLICKHOUSE_CLIENT --query="SELECT count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), 02535_custom_key_rmt_hash) as t1 JOIN 02535_custom_key_rmt_hash USING y" --allow_repeated_settings --parallel_replicas_custom_key="y" --send_logs_level="trace" 2>&1 | grep -m 1 -Fa "JOINs are not supported with" | wc -l
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE 02535_custom_key_rmt_hash"

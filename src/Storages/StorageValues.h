@@ -1,10 +1,12 @@
 #pragma once
 
 #include <Storages/IStorage.h>
+#include <QueryPipeline/Pipe.h>
 
 
 namespace DB
 {
+
 /* One block storage used for values table function
  * It's structure is similar to IStorageSystemOneBlock
  */
@@ -17,7 +19,7 @@ public:
     StorageValues(
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
-        const Block & res_block_,
+        Block res_block_,
         VirtualColumnsDescription virtuals_ = {});
 
     StorageValues(
@@ -41,11 +43,24 @@ public:
     /// FIXME probably it should return false, but StorageValues is used in ExecutingInnerQueryFromViewTransform (whatever it is)
     bool supportsTransactions() const override { return true; }
 
+    bool supportsSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
+
     bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
+
+    /// Returns the prepared pipe if it was not read.
+    std::optional<Pipe> extractPreparedPipe();
+
+    /// While it is not allowed, reading the prepared pipe throws.
+    void setPreparedPipeReadAllowed(bool value) { prepared_pipe_read_allowed = value; }
 
 private:
     Block res_block;
     Pipe prepared_pipe;
+    /// The prepared pipe can be read only once.
+    bool has_prepared_pipe = false;
+    bool prepared_pipe_was_read = false;
+    bool prepared_pipe_read_allowed = true;
 };
 
 }

@@ -1,0 +1,5 @@
+3749925000
+OK
+1	0	SELECT * FROM mergeTreeAnalyzeIndexesUUID(?, greater(key, _CAST(?..)), [?])
+1	0	SELECT * FROM mergeTreeAnalyzeIndexesUUID(?, in(key, (SELECT __table1.key AS key FROM default.test_in_dia AS __table1 WHERE __table1.key > ?)), [?])
+1	1	SELECT sum(key) FROM test_in_dia WHERE key IN (SELECT key FROM test_in_dia WHERE key > ?)

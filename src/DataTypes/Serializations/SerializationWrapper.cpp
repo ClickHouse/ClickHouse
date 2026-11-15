@@ -47,7 +47,7 @@ void SerializationWrapper::serializeBinaryBulkWithMultipleStreams(
 }
 
 void SerializationWrapper::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
+    IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -85,6 +85,11 @@ void SerializationWrapper::serializeBinary(const IColumn & column, size_t row_nu
 void SerializationWrapper::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     nested_serialization->deserializeBinary(column, istr, settings);
+}
+
+void SerializationWrapper::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+    nested_serialization->serializeForHashCalculation(column, row_num, ostr);
 }
 
 void SerializationWrapper::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -130,6 +135,11 @@ void SerializationWrapper::deserializeTextCSV(IColumn & column, ReadBuffer & ist
 bool SerializationWrapper::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     return nested_serialization->tryDeserializeTextCSV(column, istr, settings);
+}
+
+void SerializationWrapper::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    nested_serialization->serializeTextHive(column, row_num, ostr, settings);
 }
 
 void SerializationWrapper::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

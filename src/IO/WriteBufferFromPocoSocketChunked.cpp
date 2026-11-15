@@ -22,11 +22,22 @@ WriteBufferFromPocoSocketChunked::WriteBufferFromPocoSocketChunked(Poco::Net::So
 {}
 
 WriteBufferFromPocoSocketChunked::WriteBufferFromPocoSocketChunked(Poco::Net::Socket & socket_, const ProfileEvents::Event & write_event_, size_t buf_size)
+    : WriteBufferFromPocoSocketChunked(socket_, write_event_, ProfileEvents::end(), buf_size)
+{
+}
+
+WriteBufferFromPocoSocketChunked::WriteBufferFromPocoSocketChunked(
+    Poco::Net::Socket & socket_,
+    const ProfileEvents::Event & write_event_,
+    const ProfileEvents::Event & flush_event_,
+    size_t buf_size)
     : WriteBufferFromPocoSocket(
         socket_, write_event_,
         std::clamp(buf_size, sizeof(*chunk_size_ptr) + 1, static_cast<size_t>(std::numeric_limits<std::remove_reference_t<decltype(*chunk_size_ptr)>>::max()))),
-        log(getLogger("Protocol"))
-{}
+        log(getLogger("Protocol")),
+        flush_event(flush_event_)
+{
+}
 
 void WriteBufferFromPocoSocketChunked::enableChunked()
 {
@@ -108,23 +119,16 @@ void WriteBufferFromPocoSocketChunked::finishChunk()
     last_finish_chunk = chunk_size_ptr;
 }
 
-WriteBufferFromPocoSocketChunked::~WriteBufferFromPocoSocketChunked()
-{
-    try
-    {
-        finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
-
 void WriteBufferFromPocoSocketChunked::nextImpl()
 {
     if (!chunked)
     {
+        if (!offset())
+            return;
+
         WriteBufferFromPocoSocket::nextImpl();
+        if (flush_event != ProfileEvents::end())
+            ProfileEvents::increment(flush_event);
         return;
     }
 
@@ -146,6 +150,8 @@ void WriteBufferFromPocoSocketChunked::nextImpl()
 
         last_finish_chunk = chunk_size_ptr;
 
+        if (flush_event != ProfileEvents::end())
+            ProfileEvents::increment(flush_event);
         return;
     }
 
@@ -168,6 +174,8 @@ void WriteBufferFromPocoSocketChunked::nextImpl()
 
         last_finish_chunk = nullptr;
 
+        if (flush_event != ProfileEvents::end())
+            ProfileEvents::increment(flush_event);
         return;
     }
 
@@ -186,7 +194,7 @@ void WriteBufferFromPocoSocketChunked::nextImpl()
             LOG_TEST(log, "{} -> {} Chunk send started. Message {}, size {}",
                     ourAddress().toString(), peerAddress().toString(),
                     static_cast<unsigned int>(*(reinterpret_cast<char *>(chunk_size_ptr) + sizeof(*chunk_size_ptr))),
-                    *chunk_size_ptr);
+                     *chunk_size_ptr);
         }
         else
             LOG_TEST(log, "{} -> {} Chunk send continued. Size {}", ourAddress().toString(), peerAddress().toString(), *chunk_size_ptr);
@@ -198,6 +206,9 @@ void WriteBufferFromPocoSocketChunked::nextImpl()
     nextimpl_working_buffer_offset = sizeof(*chunk_size_ptr);
 
     last_finish_chunk = initialize_last_finish_chunk ? chunk_size_ptr : nullptr;
+
+    if (flush_event != ProfileEvents::end())
+        ProfileEvents::increment(flush_event);
 }
 
 void WriteBufferFromPocoSocketChunked::finalizeImpl()

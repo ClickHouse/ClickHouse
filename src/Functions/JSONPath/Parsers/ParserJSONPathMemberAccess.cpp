@@ -54,16 +54,16 @@ bool ParserJSONPathMemberAccess::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
         if (pos.isValid() && pos->type == TokenType::BareWord && pos->begin == last_end)
         {
-            member_name = std::make_shared<ASTIdentifier>(String(last_begin, pos->end));
+            member_name = make_intrusive<ASTIdentifier>(String(last_begin, pos->end));
             ++pos;
         }
         else if (pos.isValid() && (pos->type == TokenType::Dot || pos->type == TokenType::OpeningSquareBracket))
         {
-            member_name = std::make_shared<ASTIdentifier>(String(last_begin, last_end));
+            member_name = make_intrusive<ASTIdentifier>(String(last_begin, last_end));
         }
         else if (!pos.isValid() && pos->type == TokenType::EndOfStream)
         {
-            member_name = std::make_shared<ASTIdentifier>(String(last_begin, last_end));
+            member_name = make_intrusive<ASTIdentifier>(String(last_begin, last_end));
         }
         else
         {
@@ -79,7 +79,7 @@ bool ParserJSONPathMemberAccess::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         if (!name_p.parse(pos, member_name, expected))
             return false;
     }
-    auto member_access = std::make_shared<ASTJSONPathMemberAccess>();
+    auto member_access = make_intrusive<ASTJSONPathMemberAccess>();
     node = member_access;
     return tryGetIdentifierNameInto(member_name, member_access->member_name);
 }

@@ -14,9 +14,11 @@ class ASTQualifiedAsterisk : public IAST
 {
 public:
     String getID(char) const override { return "QualifiedAsterisk"; }
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
     ASTPtr clone() const override
     {
-        auto clone = std::make_shared<ASTQualifiedAsterisk>(*this);
+        auto clone = make_intrusive<ASTQualifiedAsterisk>(*this);
         clone->children.clear();
 
         if (transformers)
@@ -34,8 +36,9 @@ public:
 
     ASTPtr qualifier;
     ASTPtr transformers;
+
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }

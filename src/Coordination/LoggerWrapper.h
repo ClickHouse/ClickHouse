@@ -1,8 +1,8 @@
 #pragma once
 
+#include <Core/LogsLevel.h>
 #include <libnuraft/nuraft.hxx>
 #include <Common/logger_useful.h>
-#include <Core/SettingsEnums.h>
 
 namespace DB
 {

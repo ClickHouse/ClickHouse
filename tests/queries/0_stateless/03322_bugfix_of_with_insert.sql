@@ -1,0 +1,7 @@
+-- fix crash issue of with + insert
+
+WITH x AS (SELECT 1) INSERT INTO TABLE t0 (c0) WITH y AS (SELECT 1) (SELECT 1); -- { clientError SYNTAX_ERROR }
+
+WITH z AS (SELECT 1) INSERT INTO TABLE x SELECT 1 FROM ((SELECT 1) UNION (WITH y AS (SELECT 1) (SELECT 1) UNION (SELECT 1)));  -- { clientError SYNTAX_ERROR }
+
+WITH x AS (SELECT 1 as c0) INSERT INTO TABLE t0 (c0) SELECT [1,;  -- { clientError SYNTAX_ERROR }

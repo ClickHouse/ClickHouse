@@ -22,16 +22,24 @@ public:
 
     void initialize(std::shared_ptr<TraceLog> trace_log_);
 
+    /// Waits until the collector has handled every trace sent before the call.
+    static void flush();
+
 private:
     std::shared_ptr<TraceLog> getTraceLog();
 
     std::atomic<bool> is_trace_log_initialized = false;
     std::shared_ptr<TraceLog> trace_log_ptr;
+    bool symbolize = false;
 
-    ThreadFromGlobalPool thread;
+    /// Use a thread that does not call `ThreadStatus::initGlobalProfiler` on startup:
+    /// `initGlobalProfiler` reads `Context::hasTraceCollector`, which races with
+    /// `optional<TraceCollector>::emplace` because the worker thread is created
+    /// inside the optional's constructor (before `emplace` has set `has_value`).
+    /// Profiling the trace collector's own thread is also pointless.
+    ThreadFromGlobalPoolWithoutTraceCollector thread;
 
     void tryClosePipe();
-
     void run();
 };
 

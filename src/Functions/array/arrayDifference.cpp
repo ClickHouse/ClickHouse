@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 
-#include "FunctionArrayMapped.h"
+#include <Functions/array/FunctionArrayMapped.h>
 
 
 namespace DB
@@ -21,6 +21,14 @@ namespace ErrorCodes
   */
 struct ArrayDifferenceImpl
 {
+    /// Authoritative — array of consecutive differences. The result element type widens to fit a
+    /// signed difference (e.g. `Array(UInt8)` → `Array(Int16)`, `Array(UInt32)` → `Array(Int64)`);
+    /// `Decimal` keeps its type and `DateTime64` widens to a signed `Decimal64` of the same scale.
+    /// See the `arrayDifferenceResult` type function. `Date`/`DateTime` inputs are accepted too.
+    static constexpr auto signature =
+        "(Function((Any, ...), T : Number | DateOrDateTime), Array, ...) -> Array(arrayDifferenceResult(T))"
+        " OR (Array(T : Number | DateOrDateTime)) -> Array(arrayDifferenceResult(T))";
+
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -154,8 +162,7 @@ struct ArrayDifferenceImpl
             || executeType<Decimal128, Decimal128>(mapped, array, res) || executeType<Decimal256, Decimal256>(mapped, array, res)
             || executeType<DateTime64, Decimal64>(mapped, array, res))
             return res;
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arrayDifference: {}", mapped->getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arrayDifference: {}", mapped->getName());
     }
 };
 
@@ -167,7 +174,29 @@ using FunctionArrayDifference = FunctionArrayMapped<ArrayDifferenceImpl, NameArr
 
 REGISTER_FUNCTION(ArrayDifference)
 {
-    factory.registerFunction<FunctionArrayDifference>();
+    FunctionDocumentation::Description description = R"(
+Calculates an array of differences between adjacent array elements.
+The first element of the result array will be 0, the second `arr[1] - arr[0]`, the third `arr[2] - arr[1]`, etc.
+The type of elements in the result array are determined by the type inference rules for subtraction (e.g. `UInt8` - `UInt8` = `Int16`).
+    )";
+    FunctionDocumentation::Syntax syntax = "arrayDifference(arr)";
+    FunctionDocumentation::Arguments argument = {
+        {"arr", "Array for which to calculate differences between adjacent elements.", {"Array(T)"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of differences between adjacent array elements", {"UInt*"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT arrayDifference([1, 2, 3, 4]);", "[0,1,1,1]"},
+        {"Example of overflow due to result type Int64", "SELECT arrayDifference([0, 10000000000000000000]);", R"(
+┌─arrayDifference([0, 10000000000000000000])─┐
+│ [0,-8446744073709551616]                   │
+└────────────────────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, argument, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayDifference>(documentation);
 }
 
 }

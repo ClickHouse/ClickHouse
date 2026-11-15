@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Databases/DatabaseFactory.h>
 #include <Databases/registerDatabases.h>
 
@@ -9,13 +11,15 @@ void registerDatabaseAtomic(DatabaseFactory & factory);
 void registerDatabaseOrdinary(DatabaseFactory & factory);
 void registerDatabaseDictionary(DatabaseFactory & factory);
 void registerDatabaseMemory(DatabaseFactory & factory);
-void registerDatabaseLazy(DatabaseFactory & factory);
 void registerDatabaseFilesystem(DatabaseFactory & factory);
+void registerDatabaseURL(DatabaseFactory & factory);
 void registerDatabaseReplicated(DatabaseFactory & factory);
+#if CLICKHOUSE_CLOUD
+void registerDatabaseShared(DatabaseFactory & factory);
+#endif
 
 #if USE_MYSQL
 void registerDatabaseMySQL(DatabaseFactory & factory);
-void registerDatabaseMaterializedMySQL(DatabaseFactory & factory);
 #endif
 
 #if USE_LIBPQXX
@@ -36,6 +40,16 @@ void registerDatabaseS3(DatabaseFactory & factory);
 void registerDatabaseHDFS(DatabaseFactory & factory);
 #endif
 
+#if USE_AVRO && USE_PARQUET
+void registerDatabaseDataLake(DatabaseFactory & factory);
+#endif
+
+void registerDatabaseBackup(DatabaseFactory & factory);
+
+void registerDatabaseRemote(DatabaseFactory & factory);
+void registerDatabaseOverlay(DatabaseFactory & factory);
+void registerDatabaseCluster(DatabaseFactory & factory);
+
 void registerDatabases()
 {
     auto & factory = DatabaseFactory::instance();
@@ -43,13 +57,18 @@ void registerDatabases()
     registerDatabaseOrdinary(factory);
     registerDatabaseDictionary(factory);
     registerDatabaseMemory(factory);
-    registerDatabaseLazy(factory);
     registerDatabaseFilesystem(factory);
+    registerDatabaseURL(factory);
     registerDatabaseReplicated(factory);
+    registerDatabaseRemote(factory);
+    registerDatabaseOverlay(factory);
+    registerDatabaseCluster(factory);
+#if CLICKHOUSE_CLOUD
+    registerDatabaseShared(factory);
+#endif
 
 #if USE_MYSQL
     registerDatabaseMySQL(factory);
-    registerDatabaseMaterializedMySQL(factory);
 #endif
 
 #if USE_LIBPQXX
@@ -68,5 +87,11 @@ void registerDatabases()
 #if USE_HDFS
     registerDatabaseHDFS(factory);
 #endif
+
+#if USE_AVRO && USE_PARQUET
+    registerDatabaseDataLake(factory);
+#endif
+
+    registerDatabaseBackup(factory);
 }
 }

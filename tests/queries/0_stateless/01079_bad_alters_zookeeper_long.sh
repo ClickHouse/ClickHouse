@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, zookeeper
+# Tags: long, zookeeper, no-msan
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -22,7 +22,13 @@ $CLICKHOUSE_CLIENT --query "ALTER TABLE table_for_bad_alters MODIFY COLUMN value
 
 sleep 2
 
-while [[ $($CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE mutation_id='0000000000' and database = '$CLICKHOUSE_DATABASE'" 2>&1) ]]; do
+counter=0 retries=60
+while [[ $counter -lt $retries ]]; do
+    output=$($CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE mutation_id='0000000000' and database = '$CLICKHOUSE_DATABASE'" 2>&1)
+    if [[ "$output" == *"finished"* ]]; then
+        break
+    fi
+    ((++counter))
     sleep 1
 done
 

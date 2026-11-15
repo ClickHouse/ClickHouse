@@ -18,4 +18,4 @@ $CLICKHOUSE_LOCAL --query "SELECT 202;" --query "SELECT 202;"
 $CLICKHOUSE_LOCAL --query "SELECT 303" --query "SELECT 303; SELECT 303"
 $CLICKHOUSE_LOCAL --query "" --query ""
 $CLICKHOUSE_LOCAL --query "SELECT 303" --query 2>&1 | grep -o 'Bad arguments'
-$CLICKHOUSE_LOCAL --query "SELECT 303" --query "SELE" 2>&1 | grep -o 'Syntax error'
+$CLICKHOUSE_LOCAL --implicit-select 0 --query "SELECT 303" --query "SELE" 2>&1 | grep -o 'Syntax error'

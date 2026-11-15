@@ -1,0 +1,87 @@
+-- { echo }
+
+SET allow_suspicious_low_cardinality_types = 1;
+SELECT
+    toTypeName(sumCount(NULL)),
+    sumCount(NULL);
+Nullable(Nothing)	\N
+SELECT
+    toTypeName(sumCount(CAST(NULL, 'Nullable(Float32)'))),
+    sumCount(CAST(NULL, 'Nullable(Float32)'));
+Tuple(Float64, UInt64)	(0,0)
+SELECT
+    toTypeName(sumCount(CAST(NULL, 'LowCardinality(Nullable(Float32))'))),
+    sumCount(CAST(NULL, 'LowCardinality(Nullable(Float32))'));
+Tuple(Float64, UInt64)	(0,0)
+SELECT hex(sumCountState(CAST(NULL, 'Nullable(Float32)')));
+000000000000000000
+SELECT hex(sumCountState(CAST(NULL, 'LowCardinality(Nullable(Float32))')));
+000000000000000000
+SELECT sumCount(x), hex(sumCountState(x))
+FROM
+(
+    SELECT CAST(arrayJoin([NULL, NULL, NULL]), 'Nullable(Float32)') AS x
+);
+(0,0)	000000000000000000
+SELECT sumCount(x), hex(sumCountState(x))
+FROM
+(
+    SELECT CAST(arrayJoin([NULL, NULL, NULL]), 'LowCardinality(Nullable(Float32))') AS x
+);
+(0,0)	000000000000000000
+SELECT finalizeAggregation(CAST(unhex('000000000000000000'), 'AggregateFunction(sumCount, Nullable(Float32))'));
+(0,0)
+SELECT finalizeAggregation(CAST(unhex('000000000000000000'), 'AggregateFunction(sumCount, LowCardinality(Nullable(Float32)))'));
+(0,0)
+SELECT finalizeAggregation(CAST(unhex('000000008639E64709'), 'AggregateFunction(sumCount, Nullable(Float32))'));
+(2.363335573687322e38,9)
+SELECT finalizeAggregation(CAST(unhex('000000008639E64709'), 'AggregateFunction(sumCount, LowCardinality(Nullable(Float32)))'));
+(2.363335573687322e38,9)
+SELECT finalizeAggregation(CAST(unhex('0000000064789'), 'AggregateFunction(sumCount, Nullable(Float32))')); -- { serverError CANNOT_READ_ALL_DATA }
+SELECT finalizeAggregation(CAST(unhex('000000008639E64789'), 'AggregateFunction(sumCount, Nullable(Float32))')); -- { serverError ATTEMPT_TO_READ_AFTER_EOF }
+SELECT sumCount(x), hex(sumCountState(x))
+FROM
+(
+    SELECT CAST(number % 2, 'Nullable(UInt8)') AS x
+    FROM numbers(130)
+);
+(65,130)	41000000000000008201
+SELECT sumCount(x), hex(sumCountState(x))
+FROM
+(
+    SELECT CAST(number % 2, 'LowCardinality(Nullable(UInt8))') AS x
+    FROM numbers(130)
+);
+(65,130)	41000000000000008201
+SELECT finalizeAggregation(CAST(unhex('41000000000000008201'), 'AggregateFunction(sumCount, Nullable(UInt8))'));
+(65,130)
+SELECT finalizeAggregation(CAST(unhex('41000000000000008201'), 'AggregateFunction(sumCount, LowCardinality(Nullable(UInt8)))'));
+(65,130)
+SELECT sumCountMerge(st)
+FROM
+(
+    SELECT CAST(unhex('000000008639E64709'), 'AggregateFunction(sumCount, Nullable(Float32))') AS st
+    UNION ALL
+    SELECT CAST(unhex('000000008639E64709'), 'AggregateFunction(sumCount, Nullable(Float32))') AS st
+);
+(4.726671147374644e38,18)
+SELECT hex(sumCountState(x))
+FROM
+(
+    SELECT CAST(
+        arrayJoin(
+            [3.4028235e38, -3.4028235e38, NULL, 2.3835032e38, -6.857267e37, -4.4835215e37, -2.6999879e38, 1.9934134e38, 2.362745e38, -5.4225925e37]),
+        'LowCardinality(Nullable(Float32))')
+        AS x
+);
+000000008639E64709
+SELECT hex(sumCountState(x))
+FROM
+(
+    SELECT CAST(
+        arrayJoin(
+            [3.4028235e38, -3.4028235e38, NULL, 2.3835032e38, -6.857267e37, -4.4835215e37, -2.6999879e38, 1.9934134e38, 2.362745e38, -5.4225925e37]),
+        'Nullable(Float32)')
+        AS x
+);
+000000008639E64709

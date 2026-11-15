@@ -1,0 +1,1532 @@
+Row 1:
+──────
+[1mexp2(number):[0m           1
+[1mexp10(number):[0m          1
+[1mconcat('test', number):[0m test0
+
+Row 2:
+──────
+[1mexp2(number):[0m           2[90m -- 2.00[0m
+[1mexp10(number):[0m          10[90m -- 10.00[0m
+[1mconcat('test', number):[0m test1
+
+Row 3:
+──────
+[1mexp2(number):[0m           4[90m -- 4.00[0m
+[1mexp10(number):[0m          100[90m -- 100.00[0m
+[1mconcat('test', number):[0m test2
+
+Row 4:
+──────
+[1mexp2(number):[0m           8[90m -- 8.00[0m
+[1mexp10(number):[0m          1000[90m -- 1.00 thousand[0m
+[1mconcat('test', number):[0m test3
+
+Row 5:
+──────
+[1mexp2(number):[0m           16[90m -- 16.00[0m
+[1mexp10(number):[0m          1[4m0[0m000[90m -- 10.00 thousand[0m
+[1mconcat('test', number):[0m test4
+
+Row 6:
+──────
+[1mexp2(number):[0m           32[90m -- 32.00[0m
+[1mexp10(number):[0m          10[4m0[0m000[90m -- 100.00 thousand[0m
+[1mconcat('test', number):[0m test5
+
+Row 7:
+──────
+[1mexp2(number):[0m           64[90m -- 64.00[0m
+[1mexp10(number):[0m          [4m1[0m00[4m0[0m000[90m -- 1.00 million[0m
+[1mconcat('test', number):[0m test6
+
+Row 8:
+──────
+[1mexp2(number):[0m           128[90m -- 128.00[0m
+[1mexp10(number):[0m          1[4m0[0m00[4m0[0m000[90m -- 10.00 million[0m
+[1mconcat('test', number):[0m test7
+
+Row 9:
+───────
+[1mexp2(number):[0m           256[90m -- 256.00[0m
+[1mexp10(number):[0m          10[4m0[0m00[4m0[0m000[90m -- 100.00 million[0m
+[1mconcat('test', number):[0m test8
+
+Row 10:
+───────
+[1mexp2(number):[0m           512[90m -- 512.00[0m
+[1mexp10(number):[0m          [4m1[0m00[4m0[0m00[4m0[0m000[90m -- 1.00 billion[0m
+[1mconcat('test', number):[0m test9
+
+Row 11:
+───────
+[1mexp2(number):[0m           1024[90m -- 1.02 thousand[0m
+[1mexp10(number):[0m          1[4m0[0m00[4m0[0m00[4m0[0m000[90m -- 10.00 billion[0m
+[1mconcat('test', number):[0m test10
+
+Row 12:
+───────
+[1mexp2(number):[0m           2048[90m -- 2.05 thousand[0m
+[1mexp10(number):[0m          10[4m0[0m00[4m0[0m00[4m0[0m000[90m -- 100.00 billion[0m
+[1mconcat('test', number):[0m test11
+
+Row 13:
+───────
+[1mexp2(number):[0m           4096[90m -- 4.10 thousand[0m
+[1mexp10(number):[0m          [4m1[0m00[4m0[0m00[4m0[0m00[4m0[0m000[90m -- 1.00 trillion[0m
+[1mconcat('test', number):[0m test12
+
+Row 14:
+───────
+[1mexp2(number):[0m           8192[90m -- 8.19 thousand[0m
+[1mexp10(number):[0m          1[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m000[90m -- 10.00 trillion[0m
+[1mconcat('test', number):[0m test13
+
+Row 15:
+───────
+[1mexp2(number):[0m           1[4m6[0m384[90m -- 16.38 thousand[0m
+[1mexp10(number):[0m          10[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m000[90m -- 100.00 trillion[0m
+[1mconcat('test', number):[0m test14
+
+Row 16:
+───────
+[1mexp2(number):[0m           3[4m2[0m768[90m -- 32.77 thousand[0m
+[1mexp10(number):[0m          [4m1[0m00[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m000[90m -- 1.00 quadrillion[0m
+[1mconcat('test', number):[0m test15
+
+Row 17:
+───────
+[1mexp2(number):[0m           6[4m5[0m536[90m -- 65.54 thousand[0m
+[1mexp10(number):[0m          1[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m000[90m -- 10.00 quadrillion[0m
+[1mconcat('test', number):[0m test16
+
+Row 18:
+───────
+[1mexp2(number):[0m           13[4m1[0m072[90m -- 131.07 thousand[0m
+[1mexp10(number):[0m          10[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m000[90m -- 100.00 quadrillion[0m
+[1mconcat('test', number):[0m test17
+
+Row 19:
+───────
+[1mexp2(number):[0m           26[4m2[0m144[90m -- 262.14 thousand[0m
+[1mexp10(number):[0m          [4m1[0m00[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m000
+[1mconcat('test', number):[0m test18
+
+Row 20:
+───────
+[1mexp2(number):[0m           52[4m4[0m288[90m -- 524.29 thousand[0m
+[1mexp10(number):[0m          1[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m000
+[1mconcat('test', number):[0m test19
+
+Row 21:
+───────
+[1mexp2(number):[0m           [4m1[0m04[4m8[0m576[90m -- 1.05 million[0m
+[1mexp10(number):[0m          10[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m000[90m -- 100.00 quintillion[0m
+[1mconcat('test', number):[0m test20
+
+Row 22:
+───────
+[1mexp2(number):[0m           [4m2[0m09[4m7[0m152[90m -- 2.10 million[0m
+[1mexp10(number):[0m          1e21[90m -- 1.00 sextillion[0m
+[1mconcat('test', number):[0m test21
+
+Row 23:
+───────
+[1mexp2(number):[0m           [4m4[0m19[4m4[0m304[90m -- 4.19 million[0m
+[1mexp10(number):[0m          1e22[90m -- 10.00 sextillion[0m
+[1mconcat('test', number):[0m test22
+
+Row 24:
+───────
+[1mexp2(number):[0m           [4m8[0m38[4m8[0m608[90m -- 8.39 million[0m
+[1mexp10(number):[0m          1e23[90m -- 100.00 sextillion[0m
+[1mconcat('test', number):[0m test23
+
+Row 25:
+───────
+[1mexp2(number):[0m           1[4m6[0m77[4m7[0m216[90m -- 16.78 million[0m
+[1mexp10(number):[0m          1e24[90m -- 1.00 septillion[0m
+[1mconcat('test', number):[0m test24
+
+Row 26:
+───────
+[1mexp2(number):[0m           3[4m3[0m55[4m4[0m432[90m -- 33.55 million[0m
+[1mexp10(number):[0m          1e25[90m -- 10.00 septillion[0m
+[1mconcat('test', number):[0m test25
+
+Row 27:
+───────
+[1mexp2(number):[0m           6[4m7[0m10[4m8[0m864[90m -- 67.11 million[0m
+[1mexp10(number):[0m          1e26[90m -- 100.00 septillion[0m
+[1mconcat('test', number):[0m test26
+
+Row 28:
+───────
+[1mexp2(number):[0m           13[4m4[0m21[4m7[0m728[90m -- 134.22 million[0m
+[1mexp10(number):[0m          1e27[90m -- 1.00 octillion[0m
+[1mconcat('test', number):[0m test27
+
+Row 29:
+───────
+[1mexp2(number):[0m           26[4m8[0m43[4m5[0m456[90m -- 268.44 million[0m
+[1mexp10(number):[0m          1e28[90m -- 10.00 octillion[0m
+[1mconcat('test', number):[0m test28
+
+Row 30:
+───────
+[1mexp2(number):[0m           53[4m6[0m87[4m0[0m912[90m -- 536.87 million[0m
+[1mexp10(number):[0m          1e29[90m -- 100.00 octillion[0m
+[1mconcat('test', number):[0m test29
+
+Row 31:
+───────
+[1mexp2(number):[0m           [4m1[0m07[4m3[0m74[4m1[0m824[90m -- 1.07 billion[0m
+[1mexp10(number):[0m          1e30[90m -- 1.00 nonillion[0m
+[1mconcat('test', number):[0m test30
+
+Row 32:
+───────
+[1mexp2(number):[0m           [4m2[0m14[4m7[0m48[4m3[0m648[90m -- 2.15 billion[0m
+[1mexp10(number):[0m          1e31[90m -- 10.00 nonillion[0m
+[1mconcat('test', number):[0m test31
+
+Row 33:
+───────
+[1mexp2(number):[0m           [4m4[0m29[4m4[0m96[4m7[0m296[90m -- 4.29 billion[0m
+[1mexp10(number):[0m          1e32[90m -- 100.00 nonillion[0m
+[1mconcat('test', number):[0m test32
+
+Row 34:
+───────
+[1mexp2(number):[0m           [4m8[0m58[4m9[0m93[4m4[0m592[90m -- 8.59 billion[0m
+[1mexp10(number):[0m          1e33[90m -- 1000.00 nonillion[0m
+[1mconcat('test', number):[0m test33
+
+Row 35:
+───────
+[1mexp2(number):[0m           1[4m7[0m17[4m9[0m86[4m9[0m184[90m -- 17.18 billion[0m
+[1mexp10(number):[0m          1e34[90m -- 10.00 decillion[0m
+[1mconcat('test', number):[0m test34
+
+Row 36:
+───────
+[1mexp2(number):[0m           3[4m4[0m35[4m9[0m73[4m8[0m368[90m -- 34.36 billion[0m
+[1mexp10(number):[0m          1e35[90m -- 100.00 decillion[0m
+[1mconcat('test', number):[0m test35
+
+Row 37:
+───────
+[1mexp2(number):[0m           6[4m8[0m71[4m9[0m47[4m6[0m736[90m -- 68.72 billion[0m
+[1mexp10(number):[0m          1e36[90m -- 1.00 undecillion[0m
+[1mconcat('test', number):[0m test36
+
+Row 38:
+───────
+[1mexp2(number):[0m           13[4m7[0m43[4m8[0m95[4m3[0m472[90m -- 137.44 billion[0m
+[1mexp10(number):[0m          1e37[90m -- 10.00 undecillion[0m
+[1mconcat('test', number):[0m test37
+
+Row 39:
+───────
+[1mexp2(number):[0m           27[4m4[0m87[4m7[0m90[4m6[0m944[90m -- 274.88 billion[0m
+[1mexp10(number):[0m          1e38[90m -- 100.00 undecillion[0m
+[1mconcat('test', number):[0m test38
+
+Row 40:
+───────
+[1mexp2(number):[0m           54[4m9[0m75[4m5[0m81[4m3[0m888[90m -- 549.76 billion[0m
+[1mexp10(number):[0m          1e39[90m -- 1000.00 undecillion[0m
+[1mconcat('test', number):[0m test39
+
+Row 41:
+───────
+[1mexp2(number):[0m           [4m1[0m09[4m9[0m51[4m1[0m62[4m7[0m776[90m -- 1.10 trillion[0m
+[1mexp10(number):[0m          1e40[90m -- 10.00 duodecillion[0m
+[1mconcat('test', number):[0m test40
+
+Row 42:
+───────
+[1mexp2(number):[0m           [4m2[0m19[4m9[0m02[4m3[0m25[4m5[0m552[90m -- 2.20 trillion[0m
+[1mexp10(number):[0m          1e41[90m -- 100.00 duodecillion[0m
+[1mconcat('test', number):[0m test41
+
+Row 43:
+───────
+[1mexp2(number):[0m           [4m4[0m39[4m8[0m04[4m6[0m51[4m1[0m104[90m -- 4.40 trillion[0m
+[1mexp10(number):[0m          1e42[90m -- 1.00 tredecillion[0m
+[1mconcat('test', number):[0m test42
+
+Row 44:
+───────
+[1mexp2(number):[0m           [4m8[0m79[4m6[0m09[4m3[0m02[4m2[0m208[90m -- 8.80 trillion[0m
+[1mexp10(number):[0m          1e43[90m -- 10.00 tredecillion[0m
+[1mconcat('test', number):[0m test43
+
+Row 45:
+───────
+[1mexp2(number):[0m           1[4m7[0m59[4m2[0m18[4m6[0m04[4m4[0m416[90m -- 17.59 trillion[0m
+[1mexp10(number):[0m          1e44[90m -- 100.00 tredecillion[0m
+[1mconcat('test', number):[0m test44
+
+Row 46:
+───────
+[1mexp2(number):[0m           3[4m5[0m18[4m4[0m37[4m2[0m08[4m8[0m832[90m -- 35.18 trillion[0m
+[1mexp10(number):[0m          1e45[90m -- 1000.00 tredecillion[0m
+[1mconcat('test', number):[0m test45
+
+Row 47:
+───────
+[1mexp2(number):[0m           7[4m0[0m36[4m8[0m74[4m4[0m17[4m7[0m664[90m -- 70.37 trillion[0m
+[1mexp10(number):[0m          1e46[90m -- 10.00 quattuordecillion[0m
+[1mconcat('test', number):[0m test46
+
+Row 48:
+───────
+[1mexp2(number):[0m           14[4m0[0m73[4m7[0m48[4m8[0m35[4m5[0m328[90m -- 140.74 trillion[0m
+[1mexp10(number):[0m          1e47[90m -- 100.00 quattuordecillion[0m
+[1mconcat('test', number):[0m test47
+
+Row 49:
+───────
+[1mexp2(number):[0m           28[4m1[0m47[4m4[0m97[4m6[0m71[4m0[0m656[90m -- 281.47 trillion[0m
+[1mexp10(number):[0m          1e48[90m -- 1.00 quindecillion[0m
+[1mconcat('test', number):[0m test48
+
+Row 50:
+───────
+[1mexp2(number):[0m           56[4m2[0m94[4m9[0m95[4m3[0m42[4m1[0m312[90m -- 562.95 trillion[0m
+[1mexp10(number):[0m          1e49[90m -- 10.00 quindecillion[0m
+[1mconcat('test', number):[0m test49
+
+Row 51:
+───────
+[1mexp2(number):[0m           [4m1[0m12[4m5[0m89[4m9[0m90[4m6[0m84[4m2[0m624[90m -- 1.13 quadrillion[0m
+[1mexp10(number):[0m          1e50[90m -- 100.00 quindecillion[0m
+[1mconcat('test', number):[0m test50
+
+Row 52:
+───────
+[1mexp2(number):[0m           [4m2[0m25[4m1[0m79[4m9[0m81[4m3[0m68[4m5[0m248[90m -- 2.25 quadrillion[0m
+[1mexp10(number):[0m          1e51[90m -- 1.00 sexdecillion[0m
+[1mconcat('test', number):[0m test51
+
+Row 53:
+───────
+[1mexp2(number):[0m           [4m4[0m50[4m3[0m59[4m9[0m62[4m7[0m37[4m0[0m496[90m -- 4.50 quadrillion[0m
+[1mexp10(number):[0m          1e52[90m -- 10.00 sexdecillion[0m
+[1mconcat('test', number):[0m test52
+
+Row 54:
+───────
+[1mexp2(number):[0m           [4m9[0m00[4m7[0m19[4m9[0m25[4m4[0m74[4m0[0m992[90m -- 9.01 quadrillion[0m
+[1mexp10(number):[0m          1e53[90m -- 100.00 sexdecillion[0m
+[1mconcat('test', number):[0m test53
+
+Row 55:
+───────
+[1mexp2(number):[0m           1[4m8[0m01[4m4[0m39[4m8[0m50[4m9[0m48[4m1[0m984[90m -- 18.01 quadrillion[0m
+[1mexp10(number):[0m          1e54[90m -- 1.00 septendecillion[0m
+[1mconcat('test', number):[0m test54
+
+Row 56:
+───────
+[1mexp2(number):[0m           3[4m6[0m02[4m8[0m79[4m7[0m01[4m8[0m96[4m3[0m970[90m -- 36.03 quadrillion[0m
+[1mexp10(number):[0m          1e55[90m -- 10.00 septendecillion[0m
+[1mconcat('test', number):[0m test55
+
+Row 57:
+───────
+[1mexp2(number):[0m           7[4m2[0m05[4m7[0m59[4m4[0m03[4m7[0m92[4m7[0m940[90m -- 72.06 quadrillion[0m
+[1mexp10(number):[0m          1e56[90m -- 100.00 septendecillion[0m
+[1mconcat('test', number):[0m test56
+
+Row 58:
+───────
+[1mexp2(number):[0m           14[4m4[0m11[4m5[0m18[4m8[0m07[4m5[0m85[4m5[0m870
+[1mexp10(number):[0m          1e57[90m -- 1.00 octodecillion[0m
+[1mconcat('test', number):[0m test57
+
+Row 59:
+───────
+[1mexp2(number):[0m           28[4m8[0m23[4m0[0m37[4m6[0m15[4m1[0m71[4m1[0m740
+[1mexp10(number):[0m          1e58[90m -- 10.00 octodecillion[0m
+[1mconcat('test', number):[0m test58
+
+Row 60:
+───────
+[1mexp2(number):[0m           57[4m6[0m46[4m0[0m75[4m2[0m30[4m3[0m42[4m3[0m500
+[1mexp10(number):[0m          1e59[90m -- 100.00 octodecillion[0m
+[1mconcat('test', number):[0m test59
+
+Row 61:
+───────
+[1mexp2(number):[0m           [4m1[0m15[4m2[0m92[4m1[0m50[4m4[0m60[4m6[0m84[4m7[0m000
+[1mexp10(number):[0m          1e60[90m -- 1000.00 octodecillion[0m
+[1mconcat('test', number):[0m test60
+
+Row 62:
+───────
+[1mexp2(number):[0m           [4m2[0m30[4m5[0m84[4m3[0m00[4m9[0m21[4m3[0m69[4m4[0m000
+[1mexp10(number):[0m          1e61[90m -- 10.00 novemdecillion[0m
+[1mconcat('test', number):[0m test61
+
+Row 63:
+───────
+[1mexp2(number):[0m           [4m4[0m61[4m1[0m68[4m6[0m01[4m8[0m42[4m7[0m38[4m8[0m000
+[1mexp10(number):[0m          1e62[90m -- 100.00 novemdecillion[0m
+[1mconcat('test', number):[0m test62
+
+Row 64:
+───────
+[1mexp2(number):[0m           [4m9[0m22[4m3[0m37[4m2[0m03[4m6[0m85[4m4[0m77[4m6[0m000
+[1mexp10(number):[0m          1e63[90m -- 1.00 vigintillion[0m
+[1mconcat('test', number):[0m test63
+Row 1:
+──────
+exp2(number):           1
+exp10(number):          1
+concat('test', number): test0
+
+Row 2:
+──────
+exp2(number):           2 -- 2.00
+exp10(number):          10 -- 10.00
+concat('test', number): test1
+
+Row 3:
+──────
+exp2(number):           4 -- 4.00
+exp10(number):          100 -- 100.00
+concat('test', number): test2
+
+Row 4:
+──────
+exp2(number):           8 -- 8.00
+exp10(number):          1000 -- 1.00 thousand
+concat('test', number): test3
+
+Row 5:
+──────
+exp2(number):           16 -- 16.00
+exp10(number):          10000 -- 10.00 thousand
+concat('test', number): test4
+
+Row 6:
+──────
+exp2(number):           32 -- 32.00
+exp10(number):          100000 -- 100.00 thousand
+concat('test', number): test5
+
+Row 7:
+──────
+exp2(number):           64 -- 64.00
+exp10(number):          1000000 -- 1.00 million
+concat('test', number): test6
+
+Row 8:
+──────
+exp2(number):           128 -- 128.00
+exp10(number):          10000000 -- 10.00 million
+concat('test', number): test7
+
+Row 9:
+───────
+exp2(number):           256 -- 256.00
+exp10(number):          100000000 -- 100.00 million
+concat('test', number): test8
+
+Row 10:
+───────
+exp2(number):           512 -- 512.00
+exp10(number):          1000000000 -- 1.00 billion
+concat('test', number): test9
+
+Row 11:
+───────
+exp2(number):           1024 -- 1.02 thousand
+exp10(number):          10000000000 -- 10.00 billion
+concat('test', number): test10
+
+Row 12:
+───────
+exp2(number):           2048 -- 2.05 thousand
+exp10(number):          100000000000 -- 100.00 billion
+concat('test', number): test11
+
+Row 13:
+───────
+exp2(number):           4096 -- 4.10 thousand
+exp10(number):          1000000000000 -- 1.00 trillion
+concat('test', number): test12
+
+Row 14:
+───────
+exp2(number):           8192 -- 8.19 thousand
+exp10(number):          10000000000000 -- 10.00 trillion
+concat('test', number): test13
+
+Row 15:
+───────
+exp2(number):           16384 -- 16.38 thousand
+exp10(number):          100000000000000 -- 100.00 trillion
+concat('test', number): test14
+
+Row 16:
+───────
+exp2(number):           32768 -- 32.77 thousand
+exp10(number):          1000000000000000 -- 1.00 quadrillion
+concat('test', number): test15
+
+Row 17:
+───────
+exp2(number):           65536 -- 65.54 thousand
+exp10(number):          10000000000000000 -- 10.00 quadrillion
+concat('test', number): test16
+
+Row 18:
+───────
+exp2(number):           131072 -- 131.07 thousand
+exp10(number):          100000000000000000 -- 100.00 quadrillion
+concat('test', number): test17
+
+Row 19:
+───────
+exp2(number):           262144 -- 262.14 thousand
+exp10(number):          1000000000000000000
+concat('test', number): test18
+
+Row 20:
+───────
+exp2(number):           524288 -- 524.29 thousand
+exp10(number):          10000000000000000000
+concat('test', number): test19
+
+Row 21:
+───────
+exp2(number):           1048576 -- 1.05 million
+exp10(number):          100000000000000000000 -- 100.00 quintillion
+concat('test', number): test20
+
+Row 22:
+───────
+exp2(number):           2097152 -- 2.10 million
+exp10(number):          1e21 -- 1.00 sextillion
+concat('test', number): test21
+
+Row 23:
+───────
+exp2(number):           4194304 -- 4.19 million
+exp10(number):          1e22 -- 10.00 sextillion
+concat('test', number): test22
+
+Row 24:
+───────
+exp2(number):           8388608 -- 8.39 million
+exp10(number):          1e23 -- 100.00 sextillion
+concat('test', number): test23
+
+Row 25:
+───────
+exp2(number):           16777216 -- 16.78 million
+exp10(number):          1e24 -- 1.00 septillion
+concat('test', number): test24
+
+Row 26:
+───────
+exp2(number):           33554432 -- 33.55 million
+exp10(number):          1e25 -- 10.00 septillion
+concat('test', number): test25
+
+Row 27:
+───────
+exp2(number):           67108864 -- 67.11 million
+exp10(number):          1e26 -- 100.00 septillion
+concat('test', number): test26
+
+Row 28:
+───────
+exp2(number):           134217728 -- 134.22 million
+exp10(number):          1e27 -- 1.00 octillion
+concat('test', number): test27
+
+Row 29:
+───────
+exp2(number):           268435456 -- 268.44 million
+exp10(number):          1e28 -- 10.00 octillion
+concat('test', number): test28
+
+Row 30:
+───────
+exp2(number):           536870912 -- 536.87 million
+exp10(number):          1e29 -- 100.00 octillion
+concat('test', number): test29
+
+Row 31:
+───────
+exp2(number):           1073741824 -- 1.07 billion
+exp10(number):          1e30 -- 1.00 nonillion
+concat('test', number): test30
+
+Row 32:
+───────
+exp2(number):           2147483648 -- 2.15 billion
+exp10(number):          1e31 -- 10.00 nonillion
+concat('test', number): test31
+
+Row 33:
+───────
+exp2(number):           4294967296 -- 4.29 billion
+exp10(number):          1e32 -- 100.00 nonillion
+concat('test', number): test32
+
+Row 34:
+───────
+exp2(number):           8589934592 -- 8.59 billion
+exp10(number):          1e33 -- 1000.00 nonillion
+concat('test', number): test33
+
+Row 35:
+───────
+exp2(number):           17179869184 -- 17.18 billion
+exp10(number):          1e34 -- 10.00 decillion
+concat('test', number): test34
+
+Row 36:
+───────
+exp2(number):           34359738368 -- 34.36 billion
+exp10(number):          1e35 -- 100.00 decillion
+concat('test', number): test35
+
+Row 37:
+───────
+exp2(number):           68719476736 -- 68.72 billion
+exp10(number):          1e36 -- 1.00 undecillion
+concat('test', number): test36
+
+Row 38:
+───────
+exp2(number):           137438953472 -- 137.44 billion
+exp10(number):          1e37 -- 10.00 undecillion
+concat('test', number): test37
+
+Row 39:
+───────
+exp2(number):           274877906944 -- 274.88 billion
+exp10(number):          1e38 -- 100.00 undecillion
+concat('test', number): test38
+
+Row 40:
+───────
+exp2(number):           549755813888 -- 549.76 billion
+exp10(number):          1e39 -- 1000.00 undecillion
+concat('test', number): test39
+
+Row 41:
+───────
+exp2(number):           1099511627776 -- 1.10 trillion
+exp10(number):          1e40 -- 10.00 duodecillion
+concat('test', number): test40
+
+Row 42:
+───────
+exp2(number):           2199023255552 -- 2.20 trillion
+exp10(number):          1e41 -- 100.00 duodecillion
+concat('test', number): test41
+
+Row 43:
+───────
+exp2(number):           4398046511104 -- 4.40 trillion
+exp10(number):          1e42 -- 1.00 tredecillion
+concat('test', number): test42
+
+Row 44:
+───────
+exp2(number):           8796093022208 -- 8.80 trillion
+exp10(number):          1e43 -- 10.00 tredecillion
+concat('test', number): test43
+
+Row 45:
+───────
+exp2(number):           17592186044416 -- 17.59 trillion
+exp10(number):          1e44 -- 100.00 tredecillion
+concat('test', number): test44
+
+Row 46:
+───────
+exp2(number):           35184372088832 -- 35.18 trillion
+exp10(number):          1e45 -- 1000.00 tredecillion
+concat('test', number): test45
+
+Row 47:
+───────
+exp2(number):           70368744177664 -- 70.37 trillion
+exp10(number):          1e46 -- 10.00 quattuordecillion
+concat('test', number): test46
+
+Row 48:
+───────
+exp2(number):           140737488355328 -- 140.74 trillion
+exp10(number):          1e47 -- 100.00 quattuordecillion
+concat('test', number): test47
+
+Row 49:
+───────
+exp2(number):           281474976710656 -- 281.47 trillion
+exp10(number):          1e48 -- 1.00 quindecillion
+concat('test', number): test48
+
+Row 50:
+───────
+exp2(number):           562949953421312 -- 562.95 trillion
+exp10(number):          1e49 -- 10.00 quindecillion
+concat('test', number): test49
+
+Row 51:
+───────
+exp2(number):           1125899906842624 -- 1.13 quadrillion
+exp10(number):          1e50 -- 100.00 quindecillion
+concat('test', number): test50
+
+Row 52:
+───────
+exp2(number):           2251799813685248 -- 2.25 quadrillion
+exp10(number):          1e51 -- 1.00 sexdecillion
+concat('test', number): test51
+
+Row 53:
+───────
+exp2(number):           4503599627370496 -- 4.50 quadrillion
+exp10(number):          1e52 -- 10.00 sexdecillion
+concat('test', number): test52
+
+Row 54:
+───────
+exp2(number):           9007199254740992 -- 9.01 quadrillion
+exp10(number):          1e53 -- 100.00 sexdecillion
+concat('test', number): test53
+
+Row 55:
+───────
+exp2(number):           18014398509481984 -- 18.01 quadrillion
+exp10(number):          1e54 -- 1.00 septendecillion
+concat('test', number): test54
+
+Row 56:
+───────
+exp2(number):           36028797018963970 -- 36.03 quadrillion
+exp10(number):          1e55 -- 10.00 septendecillion
+concat('test', number): test55
+
+Row 57:
+───────
+exp2(number):           72057594037927940 -- 72.06 quadrillion
+exp10(number):          1e56 -- 100.00 septendecillion
+concat('test', number): test56
+
+Row 58:
+───────
+exp2(number):           144115188075855870
+exp10(number):          1e57 -- 1.00 octodecillion
+concat('test', number): test57
+
+Row 59:
+───────
+exp2(number):           288230376151711740
+exp10(number):          1e58 -- 10.00 octodecillion
+concat('test', number): test58
+
+Row 60:
+───────
+exp2(number):           576460752303423500
+exp10(number):          1e59 -- 100.00 octodecillion
+concat('test', number): test59
+
+Row 61:
+───────
+exp2(number):           1152921504606847000
+exp10(number):          1e60 -- 1000.00 octodecillion
+concat('test', number): test60
+
+Row 62:
+───────
+exp2(number):           2305843009213694000
+exp10(number):          1e61 -- 10.00 novemdecillion
+concat('test', number): test61
+
+Row 63:
+───────
+exp2(number):           4611686018427388000
+exp10(number):          1e62 -- 100.00 novemdecillion
+concat('test', number): test62
+
+Row 64:
+───────
+exp2(number):           9223372036854776000
+exp10(number):          1e63 -- 1.00 vigintillion
+concat('test', number): test63
+Row 1:
+──────
+[1mexp2(number):[0m           1
+[1mexp10(number):[0m          1
+[1mconcat('test', number):[0m test0
+
+Row 2:
+──────
+[1mexp2(number):[0m           2[90m -- 2.00[0m
+[1mexp10(number):[0m          10[90m -- 10.00[0m
+[1mconcat('test', number):[0m test1
+
+Row 3:
+──────
+[1mexp2(number):[0m           4[90m -- 4.00[0m
+[1mexp10(number):[0m          100[90m -- 100.00[0m
+[1mconcat('test', number):[0m test2
+
+Row 4:
+──────
+[1mexp2(number):[0m           8[90m -- 8.00[0m
+[1mexp10(number):[0m          1000[90m -- 1.00 thousand[0m
+[1mconcat('test', number):[0m test3
+
+Row 5:
+──────
+[1mexp2(number):[0m           16[90m -- 16.00[0m
+[1mexp10(number):[0m          10000[90m -- 10.00 thousand[0m
+[1mconcat('test', number):[0m test4
+
+Row 6:
+──────
+[1mexp2(number):[0m           32[90m -- 32.00[0m
+[1mexp10(number):[0m          100000[90m -- 100.00 thousand[0m
+[1mconcat('test', number):[0m test5
+
+Row 7:
+──────
+[1mexp2(number):[0m           64[90m -- 64.00[0m
+[1mexp10(number):[0m          1000000[90m -- 1.00 million[0m
+[1mconcat('test', number):[0m test6
+
+Row 8:
+──────
+[1mexp2(number):[0m           128[90m -- 128.00[0m
+[1mexp10(number):[0m          10000000[90m -- 10.00 million[0m
+[1mconcat('test', number):[0m test7
+
+Row 9:
+───────
+[1mexp2(number):[0m           256[90m -- 256.00[0m
+[1mexp10(number):[0m          100000000[90m -- 100.00 million[0m
+[1mconcat('test', number):[0m test8
+
+Row 10:
+───────
+[1mexp2(number):[0m           512[90m -- 512.00[0m
+[1mexp10(number):[0m          1000000000[90m -- 1.00 billion[0m
+[1mconcat('test', number):[0m test9
+
+Row 11:
+───────
+[1mexp2(number):[0m           1024[90m -- 1.02 thousand[0m
+[1mexp10(number):[0m          10000000000[90m -- 10.00 billion[0m
+[1mconcat('test', number):[0m test10
+
+Row 12:
+───────
+[1mexp2(number):[0m           2048[90m -- 2.05 thousand[0m
+[1mexp10(number):[0m          100000000000[90m -- 100.00 billion[0m
+[1mconcat('test', number):[0m test11
+
+Row 13:
+───────
+[1mexp2(number):[0m           4096[90m -- 4.10 thousand[0m
+[1mexp10(number):[0m          1000000000000[90m -- 1.00 trillion[0m
+[1mconcat('test', number):[0m test12
+
+Row 14:
+───────
+[1mexp2(number):[0m           8192[90m -- 8.19 thousand[0m
+[1mexp10(number):[0m          10000000000000[90m -- 10.00 trillion[0m
+[1mconcat('test', number):[0m test13
+
+Row 15:
+───────
+[1mexp2(number):[0m           16384[90m -- 16.38 thousand[0m
+[1mexp10(number):[0m          100000000000000[90m -- 100.00 trillion[0m
+[1mconcat('test', number):[0m test14
+
+Row 16:
+───────
+[1mexp2(number):[0m           32768[90m -- 32.77 thousand[0m
+[1mexp10(number):[0m          1000000000000000[90m -- 1.00 quadrillion[0m
+[1mconcat('test', number):[0m test15
+
+Row 17:
+───────
+[1mexp2(number):[0m           65536[90m -- 65.54 thousand[0m
+[1mexp10(number):[0m          10000000000000000[90m -- 10.00 quadrillion[0m
+[1mconcat('test', number):[0m test16
+
+Row 18:
+───────
+[1mexp2(number):[0m           131072[90m -- 131.07 thousand[0m
+[1mexp10(number):[0m          100000000000000000[90m -- 100.00 quadrillion[0m
+[1mconcat('test', number):[0m test17
+
+Row 19:
+───────
+[1mexp2(number):[0m           262144[90m -- 262.14 thousand[0m
+[1mexp10(number):[0m          1000000000000000000
+[1mconcat('test', number):[0m test18
+
+Row 20:
+───────
+[1mexp2(number):[0m           524288[90m -- 524.29 thousand[0m
+[1mexp10(number):[0m          10000000000000000000
+[1mconcat('test', number):[0m test19
+
+Row 21:
+───────
+[1mexp2(number):[0m           1048576[90m -- 1.05 million[0m
+[1mexp10(number):[0m          100000000000000000000[90m -- 100.00 quintillion[0m
+[1mconcat('test', number):[0m test20
+
+Row 22:
+───────
+[1mexp2(number):[0m           2097152[90m -- 2.10 million[0m
+[1mexp10(number):[0m          1e21[90m -- 1.00 sextillion[0m
+[1mconcat('test', number):[0m test21
+
+Row 23:
+───────
+[1mexp2(number):[0m           4194304[90m -- 4.19 million[0m
+[1mexp10(number):[0m          1e22[90m -- 10.00 sextillion[0m
+[1mconcat('test', number):[0m test22
+
+Row 24:
+───────
+[1mexp2(number):[0m           8388608[90m -- 8.39 million[0m
+[1mexp10(number):[0m          1e23[90m -- 100.00 sextillion[0m
+[1mconcat('test', number):[0m test23
+
+Row 25:
+───────
+[1mexp2(number):[0m           16777216[90m -- 16.78 million[0m
+[1mexp10(number):[0m          1e24[90m -- 1.00 septillion[0m
+[1mconcat('test', number):[0m test24
+
+Row 26:
+───────
+[1mexp2(number):[0m           33554432[90m -- 33.55 million[0m
+[1mexp10(number):[0m          1e25[90m -- 10.00 septillion[0m
+[1mconcat('test', number):[0m test25
+
+Row 27:
+───────
+[1mexp2(number):[0m           67108864[90m -- 67.11 million[0m
+[1mexp10(number):[0m          1e26[90m -- 100.00 septillion[0m
+[1mconcat('test', number):[0m test26
+
+Row 28:
+───────
+[1mexp2(number):[0m           134217728[90m -- 134.22 million[0m
+[1mexp10(number):[0m          1e27[90m -- 1.00 octillion[0m
+[1mconcat('test', number):[0m test27
+
+Row 29:
+───────
+[1mexp2(number):[0m           268435456[90m -- 268.44 million[0m
+[1mexp10(number):[0m          1e28[90m -- 10.00 octillion[0m
+[1mconcat('test', number):[0m test28
+
+Row 30:
+───────
+[1mexp2(number):[0m           536870912[90m -- 536.87 million[0m
+[1mexp10(number):[0m          1e29[90m -- 100.00 octillion[0m
+[1mconcat('test', number):[0m test29
+
+Row 31:
+───────
+[1mexp2(number):[0m           1073741824[90m -- 1.07 billion[0m
+[1mexp10(number):[0m          1e30[90m -- 1.00 nonillion[0m
+[1mconcat('test', number):[0m test30
+
+Row 32:
+───────
+[1mexp2(number):[0m           2147483648[90m -- 2.15 billion[0m
+[1mexp10(number):[0m          1e31[90m -- 10.00 nonillion[0m
+[1mconcat('test', number):[0m test31
+
+Row 33:
+───────
+[1mexp2(number):[0m           4294967296[90m -- 4.29 billion[0m
+[1mexp10(number):[0m          1e32[90m -- 100.00 nonillion[0m
+[1mconcat('test', number):[0m test32
+
+Row 34:
+───────
+[1mexp2(number):[0m           8589934592[90m -- 8.59 billion[0m
+[1mexp10(number):[0m          1e33[90m -- 1000.00 nonillion[0m
+[1mconcat('test', number):[0m test33
+
+Row 35:
+───────
+[1mexp2(number):[0m           17179869184[90m -- 17.18 billion[0m
+[1mexp10(number):[0m          1e34[90m -- 10.00 decillion[0m
+[1mconcat('test', number):[0m test34
+
+Row 36:
+───────
+[1mexp2(number):[0m           34359738368[90m -- 34.36 billion[0m
+[1mexp10(number):[0m          1e35[90m -- 100.00 decillion[0m
+[1mconcat('test', number):[0m test35
+
+Row 37:
+───────
+[1mexp2(number):[0m           68719476736[90m -- 68.72 billion[0m
+[1mexp10(number):[0m          1e36[90m -- 1.00 undecillion[0m
+[1mconcat('test', number):[0m test36
+
+Row 38:
+───────
+[1mexp2(number):[0m           137438953472[90m -- 137.44 billion[0m
+[1mexp10(number):[0m          1e37[90m -- 10.00 undecillion[0m
+[1mconcat('test', number):[0m test37
+
+Row 39:
+───────
+[1mexp2(number):[0m           274877906944[90m -- 274.88 billion[0m
+[1mexp10(number):[0m          1e38[90m -- 100.00 undecillion[0m
+[1mconcat('test', number):[0m test38
+
+Row 40:
+───────
+[1mexp2(number):[0m           549755813888[90m -- 549.76 billion[0m
+[1mexp10(number):[0m          1e39[90m -- 1000.00 undecillion[0m
+[1mconcat('test', number):[0m test39
+
+Row 41:
+───────
+[1mexp2(number):[0m           1099511627776[90m -- 1.10 trillion[0m
+[1mexp10(number):[0m          1e40[90m -- 10.00 duodecillion[0m
+[1mconcat('test', number):[0m test40
+
+Row 42:
+───────
+[1mexp2(number):[0m           2199023255552[90m -- 2.20 trillion[0m
+[1mexp10(number):[0m          1e41[90m -- 100.00 duodecillion[0m
+[1mconcat('test', number):[0m test41
+
+Row 43:
+───────
+[1mexp2(number):[0m           4398046511104[90m -- 4.40 trillion[0m
+[1mexp10(number):[0m          1e42[90m -- 1.00 tredecillion[0m
+[1mconcat('test', number):[0m test42
+
+Row 44:
+───────
+[1mexp2(number):[0m           8796093022208[90m -- 8.80 trillion[0m
+[1mexp10(number):[0m          1e43[90m -- 10.00 tredecillion[0m
+[1mconcat('test', number):[0m test43
+
+Row 45:
+───────
+[1mexp2(number):[0m           17592186044416[90m -- 17.59 trillion[0m
+[1mexp10(number):[0m          1e44[90m -- 100.00 tredecillion[0m
+[1mconcat('test', number):[0m test44
+
+Row 46:
+───────
+[1mexp2(number):[0m           35184372088832[90m -- 35.18 trillion[0m
+[1mexp10(number):[0m          1e45[90m -- 1000.00 tredecillion[0m
+[1mconcat('test', number):[0m test45
+
+Row 47:
+───────
+[1mexp2(number):[0m           70368744177664[90m -- 70.37 trillion[0m
+[1mexp10(number):[0m          1e46[90m -- 10.00 quattuordecillion[0m
+[1mconcat('test', number):[0m test46
+
+Row 48:
+───────
+[1mexp2(number):[0m           140737488355328[90m -- 140.74 trillion[0m
+[1mexp10(number):[0m          1e47[90m -- 100.00 quattuordecillion[0m
+[1mconcat('test', number):[0m test47
+
+Row 49:
+───────
+[1mexp2(number):[0m           281474976710656[90m -- 281.47 trillion[0m
+[1mexp10(number):[0m          1e48[90m -- 1.00 quindecillion[0m
+[1mconcat('test', number):[0m test48
+
+Row 50:
+───────
+[1mexp2(number):[0m           562949953421312[90m -- 562.95 trillion[0m
+[1mexp10(number):[0m          1e49[90m -- 10.00 quindecillion[0m
+[1mconcat('test', number):[0m test49
+
+Row 51:
+───────
+[1mexp2(number):[0m           1125899906842624[90m -- 1.13 quadrillion[0m
+[1mexp10(number):[0m          1e50[90m -- 100.00 quindecillion[0m
+[1mconcat('test', number):[0m test50
+
+Row 52:
+───────
+[1mexp2(number):[0m           2251799813685248[90m -- 2.25 quadrillion[0m
+[1mexp10(number):[0m          1e51[90m -- 1.00 sexdecillion[0m
+[1mconcat('test', number):[0m test51
+
+Row 53:
+───────
+[1mexp2(number):[0m           4503599627370496[90m -- 4.50 quadrillion[0m
+[1mexp10(number):[0m          1e52[90m -- 10.00 sexdecillion[0m
+[1mconcat('test', number):[0m test52
+
+Row 54:
+───────
+[1mexp2(number):[0m           9007199254740992[90m -- 9.01 quadrillion[0m
+[1mexp10(number):[0m          1e53[90m -- 100.00 sexdecillion[0m
+[1mconcat('test', number):[0m test53
+
+Row 55:
+───────
+[1mexp2(number):[0m           18014398509481984[90m -- 18.01 quadrillion[0m
+[1mexp10(number):[0m          1e54[90m -- 1.00 septendecillion[0m
+[1mconcat('test', number):[0m test54
+
+Row 56:
+───────
+[1mexp2(number):[0m           36028797018963970[90m -- 36.03 quadrillion[0m
+[1mexp10(number):[0m          1e55[90m -- 10.00 septendecillion[0m
+[1mconcat('test', number):[0m test55
+
+Row 57:
+───────
+[1mexp2(number):[0m           72057594037927940[90m -- 72.06 quadrillion[0m
+[1mexp10(number):[0m          1e56[90m -- 100.00 septendecillion[0m
+[1mconcat('test', number):[0m test56
+
+Row 58:
+───────
+[1mexp2(number):[0m           144115188075855870
+[1mexp10(number):[0m          1e57[90m -- 1.00 octodecillion[0m
+[1mconcat('test', number):[0m test57
+
+Row 59:
+───────
+[1mexp2(number):[0m           288230376151711740
+[1mexp10(number):[0m          1e58[90m -- 10.00 octodecillion[0m
+[1mconcat('test', number):[0m test58
+
+Row 60:
+───────
+[1mexp2(number):[0m           576460752303423500
+[1mexp10(number):[0m          1e59[90m -- 100.00 octodecillion[0m
+[1mconcat('test', number):[0m test59
+
+Row 61:
+───────
+[1mexp2(number):[0m           1152921504606847000
+[1mexp10(number):[0m          1e60[90m -- 1000.00 octodecillion[0m
+[1mconcat('test', number):[0m test60
+
+Row 62:
+───────
+[1mexp2(number):[0m           2305843009213694000
+[1mexp10(number):[0m          1e61[90m -- 10.00 novemdecillion[0m
+[1mconcat('test', number):[0m test61
+
+Row 63:
+───────
+[1mexp2(number):[0m           4611686018427388000
+[1mexp10(number):[0m          1e62[90m -- 100.00 novemdecillion[0m
+[1mconcat('test', number):[0m test62
+
+Row 64:
+───────
+[1mexp2(number):[0m           9223372036854776000
+[1mexp10(number):[0m          1e63[90m -- 1.00 vigintillion[0m
+[1mconcat('test', number):[0m test63
+Row 1:
+──────
+exp2(number):           1
+exp10(number):          1
+concat('test', number): test0
+
+Row 2:
+──────
+exp2(number):           2
+exp10(number):          10
+concat('test', number): test1
+
+Row 3:
+──────
+exp2(number):           4
+exp10(number):          100
+concat('test', number): test2
+
+Row 4:
+──────
+exp2(number):           8
+exp10(number):          1000
+concat('test', number): test3
+
+Row 5:
+──────
+exp2(number):           16
+exp10(number):          10000
+concat('test', number): test4
+
+Row 6:
+──────
+exp2(number):           32
+exp10(number):          100000
+concat('test', number): test5
+
+Row 7:
+──────
+exp2(number):           64
+exp10(number):          1000000
+concat('test', number): test6
+
+Row 8:
+──────
+exp2(number):           128
+exp10(number):          10000000
+concat('test', number): test7
+
+Row 9:
+───────
+exp2(number):           256
+exp10(number):          100000000
+concat('test', number): test8
+
+Row 10:
+───────
+exp2(number):           512
+exp10(number):          1000000000
+concat('test', number): test9
+
+Row 11:
+───────
+exp2(number):           1024
+exp10(number):          10000000000
+concat('test', number): test10
+
+Row 12:
+───────
+exp2(number):           2048
+exp10(number):          100000000000
+concat('test', number): test11
+
+Row 13:
+───────
+exp2(number):           4096
+exp10(number):          1000000000000
+concat('test', number): test12
+
+Row 14:
+───────
+exp2(number):           8192
+exp10(number):          10000000000000
+concat('test', number): test13
+
+Row 15:
+───────
+exp2(number):           16384
+exp10(number):          100000000000000
+concat('test', number): test14
+
+Row 16:
+───────
+exp2(number):           32768
+exp10(number):          1000000000000000
+concat('test', number): test15
+
+Row 17:
+───────
+exp2(number):           65536
+exp10(number):          10000000000000000
+concat('test', number): test16
+
+Row 18:
+───────
+exp2(number):           131072
+exp10(number):          100000000000000000
+concat('test', number): test17
+
+Row 19:
+───────
+exp2(number):           262144
+exp10(number):          1000000000000000000
+concat('test', number): test18
+
+Row 20:
+───────
+exp2(number):           524288
+exp10(number):          10000000000000000000
+concat('test', number): test19
+
+Row 21:
+───────
+exp2(number):           1048576
+exp10(number):          100000000000000000000
+concat('test', number): test20
+
+Row 22:
+───────
+exp2(number):           2097152
+exp10(number):          1e21
+concat('test', number): test21
+
+Row 23:
+───────
+exp2(number):           4194304
+exp10(number):          1e22
+concat('test', number): test22
+
+Row 24:
+───────
+exp2(number):           8388608
+exp10(number):          1e23
+concat('test', number): test23
+
+Row 25:
+───────
+exp2(number):           16777216
+exp10(number):          1e24
+concat('test', number): test24
+
+Row 26:
+───────
+exp2(number):           33554432
+exp10(number):          1e25
+concat('test', number): test25
+
+Row 27:
+───────
+exp2(number):           67108864
+exp10(number):          1e26
+concat('test', number): test26
+
+Row 28:
+───────
+exp2(number):           134217728
+exp10(number):          1e27
+concat('test', number): test27
+
+Row 29:
+───────
+exp2(number):           268435456
+exp10(number):          1e28
+concat('test', number): test28
+
+Row 30:
+───────
+exp2(number):           536870912
+exp10(number):          1e29
+concat('test', number): test29
+
+Row 31:
+───────
+exp2(number):           1073741824
+exp10(number):          1e30
+concat('test', number): test30
+
+Row 32:
+───────
+exp2(number):           2147483648
+exp10(number):          1e31
+concat('test', number): test31
+
+Row 33:
+───────
+exp2(number):           4294967296
+exp10(number):          1e32
+concat('test', number): test32
+
+Row 34:
+───────
+exp2(number):           8589934592
+exp10(number):          1e33
+concat('test', number): test33
+
+Row 35:
+───────
+exp2(number):           17179869184
+exp10(number):          1e34
+concat('test', number): test34
+
+Row 36:
+───────
+exp2(number):           34359738368
+exp10(number):          1e35
+concat('test', number): test35
+
+Row 37:
+───────
+exp2(number):           68719476736
+exp10(number):          1e36
+concat('test', number): test36
+
+Row 38:
+───────
+exp2(number):           137438953472
+exp10(number):          1e37
+concat('test', number): test37
+
+Row 39:
+───────
+exp2(number):           274877906944
+exp10(number):          1e38
+concat('test', number): test38
+
+Row 40:
+───────
+exp2(number):           549755813888
+exp10(number):          1e39
+concat('test', number): test39
+
+Row 41:
+───────
+exp2(number):           1099511627776
+exp10(number):          1e40
+concat('test', number): test40
+
+Row 42:
+───────
+exp2(number):           2199023255552
+exp10(number):          1e41
+concat('test', number): test41
+
+Row 43:
+───────
+exp2(number):           4398046511104
+exp10(number):          1e42
+concat('test', number): test42
+
+Row 44:
+───────
+exp2(number):           8796093022208
+exp10(number):          1e43
+concat('test', number): test43
+
+Row 45:
+───────
+exp2(number):           17592186044416
+exp10(number):          1e44
+concat('test', number): test44
+
+Row 46:
+───────
+exp2(number):           35184372088832
+exp10(number):          1e45
+concat('test', number): test45
+
+Row 47:
+───────
+exp2(number):           70368744177664
+exp10(number):          1e46
+concat('test', number): test46
+
+Row 48:
+───────
+exp2(number):           140737488355328
+exp10(number):          1e47
+concat('test', number): test47
+
+Row 49:
+───────
+exp2(number):           281474976710656
+exp10(number):          1e48
+concat('test', number): test48
+
+Row 50:
+───────
+exp2(number):           562949953421312
+exp10(number):          1e49
+concat('test', number): test49
+
+Row 51:
+───────
+exp2(number):           1125899906842624
+exp10(number):          1e50
+concat('test', number): test50
+
+Row 52:
+───────
+exp2(number):           2251799813685248
+exp10(number):          1e51
+concat('test', number): test51
+
+Row 53:
+───────
+exp2(number):           4503599627370496
+exp10(number):          1e52
+concat('test', number): test52
+
+Row 54:
+───────
+exp2(number):           9007199254740992
+exp10(number):          1e53
+concat('test', number): test53
+
+Row 55:
+───────
+exp2(number):           18014398509481984
+exp10(number):          1e54
+concat('test', number): test54
+
+Row 56:
+───────
+exp2(number):           36028797018963970
+exp10(number):          1e55
+concat('test', number): test55
+
+Row 57:
+───────
+exp2(number):           72057594037927940
+exp10(number):          1e56
+concat('test', number): test56
+
+Row 58:
+───────
+exp2(number):           144115188075855870
+exp10(number):          1e57
+concat('test', number): test57
+
+Row 59:
+───────
+exp2(number):           288230376151711740
+exp10(number):          1e58
+concat('test', number): test58
+
+Row 60:
+───────
+exp2(number):           576460752303423500
+exp10(number):          1e59
+concat('test', number): test59
+
+Row 61:
+───────
+exp2(number):           1152921504606847000
+exp10(number):          1e60
+concat('test', number): test60
+
+Row 62:
+───────
+exp2(number):           2305843009213694000
+exp10(number):          1e61
+concat('test', number): test61
+
+Row 63:
+───────
+exp2(number):           4611686018427388000
+exp10(number):          1e62
+concat('test', number): test62
+
+Row 64:
+───────
+exp2(number):           9223372036854776000
+exp10(number):          1e63
+concat('test', number): test63

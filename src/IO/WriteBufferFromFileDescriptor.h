@@ -1,7 +1,7 @@
 #pragma once
 
 #include <IO/WriteBufferFromFileBase.h>
-#include <Common/Throttler_fwd.h>
+#include <Common/IThrottler.h>
 
 
 namespace DB
@@ -30,8 +30,6 @@ public:
         fd = fd_;
     }
 
-    ~WriteBufferFromFileDescriptor() override;
-
     int getFD() const
     {
         return fd;
@@ -57,12 +55,6 @@ protected:
 
     /// If file has name contains filename, otherwise contains string "(fd=...)"
     std::string file_name;
-
-    /// If true, the size of internal buffer will be exponentially increased up to
-    /// adaptive_buffer_max_size after each nextImpl call. It can be used to avoid
-    /// large buffer allocation when actual size of written data is small.
-    bool use_adaptive_buffer_size;
-    size_t adaptive_max_buffer_size;
 
     void finalizeImpl() override;
 };

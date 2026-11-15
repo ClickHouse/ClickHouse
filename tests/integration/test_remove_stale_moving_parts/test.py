@@ -1,6 +1,8 @@
-from pathlib import Path
 import time
+from pathlib import Path
+
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -49,12 +51,13 @@ def exec(node, cmd, path):
             "bash",
             "-c",
             f"{cmd} {path}",
-        ]
+        ],
+        nothrow=True,
     )
 
 
 def wait_part_is_stuck(node, table_moving_path, moving_part):
-    num_tries = 5
+    num_tries = 10
     while q(node, "SELECT part_name FROM system.moves").strip() != moving_part:
         if num_tries == 0:
             raise Exception("Part has not started to move")
@@ -68,22 +71,9 @@ def wait_part_is_stuck(node, table_moving_path, moving_part):
         time.sleep(1)
 
 
-def wait_zookeeper_node_to_start(zk_nodes, timeout=60):
-    start = time.time()
-    while time.time() - start < timeout:
-        try:
-            for instance in zk_nodes:
-                conn = cluster.get_kazoo_client(instance)
-                conn.get_children("/")
-            print("All instances of ZooKeeper started")
-            return
-        except Exception as ex:
-            print(("Can't connect to ZooKeeper " + str(ex)))
-            time.sleep(0.5)
-
-
 def test_remove_stale_moving_parts_without_zookeeper(started_cluster):
-    ch1.query(f"CREATE DATABASE IF NOT EXISTS {DATABASE_NAME}")
+    ch1.query(f"DROP DATABASE IF EXISTS {DATABASE_NAME}")
+    ch1.query(f"CREATE DATABASE {DATABASE_NAME}")
 
     q(
         ch1,
@@ -111,7 +101,7 @@ def test_remove_stale_moving_parts_without_zookeeper(started_cluster):
     assert exec(ch1, "ls", table_moving_path).strip() == ""
 
     cluster.start_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
-    wait_zookeeper_node_to_start(["zoo1", "zoo2", "zoo3"])
+    cluster.wait_zookeeper_nodes_to_start(["zoo1", "zoo2", "zoo3"])
     q(ch1, "SYSTEM START MOVES")
 
-    q(ch1, f"DROP TABLE test_remove")
+    q(ch1, "DROP TABLE test_remove")

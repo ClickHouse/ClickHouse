@@ -61,7 +61,10 @@ $CLIENT --distributed_ddl_output_mode=throw -q "select value from system.setting
 $CLIENT --distributed_ddl_output_mode=throw -q "create table throw on cluster test_shard_localhost (n int) engine=Memory;"
 $CLIENT --distributed_ddl_output_mode=throw -q "create table throw on cluster test_shard_localhost (n int) engine=Memory format Null;" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
 
-run_until_out_contains 'not finished on 1 ' $CLICKHOUSE_CLIENT_WITH_SETTINGS --distributed_ddl_output_mode=throw -q "drop table if exists throw on cluster test_unavailable_shard;" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//" | sed "s/Distributed DDL task .* is not finished/Distributed DDL task <task> is not finished/" | sed "s/for .* seconds/for <sec> seconds/"
+# ┌─host──────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+# │ localhost │ 9000 │      0 │       │                   1 │                0 │
+# └───────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+run_until_out_contains '9000	0		1	0' $CLICKHOUSE_CLIENT_WITH_SETTINGS --distributed_ddl_output_mode=throw -q "drop table if exists throw on cluster test_unavailable_shard;" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//" | sed "s/Distributed DDL task .* is not finished/Distributed DDL task <task> is not finished/" | sed "s/for .* seconds/for <sec> seconds/"
 
 
 $CLIENT --distributed_ddl_output_mode=null_status_on_timeout -q "select value from system.settings where name='distributed_ddl_output_mode';"
@@ -89,4 +92,4 @@ $CLICKHOUSE_CLIENT -q "select entry_version, initiator_host, initiator_port, clu
     from system.distributed_ddl_queue
     where arrayExists((key, val) -> key='log_comment' and val like '%$RAND_COMMENT%', mapKeys(settings), mapValues(settings))
     and arrayExists((key, val) -> key='distributed_ddl_task_timeout' and val in ('$TIMEOUT', '$MIN_TIMEOUT'), mapKeys(settings), mapValues(settings))
-    order by entry, host, port, exception_code"
+    order by entry, host, port, exception_code" | sed 's/.ec2.internal//g'  # running job in docker with --network=host in CI leads to hostname=localhost.ec2.internal - sed is to align it with reference output

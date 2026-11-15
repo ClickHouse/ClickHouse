@@ -1,7 +1,10 @@
-#include "StorageSystemDetachedTables.h"
+#include <Storages/System/StorageSystemDetachedTables.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Access/ContextAccess.h>
+#include <Common/Exception.h>
 #include <Core/NamesAndTypes.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -9,11 +12,13 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/System/StorageSystemTables.h>
+#include <Storages/System/extractTablesFilter.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
 
@@ -23,15 +28,20 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 namespace
 {
 
-class DetachedTablesBlockSource : public ISource
+class DetachedTablesBlockSource final : public ISource
 {
 public:
     DetachedTablesBlockSource(
         std::vector<UInt8> columns_mask_,
-        Block header_,
+        SharedHeader header_,
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ColumnPtr detached_tables_,
@@ -46,7 +56,7 @@ public:
         detached_tables.reserve(size);
         for (size_t idx = 0; idx < size; ++idx)
         {
-            detached_tables.insert(detached_tables_->getDataAt(idx).toString());
+            detached_tables.insert(std::string{detached_tables_->getDataAt(idx)});
         }
     }
 
@@ -63,11 +73,10 @@ protected:
         const auto access = context->getAccess();
         const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
-        size_t database_idx = 0;
         size_t rows_count = 0;
-        for (; database_idx < databases->size() && rows_count < max_block_size; ++database_idx)
+        for (; database_idx < databases->size(); ++database_idx)
         {
-            database_name = databases->getDataAt(database_idx).toString();
+            database_name = databases->getDataAt(database_idx);
             database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
             if (!database)
@@ -77,7 +86,21 @@ protected:
                 = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             if (!detached_tables_it || !detached_tables_it->isValid())
-                detached_tables_it = database->getDetachedTablesIterator(context, {}, false);
+            {
+                try
+                {
+                    /// The names that survived `getFilteredTables` are exactly the ones this
+                    /// source can emit, so hand them to the database as the enumeration filter.
+                    detached_tables_it = database->getDetachedTablesIterator(
+                        context, [this](const String & name) { return detached_tables.contains(name); }, false);
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::NOT_IMPLEMENTED)
+                        continue;
+                    throw;
+                }
+            }
 
             for (; rows_count < max_block_size && detached_tables_it->isValid(); detached_tables_it->next())
             {
@@ -92,12 +115,18 @@ protected:
                 fillResultColumnsByDetachedTableIterator(result_columns);
                 ++rows_count;
             }
+
+             if (rows_count == max_block_size)
+             {
+                if (!detached_tables_it->isValid())
+                    ++database_idx;
+                break;
+             }
         }
 
-        if (databases->size() == database_idx && (!detached_tables_it || !detached_tables_it->isValid()))
-        {
+        if (databases->size() == database_idx)
             done = true;
-        }
+
         const UInt64 num_rows = result_columns.at(0)->size();
         return Chunk(std::move(result_columns), num_rows);
     }
@@ -112,6 +141,7 @@ private:
     bool done = false;
     DatabasePtr database;
     std::string database_name;
+    size_t database_idx{};
 
     void fillResultColumnsByDetachedTableIterator(MutableColumns & result_columns) const
     {
@@ -163,7 +193,7 @@ private:
     ColumnPtr filtered_tables_column;
 };
 
-StorageSystemDetachedTables::StorageSystemDetachedTables(const StorageID & table_id_) : IStorage(table_id_)
+StorageSystemDetachedTables::StorageSystemDetachedTables(const StorageID & table_id_) : StorageWithCommonVirtualColumns(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
 
@@ -177,10 +207,19 @@ StorageSystemDetachedTables::StorageSystemDetachedTables(const StorageID & table
 
     storage_metadata.setColumns(std::move(description));
 
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-void StorageSystemDetachedTables::read(
+VirtualColumnsDescription StorageSystemDetachedTables::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
+
+void StorageSystemDetachedTables::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -209,7 +248,7 @@ ReadFromSystemDetachedTables::ReadFromSystemDetachedTables(
     Block sample_block,
     std::vector<UInt8> columns_mask_,
     size_t max_block_size_)
-    : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
+    : SourceStepWithFilter(std::make_shared<const Block>(std::move(sample_block)), column_names_, query_info_, storage_snapshot_, context_)
     , columns_mask(std::move(columns_mask_))
     , max_block_size(max_block_size_)
 {
@@ -224,14 +263,15 @@ void ReadFromSystemDetachedTables::applyFilters(ActionDAGNodes added_filter_node
         predicate = filter_actions_dag->getOutputs().at(0);
 
     filtered_databases_column = detail::getFilteredDatabases(predicate, context);
-    filtered_tables_column = detail::getFilteredTables(predicate, filtered_databases_column, context, true);
+    filtered_tables_column = detail::getFilteredTables(
+        predicate, filtered_databases_column, context, true, extractTablesFilter(predicate, "table", context));
 }
 
 void ReadFromSystemDetachedTables::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto pipe = Pipe(std::make_shared<DetachedTablesBlockSource>(
         std::move(columns_mask),
-        getOutputStream().header,
+        getOutputHeader(),
         max_block_size,
         std::move(filtered_databases_column),
         std::move(filtered_tables_column),
@@ -239,3 +279,6 @@ void ReadFromSystemDetachedTables::initializePipeline(QueryPipelineBuilder & pip
     pipeline.init(std::move(pipe));
 }
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDetachedTables) }

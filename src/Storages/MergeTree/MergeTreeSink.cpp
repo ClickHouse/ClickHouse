@@ -1,52 +1,69 @@
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/StorageMergeTree.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyTxnCommit.h>
+#include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
-#include <DataTypes/ObjectUtils.h>
+#include <Common/logger_useful.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/FailPoint.h>
+#include <Common/thread_local_rng.h>
 #include <Core/Settings.h>
+#include <base/sleep.h>
 
+#include <exception>
+#include <memory>
 
 namespace ProfileEvents
 {
     extern const Event DuplicatedInsertedBlocks;
+    extern const Event SelfDuplicatedAsyncInserts;
+    extern const Event DuplicatedAsyncInserts;
+    extern const Event DuplicationElapsedMicroseconds;
 }
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 namespace DB
 {
-namespace Setting
+
+namespace ErrorCodes
 {
-    extern const SettingsBool insert_deduplicate;
-    extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
+    extern const int INSERT_WAS_DEDUPLICATED;
 }
 
-struct MergeTreeSink::DelayedChunk
+namespace Setting
 {
-    struct Partition
-    {
-        MergeTreeDataWriter::TemporaryPart temp_part;
-        UInt64 elapsed_ns;
-        String block_dedup_token;
-        ProfileEvents::Counters part_counters;
-    };
+    extern const SettingsUInt64 input_format_max_block_wait_ms;
+    extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
+    extern const SettingsBool wait_for_part_commit_in_dependent_materialized_views;
+}
 
-    std::vector<Partition> partitions;
-};
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsUInt64 non_replicated_deduplication_window;
+}
 
+namespace FailPoints
+{
+    extern const char merge_tree_sink_on_start_random_sleep[];
+}
 
 MergeTreeSink::~MergeTreeSink()
 {
     if (!delayed_chunk)
         return;
 
+    chassert(isCancelled() || std::uncaught_exceptions());
+
     for (auto & partition : delayed_chunk->partitions)
     {
-        partition.temp_part.cancel();
+        partition.temp_part->cancel();
     }
 
     delayed_chunk.reset();
@@ -57,26 +74,69 @@ MergeTreeSink::MergeTreeSink(
     StorageMetadataPtr metadata_snapshot_,
     size_t max_parts_per_block_,
     ContextPtr context_)
-    : SinkToStorage(metadata_snapshot_->getSampleBlock())
+    : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , max_parts_per_block(max_parts_per_block_)
     , context(context_)
     , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
+    , deduplicate((*storage.getSettings())[MergeTreeSetting::non_replicated_deduplication_window] > 0 && storage.getDeduplicationLog() != nullptr)
+    , parts_to_sync([&storage_](const MergeTreeDataPartPtr & part) { storage_.detachPartAfterFailedFsync(part); })
 {
+    LOG_TEST(storage.log, "Create MergeTreeSink, deduplicate={}", deduplicate);
+
+    defer_fsync = DeferredPartsSync::isEnabled(storage, metadata_snapshot);
+    sync_existing_parts = DeferredPartsSync::shouldSyncExistingParts(storage);
+
+    /// It's only allowed to throw "too many parts" before write,
+    /// because interrupting long-running INSERT query in the middle is not convenient for users.
+    /// The check has to run here, on the query thread while the insert pipeline is being built,
+    /// and not in onStart: a plain INSERT fans out to multiple parallel sinks, and a sink whose
+    /// onStart runs late would count the parts already committed by its sibling sinks and
+    /// spuriously reject the very insert that wrote them. All sinks are constructed before the
+    /// pipeline executes, so the check never sees this query's own parts. The throw itself is
+    /// deferred to onStart, so that the error still surfaces during execution, where the callers
+    /// expect it (e.g. `materialized_views_ignore_errors` and async insert flushes handle errors
+    /// thrown by an executing sink, not errors thrown while the insert chain is being built).
+    try
+    {
+        storage.delayInsertOrThrowIfNeeded(nullptr, context, /*allow_throw=*/ true, /*allow_delay=*/ false);
+    }
+    catch (...)
+    {
+        too_many_parts_exception = std::current_exception();
+    }
+}
+
+void MergeTreeSink::setHasDependentMaterializedViews(bool has_dependent_views)
+{
+    synchronously_commit_part_for_dependent_views
+        = has_dependent_views && context->getSettingsRef()[Setting::wait_for_part_commit_in_dependent_materialized_views];
 }
 
 void MergeTreeSink::onStart()
 {
-    /// It's only allowed to throw "too many parts" before write,
-    /// because interrupting long-running INSERT query in the middle is not convenient for users.
-    storage.delayInsertOrThrowIfNeeded(nullptr, context, true);
+    /// Used by tests: skews the start of the parallel sinks of one insert, widening the window
+    /// between one sink committing its part and a sibling sink starting.
+    fiu_do_on(FailPoints::merge_tree_sink_on_start_random_sleep, { sleepForMicroseconds(thread_local_rng() % 3000); });
+
+    /// The "too many parts" check was evaluated at sink construction (see the constructor for why);
+    /// here it only surfaces its result.
+    if (too_many_parts_exception)
+        std::rethrow_exception(too_many_parts_exception);
+
+    /// Delay only: the parts were already counted at sink construction, and counting them again
+    /// here would include the parts committed by the sibling sinks of this very insert.
+    storage.delayInsertOrThrowIfNeeded(nullptr, context, /*allow_throw=*/ false);
 }
 
 void MergeTreeSink::onFinish()
 {
-    chassert(!isCancelled());
+    if (isCancelled())
+        return;
+
     finishDelayedChunk();
+    parts_to_sync.syncAll();
 }
 
 void MergeTreeSink::consume(Chunk & chunk)
@@ -85,65 +145,104 @@ void MergeTreeSink::consume(Chunk & chunk)
         storage.delayInsertOrThrowIfNeeded(nullptr, context, false);
 
     auto block = getHeader().cloneWithColumns(chunk.getColumns());
-    if (!storage_snapshot->object_columns.empty())
-        convertDynamicColumnsToTuples(block, storage_snapshot);
 
-    auto part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context);
+    auto deduplication_info = chunk.getChunkInfos().getSafe<DeduplicationInfo>();
+    IColumn::Selector partition_selector;
+    auto part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context, &partition_selector);
 
-    using DelayedPartitions = std::vector<MergeTreeSink::DelayedChunk::Partition>;
+    using DelayedPartitions = std::vector<MergeTreeDelayedChunk::Partition>;
     DelayedPartitions partitions;
 
     const Settings & settings = context->getSettingsRef();
-    size_t streams = 0;
+    size_t total_streams = 0;
     bool support_parallel_write = false;
 
-    auto token_info = chunk.getChunkInfos().get<DeduplicationToken::TokenInfo>();
-    if (!token_info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "TokenInfo is expected for consumed chunk in MergeTreeSink for table: {}",
-            storage.getStorageID().getNameForLogs());
+    auto process_list_element = context->getProcessListElement();
 
-    const bool need_to_define_dedup_token = !token_info->isDefined();
-
-    String block_dedup_token;
-    if (token_info->isDefined())
-        block_dedup_token = token_info->getToken();
-
-    for (auto & current_block : part_blocks)
+    if (deduplication_info && deduplicate && !deduplication_info->isDisabled())
     {
-        ProfileEvents::Counters part_counters;
+        /// Preserve the pre-loop interrupt point that used to be the first checkTimeLimit()
+        /// inside the partition loop: a killed or timed-out insert should be noticed before
+        /// the full O(N) prewarm hash pass, not after it.
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
 
-        UInt64 elapsed_ns = 0;
-        MergeTreeDataWriter::TemporaryPart temp_part;
+        /// Warm the data hashes once here: the per-partition infos produced by filterToPartition
+        /// below copy these tokens with their cached hash, so a token whose rows span several
+        /// partitions is hashed once instead of once per partition it landed in.
+        /// Time it under DuplicationElapsedMicroseconds like the per-partition dedup below, so
+        /// the profile event still reflects the total deduplication CPU.
+        ProfileEventTimeIncrement<Microseconds> duplication_elapsed(ProfileEvents::DuplicationElapsedMicroseconds);
+        deduplication_info->prewarmDataHashes();
+    }
+
+    for (size_t part_index = 0; part_index < part_blocks.size(); ++part_index)
+    {
+        auto & current_block = part_blocks[part_index];
+
+        /// A single INSERT can split into very many parts (e.g. high-cardinality partition key with
+        /// max_partitions_per_insert_block); honor cancellation/timeout between them.
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
+
+        ProfileEvents::Counters part_counters;
+        auto partition_scope = std::make_unique<ProfileEventsScope>(&part_counters);
+
+        /// Keep only the tokens whose own rows landed in this partition, so a coalesced async
+        /// insert does not register a token in partitions it never wrote to.
+        auto current_deduplication_info = deduplication_info->filterToPartition(partition_selector, part_index, deduplicate);
 
         {
-            ProfileEventsScope scoped_attach(&part_counters);
+            ProfileEventTimeIncrement<Microseconds> duplication_elapsed(ProfileEvents::DuplicationElapsedMicroseconds);
 
+            auto result = current_deduplication_info->deduplicateSelf(deduplicate, current_block.partition_id, context);
+            if (result.removed_rows > 0)
+            {
+                ProfileEvents::increment(ProfileEvents::SelfDuplicatedAsyncInserts, result.removed_tokens);
+                LOG_DEBUG(
+                    storage.log,
+                    "In partition {} self deduplication removed tokens {} out of {}, left rows {} in tokens {}, debug: {}",
+                    current_block.partition_id,
+                    result.removed_tokens,
+                    current_deduplication_info->getCount(),
+                    result.filtered_block->rows(),
+                    result.deduplication_info->getCount(),
+                    result.deduplication_info->debug());
+
+                current_block.block = std::move(result.filtered_block);
+                current_deduplication_info = std::move(result.deduplication_info);
+            }
+        }
+
+        UInt64 elapsed_ns = 0;
+        TemporaryPartPtr temp_part;
+
+        MergeTreeTransactionHolder uk_txn;
+        if (metadata_snapshot->hasUniqueKey())
+            uk_txn = beginUniqueKeyTransaction(context, "INSERT");
+
+        {
             Stopwatch watch;
-            temp_part = storage.writer.writeTempPart(current_block, metadata_snapshot, context);
+            temp_part = writeNewTempPart(current_block, uk_txn.getTransaction());
             elapsed_ns = watch.elapsed();
         }
 
-        /// Reset earlier to free memory
-        current_block.block.clear();
-        current_block.partition.clear();
-
         /// If optimize_on_insert setting is true, current_block could become empty after merge
         /// and we didn't create part.
-        if (!temp_part.part)
+        if (!temp_part->part)
             continue;
 
-        if (need_to_define_dedup_token)
-        {
-            chassert(temp_part.part);
-            const auto hash_value = temp_part.part->getPartBlockIDHash();
-            token_info->addChunkHash(toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]));
-        }
+        LOG_DEBUG(
+            storage.log,
+            "Wrote block with {} rows and deduplication blocks: {}, deduplication info: {}",
+            current_block.block->rows(),
+            fmt::join(getDeduplicationBlockIds(current_deduplication_info->getDeduplicationHashes(current_block.partition_id, deduplicate)), ", "),
+            current_deduplication_info->debug());
 
-        if (!support_parallel_write && temp_part.part->getDataPartStorage().supportParallelWrite())
+        if (!support_parallel_write && temp_part->part->getDataPartStorage().supportParallelWrite())
             support_parallel_write = true;
 
-        size_t max_insert_delayed_streams_for_parallel_write;
+        size_t max_insert_delayed_streams_for_parallel_write = 0;
 
         if (settings[Setting::max_insert_delayed_streams_for_parallel_write].changed)
             max_insert_delayed_streams_for_parallel_write = settings[Setting::max_insert_delayed_streams_for_parallel_write];
@@ -153,37 +252,51 @@ void MergeTreeSink::consume(Chunk & chunk)
             max_insert_delayed_streams_for_parallel_write = 0;
 
         /// In case of too much columns/parts in block, flush explicitly.
-        streams += temp_part.streams.size();
+        size_t current_streams = 0;
+        for (const auto & stream : temp_part->streams)
+            current_streams += stream.stream->getNumberOfOpenStreams();
 
-        if (streams > max_insert_delayed_streams_for_parallel_write)
+        if (total_streams + current_streams > max_insert_delayed_streams_for_parallel_write)
         {
             finishDelayedChunk();
-            delayed_chunk = std::make_unique<MergeTreeSink::DelayedChunk>();
+            delayed_chunk = std::make_unique<MergeTreeDelayedChunk>();
             delayed_chunk->partitions = std::move(partitions);
             finishDelayedChunk();
 
-            streams = 0;
+            total_streams = 0;
             support_parallel_write = false;
             partitions = DelayedPartitions{};
         }
 
-        partitions.emplace_back(MergeTreeSink::DelayedChunk::Partition
+        // partition_scope must be reset before part_counters is moved
+        partition_scope.reset();
+
+        partitions.emplace_back(MergeTreeDelayedChunk::Partition
         {
+            .log = storage.log.load(),
+            .block_with_partition = std::move(current_block),
+            .deduplication_info = std::move(current_deduplication_info),
             .temp_part = std::move(temp_part),
             .elapsed_ns = elapsed_ns,
-            .block_dedup_token = block_dedup_token,
             .part_counters = std::move(part_counters),
+            .uk_txn = std::move(uk_txn),
         });
-    }
 
-    if (need_to_define_dedup_token)
-    {
-        token_info->finishChunkHashes();
+        total_streams += current_streams;
     }
 
     finishDelayedChunk();
-    delayed_chunk = std::make_unique<MergeTreeSink::DelayedChunk>();
+
+    delayed_chunk = std::make_unique<MergeTreeDelayedChunk>();
     delayed_chunk->partitions = std::move(partitions);
+    /// Streaming `INSERT` flushes partial blocks on a timeout, so commit the just-written
+    /// part immediately to make its rows visible without waiting for the next consume()
+    /// or onFinish(); the normal write/commit pipelining is preferred otherwise.
+    if (settings[Setting::input_format_max_block_wait_ms] != 0)
+        finishDelayedChunk();
+
+    if (synchronously_commit_part_for_dependent_views)
+        finishDelayedChunk();
 
     ++num_blocks_processed;
 }
@@ -193,56 +306,211 @@ void MergeTreeSink::finishDelayedChunk()
     if (!delayed_chunk)
         return;
 
-    const Settings & settings = context->getSettingsRef();
+    auto process_list_element = context->getProcessListElement();
 
     for (auto & partition : delayed_chunk->partitions)
     {
-        ProfileEventsScope scoped_attach(&partition.part_counters);
+        /// Honor cancellation/timeout between parts; finalizing each can be slow on object storage.
+        /// onFinish() skips finishDelayedChunk() when cancelled, so a normal finish never throws here.
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
 
-        partition.temp_part.finalize();
+        Stopwatch watch;
+        auto profile_events_scope = std::make_unique<ProfileEventsScope>(&partition.part_counters);
 
-        auto & part = partition.temp_part.part;
-
-        bool added = false;
-
-        /// It's important to create it outside of lock scope because
-        /// otherwise it can lock parts in destructor and deadlock is possible.
-        MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
+        auto retry_times = 0;
+        while (true)
         {
-            auto lock = storage.lockParts();
-            storage.fillNewPartName(part, lock);
+            partition.temp_part->finalize();
+            partition.temp_part->part->getDataPartStorage().commitTransaction();
 
-            auto * deduplication_log = storage.getDeduplicationLog();
+            auto & part = partition.temp_part->part;
+            auto deduplication_hashes = partition.deduplication_info->getDeduplicationHashes(part->info.getPartitionId(), deduplicate);
+            auto outcome = metadata_snapshot->hasUniqueKey()
+                ? commitUniqueKeyPart(partition, deduplication_hashes)
+                : UniqueKeyInsertOutcome{.conflicting_blocks = commitPart(part, deduplication_hashes)};
 
-            if (settings[Setting::insert_deduplicate] && deduplication_log)
+            /// Every row conflicted under IGNORE: nothing published, no retry.
+            if (outcome.part_discarded)
+                break;
+
+            auto conflicts = std::move(outcome.conflicting_blocks);
+
+            if (conflicts.empty())
             {
-                const String block_id = part->getZeroLevelPartBlockID(partition.block_dedup_token);
-                auto res = deduplication_log->addPart(block_id, part->info);
-                if (!res.second)
-                {
-                    ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
-                    LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartNameForLogs());
-                    continue;
-                }
+                if (defer_fsync)
+                    parts_to_sync.add(part);
+
+                partition.temp_part->prewarmCaches();
+
+                profile_events_scope.reset();
+                partition.elapsed_ns += watch.elapsed();
+                auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
+
+                PartLog::addNewPart(
+                    storage.getContext(),
+                    PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot),
+                    getDeduplicationBlockIds(deduplication_hashes));
+                StorageMergeTree::incrementInsertedPartsProfileEvent(part->getType());
+
+                /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
+                storage.background_operations_assignee.trigger();
+                break;
             }
 
-            added = storage.renameTempPartAndAdd(part, transaction, lock);
-            transaction.commit(&lock);
-        }
+            ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks, conflicts.size());
 
-        /// Part can be deduplicated, so increment counters and add to part log only if it's really added
-        if (added)
-        {
-            auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
-            PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot));
-            StorageMergeTree::incrementInsertedPartsProfileEvent(part->getType());
+            auto result = partition.deduplication_info->deduplicateBlock(
+                conflicts,
+                partition.block_with_partition.partition_id,
+                context);
 
-            /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
-            storage.background_operations_assignee.trigger();
+            if (partition.deduplication_info->isAsyncInsert())
+                ProfileEvents::increment(ProfileEvents::DuplicatedAsyncInserts, result.removed_tokens);
+            else
+                ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks, result.removed_tokens);
+
+            LOG_DEBUG(
+                storage.log,
+                "After filtering by collision at {} try,"
+                " removed rows {}/{}"
+                " removed tokets {}/{} from origin block,"
+                " after retry remaining rows: {},"
+                " remaining tokens: {},"
+                " new deduplication info debug: {}",\
+                retry_times,
+                result.removed_rows,
+                partition.deduplication_info->getRows(),
+                result.removed_tokens,
+                partition.deduplication_info->getCount(),
+                result.filtered_block->rows(),
+                result.deduplication_info->getCount(),
+                result.deduplication_info->debug());
+
+            if (result.filtered_block->rows() == 0)
+            {
+                LOG_DEBUG(
+                    storage.log,
+                    "All rows are deduplicated for part with block IDs: {}, skipping the part commit.",
+                    fmt::join(conflicts, ", "));
+
+                profile_events_scope.reset();
+                partition.elapsed_ns += watch.elapsed();
+                auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
+
+                PartLog::addNewPart(
+                    storage.getContext(),
+                    PartLog::PartLogEntry(partition.temp_part->part, partition.elapsed_ns, counters_snapshot),
+                    getDeduplicationBlockIds(deduplication_hashes),
+                    ExecutionStatus(ErrorCodes::INSERT_WAS_DEDUPLICATED, "The part was deduplicated"));
+
+                break;
+            }
+
+            partition.block_with_partition.block = result.filtered_block;
+            partition.deduplication_info = std::move(result.deduplication_info);
+
+            /// writeTempPart moves the partition value out of block_with_partition into the part,
+            /// so restore it from the just-written part before rewriting the filtered block.
+            partition.block_with_partition.partition = MergeTreePartition(partition.temp_part->part->partition.value);
+            /// The conflict rolled the UNIQUE KEY transaction back.
+            if (metadata_snapshot->hasUniqueKey())
+                partition.uk_txn = beginUniqueKeyTransaction(context, "INSERT");
+            partition.temp_part = writeNewTempPart(partition.block_with_partition, partition.uk_txn.getTransaction());
+
+            /// If optimize_on_insert setting is true, the rewritten partition.block_with_partition
+            /// could become empty after merge and then no part is created.
+            if (!partition.temp_part->part)
+                break;
+
+            ++retry_times;
         }
     }
 
+    /// Any partition transaction that never reached a commit -- a deduplicated block, a
+    /// discarded part -- is rolled back by its `MergeTreeTransactionHolder` here.
     delayed_chunk.reset();
+
+    parts_to_sync.syncOld();
+}
+
+MergeTreeTemporaryPartPtr MergeTreeSink::writeNewTempPart(BlockWithPartition & block, const MergeTreeTransactionPtr & txn)
+{
+    return storage.writer.writeTempPart(block, metadata_snapshot, context, /*may_have_leftover=*/ true, defer_fsync, txn);
+}
+
+UniqueKeyInsertOutcome MergeTreeSink::commitUniqueKeyPart(
+    MergeTreeDelayedChunk::Partition & partition, const std::vector<DeduplicationHash> & deduplication_hashes)
+{
+    return UniqueKeyTxnCommit::insert(
+        {.storage = storage,
+         .metadata_snapshot = metadata_snapshot,
+         .context = context,
+         .temp_part = *partition.temp_part,
+         .block = partition.block_with_partition.block,
+         .deduplication_hashes = deduplication_hashes,
+         .transaction = partition.uk_txn});
+}
+
+std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr & part, const std::vector<DeduplicationHash> & deduplication_hashes)
+{
+    /// It's important to create it outside of lock scope because
+    /// otherwise it can lock parts in destructor and deadlock is possible.
+    MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
+    {
+        auto lock = storage.lockParts();
+        auto block_holder = storage.fillNewPartName(part, lock);
+
+        /// Check the size limits of a temporary table under the same lock as the deduplication and the commit,
+        /// so that concurrent inserts cannot make the table exceed them. A block that is already in
+        /// the deduplication log is not committed as is: `addPart` reports the conflict, and the part is either
+        /// skipped or rewritten from the remaining rows, which is checked on the next try.
+        std::vector<std::string> block_ids;
+        if (!deduplication_hashes.empty())
+            block_ids = getDeduplicationBlockIds(deduplication_hashes);
+
+        auto * deduplication_log = storage.getDeduplicationLog();
+        if (block_ids.empty() || !deduplication_log || !deduplication_log->containsAny(block_ids))
+            storage.throwIfTemporaryTableSizeLimitsExceededForReplacement(context, lock, {part}, std::nullopt);
+
+        if (!block_ids.empty())
+        {
+            chassert(deduplication_log);
+            auto result = deduplication_log->addPart(block_ids, part->info);
+
+            std::vector<std::string> conflict_block_ids;
+            for (const auto & res : result)
+            {
+                LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", res.block_id, res.part_info.getPartNameForLogs());
+                conflict_block_ids.push_back(res.block_id);
+
+                /// The existing part may be committed by another insert that has not synced it yet,
+                /// or its sync may have failed. This insert relies on it, so it must not be acknowledged
+                /// before the part is durable, even if this insert syncs its own parts inline.
+                if (sync_existing_parts)
+                    if (auto existing_part = storage.getActiveContainingPart(res.part_info, MergeTreeDataPartState::Active, lock))
+                        parts_to_sync.add(existing_part);
+            }
+
+            if (!conflict_block_ids.empty())
+                return conflict_block_ids;
+        }
+
+        /// FIXME: renames for MergeTree should be done under the same lock
+        /// to avoid removing extra covered parts after merge.
+        ///
+        /// Image the following:
+        /// - T1: all_2_2_0 is in renameParts()
+        /// - T2: merge assigned for [all_1_1_0, all_3_3_0]
+        /// - T1: renameParts() finished, part had been added as Active
+        /// - T2: merge finished, covered parts removed, and it will include all_2_2_0!
+        ///
+        /// Hence, for now rename_in_transaction is false.
+        storage.renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
+        transaction.commit(lock);
+    }
+
+    return {};
 }
 
 }

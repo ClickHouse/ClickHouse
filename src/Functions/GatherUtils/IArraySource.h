@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnArray.h>
-#include "ArraySourceVisitor.h"
+#include <Functions/GatherUtils/ArraySourceVisitor.h>
 
 namespace DB
 {
@@ -23,6 +23,8 @@ struct IArraySource
     virtual size_t getColumnSize() const = 0;
     virtual bool isConst() const { return false; }
     virtual bool isNullable() const { return false; }
+    /// True for ReplicatedSource: the source reads a lazily replicated array (ColumnReplicated)
+    virtual bool isReplicated() const { return false; }
 
     virtual void accept(ArraySourceVisitor &)
     {
@@ -31,7 +33,7 @@ struct IArraySource
 };
 
 template <typename Derived>
-class ArraySourceImpl : public Visitable<Derived, IArraySource, ArraySourceVisitor> {};
+class ArraySourceImpl : public Visitable<Derived, IArraySource, ArraySourceVisitor> {};  /// NOLINT(bugprone-crtp-constructor-accessibility)
 
 }
 

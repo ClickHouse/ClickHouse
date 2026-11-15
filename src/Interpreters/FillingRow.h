@@ -1,6 +1,6 @@
 #pragma once
-#include <Core/SortDescription.h>
 
+#include <Core/SortDescription.h>
 
 namespace DB
 {
@@ -9,22 +9,53 @@ namespace DB
 bool less(const Field & lhs, const Field & rhs, int direction);
 bool equals(const Field & lhs, const Field & rhs);
 
+/// Whether `value` is a valid value of a fill column of type `type`: it fits the range of the storage type and,
+/// for the calendar-backed `Date32` and `DateTime64`, the representable calendar window as well. Types that
+/// saturate instead of wrapping around (`Float`, `Decimal`) are not checked and always pass.
+bool fillValueFitsColumnType(const Field & value, const IDataType & type);
+
+/// The inclusive `[min, max]` range that `fillValueFitsColumnType` checks against, as `Field`s comparable with
+/// the values the filling generates, so that the per-generated-value check does not have to redo the type
+/// dispatch. Null bounds mean the type is not checked and every value passes.
+std::pair<Field, Field> fillRepresentableRangeOfColumnType(const IDataType & type);
+
 /** Helps to implement modifier WITH FILL for ORDER BY clause.
  *  Stores row as array of fields and provides functions to generate next row for filling gaps and for comparing rows.
  *  Used in FillingTransform.
  */
 class FillingRow
 {
+    /// finds last value <= to
+    Field doLongJump(const FillColumnDescription & descr, size_t column_ind, const Field & to);
+
+    void checkGeneratedValueFitsColumnType(const Field & value, size_t column_ind) const;
+    void checkFillingTowardsConstraintFitsColumnType(size_t column_ind);
+
+    bool hasSomeConstraints(size_t pos) const;
+    bool isConstraintsSatisfied(size_t pos) const;
+
 public:
     explicit FillingRow(const SortDescription & sort_description);
 
     /// Generates next row according to fill 'from', 'to' and 'step' values.
-    /// Return pair of boolean
-    /// apply - true if filling values should be inserted into result set
-    /// value_changed - true if filling row value was changed
-    std::pair<bool, bool> next(const FillingRow & to_row);
+    /// Returns true if filling values should be inserted into result set
+    bool next(const FillingRow & next_original_row, bool& value_changed);
 
-    void initFromDefaults(size_t from_pos = 0);
+    /// Returns true if need to generate some prefix for to_row
+    bool shift(const FillingRow & next_original_row, bool& value_changed);
+
+    bool hasSomeConstraints() const;
+    bool isConstraintsSatisfied() const;
+
+    void initUsingFrom(size_t from_pos = 0);
+    void initUsingTo(size_t from_pos = 0);
+    void updateConstraintsWithStalenessRow(const Columns& base_row, size_t row_ind);
+
+    /// Throws when filling from the current row towards a constraint past the range of a column type would
+    /// generate a value the column cannot hold. The per-value check in `next` rejects such a value too, but only
+    /// after generating every value up to the boundary of the type - 2^32 rows for `DateTime` - so this is checked
+    /// up front once the anchor of the filling is known.
+    void checkFillingTowardsConstraintsFitsColumnTypes();
 
     Field & operator[](size_t index) { return row[index]; }
     const Field & operator[](size_t index) const { return row[index]; }
@@ -42,6 +73,11 @@ public:
 
 private:
     Row row;
+    Row constraints;
+    /// The value and the constraint of each column whose walk towards its constraint in `next` was last checked
+    /// by `checkFillingTowardsConstraintFitsColumnType`, so that the check runs once per walk, not once per step.
+    Row checked_walk_cursor;
+    Row checked_walk_constraint;
     SortDescription sort_description;
 };
 

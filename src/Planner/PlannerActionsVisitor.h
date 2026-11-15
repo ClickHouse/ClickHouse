@@ -1,11 +1,11 @@
 #pragma once
 
-#include <optional>
 #include <Core/Names.h>
-#include <Core/NamesAndTypes.h>
 
 #include <Interpreters/Context_fwd.h>
 
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <Interpreters/ActionsDAG.h>
@@ -14,8 +14,14 @@
 namespace DB
 {
 
+struct CorrelatedSubtrees;
+
 class PlannerContext;
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;
+
+class ColumnNode;
+using ColumnNodePtr = std::shared_ptr<ColumnNode>;
+using ColumnNodes = std::vector<ColumnNodePtr>;
 
 /** Planner actions visitor is responsible for adding necessary actions to calculate query tree expression node
   * into actions dag.
@@ -33,16 +39,20 @@ using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 class PlannerActionsVisitor
 {
 public:
-    explicit PlannerActionsVisitor(const PlannerContextPtr & planner_context_, bool use_column_identifier_as_action_node_name_ = true);
+    explicit PlannerActionsVisitor(
+      const PlannerContextPtr & planner_context_,
+      const ColumnNodePtrWithHashSet & correlated_columns_set_,
+      bool use_column_identifier_as_action_node_name_ = true);
 
     /** Add actions necessary to calculate expression node into expression dag.
       * Necessary actions are not added in actions dag output.
       * Returns query tree expression node actions dag nodes.
       */
-    ActionsDAG::NodeRawConstPtrs visit(ActionsDAG & actions_dag, QueryTreeNodePtr expression_node);
+    std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> visit(ActionsDAG & actions_dag, QueryTreeNodePtr expression_node);
 
 private:
     const PlannerContextPtr planner_context;
+    const ColumnNodePtrWithHashSet & correlated_columns_set;
     bool use_column_identifier_as_action_node_name = true;
 };
 
@@ -68,6 +78,8 @@ String calculateActionNodeName(const QueryTreeNodePtr & node,
 /// Calculate action node name for constant
 String calculateConstantActionNodeName(const Field & constant_literal, const DataTypePtr & constant_type);
 
+String calculateConstantActionNodeName(const ConstantNode & constant_node, Int64 optimize_const_name_size);
+
 /// Calculate action node name for constant, data type will be derived from constant literal value
 String calculateConstantActionNodeName(const Field & constant_literal);
 
@@ -75,8 +87,7 @@ String calculateConstantActionNodeName(const Field & constant_literal);
   * Window node action name can only be part of window function action name.
   * For column node column node identifier from planner context is used, if use_column_identifier_as_action_node_name = true.
   */
-String calculateWindowNodeActionName(const QueryTreeNodePtr & function_node,
-    const QueryTreeNodePtr & window_node,
+String calculateWindowNodeActionName(const QueryTreeNodePtr & window_node,
     const PlannerContext & planner_context,
     bool use_column_identifier_as_action_node_name = true);
 

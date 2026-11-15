@@ -1,8 +1,0 @@
-position: 10
-label: '优化查询性能'
-collapsible: true
-collapsed: true
-link:
-  type: generated-index
-  title: Improving Query Performance
-  slug: /zh/guides/improving-query-performance

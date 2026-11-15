@@ -1,16 +1,26 @@
 #pragma once
 
-#include <Parsers/ASTConstraintDeclaration.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/TreeCNFConverter.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Analyzer/Passes/CNFAtomicFormula.h>
+#include <Interpreters/CNFQueryAtomicFormula.h>
 #include <Interpreters/ComparisonGraph.h>
+#include <Parsers/IASTHash.h>
 
-#include <Analyzer/Passes/CNF.h>
+#include <map>
+#include <memory>
+#include <optional>
+#include <vector>
+
 
 namespace DB
 {
 
-using ConstraintsExpressions = std::vector<ExpressionActionsPtr>;
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
+using ConstraintsExpressions = VectorWithMemoryTracking<ExpressionActionsPtr>;
+
+class NamesAndTypesList;
 
 struct ConstraintsDescription
 {
@@ -20,8 +30,10 @@ public:
     ConstraintsDescription(const ConstraintsDescription & other);
     ConstraintsDescription & operator=(const ConstraintsDescription & other);
 
-    ConstraintsDescription(ConstraintsDescription && other) noexcept;
-    ConstraintsDescription & operator=(ConstraintsDescription && other) noexcept;
+    /// Not noexcept: the move operations rebuild the derived data via update(), which allocates
+    /// (make_unique, CNF construction) and can throw, e.g. MEMORY_LIMIT_EXCEEDED.
+    ConstraintsDescription(ConstraintsDescription && other); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
+    ConstraintsDescription & operator=(ConstraintsDescription && other); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 
     bool empty() const { return constraints.empty(); }
     String toString() const;
@@ -40,12 +52,28 @@ public:
 
     const ASTs & getConstraints() const;
 
-    const std::vector<std::vector<CNFQuery::AtomicFormula>> & getConstraintData() const;
-    std::vector<CNFQuery::AtomicFormula> getAtomicConstraintData() const;
+    const std::vector<std::vector<CNFQueryAtomicFormula>> & getConstraintData() const;
+    std::vector<CNFQueryAtomicFormula> getAtomicConstraintData() const;
 
     const ComparisonGraph<ASTPtr> & getGraph() const;
 
     ConstraintsExpressions getExpressions(ContextPtr context, const NamesAndTypesList & source_columns_) const;
+
+    /// Rejects a constraint expression that changes the number of rows. `CheckConstraintsTransform` reads
+    /// the constraint's result column by block row, so an `arrayJoin` inside it makes a row be checked
+    /// against another row's value, or - when the column ends up shorter than the block - past the end of
+    /// it. The declaration's AST is read rather than the built expression, because a constraint that
+    /// cannot be built at all (a bare subquery as in `03594_constraint_subqery_logical_error`, a wrong
+    /// arity as in `04489_constraint_comparison_wrong_arity`) is only reported when a row is inserted, and
+    /// building it here would move that report to the DDL.
+    /// Called from DDL only, so metadata stored before this check still loads.
+    void checkExpressionsPreserveRowCount() const;
+
+    /// Rejects a constraint name that is declared more than once. `DROP CONSTRAINT` erases and
+    /// `MODIFY CONSTRAINT` replaces the first declaration of a name, so a second declaration of it is
+    /// reachable only once the first one has been dropped.
+    /// Called from DDL only, so metadata stored before this check still loads.
+    void checkNamesAreUnique() const;
 
     struct AtomId
     {
@@ -56,36 +84,47 @@ public:
     using AtomIds = std::vector<AtomId>;
 
     std::optional<AtomIds> getAtomIds(const ASTPtr & ast) const;
-    std::vector<CNFQuery::AtomicFormula> getAtomsById(const AtomIds & ids) const;
+    std::vector<CNFQueryAtomicFormula> getAtomsById(const AtomIds & ids) const;
 
     class QueryTreeData
     {
     public:
         const QueryTreeNodes & getConstraints() const;
-        const std::vector<std::vector<Analyzer::CNF::AtomicFormula>> & getConstraintData() const;
+        const std::vector<std::vector<Analyzer::CNFAtomicFormula>> & getConstraintData() const;
         std::optional<AtomIds> getAtomIds(const QueryTreeNodePtrWithHash & node_with_hash) const;
-        std::vector<Analyzer::CNF::AtomicFormula> getAtomsById(const AtomIds & ids) const;
+        std::vector<Analyzer::CNFAtomicFormula> getAtomsById(const AtomIds & ids) const;
         const ComparisonGraph<QueryTreeNodePtr> & getGraph() const;
     private:
         QueryTreeNodes constraints;
-        std::vector<std::vector<Analyzer::CNF::AtomicFormula>> cnf_constraints;
+        std::vector<std::vector<Analyzer::CNFAtomicFormula>> cnf_constraints;
         QueryTreeNodePtrWithHashMap<AtomIds> query_node_to_atom_ids;
         std::unique_ptr<ComparisonGraph<QueryTreeNodePtr>> graph;
 
         friend ConstraintsDescription;
     };
 
-    QueryTreeData getQueryTreeData(const ContextPtr & context, const QueryTreeNodePtr & table_node) const;
+    QueryTreeData getQueryTreeData(const ContextPtr & context, const TableExpressionNodePtr & table_node) const;
 
 private:
-    std::vector<std::vector<CNFQuery::AtomicFormula>> buildConstraintData() const;
+    /// The always-true constraints that the query-time constraint optimizer may rely on: a constraint
+    /// whose expression changes the number of rows (contains `arrayJoin`) is left out.
+    ///
+    /// Such a constraint is rejected at DDL time by `checkExpressionsPreserveRowCount`, but metadata
+    /// stored before that check still loads, so it has to be distrusted here as well. Otherwise
+    /// `WhereConstraintsOptimizer` and `ConvertQueryToCNFPass::optimizeWithConstraints` would match a
+    /// stored `CHECK` or `ASSUME arrayJoin(arr) > 0` against `WHERE arrayJoin(arr) > 0` and remove the
+    /// filter, turning a query over the exploded rows into a query over the base rows. The optimization
+    /// is skipped rather than the query being refused, so that reading such a table keeps working.
+    ASTs filterConstraintsForOptimization() const;
+
+    std::vector<std::vector<CNFQueryAtomicFormula>> buildConstraintData() const;
     std::unique_ptr<ComparisonGraph<ASTPtr>> buildGraph() const;
     void update();
 
     ASTs constraints;
 
-    std::vector<std::vector<CNFQuery::AtomicFormula>> cnf_constraints;
-    std::map<IAST::Hash, AtomIds> ast_to_atom_ids;
+    std::vector<std::vector<CNFQueryAtomicFormula>> cnf_constraints;
+    std::map<IASTHash, AtomIds> ast_to_atom_ids;
 
     std::unique_ptr<ComparisonGraph<ASTPtr>> graph;
 };

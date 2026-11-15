@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
 uuids = []
 
@@ -13,7 +13,6 @@ def cluster():
             "node1",
             main_configs=["configs/storage_conf.xml", "configs/no_async_load.xml"],
             with_nginx=True,
-            use_old_analyzer=True,
         )
         cluster.add_instance(
             "node2",
@@ -21,14 +20,12 @@ def cluster():
             with_nginx=True,
             stay_alive=True,
             with_zookeeper=True,
-            use_old_analyzer=True,
         )
         cluster.add_instance(
             "node3",
             main_configs=["configs/storage_conf_web.xml", "configs/no_async_load.xml"],
             with_nginx=True,
             with_zookeeper=True,
-            use_old_analyzer=True,
         )
 
         cluster.add_instance(
@@ -42,9 +39,12 @@ def cluster():
         )
         cluster.add_instance(
             "node5",
-            main_configs=["configs/storage_conf.xml", "configs/no_async_load.xml"],
+            main_configs=[
+                "configs/storage_conf.xml",
+                "configs/no_async_load.xml",
+                "configs/http_forbid_headers.xml",
+            ],
             with_nginx=True,
-            use_old_analyzer=True,
         )
 
         cluster.start()
@@ -112,11 +112,12 @@ def test_usage(cluster, node_name):
     for i in range(3):
         node2.query(
             """
+            DROP TABLE IF EXISTS test{};
             CREATE TABLE test{} UUID '{}'
             (id Int32) ENGINE = MergeTree() ORDER BY id
             SETTINGS storage_policy = 'web';
         """.format(
-                i, uuids[i]
+                i, i, uuids[i]
             )
         )
 
@@ -177,7 +178,7 @@ def test_incorrect_usage(cluster):
     assert "Table is read-only" in result
 
     result = node2.query_and_get_error("OPTIMIZE TABLE test0 FINAL")
-    assert "Table is in readonly mode due to static storage" in result
+    assert "Table is in readonly mode" in result
 
     node2.query("DROP TABLE test0 SYNC")
 
@@ -202,7 +203,7 @@ def test_cache(cluster, node_name):
 
         result = node2.query(
             """
-            SYSTEM DROP FILESYSTEM CACHE;
+            SYSTEM CLEAR FILESYSTEM CACHE;
             SELECT count() FROM system.filesystem_cache;
         """
         )
@@ -360,7 +361,7 @@ def test_page_cache(cluster):
 
         def get_profile_events(query_name):
             text = node.query(
-                f"SELECT ProfileEvents.Names, ProfileEvents.Values FROM system.query_log ARRAY JOIN ProfileEvents WHERE query LIKE '% -- {query_name}' AND type = 'QueryFinish'"
+                f"SELECT ProfileEvents.keys, ProfileEvents.values FROM system.query_log ARRAY JOIN ProfileEvents WHERE query LIKE '% -- {query_name}' AND type = 'QueryFinish'"
             )
             res = {}
             for line in text.split("\n"):
@@ -371,23 +372,23 @@ def test_page_cache(cluster):
             return res
 
         ev1 = get_profile_events("test cold cache")
-        assert ev1.get("PageCacheChunkMisses", 0) > 0
+        assert ev1.get("PageCacheMisses", 0) > 0
         assert (
             ev1.get("DiskConnectionsCreated", 0) + ev1.get("DiskConnectionsReused", 0)
             > 0
         )
 
         ev2 = get_profile_events("test warm cache")
-        assert ev2.get("PageCacheChunkDataHits", 0) > 0
-        assert ev2.get("PageCacheChunkMisses", 0) == 0
+        assert ev2.get("PageCacheHits", 0) > 0
+        assert ev2.get("PageCacheMisses", 0) == 0
         assert (
             ev2.get("DiskConnectionsCreated", 0) + ev2.get("DiskConnectionsReused", 0)
             == 0
         )
 
         ev3 = get_profile_events("test no cache")
-        assert ev3.get("PageCacheChunkDataHits", 0) == 0
-        assert ev3.get("PageCacheChunkMisses", 0) == 0
+        assert ev3.get("PageCacheHits", 0) == 0
+        assert ev3.get("PageCacheMisses", 0) == 0
         assert (
             ev3.get("DiskConnectionsCreated", 0) + ev3.get("DiskConnectionsReused", 0)
             > 0
@@ -413,3 +414,37 @@ def test_config_reload(cluster):
 
     node1.query("SYSTEM RELOAD CONFIG")
     node1.query(f"DROP TABLE {table_name} SYNC")
+
+
+FORBID_CONFIG = "/etc/clickhouse-server/config.d/http_forbid_headers.xml"
+FORBID_PLACEHOLDER = "<header>X-Forbidden-Placeholder</header>"
+
+
+def test_userinfo_with_forbidden_authorization(cluster):
+    # The userinfo of the endpoint is sent as Basic credentials in the `Authorization` header with every data read.
+    node = cluster.instances["node5"]
+    table_name = "userinfo_forbidden_authorization"
+    node.query(
+        f"""
+        DROP TABLE IF EXISTS {table_name};
+        CREATE TABLE {table_name} UUID '{uuids[0]}'
+        (id Int32) ENGINE = MergeTree() ORDER BY id
+        SETTINGS disk = disk(type=web, endpoint='http://user:pass@nginx:80/test1/');
+    """
+    )
+    # The filter makes the query read the column instead of answering it from the part statistics.
+    query = f"SELECT sum(id) FROM {table_name} WHERE id % 2 = 0"
+    try:
+        expected = node.query(query)
+        assert int(expected) > 0
+        node.replace_in_config(FORBID_CONFIG, FORBID_PLACEHOLDER, FORBID_PLACEHOLDER + "<header>Authorization</header>")
+        node.query("SYSTEM RELOAD CONFIG")
+        try:
+            error = node.query_and_get_error(query)
+            assert 'HTTP header "Authorization" is forbidden' in error, error
+        finally:
+            node.replace_in_config(FORBID_CONFIG, "<header>Authorization</header>", "")
+            node.query("SYSTEM RELOAD CONFIG")
+        assert node.query(query) == expected
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")

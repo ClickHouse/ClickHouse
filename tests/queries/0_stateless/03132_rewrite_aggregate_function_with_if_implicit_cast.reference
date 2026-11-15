@@ -38,20 +38,20 @@ QUERY id: 0
                       LIST id: 20, nodes: 2
                         COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
                         CONSTANT id: 21, constant_value: \'Nullable(Int128)\', constant_value_type: String
-                  FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+                  FUNCTION id: 22, function_name: equals, function_type: ordinary, result_type: UInt8
                     ARGUMENTS
-                      LIST id: 10, nodes: 2
-                        FUNCTION id: 11, function_name: modulo, function_type: ordinary, result_type: UInt8
+                      LIST id: 23, nodes: 2
+                        FUNCTION id: 24, function_name: modulo, function_type: ordinary, result_type: UInt8
                           ARGUMENTS
-                            LIST id: 12, nodes: 2
+                            LIST id: 25, nodes: 2
                               COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
-                              CONSTANT id: 13, constant_value: UInt64_10, constant_value_type: UInt8
-                        CONSTANT id: 14, constant_value: UInt64_5, constant_value_type: UInt8
+                              CONSTANT id: 26, constant_value: UInt64_10, constant_value_type: UInt8
+                        CONSTANT id: 27, constant_value: UInt64_5, constant_value_type: UInt8
   JOIN TREE
     TABLE_FUNCTION id: 7, alias: __table1, table_function_name: numbers
       ARGUMENTS
-        LIST id: 22, nodes: 1
-          CONSTANT id: 23, constant_value: UInt64_100, constant_value_type: UInt8
+        LIST id: 28, nodes: 1
+          CONSTANT id: 29, constant_value: UInt64_100, constant_value_type: UInt8
 SELECT any(if((number % 10) = 5, CAST(NULL, 'Nullable(Int128)'), number)) AS a, toTypeName(a) FROM numbers(100) AS a;
 0	Nullable(Int128)
 EXPLAIN QUERY TREE SELECT any(if((number % 10) = 5, CAST(NULL, 'Nullable(Int128)'), number)) AS a, toTypeName(a) FROM numbers(100);
@@ -95,17 +95,17 @@ QUERY id: 0
                   FUNCTION id: 24, function_name: not, function_type: ordinary, result_type: UInt8
                     ARGUMENTS
                       LIST id: 25, nodes: 1
-                        FUNCTION id: 11, function_name: equals, function_type: ordinary, result_type: UInt8
+                        FUNCTION id: 26, function_name: equals, function_type: ordinary, result_type: UInt8
                           ARGUMENTS
-                            LIST id: 12, nodes: 2
-                              FUNCTION id: 13, function_name: modulo, function_type: ordinary, result_type: UInt8
+                            LIST id: 27, nodes: 2
+                              FUNCTION id: 28, function_name: modulo, function_type: ordinary, result_type: UInt8
                                 ARGUMENTS
-                                  LIST id: 14, nodes: 2
+                                  LIST id: 29, nodes: 2
                                     COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
-                                    CONSTANT id: 15, constant_value: UInt64_10, constant_value_type: UInt8
-                              CONSTANT id: 16, constant_value: UInt64_5, constant_value_type: UInt8
+                                    CONSTANT id: 30, constant_value: UInt64_10, constant_value_type: UInt8
+                              CONSTANT id: 31, constant_value: UInt64_5, constant_value_type: UInt8
   JOIN TREE
     TABLE_FUNCTION id: 7, alias: __table1, table_function_name: numbers
       ARGUMENTS
-        LIST id: 26, nodes: 1
-          CONSTANT id: 27, constant_value: UInt64_100, constant_value_type: UInt8
+        LIST id: 32, nodes: 1
+          CONSTANT id: 33, constant_value: UInt64_100, constant_value_type: UInt8

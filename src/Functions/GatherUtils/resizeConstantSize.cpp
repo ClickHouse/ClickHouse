@@ -1,8 +1,8 @@
 #ifndef __clang_analyzer__ // It's too hard to analyze.
 
-#include "GatherUtils.h"
-#include "Selectors.h"
-#include "Algorithms.h"
+#include <Functions/GatherUtils/GatherUtils.h>
+#include <Functions/GatherUtils/Selectors.h>
+#include <Functions/GatherUtils/Algorithms.h>
 
 namespace DB::GatherUtils
 {

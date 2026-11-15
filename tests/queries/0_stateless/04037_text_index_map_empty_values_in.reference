@@ -1,0 +1,28 @@
+-- Empty value only: should match rows where 'key' is absent (100000 rows).
+-- The index must NOT skip granules where the key does not exist.
+-- { echoOn }
+SELECT count() FROM tab WHERE map['key'] IN ('');
+100000
+Granules: 25/25
+-- Empty value together with a real value.
+-- { echoOn }
+SELECT count() FROM tab WHERE map['key'] IN ('', 'alpha');
+150000
+Granules: 25/25
+-- Non-empty values only (baseline for comparison).
+-- { echoOn }
+SELECT count() FROM tab WHERE map['key'] IN ('alpha');
+50000
+Granules: 25/25
+Name: idx_map_keys
+Granules: 14/25
+Name: idx_map_values
+Granules: 7/14
+-- { echoOn }
+SELECT count() FROM tab WHERE map['key'] IN ('alpha', 'gamma');
+100000
+Granules: 25/25
+Name: idx_map_keys
+Granules: 14/25
+Name: idx_map_values
+Granules: 14/14

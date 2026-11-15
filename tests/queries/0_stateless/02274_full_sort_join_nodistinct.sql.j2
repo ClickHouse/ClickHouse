@@ -1,14 +1,14 @@
--- Tags: long
+-- Tags: long, no-msan
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 DROP TABLE IF EXISTS tn1;
 DROP TABLE IF EXISTS tn2;
 
-CREATE TABLE t1 (key UInt32, s String) engine = TinyLog;
-CREATE TABLE tn1 (key Nullable(UInt32), s String) engine = TinyLog;
-CREATE TABLE t2 (key UInt32, s String) engine = TinyLog;
-CREATE TABLE tn2 (key Nullable(UInt32), s String) engine = TinyLog;
+CREATE TABLE t1 (key UInt32, s String) engine = MergeTree ORDER BY tuple();
+CREATE TABLE tn1 (key Nullable(UInt32), s String) engine = MergeTree ORDER BY tuple();
+CREATE TABLE t2 (key UInt32, s String) engine = MergeTree ORDER BY tuple();
+CREATE TABLE tn2 (key Nullable(UInt32), s String) engine = MergeTree ORDER BY tuple();
 
 INSERT INTO t1 VALUES (1, 'val1'), (2, 'val21'), (2, 'val22'), (2, 'val23'), (2, 'val24'), (2, 'val25'), (2, 'val26'), (2, 'val27'), (3, 'val3');
 INSERT INTO tn1 VALUES (1, 'val1'), (NULL, 'val21'), (NULL, 'val22'), (NULL, 'val23'), (NULL, 'val24'), (NULL, 'val25'), (NULL, 'val26'), (NULL, 'val27'), (3, 'val3');
@@ -20,7 +20,8 @@ INSERT INTO tn2 VALUES (1, 'val11'), (1, 'val12'), (NULL, 'val22'), (NULL, 'val2
 
 {% for join_algorithm in ['full_sorting_merge', 'grace_hash'] -%}
 
-SET max_bytes_in_join = '{% if join_algorithm == 'grace_hash' %}10K{% else %}0{% endif %}';
+-- The threshold has to stay above the size of an empty hash table, or the buckets keep splitting.
+SET max_bytes_before_external_join = '{% if join_algorithm == 'grace_hash' %}16Mi{% else %}0{% endif %}';
 
 SET join_algorithm = '{{ join_algorithm }}';
 
@@ -52,7 +53,7 @@ SELECT key, length(t1.s), length(t2.s) FROM {{ t1 }} AS t1 ALL FULL JOIN {{ t2 }
 {% endif -%}
 {% endfor -%}
 {% endfor -%}
-SET max_bytes_in_join = 0;
+SET max_bytes_before_external_join = 0;
 
 {% endfor -%}
 

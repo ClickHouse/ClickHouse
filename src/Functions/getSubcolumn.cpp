@@ -13,7 +13,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionGetSubcolumn : public IFunction
+class FunctionGetSubcolumn final : public IFunction
 {
 public:
     static constexpr auto name = "getSubcolumn";
@@ -23,12 +23,16 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForDynamic() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    /// Declarative signature — looks up the named subcolumn's type on the
+    /// first argument via the `subcolumnTypeOf` type function.
+    String getSignatureString() const override
     {
-        auto subcolumn_name = getSubcolumnName(arguments);
-        return arguments[0].type->getSubcolumnType(subcolumn_name);
+        return "(T : Any, const name String) -> subcolumnTypeOf(T, name)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
@@ -45,7 +49,7 @@ private:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "The second argument of function {} should be a constant string with the name of a subcolumn", name);
 
-        return column->getDataAt(0).toView();
+        return column->getDataAt(0);
     }
 };
 
@@ -59,8 +63,19 @@ Receives the expression or identifier and constant string with the name of subco
 
 Returns requested subcolumn extracted from the expression.
 )",
-        .examples{{"getSubcolumn", "SELECT getSubcolumn(array_col, 'size0'), getSubcolumn(tuple_col, 'elem_name')", ""}},
-        .categories{"OtherFunctions"}
+        .syntax = "getSubcolumn(nested_value, subcolumn_name)",
+        .examples{{"getSubcolumn",
+             R"(
+SELECT getSubcolumn(array_col, 'size0'), getSubcolumn(tuple_col, 'elem_name')
+FROM values('array_col Array(UInt32), tuple_col Tuple(elem_name String)', ([1, 2, 3], tuple('abc')));
+             )",
+             R"(
+┌─getSubcolumn(array_col, 'size0')─┬─getSubcolumn(tuple_col, 'elem_name')─┐
+│                                3 │ abc                                  │
+└──────────────────────────────────┴──────────────────────────────────────┘
+             )"}},
+        .introduced_in = {23, 3},
+        .category = FunctionDocumentation::Category::Other
     });
 }
 

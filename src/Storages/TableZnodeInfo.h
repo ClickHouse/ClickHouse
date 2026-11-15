@@ -1,0 +1,83 @@
+#pragma once
+
+#include <base/types.h>
+#include <Storages/RenamingRestrictions.h>
+#include <Databases/LoadingStrictnessLevel.h>
+
+#include <memory>
+
+namespace zkutil
+{
+class ZooKeeper;
+using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
+}
+
+namespace DB
+{
+
+struct StorageID;
+class ASTCreateQuery;
+class Context;
+using ContextPtr = std::shared_ptr<const Context>;
+class IDatabase;
+using DatabasePtr = std::shared_ptr<IDatabase>;
+
+/// Helper for replicated tables that use zookeeper for coordination among replicas.
+/// Handles things like:
+///  * Expanding macros like {table} and {uuid} in zookeeper path. Some macros are expanded+saved once
+///    on table creation (e.g. {table}, to avoid changing the path if the table is later renamed),
+///    others are expanded on each server startup and each replica (e.g. {replica} because it's
+///    different on different replicas).
+///  * When dropping table with znode path (say) "/clickhouse/tables/{uuid}/{shard}", delete not only
+///    the znode at this path but also the parent znode "/clickhouse/tables/{uuid}" if it became empty.
+///    Otherwise each created+dropped table would leave behind an empty znode.
+
+struct TableZnodeInfo
+{
+    String path;
+    String replica_name;
+    /// Which zookeeper cluster to use ("default" or one of auxiliary zookeepers listed in config).
+    String zookeeper_name = "default";
+
+    /// Path with optional zookeeper_name prefix: "<auxiliary_zookeeper_name>:<path>".
+    String full_path;
+
+    /// Do not allow RENAME TABLE if zookeeper_path contains {database} or {table} macro.
+    RenamingRestrictions renaming_restrictions = RenamingRestrictions::ALLOW_ANY;
+
+    /// Information to save in table metadata and send to replicas (if ON CLUSTER or DatabaseReplicated).
+    /// Has some macros expanded (e.g. {table}), others left unexpanded (e.g. {replica}).
+    String full_path_for_metadata;
+    String replica_name_for_metadata;
+
+    /// Path to an ancestor of `path` that should be considered "owned" by this table (shared among
+    /// replicas of the table). When table is dropped, this znode will be removed if it became empty.
+    /// E.g. path = "/clickhouse/tables/{uuid}/{shard}", path_prefix_to_drop = "/clickhouse/tables/{uuid}".
+    String path_prefix_for_drop;
+
+    /// `validate_substitutions` rejects a {database}/{table} value that would not stay a single safe
+    /// ZooKeeper path component. It must be requested only for a freshly supplied definition: enabling
+    /// it while merely re-deriving the path of an existing table (a short ATTACH, a Replicated-database
+    /// recovery replay, a restore of a definition that kept its own engine arguments) would break that
+    /// table. What decides it is the origin of the value being judged, not the statement's mode:
+    /// a value minted from the server's `default_replica_path` template is freshly supplied even
+    /// during a RESTORE, because it is expanded against the name that statement supplies. Converting a
+    /// MergeTree table to a replicated engine counts as fresh for the same reason.
+    static TableZnodeInfo resolve(
+        const String & requested_path, const String & requested_replica_name,
+        const StorageID & table_id, const ASTCreateQuery & query, LoadingStrictnessLevel mode,
+        const ContextPtr & context, bool validate_substitutions = false);
+
+    void dropAncestorZnodesIfNeeded(const zkutil::ZooKeeperPtr & zookeeper) const;
+
+    /// A table of an `Ordinary` database stores `path` as a literal, without the {uuid} macro, so on every
+    /// later load `path_prefix_for_drop` is recovered by matching the path against the `default_replica_path`
+    /// template again. Throws if that recovery would not yield the prefix computed here, which happens when
+    /// the template cannot be matched at all (it expands {uuid} more than once, say), and also when the match
+    /// would depend on the name of the table, which a `RENAME TABLE` changes while the literal path keeps the
+    /// old one: such a table would keep its parent znode forever after `DROP TABLE`.
+    /// Call it before the literal path is written into metadata.
+    void checkPrefixForDropRecoverableFromPath(const StorageID & table_id, const ContextPtr & context) const;
+};
+
+}

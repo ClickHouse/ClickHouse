@@ -1,46 +1,65 @@
-#include <unistd.h>
-#include <fcntl.h>
+#include <base/phdr_cache.h>
+#include <base/scope_guard.h>
+#include <base/defines.h>
+#include <base/sanitizer_options.h>
 
-#include <new>
-#include <iostream>
-#include <vector>
-#include <string>
-#include <string_view>
-#include <utility> /// pair
+#include <Common/EnvironmentChecks.h>
+#include <Common/Exception.h>
+#include <Common/StringUtils.h>
+#include <Common/getHashOfLoadedBinary.h>
+#include <Common/Crypto/OpenSSLInitializer.h>
 
-#include <fmt/format.h>
 
 #include "config.h"
 #include "config_tools.h"
 
-#include <Common/EnvironmentChecks.h>
-#include <Common/Coverage.h>
-#include <Common/StringUtils.h>
-#include <Common/getHashOfLoadedBinary.h>
-#include <Common/IO.h>
+#include <fcntl.h>
+#include <sys/resource.h>
+#include <unistd.h>
+#include <sched.h>
 
-#include <base/phdr_cache.h>
-#include <base/coverage.h>
-
+#include <charconv>
+#include <filesystem>
+#include <iostream>
+#include <new>
+#include <string>
+#include <string_view>
+#include <utility> /// pair
+#include <vector>
 
 /// Universal executable for various clickhouse applications
-int mainEntryClickHouseServer(int argc, char ** argv);
-int mainEntryClickHouseClient(int argc, char ** argv);
-int mainEntryClickHouseLocal(int argc, char ** argv);
 int mainEntryClickHouseBenchmark(int argc, char ** argv);
-int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
+int mainEntryClickHouseCheckMarks(int argc, char ** argv);
+int mainEntryClickHouseChecksumForCompressedBlock(int, char **);
+int mainEntryClickHouseClient(int argc, char ** argv);
 int mainEntryClickHouseCompressor(int argc, char ** argv);
-int mainEntryClickHouseFormat(int argc, char ** argv);
-int mainEntryClickHouseObfuscator(int argc, char ** argv);
-int mainEntryClickHouseGitImport(int argc, char ** argv);
-int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
-int mainEntryClickHouseSU(int argc, char ** argv);
 int mainEntryClickHouseDisks(int argc, char ** argv);
+int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
+int mainEntryClickHouseFormat(int argc, char ** argv);
+int mainEntryClickHouseFstDumpTree(int argc, char ** argv);
+int mainEntryClickHouseGitImport(int argc, char ** argv);
+int mainEntryClickHouseLocal(int argc, char ** argv);
+int mainEntryClickHouseObfuscator(int argc, char ** argv);
+int mainEntryClickHouseOomCanary(int argc, char ** argv);
+int mainEntryClickHouseSU(int argc, char ** argv);
+int mainEntryClickHouseDockerInit(int argc, char ** argv);
+int mainEntryClickHouseServer(int argc, char ** argv);
+int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
+int mainEntryClickHouseZooKeeperDumpTree(int argc, char ** argv);
+int mainEntryClickHouseZooKeeperRemoveByList(int argc, char ** argv);
 
-int mainEntryClickHouseHashBinary(int, char **)
+int mainEntryClickHouseHashBinary(int argc, char ** argv);
+int mainEntryClickHouseHashBinary(int argc, char ** argv)
 {
-    /// Intentionally without newline. So you can run:
-    /// objcopy --add-section .clickhouse.hash=<(./clickhouse hash-binary) clickhouse
+    if (argc > 1 && (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0))
+    {
+        std::cout << "Usage: clickhouse hash-binary\n"
+                     "Prints hash of ClickHouse binary.\n"
+                     "  -h, --help   Print this message\n"
+                     "Result is intentionally without newline. So you can run:\n"
+                     "objcopy --add-section .clickhouse.hash=<(./clickhouse hash-binary) clickhouse\n\n"
+                     "Current binary hash: ";
+    }
     std::cout << getHashOfLoadedBinaryHex();
     return 0;
 }
@@ -54,6 +73,22 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_KEEPER_CLIENT
 int mainEntryClickHouseKeeperClient(int argc, char ** argv);
 #endif
+#if USE_RAPIDJSON && USE_NURAFT
+int mainEntryClickHouseKeeperBench(int argc, char ** argv);
+#endif
+#if USE_NURAFT
+int mainEntryClickHouseKeeperDataDumper(int argc, char ** argv);
+int mainEntryClickHouseKeeperUtils(int argc, char ** argv);
+#endif
+
+#if USE_CHDIG
+extern "C" int chdig_main(int argc, char ** argv);
+int mainEntryClickHouseChdig(int argc, char ** argv);
+int mainEntryClickHouseChdig(int argc, char ** argv)
+{
+    return chdig_main(argc, argv);
+}
+#endif
 
 // install
 int mainEntryClickHouseInstall(int argc, char ** argv);
@@ -62,27 +97,69 @@ int mainEntryClickHouseStop(int argc, char ** argv);
 int mainEntryClickHouseStatus(int argc, char ** argv);
 int mainEntryClickHouseRestart(int argc, char ** argv);
 
+// packed-io: list/extract/create ClickHouse packed-format archives
+int mainEntryClickHousePackedIO(int argc, char ** argv);
+
+/// Private-only programs
+#if CLICKHOUSE_CLOUD
+int mainEntryClickHouseSharedCatalogUtil(int argc, char ** argv);
+#if ENABLE_DISTRIBUTED_CACHE
+int mainEntryClickHouseDistributedCache(int argc, char ** argv);
+#endif
+int mainEntryClickHouseSharedMergeTreeGarbageCleaner(int argc, char ** argv);
+int mainEntryClickHouseClearZooKeeperLocks(int argc, char ** argv);
+int mainEntryClickHouseMangler(int argc, char ** argv);
+#endif
+
 namespace
 {
 
 using MainFunc = int (*)(int, char**);
 
-/// Add an item here to register new application
+/// Forward declaration, since clickhouse_applications is defined after this function.
+void printHelp(std::ostream & out);
+
+int mainEntryHelp(int, char **)
+{
+    printHelp(std::cout);
+    return 0;
+}
+
+int printHelpOnError(int, char **)
+{
+    printHelp(std::cerr);
+    return -1;
+}
+
+/// Add an item here to register new application.
+/// This list has a "priority" - e.g. we need to disambiguate clickhouse --format being
+/// either clickouse-format or clickhouse-{local, client} --format.
+/// Currently we will prefer the latter option.
 std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 {
     {"local", mainEntryClickHouseLocal},
     {"client", mainEntryClickHouseClient},
+#if USE_CHDIG
+    {"chdig", mainEntryClickHouseChdig},
+    {"dig", mainEntryClickHouseChdig},
+#endif
     {"benchmark", mainEntryClickHouseBenchmark},
     {"server", mainEntryClickHouseServer},
     {"extract-from-config", mainEntryClickHouseExtractFromConfig},
     {"compressor", mainEntryClickHouseCompressor},
     {"format", mainEntryClickHouseFormat},
     {"obfuscator", mainEntryClickHouseObfuscator},
+    {"oom-canary", mainEntryClickHouseOomCanary},
     {"git-import", mainEntryClickHouseGitImport},
     {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
     {"su", mainEntryClickHouseSU},
+    {"docker-init", mainEntryClickHouseDockerInit},
     {"hash-binary", mainEntryClickHouseHashBinary},
     {"disks", mainEntryClickHouseDisks},
+    {"check-marks", mainEntryClickHouseCheckMarks},
+    {"checksum-for-compressed-block", mainEntryClickHouseChecksumForCompressedBlock},
+    {"zookeeper-dump-tree", mainEntryClickHouseZooKeeperDumpTree},
+    {"zookeeper-remove-by-list", mainEntryClickHouseZooKeeperRemoveByList},
 
     // keeper
 #if ENABLE_CLICKHOUSE_KEEPER
@@ -94,21 +171,40 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 #if ENABLE_CLICKHOUSE_KEEPER_CLIENT
     {"keeper-client", mainEntryClickHouseKeeperClient},
 #endif
-
+#if USE_RAPIDJSON && USE_NURAFT
+    {"keeper-bench", mainEntryClickHouseKeeperBench},
+#endif
+#if USE_NURAFT
+    {"keeper-data-dumper", mainEntryClickHouseKeeperDataDumper},
+    {"keeper-utils", mainEntryClickHouseKeeperUtils},
+#endif
     // install
     {"install", mainEntryClickHouseInstall},
     {"start", mainEntryClickHouseStart},
     {"stop", mainEntryClickHouseStop},
     {"status", mainEntryClickHouseStatus},
     {"restart", mainEntryClickHouseRestart},
+    // help
+    {"help", mainEntryHelp},
+    {"packed-io", mainEntryClickHousePackedIO},
+
+/// Private-only programs
+#if CLICKHOUSE_CLOUD
+    {"shared-merge-tree-garbage-cleaner", mainEntryClickHouseSharedMergeTreeGarbageCleaner},
+    {"clear-zookeeper-locks", mainEntryClickHouseClearZooKeeperLocks},
+    {"shared-catalog-util", mainEntryClickHouseSharedCatalogUtil},
+    {"mangler", mainEntryClickHouseMangler},
+#if ENABLE_DISTRIBUTED_CACHE
+    {"distributed-cache", mainEntryClickHouseDistributedCache}
+#endif
+#endif
 };
 
-int printHelp(int, char **)
+void printHelp(std::ostream & out)
 {
-    std::cerr << "Use one of the following commands:" << std::endl;
-    for (auto & application : clickhouse_applications)
-        std::cerr << "clickhouse " << application.first << " [args] " << std::endl;
-    return -1;
+    out << "Use one of the following commands:" << std::endl;
+    for (const auto & application : clickhouse_applications)
+        out << "clickhouse " << application.first << " [args] " << std::endl;
 }
 
 /// Add an item here to register a new short name
@@ -116,11 +212,14 @@ std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
 {
     {"chl", "local"},
     {"chc", "client"},
+#if USE_CHDIG
+    {"chdig", "chdig"},
+#endif
 };
 
 }
 
-bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
+static bool isClickHouseApp(std::string_view app_suffix, std::vector<char *> & argv)
 {
     for (const auto & [alias, name] : clickhouse_short_names)
         if (app_suffix == name
@@ -151,10 +250,29 @@ bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
 /// We absolutely discourage the ancient technique of loading
 /// 3rd-party uncontrolled dangerous libraries into the process address space,
 /// because it is insane.
-
-#if !defined(USE_MUSL)
+///
+/// We do allow `dlopen()` in case of OpenSSL FIPS build,
+/// because it requires a FIPS provider (i.e. fips.so), which is loaded dynamically.
+///
+/// And in a build with the GPU engine, because CUDA has no other way to reach a device: there is
+/// no static driver library to link: even `libcudart_static.a` finds the driver by
+/// `dlopen("libcuda.so.1")`, and with the stub below in place it is told there is none and reports
+/// that the driver is too old. So `-DENABLE_GPU=1` gives up this protection for the whole binary,
+/// which is one more reason for that build to stay experimental.
+///
+/// Not on WebAssembly: Emscripten's libc unconditionally defines `dlerror` (its own code
+/// pulls it in), so the override would be a duplicate symbol at the link - and a sandbox
+/// cannot load libraries in the first place.
+///
+/// Keep this guard identical to the one in `programs/keeper/keeper_main.cpp`.
+#if !(defined(USE_MUSL) || USE_OPENSSL_FIPS || USE_GPU || defined(OS_WASM))
 extern "C"
 {
+    void * dlopen(const char *, int);
+    void * dlmopen(long, const char *, int); // NOLINT
+    int dlclose(void *);
+    const char * dlerror();
+
     void * dlopen(const char *, int)
     {
         return nullptr;
@@ -177,13 +295,120 @@ extern "C"
 }
 #endif
 
-/// Prevent messages from JeMalloc in the release build.
-/// Some of these messages are non-actionable for the users, such as:
-/// <jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.
-#if USE_JEMALLOC && defined(NDEBUG) && !defined(SANITIZER)
-extern "C" void (*malloc_message)(void *, const char *s);
-__attribute__((constructor(0))) void init_je_malloc_message() { malloc_message = [](void *, const char *){}; }
+#if USE_JEMALLOC && defined(OS_LINUX) && !defined(USE_MUSL)
+/// A short-lived clickhouse-local process faults in fewer pages with a few shared arenas than with per-CPU ones.
+/// jemalloc reads `je_malloc_conf` at its first allocation, which comes after `.preinit_array`.
+extern "C"
+{
+const char * je_malloc_conf = nullptr;
+}
+
+static void configureJemallocForLocal(int argc, char ** argv, char ** envp)
+{
+    /// NOTE: You cannot have any allocations here
+    if (argc < 1 || !argv || !argv[0])
+        return;
+
+    std::string_view program(argv[0]);
+    if (auto slash = program.rfind('/'); slash != std::string_view::npos)
+        program.remove_prefix(slash + 1);
+    std::string_view first_arg = (argc >= 2 && argv[1]) ? std::string_view(argv[1]) : std::string_view();
+
+    bool is_local = program == "clickhouse-local" || first_arg == "local" || first_arg == "--local";
+    for (const auto & [alias, name] : clickhouse_short_names)
+        is_local = is_local || (name == "local" && program == alias);
+    if (!is_local)
+        return;
+
+    for (char ** env = envp; env && *env; ++env)
+        if (std::string_view(*env).starts_with("MALLOC_CONF="))
+            return;
+
+    /// `cpu_set_t` holds only 1024 CPUs, and `sched_getaffinity` fails with EINVAL when the kernel mask is wider.
+    /// 8192 is the largest `NR_CPUS` of the supported architectures.
+    UInt64 mask[8192 / 64] = {};
+    auto * cpus = reinterpret_cast<cpu_set_t *>(mask);
+    if (0 != sched_getaffinity(0, sizeof(mask), cpus))
+        return;
+    unsigned num_cpus = static_cast<unsigned>(CPU_COUNT_S(sizeof(mask), cpus));
+    if (num_cpus == 0)
+        return;
+    unsigned num_arenas = std::min(std::max((num_cpus + 7) / 8, 2u), num_cpus);
+
+    static char config[64] = "percpu_arena:disabled,narenas:";
+    char * end = config + std::string_view(config).size();
+    auto [ptr, ec] = std::to_chars(end, config + sizeof(config) - 1, num_arenas);
+    if (ec != std::errc())
+        return;
+    *ptr = '\0';
+    je_malloc_conf = config;
+}
+
+__attribute__((section(".preinit_array"), used))
+static void (* const configure_jemalloc_for_local)(int, char **, char **) = configureJemallocForLocal;
 #endif
+
+/// Ignore messages which can be safely ignored, e.g. EAGAIN on pthread_create,
+/// or messages that do not mean anything to the user.
+#if USE_JEMALLOC
+extern "C" void (*je_malloc_message)(void *, const char * s);
+static __attribute__((constructor(0))) void init_je_malloc_message()
+{
+    je_malloc_message = [](void *, const char * str)
+    {
+        /// NOTE: You cannot have any allocations here
+
+        std::string_view message_view{str};
+        if (message_view == "<jemalloc>: background thread creation failed (11)\n")
+            return;
+
+#    if defined(SYS_write)
+        syscall(SYS_write, STDERR_FILENO, message_view.data(), message_view.size());
+#    else
+        write(STDERR_FILENO, message_view.data(), message_view.size());
+#    endif
+    };
+}
+#endif
+
+#if defined(OS_LINUX) && !defined(USE_MUSL) && !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER)
+/// Linux grows the descriptor table of a multithreaded process only after an RCU grace period, and threads that open
+/// files meanwhile wait. Grow it from `.preinit_array`, which glibc runs before any constructor, so before jemalloc
+/// starts its background thread. Sanitizer runtimes initialize from `.preinit_array` too and intercept these calls.
+static void reserveFileDescriptorTable(int, char **, char **)
+{
+    rlimit rlim{};
+    if (0 != getrlimit(RLIMIT_NOFILE, &rlim))
+        return;
+    rlim_t count = 4096;
+    if (rlim.rlim_cur != RLIM_INFINITY && rlim.rlim_cur < count)
+        count = rlim.rlim_cur;
+    /// The initial table has 64 entries.
+    if (count <= 64)
+        return;
+
+    int fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
+    if (fd < 0)
+        return;
+    int high_fd = fcntl(fd, F_DUPFD_CLOEXEC, static_cast<int>(count - 1));
+    if (high_fd >= 0)
+    {
+        [[maybe_unused]] int high_err = close(high_fd);
+    }
+    [[maybe_unused]] int err = close(fd);
+}
+
+__attribute__((section(".preinit_array"), used))
+static void (* const reserve_file_descriptor_table)(int, char **, char **) = reserveFileDescriptorTable;
+#endif
+
+/// OpenSSL early initialization.
+/// See also EnvironmentChecks.cpp for other static initializers.
+/// Must be ran after EnvironmentChecks.cpp, as OpenSSL uses SSE4.1 and POPCNT.
+static __attribute__((constructor(202))) void init_ssl()
+{
+    DB::OpenSSLInitializer::instance();
+}
 
 /// This allows to implement assert to forbid initialization of a class in static constructors.
 /// Usage:
@@ -204,7 +429,7 @@ int main(int argc_, char ** argv_)
     updatePHDRCache();
 
 #if !defined(USE_MUSL)
-    checkHarmfulEnvironmentVariables(argv_);
+    checkHarmfulEnvironment(argv_);
 #endif
 
     /// This is used for testing. For example,
@@ -219,14 +444,42 @@ int main(int argc_, char ** argv_)
     std::vector<char *> argv(argv_, argv_ + argc_);
 
     /// Print a basic help if nothing was matched
-    MainFunc main_func = printHelp;
+    MainFunc main_func = printHelpOnError;
 
     for (auto & application : clickhouse_applications)
     {
-        if (isClickhouseApp(application.first, argv))
+        if (isClickHouseApp(application.first, argv))
         {
             main_func = application.second;
             break;
+        }
+    }
+
+    /// Top-level --help / -h / -? (as the sole argument) should show the dispatcher
+    /// help listing all subcommands and exit with code 0. Without this carve-out,
+    /// `--help` would match the `startsWith(argv[i], "-h")` rule below and be routed
+    /// into clickhouse-client, which treats anything starting with "-h" as a --host
+    /// specification and fails.
+    if (main_func == printHelpOnError && argv.size() == 2)
+    {
+        std::string_view arg(argv[1]);
+        if (arg == "--help" || arg == "-h" || arg == "-?")
+            main_func = mainEntryHelp;
+    }
+
+    /// If host/port arguments are passed to clickhouse/ch shortcuts,
+    /// interpret it as clickhouse-client invocation for usability.
+    if (main_func == printHelpOnError && argv.size() >= 2)
+    {
+        for (size_t i = 1, num_args = argv.size(); i < num_args; ++i)
+        {
+            if ((i + 1 < num_args && argv[i] == std::string_view("--host")) || startsWith(argv[i], "--host=")
+                || (i + 1 < num_args && argv[i] == std::string_view("--port")) || startsWith(argv[i], "--port=")
+                || startsWith(argv[i], "-h"))
+            {
+                main_func = mainEntryClickHouseClient;
+                break;
+            }
         }
     }
 
@@ -238,18 +491,38 @@ int main(int argc_, char ** argv_)
     ///     clickhouse # spawn local
     ///     clickhouse local # spawn local
     ///     clickhouse "select ..." # spawn local
+    ///     clickhouse /tmp/repro --enable-analyzer
     ///
-    if (main_func == printHelp && !argv.empty() && (argv.size() == 1 || argv[1][0] == '-'
-        || std::string_view(argv[1]).contains(' ')))
+    std::error_code ec;
+    if (main_func == printHelpOnError && !argv.empty()
+        && (argv.size() < 2 || argv[1] != std::string_view("--help"))
+        && (argv.size() == 1 || argv[1][0] == '-' || std::string_view(argv[1]).contains(' ')
+            || std::filesystem::is_regular_file(std::filesystem::path{argv[1]}, ec)))
     {
         main_func = mainEntryClickHouseLocal;
     }
 
-    int exit_code = main_func(static_cast<int>(argv.size()), argv.data());
+    /// If the argument looks like a file path but doesn't exist, provide a helpful error
+    /// instead of the generic "Use one of the following commands" message.
+    /// The check above routes existing files to clickhouse-local, but when the file
+    /// doesn't exist, we fall through to `printHelp` which is confusing:
+    ///     $ clickhouse tests/queries/0_stateless/my_test.sql
+    ///     Use one of the following commands: ...
+    /// We detect file-like arguments by the presence of `/` (path separator)
+    /// or `.` (file extension), which distinguishes them from mistyped subcommand
+    /// names like "clickhouse sever" where the generic help is appropriate.
+    if (main_func == printHelpOnError && argv.size() >= 2)
+    {
+        std::string_view arg(argv[1]);
+        if (arg.contains('/') || arg.contains('.'))
+        {
+            std::cerr << "Error: no such file: " << arg << std::endl;
+            std::cerr << "If you intended to run a script, please check the path." << std::endl;
+            return 1;
+        }
+    }
 
-#if defined(SANITIZE_COVERAGE)
-    dumpCoverage();
-#endif
+    int exit_code = main_func(static_cast<int>(argv.size()), argv.data());
 
     return exit_code;
 }

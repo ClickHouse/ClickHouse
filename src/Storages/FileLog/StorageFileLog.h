@@ -4,9 +4,9 @@
 
 #include <Storages/FileLog/Buffer_fwd.h>
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
-#include <Storages/FileLog/FileLogSettings.h>
 
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/StreamingHandleErrorMode.h>
 #include <Storages/IStorage.h>
 #include <Common/SettingsChanges.h>
 
@@ -17,6 +17,11 @@
 #include <mutex>
 #include <optional>
 
+namespace re2
+{
+class RE2;
+}
+
 namespace DB
 {
 namespace ErrorCodes
@@ -25,6 +30,7 @@ namespace ErrorCodes
 }
 
 class FileLogDirectoryWatcher;
+struct FileLogSettings;
 
 class StorageFileLog final : public IStorage, WithContext
 {
@@ -44,7 +50,7 @@ public:
 
     std::string getName() const override { return "FileLog"; }
 
-    bool noPushingToViews() const override { return true; }
+    bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;
@@ -76,6 +82,8 @@ public:
         FileStatus status = FileStatus::OPEN;
         UInt64 inode{};
         std::optional<std::ifstream> reader = std::nullopt;
+        /// The last attempt to open the file failed for a reason of the file itself (missing, not readable).
+        bool open_failed = false;
     };
 
     struct FileMeta
@@ -120,8 +128,7 @@ public:
     {
         if (auto it = map.find(key); it != map.end())
             return it->second;
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The key {} doesn't exist.", key);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The key {} doesn't exist.", key);
     }
 
     void increaseStreams();
@@ -129,11 +136,23 @@ public:
 
     void wakeUp();
 
+    /// The next read of `file_name` starts at `offset`, or at its current end if `offset` is not set;
+    /// without `file_name`, every file is read again from the beginning.
+    void resetReadPosition(const std::optional<String> & file_name, std::optional<UInt64> offset);
+
     const auto & getFileLogSettings() const { return filelog_settings; }
+
+    const LoggerPtr & getLog() const { return log; }
+
+    void setReadMoreAfterSkippedRecords() { read_more_after_skipped_records = true; }
+
+    /// The file name matches the globs of `path`, if any.
+    bool fileNameMatches(const String & file_name) const;
 
 private:
     friend class ReadFromStorageFileLog;
 
+    ContextMutablePtr filelog_context;
     std::unique_ptr<FileLogSettings> filelog_settings;
 
     const String path;
@@ -143,6 +162,9 @@ private:
     /// otherwise, it equals to user_files_path/ + path_argument/, e.g. path
     String root_data_path;
     String metadata_base_path;
+
+    /// Set when the file name of `path` has globs.
+    std::shared_ptr<const re2::RE2> file_name_matcher;
 
     FileInfos file_infos;
 
@@ -167,11 +189,17 @@ private:
 
     std::mutex file_infos_mutex;
 
+    /// Written by openFilesAndSetPos under file_infos_mutex, read by threadFunc without it.
+    std::atomic<bool> has_files_to_reopen = false;
+
+    /// Set by a stream that stopped after skipping broken records before the end of its files.
+    std::atomic<bool> read_more_after_skipped_records = false;
+
     struct TaskContext
     {
-        BackgroundSchedulePool::TaskHolder holder;
+        BackgroundSchedulePoolTaskHolder holder;
         std::atomic<bool> stream_cancelled {false};
-        explicit TaskContext(BackgroundSchedulePool::TaskHolder&& task_) : holder(std::move(task_))
+        explicit TaskContext(BackgroundSchedulePoolTaskHolder&& task_) : holder(std::move(task_))
         {
         }
     };
@@ -182,6 +210,9 @@ private:
     void loadFiles();
 
     void loadMetaFiles(bool attach);
+
+    /// The directory watcher reports when the file is removed, renamed or replaced (not a change of a symlink's target).
+    bool isTrackedByDirectoryEvents(const String & file_name) const;
 
     void threadFunc();
 
@@ -194,12 +225,28 @@ private:
 
     bool updateFileInfos();
 
+    /// Apply a "file `file_name` now refers to a regular file with `inode`" event
+    /// (shared by `DW_ITEM_ADDED` and `DW_ITEM_MOVED_TO` branches).
+    /// If the name was previously tracked with a different inode (delete+recreate
+    /// or rename-over), cleans up the stale `meta_by_inode` entry and removes the
+    /// stale on-disk meta file, guarded by filename ownership: we only drop the
+    /// stale entry if it still claims this `file_name`, so that a rename pair
+    /// re-assigning the old inode to a different filename earlier in the batch
+    /// is not clobbered. Leaves `context_by_name[file_name]` at `{OPEN, inode}`
+    /// and pushes the name into `file_names` exactly once.
+    void onFileAppeared(const String & file_name, UInt64 inode);
+
+    /// The file is read under another name that still has it (a hard link).
+    bool isReadUnderOtherName(const String & file_name, UInt64 inode) const;
+
     size_t getTableDependentCount() const;
 
     /// Used in shutdown()
     void serialize() const;
     /// Used in FileSource closeFileAndStoreMeta(file_name).
     void serialize(UInt64 inode, const FileMeta & file_meta) const;
+    /// Writes the meta file of `file_meta` to a temporary path and returns that path.
+    String writeTemporaryMeta(UInt64 inode, const FileMeta & file_meta) const;
 
     void deserialize();
     void checkOffsetIsValid(const String & filename, UInt64 offset) const;
@@ -213,5 +260,8 @@ private:
 
     static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 };
+
+/// Resolves a relative `path` against `user_files_path`, unless it is already inside `user_files_path` from the working directory.
+String resolveFileLogPath(const String & path, const String & user_files_path);
 
 }

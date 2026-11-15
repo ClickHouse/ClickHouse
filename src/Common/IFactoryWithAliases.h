@@ -25,19 +25,21 @@ class IFactoryWithAliases : public IHints<2>
 protected:
     using Value = ValueType;
 
+    std::unordered_map<String, String> case_insensitive_name_mapping{};
+
+public:
+    /// Resolve an alias to the name its target was registered under, or return `name`
+    /// unchanged when it is not an alias. Both alias maps are consulted, so a
+    /// case-insensitive alias resolves through any spelling of it.
     String getAliasToOrName(const String & name) const
     {
         if (aliases.contains(name))
             return aliases.at(name);
-        else if (String name_lowercase = Poco::toLower(name); case_insensitive_aliases.contains(name_lowercase))
+        if (String name_lowercase = Poco::toLower(name); case_insensitive_aliases.contains(name_lowercase))
             return case_insensitive_aliases.at(name_lowercase);
-        else
-            return name;
+        return name;
     }
 
-    std::unordered_map<String, String> case_insensitive_name_mapping;
-
-public:
     /// For compatibility with SQL, it's possible to specify that certain function name is case insensitive.
     enum Case
     {
@@ -83,9 +85,9 @@ public:
     }
 
 
-    std::vector<String> getAllRegisteredNames() const override
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
-        std::vector<String> result;
+        VectorWithMemoryTracking<String> result;
         auto getter = [](const auto & pair) { return pair.first; };
         std::transform(getMap().begin(), getMap().end(), std::back_inserter(result), getter);
         std::transform(aliases.begin(), aliases.end(), std::back_inserter(result), getter);
@@ -102,7 +104,7 @@ public:
     {
         if (auto it = aliases.find(name); it != aliases.end())
             return it->second;
-        else if (auto jt = case_insensitive_aliases.find(Poco::toLower(name)); jt != case_insensitive_aliases.end())
+        if (auto jt = case_insensitive_aliases.find(Poco::toLower(name)); jt != case_insensitive_aliases.end())
             return jt->second;
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: name '{}' is not alias", getFactoryName(), name);
@@ -121,7 +123,7 @@ public:
         auto it = case_insensitive_name_mapping.find(Poco::toLower(name));
         if (it != case_insensitive_name_mapping.end())
             return it->second;
-        return name;
+        return name;  /// NOLINT(bugprone-return-const-ref-from-parameter)
     }
 
     ~IFactoryWithAliases() override = default;
@@ -135,10 +137,10 @@ private:
     virtual String getFactoryName() const = 0;
 
     /// Alias map to data_types from previous two maps
-    AliasMap aliases;
+    AliasMap aliases{};
 
     /// Case insensitive aliases
-    AliasMap case_insensitive_aliases;
+    AliasMap case_insensitive_aliases{};
 };
 
 }

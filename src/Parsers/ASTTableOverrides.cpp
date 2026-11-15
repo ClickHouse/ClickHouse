@@ -1,18 +1,24 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTColumnDeclaration.h>
-#include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTIndexDeclaration.h>
-#include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTTableOverrides.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
+#include <Common/Exception.h>
+
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 ASTPtr ASTTableOverride::clone() const
 {
-    auto res = std::make_shared<ASTTableOverride>(*this);
+    auto res = make_intrusive<ASTTableOverride>(*this);
     res->children.clear();
     res->table_name = table_name;
     if (columns)
@@ -22,23 +28,21 @@ ASTPtr ASTTableOverride::clone() const
     return res;
 }
 
-void ASTTableOverride::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTTableOverride::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     String nl_or_nothing = settings.one_line ? "" : "\n";
     String nl_or_ws = settings.one_line ? " " : "\n";
-    String hl_keyword = settings.hilite ? hilite_keyword : "";
-    String hl_none = settings.hilite ? hilite_none : "";
 
     if (is_standalone)
     {
-        settings.ostr << hl_keyword << "TABLE OVERRIDE " << hl_none;
-        ASTIdentifier(table_name).formatImpl(settings, state, frame);
+        ostr << "TABLE OVERRIDE ";
+        ASTIdentifier(table_name).format(ostr, settings, state, frame);
     }
     auto override_frame = frame;
     if (is_standalone)
     {
         ++override_frame.indent;
-        settings.ostr << nl_or_ws << '(' << nl_or_nothing;
+        ostr << nl_or_ws << '(' << nl_or_nothing;
     }
     String indent_str = settings.one_line ? "" : String(4 * override_frame.indent, ' ');
     size_t override_elems = 0;
@@ -46,9 +50,9 @@ void ASTTableOverride::formatImpl(const FormatSettings & settings, FormatState &
     {
         FormatStateStacked columns_frame = override_frame;
         columns_frame.expression_list_always_start_on_new_line = true;
-        settings.ostr << indent_str << hl_keyword << "COLUMNS" << hl_none << nl_or_ws << indent_str << "(";
-        columns->formatImpl(settings, state, columns_frame);
-        settings.ostr << nl_or_nothing << indent_str << ")";
+        ostr << indent_str << "COLUMNS" << nl_or_ws << indent_str << "(";
+        columns->format(ostr, settings, state, columns_frame);
+        ostr << nl_or_nothing << indent_str << ")";
         ++override_elems;
     }
     if (storage)
@@ -57,10 +61,8 @@ void ASTTableOverride::formatImpl(const FormatSettings & settings, FormatState &
         {
             if (elem)
             {
-                settings.ostr << (override_elems++ ? nl_or_ws : "")
-                              << indent_str
-                              << hl_keyword << elem_name << hl_none << ' ';
-                elem->formatImpl(settings, state, override_frame);
+                ostr << (override_elems++ ? nl_or_ws : "") << indent_str << elem_name << ' ';
+                elem->format(ostr, settings, state, override_frame);
             }
         };
         format_storage_elem(storage->partition_by, "PARTITION BY");
@@ -71,12 +73,12 @@ void ASTTableOverride::formatImpl(const FormatSettings & settings, FormatState &
     }
 
     if (is_standalone)
-        settings.ostr << nl_or_nothing << ')';
+        ostr << nl_or_nothing << ')';
 }
 
 ASTPtr ASTTableOverrideList::clone() const
 {
-    auto res = std::make_shared<ASTTableOverrideList>(*this);
+    auto res = make_intrusive<ASTTableOverrideList>(*this);
     res->cloneChildren();
     return res;
 }
@@ -121,19 +123,79 @@ bool ASTTableOverrideList::hasOverride(const String & name) const
     return positions.contains(name);
 }
 
-void ASTTableOverrideList::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTTableOverride::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    table_name = r.getString("table_name");
+    is_standalone = r.getBool("is_standalone", true);
+    /// `columns` (`ASTColumns`) and `storage` (`ASTStorage`) are concrete typed members; restoring them
+    /// generically would let a wrong node type reach `IAST::set` as a `LOGICAL_ERROR` cast failure.
+    auto columns_child = r.readChildOfType<ASTColumns>("columns");
+    if (columns_child)
+        set(columns, columns_child);
+    auto storage_child = r.readChildOfType<ASTStorage>("storage");
+    if (storage_child)
+        set(storage, storage_child);
+}
+
+void ASTTableOverride::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "TableOverride");
+    w.writeString("table_name", table_name);
+    w.writeBool("is_standalone", is_standalone);
+    w.writeChild("columns", columns);
+    w.writeChild("storage", storage);
+}
+
+void ASTTableOverrideList::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    /// `TableOverrideList` must contain only `TableOverride` nodes: semantic lookup through
+    /// `tryGetTableOverride` / `hasOverride` only sees children registered in `positions`,
+    /// so a foreign child would still be formatted but silently ignored. Reject it here.
+    children = r.readChildrenOfType<ASTTableOverride>("TableOverrideList");
+    positions.clear();
+    for (size_t i = 0; i < children.size(); ++i)
+    {
+        auto & override = children[i]->as<ASTTableOverride &>();
+        /// `ParserTableOverridesDeclarationList` fills this list only through `setTableOverride`
+        /// with standalone overrides (`TABLE OVERRIDE name (...)`), so every parser-produced child
+        /// is standalone, has a non-empty name, and names never repeat (`setTableOverride` replaces
+        /// an existing entry instead of appending). A non-standalone child would format as a bare
+        /// `PARTITION BY` / `COLUMNS` clause after `CREATE DATABASE ...`, and a duplicate name would
+        /// format both entries while `tryGetTableOverride` only sees the last one.
+        if (!override.is_standalone)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "TableOverrideList children must be standalone table overrides during AST JSON deserialization");
+        if (override.table_name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "TableOverrideList children must have a non-empty 'table_name' during AST JSON deserialization");
+        if (positions.contains(override.table_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Duplicate table override for table '{}' during AST JSON deserialization", override.table_name);
+        positions[override.table_name] = i;
+    }
+}
+
+void ASTTableOverrideList::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "TableOverrideList");
+    w.writeChildren(children);
+}
+
+void ASTTableOverrideList::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     if (frame.expression_list_prepend_whitespace)
-        settings.ostr << ' ';
+        ostr << ' ';
 
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
         if (it != children.begin())
         {
-            settings.ostr << (settings.one_line ? ", " : ",\n");
+            ostr << (settings.one_line ? ", " : ",\n");
         }
 
-        (*it)->formatImpl(settings, state, frame);
+        (*it)->format(ostr, settings, state, frame);
     }
 }
 

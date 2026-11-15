@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -19,8 +19,8 @@ node2 = cluster.add_instance(
     stay_alive=True,
     with_installed_binary=True,
 )
-node3 = cluster.add_instance("node3", with_zookeeper=False, use_old_analyzer=True)
-node4 = cluster.add_instance("node4", with_zookeeper=False, use_old_analyzer=True)
+node3 = cluster.add_instance("node3", with_zookeeper=False)
+node4 = cluster.add_instance("node4", with_zookeeper=False)
 
 
 @pytest.fixture(scope="module")

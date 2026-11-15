@@ -2,7 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include <Common/StringUtils.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <base/find_symbols.h>
 
 
@@ -233,6 +233,29 @@ namespace
 
 REGISTER_FUNCTION(DecodeXMLComponent)
 {
-    factory.registerFunction<FunctionDecodeXMLComponent>();
+    FunctionDocumentation::Description description = R"(
+Decodes XML entities in a string to their corresponding characters.
+)";
+    FunctionDocumentation::Syntax syntax = "decodeXMLComponent(s)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "String containing XML entities to decode.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the provided string with XML entities decoded.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT decodeXMLComponent('&lt;tag&gt;Hello &amp; World&lt;/tag&gt;')",
+        R"(
+┌─decodeXMLComponent('&lt;tag&gt;Hello &amp; World&lt;/tag&gt;')─┐
+│ <tag>Hello & World</tag>                                       │
+└────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionDecodeXMLComponent>(documentation);
 }
 }

@@ -1,7 +1,11 @@
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
 
+#include <Columns/ColumnConst.h>
+#include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -11,7 +15,11 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/getEffectiveMaxThreads.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Common/Logger.h>
 
 
 namespace DB
@@ -28,7 +36,6 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_rows_to_read_leaf;
-    extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 min_execution_speed;
     extern const SettingsUInt64 min_execution_speed_bytes;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -39,16 +46,15 @@ namespace Setting
     extern const SettingsOverflowMode timeout_overflow_mode;
 }
 
+IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextPtr & context_, const SelectQueryOptions & options_)
+    : IInterpreterUnionOrSelectQuery(query_ptr_, Context::createCopy(context_), options_)
+{
+}
+
 IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(
     const ASTPtr & query_ptr_, const ContextMutablePtr & context_, const SelectQueryOptions & options_)
-    : query_ptr(query_ptr_), context(context_), options(options_), max_streams(context->getSettingsRef()[Setting::max_threads])
+    : query_ptr(query_ptr_), context(context_), options(options_), max_streams(getEffectiveMaxThreads(*context))
 {
-    /// FIXME All code here will work with the old analyzer, however for views over Distributed tables
-    /// it's possible that new analyzer will be enabled in ::getQueryProcessingStage method
-    /// of the underlying storage when all other parts of infrastructure are not ready for it
-    /// (built with old analyzer).
-    context->setSetting("allow_experimental_analyzer", false);
-
     if (options.shard_num)
         context->addSpecialScalar(
                 "_shard_num",
@@ -68,8 +74,7 @@ QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline()
 QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline(QueryPlan & query_plan)
 {
     buildQueryPlan(query_plan);
-    return std::move(*query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context)));
+    return std::move(*query_plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context)));
 }
 
 static StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQueryOptions & options)
@@ -114,7 +119,8 @@ StorageLimits IInterpreterUnionOrSelectQuery::getStorageLimits(const Context & c
     if (!options.ignore_limits)
     {
         limits = getLimitsForStorage(settings, options);
-        leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], settings[Setting::max_bytes_to_read_leaf], settings[Setting::read_overflow_mode_leaf]);
+        if (context.getClientInfo().distributed_depth > 0)
+            leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], settings[Setting::max_bytes_to_read_leaf], settings[Setting::read_overflow_mode_leaf]);
     }
 
     return {limits, leaf_limits};
@@ -128,6 +134,7 @@ void IInterpreterUnionOrSelectQuery::setQuota(QueryPipeline & pipeline) const
         quota = context->getQuota();
 
     pipeline.setQuota(quota);
+    pipeline.setNormalizedQueryHash(context->getNormalizedQueryHash());
 }
 
 static ASTPtr parseAdditionalPostFilter(const Context & context)
@@ -174,10 +181,10 @@ void IInterpreterUnionOrSelectQuery::addAdditionalPostFilter(QueryPlan & plan) c
     if (!ast)
         return;
 
-    auto dag = makeAdditionalPostFilter(ast, context, plan.getCurrentDataStream().header);
+    auto dag = makeAdditionalPostFilter(ast, context, *plan.getCurrentHeader());
     std::string filter_name = dag.getOutputs().back()->result_name;
     auto filter_step = std::make_unique<FilterStep>(
-        plan.getCurrentDataStream(), std::move(dag), std::move(filter_name), true);
+        plan.getCurrentHeader(), std::move(dag), std::move(filter_name), true);
     filter_step->setStepDescription("Additional result filter");
     plan.addStep(std::move(filter_step));
 }

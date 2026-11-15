@@ -1,6 +1,5 @@
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 #include <TableFunctions/TableFunctionFactory.h>
-
 
 namespace DB
 {
@@ -11,11 +10,13 @@ void registerTableFunctions()
     registerTableFunctionMerge(factory);
     registerTableFunctionRemote(factory);
     registerTableFunctionNumbers(factory);
+    registerTableFunctionPrimes(factory);
     registerTableFunctionLoop(factory);
     registerTableFunctionGenerateSeries(factory);
     registerTableFunctionNull(factory);
     registerTableFunctionZeros(factory);
     registerTableFunctionExecutable(factory);
+    registerTableFunctionEval(factory);
     registerTableFunctionFile(factory);
     registerTableFunctionFileCluster(factory);
     registerTableFunctionURL(factory);
@@ -23,9 +24,23 @@ void registerTableFunctions()
     registerTableFunctionValues(factory);
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
+    registerTableFunctionFilesystem(factory);
+#if USE_MONGODB
     registerTableFunctionMongoDB(factory);
+#endif
     registerTableFunctionRedis(factory);
+    registerTableFunctionBigQuery(factory);
+    registerTableFunctionElasticsearch(factory);
+
+#if USE_ARROWFLIGHT
+    registerTableFunctionArrowFlight(factory);
+#endif
+
     registerTableFunctionMergeTreeIndex(factory);
+    registerTableFunctionMergeTreeAnalyzeIndexes(factory);
+    registerTableFunctionMergeTreeProjection(factory);
+    registerTableFunctionMergeTreeTextIndex(factory);
+    registerTableFunctionMergeTreeCodecBlockCounts(factory);
     registerTableFunctionFuzzQuery(factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerTableFunctionFuzzJSON(factory);
@@ -40,6 +55,8 @@ void registerTableFunctions()
 
     registerTableFunctionView(factory);
     registerTableFunctionViewIfPermitted(factory);
+
+    registerTableFunctionObfuscate(factory);
 
 #if USE_MYSQL
     registerTableFunctionMySQL(factory);
@@ -57,11 +74,18 @@ void registerTableFunctions()
 
     registerTableFunctionFormat(factory);
     registerTableFunctionExplain(factory);
+    registerTableFunctionTraceView(factory);
     registerTableFunctionTimeSeries(factory);
 
     registerTableFunctionObjectStorage(factory);
     registerTableFunctionObjectStorageCluster(factory);
     registerDataLakeTableFunctions(factory);
+    registerDataLakeClusterTableFunctions(factory);
+
+#if USE_YTSAURUS
+    registerTableFunctionYTsaurus(factory);
+#endif
+
 }
 
 }

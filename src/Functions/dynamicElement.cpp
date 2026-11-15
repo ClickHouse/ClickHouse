@@ -4,6 +4,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <Columns/ColumnArray.h>
@@ -29,7 +30,7 @@ namespace
 /** Extract element of Dynamic by type name.
   * Also the function looks through Arrays: you can get Array of Dynamic elements from Array of Dynamic.
   */
-class FunctionDynamicElement : public IFunction
+class FunctionDynamicElement final : public IFunction
 {
 public:
     static constexpr auto name = "dynamicElement";
@@ -42,6 +43,14 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    /// Documentation-only — the result type is the requested variant
+    /// element (or array of), looked up dynamically from the const-string
+    /// or const-Array(String) type-name in the second argument.
+    String getSignatureString() const override
+    {
+        return "(Dynamic, const String) -> Any";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -66,7 +75,7 @@ public:
                             getName(),
                             arguments[0].type->getName());
 
-        auto return_type = makeNullableOrLowCardinalityNullableSafe(getRequestedType(arguments[1].column));
+        auto return_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(getRequestedType(arguments[1].column));
 
         for (; count_arrays; --count_arrays)
             return_type = std::make_shared<DataTypeArray>(return_type);
@@ -139,30 +148,48 @@ private:
 
 REGISTER_FUNCTION(DynamicElement)
 {
-    factory.registerFunction<FunctionDynamicElement>(FunctionDocumentation{
-        .description = R"(
+    FunctionDocumentation::Description description = R"(
 Extracts a column with specified type from a `Dynamic` column.
-)",
-        .syntax{"dynamicElement(dynamic, type_name)"},
-        .arguments{
-            {"dynamic", "Dynamic column"},
-            {"type_name", "The name of the variant type to extract"}},
-        .examples{{{
-            "Example",
-            R"(
+
+This function allows you to extract values of a specific type from a Dynamic column. If a row contains a value
+of the requested type, it returns that value. If the row contains a different type or NULL, it returns NULL
+for scalar types or an empty array for array types.
+    )";
+    FunctionDocumentation::Syntax syntax = "dynamicElement(dynamic, type_name)";
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"dynamic", "Dynamic column to extract from.", {"Dynamic"}},
+        {"type_name", "The name of the variant type to extract (e.g., 'String', 'Int64', 'Array(Int64)')."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value =
+    {
+        "Returns values of the specified type from the Dynamic column. Returns NULL for non-matching types (or empty array for array types).",
+        {"Any"}
+    };
+    FunctionDocumentation::Examples examples =
+    {
+    {
+        "Extracting different types from Dynamic column",
+        R"(
 CREATE TABLE test (d Dynamic) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
-SELECT d, dynamicType(d), dynamicElement(d, 'String'), dynamicElement(d, 'Int64'), dynamicElement(d, 'Array(Int64)'), dynamicElement(d, 'Date'), dynamicElement(d, 'Array(String)') FROM test;)",
-            R"(
+SELECT d, dynamicType(d), dynamicElement(d, 'String'), dynamicElement(d, 'Int64'), dynamicElement(d, 'Array(Int64)'), dynamicElement(d, 'Date'), dynamicElement(d, 'Array(String)') FROM test
+        )",
+        R"(
 ┌─d─────────────┬─dynamicType(d)─┬─dynamicElement(d, 'String')─┬─dynamicElement(d, 'Int64')─┬─dynamicElement(d, 'Array(Int64)')─┬─dynamicElement(d, 'Date')─┬─dynamicElement(d, 'Array(String)')─┐
 │ ᴺᵁᴸᴸ          │ None           │ ᴺᵁᴸᴸ                        │                       ᴺᵁᴸᴸ │ []                                │                      ᴺᵁᴸᴸ │ []                                 │
 │ 42            │ Int64          │ ᴺᵁᴸᴸ                        │                         42 │ []                                │                      ᴺᵁᴸᴸ │ []                                 │
 │ Hello, World! │ String         │ Hello, World!               │                       ᴺᵁᴸᴸ │ []                                │                      ᴺᵁᴸᴸ │ []                                 │
 │ [1,2,3]       │ Array(Int64)   │ ᴺᵁᴸᴸ                        │                       ᴺᵁᴸᴸ │ [1,2,3]                           │                      ᴺᵁᴸᴸ │ []                                 │
 └───────────────┴────────────────┴─────────────────────────────┴────────────────────────────┴───────────────────────────────────┴───────────────────────────┴────────────────────────────────────┘
-)"}}},
-        .categories{"Dynamic"},
-    });
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionDynamicElement>(documentation);
 }
 
 }

@@ -1,5 +1,4 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/37729
-SET enable_analyzer=1;
 
 DROP TABLE IF EXISTS nested_test;
 DROP TABLE IF EXISTS join_test;
@@ -32,7 +31,8 @@ VALUES (1,1),(2,4),(3,20),(4,40);
 SELECT s
 FROM nested_test AS t1
 ARRAY JOIN nest
-INNER JOIN join_test AS t2 ON nest.y = t2.y;
+INNER JOIN join_test AS t2 ON nest.y = t2.y
+ORDER BY ALL;
 
 DROP TABLE IF EXISTS nested_test;
 DROP TABLE IF EXISTS join_test;

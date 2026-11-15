@@ -1,0 +1,5 @@
+syntax = "proto3";
+
+message Numbers {
+  uint64 number = 1;
+};

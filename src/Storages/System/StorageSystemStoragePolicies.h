@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Formats/FormatSettings.h>
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 
@@ -13,12 +12,16 @@ class Context;
 
 /** Implements the system table `storage`, which allows you to get information about all disks.
 */
-class StorageSystemStoragePolicies final : public IStorage
+class StorageSystemStoragePolicies final : public StorageWithCommonVirtualColumns
 {
 public:
     explicit StorageSystemStoragePolicies(const StorageID & table_id_);
 
     std::string getName() const override { return "SystemStoragePolicies"; }
+
+    static VirtualColumnsDescription createVirtuals();
+
+    using StorageWithCommonVirtualColumns::read;
 
     Pipe read(
         const Names & column_names,

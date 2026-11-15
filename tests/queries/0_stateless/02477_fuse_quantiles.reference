@@ -9,7 +9,7 @@ QUERY id: 0
     quantile(0.9)(b) Float64
   PROJECTION
     LIST id: 1, nodes: 2
-      FUNCTION id: 2, function_name: arrayElement, function_type: ordinary, result_type: Float64
+      FUNCTION id: 2, alias: quantile(0.5)(__table1.b), function_name: arrayElement, function_type: ordinary, result_type: Float64
         ARGUMENTS
           LIST id: 3, nodes: 2
             FUNCTION id: 4, function_name: quantiles, function_type: aggregate, result_type: Array(Float64)
@@ -21,7 +21,7 @@ QUERY id: 0
                 LIST id: 8, nodes: 1
                   COLUMN id: 9, column_name: b, result_type: Float64, source_id: 10
             CONSTANT id: 11, constant_value: UInt64_1, constant_value_type: UInt8
-      FUNCTION id: 12, function_name: arrayElement, function_type: ordinary, result_type: Float64
+      FUNCTION id: 12, alias: quantile(0.9)(__table1.b), function_name: arrayElement, function_type: ordinary, result_type: Float64
         ARGUMENTS
           LIST id: 13, nodes: 2
             FUNCTION id: 4, function_name: quantiles, function_type: aggregate, result_type: Array(Float64)
@@ -51,7 +51,7 @@ QUERY id: 0
             quantile(0.9)(b) Float64
           PROJECTION
             LIST id: 21, nodes: 2
-              FUNCTION id: 22, function_name: arrayElement, function_type: ordinary, result_type: Float64
+              FUNCTION id: 22, alias: quantile(0.5)(__table3.b), function_name: arrayElement, function_type: ordinary, result_type: Float64
                 ARGUMENTS
                   LIST id: 23, nodes: 2
                     FUNCTION id: 24, function_name: quantiles, function_type: aggregate, result_type: Array(Float64)
@@ -63,7 +63,7 @@ QUERY id: 0
                         LIST id: 28, nodes: 1
                           COLUMN id: 29, column_name: b, result_type: Int32, source_id: 30
                     CONSTANT id: 31, constant_value: UInt64_1, constant_value_type: UInt8
-              FUNCTION id: 32, function_name: arrayElement, function_type: ordinary, result_type: Float64
+              FUNCTION id: 32, alias: quantile(0.9)(__table3.b), function_name: arrayElement, function_type: ordinary, result_type: Float64
                 ARGUMENTS
                   LIST id: 33, nodes: 2
                     FUNCTION id: 24, function_name: quantiles, function_type: aggregate, result_type: Array(Float64)

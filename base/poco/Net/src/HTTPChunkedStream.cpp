@@ -52,9 +52,9 @@ void HTTPChunkedStreamBuf::close()
 	if (_mode & std::ios::out && _chunk != std::char_traits<char>::eof())
 	{
 		sync();
-		_session.write("0\r\n\r\n", 5);
-
-        _chunk = std::char_traits<char>::eof();
+		if (writeToDevice("", 0) < 0)
+			throw MessageException("Failed to write terminating chunk");
+		_chunk = std::char_traits<char>::eof();
 	}
 }
 
@@ -90,7 +90,7 @@ unsigned int HTTPChunkedStreamBuf::parseChunkLen()
 	if (size_t pos = line.find(';'); pos != std::string::npos)
 		line.resize(pos);
 
-	unsigned chunkLen;
+	unsigned chunkLen = 0;
 	if (NumberParser::tryParseHex(line, chunkLen))
 		return chunkLen;
 	else
@@ -118,6 +118,9 @@ int HTTPChunkedStreamBuf::readFromDevice(char* buffer, std::streamsize length)
 
 	if (_chunk > 0)
 	{
+		if (length == 0)
+			return 0;
+
 		if (length > _chunk) length = _chunk;
 		int n = _session.read(buffer, length);
 		if (n > 0)
@@ -128,12 +131,32 @@ int HTTPChunkedStreamBuf::readFromDevice(char* buffer, std::streamsize length)
 		if (_chunk == 0) skipCRLF();
 		return n;
 	}
-	else 
+	else
 	{
 		skipCRLF();
 		_chunk = eof;
 		return 0;
 	}
+}
+
+
+bool HTTPChunkedStreamBuf::isComplete(bool read_from_device_to_check_eof) noexcept
+{
+	if (read_from_device_to_check_eof)
+	{
+		try
+		{
+			/// If the stream is closed without final last chunk
+			/// "Unexpected EOF" exception would be thrown
+			readFromDevice(nullptr, 0);
+		}
+		catch (...)
+		{
+			return false;
+		}
+	}
+
+	return _chunk == std::char_traits<char>::eof();
 }
 
 
@@ -144,7 +167,16 @@ int HTTPChunkedStreamBuf::writeToDevice(const char* buffer, std::streamsize leng
 	_chunkBuffer.append("\r\n", 2);
 	_chunkBuffer.append(buffer, static_cast<std::string::size_type>(length));
 	_chunkBuffer.append("\r\n", 2);
-	_session.write(_chunkBuffer.data(), static_cast<std::streamsize>(_chunkBuffer.size()));
+
+	std::streamsize chunkSize = static_cast<std::streamsize>(_chunkBuffer.size());
+	std::streamsize offset = 0;
+	while (offset < chunkSize)
+	{
+		int written = _session.write(_chunkBuffer.data() + offset, chunkSize - offset);
+		if (written <= 0)
+			return -1;
+		offset += written;
+	}
 	return static_cast<int>(length);
 }
 
@@ -187,6 +219,7 @@ HTTPChunkedInputStream::HTTPChunkedInputStream(HTTPSession& session):
 	HTTPChunkedIOS(session, std::ios::in),
 	std::istream(&_buf)
 {
+	poco_ios_init(&_buf);
 }
 
 
@@ -202,6 +235,7 @@ HTTPChunkedOutputStream::HTTPChunkedOutputStream(HTTPSession& session):
 	HTTPChunkedIOS(session, std::ios::out),
 	std::ostream(&_buf)
 {
+	poco_ios_init(&_buf);
 }
 
 

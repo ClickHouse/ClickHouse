@@ -72,6 +72,13 @@ namespace Net
         /// delimited by a carriage return and a linefeed
         /// character. See RFC 2822 for details.
 
+        void write(std::string & out) const;
+        /// Appends the message header to the given string, in the same
+        /// format as the `std::ostream` overload writes it.
+        ///
+        /// Lets a client serialize the header without an `std::ostream`,
+        /// so that the header can be handed to a socket directly.
+
         virtual void read(std::istream & istr);
         /// Reads the message header from the given input stream.
         ///
@@ -102,6 +109,26 @@ namespace Net
         /// Specify 0 for unlimited (not recommended).
         ///
         /// The default limit is 100.
+
+        int getNameLengthLimit() const;
+		/// Returns the maximum length of a field name.
+		///
+		/// See setNameLengthLimit() for more information.
+
+        void setNameLengthLimit(int limit);
+		/// Sets the maximum length of a field name.
+		///
+		/// The default limit is 256.
+
+        int getValueLengthLimit() const;
+		/// Returns the maximum length of a field value.
+		///
+		/// See setValueLengthLimit() for more information.
+
+        void setValueLengthLimit(int limit);
+		/// Sets the maximum length of a field value.
+		///
+		/// The default limit is 8192.
 
         bool hasToken(const std::string & fieldName, const std::string & token) const;
         /// Returns true iff the field with the given fieldName contains
@@ -157,12 +184,14 @@ namespace Net
         enum Limits
         /// Limits for basic sanity checks when reading a header
         {
-            MAX_NAME_LENGTH = 256,
-            MAX_VALUE_LENGTH = 8192,
+            DFL_NAME_LENGTH_LIMIT = 256,
+            DFL_VALUE_LENGTH_LIMIT = 8192,
             DFL_FIELD_LIMIT = 100
         };
 
         int _fieldLimit;
+        int _nameLengthLimit;
+        int _valueLengthLimit;
     };
 
 

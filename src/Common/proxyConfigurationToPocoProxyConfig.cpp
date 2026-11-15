@@ -1,18 +1,7 @@
 #include <Common/proxyConfigurationToPocoProxyConfig.h>
-
-
 #include <Common/StringUtils.h>
+#include <Common/re2.h>
 #include <base/find_symbols.h>
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
-#pragma clang diagnostic ignored "-Wnested-anon-types"
-#pragma clang diagnostic ignored "-Wunused-parameter"
-#pragma clang diagnostic ignored "-Wshadow-field-in-constructor"
-#pragma clang diagnostic ignored "-Wdtor-name"
-#include <re2/re2.h>
-#pragma clang diagnostic pop
 
 namespace DB
 {
@@ -25,15 +14,11 @@ namespace
  * `curl` strips leading dot and accepts url gitlab.com as a match for no_proxy .gitlab.com,
  * while `wget` does an exact match.
  * */
-std::string buildPocoRegexpEntryWithoutLeadingDot(const std::string & host)
+std::string buildPocoRegexpEntryWithoutLeadingDot(std::string_view host)
 {
-    std::string_view view_without_leading_dot = host;
-    if (host[0] == '.')
-    {
-        view_without_leading_dot = std::string_view {host.begin() + 1u, host.end()};
-    }
-
-    return RE2::QuoteMeta(view_without_leading_dot);
+    if (host.starts_with('.'))
+        host.remove_prefix(1);
+    return RE2::QuoteMeta(host);
 }
 
 }
@@ -110,6 +95,8 @@ Poco::Net::HTTPClientSession::ProxyConfig proxyConfigurationToPocoProxyConfig(co
     poco_proxy_config.tunnel = proxy_configuration.tunneling;
     poco_proxy_config.originalRequestProtocol = DB::ProxyConfiguration::protocolToString(proxy_configuration.original_request_protocol);
     poco_proxy_config.nonProxyHosts = proxy_configuration.no_proxy_hosts;
+    poco_proxy_config.username = proxy_configuration.username;
+    poco_proxy_config.password = proxy_configuration.password;
 
     return poco_proxy_config;
 }

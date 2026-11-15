@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+USER_NAME="u_${CLICKHOUSE_DATABASE}"
+ADMIN_HANDLER="ha_${CLICKHOUSE_DATABASE}"
+USER_HANDLER="hu_${CLICKHOUSE_DATABASE}"
+URL_PREFIX="/handler_admin_${CLICKHOUSE_DATABASE}"
+
+cleanup() {
+    ${CLICKHOUSE_CLIENT} -q "DROP HANDLER IF EXISTS \`${ADMIN_HANDLER}\`; DROP HANDLER IF EXISTS \`${USER_HANDLER}\`; DROP USER IF EXISTS \`${USER_NAME}\`"
+}
+trap cleanup EXIT
+cleanup
+
+${CLICKHOUSE_CLIENT} -q "
+    CREATE USER \`${USER_NAME}\` NOT IDENTIFIED;
+    GRANT CREATE, ALTER, DROP ON *.* TO \`${USER_NAME}\`;
+    CREATE HANDLER \`${ADMIN_HANDLER}\` URL '${URL_PREFIX}/admin' AS SELECT 1"
+
+echo "--- CREATE, ALTER and DROP do not include the handler privileges ---"
+${CLICKHOUSE_CLIENT} --user "${USER_NAME}" -q "CHECK GRANT CREATE TABLE ON *.*"
+${CLICKHOUSE_CLIENT} --user "${USER_NAME}" -q "CHECK GRANT CREATE HANDLER ON *.*"
+${CLICKHOUSE_CLIENT} --user "${USER_NAME}" -q "CREATE HANDLER \`${USER_HANDLER}\` URL '${URL_PREFIX}/user' AS SELECT 1" 2>&1 | grep -o -m1 'ACCESS_DENIED'
+${CLICKHOUSE_CLIENT} --user "${USER_NAME}" -q "ALTER HANDLER \`${ADMIN_HANDLER}\` AS SELECT 2" 2>&1 | grep -o -m1 'ACCESS_DENIED'
+${CLICKHOUSE_CLIENT} --user "${USER_NAME}" -q "DROP HANDLER \`${ADMIN_HANDLER}\`" 2>&1 | grep -o -m1 'ACCESS_DENIED'
+
+${CLICKHOUSE_CLIENT} -q "REVOKE CREATE, ALTER, DROP ON *.* FROM \`${USER_NAME}\`; GRANT HANDLER ADMIN ON *.* TO \`${USER_NAME}\`"
+
+echo "--- HANDLER ADMIN includes all handler privileges ---"
+${CLICKHOUSE_CLIENT} --user "${USER_NAME}" -q "CREATE HANDLER \`${USER_HANDLER}\` URL '${URL_PREFIX}/user' AS SELECT 1" && echo "create ok"
+${CLICKHOUSE_CLIENT} --user "${USER_NAME}" -q "ALTER HANDLER \`${USER_HANDLER}\` AS SELECT 2" && echo "alter ok"
+${CLICKHOUSE_CLIENT} --user "${USER_NAME}" -q "DROP HANDLER \`${USER_HANDLER}\`" && echo "drop ok"
+${CLICKHOUSE_CLIENT} --user "${USER_NAME}" -q "CHECK GRANT SHOW HANDLERS ON *.*"

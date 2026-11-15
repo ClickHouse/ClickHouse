@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-DATA_FILE=$CLICKHOUSE_TMP/test_02103_null.data
+DATA_FILE=${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_02103_null.data
+trap 'rm -rf ${DATA_FILE}' EXIT
 
 # Wrapper for clickhouse-client to always output in JSONEachRow format, that
 # way format settings will not affect output.
@@ -25,5 +25,3 @@ clickhouse_local -q "SELECT * FROM file('$DATA_FILE', 'CSV', 'bool Bool') settin
 echo -e "'Yes'\n'No'\n'yes'\n'no'\n'y'\n'Y'\n'N'\nTrue\nFalse\ntrue\nfalse\n't'\n'f'\n'T'\n'F'\n'On'\n'Off'\n'on'\n'off'\n'enable'\n'disable'\n'enabled'\n'disabled'" > $DATA_FILE
 clickhouse_local -q "SELECT * FROM file('$DATA_FILE', 'CustomSeparated', 'bool Bool') settings format_custom_escaping_rule='Quoted'"
 clickhouse_local -q "SELECT * FROM file('$DATA_FILE', 'CustomSeparated', 'bool Bool') settings format_custom_escaping_rule='Quoted', input_format_parallel_parsing=0, max_read_buffer_size=2"
-
-rm $DATA_FILE

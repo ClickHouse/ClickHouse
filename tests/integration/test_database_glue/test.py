@@ -1,0 +1,2709 @@
+import json
+import logging
+import os
+import random
+import re
+import uuid
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
+
+import pyarrow as pa
+import pytest
+import pytz
+from datetime import timedelta
+from pyiceberg.catalog import load_catalog
+from pyiceberg.partitioning import PartitionField, PartitionSpec
+from pyiceberg.schema import Schema
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortField, SortOrder
+from pyiceberg.transforms import DayTransform, IdentityTransform
+from helpers.config_cluster import minio_access_key, minio_secret_key
+import decimal
+from pyiceberg.types import (
+    BinaryType,
+    DoubleType,
+    LongType,
+    NestedField,
+    StringType,
+    StructType,
+    TimestampType,
+    TimestamptzType,
+    MapType,
+    DecimalType,
+)
+
+from helpers.cluster import ClickHouseCluster
+from helpers.mock_servers import start_mock_servers
+
+import boto3
+import botocore.config
+
+
+def run_s3_mocks(started_cluster, args=[]):
+    script_dir = os.path.join(os.path.dirname(__file__), "s3_mocks")
+    start_mock_servers(
+        started_cluster,
+        script_dir,
+        [
+            ("mock_sts.py", "sts.us-east-1.amazonaws.com", "80", args),
+            ("glue_fault_proxy.py", "sts.us-east-1.amazonaws.com", "8081"),
+        ],
+    )
+
+
+CATALOG_NAME = "test"
+
+BASE_URL = "http://glue:3000"
+
+# `s3_mocks/glue_fault_proxy.py`, which forwards to `BASE_URL`.
+GLUE_FAULT_PROXY_URL = "http://sts.us-east-1.amazonaws.com:8081"
+
+
+def get_glue_local_url(cluster):
+    return f"http://localhost:{cluster.glue_catalog_port}"
+
+def generate_decimal(precision=9, scale=2):
+    max_value = 10**(precision - scale) - 1
+    value = random.uniform(0, max_value)
+    return round(decimal.Decimal(value), scale)
+
+DEFAULT_SCHEMA = Schema(
+    NestedField(
+        field_id=1, name="datetime", field_type=TimestampType(), required=False
+    ),
+    NestedField(field_id=2, name="symbol", field_type=StringType(), required=False),
+    NestedField(field_id=3, name="bid", field_type=DoubleType(), required=False),
+    NestedField(field_id=4, name="ask", field_type=DoubleType(), required=False),
+    NestedField(
+        field_id=5,
+        name="details",
+        field_type=StructType(
+            NestedField(
+                field_id=4,
+                name="created_by",
+                field_type=StringType(),
+                required=False,
+            ),
+        ),
+        required=False,
+    ),
+    NestedField(
+        field_id=6,
+        name="map_string_decimal",
+        field_type=MapType(
+            key_type=StringType(),
+            value_type=DecimalType(9, 2),
+            key_id=7,
+            value_id=8,
+            value_required=False,
+        ),
+        required=False,
+    ),
+)
+
+DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String)),\\n    `map_string_decimal` Map(String, Nullable(Decimal(9, 2)))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-glue/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+
+DEFAULT_PARTITION_SPEC = PartitionSpec(
+    PartitionField(
+        source_id=1, field_id=1000, transform=DayTransform(), name="datetime_day"
+    )
+)
+
+DEFAULT_SORT_ORDER = SortOrder(SortField(source_id=2, transform=IdentityTransform()))
+
+
+def list_databases(started_cluster):
+    client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    databases = client.get_databases()
+    return databases
+
+
+def load_catalog_impl(started_cluster):
+    return load_catalog(
+        CATALOG_NAME,  # name is not important
+        **{
+            "type": "glue",
+            "glue.endpoint": get_glue_local_url(started_cluster),
+            "glue.region": "us-east-1",
+            "s3.endpoint": f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+            "s3.access-key-id": minio_access_key,
+            "s3.secret-access-key": minio_secret_key,
+        },
+    )
+
+
+def create_table(
+    catalog,
+    namespace,
+    table,
+    schema=DEFAULT_SCHEMA,
+    partition_spec=DEFAULT_PARTITION_SPEC,
+    sort_order=DEFAULT_SORT_ORDER,
+    dir="data"
+):
+    return catalog.create_table(
+        identifier=f"{namespace}.{table}",
+        schema=schema,
+        location=f"s3://warehouse-glue/{dir}",
+        partition_spec=partition_spec,
+        sort_order=sort_order,
+    )
+
+
+
+def generate_arrow_data(num_rows=5):
+    datetimes = []
+    symbols = []
+    bids = []
+    asks = []
+    details_created_by = []
+    map_keys = []
+    map_values = []
+
+    offsets = [0]
+
+    for _ in range(num_rows):
+        datetimes.append(datetime.utcnow() - timedelta(minutes=random.randint(0, 60)))
+        symbols.append(random.choice(["AAPL", "GOOG", "MSFT"]))
+        bids.append(random.uniform(100, 150))
+        asks.append(random.uniform(150, 200))
+        details_created_by.append(random.choice(["alice", "bob", "carol"]))
+
+        # map<string, decimal(9,2)>
+        keys = []
+        values = []
+        for i in range(random.randint(1, 3)):
+            keys.append(f"key{i}")
+            values.append(generate_decimal())
+        map_keys.extend(keys)
+        map_values.extend(values)
+        offsets.append(offsets[-1] + len(keys))
+
+    # Struct for 'details'
+    struct_array = pa.StructArray.from_arrays(
+        [pa.array(details_created_by, type=pa.string())],
+        names=["created_by"]
+    )
+
+    # Map array
+    map_array = pa.MapArray.from_arrays(
+        offsets=pa.array(offsets, type=pa.int32()),
+        keys=pa.array(map_keys, type=pa.string()),
+        items=pa.array(map_values, type=pa.decimal128(9, 2))
+    )
+
+    # Final table
+    table = pa.table({
+        "datetime": pa.array(datetimes, type=pa.timestamp("us")),
+        "symbol": pa.array(symbols, type=pa.string()),
+        "bid": pa.array(bids, type=pa.float64()),
+        "ask": pa.array(asks, type=pa.float64()),
+        "details": struct_array,
+        "map_string_decimal": map_array,
+    })
+
+    return table
+
+def create_clickhouse_glue_database(
+    started_cluster, node, name, additional_settings={}, query_settings={}, with_credentials=True, url=BASE_URL
+):
+    settings = {
+        "catalog_type": "glue",
+        "warehouse": "test",
+        "storage_endpoint": "http://minio1:9001/warehouse-glue",
+        "region": "us-east-1",
+    }
+
+    # The Glue catalog API client is subject to the server-managed credential restriction. Unless the session
+    # opts in via `s3_allow_server_credentials_in_user_queries`, the creator must pass explicit catalog
+    # credentials instead of falling back to the server's AWS identity (moto accepts any non-empty values).
+    if not query_settings.get("s3_allow_server_credentials_in_user_queries"):
+        settings["aws_access_key_id"] = minio_access_key
+        settings["aws_secret_access_key"] = minio_secret_key
+
+    settings.update(additional_settings)
+
+    credential_args = f",'{minio_access_key}', '{minio_secret_key}'" if with_credentials else ""
+
+    node.query(
+        f"""
+DROP DATABASE IF EXISTS {name};
+CREATE DATABASE {name} ENGINE = DataLakeCatalog('{url}'{credential_args})
+SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
+    """,
+        settings={
+            "allow_database_glue_catalog": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+            **query_settings,
+        },
+    )
+
+def create_clickhouse_glue_table(
+    started_cluster, node, database_name, table_name, schema, additional_settings={}, catalog_name=CATALOG_NAME
+):
+    settings_suffix = "" if len(additional_settings) == 0 else f"SETTINGS {",".join((k+"="+repr(v) for k, v in additional_settings.items()))}"
+
+    node.query(
+        f"""
+CREATE TABLE {catalog_name}.`{database_name}.{table_name}` {schema} ENGINE = IcebergS3('http://minio1:9001/warehouse-glue/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
+{settings_suffix}
+""",
+        settings={
+            "allow_database_glue_catalog": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    show_result = node.query(f"SHOW DATABASE {catalog_name}")
+    assert minio_secret_key not in show_result
+
+def create_glue_table_directly(
+    started_cluster, database_name, table_name, table_type=None, columns=None
+):
+    """Create a raw (non-Iceberg) table directly in Glue via boto3.
+
+    Such a table - e.g. a Delta Lake table (table_type != 'ICEBERG') or a raw parquet
+    file registered by a crawler (no table_type at all) - is visible in the Glue catalog
+    but cannot be read by ClickHouse, whose Glue engine only supports Iceberg tables.
+    """
+    client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    if columns is None:
+        columns = [
+            {"Name": "id", "Type": "bigint"},
+            {"Name": "value", "Type": "string"},
+        ]
+    parameters = {} if table_type is None else {"table_type": table_type}
+    client.create_table(
+        DatabaseName=database_name,
+        TableInput={
+            "Name": table_name,
+            "StorageDescriptor": {
+                "Columns": columns,
+                "Location": f"s3://warehouse-glue/{table_name}/",
+            },
+            "TableType": "EXTERNAL_TABLE",
+            "Parameters": parameters,
+        },
+    )
+
+
+def test_show_tables_hides_unreadable_tables(started_cluster):
+    """
+    Regression test: SHOW TABLES and system.tables must agree for a Glue catalog that
+    mixes Iceberg tables with non-Iceberg tables (Delta Lake tables, raw parquet files,
+    ...). ClickHouse can only read Iceberg tables via the Glue catalog, so the
+    non-Iceberg tables must appear in NEITHER listing.
+
+    Before the fix, the lightweight name-only listing path (used by SHOW TABLES and by
+    SELECT name FROM system.tables) did not filter unreadable tables, while the full
+    system.tables path dropped them - so the two disagreed and SHOW TABLES listed tables
+    that could not be queried. This test fails on master and passes with the fix.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_hide_unreadable_{uuid.uuid4().hex[:8]}"
+    namespace = f"{test_ref}_ns"
+    iceberg_table = f"{test_ref}_iceberg"
+    delta_table = f"{test_ref}_delta"
+    parquet_table = f"{test_ref}_parquet"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    # Readable Iceberg table (pyiceberg sets table_type=ICEBERG in Glue).
+    table = create_table(catalog, namespace, iceberg_table)
+    table.append(generate_arrow_data(10))
+
+    # Unreadable tables registered directly in Glue.
+    create_glue_table_directly(started_cluster, namespace, delta_table, table_type="delta")
+    create_glue_table_directly(started_cluster, namespace, parquet_table, table_type=None)
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    iceberg_full = f"{namespace}.{iceberg_table}"
+    delta_full = f"{namespace}.{delta_table}"
+    parquet_full = f"{namespace}.{parquet_table}"
+
+    settings = "SETTINGS show_data_lake_catalogs_in_system_tables = true"
+
+    # SHOW TABLES (lightweight name-only path): only the Iceberg table is listed.
+    show_tables = node.query(
+        f"SHOW TABLES FROM {CATALOG_NAME} LIKE '%{test_ref}%'"
+    ).split()
+    assert iceberg_full in show_tables, show_tables
+    assert delta_full not in show_tables, show_tables
+    assert parquet_full not in show_tables, show_tables
+
+    # system.tables name-only path (same lightweight iterator as SHOW TABLES).
+    names_only = node.query(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+        f"AND name LIKE '%{test_ref}%' ORDER BY name {settings}"
+    ).split()
+    assert names_only == [iceberg_full], names_only
+
+    # system.tables full path (references engine -> fetches per-table metadata).
+    full = node.query(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+        f"AND name LIKE '%{test_ref}%' AND engine != '' ORDER BY name {settings}"
+    ).split()
+    assert full == [iceberg_full], full
+
+    # The two listings agree - this is exactly the property that was broken.
+    assert sorted(show_tables) == sorted(names_only)
+
+
+def drop_clickhouse_glue_table(
+    node, database_name, table_name
+):
+    node.query(
+        f"""
+DROP TABLE {CATALOG_NAME}.`{database_name}.{table_name}`;
+    """
+    )
+
+
+@pytest.fixture(scope="module")
+def started_cluster():
+    try:
+        # We must add some credentials, otherwise moto (AWS Mock)
+        # will reject boto connection
+        os.environ["AWS_ACCESS_KEY_ID"] = "testing"
+        os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
+        cluster = ClickHouseCluster(__file__)
+        cluster.add_instance(
+            "node1",
+            main_configs=[
+                "configs/query_log.xml",
+                "configs/text_log.xml",
+                "configs/url_scheme_mappers.xml",
+            ],
+            user_configs=[],
+            stay_alive=True,
+            with_glue_catalog=True,
+            with_zookeeper=True
+        )
+
+        sts = cluster.add_instance(
+            name="sts.us-east-1.amazonaws.com",
+            hostname="sts.us-east-1.amazonaws.com",
+            image="clickhouse/python-bottle",
+            tag="latest",
+            stay_alive=True,
+        )
+        sts.stop_clickhouse(kill=True)
+
+        logging.info("Starting cluster...")
+        cluster.start()
+        logging.info("Cluster started")
+
+        run_s3_mocks(cluster)
+
+        yield cluster
+
+    finally:
+        cluster.shutdown()
+
+
+@pytest.fixture(autouse=True)
+def clean_catalog(started_cluster):
+    # All tests share one module-scoped Glue catalog. Listing operations such as
+    # SHOW TABLES enumerate every namespace and make one sequential Glue call per
+    # namespace, so leftover namespaces from earlier tests make these calls grow
+    # unbounded and eventually exceed query timeouts. Drop everything each test
+    # created so the catalog stays bounded to the running test.
+    yield
+    catalog = load_catalog_impl(started_cluster)
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    for namespace in catalog.list_namespaces():
+        # Drop Iceberg tables via pyiceberg so their data and metadata are removed too.
+        for table in catalog.list_tables(namespace):
+            catalog.drop_table(table)
+        # Drop any remaining tables registered directly in Glue (e.g. non-Iceberg tables
+        # such as Delta Lake tables or raw data files). pyiceberg's list_tables ignores
+        # them, and drop_namespace refuses to drop a namespace that still contains them.
+        database_name = ".".join(namespace)
+        for table in glue_client.get_tables(DatabaseName=database_name).get("TableList", []):
+            glue_client.delete_table(DatabaseName=database_name, Name=table["Name"])
+        catalog.drop_namespace(namespace)
+
+
+def test_no_secrets_in_logs(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    db_name = f"glue_query_log_{uuid.uuid4().hex}"
+    root_namespace = f"log_check_ns_{uuid.uuid4().hex}"
+    table_name = f"log_check_tbl_{uuid.uuid4().hex}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    db_settings = {
+        "catalog_type": "glue",
+        "warehouse": "test",
+        "storage_endpoint": "http://minio1:9001/warehouse-glue",
+        "region": "us-east-1",
+        # The Glue catalog API client is restricted; pass explicit catalog credentials instead of relying on
+        # the server's AWS identity (moto accepts any non-empty values).
+        "aws_access_key_id": minio_access_key,
+        "aws_secret_access_key": minio_secret_key,
+    }
+
+    qid_db = uuid.uuid4().hex
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node.query(
+        f"""CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('{BASE_URL}', '{minio_access_key}', '{minio_secret_key}')
+SETTINGS {",".join((k + "=" + repr(v) for k, v in db_settings.items()))}""",
+        query_id=qid_db,
+        settings={
+            "allow_database_glue_catalog": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    qid_table = uuid.uuid4().hex
+    node.query(
+        f"""CREATE TABLE {db_name}.`{root_namespace}.{table_name}` (x String) ENGINE = IcebergS3('http://minio1:9001/warehouse-glue/{table_name}/', '{minio_access_key}', '{minio_secret_key}')""",
+        query_id=qid_table,
+        settings={
+            "allow_database_glue_catalog": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    qid_show_db = uuid.uuid4().hex
+    show_db_result = node.query(
+        f"SHOW CREATE DATABASE {db_name}", query_id=qid_show_db
+    )
+    assert minio_secret_key not in show_db_result
+    assert "[HIDDEN]" in show_db_result
+
+    qid_show_table = uuid.uuid4().hex
+    show_table_result = node.query(
+        f"SHOW CREATE TABLE {db_name}.`{root_namespace}.{table_name}`",
+        query_id=qid_show_table,
+    )
+    assert minio_secret_key not in show_table_result
+    assert "[HIDDEN]" in show_table_result
+
+    node.query("SYSTEM FLUSH LOGS system.query_log")
+    node.query("SYSTEM FLUSH LOGS system.text_log")
+
+    for qid in (qid_db, qid_table, qid_show_db, qid_show_table):
+        assert (
+            int(
+                node.query(
+                    f"SELECT count() FROM system.query_log WHERE query_id = '{qid}' AND type = 'QueryFinish'"
+                ).strip()
+            )
+            >= 1
+        )
+        query_text = node.query(
+            f"SELECT arrayStringConcat(groupArray(query), '\\n') FROM system.query_log WHERE query_id = '{qid}' AND type = 'QueryFinish'"
+        ).strip()
+        assert minio_secret_key not in query_text
+
+    text_log_rows = node.query(
+        f"""
+SELECT message, value1, value2, value3, value4, value5, value6, value7, value8, value9, value10
+FROM system.text_log
+WHERE query_id IN ('{qid_db}', '{qid_table}', '{qid_show_db}', '{qid_show_table}')
+FORMAT JSONEachRow
+"""
+    ).strip()
+    assert text_log_rows
+    for line in text_log_rows.split("\n"):
+        row = json.loads(line)
+        for val in row.values():
+            if isinstance(val, str):
+                assert minio_secret_key not in val
+
+
+def test_list_tables(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    namespace_1 = f"{root_namespace}_testA_A"
+    namespace_2 = f"{root_namespace}_testB_B"
+    namespace_1_tables = ["tableA", "tableB"]
+    namespace_2_tables = ["tableC", "tableD"]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    for namespace in [namespace_1, namespace_2]:
+        catalog.create_namespace(namespace)
+
+    for namespace in [namespace_1, namespace_2]:
+        assert len(catalog.list_tables(namespace)) == 0
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    tables_list = ""
+    for table in namespace_1_tables:
+        create_table(catalog, namespace_1, table)
+        if len(tables_list) > 0:
+            tables_list += "\n"
+        tables_list += f"{namespace_1}.{table}"
+
+    for table in namespace_2_tables:
+        create_table(catalog, namespace_2, table)
+        if len(tables_list) > 0:
+            tables_list += "\n"
+        tables_list += f"{namespace_2}.{table}"
+
+    assert (
+        tables_list
+        == node.query(
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name SETTINGS show_data_lake_catalogs_in_system_tables = true"
+        ).strip()
+    )
+    node.restart_clickhouse()
+    assert (
+        tables_list
+        == node.query(
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name SETTINGS show_data_lake_catalogs_in_system_tables = true"
+        ).strip()
+    )
+
+    expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace_2, "tableC")
+    print("Expected", expected)
+    print("Got", node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace_2}.tableC`"))
+    assert expected == node.query(
+        f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace_2}.tableC`"
+    )
+    assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%'").strip()) == 0
+
+
+def test_select(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_list_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    namespaces_to_create = [
+        root_namespace,
+        f"{root_namespace}_A",
+        f"{root_namespace}_B",
+        f"{root_namespace}_C",
+    ]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    for namespace in namespaces_to_create:
+        catalog.create_namespace(namespace)
+        assert len(catalog.list_tables(namespace)) == 0
+
+    for namespace in namespaces_to_create:
+        table = create_table(catalog, namespace, table_name)
+
+        num_rows = 10
+        df = generate_arrow_data(num_rows)
+        table.append(df)
+
+        create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+        expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace, table_name)
+        assert expected == node.query(
+            f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`"
+        )
+
+        assert num_rows == int(
+            node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
+        )
+
+    assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%'").strip()) == 4
+    assert int(node.query(f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) == 4
+    assert int(node.query(f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = false").strip()) == 0
+
+
+def test_hide_sensitive_info(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_hide_sensitive_info_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    namespace = f"{root_namespace}_A"
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    create_table(catalog, namespace, table_name)
+
+    create_clickhouse_glue_database(
+        started_cluster,
+        node,
+        CATALOG_NAME,
+        additional_settings={
+            "aws_access_key_id": "SECRET_1",
+            "aws_secret_access_key": "SECRET_2",
+        },
+    )
+    assert "SECRET_1" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
+    assert "SECRET_2" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
+
+
+def test_select_after_rename(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_list_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    namespaces_to_create = [
+        root_namespace,
+        f"{root_namespace}_A",
+        f"{root_namespace}_B",
+        f"{root_namespace}_C",
+    ]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    for namespace in namespaces_to_create:
+        catalog.create_namespace(namespace)
+        assert len(catalog.list_tables(namespace)) == 0
+
+    for namespace in namespaces_to_create:
+        table = create_table(catalog, namespace, table_name)
+
+        num_rows = 10
+        df = generate_arrow_data(num_rows)
+        table.append(df)
+
+        create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+        expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace, table_name)
+        assert expected == node.query(
+            f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`"
+        )
+
+        with table.update_schema() as update:
+            update.rename_column("bid", "new_bid")
+
+        print(node.query(f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}`"))
+
+def test_non_existing_tables(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_non_existing_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    namespaces_to_create = [
+        root_namespace,
+        f"{root_namespace}_A",
+    ]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    for namespace in namespaces_to_create:
+        catalog.create_namespace(namespace)
+
+    for namespace in namespaces_to_create:
+        table = create_table(catalog, namespace, table_name)
+
+        num_rows = 10
+        df = generate_arrow_data(num_rows)
+        table.append(df)
+
+        create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+        expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace, table_name)
+        assert expected == node.query(
+            f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`"
+        )
+
+        try:
+            node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.wrong_table_name`")
+        except Exception as e:
+            assert "DB::Exception: Table" in str(e)
+            assert "doesn't exist" in str(e)
+
+        try:
+            node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`fake_namespace.wrong_table_name`")
+        except Exception as e:
+            assert "DB::Exception: Table" in str(e)
+            assert "doesn't exist" in str(e)
+
+
+def test_empty_table(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_list_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    create_table(catalog, root_namespace, table_name)
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    assert len(node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`")) == 0
+
+
+def test_cloud_mode(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_cloud_mode_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    namespace = f"{root_namespace}_A"
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    table = create_table(catalog, namespace, table_name)
+
+
+    num_rows = 10
+    df = generate_arrow_data(num_rows)
+    table.append(df)
+
+    create_clickhouse_glue_database(
+        started_cluster,
+        node,
+        CATALOG_NAME, query_settings={"cloud_mode": 1}
+    )
+
+    assert int(
+        node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
+    ) == num_rows
+
+    
+def test_timestamps(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_list_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    schema = Schema(
+        NestedField(
+            field_id=1, name="timestamp", field_type=TimestampType(), required=False
+        ),
+        NestedField(
+            field_id=2,
+            name="timestamptz",
+            field_type=TimestamptzType(),
+            required=False,
+        ),
+    )
+    table = create_table(catalog, root_namespace, table_name, schema)
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    data = [
+        {
+            "timestamp": datetime(2024, 1, 1, hour=12, minute=0, second=0, microsecond=0),
+            "timestamptz": datetime(
+                2024,
+                1,
+                1,
+                hour=12,
+                minute=0,
+                second=0,
+                microsecond=0,
+                tzinfo=pytz.timezone("UTC"),
+            )
+        }
+    ]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'UTC\\'))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-glue/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"
+
+
+def test_insert(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_list_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    create_table(catalog, root_namespace, table_name, DEFAULT_SCHEMA, PartitionSpec(), DEFAULT_SORT_ORDER, table_name)
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (NULL, 'AAPL', 193.24, 193.31, tuple('bot'), NULL);", settings={"allow_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
+    catalog.load_table(f"{root_namespace}.{table_name}")
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "\\N\tAAPL\t193.24\t193.31\t('bot')\t{}\n"
+
+
+def test_create(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_list_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
+    before = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    columns = before["StorageDescriptor"]["Columns"]
+    assert [(col["Name"], col["Type"]) for col in columns] == [("x", "string")]
+    for name, value in {
+        "iceberg.field.id": "1",
+        "iceberg.field.optional": "false",
+        "iceberg.field.current": "true",
+    }.items():
+        assert columns[0]["Parameters"][name] == value
+
+    # Preserve other Glue clients' columns and attributes on metadata commits.
+    glue_client.update_table(
+        DatabaseName=root_namespace,
+        TableInput={
+            "Name": table_name,
+            "TableType": before["TableType"],
+            "Description": "Keep this Glue description",
+            "StorageDescriptor": {
+                "Location": before["StorageDescriptor"]["Location"],
+                "Columns": columns,
+            },
+            "Parameters": {**before["Parameters"], "external_parameter": "keep-me"},
+        },
+    )
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('AAPL');", settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1})
+    after = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    assert after["StorageDescriptor"]["Columns"] == columns
+    assert after["Description"] == "Keep this Glue description"
+    assert after["Parameters"]["external_parameter"] == "keep-me"
+    assert after["Parameters"]["previous_metadata_location"] == before["Parameters"]["metadata_location"]
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    assert "`x` String" in node.query(f"SHOW CREATE TABLE {table_ref}")
+    assert node.query(f"SELECT * FROM {table_ref}") == "AAPL\n"
+
+    # `storage_endpoint` without the bucket: metadata reads must use the table's bucket.
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": "http://minio1:9001"})
+    assert "`x` String" in node.query(f"SHOW CREATE TABLE {table_ref}")
+    node.query(f"INSERT INTO {table_ref} VALUES ('MSFT');", settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1})
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "AAPL\nMSFT\n"
+
+
+def test_create_preserves_nested_names_and_uuid_on_reopen(started_cluster):
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_glue_schema_roundtrip_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(
+        started_cluster, node, root_namespace, table_name,
+        "(id UUID, details Tuple(`a:b` Int32, `c,d` Nullable(String)))",
+    )
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    columns = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]["StorageDescriptor"]["Columns"]
+    assert [(col["Name"], col["Type"]) for col in columns] == [
+        ("id", "string"),
+        ("details", "struct<a:b:int,c,d:string>"),
+    ]
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    description = {line.split("\t")[0]: line.split("\t")[1] for line in node.query(f"DESCRIBE TABLE {table_ref}").splitlines()}
+    assert description["id"] == "UUID"
+    assert "a:b" in description["details"]
+    assert "c,d" in description["details"]
+    assert "Nullable(String)" in description["details"]
+    assert node.query(f"SELECT * FROM {table_ref}") == ""
+
+
+@pytest.mark.parametrize("glue_columns", [[], [{"Name": "stale", "Type": "int"}]], ids=["empty", "stale"])
+def test_insert_rewrites_glue_columns(started_cluster, glue_columns):
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_glue_legacy_columns_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    before = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    glue_client.update_table(
+        DatabaseName=root_namespace,
+        TableInput={
+            "Name": table_name,
+            "TableType": before["TableType"],
+            "StorageDescriptor": {
+                "Location": before["StorageDescriptor"]["Location"],
+                "Columns": glue_columns,
+            },
+            "Parameters": before["Parameters"],
+        },
+    )
+    stored_columns = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]["StorageDescriptor"]["Columns"]
+    assert [col["Name"] for col in stored_columns] == [col["Name"] for col in glue_columns]
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    node.query(f"INSERT INTO {table_ref} VALUES ('repaired')", settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1})
+    after = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    assert [(col["Name"], col["Type"]) for col in after["StorageDescriptor"]["Columns"]] == [("x", "string")]
+    assert after["Parameters"]["previous_metadata_location"] == before["Parameters"]["metadata_location"]
+    assert node.query(f"SELECT * FROM {table_ref}") == "repaired\n"
+
+
+def test_s3a_locations(started_cluster):
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_glue_s3a_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    schema = Schema(NestedField(field_id=1, name="id", field_type=StringType(), required=False))
+    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), UNSORTED_SORT_ORDER, dir=table_name)
+    table.append(pa.Table.from_pylist([{"id": "a"}, {"id": "b"}]))
+
+    # Other writers (Spark, EMR) register Hadoop `s3a://` locations in Glue.
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    before = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    parameters = dict(before["Parameters"])
+    parameters["metadata_location"] = parameters["metadata_location"].replace("s3://", "s3a://", 1)
+    storage_descriptor = dict(before["StorageDescriptor"])
+    storage_descriptor["Location"] = storage_descriptor["Location"].replace("s3://", "s3a://", 1)
+    glue_client.update_table(
+        DatabaseName=root_namespace,
+        TableInput={
+            "Name": table_name,
+            "TableType": before["TableType"],
+            "StorageDescriptor": storage_descriptor,
+            "Parameters": parameters,
+        },
+    )
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": "http://minio1:9001"})
+    assert "`id` Nullable(String)" in node.query(f"SHOW CREATE TABLE {table_ref}")
+    assert node.query(f"SELECT id FROM {table_ref} ORDER BY id") == "a\nb\n"
+
+
+def test_storage_endpoint_with_key_prefix(started_cluster):
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_glue_key_prefix_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    schema = Schema(NestedField(field_id=1, name="id", field_type=StringType(), required=False))
+    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), UNSORTED_SORT_ORDER, dir=table_name)
+    table.append(pa.Table.from_pylist([{"id": "a"}, {"id": "b"}]))
+
+    s3_client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=minio_access_key,
+        aws_secret_access_key=minio_secret_key,
+        region_name="us-east-1",
+    )
+    prefix_bucket = f"glue-prefix-{uuid.uuid4().hex[:8]}"
+    s3_client.create_bucket(Bucket=prefix_bucket)
+    for page in s3_client.get_paginator("list_objects_v2").paginate(Bucket="warehouse-glue", Prefix=f"{table_name}/"):
+        for obj in page.get("Contents", []):
+            s3_client.copy_object(
+                Bucket=prefix_bucket,
+                Key=f"warehouse-glue/{obj['Key']}",
+                CopySource={"Bucket": "warehouse-glue", "Key": obj["Key"]},
+            )
+
+    create_clickhouse_glue_database(
+        started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": f"http://minio1:9001/{prefix_bucket}"}
+    )
+    assert "`id` Nullable(String)" in node.query(f"SHOW CREATE TABLE {table_ref}")
+    assert node.query(f"SELECT id FROM {table_ref} ORDER BY id") == "a\nb\n"
+
+
+@pytest.mark.parametrize("engine_clause", [" ENGINE = IcebergS3", ""])
+def test_create_without_engine_arguments(started_cluster, engine_clause):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_without_engine_arguments_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    glue_client.create_database(
+        DatabaseInput={
+            "Name": root_namespace,
+            "LocationUri": f"s3://warehouse-glue/{root_namespace}",
+        }
+    )
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String){engine_clause}",
+        settings={
+            "allow_experimental_database_glue_catalog": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    assert node.query(
+        f"SHOW TABLES FROM {CATALOG_NAME} LIKE '%{table_name}%'"
+    ) == f"{root_namespace}.{table_name}\n"
+
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+    table_info = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    metadata_location = table_info["Parameters"]["metadata_location"]
+    assert f"/{root_namespace}/{table_name}/metadata/" in metadata_location, metadata_location
+
+
+@pytest.mark.parametrize("engine_clause", [" ENGINE = IcebergS3", ""])
+def test_create_without_engine_arguments_no_database_location(started_cluster, engine_clause):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_without_engine_arguments_no_location_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    glue_client.create_database(DatabaseInput={"Name": root_namespace})
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    with pytest.raises(Exception) as exc:
+        node.query(
+            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String){engine_clause}",
+            settings={"allow_experimental_database_glue_catalog": 1},
+        )
+    assert "cannot tell where table" in str(exc.value), str(exc.value)
+    assert table_name not in node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+
+
+@pytest.mark.parametrize("engine_clause", [" ENGINE = IcebergS3", ""])
+def test_create_without_engine_arguments_missing_database(started_cluster, engine_clause):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_without_engine_arguments_missing_database_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    for _ in range(2):
+        with pytest.raises(Exception) as exc:
+            node.query(
+                f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String){engine_clause}",
+                settings={"allow_experimental_database_glue_catalog": 1},
+            )
+        assert "cannot tell where table" in str(exc.value), str(exc.value)
+
+    with pytest.raises(glue_client.exceptions.EntityNotFoundException):
+        glue_client.get_database(Name=root_namespace)
+
+
+def test_create_gzip_metadata(started_cluster):
+    # Regression for issue #109801: a catalog-backed CREATE TABLE from ClickHouse
+    # with gzip metadata compression exercises IcebergMetadata::createInitial and
+    # the catalog->createTable registration. The first revision of the fix wrote
+    # v1.gz.metadata.json on disk but registered a hardcoded v1.metadata.json as
+    # the catalog metadata_location, so a reopen through the catalog failed.
+    #
+    # Glue is the concrete broken path: GlueCatalog::createTable persists the
+    # supplied new_metadata_path verbatim as parameters["metadata_location"]
+    # (unlike RestCatalog, which ignores new_metadata_path). We therefore read
+    # the registered metadata_location straight from Glue immediately after
+    # CREATE TABLE, before any INSERT, so the assertion validates createInitial's
+    # registration itself rather than a later updateMetadata pointer advance.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_gzip_metadata_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(
+        started_cluster,
+        node,
+        root_namespace,
+        table_name,
+        "(x String)",
+        additional_settings={"iceberg_metadata_compression_method": "gzip"},
+    )
+
+    # Validate the catalog registration produced by createInitial, before INSERT.
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    table_info = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    metadata_location = table_info["Parameters"]["metadata_location"]
+    assert metadata_location.endswith(".gz.metadata.json"), metadata_location
+    assert not metadata_location.endswith(".gzip.metadata.json"), metadata_location
+
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');",
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+            "iceberg_metadata_compression_method": "gzip",
+        },
+    )
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+    # Reopen through the catalog (fresh database) and confirm read still works.
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+
+def test_schema_evolution(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_schema_evolution_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String, y Int32)")
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('123', 1);", settings=write_settings)
+
+    node.query(f"ALTER TABLE {table_ref} ADD COLUMN z Nullable(String);", settings=write_settings)
+    added_columns = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]["StorageDescriptor"]["Columns"]
+    assert [(col["Name"], col["Type"]) for col in added_columns] == [("x", "string"), ("y", "int"), ("z", "string")]
+    assert added_columns[2]["Parameters"]["iceberg.field.optional"] == "true"
+    assert "z" in node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
+    assert node.query(f"SELECT x, y, z FROM {table_ref} ORDER BY ALL", settings=write_settings) == "123\t1\t\\N\n"
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('456', 2, 'hello');", settings=write_settings)
+    assert glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]["StorageDescriptor"]["Columns"] == added_columns
+    assert (
+        node.query(f"SELECT x, y, z FROM {table_ref} ORDER BY ALL", settings=write_settings)
+        == "123\t1\t\\N\n456\t2\thello\n"
+    )
+
+    node.query(f"ALTER TABLE {table_ref} RENAME COLUMN z TO w;", settings=write_settings)
+    renamed_columns = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]["StorageDescriptor"]["Columns"]
+    assert [col["Name"] for col in renamed_columns] == ["x", "y", "w"]
+    assert renamed_columns[2]["Parameters"]["iceberg.field.id"] == added_columns[2]["Parameters"]["iceberg.field.id"]
+    assert "w" in node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
+    assert (
+        node.query(f"SELECT x, y, w FROM {table_ref} ORDER BY ALL", settings=write_settings)
+        == "123\t1\t\\N\n456\t2\thello\n"
+    )
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    assert "w" in node.query(f"DESCRIBE TABLE {table_ref}")
+    assert node.query(f"SELECT x, y, w FROM {table_ref} ORDER BY ALL") == "123\t1\t\\N\n456\t2\thello\n"
+
+
+def test_writes_schema_evolution_concurrent_add_columns(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_schema_evolution_concurrent_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String, y Int32)")
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('123', 1);", settings=write_settings)
+    version_before = metadata_version(glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"])
+
+    num_columns = 10
+
+    def add_column(idx):
+        node.query(
+            f"ALTER TABLE {table_ref} ADD COLUMN col_{idx} Nullable(String);",
+            settings=write_settings,
+        )
+
+    with ThreadPoolExecutor(max_workers=num_columns) as executor:
+        list(executor.map(add_column, range(num_columns)))
+
+    description = node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
+    for idx in range(num_columns):
+        assert f"col_{idx}" in description, f"col_{idx} missing from:\n{description}"
+
+    columns = [line.split("\t")[0] for line in description.strip().split("\n")]
+    assert sorted(columns) == sorted(["x", "y"] + [f"col_{idx}" for idx in range(num_columns)])
+
+    select_cols = ", ".join(["x", "y"] + [f"col_{idx}" for idx in range(num_columns)])
+    expected = "123\t1" + "\t\\N" * num_columns + "\n"
+    assert node.query(f"SELECT {select_cols} FROM {table_ref} ORDER BY ALL", settings=write_settings) == expected
+
+    # Each ALTER advanced the Glue pointer by one version, so it never moved back to an older schema.
+    table = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    assert metadata_version(table) == version_before + num_columns
+    assert sorted(col["Name"] for col in table["StorageDescriptor"]["Columns"]) == sorted(columns)
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    description = node.query(f"DESCRIBE TABLE {table_ref}")
+    assert sorted(line.split("\t")[0] for line in description.strip().split("\n")) == sorted(columns)
+
+
+def metadata_version(glue_table):
+    file_name = glue_table["Parameters"]["metadata_location"].rsplit("/", 1)[1]
+    return int(re.match(r"v?(\d+)", file_name).group(1))
+
+
+def test_writes_do_not_overwrite_concurrent_glue_commit(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_concurrent_glue_commit_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+    failpoint = "iceberg_writes_pause_before_commit"
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('base');", settings=write_settings)
+    base = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    base_location = base["Parameters"]["metadata_location"]
+    # An Iceberg Java style name, whose version is unrelated to the `vN` that ClickHouse writes next.
+    external_location = f"{base_location.rsplit('/', 1)[0]}/00099-{uuid.uuid4()}.metadata.json"
+
+    def s3_url(location):
+        return "http://minio1:9001/" + location.split("://", 1)[1]
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    executor = ThreadPoolExecutor(max_workers=1)
+    try:
+        paused_insert = executor.submit(
+            node.query, f"INSERT INTO {table_ref} VALUES ('paused');", settings=write_settings, timeout=120
+        )
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+
+        # Another engine commits while the insert is paused after reading its base from Glue.
+        node.query(
+            f"INSERT INTO FUNCTION s3('{s3_url(external_location)}', '{minio_access_key}', '{minio_secret_key}', 'RawBLOB') "
+            f"SELECT * FROM s3('{s3_url(base_location)}', '{minio_access_key}', '{minio_secret_key}', 'RawBLOB')"
+        )
+        glue_client.update_table(
+            DatabaseName=root_namespace,
+            TableInput={
+                "Name": table_name,
+                "TableType": base["TableType"],
+                "StorageDescriptor": {
+                    "Location": base["StorageDescriptor"]["Location"],
+                    "Columns": base["StorageDescriptor"]["Columns"],
+                },
+                "Parameters": {
+                    **base["Parameters"],
+                    "metadata_location": external_location,
+                    "previous_metadata_location": base_location,
+                },
+            },
+        )
+
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        paused_insert.result(timeout=120)
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        executor.shutdown(wait=False)
+
+    # The insert detected the conflict and was rebuilt on top of the other commit instead of overwriting it.
+    after = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    assert after["Parameters"]["previous_metadata_location"] == external_location
+    assert metadata_version(after) == 100
+    assert [col["Name"] for col in after["StorageDescriptor"]["Columns"]] == ["x"]
+    assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == "base\npaused\n"
+
+
+def test_writes_do_not_overwrite_replaced_glue_metadata_of_same_version(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_replaced_glue_metadata_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+    failpoint = "iceberg_writes_pause_before_commit"
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('base');", settings=write_settings)
+    base = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    base_location = base["Parameters"]["metadata_location"]
+    replaced_location = (
+        f"{base_location.rsplit('/', 1)[0]}/{metadata_version(base):05d}-{uuid.uuid4()}.metadata.json"
+    )
+
+    def s3_url(location):
+        return "http://minio1:9001/" + location.split("://", 1)[1]
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    executor = ThreadPoolExecutor(max_workers=1)
+    try:
+        paused_insert = executor.submit(
+            node.query, f"INSERT INTO {table_ref} VALUES ('paused');", settings=write_settings, timeout=120
+        )
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+
+        node.query(
+            f"INSERT INTO FUNCTION s3('{s3_url(replaced_location)}', '{minio_access_key}', '{minio_secret_key}', 'RawBLOB') "
+            f"SELECT * FROM s3('{s3_url(base_location)}', '{minio_access_key}', '{minio_secret_key}', 'RawBLOB')"
+        )
+        glue_client.update_table(
+            DatabaseName=root_namespace,
+            TableInput={
+                "Name": table_name,
+                "TableType": base["TableType"],
+                "StorageDescriptor": {
+                    "Location": base["StorageDescriptor"]["Location"],
+                    "Columns": base["StorageDescriptor"]["Columns"],
+                },
+                "Parameters": {
+                    **base["Parameters"],
+                    "metadata_location": replaced_location,
+                    "previous_metadata_location": base_location,
+                },
+            },
+        )
+
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        # The commit built on `base_location` is rejected, its metadata file is removed, and the retry builds on the replacement.
+        paused_insert.result(timeout=120)
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        executor.shutdown(wait=False)
+
+    after = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    assert after["Parameters"]["previous_metadata_location"] == replaced_location
+    assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == "base\npaused\n"
+
+    # The rejected attempt must not leave a metadata file that blocks later commits.
+    node.query(f"INSERT INTO {table_ref} VALUES ('later');", settings=write_settings)
+    node.query(f"ALTER TABLE {table_ref} ADD COLUMN y Nullable(String);", settings=write_settings)
+    assert node.query(f"SELECT x, y FROM {table_ref} ORDER BY x") == "base\t\\N\nlater\t\\N\npaused\t\\N\n"
+
+
+def test_writes_rebuild_after_glue_version_id_conflict(started_cluster):
+    node = started_cluster.instances["node1"]
+    proxy = started_cluster.get_container_id("sts.us-east-1.amazonaws.com")
+
+    test_ref = uuid.uuid4().hex
+    db_name = f"glue_cas_{test_ref}"
+    root_namespace = f"cas_{test_ref}"
+    table_name = "t"
+    table_ref = f"{db_name}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+    failpoint = "glue_catalog_pause_before_update_table"
+
+    create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
+    try:
+        create_clickhouse_glue_table(
+            started_cluster, node, root_namespace, table_name, "(x String)", catalog_name=db_name
+        )
+        glue_client = boto3.client(
+            "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+        )
+
+        node.query(f"INSERT INTO {table_ref} VALUES ('base');", settings=write_settings)
+        base = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+        base_location = base["Parameters"]["metadata_location"]
+        external_location = f"{base_location.rsplit('/', 1)[0]}/00099-{uuid.uuid4()}.metadata.json"
+
+        def s3_url(location):
+            return "http://minio1:9001/" + location.split("://", 1)[1]
+
+        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        executor = ThreadPoolExecutor(max_workers=1)
+        try:
+            paused_insert = executor.submit(
+                node.query, f"INSERT INTO {table_ref} VALUES ('paused');", settings=write_settings, timeout=120
+            )
+            node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+
+            # Another engine commits after the insert has read the `VersionId` it sends with `UpdateTable`.
+            node.query(
+                f"INSERT INTO FUNCTION s3('{s3_url(external_location)}', '{minio_access_key}', '{minio_secret_key}', 'RawBLOB') "
+                f"SELECT * FROM s3('{s3_url(base_location)}', '{minio_access_key}', '{minio_secret_key}', 'RawBLOB')"
+            )
+            glue_client.update_table(
+                DatabaseName=root_namespace,
+                TableInput={
+                    "Name": table_name,
+                    "TableType": base["TableType"],
+                    "StorageDescriptor": {
+                        "Location": base["StorageDescriptor"]["Location"],
+                        "Columns": base["StorageDescriptor"]["Columns"],
+                    },
+                    "Parameters": {
+                        **base["Parameters"],
+                        "metadata_location": external_location,
+                        "previous_metadata_location": base_location,
+                    },
+                },
+            )
+
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            # The stale `VersionId` is rejected once; the insert is rebuilt on top of the other commit instead of failing.
+            paused_insert.result(timeout=120)
+        finally:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            executor.shutdown(wait=False)
+
+        injected = started_cluster.exec_in_container(
+            proxy, ["curl", "-s", f"http://localhost:8081/injected/{root_namespace}"]
+        )
+        assert int(injected) == 1
+
+        after = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+        assert after["Parameters"]["previous_metadata_location"] == external_location
+        assert metadata_version(after) == 100
+        assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == "base\npaused\n"
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_alternating_commits_with_pyiceberg(started_cluster):
+    # Iceberg Java and pyiceberg parse the table version only from `<N>-<uuid>.metadata.json`. When ClickHouse named
+    # its files `v<N>.metadata.json`, pyiceberg restarted the version at 0 and a later ClickHouse commit wanted a name
+    # it had already used, so every following write failed with `Write into iceberg was not successful`.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_alternating_commits_with_pyiceberg_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    schema = Schema(NestedField(field_id=1, name="id", field_type=LongType(), required=False))
+    create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), SortOrder(), table_name)
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    metastore_name = re.compile(r"(\d{5})-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.metadata\.json")
+    versions = []
+
+    def check_pointer():
+        file_name = catalog.load_table(f"{root_namespace}.{table_name}").metadata_location.rsplit("/", 1)[1]
+        match = metastore_name.fullmatch(file_name)
+        assert match, file_name
+        versions.append(int(match.group(1)))
+
+    expected = []
+    for i in range(3):
+        catalog.load_table(f"{root_namespace}.{table_name}").append(pa.table({"id": pa.array([10 * i], pa.int64())}))
+        check_pointer()
+        node.query(f"INSERT INTO {table_ref} VALUES ({10 * i + 1})", settings=write_settings)
+        check_pointer()
+        expected += [10 * i, 10 * i + 1]
+
+    catalog.load_table(f"{root_namespace}.{table_name}").append(pa.table({"id": pa.array([100], pa.int64())}))
+    node.query(f"ALTER TABLE {table_ref} DELETE WHERE id = 1", settings=write_settings)
+    check_pointer()
+    expected = sorted([x for x in expected if x != 1] + [100])
+
+    assert versions == sorted(set(versions)), versions
+    assert node.query(f"SELECT id FROM {table_ref} ORDER BY id") == "".join(f"{x}\n" for x in expected)
+    assert sorted(catalog.load_table(f"{root_namespace}.{table_name}").scan().to_arrow()["id"].to_pylist()) == expected
+
+
+def test_drop_table(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_list_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
+    assert len(catalog.list_tables(root_namespace)) == 1
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == ""
+
+    drop_clickhouse_glue_table(node, root_namespace, table_name)
+    assert len(catalog.list_tables(root_namespace)) == 0
+
+
+def test_system_tables(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_system_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    namespaces_to_create = [
+        root_namespace,
+        f"{root_namespace}_A",
+        f"{root_namespace}_B",
+        f"{root_namespace}_C",
+    ]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    for namespace in namespaces_to_create:
+        catalog.create_namespace(namespace)
+        assert len(catalog.list_tables(namespace)) == 0
+
+    for namespace in namespaces_to_create:
+        table = create_table(catalog, namespace, table_name)
+
+        num_rows = 10
+        df = generate_arrow_data(num_rows)
+        table.append(df)
+
+        create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+        expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace, table_name)
+        assert expected == node.query(
+            f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`"
+        )
+
+        assert num_rows == int(
+            node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
+        )
+
+    assert CATALOG_NAME in node.query("SHOW DATABASES")
+    assert table_name in node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+
+    # system.tables
+    assert int(node.query(f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) == 4
+    assert int(node.query(f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%'").strip()) == 0
+
+    # system.iceberg_history - always displays irrespective of show_data_lake_catalogs_in_system_tables
+    assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) == 4
+    assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = false").strip()) == 4
+
+    # system.databases always shows data lake catalog databases regardless of show_data_lake_catalogs_in_system_tables,
+    # because listing a database name is purely local metadata and never requires calls to an external catalog service.
+    assert int(node.query(f"SELECT count() FROM system.databases WHERE name = '{CATALOG_NAME}' SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) == 1
+    assert int(node.query(f"SELECT count() FROM system.databases WHERE name = '{CATALOG_NAME}' SETTINGS show_data_lake_catalogs_in_system_tables = false").strip()) == 1
+
+    # system.columns
+    assert int(node.query(f"SELECT count() FROM system.columns WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) == 24
+    assert int(node.query(f"SELECT count() FROM system.columns WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%'").strip()) == 0
+
+    # system.completions
+    assert int(node.query(f"SELECT count() FROM system.completions WHERE startsWith(word, '{test_ref}') SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) != 0
+    assert int(node.query(f"SELECT count() FROM system.completions WHERE startsWith(word, '{test_ref}')").strip()) == 0
+
+def test_show_tables_optimization(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_show_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    namespaces_to_create = [
+        root_namespace,
+        f"{root_namespace}_A",
+        f"{root_namespace}_B",
+        f"{root_namespace}_C",
+    ]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    for namespace in namespaces_to_create:
+        catalog.create_namespace(namespace)
+        assert len(catalog.list_tables(namespace)) == 0
+
+    for namespace in namespaces_to_create:
+        table = create_table(catalog, namespace, table_name)
+
+        num_rows = 10
+        df = generate_arrow_data(num_rows)
+        table.append(df)
+
+        create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    assert table_name in node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+
+    assert not node.contains_in_log(
+        f"Get table information for table {root_namespace}.{table_name}"
+    )
+
+    node.query(f"SELECT * from system.tables where table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = true")
+    assert node.contains_in_log(
+        f"Get table information for table {root_namespace}.{table_name}"
+    )
+
+    node.query("SYSTEM ENABLE FAILPOINT lightweight_show_tables")
+    node.query(f"SHOW TABLES FROM {CATALOG_NAME}", timeout=5)
+
+
+def test_typo_hint_does_not_trigger_heavyweight_fetch(started_cluster):
+    """
+    Regression test for the high-memory typo-hint path on a DataLake (Glue) database.
+
+    When a query references a table that does not exist, the UNKNOWN_TABLE error
+    path builds a "maybe you meant ...?" suggestion through
+    TableNameHints -> getAllRegisteredNames -> IDatabase::getAllTableNames. Before
+    this fix DatabaseDataLake did not override getAllTableNames, so the base
+    implementation iterated getTablesIterator and fetched per-table metadata from
+    the catalog (one heavyweight S3 read per table). With many tables this hint
+    lookup alone could exhaust the server's memory. The fix overrides
+    getAllTableNames to return getCatalog()->getTables() (table names only).
+
+    INSERT resolves its target table through the throwing DatabaseCatalog::getTable
+    overload independently of the analyzer, so it deterministically drives the
+    hint path. show_data_lake_catalogs_in_system_tables=1 is required: otherwise
+    getAllRegisteredNames short-circuits for remote databases and getAllTableNames
+    is never reached, so the override would not be exercised at all.
+
+    Signal: the log line emitted once per table inside
+    DatabaseDataLake::getTablesIterator. Counting it scoped to this namespace
+    makes the measurement exact and immune to other tables in the catalog. A
+    global S3GetObject counter is deliberately NOT used: catalog metadata is
+    cached across queries, so a repeated heavyweight iteration issues no new S3
+    GET requests even though it still walks every table.
+
+    Pre-fix the marker fires once per table (N). With the fix it stays at 0.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_hint_heavy_{uuid.uuid4().hex[:8]}"
+    namespace = f"{test_ref}_ns"
+    N = 20
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    try:
+        for i in range(N):
+            tbl = create_table(catalog, namespace, f"{test_ref}_t{i:02d}")
+            tbl.append(generate_arrow_data(1))
+
+        create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+        # Emitted once per table inside DatabaseDataLake::getTablesIterator. If the
+        # message is ever rephrased, update this marker.
+        marker = f"Get table information for table {namespace}."
+        baseline = int(node.count_in_log(marker).strip())
+
+        # Reference a non-existent table; this must raise UNKNOWN_TABLE and on the
+        # way build the typo hint that walks getAllTableNames.
+        error = node.query_and_get_error(
+            f"INSERT INTO {CATALOG_NAME}.`{namespace}.does_not_exist` VALUES (1)",
+            settings={"show_data_lake_catalogs_in_system_tables": 1},
+        )
+        assert "UNKNOWN_TABLE" in error or "does not exist" in error, (
+            f"Expected an UNKNOWN_TABLE error for a non-existent table, got: {error}"
+        )
+
+        fetches = int(node.count_in_log(marker).strip()) - baseline
+        assert fetches == 0, (
+            f"The typo-hint lookup for a non-existent table triggered {fetches} "
+            f"per-table metadata fetches (expected 0; the namespace has {N} tables). "
+            f"DatabaseDataLake.getAllTableNames is falling through to "
+            f"IDatabase::getAllTableNames -> getTablesIterator instead of using "
+            f"getCatalog()->getTables() directly."
+        )
+    finally:
+        try:
+            for i in range(N):
+                catalog.drop_table(f"{namespace}.{test_ref}_t{i:02d}")
+            catalog.drop_namespace(namespace)
+        except Exception:
+            pass
+
+
+def test_table_without_metadata_location(started_cluster):
+    """
+    Test that ClickHouse can read Iceberg tables from Glue when 'metadata_location' is not present in Glue parameters.
+    Glue's Location field is used to deduce the metadata location.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_no_metadata_location_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    # Use unique database name to avoid interference with other tests (as we are playing with Glue metadata here)
+    db_name = f"db_{test_ref.replace('-', '_')}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="value", field_type=DoubleType(), required=False),
+    )
+    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), DEFAULT_SORT_ORDER, dir=table_name)
+
+    data = [
+        {"id": "row1", "value": 1.5},
+        {"id": "row2", "value": 2.5},
+        {"id": "row3", "value": 3.5},
+    ]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+
+    table_response = glue_client.get_table(
+        DatabaseName=root_namespace,
+        Name=table_name
+    )
+    table_info = table_response["Table"]
+
+    # Verify metadata_location exists before we remove it
+    assert "metadata_location" in table_info.get("Parameters", {}), "Test setup failed: metadata_location should exist initially"
+
+    # Remove metadata_location from parameters but keep other parameters
+    new_parameters = {k: v for k, v in table_info.get("Parameters", {}).items() if k != "metadata_location"}
+    glue_client.update_table(
+        DatabaseName=root_namespace,
+        TableInput={
+            "Name": table_name,
+            "StorageDescriptor": table_info["StorageDescriptor"],
+            "Parameters": new_parameters,
+            "TableType": table_info.get("TableType", "EXTERNAL_TABLE"),
+        }
+    )
+
+    # Verify metadata_location was removed
+    updated_table = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)
+    assert "metadata_location" not in updated_table["Table"].get("Parameters", {}), "Failed to remove metadata_location"
+    assert updated_table["Table"]["StorageDescriptor"]["Location"], "Location should still be present"
+
+    create_clickhouse_glue_database(started_cluster, node, db_name)
+
+    # Verify SHOW TABLES FROM works
+    tables_result = node.query(f"SHOW TABLES FROM {db_name} LIKE '%{table_name}%'")
+    assert table_name in tables_result, f"Table {table_name} not found in SHOW TABLES: {tables_result}"
+
+    # Query should work even without metadata_location in Glue
+    result = node.query(f"SELECT id, value FROM {db_name}.`{root_namespace}.{table_name}` ORDER BY id")
+    assert result == "row1\t1.5\nrow2\t2.5\nrow3\t3.5\n", f"Unexpected result: {result}"
+
+    # Also verify SHOW CREATE TABLE works
+    create_table_result = node.query(f"SHOW CREATE TABLE {db_name}.`{root_namespace}.{table_name}`")
+    assert "Iceberg" in create_table_result, f"Expected Iceberg engine in: {create_table_result}"
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_location_not_a_uri(started_cluster):
+    # Without `storage_endpoint` the location itself is the S3 URL; the timestamp column makes Glue read the
+    # metadata early through `createObjectStorageForEarlyTableAccess`.
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_location_not_a_uri_{uuid.uuid4().hex[:8]}"
+    namespace = f"{test_ref}_ns"
+    table_name = f"{test_ref}_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    table = create_table(catalog, namespace, table_name, dir=f"{test_ref}/a b é")
+    table.append(generate_arrow_data(5))
+
+    create_clickhouse_glue_database(
+        started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": ""}
+    )
+    assert node.query(
+        f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}` SETTINGS optimize_trivial_count_query = 0"
+    ) == "5\n"
+
+
+def test_check_database(started_cluster):
+    """Test that CHECK DATABASE works with Glue catalog database."""
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_check_database_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    namespaces_to_create = [
+        root_namespace,
+        f"{root_namespace}_A",
+        f"{root_namespace}_B",
+        f"{root_namespace}_C",
+    ]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    # Create namespaces
+    for namespace in namespaces_to_create:
+        catalog.create_namespace(namespace)
+        assert len(catalog.list_tables(namespace)) == 0
+
+    # Create ClickHouse Glue database once
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    # Create tables in each namespace
+    for namespace in namespaces_to_create:
+        table = create_table(catalog, namespace, table_name)
+
+        num_rows = 10
+        df = generate_arrow_data(num_rows)
+        table.append(df)
+
+        expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace, table_name)
+        assert expected == node.query(
+            f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`"
+        )
+
+        assert num_rows == int(
+            node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
+        )
+
+    # Verify database exists
+    assert CATALOG_NAME in node.query("SHOW DATABASES")
+
+    # Run CHECK DATABASE and verify it completes without error
+    node.query(f"CHECK DATABASE {CATALOG_NAME}")
+
+    try:
+        node.query(
+            "SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
+        )
+    
+        assert "fault when checking database" in node.query_and_get_error(
+            f"CHECK DATABASE {CATALOG_NAME}"
+        )
+    finally:
+        node.query(
+            "SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
+        )
+
+def test_sts_smoke(started_cluster):
+    """Test that STS authentication works with Glue catalog using role_arn and role_session_name"""
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_sts_smoke_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="value", field_type=DoubleType(), required=False),
+    )
+    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), DEFAULT_SORT_ORDER, dir=table_name)
+
+    data = [
+        {"id": "row1", "value": 10.0},
+        {"id": "row2", "value": 20.0},
+        {"id": "row3", "value": 30.0},
+    ]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    # Test with wrong role_session_name - should fail
+    db_name_fail = f"db_fail_{test_ref.replace('-', '_')}"
+    create_clickhouse_glue_database(
+        started_cluster,
+        node,
+        db_name_fail,
+        additional_settings={
+            "aws_role_arn": "arn::role",
+            "aws_role_session_name": "wrongsession",
+        },
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
+        with_credentials=False,
+    )
+
+    # Query should fail with wrong session name
+    try:
+        result = node.query(
+            f"SELECT sum(value) FROM {db_name_fail}.`{root_namespace}.{table_name}` "
+            f"SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 1000"
+        )
+        assert False, f"Expected query to fail with wrong session name but got result: {result}"
+    except Exception as e:
+        error_str = str(e)
+        assert "403" in error_str or "Failed to get object info" in error_str or "HTTP response code: 403" in error_str, \
+            f"Expected 403 error but got: {error_str}"
+
+    # Test with correct role_session_name - should succeed
+    db_name_success = f"db_success_{test_ref.replace('-', '_')}"
+    create_clickhouse_glue_database(
+        started_cluster,
+        node,
+        db_name_success,
+        additional_settings={
+            "aws_role_arn": "arn::role",
+            "aws_role_session_name": "miniorole",
+        },
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
+        with_credentials=False,
+    )
+
+    # Query should succeed with correct session name
+    result = node.query(f"SELECT sum(value) FROM {db_name_success}.`{root_namespace}.{table_name}`")
+    assert result.strip() == "60", f"Expected sum to be 60 but got: {result}"
+
+    # `aws_role_session_name` can act as a shared secret (the trust policy can pin it, which is what the
+    # STS mock does), so every display surface hides it while `aws_role_arn` stays visible. This database
+    # carries no other secret, so `[HIDDEN]` can only come from the session name.
+    show_create = node.query(f"SHOW CREATE DATABASE {db_name_success}")
+    assert "miniorole" not in show_create
+    assert "arn::role" in show_create
+    assert "[HIDDEN]" in show_create
+
+    engine_full = node.query(
+        f"SELECT engine_full FROM system.databases WHERE name = '{db_name_success}'"
+    )
+    assert "miniorole" not in engine_full
+    assert "[HIDDEN]" in engine_full
+
+    node.query("SYSTEM FLUSH LOGS system.query_log")
+    logged_create = node.query(
+        f"SELECT arrayStringConcat(groupArray(query), '\\n') FROM system.query_log "
+        f"WHERE query_kind = 'Create' AND type = 'QueryFinish' AND query LIKE '%{db_name_success}%'"
+    )
+    assert "[HIDDEN]" in logged_create
+    assert "miniorole" not in logged_create
+
+    # Cleanup
+    node.query(f"DROP DATABASE IF EXISTS {db_name_fail} SYNC")
+    node.query(f"DROP DATABASE IF EXISTS {db_name_success} SYNC")
+
+
+def test_sts_backup_restore_keeps_role_session_name(started_cluster):
+    """A backup archives the database definition with the real `aws_role_session_name`, although every
+    display surface shows `[HIDDEN]`. The STS mock grants the role only for the session name `miniorole`,
+    so the restored catalog can read its table only if the archived value was the real one."""
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_sts_backup_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="value", field_type=DoubleType(), required=False),
+    )
+    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), DEFAULT_SORT_ORDER, dir=table_name)
+    table.append(
+        pa.Table.from_pylist(
+            [
+                {"id": "row1", "value": 10.0},
+                {"id": "row2", "value": 20.0},
+                {"id": "row3", "value": 30.0},
+            ]
+        )
+    )
+
+    db_name = f"db_backup_{test_ref.replace('-', '_')}"
+    restored_db_name = f"{db_name}_restored"
+    create_clickhouse_glue_database(
+        started_cluster,
+        node,
+        db_name,
+        additional_settings={
+            "aws_role_arn": "arn::role",
+            "aws_role_session_name": "miniorole",
+        },
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
+        with_credentials=False,
+    )
+    result = node.query(f"SELECT sum(value) FROM {db_name}.`{root_namespace}.{table_name}`")
+    assert result.strip() == "60", f"Expected sum to be 60 but got: {result}"
+
+    # A DataLakeCatalog database owns no tables, so the backup holds just the database definition. The
+    # default server config allows File backups under its `backups` directory.
+    backup = f"File('{db_name}')"
+    node.query(f"BACKUP DATABASE {db_name} TO {backup}")
+    node.query(f"DROP DATABASE IF EXISTS {restored_db_name} SYNC")
+    node.query(
+        f"RESTORE DATABASE {db_name} AS {restored_db_name} FROM {backup}",
+        settings={
+            "allow_database_glue_catalog": 1,
+            "s3_allow_server_credentials_in_user_queries": 1,
+        },
+    )
+
+    # Readable only with the real session name: the STS mock rejects any other value.
+    result = node.query(f"SELECT sum(value) FROM {restored_db_name}.`{root_namespace}.{table_name}`")
+    assert result.strip() == "60", f"Expected sum to be 60 but got: {result}"
+
+    # The archived value came back, and the display of the restored definition is masked like any other.
+    show_create = node.query(f"SHOW CREATE DATABASE {restored_db_name}")
+    assert "miniorole" not in show_create
+    assert "arn::role" in show_create
+    assert "[HIDDEN]" in show_create
+
+    node.query(f"DROP DATABASE IF EXISTS {restored_db_name} SYNC")
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_sts_smoke_no_opt_in(started_cluster):
+    """A Glue DataLakeCatalog with aws_role_arn set, no explicit aws_access_key_id/aws_secret_access_key,
+    and no s3_allow_server_credentials_in_user_queries opt-in. GlueCatalog routes through the same
+    getCredentialsProvider chokepoint as the s3()/s3Cluster() table functions, so role_arn-based STS
+    assume-role must work here too."""
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_sts_smoke_no_opt_in_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="value", field_type=DoubleType(), required=False),
+    )
+    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), DEFAULT_SORT_ORDER, dir=table_name)
+
+    data = [
+        {"id": "row1", "value": 10.0},
+        {"id": "row2", "value": 20.0},
+        {"id": "row3", "value": 30.0},
+    ]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    db_name = f"db_no_opt_in_{test_ref.replace('-', '_')}"
+    settings = {
+        "catalog_type": "glue",
+        "warehouse": "test",
+        "storage_endpoint": "http://minio1:9001/warehouse-glue",
+        "region": "us-east-1",
+        "aws_role_arn": "arn::role",
+        "aws_role_session_name": "miniorole",
+    }
+    node.query(
+        f"""
+DROP DATABASE IF EXISTS {db_name};
+CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('{BASE_URL}')
+SETTINGS {",".join((k + "=" + repr(v) for k, v in settings.items()))}
+    """,
+        settings={
+            "allow_database_glue_catalog": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    result = node.query(f"SELECT sum(value) FROM {db_name}.`{root_namespace}.{table_name}`")
+    assert result.strip() == "60", f"Expected sum to be 60 but got: {result}"
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_sts_external_id(started_cluster):
+    """Test that `aws_external_id` reaches the STS AssumeRole request from the
+    Glue catalog database engine. The mock STS only vends working credentials
+    when the supplied ExternalId matches, so the negative case fails purely on
+    the external id (the role session name is correct in both cases)."""
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_sts_external_id_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="value", field_type=DoubleType(), required=False),
+    )
+    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), DEFAULT_SORT_ORDER, dir=table_name)
+
+    data = [
+        {"id": "row1", "value": 10.0},
+        {"id": "row2", "value": 20.0},
+        {"id": "row3", "value": 30.0},
+    ]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    # Negative: correct role session name but wrong external id - should fail.
+    db_name_fail = f"db_fail_{test_ref.replace('-', '_')}"
+    create_clickhouse_glue_database(
+        started_cluster,
+        node,
+        db_name_fail,
+        additional_settings={
+            "aws_role_arn": "arn::role",
+            "aws_role_session_name": "miniorole",
+            "aws_external_id": "wrong_external_id",
+        },
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
+        with_credentials=False,
+    )
+
+    try:
+        result = node.query(
+            f"SELECT sum(value) FROM {db_name_fail}.`{root_namespace}.{table_name}` "
+            f"SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 1000"
+        )
+        assert False, f"Expected query to fail with wrong external id but got result: {result}"
+    except Exception as e:
+        error_str = str(e)
+        assert "403" in error_str or "Failed to get object info" in error_str or "HTTP response code: 403" in error_str, \
+            f"Expected 403 error but got: {error_str}"
+
+    # Positive: correct role session name and external id - should succeed.
+    db_name_success = f"db_success_{test_ref.replace('-', '_')}"
+    create_clickhouse_glue_database(
+        started_cluster,
+        node,
+        db_name_success,
+        additional_settings={
+            "aws_role_arn": "arn::role",
+            "aws_role_session_name": "miniorole",
+            "aws_external_id": "miniexternalid",
+        },
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
+        with_credentials=False,
+    )
+
+    result = node.query(f"SELECT sum(value) FROM {db_name_success}.`{root_namespace}.{table_name}`")
+    assert result.strip() == "60", f"Expected sum to be 60 but got: {result}"
+
+    # Cleanup
+    node.query(f"DROP DATABASE IF EXISTS {db_name_fail} SYNC")
+    node.query(f"DROP DATABASE IF EXISTS {db_name_success} SYNC")
+
+
+def test_sts_credential_refresh_on_expired_token(started_cluster):
+    """When an S3 read fails mid-query with an `ExpiredToken`-style error,
+    `GlueCatalog::getCredentialsConfigurationCallback` should fire and the read
+    should recover with freshly-vended STS credentials.
+
+    Without the override (the previous behavior), the catalog inherits the default
+    `std::nullopt` from `ICatalog::getCredentialsConfigurationCallback`,
+    `ReadBufferFromS3::processException` skips the refresh branch, and the read
+    surfaces the `ExpiredToken` to the user.
+
+    The `s3_send_request_throw_expired_token` failpoint fires inside
+    `ReadBufferFromS3::sendRequest`, so it covers both `nextImpl`-driven
+    streaming reads and the `readBigAt` range-read path that Parquet column-chunk
+    reads go through. It is `ONCE`, so only the first S3 GET fails — the
+    subsequent retry triggered by the credentials refresh callback succeeds.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"refresh_token_{uuid.uuid4().hex}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="value", field_type=DoubleType(), required=False),
+    )
+
+    rows = [
+        {"id": "row1", "value": 10.0},
+        {"id": "row2", "value": 20.0},
+        {"id": "row3", "value": 30.0},
+    ]
+    expected_sum = sum(r["value"] for r in rows)
+    create_table(
+        catalog, root_namespace, table_name, schema, PartitionSpec(), DEFAULT_SORT_ORDER, dir=table_name
+    ).append(pa.Table.from_pylist(rows))
+
+    db_name = f"db_{test_ref.replace('-', '_')}"
+    create_clickhouse_glue_database(
+        started_cluster,
+        node,
+        db_name,
+        additional_settings={
+            "aws_role_arn": "arn::role",
+            "aws_role_session_name": "miniorole",
+        },
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
+        with_credentials=False,
+    )
+
+    # Sanity check: query works without the failpoint.
+    pre_failpoint = node.query(
+        f"SELECT sum(value) FROM {db_name}.`{root_namespace}.{table_name}`"
+    ).strip()
+    assert pre_failpoint == str(int(expected_sum)), (
+        f"Baseline query returned {pre_failpoint}, expected {int(expected_sum)}"
+    )
+
+    qid_select = uuid.uuid4().hex
+    node.query("SYSTEM ENABLE FAILPOINT s3_send_request_throw_expired_token")
+    try:
+        result = node.query(
+            f"SELECT sum(value) FROM {db_name}.`{root_namespace}.{table_name}` "
+            "SETTINGS max_threads = 1",
+            query_id=qid_select,
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT s3_send_request_throw_expired_token")
+
+    assert result.strip() == str(int(expected_sum)), (
+        f"Expected sum {int(expected_sum)} after refresh-driven retry, got: {result}"
+    )
+
+    node.query("SYSTEM FLUSH LOGS system.text_log")
+
+    # Diagnostic: confirm the failpoint actually tripped. If this assertion fails,
+    # the test environment did not reach the credential-refresh code path at all
+    # (e.g. column chunks completed in a single `nextImpl` call); the refresh-log
+    # assertion below would be vacuous.
+    failpoint_fired = int(
+        node.query(
+            "SELECT count() FROM system.text_log "
+            "WHERE message LIKE '%Caught exception while reading S3 object%' "
+            "AND message LIKE '%ExpiredToken%' "
+            "AND event_time >= now() - INTERVAL 5 MINUTE"
+        ).strip()
+    )
+    assert failpoint_fired >= 1, (
+        "Failpoint `s3_send_request_throw_expired_token` did not fire — "
+        "`processException` was never invoked, so the credentials-refresh "
+        "code path was not exercised."
+    )
+
+    # The `LOG_DEBUG` in `GlueCatalog::getCredentialsConfigurationCallback` must
+    # have fired — its absence would mean the override is not in place and the
+    # retry was attributable to some other path.
+    refresh_log_count = int(
+        node.query(
+            "SELECT count() FROM system.text_log "
+            "WHERE message LIKE '%Refreshing AWS credentials%after expired token%' "
+            "AND event_time >= now() - INTERVAL 5 MINUTE"
+        ).strip()
+    )
+    assert refresh_log_count >= 1, (
+        "The failpoint fired but `GlueCatalog::getCredentialsConfigurationCallback` "
+        "was not invoked — the override is missing or not wired into "
+        "`StorageS3Configuration::createObjectStorage`"
+    )
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_glue_catalog_unavailable_after_restart_under_restriction(started_cluster):
+    # A Glue `DataLakeCatalog` whose catalog credentials are server-managed (no explicit keys -> resolved from
+    # the server environment) is created under the per-session opt-in. After a restart it is reloaded under the
+    # default restriction (`s3_allow_server_credentials_in_user_queries = 0`); the server must still start, but
+    # the catalog is left unavailable (governed by `s3_load_table_anonymously_if_credentials_restricted`) rather
+    # than silently reusing the server identity or aborting startup.
+    node = started_cluster.instances["node1"]
+    db_name = f"glue_server_cred_restart_{uuid.uuid4().hex}"
+
+    create_clickhouse_glue_database(
+        started_cluster,
+        node,
+        db_name,
+        with_credentials=False,
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
+    )
+    # Works while the creating session allows server-managed credentials for the catalog.
+    node.query(
+        f"SHOW TABLES FROM {db_name}",
+        settings={"s3_allow_server_credentials_in_user_queries": 1},
+    )
+
+    node.restart_clickhouse()
+
+    # The server starts even though the catalog can no longer resolve its (server-managed) credentials.
+    assert node.query("SELECT 1").strip() == "1"
+    # Reloaded under the default restriction, the catalog is unavailable. Querying a table goes through the
+    # catalog client (`getCatalog`) and reports the restriction, rather than silently reusing the server
+    # identity. (`SHOW TABLES` intentionally swallows catalog errors so `system.tables` does not fail, so it
+    # is not a reliable probe here.)
+    error = node.query_and_get_error(f"SELECT * FROM {db_name}.`unavailable.table`")
+    assert (
+        "ACCESS_DENIED" in error
+        or "server-managed" in error
+        or "s3_allow_server_credentials_in_user_queries" in error
+    ), error
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_glue_catalog_user_attach_under_restriction_is_rejected(started_cluster):
+    # A user ATTACH DATABASE of a catalog that resolves server-managed credentials must stay fail-closed for a
+    # restricted user. The catalog is built lazily (on first access, not at ATTACH), so the ATTACH itself
+    # succeeds but the database is inaccessible: the first query against it is refused because the catalog
+    # resolves server-managed credentials that are restricted for user queries.
+    node = started_cluster.instances["node1"]
+    db_name = f"glue_user_attach_{uuid.uuid4().hex}"
+    allow = {"s3_allow_server_credentials_in_user_queries": 1}
+
+    create_clickhouse_glue_database(
+        started_cluster, node, db_name, with_credentials=False, query_settings=allow
+    )
+    node.query(f"DETACH DATABASE {db_name}")
+
+    # Re-attaching as a user query under the default restriction succeeds (lazy), but the database is
+    # fail-closed: accessing a table goes through the catalog client (`getCatalog`), which resolves the
+    # restricted server credentials and is refused. (`SHOW TABLES` intentionally swallows catalog errors, so it
+    # is not a reliable probe.)
+    node.query(f"ATTACH DATABASE {db_name}")
+    error = node.query_and_get_error(f"SELECT * FROM {db_name}.`unavailable.table`")
+    assert (
+        "ACCESS_DENIED" in error
+        or "server-managed" in error
+        or "s3_allow_server_credentials_in_user_queries" in error
+    ), error
+
+    # With the opt-in the database is usable again, so it can be cleaned up.
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC", settings=allow)
+
+
+def test_listing_tolerates_missing_namespace(started_cluster):
+    # A Glue table listing must treat a database that is absent from Glue as contributing no tables, instead
+    # of failing the whole query. `name = 'ns.table'` is pushed down to a single-namespace listing, so naming a
+    # namespace that does not exist reaches the GetTables error branch with no race.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_missing_namespace_{uuid.uuid4().hex}"
+    namespace = f"{test_ref}_namespace"
+    table_name = f"{test_ref}_table"
+    missing_namespace = f"{test_ref}_absent_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    table = create_table(catalog, namespace, table_name)
+    table.append(generate_arrow_data(10))
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    # T1: the missing namespace yields an empty listing, not an error.
+    assert (
+        ""
+        == node.query(
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            f"AND name = '{missing_namespace}.no_such_table' "
+            f"SETTINGS show_data_lake_catalogs_in_system_tables = true"
+        ).strip()
+    )
+
+    # T1 is only meaningful if the absent namespace really was listed. Without the pushdown the query
+    # degrades to listing the namespaces Glue reports, which excludes this one, so nothing would reach
+    # the code under test and T1 would pass unpatched.
+    assert node.contains_in_log(f"Getting tables for database '{missing_namespace}'")
+
+    # T2: the same pushdown still resolves a table in a namespace that does exist.
+    assert (
+        f"{namespace}.{table_name}"
+        == node.query(
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            f"AND name = '{namespace}.{table_name}' "
+            f"SETTINGS show_data_lake_catalogs_in_system_tables = true"
+        ).strip()
+    )
+
+    # T3: the unfiltered listing still reports the table.
+    assert table_name in node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+
+
+def test_listing_propagates_non_not_found_error(started_cluster):
+    # The tolerance above must stay narrow: only Glue's `EntityNotFoundException` may be read as "this
+    # database contributes no tables". Any other failure -- here an endpoint whose host does not resolve
+    # -- must still fail the listing loudly, so a misconfigured or unreachable catalog is never silently
+    # reported as empty.
+    node = started_cluster.instances["node1"]
+
+    db_name = f"glue_unreachable_{uuid.uuid4().hex}"
+    missing_namespace = f"glue_unreachable_ns_{uuid.uuid4().hex}"
+    # ATTACH is lazy, so the unreachable endpoint is only contacted by the listing below.
+    node.query(
+        f"""
+        ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-glue:1')
+        SETTINGS catalog_type = 'glue', region = 'us-east-1', storage_endpoint = 'http://fake-glue:1/x',
+                 aws_access_key_id = '{minio_access_key}', aws_secret_access_key = '{minio_secret_key}'
+        """
+    )
+    try:
+        # `name = 'ns.table'` is pushed down, so the failing call is the single-namespace listing -- the
+        # same code path the previous test exercises -- rather than the enclosing database enumeration.
+        error = node.query_and_get_error(
+            f"SELECT name FROM system.tables WHERE database = '{db_name}' "
+            f"AND name = '{missing_namespace}.some_table' "
+            f"SETTINGS show_data_lake_catalogs_in_system_tables = true"
+        )
+        assert "DATALAKE_DATABASE_ERROR" in error, error
+        assert "Exception calling GetTables" in error, error
+
+        # The error above is only evidence about the changed branch if the single-namespace listing is what
+        # failed. The database enumeration throws with a byte-identical message from an unmodified function,
+        # so without this the arm would also pass on a degraded pushdown -- and then a guard widened to
+        # swallow every error type would still be reported as caught.
+        assert node.contains_in_log(
+            f"Getting tables for database '{missing_namespace}'"
+        )
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_exists_table_answers_only_from_not_found(started_cluster):
+    # `EXISTS TABLE` must answer "absent" only when Glue reports the table as not found. Any other failure
+    # has to propagate, otherwise an outage makes an existing table look dropped, and the DDL paths that
+    # share this probe act on that answer.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_exists_table_{uuid.uuid4().hex}"
+    namespace = f"{test_ref}_namespace"
+    table_name = f"{test_ref}_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    create_table(catalog, namespace, table_name)
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    assert (
+        "1"
+        == node.query(f"EXISTS TABLE {CATALOG_NAME}.`{namespace}.{table_name}`").strip()
+    )
+    assert (
+        "0"
+        == node.query(
+            f"EXISTS TABLE {CATALOG_NAME}.`{namespace}.no_such_table`"
+        ).strip()
+    )
+
+    # Reusing the name of the table created above is what makes the arm below an assertion about error
+    # handling rather than about absence: the table is known to exist, so answering "0" is the misreport.
+    db_name = f"{test_ref}_unreachable"
+    # ATTACH is lazy, so the unreachable endpoint is only contacted by the probe below.
+    node.query(
+        f"""
+        ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-glue:1')
+        SETTINGS catalog_type = 'glue', region = 'us-east-1', storage_endpoint = 'http://fake-glue:1/x',
+                 aws_access_key_id = '{minio_access_key}', aws_secret_access_key = '{minio_secret_key}'
+        """
+    )
+    try:
+        error = node.query_and_get_error(
+            f"EXISTS TABLE {db_name}.`{namespace}.{table_name}`"
+        )
+        assert "DATALAKE_DATABASE_ERROR" in error, error
+        # This per-table message has a single emitter, so it pins the failure to the GetTable probe rather
+        # than to a listing: the error alone would also be satisfied by an unrelated failing call.
+        assert (
+            f"Exception calling GetTable for table {namespace}.{table_name}" in error
+        ), error
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_glue_retries_transient_server_error(started_cluster):
+    # Glue maps `InternalServiceException` (HTTP 500) to a non-retryable error, so a transient Glue failure
+    # must be retried by its HTTP status. The proxy fails the first two `GetTables` calls for a `transient_*`
+    # database and every call for a `denied_*` database.
+    node = started_cluster.instances["node1"]
+    proxy = started_cluster.get_container_id("sts.us-east-1.amazonaws.com")
+
+    def injected(database):
+        return int(
+            started_cluster.exec_in_container(
+                proxy, ["curl", "-s", f"http://localhost:8081/injected/{database}"]
+            )
+        )
+
+    test_ref = uuid.uuid4().hex
+    transient_namespace = f"transient_{test_ref}"
+    denied_namespace = f"denied_{test_ref}"
+    table_name = "t"
+    db_name = f"glue_fault_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(transient_namespace)
+    create_table(catalog, transient_namespace, table_name)
+
+    create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
+    try:
+        # T1: the listing survives two transient failures. The count proves both were served.
+        assert f"{transient_namespace}.{table_name}" in node.query(f"SHOW TABLES FROM {db_name}")
+        assert injected(transient_namespace) == 2
+
+        # T2: a non-transient error is not retried and still fails the query.
+        error = node.query_and_get_error(
+            f"SELECT name FROM system.tables WHERE database = '{db_name}' "
+            f"AND name = '{denied_namespace}.{table_name}' "
+            f"SETTINGS show_data_lake_catalogs_in_system_tables = true"
+        )
+        assert "DATALAKE_DATABASE_ERROR" in error, error
+        assert "Injected access denied" in error, error
+        assert injected(denied_namespace) == 1
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_catalog_schema_with_empty_column_name_is_rejected(started_cluster):
+    """
+    A Glue catalog column whose `Name` is empty must be refused where the table structure is
+    built. Related to https://github.com/ClickHouse/ClickHouse/issues/114350.
+
+    A read alone does not distinguish the behaviours: the empty name also reaches
+    `Block::insert`, which raises the same AMBIGUOUS_COLUMN_NAME. SHOW CREATE TABLE is the
+    arm that does - it answers with an empty-named column unless the schema is validated.
+
+    boto3 refuses a blank `Column.Name` client-side (the Glue service model declares
+    `min: 1`), so the malformed state is written through a client with parameter validation
+    disabled.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_empty_column_name_{uuid.uuid4().hex[:8]}"
+    table_name = f"{test_ref}_table"
+    namespace = f"{test_ref}_namespace"
+    # Own database: this rewrites Glue metadata, so it must not disturb other tests.
+    db_name = f"db_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="value", field_type=DoubleType(), required=False),
+    )
+    table = create_table(
+        catalog, namespace, table_name, schema, PartitionSpec(), DEFAULT_SORT_ORDER, dir=table_name
+    )
+    table.append(pa.Table.from_pylist([{"id": "row1", "value": 1.5}]))
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    # Same endpoint, validation off, used only for the malformed write below.
+    raw_glue_client = boto3.client(
+        "glue",
+        region_name="us-east-1",
+        endpoint_url=get_glue_local_url(started_cluster),
+        config=botocore.config.Config(parameter_validation=False),
+    )
+
+    create_clickhouse_glue_database(started_cluster, node, db_name)
+    qualified = f"{db_name}.`{namespace}.{table_name}`"
+
+    # Control: the table reads before the catalog is corrupted. Without this, a later
+    # failure could equally be a broken fixture rather than the guard firing.
+    assert node.query(f"SELECT id, value FROM {qualified}") == "row1\t1.5\n"
+
+    table_info = glue_client.get_table(DatabaseName=namespace, Name=table_name)["Table"]
+    columns = table_info["StorageDescriptor"]["Columns"]
+    assert [column["Name"] for column in columns] == ["id", "value"], columns
+
+    storage_descriptor = dict(table_info["StorageDescriptor"])
+    blanked = [dict(column) for column in columns]
+    blanked[1]["Name"] = ""
+    storage_descriptor["Columns"] = blanked
+    raw_glue_client.update_table(
+        DatabaseName=namespace,
+        TableInput={
+            "Name": table_name,
+            "StorageDescriptor": storage_descriptor,
+            "Parameters": table_info.get("Parameters", {}),
+            "TableType": table_info.get("TableType", "EXTERNAL_TABLE"),
+        },
+    )
+    # The mock must actually serve the empty name, otherwise the assertions below pass
+    # without the server ever seeing malformed input.
+    served = glue_client.get_table(DatabaseName=namespace, Name=table_name)["Table"]
+    assert [c["Name"] for c in served["StorageDescriptor"]["Columns"]] == ["id", ""], served
+
+    # Re-attach so the corrupted catalog state is fetched rather than served from cache.
+    create_clickhouse_glue_database(started_cluster, node, db_name)
+
+    # The discriminating arm: the structure must not be handed out at all. Without the
+    # check this answers with an empty-named column instead of failing.
+    show_create_error = node.query_and_get_error(f"SHOW CREATE TABLE {qualified}")
+    assert "AMBIGUOUS_COLUMN_NAME" in show_create_error, show_create_error
+    assert (
+        "Column name in data lake catalog table schema cannot be empty" in show_create_error
+    ), show_create_error
+    assert "position 1" in show_create_error, show_create_error
+
+    for statement in (f"SELECT * FROM {qualified}", f"SELECT id FROM {qualified}", f"DESCRIBE TABLE {qualified}"):
+        error = node.query_and_get_error(statement)
+        assert "AMBIGUOUS_COLUMN_NAME" in error, (statement, error)
+        assert (
+            "Column name in data lake catalog table schema cannot be empty" in error
+        ), (statement, error)
+
+    # Repeat: rejecting must be stable, not a one-shot that leaves the schema half built.
+    error_again = node.query_and_get_error(f"SELECT * FROM {qualified}")
+    assert "AMBIGUOUS_COLUMN_NAME" in error_again, error_again
+
+    assert node.query("SELECT 1") == "1\n"
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_geo_types_opt_in_per_query(started_cluster):
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_glue_geo_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="geom", field_type=BinaryType(), required=False),
+    )
+    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), UNSORTED_SORT_ORDER, dir=table_name)
+
+    # pyiceberg cannot create `geometry` columns, so patch the type in the current metadata file.
+    s3_client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=minio_access_key,
+        aws_secret_access_key=minio_secret_key,
+        region_name="us-east-1",
+    )
+    bucket, key = table.metadata_location.removeprefix("s3://").split("/", 1)
+    metadata = json.loads(s3_client.get_object(Bucket=bucket, Key=key)["Body"].read())
+    for table_schema in metadata["schemas"]:
+        for field in table_schema["fields"]:
+            if field["name"] == "geom":
+                field["type"] = "geometry"
+    s3_client.put_object(Bucket=bucket, Key=key, Body=json.dumps(metadata).encode())
+
+    # `allow_geo_types_in_iceberg` is disabled by default and enabled only for the query.
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    result = node.query(f"SHOW CREATE TABLE {table_ref}", settings={"allow_geo_types_in_iceberg": 1})
+    assert "`geom` Geometry" in result, result
