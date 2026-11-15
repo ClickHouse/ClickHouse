@@ -135,7 +135,7 @@ namespace
     void validateMaxComputeEndpoint(const String & endpoint, const RemoteHostFilter & remote_host_filter)
     {
         Poco::URI uri(endpoint);
-        const String scheme = uri.getScheme();
+        const String & scheme = uri.getScheme();
         if (!boost::iequals(scheme, "http") && !boost::iequals(scheme, "https"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "MaxCompute endpoint must use HTTP or HTTPS, got scheme '{}'", scheme);
         if (!uri.getUserInfo().empty())
@@ -353,7 +353,7 @@ namespace
         }
     }
 
-    const std::string getStringValueFromOdpsTypes(
+    std::string getStringValueFromOdpsTypes(
         const uint32_t & idx, const apsara::odps::sdk::ODPSArray & odps_rray,
         const ODPSColumnType odps_column_type, const std::string & col_name)
     {
@@ -375,7 +375,7 @@ namespace
         }
     }
 
-    const std::string getStringValueFromOdpsTypes(
+    std::string getStringValueFromOdpsTypes(
         const uint32_t & idx, const apsara::odps::sdk::ODPSStruct & odps_struct,
         const ODPSColumnType odps_column_type, const std::string & col_name)
     {
@@ -399,14 +399,14 @@ namespace
 
 #define ARRAY_VALUECASE(odps_rray, result, ODPS_TYPE, TYPE) \
         { \
-            for (uint32_t i = 0; i < odps_rray.Size(); i++) \
+            for (uint32_t i = 0; i < (odps_rray).Size(); i++) \
             { \
-                if (odps_rray.IsNull(i)) \
+                if ((odps_rray).IsNull(i)) \
                 { \
-                    result.push_back(Null()); \
+                    (result).push_back(Null()); \
                 } \
                 else \
-                    result.push_back(TYPE(odps_rray.Get##ODPS_TYPE(i))); \
+                    (result).push_back(TYPE((odps_rray).Get##ODPS_TYPE(i))); \
             } \
         }
 
@@ -647,7 +647,7 @@ namespace
                 requireOdpsType(odps_column_type, ODPSColumnType::ODPS_DECIMAL, "Decimal32", col_name);
                 try
                 {
-                    uint32_t len;
+                    uint32_t len = 0;
                     std::string rs = record.GetDecimalValue(idx, len);
                     const auto & decimal_type = assert_cast<const DataTypeDecimal<Decimal32> &>(*type);
                     result = DecimalField<Decimal32>(decimal_type.parseFromString(rs), decimal_type.getScale());
@@ -667,7 +667,7 @@ namespace
                 requireOdpsType(odps_column_type, ODPSColumnType::ODPS_DECIMAL, "Decimal64", col_name);
                 try
                 {
-                    uint32_t len;
+                    uint32_t len = 0;
                     std::string rs = record.GetDecimalValue(idx, len);
                     const auto & decimal_type = assert_cast<const DataTypeDecimal<Decimal64> &>(*type);
                     result = DecimalField<Decimal64>(decimal_type.parseFromString(rs), decimal_type.getScale());
@@ -687,7 +687,7 @@ namespace
                 requireOdpsType(odps_column_type, ODPSColumnType::ODPS_DECIMAL, "Decimal128", col_name);
                 try
                 {
-                    uint32_t len;
+                    uint32_t len = 0;
                     std::string rs = record.GetDecimalValue(idx, len);
                     const auto & decimal_type = assert_cast<const DataTypeDecimal<Decimal128> &>(*type);
                     result = DecimalField<Decimal128>(decimal_type.parseFromString(rs), decimal_type.getScale());
@@ -707,7 +707,7 @@ namespace
                 requireOdpsType(odps_column_type, ODPSColumnType::ODPS_DECIMAL, "Decimal256", col_name);
                 try
                 {
-                    uint32_t len;
+                    uint32_t len = 0;
                     std::string rs = record.GetDecimalValue(idx, len);
                     const auto & decimal_type = assert_cast<const DataTypeDecimal<Decimal256> &>(*type);
                     result = DecimalField<Decimal256>(decimal_type.parseFromString(rs), decimal_type.getScale());
@@ -723,7 +723,7 @@ namespace
                 }
             }
             case TypeIndex::String: {
-                uint32_t len;
+                uint32_t len = 0;
                 const char * ch = getStringValueFromOdpsTypes(idx, len, record, odps_column_type, col_name);
                 std::string rs = ch ? std::string(ch, len) : std::string();
                 result = rs;
@@ -1407,7 +1407,7 @@ Pipe StorageMaxCompute::read(
         {
             if (split_strings.size() != 2)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported MaxCompute nested field path '{}'", col_name);
-            if (odps_read_cols_set.find(split_strings[0]) == odps_read_cols_set.end())
+            if (!odps_read_cols_set.contains(split_strings[0]))
             {
                 odps_read_cols.push_back(split_strings[0]);
                 odps_read_cols_set.insert(split_strings[0]);
@@ -1776,8 +1776,8 @@ void registerStorageMaxCompute(StorageFactory & factory)
                 "Storage MaxCompute requires 6-10 parameters: MaxCompute('tunnel_endpoint', project, table, 'partition', 'user', "
                 "'password'[, thread_num, 'quota_name', start, count]).");
 
-        for (size_t i = 0; i < engine_args.size(); ++i)
-            engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.getLocalContext());
+        for (auto & engine_arg : engine_args)
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
 
         const String & odps_tunnel_endpoint = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         const String & project = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
@@ -1823,7 +1823,7 @@ void registerStorageMaxCompute(StorageFactory & factory)
                 count = engine_args[9]->as<ASTLiteral &>().value.safeGet<UInt64>();
         }
 
-        String odps_endpoint = "";
+        String odps_endpoint;
         if (storage_engine_name == "MaxComputeRaw")
             odps_endpoint = odps_tunnel_endpoint;
 
@@ -1846,7 +1846,7 @@ void registerStorageMaxCompute(StorageFactory & factory)
             args.storage_def->settings ? args.storage_def->settings->clone() : nullptr);
     };
 
-    const auto description = R"DOCS_MD(
+    const auto * const description = R"DOCS_MD(
 The `MaxCompute` and `MaxComputeRaw` table engines read existing Alibaba Cloud MaxCompute (ODPS) tables through the Tunnel API.
 They support `SELECT` and importing data into ClickHouse with `INSERT INTO clickhouse_table SELECT ... FROM maxcompute_table`.
 Writing to MaxCompute, automatic schema inference, and the MaxCompute Storage API are not supported.

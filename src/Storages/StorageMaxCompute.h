@@ -18,7 +18,7 @@ public:
         size_t num_streams) override;
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
     size_t getMaxReadStreams(size_t num_streams, ContextPtr context) override;
-public:
+
     StorageMaxCompute(
         const StorageID & table_id_,
         const std::string & odps_tunnel_endpoint_,
@@ -28,9 +28,9 @@ public:
         const std::string & user_name_,
         const std::string & password_,
         const std::string & sts_token_,
-        const uint64_t start_,
-        const uint64_t count_,
-        const uint64_t thread_num_,
+        uint64_t start_,
+        uint64_t count_,
+        uint64_t thread_num_,
         const std::string & odps_endpoint_,
         const std::string & quota_name_,
         const ColumnsDescription & columns_,

@@ -1137,6 +1137,10 @@ if (ENABLE_TESTS)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::yaml_cpp)
     endif()
 
+    if (TARGET ch_contrib::odps)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::odps)
+    endif()
+
     if (TARGET ch_rust::delta_kernel_rs)
         target_link_libraries(unit_tests_dbms PRIVATE ch_rust::delta_kernel_rs)
     endif ()
