@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database
+# Tags: long, no-replicated-database, no-msan
 # no-replicated-database: hypothetical indexes are session-scoped and not replicated
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -298,7 +298,7 @@ $CLICKHOUSE_CLIENT -n -q "
     CREATE TABLE t_hypo_priv (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
     DROP USER IF EXISTS ${user};
     CREATE USER ${user} NOT IDENTIFIED;
-    GRANT SELECT(a) ON ${CLICKHOUSE_DATABASE}.t_hypo_priv TO ${user};
+    GRANT SELECT(a), SHOW COLUMNS ON ${CLICKHOUSE_DATABASE}.t_hypo_priv TO ${user};
 "
 $CLICKHOUSE_CLIENT --user "${user}" -q "
     CREATE HYPOTHETICAL INDEX idx_b ON ${CLICKHOUSE_DATABASE}.t_hypo_priv (b) TYPE minmax GRANULARITY 1;
@@ -313,7 +313,7 @@ $CLICKHOUSE_CLIENT -n -q "
     CREATE TABLE t_hypo_priv2 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
     DROP USER IF EXISTS ${user2};
     CREATE USER ${user2} NOT IDENTIFIED;
-    GRANT SELECT(b) ON ${CLICKHOUSE_DATABASE}.t_hypo_priv2 TO ${user2};
+    GRANT SELECT(b), SHOW COLUMNS ON ${CLICKHOUSE_DATABASE}.t_hypo_priv2 TO ${user2};
 "
 $CLICKHOUSE_CLIENT --user "${user2}" -n -q "
     CREATE HYPOTHETICAL INDEX idx_b ON ${CLICKHOUSE_DATABASE}.t_hypo_priv2 (b) TYPE minmax GRANULARITY 1;
@@ -334,7 +334,7 @@ $CLICKHOUSE_CLIENT -n -q "
     INSERT INTO t_hypo_priv3 SELECT number, number, number FROM numbers(100);
     DROP USER IF EXISTS ${user3};
     CREATE USER ${user3} NOT IDENTIFIED;
-    GRANT SELECT(a, b, c) ON ${CLICKHOUSE_DATABASE}.t_hypo_priv3 TO ${user3};
+    GRANT SELECT(a, b, c), SHOW COLUMNS ON ${CLICKHOUSE_DATABASE}.t_hypo_priv3 TO ${user3};
 "
 # An HTTP session keeps the session-local store alive across requests; create the index on
 # (b, c) while SELECT(c) is granted, revoke it, then evaluate from the same session.
@@ -360,7 +360,7 @@ $CLICKHOUSE_CLIENT -n -q "
     CREATE USER ${userq} NOT IDENTIFIED;
     GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_hypo_quota TO ${userq};
     DROP QUOTA IF EXISTS ${quotaq};
-    CREATE QUOTA ${quotaq} FOR INTERVAL 1 hour MAX read_rows = 100 TO ${userq};
+    CREATE QUOTA ${quotaq} FOR INTERVAL 100 YEAR MAX read_rows = 100 TO ${userq};
 "
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${userq}&session_id=${sessq}&session_timeout=60" \
     --data-binary "CREATE HYPOTHETICAL INDEX idx_b ON ${CLICKHOUSE_DATABASE}.t_hypo_quota (b) TYPE minmax GRANULARITY 1"

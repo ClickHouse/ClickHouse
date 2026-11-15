@@ -9,6 +9,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/StorageAlias.h>
+#include <Storages/System/extractTablesFilter.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -68,12 +70,14 @@ public:
         SharedHeader header,
         UInt64 max_block_size_,
         ColumnPtr databases_,
-        ContextPtr context_)
+        ContextPtr context_,
+        IDatabase::FilterByNameFunction table_name_filter_)
         : ISource(header)
         , column_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases_cursor(std::move(databases_))
         , context(Context::createCopy(context_))
+        , table_name_filter(std::move(table_name_filter_))
     {}
 
     String getName() const override { return "DataSkippingIndices"; }
@@ -98,7 +102,8 @@ protected:
             const String & database_name = databases_cursor.getDatabaseName();
 
             if (!databases_cursor.hasTablesIterator())
-                databases_cursor.setTablesIterator(databases_cursor.getDatabase()->getTablesIterator(context));
+                databases_cursor.setTablesIterator(
+                    databases_cursor.getDatabase()->getTablesIterator(context, table_name_filter, /* skip_not_loaded */ false));
 
             const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
@@ -112,12 +117,17 @@ protected:
                 const auto table = tables_it.table();
                 if (!table)
                     continue;
+
+                if (const auto * alias = table->as<StorageAlias>();
+                    alias && !alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {}))
+                    continue;
+
                 const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
                 if (!metadata_snapshot)
                     continue;
                 const auto indices = metadata_snapshot->getSecondaryIndices();
 
-                auto secondary_index_sizes = table->getSecondaryIndexSizes();
+                const auto secondary_index_sizes = table->getSecondaryIndexSizes();
                 for (const auto & index : indices)
                 {
                     ++rows_count;
@@ -164,19 +174,34 @@ protected:
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(index.granularity);
 
-                    auto & secondary_index_size = secondary_index_sizes[index.name];
+                    auto secondary_index_size = secondary_index_sizes.find(index.name);
 
                     // 'compressed bytes' column
                     if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(secondary_index_size.data_compressed);
+                    {
+                        if (secondary_index_size != secondary_index_sizes.end())
+                            res_columns[res_index++]->insert(secondary_index_size->second.data_compressed);
+                        else
+                            res_columns[res_index++]->insertDefault();
+                    }
 
                     // 'uncompressed bytes' column
                     if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(secondary_index_size.data_uncompressed);
+                    {
+                        if (secondary_index_size != secondary_index_sizes.end())
+                            res_columns[res_index++]->insert(secondary_index_size->second.data_uncompressed);
+                        else
+                            res_columns[res_index++]->insertDefault();
+                    }
 
                     /// 'marks_bytes' column
                     if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(secondary_index_size.marks);
+                    {
+                        if (secondary_index_size != secondary_index_sizes.end())
+                            res_columns[res_index++]->insert(secondary_index_size->second.marks);
+                        else
+                            res_columns[res_index++]->insertDefault();
+                    }
                 }
             }
         }
@@ -188,6 +213,7 @@ private:
     UInt64 max_block_size;
     DatabaseTablesCursor databases_cursor;
     ContextPtr context;
+    IDatabase::FilterByNameFunction table_name_filter;
 };
 
 class ReadFromSystemDataSkippingIndices : public SourceStepWithFilter
@@ -224,6 +250,8 @@ private:
     std::vector<UInt8> columns_mask;
     const size_t max_block_size;
     ExpressionActionsPtr virtual_columns_filter;
+    IDatabase::FilterByNameFunction database_name_filter;
+    IDatabase::FilterByNameFunction table_name_filter;
 };
 
 void ReadFromSystemDataSkippingIndices::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -236,6 +264,15 @@ void ReadFromSystemDataSkippingIndices::applyFilters(ActionDAGNodes added_filter
         {
             { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
         };
+
+        /// A condition on `table` prunes the enumeration the same way the one on `database` does.
+        /// It is read before the filter below is built: that build drops the elements of an `IN`
+        /// over a subquery, and the extraction needs them (it builds such a set itself, keeping them).
+        table_name_filter = extractNameFilter(filter_actions_dag->getOutputs().at(0), "table", context);
+        /// The filter below only sees `database`, so it cannot use a condition that names the
+        /// database together with the table, such as `(database, table) IN ((db, t))`; the
+        /// extraction reads that shape too, and shortlists the databases first.
+        database_name_filter = extractNameFilter(filter_actions_dag->getOutputs().at(0), "database", context);
 
         auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
         if (dag)
@@ -278,6 +315,8 @@ void ReadFromSystemDataSkippingIndices::initializePipeline(QueryPipelineBuilder 
             continue;
         if (database->isExternal())
             continue;
+        if (database_name_filter && !database_name_filter(database_name))
+            continue;
         column->insert(database_name);
     }
 
@@ -288,7 +327,7 @@ void ReadFromSystemDataSkippingIndices::initializePipeline(QueryPipelineBuilder 
 
     ColumnPtr & filtered_databases = block.getByPosition(0).column;
     pipeline.init(Pipe(std::make_shared<DataSkippingIndicesSource>(
-        std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases), context)));
+        std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases), context, std::move(table_name_filter))));
 }
 
 }

@@ -297,7 +297,7 @@ public:
         RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr query_context) const override;
-    void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & lock_holder) override;
+    void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & lock_holder, DDLGuardPtr & ddl_guard) override;
 
     /// `DELETE FROM` is executed by the storage itself rather than translated into a lightweight
     /// update, because there is no part to rewrite and no `_row_exists` column to mask.

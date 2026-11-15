@@ -27,15 +27,6 @@ namespace ErrorCodes
     extern const int DATABASE_ACCESS_DENIED;
 }
 
-namespace
-{
-
-bool isStringOrNull(const IDataType & type)
-{
-    return isString(type) || type.onlyNull();
-}
-
-}
 
 /// A function to read file as a string.
 class FunctionFile final : public IFunction
@@ -57,21 +48,9 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"path", &isString, nullptr, "String"}
-        };
-        FunctionArgumentDescriptors optional_args{
-            {"default", &isStringOrNull, nullptr, "String or Null"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        auto ret = std::make_shared<DataTypeString>();
-        if (arguments.size() == 2 && arguments[1].type->onlyNull())
-            return makeNullable(ret);
-        return ret;
+        return "(String, NULL) -> Nullable(String) OR (String, [const String]) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -192,9 +171,18 @@ Also see the [`file`](/reference/functions/table-functions/file) table function.
         {
             "Insert files into a table",
             R"(
-INSERT INTO table SELECT file('a.txt'), file('b.txt');
+INSERT INTO FUNCTION file('a.txt', 'RawBLOB') SELECT 'Hello' SETTINGS engine_file_truncate_on_insert = 1;
+INSERT INTO FUNCTION file('b.txt', 'RawBLOB') SELECT 'World!' SETTINGS engine_file_truncate_on_insert = 1;
+
+CREATE TABLE data (a String, b String) ENGINE = Memory;
+INSERT INTO data SELECT file('a.txt'), file('b.txt');
+
+SELECT * FROM data;
             )",
             R"(
+┌─a─────┬─b──────┐
+│ Hello │ World! │
+└───────┴────────┘
             )"
         }
     };

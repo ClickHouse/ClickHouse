@@ -144,6 +144,27 @@ INSERT INTO stem_test_lc VALUES ('blessing'), ('disguise'), ('blessing');
 SELECT stem(word, 'en') FROM stem_test_lc ORDER BY word;
 DROP TABLE stem_test_lc;
 
+SELECT '- Lengthening stemmers.';
+
+SELECT '-- Turkish stems a 3-byte word to a 5-byte word, so the output is longer than the input.';
+SELECT stem('uag', 'tr');
+
+SELECT '-- Over a multi-block scan the output must stay correct even when it overflows the input-sized estimate.';
+SELECT countIf(s != 'uagı')
+FROM (SELECT stem(materialize('uag'), 'tr') AS s FROM numbers(6800))
+SETTINGS max_block_size = 1700;
+
+SELECT '-- Turkish also lengthens via a multi-byte substitution (3 bytes to 4 bytes).';
+SELECT stem('aac', 'tr');
+
+SELECT '-- Estonian lengthens by appending ASCII letters (4 bytes to 5 bytes), a different mechanism.';
+SELECT stem('keeb', 'et');
+
+SELECT '-- Estonian over a multi-block scan must also stay correct past the input-sized estimate.';
+SELECT countIf(s != 'keesi')
+FROM (SELECT stem(materialize('keeb'), 'et') AS s FROM numbers(6800))
+SETTINGS max_block_size = 1700;
+
 SELECT '- Negative tests.';
 
 SELECT '-- Whitespace in a String input raises BAD_ARGUMENTS.';

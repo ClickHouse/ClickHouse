@@ -80,15 +80,15 @@ SELECT format('{} {}', 'Hello', 'World')
 
 قُدِّمت في: v24.9.0
 
-يستبدل جزءًا من السلسلة `input` بسلسلة أخرى هي `replace`، بدءًا من الموضع `offset` المفهرس ابتداءً من 1.
+يستبدل جزءًا من السلسلة `input` بسلسلة أخرى هي `replace`، بدءًا من الفهرس `offset` بفهرسة تبدأ من 1.
 
-**الصياغة**
+**صيغة**
 
 ```sql
 overlay(s, replace, offset[, length])
 ```
 
-**المعاملات**
+**وسيطات الدالة**
 
 * `s` — سلسلة الإدخال. [`String`](/ar/reference/data-types/string)
 * `replace` — سلسلة الاستبدال [`const String`](/ar/reference/data-types/string)
@@ -108,9 +108,9 @@ SELECT overlay('My father is from Mexico.', 'mother', 4) AS res;
 ```
 
 ```response title=Response
-┌─res──────────────────────┐
-│ My mother is from Mexico.│
-└──────────────────────────┘
+┌─res───────────────────────┐
+│ My mother is from Mexico. │
+└───────────────────────────┘
 ```
 
 **الاستبدال مع تحديد الطول**
@@ -120,9 +120,9 @@ SELECT overlay('My father is from Mexico.', 'dad', 4, 6) AS res;
 ```
 
 ```response title=Response
-┌─res───────────────────┐
-│ My dad is from Mexico.│
-└───────────────────────┘
+┌─res────────────────────┐
+│ My dad is from Mexico. │
+└────────────────────────┘
 ```
 
 <div id="overlayUTF8">
@@ -131,7 +131,7 @@ SELECT overlay('My father is from Mexico.', 'dad', 4, 6) AS res;
 
 أُضيف في: v24.9.0
 
-يستبدل جزءًا من السلسلة `s` بسلسلة أخرى هي `replace`، بدءًا من الفهرس `offset` ذي الأساس 1.
+يستبدل جزءًا من السلسلة `s` بسلسلة أخرى هي `replace`، بدءًا من الفهرس `offset` بفهرسة تبدأ من 1.
 يفترض أن السلسلة تحتوي على نص مرمّز بترميز UTF-8 صالح.
 إذا لم يتحقق هذا الافتراض، فلن يُطرَح أي استثناء وستكون النتيجة غير معرّفة.
 
@@ -141,7 +141,7 @@ SELECT overlay('My father is from Mexico.', 'dad', 4, 6) AS res;
 overlayUTF8(s, replace, offset[, length])
 ```
 
-**الوسيطات**
+**وسيطات الدالة**
 
 * `s` — سلسلة الإدخال. [`String`](/ar/reference/data-types/string)
 * `replace` — سلسلة الاستبدال. [`const String`](/ar/reference/data-types/string)
@@ -161,9 +161,9 @@ SELECT overlayUTF8('Mein Vater ist aus Österreich.', 'der Türkei', 20) AS res;
 ```
 
 ```response title=Response
-┌─res───────────────────────────┐
-│ Mein Vater ist aus der Türkei.│
-└───────────────────────────────┘
+┌─res────────────────────────────┐
+│ Mein Vater ist aus der Türkei. │
+└────────────────────────────────┘
 ```
 
 <div id="printf">
@@ -338,15 +338,15 @@ SELECT replaceOne('Hello, Hello world', 'Hello', 'Hi') AS res;
 replaceRegexpAll(haystack, pattern, replacement)
 ```
 
-**الأسماء البديلة**: `REGEXP_REPLACE`
+**اسم مستعار**: `REGEXP_REPLACE`
 
-**الوسيطات**
+**وسيطات الدالة**
 
 * `haystack` — سلسلة الإدخال المراد البحث فيها. [`String`](/ar/reference/data-types/string)
 * `pattern` — نمط التعبير النمطي المراد العثور عليه. [`const String`](/ar/reference/data-types/string)
 * `replacement` — السلسلة التي سيُستبدل بها النمط، وقد تحتوي على استبدالات. [`const String`](/ar/reference/data-types/string)
 
-**القيمة المرجعة**
+**القيمة المُعادة**
 
 يعيد سلسلةً استُبدلت فيها جميع المطابقات للتعبير النمطي. [`String`](/ar/reference/data-types/string)
 
@@ -359,9 +359,9 @@ SELECT replaceRegexpAll('Hello123', '.', '\\0\\0') AS res
 ```
 
 ```response title=Response
-┌─res──────────────────┐
-│ HHeelllloo112233     │
-└──────────────────────┘
+┌─res──────────────┐
+│ HHeelllloo112233 │
+└──────────────────┘
 ```
 
 **مثال على استبدال سلسلة فرعية فارغة**

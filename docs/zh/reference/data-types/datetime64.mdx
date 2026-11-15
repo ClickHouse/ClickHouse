@@ -43,14 +43,14 @@ ENGINE = MergeTree;
 ```
 
 ```sql
--- 解析 DateTime
--- - 从整数解析，将其解释为自 1970-01-01 起的毫秒数（因精度为 3），
--- - 从小数解析，小数点前的部分表示秒数，小数点后的部分根据精度处理，
--- - 从字符串解析。
+-- Parse DateTime64
+-- - from an integer interpreted as the number of seconds since 1970-01-01 (like DateTime),
+-- - from a decimal interpreted as the number of seconds, the fractional part giving sub-second precision,
+-- - from a string.
 
 INSERT INTO dt64
 VALUES
-(1546300800123, 1),
+(1546300800, 1),
 (1546300800.123, 2),
 ('2019-01-01 00:00:00', 3);
 
@@ -59,13 +59,13 @@ SELECT * FROM dt64;
 
 ```text
 ┌───────────────timestamp─┬─event_id─┐
-│ 2019-01-01 03:00:00.123 │        1 │
+│ 2019-01-01 03:00:00.000 │        1 │
 │ 2019-01-01 03:00:00.123 │        2 │
 │ 2019-01-01 00:00:00.000 │        3 │
 └─────────────────────────┴──────────┘
 ```
 
-* 以整数形式插入 datetime 时，会将其视为按相应精度缩放的 Unix 时间戳 (UTC) 。`1546300800000` (精度 为 3) 表示 UTC 的 `'2019-01-01 00:00:00'`。但由于 `timestamp` 列指定了 `Asia/Istanbul` (UTC+3) 时区，因此在以字符串形式输出时，该值会显示为 `'2019-01-01 03:00:00'`。以十进制数形式插入 datetime 时，处理方式与整数类似，不同之处在于：小数点前的值是精确到秒 (含秒) 的 Unix 时间戳，小数点后的值会被视为 精度。
+* 以数值形式插入 datetime 时，会像 `DateTime` 一样将其视为以秒为单位的 Unix 时间戳 (UTC) 。`1546300800` 表示 UTC 的 `'2019-01-01 00:00:00'`。但由于 `timestamp` 列指定了 `Asia/Istanbul` (UTC+3) 时区，因此以字符串形式输出时，该值会显示为 `'2019-01-01 03:00:00'`。插入带小数部分的数值时，处理方式相同：小数点前的部分是以秒为单位的 Unix 时间戳，小数点后的部分则根据列的精度提供子秒级精度。 (在 26.8 版本之前，`JSON` 和 `Values`/`Quoted` 输入路径中的无引号整数——后者涵盖所有使用 `Quoted` 转义规则解析字段的格式：`Values`、`MySQLDump`，以及配置了 `Quoted` 字段转义的 `Template`/`CustomSeparated`/`Regexp`——会被解释为列精度下的原始底层值，因此精度为 3 时，`1546300800000` 表示 `'2019-01-01 00:00:00'`。若要在这些路径中恢复此前的行为，请设置 `input_format_read_datetime_number_as_raw_value = 1` (或 `SET compatibility = '26.7'`) ；这也会影响 `JSONExtract` 函数和 `JSON` 数据类型。兼容性设置仅适用于无引号整数：在 `Values` 格式中，旧版流式 parser 会拒绝带小数部分的数值，随后会回退到 SQL expression 求值并按秒读取——这与 26.8 之前的版本相同。在 `JSONExtract` 和 `JSON` 数据类型中，带小数部分的值会通过 `Float64` 解析，因此位数超过 `Float64` 可保留范围的时间戳可能会舍入为相邻值；而行输入格式会精确解析原始文本。制表符分隔、CSV 及其他转义文本输入格式不受此设置控制，并会保留其对无引号数值的现有解释：较大的值将按 ticks 读取。)
 * 以字符串形式插入 datetime 值时，会将其视为采用列时区。`'2019-01-01 00:00:00'` 会被视为采用 `Asia/Istanbul` 时区，并存储为 `1546290000000`。
 
 2. 过滤 `DateTime64` 值
@@ -93,8 +93,7 @@ SELECT * FROM dt64 WHERE timestamp = toDateTime64(1546300800.123, 3);
 └─────────────────────────┴──────────┘
 ```
 
-与插入时不同，`toDateTime64` 函数会将所有值都按小数处理，因此精度需要
-在小数点后给出。
+与插入数值时一样，`toDateTime64` 函数会将数值参数视为秒数，因此子秒级精度需在小数点后给出。
 
 3. 获取 `DateTime64` 类型值的时区：
 
@@ -129,10 +128,10 @@ FROM dt64;
 
 * [类型转换函数](/zh/reference/functions/regular-functions/type-conversion-functions)
 * [日期和时间函数](/zh/reference/functions/regular-functions/date-time-functions)
-* [`date_time_input_format` 设置](/zh/reference/settings/formats#date_time_input_format)
-* [`date_time_output_format` 设置](/zh/reference/settings/formats#date_time_output_format)
-* [`timezone` server 配置参数](/zh/reference/settings/server-settings/settings#timezone)
-* [`session_timezone` 设置](/zh/reference/settings/session-settings#session_timezone)
+* [`date_time_input_format` 设置](/zh/reference/settings/formats/date-time#date_time_input_format)
+* [`date_time_output_format` 设置](/zh/reference/settings/formats/date-time#date_time_output_format)
+* [`timezone` server 配置参数](/zh/reference/settings/server-settings/settings/other#timezone)
+* [`session_timezone` 设置](/zh/reference/settings/session-settings/other#session_timezone)
 * [日期和时间运算符](/zh/reference/operators/index#operators-for-working-with-dates-and-times)
 * [`Date` 数据类型](/zh/reference/data-types/date)
 * [`DateTime` 数据类型](/zh/reference/data-types/datetime)

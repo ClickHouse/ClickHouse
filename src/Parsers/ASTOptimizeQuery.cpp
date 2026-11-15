@@ -99,19 +99,14 @@ void ASTOptimizeQuery::readJSON(const Poco::JSON::Object & json)
     /// `tryGetIdentifierNameInto`, so reject other node types here (a foreign node would format as one
     /// target while execution resolves a different/empty one).
     database = r.readIdentifierChild("database");
-    if (database)
-        children.push_back(database);
     table = r.readIdentifierChild("table");
     if (!table)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'table' field in `OptimizeQuery` during AST JSON deserialization");
-    children.push_back(table);
     /// `partition` is parser-produced as an `ASTPartition`; `InterpreterOptimizeQuery` forwards it into
     /// `StorageMergeTree::optimize` / `StorageReplicatedMergeTree::optimize`, which call
     /// `getPartitionIDFromQuery` and immediately downcast via `partition->as<ASTPartition &>()`,
     /// raising `LOGICAL_ERROR` otherwise. Reject any other node type at the deserialization boundary.
     partition = r.readChildOfType<ASTPartition>("partition");
-    if (partition)
-        children.push_back(partition);
     final = r.getBool("final");
     deduplicate = r.getBool("deduplicate");
     cleanup = r.getBool("cleanup");
@@ -135,7 +130,7 @@ void ASTOptimizeQuery::readJSON(const Poco::JSON::Object & json)
             if (!entry || !(entry->as<ASTIdentifier>() || entry->as<ASTAsterisk>() || entry->as<ASTColumnsRegexpMatcher>() || entry->as<ASTColumnsListMatcher>()))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Each entry of 'deduplicate_by_columns' must be an identifier, an asterisk, or a COLUMNS matcher during AST JSON deserialization");
         }
-        children.push_back(deduplicate_by_columns);
+        /// This is member-only in `ParserOptimizeQuery`.
     }
     /// `parts_list` is produced by the parser only for `OPTIMIZE ... DRY RUN PARTS '...'`:
     /// a non-empty `ASTExpressionList` of string literals. `formatImpl` prints it only inside
@@ -156,10 +151,19 @@ void ASTOptimizeQuery::readJSON(const Poco::JSON::Object & json)
             if (!literal || literal->value.getType() != Field::Types::String)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Each entry of 'parts_list' must be a string literal during AST JSON deserialization");
         }
-        children.push_back(parts_list);
     }
     else if (dry_run)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE ... DRY RUN requires a non-empty 'parts_list' during AST JSON deserialization");
+
+    /// Match `ParserOptimizeQuery`: partition and parts list are children first, followed by the
+    /// database/table identifiers; `deduplicate_by_columns` remains member-only.
+    if (partition)
+        children.push_back(partition);
+    if (parts_list)
+        children.push_back(parts_list);
+    if (database)
+        children.push_back(database);
+    children.push_back(table);
     readOutputOptionsJSON(r);
 }
 

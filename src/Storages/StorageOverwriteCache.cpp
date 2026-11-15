@@ -888,7 +888,7 @@ StorageOverwriteCache::StorageOverwriteCache(
         getPersistenceFingerprint(),
         fmt::format("StorageOverwriteCache ({})", table_id_.getNameForLogs()));
     loadPersistedData();
-    small_segment_compaction_task = getContext()->getSchedulePool().createTask(
+    small_segment_compaction_task = getContext()->getSchedulePool()->createTask(
         getStorageID(), log->name() + "/SmallSegmentCompaction", [this] { runSmallSegmentCompaction(); });
 }
 
@@ -3339,7 +3339,7 @@ void StorageOverwriteCache::checkAlterIsPossible(const AlterCommands & commands,
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lookup `INDEX` does not exist");
 }
 
-void StorageOverwriteCache::alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder &)
+void StorageOverwriteCache::alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder &, DDLGuardPtr &)
 {
     checkAlterIsPossible(commands, query_context);
     const auto & command = commands.front();
@@ -3786,6 +3786,7 @@ void registerStorageOverwriteCache(StorageFactory & factory)
                 args.relative_data_path,
                 args.getContext());
         },
+        SecretArgumentsSpec{},
         {
             .supports_settings = true,
             .supports_keys = true,

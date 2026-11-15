@@ -34,9 +34,9 @@ doc_type: 'reference'
 | `geometry`   | `Geometry`         | هندسة المعلم، وتُخزَّن كنوع `Variant` من `Geometry`.                                                                                                                                     |
 | `properties` | `Nullable(JSON)`   | كائن `properties` الخاص بالمعلم، ويُخزَّن في عمود `JSON` شبه منظَّم. وتُحفَظ القيمة الصريحة `"properties": null` على هيئة `NULL`.                                                        |
 
-تُخزَّن كل هندسة في النوع `Geometry` الخاص بـ ClickHouse (وهو `Variant`). أنواع هندسة GeoJSON المدعومة هي `Point` و`LineString` و`MultiLineString` و`Polygon` و`MultiPolygon`. أما نوعا هندسة GeoJSON الآخران، `GeometryCollection` و`MultiPoint`، فلا يمكن تمثيلهما بالنوع `Geometry`؛ وقراءة أحدهما في العمود `geometry` تؤدي افتراضيًا إلى ظهور استثناء، ويمكن تغيير هذا السلوك لإدراج `NULL` بدلًا من ذلك — انظر [التعامل مع أنواع الهندسة غير المدعومة](#unsupported-geometry) أدناه. افتراضيًا، تكون قيمة العمود `geometry` هي `NULL` فقط عندما تكون هندسة المعلم قيمة `null` صريحة في `JSON`؛ ومع `input_format_geojson_unsupported_geometry_handling = 'null'` تكون أيضًا `NULL` عند استخدام نوع هندسة غير مدعوم.
+تُخزَّن كل هندسة في النوع `Geometry` الخاص بـ ClickHouse (وهو `Variant`). أنواع هندسة GeoJSON المدعومة هي `Point` و`MultiPoint` و`LineString` و`MultiLineString` و`Polygon` و`MultiPolygon`. أما نوع هندسة GeoJSON المتبقي، `GeometryCollection`، فلا يمكن تمثيله بالنوع `Geometry`؛ وقراءته في العمود `geometry` تؤدي افتراضيًا إلى ظهور استثناء، ويمكن تغيير هذا السلوك لإدراج `NULL` بدلًا من ذلك — انظر [التعامل مع أنواع الهندسة غير المدعومة](#unsupported-geometry) أدناه. افتراضيًا، تكون قيمة العمود `geometry` هي `NULL` فقط عندما تكون هندسة المعلم قيمة `null` صريحة في `JSON`؛ ومع `input_format_geojson_unsupported_geometry_handling = 'null'` تكون أيضًا `NULL` عند استخدام نوع هندسة غير مدعوم.
 
-يُتحقَّق من بنية المستند: يجب أن تكون قيمة `type` في المستوى الأعلى هي `FeatureCollection`، ويجب أن يكون لكل عنصر في `features` قيمة `type` تساوي `Feature`. افتراضيًا، يجب أن تستوفي الإحداثيات شروط صحة شكل GeoJSON — إذ يجب أن يحتوي `LineString` (وكل خط في `MultiLineString`) على نقطتين على الأقل، ويجب أن تكون حلقة `Polygon` (وكل حلقة في `MultiPolygon`) مغلقة وأن تحتوي على أربع نقاط على الأقل (انظر [التحقق من صحة الهندسة](#geometry-validation)). تُرفَض المستندات غير السليمة بدلًا من تحميلها بصمت.
+يُتحقَّق من بنية المستند: يجب أن تكون قيمة `type` في المستوى الأعلى هي `FeatureCollection`، ويجب أن يكون لكل عنصر في `features` قيمة `type` تساوي `Feature`. افتراضيًا، يجب أن تستوفي الإحداثيات شروط صحة شكل GeoJSON — إذ يجب أن يحتوي `LineString` (وكل خط في `MultiLineString`) على نقطتين على الأقل، ويجب أن تكون حلقة `Polygon` (وكل حلقة في `MultiPolygon`) مغلقة وأن تحتوي على أربع نقاط على الأقل (انظر [التحقق من صحة الهندسة](#geometry-validation)). تُرفَض المستندات غير السليمة بدلًا من تحميلها بصمت.
 
 ترتيب المفاتيح مرن: يمكن أن تظهر `type` في المستوى الأعلى قبل مصفوفة `features` أو بعدها، وداخل كائن هندسي يمكن أن تظهر `coordinates` قبل `type` أو بعدها.
 
@@ -91,7 +91,7 @@ FROM file('london.geojson', GeoJSON);
 └────┴─────────────────┴────────────┘
 ```
 
-يُكتشَف امتداد الملف `.geojson` تلقائيًا، لذا يمكن حذف وسيطة `format`:
+يُكتشَف امتداد الملف `.geojson` تلقائيًا، لذا يمكن حذف وسيط التنسيق:
 
 ```sql title="Query"
 SELECT id, properties.name AS name, variantType(geometry) AS geo_type
@@ -213,7 +213,7 @@ DESCRIBE format(GeoJSON, '{"type":"FeatureCollection","features":[]}');
   ### التعامل مع أنواع هندسة غير المدعومة
 </div>
 
-بعض أنواع الهندسة الصالحة في GeoJSON — مثل `GeometryCollection` و`MultiPoint` — لا يمكن تمثيلها بالنوع `Geometry` في ClickHouse. يمكنك التحكم في ما يحدث عندما يلزم تخزين هندسة من هذا النوع في العمود `geometry` باستخدام الإعداد `input_format_geojson_unsupported_geometry_handling`. القيم الممكنة هي:
+بعض أنواع الهندسة الصالحة في GeoJSON — مثل `GeometryCollection` — لا يمكن تمثيلها بالنوع `Geometry` في ClickHouse. يمكنك التحكم في ما يحدث عندما يلزم تخزين هندسة من هذا النوع في العمود `geometry` باستخدام الإعداد `input_format_geojson_unsupported_geometry_handling`. القيم الممكنة هي:
 
 * `'throw'` — طرح استثناء (الافتراضي)
 * `'null'` — إدراج قيمة `NULL` في العمود `geometry` ومتابعة التحليل
@@ -230,7 +230,7 @@ DESCRIBE format(GeoJSON, '{"type":"FeatureCollection","features":[]}');
 * يُسقَط الإحداثي الثالث (الارتفاع) للموضع، وكذلك أي إحداثيات تليه — فتصبح المواضع `[longitude, latitude]`.
 * يتم تجاهل `bbox` والأعضاء الخارجية (مثل `name` أو `crs` على المستوى الأعلى، أو الأعضاء الإضافيين داخل `Feature`).
 * يُخزَّن `id` الرقمي كنص، لذلك يضيع الفرق بين `string` و`number`؛ أما `id` غير الموجود أو الذي قيمته `null` فيصبح `NULL`.
-* لا يمكن تمثيل `GeometryCollection` و`MultiPoint` — راجع [التعامل مع أنواع هندسة غير المدعومة](#unsupported-geometry).
+* لا يمكن تمثيل `GeometryCollection` — راجع [التعامل مع أنواع هندسة غير المدعومة](#unsupported-geometry).
 
 <div id="writing-data">
   ## كتابة البيانات
@@ -252,6 +252,7 @@ DESCRIBE format(GeoJSON, '{"type":"FeatureCollection","features":[]}');
 | نوع ClickHouse    | قيمة `"type"` في GeoJSON      |
 | ----------------- | ----------------------------- |
 | `Point`           | `Point`                       |
+| `MultiPoint`      | `MultiPoint`                  |
 | `LineString`      | `LineString`                  |
 | `MultiLineString` | `MultiLineString`             |
 | `Polygon`         | `Polygon`                     |

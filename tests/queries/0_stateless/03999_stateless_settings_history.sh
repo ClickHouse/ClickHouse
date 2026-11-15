@@ -6,8 +6,8 @@
 #   * The only committed data is a FROZEN snapshot of the settings (name, kind and
 #     default value) that existed when this test was introduced
 #     (03999_settings_history_baseline.tsv). It is never regenerated:
-#       - any setting NOT present in it was added afterwards and must be recorded in
-#         `SettingsChangesHistory.cpp` (surfaced via `system.settings_changes`);
+#       - any setting NOT present in it was added afterwards and must have a history
+#         record in its `DECLARE` (surfaced via `system.settings_changes`);
 #       - any setting present in it whose default differs from the snapshot must be
 #         recorded there too (otherwise a default change to a long-lived setting that
 #         has no history row would go unnoticed).
@@ -23,7 +23,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 BASELINE="${CUR_DIR}/03999_settings_history_baseline.tsv"
 # Settings whose current default already disagrees with the newest new_value recorded in
-# SettingsChangesHistory.cpp (i.e. a default change that predates this test and was never
+# their history (i.e. a default change that predates this test and was never
 # recorded). This list may only SHRINK: each name should be fixed in the history and removed.
 VALUE_DRIFT_IGNORE="${CUR_DIR}/03999_settings_value_drift_ignore.txt"
 
@@ -49,6 +49,19 @@ $CLICKHOUSE_LOCAL --query "
                 emptyArrayString()
             )) AS name
         ),
+        -- The sampling query profiler is unavailable under MemorySanitizer because its signal
+        -- handler can interrupt the sanitizer while it is reporting an error. Its defaults are
+        -- therefore zero only in that build; this is a build capability difference, not a
+        -- compatibility change. Detect the build capability from the compiler flags rather
+        -- than from the defaults being checked below.
+        memory_sanitizer_divergent_settings AS
+        (
+            SELECT arrayJoin(if(
+                (SELECT position('sanitize=memory' IN value) > 0 FROM system.build_options WHERE name = 'CXX_FLAGS'),
+                ['query_profiler_real_time_period_ns', 'query_profiler_cpu_time_period_ns'],
+                emptyArrayString()
+            )) AS name
+        ),
         session_documented AS
         (
             SELECT DISTINCT arrayJoin(tupleElement(changes, 'name')) AS name
@@ -60,13 +73,9 @@ $CLICKHOUSE_LOCAL --query "
             FROM system.settings_changes WHERE type = 'MergeTree'
         ),
         -- For every documented setting, the value the current default is expected to equal is
-        -- the new_value of the LAST entry applied by the compatibility mechanism: entries are
-        -- applied in ascending version order and, within a version, in vector order (the order
-        -- they appear in the block). A setting may legitimately appear more than once in the
-        -- same block, so ties on version are broken by the entry index - argMax over the tuple
-        -- (version, index) reproduces the effective 'latest' value deterministically. If it
-        -- differs from the current default, a default was changed in code without recording it
-        -- in SettingsChangesHistory.cpp, so the compatibility setting restores a wrong value.
+        -- the new_value of its newest record. If it differs from the current default, a default
+        -- was changed in code without adding a history record to the setting's DECLARE, so the
+        -- compatibility setting restores a wrong value.
         session_expected_default AS
         (
             SELECT name, argMax(new_value, (vnum, idx)) AS expected
@@ -98,7 +107,7 @@ $CLICKHOUSE_LOCAL --query "
     SELECT * FROM
     (
         -- New session setting that is neither in the frozen snapshot nor documented.
-        SELECT 'PLEASE ADD THE NEW SETTING TO SettingsChangesHistory.cpp: ' || name AS message
+        SELECT 'PLEASE ADD A HISTORY RECORD TO THE DECLARE OF THE NEW SETTING: ' || name AS message
         FROM system.settings
         WHERE alias_for = '' AND is_obsolete = 0
           AND name NOT IN (SELECT name FROM baseline WHERE kind = 'Session')
@@ -107,30 +116,17 @@ $CLICKHOUSE_LOCAL --query "
         UNION ALL
 
         -- New MergeTree setting that is neither in the frozen snapshot nor documented.
-        SELECT 'PLEASE ADD THE NEW MERGE_TREE_SETTING TO SettingsChangesHistory.cpp: ' || name
+        SELECT 'PLEASE ADD A HISTORY RECORD TO THE DECLARE OF THE NEW MERGE_TREE_SETTING: ' || name
         FROM system.merge_tree_settings
         WHERE is_obsolete = 0
           AND name NOT IN (SELECT name FROM baseline WHERE kind = 'MergeTree')
           AND name NOT IN (SELECT name FROM mergetree_documented)
 
-        UNION ALL
-
-        -- Dangling history entry: a documented name that no longer exists as a setting
-        -- (typo or a rename that forgot to keep the old name). Catches the reverse mistake.
-        SELECT 'SETTING IN SettingsChangesHistory.cpp DOES NOT EXIST (typo/rename?): ' || name
-        FROM session_documented
-        WHERE name NOT IN (SELECT name FROM system.settings)
-
-        UNION ALL
-
-        SELECT 'MERGE_TREE_SETTING IN SettingsChangesHistory.cpp DOES NOT EXIST (typo/rename?): ' || name
-        FROM mergetree_documented
-        WHERE name NOT IN (SELECT name FROM system.merge_tree_settings)
 
         UNION ALL
 
         -- Session default changed in code but the newest recorded new_value was not updated to match.
-        SELECT 'PLEASE RECORD THE DEFAULT CHANGE IN SettingsChangesHistory.cpp: ' || s.name
+        SELECT 'PLEASE ADD A HISTORY RECORD FOR THE DEFAULT CHANGE TO THE DECLARE OF: ' || s.name
             || ' default is ' || s.default || ' but history last records ' || e.expected
         FROM system.settings s
         JOIN session_expected_default e ON s.name = e.name
@@ -139,6 +135,7 @@ $CLICKHOUSE_LOCAL --query "
           AND s.type != 'Map'               -- avoid '{}' vs '' rendering differences
           AND s.name NOT IN (SELECT name FROM value_drift_ignore)
           AND s.name NOT IN (SELECT name FROM cloud_divergent_settings)
+          AND s.name NOT IN (SELECT name FROM memory_sanitizer_divergent_settings)
           AND if(s.type = 'Bool',
                  -- history may store true/false, system.settings shows 1/0
                  transform(e.expected, ['true', 'false'], ['1', '0'], e.expected) != s.default,
@@ -150,7 +147,7 @@ $CLICKHOUSE_LOCAL --query "
         UNION ALL
 
         -- MergeTree default changed in code but the newest recorded new_value was not updated to match.
-        SELECT 'PLEASE RECORD THE MERGE_TREE_SETTING DEFAULT CHANGE IN SettingsChangesHistory.cpp: ' || s.name
+        SELECT 'PLEASE ADD A HISTORY RECORD FOR THE DEFAULT CHANGE TO THE DECLARE OF MERGE_TREE_SETTING: ' || s.name
             || ' default is ' || s.default || ' but history last records ' || e.expected
         FROM system.merge_tree_settings s
         JOIN mergetree_expected_default e ON s.name = e.name
@@ -159,6 +156,7 @@ $CLICKHOUSE_LOCAL --query "
           AND s.type != 'Map'
           AND s.name NOT IN (SELECT name FROM value_drift_ignore)
           AND s.name NOT IN (SELECT name FROM cloud_divergent_settings)
+          AND s.name NOT IN (SELECT name FROM memory_sanitizer_divergent_settings)
           AND if(s.type = 'Bool',
                  transform(e.expected, ['true', 'false'], ['1', '0'], e.expected) != s.default,
               if(s.type = 'Float',
@@ -171,8 +169,8 @@ $CLICKHOUSE_LOCAL --query "
         -- matches the baseline but that has NO history row at all: the value-drift arm above
         -- joins on the history and so cannot see it. Compare against the frozen baseline default
         -- (both come from system.settings, so the representation matches - no normalization). Such
-        -- a change must be recorded in SettingsChangesHistory.cpp so the compatibility setting restores it.
-        SELECT 'PLEASE RECORD THE DEFAULT CHANGE IN SettingsChangesHistory.cpp: ' || s.name
+        -- a change must be recorded in the setting's DECLARE so the compatibility setting restores it.
+        SELECT 'PLEASE ADD A HISTORY RECORD FOR THE DEFAULT CHANGE TO THE DECLARE OF: ' || s.name
             || ' default changed from ' || b.default || ' to ' || s.default || ' since the baseline but has no history entry'
         FROM system.settings s
         JOIN baseline b ON b.name = s.name AND b.kind = 'Session'
@@ -182,11 +180,12 @@ $CLICKHOUSE_LOCAL --query "
           AND s.name NOT IN (SELECT name FROM session_documented)
           AND s.name NOT IN (SELECT name FROM value_drift_ignore)
           AND s.name NOT IN (SELECT name FROM cloud_divergent_settings)
+          AND s.name NOT IN (SELECT name FROM memory_sanitizer_divergent_settings)
 
         UNION ALL
 
         -- Same guard for MergeTree settings without a history row.
-        SELECT 'PLEASE RECORD THE MERGE_TREE_SETTING DEFAULT CHANGE IN SettingsChangesHistory.cpp: ' || s.name
+        SELECT 'PLEASE ADD A HISTORY RECORD FOR THE DEFAULT CHANGE TO THE DECLARE OF MERGE_TREE_SETTING: ' || s.name
             || ' default changed from ' || b.default || ' to ' || s.default || ' since the baseline but has no history entry'
         FROM system.merge_tree_settings s
         JOIN baseline b ON b.name = s.name AND b.kind = 'MergeTree'

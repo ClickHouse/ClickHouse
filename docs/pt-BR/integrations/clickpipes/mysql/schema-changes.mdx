@@ -13,15 +13,27 @@ O ClickPipes para MySQL pode detectar alterações de esquema nas tabelas de ori
 
 [//]: # "TODO Expandir esta página com o comportamento para rename, alterações de tipo de dado e truncate + orientações sobre como lidar com alterações de esquema incompatíveis."
 
-| Tipo de alteração de esquema                                                          | Comportamento                                                                                                                                                                                                        |
-| ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Adição de uma nova coluna (`ALTER TABLE ADD COLUMN ...`)                              | Propagada automaticamente. As novas colunas serão preenchidas em todas as linhas replicadas após a alteração de esquema                                                                                              |
-| Adição de uma nova coluna com valor padrão (`ALTER TABLE ADD COLUMN ... DEFAULT ...`) | Propagada automaticamente. As novas colunas serão preenchidas em todas as linhas replicadas após a alteração de esquema, mas as linhas existentes não exibirão o valor padrão sem uma atualização completa da tabela |
-| Remoção de uma coluna existente (`ALTER TABLE DROP COLUMN ...`)                       | Detectada, mas **não** propagada. As colunas removidas serão preenchidas com `NULL` em todas as linhas replicadas após a alteração de esquema                                                                        |
+| Tipo de alteração de esquema                                                          | Comportamento                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Adição de uma nova coluna (`ALTER TABLE ADD COLUMN ...`)                              | Propagada automaticamente. As novas colunas serão preenchidas em todas as linhas replicadas após a alteração de esquema                                                                                                                                  |
+| Adição de uma nova coluna com valor padrão (`ALTER TABLE ADD COLUMN ... DEFAULT ...`) | Propagada automaticamente. [Valores padrão compatíveis](#default-values-for-added-columns) também são adicionados à coluna do ClickHouse, portanto, aplicam-se às linhas já existentes no ClickHouse e às linhas replicadas após a alteração de esquema. |
+| Remoção de uma coluna existente (`ALTER TABLE DROP COLUMN ...`)                       | Detectada, mas **não** propagada. As colunas removidas serão preenchidas com `NULL` em todas as linhas replicadas após a alteração de esquema                                                                                                            |
 
 <Note>
   No momento, adições de colunas durante o snapshot não têm suporte. A solução alternativa recomendada é executar snapshots antes ou depois de alterações de esquema planejadas ou, se o ClickPipe já estiver falhando, adicionar manualmente uma coluna do tipo apropriado à tabela de destino.
 </Note>
+
+<div id="default-values-for-added-columns">
+  ## Valores padrão para colunas adicionadas
+</div>
+
+Para uma coluna adicionada, o ClickPipes propaga um valor padrão apenas quando consegue converter o valor com segurança para o ClickHouse. Quando um valor padrão é propagado, o ClickHouse o usa ao ler partes de dados anteriores à nova coluna. Como resultado, as linhas já presentes no ClickHouse recebem o valor padrão da origem sem uma atualização completa da tabela.
+
+O ClickPipes propaga valores literais inteiros, decimais e de ponto flutuante; booleanos; valores simples de string e data; e valores enum ou set quando o servidor MySQL fornece metadados completos de linha do binlog. Ele reescreve literais de string usando delimitação compatível com o ClickHouse.
+
+O ClickPipes omite intencionalmente valores padrão que não são literais portáveis, incluindo `NULL`, literais de bit, chamadas de função como `CURRENT_TIMESTAMP`, `NOW()` ou `UUID()`, e valores de string que contêm barras invertidas ou caracteres de controle. A coluna ainda é adicionada, mas o ClickHouse usa o valor padrão normal do tipo para partes anteriores à coluna. Uma atualização completa da tabela é necessária caso essas linhas existentes precisem conter o valor padrão da origem.
+
+O ClickPipes propaga valores padrão somente como parte de `ALTER TABLE ADD COLUMN`. Operações posteriores que alteram ou removem um valor padrão de coluna não são propagadas para o ClickHouse.
 
 <div id="mysql-5-limitations">
   ### Limitações do MySQL 5.x

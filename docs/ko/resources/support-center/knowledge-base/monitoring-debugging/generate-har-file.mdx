@@ -6,6 +6,20 @@ keywords: ['HAR 파일', 'HTTP Archive']
 description: 'HAR(HTTP Archive) 파일은 브라우저의 네트워크 활동을 기록합니다. 이 파일은 지원 팀이 페이지 로드 지연, 요청 실패 또는 기타 네트워크 문제를 진단하는 데 도움이 될 수 있습니다.'
 ---
 
+<Warning>
+  HAR 파일에는 세션 쿠키나 기타 민감한 데이터가 포함될 수 있습니다.
+  권한이 있는 지원 담당자에게만 공유하십시오.
+</Warning>
+
+<Note title="로그인 시도 및 기타 여러 단계 흐름 캡처">
+  일부 문제는 로그인 후 IdP(Identity Provider)로 리디렉션되었다가 다시 돌아오는 경우처럼 두 번 이상의 페이지 로드에 걸쳐 발생합니다. 기본적으로 브라우저는 탐색할 때마다 네트워크 로그를 지우므로, 결과로 생성된 HAR 파일이 거의 비어 있을 수 있습니다. 이와 같은 문제를 재현할 때는 시작하기 전에 페이지 로드 간에도 로그를 유지하도록 브라우저 옵션을 활성화하십시오:
+
+  * Chrome / Edge / Safari: &quot;Preserve log&quot; 활성화
+  * Firefox: &quot;Persist Logs&quot; 활성화
+
+  원한다면 HAR 파일이 생성된 후에는 이 옵션을 다시 해제해도 됩니다.
+</Note>
+
 <div id="from-google-chrome">
   ## Google Chrome에서
 </div>
@@ -52,8 +66,3 @@ description: 'HAR(HTTP Archive) 파일은 브라우저의 네트워크 활동을
 1. 파일 이름을 짧고 알아보기 쉽게 변경하세요(예: login-issue.har).
 2. 파일을 압축하세요(선택 사항이지만 권장합니다).
 3. 지원 케이스에 첨부하거나 배정된 지원 담당자에게 이메일로 보내세요.
-
-<Note>
-  HAR 파일에는 session 쿠키 또는 기타 민감한 데이터가 포함될 수 있습니다.
-  권한이 있는 지원 담당자에게만 공유하세요.
-</Note>
