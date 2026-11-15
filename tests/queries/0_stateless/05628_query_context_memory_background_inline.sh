@@ -24,9 +24,9 @@ payload = ('x' * 8191 + '\n') * 1024
 revision = 54452
 
 
-def admin(query):
+def admin(query, allow_nothing_to_kill=False):
     result = subprocess.run(client + ['--log_queries=0'], input=query, text=True, capture_output=True, timeout=60)
-    assert result.returncode == 0, result.stderr
+    assert result.returncode == 0 or (allow_nothing_to_kill and 'NOTHING_TO_KILL' in result.stderr), result.stderr
     return result.stdout.strip()
 
 
@@ -64,7 +64,7 @@ def read_string(stream):
 def background(query, query_id, **settings):
     # Send the complete inline payload in a Query packet. clickhouse-client
     # parses INSERT data locally and would exercise a different ownership path.
-    settings.update(run_query_in_background=1, log_queries=0, query_metric_log_interval=0,
+    settings.update(run_query_in_background=1, async_insert=0, log_queries=0, query_metric_log_interval=0,
                     send_logs_level='none', send_profile_events=0, max_threads=1,
                     max_query_size=32 * 1024 * 1024, max_insert_block_size=16,
                     input_format_parallel_parsing=0)
@@ -149,7 +149,7 @@ try:
             time.sleep(0.05)
         print(batching_limit, 'reports and releases inline payload with another query active')
 finally:
-    admin(f"KILL QUERY WHERE user = '{user}' SYNC")
+    admin(f"KILL QUERY WHERE user = '{user}' SYNC", allow_nothing_to_kill=True)
     admin(f'DROP TABLE IF EXISTS {table}')
     admin(f'DROP USER {user}')
 PYTHON
