@@ -27,6 +27,7 @@ const auto KAFKA_CONSUMER_CLOSE_TIMEOUT_S = 60;
     M(CLASS_NAME, ArrowCompression) \
     M(CLASS_NAME, ArrowUnsupportedTypes) \
     M(CLASS_NAME, Bool) \
+    M(CLASS_NAME, BoolAuto) \
     M(CLASS_NAME, CapnProtoEnumComparingMode) \
     M(CLASS_NAME, Char) \
     M(CLASS_NAME, DateTimeInputFormat) \
