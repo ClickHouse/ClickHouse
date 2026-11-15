@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickpipes', 'mongodb', 'documentdb', 'cdc', 'data ingestion', 'real-time sync']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## Supported DocumentDB versions {#supported-documentdb-versions}
 
 ClickPipes supports DocumentDB version 5.0.
@@ -20,15 +18,47 @@ By default, Amazon DocumentDB has a 3-hour change stream log retention period, w
 ### Update change stream log retention via AWS Console {#update-change-stream-log-retention-via-aws-console}
 
 1. Click `Parameter groups` in the left panel, find the parameter group used by your DocumentDB cluster (if you're using the default parameter group, you will need to create a new parameter group first in order to modify it).
-<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-select-parameter-group.webp" alt="Select parameter group" size="lg" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Select parameter group](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-select-parameter-group.webp)
+
+</Frame>
+
+</div>
 
 2. Search for `change_stream_log_retention_duration`, select and edit it to `259200` (72 hours)
-<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-modify-parameter-group.webp" alt="Modify parameter group" size="lg" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Modify parameter group](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-modify-parameter-group.webp)
+
+</Frame>
+
+</div>
 
 3. Click `Apply Changes` to apply the modified parameter group to your DocumentDB cluster immediately. You should see the status of the parameter group transition to `applying`, and then to `in-sync` when the change is applied.
-<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-apply-parameter-group.webp" alt="Apply parameter group" size="lg" border/>
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-parameter-group-status.webp" alt="Parameter group status" size="lg" border/>
+<Frame>
+
+![Apply parameter group](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-apply-parameter-group.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Parameter group status](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-parameter-group-status.webp)
+
+</Frame>
+
+</div>
 
 ### Update change stream log retention via AWS CLI {#update-change-stream-log-retention-via-aws-cli}
 

@@ -2,10 +2,13 @@
 #include <Core/Block_fwd.h>
 #include <Core/Names.h>
 #include <Interpreters/AggregatedData.h>
+#include <Interpreters/AggregationCellIndex.h>
 #include <Interpreters/AggregationMethod.h>
+#include <Common/PODArray.h>
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <boost/noncopyable.hpp>
 
 
@@ -505,6 +508,10 @@ struct AggregatedDataVariants : private boost::noncopyable
     /// Memory held by the variants: the arenas (keys and states) plus the active method's
     /// hash-table buffer, which dominates for inline states over fixed keys.
     size_t allocatedBytes() const;
+    /// Bytes of the active method's hash-table buffer: its cells, which hold the keys (references to
+    /// the bytes of string keys) and the states' pointers, or the states themselves where they are
+    /// stored inline.
+    size_t hashTableBufferBytes() const;
     /// Bytes that the keys and states took in the arenas. Unlike the arenas' allocated bytes,
     /// which grow by whole chunks of doubling size, they follow every allocation.
     size_t usedArenaBytes() const;
@@ -532,6 +539,21 @@ struct AggregatedDataVariants : private boost::noncopyable
     bool isConvertibleToTwoLevel() const;
     static bool isConvertibleToTwoLevel(Type type);
     void convertToTwoLevel();
+    /// Builds the cell index of the single-level table (see `AggregationCellIndex`): its cells grouped by
+    /// `partition_of(hash)`, so that a merge reads the cells of any run of consecutive partitions without
+    /// walking the table, which spares its conversion to two-level. The caller guarantees that the method has
+    /// a two-level counterpart and the table is single-level (see `isConvertibleToTwoLevel`), and that
+    /// `partition_of` returns a partition below `num_partitions`. Counts the table in
+    /// `AggregationIndexedTables`, as `convertToTwoLevel` counts a conversion.
+    template <typename PartitionOf>
+    void indexCells(size_t num_partitions, PartitionOf && partition_of);
+    /// Whether `indexCells` indexed the table's cells and nothing cleared the index since (see `cell_index`).
+    bool hasCellIndex() const { return cell_index.has_value(); }
+    /// The cell index of the single-level table, which hands out the table's cells for writing. The caller
+    /// guarantees that the table is indexed (see `hasCellIndex`).
+    AggregationCellIndex & cellIndex() { return *cell_index; }
+    /// Drops the cell index before an insertion into the table, which may move the cells it points to.
+    void dropCellIndex() { cell_index.reset(); }
     /// Replaces an empty two-level table with an empty single-level table of the same method: the reverse of
     /// `convertToTwoLevel` for a table whose data was written to disk.
     void resetToSingleLevel();
@@ -549,7 +571,44 @@ struct AggregatedDataVariants : private boost::noncopyable
 
     /** Select the aggregation method based on the number and types of keys. */
     static Type chooseMethod(const Block & header, const Names & keys, Sizes & out_key_sizes);
+
+private:
+    /// The index of the cells of the single-level table (see `indexCells`). It points into the table's
+    /// buffer, so it serves only while the table takes no more keys: the serial merge, which inserts into the
+    /// first table, drops the index of that table first (see `dropCellIndex`), and `init`,
+    /// `convertToTwoLevel` and `resetAfterStateOwnershipTransfer`, which replace the table, clear it.
+    std::optional<AggregationCellIndex> cell_index;
+
+    /// Stores the index that `indexCells` built, and counts it.
+    void setCellIndex(AggregationCellIndex && index);
+
+    [[noreturn]] void throwCannotIndexCells() const;
 };
+
+template <typename PartitionOf>
+void AggregatedDataVariants::indexCells(size_t num_partitions, PartitionOf && partition_of)
+{
+    auto index_table = [&]<typename TwoLevelTable>(std::type_identity<TwoLevelTable>, auto & table)
+    {
+        /// The merges read the cells of either kind of table as the cells of a bucket of the two-level table.
+        static_assert(cellsReadableAs<std::decay_t<decltype(table)>, typename TwoLevelTable::Impl>());
+        setCellIndex(AggregationCellIndex(table, num_partitions, partition_of));
+    };
+
+    switch (type)
+    {
+    #define M(NAME) \
+        case Type::NAME: \
+            index_table(std::type_identity<decltype(NAME ## _two_level)::element_type::Data>{}, (NAME)->data); \
+            break;
+
+        APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+
+    #undef M
+        default:
+            throwCannotIndexCells();
+    }
+}
 
 using AggregatedDataVariantsPtr = std::shared_ptr<AggregatedDataVariants>;
 using ManyAggregatedDataVariants = std::vector<AggregatedDataVariantsPtr>;

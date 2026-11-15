@@ -7,8 +7,6 @@ keywords: ['청구']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 이 문서에서는 ClickHouse Cloud에서 조직의 청구 방식을 관리하고 변경하는 방법을 설명합니다. 여기에는 신용카드 청구와 마켓플레이스 청구 간 전환, 백업 신용카드 추가, 여러 조직 간 마켓플레이스 subscription 공유가 포함됩니다.
 
 <div id="prerequisites">
@@ -38,11 +36,27 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 1. ClickHouse Cloud 콘솔에서 **청구**로 이동합니다.
 2. 신용카드를 추가하려면 페이지 상단에서 **결제 수단 추가** 버튼을 클릭합니다.
 
-<Image img="/images/cloud/reference/billing/01-add-payment-method.webp" alt="결제 수단 추가" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![결제 수단 추가](/images/cloud/reference/billing/01-add-payment-method.webp)
+
+</Frame>
+
+</div>
 
 3. 신용카드를 수정하려면 페이지 상단에서 **신용카드 수정** 버튼을 클릭합니다.
 
-<Image img="/images/cloud/reference/billing/02-edit-credit-card.webp" alt="신용카드 수정" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![신용카드 수정](/images/cloud/reference/billing/02-edit-credit-card.webp)
+
+</Frame>
+
+</div>
 
 4. 두 경우 모두 안내에 따라 신용카드의 청구 주소 정보를 추가하거나 업데이트합니다.
 
@@ -62,7 +76,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 1. ClickHouse Cloud 콘솔의 **청구** 페이지로 이동합니다.
 2. **결제 수단** 옆의 편집 아이콘을 클릭합니다.
 
-<Image img="/images/cloud/reference/billing/03-edit-payment-method.webp" alt="결제 수단 편집" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![결제 수단 편집](/images/cloud/reference/billing/03-edit-payment-method.webp)
+
+</Frame>
+
+</div>
 
 3. **결제 수단 편집** 대화 상자에서 현재 사용 중인 신용카드가 기본 결제 수단으로 표시됩니다.
 4. 신용카드 아래에는 다른 조직의 사용 가능한 마켓플레이스 구독이 표시됩니다. 각 항목에는 마켓플레이스 유형(예: AWS Marketplace)과 연결된 조직 이름이 함께 표시됩니다.
@@ -76,7 +98,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 1. ClickHouse Cloud 콘솔의 **청구** 페이지로 이동합니다.
 2. **결제 수단** 옆에 있는 편집 아이콘을 클릭합니다.
 
-<Image img="/images/cloud/reference/billing/04-edit-payment-method.webp" alt="결제 수단 편집" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![결제 수단 편집](/images/cloud/reference/billing/04-edit-payment-method.webp)
+
+</Frame>
+
+</div>
 
 3. **결제 수단 편집** 대화 상자에서 현재 마켓플레이스 구독이 결제 수단으로 표시됩니다.
 4. 현재 마켓플레이스 구독 아래에는 다른 조직의 사용 가능한 마켓플레이스 구독이 표시됩니다. 각 항목에는 marketplace 유형(예: AWS Marketplace)과 연결된 조직 이름이 함께 표시됩니다.
@@ -101,7 +131,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 2. 청구 페이지 상단에는 기본 결제 수단이 마켓플레이스 구독으로, 백업 결제 수단이 **None**으로 표시됩니다.
 3. 백업 결제 수단을 설정하려면 **add credit card** 버튼을 클릭합니다.
 
-<Image img="/images/cloud/reference/billing/05-add-backup.webp" alt="백업 신용카드 추가" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![백업 신용카드 추가](/images/cloud/reference/billing/05-add-backup.webp)
+
+</Frame>
+
+</div>
 
 4. 안내에 따라 신용카드의 청구지 주소 정보를 추가하거나 업데이트합니다. 저장하면 **청구** 페이지에 프라이머리 마켓플레이스 구독과 함께 백업 신용카드가 표시됩니다.
 

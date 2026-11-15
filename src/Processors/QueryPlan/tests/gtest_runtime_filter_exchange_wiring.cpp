@@ -32,6 +32,7 @@
 #include <optional>
 #include <set>
 #include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 using namespace DB;
 using namespace DB::QueryPlanOptimizations;
@@ -189,7 +190,7 @@ void addTwoSiteConsumerStage(
     SharedHeaders headers;
     headers.emplace_back(dataHeader());
     headers.emplace_back(dataHeader());
-    std::vector<QueryPlanPtr> union_plans;
+    QueryPlanPtrs union_plans;
     union_plans.push_back(makeApplyPlan(filter_key, first_arm_limit));
     union_plans.push_back(makeApplyPlan(filter_key, second_arm_limit));
 
