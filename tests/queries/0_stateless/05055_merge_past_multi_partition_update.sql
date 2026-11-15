@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- Tag no-parallel: uses the server-global failpoint mt_select_parts_to_mutate_no_free_threads
 
 -- A merge extends the merged part's data version through the pending mutations it materializes by

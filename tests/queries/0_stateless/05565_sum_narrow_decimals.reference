@@ -1,0 +1,18 @@
+widening sums, whole column
+1	1	1	1
+widening sums, -If
+1	1	1	1
+widening sums, Nullable
+1	1	1	1
+widening sums, Nullable and -If
+1	1	1	1	1
+all rows excluded
+0	0	nan	0	0
+wrapping sums
+-7280793.68	3875820019183712.736	-16198018	-6316507022467366.256	-3875820019183712.736	-617283945061500	-849066285281955.096	6790004830088480.512
+window frames with a nonzero first row
+0
+GROUP BY with one key per block
+0
+null map bytes other than 1
+1	1	1	1	1

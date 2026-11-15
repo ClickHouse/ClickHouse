@@ -85,9 +85,32 @@ GROUP BY
 └─────────────┴──────────┴─────────┘
 ```
 
-<div id="important-note">
-  ### Boa prática
-</div>
+### Ordem das linhas {#row-order}
+
+Para cada linha de origem, `arrayJoin` produz os elementos na mesma ordem em que aparecem no array.
+
+Se uma consulta tiver mais de uma chamada de `arrayJoin` com argumentos diferentes, o resultado terá uma linha para cada combinação dos elementos. A ordem dessas linhas não é garantida, pois depende do plano de consulta. Por exemplo, se a cláusula `WHERE` usar uma das chamadas, a consulta poderá expandir essa chamada primeiro. Para obter uma ordem previsível, use `ORDER BY`:
+
+```sql title="Query"
+SELECT arrayJoin(['a', 'b']) AS x, arrayJoin([1, 2]) AS y
+WHERE y > 0
+ORDER BY x, y
+```
+
+```text title="Response"
+┌─x─┬─y─┐
+│ a │ 1 │
+│ a │ 2 │
+│ b │ 1 │
+│ b │ 2 │
+└───┴───┘
+```
+
+Sem `ORDER BY`, esta consulta pode retornar as linhas na ordem `('a', 1)`, `('b', 1)`, `('a', 2)`, `('b', 2)`.
+
+Sem `ORDER BY`, a ordem das linhas de origem não é garantida. Para obter uma ordem estável e paginar com `LIMIT` e `OFFSET`, consulte a seção &quot;Row Order and Paging&quot; da cláusula [`ARRAY JOIN`](/pt-BR/reference/statements/select/array-join). As regras para `ORDER BY` descritas nessa seção também se aplicam a `arrayJoin`.
+
+### Boa prática {#important-note}
 
 Usar várias chamadas de `arrayJoin` com a mesma expressão pode não produzir os resultados esperados devido à eliminação de subexpressões comuns.
 Nesses casos, considere modificar expressões de array repetidas com operações adicionais que não afetam o resultado do JOIN. Por exemplo, `arrayJoin(arraySort(arr))`, `arrayJoin(arrayConcat(arr, []))`

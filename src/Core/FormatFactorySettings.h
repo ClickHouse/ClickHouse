@@ -5,6 +5,7 @@
 #include <Core/SettingsObsoleteMacros.h>
 #include <Core/SettingsFields.h>
 #include <Core/Defines.h>
+#include <Formats/FormatSettings.h>
 
 // clang-format off
 #if defined(__CLION_IDE__)
@@ -225,6 +226,10 @@ When reading Parquet files, skip whole row groups based on the WHERE expressions
 When reading Parquet files (with reader v3), skip whole row groups based on the WHERE/PREWHERE expressions and the dictionary page contents, when all data pages of a column chunk are dictionary-encoded. The value is the maximum dictionary page size (in bytes) for which this optimization is applied; set to 0 to disable. This takes precedence over the bloom filter when both are available.
 )", 0, \
         {"26.8", 0, 1024 * 1024, "New setting enabling Parquet row-group pruning based on dictionary page contents (reader v3). The value is the maximum dictionary page size in bytes for which the optimization applies; 0 (the previous behavior) disables it."}) \
+    DECLARE(UInt64, input_format_parquet_footer_read_size, 0, R"(
+Size (in bytes) of the initial tail read that fetches the Parquet footer (`FileMetaData`) when opening a file with reader v3. `0` (default) reads a 64 KiB tail when the file is read directly from the local filesystem, and for other sources (object storage, URL, HDFS) sizes the read adaptively - 1% of the file size, clamped to `[128 KiB, 2 MiB]` - so it usually covers the whole footer in a single read even for wide files with hundreds of columns. Set a non-zero value to force a fixed initial read size instead of the adaptive one; this is useful for very high-latency object storage where reading a larger tail up front avoids a second round trip. The value is clamped to the file size.
+)", 0, \
+        {"26.10", 65536, 0, "New setting for the Parquet footer initial read size; 0 reads 64 KiB of a local file and sizes the read adaptively for other sources."}) \
     DECLARE(Bool, input_format_parquet_enable_json_parsing, true, R"(
 When reading Parquet files, parse JSON columns as ClickHouse JSON Column.
 )", 0, \
@@ -280,6 +285,14 @@ The time zone name for ORC row reader, the default ORC row reader's time zone is
 Treat ORC dictionary encoded columns as LowCardinality columns while reading ORC files.
 )", 0, \
         {"24.10", false, true, "Treat ORC dictionary encoded columns as LowCardinality columns while reading ORC files"}) \
+    DECLARE(Bool, input_format_vortex_filter_push_down, true, R"(
+When reading Vortex files, push translatable parts of WHERE conditions on top-level integer, floating-point, string/binary, `Bool`, `Date`, `Date32` and `DateTime64` columns down into the scan, so that a selective query reads and decodes less data. Only the translated part of the condition is enforced inside the scan: a condition that is only partly translatable is widened to one that keeps at least every matching row, so rows that do not match can still be read and decoded. ClickHouse reapplies the full filter after the scan.
+)", 0, \
+        {"26.11", true, true, "New setting to push translatable parts of WHERE conditions on top-level integer, floating-point, string/binary, `Bool`, `Date`, `Date32` and `DateTime64` columns down into the Vortex format scan, which may reduce the rows decoded; a condition that is only partly translatable is widened to one that keeps at least every matching row, and ClickHouse reapplies the full filter after the scan."}) \
+    DECLARE(Bool, input_format_vortex_preserve_order, false, R"(
+Return the rows of a Vortex file in file order. By default the row splits of a file are decoded in parallel (see `max_parsing_threads`) and returned as soon as they are ready, so the row order is not guaranteed; with this setting a slow split holds back the ones after it. Not recommended as row ordering is generally not guaranteed, and other parts of the query pipeline may break it.
+)", 0, \
+        {"26.11", false, false, "New setting to return the rows of a Vortex file in file order; by default the file is decoded in parallel and the row order is not guaranteed."}) \
     DECLARE(Bool, input_format_parquet_allow_missing_columns, true, R"(
 Allow missing columns while reading Parquet input formats
 )", 0, \
@@ -425,12 +438,12 @@ If the `schema_inference_hints` is not formatted properly, or if there is a typo
 </Note>
 )", 0) \
     DECLARE(SchemaInferenceMode, schema_inference_mode, "default", R"(
-Mode of schema inference. 'default' - assume that all files have the same schema and schema can be inferred from any file, 'union' - files can have different schemas and the resulting schema should be the a union of schemas of all files
+Mode of schema inference. 'default' - assume that all files have the same schema and schema can be inferred from any file, 'union' - files can have different schemas and the resulting schema should be a union of schemas of all files
 )", 0) \
     DECLARE(UInt64Auto, schema_inference_make_columns_nullable, 3, R"(
 Controls making inferred types `Nullable` in schema inference.
 Possible values:
- * 0 - the inferred type will never be `Nullable` (use input_format_null_as_default to control what do do with null values in this case),
+ * 0 - the inferred type will never be `Nullable` (use input_format_null_as_default to control what to do with null values in this case),
  * 1 - all inferred types will be `Nullable`,
  * 2 or `auto` - the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference or file metadata contains information about column nullability,
  * 3 - the inferred type nullability will match file metadata if the format has it (e.g. Parquet), always Nullable otherwise (e.g. CSV).
@@ -647,6 +660,10 @@ When enabled, JSONs like `{"a" : 42, "a" : {"b" : 42}}` where some key is duplic
 When enabled, during parsing JSON object into JSON type regular expressions specified using SKIP REGEXP will require partial match to skip a path. When disabled, full match will be required.
 )", 0, \
         {"26.1", false, true, "Add new setting that allows to use partial match in regexp paths skip in JSON type parsing"}) \
+    DECLARE(Bool, type_json_skip_duplicate_key_detection, false, R"(
+When enabled, parsing a JSON object into the `JSON` type skips the per-object duplicate-key detection, which speeds up parsing of objects with many keys. Enable it only when objects are known to have unique keys. The guarantee is the user's: if a duplicated key is actually present, the value is not corrupted (paths that collide are still rejected or skipped as duplicates and the row is rolled back), but a duplicated key combining a literal and a nested object is no longer specially merged regardless of `type_json_allow_duplicated_key_with_literal_and_nested_object`.
+)", 0, \
+        {"26.11", false, false, "Add a setting to skip per-object duplicate-key detection when keys are known to be unique"}) \
     DECLARE(Bool, json_type_escape_dots_in_keys, false, R"(
 When enabled, dots in JSON keys will be escaped during parsing.
 )", 0, \
@@ -716,6 +733,10 @@ When input_format_try_infer_datetimes is enabled, infer only DateTime64 but not 
 Try to infer floats in exponential notation while schema inference in text formats (except JSON, where exponent numbers are always inferred)
 )", 0, \
         {"24.2", true, false, "Don't infer floats in exponential notation by default"}) \
+    DECLARE(UInt64, input_format_freeform_max_search_steps, 4096, R"(
+The maximum number of steps of the search for the structure of a row in the `Freeform` format. The search branches on every field that several escaping rules read alike (for example, a word in a tab-separated row is read the same by the `Raw` and `Escaped` rules), so a wide row of strings has exponentially many candidate structures. When the search exceeds this number of steps, an exception is thrown instead of exhausting memory and time. 0 means unlimited.
+)", 0, \
+        {"26.10", 0, 4096, "New setting bounding the search for the structure of a `Freeform` row. The search was unbounded before and could exhaust memory on a wide row of strings; 0 restores that behavior."}) \
     DECLARE(Bool, output_format_markdown_escape_special_characters, false, R"(
 When enabled, escape special characters in Markdown.
 
@@ -759,13 +780,13 @@ If it is set true, file function will read TSV format with \\r\\n instead of \\n
     DECLARE(Bool, input_format_native_allow_types_conversion, true, R"(
 Allow data types conversion in Native input format
 )", 0, \
-        {"23.3", false, true, "Allow types conversion in Native input forma"}) \
+        {"23.3", false, true, "Allow types conversion in Native input format"}) \
     DECLARE(Bool, input_format_native_decode_types_in_binary_format, false, R"(
 Read data types in binary format instead of type names in Native input format
 )", 0, \
         {"24.7", false, false, "Added new setting to allow to read type names in binary format in Native output format"}) \
     DECLARE(UInt64, output_format_compression_level, 3, R"(
-Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`.
+Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`. It is also applied to the compressed response to an HTTP request with a method other than `gzip` and `deflate`, for which [http_zlib_compression_level](/reference/settings/session-settings/http#http_zlib_compression_level) is used.
 
 Possible values: from `1` to `22`
 )", 0, \
@@ -942,7 +963,7 @@ The maximum allowed size for String in RowBinary format. It prevents allocating 
 The maximum allowed size for Array in RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit
 )", 0) \
     DECLARE(UInt64, input_format_binary_max_type_complexity, 1000, R"(
-Max type nodes when decoding binary types (not depth, but total count). `Map(String, UInt32)` = 3 nodes. Protects against malicious inputs. 0 = unlimited.
+Max type nodes when decoding binary types (not depth, but total count). `Map(String, UInt32)` = 3 nodes. Parameters of `AggregateFunction` types count as one node per value, including nested ones. Protects against malicious inputs. 0 = unlimited.
 )", 0, \
         {"26.1", 0, 1000, "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."}) \
     DECLARE(UInt64, format_binary_max_object_size, 100000, R"(
@@ -1392,8 +1413,12 @@ Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM
 Put crc32 checksums in parquet page headers.
 )", 0, \
         {"25.11", false, true, "New setting."}) \
+    DECLARE(Bool, output_format_parquet_use_alp_encoding, false, R"(
+Encode `Float32` and `Float64` columns (Parquet `FLOAT` and `DOUBLE`) with the `ALP` (Adaptive Lossless floating-Point) encoding. `ALP` is lossless and compresses decimal-like floating-point data (prices, measurements, coordinates) much better than `PLAIN`. Such columns are written without a dictionary, and a page for which `ALP` would be bigger than `PLAIN` is written with `PLAIN`. The encoding was added to the Parquet format recently, so not every Parquet reader supports it yet: enable it only if the files are read by readers that do.
+)", 0, \
+        {"26.11", false, false, "New setting."}) \
     DECLARE(String, output_format_avro_codec, "", R"(
-Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.
+Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd', 'bzip2', 'xz'.
 )", 0) \
     DECLARE(UInt64, output_format_avro_sync_interval, 16 * 1024, R"(
 Sync interval in bytes.
@@ -1563,7 +1588,7 @@ Suffix after result set (for CustomSeparated format)
 Regular expression (for Regexp format)
 )", 0) \
     DECLARE(EscapingRule, format_regexp_escaping_rule, "Raw", R"(
-Field escaping rule (for Regexp format)
+Specifies how each capture group produced by `format_regexp` is parsed into its target column type. Use `Raw` (default) for unescaped text, `Escaped` for TSV-style escaping, `Quoted` for Values-style quoted fields, `CSV` for CSV fields, or `JSON` for JSON values. This setting applies after the regular expression matches a row; it does not change the regular expression itself.
 )", 0, \
         {"20.10", "Escaped", "Raw", "Use Raw as default escaping rule for Regexp format to male the behaviour more like to what users expect"}) \
     DECLARE(Bool, format_regexp_skip_unmatched, false, R"(
@@ -1596,6 +1621,12 @@ Print a readable number tip on the right side of the table if the block consists
 If enabled and if output is a terminal, highlight trailing spaces with a gray color and underline.
 )", 0, \
         {"25.1", false, true, "A new setting."}) \
+    DECLARE(Bool, output_format_pretty_display_control_characters, true, R"(
+If enabled, non-printable control characters (NUL, SOH, CR, DEL, etc.) in the values and column names of the `Vertical` and `Pretty*` output formats are displayed as Unicode "Control Pictures" (such as ␀, ␁, ␍, ␡) instead of being printed as raw bytes that are usually swallowed by the terminal.
+
+`TAB`, the line feed and `ESC` are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them. A tab advances to the next tab stop, a multi-line value keeps being broken across lines so that it stays easy to read and copy-paste, and the ANSI escape sequences contained in the data keep being interpreted, which is needed for visualizations. A column name is the exception to that exception: it is rendered on a single line, so a line feed in a name is replaced like any other control character.
+)", 0, \
+        {"26.10", false, true, "New setting to display non-printable control characters as Unicode \"Control Pictures\" in the `Vertical` and `Pretty*` output formats."}) \
     DECLARE(Bool, output_format_pretty_multiline_fields, true, R"(
 If enabled, Pretty formats will render multi-line fields inside table cell, so the table's outline will be preserved.
 If not, they will be rendered as is, potentially deforming the table (one upside of keeping it off is that copy-pasting multi-line values will be easier).
@@ -1675,6 +1706,11 @@ Compression method for Arrow output format. Supported codecs: lz4_frame, zstd, n
 Write Date values as plain 16-bit numbers (read back as UInt16), instead of converting to a 32-bit Arrow DATE32 type (read back as Date32).
 )", 0, \
         {"26.2", true, false, "Write Date as Arrow DATE32 instead of plain UInt16 by default."}) \
+    DECLARE(Bool, output_format_arrow_uuid_as_fixed_byte_array, false, R"(
+Write `UUID` values as plain Arrow `FixedSizeBinary(16)`, without the `arrow.uuid` extension type in the field metadata.
+Use it for Arrow readers that do not support the `arrow.uuid` extension type.
+)", 0, \
+        {"26.11", false, false, "New setting to write UUID as plain FixedSizeBinary(16) without the `arrow.uuid` extension type."}) \
     DECLARE(ArrowUnsupportedTypes, output_format_arrow_unsupported_types, "binary", R"(
 What to write for a column whose type has no first-class Arrow mapping (for example `JSON`, `Dynamic`, `QBit` or `AggregateFunction`):
 
@@ -1723,6 +1759,18 @@ Buffering blocks can increase memory use and delay the first record batch until 
 `0` (the default) disables the byte target. Try `1048576` (1 MiB) as a starting value.
 )", 0, \
         {"26.9", 0, 0, "New setting to combine small blocks in `Arrow` and `ArrowStream` output using a target size in bytes of accumulated data. The default `0` preserves one record batch per block."}) \
+    DECLARE(UInt64, output_format_arrow_max_record_batch_size_bytes, 2147483646, R"(
+Upper bound on the `Utf8`, `Binary` and `List` buffers of a single record batch in the `Arrow` and `ArrowStream` output formats, and in the Arrow record batches the `Vortex` output format is written from. A block whose strings, binary values or list elements exceed this is written as several record batches.
+
+Unlike [output_format_arrow_record_batch_size_bytes](#output_format_arrow_record_batch_size_bytes), which is a target that combines small blocks, this is a limit that splits large ones. The default is the largest value Arrow can address, because it offsets those buffers with 32-bit integers; a larger value has no effect.
+
+Only the buffers named above are bounded: a column of a fixed-width type has no offsets to overflow and stays in one batch. A single row never splits either, so a row above the limit still produces a batch that exceeds it.
+)", 0, \
+        {"26.11", 2147483646, 2147483646, "New setting bounding the size of one record batch in `Arrow` and `ArrowStream` output. The default is Arrow's own addressing limit, so it does not change behavior."}) \
+    DECLARE(Bool, output_format_vortex_string_as_string, true, R"(
+Write `String` columns of the `Vortex` format as `Utf8` instead of `Binary`. Vortex compresses `Utf8` better. A `Utf8` value has to be valid UTF-8 and the Vortex writer does not check that, so ClickHouse checks every value and throws an exception if one is not valid UTF-8; disable the setting to write such data as `Binary`. `FixedString` columns are always written as `Binary`. Both types are read back as `String`.
+)", 0, \
+        {"26.11", true, true, "New setting to write `String` columns of the `Vortex` format as `Utf8`, which Vortex compresses better than `Binary`."}) \
     \
     DECLARE(Bool, output_format_orc_string_as_string, true, R"(
 Use ORC String type instead of Binary for String columns
@@ -1790,6 +1838,15 @@ Use REPLACE statement instead of INSERT
 Quote column names with '`' characters
 )", 0) \
     \
+    DECLARE(String, input_format_sqlite_table_name, "", R"(
+Name of the table in SQLite input from which to read data. If empty, the first table from the SQLite database is used.
+)", 0, \
+        {"26.10", "", "", "New setting for the `SQLite` input format: the name of the table to read."}) \
+    DECLARE(String, output_format_sqlite_table_name, "table", R"(
+Name of the table in SQLite output
+)", 0, \
+        {"26.10", "table", "table", "New setting for the `SQLite` output format: the name of the table to write."}) \
+    \
     DECLARE(Bool, output_format_values_escape_quote_with_quote, false, R"(
 If true escape ' with '', otherwise quoted with \\'
 )", 0, \
@@ -1825,13 +1882,17 @@ Use the precise float parsing algorithm, which always returns the closest repres
 )", 0, \
         {"26.7", false, true, "Use the precise (closest-representable) float parsing algorithm by default, now that it is faster than the previous fast algorithm. Set to false to restore the pre-26.7 fast-but-less-accurate parsing in conversion functions."}) \
     DECLARE(DateTimeOverflowBehavior, date_time_overflow_behavior, "ignore", R"(
-Defines the behavior when [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type. It also applies when a `Date` or `DateTime` is parsed from text, including by an input format.
+Defines the behavior when [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64), [Time](/reference/data-types/time), [Time64](/reference/data-types/time64) or numeric values (integers and floating-point numbers) are converted into `Date`, `Date32`, `DateTime`, `DateTime64`, `Time` or `Time64` but the value cannot be represented in the result type. `Decimal` values can be converted only into `DateTime64` and `Time64`, and those conversions follow this setting as well; a `Decimal` converted into `Date`, `Date32`, `DateTime` or `Time` is rejected regardless of the setting. It also applies when a `Date` or `DateTime` is parsed from text, including by an input format.
 
 Possible values:
 
-- `ignore` — Silently ignore overflows. Result are undefined.
+- `ignore` — Silently ignore overflows. For conversions between date and time types the result is undefined (the value may wrap around); a numeric value is saturated to the range boundaries of the result type.
 - `throw` — Throw an exception in case of overflow.
 - `saturate` — Saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
+
+The accurate casts (`accurateCast`, `accurateCastOrNull`, `accurateCastOrDefault`) do not depend on this setting: an unrepresentable value is always rejected, reported as `NULL` or replaced with the default value, respectively.
+
+The setting applies to conversions done by `CAST` and the conversion functions, including those an `INSERT ... VALUES` expression template or an `INSERT ... SELECT` performs. A constant expression that the `Values` format evaluates without a template (the fallback enabled by `input_format_values_interpret_expressions`) and the `values` table function follow it only for `DateTime64` and `Time64`: an out-of-range number put into a `Date`, `Date32`, `DateTime` or `Time` column there does not follow this setting. The `values` table function rejects it, and the `Values` format rejects it too, unless `input_format_null_as_default` is enabled, in which case it inserts the default value of the column.
 
 Default value: `ignore`.
 )", 0) \
@@ -1841,11 +1902,11 @@ Validate usage of experimental and suspicious types inside nested types like Arr
         {"24.2", false, true, "Validate usage of experimental and suspicious types inside nested types"}) \
     \
     DECLARE(IdentifierQuotingRule, show_create_query_identifier_quoting_rule, IdentifierQuotingRule::WhenNecessary, R"(
-Set the quoting rule for identifiers in SHOW CREATE query
+Controls when identifiers are quoted in `SHOW CREATE` output. `when_necessary` (default) quotes identifiers where required to produce valid, unambiguous SQL; `user_display` quotes identifiers that are SQL keywords; `always` quotes every identifier. This setting controls whether quoting is added; `show_create_query_identifier_quoting_style` controls the quote characters and escaping.
 )", 0, \
         {"24.10", "when_necessary", "when_necessary", "New setting."}) \
     DECLARE(IdentifierQuotingStyle, show_create_query_identifier_quoting_style, IdentifierQuotingStyle::Backticks, R"(
-Set the quoting style for identifiers in SHOW CREATE query
+Controls how quoted identifiers are written in `SHOW CREATE` output. `Backticks` (default) uses ClickHouse-style backticks, `DoubleQuotes` uses double quotes with ClickHouse escaping, and `BackticksMySQL` uses MySQL-compatible backticks where embedded backticks are doubled. This setting does not control which identifiers are quoted; use `show_create_query_identifier_quoting_rule` for that.
 )", 0, \
         {"24.10", "Backticks", "Backticks", "New setting."}) \
     DECLARE(UInt64, output_format_image_width, 1024, R"(
@@ -1948,13 +2009,27 @@ Indicate which field of protobuf oneof was found by means of setting enum value 
 )", 0, \
         {"25.9", false, false, "New setting"}) \
     DECLARE(Bool, input_format_parquet_allow_geoparquet_parser, true, R"(
-Use geo column parser to convert Array(UInt8) into Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon types
+When reading Parquet files, decode geometry columns as ClickHouse geo types (`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` or `Geometry`). Applies to columns described by the GeoParquet `geo` metadata and to columns annotated with the Parquet `GEOMETRY` or `GEOGRAPHY` logical type. If disabled, such columns are read as `String` with the raw WKB (or WKT) bytes, unless a geo type is requested explicitly. Columns with a native (GeoArrow) encoding of GeoParquet 1.1 are then read as the underlying nested `Array` and `Tuple` types.
 )", 0, \
         {"25.5", false, true, "A new setting to use geo columns in parquet file"}) \
+    DECLARE(Bool, input_format_parquet_detect_variant_by_structure, true, R"(
+Read a Parquet group that has no `VARIANT` logical type, but has the layout of an unshredded variant (a `metadata` and a `value` field of type `BYTE_ARRAY`), as a variant, i.e. as `Dynamic`, instead of `Tuple`. Spark 4.0 writes variant columns this way. Groups annotated with the `VARIANT` logical type are always read as a variant.
+)", 0, \
+        {"26.10", false, true, "New setting to read Spark variant columns, which have no `VARIANT` logical type, as `Dynamic` instead of `Tuple`"}) \
     DECLARE(Bool, output_format_parquet_geometadata, true, R"(
 Allow to write information about geo columns in parquet metadata and encode columns in WKB format.
 )", 0, \
         {"25.7", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."}) \
+    DECLARE(Bool, output_format_parquet_geometry_logical_type, false, R"(
+Annotate geo columns written as WKB (see `output_format_parquet_geometadata`) with the Parquet `GEOMETRY` logical type, and write `GeospatialStatistics` (bounding box and geometry types) for them instead of min/max statistics. Readers that support the logical type recognize such columns as geometries even without the GeoParquet `geo` metadata. Has no effect if `output_format_parquet_geometadata` is disabled. A `Geometry` column is also described in the GeoParquet `geo` metadata, with an empty list of geometry types. If disabled, these columns are written as `BYTE_ARRAY` without a geospatial annotation and with min/max statistics, and a `Geometry` column is not described in the `geo` metadata. Disabled by default because readers that do not know this logical type (e.g. Arrow C++ and `pyarrow` before version 20) cannot open the whole file.
+)", 0, \
+        {"26.11", false, false, "New setting"}) \
+    DECLARE(Bool, output_format_parquet_write_file_logical_type, false, R"(
+Write a named `Tuple` whose element names are all fields of the Parquet `FILE` logical type (`uri`, `offset`, `size`, `content_type`, `checksum`, `inline`; any non-empty subset in any order) as a group annotated with the `FILE` logical type, which represents a reference to a range of bytes stored inline or in an external file. The `offset` and `size` elements must be integers (written as `INT64`), the other elements must be `String` or `FixedString` (`inline` is written as `BYTE_ARRAY` without annotation, the others as `STRING`). As the specification requires, every field is written as `OPTIONAL`. Values are written as is, without checking that they form a valid reference.
+
+When reading, a `FILE`-annotated group is always read as such a `Tuple` of `Nullable` elements.
+)", 0, \
+        {"26.10", false, false, "New setting to write a named `Tuple` with fields of the Parquet `FILE` logical type as a `FILE`-annotated group."}) \
     DECLARE(Bool, into_outfile_create_parent_directories, false, R"(
 Automatically create parent directories when using INTO OUTFILE if they do not already exists.
 )", 0, \

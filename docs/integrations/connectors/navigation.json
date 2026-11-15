@@ -75,10 +75,12 @@
             "integrations/connectors/data-visualization/tableau/tableau-analysis-tips"
           ]
         },
+        "integrations/connectors/data-visualization/thoughtspot-and-clickhouse",
         {
           "expanded": false,
           "group": "Community integrations",
           "pages": [
+            "integrations/connectors/data-visualization/community-integrations/arcodash-and-clickhouse",
             "integrations/connectors/data-visualization/community-integrations/astrato-and-clickhouse",
             "integrations/connectors/data-visualization/community-integrations/chartbrew-and-clickhouse",
             "integrations/connectors/data-visualization/community-integrations/databrain-and-clickhouse",
@@ -175,11 +177,20 @@
           ]
         },
         {
+          "group": "Striim",
+          "pages": [
+            "integrations/connectors/data-ingestion/etl-tools/striim/index",
+            "integrations/connectors/data-ingestion/etl-tools/striim/get-started",
+            "integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline"
+          ]
+        },
+        {
           "expanded": false,
           "group": "Community integrations",
           "pages": [
             "integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
             "integrations/connectors/data-ingestion/community-integrations/erathos",
+            "integrations/connectors/data-ingestion/community-integrations/sqlflow",
             {
               "group": "Estuary",
               "pages": [
@@ -200,7 +211,7 @@
         "integrations/connectors/data-integrations/integrations/retool",
         "integrations/connectors/data-integrations/integrations/easypanel",
         "integrations/connectors/data-integrations/integrations/microsoft-fabric",
-    "integrations/connectors/data-integrations/integrations/middleware",
+        "integrations/connectors/data-integrations/integrations/middleware",
         "integrations/connectors/data-integrations/integrations/notion",
         "integrations/connectors/data-integrations/integrations/splunk"
       ]
@@ -215,6 +226,7 @@
         "integrations/connectors/sql-clients/dbeaver",
         "integrations/connectors/sql-clients/dbvisualizer",
         "integrations/connectors/sql-clients/jupysql",
+        "integrations/connectors/sql-clients/libredb-studio",
         "integrations/connectors/sql-clients/probedeck",
         "integrations/connectors/sql-clients/qstudio",
         "integrations/connectors/sql-clients/tablum",
@@ -233,6 +245,5 @@
       ]
     }
   ],
-  "icon": "/images/icons/icon-connectors.svg",
   "item": "Connectors"
 }

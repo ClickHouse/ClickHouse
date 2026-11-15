@@ -16,8 +16,8 @@ CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE 
 
 이 쿼리를 올바르게 실행하려면 각 호스트에 동일한 클러스터 정의가 있어야 합니다(구성 동기화를 간소화하려면 ZooKeeper의 substitutions를 사용할 수 있습니다). 또한 각 호스트는 ZooKeeper 서버에 연결되어 있어야 합니다.
 
-일부 호스트를 현재 사용할 수 없더라도 쿼리의 로컬 버전은 결국 클러스터의 각 호스트에서 실행됩니다.
+일반적으로 일부 호스트를 현재 사용할 수 없더라도 쿼리의 로컬 버전은 결국 클러스터의 각 호스트에서 실행됩니다. 다만 이러한 쿼리는 큐에 저장되며, 항목이 큐에 머무를 수 있는 시간은 [여러 설정](/ko/reference/settings/server-settings/settings/distributed)으로 제한됩니다. 따라서 호스트를 사용할 수 없는 상태가 오래 지속되면, 해당 호스트가 다시 사용 가능해지더라도 쿼리가 실행되지 않을 수 있습니다.
 
 <Warning>
-  단일 호스트 내에서 쿼리가 실행되는 순서는 보장됩니다.
+  [distributed&#95;ddl.pool&#95;size](/ko/reference/settings/server-settings/settings/distributed#distributed_ddl.pool_size)가 1로 설정되어 있는 한, 단일 호스트 내에서 쿼리가 실행되는 순서는 보장됩니다.
 </Warning>

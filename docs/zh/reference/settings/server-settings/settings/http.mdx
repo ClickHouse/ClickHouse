@@ -12,25 +12,23 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置用于配置 ClickHouse 服务器，并根据 ClickHouse 源代码自动生成。
 
-<div id="http_allow_path_requests">
-  ## http_allow_path_requests
-</div>
+## http_allow_path_requests {#http_allow_path_requests}
 
-<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
 允许 HTTP 接口将路径式请求 (例如 `/my_db/my_table.csv`) 路由至查询处理器。
 
 此标志仅控制路由决策，该决策在对请求进行身份验证之前作出，因此不能依赖于用户级设置。路由后，用户级设置 [`http_allow_database_as_path`](/zh/reference/settings/session-settings#http_allow_database_as_path)、[`http_allow_table_as_file`](/zh/reference/settings/session-settings#http_allow_table_as_file) 和 [`http_allow_filters_as_path`](/zh/reference/settings/session-settings#http_allow_filters_as_path) 决定是否为已通过身份验证的用户实际解析路由后的路径。关闭此标志时，未知路径会返回普通的 `404`。
 
+默认启用。将其设为 `0` 可恢复之前的行为：凡是未配置处理器的路径，一律返回 `404`。
+
 **示例**
 
 ```xml
-<http_allow_path_requests>1</http_allow_path_requests>
+<http_allow_path_requests>0</http_allow_path_requests>
 ```
 
-<div id="http_handlers">
-  ## http_handlers
-</div>
+## http_handlers {#http_handlers}
 
 允许使用自定义 HTTP 处理器。
 要添加新的 HTTP 处理器，只需新增一条 `<rule>`。
@@ -95,9 +93,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 </http_handlers>
 ```
 
-<div id="http_options_response">
-  ## http_options_response
-</div>
+## http_options_response {#http_options_response}
 
 用于在 `OPTIONS` HTTP 请求的响应中添加请求头。
 `OPTIONS` 方法用于发起 CORS 预检请求。
@@ -127,9 +123,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 </http_options_response>
 ```
 
-<div id="http_server_default_response">
-  ## http_server_default_response
-</div>
+## http_server_default_response {#http_server_default_response}
 
 访问 ClickHouse HTTP(s) 服务器时默认显示的页面。
 默认值为 &quot;Ok.&quot; (末尾带有一个换行符) 。

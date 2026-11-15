@@ -16,8 +16,6 @@ extern const int PARAMETER_OUT_OF_BOUND;
 namespace
 {
 
-constexpr UInt64 MAX_RUNTIME_BLOOM_FILTER_BYTES = 16 * 1024 * 1024;
-constexpr UInt64 MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS = 10;
 constexpr UInt64 DEFAULT_RUNTIME_BLOOM_FILTER_BYTES = 512 * 1024;
 constexpr UInt64 DEFAULT_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS = 3;
 /// Max size up to which the Bloom filter grows before the false positive rate starts degrading.

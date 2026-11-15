@@ -6,24 +6,17 @@ doc_type: 'guide'
 keywords: ['clickstack', 'SDK', '로깅', '통합', '애플리케이션 모니터링']
 ---
 
+import { ClickStackIntegrates } from '/snippets/ko/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 ClickStack는 텔레메트리 데이터(로그, 메트릭,
 트레이스 및 예외)를 수집하기 위해 OpenTelemetry 표준을 사용합니다. 트레이스는 자동 계측을 통해 자동 생성되므로, 트레이싱의 이점을 얻기 위해 수동
 계측은 필요하지 않습니다.
 
-이 가이드에서는 다음 항목을 통합합니다:
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-* **로그**
-* **메트릭**
-* **트레이스**
-* **예외**
+## 시작하기 {#getting-started}
 
-<div id="getting-started">
-  ## 시작하기
-</div>
-
-<div id="install-hyperdx-opentelemetry-instrumentation-package">
-  ### HyperDX OpenTelemetry 계측 패키지 설치
-</div>
+### HyperDX OpenTelemetry 계측 패키지 설치 {#install-hyperdx-opentelemetry-instrumentation-package}
 
 [ClickStack OpenTelemetry 패키지](https://www.npmjs.com/package/@hyperdx/node-opentelemetry)를 설치하려면 다음 명령을 사용하세요.
 
@@ -41,9 +34,7 @@ ClickStack는 텔레메트리 데이터(로그, 메트릭,
   </Tab>
 </Tabs>
 
-<div id="initializin-the-sdk">
-  ### SDK 초기화
-</div>
+### SDK 초기화 {#initializin-the-sdk}
 
 SDK를 초기화하려면 애플리케이션 엔트리 포인트의 최상단에서 `init` 함수를 호출해야 합니다.
 
@@ -53,8 +44,8 @@ SDK를 초기화하려면 애플리케이션 엔트리 포인트의 최상단에
     const HyperDX = require('@hyperdx/node-opentelemetry');
 
     HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // Managed ClickStack의 경우 생략
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // Managed ClickStack의 경우 생략
         service: 'my-service'
     });
     ```
@@ -65,8 +56,8 @@ SDK를 초기화하려면 애플리케이션 엔트리 포인트의 최상단에
     import * as HyperDX from '@hyperdx/node-opentelemetry';
 
     HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // Managed ClickStack의 경우 생략
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // Managed ClickStack의 경우 생략
         service: 'my-service'
     });
     ```
@@ -75,9 +66,7 @@ SDK를 초기화하려면 애플리케이션 엔트리 포인트의 최상단에
 
 이렇게 하면 Node.js 애플리케이션의 트레이싱, 메트릭, 로그가 자동으로 수집됩니다.
 
-<div id="setup-log-collection">
-  ### 로그 수집 설정
-</div>
+### 로그 수집 설정 {#setup-log-collection}
 
 기본적으로 `console.*` 로그는 자동으로 수집됩니다. `winston`이나 `pino` 같은 로거를 사용하는 경우,
 로그를 ClickStack으로 전송하려면 로거에 transport를 추가해야 합니다. 다른 종류의 로거를 사용한다면,
@@ -136,9 +125,7 @@ SDK를 초기화하려면 애플리케이션 엔트리 포인트의 최상단에
   </Tab>
 </Tabs>
 
-<div id="setup-error-collection">
-  ### 오류 수집 설정
-</div>
+### 오류 수집 설정 {#setup-error-collection}
 
 ClickStack SDK는 전체 스택 트레이스와 코드 컨텍스트를 포함해 애플리케이션에서 처리되지 않은 예외와 오류를 자동으로 기록할 수 있습니다.
 
@@ -149,8 +136,8 @@ ClickStack SDK는 전체 스택 트레이스와 코드 컨텍스트를 포함해
     ```javascript
     const HyperDX = require('@hyperdx/node-opentelemetry');
     HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // Managed ClickStack의 경우 생략
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // Managed ClickStack의 경우 생략
         service: 'my-service'
     });
     const app = express();
@@ -171,8 +158,8 @@ ClickStack SDK는 전체 스택 트레이스와 코드 컨텍스트를 포함해
     const Router = require("@koa/router");
     const HyperDX = require('@hyperdx/node-opentelemetry');
     HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // Managed ClickStack의 경우 생략
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // Managed ClickStack의 경우 생략
         service: 'my-service'
     });
 
@@ -199,9 +186,7 @@ ClickStack SDK는 전체 스택 트레이스와 코드 컨텍스트를 포함해
   </Tab>
 </Tabs>
 
-<div id="troubleshooting">
-  ## 문제 해결
-</div>
+## 문제 해결 {#troubleshooting}
 
 SDK 사용 중 문제가 발생하면 `OTEL_LOG_LEVEL` 환경 변수를 `debug`로 설정해 자세한 로깅을 활성화할 수 있습니다.
 
@@ -209,13 +194,9 @@ SDK 사용 중 문제가 발생하면 `OTEL_LOG_LEVEL` 환경 변수를 `debug`�
 export OTEL_LOG_LEVEL=debug
 ```
 
-<div id="advanced-instrumentation-configuration">
-  ## 고급 계측 구성
-</div>
+## 고급 계측 구성 {#advanced-instrumentation-configuration}
 
-<div id="capture-console-logs">
-  ### 콘솔 로그 수집
-</div>
+### 콘솔 로그 수집 {#capture-console-logs}
 
 기본적으로 ClickStack SDK는 콘솔 로그를 수집합니다. `HDX_NODE_CONSOLE_CAPTURE` 환경 변수를 0으로
 설정하면 이 기능을 비활성화할 수 있습니다.
@@ -224,9 +205,7 @@ export OTEL_LOG_LEVEL=debug
 export HDX_NODE_CONSOLE_CAPTURE=0
 ```
 
-<div id="attach-user-information-or-metadata">
-  ### 사용자 정보 또는 메타데이터 추가
-</div>
+### 사용자 정보 또는 메타데이터 추가 {#attach-user-information-or-metadata}
 
 지정한 속성이나 식별자(예: 사용자 ID
 또는 이메일)와 관련된 모든 이벤트에 쉽게 태그를 지정하려면 `setTraceAttributes` 함수를 호출하면 됩니다. 이 함수를 호출한 이후 현재 트레이스와 연결된 모든
@@ -265,9 +244,7 @@ trace 속성을 사용하려면 `HDX_NODE_BETA_MODE` 환경
 export HDX_NODE_BETA_MODE=1
 ```
 
-<div id="google-cloud-run">
-  ### Google Cloud Run
-</div>
+### Google Cloud Run {#google-cloud-run}
 
 애플리케이션을 Google Cloud Run에서 실행하는 경우, Cloud Trace가
 수신 요청에 샘플링 헤더를 자동으로 삽입하며, 현재 각 인스턴스에서
@@ -285,9 +262,7 @@ export HDX_NODE_BETA_MODE=1
 [Google Cloud Run documentation](https://cloud.google.com/run/docs/trace)을
 참조하십시오.
 
-<div id="auto-instrumented-libraries">
-  ### 자동 계측 라이브러리
-</div>
+### 자동 계측 라이브러리 {#auto-instrumented-libraries}
 
 SDK는 다음 라이브러리를 자동으로 계측(trace)합니다:
 
@@ -309,13 +284,9 @@ SDK는 다음 라이브러리를 자동으로 계측(trace)합니다:
 * [`redis`](https://www.npmjs.com/package/redis)
 * [`winston`](https://www.npmjs.com/package/winston)
 
-<div id="alternative-installation">
-  ## 다른 설치 방법
-</div>
+## 다른 설치 방법 {#alternative-installation}
 
-<div id="run-the-application-with-cli">
-  ### ClickStack OpenTelemetry CLI로 애플리케이션 실행
-</div>
+### ClickStack OpenTelemetry CLI로 애플리케이션 실행 {#run-the-application-with-cli}
 
 또는 `opentelemetry-instrument` CLI나 Node.js의 `--require` 플래그를 사용하면 코드 변경 없이 애플리케이션을 자동 계측할 수 있습니다. CLI를 설치하면 자동 계측을 지원하는 라이브러리와 프레임워크를 더 폭넓게 사용할 수 있습니다.
 
@@ -328,7 +299,7 @@ SDK는 다음 라이브러리를 자동으로 계측(trace)합니다:
     </Info>
 
     ```shell
-    HYPERDX_API_KEY='<YOUR_INGESTION_KEY>' OTEL_SERVICE_NAME='<YOUR_APP_NAME>' npx opentelemetry-instrument index.js
+    HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' npx opentelemetry-instrument index.js
     ```
   </Tab>
 
@@ -340,7 +311,7 @@ SDK는 다음 라이브러리를 자동으로 계측(trace)합니다:
     </Info>
 
     ```shell
-    HYPERDX_API_KEY='<YOUR_INGESTION_KEY>' OTEL_SERVICE_NAME='<YOUR_APP_NAME>' ts-node -r '@hyperdx/node-opentelemetry/build/src/tracing' index.js
+    HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' ts-node -r '@hyperdx/node-opentelemetry/build/src/tracing' index.js
     ```
   </Tab>
 
@@ -360,9 +331,7 @@ SDK는 다음 라이브러리를 자동으로 계측(trace)합니다:
 
 *`OTEL_SERVICE_NAME` 환경 변수는 HyperDX 앱에서 서비스를 식별하는 데 사용되며, 원하는 이름으로 지정할 수 있습니다.*
 
-<div id="enabling-exception-capturing">
-  ### 예외 캡처 활성화
-</div>
+### 예외 캡처 활성화 {#enabling-exception-capturing}
 
 처리되지 않은 예외 캡처를 활성화하려면 `HDX_NODE_EXPERIMENTAL_EXCEPTION_CAPTURE` 환경 변수를 1로 설정해야 합니다.
 
@@ -372,9 +341,7 @@ HDX_NODE_EXPERIMENTAL_EXCEPTION_CAPTURE=1
 
 그 후 Express, Koa에서 발생하는 예외를 자동으로 수집하거나 예외를 수동으로 처리하려면 위의 [오류 수집 설정](#setup-error-collection) 섹션의 안내를 따르십시오.
 
-<div id="auto-instrumented-libraries">
-  ### 자동 계측 라이브러리
-</div>
+### 자동 계측 라이브러리 {#auto-instrumented-libraries-2}
 
 다음 라이브러리는 위 설치 방법을 통해 자동으로 계측되어 추적됩니다:
 

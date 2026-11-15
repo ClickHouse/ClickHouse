@@ -6,6 +6,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Parsers/ASTUndropQuery.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
@@ -32,6 +33,7 @@ BlockIO InterpreterUndropQuery::execute()
 {
     getContext()->checkAccess(AccessType::UNDROP_TABLE);
 
+    auto component_guard = Coordination::setCurrentComponent("InterpreterUndropQuery::execute");
     auto & undrop = query_ptr->as<ASTUndropQuery &>();
     if (!undrop.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
@@ -68,9 +70,17 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
     database->checkMetadataFilenameAvailability(table_id.table_name);
 
 #if CLICKHOUSE_CLOUD
-    if (SharedDatabaseCatalog::shouldReplicateQuery(getContext(), query_ptr))
+    if (database->getEngineName() == "Shared")
     {
-        SharedDatabaseCatalog::instance().undropTable(database->getUUID(), table_id.table_name);
+        if (!getContext()->getClientInfo().is_shared_catalog_internal)
+        {
+            chassert(guard);
+            guard.reset();
+            return SharedDatabaseCatalog::instance().tryExecuteDDLQuery(query_ptr, getContext());
+        }
+
+        auto version = SharedDatabaseCatalog::instance().undropTable(database->getUUID(), table_id.table_name, table_id.uuid);
+        getContext()->setVersionToWaitSharedCatalog(version);
         return {};
     }
 #endif
