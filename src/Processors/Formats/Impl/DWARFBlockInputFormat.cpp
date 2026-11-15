@@ -354,6 +354,18 @@ static inline void throwIfError(llvm::Error & e, const char * what)
     throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Failed to parse {}: {}", what, llvm::toString(std::move(e)));
 }
 
+/// LLVM advances the offset by the length of a block or a fixed-size form without checking it against the
+/// section (LEB128 decoding checks the offset only with an assertion), so every following read would start
+/// past the end of the section. Check the offset after each attribute.
+void DWARFBlockInputFormat::checkAttributeEnd(
+    const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t offset, const UnitState & unit) const
+{
+    if (offset > unit.end_offset || offset > extractor->size())
+        throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
+            "Attribute {} of form {} goes past the end of the unit: offset {}, end of unit {}",
+            llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, offset, unit.end_offset);
+}
+
 llvm::DWARFFormValue DWARFBlockInputFormat::parseAttribute(
     const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t * offset,
     const UnitState & unit) const
@@ -364,6 +376,7 @@ llvm::DWARFFormValue DWARFBlockInputFormat::parseAttribute(
         throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
             "Failed to parse attribute {} of form {} at offset {}",
                 llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, *offset);
+    checkAttributeEnd(attr, *offset, unit);
     return val;
 }
 
@@ -385,6 +398,7 @@ void DWARFBlockInputFormat::skipAttribute(
                 throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
                     "Failed to skip attribute {} of form {} at offset {}",
                     llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, *offset);
+        checkAttributeEnd(attr, *offset, unit);
     }
 }
 

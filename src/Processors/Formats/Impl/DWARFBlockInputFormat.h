@@ -105,6 +105,8 @@ private:
     void parseFilenameTable(UnitState & unit, uint64_t offset);
     Chunk parseEntries(UnitState & unit);
 
+    void checkAttributeEnd(
+        const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t offset, const UnitState & unit) const;
     llvm::DWARFFormValue parseAttribute(
         const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t * offset,
         const UnitState & unit) const;
