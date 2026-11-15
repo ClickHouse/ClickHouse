@@ -75,6 +75,15 @@ class SparkHudiWriter(Writer):
         return options
 
     def _save(self, df, operation, mode="append"):
+        if self.model.partitioning:
+            name = self.model.partitioning[0].column
+            if self.model.column_type(name).kind == "string":
+                from pyspark.sql.functions import col, lit, when
+
+                # Hudi stores NULL and '' of a partition column in the same `__HIVE_DEFAULT_PARTITION__` directory,
+                # and its reader returns NULL for both.
+                value = col(q(name))
+                df = df.withColumn(name, when(value == "", lit(None)).otherwise(value))
         df.write.format("hudi").options(**self._hudi_options(operation)).mode(
             mode
         ).save(self.path)

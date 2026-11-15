@@ -1,0 +1,16 @@
+--- A: Float32, values=(1.5), (3.5), (nan)
+contains_null=false	contains_nan=true	lower_bound=1.5	upper_bound=3.5
+--- B: Float64, values=(1.5), (3.5), (nan)
+contains_null=false	contains_nan=true	lower_bound=1.5	upper_bound=3.5
+--- C: Float32, values=(1.5), (3.5)
+contains_null=false	\N	lower_bound=1.5	upper_bound=3.5
+--- D: Float64, values=(1.5), (3.5)
+contains_null=false	\N	lower_bound=1.5	upper_bound=3.5
+--- E: Float32, values=(0.0), (-0.0), (5.5), (nan)
+contains_null=false	contains_nan=true	lower_bound=-0	upper_bound=5.5
+--- F: Float64, values=(0.0), (-0.0), (5.5), (nan)
+contains_null=false	contains_nan=true	lower_bound=-0	upper_bound=5.5
+--- G: Float32, values=(0.0), (-0.0)
+contains_null=false	\N	lower_bound=-0	upper_bound=0
+--- H: Float64, values=(0.0), (-0.0)
+contains_null=false	\N	lower_bound=-0	upper_bound=0

@@ -7,6 +7,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/assert_cast.h>
 #include <Common/saturatedDuration.h>
 #include <Core/Settings.h>
@@ -17,6 +18,7 @@
 
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionCodecFirstApplicable.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -454,6 +456,12 @@ public:
             if (!done)
             {
                 /// Rollback partial writes.
+                /// It must not be interrupted by the memory limit: otherwise the table is left with
+                /// the in-memory marks out of sync, and the next `INSERT` fails with a logical error.
+                LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+
+                /// Remove excessive marks first: it cannot fail, unlike the truncation of files below.
+                storage.removeUnsavedMarks(lock);
 
                 /// No more writing.
                 for (auto & [_, stream] : streams)
@@ -464,9 +472,6 @@ public:
 
                 /// Truncate files to the older sizes.
                 storage.file_checker.repair();
-
-                /// Remove excessive marks.
-                storage.removeUnsavedMarks(lock);
             }
         }
         catch (...)
@@ -616,7 +621,7 @@ CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name, const
         /// `FirstApplicable` selects the codec for the data type of every substream, as in `MergeTree`: the structural
         /// substreams (e.g. the sizes of an array) keep only generic codecs. Other codecs keep applying to the whole
         /// column type here, so that the data written by the previous versions does not change.
-        if (CompressionCodecFactory::hasFirstApplicable(column_desc.codec))
+        if (CompressionCodecFirstApplicable::isInChain(column_desc.codec))
         {
             const bool is_data_substream = ISerialization::isSpecialCompressionAllowed(substream_path);
             return CompressionCodecFactory::instance().get(
@@ -1459,6 +1464,8 @@ void registerStorageLog(StorageFactory & factory)
     StorageFactory::StorageFeatures features{
         .supports_settings = true,
         .has_builtin_setting_fn = StorageLogSettings::hasBuiltin,
+        .stores_data_on_disk = true,
+        .supports_temporary = true,
     };
 
     auto create_fn = [](const StorageFactory::Arguments & args)
@@ -1470,7 +1477,7 @@ void registerStorageLog(StorageFactory & factory)
                 args.engine_name, args.engine_args.size());
 
         String disk_name = getDiskName(*args.storage_def, args.getContext());
-        DiskPtr disk = args.getContext()->getDisk(disk_name);
+        DiskPtr disk = args.getDisk(disk_name);
 
         return std::make_shared<StorageLog>(
             args.engine_name,

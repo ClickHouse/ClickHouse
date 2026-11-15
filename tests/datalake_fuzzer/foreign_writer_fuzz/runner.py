@@ -19,7 +19,7 @@ from .operations import (
     validate_op,
 )
 from .oracle import FuzzFailure, Oracle, SchemaMismatch, canonical_rows, content_hash
-from .writers import WRITERS, ForeignReadError
+from .writers import WRITERS, ForeignReadError, is_tool_error
 
 log = logging.getLogger("foreign_writer_fuzz")
 
@@ -158,9 +158,9 @@ def run_history(ctx, history, deadline=None, oracle=None, check_every_step=True)
                 result.rejected.append(f"{label}: {str(e).splitlines()[0][:300]}")
                 log.info("Rejected %s: %s", label, str(e)[:500])
                 continue
-            except Exception as e:
-                # A foreign writer refusing an operation (`OpRejected` or any other error) is not a ClickHouse bug.
-                if isinstance(e, FuzzFailure):
+            except BaseException as e:
+                # A foreign writer refusing an operation (`OpRejected`, any other error or a Rust panic) is not a ClickHouse bug.
+                if isinstance(e, FuzzFailure) or not is_tool_error(e):
                     raise
                 result.rejected.append(
                     f"{label}: {type(e).__name__}: {str(e).splitlines()[0][:300] if str(e) else ''}"

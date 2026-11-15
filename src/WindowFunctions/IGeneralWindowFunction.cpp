@@ -31,15 +31,6 @@ const DataTypePtr & IGeneralWindowFunction::getResultType() const
     return result_type;
 }
 
-std::optional<WindowFrame> IGeneralWindowFunction::getDefaultFrame() const
-{
-    return {};
-}
-
-void IGeneralWindowFunction::checkWindowFrameType(const WindowDescription &) const
-{
-}
-
 size_t IGeneralWindowFunction::sizeOfState() const
 {
     return 0;

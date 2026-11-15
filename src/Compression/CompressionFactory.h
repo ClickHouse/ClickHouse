@@ -89,9 +89,11 @@ public:
     /// A compound such as CODEC(Delta, Default) would return false.
     static bool isDefaultCodec(const ASTPtr & codec);
 
-    /// True if the codec chain `codec` (a `CODEC(...)` function) has the combinator `FirstApplicable`, so that the
-    /// codec depends on the data type of every substream.
-    static bool hasFirstApplicable(const ASTPtr & codec);
+    /// The family name and the arguments of an element of a codec chain. Throws if it is malformed.
+    static std::pair<String, ASTPtr> getCodecNameAndArguments(const ASTPtr & element);
+
+    /// The properties of the codec family `family_name`, matched case-insensitively. Throws if it is unknown.
+    const CompressionCodecFamilyProperties & getFamilyProperties(const String & family_name) const;
 
     /// Validate codecs AST specified by user and parses codecs description (substitute default parameters)
     ASTPtr validateCodecAndGetPreprocessedAST(
@@ -192,38 +194,15 @@ private:
     ASTPtr validateCodecAndGetPreprocessedASTImpl(
         const ASTPtr & ast, const DataTypePtr & column_type, const Settings * settings, bool sanity_check) const;
 
-    /// `FirstApplicable(c1, c2, ...)` is a codec combinator: an element of a codec chain that stands for the first of
-    /// its alternatives applicable to the data type. An alternative is a codec, `Default`, a nested `FirstApplicable`,
-    /// or `Multiple(c1, c2, ...)`, which is a chain of codecs, applicable if every codec of it is.
-    /// Without a data type (nullptr), only the codecs that apply to any data type are applicable.
-
-    /// True if the alternative `element` is applicable to `type`. Throws if it is malformed.
-    bool isApplicable(const ASTPtr & element, const IDataType * type) const;
-
-    /// Appends the codecs that the chain element `element` stands for with the data type `type` to `out`:
-    /// the codec itself, the codecs of a `Multiple`, or the ones of the alternative selected by a `FirstApplicable`.
-    void appendResolvedChainElement(const ASTPtr & element, const IDataType * type, ASTs & out) const;
-
-    /// The codec chain `ast` (a `CODEC(...)` function) with every `FirstApplicable` replaced by the codecs of the
-    /// alternative selected for `type`. Returns `ast` itself if it has no `FirstApplicable`.
-    ASTPtr resolveFirstApplicable(const ASTPtr & ast, const IDataType * type) const;
-
-    /// `FirstApplicable` without a data type: a codec that compresses with the selection for no type, but keeps the
-    /// description of the whole combinator (with `Default` replaced by `current_default`) to be resolved again later.
-    CompressionCodecPtr getFirstApplicableWithoutType(const ASTPtr & element, const CompressionCodecPtr & current_default) const;
-
-    /// Throws if `FirstApplicable` (or a nested `Multiple`) `element` has a lossy codec among its alternatives.
-    /// Used without a data type: the combinator is then selected again for the type of every column, so a lossy
-    /// alternative would bypass the checks that keep lossy codecs away from a sorting key, a Map or a LowCardinality.
-    void checkFirstApplicableHasNoLossyAlternative(const ASTPtr & element) const;
-
     /// Validates `FirstApplicable` in the codec chain `ast`: every alternative must be a valid codec by itself, and
     /// the chain resolved for every substream of `column_type` (or for no type) must pass the usual validation.
     void validateCodecWithFirstApplicable(
         const ASTPtr & ast, const DataTypePtr & column_type, const Settings * settings, bool sanity_check) const;
 
-    /// Validates an alternative of `FirstApplicable` by itself, without a data type.
-    void validateFirstApplicableAlternative(const ASTPtr & element, const Settings * settings) const;
+    /// Validates an alternative of `FirstApplicable` by itself, without a data type. With `reject_lossy`, throws if it
+    /// has a lossy codec: where the data type is unknown, the combinator is selected again for the type of every column,
+    /// so a lossy alternative would bypass the checks that keep lossy codecs away from a sorting key, a Map or a LowCardinality.
+    void validateFirstApplicableAlternative(const ASTPtr & element, const Settings * settings, bool reject_lossy) const;
 
     /// Throws if the codec family is gated by a setting that is disabled in `settings` (nullptr: accepts every codec).
     static void checkCodecIsEnabled(const String & family_name, const Settings * settings);
