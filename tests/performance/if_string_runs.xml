@@ -14,6 +14,7 @@
     <query>SELECT count() FROM if_string_runs_referer WHERE NOT ignore(if(c_nat, Referer, '')) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM if_string_runs_referer WHERE NOT ignore(if(c_64, Referer, '')) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM if_string_runs_referer WHERE NOT ignore(if(c_rand, Referer, '')) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM if_string_runs_referer WHERE NOT ignore(if(c_rand, 'x', Referer)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM if_string_runs_short WHERE NOT ignore(if(c_rand, SearchPhrase, '')) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM if_string_runs_short WHERE NOT ignore(if(c_rand, MobilePhoneModel, 'unknown')) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM if_string_runs_16 WHERE NOT ignore(if(c_alt, s16, t16)) SETTINGS max_threads = 1</query>
