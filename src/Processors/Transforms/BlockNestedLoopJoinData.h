@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Core/Block.h>
 #include <Core/Joins.h>
 #include <Processors/SpillableAdapter.h>
@@ -159,7 +161,7 @@ public:
     /// Global row number of the first row of block `i`, with a trailing entry equal to
     /// `getTotalRows()`. A global row number identifies a build row for the whole probe phase and
     /// stays stable when a block is moved out of memory. Valid only after `finish`.
-    const std::vector<size_t> & getRowOffsets() const;
+    const VectorWithMemoryTracking<size_t> & getRowOffsets() const;
 
     /// Whether `BuildSideBlockReader::read` hands out the stored block itself rather than a copy of
     /// it. A compressed or spilled block is materialized anew on every read, so a consumer that
@@ -244,10 +246,10 @@ private:
     /// the release store to `finished` publishes it, and no writer is left after that edge.
     struct FinishedState
     {
-        std::vector<BuildBlockEntry> blocks;
-        std::vector<size_t> row_offsets;
+        VectorWithMemoryTracking<BuildBlockEntry> blocks;
+        VectorWithMemoryTracking<size_t> row_offsets;
         Block build_side_totals;
-        std::vector<TemporaryBlockStreamHolderPtr> spill_sinks;
+        VectorWithMemoryTracking<TemporaryBlockStreamHolderPtr> spill_sinks;
     };
 
     /// The published state; throws while the build phase is still going. The only way to read it,
@@ -280,11 +282,11 @@ private:
         TSA_REQUIRES(mutex);
     /// Takes every block that is still in memory out of it, in index order, for the temporary file at
     /// `sink_index`. What it returns has to be written before anything else goes to that file.
-    std::vector<BuildBlockPtr> takeInMemoryBlocksLocked(size_t sink_index) TSA_REQUIRES(mutex);
+    VectorWithMemoryTracking<BuildBlockPtr> takeInMemoryBlocksLocked(size_t sink_index) TSA_REQUIRES(mutex);
     /// Writes blocks to the temporary file at `sink_index`, opening it on the first ones. Called
     /// without the store mutex: serializing and compressing a block is what spilling costs, and a file
     /// has one writer only, so this is where the build streams stop queueing behind each other.
-    void writeSpilledBlocks(size_t sink_index, std::vector<BuildBlockPtr> blocks_to_write);
+    void writeSpilledBlocks(size_t sink_index, VectorWithMemoryTracking<BuildBlockPtr> blocks_to_write);
 
     /// The entry of block `index`. Needs no lock: the store is read-only by the time it is called.
     const BuildBlockEntry & getBlockEntry(size_t index) const;
@@ -304,12 +306,12 @@ private:
     mutable std::mutex mutex;
     /// Serializes scheduler writes to sink 0 with each other and with closing the store.
     std::mutex scheduler_spill_mutex;
-    std::vector<BuildBlockEntry> blocks TSA_GUARDED_BY(mutex);
+    VectorWithMemoryTracking<BuildBlockEntry> blocks TSA_GUARDED_BY(mutex);
     Block build_side_totals TSA_GUARDED_BY(mutex);
     /// Slot 0 is reserved for `spill`; build stream `i` writes to slot `i + 1`. The first spill drains
     /// all resident blocks under the mutex, so later calls have nothing to write to slot 0. Each build
     /// stream has one writer, and `finish` runs only after all writers have finished.
-    std::vector<TemporaryBlockStreamHolderPtr> spill_sinks;
+    VectorWithMemoryTracking<TemporaryBlockStreamHolderPtr> spill_sinks;
 
     /// Written once by `finish`, under the mutex and before the release store to `finished`.
     std::unique_ptr<const FinishedState> finished_state;
@@ -325,8 +327,8 @@ private:
     /// apart, and a reader that finds nothing here simply materializes its own. What a probe stream may
     /// hold is bounded either way; the sharing spares the work, it does not carry the bound.
     mutable std::mutex materialized_mutex;
-    std::vector<std::weak_ptr<const BuildBlock>> materialized TSA_GUARDED_BY(materialized_mutex);
-    std::deque<BuildBlockPtr> materialized_window TSA_GUARDED_BY(materialized_mutex);
+    VectorWithMemoryTracking<std::weak_ptr<const BuildBlock>> materialized TSA_GUARDED_BY(materialized_mutex);
+    DequeWithMemoryTracking<BuildBlockPtr> materialized_window TSA_GUARDED_BY(materialized_mutex);
     size_t materialized_window_bytes TSA_GUARDED_BY(materialized_mutex) = 0;
 
     /// One flag per build row, indexed by global row number; allocated by `finish` and only for the

@@ -99,6 +99,13 @@ public:
 
     Impl impls[NUM_BUCKETS];
 
+    /// Whether the buckets may switch to the Robin Hood mode when they become large. Call it before inserting.
+    void setRobinHoodAllowed(bool allowed) requires GrowerWithRobinHood<Grower>
+    {
+        for (auto & impl : impls)
+            impl.grower.setRobinHoodAllowed(allowed);
+    }
+
     /// `bucket_cells_prefix[b]` is the number of cells in the buckets before `b`. See `computeBucketPrefix`.
     std::vector<size_t> bucket_cells_prefix;
 

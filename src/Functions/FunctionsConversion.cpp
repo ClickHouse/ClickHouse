@@ -1265,7 +1265,17 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
             }
             else
             {
-                converted_columns[i] = to_element_types[i]->createColumn()->cloneResized(input_rows_count);
+                const auto & to_element_type = to_element_types[i];
+                if (to_element_type->isDefaultInsertTrivial())
+                {
+                    converted_columns[i] = to_element_type->createColumn()->cloneResized(input_rows_count);
+                }
+                else
+                {
+                    auto column = to_element_type->createColumn();
+                    to_element_type->insertManyDefaultsInto(*column, input_rows_count);
+                    converted_columns[i] = std::move(column);
+                }
             }
         }
 
@@ -2082,6 +2092,8 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
             FormatSettings format_settings = settings.format_settings;
             auto serialization = arguments[0].type->getDefaultSerialization();
             format_settings.json.quote_64bit_integers = false;
+            /// JSON has no number for inf and nan, unquoted they would be written as null.
+            format_settings.json.quote_denormals = true;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 serialization->serializeTextJSON(*arguments[0].column, i, write_buffer, format_settings);

@@ -1,4 +1,8 @@
 #include <algorithm>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Core/Settings.h>
@@ -26,6 +30,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
+    extern const SettingsBool enable_multiple_prewhere_read_steps;
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool optimize_move_to_prewhere_if_final_non_intersecting;
@@ -96,8 +101,8 @@ ActionsDAG splitAndFillPrewhereInfo(
     bool remove_prewhere_column,
     ActionsDAG filter_expression,
     const String & filter_column_name,
-    const std::unordered_set<const ActionsDAG::Node *> & prewhere_nodes,
-    const std::list<const ActionsDAG::Node *> & prewhere_nodes_list)
+    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & prewhere_nodes,
+    const ListWithMemoryTracking<const ActionsDAG::Node *> & prewhere_nodes_list)
 {
     prewhere_info->need_filter = true;
     prewhere_info->remove_prewhere_column = remove_prewhere_column;
@@ -127,7 +132,7 @@ ActionsDAG splitAndFillPrewhereInfo(
     ///
     /// So, here we restore removed inputs for PREWHERE actions
     {
-        std::unordered_set<const ActionsDAG::Node *> first_outputs(
+        UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> first_outputs(
             split_result.first.getOutputs().begin(), split_result.first.getOutputs().end());
         for (const auto * input : split_result.first.getInputs())
         {
@@ -179,7 +184,7 @@ ActionsDAG splitAndFillPrewhereInfo(
 /// functions can throw. The reader may evaluate several conditions of PREWHERE at once, so their order is not enough.
 static bool canBeEvaluatedOnMoreRows(const ActionsDAG::Node * condition)
 {
-    std::vector<const ActionsDAG::Node *> stack{condition};
+    VectorWithMemoryTracking<const ActionsDAG::Node *> stack{condition};
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -208,8 +213,8 @@ static bool canBeEvaluatedOnMoreRows(const ActionsDAG::Node * condition)
 /// The filter keeps all its inputs in the output, so it only drops rows and does not change the header of the read.
 /// Returns nullptr if there is nothing left to apply.
 static FilterDAGInfoPtr buildNonIntersectingFinalFilter(
-    const std::list<const ActionsDAG::Node *> & conditions,
-    const std::unordered_set<const ActionsDAG::Node *> & moved_to_prewhere)
+    const ListWithMemoryTracking<const ActionsDAG::Node *> & conditions,
+    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & moved_to_prewhere)
 {
     ActionsDAG::NodeRawConstPtrs remaining;
     for (const auto * condition : conditions)
@@ -308,12 +313,12 @@ static void setQueryConditionCacheAttribution(
     if (condition_root.type != ActionsDAG::ActionType::FUNCTION || condition_root.function_base->getName() != "and")
         return;
 
-    std::unordered_set<UInt64> filter_atom_hashes;
+    UnorderedSetWithMemoryTracking<UInt64> filter_atom_hashes;
     for (const auto * atom : ActionsDAG::extractConjunctionAtoms(outputs.front()))
         if (auto hash = getNormalizedHash(atom))
             filter_atom_hashes.insert(*hash);
 
-    std::vector<UInt64> conjunct_hashes;
+    VectorWithMemoryTracking<UInt64> conjunct_hashes;
     for (const auto * conjunct : condition_root.children)
     {
         if (!VirtualColumnUtils::isDeterministic(conjunct))
@@ -384,15 +389,20 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
 
     const auto & queried_columns = source_step_with_filter->requiredSourceColumns();
 
+    /// Statistics are only used to reorder conditions, so skip if there is just one.
+    const auto & filter_root_node = filter_step->getExpression().findInOutputs(filter_step->getFilterColumnName());
+    const bool has_multiple_conditions = filter_root_node.type == ActionsDAG::ActionType::FUNCTION
+        && filter_root_node.function_base && filter_root_node.function_base->getName() == "and";
+
     /// Candidate parallel-replica plans have not applied filters yet. Keep their existing
     /// column-size estimates until pruning filters or analyzed parts are available.
     const bool use_pruned_parts = read_from_merge_tree_step
         && (read_from_merge_tree_step->getIndexes() || read_from_merge_tree_step->getAnalyzedResult());
-    RangesInDataParts prewhere_parts;
+    ReadFromMergeTree::PartsForPrewhere prewhere_parts;
     if (use_pruned_parts)
-        prewhere_parts = read_from_merge_tree_step->getPartsForPrewhere();
+        prewhere_parts = read_from_merge_tree_step->getPartsForPrewhere(has_multiple_conditions ? &queried_columns : nullptr);
     auto column_sizes = use_pruned_parts
-        ? read_from_merge_tree_step->getColumnSizesForPrewhere(queried_columns, prewhere_parts)
+        ? read_from_merge_tree_step->getColumnSizesForPrewhere(queried_columns, prewhere_parts.parts)
         : storage.getColumnSizes(queried_columns, settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading]);
     if (column_sizes.empty())
         return;
@@ -406,20 +416,19 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         return;
 
     /// Extract column compressed sizes
-    std::unordered_map<std::string, UInt64> column_compressed_sizes;
+    UnorderedMapWithMemoryTracking<std::string, UInt64> column_compressed_sizes;
     for (const auto & [name, sizes] : column_sizes)
         column_compressed_sizes[name] = sizes.data_compressed;
 
-    /// Statistics are only used to reorder conditions, so skip if there is just one.
-    const auto & filter_root_node = filter_step->getExpression().findInOutputs(filter_step->getFilterColumnName());
-    const bool has_multiple_conditions = filter_root_node.type == ActionsDAG::ActionType::FUNCTION
-        && filter_root_node.function_base && filter_root_node.function_base->getName() == "and";
-
+    /// Without statistics for a small read, the conditions are ordered by the sizes of their columns.
     ConditionSelectivityEstimatorPtr selectivity_estimator;
     if (has_multiple_conditions && read_from_merge_tree_step)
-        selectivity_estimator = use_pruned_parts
-            ? read_from_merge_tree_step->getConditionSelectivityEstimator(queried_columns, prewhere_parts)
-            : read_from_merge_tree_step->getConditionSelectivityEstimatorForPrewhere(queried_columns, &filter_root_node);
+    {
+        if (!use_pruned_parts)
+            selectivity_estimator = read_from_merge_tree_step->getConditionSelectivityEstimatorForPrewhere(queried_columns, &filter_root_node);
+        else if (prewhere_parts.use_statistics)
+            selectivity_estimator = read_from_merge_tree_step->getConditionSelectivityEstimator(queried_columns, prewhere_parts.parts);
+    }
 
     MergeTreeWhereOptimizer where_optimizer{
         std::move(column_compressed_sizes),
@@ -440,14 +449,22 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         for (const auto & input : row_level_filter->actions.getInputs())
             columns_read_before_filter.insert(input->result_name);
     /// `installTopKDynamicFilter` runs later and prepends `__topKFilter` to PREWHERE, so it reads its column too.
+    String top_k_filter_column;
     if (read_from_merge_tree_step && read_from_merge_tree_step->hasPendingTopKDynamicFilter())
-        columns_read_before_filter.insert(read_from_merge_tree_step->getTopKFilterInfo()->column_name);
+    {
+        const auto & column = read_from_merge_tree_step->getTopKFilterInfo()->column_name;
+        columns_read_before_filter.insert(column);
+        /// Only then a condition on that column alone gets its own read step after `__topKFilter` (see `tryBuildPrewhereSteps`).
+        if (settings[Setting::enable_multiple_prewhere_read_steps]
+            && read_from_merge_tree_step->canReadColumnsAhead({column}, read_from_merge_tree_step->getParts()))
+            top_k_filter_column = column;
+    }
 
     /// The conditions that a `FINAL` read can apply as PREWHERE to the key ranges it reads without merging. A row of such a range
     /// has no other version, so any deterministic condition gives the same result before and after `FINAL`. They are collected
     /// before the conditions on the sorting key are moved out of the filter below, and stay in the filter.
     /// Not with stateful functions in the WHERE, like `runningDifference`: their results depend on the rows they see.
-    std::list<const ActionsDAG::Node *> non_intersecting_final_conditions;
+    ListWithMemoryTracking<const ActionsDAG::Node *> non_intersecting_final_conditions;
     if (is_final && read_from_merge_tree_step && settings[Setting::optimize_move_to_prewhere_if_final_non_intersecting]
         && !filter_step->getExpression().hasStatefulFunctions())
         non_intersecting_final_conditions = where_optimizer.optimize(filter_step->getExpression(),
@@ -460,7 +477,8 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         filter_step->getFilterColumnName(),
         source_step_with_filter->getContext(),
         is_final ? MergeTreeWhereOptimizer::FinalMode::SortingKeyOnly : MergeTreeWhereOptimizer::FinalMode::None,
-        columns_read_before_filter);
+        columns_read_before_filter,
+        top_k_filter_column);
 
     /// The WHERE evaluates a condition only on the rows that passed the conditions before it, e.g. `toUInt64(s) > 0` in
     /// `WHERE s != 'bad' AND toUInt64(s) > 0`. Keep that: apply early the conditions in the order of the WHERE, up to the
@@ -472,7 +490,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         const auto & filter_dag = filter_step->getExpression();
         const auto * filter_node = &filter_dag.findInOutputs(filter_step->getFilterColumnName());
         ActionsDAG::NodeRawConstPtrs atoms;
-        std::vector<const ActionsDAG::Node *> stack{filter_node};
+        VectorWithMemoryTracking<const ActionsDAG::Node *> stack{filter_node};
         while (!stack.empty())
         {
             const auto * node = stack.back();
@@ -483,7 +501,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
                 atoms.push_back(node);
         }
 
-        std::unordered_set<const ActionsDAG::Node *> non_intersecting(non_intersecting_final_conditions.begin(), non_intersecting_final_conditions.end());
+        UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> non_intersecting(non_intersecting_final_conditions.begin(), non_intersecting_final_conditions.end());
         non_intersecting_final_conditions.clear();
         const bool has_prewhere = existing_prewhere_info || !optimize_result.prewhere_nodes.empty();
         const NameSet existing_prewhere_conditions = getPrewhereConditionNames(existing_prewhere_info.get());

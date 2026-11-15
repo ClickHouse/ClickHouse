@@ -673,7 +673,8 @@ void registerAggregateFunctionsRegr(AggregateFunctionFactory & factory)
 
     /// Like count, regr_count answers with a number even when every row was NULL, rather than
     /// being wrapped by the generic Null combinator and answering NULL.
-    const AggregateFunctionProperties count_properties = {.returns_default_when_only_null = true};
+    const AggregateFunctionProperties count_properties = {.returns_default_when_only_null = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
+    const AggregateFunctionProperties properties = {.variant_arguments_conversion = VariantArgumentsConversion::All};
 
     factory.registerFunction(
         "regr_count",
@@ -705,7 +706,8 @@ which divides a `Float64` sum.
              "Float64",
              R"(┌─regr_avgx(y, x)─┐
 │             2.5 │
-└─────────────────┘)")},
+└─────────────────┘)"),
+         properties},
         AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction(
@@ -724,7 +726,8 @@ which divides a `Float64` sum.
              "Float64",
              R"(┌─regr_avgy(y, x)─┐
 │               5 │
-└─────────────────┘)")},
+└─────────────────┘)"),
+         properties},
         AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction(
@@ -743,7 +746,8 @@ $$
              "Float64",
              R"(┌─regr_sxx(y, x)─┐
 │              5 │
-└────────────────┘)")},
+└────────────────┘)"),
+         properties},
         AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction(
@@ -762,7 +766,8 @@ $$
              "Float64",
              R"(┌─regr_syy(y, x)─┐
 │             20 │
-└────────────────┘)")},
+└────────────────┘)"),
+         properties},
         AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction(
@@ -781,7 +786,8 @@ $$
              "Float64",
              R"(┌─regr_sxy(y, x)─┐
 │             10 │
-└────────────────┘)")},
+└────────────────┘)"),
+         properties},
         AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction(
@@ -802,7 +808,8 @@ Returns `nan` when `x` is constant, because the fitted line is vertical.
              "Float64",
              R"(┌─regr_slope(y, x)─┐
 │                2 │
-└──────────────────┘)")},
+└──────────────────┘)"),
+         properties},
         AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction(
@@ -823,7 +830,8 @@ Returns `nan` when `x` is constant, because the fitted line is vertical.
              "Float64",
              R"(┌─regr_intercept(y, x)─┐
 │                    0 │
-└──────────────────────┘)")},
+└──────────────────────┘)"),
+         properties},
         AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction(
@@ -839,7 +847,8 @@ correlation coefficient. Returns `nan` when `x` is constant, and `1` when `y` is
              "Float64",
              R"(┌─regr_r2(y, x)─┐
 │             1 │
-└───────────────┘)")},
+└───────────────┘)"),
+         properties},
         AggregateFunctionFactory::Case::Insensitive);
 
     /// The SQL standard spelling is the name; these are the same functions under the naming the rest

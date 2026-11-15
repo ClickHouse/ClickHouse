@@ -13,8 +13,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -54,56 +52,6 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char storage_cluster_read_sleep[];
-}
-
-/// Names and types of `columns`, plus each `DEFAULT` without secret arguments that the nodes can evaluate from them.
-static String getStructureToSend(const ColumnsDescription & columns, const ColumnsDescription * insertion_columns)
-{
-    const auto names = columns.getAll().getNameSet();
-    std::unordered_map<String, NameSet> reads;
-    for (const auto & column : columns)
-    {
-        if (column.default_desc.kind != ColumnDefaultKind::Default || !column.default_desc.expression
-            || column.default_desc.expression->hasSecretParts())
-            continue;
-        reads.emplace(column.name, getStorageColumnsReadByDefault(columns, column));
-    }
-
-    /// The least fixed point, so cycles and self-reads are never sent.
-    NameSet sent;
-    for (bool changed = true; changed;)
-    {
-        changed = false;
-        for (const auto & [name, required] : reads)
-        {
-            if (!sent.contains(name) && std::ranges::all_of(required, [&](const String & read)
-                    {
-                        if (names.contains(read))
-                            return !columns.hasDefault(read) || sent.contains(read);
-                        /// Not a column of the table the `DEFAULT`s come from either: the nodes resolve the name the same way as
-                        /// this server, as a function, dictionary, table or set.
-                        return !insertion_columns || !insertion_columns->hasColumnOrSubcolumn(GetColumnsOptions::All, read);
-                    }))
-                changed |= sent.insert(name).second;
-        }
-    }
-
-    WriteBufferFromOwnString buf;
-    bool first = true;
-    for (const auto & column : columns)
-    {
-        if (!std::exchange(first, false))
-            writeCString(", ", buf);
-        writeBackQuotedString(column.name, buf);
-        writeChar(' ', buf);
-        writeString(column.type->getName(), buf);
-        if (sent.contains(column.name))
-        {
-            writeCString(" DEFAULT ", buf);
-            writeString(column.default_desc.expression->formatWithSecretsOneLine(), buf);
-        }
-    }
-    return buf.str();
 }
 
 String StorageObjectStorageCluster::getPathSample(ContextPtr context)
@@ -400,7 +348,7 @@ void StorageObjectStorageCluster::checkAlterIsPossible(const AlterCommands & com
 Pipe StorageObjectStorageCluster::alterPartition(
     const StorageMetadataPtr & /*metadata_snapshot*/, const PartitionCommands & commands, ContextPtr context)
 {
-    return configuration->alterPartition(commands, std::move(context), catalog, getStorageID());
+    return configuration->alterPartition(object_storage, commands, std::move(context), catalog, getStorageID());
 }
 
 void StorageObjectStorageCluster::checkAlterPartitionIsPossible(
@@ -437,6 +385,9 @@ std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_co
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRowsInSnapshot(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
 {
+    if (query_context->totalsWithoutStorageAccess())
+        return std::nullopt;
+
     configuration->lazyInitializeIfNeeded(
         object_storage,
         query_context);
@@ -450,6 +401,9 @@ std::optional<UInt64> StorageObjectStorageCluster::totalRowsInSnapshot(const Sto
 
 std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
 {
+    if (query_context->totalsWithoutStorageAccess())
+        return std::nullopt;
+
     configuration->lazyInitializeIfNeeded(
         object_storage,
         query_context);
@@ -624,10 +578,10 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     {
         iterator = std::make_shared<ObjectIteratorSplitByBuckets>(
             std::move(iterator),
-            configuration->format,
+            configuration,
             object_storage,
-            local_context
-        );
+            local_context,
+            getStorageID());
     }
 
     std::vector<std::string> ids_of_hosts;

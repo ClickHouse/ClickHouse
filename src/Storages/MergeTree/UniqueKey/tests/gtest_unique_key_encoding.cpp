@@ -1174,8 +1174,8 @@ TEST(UniqueKeyEncoding, DISABLED_MicrobenchCompoundUInt64String1M)
 }
 
 /// ---------- unsupported-type rejection ----------
-/// `UniqueKeyEncoding` does not yet implement Array / Tuple /
-/// LowCardinality. The DDL surface accepts bare column identifiers
+/// `UniqueKeyEncoding` does not yet implement Array / Tuple.
+/// The DDL surface accepts bare column identifiers
 /// without filtering by data type, so the encoder is the contract that
 /// rejects these — `encodeBlock` throws `NOT_IMPLEMENTED`. Pin the
 /// specific error code here so a future encoder addition is forced to
@@ -1229,15 +1229,61 @@ TEST(UniqueKeyEncoding, TupleThrowsNotImplemented)
     expectEncodeRowThrowsNotImplemented(cols, "Tuple(UInt64,UInt64)");
 }
 
-TEST(UniqueKeyEncoding, LowCardinalityThrowsNotImplemented)
+TEST(UniqueKeyEncoding, LowCardinalityMatchesFullColumn)
 {
     auto type_lc = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     auto col = type_lc->createColumn();
-    col->insertDefault();
+    col->insert(Field(String("banana")));
+    col->insert(Field(String("apple")));
+    col->insert(Field(String("banana")));
+    col->insert(Field(String("")));
 
-    Columns cols;
-    cols.push_back(std::move(col));
-    expectEncodeRowThrowsNotImplemented(cols, "LowCardinality(String)");
+    auto full = col->convertToFullColumnIfLowCardinality();
+
+    Columns lc_cols{std::move(col)};
+    Columns full_cols{std::move(full)};
+
+    VectorWithMemoryTracking<String> lc_out;
+    VectorWithMemoryTracking<String> full_out;
+    UniqueKeyEncoding::encodeBlock(lc_cols, /*permutation=*/nullptr, 4096, lc_out);
+    UniqueKeyEncoding::encodeBlock(full_cols, /*permutation=*/nullptr, 4096, full_out);
+
+    ASSERT_EQ(lc_out.size(), 4u);
+    ASSERT_EQ(full_out.size(), 4u);
+    for (size_t r = 0; r < 4u; ++r)
+        EXPECT_EQ(lc_out[r], full_out[r]) << "LC row " << r << " must match full-column encoding";
+}
+
+TEST(UniqueKeyEncoding, LowCardinalityNullableMatchesFullColumn)
+{
+    auto type_lc = std::make_shared<DataTypeLowCardinality>(
+        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
+    auto col = type_lc->createColumn();
+    col->insert(Field(String("x")));
+    col->insert(Field(String("y")));
+    col->insert(Field());   /// NULL
+    col->insert(Field(String("x")));
+    col->insert(Field());   /// NULL
+
+    auto full = col->convertToFullColumnIfLowCardinality();
+
+    Columns lc_cols{std::move(col)};
+    Columns full_cols{std::move(full)};
+
+    VectorWithMemoryTracking<String> lc_out;
+    VectorWithMemoryTracking<String> full_out;
+    UniqueKeyEncoding::encodeBlock(lc_cols, /*permutation=*/nullptr, 4096, lc_out);
+    UniqueKeyEncoding::encodeBlock(full_cols, /*permutation=*/nullptr, 4096, full_out);
+
+    ASSERT_EQ(lc_out.size(), 5u);
+    ASSERT_EQ(full_out.size(), 5u);
+    for (size_t r = 0; r < 5u; ++r)
+        EXPECT_EQ(lc_out[r], full_out[r]) << "LC(Nullable) row " << r << " must match full-column encoding";
+
+    EXPECT_EQ(lc_out[2], String("\x01", 1));
+    EXPECT_EQ(lc_out[2], lc_out[4]);
+    EXPECT_TRUE(agrees(lc_cols, 0, 2));
+    EXPECT_TRUE(agrees(lc_cols, 1, 2));
 }
 
 /// ---------------------------------------------------------------------------

@@ -41,12 +41,12 @@ public:
 
     WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.frame = true};
+        return WindowFunctionRequirements{.frame_start = true, .frame_end = true};
     }
 
-    void evaluate(char *, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    Int64 evaluate(char *, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
-        for (size_t i = 0; i < bounds.rows; ++i)
+        for (Int64 i = 0; i < bounds.rows; ++i)
         {
             const Int64 offset = arguments.at(1, bounds.row[i]).getInt();
             if (offset <= 0)
@@ -57,6 +57,7 @@ public:
             else
                 arguments.at(0, bounds.frame_start[i] + offset - 1).appendTo(result);
         }
+        return bounds.frame_start.back();
     }
 };
 

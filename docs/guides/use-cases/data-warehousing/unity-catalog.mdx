@@ -22,8 +22,12 @@ Unity Catalog does not provide [credential vending](https://docs.databricks.com/
 </Note>
 
 <Note>
-As this feature is experimental, you will need to enable it using:
-`SET allow_experimental_database_unity_catalog = 1;`
+This feature is in beta. Enable it with:
+`SET allow_database_unity_catalog = 1;`
+
+The [Read Iceberg](#read-iceberg) example uses `catalog_type = 'rest'`, which needs `SET allow_database_iceberg = 1;` instead.
+
+On versions before 25.8, where these features are experimental, the settings are `allow_experimental_database_unity_catalog` and `allow_experimental_database_iceberg`.
 </Note>
 
 ## Configuring Unity in Databricks {#configuring-unity-in-databricks}

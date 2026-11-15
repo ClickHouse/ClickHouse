@@ -23,10 +23,10 @@ struct ConverterContext;
 /// vector or has no fixed @ modifier. This relies on `applyOffset` keeping the `Offset` node as the node of a range-vector piece.
 const PrometheusQueryTree::Offset * getFixedAtModifier(const SQLQueryPiece & argument);
 
-/// Returns the grid a range function is aggregated on: its own evaluation range, or - when the range-vector argument
-/// carries a fixed @ modifier - the single point (step 0) at the fixed timestamp, where PromQL freezes the window.
+/// Returns the grid a range function is aggregated on: its own evaluation range, the single point at a fixed @ timestamp,
+/// or its own evaluation range shifted back by an offset, because an offset keeps the timestamps of the samples.
 NodeEvaluationRange getRangeAggregationRange(
-    const PrometheusQueryTree::Offset * fixed_at_node, const NodeEvaluationRange & node_range, ConverterContext & context);
+    const SQLQueryPiece & range_argument, const NodeEvaluationRange & node_range, ConverterContext & context);
 
 /// Repeats the single value aggregated on a fixed @ grid over the `result_grid_size` points of the outer query grid.
 ASTPtr repeatFixedAtResultOverGrid(
