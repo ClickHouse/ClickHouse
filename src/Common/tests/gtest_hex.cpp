@@ -1,5 +1,6 @@
 #include <Common/Hex.h>
 #include <base/Decimal_fwd.h>
+#include <base/errnoToString.h>
 #include <base/extended_types.h>
 #include <base/scope_guard.h>
 #include <base/types.h>
@@ -577,7 +578,10 @@ TYPED_TEST(HexMultiArchTest, EncodeHex16LE)
 
 TEST(HexSveVectorLengths, AllVectorLengths)
 {
-    ArmSveHexTrait::skipIfUnsupported();
+    /// `GTEST_SKIP` returns only from the function it is used in, so it has to be in the test body:
+    /// calling `ArmSveHexTrait::skipIfUnsupported` here would let the test continue without SVE.
+    if (!DB::isArchSupported(DB::TargetArch::ARM_SVE))
+        GTEST_SKIP() << "ARM_SVE not supported on this host";
 
     /// `prctl` takes and returns the vector length in bytes. The scope guard restores the original
     /// length even when an assertion below fails.
@@ -591,7 +595,7 @@ TEST(HexSveVectorLengths, AllVectorLengths)
         errno = 0;
         const int vl = prctl(PR_SVE_SET_VL, requested_vl);
         const int saved_errno = errno;
-        ASSERT_GT(vl, 0) << "prctl(PR_SVE_SET_VL) failed: " << strerror(saved_errno);
+        ASSERT_GT(vl, 0) << "prctl(PR_SVE_SET_VL) failed: " << errnoToString(saved_errno);
         const size_t vl_bytes = static_cast<size_t>(vl & PR_SVE_VL_LEN_MASK);
         if (vl_bytes == previous_vl)
             continue; /// The hardware caps the request at its maximum vector length.

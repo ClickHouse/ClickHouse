@@ -17,8 +17,8 @@
 /// a native integer. As one 128-bit integer it is encoded `high64` first on any byte order.
 static inline unsigned __int128 cityHash128AsInteger(const uint8_t * src)
 {
-    UInt64 low;
-    UInt64 high;
+    UInt64 low = 0;
+    UInt64 high = 0;
     memcpy(&low, src, 8);
     memcpy(&high, src + 8, 8);
     return static_cast<unsigned __int128>(high) << 64 | low;
