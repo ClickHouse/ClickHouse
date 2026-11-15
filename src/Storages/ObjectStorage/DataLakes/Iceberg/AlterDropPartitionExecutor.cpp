@@ -656,12 +656,13 @@ bool AlterDropPartitionExecutor::commitMetadataJSON(
     {
         auto catalog_filename = components.path_resolver.resolveForCatalog(metadata_info.path);
         const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-        if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, state.catalog_metadata_location, new_snapshot, state.metadata_object))
+        const auto commit = [&]
         {
-            if (!catalog_writes_metadata_file)
-                removeRejectedMetadataFile(components.path_resolver, metadata_info, object_storage);
+            return catalog->updateMetadata(
+                namespace_name, table_name, catalog_filename, state.catalog_metadata_location, new_snapshot, state.metadata_object);
+        };
+        if (!commitMetadataFileToCatalog(commit, !catalog_writes_metadata_file, components.path_resolver, metadata_info, object_storage))
             return false;
-        }
     }
 
     return true;
@@ -695,15 +696,25 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
 
     std::vector<std::string> files_for_cleanup;
     bool committed = false;
+    /// The catalog commit failed with an unknown outcome, so it may reference the written files.
+    bool commit_outcome_unknown = false;
 
     SCOPE_EXIT({
-        if (!committed)
+        if (!committed && !commit_outcome_unknown)
             cleanupNotCommited(std::move(files_for_cleanup));
     });
 
     auto [metadata_info, new_snapshot] = writeManifestList(state, plan, filename_generator, files_for_cleanup);
 
-    committed = commitMetadataJSON(state, filename_generator, metadata_info, new_snapshot);
+    try
+    {
+        committed = commitMetadataJSON(state, filename_generator, metadata_info, new_snapshot);
+    }
+    catch (...)
+    {
+        commit_outcome_unknown = isCatalogCommitOutcomeUnknown();
+        throw;
+    }
     if (!committed)
         return false;
 

@@ -4,6 +4,7 @@
 
 #if USE_AVRO
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
@@ -89,6 +90,20 @@ void removeRejectedMetadataFile(
     const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
     DB::ObjectStoragePtr object_storage);
 
+/// Calls `commit`, which moves the catalog pointer to the metadata file `metadata_file_info`. If this writer wrote that file
+/// (`writer_wrote_metadata_file`) and the catalog did not commit it (`false`, or an exception other than an unknown outcome),
+/// removes the file, so that the next attempt, which takes the version from the catalog, can reuse its name.
+bool commitMetadataFileToCatalog(
+    const std::function<bool()> & commit,
+    bool writer_wrote_metadata_file,
+    const IcebergPathResolver & resolver,
+    const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
+    DB::ObjectStoragePtr object_storage);
+
+/// True while handling the exception of a catalog commit whose outcome is unknown (`UNKNOWN_STATUS_OF_TRANSACTION`):
+/// the catalog may reference the files of the commit, so they must not be removed.
+bool isCatalogCommitOutcomeUnknown();
+
 struct TransformAndArgument
 {
     String transform_name;
@@ -170,6 +185,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
 struct CatalogMetadataFilePath
 {
     /// Exactly as the catalog returned it, for a commit to check that the catalog still points to it.
+    /// Empty if the catalog has no pointer and the file was found by listing the table location.
     String location;
     /// `location` relative to the table location, for reading the file.
     String path;

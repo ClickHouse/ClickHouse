@@ -619,10 +619,13 @@ static bool writeMetadataFiles(
         {
             auto catalog_filename = path_resolver.resolveForCatalog(metadata_info.path);
             const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-            if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_snapshot, metadata))
+            const auto commit = [&]
             {
-                if (!catalog_writes_metadata_file)
-                    removeRejectedMetadataFile(path_resolver, metadata_info, object_storage);
+                return catalog->updateMetadata(
+                    namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_snapshot, metadata);
+            };
+            if (!commitMetadataFileToCatalog(commit, !catalog_writes_metadata_file, path_resolver, metadata_info, object_storage))
+            {
                 cleanup();
                 return false;
             }
@@ -630,7 +633,9 @@ static bool writeMetadataFiles(
     }
     catch (...)
     {
-        cleanup();
+        /// The catalog may already reference the files of a commit with an unknown outcome.
+        if (!isCatalogCommitOutcomeUnknown())
+            cleanup();
         throw;
     }
     return true;
@@ -968,10 +973,14 @@ void alter(
         {
             auto catalog_filename = persistent_table_components.path_resolver.resolveForCatalog(metadata_info.path);
             const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-            if (!catalog->updateSchema(namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_schema, previous_schema_id))
+            const auto commit = [&]
             {
-                if (!catalog_writes_metadata_file)
-                    removeRejectedMetadataFile(persistent_table_components.path_resolver, metadata_info, object_storage);
+                return catalog->updateSchema(
+                    namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_schema, previous_schema_id);
+            };
+            if (!commitMetadataFileToCatalog(
+                    commit, !catalog_writes_metadata_file, persistent_table_components.path_resolver, metadata_info, object_storage))
+            {
                 ++i;
                 continue;
             }
