@@ -5,10 +5,14 @@
 #include <Core/Settings.h>
 #include <Parsers/Access/ASTExecuteAsQuery.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/QueryFlags.h>
 #include <Interpreters/executeQuery.h>
+#include <Common/quoteString.h>
+
+#include <unordered_set>
 
 
 namespace DB
@@ -16,13 +20,15 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
+    extern const int SETTING_CONSTRAINT_VIOLATION;
     extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
 {
     /// Creates another query context to execute a query as another user.
-    ContextMutablePtr impersonateQueryContext(ContextPtr context, const String & target_user_name)
+    ContextMutablePtr impersonateQueryContext(ContextPtr context, const String & target_user_name, const SettingsChanges * execute_as_settings)
     {
         auto new_context = Context::createCopy(context->getGlobalContext());
         new_context->setClientInfo(context->getClientInfo());
@@ -60,7 +66,8 @@ namespace
             context->getAccessControl().getID<User>(target_user_name),
             /* external_roles_= */ {},
             context->getAuthenticationGrants(),
-            context->getAuthenticationValidUntil());
+            context->getAuthenticationValidUntil(),
+            execute_as_settings);
 
         /// `setUser` replaces the current database with the target user's default database, but
         /// the wrapped statement belongs to the caller's query and must keep its database scope.
@@ -79,7 +86,7 @@ namespace
     }
 
     /// Changes the session context to execute all following queries in this session as another user.
-    void impersonateSessionContext(ContextMutablePtr context, const String & target_user_name)
+    void impersonateSessionContext(ContextMutablePtr context, const String & target_user_name, const SettingsChanges * execute_as_settings)
     {
         auto database = context->getCurrentDatabase();
         auto changed_settings = context->getSettingsRef().changes();
@@ -90,11 +97,25 @@ namespace
         auto authentication_grants = context->getAuthenticationGrants();
         auto authentication_valid_until = context->getAuthenticationValidUntil();
 
-        context->setUser(
-            context->getAccessControl().getID<User>(target_user_name),
-            /* external_roles_= */ {},
-            authentication_grants,
-            authentication_valid_until);
+        auto target_user_id = context->getAccessControl().getID<User>(target_user_name);
+
+        /// Start from the server defaults, as the query form does: the caller's values return only through the clamp below.
+        auto previous_settings = context->getSettingsCopy();
+        context->setSettings(context->getGlobalContext()->getSettingsRef());
+        try
+        {
+            context->setUser(
+                target_user_id,
+                /* external_roles_= */ {},
+                authentication_grants,
+                authentication_valid_until,
+                execute_as_settings);
+        }
+        catch (...)
+        {
+            context->setSettings(previous_settings);
+            throw;
+        }
 
         /// We need to update the client info to make currentUser() return `target_user_name`.
         context->setCurrentUserName(target_user_name);
@@ -123,10 +144,39 @@ BlockIO InterpreterExecuteAsQuery::execute()
     String target_user_name = query.target_user->as<const ASTUserNameWithHost &>().toString();
     getContext()->checkAccess(AccessType::IMPERSONATE, target_user_name);
 
+    /// The values filled for the caller carry over to the new user, so a nested `EXECUTE AS` cannot drop them.
+    SettingsChanges execute_as_settings = getContext()->getExecuteAsSettings();
+    if (query.target_settings)
+    {
+        const auto & changes = query.target_settings->as<const ASTSetQuery &>().changes;
+        std::unordered_set<std::string_view> names;
+        for (const auto & change : changes)
+            if (!names.emplace(change.name).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is specified more than once in EXECUTE AS ... SETTINGS", backQuote(change.name));
+
+        /// The caller may give the new user only values it could set for itself.
+        getContext()->checkSettingsConstraints(changes, SettingSource::QUERY);
+
+        for (const auto & change : changes)
+        {
+            if (const auto * carried = execute_as_settings.tryGet(change.name))
+            {
+                if (*carried != change.value)
+                    throw Exception(
+                        ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
+                        "Setting {} was already set by EXECUTE AS ... SETTINGS and cannot be changed",
+                        backQuote(change.name));
+            }
+            else
+                execute_as_settings.push_back(change);
+        }
+    }
+    const SettingsChanges * execute_as_settings_ptr = execute_as_settings.empty() ? nullptr : &execute_as_settings;
+
     if (query.subquery)
     {
         /// EXECUTE AS <user> <subquery>
-        auto subquery_context = impersonateQueryContext(getContext(), target_user_name);
+        auto subquery_context = impersonateQueryContext(getContext(), target_user_name, execute_as_settings_ptr);
         /// The subquery is nested, hence `internal`, but its text comes from the user, hence `user_initiated`:
         /// without it the access checks of `CREATE` subqueries would be skipped, so the impersonated statement
         /// would not be limited to the privileges of the target user.
@@ -142,7 +192,7 @@ BlockIO InterpreterExecuteAsQuery::execute()
     else
     {
         /// EXECUTE AS <user>
-        impersonateSessionContext(getContext()->getSessionContext(), target_user_name);
+        impersonateSessionContext(getContext()->getSessionContext(), target_user_name, execute_as_settings_ptr);
         return {};
     }
 }

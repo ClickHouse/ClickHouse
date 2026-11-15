@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ClientInfo.h>
 #include <base/EnumReflection.h>
@@ -33,6 +34,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 namespace
@@ -144,6 +146,16 @@ String detectClientAgent()
         return String(generic_agent);
 
     return {};
+}
+
+void writeExecuteAsSettings(const std::vector<std::pair<String, String>> & settings, WriteBuffer & out)
+{
+    writeVarUInt(settings.size(), out);
+    for (const auto & [name, value] : settings)
+    {
+        writeStringBinary(name, out);
+        writeStringBinary(value, out);
+    }
 }
 
 }
@@ -343,6 +355,42 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool 
         else
             writeBinary(static_cast<UInt8>(0), out);
     }
+
+    if (with_trailing_fields && server_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_EXECUTE_AS_SETTINGS)
+    {
+        if (execute_as_settings.has_value())
+        {
+            writeBinary(static_cast<UInt8>(1), out);
+            writeExecuteAsSettings(*execute_as_settings, out);
+        }
+        else
+            writeBinary(static_cast<UInt8>(0), out);
+    }
+}
+
+
+String ClientInfo::serializeRolesAndSettingsForInterserverHash(UInt64 protocol_revision, const String & external_roles) const
+{
+    WriteBufferFromOwnString out;
+    if (protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_EXECUTE_AS_SETTINGS)
+    {
+        /// Each field is framed as on the wire, so no bytes can move from one field to the next and an absent list
+        /// never hashes like an empty one.
+        writeStringBinary(external_roles, out);
+        writeBinary(static_cast<UInt8>(current_roles.has_value()), out);
+        if (current_roles.has_value())
+            writeVectorBinary(*current_roles, out);
+        writeBinary(static_cast<UInt8>(execute_as_settings.has_value()), out);
+        if (execute_as_settings.has_value())
+            writeExecuteAsSettings(*execute_as_settings, out);
+    }
+    else
+    {
+        writeString(external_roles, out);
+        if (protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_CURRENT_ROLES && current_roles.has_value())
+            writeVectorBinary(*current_roles, out);
+    }
+    return out.str();
 }
 
 
@@ -353,10 +401,12 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool 
   * interfaces (an HTTP query id or quota key can be long) to the shards of a `Distributed` table and
   * persisted in the queue files of an async `Distributed` insert, so a tighter bound would make the
   * server reject what it wrote itself. The number of current roles is bounded, and a role name is an
-  * identifier, so it is bounded as well.
+  * identifier, so it is bounded as well. The same holds for the `EXECUTE AS` settings and their names.
   */
 static constexpr size_t MAX_CLIENT_INFO_ROLE_NAME_SIZE = 64 * 1024;
 static constexpr size_t MAX_CLIENT_INFO_ROLES = 65536;
+static constexpr size_t MAX_CLIENT_INFO_SETTING_NAME_SIZE = 64 * 1024;
+static constexpr size_t MAX_CLIENT_INFO_EXECUTE_AS_SETTINGS = 65536;
 
 void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool with_trailing_fields)
 {
@@ -497,6 +547,29 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
         }
         else
             current_roles.reset();
+    }
+
+    if (with_trailing_fields && client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_EXECUTE_AS_SETTINGS)
+    {
+        UInt8 have_execute_as_settings = 0;
+        readBinary(have_execute_as_settings, in);
+        if (have_execute_as_settings)
+        {
+            size_t count = 0;
+            readVarUInt(count, in);
+            if (count > MAX_CLIENT_INFO_EXECUTE_AS_SETTINGS)
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many EXECUTE AS settings (maximum: {})", MAX_CLIENT_INFO_EXECUTE_AS_SETTINGS);
+            std::vector<std::pair<String, String>> settings_list;
+            for (size_t i = 0; i < count; ++i)
+            {
+                auto & [name, value] = settings_list.emplace_back();
+                readStringBinaryGrowing(name, in, MAX_CLIENT_INFO_SETTING_NAME_SIZE);
+                readStringBinaryGrowing(value, in);
+            }
+            execute_as_settings = std::move(settings_list);
+        }
+        else
+            execute_as_settings.reset();
     }
 }
 

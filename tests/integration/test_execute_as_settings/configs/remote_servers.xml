@@ -1,0 +1,14 @@
+<clickhouse>
+    <remote_servers>
+        <c_sec_off>
+            <secret>s3cr3t</secret>
+            <shard><replica><host>node_on</host><port>9000</port></replica></shard>
+            <shard><replica><host>node_off</host><port>9000</port></replica></shard>
+        </c_sec_off>
+        <c_sec_old>
+            <secret>s3cr3t</secret>
+            <shard><replica><host>node_on</host><port>9000</port></replica></shard>
+            <shard><replica><host>node_old</host><port>9000</port></replica></shard>
+        </c_sec_old>
+    </remote_servers>
+</clickhouse>
