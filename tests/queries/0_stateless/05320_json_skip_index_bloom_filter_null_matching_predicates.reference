@@ -1,0 +1,4 @@
+IN	2
+IN with NULL	3
+NOT IN	3
+has with NULL	3

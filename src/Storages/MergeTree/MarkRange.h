@@ -1,8 +1,8 @@
 #pragma once
 
 #include <cstddef>
+#include <Common/DevectorWithMemoryTracking.h>
 #include <Processors/Chunk.h>
-#include <boost/container/devector.hpp>
 #include <fmt/format.h>
 #include <base/types.h>
 
@@ -30,7 +30,7 @@ struct MarkRange
     bool operator<(const MarkRange & rhs) const;
 };
 
-struct MarkRanges : public boost::container::devector<MarkRange>
+struct MarkRanges : public DevectorWithMemoryTracking<MarkRange>
 {
     enum class SearchAlgorithm : uint8_t
     {
@@ -39,7 +39,7 @@ struct MarkRanges : public boost::container::devector<MarkRange>
         GenericExclusionSearch,
     };
 
-    using boost::container::devector<MarkRange>::devector; /// NOLINT(modernize-type-traits)
+    using DevectorWithMemoryTracking<MarkRange>::devector;
 
     size_t getNumberOfMarks() const;
     bool isOneRangeForWholePart(size_t num_marks_in_part) const;
@@ -50,6 +50,8 @@ struct MarkRanges : public boost::container::devector<MarkRange>
 
     SearchAlgorithm search_algorithm = {SearchAlgorithm::Unknown};
 };
+
+using MarkRangesPtr = std::shared_ptr<const MarkRanges>;
 
 /** Get max range.end from ranges.
  */
@@ -72,6 +74,16 @@ public:
     size_t marks_count;
     bool has_final_mark;
     MarkRanges mark_ranges;
+
+    /// True if a transform between the reading step and the consumer of this info dropped rows
+    /// from the chunk (e.g. `FilterSortedStreamByRange` which drops the other layers' rows when
+    /// a read is split into layers for FINAL or for join-by-PK-ranges).
+    bool has_dropped_rows = false;
+
+    /// If not zero, the chunk holds all rows of `mark_ranges` in order, and every mark has this number
+    /// of rows (except the last mark of the part, which can have fewer). Then the query condition cache
+    /// can record the marks without matches of a chunk that is filtered only partially (`FilterTransform`).
+    size_t rows_per_mark = 0;
 };
 
 using MarkRangesInfoPtr = std::shared_ptr<MarkRangesInfo>;

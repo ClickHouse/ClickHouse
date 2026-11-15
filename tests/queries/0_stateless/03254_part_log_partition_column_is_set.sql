@@ -13,4 +13,4 @@ DROP TABLE test SYNC;
 SYSTEM FLUSH LOGS part_log;
 
 -- SELECT * FROM system.part_log WHERE database = currentDatabase() FORMAT Vertical;
-SELECT DISTINCT throwIf(empty(partition)) FROM system.part_log WHERE database = currentDatabase();
+SELECT DISTINCT throwIf(empty(partition)) FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase();

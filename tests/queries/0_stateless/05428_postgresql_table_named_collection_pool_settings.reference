@@ -1,0 +1,5 @@
+--- a value set by the named collection is not taken from the session, so nothing is stored
+PostgreSQL connection pool size: 5
+
+--- a value the named collection does not set is taken from the session and stored
+SETTINGS postgresql_connection_pool_size = 3

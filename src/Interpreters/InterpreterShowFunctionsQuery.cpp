@@ -17,7 +17,11 @@ InterpreterShowFunctionsQuery::InterpreterShowFunctionsQuery(const ASTPtr & quer
 
 BlockIO InterpreterShowFunctionsQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
+    auto query_context = Context::createCopy(getContext());
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId({});
+
+    return executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
 }
 
 String InterpreterShowFunctionsQuery::getRewrittenQuery()
@@ -35,7 +39,7 @@ FROM {}.{})",
         system_db->getDatabaseName(),
         functions_table);
 
-    if (!query.like.empty())
+    if (query.has_like)
     {
         rewritten_query += " WHERE name ";
         rewritten_query += query.case_insensitive_like ? "ILIKE " : "LIKE ";
@@ -45,6 +49,7 @@ FROM {}.{})",
     return rewritten_query;
 }
 
+void registerInterpreterShowFunctionsQuery(InterpreterFactory & factory);
 void registerInterpreterShowFunctionsQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

@@ -2,13 +2,13 @@
     <storage_configuration>
         <disks>
             <jbod1>
-                <path>/jbod1/</path>
+                <path>/test_jbod_load_balancing_jbod1/</path>
             </jbod1>
             <jbod2>
-                <path>/jbod2/</path>
+                <path>/test_jbod_load_balancing_jbod2/</path>
             </jbod2>
             <jbod3>
-                <path>/jbod3/</path>
+                <path>/test_jbod_load_balancing_jbod3/</path>
             </jbod3>
         </disks>
         <policies>
@@ -35,6 +35,19 @@
                     </disks>
                 </volumes>
             </jbod_least_used>
+            <jbod_least_used_ttl>
+                <volumes>
+                    <disks>
+                        <disk>jbod1</disk>
+                        <disk>jbod2</disk>
+                        <disk>jbod3</disk>
+
+                        <load_balancing>least_used</load_balancing>
+                        <!-- An hour, so the space of every disk is read only when the volume is created. -->
+                        <least_used_ttl_ms>3600000</least_used_ttl_ms>
+                    </disks>
+                </volumes>
+            </jbod_least_used_ttl>
         </policies>
     </storage_configuration>
 </clickhouse>

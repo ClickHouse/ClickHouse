@@ -1,0 +1,14 @@
+=== mergeTreeAnalyzeIndexes without grant ===
+ACCESS_DENIED
+=== mergeTreeIndex without grant ===
+ACCESS_DENIED
+=== mergeTreeAnalyzeIndexes with grant ===
+1
+=== mergeTreeIndex with grant ===
+1
+=== mergeTreeAnalyzeIndexesUUID without grant ===
+ACCESS_DENIED
+=== mergeTreeAnalyzeIndexesUUID with grant ===
+1
+=== mergeTreeAnalyzeIndexes with column-only grant ===
+ACCESS_DENIED

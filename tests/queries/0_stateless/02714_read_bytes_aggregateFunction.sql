@@ -1,4 +1,7 @@
+-- Tags: no-random-settings
+SET use_statistics_for_sum_avg_aggregation = 0;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
+SET use_columns_cache = 0;
 
 CREATE TABLE test (id UInt64, `amax` AggregateFunction(argMax, String, DateTime))
 ENGINE=MergeTree()
@@ -34,7 +37,7 @@ SELECT 'UInt64',
        read_rows,
        read_bytes
 FROM system.query_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     current_database = currentDatabase() AND
     query = 'SELECT sum(id) FROM test FORMAT Null;' AND
     type = 2 AND event_date >= yesterday()
@@ -54,7 +57,7 @@ SELECT 'AggregateFunction(argMax, String, DateTime)',
        read_rows,
        read_bytes
 FROM system.query_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     current_database = currentDatabase() AND
     query = 'SELECT argMaxMerge(amax) FROM test FORMAT Null;' AND
     type = 2 AND event_date >= yesterday()

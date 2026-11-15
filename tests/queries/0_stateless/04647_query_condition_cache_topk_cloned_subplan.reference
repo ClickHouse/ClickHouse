@@ -1,0 +1,15 @@
+--- A cloned common subplan reference returns the same rows as the plain TopK read
+10000
+11000
+12000
+10000
+11000
+12000
+--- The TopK read of the same predicate still writes no QCC entry
+0
+04647_topk_write_1	0
+04647_topk_write_2	0
+--- A TopK read must not reuse an entry primed by the cloned-subplan query
+04647_clone_prime	0
+04647_topk_after_clone_prime	0
+04647_clone_reuse	1

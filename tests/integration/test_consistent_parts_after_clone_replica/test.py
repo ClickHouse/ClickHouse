@@ -79,7 +79,7 @@ def test_inconsistent_parts_if_drop_while_replica_not_active(start_cluster):
             node2,
             "SELECT value FROM system.zookeeper WHERE path='/clickhouse/tables/test1/replicated/replicas/node1' AND name='is_lost'",
             "1",
-            retry_count=40,
+            retry_count=120,
         )
 
         node2.wait_for_log_line(

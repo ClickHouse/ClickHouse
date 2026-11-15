@@ -90,7 +90,7 @@ struct DataTypeDecimalTrait
 /// Calculates result = x * multiplier + delta.
 /// If the multiplication or the addition overflows, returns false or throws DECIMAL_OVERFLOW.
 template <typename T, bool throw_on_error>
-inline bool multiplyAdd(const T & x, const T & multiplier, const T & delta, T & result)
+ALWAYS_INLINE inline bool multiplyAdd(const T & x, const T & multiplier, const T & delta, T & result)
 {
     T multiplied = 0;
     if (common::mulOverflow(x, multiplier, multiplied))
@@ -111,11 +111,17 @@ inline bool multiplyAdd(const T & x, const T & multiplier, const T & delta, T & 
 }
 
 template <typename T>
-inline T multiplyAdd(const T & x, const T & multiplier, const T & delta)
+ALWAYS_INLINE inline T multiplyAdd(const T & x, const T & multiplier, const T & delta)
 {
     T res;
     multiplyAdd<T, true>(x, multiplier, delta, res);
     return res;
+}
+
+template <typename T>
+inline bool tryMultiplyAdd(const T & x, const T & multiplier, const T & delta, T & result)
+{
+    return multiplyAdd<T, false>(x, multiplier, delta, result);
 }
 
 /** Make a decimal value from whole and fractional components with given scale multiplier.
@@ -150,7 +156,7 @@ inline DecimalType decimalFromComponentsWithMultiplier(
         const typename DecimalType::NativeType & fractional,
         typename DecimalType::NativeType scale_multiplier)
 {
-    DecimalType result;
+    DecimalType result{};
     decimalFromComponentsWithMultiplierImpl<DecimalType, true>(whole, fractional, scale_multiplier, result);
     return result;
 }
@@ -242,7 +248,7 @@ inline bool dateTimeFromComponentsWithMultiplierImpl(
     DateTime64 & result)
 {
     using T = DateTime64::NativeType;
-    T result_value;
+    T result_value = 0;
 
     if (!multiplyAdd<T, throw_on_error>(
             T(whole_seconds), scale_multiplier, fractional % scale_multiplier, result_value))
@@ -470,6 +476,9 @@ inline DataTypeDecimalTrait<U> binaryOpResult(const DataTypeNumber<T> &, const D
 {
     return DataTypeDecimalTrait<U>(DecimalUtils::max_precision<U>, ty.getScale());
 }
+
+/// Returns the current time.
+DateTime64 getCurrentDateTime64(UInt32 scale);
 
 }
 

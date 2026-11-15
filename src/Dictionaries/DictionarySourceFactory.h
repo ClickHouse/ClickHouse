@@ -2,8 +2,11 @@
 
 #include <Dictionaries/IDictionarySource.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/SecretArgumentsSpec.h>
+#include <Common/Documentation.h>
+#include <Common/Logger_fwd.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
-#include <unordered_map>
 #include <boost/noncopyable.hpp>
 
 namespace Poco
@@ -12,8 +15,6 @@ namespace Util
 {
     class AbstractConfiguration;
 }
-
-class Logger;
 }
 
 namespace DB
@@ -43,7 +44,15 @@ public:
 
     DictionarySourceFactory();
 
-    void registerSource(const std::string & source_type, Creator create_source);
+    void registerSource(const std::string & source_type, Creator create_source, SecretArgumentsSpec secret_arguments, Documentation documentation = {});
+
+    std::vector<String> getAllRegisteredNames() const; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+
+    /// Returns the embedded documentation for a dictionary source (empty if none was registered).
+    Documentation getDocumentation(const std::string & source_type) const;
+
+    /// The secret keys of every source, see `SecretArgumentsRegistry::maskDictionarySourceValue`.
+    const UnorderedMapWithMemoryTracking<std::string, SecretArgumentsSpec> & getSecretArgumentsSpecs() const { return source_secret_arguments; }
 
     DictionarySourcePtr create(
         const std::string & name,
@@ -58,8 +67,13 @@ public:
     void checkSourceAvailable(const std::string & source_type, const std::string & dictionary_name, const ContextPtr & context) const;
 
 private:
-    using SourceRegistry = std::unordered_map<std::string, Creator>;
+    using SourceRegistry = UnorderedMapWithMemoryTracking<std::string, Creator>;
     SourceRegistry registered_sources;
+
+    /// Embedded documentation, keyed by dictionary source type.
+    UnorderedMapWithMemoryTracking<std::string, Documentation> source_documentations;
+
+    UnorderedMapWithMemoryTracking<std::string, SecretArgumentsSpec> source_secret_arguments;
 
     LoggerPtr log;
 };

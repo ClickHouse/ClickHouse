@@ -1,5 +1,5 @@
--- Tags: stateful, long, no-parallel, no-asan
--- no-asan: too long.
+-- Tags: stateful, long, no-parallel, no-asan, no-tsan, no-ubsan, no-msan
+-- no-*san: too long.
 
 DROP TABLE IF EXISTS hits_text;
 
@@ -12,10 +12,12 @@ CREATE TABLE hits_text
     `URL` String
 )
 ENGINE = MergeTree
-ORDER BY (CounterID, EventDate);
+ORDER BY (CounterID, EventDate)
+SETTINGS index_granularity = 8192;
 
-SET allow_experimental_full_text_index = 1;
 SET use_query_condition_cache = 0;
+SET max_threads = 4;
+SET min_bytes_to_use_direct_io = 10737418240;
 
 ALTER TABLE hits_text ADD INDEX idx_search_phrase SearchPhrase TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 8;
 ALTER TABLE hits_text ADD INDEX idx_url URL TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 8;
