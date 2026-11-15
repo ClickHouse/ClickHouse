@@ -41,19 +41,30 @@ send_filter()
     ${CLICKHOUSE_CLIENT} --query "
         SELECT sum(id) FROM remote('127.0.0.2', currentDatabase(), ${view_name}, '$2', '$3')
         SETTINGS cluster_table_function_pushed_down_filter = '$1', serialize_query_plan = 0, enable_parallel_replicas = 0" 2>&1 \
-        | grep -o -m1 -E 'has no value|only a set of values is allowed|is not a StorageSet|UNKNOWN_TABLE|ACCESS_DENIED' || true
+        | grep -o -m1 -E 'has no value|has no record|only a set of values is allowed|is not a StorageSet|UNKNOWN_TABLE|ACCESS_DENIED' || true
+}
+
+# `base64Encode` is not in every build, so the bytes are encoded by `base64`.
+hex_filter()
+{
+    ${CLICKHOUSE_CLIENT} --query "SELECT unhex('$1') FORMAT RawBLOB" | base64 -w0
 }
 
 # One `COLUMN` node `f` of type `UInt8` without a value, as the only output, and no sets.
 send_filter 'AQEBZgEAAAABAAA=' default ''
-${CLICKHOUSE_CLIENT} --query "SELECT 1"
+
+# `in(id, s)` with a `Set` constant `s`, and no set records.
+send_filter 'AwACaWQEAAABAXMhAAMBAQIDBAUGBwgJCgsMDQ4PEAQBZgECAAEAAmluAQABAgA=' default ''
+
+# Two `Set` constants `s` and `t`, with `s` as the only output, and a record of one row of `UInt64` for `s` only.
+set_hash="0102030405060708090a0b0c0d0e0f10"
+other_set_hash="1112131415161718191a1b1c1d1e1f20"
+send_filter "$(hex_filter "0201017321000101${set_hash}01017421000101${other_set_hash}00010001${set_hash}020101040100000000000000")" default ''
 
 # One `COLUMN` node `s` of type `Set`, as the only output, and the record of its set, which starts with its kind:
 # 1 is a `StorageSet` named by the string that follows, 3 is a plan of a subquery.
-set_hash="0102030405060708090a0b0c0d0e0f10"
 set_record_prefix="0101017321000101${set_hash}00010001${set_hash}"
 
-# `base64Encode` is not in every build, so the bytes are encoded by `base64`.
 storage_set_filter()
 {
     ${CLICKHOUSE_CLIENT} --query "
@@ -64,4 +75,7 @@ storage_set_filter()
 # The hidden table and a missing one are rejected the same way, before either is looked up.
 send_filter "$(storage_set_filter "${hidden_table}")" "${reader}" 'hello'
 send_filter "$(storage_set_filter "filecluster_untrusted_filter_missing")" "${reader}" 'hello'
-send_filter "$(${CLICKHOUSE_CLIENT} --query "SELECT unhex('${set_record_prefix}03') FORMAT RawBLOB" | base64 -w0)" default ''
+send_filter "$(hex_filter "${set_record_prefix}03")" default ''
+
+# The server is still up.
+${CLICKHOUSE_CLIENT} --query "SELECT 1"

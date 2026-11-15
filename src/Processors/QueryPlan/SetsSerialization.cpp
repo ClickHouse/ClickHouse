@@ -280,6 +280,11 @@ QueryPlanAndSets QueryPlan::deserializeSets(
                 hash.low64, hash.high64, int(kind));
     }
 
+    /// `serializeSets` writes a record for every set it registered, and a set without one would be planned without its data.
+    for (const auto & [hash, columns] : registry.sets)
+        if (!columns.empty())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} has no record", hash.low64, hash.high64);
+
     return res;
 }
 
