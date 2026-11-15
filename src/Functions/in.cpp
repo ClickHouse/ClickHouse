@@ -9,6 +9,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Interpreters/Set.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

@@ -26,6 +26,7 @@
 #include <Functions/IFunction.h>
 
 #include <Storages/MergeTree/KeyCondition.h>
+#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {

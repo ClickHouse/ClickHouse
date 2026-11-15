@@ -12,6 +12,7 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 #include <Storages/MergeTree/TextIndexPostingsRankCursor.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <IO/ReadBufferFromMemory.h>

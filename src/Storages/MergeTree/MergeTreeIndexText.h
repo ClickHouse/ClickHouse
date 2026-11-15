@@ -32,6 +32,8 @@
 namespace DB
 {
 
+class ColumnString;
+
 /**
   * Implementation of inverted index for text search.
   *
