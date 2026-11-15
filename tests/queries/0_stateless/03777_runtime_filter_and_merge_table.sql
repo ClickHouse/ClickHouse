@@ -1,5 +1,5 @@
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer=1;
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 
 DROP TABLE IF EXISTS foo;
 DROP TABLE IF EXISTS foo1;
@@ -20,7 +20,7 @@ SELECT explain FROM (
 EXPLAIN
 SELECT count()
 FROM foo_merge JOIN t2 USING Val
-SETTINGS enable_join_runtime_filters=1, parallel_replicas_local_plan=1
+SETTINGS enable_join_runtime_filters=1, join_runtime_filter_min_probe_rows = 0, parallel_replicas_local_plan=1
 );
 
 SELECT '=================================================';
@@ -33,4 +33,4 @@ SELECT '=================================================';
 
 SELECT count()
 FROM foo_merge JOIN t2 USING Val
-SETTINGS enable_join_runtime_filters=1;
+SETTINGS enable_join_runtime_filters=1, join_runtime_filter_min_probe_rows = 0;

@@ -28,14 +28,14 @@ namespace
 
     struct DelayedMetricsScope
     {
-        ProfileEvents::Count slots_before = ProfileEvents::global_counters[ProfileEvents::ConcurrencyControlSlotsDelayed].load();
-        ProfileEvents::Count queries_before = ProfileEvents::global_counters[ProfileEvents::ConcurrencyControlQueriesDelayed].load();
+        ProfileEvents::Count slots_before = ProfileEvents::global_counters[ProfileEvents::ConcurrencyControlSlotsDelayed];
+        ProfileEvents::Count queries_before = ProfileEvents::global_counters[ProfileEvents::ConcurrencyControlQueriesDelayed];
 
         DelayedMetrics diff() const
         {
             return {
-                ProfileEvents::global_counters[ProfileEvents::ConcurrencyControlSlotsDelayed].load() - slots_before,
-                ProfileEvents::global_counters[ProfileEvents::ConcurrencyControlQueriesDelayed].load() - queries_before,
+                ProfileEvents::global_counters[ProfileEvents::ConcurrencyControlSlotsDelayed] - slots_before,
+                ProfileEvents::global_counters[ProfileEvents::ConcurrencyControlQueriesDelayed] - queries_before,
             };
         }
     };
@@ -1152,3 +1152,37 @@ TEST(ConcurrencyControl, SetMaxShrinkThenGrowNoUnderflow)
     }
 }
 
+
+TEST(ConcurrencyControl, FairShare)
+{
+    for (const auto * scheduler : {"round_robin", "fair_round_robin", "max_min_fair"})
+    {
+        SCOPED_TRACE(scheduler);
+
+        ConcurrencyControlTest unlimited;
+        ASSERT_TRUE(unlimited.cc.setScheduler(scheduler));
+        {
+            auto allocation = unlimited.cc.allocate(1, 1);
+            ASSERT_EQ(unlimited.cc.getFairShare(), UnlimitedSlots);
+        }
+
+        ConcurrencyControlTest t(10);
+        ASSERT_TRUE(t.cc.setScheduler(scheduler));
+        ASSERT_EQ(t.cc.getFairShare(), 10);
+
+        std::vector<SlotAllocationPtr> allocations;
+        allocations.emplace_back(t.cc.allocate(1, 1));
+        ASSERT_EQ(t.cc.getFairShare(), 5);
+        allocations.emplace_back(t.cc.allocate(1, 10));
+        ASSERT_EQ(t.cc.getFairShare(), 3);
+        for (size_t i = 0; i < 20; ++i)
+            allocations.emplace_back(t.cc.allocate(1, 1));
+        ASSERT_EQ(t.cc.getFairShare(), 1); /// Never lower than one slot.
+
+        /// Destroyed allocations no longer take a share.
+        allocations.resize(1);
+        ASSERT_EQ(t.cc.getFairShare(), 5);
+        allocations.clear();
+        ASSERT_EQ(t.cc.getFairShare(), 10);
+    }
+}

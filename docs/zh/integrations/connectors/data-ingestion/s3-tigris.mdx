@@ -1,0 +1,64 @@
+---
+sidebar_label: 'Tigris'
+sidebar_position: 7
+sidebarTitle: 'Tigris'
+slug: /integrations/tigris
+description: '将兼容 S3 的 Tigris 对象存储与 ClickHouse 配合使用'
+title: '使用 Tigris'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+keywords: ['s3', 'tigris', '对象存储', '数据加载', '兼容存储']
+---
+
+import SelfManaged from '/snippets/zh/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+ClickHouse 的 `s3` 表函数和 `S3` 磁盘类型与 [Tigris](https://www.tigrisdata.com) 兼容，后者是一项兼容 S3 的对象存储服务。Tigris 在 `https://t3.storage.dev` 提供一个全局端点，并从距离调用方最近的区域提供读取服务。因此，多区域 ClickHouse 集群可使用同一个存储桶 URL，无需为每个区域配置副本，也不会产生跨区域出口流量。
+
+后端 MergeTree 配置只需稍作修改即可兼容：
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        ...
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>https://your-bucket.t3.storage.dev/tables/</endpoint>
+                <access_key_id>your_access_key_id</access_key_id>
+                <secret_access_key>your_secret_access_key</secret_access_key>
+                <region>auto</region>
+                <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
+            </s3>
+            <s3_cache>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/var/lib/clickhouse/disks/s3_cache/</path>
+                <max_size>10Gi</max_size>
+            </s3_cache>
+        </disks>
+        ...
+    </storage_configuration>
+</clickhouse>
+```
+
+<Tip>
+  设置 `<region>auto</region>`。Tigris 使用单个全局端点，而非按区域划分的桶；但 ClickHouse 使用的 AWS SigV4 签名流程仍要求提供区域值，按惯例应设为 `auto`。
+</Tip>
+
+`s3` 表函数使用同一端点：
+
+```sql
+SELECT *
+FROM s3(
+    'https://your-bucket.t3.storage.dev/path/to/file.parquet',
+    'your_access_key_id',
+    'your_secret_access_key',
+    'Parquet'
+);
+```
+
+可在 [Tigris Console](https://console.storage.dev/) 中创建访问密钥。访问密钥 ID 以 `tid_` 开头，密钥以 `tsec_` 开头。

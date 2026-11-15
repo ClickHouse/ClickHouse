@@ -50,6 +50,10 @@ struct S3Settings
 
     void updateIfChanged(const S3Settings & settings);
 
+    /// Returns true if applying `settings` via `updateIfChanged` changes anything the S3 client is built from
+    /// (see `getClient`): any auth setting or a request setting marked with `AFFECTS_CLIENT`.
+    bool hasChangesAffectingClient(const S3Settings & settings) const;
+
     void serialize(WriteBuffer & os, ContextPtr) const;
     static S3Settings deserialize(ReadBuffer & is, ContextPtr context);
 };

@@ -1,0 +1,27 @@
+non-MergeTree left: reads from replicas
+1
+10	45	10
+the join is shipped to the replicas
+0
+non-replicated MergeTree left: reads from replicas
+1
+10	45	28
+the join is not shipped
+0
+the same left admitted: the join is shipped to the replicas
+1
+view left: reads from replicas
+1
+10	45	28
+the join is shipped to the replicas
+1
+view left with FINAL: reads from replicas
+1
+10	45	28
+the join is not shipped
+0
+materialized view left: reads from replicas
+1
+10	45	18
+the join is shipped to the replicas
+1

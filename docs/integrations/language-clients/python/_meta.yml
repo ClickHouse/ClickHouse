@@ -1,0 +1,19 @@
+schemaVersion: 1
+id: python
+name: Python
+pkg: clickhouse-connect
+category: language_client
+supportLevel: core
+license: Apache-2.0
+repository: https://github.com/ClickHouse/clickhouse-connect
+packageRegistry: pypi
+slug: /integrations/python
+transports: [HTTP]
+formats: [Native, RowBinary, Arrow, Parquet, JSONEachRow, CSV, TSV]
+ecosystem: [Apache Arrow, Pandas, SQLAlchemy, Alembic, Superset]
+install:
+  pip: pip install clickhouse-connect
+quickStartCode: /examples/quickstart.py
+desc: >-
+  HTTP client with NumPy/Pandas/Arrow/Polars integration and async
+  support. The default for new Python projects.

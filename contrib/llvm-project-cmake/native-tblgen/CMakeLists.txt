@@ -25,27 +25,39 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # These are used by the config templates but don't affect tablegen functionality
 if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     set(LLVM_TARGET_ARCH "X86")
-    set(LLVM_HOST_TRIPLE "x86_64-unknown-linux-gnu")
+    set(LLVM_HOST_TRIPLE_ARCH "x86_64")
 elseif(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64")
     set(LLVM_TARGET_ARCH "AArch64")
-    set(LLVM_HOST_TRIPLE "aarch64-unknown-linux-gnu")
+    set(LLVM_HOST_TRIPLE_ARCH "aarch64")
 elseif(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "ppc64le")
     set(LLVM_TARGET_ARCH "PowerPC")
-    set(LLVM_HOST_TRIPLE "powerpc64le-unknown-linux-gnu")
+    set(LLVM_HOST_TRIPLE_ARCH "powerpc64le")
 elseif(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "s390x")
     set(LLVM_TARGET_ARCH "SystemZ")
-    set(LLVM_HOST_TRIPLE "s390x-unknown-linux-gnu")
+    set(LLVM_HOST_TRIPLE_ARCH "s390x")
 elseif(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "riscv64")
     set(LLVM_TARGET_ARCH "RISCV")
-    set(LLVM_HOST_TRIPLE "riscv64-unknown-linux-gnu")
+    set(LLVM_HOST_TRIPLE_ARCH "riscv64")
 elseif(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "loongarch64")
     set(LLVM_TARGET_ARCH "LoongArch")
-    set(LLVM_HOST_TRIPLE "loongarch64-unknown-linux-gnu")
+    set(LLVM_HOST_TRIPLE_ARCH "loongarch64")
 else()
     # Default to X86 - tablegen doesn't actually use this at runtime
     set(LLVM_TARGET_ARCH "X86")
-    set(LLVM_HOST_TRIPLE "x86_64-unknown-linux-gnu")
+    set(LLVM_HOST_TRIPLE_ARCH "x86_64")
 endif()
+
+# The OS component of the triple must match the host too (see the parent CMakeLists.txt: a
+# wrong OS makes the AArch64 backend mis-handle the OS-reserved x18 register). tablegen itself
+# does not depend on this, but keep it consistent with the host it is built for.
+if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
+    set(LLVM_HOST_TRIPLE_OS "apple-darwin")
+elseif (CMAKE_HOST_SYSTEM_NAME STREQUAL "FreeBSD")
+    set(LLVM_HOST_TRIPLE_OS "unknown-freebsd")
+else()
+    set(LLVM_HOST_TRIPLE_OS "unknown-linux-gnu")
+endif()
+set(LLVM_HOST_TRIPLE "${LLVM_HOST_TRIPLE_ARCH}-${LLVM_HOST_TRIPLE_OS}")
 
 # Generate config headers
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/include/llvm/Config")
@@ -229,6 +241,7 @@ target_include_directories(llvm-min-tblgen PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}/include
     ${LLVM_SOURCE_DIR}/utils/TableGen
     ${LLVM_SOURCE_DIR}/../third-party/siphash/include
+    ${LLVM_SOURCE_DIR}/../libc
 )
 
 target_compile_definitions(llvm-min-tblgen PRIVATE ${LLVM_COMPILE_DEFINITIONS})
@@ -280,8 +293,10 @@ add_executable(llvm-tblgen
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/CodeExpander.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/CombinerUtils.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/CXXPredicates.cpp
-    ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/GlobalISelMatchTable.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/GlobalISelMatchTableExecutorEmitter.cpp
+    ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/MatchTable/MatchTable.cpp
+    ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/MatchTable/Matchers.cpp
+    ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/MatchTable/Types.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/PatternParser.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/Patterns.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/AsmWriterInst.cpp
@@ -366,6 +381,7 @@ target_include_directories(llvm-tblgen PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}/include
     ${LLVM_SOURCE_DIR}/utils/TableGen
     ${LLVM_SOURCE_DIR}/../third-party/siphash/include
+    ${LLVM_SOURCE_DIR}/../libc
 )
 
 target_compile_definitions(llvm-tblgen PRIVATE ${LLVM_COMPILE_DEFINITIONS})

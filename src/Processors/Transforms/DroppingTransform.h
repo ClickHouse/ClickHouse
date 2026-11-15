@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Port.h>
 
 #include <vector>
@@ -21,11 +22,15 @@ namespace DB
   * totals input, then (if present) the extremes input. Outputs are the `num_streams` data
   * outputs. This ordering is required by `Pipe::addTransform`, which connects the pipe's data
   * ports to the first inputs and identifies the totals/extremes inputs by pointer.
+  *
+  * A null totals/extremes header means that stream is absent. Each is taken separately from
+  * its own port, because a totals stream may be finalized while the data stream is not.
   */
 class DroppingTransform : public IProcessor
 {
 public:
-    DroppingTransform(SharedHeader header, size_t num_streams_, bool has_totals, bool has_extremes);
+    DroppingTransform(
+        SharedHeader header, size_t num_streams_, SharedHeader totals_header, SharedHeader extremes_header);
 
     String getName() const override { return "DroppingTransform"; }
 
@@ -37,8 +42,8 @@ public:
 private:
     size_t num_streams;
 
-    std::vector<InputPort *> data_inputs;
-    std::vector<OutputPort *> data_outputs;
+    VectorWithMemoryTracking<InputPort *> data_inputs;
+    VectorWithMemoryTracking<OutputPort *> data_outputs;
 
     InputPort * totals_input = nullptr;
     InputPort * extremes_input = nullptr;

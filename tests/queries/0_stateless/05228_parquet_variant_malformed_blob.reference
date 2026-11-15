@@ -1,0 +1,5 @@
+Malformed Parquet variant: 16 bytes are needed at offset 1, but the blob is 1 bytes
+Malformed Parquet variant: 1 bytes are needed at offset 1, but the blob is 1 bytes
+Malformed Parquet variant: 8 bytes are needed at offset 2, but the blob is 2 bytes
+Malformed Parquet variant: 99 bytes are needed at offset 5, but the blob is 5 bytes
+Malformed Parquet variant: 3 bytes are needed at offset 1, but the blob is 1 bytes

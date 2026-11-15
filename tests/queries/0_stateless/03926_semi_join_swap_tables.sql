@@ -1,6 +1,7 @@
 -- Test for swapping the build and probe sides of a SEMI join
 SET explain_query_plan_default = 'legacy';
 
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 CREATE TABLE lhs(a UInt32)
 ENGINE = MergeTree
 ORDER BY tuple();
@@ -13,7 +14,7 @@ INSERT INTO lhs VALUES (1), (2), (3);
 INSERT INTO rhs SELECT * FROM numbers_mt(1e6);
 
 SET enable_parallel_replicas = 0; -- join swap/reordering disabled with parallel replicas
-SET enable_analyzer = 1, query_plan_join_swap_table = 'auto';
+SET query_plan_join_swap_table = 'auto';
 SET join_algorithm='hash';
 SET query_plan_convert_any_join_to_semi_or_anti_join = 0; -- test is specifically about semi join swap, prevent interference
 SET query_plan_optimize_join_order_limit = 10; -- cardinality estimation needed for size-based swap decision
@@ -28,7 +29,7 @@ FROM (
     ON lhs.a = rhs.a
 )
 WHERE (explain LIKE '% Type:%') OR (explain LIKE '% Strictness:%')
-SETTINGS enable_join_runtime_filters = 1; -- affects hash join plan depth
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0; -- affects hash join plan depth
 
 -- no swapping for PARTIAL_MERGE join
 SELECT trimLeft(explain)
@@ -89,7 +90,7 @@ FROM (
     ON lhs.a = rhs.a
 )
 WHERE (explain LIKE '% Type:%') OR (explain LIKE '% Strictness:%')
-SETTINGS enable_join_runtime_filters = 1; -- affects hash join plan depth
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0; -- affects hash join plan depth
 
 SELECT *
 FROM lhs

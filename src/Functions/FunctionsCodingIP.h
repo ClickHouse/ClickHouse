@@ -108,13 +108,13 @@ namespace detail
             {
                 auto & vec_res = col_res->getChars();
                 vec_res.resize(col_size * IPV6_BINARY_LENGTH);
-                return (vec_res);
+                return vec_res;
             }
             else
             {
                 auto & vec_res = col_res->getData();
                 vec_res.resize(col_size);
-                return (vec_res);
+                return vec_res;
             }
         };
 

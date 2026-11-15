@@ -17,6 +17,7 @@ PipelineReadBuffer::PipelineReadBuffer(std::unique_ptr<ReaderExecutor> executor_
     , executor(std::move(executor_))
     , read_position(executor->getPosition())
 {
+    clearBufferPadding();
     LOG_DEBUG(log, "Created, total_size={}, read_position={}", executor->totalSize(), read_position);
 }
 
@@ -55,7 +56,7 @@ bool PipelineReadBuffer::nextImpl()
     }
 
     internal_buffer = Buffer(span.data, span.data + span.size);
-    working_buffer = internal_buffer;
+    working_buffer = Buffer(span.data, span.data + span.size);
     pos = working_buffer.begin();
     read_position = span.logical_offset + span.size;
     return true;
@@ -89,13 +90,25 @@ off_t PipelineReadBuffer::seek(off_t off, int whence)
     else
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "PipelineReadBuffer::seek: unsupported whence");
 
+    /// If the target lands inside the bytes already in `working_buffer`, just reposition `pos`:
+    /// no executor seek, no dropped window. The compressed reader over-reads a full block and then
+    /// seeks back to a mark inside it; propagating that as a backward seek to the executor would
+    /// refetch and -- since a held source connection is forward-only -- break long-connection reuse.
+    if (!working_buffer.empty()
+        && read_position - working_buffer.size() <= new_pos
+        && new_pos <= read_position)
+    {
+        pos = working_buffer.end() - (read_position - new_pos);
+        return static_cast<off_t>(new_pos);
+    }
+
     LOG_DEBUG(log, "seek to {}", new_pos);
 
     detachBuffer();
     chain = ChainedBuffers{};
     executor->seek(new_pos);
     read_position = new_pos;
-    return new_pos;
+    return static_cast<off_t>(new_pos);
 }
 
 off_t PipelineReadBuffer::getPosition()
@@ -124,6 +137,11 @@ void PipelineReadBuffer::setReadUntilPosition(size_t position)
 void PipelineReadBuffer::setReadUntilEnd()
 {
     executor->setReadUntil(std::nullopt);
+}
+
+void PipelineReadBuffer::setRequestMap(ByteRangeSet ranges)
+{
+    executor->setRequestMap(std::move(ranges));
 }
 
 std::optional<size_t> PipelineReadBuffer::tryGetFileSize()

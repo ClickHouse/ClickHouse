@@ -21,7 +21,6 @@ CREATE TABLE t_right      (id UInt64, val String) ENGINE = MergeTree() ORDER BY 
 INSERT INTO t_left  VALUES (2, 'L2'), (3, 'L3'), (7, 'L7');
 INSERT INTO t_right VALUES (2, 'R2'), (3, 'R3'), (5, 'R5'), (6, 'R6'), (7, 'R7');
 
-SET allow_experimental_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'parallel_replicas';

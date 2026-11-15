@@ -1,0 +1,8 @@
+wide v base	-1	-1
+wide v proj	-1	-1
+wide w base	1000	1000
+wide w proj	1000	1000
+compact v base	-1	-1
+compact v proj	-1	-1
+nodefault u base	0	0
+nodefault u proj	0	0
