@@ -121,6 +121,10 @@ public:
     /// EXPLAIN sets `for_explain`: a step whose plan runs with privileges the current user does not hold may hide it there.
     virtual QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) { return {}; }
 
+    /// The child plans this step has already built. A step that builds them on demand reports none until
+    /// something else has asked for them, which keeps observing a plan from changing the work a query does.
+    virtual QueryPlanRawPtrs getBuiltChildPlans() { return {}; }
+
     /// Append extra processors for this step.
     void appendExtraProcessors(const Processors & extra_processors);
 

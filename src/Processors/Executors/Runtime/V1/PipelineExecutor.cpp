@@ -21,6 +21,7 @@
 #include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
 #include <Processors/Executors/Runtime/V1/ExecutingGraph.h>
 #include <Common/MemorySpillScheduler.h>
+#include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <QueryPipeline/printPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/ISource.h>
@@ -327,6 +328,9 @@ void PipelineExecutor::setExceptionCallback(std::function<void()> callback)
 
 void PipelineExecutor::finalizeExecution()
 {
+    if (step_profiler)
+        step_profiler->markExecutionFinished();
+
     /// The output formats write their epilogue in `onPipelineFinished` below, and for some of them (`Parquet`,
     /// `ORC`, the parallel formatting) that is a substantial amount of work with its own memory, which used
     /// to be done by the executor threads. It stays within the resource accounting of the query: the CPU slots
