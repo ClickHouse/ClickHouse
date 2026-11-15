@@ -2508,6 +2508,28 @@ bool floatValuesMissKeyValues(
     return !castValuesAreTheOnlyMatches<Float64>(*compared_floats, *converted_cast_values, *converted_below, *converted_above);
 }
 
+/// A comparison of a `DateTime` with a `Date32` converts both to a zone-less `DateTime64(0)`,
+/// so it reads the date in the session time zone, not in the zone of the `DateTime`.
+static bool tryConvertDateConstantToComparisonSupertype(const DataTypePtr & transform_input_type, ColumnWithTypeAndName & constant)
+{
+    const auto input_type = removeLowCardinalityAndNullable(transform_input_type);
+    const auto constant_type = removeLowCardinalityAndNullable(constant.type);
+    if (!isDateOrDate32OrDateTimeOrDateTime64(input_type) || !isDateOrDate32OrDateTimeOrDateTime64(constant_type))
+        return true;
+
+    const auto supertype = tryGetLeastSupertype(DataTypes{input_type, constant_type});
+    if (!supertype || supertype->equals(*input_type) || supertype->equals(*constant_type))
+        return true;
+
+    Field converted = tryConvertFieldToType((*constant.column)[0], *supertype, constant_type.get());
+    if (converted.isNull())
+        return false;
+
+    constant.column = supertype->createColumnConst(1, converted);
+    constant.type = supertype;
+    return true;
+}
+
 /// Over a type of consecutive integers (the integers, `Date`, `Date32` and `DateTime`), the strict
 /// comparison `x < c` matches the same rows as `x <= c - 1`, and `x > c` the same as `x >= c + 1`. This
 /// replaces the constant `c` of such a comparison with that inclusive bound, where `x` has the type
@@ -2601,6 +2623,8 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
             if (fixedStringConstantLosesPadding(value, is_fixed_string, transform_input_type)
                 || floatValuesMissKeyValues(constant.column, constant.type, transform_input_type, std::make_shared<DataTypeFloat64>())
                 || !tryNormalizeTextConstantForZonelessDateTimeInput(transform_input_type, normalized_constant))
+                continue;
+            if (!tryConvertDateConstantToComparisonSupertype(transform_input_type, normalized_constant))
                 continue;
             makeStrictBoundInclusive(func_name, transform_input_type, normalized_constant);
         }
@@ -3357,6 +3381,8 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
 
         auto normalized_constant = constant;
         if (!tryNormalizeTextConstantForZonelessDateTimeInput(candidate.dag.input_type, normalized_constant))
+            continue;
+        if (!tryConvertDateConstantToComparisonSupertype(candidate.dag.input_type, normalized_constant))
             continue;
 
         /// Conversion to the transform's input type can turn a `String` constant into a NaN.
