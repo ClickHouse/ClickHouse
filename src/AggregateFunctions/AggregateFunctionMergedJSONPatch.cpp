@@ -38,6 +38,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int INCORRECT_DATA;
 }
 
 
@@ -291,6 +292,13 @@ struct AggregateFunctionMergedJSONPatchData
             readStringBinary(lv.path, buf);
             readStringBinary(lv.value_blob, buf);
             lv.sort_key.deserialize(buf);
+
+            /// `serialize` writes `entries`, which are sorted by path and have no duplicate paths.
+            /// A duplicate path would be inserted into the result twice for a single row of JSON.
+            if (i > 0 && batch[i - 1].path >= lv.path)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Paths in a serialized state of aggregate function mergedJSONPatch are not sorted or have duplicates (at path '{}')",
+                    lv.path);
         }
 
         insertBatchAtomic(batch);
