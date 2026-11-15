@@ -1289,8 +1289,8 @@ struct ByteAffineGapDistanceImpl
             return 0.0;
             
         /// For UTF-8 strings, convert to code points first
-        std::vector<UInt32> haystack_codepoints;
-        std::vector<UInt32> needle_codepoints;
+        VectorWithMemoryTracking<UInt32> haystack_codepoints;
+        VectorWithMemoryTracking<UInt32> needle_codepoints;
         
         if constexpr (is_utf8)
         {
@@ -1315,9 +1315,9 @@ struct ByteAffineGapDistanceImpl
         /// 3. y_matrix[i][j]: Represents the optimal score when aligning position j with a gap
         ///    in the first sequence (haystack). This tracks insertions in the second sequence.
 
-        std::vector<std::vector<double>> m_matrix(haystack_size + 1, std::vector<double>(needle_size + 1, big_value));
-        std::vector<std::vector<double>> x_matrix(haystack_size + 1, std::vector<double>(needle_size + 1, big_value));
-        std::vector<std::vector<double>> y_matrix(haystack_size + 1, std::vector<double>(needle_size + 1, big_value));
+        VectorWithMemoryTracking<VectorWithMemoryTracking<double>> m_matrix(haystack_size + 1, VectorWithMemoryTracking<double>(needle_size + 1, big_value));
+        VectorWithMemoryTracking<VectorWithMemoryTracking<double>> x_matrix(haystack_size + 1, VectorWithMemoryTracking<double>(needle_size + 1, big_value));
+        VectorWithMemoryTracking<VectorWithMemoryTracking<double>> y_matrix(haystack_size + 1, VectorWithMemoryTracking<double>(needle_size + 1, big_value));
         
         m_matrix[0][0] = 0.0;
         x_matrix[0][0] = gap_open;
@@ -1351,7 +1351,7 @@ struct ByteAffineGapDistanceImpl
             for (size_t j = 1; j <= needle_size; ++j)
             {
                 /// Check if characters at positions i-1 and j-1 match
-                bool match;
+                bool match = false;
                 if constexpr (is_utf8)
                     match = haystack_codepoints[i-1] == needle_codepoints[j-1];
                 else
@@ -1407,8 +1407,8 @@ struct ByteSmashSimilarityImpl
                 "String size too large for smashSimilarity");
 
         // Convert input strings to UTF-8 code points if needed
-        std::vector<UInt32> haystack_codepoints;
-        std::vector<UInt32> needle_codepoints;
+        VectorWithMemoryTracking<UInt32> haystack_codepoints;
+        VectorWithMemoryTracking<UInt32> needle_codepoints;
         
         if constexpr (utf8_enabled)
         {
@@ -1427,8 +1427,8 @@ struct ByteSmashSimilarityImpl
                 std::string_view short_str(reinterpret_cast<const char*>(needle_codepoints.data()),
                                         needle_codepoints.size() * sizeof(UInt32));
                 
-                std::vector<UInt32> long_codepoints = haystack_codepoints;
-                std::vector<UInt32> short_codepoints = needle_codepoints;
+                VectorWithMemoryTracking<UInt32> long_codepoints = haystack_codepoints;
+                VectorWithMemoryTracking<UInt32> short_codepoints = needle_codepoints;
                 
                 if (long_str.size() < short_str.size())
                 {
@@ -1460,7 +1460,7 @@ private:
     static ResultType processStrings(
         const std::string_view& long_str,
         const std::string_view& short_str,
-        const std::vector<UInt32>& codepoints)
+        const VectorWithMemoryTracking<UInt32>& codepoints)
     {
         if (long_str.empty() && short_str.empty())
             return 1.0;
@@ -1468,7 +1468,7 @@ private:
         if (long_str.empty() || short_str.empty())
             return 0.0;
 
-        std::vector<std::string_view> words;
+        VectorWithMemoryTracking<std::string_view> words;
         size_t pos = 0;
 
         // Split into words
@@ -1515,7 +1515,7 @@ private:
         /// dp[i][j] represents the minimum distance to match the first i words
         /// with the first j characters of the short string.
 
-        std::vector<std::vector<double>> dp(m + 1, std::vector<double>(n + 1, std::numeric_limits<double>::infinity()));
+        VectorWithMemoryTracking<VectorWithMemoryTracking<double>> dp(m + 1, VectorWithMemoryTracking<double>(n + 1, std::numeric_limits<double>::infinity()));
         dp[0][0] = 0.0;
 
         auto start_time = std::chrono::steady_clock::now();
@@ -1556,7 +1556,7 @@ private:
         return std::clamp(similarity, 0.0, 1.0);
     }
 
-    static bool isSpace(const std::string_view& str, size_t pos, const std::vector<UInt32>& codepoints)
+    static bool isSpace(const std::string_view& str, size_t pos, const VectorWithMemoryTracking<UInt32>& codepoints)
     {
         if constexpr (utf8_enabled)
         {
