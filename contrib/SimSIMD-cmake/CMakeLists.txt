@@ -13,15 +13,6 @@ if (ARCH_AMD64 OR (ARCH_AARCH64 AND NOT NO_ARMV81_OR_HIGHER))
     # Disable SVE: LLVM's MemorySanitizer cannot instrument SVE scalable vector types,
     # emitting unconditional `__msan_warning_noreturn` at every SVE function entry.
     target_compile_definitions(_simsimd PRIVATE SIMSIMD_TARGET_SVE=0 SIMSIMD_TARGET_SVE2=0)
-    # No return address signing. SimSIMD compiles some functions for ARMv8.3 and later (`target("arch=armv8.5-a+sve")`
-    # and the like), and in a function whose target has `FEAT_PAuth` clang folds `autiasp; ret` from the inherited
-    # `-mbranch-protection=pac-ret` into `retaa`. Unlike `paciasp` and `autiasp`, `retaa` is not in the `NOP` space,
-    # so it raises SIGILL on cores without `FEAT_PAuth` (Graviton2, Ampere Altra). One of these functions is the CPU
-    # probe `_simsimd_capabilities_arm`, which runs on every core, before anything is dispatched.
-    # See https://github.com/ClickHouse/ClickHouse/issues/131748 and the check in `ci/jobs/compatibility_check.py`.
-    if (ARCH_AARCH64)
-        target_compile_options(_simsimd PRIVATE -mbranch-protection=none)
-    endif()
     add_library(ch_contrib::simsimd ALIAS _simsimd)
 else()
     message(STATUS "SimSIMD library is only supported on x86_64 with SSE or ARM with ARMv8.1")
