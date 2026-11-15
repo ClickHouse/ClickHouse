@@ -2,7 +2,6 @@
 
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
-#include <Databases/IDatabase.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/Context_fwd.h>
@@ -24,6 +23,7 @@
 #include <functional>
 #include <optional>
 #include <list>
+#include <Poco/Timespan.h>
 
 
 namespace DB

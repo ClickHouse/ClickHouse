@@ -88,6 +88,7 @@
 
 #include <fmt/core.h>
 #include <fmt/ranges.h>
+#include <Databases/IDatabase.h>
 
 
 namespace ProfileEvents

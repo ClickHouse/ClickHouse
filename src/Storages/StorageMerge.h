@@ -8,6 +8,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Databases/IDatabase.h>
 
 
 namespace DB

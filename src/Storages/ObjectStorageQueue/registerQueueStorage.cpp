@@ -18,6 +18,7 @@
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseReplicatedHelpers.h>
+#include <Databases/IDatabase.h>
 
 #if USE_AWS_S3
 #include <IO/S3Common.h>

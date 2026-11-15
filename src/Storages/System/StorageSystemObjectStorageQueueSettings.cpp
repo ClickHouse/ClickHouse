@@ -13,6 +13,7 @@
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageProxy.h>
+#include <Databases/IDatabase.h>
 
 
 namespace DB

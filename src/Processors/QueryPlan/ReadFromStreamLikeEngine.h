@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageSnapshot.h>
+#include <QueryPipeline/StreamLocalLimits.h>
 
 namespace DB
 {

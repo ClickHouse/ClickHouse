@@ -3,6 +3,10 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Parsers/IAST_fwd.h>
+#include <filesystem>
+
+namespace fs = std::filesystem;
+
 
 namespace DB
 {

@@ -13,6 +13,7 @@
 #include <Storages/StorageLoop.h>
 #include <Storages/StorageProxy.h>
 #include <TableFunctions/registerTableFunctions.h>
+#include <Databases/IDatabase.h>
 
 namespace DB
 {

@@ -11,6 +11,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Common/typeid_cast.h>
+#include <Databases/IDatabase.h>
 
 namespace DB
 {

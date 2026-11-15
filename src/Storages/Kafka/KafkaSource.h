@@ -7,6 +7,7 @@
 #include <Common/Stopwatch.h>
 
 #include <optional>
+#include <Poco/Timespan.h>
 
 
 namespace Poco

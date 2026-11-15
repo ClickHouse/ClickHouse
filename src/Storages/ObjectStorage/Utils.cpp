@@ -21,6 +21,7 @@
 #include <Poco/UUIDGenerator.h>
 
 #include "config.h"
+#include <Databases/IDatabase.h>
 #if USE_AZURE_BLOB_STORAGE
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #endif

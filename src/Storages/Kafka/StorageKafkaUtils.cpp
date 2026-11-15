@@ -46,6 +46,7 @@
 
 #include <cppkafka/cppkafka.h>
 #include <librdkafka/rdkafka.h>
+#include <Databases/IDatabase.h>
 
 #if USE_KRB5
 #    include <Access/KerberosInit.h>

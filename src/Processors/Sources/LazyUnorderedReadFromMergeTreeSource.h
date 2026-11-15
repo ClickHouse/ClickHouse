@@ -4,6 +4,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 
 namespace DB
 {
