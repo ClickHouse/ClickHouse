@@ -15,6 +15,7 @@
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesMax.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesMin.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesVariance.h>
 
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
@@ -171,6 +172,12 @@ int mainEntryExampleTimeSeriesToGridTwoStackVsRecompute(int, char **)
     using MinTraits = AggregateFunctionTimeseriesMinTraits</* TimestampType */ DateTime64, /* ValueType */ Float64, /* return_timestamp */ false>;
     runFunction("timeSeriesMinToGrid", buildDataset<typename MinTraits::Bucket>(),
         [](size_t stack_size) { return typename MinTraits::Aggregator{stack_size}; },
+        checksum);
+
+    /// Variance (`timeSeriesStdvarToGrid` / `timeSeriesStddevToGrid` differ only in the result; the buckets are raw samples).
+    using VarianceTraits = AggregateFunctionTimeseriesVarianceTraits</* TimestampType */ DateTime64, /* ValueType */ Float64, /* is_stddev */ false>;
+    runFunction("timeSeriesStdvarToGrid", buildDataset<typename VarianceTraits::Bucket>(),
+        [](size_t stack_size) { return typename VarianceTraits::Aggregator{stack_size}; },
         checksum);
 
     /// Add other non-invertible functions here.

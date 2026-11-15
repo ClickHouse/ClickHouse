@@ -10,6 +10,7 @@ import json
 import math
 import re
 from dataclasses import dataclass, field
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Optional
 
@@ -22,15 +23,16 @@ FLOAT_FRACTION = 0.00001
 FLOAT_MARGIN = 0.0001
 
 _DURATION_TOKEN = re.compile(r"([0-9]*\.?[0-9]+)(ms|s|m|h|d|w|y)")
-_UNITS = {
-    "ms": 0.001,
-    "s": 1.0,
-    "m": 60.0,
-    "h": 3600.0,
-    "d": 86400.0,
-    "w": 604800.0,
-    "y": 365 * 86400.0,
+_UNITS_NS = {
+    "ms": 1_000_000,
+    "s": 1_000_000_000,
+    "m": 60 * 1_000_000_000,
+    "h": 3600 * 1_000_000_000,
+    "d": 86400 * 1_000_000_000,
+    "w": 604800 * 1_000_000_000,
+    "y": 365 * 86400 * 1_000_000_000,
 }
+NS_PER_SECOND = 1_000_000_000
 _LABEL_RE = re.compile(r'([a-zA-Z_][a-zA-Z0-9_]*)="((?:[^"\\]|\\.)*)"')
 _MATCHER_RE = re.compile(r'([a-zA-Z_][a-zA-Z0-9_]*)\s*(=~|!~|!=|=)\s*"((?:[^"\\]|\\.)*)"')
 _METRIC_NAME_RE = re.compile(r"[a-zA-Z_:][a-zA-Z0-9_:]*")
@@ -134,7 +136,7 @@ class EvalCase:
 
 @dataclass
 class LoadBlock:
-    interval_s: float
+    interval_ns: int
     series: list[SeriesSpec]
     with_nhcb: bool = False
     line: int = 0
@@ -169,22 +171,31 @@ def snapshot_test_files(snapshot_dir: Path = SNAPSHOT_DIR) -> list[Path]:
     return [testdata / name for name in meta["included_files"]]
 
 
-def parse_duration(text: str) -> float:
+def parse_duration_ns(text: str) -> int:
+    """Parse a promqltest duration into whole nanoseconds.
+
+    The decimal digits of the text are kept exact, so a load interval such as
+    ``1ms`` or ``10s53ms`` multiplies into exact sample timestamps.
+    """
     s = text.strip()
     if not s:
         raise PromqltestParseError("empty duration")
     if re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", s):
-        return float(s)
-    total = 0.0
+        return int(Decimal(s) * NS_PER_SECOND)
+    total = Decimal(0)
     pos = 0
     for m in _DURATION_TOKEN.finditer(s):
         if m.start() != pos:
             raise PromqltestParseError(f"invalid duration {text!r}")
-        total += float(m.group(1)) * _UNITS[m.group(2)]
+        total += Decimal(m.group(1)) * _UNITS_NS[m.group(2)]
         pos = m.end()
     if pos != len(s):
         raise PromqltestParseError(f"invalid duration {text!r}")
-    return total
+    return int(total)
+
+
+def parse_duration(text: str) -> float:
+    return parse_duration_ns(text) / NS_PER_SECOND
 
 
 def _unescape_label(value: str) -> str:
@@ -508,9 +519,9 @@ def parse_test_file(path: Path) -> list[Scenario]:
             name = cmd.group(1).lower()
             if name in ("load", "load_with_nhcb"):
                 tokens = stripped.split()
-                interval = parse_duration(tokens[1]) if len(tokens) > 1 else 0.0
+                interval = parse_duration_ns(tokens[1]) if len(tokens) > 1 else 0
                 with_nhcb = name == "load_with_nhcb" or "with_nhcb" in tokens
-                block = LoadBlock(interval_s=interval, series=[], with_nhcb=with_nhcb, line=line_no)
+                block = LoadBlock(interval_ns=interval, series=[], with_nhcb=with_nhcb, line=line_no)
                 i += 1
                 while i < len(lines):
                     nxt = _strip_comment(lines[i]).strip()
@@ -656,14 +667,14 @@ def assert_manifest_complete(scenarios: list[Scenario], snapshot_dir: Path = SNA
         )
 
 
-def series_insert_values(interval_s: float, series: SeriesSpec) -> Optional[str]:
+def series_insert_values(interval_ns: int, series: SeriesSpec) -> Optional[str]:
     if series.native_histogram or series.start_timestamp:
         return None
     points = []
     for sample in series.samples:
         if sample.missing or sample.native_histogram:
             continue
-        ts = sample.offset_index * interval_s
+        ts = sample.offset_index * interval_ns
         if sample.stale or (sample.value is not None and math.isnan(sample.value)):
             val = "nan"
         elif sample.value is None:
@@ -672,7 +683,7 @@ def series_insert_values(interval_s: float, series: SeriesSpec) -> Optional[str]
             val = "inf" if sample.value > 0 else "-inf"
         else:
             val = repr(float(sample.value))
-        points.append(f"(toDateTime64({ts}, 9), {val})")
+        points.append(f"(fromUnixTimestamp64Nano({ts}), {val})")
     if not points:
         return None
     labels = dict(series.labels)
@@ -685,8 +696,8 @@ def series_insert_values(interval_s: float, series: SeriesSpec) -> Optional[str]
     return f"('{metric_sql}', {{{tag_items}}}, [{', '.join(points)}])"
 
 
-def series_insert_sql(table: str, interval_s: float, series: SeriesSpec) -> Optional[str]:
-    values = series_insert_values(interval_s, series)
+def series_insert_sql(table: str, interval_ns: int, series: SeriesSpec) -> Optional[str]:
+    values = series_insert_values(interval_ns, series)
     if values is None:
         return None
     return f"INSERT INTO {table} (metric_name, tags, samples) VALUES {values}"
@@ -747,13 +758,25 @@ def parse_sql_result(tsv: str) -> list[dict[str, Any]]:
             continue
         parts = line.split("\t")
         if len(parts) == 2:
-            labels = parse_sql_labels(parts[0])
-            for ts, val in re.findall(
-                rf"\('([^']+)',({_NUMBER_RE})\)", parts[1], re.IGNORECASE
-            ):
-                rows.append(
-                    {"metric": labels, "timestamp": ts, "value": _parse_number(val)}
-                )
+            if parts[0].lstrip().startswith("["):
+                labels = parse_sql_labels(parts[0])
+                for ts, val in re.findall(
+                    rf"\('([^']+)',({_NUMBER_RE})\)", parts[1], re.IGNORECASE
+                ):
+                    rows.append(
+                        {"metric": labels, "timestamp": ts, "value": _parse_number(val)}
+                    )
+            else:
+                value = re.fullmatch(_NUMBER_RE, parts[1].strip(), re.IGNORECASE)
+                if value and _sql_ts_to_seconds(parts[0]) is not None:
+                    rows.append(
+                        {
+                            "metric": {},
+                            "timestamp": parts[0],
+                            "value": _parse_number(value.group()),
+                            "scalar": True,
+                        }
+                    )
             continue
         if len(parts) < 3:
             continue
@@ -815,9 +838,13 @@ def compare_eval(case: EvalCase, tsv: str, error: Optional[str]) -> tuple[str, s
             return "failed", f"scalar expected, got {len(rows)} rows"
         if rows[0]["metric"]:
             return "failed", f"scalar expected, got labels {rows[0]['metric']}"
+        if not rows[0].get("scalar"):
+            return "failed", "scalar expected, got vector row"
         if not values_approx_equal(float(rows[0]["value"]), float(case.expected_scalar)):
             return "failed", f"scalar mismatch: {rows[0]['value']} vs {case.expected_scalar}"
         return "passed", ""
+    if any(row.get("scalar") for row in rows):
+        return "failed", "vector expected, got scalar row"
 
     actual_series: dict[tuple, list] = {}
     actual_order = []

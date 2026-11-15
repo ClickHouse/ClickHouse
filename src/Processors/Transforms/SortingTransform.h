@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
 #include <Processors/ISource.h>
@@ -20,13 +21,23 @@ public:
         MergeUniqueChunks,
     };
 
+    /// A nonzero `preferred_block_bytes` reduces the row limit using the average allocated row size.
+    /// The byte target is approximate and keeps at least 128 rows unless the row limit is smaller.
+    /// Zero disables byte-based sizing.
     MergeSorter(
         SharedHeader header, Chunks chunks_, const SortDescription & description,
-        size_t max_merged_block_size_, UInt64 limit_, Mode mode_ = Mode::PreserveRows);
+        size_t max_merged_block_size_, UInt64 limit_, Mode mode_ = Mode::PreserveRows, size_t preferred_block_bytes = 0);
 
     /// Consumes at most `max_merged_block_size` rows. Duplicate-only progress returns columns with zero
     /// rows; an empty chunk marks completion. A nonzero `limit` counts emitted rows.
     Chunk read();
+
+    /// Derives the output row limit from the row and byte targets and the input's average allocation.
+    static size_t calculateMaxMergedBlockSize(
+        size_t max_block_rows, size_t preferred_block_bytes, size_t input_rows, size_t input_bytes);
+
+    /// Returns the row limit, reduced by the optional byte target using the input's average row size.
+    size_t getMaxMergedBlockSize() const { return max_merged_block_size; }
 
 private:
     Chunks chunks;
@@ -56,8 +67,8 @@ class MergeSorterSource final : public ISource
 public:
     MergeSorterSource(
         SharedHeader header, Chunks chunks, const SortDescription & description, size_t max_merged_block_size,
-        UInt64 limit, MergeSorter::Mode mode = MergeSorter::Mode::PreserveRows)
-        : ISource(header), merge_sorter(header, std::move(chunks), description, max_merged_block_size, limit, mode)
+        UInt64 limit, MergeSorter::Mode mode = MergeSorter::Mode::PreserveRows, size_t preferred_block_bytes = 0)
+        : ISource(header), merge_sorter(header, std::move(chunks), description, max_merged_block_size, limit, mode, preferred_block_bytes)
     {
     }
 
@@ -108,7 +119,7 @@ protected:
     /// Save original block structure here.
     Block header_without_constants;
     /// Columns which were constant in header and we need to remove from chunks.
-    std::vector<bool> const_columns_to_remove;
+    VectorWithMemoryTracking<bool> const_columns_to_remove;
 
     void removeConstColumns(Chunk & chunk);
     void enrichChunkWithConstants(Chunk & chunk);

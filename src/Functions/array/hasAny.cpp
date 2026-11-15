@@ -1,12 +1,13 @@
 #include <Functions/array/hasAllAny.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionLowCardinalityFastPath.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 
 
 namespace DB
 {
 
-class FunctionArrayHasAny final : public FunctionArrayHasAllAny
+class FunctionArrayHasAny : public FunctionArrayHasAllAny
 {
 public:
     static constexpr auto name = "hasAny";
@@ -48,7 +49,7 @@ Code: 386. DB::Exception: There is no supertype for types Array(UInt8), String b
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionArrayHasAny>(documentation);
+    factory.registerFunction<FunctionWithLowCardinalityFastPath<FunctionArrayHasAny>>(documentation);
 }
 
 }

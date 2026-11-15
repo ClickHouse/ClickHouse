@@ -92,6 +92,7 @@ The schema of this table is the same as [system.parts](/reference/system-tables/
 - `creation_csn` ([UInt64](/reference/data-types/int-uint)) — CSN of transaction that has created this object
 - `removal_csn` ([UInt64](/reference/data-types/int-uint)) — CSN of transaction that has removed this object
 - `has_lightweight_delete` ([UInt8](/reference/data-types/int-uint)) — The flag which indicated whether the part has lightweight delete mask.
+- `unique_key_bitmap_versions` ([Array(String)](/reference/data-types/array)) — Delete-bitmap sidecars on this part: one written for another part reads as `for_<target>`, one carried in from a retired source part as `<csn>_for_<target>`. Empty without a unique key.
 - `last_removal_attempt_time` ([DateTime](/reference/data-types/datetime)) — The last time the server tried to delete this part.
 - `removal_state` ([String](/reference/data-types/string)) — The current state of part removal process.
 

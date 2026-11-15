@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
+# Tags: no-parallel-replicas
+# Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
 # an offset predicate prunes a real projection read, so the estimate has to prune by it too
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-PIN="optimize_use_projections = 1, optimize_use_implicit_projections = 0, optimize_read_in_order = 1"
+PIN="optimize_use_projections = 1, optimize_use_implicit_projections = 0, optimize_read_in_order = 1, prefer_optimize_projection = 0"
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_off_est; DROP TABLE IF EXISTS t_off_real;

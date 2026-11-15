@@ -19,7 +19,7 @@ rm -rf "$TABLE_PATH"
 # (1) Fresh create with an explicit schema writes commit 0.
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
-SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_writes = 1;
 SET allow_delta_lake_create_table = 1;
 CREATE TABLE t_dl_fresh (id Int32, name String) ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);
 "
@@ -28,7 +28,7 @@ CREATE TABLE t_dl_fresh (id Int32, name String) ENGINE = DeltaLakeLocal('${TABLE
 # (2) Attaching with a matching explicit schema succeeds.
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
-SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_writes = 1;
 SET allow_delta_lake_create_table = 1;
 CREATE TABLE t_dl_match (id Int32, name String) ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);
 SELECT count() FROM t_dl_match;
@@ -39,7 +39,7 @@ echo "match: attached"
 #     the data on read (flexible attach).
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
-SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_writes = 1;
 SET allow_delta_lake_create_table = 1;
 CREATE TABLE t_dl_differing (id Int64, name String) ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);
 SELECT count() FROM t_dl_differing;
@@ -49,7 +49,7 @@ echo "differing: attached"
 # (4) A columnless attach uses the table's own schema.
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
-SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_writes = 1;
 SET allow_delta_lake_create_table = 1;
 CREATE TABLE t_dl_columnless ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);
 SELECT count() FROM t_dl_columnless;

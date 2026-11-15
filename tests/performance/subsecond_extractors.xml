@@ -1,0 +1,14 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>CREATE TABLE dt64_6 (dt DateTime64(6)) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO dt64_6 SELECT fromUnixTimestamp64Micro(toInt64(number) * 7919 - 400000000000000) FROM numbers(100000000)</fill_query>
+
+    <query>SELECT sum(toMillisecond(dt)) FROM dt64_6</query>
+    <query>SELECT sum(toMicrosecond(dt)) FROM dt64_6</query>
+    <query>SELECT sum(toNanosecond(dt)) FROM dt64_6</query>
+
+    <drop_query>DROP TABLE IF EXISTS dt64_6</drop_query>
+</test>

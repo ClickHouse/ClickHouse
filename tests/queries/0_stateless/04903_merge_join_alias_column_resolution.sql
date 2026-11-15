@@ -1,7 +1,6 @@
 -- The `Merge` children disagree about `x`: it is physical in one child and an `ALIAS` in the
 -- other. A JOIN has to resolve both `key` and `x` through `StorageMerge`, exercising the batched
 -- identifier resolution and the subsequent alias-expression rewrite.
-SET enable_analyzer = 1;
 
 CREATE TABLE t04903_physical (key UInt8, x UInt8) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t04903_alias (key UInt8, y UInt8, x UInt8 ALIAS y IN (1, 2, 3)) ENGINE = MergeTree ORDER BY tuple();

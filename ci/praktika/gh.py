@@ -1,3 +1,4 @@
+import base64
 import dataclasses
 import html
 import json
@@ -85,6 +86,9 @@ class GH:
         url: str
         context: str
 
+    PUSH_MAX_COMMITS = 50  # bound of the push walk; the merge queue merges at most 5 entries at once
+    COMMIT_FILES_LIMIT = 3000  # GitHub lists at most 3000 files of a commit, over all pages
+
     @classmethod
     def get_changed_file_statuses(cls, strict=False) -> Optional[Dict[str, str]]:
         """Changed path -> status, fetched once from GitHub file metadata.
@@ -132,15 +136,29 @@ class GH:
                     "capped commits API for changed-file detection."
                 )
 
+        before = info.env.PUSH_BEFORE_SHA if info.is_push_event and pr_number <= 0 else ""
         if pr_number > 0:
             command = f"gh api repos/{repo_name}/pulls/{pr_number}/files --paginate"
             cache_key = f"pr:{repo_name}:{pr_number}"
         else:
             command = f"gh api repos/{repo_name}/commits/{sha}"
-            cache_key = f"commit:{repo_name}:{sha}"
+            if before:
+                cache_key = f"commit:{repo_name}:{before}..{sha}"
+            else:
+                cache_key = f"commit:{repo_name}:{sha}"
 
         if cache_key in cls._changed_file_statuses_cache:
             return dict(cls._changed_file_statuses_cache[cache_key])
+
+        if before:
+            res = cls._get_push_file_statuses(repo_name, sha, before)
+            if res is None and strict:
+                raise RuntimeError(
+                    f"Failed to get the changed files of the push {before}..{sha}"
+                )
+            if res is not None:
+                cls._changed_file_statuses_cache[cache_key] = dict(res)
+            return res
 
         # The GitHub API call is an idempotent read that occasionally fails with
         # a transient error (rate limiting, a 5xx, or a GraphQL "Something went
@@ -192,6 +210,39 @@ class GH:
         return res
 
     @classmethod
+    def _get_push_file_statuses(cls, repo_name, sha, before) -> Optional[Dict[str, str]]:
+        """The changed files of a push are those of every commit it added (the merge queue
+        fast-forwards the branch over several merges at once): walk first parents from `sha`
+        down to `before`, reading all pages of each commit's files. `None` when they cannot
+        all be known, since a partial list would filter out jobs the missing files affect."""
+        if not re.fullmatch(r"[0-9a-f]{40}", before) or not before.strip("0"):
+            # an all-zero `before` is a created branch: all of it is new
+            print(f"WARNING: the push has no previous head [{before}], the changed files are unknown")
+            return None
+        statuses = {}
+        commit = sha
+        for _ in range(cls.PUSH_MAX_COMMITS):
+            output = cls.get_output_with_retries(
+                f"gh api repos/{repo_name}/commits/{commit} --paginate"
+            )
+            try:
+                pages = cls._json_loads_paginated(output)
+                files = [file_obj for page in pages for file_obj in page["files"]]
+                parent = pages[0]["parents"][0]["sha"]
+                commit_statuses = cls._statuses_from_files(files)
+            except (KeyError, IndexError, TypeError, ValueError):
+                break
+            if len(files) >= cls.COMMIT_FILES_LIMIT:
+                break
+            for path, status in commit_statuses.items():
+                statuses.setdefault(path, status)
+            if parent == before:
+                return statuses
+            commit = parent
+        print(f"WARNING: failed to read all files of the push {before}..{sha}, the changed files are unknown")
+        return None
+
+    @classmethod
     def get_changed_files(cls, strict=False) -> Optional[List[str]]:
         statuses = cls.get_changed_file_statuses(strict=strict)
         return cls.changed_files_from_statuses(statuses)
@@ -236,7 +287,10 @@ class GH:
             files = cls._json_loads_paginated(output)
         else:
             files = json.loads(output).get("files", [])
+        return cls._statuses_from_files(files)
 
+    @classmethod
+    def _statuses_from_files(cls, files) -> Dict[str, str]:
         statuses = {}
         rename_sources = []
         for file_obj in files:
@@ -562,7 +616,7 @@ class GH:
             shutil.rmtree(temp_root, ignore_errors=True)
 
     @classmethod
-    def do_command_with_retries(cls, command, verbose=False):
+    def do_command_with_retries(cls, command, verbose=False, strict=False):
         res = False
         retry_count = 0
         out, err = "", ""
@@ -585,13 +639,19 @@ class GH:
                 time.sleep(delay)
 
         if not res:
-            print(
-                f"ERROR: Failed to execute gh command [{command}] out:[{out}] err:[{err}] after [{retry_count}] attempts"
+            # Field order matters: this message can reach a public report page, so the
+            # fields naming the cause come before the API-controlled output.
+            message = (
+                f"Failed to execute gh command [{command}] "
+                f"after [{retry_count}] attempts err:[{_elide(err)}] out:[{_elide(out)}]"
             )
+            print(f"ERROR: {message}")
+            if strict:
+                raise RuntimeError(message)
         return res
 
     @classmethod
-    def get_output_with_retries(cls, command, verbose=False, strict=False):
+    def get_output_with_retries(cls, command, verbose=False, strict=False, retries=None):
         """Run a read-style ``gh`` command and return its stdout.
 
         Mirrors :meth:`do_command_with_retries` but returns the captured
@@ -606,13 +666,19 @@ class GH:
         ``strict=True`` raises instead, so a caller can report why the
         read failed rather than be handed an empty string that is
         indistinguishable from an empty result.
+
+        ``command`` may be a string or an argv list; a list is joined with
+        ``shlex.join`` (the command runs through the shell).
         """
+        if not isinstance(command, str):
+            command = shlex.join(command)
+        limit = Settings.MAX_RETRIES_GH if retries is None else retries
         retry_count = 0
         # Counted where the subprocess is invoked, so a non-retryable class that breaks out
         # of the loop still reports the attempt it made. retry_count counts retries taken.
         attempts = 0
         out, err, ret_code = "", "", -1
-        while retry_count < Settings.MAX_RETRIES_GH:
+        while retry_count < limit:
             attempts += 1
             ret_code, out, err = Shell.get_res_stdout_stderr(command, verbose=verbose)
             if ret_code == 0:
@@ -640,6 +706,58 @@ class GH:
         if strict:
             raise RuntimeError(message)
         return ""
+
+    @classmethod
+    def api(
+        cls,
+        endpoint,
+        method="GET",
+        fields=None,
+        jq=None,
+        paginate=False,
+        strict=False,
+        retries=None,
+        verbose=False,
+        payload=None,
+    ):
+        """Run a REST ``gh api`` call with retries and return its stdout.
+
+        ``method`` is always passed as ``-X`` so ``fields`` stay query params on a
+        ``GET`` (``gh api`` switches to ``POST`` as soon as a field is present).
+        ``fields`` are sent as ``-f`` string params (no typed or ``@file`` forms).
+        Returns trimmed stdout ("" for a no-body response such as DELETE);
+        ``strict=True`` raises on persistent failure instead of returning "".
+        ``retries=1`` disables retrying, e.g. for a best-effort call whose
+        expected failure (a 404) is not transient. ``payload`` (a dict) is sent
+        as the JSON request body.
+        """
+        argv = ["gh", "api", "-X", method, endpoint]
+        for key, value in (fields or {}).items():
+            argv += ["-f", f"{key}={value}"]
+        if jq:
+            argv += ["--jq", jq]
+        if paginate:
+            argv.append("--paginate")
+        if payload is None:
+            return cls.get_output_with_retries(
+                argv, verbose=verbose, strict=strict, retries=retries
+            )
+        # A JSON body (nested objects, nulls, booleans) cannot be expressed with -f fields.
+        with tempfile.NamedTemporaryFile("w", suffix=".json", encoding="utf-8") as f:
+            json.dump(payload, f)
+            f.flush()
+            return cls.get_output_with_retries(
+                argv + ["--input", f.name], verbose=verbose, strict=strict, retries=retries
+            )
+
+    @classmethod
+    def api_json(cls, endpoint, paginate=False, **kwargs):
+        """``api`` that returns the parsed JSON response (None for an empty body) and
+        raises on persistent failure. With ``paginate``, the pages are joined into one list."""
+        out = cls.api(endpoint, paginate=paginate, strict=True, **kwargs)
+        if not out:
+            return None
+        return cls._json_loads_paginated(out) if paginate else json.loads(out)
 
     @classmethod
     def _json_loads_paginated(cls, output):
@@ -1437,6 +1555,93 @@ class GH:
         return cls.do_command_with_retries(cmd)
 
     @classmethod
+    def commit_files_to_branch(cls, repo, base_branch, branch, files, message, base_sha=None, gitlinks=None):
+        """Overlay `files` (path -> bytes, or None to delete) and submodule pointers
+        `gitlinks` (path -> commit sha) onto a base commit as a
+        single commit on `branch` (created, or force-moved if it exists) in `repo`, via
+        the Git Data API - no clone. The base is `base_sha` when given, else the tip of
+        `base_branch`. Returns True when the new tree differs from the base (the branch
+        was written), False when every file already matches (no branch)."""
+        if base_sha is None:
+            base_sha = cls.api(f"/repos/{repo}/git/ref/heads/{base_branch}", jq=".object.sha", strict=True)
+        base_tree = cls.api(f"/repos/{repo}/git/commits/{base_sha}", jq=".tree.sha", strict=True)
+        tree = [{"path": path, "mode": "160000", "type": "commit", "sha": sha} for path, sha in (gitlinks or {}).items()]
+        for path, content in files.items():
+            if content is None:  # the Git Data API deletes a path given a null sha
+                tree.append({"path": path, "mode": "100644", "type": "blob", "sha": None})
+                continue
+            blob_sha = cls.api(
+                f"/repos/{repo}/git/blobs",
+                method="POST",
+                payload={"content": base64.b64encode(content).decode(), "encoding": "base64"},
+                jq=".sha",
+                strict=True,
+            )
+            tree.append({"path": path, "mode": "100644", "type": "blob", "sha": blob_sha})
+        new_tree = cls.api(
+            f"/repos/{repo}/git/trees",
+            method="POST",
+            payload={"base_tree": base_tree, "tree": tree},
+            jq=".sha",
+            strict=True,
+        )
+        if new_tree == base_tree:
+            return False
+        tip = cls.api(f"/repos/{repo}/git/ref/heads/{branch}", jq=".object.sha", retries=1)
+        if tip and cls.api(f"/repos/{repo}/git/commits/{tip}", jq=".tree.sha", strict=True) == new_tree:
+            return True
+        commit_sha = cls.api(
+            f"/repos/{repo}/git/commits",
+            method="POST",
+            payload={"message": message, "tree": new_tree, "parents": [base_sha]},
+            jq=".sha",
+            strict=True,
+        )
+        if tip:
+            cls.api(
+                f"/repos/{repo}/git/refs/heads/{branch}",
+                method="PATCH",
+                payload={"sha": commit_sha, "force": True},
+                strict=True,
+            )
+        else:
+            cls.api(
+                f"/repos/{repo}/git/refs",
+                method="POST",
+                payload={"ref": f"refs/heads/{branch}", "sha": commit_sha},
+                strict=True,
+            )
+        return True
+
+    @classmethod
+    def find_open_pr(cls, head, repo=None):
+        """Return {'number','html_url'} of the open PR whose head branch is
+        `head`, or None if there is none."""
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        owner = repo.split("/")[0]
+        found = cls.api_json(f"/repos/{repo}/pulls", fields={"head": f"{owner}:{head}", "state": "open"})
+        if found:
+            return {"number": found[0]["number"], "html_url": found[0]["html_url"]}
+        return None
+
+    @classmethod
+    def create_pull_request(cls, head, base, title, body, repo=None, draft=False):
+        """Open a PR from `head` into `base`, or return the existing open one from
+        `head`. Returns {'number','html_url'}."""
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        existing = cls.find_open_pr(head, repo=repo)
+        if existing:
+            return existing
+        pr = cls.api_json(
+            f"/repos/{repo}/pulls",
+            method="POST",
+            payload={"title": title, "head": head, "base": base, "body": body, "draft": bool(draft)},
+        )
+        return {"number": pr["number"], "html_url": pr["html_url"]}
+
+    @classmethod
     def post_commit_status(cls, name, status, description, url, sha="", repo=""):
         """
         Sets GH commit status
@@ -1833,8 +2038,13 @@ class GH:
                 else:
                     return 2
 
+            # A skipped job that explains itself in a comment is listed too, so
+            # that a job skipped for a transient reason is not silently green.
             subresults = [
-                r for r in result.results if (r.is_completed() and not r.is_ok())
+                r
+                for r in result.results
+                if r.is_completed()
+                and (not r.is_ok() or (r.is_skipped() and r.ext.get("comment")))
             ]
             subresults = sorted(subresults, key=get_status_priority)
 
@@ -1973,6 +2183,42 @@ class GH:
                                 escape_pipes(sub_failed_result.comment or ""),
                             )
             return body
+
+
+class PR:
+    """A GitHub pull request, to grow into a full PR object as callers need more of it."""
+
+    def __init__(self, number, repo=None):
+        self.number = int(number)
+        self.repo = repo or _Environment.get().REPOSITORY
+        self.url = f"https://github.com/{self.repo}/pull/{self.number}"
+
+    @classmethod
+    def latest_merged(cls, head, repo=None):
+        """The newest merged PR from branch `head` (among its last 100 closed ones), or None."""
+        repo = repo or _Environment.get().REPOSITORY
+        prs = GH.api_json(
+            f"/repos/{repo}/pulls",
+            fields={"head": f"{repo.split('/')[0]}:{head}", "state": "closed",
+                    "sort": "created", "direction": "desc", "per_page": "100"},
+        )
+        return next((cls(pr["number"], repo) for pr in prs if pr["merged_at"]), None)
+
+    def close(self, delete_branch=False, strict=False):
+        """Close the PR, and delete its head branch when `delete_branch`. Returns whether it
+        succeeded; with `strict`, raises instead."""
+        out = GH.api(f"/repos/{self.repo}/pulls/{self.number}", method="PATCH", payload={"state": "closed"}, strict=strict)
+        if not out:
+            return False
+        if not delete_branch:
+            return True
+        head = json.loads(out)["head"]["ref"]
+        return GH.do_command_with_retries(f"gh api -X DELETE /repos/{self.repo}/git/refs/heads/{head}", strict=strict)
+
+    def get_changed_files(self):
+        """File paths the PR changes, as GitHub computes its diff."""
+        files = GH.api_json(f"/repos/{self.repo}/pulls/{self.number}/files", paginate=True)
+        return [f["filename"] for f in files]
 
 
 if __name__ == "__main__":

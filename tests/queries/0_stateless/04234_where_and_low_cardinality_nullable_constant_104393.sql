@@ -34,6 +34,6 @@ SELECT count() FROM t_104393 PREWHERE (a > 0) AND CAST(1 AS LowCardinality(Nulla
 
 -- Same predicate, prewhere disabled (the original report).
 SELECT count() FROM t_104393 WHERE (a > 0) AND CAST(1 AS LowCardinality(Nullable(UInt8)))
-SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
+SETTINGS optimize_move_to_prewhere = 0;
 
 DROP TABLE t_104393;

@@ -12,27 +12,19 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки используются для настройки сервера ClickHouse и автоматически генерируются из исходного кода ClickHouse.
 
-<div id="paimon_metadata_files_cache_max_entries">
-  ## paimon_metadata_files_cache_max_entries
-</div>
+## paimon_metadata_files_cache_max_entries {#paimon_metadata_files_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="Yes" />Максимальное количество записей в кэше файлов метаданных paimon. Ноль означает отсутствие ограничения на число записей.
 
-<div id="paimon_metadata_files_cache_policy">
-  ## paimon_metadata_files_cache_policy
-</div>
+## paimon_metadata_files_cache_policy {#paimon_metadata_files_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Название политики кэша метаданных Paimon.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Название политики вытеснения кэша метаданных Paimon. Возможные значения: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="paimon_metadata_files_cache_size">
-  ## paimon_metadata_files_cache_size
-</div>
+## paimon_metadata_files_cache_size {#paimon_metadata_files_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Да" />Максимальный размер кэша метаданных Paimon в байтах. Ноль означает, что кэш отключён.
 
-<div id="paimon_metadata_files_cache_size_ratio">
-  ## paimon_metadata_files_cache_size_ratio
-</div>
+## paimon_metadata_files_cache_size_ratio {#paimon_metadata_files_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />Размер защищённой очереди (в случае политики SLRU) в кэше метаданных paimon относительно общего размера кэша.
 

@@ -1,12 +1,6 @@
 -- Tags: long
 
-SET allow_experimental_nullable_tuple_type = 1;
-
-{% for setting in ['enable_analyzer = 1'] -%}
-
-select '{{ setting }}';
-
-SET {{ setting }};
+SET enable_nullable_tuple_type = 1;
 
 DROP TABLE IF EXISTS calendar;
 DROP TABLE IF EXISTS events32;
@@ -539,5 +533,3 @@ ORDER BY ALL;
 
 DROP TABLE IF EXISTS lhs_mixed;
 DROP TABLE IF EXISTS rhs_mixed;
-
-{% endfor -%}

@@ -2,6 +2,9 @@
 -- EXPLAIN output may differ
 
 SET explain_query_plan_default = 'legacy';
+-- This test inspects the pipeline shape of the LIMIT BY into sort optimization; the primary-key-range
+-- sharding of the `full_sorting_merge` join below would split it into per-range merge joins.
+SET query_plan_join_shard_by_pk_ranges = 0;
 
 -- { echo }
 
@@ -122,8 +125,9 @@ SELECT a.k AS k, a.v AS v
 FROM test_join_a a JOIN test_join_b b ON a.k = b.k
 ORDER BY k, v LIMIT 2, 3 BY k;
 
--- With `full_sorting_merge`, the optimization applies to the final `ORDER BY` sort above
--- the `JOIN`, not to the input sorts used by the join algorithm.
+-- With `full_sorting_merge`, the join emits its result in join-key order, so the final `ORDER BY k, v`
+-- above it only finishes the sort by `v` within each `k` (a `FinishSorting`): there is no full sort to
+-- push the `LIMIT BY` into, and neither the input sorts used by the join algorithm are touched.
 EXPLAIN PIPELINE
 SELECT a.k AS k, a.v AS v
 FROM test_join_a a JOIN test_join_b b ON a.k = b.k
