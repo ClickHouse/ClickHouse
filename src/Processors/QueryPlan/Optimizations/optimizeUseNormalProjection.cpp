@@ -853,12 +853,12 @@ UseProjectionsResult optimizeUseNormalProjections(
     bool best_sort_order_helps = projection_sort_order_useful(best_candidate->projection);
 
     /// A parent read still over the row limits after the projections pruned its parts throws,
-    /// so it cannot beat the projection whatever its mark count.
+    /// so it cannot beat the projection whatever its mark count. The rows are checked instead of `isUsable`,
+    /// because the exact count optimization clears `exceeded_row_limits` for the remaining read.
     const auto [limits, leaf_limits] = MergeTreeDataSelectExecutor::getRowLimits(*context, query_info);
     const size_t parent_reading_rows = parent_reading_select_result->selected_rows;
-    const bool parent_exceeds_row_limits = !parent_reading_select_result->isUsable()
-        && ((limits.max_rows && parent_reading_rows > limits.max_rows)
-            || (leaf_limits.max_rows && parent_reading_rows > leaf_limits.max_rows));
+    const bool parent_exceeds_row_limits = (limits.max_rows && parent_reading_rows > limits.max_rows)
+        || (leaf_limits.max_rows && parent_reading_rows > leaf_limits.max_rows);
     const bool compare_with_parent = !relax_projection_checks && !parent_exceeds_row_limits;
 
     /// Phase 4: apply the rejection criteria with the (possibly refined) parent mark count.

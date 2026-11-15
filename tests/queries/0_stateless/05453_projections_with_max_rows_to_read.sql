@@ -58,3 +58,17 @@ INSERT INTO t_pruned_projection SELECT 200000 + number, 5 FROM numbers(4000);
 SELECT count() FROM t_pruned_projection WHERE key < 201000 AND tok = 5 SETTINGS max_rows_to_read = 7000, force_optimize_projection = 0, prefer_optimize_projection = 0;
 
 DROP TABLE t_pruned_projection;
+
+-- The exact count optimization counts the first part and clears the limit flag, the remaining table read is still
+-- over the limit.
+DROP TABLE IF EXISTS t_exact_count_projection;
+CREATE TABLE t_exact_count_projection (key UInt64) ENGINE = MergeTree ORDER BY key
+SETTINGS index_granularity = 1000, index_granularity_bytes = '10Mi';
+SYSTEM STOP MERGES t_exact_count_projection;
+ALTER TABLE t_exact_count_projection ADD PROJECTION p (SELECT * ORDER BY key) WITH SETTINGS (index_granularity = 10);
+INSERT INTO t_exact_count_projection SELECT number FROM numbers(1000);
+INSERT INTO t_exact_count_projection SELECT number + 100000 FROM numbers(4000);
+
+SELECT count() FROM t_exact_count_projection WHERE key < 1000 OR (key >= 100200 AND key < 100700) SETTINGS max_rows_to_read = 700, optimize_use_implicit_projections = 1, force_optimize_projection = 0, prefer_optimize_projection = 0;
+
+DROP TABLE t_exact_count_projection;
