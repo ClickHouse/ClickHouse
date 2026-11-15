@@ -56,7 +56,7 @@ drop table test_compact_map_with_buckets;
 
 drop table if exists test_compact_map_with_buckets_tuple;
 create table test_compact_map_with_buckets_tuple (json Tuple(data JSON(max_dynamic_paths=8))) engine=MergeTree order by tuple() settings index_granularity=2, min_bytes_for_wide_part='200G', min_rows_for_wide_part=1, write_marks_for_substreams_in_compact_parts=1, object_serialization_version='v3', object_shared_data_serialization_version='map_with_buckets', object_shared_data_serialization_version_for_zero_level_parts='map_with_buckets', object_shared_data_buckets_for_compact_part=2;
-insert into test_compact_map_with_buckets_tuple select tuple(json) from source;
+insert into test_compact_map_with_buckets_tuple select tuple(json as data) from source;
 
 select 'select json.data';
 select json.data from test_compact_map_with_buckets_tuple;
@@ -183,7 +183,7 @@ drop table test_wide_map_with_buckets;
 
 drop table if exists test_wide_map_with_buckets_tuple;
 create table test_wide_map_with_buckets_tuple (json Tuple(data JSON(max_dynamic_paths=8))) engine=MergeTree order by tuple() settings index_granularity=2, min_bytes_for_wide_part=1, min_rows_for_wide_part=1, write_marks_for_substreams_in_compact_parts=1, object_serialization_version='v3', object_shared_data_serialization_version='map_with_buckets', object_shared_data_serialization_version_for_zero_level_parts='map_with_buckets', object_shared_data_buckets_for_wide_part=2;
-insert into test_wide_map_with_buckets_tuple select tuple(json) from source;
+insert into test_wide_map_with_buckets_tuple select tuple(json as data) from source;
 
 select 'select json.data';
 select json.data from test_wide_map_with_buckets_tuple;

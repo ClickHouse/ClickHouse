@@ -1,0 +1,6 @@
+--- parametric tuple as a comparison operand in the passed query
+2	y
+--- parametric tuple on the left side of IN in the passed query
+1	x
+--- parametric tuple in the pushed-down filter
+1	x

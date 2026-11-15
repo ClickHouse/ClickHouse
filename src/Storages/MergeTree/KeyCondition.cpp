@@ -3048,8 +3048,18 @@ static bool convertColumnForDeterministicDag(
     /// all (`Array`, `Tuple`), decline - this helper also transforms whole set columns, where one such
     /// element would drag the representable ones along. The caller then reads more instead of pruning by
     /// a value the key space does not hold.
-    if (!input_type->equals(*dag.input_type) && !castColumnWithoutNulls(input_column, input_type, dag.input_type, out_cast_is_exact))
-        return false;
+    ///
+    /// The elements of tuples are compared positionally, regardless of element names (as in `equals` and
+    /// `Set::execute`), so the cast must not reorder them by name: casting a `Tuple(b, a)` set element to
+    /// a key input of type `Tuple(a, b)` by name would transform a value the predicate never compares
+    /// against, and prune the rows that match. Cast to the name-less input type and then relabel the
+    /// result with the input type the DAG was built against; the column layout is the same.
+    if (!input_type->equals(*dag.input_type))
+    {
+        if (!castColumnWithoutNulls(input_column, input_type, recursiveRemoveTupleElementNames(dag.input_type), out_cast_is_exact))
+            return false;
+        input_type = dag.input_type;
+    }
 
     out_column = input_column;
     out_type = input_type;
@@ -3624,7 +3634,9 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
         /// When castColumnAccurateOrNull targets a LowCardinality type and the source value
         /// is out-of-range (e.g. Int64 → LowCardinality(UInt32)), accurateOrNull produces nulls
         /// that get inserted into the non-nullable ColumnUnique dictionary, crashing the server.
-        auto key_column_type = recursiveRemoveLowCardinality(mapping.key_expr_type);
+        /// Also strip explicit tuple element names so the cast of set columns to key column types
+        /// converts the elements of tuples positionally, consistently with `Set::execute`.
+        auto key_column_type = recursiveRemoveTupleElementNames(recursiveRemoveLowCardinality(mapping.key_expr_type));
         size_t set_element_index = mapping.index_mapping.tuple_index;
         auto set_element_type = set_types[set_element_index];
         ColumnPtr set_column = set_columns[set_element_index];
