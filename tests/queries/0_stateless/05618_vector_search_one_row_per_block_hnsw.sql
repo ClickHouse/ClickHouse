@@ -209,12 +209,26 @@ WITH (SELECT vec FROM tab_rename_reuse WHERE id = 123) AS ref
 SELECT id, d FROM tab_rename_reuse ORDER BY cosineDistance(vec, ref) LIMIT 10
 SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
 
+-- A member of `Nested` added later, with a default expression using the vector column. It is requested as a subcolumn
+-- of `n`, but its default is its own, so the vectors are read as usual.
+ALTER TABLE tab ADD COLUMN `n.d` Array(UInt64) DEFAULT [intDiv(64, length(vec))];
+
+SELECT 'nested default, setting on';
+WITH (SELECT vec FROM tab WHERE id = 123) AS ref
+SELECT id, n.d FROM tab ORDER BY cosineDistance(vec, ref) LIMIT 10
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_nested_default_on';
+
+SELECT 'nested default, setting off';
+WITH (SELECT vec FROM tab WHERE id = 123) AS ref
+SELECT id, n.d FROM tab ORDER BY cosineDistance(vec, ref) LIMIT 10
+SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
+
 SYSTEM FLUSH LOGS query_log;
 
 -- Only the candidates of the index are read this way, and none with the setting off.
 SELECT log_comment, ProfileEvents['MergeTreeOneRowPerBlockReadRows'] > 0 AS read_by_blocks
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05618_on', '05618_off', '05618_default_on', '05618_readded_on', '05618_renamed_on', '05618_other_default_on', '05618_conversion_on', '05618_rename_reuse_on')
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05618_on', '05618_off', '05618_default_on', '05618_readded_on', '05618_renamed_on', '05618_other_default_on', '05618_conversion_on', '05618_rename_reuse_on', '05618_nested_default_on')
 ORDER BY log_comment;
 
 DROP TABLE tab;

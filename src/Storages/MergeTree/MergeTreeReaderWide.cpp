@@ -326,7 +326,11 @@ bool defaultExpressionsUse(const ColumnsDescription & table_columns, const Names
     NameSet visited;
     std::vector<String> pending;
     for (const auto & column : requested_columns)
+    {
+        /// A member of `Nested`, such as `n.d`, is requested as a subcolumn of `n`, but has a default of its own.
+        pending.push_back(column.name);
         pending.push_back(column.getNameInStorage());
+    }
 
     while (!pending.empty())
     {
