@@ -19,6 +19,9 @@ $CLICKHOUSE_LOCAL -q "SELECT 4 SETTINGS max_memory_usage_for_all_queries = 123"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&allow_experimental_window_functions=1" -d "SELECT 4"
 # An obsolete `MergeTree` setting, by its `merge_tree_`-prefixed name, in a query and in a settings profile.
 $CLICKHOUSE_CLIENT -q "SET merge_tree_min_rows_for_compact_part = 123; SELECT 5"
+# A reset of an obsolete setting to the default is reported as well.
+$CLICKHOUSE_CLIENT -q "SET enable_sharding_aggregator = DEFAULT; SELECT 5"
+$CLICKHOUSE_CLIENT -q "SELECT 5 SETTINGS s3_disable_checksum = DEFAULT"
 $CLICKHOUSE_CLIENT -q "
     DROP USER IF EXISTS u_${CLICKHOUSE_DATABASE};
     DROP SETTINGS PROFILE IF EXISTS p_${CLICKHOUSE_DATABASE};
@@ -37,6 +40,8 @@ $CLICKHOUSE_CLIENT -q "
        AND message LIKE '%''allow_experimental_window_functions''%'
        AND message LIKE '%''merge_tree_min_rows_for_compact_part''%'
        AND message LIKE '%''merge_tree_min_bytes_for_compact_part''%'
+       AND message LIKE '%''enable_sharding_aggregator''%'
+       AND message LIKE '%''s3_disable_checksum''%'
     FROM system.warnings WHERE message LIKE 'Queries or settings profiles changed obsolete settings since the server start: %'"
 
 echo "-- ... and logged"

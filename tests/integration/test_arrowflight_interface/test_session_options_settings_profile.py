@@ -95,3 +95,21 @@ def test_obsolete_setting_in_session_options_is_reported():
     assert node.contains_in_log(
         "multiple_joins_rewriter_version.* is changed (to '2')"
     )
+
+
+def test_obsolete_setting_reset_in_session_options_is_reported():
+    """An obsolete setting reset to the default by SetSessionOptions is shown in `system.warnings` and logged."""
+    client = get_client()
+
+    result = client.set_session_options({"use_statistics_cache": None})
+    assert "use_statistics_cache" not in result.errors
+
+    assert (
+        node.query(
+            "SELECT count() FROM system.warnings "
+            "WHERE message LIKE 'Queries or settings profiles changed obsolete settings since the server start: %' "
+            "AND message LIKE '%''use_statistics_cache''%'"
+        ).strip()
+        == "1"
+    )
+    assert node.contains_in_log("use_statistics_cache.* is changed (to DEFAULT)")

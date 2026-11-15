@@ -1410,6 +1410,11 @@ public:
     /// Reset settings to the default in effect for them, which under an active `compatibility` is the value of that version.
     void resetSettingsToDefaultValue(const std::vector<String> & names);
 
+    /// Reports the obsolete settings among the ones a query reset to the default (e.g. `SET name = DEFAULT`),
+    /// as `applySettingChange` does for the changed ones. Not done by `resetSettingsToDefaultValue` itself,
+    /// because it is also used for internal resets, such as on scratch copies during constraint checks.
+    void reportObsoleteSettingsReset(const std::vector<String> & names) const;
+
     /// Returns the current constraints (can return null).
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfiles() const;
     void setSettingsConstraintsAndCurrentProfiles(std::shared_ptr<const SettingsConstraintsAndProfileIDs> constraints_and_profiles);
@@ -2367,6 +2372,7 @@ private:
 
     /// Remembers an obsolete setting changed by a query or a settings profile for `system.warnings`, and logs a warning.
     void reportObsoleteSettingChange(const SettingChange & change) const;
+    void reportObsoleteSettingUse(const String & name, const String & new_value) const;
 
     void applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex> & lock);
 

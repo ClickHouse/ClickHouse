@@ -1461,6 +1461,7 @@ arrow::Status ArrowFlightServer::DoAction(
                         /// std::monostate means "reset to default" (SET setting = DEFAULT).
                         session_context->checkSettingsConstraintsForSettingsReset({setting}, SettingSource::QUERY);
                         session_context->resetSettingsToDefaultValue({setting});
+                        session_context->reportObsoleteSettingsReset({setting});
                     }
                     else
                     {

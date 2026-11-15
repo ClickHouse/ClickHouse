@@ -4098,7 +4098,18 @@ void Context::reportObsoleteSettingChange(const SettingChange & change) const
     /// A `merge_tree_`-prefixed name refers to a `MergeTreeSettings` setting, which has its own tier.
     if (settingGetTier(change.name) != SettingsTierType::OBSOLETE)
         return;
+    reportObsoleteSettingUse(change.name, applyVisitor(FieldVisitorToString(), change.value));
+}
 
+void Context::reportObsoleteSettingsReset(const std::vector<String> & names) const
+{
+    for (const auto & name : names)
+        if (settingGetTier(name) == SettingsTierType::OBSOLETE)
+            reportObsoleteSettingUse(name, "DEFAULT");
+}
+
+void Context::reportObsoleteSettingUse(const String & name, const String & new_value) const
+{
     /// The client refuses obsolete settings on its command line. Besides, it applies the settings of the user's
     /// profile it receives from the server (`apply_settings_from_server`), and the server reports them itself.
     if (getApplicationType() == ApplicationType::CLIENT)
@@ -4113,7 +4124,7 @@ void Context::reportObsoleteSettingChange(const SettingChange & change) const
         std::lock_guard lock(shared->used_obsolete_settings_mutex);
         /// Log only the first use of each setting, so that a settings profile with an obsolete setting,
         /// which is applied to every session, does not flood the log.
-        if (!shared->used_obsolete_settings.emplace(change.name).second)
+        if (!shared->used_obsolete_settings.emplace(name).second)
             return;
     }
 
@@ -4124,7 +4135,7 @@ void Context::reportObsoleteSettingChange(const SettingChange & change) const
         "Obsolete setting `{}` is changed (to {}). It has no effect or must be defined in the server configuration instead, "
         "and it will be removed. Please remove it from queries, settings profiles and client configurations. "
         "Further uses of this setting will not be logged, but they are visible in the `Settings` column of `system.query_log`",
-        change.name, applyVisitor(FieldVisitorToString(), change.value));
+        name, new_value);
 }
 
 void Context::applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex>& lock)
