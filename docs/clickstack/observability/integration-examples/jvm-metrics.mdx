@@ -8,7 +8,6 @@ doc_type: 'guide'
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 Collect JVM metrics with the OpenTelemetry Java agent and send them to ClickHouse Observability. Use the [demo dataset](#demo-dataset) to try the integration without instrumenting an application.
@@ -28,7 +27,15 @@ Collect JVM metrics with the OpenTelemetry Java agent and send them to ClickHous
 
 Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry connection details](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 
 Set these variables in the terminal where you will start your application or demo collector:
 
@@ -199,7 +206,15 @@ Import the dashboard in the [next section](#dashboards), filter for `ServiceName
 2. Upload `jvm-metrics-dashboard.json`.
 3. Map the charts to your **Metrics** source and click **Finish Import**.
 
-<Image img="/images/clickstack/observability-import-dashboard.png" alt="Import dashboard button"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Import dashboard button](/images/clickstack/observability-import-dashboard.png)
+
+</Frame>
+
+</div>
 
 </Step>
 <Step title="View the dashboard" id="view-dashboard">
@@ -208,7 +223,15 @@ For the sample, filter for `ServiceName:jvm-demo` and select **Last 2 days**.
 
 The dashboard shows heap memory, GC pauses, threads, metaspace, CPU, and loaded classes from the sample.
 
-<Image img="/images/clickstack/observability-jvm-metrics-dashboard.png" alt="JVM metrics demo dashboard in ClickHouse Observability showing all six charts"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![JVM metrics demo dashboard in ClickHouse Observability showing all six charts](/images/clickstack/observability-jvm-metrics-dashboard.png)
+
+</Frame>
+
+</div>
 
 <Note>
 The sample uses an older JVM metric schema. For Java agent `2.22.0`, select the sum metric type for memory, thread, class, and CPU time metrics, and histogram for GC duration. Memory and count metrics are non-monotonic sums: use their current values rather than a rate. Update the chart filters and grouping to use `jvm.memory.type`, `jvm.memory.pool.name`, `jvm.thread.state`, and `jvm.gc.name`. See the [JVM metric conventions](https://opentelemetry.io/docs/specs/semconv/runtime/jvm-metrics/) for the current schema.

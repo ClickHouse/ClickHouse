@@ -78,6 +78,7 @@
 #endif
 #include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace ProfileEvents
@@ -2253,7 +2254,7 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline
 MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & column_name) const
 {
     /// Read from all parts
-    std::vector<QueryPlanPtr> plans;
+    QueryPlanPtrs plans;
     size_t part_starting_offset = 0;
     /// Do not apply mask for lightweight delete in vertical merge, because it is applied in merging algorithm
     bool apply_deleted_mask = !global_ctx->vertical_lightweight_delete;
@@ -3715,7 +3716,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     const bool allow_remote_fs_prefetch = canPrefetchInMergeOrMutation(*global_ctx->data, global_ctx->future_part->parts, merging_column_names, global_ctx->context);
 
     /// Read from all parts
-    std::vector<QueryPlanPtr> plans;
+    QueryPlanPtrs plans;
     size_t part_starting_offset = 0;
     for (size_t i = 0; i < global_ctx->future_part->parts.size(); ++i)
     {

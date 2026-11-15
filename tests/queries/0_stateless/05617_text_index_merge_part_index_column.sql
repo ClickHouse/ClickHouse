@@ -1,5 +1,6 @@
 -- A table column named `_part_index` shadows the virtual column that a text-index merge used to map rows.
 
+SET allow_reserved_column_names = 1;
 DROP TABLE IF EXISTS t_horizontal;
 DROP TABLE IF EXISTS t_vertical;
 
