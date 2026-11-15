@@ -50,8 +50,16 @@ private:
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
+    struct ResolvedIndex
+    {
+        StoragePtr source_table;
+        /// The source metadata the index was built from.
+        StorageMetadataPtr source_metadata;
+        MergeTreeIndexPtr index;
+    };
+
     /// Resolves the index of the source table and checks that the user may read it.
-    std::pair<StoragePtr, MergeTreeIndexPtr> resolveIndex(ContextPtr context) const;
+    ResolvedIndex resolveIndex(ContextPtr context) const;
 
     /// The result structure for the given resolved index.
     static ColumnsDescription getColumns(const MergeTreeIndexPtr & index);
@@ -95,7 +103,7 @@ static std::shared_ptr<DataTypeEnum8> getDictionaryCompressionType()
     return std::make_shared<DataTypeEnum8>(std::move(values));
 }
 
-std::pair<StoragePtr, MergeTreeIndexPtr> TableFunctionMergeTreeTextIndex::resolveIndex(ContextPtr context) const
+TableFunctionMergeTreeTextIndex::ResolvedIndex TableFunctionMergeTreeTextIndex::resolveIndex(ContextPtr context) const
 {
     /// A table persisted before that was forbidden resolves the function under the load context, which has no user.
     if (!context->getUserID())
@@ -108,8 +116,12 @@ std::pair<StoragePtr, MergeTreeIndexPtr> TableFunctionMergeTreeTextIndex::resolv
     /// Otherwise the errors below would reveal the engine and the indexes of a table the user cannot see.
     context->checkAccess(AccessType::SHOW_TABLES, source_database, source_table);
 
-    auto source_table_ptr = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(StorageID{source_database, source_table}, context));
-    auto metadata_snapshot = source_table_ptr->getInMemoryMetadataPtr(context, false);
+    StorageID source_table_id{source_database, source_table};
+    auto source_table_ptr = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
+    /// The metadata of an `Alias` is its target's, so the index below is the target's index.
+    checkSourceStorageAccess(context, source_table_ptr, source_table_id, AccessType::SHOW_COLUMNS);
+    const auto metadata_handle = source_table_ptr->getInMemoryMetadataPtr(context, false);
+    StorageMetadataPtr metadata_snapshot = metadata_handle;
     const auto & index_desc = metadata_snapshot->getSecondaryIndices().getByName(source_index_name);
 
     if (index_desc.type != "text")
@@ -123,8 +135,8 @@ std::pair<StoragePtr, MergeTreeIndexPtr> TableFunctionMergeTreeTextIndex::resolv
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeTextIndex expected MergeTree table, got: {}", source_table_ptr->getName());
 
     auto text_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_desc, *merge_tree->getSettings());
-    StorageMergeTreeTextIndex::checkAccess(context, *source_table_ptr, *text_index);
-    return {std::move(source_table_ptr), std::move(text_index)};
+    StorageMergeTreeTextIndex::checkAccess(context, *source_table_ptr, *metadata_snapshot, *text_index);
+    return {std::move(source_table_ptr), std::move(metadata_snapshot), std::move(text_index)};
 }
 
 ColumnsDescription TableFunctionMergeTreeTextIndex::getColumns(const MergeTreeIndexPtr & index)
@@ -160,7 +172,7 @@ ColumnsDescription TableFunctionMergeTreeTextIndex::getColumns(const MergeTreeIn
 ColumnsDescription TableFunctionMergeTreeTextIndex::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     /// Resolving is also where e.g. `remote` over a local shard checks the access of the user.
-    return getColumns(resolveIndex(context).second);
+    return getColumns(resolveIndex(context).index);
 }
 
 StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
@@ -171,13 +183,14 @@ StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
     bool /*is_insert_query*/) const
 {
     /// The structure comes from the same index object the storage reads with, so the two cannot diverge.
-    auto [source_table_ptr, text_index] = resolveIndex(context);
+    auto [source_table_ptr, source_metadata, text_index] = resolveIndex(context);
     auto columns = getColumns(text_index);
     StorageID storage_id(getDatabaseName(), table_name);
 
     auto res = std::make_shared<StorageMergeTreeTextIndex>(
         std::move(storage_id),
         std::move(source_table_ptr),
+        std::move(source_metadata),
         std::move(text_index),
         std::move(columns));
 
@@ -214,6 +227,17 @@ A table object with tokens and their posting list metadata.
 
 If the index uses the `keyValuePairs` tokenizer, each token is a `(key, value)` pair of a `Map` column, and the result has two additional columns `token_key` and `token_value` with the decoded parts of the token.
 
+The posting lists of the tokens are returned in the following virtual columns. They are not returned by `SELECT *` and must be selected explicitly.
+
+| Column      | Type            | Description                                                                                                   |
+|-------------|-----------------|---------------------------------------------------------------------------------------------------------------|
+| `row_id`    | `UInt32`        | The number of a row of the data part (see `_part_offset`) from the posting list of the token.                 |
+| `positions` | `Array(UInt32)` | The positions of the token in the row. Exists only if the index has the argument `support_phrase_search = 1`. |
+
+If any of these columns is selected, the result has a row for each row in the posting list of each token, like `ARRAY JOIN` of the posting list: the other columns of the token are repeated in each of them.
+
+The posting lists are returned as they are stored in the index of the data part, so they include the rows deleted by lightweight `DELETE` (see `_row_exists`) until the part is merged.
+
 ## Usage Example {#usage-example}
 
 ```sql title="Query"
@@ -240,7 +264,36 @@ SELECT * FROM mergeTreeTextIndex(currentDatabase(), tab, idx_s);
 4. │ all_2_2_0 │ date   │ front_coded            │         500 │                  1 │                     0 │                0 │                       0 │
    └───────────┴────────┴────────────────────────┴─────────────┴────────────────────┴───────────────────────┴──────────────────┴─────────────────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+
+## Usage Example: Posting Lists {#usage-example-posting-lists}
+
+```sql title="Query"
+CREATE TABLE tab
+(
+    id UInt64,
+    s String,
+    INDEX idx_s (s) TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS allow_experimental_text_index_phrase_search = 1;
+
+INSERT INTO tab VALUES (0, 'apple banana apple'), (1, 'banana cherry'), (2, 'cherry apple');
+
+SELECT token, row_id, positions FROM mergeTreeTextIndex(currentDatabase(), tab, idx_s) ORDER BY token, row_id;
+```
+
+```text title="Response"
+   ┌─token──┬─row_id─┬─positions─┐
+1. │ apple  │      0 │ [0,2]     │
+2. │ apple  │      2 │ [1]       │
+3. │ banana │      0 │ [1]       │
+4. │ banana │      1 │ [0]       │
+5. │ cherry │      1 │ [1]       │
+6. │ cherry │      2 │ [0]       │
+   └────────┴────────┴───────────┘
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{},
         {.allow_readonly = true}
     );
 }

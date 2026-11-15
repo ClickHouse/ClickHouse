@@ -15,9 +15,7 @@ doc_type: 'справочник'
 | ---- | ----- | --------- |
 | ✔    | ✔     |           |
 
-<div id="description">
-  ## Описание
-</div>
+## Описание {#description}
 
 Полная официальная спецификация формата `Native` доступна [здесь](/ru/resources/develop-contribute/native-protocol/format), а сопутствующая спецификация протокола `Native` — TCP-протокола, по которому он передается, — доступна [здесь](/ru/resources/develop-contribute/native-protocol/protocol).
 
@@ -38,9 +36,7 @@ doc_type: 'справочник'
   Однако работать с этим форматом напрямую не всегда удобно.
 </Tip>
 
-<div id="data-types-wire-format">
-  ## Формат передачи данных для типов данных
-</div>
+## Формат передачи данных для типов данных {#data-types-wire-format}
 
 Данные передаются в столбцовом формате: каждый столбец передаётся отдельно,
 а все его значения отправляются вместе как единый массив.
@@ -53,9 +49,7 @@ doc_type: 'справочник'
   обычный HTTP-интерфейс без версии протокола, поэтому `BlockInfo` не записывается.
 </Note>
 
-<div id="block-structure">
-  ### Структура блока
-</div>
+### Структура блока {#block-structure}
 
 Следующий запрос возвращает два столбца, `number` и `str`, из трёх строк:
 
@@ -97,9 +91,7 @@ const data = new Uint8Array([
 ])
 ```
 
-<div id="multiple-blocks">
-  ### Несколько блоков
-</div>
+### Несколько блоков {#multiple-blocks}
 
 Однако во многих случаях данные не помещаются в один блок, и ClickHouse отправляет их в виде нескольких блоков.
 Рассмотрим следующий запрос, который извлекает две строки при уменьшенном размере блока, чтобы принудительно разбить данные так, что в каждом блоке будет по одной строке:
@@ -153,9 +145,7 @@ const data = new Uint8Array([
 ]);
 ```
 
-<div id="simple-data-types">
-  ### Простые типы данных
-</div>
+### Простые типы данных {#simple-data-types}
 
 Формат передачи данных отдельного значения одного из простых типов данных аналогичен `RowBinary`/`RowBinaryWithNamesAndTypes`.
 Полный список типов, соответствующих этому описанию:
@@ -175,9 +165,7 @@ const data = new Uint8Array([
 
 Подробнее см. описания перечисленных выше типов в разделе [&quot;Формат передачи данных типов данных RowBinary&quot;](/ru/reference/formats/RowBinary/RowBinary#data-types-wire-format).
 
-<div id="complex-data-types">
-  ### Сложные типы данных
-</div>
+### Сложные типы данных {#complex-data-types}
 
 Кодирование следующих типов отличается от кодирования в `RowBinary` и `RowBinaryWithNamesAndTypes`.
 
@@ -189,9 +177,7 @@ const data = new Uint8Array([
 * Dynamic
 * JSON
 
-<div id="nullable">
-  #### Nullable
-</div>
+#### Nullable {#nullable}
 
 В формате `Native` перед самими данными для столбца с типом `Nullable` записывается количество байтов, равное числу строк в блоке. Каждый из этих байтов указывает, равно ли значение `NULL` или нет. Например, в этом запросе каждое нечётное число будет `NULL`:
 
@@ -311,9 +297,7 @@ const data = new Uint8Array([
 ])
 ```
 
-<div id="lowcardinality">
-  #### LowCardinality
-</div>
+#### LowCardinality {#lowcardinality}
 
 В отличие от [RowBinary](/ru/reference/formats/RowBinary/RowBinary#lowcardinality), где `LowCardinality` прозрачен, формат Native использует словарное столбцовое кодирование. Столбец кодируется как префикс версии, затем словарь уникальных значений и массив целочисленных индексов этого словаря.
 
@@ -361,9 +345,7 @@ const data = new Uint8Array([
 02 00 02 00 02              // индексы → "yes", NULL, "yes", NULL, "yes"
 ```
 
-<div id="array">
-  #### Array
-</div>
+#### Array {#array}
 
 В отличие от [RowBinary](/ru/reference/formats/RowBinary/RowBinary#array), где каждому массиву предшествует число элементов в кодировке LEB128, формат Native кодирует массивы как два столбцовых подпотока:
 
@@ -402,9 +384,7 @@ const data = new Uint8Array([
 01 32                       // "2"
 ```
 
-<div id="map">
-  #### Map
-</div>
+#### Map {#map}
 
 `Map(K, V)` кодируется как `Array(Tuple(K, V))` — сначала идут смещения массива, затем все ключи, а потом все значения. Это отличается от [RowBinary](/ru/reference/formats/RowBinary/RowBinary#map), где ключи и значения чередуются в каждой записи.
 
@@ -433,9 +413,7 @@ const data = new Uint8Array([
 0c 00 00 00 00 00 00 00    // 12
 ```
 
-<div id="variant">
-  #### Variant
-</div>
+#### Variant {#variant}
 
 В отличие от [RowBinary](/ru/reference/formats/RowBinary/RowBinary#variant), где каждая строка содержит собственный байт дискриминатора, за которым сразу следует встроенное значение, формат Native отделяет дискриминаторы от данных.
 
@@ -464,9 +442,7 @@ const data = new Uint8Array([
 03 00 00 00                 // 3
 ```
 
-<div id="dynamic">
-  #### Dynamic
-</div>
+#### Dynamic {#dynamic}
 
 В отличие от [RowBinary](/ru/reference/formats/RowBinary/RowBinary#dynamic), где каждое значение является самоописывающимся (префикс типа + значение), формат Native сериализует `Dynamic` как префикс структуры, за которым следует столбец [Variant](#variant).
 
@@ -493,9 +469,7 @@ const data = new Uint8Array([
 03 00 00 00                 // UInt32: 3
 ```
 
-<div id="json">
-  #### JSON
-</div>
+#### JSON {#json}
 
 В отличие от [RowBinary](/ru/reference/formats/RowBinary/RowBinary#json), где каждая строка содержит имена путей и значения и потому является самоописывающейся, формат Native сериализует `JSON` в столбцовой структуре. Схема кодирования сложна и зависит от версии: она включает префикс структуры с версией сериализации, имена динамических путей и структуру общих данных, после чего следуют типизированные пути (каждый в виде отдельного столбца), динамические пути (каждый как столбец [Dynamic](#dynamic)) и общие данные для overflow-путей.
 

@@ -20,10 +20,12 @@
 #    include <DataTypes/DataTypeTuple.h>
 #    include <DataTypes/DataTypesDecimal.h>
 #    include <Interpreters/Context.h>
+#    include <Interpreters/FunctionSecretArgumentsFinder.h>
 #    include <Interpreters/ProcessList.h>
 #    include <Interpreters/evaluateConstantExpression.h>
 #    include <IO/Operators.h>
 #    include <IO/WriteBufferFromString.h>
+#    include <Common/quoteString.h>
 #    include <Parsers/ASTCreateQuery.h>
 #    include <Parsers/ASTLiteral.h>
 #    include <Parsers/ASTSetQuery.h>
@@ -41,6 +43,7 @@
 #    include <Common/Stopwatch.h>
 #    include <Common/RemoteHostFilter.h>
 #    include <Common/assert_cast.h>
+#    include <Common/maskURIPassword.h>
 #    include <Common/logger_useful.h>
 #    include <Poco/URI.h>
 #    include <base/defines.h>
@@ -1565,6 +1568,107 @@ Pipe StorageMaxCompute::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
+/// What is secret in the arguments of `MaxCompute` and `MaxComputeRaw`.
+static void findMaxComputeTableEngineSecretArguments(FunctionSecretArgumentsFinder & finder)
+{
+    const auto & function = finder.function;
+    auto & result = finder.result;
+
+    if (!function->hasArguments())
+        return;
+
+    if (!finder.isNamedCollectionName(0))
+    {
+        /// `MaxCompute(endpoint, project, table, partition, access_key_id,
+        /// access_key_secret, ...)`. Hide invalid expressions too because query
+        /// formatting happens before storage argument validation.
+        String endpoint;
+        if (function->arguments->at(0)->tryGetString(&endpoint, false))
+        {
+            if (maskURIUserinfo(endpoint))
+                result.replaced_arguments[0] = quoteString(endpoint);
+        }
+        else
+        {
+            finder.markSecretArgument(0);
+        }
+
+        finder.markSecretArgument(5);
+
+        for (size_t i = 6; i < function->arguments->size(); ++i)
+        {
+            String literal_text;
+            const bool is_literal = function->arguments->at(i)->tryGetLiteralText(&literal_text);
+            const bool is_string = is_literal && !literal_text.empty() && literal_text.front() == '\'';
+            if (i >= 10 || !is_literal || (i != 7 && is_string))
+                finder.markSecretArgument(i);
+        }
+        return;
+    }
+
+    static constexpr std::string_view secret_keys[] = {
+        "password",
+        "access_key_secret",
+        "secret_access_key",
+        "sts_token",
+        "session_token",
+        "token",
+    };
+    static constexpr std::string_view plain_keys[] = {
+        "endpoint_mode",
+        "project",
+        "table",
+        "partition",
+        "partition_spec",
+        "access_key_id",
+        "user",
+        "username",
+        "quota_name",
+        "thread_num",
+        "start",
+        "count",
+    };
+
+    for (const auto key : secret_keys)
+        finder.findSecretNamedArgument(key, 1);
+
+    for (size_t i = 1; i < function->arguments->size(); ++i)
+    {
+        const auto equals_function = function->arguments->at(i)->getFunction();
+        if (!equals_function || equals_function->name() != "equals" || !equals_function->hasArguments()
+            || equals_function->arguments->size() != 2)
+        {
+            finder.markSecretArgument(i);
+            continue;
+        }
+
+        String key;
+        if (!equals_function->arguments->at(0)->tryGetString(&key, true))
+        {
+            finder.markSecretArgument(i, true);
+        }
+        else if (key == "endpoint")
+        {
+            String endpoint;
+            if (equals_function->arguments->at(1)->tryGetString(&endpoint, false))
+            {
+                if (maskURIUserinfo(endpoint))
+                    result.replaced_arguments[i] = "endpoint = " + quoteString(endpoint);
+            }
+            else
+            {
+                finder.markSecretArgument(i, true);
+            }
+        }
+        else if (std::find(std::begin(plain_keys), std::end(plain_keys), key) == std::end(plain_keys)
+                 || (!equals_function->arguments->at(1)->tryGetString(nullptr, true)
+                     && !equals_function->arguments->at(1)->tryGetLiteralText(nullptr)))
+        {
+            finder.markSecretArgument(i, true);
+        }
+    }
+}
+
 /// Keep a prototype visible in this translation unit for `-Wmissing-prototypes`,
 /// following the same local-declaration pattern as the other storage engines.
 void registerStorageMaxCompute(StorageFactory & factory);
@@ -2028,7 +2132,12 @@ Configured endpoints and router-resolved Tunnel endpoints are checked against th
     factory.registerStorage("MaxCompute", [createStorageMaxCompute](const StorageFactory::Arguments & args)
     {
         return createStorageMaxCompute(args, "MaxCompute");
-    }, {.supports_settings = true,
+    },
+        SecretArgumentsSpec{
+            .custom = findMaxComputeTableEngineSecretArguments,
+            .custom_reads_named_arguments = true,
+        },
+        {.supports_settings = true,
         .source_access_type = AccessTypeObjects::Source::MAXCOMPUTE,
         .has_builtin_setting_fn = hasMaxComputeSetting},
         Documentation{
@@ -2049,7 +2158,12 @@ SELECT id, name FROM remote_events LIMIT 10;
     factory.registerStorage("MaxComputeRaw", [createStorageMaxCompute](const StorageFactory::Arguments & args)
     {
         return createStorageMaxCompute(args, "MaxComputeRaw");
-    }, {.supports_settings = true,
+    },
+        SecretArgumentsSpec{
+            .custom = findMaxComputeTableEngineSecretArguments,
+            .custom_reads_named_arguments = true,
+        },
+        {.supports_settings = true,
         .source_access_type = AccessTypeObjects::Source::MAXCOMPUTE,
         .has_builtin_setting_fn = hasMaxComputeSetting},
         Documentation{

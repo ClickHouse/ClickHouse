@@ -13,6 +13,8 @@
 #include <Common/AsyncTaskExecutor.h>
 #include <Common/checkSSLReturnCode.h>
 
+#include <algorithm>
+
 namespace ProfileEvents
 {
     extern const Event NetworkSendElapsedMicroseconds;
@@ -67,10 +69,30 @@ ssize_t WriteBufferFromPocoSocket::socketSendBytesImpl(const char * ptr, size_t 
     }
     else
     {
+        if (wait_before_send)
+            size = waitBeforeSend(size);
         res = socket.impl()->sendBytes(ptr, static_cast<int>(size));
     }
 
     return res;
+}
+
+size_t WriteBufferFromPocoSocket::waitBeforeSend(size_t size)
+{
+    constexpr int min_size = 4096;
+
+    const Poco::Timespan timeout = wait_failed ? Poco::Timespan(0) : socket.getSendTimeout();
+    wait_failed = !socket.impl()->poll(timeout, Poco::Net::Socket::SELECT_WRITE);
+    /// It may fit nevertheless (a small write into the last third of the buffer), and failing here would break such writes.
+    /// So write as without the wait. And do not delay the next writes as well.
+    if (wait_failed || size <= min_size)
+        return size;
+
+    /// On Linux, writable usually means that at least a third of the buffer is free. Stay well below that, because the
+    /// buffer also holds the overhead of TLS and of the packets. And write at most one TLS record, because more would
+    /// often not fit if the amount of unsent data is limited (TCP_NOTSENT_LOWAT).
+    constexpr int tls_record_size = 16384;
+    return std::min<size_t>(size, std::clamp(socket.getSendBufferSize() / 8, min_size, tls_record_size));
 }
 
 void WriteBufferFromPocoSocket::socketSendBytes(const char * ptr, size_t size)

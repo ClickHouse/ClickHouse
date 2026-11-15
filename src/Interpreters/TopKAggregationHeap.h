@@ -24,6 +24,9 @@
 namespace DB
 {
 
+class ITopKThresholdTracker;
+using TopKThresholdTrackerPtr = std::shared_ptr<ITopKThresholdTracker>;
+
 /** The tightest skip boundary any aggregation thread has published, shared by all
   * per-thread top-K sets of one `Aggregator`. A set at capacity K with boundary B proves
   * K distinct groups strictly better than any key worse than B - globally, not just for
@@ -74,10 +77,14 @@ struct TopKAggregationHeapBase
 
     size_t size() const { return heap_indices.size(); }
 
+    /// Runs once per processed block; also the moment the boundary is published to the
+    /// threshold tracker (see `publishBoundary`), so that the publication costs nothing per row.
     void recordRows(UInt64 observed, UInt64 skipped)
     {
         observed_rows += observed;
         skipped_rows += skipped;
+        if (boundary_changed)
+            publishBoundary();
     }
 
     bool everRejected() const { return skipped_rows > 0 || evicted_keys > 0; }
@@ -144,6 +151,8 @@ protected:
     /// The tracked set.
     std::vector<size_t> heap_indices;       /// row indices into `heap_column`, in no particular order
     size_t boundary_row = invalid_row;      /// `heap_column` row of the worst kept key, i.e. the local skip boundary; fixed between trims
+    bool boundary_changed = false;          /// the boundary moved since `publishBoundary` last ran
+    TopKThresholdTrackerPtr threshold_tracker;  /// shared with the reading step of the plan, which filters and skips granules by the published boundary; may be null
     std::unique_ptr<Arena> key_arena;       /// owned bytes of pointer-bearing keys (`emplaceKey` may return a pointer into the source block); rebuilt from survivors at every trim
     size_t k = 0;                           /// the query's `LIMIT K`; trims shrink the set back to it
 
@@ -368,6 +377,15 @@ private:
     /// Sets `boundary_row` to the worst key once the set first reaches `k`; runs once per heap.
     void initBoundary();
 
+    /// Publishes the first ranked column of the boundary key to `threshold_tracker`, if any.
+    /// Every key the heap still admits is at least as good as the boundary in the first column,
+    /// so a row whose first column is worse can never reach the result: the reading step drops
+    /// such rows early and skips whole granules that consist of them. The heaps of all
+    /// aggregation streams publish into one tracker, which keeps the tightest bound; each of
+    /// them is a valid bound on its own, since the stream has already seen `k` keys not worse
+    /// than it.
+    void publishBoundary();
+
     bool sourceAboveBoundary(const IColumn & source_column, size_t source_row) const
     {
         const int cmp = compareColumns(source_column, source_row, boundaryColumn(), boundaryRow(), 0);
@@ -419,7 +437,8 @@ struct TopKAggregationHeap : public TopKAggregationHeapBase
         const std::vector<int> & dirs,
         const std::vector<int> & null_dirs,
         UInt64 observation_rows,
-        SharedTopKBoundary * shared)
+        SharedTopKBoundary * shared,
+        TopKThresholdTrackerPtr tracker)
     {
         if (heap_column)
             return;
@@ -428,6 +447,7 @@ struct TopKAggregationHeap : public TopKAggregationHeapBase
 
         const size_t reserve_hint
             = initBase(key_columns, heap_key_count, total_group_by_keys, query_k, dirs, null_dirs, observation_rows);
+        threshold_tracker = std::move(tracker);
 
         hash_table_keys.clear();
         hash_table_keys.reserve(reserve_hint);

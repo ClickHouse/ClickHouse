@@ -238,6 +238,7 @@ void registerDatabaseCluster(DatabaseFactory & factory)
     factory.registerDatabase(
         "Cluster",
         create_fn,
+        SecretArgumentsSpec{},
         DatabaseFactory::EngineFeatures{
             .supports_arguments = true,
             .supports_settings = false,

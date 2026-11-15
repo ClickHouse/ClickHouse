@@ -4,8 +4,6 @@
 -- itself -- otherwise a suspicious key type such as `Dynamic`/`Variant`, which an explicit
 -- `GROUP BY` rejects, would be silently accepted by `GROUP BY ALL`.
 
-SET enable_analyzer = 1;
-
 SELECT d FROM (SELECT 1::Dynamic AS d) GROUP BY ALL SETTINGS allow_suspicious_types_in_group_by = 0; -- { serverError ILLEGAL_COLUMN }
 SELECT d FROM (SELECT 1::Dynamic AS d) GROUP BY d SETTINGS allow_suspicious_types_in_group_by = 0; -- { serverError ILLEGAL_COLUMN }
 

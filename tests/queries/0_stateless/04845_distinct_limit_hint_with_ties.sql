@@ -16,8 +16,6 @@ SELECT count() FROM (SELECT number, 0 AS k FROM numbers(200000) ORDER BY k LIMIT
 -- An ordinary positive LIMIT still uses the hint and stays correct.
 SELECT count() FROM (SELECT DISTINCT number FROM numbers(200000) ORDER BY number LIMIT 3);
 
-SET enable_analyzer = 1;
-
 -- exact_rows_before_limit needs a MergeTree table: numbers() reports the full count either way.
 DROP TABLE IF EXISTS t_erbl;
 CREATE TABLE t_erbl (n UInt64) ENGINE = MergeTree ORDER BY n;
@@ -38,7 +36,5 @@ SELECT DISTINCT count() FROM t_erbl GROUP BY n WITH TOTALS LIMIT 1 FORMAT JSONCo
 -- The LIMIT must not be marked as reading all data, and the totals must still be complete.
 SELECT countIf(explain LIKE '%Reads all data%') FROM (EXPLAIN PLAN SELECT DISTINCT count() AS c FROM t_erbl GROUP BY n WITH TOTALS ORDER BY c LIMIT 1 SETTINGS query_plan_remove_redundant_distinct = 0);
 SELECT DISTINCT count() AS c FROM t_erbl GROUP BY n WITH TOTALS ORDER BY c LIMIT 1 FORMAT TabSeparatedWithNames SETTINGS query_plan_remove_redundant_distinct = 0;
-
-SET enable_analyzer = 1;
 
 DROP TABLE t_erbl;

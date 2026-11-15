@@ -11,7 +11,9 @@ doc_type: 'reference'
 
 ### InsertContexts {#insertcontexts}
 
-ClickHouse Connect exécute les insertions au format Native, c’est-à-dire les méthodes `insert` et `insert_df`, dans un `InsertContext`. Les méthodes `insert_arrow`, `insert_df_arrow` et `raw_insert` envoient directement leurs payloads et n’en utilisent pas. L’`InsertContext` inclut toutes les valeurs transmises comme arguments à la méthode client `insert`. De plus, lors de la création initiale d’un `InsertContext`, ClickHouse Connect récupère les types de données des colonnes à insérer, nécessaires à des insertions efficaces au format Native. En réutilisant l’`InsertContext` pour plusieurs insertions, cette « pré-requête » est évitée, ce qui rend les insertions plus rapides et plus efficaces.
+ClickHouse Connect exécute les insertions au format Native, c’est-à-dire les méthodes `insert` et `insert_df`, dans un `InsertContext`. Les méthodes `insert_arrow`, `insert_df_arrow` et `raw_insert` envoient directement leurs charges utiles et n’en utilisent pas. L’`InsertContext` inclut toutes les valeurs transmises comme arguments à la méthode client `insert`. De plus, lors de la création initiale d’un `InsertContext`, ClickHouse Connect récupère les types de données des colonnes à insérer, nécessaires à des insertions efficaces au format Native. En réutilisant l’`InsertContext` pour plusieurs insertions, cette « pré-requête » est évitée, ce qui rend les insertions plus rapides et plus efficaces.
+
+Le `DESCRIBE TABLE` interne utilise son propre identifiant de requête, généré par le serveur, tandis que l’`INSERT` conserve le `query_id` défini dans les paramètres propres à chaque insertion ou dans les valeurs par défaut du client.
 
 Il est possible d’obtenir un `InsertContext` à l’aide de la méthode client `create_insert_context`. Cette méthode prend les mêmes arguments que la fonction `insert`, à l’exception de `context` lui-même. Notez que seule la propriété `data` des `InsertContext` doit être modifiée en vue d’une réutilisation. Cela correspond à son objectif : fournir un objet réutilisable pour des insertions répétées de nouvelles données dans la même table.
 
@@ -29,7 +31,17 @@ assert qr.row_count == 4
 assert qr.first_row[0] == 113
 ```
 
-`InsertContext`s incluent un état mutable mis à jour pendant le processus d’insertion ; ils ne sont donc pas thread-safe.
+`InsertContext`s incluent un état mutable mis à jour pendant le processus d’insertion ; ils ne sont donc pas thread-safe.
+
+### Nouvelles tentatives d&#39;insertion et déduplication {#insert-retries-and-deduplication}
+
+Les deux clients HTTP peuvent relancer une fois `insert` et `insert_df` après certaines fermetures de connexion côté distant. Le client reconstruit alors les données d&#39;insertion au format Native pour la nouvelle tentative. Une charge utile de type chaîne ou octets transmise à `raw_insert` peut bénéficier de la même nouvelle tentative. En revanche, un générateur ou un fichier ouvert n&#39;est pas rejoué. Ces nouvelles tentatives d&#39;insertion n&#39;utilisent pas `query_retries` et ne s&#39;appliquent pas aux réponses HTTP 429, 503 ou 504.
+
+Les nouvelles tentatives d&#39;insertion offrent une sémantique « au moins une fois ». Si la première tentative est validée mais que sa réponse est perdue, la nouvelle tentative peut insérer les mêmes lignes une seconde fois. Une exception peut également survenir après la validation de la première tentative. Le client ne garantit donc pas une insertion exactement une fois.
+
+La déduplication dépend du table engine, de la version du serveur et des paramètres. Pour les tables MergeTree simples, définissez le paramètre de table `non_replicated_deduplication_window` sur une valeur non nulle suffisamment élevée pour couvrir les nouvelles tentatives. Sa valeur par défaut, `0`, désactive la déduplication. Les moteurs Replicated et Shared MergeTree prennent en charge la déduplication des insertions, mais vérifiez les paramètres effectivement appliqués avant de vous y fier. En particulier, les insertions asynchrones côté serveur ne sont pas dédupliquées par défaut avant ClickHouse 26.2, ni avec d&#39;anciens paramètres de compatibilité. La déduplication ne protège les insertions que dans la limite de la fenêtre de déduplication configurée.
+
+Les statements SQL `INSERT` envoyés via les méthodes query ou command obéissent à une [politique de nouvelles tentatives HTTP](/fr/integrations/language-clients/python/driver-api#http-retries) distincte.
 
 ### Formats d&#39;écriture {#write-formats}
 

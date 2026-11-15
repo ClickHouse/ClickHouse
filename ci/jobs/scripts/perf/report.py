@@ -361,6 +361,9 @@ def add_errors_explained():
 if args.report == "main":
     print((header_template.format()))
 
+    if os.path.exists("run-warnings.tsv"):
+        addSimpleTable("Warnings", ["Warning"], tsvRows("run-warnings.tsv"))
+
     add_tested_commits()
 
     def print_status(status, message):
@@ -457,19 +460,24 @@ if args.report == "main":
             "Ratio of speedup&nbsp;(-) or slowdown&nbsp;(+)",  # 2
             "Relative difference (new&nbsp;&minus;&nbsp;old) / old",  # 3
             "p&nbsp;<&nbsp;0.01 threshold",  # 4
-            "",  # Failed                                           # 5
-            "Test",  # 6
-            "#",  # 7
-            "Query",  # 8
+            # Hardware counters of the profile runs, empty when the query was not profiled.
+            "Instructions ratio new&nbsp;/&nbsp;old",  # 5
+            "Cycles ratio new&nbsp;/&nbsp;old",  # 6
+            "IPC old",  # 7
+            "IPC new",  # 8
+            "",  # Failed                                           # 9
+            "Test",  # 10
+            "#",  # 11
+            "Query",  # 12
         ]
         attrs = ["" for c in columns]
-        attrs[5] = None
+        attrs[9] = None
 
         text += tableHeader(columns, attrs)
 
         for row in rows:
-            anchor = f"{currentTableAnchor()}.{row[6]}.{row[7]}"
-            if int(row[5]):
+            anchor = f"{currentTableAnchor()}.{row[10]}.{row[11]}"
+            if int(row[9]):
                 if float(row[3]) < 0.0:
                     faster_queries += 1
                     attrs[2] = attrs[3] = f'style="background: {color_good}"'
@@ -478,7 +486,7 @@ if args.report == "main":
                     attrs[2] = attrs[3] = f'style="background: {color_bad}"'
                     errors_explained.append(
                         [
-                            f"<a href=\"#{anchor}\">The query no. {row[7]} of test '{row[6]}' has slowed down</a>"
+                            f"<a href=\"#{anchor}\">The query no. {row[11]} of test '{row[10]}' has slowed down</a>"
                         ]
                     )
             else:
@@ -576,8 +584,24 @@ if args.report == "main":
 
     add_unstable_queries()
 
+    # Written by performance_tests.py only, not by the standalone compare.sh flows.
+    if os.path.exists("thread-stack-alignment.tsv"):
+        addSimpleTable(
+            "Thread Stack Alignment",
+            ["Server", "Threads in futex wait", "Threads by sp mod 64, or error"],
+            tsvRows("thread-stack-alignment.tsv"),
+        )
+
     skipped_tests_rows = tsvRows("analyze/skipped-tests.tsv")
     addSimpleTable("Skipped Tests", ["Test", "Reason"], skipped_tests_rows)
+
+    # perf.py compares the prewarm results of the servers (`result_digest`).
+    # Not an error: a pull request that fixes a result changes it.
+    addSimpleTable(
+        "Queries with Different Results",
+        ["Test", "#", "Rows on the old server", "Rows on the new server"],
+        tsvRows("analyze/result-mismatches.tsv"),
+    )
 
     addSimpleTable(
         "Test Performance Changes",
@@ -727,7 +751,8 @@ if args.report == "main":
         # embedded here and recomputes the final Praktika status. In
         # `master_head` mode the performance dashboard's per-query verdict is
         # the gate; the "N slower" message below is reparsed only for the
-        # cumulative `release_base` mode, so the effective gate lives there.
+        # cumulative `release_base` mode and for a `master_head` shard the
+        # dashboard could not judge, so the effective gate lives there.
         if slower_queries > 10:
             status = "failure"
         message_array.append(str(slower_queries) + " slower")

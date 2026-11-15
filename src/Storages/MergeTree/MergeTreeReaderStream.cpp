@@ -5,6 +5,7 @@
 
 #include <base/getThreadId.h>
 #include <base/range.h>
+#include <Common/SipHash.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <utility>
 #include <filesystem>
@@ -90,6 +91,9 @@ void MergeTreeReaderStream::init()
         return pipeline.build();
     };
 
+    /// The same for every part of the table, so that the read streams of a column share decoder statistics.
+    const UInt64 statistics_hint = sipHash64((fs::path(data_part_storage->getFullRootPath()) / (path_prefix + data_file_extension)).string()) | 1;
+
     /// Initialize the objects that shall be used to perform read operations.
     if (!settings.is_compressed)
     {
@@ -127,6 +131,7 @@ void MergeTreeReaderStream::init()
 
         if (!settings.checksum_on_read)
             buffer->disableChecksumming();
+        buffer->setStatisticsHint(statistics_hint);
 
         read_buffer_holder = std::move(buffer);
         data_buffer = read_buffer_holder.get();
@@ -142,6 +147,7 @@ void MergeTreeReaderStream::init()
 
         if (!settings.checksum_on_read)
             buffer->disableChecksumming();
+        buffer->setStatisticsHint(statistics_hint);
 
         read_buffer_holder = std::move(buffer);
         data_buffer = read_buffer_holder.get();

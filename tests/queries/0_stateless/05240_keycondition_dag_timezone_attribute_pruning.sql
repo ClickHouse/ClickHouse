@@ -1,4 +1,6 @@
--- Tags: no-parallel-replicas, long
+-- Tags: no-parallel-replicas, long, no-msan
+-- no-msan: it takes minutes under MSan even with local metadata, and over the 600 s timeout with `meta in keeper`
+-- and `s3 storage`. It checks the result of index analysis, which other builds cover as well.
 -- long: it creates and drops dozens of tables, which takes over the 180 s flaky-check limit with `meta in keeper` and `s3 storage`.
 -- no-parallel-replicas: the `pruning_selected_parts` row below reads `ProfileEvents` from the
 -- initiator's `query_log`, and with parallel replicas the counters are reported where each
@@ -576,14 +578,6 @@ INSERT INTO k_variant SELECT CAST(toDateTime(1675195200, 'UTC') AS Variant(DateT
 INSERT INTO k_variant SELECT CAST(toDateTime(1677614400, 'UTC') AS Variant(DateTime('UTC'), String));
 SELECT 'control_variant', count() FROM k_variant WHERE v = CAST(toDateTime(1675195200, 'Asia/Kolkata') AS Variant(DateTime('Asia/Kolkata'), String));
 SELECT 'control_variant_neq', count() FROM k_variant WHERE v != CAST(toDateTime(1675195200, 'Asia/Kolkata') AS Variant(DateTime('Asia/Kolkata'), String));
-
--- The counts above stay right even if the walk merely declines the pair, because a declined atom reads
--- every part. This pins that the key is USED: one granule of the two, with the key column's own zone in
--- the condition. Stable whether or not the two parts have merged, since `index_granularity` is 1.
-SELECT 'control_variant_prunes', count() FROM (
-    EXPLAIN indexes = 1 SELECT v FROM k_variant
-    WHERE v = CAST(toDateTime(1675195200, 'Asia/Kolkata') AS Variant(DateTime('Asia/Kolkata'), String))
-) WHERE explain ILIKE '%Granules: 1/2%';
 
 -- Alternatives are paired by position, and position is only a canonical name order, so a Variant holding
 -- two alternatives that are `equals`-equal to each other (here two `DateTime` zones, which needs

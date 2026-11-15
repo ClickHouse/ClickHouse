@@ -1,0 +1,34 @@
+<test>
+  <settings>
+    <use_query_condition_cache>0</use_query_condition_cache>
+    <max_threads>4</max_threads>
+  </settings>
+
+  <create_query>
+    CREATE TABLE tab
+    (
+        id     UInt64,
+        message String,
+        INDEX  idx(message) TYPE text(tokenizer = 'splitByNonAlpha')
+    )
+    ENGINE = MergeTree
+    ORDER BY id
+  </create_query>
+
+  <fill_query>
+    INSERT INTO tab
+    SELECT
+        number,
+        trimRight(if(number &lt; 100000,
+            repeat('clickhouse is a fast column oriented database system ', 4),
+            repeat('the quick brown fox jumps over the lazy dog near the river ', 4)))
+    FROM numbers(10000000)
+  </fill_query>
+
+  <query>SELECT count() FROM tab WHERE multiSearchAny(message, ['ickhous'])</query>
+  <query>SELECT count() FROM tab WHERE multiSearchAnyUTF8(message, ['ickhous'])</query>
+  <query>SELECT count() FROM tab WHERE multiSearchAnyCaseInsensitive(message, ['OLUMN'])</query>
+  <query>SELECT count() FROM tab WHERE multiSearchAnyCaseInsensitiveUTF8(message, ['OLUMN'])</query>
+
+  <drop_query>DROP TABLE IF EXISTS tab</drop_query>
+</test>
