@@ -1,0 +1,5 @@
+frozen	1	1	1	1
+one unfrozen	0	0	1	1
+data	2	3
+both unfrozen	0	0	0	0
+data	2	3

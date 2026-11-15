@@ -1,0 +1,4 @@
+--- malformed manifest list is rejected cleanly ---
+ICEBERG_SPECIFICATION_VIOLATION
+--- stateless server is still alive ---
+1

@@ -41,7 +41,6 @@ public:
     bool noPushingToViewsOnInserts() const override { return true; }
     bool prefersLargeBlocks() const override { return false; }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
 
     void startup() override;

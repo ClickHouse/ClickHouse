@@ -48,7 +48,7 @@ public:
         return configuration->format != "auto" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context);
     }
 
-    std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override
+    NameSet getVirtualsToCheckBeforeUsingStructureHint() const override
     {
         return VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
     }
@@ -102,11 +102,12 @@ protected:
 
     mutable StorageObjectStorageConfigurationPtr configuration;
     mutable ObjectStoragePtr object_storage;
+    mutable bool object_storage_is_readonly = false;
     ColumnsDescription structure_hint;
     std::shared_ptr<Settings> settings;
     ASTPtr partition_by;
 
-    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 };
 
 #if USE_AWS_S3

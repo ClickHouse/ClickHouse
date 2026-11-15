@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
+from helpers.cluster import ClickHouseCluster, get_docker_compose_path
 
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -36,6 +36,21 @@ def started_cluster():
 
 
 def test_host_regexp_multiple_ptr_hosts_file_v4(started_cluster):
+    # The IPv4 client below reaches the dual-stack listener as an IPv4-mapped address.
+    # The server counts as started once its TCP port accepts, before it logs the listeners.
+    ch_server.wait_for_log_line("Ready for connections")
+    assert ch_server.contains_in_log(r"Listening for http://\[::\]:8123")
+    # An IPv6-only `::` socket would let `0.0.0.0` bind too (`0A` is `TCP_LISTEN`).
+    ipv4_listeners = [
+        fields[1]
+        for fields in map(
+            str.split,
+            ch_server.exec_in_container(["cat", "/proc/net/tcp"]).splitlines()[1:],
+        )
+        if fields[1].endswith(f":{8123:04X}") and fields[3] == "0A"
+    ]
+    assert ipv4_listeners == []
+
     server_ip = cluster.get_instance_ip("clickhouse-server")
     client_ip = cluster.get_instance_ip("clickhouse-client")
 

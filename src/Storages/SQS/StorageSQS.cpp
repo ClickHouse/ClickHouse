@@ -6,6 +6,7 @@
 
 #include <Access/Common/AccessType.h>
 #include <Common/Exception.h>
+#include <Common/HiddenSecret.h>
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
@@ -84,12 +85,12 @@ namespace SQSSetting
 VirtualColumnsDescription StorageSQS::createVirtuals()
 {
     VirtualColumnsDescription desc;
-    desc.addEphemeral("_message_id", std::make_shared<DataTypeString>(), "SQS message ID");
-    desc.addEphemeral("_receive_count", std::make_shared<DataTypeUInt64>(), "Number of times this message has been received");
-    desc.addEphemeral("_sent_timestamp", std::make_shared<DataTypeUInt64>(), "Unix timestamp (seconds) when the message was sent");
-    desc.addEphemeral("_message_group_id", std::make_shared<DataTypeString>(), "FIFO queue message group ID");
-    desc.addEphemeral("_message_deduplication_id", std::make_shared<DataTypeString>(), "FIFO queue message deduplication ID");
-    desc.addEphemeral("_sequence_number", std::make_shared<DataTypeString>(), "FIFO queue sequence number");
+    desc.addEphemeral("_message_id", std::make_shared<DataTypeString>(), "SQS message ID", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_receive_count", std::make_shared<DataTypeUInt64>(), "Number of times this message has been received", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_sent_timestamp", std::make_shared<DataTypeUInt64>(), "Unix timestamp (seconds) when the message was sent", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_message_group_id", std::make_shared<DataTypeString>(), "FIFO queue message group ID", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_message_deduplication_id", std::make_shared<DataTypeString>(), "FIFO queue message deduplication ID", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_sequence_number", std::make_shared<DataTypeString>(), "FIFO queue sequence number", VirtualsMaterializationPlace::Reader);
     return desc;
 }
 
@@ -143,8 +144,8 @@ StorageSQS::StorageSQS(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 
     const String & queue_url = (*sqs_settings)[SQSSetting::sqs_queue_url].value;
     if (queue_url.empty())
@@ -191,7 +192,7 @@ void StorageSQS::startup()
         pushConsumer(consumer);
     }
 
-    streaming_task = getContext()->getMessageBrokerSchedulePool().createTask(
+    streaming_task = getContext()->getMessageBrokerSchedulePool()->createTask(
         getStorageID(), "SQSStreamingToViews", [this]() { streamingToViewsFunc(); });
     streaming_task->activateAndSchedule();
 }
@@ -368,7 +369,8 @@ bool StorageSQS::tryStreamToViews()
 
     auto block_io = interpreter.execute();
 
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
+    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
     auto column_names = block_io.pipeline.getHeader().getNames();
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
 
@@ -462,6 +464,7 @@ void StorageSQS::streamingToViewsFunc()
     scheduleNextExecution(success);
 }
 
+void registerStorageSQS(StorageFactory & factory);
 void registerStorageSQS(StorageFactory & factory)
 {
     factory.registerStorage(
@@ -487,16 +490,11 @@ void registerStorageSQS(StorageFactory & factory)
                 args.comment,
                 std::move(sqs_settings));
         },
-        {
+        SecretArgumentsSpec{
+            .secret_settings = {{"sqs_aws_secret_access_key", hideSecretValue}},
+        },
+        StorageFactory::StorageFeatures{
             .supports_settings = true,
-            .supports_skipping_indices = false,
-            .supports_projections = false,
-            .supports_sort_order = false,
-            .supports_ttl = false,
-            .supports_replication = false,
-            .supports_deduplication = false,
-            .supports_parallel_insert = false,
-            .supports_schema_inference = false,
             .source_access_type = AccessTypeObjects::Source::SQS,
             .has_builtin_setting_fn = SQSSettings::hasBuiltin,
         });

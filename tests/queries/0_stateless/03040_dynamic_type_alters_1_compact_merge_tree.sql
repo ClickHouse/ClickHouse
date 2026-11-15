@@ -3,7 +3,8 @@ set allow_experimental_variant_type = 1;
 set use_variant_as_common_type = 1;
 
 drop table if exists test;
-create table test (x UInt64, y UInt64) engine=MergeTree order by x settings min_rows_for_wide_part=100000000, min_bytes_for_wide_part=1000000000;
+-- Pin off background merges: a merge re-decides Dynamic subcolumn placement (flips isDynamicElementInSharedData); mutations below still run.
+create table test (x UInt64, y UInt64) engine=MergeTree order by x settings min_rows_for_wide_part=100000000, min_bytes_for_wide_part=1000000000, max_bytes_to_merge_at_max_space_in_pool=1;
 select 'initial insert';
 insert into test select number, number from numbers(3);
 

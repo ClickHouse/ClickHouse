@@ -1,0 +1,196 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-06-12
+title: 'Демо-дни - 2026-06-12'
+sidebarTitle: '2026-06-12'
+description: 'Демо-дни ClickStack от 2026-06-12'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Демо-дни']
+---
+
+<div id="schema-migration-tool">
+  ## Инструмент миграции схемы
+</div>
+
+*Демо от [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/jRKTN30ghAo" title="Проигрыватель видео YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Инструмент миграции схемы — это новая возможность ClickStack, находящаяся в активной разработке, которая позволяет пользователям запускать и отслеживать миграции схемы ClickHouse напрямую из интерфейса. Уоррен включает инструмент миграции, создает индекс полнотекстового поиска для столбца `body`, а затем удаляет его, отслеживая ход выполнения в `tail` журнала в реальном времени.
+
+Далее планируется поддержка изменений схемы на уровне всего развертывания, что приблизит эту возможность к стадии общей доступности. 
+
+<div id="source-level-filters-for-alerts-and-mcp">
+  ## Фильтры на уровне источника для оповещений и MCP
+</div>
+
+*Демо от [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/z0Lbggcy6dU" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Drew демонстрирует существенное расширение поддержки фильтров на уровне источника во всём ClickStack. Теперь оповещения можно настраивать для плиток на панели мониторинга и плиток Raw SQL, которым требуются фильтры на уровне источника, с понятными встроенными подсказками, если фильтры отсутствуют или если запрос не содержит макроса фильтра для подстановки. Оповещения для сохранённых поисков поддерживают то же поведение.
+
+Теперь фильтры на уровне источника учитываются во всём интерфейсе карты сервисов, а выбранные значения передаются на связанные страницы Search и в боковые панели трассировок.
+
+MCP также получил поддержку фильтров на уровне источника. Агенты могут определять требования к фильтрам, получать доступные значения и передавать фильтры в инструменты запросов. Значения фильтров взаимно отсекаются, так что один выбор может сузить набор совместимых значений для других. Если обязательные фильтры не указаны, MCP может автоматически выбрать их и сообщить, какие значения были применены. Первые результаты оценки показывают, что для источников, не использующих фильтры на уровне источника, измеримого влияния нет.
+
+**Связанные PR:** [#2459](https://github.com/hyperdxio/hyperdx/pull/2459) feat: show icon on tiles with excluded source-scoped filters, [#2331](https://github.com/hyperdxio/hyperdx/pull/2331) feat: Add source scoping to dashboard filters
+
+<div id="candidate-columns-when-building-sources">
+  ## Подходящие столбцы при создании источников
+</div>
+
+*Демо от [@karl-power](https://github.com/karl-power)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/PA-6sDjdjIM" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+При создании источника ClickStack теперь предлагает подходящие поля из базовой таблицы, чтобы упростить заполнение формы конфигурации. Подсказки отображаются в виде кликабельных меток, а проверка различает несуществующие поля и поля, которые корректны, но требуют фильтра на уровне источника, прежде чем их можно будет сопоставить.
+
+Новое предупреждение также выделяет случаи, когда выражение body настроено без неявного столбца. Эта возможность в основном уже завершена; остаются лишь небольшие доработки интерфейса и улучшения проверки.
+
+**Связанные PR:** [#2436](https://github.com/hyperdxio/hyperdx/pull/2436) feat: add source field suggestions
+
+<div id="anomaly-alerts-with-group-by">
+  ## Оповещения об аномалиях с group-by (WIP)
+</div>
+
+*Демо от [@fleon](https://github.com/fleon)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/70UzCRUTK7M" title="Проигрыватель видео YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+В этой работе решается проблема удобства использования при обнаружении аномалий в сгруппированных временных рядах. Если одновременно отображать зоны аномалий для всех серий, график быстро становится нечитаемым. Подход Химаншу показывает зоны аномалий через легенду при наведении курсора, сохраняя их отображение непосредственно на графике, когда выбрана одна серия.
+
+Эта возможность всё ещё находится в активной разработке и требует дополнительных улучшений перед релизом.
+
+<div id="mcp-eval-multi-model-selector">
+  ## Селектор нескольких моделей для оценки MCP
+</div>
+
+*Демо от [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/1O47NXHDzUY" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Фреймворк оценки MCP теперь поддерживает одновременный запуск одного набора оценок для нескольких моделей. Brandon демонстрирует эту возможность, сравнивая Fable, Opus и Sonnet в рамках одного запуска после выхода Fable.
+
+Как в наборе оценок ClickHouse, так и в наборе HyperDX Fable показала заметно более сильные результаты на вопросах, специфичных для ClickStack. Если бы только эту модель ещё можно было использовать :).
+
+**Связанные PR:** [#2438](https://github.com/hyperdxio/hyperdx/pull/2438) feat(hdx-eval): support multi-model comparison in eval batches, [#2414](https://github.com/hyperdxio/hyperdx/pull/2414) feat: AI eval framework for benchmarking MCP servers
+
+<div id="all-notebook-tools-now-use-the-mcp">
+  ## Все инструменты расследования в notebook теперь используют MCP
+</div>
+
+*Демо от [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/lJnrfmQswpQ" title="Проигрыватель видео YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Все инструменты расследования в notebook теперь работают через ClickStack MCP, а не через отдельную реализацию. Хотя для пользователей ничего не изменится, это объединение устраняет дублирующиеся участки кода и создает основу для будущего взаимодействия между notebook и локальным agent.
+
+Следующими запланированы плитки notebook с Raw SQL.
+
+<div id="datadog-receiver">
+  ## Приёмник Datadog
+</div>
+
+*Демо от [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/P0VVuN_yL6Q" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Спенсер демонстрирует улучшения приёмника Datadog.
+
+Ранее полезная нагрузка логов Datadog в основном поступала как неструктурированный JSON в теле сообщения. Теперь приёмник извлекает и выносит ключевые поля, такие как trace ID, span ID, временные метки и метаданные HTTP-запросов, в стандартные атрибуты ресурсов и логов OpenTelemetry.
+
+64-битные числовые trace ID в Datadog также преобразуются в 128-битный формат OpenTelemetry, что обеспечивает корректную корреляцию трассировок в ClickStack. Ожидается, что приёмник войдёт в дистрибутив коллектора ClickStack; также планируется дополнительное тестирование сквозной корреляции трассировок.
+
+<div id="event-patterns-any-column">
+  ## Шаблоны событий: любой столбец
+</div>
+
+*Демо от [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/5uGZ69YNV74" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Теперь анализ шаблонов событий можно запускать по любому строковому столбцу, а не только по `Body`. Чтобы сохранить текущее поведение, в новом селекторе столбцов по умолчанию выбрано `Body`, но при этом пользователи могут выбрать любой столбец, который можно представить как строку.
+
+Аарон также объясняет логику маскирования, которая используется для нормализации переменного содержимого перед тем, как алгоритм Drain группирует события в шаблоны. Эта возможность всё ещё находится на ревью, но должна стать доступной уже скоро.
+
+**Связанные PR:** [#2460](https://github.com/hyperdxio/hyperdx/pull/2460) feat: add pattern column selector for event pattern matching on any column
+
+<div id="span-links">
+  ## Ссылки между спанами (WIP)
+</div>
+
+*Демо от [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/SK-T5J3YcQE" title="Проигрыватель видео YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Alex показывает раннюю реализацию поддержки ссылок между спанами в просмотрщике трасс ClickStack. Ссылки между спанами — это концепция OpenTelemetry, которая позволяет спанам ссылаться на связанные спаны в других трассах; это одна из часто запрашиваемых возможностей трассировки.
+
+Текущая реализация показывает связанные спаны и их атрибуты прямо в панели трассы. Дизайн и отображение всё ещё дорабатываются, так что это пока явно незавершённая работа.
+
+**Связанные PR:** [#2463](https://github.com/hyperdxio/hyperdx/pull/2463) feat(traces): отображение ссылок между спанами в просмотрщике трасс
+
+<div id="time-series-highlighting-on-hover">
+  ## Подсветка временных рядов при наведении
+</div>
+
+*Демо от [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/QhyWYDE-stY" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+На многосерийных временных графиках теперь подсвечивается серия, ближайшая к курсору. Это значительно упрощает поиск отдельных линий на насыщенных графиках с большим количеством значений group-by.
+
+Эта возможность появилась благодаря отзывам команд, переходящих с Grafana на ClickStack.
+
+**Связанные PR:** [#2456](https://github.com/hyperdxio/hyperdx/pull/2456) feat: highlight the series nearest the cursor in time chart tooltips
+
+<div id="duplicate-series">
+  ## Дублирование серий
+</div>
+
+*Демо от [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/PnhU_CtRFc4" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+В конструкторе графиков появилась функция дублирования. Теперь пользователи могут копировать существующую конфигурацию серии и вносить небольшие изменения, вместо того чтобы заново собирать похожую серию.
+
+Алекс показывает этот сценарий на примере сравнения P50 и P95.
+
+**Связанные PR:** [#2453](https://github.com/hyperdxio/hyperdx/pull/2453) feat(chart-explorer): дублирование серии в конструкторе графиков
+
+<div id="editable-pill-filters">
+  ## Редактируемые плашки фильтров (в разработке)
+</div>
+
+*Демо от [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/T7q_qkhWjUU" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Плашки фильтров теперь можно редактировать прямо в интерфейсе поиска. На текущем этапе уже доступны переключение между режимами включения и исключения, редактирование значений на месте и копирование фильтров прямо из плашки.
+
+Работа над этой функцией ещё продолжается; до релиза планируются дополнительные возможности и доработка интерфейса.
+
+**Связанные PR:** [#2455](https://github.com/hyperdxio/hyperdx/pull/2455) feat(search): редактируемые плашки фильтров, [#2471](https://github.com/hyperdxio/hyperdx/pull/2471) feat(search): разрешить значения в свободной форме при редактировании плашки фильтра

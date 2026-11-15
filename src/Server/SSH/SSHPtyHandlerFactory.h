@@ -4,6 +4,7 @@
 
 #if USE_SSH && defined(OS_LINUX)
 
+#include <fcntl.h>
 #include <optional>
 #include <unistd.h>
 
@@ -18,6 +19,7 @@
 #include <Common/LibSSHLogger.h>
 #include <Server/SSH/SSHBind.h>
 #include <Server/SSH/SSHSession.h>
+#include <Common/config_version.h>
 
 namespace Poco
 {
@@ -56,6 +58,10 @@ public:
     {
         LOG_INFO(log, "Initializing sshbind");
         ssh_bind.disableDefaultConfig();
+        /// Identify ourselves to ssh clients, similar to how OpenSSH prepends its
+        /// own name to the "SSH-2.0-" prefix (e.g. "SSH-2.0-OpenSSH_8.9p1"). Use
+        /// underscore because RFC 4253 forbids spaces and '-' in this field.
+        ssh_bind.setBanner(std::string("ClickHouse_") + VERSION_STRING);
 
         String prefix = "ssh_server.";
         auto rsa_key = config.getString(prefix + "host_rsa_key", "");
@@ -82,7 +88,7 @@ public:
         ::ssh::libsshLogger::initialize();
         ::ssh::SSHSession session;
         session.disableDefaultConfig();
-        int duplicated_fd = dup(socket.sockfd());
+        int duplicated_fd = ::fcntl(socket.sockfd(), F_DUPFD_CLOEXEC, 0);
         if (duplicated_fd == -1)
             throw Exception(ErrorCodes::SSH_EXCEPTION, "Failed to duplicate socket file descriptor");
         ssh_bind.acceptFd(session, duplicated_fd);

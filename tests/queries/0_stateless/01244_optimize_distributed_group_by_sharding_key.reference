@@ -58,6 +58,8 @@ LIMIT
 LIMIT OFFSET
 1	1
 OFFSET distributed_push_down_limit=0
+1	0
+1	1
 1	1
 OFFSET distributed_push_down_limit=1
 1	0

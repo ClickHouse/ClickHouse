@@ -1,12 +1,30 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 
+#include <Common/Exception.h>
+
 #include <boost/algorithm/string/case_conv.hpp>
 #include <fmt/format.h>
+
+#include <filesystem>
 
 #if USE_AVRO
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+std::string toIcebergMetadataCompressionExtension(CompressionMethod method)
+{
+    /// Iceberg only defines gzip compression for metadata files, and its file
+    /// extension is "gz" (org.apache.iceberg.TableMetadataParser.Codec).
+    if (method == CompressionMethod::Gzip)
+        return "gz";
+    return toContentEncodingName(method);
+}
 
 FileNamesGenerator::FileNamesGenerator(
     const String & table_location_,
@@ -18,7 +36,6 @@ FileNamesGenerator::FileNamesGenerator(
     , compression_method(compression_method_)
     , format_name(boost::to_lower_copy(format_name_))
 {
-    /// Normalize: ensure table_location ends with '/'
     if (!table_location.empty() && table_location.back() != '/')
         table_location += '/';
 }
@@ -27,7 +44,9 @@ FileNamesGenerator::FileNamesGenerator(const FileNamesGenerator & other)
 {
     initial_version = other.initial_version;
     table_location = other.table_location;
+    data_location = other.data_location;
     use_uuid_in_metadata = other.use_uuid_in_metadata;
+    base_metadata_file_name = other.base_metadata_file_name;
     compression_method = other.compression_method;
     format_name = other.format_name;
 }
@@ -39,16 +58,26 @@ FileNamesGenerator & FileNamesGenerator::operator=(const FileNamesGenerator & ot
 
     initial_version = other.initial_version;
     table_location = other.table_location;
+    data_location = other.data_location;
     use_uuid_in_metadata = other.use_uuid_in_metadata;
+    base_metadata_file_name = other.base_metadata_file_name;
     compression_method = other.compression_method;
     format_name = other.format_name;
 
     return *this;
 }
 
+void FileNamesGenerator::setBaseMetadataFile(Int32 base_version, const String & base_metadata_path)
+{
+    initial_version = base_version + 1;
+    base_metadata_file_name = std::filesystem::path(base_metadata_path).filename();
+}
+
 Iceberg::IcebergPathFromMetadata FileNamesGenerator::generateDataFileName()
 {
     auto uuid_str = uuid_generator.createRandom().toString();
+    if (!data_location.empty())
+        return Iceberg::IcebergPathFromMetadata(fmt::format("{}/data-{}.{}", data_location, uuid_str, format_name));
     return Iceberg::IcebergPathFromMetadata(fmt::format("{}data/data-{}.{}", table_location, uuid_str, format_name));
 }
 
@@ -66,7 +95,7 @@ Iceberg::IcebergPathFromMetadata FileNamesGenerator::generateManifestListName(In
 
 GeneratedMetadataFileWithInfo FileNamesGenerator::generateMetadataPathWithInfo()
 {
-    auto compression_suffix = toContentEncodingName(compression_method);
+    auto compression_suffix = toIcebergMetadataCompressionExtension(compression_method);
     if (!compression_suffix.empty())
         compression_suffix = "." + compression_suffix;
     auto used_version = initial_version++;
@@ -80,10 +109,14 @@ GeneratedMetadataFileWithInfo FileNamesGenerator::generateMetadataPathWithInfo()
     }
     else
     {
-        auto uuid_str = uuid_generator.createRandom().toString();
+        if (base_metadata_file_name.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The base metadata file is not set for a metadata file name with a UUID");
+
+        /// Not random: writers that commit on top of the same base must collide on the name, see the class comment.
+        auto uuid_str = uuid_generator.createFromName(Poco::UUID::oid(), fmt::format("{}/{}", base_metadata_file_name, used_version)).toString();
         return GeneratedMetadataFileWithInfo{
             .path = Iceberg::IcebergPathFromMetadata(
-                fmt::format("{}metadata/v{}-{}{}.metadata.json", table_location, used_version, uuid_str, compression_suffix)),
+                fmt::format("{}metadata/{:05d}-{}{}.metadata.json", table_location, used_version, uuid_str, compression_suffix)),
             .version = used_version,
             .compression_method = compression_method};
     }
@@ -97,6 +130,8 @@ Iceberg::IcebergPathFromMetadata FileNamesGenerator::generateVersionHint()
 Iceberg::IcebergPathFromMetadata FileNamesGenerator::generatePositionDeleteFile()
 {
     auto uuid_str = uuid_generator.createRandom().toString();
+    if (!data_location.empty())
+        return Iceberg::IcebergPathFromMetadata(fmt::format("{}/{}-deletes.{}", data_location, uuid_str, format_name));
     return Iceberg::IcebergPathFromMetadata(fmt::format("{}data/{}-deletes.{}", table_location, uuid_str, format_name));
 }
 

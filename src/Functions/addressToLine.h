@@ -4,12 +4,9 @@
 #include <Common/Dwarf.h>
 #include <Common/SymbolIndex.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/Arena.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeArray.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteBufferFromArena.h>
@@ -36,6 +33,10 @@ class FunctionAddressToLineBase : public IFunction
 public:
 
     size_t getNumberOfArguments() const override { return 1; }
+
+    /// Resolved against the executing node's own binary, like `buildId`.
+    bool isDeterministic() const override { return false; }
+    bool isServerConstant() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -73,7 +74,7 @@ protected:
     virtual DataTypePtr getDataType() const = 0;
     virtual ColumnPtr getResultColumn(const typename ColumnVector<UInt64>::Container & data, size_t input_rows_count) const = 0;
     virtual void
-    setResult(ResultT & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> & frames) const = 0;
+    setResult(ResultT & result, const Dwarf::LocationInfo & location, const VectorWithMemoryTracking<Dwarf::SymbolizedFrame> & frames) const = 0;
 
     struct Cache
     {
@@ -81,13 +82,17 @@ protected:
         Arena arena;
         using Map = HashMap<uintptr_t, ResultT>;
         Map map;
-        std::unordered_map<std::string, Dwarf> dwarfs;
+        UnorderedMapWithMemoryTracking<std::string, Dwarf> dwarfs;
     };
 
     mutable Cache cache;
 
     ResultT impl(uintptr_t addr) const
     {
+        /// 0 is the stored form of frames outside the main executable.
+        if (!addr)
+            return {};
+
         const SymbolIndex & symbol_index = SymbolIndex::instance();
 
         if (const auto * object = symbol_index.thisObject())
@@ -96,8 +101,8 @@ protected:
             if (!object->dsym)
                 return {object->name};
             auto dwarf_it = cache.dwarfs.try_emplace(object->name, object->dsym).first;
-            /// Convert runtime address to linked (pre-ASLR) address for DWARF lookup.
-            uintptr_t dwarf_addr = addr - object->slide;
+            /// Convert the offset from the image start to the linked (pre-ASLR) address for DWARF lookup.
+            uintptr_t dwarf_addr = addr + uintptr_t(object->address_begin) - object->slide;
 #else
             auto dwarf_it = cache.dwarfs.try_emplace(object->name, object->elf).first;
             if (!std::filesystem::exists(object->name))
@@ -106,7 +111,7 @@ protected:
 #endif
 
             Dwarf::LocationInfo location;
-            std::vector<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
+            VectorWithMemoryTracking<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
             ResultT result;
             if (dwarf_it->second.findAddress(dwarf_addr, location, locationInfoMode, frames))
             {
@@ -121,7 +126,7 @@ protected:
     ResultT implCached(uintptr_t addr) const
     {
         typename Cache::Map::LookupResult it;
-        bool inserted;
+        bool inserted = false;
         std::lock_guard lock(cache.mutex);
         cache.map.emplace(addr, it, inserted);
         if (inserted)

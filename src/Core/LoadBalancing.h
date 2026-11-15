@@ -14,6 +14,10 @@ enum class LoadBalancing : uint8_t
     NEAREST_HOSTNAME,
     /// just like NEAREST_HOSTNAME, but it count distinguished characters in a levenshtein distance manner
     HOSTNAME_LEVENSHTEIN_DISTANCE,
+    /// just like NEAREST_HOSTNAME, but prefers the replica whose hostname shares the longest common prefix with the local hostname
+    HOSTNAME_LONGEST_COMMON_PREFIX,
+    /// just like NEAREST_HOSTNAME, but prefers the replica whose hostname shares the longest common suffix with the local hostname
+    HOSTNAME_LONGEST_COMMON_SUFFIX,
     // replicas with the same number of errors are accessed in the same order
     // as they are specified in the configuration.
     IN_ORDER,

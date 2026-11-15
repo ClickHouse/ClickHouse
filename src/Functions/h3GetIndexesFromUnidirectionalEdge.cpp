@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -11,45 +11,42 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
-#include <h3api.h>
 
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
 namespace
 {
 
-class FunctionH3GetIndexesFromUnidirectionalEdge : public IFunction
+class FunctionH3GetIndexesFromUnidirectionalEdge final : public IFunction
 {
 public:
     static constexpr auto name = "h3GetIndexesFromUnidirectionalEdge";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3GetIndexesFromUnidirectionalEdge>(); }
+    H3Validator validator;
+
+    explicit FunctionH3GetIndexesFromUnidirectionalEdge(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3GetIndexesFromUnidirectionalEdge>(context); }
 
     std::string getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto * arg = arguments[0].get();
-        if (!WhichDataType(arg).isUInt64())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(), 1, getName());
-
-        return std::make_shared<DataTypeTuple>(
-                DataTypes{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUInt64>()},
-                Strings{"origin", "destination"});
+        return "(UInt64) -> Tuple(origin UInt64, destination UInt64)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -79,15 +76,18 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 edge = data_hindex_edge[row];
-            // allocate array of size 2
-            // directedEdgeToCells func sets the origin and
-            // destination at [0] and [1] of the input vector
-            std::array<H3Index, 2> res;
-
-            directedEdgeToCells(edge, res.data());
-
-            origin_data[row] = res[0];
-            destination_data[row] = res[1];
+            if (validator.validateEdge(edge))
+            {
+                std::array<H3Index, 2> res{};
+                directedEdgeToCells(edge, res.data());
+                origin_data[row] = res[0];
+                destination_data[row] = res[1];
+            }
+            else
+            {
+                origin_data[row] = 0;
+                destination_data[row] = 0;
+            }
         }
 
         MutableColumns columns;
@@ -110,7 +110,7 @@ Returns the origin and destination hexagon indexes from the given unidirectional
         {"edge", "Hexagon index number that represents a unidirectional edge.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns a tuple containing the origin and destination hexagon indices from the unidirectional edge, or `(0,0)` if the input is not valid.",
+        "Returns a tuple containing the origin and destination hexagon indices from the unidirectional edge. Throws `INCORRECT_DATA` if the input is not a valid directed edge unless `functions_h3_default_if_invalid = 1`, in which case it returns `(0, 0)`.",
         {"Tuple(UInt64, UInt64)"}
     };
     FunctionDocumentation::Examples examples = {
@@ -119,8 +119,9 @@ Returns the origin and destination hexagon indexes from the given unidirectional
             "SELECT h3GetIndexesFromUnidirectionalEdge(1248204388774707199) AS indexes",
             R"(
 ┌─indexes─────────────────────────────────┐
-│ (599686042433355775,599686043507097599) │
-└─────────────────────────────────────────┘
+├─────────────origin─┬────────destination─┤
+│ 599686042433355775 │ 599686043507097599 │
+└────────────────────┴────────────────────┘
             )"
         }
     };
