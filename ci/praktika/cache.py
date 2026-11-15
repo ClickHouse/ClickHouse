@@ -42,6 +42,23 @@ class Cache:
         def from_dict(cls, obj):
             return Cache.CacheRecord(**obj)
 
+    @classmethod
+    def artifact_dir(cls, job_name):
+        """The name of the S3 directory with the artifacts of `job_name` under a run's prefix.
+
+        A salted job (see `CacheRunnerHooks.configure`) produces a different variant of its
+        artifacts than the regular job with the same name at the same commit, so it stores
+        them in its own directory. Otherwise a rerun of the job at the same commit with the
+        other variant overwrites them, and a cache record of the first variant, which points
+        to the run's prefix, restores the artifacts of the second one. The cache record of a
+        salted job has a salted digest, so a run that reuses it has the same salt and resolves
+        the same directory."""
+        salts = _Environment.get().JOB_KV_DATA.get(cls.DIGEST_SALTS_KV_KEY) or {}
+        name = Utils.normalize_string(job_name)
+        if job_name in salts:
+            name += f"_{Utils.normalize_string(salts[job_name])}"
+        return name
+
     def __init__(self):
         self.digest = Digest()
         self.success = {}  # type Dict[str, Any]

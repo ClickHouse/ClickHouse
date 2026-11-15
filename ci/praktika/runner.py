@@ -18,6 +18,7 @@ from urllib.parse import unquote, urlparse
 
 from ._environment import _Environment
 from .artifact import Artifact
+from .cache import Cache
 from .cidb import CIDB
 from .digest import Digest
 from .docker import (  # noqa: F401  - re-exported: the pull policy moved to docker.py
@@ -411,7 +412,7 @@ class Runner:
 
                 for artifact_path in artifact_paths:
                     if "*" in artifact_path:
-                        s3_path = f"{Settings.S3_ARTIFACT_BUCKET}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/"
+                        s3_path = f"{Settings.S3_ARTIFACT_BUCKET}/{prefix}/{Cache.artifact_dir(artifact._provided_by)}/"
                         include_pattern = Path(artifact_path).name
                         assert "*" in include_pattern
                         names = self._last_upload_names(
@@ -434,7 +435,7 @@ class Runner:
                                 for n in matched
                             )
                     else:
-                        s3_path = f"{Settings.S3_ARTIFACT_BUCKET}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{Path(artifact_path).name}"
+                        s3_path = f"{Settings.S3_ARTIFACT_BUCKET}/{prefix}/{Cache.artifact_dir(artifact._provided_by)}/{Path(artifact_path).name}"
                         downloaded = S3.copy_file_from_s3(
                             s3_path=s3_path,
                             local_path=Settings.INPUT_DIR,
@@ -1034,7 +1035,7 @@ class Runner:
             if providing_artifacts:
                 print(f"Job provides s3 artifacts [{providing_artifacts}]")
                 artifact_links = []
-                s3_path = f"{Settings.S3_ARTIFACT_BUCKET}/{env.get_s3_prefix()}/{Utils.normalize_string(env.JOB_NAME)}"
+                s3_path = f"{Settings.S3_ARTIFACT_BUCKET}/{env.get_s3_prefix()}/{Cache.artifact_dir(env.JOB_NAME)}"
                 # Every object uploaded to the artifact bucket must carry a
                 # "retention" tag: S3 lifecycle filters cannot match "objects
                 # without a tag", so untagged objects would be covered by no
