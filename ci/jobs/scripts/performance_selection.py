@@ -4,7 +4,6 @@ import difflib
 import hashlib
 import json
 import re
-import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -76,6 +75,8 @@ def full_suite_reason(info, build_type):
         return "Requested by ci-force-all"
     # Missing inputs fail in `select`, not in the pre-hook that starts the whole workflow.
     changed = [f.removeprefix("./") for f in info.get_changed_files() or []]
+    # `PerformanceSelection.source` reads every changed file at two revisions through the GitHub API, in every
+    # shard, so a wider change exhausts the API rate limit and no test runs at all.
     if len(changed) > MAX_SELECTION_CHANGED_FILES:
         return f"Too many changed files for test selection: {len(changed)} > {MAX_SELECTION_CHANGED_FILES}"
     # Labels and automatic full-suite requests use ARM; AMD keeps query coverage selection.
@@ -525,28 +526,24 @@ class PerformanceSelection(Targeting):
         }
         return snapshots, tests, manifests[0]["binary_sha"]
 
-    def fetch_revisions(self, *revisions):
-        """The checkout is shallow: fetch the revisions `source` reads, without history."""
-        subprocess.run(
-            ["git", "fetch", "--depth=1", "--no-tags", "--no-recurse-submodules", "origin", *revisions],
-            check=True,
-        )
-
     def source(self, revision, path):
+        import requests
+
         key = revision, path
         if key not in self._sources:
-            if subprocess.run(["git", "cat-file", "-e", f"{revision}:{path}"], stderr=subprocess.DEVNULL).returncode:
+            try:
+                response = self._github_get(
+                    f"contents/{urllib.parse.quote(path, safe='/')}?ref={revision}",
+                    accept="application/vnd.github.raw+json",
+                )
+            except requests.HTTPError as error:
+                if error.response.status_code != 404:
+                    raise
                 # A file added after collection has no source coordinates in
                 # that binary. It is reported as unmapped, never as coverage.
                 self._sources[key] = []
             else:
-                self._sources[key] = subprocess.run(
-                    ["git", "show", f"{revision}:{path}"],
-                    check=True,
-                    stdout=subprocess.PIPE,
-                    text=True,
-                    errors="replace",
-                ).stdout.splitlines()
+                self._sources[key] = response.text.splitlines()
         return self._sources[key]
 
     def select(self, test_files, directory=Path("tests/performance")):
@@ -563,7 +560,6 @@ class PerformanceSelection(Targeting):
         compare = f"compare/{metadata['base']['sha']}...{self.info.sha}"
         base = self._github_get(compare).json()["merge_base_commit"]["sha"]
         diff = self._github_get(compare, accept="application/vnd.github.diff").text
-        self.fetch_revisions(base, binary_sha)
         # Added files have no old text. They are explicitly recorded as unmapped,
         # not attributed to arbitrary nearby code or a fabricated full-suite rule.
         added = {m[1] for m in re.finditer(r"--- /dev/null\n\+\+\+ b/(.+)", diff)}

@@ -138,32 +138,11 @@ void LimitByTransform::processRunInsideWindow(
     UInt64 run_start_row, UInt64 run_row_count, size_t group_idx, UInt64 group_rows_seen_before_run)
 {
     const auto slice = shrinkRunToLimitWindow(run_start_row, run_row_count, group_rows_seen_before_run, group_offset, group_limit_end);
-    const UInt64 group_rows_seen_after_run = group_rows_seen_before_run + run_row_count;
 
-    /// Growing `output_slices` is a call, and a function that makes a call saves the callee-saved
-    /// registers it uses. The row loop of `consumeImpl` keeps its state in those registers, and the
-    /// saving `stp` pairs and restoring `ldp` pairs make a register that waits for the hash-table
-    /// lookup of this row delay the one it is paired with, which can be the address of the next key.
-    /// So the growth goes to a separate function called as a tail call, and this one saves nothing.
     if (slice.length > 0)
-    {
-        if (unlikely(output_slices.size() == output_slices.capacity()))
-        {
-            appendOutputSliceWithGrowth(slice, group_idx, group_rows_seen_after_run);
-            return;
-        }
+        output_slices.push_back(slice);
 
-        output_slices.resize_assume_reserved(output_slices.size() + 1);
-        output_slices.back() = slice;
-    }
-
-    group_counts[group_idx] = group_rows_seen_after_run;
-}
-
-void LimitByTransform::appendOutputSliceWithGrowth(ChunkRowRange slice, size_t group_idx, UInt64 group_rows_seen_after_run)
-{
-    output_slices.push_back(slice);
-    group_counts[group_idx] = group_rows_seen_after_run;
+    group_counts[group_idx] = group_rows_seen_before_run + run_row_count;
 }
 
 /// LimitBy stores a group index in the cell's mapped slot, so it cannot use a set method. `chooseMethod`
@@ -176,9 +155,6 @@ void LimitByTransform::consumeImpl(Method &, const ColumnRawPtrs &, UInt64)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "LimitByTransform does not support void-mapped aggregation methods");
 }
 
-/// `isCancelled` is polled every this many rows of the row loops below.
-constexpr UInt64 cancellation_check_batch_rows = 1024;
-
 template <typename Method>
 requires MapAggregationMethod<Method>
 void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & grouping_key_columns, UInt64 row_count)
@@ -190,11 +166,7 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
 
     FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_pause);
 
-    /// Checking for cancellation on every row costs an atomic load per row and, with clang-23, the registers
-    /// the row loop needs for its hash lookup; a batch of rows is processed in microseconds, so checking once
-    /// per batch loses nothing noticeable. The check sits in an outer loop rather than behind a mask test on
-    /// the row index: on AArch64 clang-23 keeps even that test and its branch in the row loop, which costs 20%.
-    for (UInt64 batch_start_row = 0; batch_start_row < row_count; batch_start_row += cancellation_check_batch_rows)
+    for (UInt64 row_idx = 0; row_idx < row_count; ++row_idx)
     {
         if (isCancelled())
         {
@@ -203,42 +175,38 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
             return;
         }
 
-        const UInt64 batch_end_row = std::min(batch_start_row + cancellation_check_batch_rows, row_count);
-        for (UInt64 row_idx = batch_start_row; row_idx < batch_end_row; ++row_idx)
+        if (row_idx == 5)
+            FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_mid_loop_pause);
+
+        auto key_emplace_result = state.emplaceKey(hash_method.data, row_idx, *data.aggregates_pool);
+        /// A key is given its group index only after `push_back` succeeds. If it throws, the key stays in the hash table
+        /// with a null mapped value, and since `ISimpleTransform::work` may pass later chunks to this transform, the key
+        /// gets its group the next time it is seen.
+        if (key_emplace_result.isInserted())
+            key_emplace_result.setMapped(nullptr);
+
+        size_t row_group_idx = 0;
+        if (!key_emplace_result.getMapped()) /// New grouping key
         {
-            if (row_idx == 5)
-                FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_mid_loop_pause);
+            /// Assign a stable index into `group_counts` to the grouping key we just inserted.
+            row_group_idx = group_counts.size();
+            group_counts.push_back(0);
+            key_emplace_result.setMapped(mappedFromGroupIndex(row_group_idx));
+        }
+        else /// Existing grouping key
+        {
+            row_group_idx = groupIndexFromMapped(key_emplace_result.getMapped());
 
-            auto key_emplace_result = state.emplaceKey(hash_method.data, row_idx, *data.aggregates_pool);
-            /// A key is given its group index only after `push_back` succeeds. If it throws, the key stays in the hash table
-            /// with a null mapped value, and since `ISimpleTransform::work` may pass later chunks to this transform, the key
-            /// gets its group the next time it is seen.
-            if (key_emplace_result.isInserted())
-                key_emplace_result.setMapped(nullptr);
+            chassert(row_group_idx < group_counts.size());
+        }
 
-            size_t row_group_idx = 0;
-            if (!key_emplace_result.getMapped()) /// New grouping key
-            {
-                /// Assign a stable index into `group_counts` to the grouping key we just inserted.
-                row_group_idx = group_counts.size();
-                group_counts.push_back(0);
-                key_emplace_result.setMapped(mappedFromGroupIndex(row_group_idx));
-            }
-            else /// Existing grouping key
-            {
-                row_group_idx = groupIndexFromMapped(key_emplace_result.getMapped());
-
-                chassert(row_group_idx < group_counts.size());
-            }
-
-            if (row_idx == 0)
-                current_run_group_idx = row_group_idx;
-            else if (row_group_idx != current_run_group_idx) /// Local run ended
-            {
-                processRun(current_run_start_row, row_idx - current_run_start_row, current_run_group_idx);
-                current_run_group_idx = row_group_idx;
-                current_run_start_row = row_idx;
-            }
+        if (row_idx == 0)
+            current_run_group_idx = row_group_idx;
+        else if (row_group_idx != current_run_group_idx) /// Local run ended
+        {
+            processRun(current_run_start_row, row_idx - current_run_start_row, current_run_group_idx);
+            current_run_group_idx = row_group_idx;
+            current_run_start_row = row_idx;
         }
     }
 
