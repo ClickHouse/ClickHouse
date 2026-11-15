@@ -12,6 +12,7 @@
 #include <Common/QueryScope.h>
 #include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Core/Field.h>
 #include <Interpreters/Context.h>
 
 namespace DB
