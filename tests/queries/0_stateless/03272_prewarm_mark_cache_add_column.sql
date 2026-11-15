@@ -24,7 +24,7 @@ SELECT * FROM t_prewarm_add_column ORDER BY a;
 SYSTEM FLUSH LOGS query_log;
 
 SELECT ProfileEvents['LoadedMarksCount'] FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE 'SELECT * FROM t_prewarm_add_column%'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE 'SELECT * FROM t_prewarm_add_column%'
 ORDER BY event_time_microseconds;
 
 DROP TABLE t_prewarm_add_column;

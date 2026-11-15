@@ -1,5 +1,5 @@
--- Tags: no-parallel, no-object-storage
--- no-parallel -- for flaky check and to avoid "Removing leftovers from table" (for other tables)
+-- Tags: no-object-storage, no-flaky-check, no-fasttest
+-- no-fasttest: Too slow for fast test (~11s), covered by regular stateless runs.
 
 -- Temporarily skip warning 'table was created by another server at the same moment, will retry'
 set send_logs_level='error';

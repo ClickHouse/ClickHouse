@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: Too slow for fast test (~11s), covered by regular stateless runs.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -13,7 +15,7 @@ TIMEOUT=10
 function thread()
 {
   I=0
-  while true
+  while clickhouse_test_time_left
   do
     [[ $SECONDS -gt $TIMEOUT ]] && break
     I=$((I+1))
@@ -46,3 +48,15 @@ thread &
 thread &
 
 wait
+
+# The databases are created outside of the test database, so they must be dropped here:
+# leftover `Replicated` databases break tests that enumerate all `Replicated` databases of the server,
+# such as `05061_system_drop_database_replica_access`. Wait for the `ASYNC` backups to finish first.
+for _ in $(seq 1 600)
+do
+    [[ $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.backups WHERE status = 'CREATING_BACKUP' AND name LIKE '%${CLICKHOUSE_DATABASE}%'") == 0 ]] && break
+    sleep 0.1
+done
+
+$CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS d1_$CLICKHOUSE_DATABASE SYNC"
+$CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS d2_$CLICKHOUSE_DATABASE SYNC"

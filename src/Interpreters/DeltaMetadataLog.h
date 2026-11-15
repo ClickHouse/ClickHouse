@@ -30,6 +30,9 @@ void insertDeltaRowToLogTable(
 class DeltaMetadataLog : public SystemLog<DeltaMetadataLogElement>
 {
     using SystemLog<DeltaMetadataLogElement>::SystemLog;
+
+public:
+    static consteval size_t getDefaultFlushIntervalMilliseconds() { return 2000; }
 };
 
 }

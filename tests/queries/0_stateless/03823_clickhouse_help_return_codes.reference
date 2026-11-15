@@ -1,5 +1,7 @@
 clickhouse help: 0
 clickhouse --help: 0
+clickhouse -h: 0
+clickhouse -?: 0
 clickhouse start --help: 0
 clickhouse stop --help: 0
 clickhouse status --help: 0

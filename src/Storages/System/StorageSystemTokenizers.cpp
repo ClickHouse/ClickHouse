@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemTokenizers.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TokenizerFactory.h>
@@ -11,8 +12,7 @@ ColumnsDescription StorageSystemTokenizers::getColumnsDescription()
 {
     return ColumnsDescription
     {
-        {"name", std::make_shared<DataTypeString>(), "Name of the tokenizer"},
-        {"type", std::make_shared<DataTypeString>(), "Type of the tokenizer"}
+        {"name", std::make_shared<DataTypeString>(), "Name of the tokenizer"}
     };
 }
 
@@ -27,10 +27,10 @@ void StorageSystemTokenizers::fillData(MutableColumns & res_columns, ContextPtr,
     const auto & tokenizers = tokenizer_factory.getAllTokenizers();
 
     for (const auto & tokenizer : tokenizers)
-    {
         res_columns[0]->insert(tokenizer.first);
-        res_columns[1]->insert(magic_enum::enum_name(tokenizer.second));
-    }
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemTokenizers) }

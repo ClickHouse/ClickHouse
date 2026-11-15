@@ -40,7 +40,7 @@ def test_insert_distributed_async_send_success():
     )
 
     data_path = node.query(
-        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='dist'"
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='dist'"
     ).strip()
 
     node.exec_in_container(

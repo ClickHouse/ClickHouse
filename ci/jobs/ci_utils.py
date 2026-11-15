@@ -1,6 +1,7 @@
 from ci.praktika.info import Info
 
 EXTENDED_RUN_LABELS = {"pr-feature", "pr-improvement", "pr-performance"}
+SANITIZERS = ("asan", "tsan", "msan", "ubsan")
 
 
 def is_extended_run() -> bool:

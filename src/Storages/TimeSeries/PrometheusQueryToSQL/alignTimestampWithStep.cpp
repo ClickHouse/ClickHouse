@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/alignTimestampWithStep.h>
 
 

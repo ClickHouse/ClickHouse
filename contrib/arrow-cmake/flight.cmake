@@ -8,27 +8,33 @@ endif()
 
 if(NOT ENABLE_GRPC)
     message(${RECONFIGURE_MESSAGE_LEVEL} "Can't use ArrowFlight without gRPC")
+    return()
 endif()
 
 set(GRPC_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/grpc/include)
 
 set(ARROW_FLIGHT_SRC_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/arrow/flight)
+set(ARROW_FLIGHT_SQL_SRC_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/arrow/flight/sql)
 set(ARROW_FLIGHT_PROTO_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/format)
 set(ARROW_FLIGHT_GENERATED_SRC_DIR ${ARROW_GENERATED_SRC_DIR}/arrow/flight)
+set(ARROW_FLIGHT_SQL_GENERATED_SRC_DIR ${ARROW_GENERATED_SRC_DIR}/arrow/flight/sql)
 
-add_custom_command(
-    OUTPUT
-        "${ARROW_FLIGHT_GENERATED_SRC_DIR}/Flight.grpc.pb.cc"
-        "${ARROW_FLIGHT_GENERATED_SRC_DIR}/Flight.grpc.pb.h"
-        "${ARROW_FLIGHT_GENERATED_SRC_DIR}/Flight.pb.cc"
-        "${ARROW_FLIGHT_GENERATED_SRC_DIR}/Flight.pb.h"
-    COMMAND ${PROTOBUF_EXECUTABLE}
-    -I ${ARROW_FLIGHT_PROTO_DIR}
-    -I "${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src"
-    --cpp_out="${ARROW_FLIGHT_GENERATED_SRC_DIR}"
-    --grpc_out="${ARROW_FLIGHT_GENERATED_SRC_DIR}"
-    --plugin=protoc-gen-grpc="${GRPC_EXECUTABLE}"
-    "${ARROW_FLIGHT_PROTO_DIR}/Flight.proto"
+set(PROTOBUF_IMPORT_DIRS ${ARROW_FLIGHT_PROTO_DIR} ${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src)
+
+PROTOBUF_GENERATE_GRPC_CPP(
+    flight_sources
+    flight_headers
+    APPEND_PATH
+    PROTOC_OUT_DIR ${ARROW_FLIGHT_GENERATED_SRC_DIR}
+    ${ARROW_FLIGHT_PROTO_DIR}/Flight.proto
+)
+
+PROTOBUF_GENERATE_GRPC_CPP(
+    flight_sql_sources
+    flight_sql_headers
+    APPEND_PATH
+    PROTOC_OUT_DIR ${ARROW_FLIGHT_SQL_GENERATED_SRC_DIR}
+    ${ARROW_FLIGHT_PROTO_DIR}/FlightSql.proto
 )
 
 # NOTE: we do not compile the ${ARROW_FLIGHT_GENERATED_SRCS} directly, instead
@@ -37,6 +43,7 @@ add_custom_command(
 # protobuf-internal.cc
 set(ARROW_FLIGHT_SRCS
         ${ARROW_FLIGHT_GENERATED_SRC_DIR}/Flight.pb.cc
+        ${ARROW_FLIGHT_SQL_GENERATED_SRC_DIR}/FlightSql.pb.cc
         ${ARROW_FLIGHT_SRC_DIR}/client.cc
         ${ARROW_FLIGHT_SRC_DIR}/client_cookie_middleware.cc
         ${ARROW_FLIGHT_SRC_DIR}/client_tracing_middleware.cc
@@ -54,6 +61,12 @@ set(ARROW_FLIGHT_SRCS
         ${ARROW_FLIGHT_SRC_DIR}/transport/grpc/serialization_internal.cc
         ${ARROW_FLIGHT_SRC_DIR}/transport/grpc/util_internal.cc
         ${ARROW_FLIGHT_SRC_DIR}/types.cc
+        ${ARROW_FLIGHT_SQL_SRC_DIR}/client.cc
+        ${ARROW_FLIGHT_SQL_SRC_DIR}/column_metadata.cc
+        ${ARROW_FLIGHT_SQL_SRC_DIR}/protocol_internal.cc
+        ${ARROW_FLIGHT_SQL_SRC_DIR}/server_session_middleware.cc
+        ${ARROW_FLIGHT_SQL_SRC_DIR}/server.cc
+        ${ARROW_FLIGHT_SQL_SRC_DIR}/sql_info_internal.cc
 )
 
 add_library(_arrow_flight ${ARROW_FLIGHT_SRCS})
@@ -62,4 +75,4 @@ add_library(ch_contrib::arrow_flight ALIAS _arrow_flight)
 add_dependencies(_arrow_flight _protoc grpc_cpp_plugin)
 target_link_libraries(_arrow_flight PUBLIC _arrow)
 target_link_libraries(_arrow_flight PRIVATE _protobuf grpc++)
-target_include_directories(_arrow_flight PRIVATE ${ARROW_GENERATED_SRC_DIR})
+target_include_directories(_arrow_flight PUBLIC ${ARROW_GENERATED_SRC_DIR})

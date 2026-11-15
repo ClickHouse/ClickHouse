@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-parallel-replicas, no-async-insert
+-- Tags: no-parallel-replicas
 
 -- Tests for GitHub issue 93358.
 

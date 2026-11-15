@@ -4,6 +4,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <Columns/ColumnArray.h>
@@ -29,7 +30,7 @@ namespace
 /** Extract element of Variant by variant type name.
   * Also the function looks through Arrays: you can get Array of Variant elements from Array of Variants.
   */
-class FunctionVariantElement : public IFunction
+class FunctionVariantElement final : public IFunction
 {
 public:
     static constexpr auto name = "variantElement";
@@ -43,6 +44,15 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    /// Documentation-only — the result type is the requested Variant element
+    /// (or array of, when called on Array(Variant)), looked up dynamically from
+    /// the const-string type-name in the second argument. The optional third
+    /// argument is the default value.
+    String getSignatureString() const override
+    {
+        return "(Variant | Array, const String, [Any]) -> Any";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -78,7 +88,7 @@ public:
         std::optional<size_t> variant_global_discr = getVariantGlobalDiscriminator(arguments[1].column, *variant_type, arguments.size());
         if (variant_global_discr.has_value())
         {
-            DataTypePtr return_type = makeNullableOrLowCardinalityNullableSafe(variant_type->getVariant(variant_global_discr.value()));
+            DataTypePtr return_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(variant_type->getVariant(variant_global_discr.value()));
 
             for (; count_arrays; --count_arrays)
                 return_type = std::make_shared<DataTypeArray>(return_type);

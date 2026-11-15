@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <optional>
 
 namespace DB
 {
@@ -17,7 +18,7 @@ struct OneTimePasswordParams
         SHA512,
     } algorithm = Algorithm::SHA1;
 
-    explicit OneTimePasswordParams(Int32 num_digits_ = {}, Int32 period_ = {}, const String & algorithm_name_ = {});
+    explicit OneTimePasswordParams(std::optional<Int32> num_digits_ = {}, std::optional<Int32> period_ = {}, std::optional<String> algorithm_name_ = {});
 
     bool operator==(const OneTimePasswordParams &) const = default;
 
@@ -32,9 +33,17 @@ struct OneTimePasswordSecret
     explicit OneTimePasswordSecret(
         const String & key_,
         OneTimePasswordParams params_ = OneTimePasswordParams{});
+
+    bool operator==(const OneTimePasswordSecret &) const = default;
 };
 
 String getOneTimePasswordSecretLink(const OneTimePasswordSecret & secret);
+
+/// Returns the time step (RFC 6238, Section 4) the code belongs to, if the code matches the time step
+/// of `current_time` or one of the adjacent ones, to tolerate clock skew and typing delay.
+std::optional<Int64> findOneTimePasswordTimeStep(std::string_view password, const OneTimePasswordSecret & secret, UInt64 current_time);
+
+/// Checks the code against the current time step, with a tolerance of one time step in both directions.
 bool checkOneTimePassword(std::string_view password, const OneTimePasswordSecret & secret);
 
 }

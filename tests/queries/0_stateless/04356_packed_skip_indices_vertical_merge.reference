@@ -1,0 +1,8 @@
+merge_algorithm	Vertical
+active_parts	1
+secondary_bytes_positive	1
+m_a_filters	1
+m_b_filters	1
+m_a_lookup	1
+m_b_lookup	1
+1

@@ -2,7 +2,7 @@
 
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 
 namespace DB
@@ -16,14 +16,16 @@ class Context;
   * Used when the table is not specified in the query.
   * Analog of the DUAL table in Oracle and MySQL.
   */
-class StorageSystemOne final : public IStorage
+class StorageSystemOne final : public StorageWithCommonVirtualColumns
 {
 public:
     explicit StorageSystemOne(const StorageID & table_id_);
 
     std::string getName() const override { return "SystemOne"; }
 
-    void read(
+    static VirtualColumnsDescription createVirtuals();
+
+    void readImpl(
         QueryPlan & query_plan,
         const Names & /*column_names*/,
         const StorageSnapshotPtr & /*storage_snapshot*/,
@@ -46,6 +48,8 @@ public:
         const StorageSnapshotPtr & storage_snapshot_
     );
 
+    explicit ReadFromSystemOneStep(SharedHeader header_);
+
     ReadFromSystemOneStep(const ReadFromSystemOneStep &) = default;
     ReadFromSystemOneStep(ReadFromSystemOneStep &&) = default;
 
@@ -55,6 +59,13 @@ public:
     {
         return std::make_unique<ReadFromSystemOneStep>(*this);
     }
+
+    /// The step has no state beyond its header: it produces the single dummy row, so a replica can
+    /// rebuild it from the header alone. Being serializable is what lets a plan fragment reading
+    /// `system.one` - the broadcast side of a shipped join, for instance - be sent to the replicas.
+    void serialize(Serialization & ctx) const override;
+    bool isSerializable() const override { return true; }
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 };

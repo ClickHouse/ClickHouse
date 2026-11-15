@@ -1,0 +1,36 @@
+rewrite
+          FUNCTION, function_name: empty, function_type: ordinary, result_type: LowCardinality(UInt8)
+          FUNCTION, function_name: notEmpty, function_type: ordinary, result_type: LowCardinality(Nullable(UInt8))
+    FUNCTION, function_name: equals, function_type: ordinary, result_type: LowCardinality(UInt8)
+results
+0
+1
+99
+98
+98
+bloom filter
+0
+1
+Parts: 1 | Granules: 1
+Granules: 25/25
+Granules: 1/25
+fixed string
+    FUNCTION, function_name: equals, function_type: ordinary, result_type: LowCardinality(UInt8)
+4
+Parts: 1 | Granules: 1
+Granules: 1/25
+primary key
+4
+Parts: 1 | Granules: 1
+Granules: 1/25
+computed primary key
+4	
+Parts: 1 | Granules: 2
+Granules: 2/25
+Parts: 1 | Granules: 2
+Granules: 2/25
+96
+4	
+Parts: 1 | Granules: 2
+Granules: 2/25
+96

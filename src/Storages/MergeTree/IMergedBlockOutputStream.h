@@ -51,13 +51,25 @@ public:
         return writer ? writer->releaseCachedMarks() : PlainMarksByName{};
     }
 
+    PlainMarksByName releaseCachedIndexMarks()
+    {
+        return writer ? writer->releaseCachedIndexMarks() : PlainMarksByName{};
+    }
+
     size_t getNumberOfOpenStreams() const
     {
         return writer->getNumberOfOpenStreams();
     }
 
+    /// See IMergeTreeDataPartWriter::getSkipIndicesPackedWriter.
+    class PackedFilesWriter * getSkipIndicesPackedWriter()
+    {
+        return writer ? writer->getSkipIndicesPackedWriter() : nullptr;
+    }
+
 protected:
-    /// Remove all columns in @empty_columns. Also, clears checksums
+    /// Remove all columns in @empty_columns, except that one column is always kept, because a
+    /// part with no columns cannot be loaded. Also, clears checksums
     /// and columns array. Return set of removed files names.
     NameSet removeEmptyColumnsFromPart(
         const MergeTreeDataPartPtr & data_part,

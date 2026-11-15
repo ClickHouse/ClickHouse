@@ -1,9 +1,12 @@
 #pragma once
 
+#include <Core/Types_fwd.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/NullsAction.h>
+
+#include <initializer_list>
 
 
 namespace DB
@@ -18,7 +21,7 @@ class ASTFunction : public ASTWithAlias
     struct ASTFunctionFlags
     {
         using ParentFlags = ASTWithAlias::ASTWithAliasFlags;
-        static constexpr UInt32 RESERVED_BITS = ParentFlags::RESERVED_BITS + 12;
+        static constexpr UInt32 RESERVED_BITS = ParentFlags::RESERVED_BITS + 13;
 
         UInt32 _parent_reserved : ParentFlags::RESERVED_BITS;
         UInt32 is_operator : 1;
@@ -29,8 +32,8 @@ class ASTFunction : public ASTWithAlias
         UInt32 no_empty_args : 1;
         UInt32 is_compound_name : 1;
         UInt32 nulls_action : 2; /// 2 bits for NullsAction (3 values)
-        UInt32 kind : 3; /// 3 bits for Kind (8 values)
-        UInt32 unused : 19;
+        UInt32 kind : 4; /// 4 bits for Kind
+        UInt32 unused : 18;
     };
 
 public:
@@ -77,7 +80,7 @@ public:
 
     /// do not print empty parentheses if there are no args - compatibility with engine names.
     bool noEmptyArgs() const { return flags<ASTFunctionFlags>().no_empty_args; }
-    void setNoEmptyArgs(bool value) { flags<ASTFunctionFlags>().no_empty_args = value; }
+    void setNoEmptyArgs(bool value);
 
     /// Specifies where this function-like expression is used.
     enum class Kind : UInt8
@@ -90,6 +93,7 @@ public:
         BACKUP_NAME,
         CODEC,
         STATISTICS,
+        TABLE_FUNCTION,
     };
     Kind getKind() const { return static_cast<Kind>(flags<ASTFunctionFlags>().kind); }
     void setKind(Kind value) { flags<ASTFunctionFlags>().kind = static_cast<UInt32>(value); }
@@ -98,6 +102,8 @@ public:
     String getID(char delim) const override;
 
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
@@ -142,6 +148,10 @@ boost::intrusive_ptr<ASTFunction> makeASTOperator(const String & name, Args &&..
     function->setIsOperator(true);
     return function;
 }
+
+/// Creates an AST for a lambda: `(param_names...) -> body`.
+boost::intrusive_ptr<ASTFunction> makeASTLambda(const Strings & param_names, ASTPtr && body);
+boost::intrusive_ptr<ASTFunction> makeASTLambda(std::initializer_list<String> param_names, ASTPtr && body);
 
 /// Adds a parameters to aggregate function.
 inline boost::intrusive_ptr<ASTFunction> addParametersToAggregateFunction(boost::intrusive_ptr<ASTFunction> && function) { return std::move(function); }

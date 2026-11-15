@@ -8,11 +8,17 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Common/ProfileEvents.h>
 #include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupConcurrencyCheck.h>
 #include <Poco/URI.h>
 #include <boost/algorithm/string/join.hpp>
 
+
+namespace ProfileEvents
+{
+    extern const Event ZooKeeperWatchTriggeredBackupCoordination;
+}
 
 namespace DB
 {
@@ -42,7 +48,16 @@ namespace
 
         /// Now we create the 'finish' node both if the work is done or if the error handling is done.
 
-        kCurrentVersion = 2,
+        /// Since this version the initiating host takes the named collections access decisions
+        /// before dispatching the query: a BACKUP ON CLUSTER initiator authorizes exporting the
+        /// collections against the initiating user (see `backupNamedCollections`), and a RESTORE
+        /// ON CLUSTER initiator requires the right restoring them needs (`CREATE NAMED COLLECTION`,
+        /// see `RestorerFromBackup::getRequiredAccess`). The hosts executing the dispatched query -
+        /// possibly with full access - may trust it only then: a host receiving a query dispatched
+        /// by an older initiator must neither export nor restore the collections.
+        kVersionWithNamedCollectionsAccessDecisions = 3,
+
+        kCurrentVersion = 3,
     };
 }
 
@@ -476,6 +491,7 @@ void BackupCoordinationStageSync::watchingThread()
 {
     LOG_TRACE(log, "Started the watching thread");
 
+    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationStageSync::watchingThread");
     auto should_stop = [&]
     {
         std::lock_guard lock{mutex};
@@ -582,7 +598,10 @@ void BackupCoordinationStageSync::readCurrentState(Coordination::ZooKeeperWithFa
     (*zk_nodes_changed).reset();
 
     /// Get zk nodes and subscribe on their changes.
-    Strings new_zk_nodes = zookeeper->getChildren(zookeeper_path, nullptr, zk_nodes_changed);
+    Strings new_zk_nodes = zookeeper->getChildrenWatch(
+        zookeeper_path,
+        nullptr,
+        Coordination::WatchCallbackPtrOrEventPtr{zk_nodes_changed, ProfileEvents::ZooKeeperWatchTriggeredBackupCoordination});
     std::sort(new_zk_nodes.begin(), new_zk_nodes.end()); /// Sorting is necessary because we compare the list of zk nodes with its previous versions.
 
     State new_state;
@@ -704,7 +723,7 @@ void BackupCoordinationStageSync::readCurrentState(Coordination::ZooKeeperWithFa
 
 int BackupCoordinationStageSync::parseStartNode(const String & start_node_contents, const String & host) const
 {
-    int version;
+    int version = 0;
     if (start_node_contents.empty())
     {
         version = kInitialVersion;
@@ -759,7 +778,7 @@ void BackupCoordinationStageSync::cancelQueryIfDisconnectedTooLong()
 
     {
         std::lock_guard lock{mutex};
-        if (state.host_with_error || ((failure_after_host_disconnected_for_seconds.count() == 0)))
+        if (state.host_with_error || (failure_after_host_disconnected_for_seconds.count() == 0))
             return;
 
         auto monotonic_now = std::chrono::steady_clock::now();
@@ -1028,6 +1047,7 @@ void BackupCoordinationStageSync::finishImpl(bool throw_if_error, WithRetries::K
 
     stopWatchingThread();
 
+    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationStageSync::finish");
     try
     {
         auto holder = with_retries.createRetriesControlHolder("BackupCoordinationStageSync::finish", retries_kind);
@@ -1208,6 +1228,12 @@ int BackupCoordinationStageSync::getInitiatorVersion() const
 {
     std::lock_guard lock{mutex};
     return state.hosts.at(String{kInitiator}).version;
+}
+
+
+bool BackupCoordinationStageSync::doesInitiatorTakeNamedCollectionsAccessDecisions() const
+{
+    return getInitiatorVersion() >= kVersionWithNamedCollectionsAccessDecisions;
 }
 
 

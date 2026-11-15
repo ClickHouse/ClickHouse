@@ -1,4 +1,5 @@
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
+#include <Common/Exception.h>
 
 
 namespace DB::ErrorCodes

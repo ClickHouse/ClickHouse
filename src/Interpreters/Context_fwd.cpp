@@ -1,4 +1,5 @@
 #include <Interpreters/Context_fwd.h>
+#include <Common/Exception.h>
 
 
 namespace DB

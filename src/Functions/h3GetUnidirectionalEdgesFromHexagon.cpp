@@ -18,36 +18,36 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
 namespace
 {
 
-class FunctionH3GetUnidirectionalEdgesFromHexagon : public IFunction
+class FunctionH3GetUnidirectionalEdgesFromHexagon final : public IFunction
 {
 public:
     static constexpr auto name = "h3GetUnidirectionalEdgesFromHexagon";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3GetUnidirectionalEdgesFromHexagon>(); }
+    H3Validator validator;
+
+    explicit FunctionH3GetUnidirectionalEdgesFromHexagon(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3GetUnidirectionalEdgesFromHexagon>(context); }
 
     std::string getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto * arg = arguments[0].get();
-        if (!WhichDataType(arg).isUInt64())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(), 1, getName());
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+        return "(UInt64) -> Array(UInt64)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -82,10 +82,14 @@ public:
             // allocate array of size 6
             // originToDirectedEdges places 6 edges into
             // array that's passed to it
-            std::array<H3Index, 6> res;
+            std::array<H3Index, 6> res{};
 
             const UInt64 cell = data_hindex[row];
-            validateH3Cell(cell);
+            if (!validator.validateCell(cell))
+            {
+                result_offsets[row] = current_offset;
+                continue;
+            }
             originToDirectedEdges(cell, res.data());
 
             for (auto & i : res)
@@ -112,7 +116,7 @@ Provides all of the unidirectional edges from the provided H3Index.
         {"index", "Hexagon index number that represents a cell.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns an array of H3 indexes representing each unidirectional edge.",
+        "Returns an array of H3 indexes representing each unidirectional edge. Throws an exception if the input is not a valid H3 cell (controlled by the `functions_h3_default_if_invalid` setting); returns an empty array only when that setting is enabled.",
         {"Array(UInt64)"}
     };
     FunctionDocumentation::Examples examples = {

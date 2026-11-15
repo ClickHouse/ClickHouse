@@ -23,7 +23,7 @@ done
 
 ${CLICKHOUSE_CLIENT} -q "SELECT query, arrayExists(x -> x LIKE '%async_inserts_2156', tables), \
         query_kind, Settings['async_insert'] FROM system.query_log \
-    WHERE event_date >= yesterday() AND current_database = '$CLICKHOUSE_DATABASE' \
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = '$CLICKHOUSE_DATABASE' \
     AND query ILIKE 'INSERT INTO async_inserts_2156 VALUES%' AND type = 'QueryFinish' \
     ORDER BY query_start_time_microseconds"
 

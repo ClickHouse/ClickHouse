@@ -1,6 +1,5 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOffset.h>
 
-#include <Core/DecimalFunctions.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -8,7 +7,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
-#include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
 namespace DB::ErrorCodes
@@ -24,12 +22,16 @@ namespace
 {
     /// Applies an offset for the evaluation time: <expression> offset 1d
     SQLQueryPiece offsetEvaluationTime(
-        const PQT::Offset * offset_node,
+        const PrometheusQueryTree::Offset * offset_node,
         SQLQueryPiece && expression,
         DurationType offset_value,
         ConverterContext & context)
     {
         expression.node = offset_node;
+
+        /// A range vector keeps the timestamps of its samples, the range function consuming it shifts its grid instead.
+        if (expression.type == ResultType::RANGE_VECTOR)
+            return std::move(expression);
 
         switch (expression.store_method)
         {
@@ -40,6 +42,7 @@ namespace
 
             case StoreMethod::CONST_SCALAR:
             case StoreMethod::CONST_STRING:
+            case StoreMethod::SINGLE_SCALAR:
             case StoreMethod::SCALAR_GRID:
             case StoreMethod::VECTOR_GRID:
             {
@@ -48,73 +51,40 @@ namespace
                 return std::move(expression);
             }
 
-            case StoreMethod::RAW_DATA:
+            case StoreMethod::SAMPLES:
+            case StoreMethod::TIMESTAMP_AND_VALUE:
             {
-                /// SELECT group, timestamp + INTERVAL X, value
-                /// FROM <raw_data>
-                SelectQueryBuilder builder;
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-
-                ASTPtr new_timestamp;
-                if (isDateTime64(context.timestamp_data_type))
-                {
-                    /// timestamp + INTERVAL x MILLISECONDS
-                    chassert(context.timestamp_scale <= 9); /// Maximum scale for DateTime64 is 9 (nanoseconds).
-                    /// Round up the scale to next number divisible by 3.
-                    UInt32 scale = std::max<UInt32>((context.timestamp_scale + 2) / 3 * 3, 9);
-                    Decimal64 scaled_offset_value = DecimalUtils::convertTo<Decimal64>(scale, offset_value, context.timestamp_scale);
-
-                    static const std::string_view to_interval_functions[] = {"toIntervalSecond", "toIntervalMillisecond", "toIntervalMicrosecond", "toIntervalNanosecond"};
-                    std::string_view to_interval_function = to_interval_functions[scale / 3];
-
-                    new_timestamp = makeASTFunction(
-                        "plus",
-                        make_intrusive<ASTIdentifier>(ColumnNames::Timestamp),
-                        makeASTFunction(to_interval_function, make_intrusive<ASTLiteral>(scaled_offset_value)));
-                }
-                else
-                {
-                    /// timestamp + x
-                    new_timestamp = makeASTFunction(
-                        "plus",
-                        make_intrusive<ASTIdentifier>(ColumnNames::Timestamp),
-                        timeSeriesDurationToAST(offset_value, context.timestamp_data_type));
-                }
-
-                new_timestamp->setAlias(ColumnNames::Timestamp);
-                builder.select_list.push_back(std::move(new_timestamp));
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
-
-                auto & subqueries = context.subqueries;
-                subqueries.emplace_back(subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE);
-                builder.from_table = subqueries.back().name;
-
-                expression.select_query = builder.getSelectQuery();
-
-                return std::move(expression);
+                /// Can't get in here because these store methods are used only for range vectors, and they are returned above as is.
+                throwUnexpectedStoreMethod(expression, context);
             }
         }
 
         UNREACHABLE();
     }
 
-    /// Applies setting a fixed evaluation time: <expression> @ 1609746000
-    SQLQueryPiece setEvaluationTime(const PQT::Offset * offset_node, SQLQueryPiece && expression, ConverterContext & context)
+    /// Applies a fixed evaluation time: <expression> @ 1609746000, @ start(), or @ end()
+    SQLQueryPiece setEvaluationTime(
+        const PrometheusQueryTree::Offset * offset_node, SQLQueryPiece && expression, ConverterContext & context)
     {
+        /// A range vector already contains the samples evaluated at the fixed time. Keep its timestamps and, for a
+        /// subquery, its complete inner grid intact. A range-vector function will aggregate it at the fixed time.
+        if (expression.type == ResultType::RANGE_VECTOR)
+        {
+            expression.node = offset_node;
+            return std::move(expression);
+        }
+
+        auto node_range = context.node_range_getter.get(offset_node);
+        if (node_range.empty())
+            return SQLQueryPiece{offset_node, offset_node->result_type, StoreMethod::EMPTY};
+
         /// <expression> is expected to be calculated at a fixed evaluation time.
         if (expression.start_time != expression.end_time)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Expression {} is expected to be calculated at a fixed evaluation time",
-                            getPromQLQuery(expression, context));
+                            getPromQLText(expression, context));
         }
-
-        auto evaluation_range = context.node_evaluation_range_getter.get(offset_node);
-
-        if (evaluation_range.start_time > evaluation_range.end_time)
-            return SQLQueryPiece{offset_node, offset_node->result_type, StoreMethod::EMPTY};
 
         expression.node = offset_node;
 
@@ -127,10 +97,11 @@ namespace
 
             case StoreMethod::CONST_SCALAR:
             case StoreMethod::CONST_STRING:
+            case StoreMethod::SINGLE_SCALAR:
             {
-                expression.start_time = evaluation_range.start_time;
-                expression.end_time = evaluation_range.end_time;
-                expression.step = evaluation_range.step;
+                expression.start_time = node_range.start_time;
+                expression.end_time = node_range.end_time;
+                expression.step = node_range.step;
                 return std::move(expression);
             }
 
@@ -154,7 +125,7 @@ namespace
                     "arrayResize",
                     make_intrusive<ASTLiteral>(Array{}),
                     make_intrusive<ASTLiteral>(
-                        stepsInTimeSeriesRange(evaluation_range.start_time, evaluation_range.end_time, evaluation_range.step)),
+                        stepsInTimeSeriesRange(node_range.start_time, node_range.end_time, node_range.step)),
                     makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u)));
 
                 new_values->setAlias(ColumnNames::Values);
@@ -166,42 +137,17 @@ namespace
 
                 expression.select_query = builder.getSelectQuery();
 
-                expression.start_time = evaluation_range.start_time;
-                expression.end_time = evaluation_range.end_time;
-                expression.step = evaluation_range.step;
+                expression.start_time = node_range.start_time;
+                expression.end_time = node_range.end_time;
+                expression.step = node_range.step;
                 return std::move(expression);
             }
 
-            case StoreMethod::RAW_DATA:
+            case StoreMethod::SAMPLES:
+            case StoreMethod::TIMESTAMP_AND_VALUE:
             {
-                /// SELECT group,
-                ///        arrayJoin(timeSeriesRange(<start_time>, <end_time>, <step>)) AS timestamp,
-                ///        value
-                /// FROM <raw_data>
-                SelectQueryBuilder builder;
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-
-                auto new_timestamp = makeASTFunction(
-                    "arrayJoin",
-                    makeASTFunction(
-                        "timeSeriesRange",
-                        timeSeriesTimestampToAST(evaluation_range.start_time, context.timestamp_data_type),
-                        timeSeriesTimestampToAST(evaluation_range.end_time, context.timestamp_data_type),
-                        timeSeriesDurationToAST(evaluation_range.step, context.timestamp_data_type)));
-
-                new_timestamp->setAlias(ColumnNames::Timestamp);
-                builder.select_list.push_back(std::move(new_timestamp));
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
-
-                auto & subqueries = context.subqueries;
-                subqueries.emplace_back(subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE);
-                builder.from_table = subqueries.back().name;
-
-                expression.select_query = builder.getSelectQuery();
-
-                return std::move(expression);
+                /// Can't get in here because these store methods are used only for range vectors, and they are returned above as is.
+                throwUnexpectedStoreMethod(expression, context);
             }
         }
 
@@ -209,9 +155,9 @@ namespace
     }
 }
 
-SQLQueryPiece applyOffset(const PQT::Offset * offset_node, SQLQueryPiece && expression, ConverterContext & context)
+SQLQueryPiece applyOffset(const PrometheusQueryTree::Offset * offset_node, SQLQueryPiece && expression, ConverterContext & context)
 {
-    if (offset_node->at_timestamp)
+    if (offset_node->hasAtModifier())
     {
         /// Set fixed evaluation time.
         return setEvaluationTime(offset_node, std::move(expression), context);

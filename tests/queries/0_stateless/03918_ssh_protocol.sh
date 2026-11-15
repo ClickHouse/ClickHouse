@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-openssl-fips
+# no-openssl-fips: authenticates with an ssh-ed25519 key, which is not FIPS-approved and is rejected on FIPS builds.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -9,13 +10,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Check that the SSH port is configured and listening
 if ! echo "" | nc -w 1 "${CLICKHOUSE_HOST}" "${CLICKHOUSE_PORT_SSH}" >/dev/null 2>&1; then
-    echo "SSH port ${CLICKHOUSE_PORT_SSH} is not available, skipping test" >&2
+    echo "@@SKIP@@: SSH port ${CLICKHOUSE_PORT_SSH} is not available, skipping test"
     exit 0
 fi
 
 # Check that the ssh client is available
 if ! command -v ssh &>/dev/null; then
-    echo "ssh client is not available, skipping test" >&2
+    echo "@@SKIP@@: ssh client is not available, skipping test"
     exit 0
 fi
 

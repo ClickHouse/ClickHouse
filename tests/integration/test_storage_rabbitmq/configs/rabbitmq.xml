@@ -1,0 +1,18 @@
+<clickhouse>
+    <rabbitmq>
+        <username>root</username>
+        <password>clickhouse</password>
+    </rabbitmq>
+    
+    <!-- Enable detailed logging for debugging -->
+    <logger>
+        <level>trace</level>
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+        <size>1000M</size>
+        <count>10</count>
+    </logger>
+    
+    <!-- Settings for streaming storage factory -->
+    <streaming_storage_shutdown_threads>10</streaming_storage_shutdown_threads>
+</clickhouse>

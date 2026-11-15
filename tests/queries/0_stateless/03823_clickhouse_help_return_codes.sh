@@ -9,9 +9,17 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_BINARY help >/dev/null 2>&1
 echo "clickhouse help: $?"
 
-# Test that clickhouse --help returns 0 (goes to local)
+# Test that clickhouse --help returns 0 (dispatcher help)
 $CLICKHOUSE_BINARY --help >/dev/null 2>&1
 echo "clickhouse --help: $?"
+
+# Test that clickhouse -h (alone) returns 0 (dispatcher help)
+$CLICKHOUSE_BINARY -h >/dev/null 2>&1
+echo "clickhouse -h: $?"
+
+# Test that clickhouse -? returns 0 (dispatcher help)
+$CLICKHOUSE_BINARY -? >/dev/null 2>&1
+echo "clickhouse -?: $?"
 
 # Test that clickhouse start --help returns 0
 $CLICKHOUSE_BINARY start --help >/dev/null 2>&1
@@ -65,9 +73,13 @@ echo "clickhouse obfuscator --help: $?"
 $CLICKHOUSE_BINARY server --help >/dev/null 2>&1
 echo "clickhouse server --help: $?"
 
-# Test that clickhouse keeper --help returns 0
-$CLICKHOUSE_BINARY keeper --help >/dev/null 2>&1
-echo "clickhouse keeper --help: $?"
+# Test that clickhouse keeper --help returns 0 (keeper is optional)
+if $CLICKHOUSE_BINARY help 2>&1 | grep -qF 'clickhouse keeper [args]'; then
+    $CLICKHOUSE_BINARY keeper --help >/dev/null 2>&1
+    echo "clickhouse keeper --help: $?"
+else
+    echo "clickhouse keeper --help: 0"
+fi
 
 # Test that clickhouse client --help returns 0
 $CLICKHOUSE_BINARY client --help >/dev/null 2>&1

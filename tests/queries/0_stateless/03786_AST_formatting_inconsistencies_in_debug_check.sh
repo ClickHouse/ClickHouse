@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 ch_format() {
-    $CLICKHOUSE_FORMAT --oneline
+    $CLICKHOUSE_FORMAT --oneline --show_secrets
 }
 
 format_query() {
@@ -59,5 +59,25 @@ format_query "ALTER TABLE \`t55\` (MODIFY ORDER BY ((\`c0\` AS \`a0\`)));"
 format_query "select (tab.*).2 from tab;"
 format_query "with (((1,1),1),1) as t1 select t1.1.1.1;"
 
+# Aliased index of the tuple element access operator: the alias must stay inside the parens
+format_query "SELECT ((1,2) AS t).(1 AS a)"
+format_query "SELECT (1,2).(0 AS a)"
+format_query "select (tab.*).(2 AS a) from tab;"
+format_query "SELECT ((1,(2,3)) AS t).(2 AS a).(1 AS b)"
+format_query "SELECT 1 + ((1,2) AS t).(1 AS a)"
+
 # Array with tuple element access (should not add extra parens around array)
 format_query "SELECT [['hello']].1;"
+
+# SETTINGS on SelectWithUnionQuery: parenthesized subqueries preserve SETTINGS attachment
+format_query "(SELECT 1) UNION ALL (SELECT 2) SETTINGS max_threads = 1"
+
+# SETTINGS on SelectWithUnionQuery inside EXPLAIN AST
+format_query "EXPLAIN AST (SELECT 1) UNION ALL (SELECT 2) SETTINGS max_threads = 1 INTO OUTFILE '/dev/null' FORMAT Null"
+
+# complex row policy with aliases should be consistent
+format_query "CREATE ROW POLICY OR REPLACE p0 ON t0 USING (1 AND (2 AND (4 AS a)) AND (3 as b))"
+format_query "ALTER ROW POLICY p0 ON t0 USING (1 AND (2 AND (4 AS a)) AND (3 as b))"
+# WITH CHECK is parsed but not implemented, so it is ignored by the formatter for now
+format_query "CREATE ROW POLICY OR REPLACE p0 ON t0 WITH CHECK (2 AND (3 AS b))"
+format_query "ALTER ROW POLICY p0 ON t0 WITH CHECK (2 AND (3 AS b))"

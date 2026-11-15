@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0.
 
 if (USE_CPU_EXTENSIONS)
-    if (ENABLE_AVX2)
+    if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 3)
         set (AVX2_CFLAGS "-mavx -mavx2")
         set (HAVE_AVX2_INTRINSICS 1)
         set (HAVE_MM256_EXTRACT_EPI64 1)

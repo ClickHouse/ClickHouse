@@ -62,10 +62,21 @@ node8 = cluster.add_instance(
     "node8",
     main_configs=[
         "configs/remote_servers_with_disable_dns_setting.xml",
-        "configs/listen_host.xml"
+        "configs/listen_host.xml",
+        "configs/dns_update_short.xml",
     ],
+    # Disable `with_remote_database_disk` as the `test_reload_cluster_config_if_host_address_change` may simulate DNS service outage, causing it to fail to start.
+    with_remote_database_disk=False,
     stay_alive=True,
     ipv6_address="2001:3984:3989::1:1118",
+)
+node9 = cluster.add_instance(
+    "node9",
+    main_configs=[
+        "configs/disable_cache_and_ipv6.xml",
+        "configs/listen_host.xml"
+    ],
+    ipv6_address="2001:3984:3989::1:1119",
 )
 
 
@@ -110,7 +121,9 @@ def cluster_ready(cluster_start):
     """
     try:
         for node in cluster_start.instances.values():
-            node.wait_for_start(10)
+            # Use the default start timeout: sanitizer builds (msan) can take
+            # well over 10s to reopen the TCP port after a restart.
+            node.wait_for_start()
 
         yield cluster
 
@@ -476,3 +489,75 @@ def test_setting_disable_internal_dns_cache(cluster_ready, disable_internal_dns_
         assert node.query("SELECT count(*) from system.dns_cache;") == "0\n"
     else:
         assert node.query("SELECT count(*) from system.dns_cache;") != "0\n"
+
+    # Reset the node8 state
+    node.replace_in_config(
+        "/etc/clickhouse-server/config.d/remote_servers_with_disable_dns_setting.xml",
+        "<disable_internal_dns_cache>[10]</disable_internal_dns_cache>",
+        "<disable_internal_dns_cache>0</disable_internal_dns_cache>"
+    )
+
+
+def test_reload_cluster_config_if_host_address_change(cluster_ready):
+    # `disable_internal_dns_cache` should be false for updating cache,
+    # so that we can reload cluster config if host address changes.
+    node = node8
+    # Back up DNS configuration (resolv.conf and hosts)
+    resolv_conf_bak = node.exec_in_container(["bash", "-c", "cat /etc/resolv.conf"])
+    hosts_bak = node.exec_in_container(["bash", "-c", "cat /etc/hosts"])
+    # Clear DNS configuration to simulate DNS service outage
+    node.exec_in_container(["bash", "-c", "echo '' > /etc/resolv.conf",], privileged=True, user="root")
+    node.exec_in_container(["bash", "-c", "echo '' > /etc/hosts"], privileged=True, user="root")
+
+    node.restart_clickhouse()
+
+    # Failed to resolve DNS at cluster initialization
+    assert node.wait_for_log_line(
+        regexp="Cluster: Code: 198. DB::NetException: Not found address of host: node8.",
+        filename="/var/log/clickhouse-server/clickhouse-server.err.log",
+        timeout=3
+    )
+    # `is_local` is set to false by default as failure in DNS resolution
+    assert node.query("SELECT is_local FROM system.clusters WHERE cluster='test_cluster' AND host_name='node8'") == "0\n"
+
+    # Restore the original DNS configuration to simulate DNS service recovery
+    node.exec_in_container(["bash", "-c", f"echo '{resolv_conf_bak}' > /etc/resolv.conf"], privileged=True, user="root")
+    node.exec_in_container(["bash", "-c", f"echo '{hosts_bak}' > /etc/hosts"], privileged=True, user="root")
+    # Wait until dns cache will be updated (dns_cache_update_period is 10s, so we need enough retries)
+    assert_eq_with_retry(node, "SELECT is_local FROM system.clusters WHERE cluster='test_cluster' AND host_name='node8'", "1", retry_count=40)
+
+    # Change the resolved IPs of node8
+    node.exec_in_container(["bash", "-c", "echo -e '127.0.0.1 node8\n192.168.1.1 node8\n192.168.1.2 node8' > /etc/hosts"], privileged=True, user="root")
+    # During this update period, the cluster config was reloaded
+    assert node.wait_for_log_line(
+        regexp="DNSCacheUpdater: IPs of host name node8 have been changed",
+        look_behind_lines=10,
+    )
+    assert node.query("SELECT is_local FROM system.clusters WHERE cluster='test_cluster' AND host_name='node8'") == "1\n"
+    # The row order in system.dns_cache follows the resolver's return order, which is
+    # libc-specific (glibc sorts all-IPv4 results per RFC 3484, musl returns /etc/hosts
+    # file order), so compare the set of addresses with a deterministic ORDER BY.
+    assert node.query("SELECT ip_address FROM system.dns_cache WHERE hostname='node8' ORDER BY ip_address") == "127.0.0.1\n192.168.1.1\n192.168.1.2\n"
+
+    # Change the resolved IPs' order of node8
+    node.exec_in_container(["bash", "-c", "echo -e '192.168.1.2 node8\n192.168.1.1 node8\n127.0.0.1 node8' > /etc/hosts"], privileged=True, user="root")
+    # During this update period, the cluster config was not reloaded yet
+    assert node.wait_for_log_line(
+        regexp="DNSResolver: Updated DNS cache",
+        look_behind_lines=10,
+    )
+    assert node.count_in_log("DNSCacheUpdater: IPs of host name node8 have been changed") == "2\n"
+    assert node.query("SELECT is_local FROM system.clusters WHERE cluster='test_cluster' AND host_name='node8'") == "1\n"
+    assert node.query("SELECT ip_address FROM system.dns_cache WHERE hostname='node8' ORDER BY ip_address") == "127.0.0.1\n192.168.1.1\n192.168.1.2\n"
+
+    # Reset the node8 state
+    node.exec_in_container(["bash", "-c", f"echo '{hosts_bak}' > /etc/hosts"], privileged=True, user="root")
+
+def test_dns_resolver_filter_cache_disabled(cluster_ready):
+    node = node9
+    node.set_hosts([(node.ipv6_address, "test_host")])
+    # query should fail because we disable IPv6 address resolution but provide no IPv4 address
+    with pytest.raises(QueryRuntimeException) as e:
+        node.query("SELECT * FROM remote('test_host', 'system', 'one')")
+    assert "DNS_ERROR" in str(e.value)
+    assert "After filtering there are no resolved address for host(test_host)" in str(e.value)
