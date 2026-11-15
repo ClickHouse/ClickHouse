@@ -307,6 +307,25 @@ size_t getMinBytesForPrefetch()
     return getL2CacheSize();
 }
 
+/// Fills `places` from `row` while the keys are in the table and returns the first row with a new key, or `end`.
+/// It calls nothing, so the table and the key columns stay in registers.
+template <typename Data, typename State>
+NO_INLINE size_t findRunOfKnownKeys(
+    Data & __restrict data, State & __restrict state, DB::AggregateDataPtr * __restrict places, size_t row, size_t end, DB::Arena & pool)
+{
+    /// See the comment in `Set::executeImplCase`.
+    __builtin_assume_dereferenceable(&data, sizeof(data));
+    __builtin_assume_dereferenceable(&state, sizeof(state));
+    for (; row < end; ++row)
+    {
+        auto find_result = state.findKnownKey(data, row, pool);
+        if (!find_result.isFound())
+            break;
+        places[row] = find_result.getMapped();
+    }
+    return row;
+}
+
 }
 
 namespace DB
@@ -1988,6 +2007,18 @@ void NO_INLINE Aggregator::executeImplBatch(
                 skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, key_start, key_end);
         }
 
+        /// After a row whose key is found, the next rows are looked up by `findRunOfKnownKeys` up to the first new key: only in
+        /// a single-level table that fits in the cache, and for states whose `emplaceKey` is `HashMethodBase`'s.
+        static constexpr bool may_look_up_known_keys = !prefetch && !top_k && State::has_cheap_key_holder
+            && !Method::low_cardinality_optimization && !requires { Method::Data::NUM_BUCKETS; };
+        [[maybe_unused]] size_t known_keys_end = 0;
+        if constexpr (may_look_up_known_keys)
+        {
+            /// The test that selects prefetching; `prefetch` is also false when prefetching is disabled by the setting.
+            if (bytesForPrefetch(method.data) <= minBytesForPrefetch<typename Method::Data, State::has_mapped>(min_bytes_for_prefetch))
+                known_keys_end = key_end;
+        }
+
         for (size_t i = key_start; i < key_end; ++i)
         {
             AggregateDataPtr aggregate_data = nullptr;
@@ -2054,7 +2085,20 @@ void NO_INLINE Aggregator::executeImplBatch(
                 emplace_result.setMapped(aggregate_data);
             }
             else
+            {
                 aggregate_data = emplace_result.getMapped();
+
+                if constexpr (may_look_up_known_keys)
+                {
+                    if (i + 1 < known_keys_end)
+                    {
+                        places[i] = aggregate_data;
+                        /// The loop resumes at the first row whose key is not in the table.
+                        i = findRunOfKnownKeys(method.data, state, places.get(), i + 1, known_keys_end, *aggregates_pool) - 1;
+                        continue;
+                    }
+                }
+            }
 
             if constexpr (top_k)
             {
