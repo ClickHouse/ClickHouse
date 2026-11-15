@@ -129,7 +129,8 @@ public:
     String resolve(const IcebergPathFromMetadata & metadata_path) const;
 
     /// A key for the storage object that `resolve(metadata_path)` addresses, the same for paths the storage treats alike.
-    String storageIdentity(const IcebergPathFromMetadata & metadata_path) const;
+    /// `key_prefix` is the storage's `getCommonKeyPrefix`.
+    String storageIdentity(const IcebergPathFromMetadata & metadata_path, const String & key_prefix) const;
 
     static String parseNamespace(std::string_view path);
 

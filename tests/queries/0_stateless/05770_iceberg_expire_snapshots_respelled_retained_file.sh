@@ -12,6 +12,7 @@ WORK_DIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 rm -rf "${WORK_DIR}"
 mkdir -p "${WORK_DIR}"
 trap 'rm -rf "${WORK_DIR}"' EXIT
+cd "${WORK_DIR}" || exit
 
 local_query() { ${CLICKHOUSE_LOCAL} --allow_insert_into_iceberg=1 --allow_expire_snapshots=1 -q "$1" -- --user_files_path="${WORK_DIR}"; }
 
@@ -26,7 +27,7 @@ check()
         INSERT INTO t VALUES (3);"
     # The first snapshot names the manifest list of the current one, so only the second snapshot's own list is expired.
     python3 -c "
-import glob, json, re
+import glob, json, os, re
 f = max(glob.glob('${path}/metadata/v*.metadata.json'), key=lambda f: int(re.search(r'/v(\d+)\.metadata', f).group(1)))
 m = json.load(open(f))
 p = next(s for s in m['snapshots'] if s['snapshot-id'] == m['current-snapshot-id'])['manifest-list']
@@ -42,3 +43,5 @@ echo "file:// prefix"
 check t1 "'file://' + p"
 echo "repeated slash"
 check t2 "p.replace('/metadata/', '/metadata//')"
+echo "relative path"
+check t3 "os.path.relpath(p)"

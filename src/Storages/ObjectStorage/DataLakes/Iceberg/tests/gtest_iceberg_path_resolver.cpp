@@ -118,8 +118,8 @@ TEST(IcebergDeriveTableRoot, EmptyTailIsNotARoot)
 
 TEST(IcebergPathResolver, StorageIdentity)
 {
-    auto identity = [](const IcebergPathResolver & resolver, const String & path)
-    { return resolver.storageIdentity(Iceberg::IcebergPathFromMetadata::deserialize(path)); };
+    auto identity = [](const IcebergPathResolver & resolver, const String & path, const String & key_prefix = "/")
+    { return resolver.storageIdentity(Iceberg::IcebergPathFromMetadata::deserialize(path), key_prefix); };
 
     IcebergPathResolver s3("s3://bucket/tbl", "tbl", {.type_name = "s3", .namespace_name = "bucket", .allow_foreign_namespaces = true});
     EXPECT_EQ(identity(s3, "s3://bucket/tbl/data/x.parquet"), "bucket/tbl/data/x.parquet");
@@ -133,4 +133,6 @@ TEST(IcebergPathResolver, StorageIdentity)
     IcebergPathResolver local("/w/t", "/w/t", {.type_name = "local", .namespace_name = "", .allow_foreign_namespaces = false});
     for (const auto * path : {"/w/t/metadata/s.avro", "file:///w/t/metadata/s.avro", "/w/t/metadata//s.avro", "/w/t/./metadata/s.avro"})
         EXPECT_EQ(identity(local, path), "/w/t/metadata/s.avro") << path;
+    /// A server's local storage takes a relative path from `user_files_path`.
+    EXPECT_EQ(identity(local, "t/metadata/s.avro", "/w"), "/w/t/metadata/s.avro");
 }

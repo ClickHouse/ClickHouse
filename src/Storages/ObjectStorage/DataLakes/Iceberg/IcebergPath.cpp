@@ -2,6 +2,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
 #include <Databases/DataLake/ICatalog.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/FullyQualifiedObjectPath.h>
@@ -207,16 +208,18 @@ String IcebergPathResolver::resolve(const IcebergPathFromMetadata & metadata_pat
     }
 }
 
-String IcebergPathResolver::storageIdentity(const IcebergPathFromMetadata & metadata_path) const
+String IcebergPathResolver::storageIdentity(const IcebergPathFromMetadata & metadata_path, const String & key_prefix) const
 {
     String path = resolve(metadata_path);
     /// A filesystem names `a/./b`, `a//b` and `a/b/` as `a/b`; an object key is a byte string.
     if (blob_storage.type_name == "local" || blob_storage.type_name == "hdfs")
     {
-        path = std::filesystem::path(path).lexically_normal().string();
-        while (path.size() > 1 && path.back() == '/')
-            path.pop_back();
-        return path;
+        std::filesystem::path fs_path(path);
+        /// The file `LocalObjectStorage` opens for a relative path: from the working directory or from the key prefix.
+        if (blob_storage.type_name == "local" && fs_path.is_relative())
+            fs_path = std::filesystem::absolute(resolvePathRelativelyToBase(path, key_prefix));
+        path = fs_path.lexically_normal().string();
+        return String(trimTrailingSlashes(path));
     }
     /// As in `S3ObjectStorage::splitBucketAndKey`, a fully qualified path names its bucket whatever its scheme.
     if (blob_storage.type_name == "s3")
