@@ -88,7 +88,16 @@ void flattenDocument(const std::string & prefix, const rapidjson::Value & docume
         /// is made on a wrapper-shaped document by `tryParseMongoConstant` itself, so a wrapper
         /// with an invalid value is an error rather than a strangely named column.
         if (it->value.IsObject() && !tryParseMongoConstant(it->value))
+        {
+            /// A subdocument becomes the columns of its paths, and an empty one has no path: it
+            /// would disappear from the inserted row without anything refusing the field.
+            if (it->value.ObjectEmpty())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The field '{}' is an empty document, which has no column to be written into in this table",
+                    path);
             flattenDocument(path, it->value, fields);
+        }
         else
         {
             auto value = parseInsertedValue(it->value, path);

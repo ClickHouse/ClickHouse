@@ -7,6 +7,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -60,6 +61,14 @@ bool ParserMongoDeleteQuery::parseImpl(ASTPtr & node)
 
     /// `set` makes the condition a child, so the limits on the size and depth of the AST see it.
     delete_query->set(delete_query->predicate, std::move(where_condition));
+
+    /// `$divide` of two integers is a double, whatever `sql_compatible_division_for_integers` the
+    /// user has: `normalizeDivision` honours the setting of the query, as for a `find`.
+    auto settings = make_intrusive<ASTSetQuery>();
+    settings->is_standalone = false;
+    settings->changes.emplace_back("sql_compatible_division_for_integers", Field(UInt64(0)));
+    delete_query->settings_ast = settings;
+    delete_query->children.push_back(std::move(settings));
     return true;
 }
 

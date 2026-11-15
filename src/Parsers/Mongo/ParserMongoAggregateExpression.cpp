@@ -629,9 +629,10 @@ std::vector<bool> findOptionalCaptureGroups(std::string_view pattern)
   * A constant carries its digits, so its exact scale is computed here; a value that fits no
   * scale of `Decimal128` is rejected rather than silently rounded. A non-constant argument
   * only converts exactly when it is an integer or a boolean - their scale is zero whatever
-  * the value - so anything else is rejected when the query is analyzed, by a `throwIf` on the
-  * type name, which is a constant.
+  * the value - so anything else is rejected by a `throwIf` on the type the value holds.
   */
+ASTPtr makeRowType(const ASTPtr & value);
+
 ASTPtr makeToDecimal(ASTPtr argument)
 {
     if (const auto * literal = argument->as<ASTLiteral>())
@@ -675,8 +676,11 @@ ASTPtr makeToDecimal(ASTPtr argument)
             return argument;
     }
 
+    /// The type the value holds in each row (see `makeRowType`): a `Nullable` column and a path of a
+    /// stored document are `Nullable(Int64)` and `Dynamic` as a whole, which names no integer. A
+    /// `null` converts to `null`, as in Mongo.
     auto is_exact = makeASTFunction(
-        "match", makeASTFunction("toTypeName", argument), makeLiteral(Field(String("^(U?Int(8|16|32|64|128|256)|Bool)$"))));
+        "match", makeRowType(argument), makeLiteral(Field(String("^(U?Int(8|16|32|64|128|256)|Bool|None)$"))));
     auto guard = makeASTFunction(
         "throwIf",
         makeASTFunction("not", std::move(is_exact)),
@@ -693,7 +697,6 @@ ASTPtr makeToDecimal(ASTPtr argument)
   * in each row (see `makeRowType`), which sees through a `Nullable` column and a `Dynamic` path of a
   * stored document - the type of either as a whole names no number.
   */
-ASTPtr makeRowType(const ASTPtr & value);
 
 ASTPtr makeToDate(ASTPtr argument)
 {
@@ -1290,10 +1293,10 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
           * onto it directly would count the bytes of a string instead of rejecting it the way
           * Mongo does. Unlike the `$size` of a filter, which is a predicate and can simply not
           * match, this one has to produce a value, so the rejection is a `throwIf` on the type
-          * of the argument: the type name is a constant, and a non-array argument fails when
-          * the query is analyzed.
+          * the argument holds in each row (see `makeRowType`): an array path of a stored document
+          * is `Dynamic` as a whole, and only the value it holds is an array.
           */
-        auto is_array = makeASTFunction("startsWith", makeASTFunction("toTypeName", arguments[0]), makeLiteral(Field(String("Array"))));
+        auto is_array = makeASTFunction("startsWith", makeRowType(arguments[0]), makeLiteral(Field(String("Array"))));
         auto guard = makeASTFunction(
             "throwIf", makeASTFunction("not", std::move(is_array)), makeLiteral(Field(String("The argument of '$size' must be an array"))));
         return makeASTFunction("plus", makeASTFunction("length", arguments[0]->clone()), std::move(guard));
@@ -1429,10 +1432,15 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
 
         /// `dateTrunc` starts a week on Monday; the start of the week Mongo means is a different day.
         /// `startOfWeek` is read for the `week` unit only: Mongo ignores it for every other unit.
-        if (unit == "week")
-            return makeStartOfWeek(std::move(date), startOfWeekMode(argument, name), timezone);
+        ASTPtr truncated = unit == "week"
+            ? makeStartOfWeek(std::move(date), startOfWeekMode(argument, name), timezone)
+            : makeASTFunction("dateTrunc", makeLiteral(Field(String(unit))), date, timezone->clone());
 
-        return makeASTFunction("dateTrunc", makeLiteral(Field(String(unit))), std::move(date), std::move(timezone));
+        /// The boundary of a calendar unit is a `Date` - a day without a timezone, which would be
+        /// read as the midnight of UTC - while Mongo returns the instant of the midnight in the
+        /// requested timezone. `toDateTime64` with the timezone turns a `Date` into exactly that
+        /// instant and keeps the instant of a `DateTime` or `DateTime64` as it is.
+        return makeASTFunction("toDateTime64", std::move(truncated), makeLiteral(Field(UInt64(3))), timezone->clone());
     }
 
     if (name == "$regexMatch")

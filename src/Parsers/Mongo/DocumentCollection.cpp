@@ -17,6 +17,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/Mongo/Utils.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -246,6 +247,38 @@ ASTPtr makeDocumentPath(const ASTIdentifier & identifier, const String & input_t
     return path;
 }
 
+/** `json.^<path>`: the subobject of the document under a field, which holds the paths below it.
+  * The path of a field that holds an object is `NULL`, because only the leaves of a document are
+  * stored as paths, so a field is absent only when it has neither a value nor a subobject.
+  */
+ASTPtr makeDocumentSubtree(const ASTIdentifier & identifier, const String & input_table)
+{
+    auto path = makeDocumentPath(identifier, input_table);
+    auto parts = path->as<ASTIdentifier &>().name_parts;
+    const size_t first_field_part = input_table.empty() ? 1 : 2;
+    parts[first_field_part] = "^" + backQuote(parts[first_field_part]);
+    return make_intrusive<ASTIdentifier>(std::move(parts));
+}
+
+/** `isNull(<field>)` and `isNotNull(<field>)`, which is how `$exists` and the equality with `null`
+  * are spelled, over a field of a document: a field that holds an object is present although its
+  * path is `NULL`.
+  */
+ASTPtr rewriteFieldNullCheck(const ASTFunction & function, const std::unordered_set<String> & bound, const String & input_table)
+{
+    if ((function.name != "isNull" && function.name != "isNotNull") || !function.arguments || function.arguments->children.size() != 1)
+        return nullptr;
+    const auto * field = function.arguments->children.front()->as<ASTIdentifier>();
+    if (!field || bound.contains(field->name()) || field->name() == OBJECT_ID_COLUMN || !field->tryGetAlias().empty())
+        return nullptr;
+
+    auto path = makeDocumentPath(*field, input_table);
+    auto subtree_paths = makeASTFunction("JSONAllPaths", makeDocumentSubtree(*field, input_table));
+    if (function.name == "isNull")
+        return makeASTFunction("and", makeASTFunction("isNull", std::move(path)), makeASTFunction("empty", std::move(subtree_paths)));
+    return makeASTFunction("or", makeASTFunction("isNotNull", std::move(path)), makeASTFunction("notEmpty", std::move(subtree_paths)));
+}
+
 /** The field of `has(flatten(array(<field>)), <value>)` and of `hasAny(<values>, flatten(array(<field>)))`,
   * which is how the filters spell Mongo's equality and its `$in`: both are tests over the elements
   * of a field that holds an array, and over a scalar field over the one element it is.
@@ -279,10 +312,18 @@ ASTPtr rewriteElementWiseCondition(const ASTFunction & function, const String & 
       * would match nothing - and under a negation, which takes a `NULL` condition as not holding,
       * everything - so the comparison with a `null` is a test of `NULL` instead.
       */
-    auto make_equality = [](ASTPtr path, const ASTPtr & value) -> ASTPtr
+    auto make_equality = [&](const ASTIdentifier & field, ASTPtr path, const ASTPtr & value) -> ASTPtr
     {
         if (const auto * literal = value->as<ASTLiteral>(); literal && literal->value.isNull())
-            return makeASTFunction("isNull", std::move(path));
+        {
+            /// A field that holds an object is not `null` although its path is (see `makeDocumentSubtree`).
+            if (field.name() == OBJECT_ID_COLUMN)
+                return makeASTFunction("isNull", std::move(path));
+            return makeASTFunction(
+                "and",
+                makeASTFunction("isNull", std::move(path)),
+                makeASTFunction("empty", makeASTFunction("JSONAllPaths", makeDocumentSubtree(field, input_table))));
+        }
         return makeASTFunction("equals", std::move(path), value->clone());
     };
 
@@ -309,7 +350,7 @@ ASTPtr rewriteElementWiseCondition(const ASTFunction & function, const String & 
     if (function.name == "has")
     {
         if (const auto * field = elementWiseField(left))
-            return make_equality(field_or_path(*field), right);
+            return make_equality(*field, field_or_path(*field), right);
         return nullptr;
     }
 
@@ -335,10 +376,10 @@ ASTPtr rewriteElementWiseCondition(const ASTFunction & function, const String & 
         /// there are candidates: this runs after the depth of the query has been checked, and the
         /// tree is walked recursively afterwards.
         if (candidates->arguments->children.size() == 1)
-            return make_equality(std::move(path), candidates->arguments->children.front());
+            return make_equality(*field, std::move(path), candidates->arguments->children.front());
         auto matches = makeASTFunction("or");
         for (const auto & candidate : candidates->arguments->children)
-            matches->arguments->children.push_back(make_equality(path->clone(), candidate));
+            matches->arguments->children.push_back(make_equality(*field, path->clone(), candidate));
         return matches;
     }
 
@@ -439,6 +480,13 @@ void rewriteField(
     if (const auto * function = node->as<ASTFunction>())
     {
         if (auto rewritten = rewriteElementWiseCondition(*function, input_table))
+        {
+            rewritten->setAlias(node->tryGetAlias());
+            node = std::move(rewritten);
+            return;
+        }
+
+        if (auto rewritten = rewriteFieldNullCheck(*function, bound, input_table))
         {
             rewritten->setAlias(node->tryGetAlias());
             node = std::move(rewritten);

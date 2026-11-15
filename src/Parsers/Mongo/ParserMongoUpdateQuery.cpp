@@ -11,6 +11,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/IAST_fwd.h>
 
 #include <Parsers/Mongo/MongoConstants.h>
@@ -84,6 +85,24 @@ ASTPtr parseUpdateValue(const rapidjson::Value & value, std::string_view operato
         operator_name);
 }
 
+/** The operand of `$inc` and `$mul`, which Mongo requires to be a number: a JSON number or one of
+  * the numeric Extended JSON wrappers. `parseUpdateValue` also accepts `null`, booleans, strings
+  * and arrays, and `plus(x, NULL)` would silently write `NULL` where Mongo refuses the update.
+  */
+ASTPtr parseArithmeticOperand(const rapidjson::Value & value, std::string_view operator_name, std::string_view field)
+{
+    bool is_number = value.IsNumber();
+    if (!is_number && value.IsObject() && value.MemberCount() == 1)
+    {
+        const std::string_view wrapper = stringView(value.MemberBegin()->name);
+        is_number = wrapper == "$numberInt" || wrapper == "$numberLong" || wrapper == "$numberDouble" || wrapper == "$numberDecimal";
+    }
+    if (!is_number)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Cannot apply '{}' to the field '{}' with a non-numeric operand", operator_name, field);
+    return parseUpdateValue(value, operator_name, /* documents_are_values = */ false);
+}
+
 /// The values `$push` and `$addToSet` append, which `$each` turns into several of them.
 std::vector<ASTPtr> parseAppendedValues(const rapidjson::Value & value, std::string_view operator_name)
 {
@@ -137,13 +156,11 @@ void parseUpdateOperator(std::string_view name, const rapidjson::Value & argumen
         }
         else if (name == "$unset")
             assignments.push_back(makeAssignment(column, makeDefaultValue(column)));
-        /// The arithmetic operators take a number, so an embedded document is not a value they can
-        /// write: they pass `documents_are_values = false` and keep the error message about what
-        /// they do accept.
+        /// The arithmetic operators take a number, see `parseArithmeticOperand`.
         else if (name == "$inc")
-            assignments.push_back(makeAssignment(column, makeASTFunction("plus", field(), parseUpdateValue(it->value, name, false))));
+            assignments.push_back(makeAssignment(column, makeASTFunction("plus", field(), parseArithmeticOperand(it->value, name, column))));
         else if (name == "$mul")
-            assignments.push_back(makeAssignment(column, makeASTFunction("multiply", field(), parseUpdateValue(it->value, name, false))));
+            assignments.push_back(makeAssignment(column, makeASTFunction("multiply", field(), parseArithmeticOperand(it->value, name, column))));
         /** `$min` and `$max` compare as Mongo orders values, where `null` is below every other value:
           * `$min` with a `null` on either side writes `null`, and `$max` writes the other side.
           * `least` and `greatest` skip a `NULL` argument instead, or propagate it with
@@ -404,6 +421,14 @@ bool ParserMongoUpdateQuery::parseImpl(ASTPtr & node)
     if (update_query->database)
         update_query->children.push_back(update_query->database);
     update_query->children.push_back(update_query->table);
+
+    /// `$divide` of two integers is a double, whatever `sql_compatible_division_for_integers` the
+    /// user has: `normalizeDivision` honours the setting of the query, as for a `find`.
+    auto settings = make_intrusive<ASTSetQuery>();
+    settings->is_standalone = false;
+    settings->changes.emplace_back("sql_compatible_division_for_integers", Field(UInt64(0)));
+    update_query->settings_ast = settings;
+    update_query->children.push_back(std::move(settings));
 
     node = update_query;
     return true;
