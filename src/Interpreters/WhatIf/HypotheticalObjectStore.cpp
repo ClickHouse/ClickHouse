@@ -121,9 +121,9 @@ Names expand(const IAST & matcher, const ColumnsDescription & columns)
     return names;
 }
 
-/// as `resolveFunction`, the analyzer removes an unqualified matcher from the arguments of `count` and `countState`,
+/// as `resolveFunction` and `TranslateQualifiedNamesMatcher`, `*` is removed from the arguments of `count` and `countState`,
 /// also with combinators that keep the argument types, so `count(*)` reads no column
-bool removesMatchers(const ASTFunction & function)
+bool removesAsterisk(const ASTFunction & function)
 {
     String name = function.name;
     while (const auto combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))
@@ -146,13 +146,13 @@ void bindExpansions(const ASTPtr & ast, const ColumnsDescription & columns, Hypo
         binding.expansions.emplace_back(ast, std::move(names));
     }
     const auto * function = ast->as<ASTFunction>();
-    const bool skip_matchers = function && function->arguments && removesMatchers(*function);
+    const bool skip_asterisk = function && function->arguments && removesAsterisk(*function);
     for (const auto & child : ast->children)
     {
-        if (skip_matchers && child == function->arguments)
+        if (skip_asterisk && child == function->arguments)
         {
             for (const auto & argument : child->children)
-                if (!argument->as<ASTAsterisk>() && !argument->as<ASTColumnsRegexpMatcher>())
+                if (!argument->as<ASTAsterisk>())
                     bindExpansions(argument, columns, binding);
             continue;
         }
