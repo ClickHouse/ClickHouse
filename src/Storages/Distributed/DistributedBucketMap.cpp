@@ -108,11 +108,13 @@ void DistributedBucketMap::validateAndBuildSlots()
 }
 
 
-DistributedBucketMapWatcher::DistributedBucketMapWatcher(ContextPtr context_, const StorageID & storage_id, const String & zookeeper_path_)
+DistributedBucketMapWatcher::DistributedBucketMapWatcher(
+    ContextPtr context_, const StorageID & storage_id, const String & zookeeper_path_, UInt64 buckets_)
     : WithContext(context_->getGlobalContext())
     , full_zookeeper_path(zookeeper_path_)
     , zookeeper_name(zkutil::extractZooKeeperName(full_zookeeper_path))
     , zookeeper_path(zkutil::extractZooKeeperPath(full_zookeeper_path, /* check_starts_with_slash */ true))
+    , table_buckets(buckets_)
     , log(getLogger(fmt::format("DistributedBucketMapWatcher ({})", storage_id.getNameForLogs())))
 {
     task = getContext()->getSchedulePool()->createTask(storage_id, log->name(), [this] { run(); });
@@ -198,6 +200,14 @@ DistributedBucketMapPtr DistributedBucketMapWatcher::load()
         auto new_map_ptr = std::make_shared<const DistributedBucketMap>(std::move(new_map));
 
         std::lock_guard lock(mutex);
+
+        /// Another number of buckets would change the bucket of almost every sharding key.
+        const UInt64 expected_buckets = map ? map->buckets : table_buckets;
+        if (expected_buckets && new_map_ptr->buckets != expected_buckets)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The map has {} buckets, but the table uses {} buckets, and the number of buckets cannot be changed",
+                new_map_ptr->buckets, expected_buckets);
+
         if (!map || map->version != new_map_ptr->version)
             LOG_INFO(log, "Loaded version {} of bucket map {}", new_map_ptr->version, full_zookeeper_path);
         map = new_map_ptr;

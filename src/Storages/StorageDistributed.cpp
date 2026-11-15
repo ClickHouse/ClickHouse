@@ -673,12 +673,12 @@ StorageDistributed::StorageDistributed(
         if (is_fresh_definition && !sharding_key_)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `bucket_map_zookeeper_path` requires a sharding key");
 
-        bucket_map_watcher = std::make_unique<DistributedBucketMapWatcher>(getContext(), id_, bucket_map_path);
+        const UInt64 bucket_map_buckets = (*distributed_settings)[DistributedSetting::bucket_map_buckets];
+        bucket_map_watcher = std::make_unique<DistributedBucketMapWatcher>(getContext(), id_, bucket_map_path, bucket_map_buckets);
 
         /// The map is created by the query that creates the table, and not on server startup, to not depend on ZooKeeper there.
         if (mode <= LoadingStrictnessLevel::SECONDARY_CREATE)
-            bucket_map_watcher->createIfNotExists(
-                (*distributed_settings)[DistributedSetting::bucket_map_buckets], getCluster()->getShardsInfo().size());
+            bucket_map_watcher->createIfNotExists(bucket_map_buckets, getCluster()->getShardsInfo().size());
     }
 
     initializeFromDisk();
@@ -3023,7 +3023,7 @@ buckets: 4
 2 3 2
 ```
 
-Every line after the header assigns an inclusive range of buckets to a shard number, as `shard_num` in [system.clusters](/reference/system-tables/clusters). The ranges go in order and cover all buckets. The table watches the node and uses a new version of the map as soon as it is written, for example with `INSERT INTO system.zookeeper`. A new version changes the shard only of the rows inserted after it: the existing rows stay where they are, so the shards of the moved buckets no longer match the map for them, as after a change of the shard weights. The loaded maps are shown in [system.distributed_bucket_maps](/reference/system-tables/distributed_bucket_maps).
+Every line after the header assigns an inclusive range of buckets to a shard number, as `shard_num` in [system.clusters](/reference/system-tables/clusters). The ranges go in order and cover all buckets. The table watches the node and uses a new version of the map as soon as it is written, for example with `INSERT INTO system.zookeeper`. A new version with a different number of buckets is rejected: the table keeps the map it has loaded and shows the error in `last_exception` of `system.distributed_bucket_maps`. A new version changes the shard only of the rows inserted after it: the existing rows stay where they are, so the shards of the moved buckets no longer match the map for them, as after a change of the shard weights. The loaded maps are shown in [system.distributed_bucket_maps](/reference/system-tables/distributed_bucket_maps).
 
 `optimize_skip_unused_shards` and `optimize_skip_unused_shards_rewrite_in` use the bucket map as well. `DROP TABLE` does not remove the map from ZooKeeper. The `remote`, `remoteSecure`, `cluster` and `clusterAllReplicas` table functions do not accept `bucket_map_zookeeper_path`.
 

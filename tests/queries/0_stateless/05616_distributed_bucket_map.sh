@@ -101,6 +101,19 @@ wait_for_map_version 3
 $CLICKHOUSE_CLIENT --distributed_foreground_insert 1 -q "INSERT INTO dist VALUES (100)" 2>&1 \
     | grep -o -m1 'assigns buckets to shard 3, but cluster test_cluster_two_shards_different_databases has 2 shards'
 
+echo '-- a map with a different number of buckets is rejected, the loaded map keeps routing'
+set_map 'format version: 1\nbuckets: 4\n0 1 1\n2 3 2\n'
+wait_for_map_version 4
+set_map 'format version: 1\nbuckets: 8\n0 3 1\n4 7 2\n'
+wait_for_map_exception
+$CLICKHOUSE_CLIENT -q "SELECT last_exception LIKE '%The map has 8 buckets, but the table uses 4 buckets%' FROM system.distributed_bucket_maps WHERE database = currentDatabase() AND table = 'dist'"
+$CLICKHOUSE_CLIENT -q "SELECT version, buckets, ranges FROM system.distributed_bucket_maps WHERE database = currentDatabase() AND table = 'dist'"
+$CLICKHOUSE_CLIENT --distributed_foreground_insert 1 -q "INSERT INTO dist VALUES (101)"
+shard_keys shard_0
+set_map 'format version: 1\nbuckets: 4\n0 0 1\n1 3 2\n'
+wait_for_map_version 6
+$CLICKHOUSE_CLIENT -q "SELECT version, buckets, ranges, last_exception FROM system.distributed_bucket_maps WHERE database = currentDatabase() AND table = 'dist'"
+
 echo '-- the table is attached without the experimental setting'
 set_map 'format version: 1\nbuckets: 4\n0 1 1\n2 3 2\n'
 $CLICKHOUSE_CLIENT -q "DETACH TABLE dist"
