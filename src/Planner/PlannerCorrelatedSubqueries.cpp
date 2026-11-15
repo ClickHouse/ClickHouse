@@ -245,14 +245,18 @@ std::optional<Field> tryGetScalarSubqueryEmptyGroupValue(const QueryTreeNodePtr 
         collectSets(in_node, *planner_context);
 
     ColumnsWithTypeAndName aggregate_values;
-    std::unordered_set<String> aggregate_names;
+    std::unordered_map<String, String> aggregate_type_names;
     for (const auto & aggregate : collectAggregateFunctionNodes(projection))
     {
         auto name = calculateActionNodeName(aggregate, *planner_context, /*use_column_identifier_as_action_node_name=*/ false);
-        if (!aggregate_names.insert(name).second)
-            continue;
         auto result_type = aggregate->getResultType();
-        aggregate_values.emplace_back(result_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(), result_type, std::move(name));
+        /// Without column identifiers `min(i.v)` and `min(j.v)` share one input, which holds the value of both only for the
+        /// same type. Compared by name: `IDataType::equals` does not tell `Bool` from `UInt8`.
+        auto [it, inserted] = aggregate_type_names.emplace(name, result_type->getName());
+        if (!inserted && it->second != result_type->getName())
+            return {};
+        if (inserted)
+            aggregate_values.emplace_back(result_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(), result_type, std::move(name));
     }
 
     ColumnNodePtrWithHashSet empty_correlated_columns_set;

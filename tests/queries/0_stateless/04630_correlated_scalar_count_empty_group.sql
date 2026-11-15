@@ -244,3 +244,46 @@ SELECT o.k,
 FROM values('k UInt8', (1), (2)) AS o
 ORDER BY o.k
 SETTINGS correlated_subqueries_default_join_kind = 'left';
+
+-- Same-named columns of different types (a, b: UInt8 and UInt64; d, e: Bool and UInt8) have one empty-group input,
+-- so the empty group keeps NULL in either operand order. Of the same type (c) that input is the value of both, so it
+-- is restored.
+SELECT o.k,
+    (SELECT bitCount(bitNot(minOrDefault(i.v))) + bitCount(bitNot(minOrDefault(j.v)))
+     FROM values('k UInt8, v UInt8', (2, 7)) AS i CROSS JOIN values('k UInt8, v UInt64', (2, 5)) AS j
+     WHERE i.k = o.k AND j.k = o.k) AS a,
+    (SELECT bitCount(bitNot(minOrDefault(j.v))) + bitCount(bitNot(minOrDefault(i.v)))
+     FROM values('k UInt8, v UInt8', (2, 7)) AS i CROSS JOIN values('k UInt8, v UInt64', (2, 5)) AS j
+     WHERE i.k = o.k AND j.k = o.k) AS b,
+    (SELECT bitCount(bitNot(minOrDefault(i.v))) + bitCount(bitNot(minOrDefault(j.v)))
+     FROM values('k UInt8, v UInt8', (2, 7)) AS i CROSS JOIN values('k UInt8, v UInt8', (2, 5)) AS j
+     WHERE i.k = o.k AND j.k = o.k) AS c,
+    (SELECT toString(minOrDefault(i.v)) || ',' || toString(minOrDefault(j.v))
+     FROM values('k UInt8, v Bool', (2, true)) AS i CROSS JOIN values('k UInt8, v UInt8', (2, 5)) AS j
+     WHERE i.k = o.k AND j.k = o.k) AS d,
+    (SELECT toString(minOrDefault(j.v)) || ',' || toString(minOrDefault(i.v))
+     FROM values('k UInt8, v Bool', (2, true)) AS i CROSS JOIN values('k UInt8, v UInt8', (2, 5)) AS j
+     WHERE i.k = o.k AND j.k = o.k) AS e
+FROM values('k UInt8', (1), (2)) AS o
+ORDER BY o.k
+SETTINGS aggregate_functions_null_for_empty = 0;
+
+SELECT o.k,
+    (SELECT bitCount(bitNot(minOrDefault(i.v))) + bitCount(bitNot(minOrDefault(j.v)))
+     FROM values('k UInt8, v UInt8', (2, 7)) AS i CROSS JOIN values('k UInt8, v UInt64', (2, 5)) AS j
+     WHERE i.k = o.k AND j.k = o.k) AS a,
+    (SELECT bitCount(bitNot(minOrDefault(j.v))) + bitCount(bitNot(minOrDefault(i.v)))
+     FROM values('k UInt8, v UInt8', (2, 7)) AS i CROSS JOIN values('k UInt8, v UInt64', (2, 5)) AS j
+     WHERE i.k = o.k AND j.k = o.k) AS b,
+    (SELECT bitCount(bitNot(minOrDefault(i.v))) + bitCount(bitNot(minOrDefault(j.v)))
+     FROM values('k UInt8, v UInt8', (2, 7)) AS i CROSS JOIN values('k UInt8, v UInt8', (2, 5)) AS j
+     WHERE i.k = o.k AND j.k = o.k) AS c,
+    (SELECT toString(minOrDefault(i.v)) || ',' || toString(minOrDefault(j.v))
+     FROM values('k UInt8, v Bool', (2, true)) AS i CROSS JOIN values('k UInt8, v UInt8', (2, 5)) AS j
+     WHERE i.k = o.k AND j.k = o.k) AS d,
+    (SELECT toString(minOrDefault(j.v)) || ',' || toString(minOrDefault(i.v))
+     FROM values('k UInt8, v Bool', (2, true)) AS i CROSS JOIN values('k UInt8, v UInt8', (2, 5)) AS j
+     WHERE i.k = o.k AND j.k = o.k) AS e
+FROM values('k UInt8', (1), (2)) AS o
+ORDER BY o.k
+SETTINGS correlated_subqueries_default_join_kind = 'left', aggregate_functions_null_for_empty = 0;
