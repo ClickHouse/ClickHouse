@@ -3,6 +3,7 @@
 
 SET use_skip_indexes_on_data_read = 1;
 SET use_query_condition_cache = 0;
+SET allow_reserved_column_names = 1;
 
 DROP TABLE IF EXISTS t_renamed_offset;
 DROP TABLE IF EXISTS t_renamed_index;

@@ -159,6 +159,8 @@ DROP TABLE t_sign_source;
 
 -- A table column named `_part_offset` or `_part_index` shadows the virtual column read by the offset mapping,
 -- so such merges keep rebuilding text indexes, and the column keeps its values.
+SET allow_reserved_column_names = 1;
+
 DROP TABLE IF EXISTS t_shadow_offset;
 DROP TABLE IF EXISTS t_shadow_index;
 
