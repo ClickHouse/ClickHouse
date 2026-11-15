@@ -1254,6 +1254,48 @@ SELECT JSONMergePatch('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name"
 └───────────────────────┘
 ```
 
+## JSONRemove {#JSONRemove}
+
+도입 버전: v26.10.0
+
+JSONPath를 사용하여 JSON 문자열에서 하나 이상의 객체 멤버 또는 배열 원소를 제거합니다.
+각 경로는 하나의 객체 멤버 이름 또는 배열 위치로 해석되어야 합니다. 경로는 왼쪽에서 오른쪽 순서로 적용됩니다.
+`$[1 to 2]`처럼 하나의 배열 위치로 해석되는 JSONPath 범위는 해당 위치로 처리되며 `$[1]`과 동등합니다.
+객체 멤버 단계는 중복된 멤버를 포함하여 이름이 일치하는 모든 멤버를 따라갑니다.
+마지막 객체 멤버 단계에서는 일치하는 멤버가 모두 제거됩니다. 존재하지 않는 경로를 지정하면 아무 값도 제거되지 않습니다.
+결과는 공백 없이 압축된 형태로 반환됩니다. 유효하지 않은 JSON을 입력하면 예외가 발생합니다.
+
+**구문**
+
+```sql
+JSONRemove(json, path[, path ...])
+```
+
+**별칭**: `JSON_REMOVE`
+
+**인수**
+
+* `json` — 유효한 JSON을 담은 문자열입니다. [`String`](/ko/reference/data-types/string)
+* `path[, path ...]` — JSONPath 표현식을 담은 하나 이상의 상수 문자열입니다. 각 경로는 하나의 객체 멤버 이름 또는 배열 위치를 가리켜야 합니다. $[1 to 2]와 같이 하나의 배열 위치로 해석되는 범위는 $[1]로 처리됩니다. [`String`](/ko/reference/data-types/string)
+
+**반환 값**
+
+JSON 문서를 압축된 형식의 문자열로 반환합니다. [`String`](/ko/reference/data-types/string)
+
+**예시**
+
+**사용 예시**
+
+```sql title=Query
+SELECT JSONRemove('{"a":1,"b":2}', '$.a');
+SELECT JSON_REMOVE('[0,1,2]', '$[0]', '$[1]');
+```
+
+```response title=Response
+{"b":2}
+[1]
+```
+
 ## JSONSharedDataPaths {#JSONSharedDataPaths}
 
 도입 버전: v24.8.0

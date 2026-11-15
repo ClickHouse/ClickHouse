@@ -121,10 +121,11 @@ doc_type: 'reference'
 시간 기반 일회용 비밀번호(Time-Based One-Time Password, TOTP)는 제한된 시간 동안만 유효한 임시 액세스 코드를 생성해 ClickHouse 사용자를 인증하는 데 사용할 수 있습니다.
 이 TOTP 인증 방법은 [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238) 표준을 준수하므로 Google Authenticator, 1Password 같은 널리 사용되는 TOTP 애플리케이션과 호환됩니다.
 비밀번호 기반 인증과 함께 `users.xml` 설정 파일을 통해 구성할 수 있습니다.
-아직 SQL 기반 Access Control에서는 지원되지 않습니다.
+아직 SQL 기반 액세스 제어에서는 지원되지 않습니다.
 
-TOTP로 인증하려면 기본 비밀번호와 함께 TOTP 애플리케이션이 생성한 일회용 비밀번호를 `--one-time-password` 명령줄 옵션으로 제공하거나, `+` 문자를 사용해 기본 비밀번호 뒤에 붙여 제공해야 합니다.
+TOTP로 인증하려면 기본 비밀번호와 함께 TOTP 애플리케이션이 생성한 일회용 비밀번호를 `--one-time-password` 명령줄 옵션으로 제공하거나, &#39;+&#39; 문자를 사용해 기본 비밀번호 뒤에 붙여 제공해야 합니다.
 예를 들어 기본 비밀번호가 `some_password`이고 생성된 TOTP 코드가 `345123`인 경우, ClickHouse에 연결할 때 `--password some_password+345123` 또는 `--password some_password --one-time-password 345123`를 지정할 수 있습니다. 비밀번호를 지정하지 않으면 `clickhouse-client`가 대화형으로 입력을 요청합니다.
+TOTP가 설정된 계정에서 코드 없이 인증을 시도하면 서버는 비밀번호가 올바른지 여부와 관계없이 `REQUIRED_SECOND_FACTOR` 오류를 반환하며, `clickhouse-client`는 코드 입력을 요청합니다. 비밀번호는 코드와 함께 제공될 때만 검증됩니다.
 
 [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238#section-5.2)에서 요구하는 대로 각 코드는 최대 한 번만 사용할 수 있으므로, 사용자는 `period`당 최대 한 번만 인증에 성공할 수 있습니다.
 모든 요청이나 연결마다 인증하는 클라이언트(예: HTTP 인터페이스를 사용하는 스크립트)를 사용할 때는 이 점에 유의하십시오. 인증할 때마다 새로운 코드가 필요합니다.

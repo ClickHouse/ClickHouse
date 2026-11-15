@@ -837,6 +837,16 @@ void CompressionCodecT64::updateHash(SipHash & hash) const
     hash.update(variant);
 }
 
+namespace
+{
+
+bool isApplicableToType(const IDataType & type)
+{
+    return baseType(type.getTypeId()) != TypeIndex::Nothing;
+}
+
+}
+
 void registerCodecT64(CompressionCodecFactory & factory)
 {
     auto reg_func = [&](const ASTPtr & arguments, const IDataType * type) -> CompressionCodecPtr
@@ -868,13 +878,13 @@ void registerCodecT64(CompressionCodecFactory & factory)
         if (type)
         {
             type_idx = type->getTypeId();
-            if (baseType(*type_idx) == TypeIndex::Nothing)
+            if (!isApplicableToType(*type))
                 throw Exception(
                     ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "T64 codec is not supported for specified type {}", type->getName());
         }
         return std::make_shared<CompressionCodecT64>(type_idx, variant);
     };
 
-    factory.registerCompressionCodecWithType("T64", codecId(), reg_func);
+    factory.registerCompressionCodecWithType("T64", codecId(), reg_func, {.is_applicable_to_type = isApplicableToType});
 }
 }

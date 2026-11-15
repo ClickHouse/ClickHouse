@@ -149,7 +149,7 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
         auto splitter = FormatFactory::instance().getSplitter(configuration->format);
         if (splitter)
         {
-            std::vector<size_t> matching_row_groups;
+            RowGroupIndices matching_row_groups;
             bool has_cache_entry = false;
             if (query_condition_cache)
             {
@@ -177,7 +177,7 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
 
             const auto & settings = getContext()->getSettingsRef();
             size_t bucket_size = settings[Setting::cluster_table_function_buckets_batch_size];
-            std::vector<FileBucketInfoPtr> file_bucket_infos;
+            VectorWithMemoryTracking<FileBucketInfoPtr> file_bucket_infos;
             if (settings[Setting::cluster_table_function_split_by_split_offsets] && !has_cache_entry)
             {
                 if (auto file_size = last_object_info->getFileSizeHint())
@@ -193,19 +193,19 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
             }
             for (const auto & file_bucket : file_bucket_infos)
             {
-                auto copy_object_info = *last_object_info;
+                auto copy_object_info = last_object_info->clone();
                 if (has_cache_entry)
                 {
                     auto filtered = file_bucket->filterByMatchingRowGroups(matching_row_groups);
                     if (!filtered)
                         continue;
-                    copy_object_info.file_bucket_info = std::move(filtered);
+                    copy_object_info->file_bucket_info = std::move(filtered);
                 }
                 else
                 {
-                    copy_object_info.file_bucket_info = file_bucket;
+                    copy_object_info->file_bucket_info = file_bucket;
                 }
-                pending_objects_info.push(std::make_shared<ObjectInfo>(copy_object_info));
+                pending_objects_info.push(std::move(copy_object_info));
             }
         }
     }

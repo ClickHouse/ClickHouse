@@ -840,6 +840,16 @@ public:
         fillFromRowStorePtrs(type, row_store_ptrs, field_offset, field_size, begin, count, /*null_map=*/ nullptr);
     }
 
+    /// Writes rows `[start, start + count)` into the row at `field_offset` of consecutive rows of `row_length` bytes.
+    /// With `null_map`, the field starts with the null byte.
+    virtual void gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *& overflow_cursor, const UInt8 * null_map) const;
+
+    /// Writes fixed-width values of `source_rows` into the field at `field_offset` of `destination_rows`.
+    /// With the null byte first when `null_map` is set.
+    virtual void gatherSelectedIntoRows(std::span<const UInt32> source_rows, std::span<char * const> destination_rows, size_t field_offset, const UInt8 * null_map) const;
+
+    virtual size_t rowStoreOverflowBytes(size_t /*start*/, size_t /*count*/) const { return 0; }
+
     /// Some columns may require finalization before using of other operations.
     virtual void finalize() {}
     virtual bool isFinalized() const { return true; }

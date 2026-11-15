@@ -94,6 +94,7 @@ void registerUnionStep(QueryPlanStepRegistry & registry);
 void registerIntersectOrExceptStep(QueryPlanStepRegistry & registry);
 void registerDistinctStep(QueryPlanStepRegistry & registry);
 void registerSortingStep(QueryPlanStepRegistry & registry);
+void registerShuffleStep(QueryPlanStepRegistry & registry);
 void registerAggregatingStep(QueryPlanStepRegistry & registry);
 void registerMergingAggregatedStep(QueryPlanStepRegistry & registry);
 void registerRollupStep(QueryPlanStepRegistry & registry);
@@ -146,6 +147,7 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerIntersectOrExceptStep(registry);
     registerDistinctStep(registry);
     registerSortingStep(registry);
+    registerShuffleStep(registry);
     registerAggregatingStep(registry);
     registerMergingAggregatedStep(registry);
     registerRollupStep(registry);

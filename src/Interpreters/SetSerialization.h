@@ -1,5 +1,7 @@
 #pragma once
 #include <Interpreters/PreparedSets.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -32,7 +34,7 @@ struct DeserializedSetsRegistry
         UInt64 operator()(const FutureSet::Hash & key) const { return key.low64 ^ key.high64; }
     };
 
-    std::unordered_map<FutureSet::Hash, std::list<ColumnSet *>, Hashing> sets;
+    UnorderedMapWithMemoryTracking<FutureSet::Hash, ListWithMemoryTracking<ColumnSet *>, Hashing> sets;
 };
 
 }

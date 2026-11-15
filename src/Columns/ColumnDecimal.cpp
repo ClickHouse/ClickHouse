@@ -30,6 +30,10 @@
 
 #include <algorithm>
 
+#if USE_EMBEDDED_COMPILER
+#include <DataTypes/Native.h>
+#endif
+
 
 namespace DB
 {
@@ -38,6 +42,7 @@ namespace ErrorCodes
 {
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 template <is_decimal T>
@@ -101,6 +106,25 @@ Int64 ColumnDecimal<T>::compareTrackAt(size_t n, size_t m, const IColumn & rhs_,
         [&](size_t row) { return decimalLess<T>(lhs_data[row], b, scale, other.scale); },
         [&](size_t row) { return decimalLess<T>(rhs_data[row], a, other.scale, scale); });
 }
+
+#if USE_EMBEDDED_COMPILER
+
+template <is_decimal T>
+bool ColumnDecimal<T>::isComparatorCompilable() const
+{
+    return std::is_integral_v<NativeT>;
+}
+
+template <is_decimal T>
+llvm::Value * ColumnDecimal<T>::compileComparator(llvm::IRBuilderBase & builder, llvm::Value * lhs, llvm::Value * rhs, llvm::Value *) const
+{
+    if constexpr (std::is_integral_v<NativeT>)
+        return compileIntegerComparator(builder, lhs, rhs, std::is_signed_v<NativeT>);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Method compileComparator is not supported for type {}", TypeName<T>);
+}
+
+#endif
 
 template <is_decimal T>
 size_t ColumnDecimal<T>::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int) const
