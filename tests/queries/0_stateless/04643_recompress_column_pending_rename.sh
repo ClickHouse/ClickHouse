@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-replicated-database, no-shared-merge-tree
+# Tags: zookeeper, no-fasttest, no-replicated-database, no-shared-merge-tree
+# It is tagged `no-fasttest` because waiting for the merge-selecting task to pick up the combined
+# mutations after `SYSTEM START MERGES` can take longer than the fast test time limit.
 # The test uses `SYSTEM STOP MERGES` to keep two mutations of a `ReplicatedMergeTree` table pending
 # at the same time so that they can be combined into a single mutate task, and polls
 # `system.mutations` of the single local replica -- both are specific to a plain replicated table
