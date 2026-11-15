@@ -1,0 +1,49 @@
+alias
+2
+2
+2
+2
+2
+2
+2
+2
+2
+10
+10
+3
+lambda argument
+2
+table function
+4	3
+4	3
+prefer_column_name_to_alias
+3
+3
+3
+3
+4
+['a=3']
+['a=3']
+functions that use names of arguments
+3
+3
+3
+3
+['a=3']
+3
+3
+3
+3
+3
+3
+3
+3
+3
+3
+expressions that are rewritten for the shards
+3
+3
+1
+1
+parallel replicas
+2

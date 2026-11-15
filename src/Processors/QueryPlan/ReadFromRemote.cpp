@@ -4,6 +4,8 @@
 #include <Common/SetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/NestedUtils.h>
 
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
@@ -67,6 +69,7 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsBool enable_named_columns_in_function_tuple;
     extern const SettingsBool extremes;
     extern const SettingsSeconds max_execution_time;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
@@ -77,6 +80,7 @@ namespace Setting
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool parallel_replicas_filter_pushdown;
+    extern const SettingsBool prefer_column_name_to_alias;
 }
 
 namespace ErrorCodes
@@ -245,12 +249,57 @@ static ASTSelectQuery & getSelectQuery(ASTPtr ast)
     return ast->as<ASTSelectQuery &>();
 }
 
+/// `formatRow` and `tuple` take the names of their arguments from the query text, so the names can be different on the other server.
+static bool dependsOnNamesOfArguments(
+    const ActionsDAG::Node & node,
+    const UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, ASTPtr> & node_to_ast,
+    bool named_columns_in_function_tuple)
+{
+    const auto function_name = node.function_base->getName();
+    if (function_name.starts_with("formatRow"))
+        return true;
+
+    auto is_tuple_with_other_names = [&](const ActionsDAG::Node * argument)
+    {
+        while (argument->type == ActionsDAG::ActionType::ALIAS)
+            argument = argument->children.front();
+
+        if (argument->type != ActionsDAG::ActionType::FUNCTION || argument->column || argument->function_base->getName() != "tuple")
+            return false;
+
+        const auto & type = assert_cast<const DataTypeTuple &>(*argument->result_type);
+        if (!named_columns_in_function_tuple || !type.hasExplicitNames())
+            return named_columns_in_function_tuple || type.hasExplicitNames();
+
+        /// An element that is written as an alias has the name of the alias.
+        for (size_t i = 0; i < argument->children.size(); ++i)
+        {
+            const auto & ast = node_to_ast.at(argument->children[i]);
+            const auto * identifier = ast ? ast->as<ASTIdentifier>() : nullptr;
+            if (!identifier || identifier->compound() || identifier->name() != type.getElementNames()[i])
+                return true;
+        }
+        return false;
+    };
+
+    if (std::ranges::none_of(node.children, is_tuple_with_other_names))
+        return false;
+
+    /// A comparison, and `IN` a set with many columns, match the elements by position.
+    if (isNameOfInFunction(function_name))
+    {
+        const auto * column_set = typeid_cast<const ColumnSet *>(node.children.at(1)->column->getDataColumnPtr().get());
+        return !column_set || column_set->getData()->getTypes().size() == 1;
+    }
+    return !node.function_base->isNameInsensitive();
+}
+
 /// This is an attempt to convert filters (pushed down from the plan optimizations) from ActionsDAG back to AST.
 /// It should not be needed after we send a full plan for distributed queries.
 ASTPtr tryBuildAdditionalFilterAST(
     const ActionsDAG & dag,
-    const NameSet & projection_names,
-    const UnorderedMapWithMemoryTracking<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
+    const UnorderedMapWithMemoryTracking<std::string, ASTPtr> & input_name_to_ast,
+    bool named_columns_in_function_tuple,
     Tables * external_tables,
     ContextMutablePtr & context,
     VectorWithMemoryTracking<const ActionsDAG::Node *> * dropped_conjuncts)
@@ -381,34 +430,8 @@ ASTPtr tryBuildAdditionalFilterAST(
 
         if (node->type == ActionsDAG::ActionType::INPUT)
         {
-            /// The column name can be taken from the projection name, or from the projection expression.
-            /// It depends on the predicate and query stage.
-
-            if (projection_names.contains(node->result_name))
-            {
-                /// The input name matches the projection name. Example:
-                /// SELECT x FROM (SELECT number + 1 AS x FROM remote('127.0.0.2', numbers(3))) WHERE x = 1
-                /// In this case, ReadFromRemote has header `x UInt64` and filter DAG has input column with name `x`.
-                /// Here, filter is applied to the whole query, and checking for projection name is reasonable.
-                res = make_intrusive<ASTIdentifier>(node->result_name);
-            }
-            else
-            {
-                /// The input name matches the execution name of the projection. Example:
-                /// SELECT x, y FROM (
-                ///     SELECT number + 1 AS x, sum(number) AS y FROM remote('127.0.0.{1,2}', numbers(3)) GROUP BY x
-                /// ) WHERE x = 1
-                /// In this case, ReadFromRemote has `plus(__table1.number, 1_UInt8) UInt64` in header,
-                /// and filter DAG has input column with name `plus(__table1.number, 1_UInt8)`.
-                /// Here, filter is pushed down before the aggregation, and projection name can't be used.
-                /// However, we can match the input with the execution name of projection query tree.
-                /// Note: this may not cover all the cases.
-                auto it = execution_name_to_projection_query_tree.find(node->result_name);
-                if (it != execution_name_to_projection_query_tree.end())
-                    /// Append full expression as an AST.
-                    /// We rely on plan optimization that the result is (expected to be) valid.
-                    res = it->second->toAST();
-            }
+            if (auto it = input_name_to_ast.find(node->result_name); it != input_name_to_ast.end())
+                res = it->second;
         }
 
         if (node->type == ActionsDAG::ActionType::ALIAS)
@@ -418,6 +441,9 @@ ASTPtr tryBuildAdditionalFilterAST(
             continue;
 
         if (!node->function_base->isDeterministic() || node->function_base->isStateful())
+            continue;
+
+        if (dependsOnNamesOfArguments(*node, node_to_ast, named_columns_in_function_tuple))
             continue;
 
         bool has_all_args = true;
@@ -534,6 +560,7 @@ static bool addFilters(
     const ASTPtr & query_ast,
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
+    QueryProcessingStage::Enum stage,
     const ActionsDAG & pushed_down_filters,
     VectorWithMemoryTracking<const ActionsDAG::Node *> * dropped_conjuncts = nullptr)
 {
@@ -548,22 +575,6 @@ static bool addFilters(
     if (!query_node)
         return false;
 
-    /// We are building a set with projection names and a map with execution names here.
-    /// They are needed to substitute inputs in ActionsDAG. See comment in tryBuildAdditionalFilterAST.
-
-    NameSet projection_names;
-    for (const auto & col : query_node->getProjectionColumns())
-        projection_names.insert(col.name);
-
-    UnorderedMapWithMemoryTracking<std::string, QueryTreeNodePtr> execution_name_to_projection_query_tree;
-    for (const auto & node : query_node->getProjection())
-        execution_name_to_projection_query_tree[calculateActionNodeName(node, *planner_context)] = node;
-
-    ASTPtr predicate = tryBuildAdditionalFilterAST(
-        pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context, dropped_conjuncts);
-    if (!predicate)
-        return false;
-
     auto table_expressions = extractTableExpressions(query_node->getJoinTreeNodeTyped());
     /// Case with JOIN is not supported so far.
     if (table_expressions.size() != 1)
@@ -573,7 +584,8 @@ static bool addFilters(
     ///   - TableNode (a real table)
     ///   - TableFunctionNode (e.g. `numbers(3)`, `remote(...)`)
     ///   - QueryNode wrapping any of the above (one level of subquery)
-    if (const auto * inner_query_node = table_expressions.front()->as<QueryNode>())
+    const auto * inner_query_node = table_expressions.front()->as<QueryNode>();
+    if (inner_query_node)
     {
         table_expressions = extractTableExpressions(inner_query_node->getJoinTreeNodeTyped());
         /// Case with JOIN is not supported so far.
@@ -581,18 +593,81 @@ static bool addFilters(
             return false;
     }
 
-    if (!table_expressions.front()->as<TableNode>() && !table_expressions.front()->as<TableFunctionNode>())
+    StorageSnapshotPtr table_snapshot;
+    if (const auto * table_node = table_expressions.front()->as<TableNode>())
+        table_snapshot = table_node->getStorageSnapshot();
+    else if (const auto * table_function_node = table_expressions.front()->as<TableFunctionNode>())
+        table_snapshot = table_function_node->getStorageSnapshot();
+    else
+        return false;
+
+    /// An input of the filter is a column of the result of the remote query. Example:
+    /// SELECT x FROM (SELECT number + 1 AS x FROM remote('127.0.0.{1,2}', numbers(3)) [ORDER BY x]) WHERE x = 1
+    /// Without `ORDER BY` the stage is `Complete`, and the input has the projection name: `x`.
+    /// With it, the input has the execution name of the projection expression: `plus(__table1.number, 1_UInt8)`.
+    /// Note: this may not cover all the cases.
+    const bool has_projection_names = stage == QueryProcessingStage::Complete;
+    const bool named_columns_in_function_tuple = settings[Setting::enable_named_columns_in_function_tuple];
+
+    /// The names that have priority over aliases. Only the part before the dot is kept, it covers subcolumns and `Nested`.
+    NameSet preferred_names;
+    if (has_projection_names && settings[Setting::prefer_column_name_to_alias])
+    {
+        auto add_names = [&](const auto & columns)
+        {
+            for (const auto & column : columns)
+                preferred_names.insert(Nested::splitName(column.name).first);
+        };
+
+        if (inner_query_node)
+            add_names(inner_query_node->getProjectionColumns());
+        else
+            add_names(table_snapshot->getColumns(
+                GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All)));
+    }
+
+    auto & select_query = getSelectQuery(query_ast);
+    const auto & select_list = select_query.select()->children;
+    const auto & projection = query_node->getProjection().getNodes();
+    if (select_list.size() != projection.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "The remote query has {} expressions in SELECT, its query tree has {}", select_list.size(), projection.size());
+
+    UnorderedMapWithMemoryTracking<std::string, ASTPtr> input_name_to_ast;
+    for (size_t i = 0; i < projection.size(); ++i)
+    {
+        auto name = has_projection_names
+            ? query_node->getProjectionColumns()[i].name
+            : calculateActionNodeName(projection[i], *planner_context);
+
+        /// The alias, or the expression from the `SELECT` list, where the columns are qualified with the table alias.
+        /// A copy of the expression has no aliases inside, see `dependsOnNamesOfArguments`.
+        ASTPtr ast;
+        if (has_projection_names && !preferred_names.contains(Nested::splitName(name).first))
+            ast = make_intrusive<ASTIdentifier>(name);
+        else if (!hasFunctionNode(projection[i], "formatRow") && !hasFunctionNode(projection[i], "formatRowNoNewline")
+            && !(named_columns_in_function_tuple && hasFunctionNode(projection[i], "tuple")))
+            ast = select_list[i];
+
+        /// Columns are received by name, so a repeated name means the first column.
+        input_name_to_ast.emplace(name, std::move(ast));
+    }
+
+    ASTPtr predicate = tryBuildAdditionalFilterAST(
+        pushed_down_filters, input_name_to_ast, named_columns_in_function_tuple, external_tables, context, dropped_conjuncts);
+    if (!predicate)
         return false;
 
     bool optimize_final = settings[Setting::enable_optimize_predicate_expression_to_final_subquery];
     bool optimize_with = settings[Setting::allow_push_predicate_when_subquery_contains_with];
 
+    /// The predicate is already written in the names of the remote query, and they must stay as they are:
+    /// a short name of a column can be resolved to an alias or to a lambda argument. So there is no table to rename from.
     ASTs predicates{predicate};
-    /// The names of columns stay qualified: short ones could mean aliases or lambda arguments of the query.
-    const TableWithColumnNamesAndTypes no_columns(DatabaseAndTableWithAlias{}, NamesAndTypesList{});
-    PredicateRewriteVisitor::Data data(rewrite_context, predicates, no_columns, optimize_final, optimize_with);
+    TableWithColumnNamesAndTypes no_table({}, {});
+    PredicateRewriteVisitor::Data data(rewrite_context, predicates, no_table, optimize_final, optimize_with);
 
-    return data.rewriteSubquery(getSelectQuery(query_ast), {});
+    return data.rewriteSubquery(select_query, {});
 }
 
 ActionsDAG::NodeRawConstPtrs conjunctsLeftOutOfRemoteQuery(
@@ -600,6 +675,7 @@ ActionsDAG::NodeRawConstPtrs conjunctsLeftOutOfRemoteQuery(
     const ASTPtr & query_ast,
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
+    QueryProcessingStage::Enum stage,
     const ContextPtr & rewrite_context)
 {
     /// The splice itself, run on copies: of the query, and of the condition as a DAG of its own, built the
@@ -611,7 +687,7 @@ ActionsDAG::NodeRawConstPtrs conjunctsLeftOutOfRemoteQuery(
     ContextMutablePtr no_context;
     VectorWithMemoryTracking<const ActionsDAG::Node *> dropped;
     if (!query_ast || !dag
-        || !addFilters(nullptr, no_context, rewrite_context, query_ast->clone(), query_tree, planner_context, *dag, &dropped))
+        || !addFilters(nullptr, no_context, rewrite_context, query_ast->clone(), query_tree, planner_context, stage, *dag, &dropped))
         return atoms;
 
     auto copied_atoms = ActionsDAG::extractConjunctionAtoms(dag->getOutputs().front());
@@ -698,7 +774,7 @@ void ReadFromRemote::addLazyPipe(
     if (filter_actions_dag)
     {
         remote_query = shard.query->clone();
-        addFilters(&external_tables, context, context, remote_query, shard.query_tree, shard.planner_context, *filter_actions_dag);
+        addFilters(&external_tables, context, context, remote_query, shard.query_tree, shard.planner_context, stage, *filter_actions_dag);
     }
 
     auto lazily_create_stream = [
@@ -923,7 +999,7 @@ void ReadFromRemote::addPipe(
     else
     {
         if (filter_actions_dag)
-            addFilters(&external_tables, context, context, shard.query, shard.query_tree, shard.planner_context, *filter_actions_dag);
+            addFilters(&external_tables, context, context, shard.query, shard.query_tree, shard.planner_context, stage, *filter_actions_dag);
 
         const String query_string = formattedAST(shard.query);
         auto stage_to_use = shard.query_plan ? QueryProcessingStage::QueryPlan : stage;
@@ -1201,7 +1277,7 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
     /// same context. Not when the replicas are sent a plan: this text is then only the fallback for a
     /// replica too old to receive it, and a condition read out of it could order that replica's read.
     if (filter_actions_dag && !query_plan && filter_rewrite_context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown])
-        addFilters(&external_tables, context, filter_rewrite_context, query_ast, query_tree, planner_context, *filter_actions_dag);
+        addFilters(&external_tables, context, filter_rewrite_context, query_ast, query_tree, planner_context, stage, *filter_actions_dag);
 
     Pipes pipes = addPipes(query_ast, output_header);
 

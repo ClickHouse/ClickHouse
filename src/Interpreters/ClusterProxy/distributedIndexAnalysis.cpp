@@ -30,6 +30,7 @@
 #include <Common/setThreadName.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Columns/ColumnString.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -60,6 +61,7 @@ namespace DB::Setting
 {
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsUInt64 connections_with_failover_max_tries;
+    extern const SettingsBool enable_named_columns_in_function_tuple;
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool use_hedged_requests;
@@ -192,10 +194,15 @@ IndexAnalysisPartsRanges getIndexAnalysisFromReplicaSync(const LoggerPtr & logge
 
 ASTPtr getFilterAST(const ActionsDAG & filter_actions_dag, const NameSet & indexes_column_names, ContextMutablePtr & context, Tables * external_tables)
 {
-    ASTPtr predicate = tryBuildAdditionalFilterAST(filter_actions_dag,
-        /*projection_names=*/ indexes_column_names,
-        /*execution_name_to_projection_query_tree=*/ {},
-        /*external_tables=*/ external_tables,
+    UnorderedMapWithMemoryTracking<std::string, ASTPtr> input_name_to_ast;
+    for (const auto & name : indexes_column_names)
+        input_name_to_ast.emplace(name, make_intrusive<ASTIdentifier>(name));
+
+    ASTPtr predicate = tryBuildAdditionalFilterAST(
+        filter_actions_dag,
+        input_name_to_ast,
+        context->getSettingsRef()[Setting::enable_named_columns_in_function_tuple],
+        external_tables,
         context);
     if (!predicate)
         return nullptr;
