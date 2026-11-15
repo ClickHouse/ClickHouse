@@ -1021,6 +1021,10 @@ endif()
 
 if (TARGET ch_contrib::scann)
     target_link_libraries(dbms PUBLIC ch_contrib::scann)
+    # The ScaNN headers log pointers with `absl` logging (e.g. `restrict_allowlist.h`),
+    # so the ban on printing of pointers (see the root CMakeLists.txt) is lifted for the file that includes them.
+    set_source_files_properties(Storages/MergeTree/MergeTreeIndexVectorSimilarityScann.cpp
+        PROPERTIES COMPILE_OPTIONS "-U_LIBCPP_DISALLOW_PRINTING_POINTERS")
 endif()
 
 if (TARGET ch_contrib::prometheus_protobufs)

@@ -1076,7 +1076,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
 
 #if USE_SCANN
-        if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay)
+        if (is_fresh_definition && !is_ddl_replay && !is_stored_definition)
         {
             for (const auto & index : metadata.secondary_indices)
             {
