@@ -85,11 +85,11 @@ Authentication by a password requires setting user name password by calling `set
         .build();
 ```
 
-Authentication by an access token requires setting access token by calling `setAccessToken(String)`:
+Authentication by an access token or Bearer token (such as a JWT) requires setting the token by calling `useBearerTokenAuth(String)` (or `setAccessToken(String)` for raw access tokens):
 ```java showLineNumbers
  Client client = new Client.Builder()
         .addEndpoint("https://clickhouse-cloud-instance:8443/")
-        .setAccessToken(userAccessToken)
+        .useBearerTokenAuth(userAccessToken)
         .build();
 ```
 
@@ -111,6 +111,35 @@ Please use tools like [openssl](https://docs.openssl.org/master/man1/openssl/) t
     - get CN from an user certificate - `openssl x509 -noout -subject -in [user.cert]`
     - verify same value is set in database `select name, auth_type, auth_params from system.users where auth_type = 'ssl_certificate'` (query will output `auth_params` with something like ` {"common_names":["some_user"]}`)
 </Note>
+
+### Connection Pooling {#connection-pooling}
+
+The `Client` uses Apache HttpClient 5 with an internal HTTP connection pool. Each operation borrows a connection from the pool, sends the request, streams the response, and returns the connection to the pool.
+
+Key connection pool settings on `Client.Builder`:
+
+| Setting | Builder Method | Default | Description |
+|---------|----------------|---------|-------------|
+| Max Connections | `setMaxConnections(int)` | `10` | Maximum open HTTP connections per server endpoint. |
+| Connection TTL | `setConnectionTTL(long, ChronoUnit)` | `-1` (disabled) | Time-to-live after which an active connection is closed and recreated. |
+| Keep-Alive Timeout | `setKeepAliveTimeout(long, ChronoUnit)` | Server default | HTTP Keep-Alive duration for idle pooled connections. |
+| Connection Request Timeout | `setConnectionRequestTimeout(long, ChronoUnit)` | `10000ms` | Maximum time a thread blocks waiting for an available connection from the pool. |
+| Reuse Strategy | `setConnectionReuseStrategy(ConnectionReuseStrategy strategy)` | `FIFO` | Connection pool allocation strategy (`FIFO` or `LIFO`). |
+| Connection Pooling | `enableConnectionPool(boolean enable)` | `true` | Enable or disable HTTP connection pooling. |
+
+#### Recommended Connection Pool Configuration
+
+```java showLineNumbers
+Client client = new Client.Builder()
+        .addEndpoint("https://clickhouse-cloud-instance:8443/")
+        .setUsername("default")
+        .setPassword("secret")
+        .setMaxConnections(50)
+        .setConnectionRequestTimeout(5, TimeUnit.SECONDS)
+        .setKeepAliveTimeout(60, TimeUnit.SECONDS)
+        .setConnectionReuseStrategy(ConnectionReuseStrategy.FIFO)
+        .build();
+```
 
 ## Configuration {#configuration}
 
@@ -216,9 +245,9 @@ Configuration is defined during client creation. See `com.clickhouse.client.api.
 | Method | Arguments | Description | Default | Key |
 |--------|-----------|-------------|---------|-----|
 | `setHttpCookiesEnabled(boolean enabled)` | `enabled` - flag to enable/disable | Set if HTTP cookies should be remembered and sent to server back. | - | - |
-| `httpHeader(String key, String value)` | `key` - HTTP header key<br/>`value` - string value | Sets value for a single HTTP header. Previous value is overridden. | `none` | `none` |
-| `httpHeader(String key, Collection values)` | `key` - HTTP header key<br/>`values` - list of string values | Sets values for a single HTTP header. Previous value is overridden. | `none` | `none` |
-| `httpHeaders(Map headers)` | `headers` - map with HTTP headers | Sets multiple HTTP header values at a time. | `none` | `none` |
+| `httpHeader(String key, String value)` | `key` - HTTP header key<br/>`value` - string value | Sets value for a single HTTP header. Previous value is overridden. | `none` | `http_header_*` |
+| `httpHeader(String key, Collection values)` | `key` - HTTP header key<br/>`values` - list of string values | Sets values for a single HTTP header. Previous value is overridden. | `none` | `http_header_*` |
+| `httpHeaders(Map headers)` | `headers` - map with HTTP headers | Sets multiple HTTP header values at a time. | `none` | `http_header_*` |
 | `useHttpFormDataForQuery(boolean enable)` | `enable` - flag to enable/disable | Sets whether query parameters should be sent as HTTP form data in the request body instead of the URL. Works only with server-side compression. If client-level compression is enabled, it will be disabled for query requests with parameters, as each parameter is sent as multipart content. | `false` | `client.http.use_form_request_for_query` |
 
 </Tab>
@@ -252,7 +281,7 @@ Configuration is defined during client creation. See `com.clickhouse.client.api.
 | `setSharedOperationExecutor(ExecutorService executorService)` | `executorService` - executor service instance | Sets executor service for operation tasks. | `none` | `none` |
 | `setQueryIdGenerator(Supplier<String> supplier)` | `supplier` - a `Supplier<String>` that generates query IDs | Sets a custom query ID generator used when no query ID is specified in operation settings (`InsertSettings`, `QuerySettings`). | - | - |
 | `setClientNetworkBufferSize(int size)` | `size` - size in bytes | Sets size of a buffer in application memory space that is used to copy data between socket and application. | `300000` | `client_network_buffer_size` |
-| `allowBinaryReaderToReuseBuffers(boolean reuse)` | `reuse` - flag to enable/disable | If enabled, reader will use preallocated buffers to do numbers transcoding. Reduces GC pressure for numeric data. | - | - |
+| `allowBinaryReaderToReuseBuffers(boolean reuse)` | `reuse` - flag to enable/disable | If enabled, reader will use pre-allocated buffers to do numbers transcoding. Reduces GC pressure for numeric data. | - | - |
 | `columnToMethodMatchingStrategy(ColumnToMethodMatchingStrategy strategy)` | `strategy` - matching strategy implementation | Sets custom strategy to be used for matching DTO class fields and DB columns when registering DTO. | `none` | `none` |
 | `setClientName(String clientName)` | `clientName` - application name string | Sets additional information about calling application. Will be passed as `User-Agent` header. | - | `client_name` |
 | `registerClientMetrics(Object registry, String name)` | `registry` - Micrometer registry instance<br/>`name` - metrics group name | Registers sensors with Micrometer (https://micrometer.io/) registry instance. | - | - |
@@ -324,18 +353,99 @@ Server side settings can be set on the client level once while creation (see `se
 ```
 ⚠️ When options are set via `setOption` method (either the `Client.Builder` or operation settings class) then server settings name should be prefixed with `clickhouse_setting_`. The `com.clickhouse.client.api.ClientConfigProperties#serverSetting()` may be handy in this case.
 
-### Custom HTTP Header
+### Custom HTTP Headers {#custom-http-headers}
 
-Custom HTTP headers can be set for all operations (client level) or a single one (operation level).
+Custom HTTP headers can be set for all operations (client level) or a single one (operation level). Operation settings override client-level headers with the same name.
+
 ```java showLineNumbers
+Map<String, String> userHeaders = new HashMap<>();
+userHeaders.put("X-User-Header1", "value1");
+userHeaders.put("X-User-Header2", "value2");
 
-QuerySettings settings = new QuerySettings()
-    .httpHeader(HttpHeaders.REFERER, clientReferer)
-    .setQueryId(qId);
+Client client = new Client.Builder()
+        .addEndpoint("https://clickhouse-cloud-instance:8443/")
+        .setUsername(user)
+        .setPassword(password)
+        .httpHeader("X-ClickHouse-Quota", "test")
+        .httpHeader("X-Forwarded-For", Arrays.asList("1.2.3.4", "5.6.7.8"))
+        .httpHeaders(userHeaders)
+        .build();
+```
+**Important**: When options are set via `setOption` (on `Client.Builder` or an operation settings class), prefix the header name with `http_header_`. `ClientConfigProperties.httpHeader(String)` builds that key.
+As header name is simple String key it should be in one letter case otherwise duplicate values will result undefined behavior, `ClientConfigProperties.httpHeader(String)` fixes this problem.
 
+```java showLineNumbers
+clientBuilder.setOption(ClientConfigProperties.httpHeader("X-ClickHouse-Quota"), "test");
+// equivalent to:
+clientBuilder.setOption("http_header_X-CLICKHOUSE-QUOTA", "test");
 ```
 
-When options are set via `setOption` method (either the `Client.Builder` or operation settings class) then custom header name should be prefixed with `http_header_`. Method `com.clickhouse.client.api.ClientConfigProperties#httpHeader()` may be handy in this case.
+## ClickHouse Cloud Features {#clickhouse-cloud-features}
+
+Features that apply when connecting to [ClickHouse Cloud](https://clickhouse.com/cloud).
+
+### Replica-aware Routing (CLOUD) {#replica-aware-routing}
+
+ClickHouse Cloud can pin related HTTP requests to the same replica. Send the `X-ClickHouse-Replica-Tag` header so a Cloud proxy routes every request that shares the tag to one replica. Use this for session-scoped objects such as temporary tables, replica-local cache reuse, or read-after-write consistency.
+Read more: https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
+
+**What to set:** HTTP header `X-ClickHouse-Replica-Tag` (`com.clickhouse.client.api.http.ClickHouseHttpProto.HEADER_REPLICA_TAG`). Use the same tag value for all requests that should stay on one replica.
+
+```java showLineNumbers
+String replicaTag = "my-app-session-1";
+
+try (Client client = new Client.Builder()
+        .addEndpoint("https://your-service.clickhouse.cloud:8443")
+        .setUsername(user)
+        .setPassword(password)
+        .httpHeader(ClickHouseHttpProto.HEADER_REPLICA_TAG, replicaTag)
+        .build()) {
+    client.query("SELECT hostname()").get();
+}
+```
+
+To configure per operation, set the header on `QuerySettings`, `InsertSettings`, or `CommandSettings` instead of the client builder.
+
+### JWT Authentication (CLOUD) {#jwt-authentication}
+
+[JWT Authentication](/concepts/features/security/external-authenticators/jwt) allows authenticating users with JSON Web Tokens (JWTs) in ClickHouse Cloud. Instead of pre-existing database users, ClickHouse dynamically creates **ephemeral users** derived from claims embedded in each token.
+
+#### Initial Configuration
+
+To configure initial JWT authentication on the client, use `useBearerTokenAuth(token)` (this automatically adds `Bearer_` prefix.
+(see [HTTP interface docs](/concepts/features/security/external-authenticators/jwt#http-interface) ) when building the `Client` instance:
+
+```java showLineNumbers
+import com.clickhouse.client.api.Client;
+
+public Client createJwtClient(String jwtToken) {
+    return new Client.Builder()
+            .addEndpoint("https://your-service.clickhouse.cloud:8443")
+            .useBearerTokenAuth(jwtToken)
+            .build();
+}
+```
+
+<Note>
+`useBearerTokenAuth(token)` automatically prepends the `Bearer ` prefix to the `Authorization` HTTP header.
+</Note>
+
+#### Updating Token at Runtime
+
+Because JWTs are short-lived and ephemeral users exist only for the token's lifetime, new JWT tokens should be set **before** the current token expires so no operations fail.
+
+You can update the bearer token on an existing `Client` instance at runtime without recreating the client:
+
+```java showLineNumbers
+import com.clickhouse.client.api.Client;
+
+public void refreshJwtToken(Client client, String newJwtToken) {
+    // Set the new JWT before the current token expires
+    client.updateBearerToken(newJwtToken);
+}
+```
+
+All subsequent requests on the `Client` instance will use the updated JWT token.
 
 ## Common Definitions {#common-definitions}
 
@@ -524,6 +634,9 @@ Configuration options for insert operations.
 | `setInputStreamCopyBufferSize(int size)`     | Copy buffer size. The buffer is used during write operations to copy data from user-provided input stream to an output stream. Default: `8196`. |
 | `serverSetting(String name, String value)`   | Sets individual server settings for an operation.                                                                          |
 | `serverSetting(String name, Collection values)` | Sets individual server settings with multiple values for an operation. Items of the collection should be `String` values.  |
+| `httpHeader(String key, String value)`       | Sets a custom HTTP header for the insert.                                                                                  |
+| `httpHeader(String key, Collection values)`  | Sets a custom HTTP header with multiple values.                                                                            |
+| `httpHeaders(Map headers)`                   | Sets multiple custom HTTP headers.                                                                                         |
 | `setDBRoles(Collection dbRoles)`             | Sets DB roles to be set before executing an operation. Items of the collection should be `String` values.                  |
 | `setOption(String option, Object value)`     | Sets a configuration option in raw format. This isn't a server setting.                                                  |
 
@@ -541,6 +654,22 @@ This object should be closed as soon as possible to release a connection because
 | `String getQueryId()`       | Returns query ID assigned for the operation by the application (through operation settings or by server). |
 
 ## Query API {#query-api}
+
+**Format Selection**
+
+Client provides transparent access to the response stream from server. User is free to choose any ClickHouse format in request and read data via `InputStream`
+from `QueryResponse` object. 
+Format can be requested via: 
+- `QuerySettings#setFormat()` this will set format header in a request. 
+- In `FORMAT` clause in query itself. 
+- Server settings `default_format` (/reference/settings/session-settings/default#default_format)
+
+There are differences in behavior depending on ClickHouse and Client version: 
+- Client &lt; `0.11.0` &amp; ClickHouse &lt; `26.8` - `FORMAT` clause has priority over request format header.
+- Client &gt; `0.11.0` &amp; ClickHouse &gt; `26.8` - request header has priority over `FORMAT` clause.
+    - Client sets header when no format is specified in `QuerySettings` - this doesn't allow to override format in query. 
+- Client starting `0.11.0` - sets default `format` value on client level and not on operation level. This allows existing code
+work without changes and new code to use `FORMAT` clause by settings `format` on client to `null`.
 
 ### query(String sqlQuery) {#querystring-sqlquery}
 
@@ -691,6 +820,9 @@ Configuration options for query operations.
 | `setUseTimeZone(String timeZone)`            | Requests server to use `timeZone` for time conversion. See [session_timezone](/reference/settings/session-settings#session_timezone). |
 | `serverSetting(String name, String value)`   | Sets individual server settings for an operation.                                                                          |
 | `serverSetting(String name, Collection values)` | Sets individual server settings with multiple values for an operation. Items of the collection should be `String` values.  |
+| `httpHeader(String key, String value)`       | Sets a custom HTTP header for the query.                                                                                   |
+| `httpHeader(String key, Collection values)`  | Sets a custom HTTP header with multiple values.                                                                            |
+| `httpHeaders(Map headers)`                   | Sets multiple custom HTTP headers.                                                                                         |
 | `setDBRoles(Collection dbRoles)`             | Sets DB roles to be set before executing an operation. Items of the collection should be `String` values.                  |
 | `setOption(String option, Object value)`     | Sets a configuration option in raw format. This isn't a server setting.                                                  |
 
@@ -810,7 +942,7 @@ can be used with any other custom reader implementation. `QueryResponse` also pr
 - `getStringArray(...)` - for `Array(String)` (and enum values represented as names).
 - `getObjectArray(...)` - generic option for any `Array(...)` element type, including nested arrays. Use to read arrays with nullable values and nested arrays.
 
-Index-based and name-based overloads are available for all methods. Index is 1-based. Index-based do dirrect access to a column.
+Index-based and name-based overloads are available for all methods. Index is 1-based. Index-based do direct access to a column.
 Name-based methods require index lookup each time.
 
 ```java
@@ -835,7 +967,7 @@ try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
 - `getStringArray(...)` - for `Array(String)` (and enum values represented as names).
 - `getObjectArray(...)` - generic option for any `Array(...)` element type, including nested arrays. Use to read arrays with nullable values and nested arrays.
 
-Index-based and name-based overloads are available for all methods. Index is 1-based. Index-based do dirrect access to a column.
+Index-based and name-based overloads are available for all methods. Index is 1-based. Index-based do direct access to a column.
 Name-based methods require index lookup each time.
 
 ```java
@@ -852,6 +984,192 @@ try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
     }
 }
 ```
+
+## Observability & Monitoring {#v2-o11y}
+
+The ClickHouse Java Client (V2) provides built-in observability features designed around OpenTelemetry semantic conventions and Micrometer metrics. The client enables monitoring operational durations, throughput, retries, server execution statistics, connection pool status, and distributed tracing spans.
+
+For a complete production-style Spring Boot application demonstrating Client V2 configuration, connection pooling, trace context propagation across `@Async` boundaries, and full telemetry integration, see the `examples/demo-spring-service` module in this repository.
+
+### Client Builder Observability API {#v2-o11y-builder-api}
+
+The `Client.Builder` exposes three primary methods to configure observability and metrics collection:
+
+- `setMetricsRecorder(MetricsRecorder recorder)`: Registers a metrics recorder for exporting operational metrics (durations, counts, retries, errors). When not explicitly set, defaults to `DefaultMetricsRecorder.NOOP`.
+- `setSpanRecorder(SpanRecorder recorder)`: Registers a span recorder for distributed tracing (operation spans and transport request spans). When not explicitly set, defaults to `DefaultSpanRecorder.NOOP`.
+- `registerClientMetrics(Object registry, String groupName)`: Binds Apache HttpClient connection pool metrics (such as available and leased connections, pending requests, and connection creation time) to a Micrometer `MeterRegistry`.
+
+**Dependencies Requirement**
+
+The built-in `OpenTelemetrySpanRecorder` and `MicrometerMetricsRecorder` classes are provided as part of the `client-v2` package. However, they require the OpenTelemetry API (`io.opentelemetry:opentelemetry-api`) and Micrometer (`io.micrometer:micrometer-core`) libraries to be present on the application's classpath at runtime. The main client artifact does not bundle these third-party dependencies nor pull them in transitively. Applications using OpenTelemetry tracing or Micrometer metrics must explicitly declare these dependencies in their project build configuration (`pom.xml` or `build.gradle`).
+
+**Builder Configuration Example**
+
+```java
+import com.clickhouse.client.api.Client;
+import com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder;
+import com.clickhouse.client.api.observability.otel.OpenTelemetrySpanRecorder;
+
+import io.micrometer.core.instrument.MeterRegistry;
+import io.opentelemetry.api.OpenTelemetry;
+
+public Client createObservedClient(MeterRegistry meterRegistry, OpenTelemetry openTelemetry) {
+    return new Client.Builder()
+        .addEndpoint("http://localhost:8123")
+        .setUsername("default")
+        .setPassword("secret")
+        .setMetricsRecorder(new MicrometerMetricsRecorder(meterRegistry))
+        .setSpanRecorder(new OpenTelemetrySpanRecorder(openTelemetry))
+        .registerClientMetrics(meterRegistry, "clickhouse-client-pool")
+        .build();
+}
+```
+
+**Integration Approaches**
+
+Applications can integrate observability using two primary patterns:
+
+1. **OpenTelemetry Agent & Global Autoconfiguration**:
+   - For applications using the OpenTelemetry Java Agent or global SDK autoconfiguration, instantiate `OpenTelemetrySpanRecorder` and `MicrometerMetricsRecorder` using their default no-argument constructors.
+   - The default constructors automatically bind to `GlobalOpenTelemetry.get()` and Micrometer's `Metrics.globalRegistry`.
+2. **Explicit Client-Level Integration**:
+   - Pass explicitly created `OpenTelemetry`, `Tracer`, or Micrometer `MeterRegistry` instances directly into the recorder constructors.
+   - Ideal when managing multiple isolated clients or multi-tenant services with independent telemetry sinks.
+
+```java
+import com.clickhouse.client.api.Client;
+import com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder;
+import com.clickhouse.client.api.observability.otel.OpenTelemetrySpanRecorder;
+
+public Client.Builder configureGlobalTelemetry(Client.Builder builder) {
+    return builder
+        .setMetricsRecorder(new MicrometerMetricsRecorder()) // uses Metrics.globalRegistry
+        .setSpanRecorder(new OpenTelemetrySpanRecorder());    // uses GlobalOpenTelemetry
+}
+```
+
+### Metrics Reported {#v2-o11y-metrics}
+
+#### Operational Metrics
+
+Metrics exported via `MetricsRecorder` follow the OpenTelemetry semantic conventions for database client metrics (`MetricName` and `MetricAttribute`):
+
+| Metric Name | Type / Unit | Description |
+|-------------|-------------|-------------|
+| `db.client.operation.duration` | Timer (`s`) | Duration of a ClickHouse client operation (queries and inserts), recorded for both successful and failed operations. |
+| `clickhouse.client.operation.serialization.duration` | Timer (`s`) | Duration of the serialization step (e.g. POJO serialization during inserts). |
+| `clickhouse.client.operation.count` | Counter (`{operation}`) | Total number of completed client operations, grouped by outcome. |
+| `clickhouse.client.operation.retries` | Counter (`{retry}`) | Number of retried attempts across client operations. |
+
+#### Metric Attributes / Tags
+
+Meters created by `MicrometerMetricsRecorder` carry low-cardinality tags (`MetricAttribute`):
+
+| Attribute Key | Description | Example Values |
+|---------------|-------------|----------------|
+| `db.system.name` | Database system identifier. | `clickhouse` |
+| `db.namespace` | Target database name. | `default`, `analytics` |
+| `db.operation.name` | Operation type. | `query`, `insert` |
+| `db.collection.name` | Target table name (recorded for inserts). | `events` |
+| `db.response.status_code` | ClickHouse server error code on failure. | `60` |
+| `error.type` | Exception class name on failure, or `none` on success. | `com.clickhouse.client.api.ServerException` |
+
+#### Connection Pool Metrics
+
+When calling `registerClientMetrics(meterRegistry, "groupName")`, HTTP connection pool gauges are registered with Micrometer:
+
+- `httpcomponents.httpclient.pool.total.max`: Configured maximum allowed persistent connections.
+- `httpcomponents.httpclient.pool.total.connections` (tagged with `state="available"` or `state="leased"`): Active connections in the pool.
+- `httpcomponents.httpclient.pool.total.pending`: Number of connection requests awaiting a free connection.
+- `httpcomponents.httpclient.pool.route.max.default`: Configured default maximum connections per route.
+- `httpcomponents.httpclient.connect.time`: Running average connection establishment time.
+
+#### Response Metrics API
+
+In addition to metrics recorders, detailed execution statistics are accessible directly on response objects (`QueryResponse`, `InsertResponse`) via `OperationMetrics`:
+
+```java
+import com.clickhouse.client.api.Client;
+import com.clickhouse.client.api.metrics.ClientMetrics;
+import com.clickhouse.client.api.metrics.OperationMetrics;
+import com.clickhouse.client.api.metrics.ServerMetrics;
+import com.clickhouse.client.api.query.QueryResponse;
+
+public void inspectResponseMetrics(Client client) throws Exception {
+    try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
+        OperationMetrics metrics = response.getMetrics();
+        long readRows = metrics.getMetric(ServerMetrics.NUM_ROWS_READ).getLong();
+        long readBytes = metrics.getMetric(ServerMetrics.NUM_BYTES_READ).getLong();
+        long durationMs = metrics.getMetric(ClientMetrics.OP_DURATION).getLong();
+    }
+}
+```
+
+### Spans Reported {#v2-o11y-spans}
+
+Tracing in Client V2 produces two types of spans arranged in a parent-child hierarchy:
+
+1. **Operation Span**: Represents a high-level client operation (`QUERY <database>` or `INSERT <database>.<table_name>`). Started under the current thread's trace context (`Context.current()`) so that database operations join the caller's active trace span.
+2. **Transport Request Span**: Represents an individual HTTP transport request attempt (`POST`). Created as a child of the corresponding operation span. Each retry attempt creates a new transport request span under the operation span.
+
+#### Span Attributes {#v2-o11y-span-attributes}
+
+Spans are populated with standard OpenTelemetry attributes (`SpanAttribute`):
+
+| Span Attribute Key | Scope / Type | Recorded Moment | Description |
+|--------------------|--------------|-----------------|-------------|
+| `db.system.name` | All operations | Before request start | Always `clickhouse`. |
+| `db.namespace` | All operations | Before request start | Target database name. |
+| `db.query.text` | Query | Before request start | SQL statement text for queries or commands. |
+| `db.collection.name` | Insert | Before request start | Target table name. |
+| `db.operation.name` | Insert | Before request start | Operation type (`INSERT`). Set for insert operations, but left unset for queries because SQL is not parsed on the client. |
+| `db.operation.batch.size` | Insert | Before request start | Number of items in insert batch. |
+| `db.query.parameter.<name>` | Query | Before request start | Statement parameter values. |
+| `clickhouse.query_id` | All operations | Before request start, updated on completion | ClickHouse query ID assigned by client or server. |
+| `db.response.returned_rows` | Query | On success completion | Number of rows returned by server. |
+| `clickhouse.response.read_rows` | Query | On success completion | Server rows read from storage. |
+| `clickhouse.response.read_bytes` | Query | On success completion | Server bytes read from storage. |
+| `clickhouse.response.written_rows` | Insert | On success completion | Server rows written to storage. |
+| `clickhouse.response.written_bytes` | Insert | On success completion | Server bytes written to storage. |
+| `server.address` | Transport request | Before attempt | Target server hostname or IP address. |
+| `server.port` | Transport request | Before attempt | Target server port. |
+| `http.request.method` | Transport request | Before attempt | HTTP method (always `POST`). |
+| `http.response.status_code` | Transport request | On response / failure | HTTP status code returned by server (e.g. `200`, `500`). |
+| `db.response.status_code` | All &amp; Transport request | On failure | ClickHouse server error code on failure. |
+| `error.type` | All &amp; Transport request | On failure | Exception class name on error. |
+
+<Note>
+**Context Propagation Across Asynchronous Boundaries:** Because Client V2 inherits `Context.current()`, operations started on threads with an active trace span automatically join the trace. When delegating tasks across thread pools (e.g., Spring `@Async` or custom `ExecutorService`), propagate the OpenTelemetry context explicitly:
+
+```java
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
+import com.clickhouse.client.api.Client;
+import com.clickhouse.client.api.insert.InsertResponse;
+
+public void processBatchAsync(Client client, String table, List<?> data, Context parentContext) throws Exception {
+    try (Scope ignored = parentContext.makeCurrent()) {
+        try (InsertResponse response = client.insert(table, data).get()) {
+            // Background Client V2 span joins parentContext trace
+        }
+    }
+}
+```
+</Note>
+
+### Developing Custom Recorders {#v2-o11y-custom-recorders}
+
+Applications with custom observability backends can implement custom recorders by extending `DefaultMetricsRecorder` (for metrics) or `DefaultSpanRecorder` (for tracing).
+
+- **`DefaultMetricsRecorder`**: Base implementation of `MetricsRecorder`. Override specific callbacks like `recordQuerySuccess` or `recordQueryFailure`. Use `MetricsSupport.DEFAULT` to derive standard metric names (`MetricName`), units, and attribute maps (`MetricAttribute`).
+- **`DefaultSpanRecorder`**: Base implementation of `SpanRecorder`. Override span creation callbacks like `startQuerySpan`, `startInsertSpan`, or `startRequestSpan`. Use `SpanSupport.DEFAULT` to calculate standard OpenTelemetry span names and attributes (`SpanAttribute`).
+
+For production reference implementations, see the built-in client classes:
+- `com.clickhouse.client.api.observability.otel.OpenTelemetrySpanRecorder` (OpenTelemetry tracing integration)
+- `com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder` (Micrometer metrics integration)
+
+
+
 
 ## Migration Guide {#migration_guide}
 
@@ -1482,21 +1800,50 @@ Java client provides configuration options to set up failover and retry behavior
 | retry                   | `0`     | Maximum number of times retry can happen for a request. Zero or a negative value means no retry. Retry sends a request to the same node and only if the ClickHouse server returns the `NETWORK_ERROR` error code                               |
 | repeat_on_session_lock  | `true`  | Whether to repeat execution when the session is locked until timed out(according to `session_timeout` or `connect_timeout`). The failed request is repeated if the ClickHouse server returns the `SESSION_IS_LOCKED` error code               |
 
-### Adding custom http headers {#v1-adding-custom-http-headers}
+### Adding custom HTTP headers {#v1-adding-custom-http-headers}
 
-Java client support HTTP/S transport layer in case we want to add custom HTTP headers to the request.
-We should use the custom_http_headers property, and the headers need to be `,` separated. The header key/value should be divided using `=`
+The HTTP transport accepts extra request headers through the `custom_http_headers` property (`ClickHouseHttpOption.CUSTOM_HEADERS`). Each header is `Name=Value`. Separate multiple headers with a comma. Escape a comma inside a value as `\,`. An `=` inside a value is kept as part of the value.
 
-## Java Client support {#v1-java-client-support}
+**Single header**
+
+```java
+options.put("custom_http_headers", "X-ClickHouse-Quota=test");
+// or
+options.put(ClickHouseHttpOption.CUSTOM_HEADERS, "X-ClickHouse-Quota=test");
+```
+
+**Multiple headers**
 
 ```java
 options.put("custom_http_headers", "X-ClickHouse-Quota=test, X-ClickHouse-Test=test");
 ```
 
-## JDBC Driver {#v1-jdbc-driver}
+You can also set headers on a request:
 
 ```java
-properties.setProperty("custom_http_headers", "X-ClickHouse-Quota=test, X-ClickHouse-Test=test");
+client.read(server)
+        .option(ClickHouseHttpOption.CUSTOM_HEADERS, "X-ClickHouse-Quota=test, X-ClickHouse-Test=test")
+        .query("SELECT 1")
+        .executeAndWait();
+```
+
+## ClickHouse Cloud Features {#v1-clickhouse-cloud-features}
+
+Features that apply when connecting to [ClickHouse Cloud](https://clickhouse.com/cloud).
+
+### Replica-aware Routing (CLOUD) {#v1-replica-aware-routing}
+
+ClickHouse Cloud can pin related HTTP requests to the same replica. Send the `X-ClickHouse-Replica-Tag` header so a Cloud proxy routes every request that shares the tag to one replica. Use this for session-scoped objects such as temporary tables, replica-local cache reuse, or read-after-write consistency.
+Read more: https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
+
+**What to set:** HTTP header `X-ClickHouse-Replica-Tag` (`com.clickhouse.client.http.config.ClickHouseHttpOption.HEADER_REPLICA_TAG`) via `custom_http_headers`. Use the same tag value for all requests that should stay on one replica.
+
+```java
+String replicaTag = "my-app-session-1";
+options.put("custom_http_headers", "X-ClickHouse-Replica-Tag=" + replicaTag);
+// or
+options.put(ClickHouseHttpOption.CUSTOM_HEADERS,
+        ClickHouseHttpOption.HEADER_REPLICA_TAG + "=" + replicaTag);
 ```
 
 </View>

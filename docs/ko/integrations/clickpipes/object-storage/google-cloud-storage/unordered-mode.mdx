@@ -16,7 +16,9 @@ doc_type: 'guide'
   ## 작동 방식
 </div>
 
-이 모드에서는 GCS ClickPipe가 선택한 경로의 **모든 파일**을 초기 적재한 다음, 지정된 경로와 일치하는 Pub/Sub subscription을 통해 객체 알림을 수신합니다. 이미 확인한 파일에 대한 메시지, 경로와 일치하지 않는 파일에 대한 메시지, 또는 다른 유형의 이벤트는 모두 **무시됩니다**. 특정 파일이나 특정 시점부터 수집을 시작하는 것은 **불가능합니다**. ClickPipes는 항상 선택한 경로의 모든 파일을 적재합니다.
+이 모드에서는 GCS ClickPipe가 선택한 경로의 **모든 파일**을 초기 적재한 다음, 지정된 경로와 일치하는 Pub/Sub subscription을 통해 객체 알림을 수신합니다. 이미 확인한 파일에 대한 메시지, 경로와 일치하지 않는 파일에 대한 메시지, 또는 다른 유형의 이벤트는 모두 **무시됩니다**.
+
+subscription을 통해 전달되는 파일만 수집하려면 **Skip initial load**를 활성화하세요. 활성화하면 ClickPipes는 선택한 경로에 있는 기존 파일의 초기 검사를 건너뛰고 Pub/Sub subscription을 통해 전달되는 파일만 처리합니다.
 
 데이터를 수집하는 과정에서 다양한 유형의 장애가 발생할 수 있으며, 이로 인해 일부만 삽입되거나 중복 데이터가 생길 수 있습니다. 객체 스토리지 ClickPipes는 삽입 실패에 탄력적으로 대응하며, 임시 스테이징 테이블을 사용해 정확히 한 번 처리 의미 체계를 제공합니다. 데이터는 먼저 스테이징 테이블에 삽입되며, 문제가 발생하면 스테이징 테이블을 TRUNCATE한 후 깨끗한 상태에서 삽입을 다시 시도합니다. 삽입이 성공적으로 완료된 경우에만 파티션이 대상 테이블로 이동됩니다.
 
@@ -35,13 +37,13 @@ doc_type: 'guide'
     **2.1.** 이 단계는 Google Cloud Console에서는 수행할 수 없으므로 `gcloud` 클라이언트 또는 Google Cloud용 선호하는 프로그래밍 인터페이스를 사용해야 합니다. 예를 들어 `gcloud`를 사용하면 다음과 같습니다.
 
     ```bash
-    # 버킷의 새 객체에 대한 Pub/Sub 알림 생성
+    # Create a Pub/Sub notification for new objects in the bucket
     gcloud storage buckets notifications create "gs://${YOUR_BUCKET_NAME}" \
       --topic="projects/${YOUR_PROJECT_ID}/topics/${YOUR_TOPIC_NAME}" \
       --event-types="OBJECT_FINALIZE" \
       --payload-format="json"
 
-    # 버킷의 Pub/Sub 알림 나열
+    # List the Pub/Sub notifications in the bucket
     gcloud storage buckets notifications describe
     ```
   </Step>
@@ -52,17 +54,17 @@ doc_type: 'guide'
     **1.1.** 이 단계는 Google Cloud Console, `gcloud` 클라이언트 또는 Google Cloud용 선호하는 프로그래밍 인터페이스를 사용해 수행할 수 있습니다. 예를 들어 `gcloud`를 사용하면 다음과 같습니다.
 
     ```bash
-    # 1. GCS 버킷에 읽기 권한 부여
+    # 1. Grant read access to the GCS bucket
     gcloud storage buckets add-iam-policy-binding "gs://${YOUR_BUCKET_NAME}" \
       --member="serviceAccount:${YOUR_SERVICE_ACCOUNT}@${YOUR_PROJECT_ID}.iam.gserviceaccount.com" \
       --role="roles/storage.objectViewer"
 
-    # 2. Pub/Sub subscription에 읽기 권한 부여
+    # 2. Grant read access to the Pub/Sub subscription
     gcloud pubsub subscriptions add-iam-policy-binding "${YOUR_SUBSCRIPTION_NAME}" \
       --member="serviceAccount:${YOUR_SERVICE_ACCOUNT}@${YOUR_PROJECT_ID}.iam.gserviceaccount.com" \
       --role="roles/pubsub.subscriber"
 
-    # 3. Pub/Sub subscription 메타데이터를 가져올 권한 부여
+    # 3. Grant permission to get the Pub/Sub subscription metadata
     gcloud pubsub subscriptions add-iam-policy-binding "${YOUR_SUBSCRIPTION_NAME}" \
       --member="serviceAccount:${YOUR_SERVICE_ACCOUNT}@${YOUR_PROJECT_ID}.iam.gserviceaccount.com" \
       --role="roles/pubsub.viewer"
@@ -72,7 +74,7 @@ doc_type: 'guide'
   <Step title="비순차 모드로 ClickPipe 만들기" id="create-clickpipe">
     **1.** ClickHouse Cloud 콘솔에서 **Data Sources &gt; Create ClickPipe**로 이동한 다음 **Google Cloud Storage**를 선택합니다. GCS 버킷에 연결하는 데 필요한 세부 정보를 입력합니다. **Authentication method**에서 **Service Account**를 선택하고 `.json` 서비스 계정 키를 제공합니다.
 
-    **2.** **Continuous ingestion**을 켠 다음, 수집 모드로 **Any order**를 선택하고 버킷에 연결된 subscription의 **Pub/Sub subscription** 이름을 입력합니다. 이 subscription은 이 ClickPipe에서만 단독으로 사용해야 합니다. [Google Cloud Pub/Sub 토픽 만들기](#create-pubsub-topic)를 참조하십시오. subscription 이름은 다음 형식을 따라야 합니다.
+    **2.** **Continuous ingestion**을 켠 다음, 수집 모드로 **Any order**를 선택하고 버킷에 연결된 subscription의 **Pub/Sub subscription** 이름을 입력합니다. subscription의 파일만 처리하고 선택한 경로에 있는 기존 파일의 초기 스캔을 건너뛰려면 **Skip initial load**를 활성화합니다. 이 subscription은 이 ClickPipe에서만 단독으로 사용해야 합니다. [Google Cloud Pub/Sub 토픽 만들기](#create-pubsub-topic)를 참조하십시오. subscription 이름은 다음 형식을 따라야 합니다.
 
     ```text
     projects/${YOUR_PROJECT_ID}/subscriptions/${YOUR_SUBSCRIPTION_NAME}
@@ -80,6 +82,6 @@ doc_type: 'guide'
 
     **3.** **Incoming data**를 클릭합니다. 대상 테이블의 **Sorting key**를 정의합니다. 매핑된 schema를 필요에 따라 조정한 다음 ClickPipes 데이터베이스 사용자의 역할을 구성합니다.
 
-    **4.** 구성을 검토한 후 **Create ClickPipe**를 클릭합니다. ClickPipes는 먼저 버킷을 초기 스캔하여 지정된 경로와 일치하는 기존 파일을 모두 적재한 다음, 토픽에 새 `OBJECT_FINALIZE` 이벤트가 도착하면 파일 처리를 시작합니다.
+    **4.** 구성을 검토한 후 **Create ClickPipe**를 클릭합니다. **Skip initial load**가 활성화되지 않은 경우 ClickPipes는 먼저 버킷을 초기 스캔하여 지정된 경로와 일치하는 기존 파일을 모두 적재한 다음, subscription에서 일치하는 `OBJECT_FINALIZE` 이벤트가 전달되면 파일 처리를 시작합니다.
   </Step>
 </Steps>

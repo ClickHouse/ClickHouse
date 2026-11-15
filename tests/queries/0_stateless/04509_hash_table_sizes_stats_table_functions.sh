@@ -28,9 +28,12 @@ run_pair()
 
 settings=(
     --max_threads=1
-    --enable_analyzer=1
     --collect_hash_table_stats_during_aggregation=1
     --max_size_to_preallocate_for_aggregation=1000000000000
+    # Spilling the aggregation to disk stops the hash-table-stats collection for the query, so a
+    # randomized external-aggregation threshold would report 0 preallocated elements.
+    --max_bytes_before_external_group_by=0
+    --max_bytes_ratio_before_external_group_by=0
 )
 
 big_query="SELECT number AS k FROM numbers(650e3) GROUP BY k FORMAT Null"
@@ -49,11 +52,13 @@ run_pair "$local_prefix" small "$small_query" "${settings[@]}" &
 # query rows (is_initial_query = 0). process_query_plan_packet is enabled in the test server config.
 dist_settings=(
     --max_threads=1
-    --enable_analyzer=1
     --collect_hash_table_stats_during_aggregation=1
     --max_size_to_preallocate_for_aggregation=1000000000000
     --serialize_query_plan=1
     --prefer_localhost_replica=0
+    # Same as in `settings` above: a spill would zero the preallocation profile event.
+    --max_bytes_before_external_group_by=0
+    --max_bytes_ratio_before_external_group_by=0
 )
 
 dist_big_query="SELECT number AS k FROM cluster('test_shard_localhost', numbers(650e3)) GROUP BY k FORMAT Null"

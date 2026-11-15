@@ -1,5 +1,4 @@
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 SET analyzer_inline_views = 1;
 
 SET enable_parallel_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', max_parallel_replicas = 3;
@@ -21,12 +20,22 @@ WHERE name > ''
 GROUP BY name
 ORDER BY name;
 
-EXPLAIN
-SELECT name, sum(age)
-FROM uv
-WHERE name > ''
-GROUP BY name
-ORDER BY name;
+-- Print the plan without step descriptions, drop the `Expression` steps and normalize the name of
+-- the step reading from the replicas, so that the result does not depend on how reading with
+-- parallel replicas is planned.
+SELECT if(step IN ('ReadFromRemoteParallelReplicas', 'ReadFromParallelReplicas'), 'ReadFromParallelReplicas', step)
+FROM
+(
+    SELECT rowNumberInAllBlocks() AS n, trim(explain) AS step
+    FROM (EXPLAIN description = 0
+        SELECT name, sum(age)
+        FROM uv
+        WHERE name > ''
+        GROUP BY name
+        ORDER BY name)
+)
+WHERE step != 'Expression'
+ORDER BY n;
 
 SELECT name, sum(age)
 FROM uv

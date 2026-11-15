@@ -12,9 +12,23 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定は ClickHouse server を構成するもので、ClickHouse のソースコードから自動生成されています。
 
-<div id="cpu_slot_preemption">
-  ## cpu_slot_preemption
-</div>
+## cpu_slot_parking {#cpu_slot_parking}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Yes" />
+
+クエリスレッドが CPU 以外の要因による待機(一部の I/O 操作や、処理可能なタスクがないアイドル状態など)でブロックされている間、その CPU スロットを解放(パーク)するかどうかを指定します。パークされたスレッドは CPU の同時実行数の上限にカウントされないため、本来であれば遊んでしまう CPU を別のスレッドが使用できます。スロットは待機の終了時に再取得されます。この設定は、`cpu_slot_preemption` が有効で、かつ単一の CPU リソースで マスタースレッド と ワーカースレッド の両方が定義されている場合にのみ適用され、それ以外の構成では効果はありません。サーバーを再起動せずに変更できます。
+
+**例**
+
+```xml
+<cpu_slot_parking>true</cpu_slot_parking>
+```
+
+**関連項目**
+
+* [ワークロードスケジューリング](/ja/concepts/features/configuration/server-config/workload-scheduling)
+
+## cpu_slot_preemption {#cpu_slot_preemption}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Yes" />
 
@@ -33,9 +47,7 @@ CPU リソース (マスタースレッドとワーカースレッド) のワー
 
 * [Workload Scheduling](/ja/concepts/features/configuration/server-config/workload-scheduling)
 
-<div id="cpu_slot_preemption_timeout_ms">
-  ## cpu_slot_preemption_timeout_ms
-</div>
+## cpu_slot_preemption_timeout_ms {#cpu_slot_preemption_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="Yes" />
 
@@ -51,9 +63,7 @@ CPU リソース (マスタースレッドとワーカースレッド) のワー
 
 * [Workload Scheduling](/ja/concepts/features/configuration/server-config/workload-scheduling)
 
-<div id="cpu_slot_quantum_ns">
-  ## cpu_slot_quantum_ns
-</div>
+## cpu_slot_quantum_ns {#cpu_slot_quantum_ns}
 
 <SettingsInfoBlock type="UInt64" default_value="10000000" changeable_without_restart="Yes" />
 

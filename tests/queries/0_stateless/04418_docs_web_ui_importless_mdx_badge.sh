@@ -22,7 +22,7 @@ PAGE="$(${CLICKHOUSE_CURL} -sS "${URL}/docs")"
 echo "$PAGE" | grep -oF 'ClickHouse <span class="accent">Reference</span>' | head -n1
 
 # `preprocessMarkdown` renders each `*Badge` as a readable label via `badgeLabel` ...
-echo "$PAGE" | grep -oF 'function badgeLabel(name) {' | head -n1
+echo "$PAGE" | grep -oF 'function badgeLabel(name, attributes) {' | head -n1
 # ... matching the `*Badge` name directly, so an importless badge is handled the same as an imported one.
 echo "$PAGE" | grep -oF '[A-Z][A-Za-z0-9]*Badge' | head -n1
 
