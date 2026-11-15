@@ -634,7 +634,13 @@ void StorageFileLog::takeOverFile(const String & file_name, FileContext & file_c
     if (has_meta_file)
         disk->replaceFile(meta_path + TMP_SUFFIX, other_meta_path);
 
-    findInMap(file_infos.context_by_name, other_meta.file_name).inode = file_ctx.inode;
+    auto & other_ctx = findInMap(file_infos.context_by_name, other_meta.file_name);
+    other_ctx.inode = file_ctx.inode;
+    other_ctx.reader.reset();
+    other_ctx.status = FileStatus::NO_CHANGE;
+    /// A failed open drops the offset, so a name that leads to no file is not retried.
+    struct stat other_stat{};
+    other_ctx.open_failed = stat(getFullDataPath(other_meta.file_name).c_str(), &other_stat) == 0;
     std::swap(meta.file_name, other_meta.file_name);
     file_ctx.inode = inode;
 }
@@ -677,7 +683,10 @@ void StorageFileLog::openFilesAndSetPos()
                 continue;
             }
             if (*inode_to_read != file_ctx.inode && file_infos.meta_by_inode.contains(*inode_to_read))
+            {
                 takeOverFile(file, file_ctx, *inode_to_read);
+                any_open_failed = true;
+            }
             else if (*inode_to_read != file_ctx.inode)
             {
                 disk->removeFileIfExists(getFullMetaPath(file));
