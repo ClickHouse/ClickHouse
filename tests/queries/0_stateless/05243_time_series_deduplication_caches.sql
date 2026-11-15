@@ -5,7 +5,7 @@
 
 SET allow_experimental_time_series_table = 1;
 
-DROP TABLE IF EXISTS ts, ts_fail, not_ts, ts_v6, ts_v7, ts_ext_tags, ext_tags_no_bounds;
+DROP TABLE IF EXISTS ts, ts_fail, not_ts, ts_v6, ts_v7, ts_ext_tags, ext_tags_no_bounds, ts_ttl_tags;
 
 -- The inner tables use MergeTree, so the counts below don't depend on background merges.
 CREATE TABLE ts ENGINE = TimeSeries TAGS INNER ENGINE = MergeTree ORDER BY (metric_name, id) METRIC FAMILIES INNER ENGINE = MergeTree ORDER BY metric_family;
@@ -132,4 +132,13 @@ TRUNCATE TABLE ext_tags_no_bounds;
 INSERT INTO ts_ext_tags (metric_name, tags, samples) VALUES ('http_requests', {'job': 'api'}, [(toDateTime64('2026-01-01 00:00:01', 3), 2.)]);
 SELECT count() FROM ext_tags_no_bounds;
 
-DROP TABLE ts, ts_fail, not_ts, ts_v6, ts_v7, ts_ext_tags, ext_tags_no_bounds;
+SELECT '--- an inner tags table with a TTL has no cache, because the TTL removes rows the cache cannot see ---';
+-- The tags table uses MergeTree, so a time series written twice has two rows.
+CREATE TABLE ts_ttl_tags ENGINE = TimeSeries
+    TAGS INNER COLUMNS (written DateTime DEFAULT now())
+    TAGS INNER ENGINE = MergeTree ORDER BY (metric_name, id) TTL written + INTERVAL 10 YEAR;
+INSERT INTO ts_ttl_tags (metric_name, tags, samples) VALUES ('http_requests', {'job': 'api'}, [(toDateTime64('2026-01-01 00:00:00', 3), 1.)]);
+INSERT INTO ts_ttl_tags (metric_name, tags, samples) VALUES ('http_requests', {'job': 'api'}, [(toDateTime64('2026-01-01 00:00:01', 3), 2.)]);
+SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts_ttl_tags);
+
+DROP TABLE ts, ts_fail, not_ts, ts_v6, ts_v7, ts_ext_tags, ext_tags_no_bounds, ts_ttl_tags;

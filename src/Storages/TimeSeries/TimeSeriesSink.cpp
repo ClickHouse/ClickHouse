@@ -1004,7 +1004,9 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     }
 
     tags_pipeline = createTargetPipeline(ViewTarget::Tags, tags_header);
-    tags_deduplication_cache = time_series_storage.getTagsDeduplicationCache();
+    /// A TTL of the tags table removes rows without the cache knowing, so the cache is not used with it.
+    if (!tags_target_metadata->hasAnyTTL())
+        tags_deduplication_cache = time_series_storage.getTagsDeduplicationCache();
 
     /// The time ranges table (if any) receives the time range of every time series with samples.
     /// The types of `min_time` and `max_time` are the timestamp type of the input chunk, the same way as for
