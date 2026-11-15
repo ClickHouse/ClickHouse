@@ -113,11 +113,16 @@
                 "$ref": "./clickstack/navigation.json"
               },
               {
+                "$ref": "./agents/navigation.json"
+              },
+              {
                 "href": "https://langfuse.com/docs",
+                "icon": "/images/icons/logo-langfuse.svg",
                 "item": "AI Engineering"
               },
               {
                 "href": "https://docs.runreveal.com/",
+                "icon": "/images/integrations/logos/runreveal.webp",
                 "item": "Security"
               },
               {

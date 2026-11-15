@@ -1421,23 +1421,25 @@ void AccessRights::grantImplHelper(const AccessRightsElement & element)
     chassert(!element.is_partial_revoke);
     chassert(!element.grant_option || with_grant_option);
 
+    /// Parameters share tree nodes with database names, so e.g. granting or revoking `ALL ON db.tbl` must not touch `READ ON db('tbl')`.
+    const auto flags = element.getGrantableFlags();
     if (element.isGlobalWithParameter())
     {
         if (element.anyParameter())
-            grantImpl<with_grant_option, wildcard>(element.access_flags);
+            grantImpl<with_grant_option, wildcard>(flags);
         else if (element.hasFilter())
-            grantImpl<with_grant_option, wildcard>(element.access_flags, element.parameter, element.filter);
+            grantImpl<with_grant_option, wildcard>(flags, element.parameter, element.filter);
         else
-            grantImpl<with_grant_option, wildcard>(element.access_flags, element.parameter);
+            grantImpl<with_grant_option, wildcard>(flags, element.parameter);
     }
     else if (element.anyDatabase())
-        grantImpl<with_grant_option, wildcard>(element.access_flags);
+        grantImpl<with_grant_option, wildcard>(flags);
     else if (element.anyTable())
-        grantImpl<with_grant_option, wildcard>(element.access_flags, element.database);
+        grantImpl<with_grant_option, wildcard>(flags, element.database);
     else if (element.anyColumn())
-        grantImpl<with_grant_option, wildcard>(element.access_flags, element.database, element.table);
+        grantImpl<with_grant_option, wildcard>(flags, element.database, element.table);
     else
-        grantImpl<with_grant_option, wildcard>(element.access_flags, element.database, element.table, element.columns);
+        grantImpl<with_grant_option, wildcard>(flags, element.database, element.table, element.columns);
 }
 
 template <bool with_grant_option, bool wildcard>
@@ -1567,23 +1569,24 @@ template <bool grant_option, bool wildcard>
 void AccessRights::revokeImplHelper(const AccessRightsElement & element)
 {
     chassert(!element.grant_option || grant_option);
+    const auto flags = element.getGrantableFlags();
     if (element.isGlobalWithParameter())
     {
         if (element.anyParameter())
-            revokeImpl<grant_option, wildcard>(element.access_flags);
+            revokeImpl<grant_option, wildcard>(flags);
         else if (element.hasFilter())
-            revokeImpl<grant_option, wildcard>(element.access_flags, element.parameter, element.filter);
+            revokeImpl<grant_option, wildcard>(flags, element.parameter, element.filter);
         else
-            revokeImpl<grant_option, wildcard>(element.access_flags, element.parameter);
+            revokeImpl<grant_option, wildcard>(flags, element.parameter);
     }
     else if (element.anyDatabase())
-        revokeImpl<grant_option, wildcard>(element.access_flags);
+        revokeImpl<grant_option, wildcard>(flags);
     else if (element.anyTable())
-        revokeImpl<grant_option, wildcard>(element.access_flags, element.database);
+        revokeImpl<grant_option, wildcard>(flags, element.database);
     else if (element.anyColumn())
-        revokeImpl<grant_option, wildcard>(element.access_flags, element.database, element.table);
+        revokeImpl<grant_option, wildcard>(flags, element.database, element.table);
     else
-        revokeImpl<grant_option, wildcard>(element.access_flags, element.database, element.table, element.columns);
+        revokeImpl<grant_option, wildcard>(flags, element.database, element.table, element.columns);
 }
 
 template <bool grant_option, bool wildcard>

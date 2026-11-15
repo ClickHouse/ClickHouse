@@ -21,10 +21,13 @@
 #    include <aws/core/internal/AWSHttpResourceClient.h>
 #    include <aws/core/config/AWSProfileConfigLoader.h>
 #    include <aws/core/auth/AWSCredentialsProviderChain.h>
+#    include <aws/core/auth/GeneralHTTPCredentialsProvider.h>
 #    include <aws/core/auth/bearer-token-provider/SSOBearerTokenProvider.h>
 
 #    include <IO/S3/PocoHTTPClient.h>
 #    include <IO/S3Defines.h>
+
+#    include <Common/Silk/FiberMutex.h>
 
 class SipHash;
 namespace DB::S3
@@ -157,6 +160,7 @@ public:
         String tmp_region);
 
     Aws::Auth::AWSCredentials GetAWSCredentials() override;
+    void SetNeedRefresh() override;
 
     struct CacheKey
     {
@@ -170,6 +174,8 @@ public:
     };
 
 protected:
+    bool IsTimeToRefresh(long reload_frequency) override; // NOLINT(google-runtime-int)
+    bool IsSetNeedRefresh() override;
     void Reload() override;
 
 private:
@@ -181,6 +187,8 @@ private:
     Aws::String token;
     LoggerPtr logger;
     uint64_t expiration_window_seconds;
+    std::atomic<Int64> last_loaded_ms{0};
+    Silk::FiberMutex get_aws_credentials_mutex;
 };
 
 class SSOCredentialsProvider : public Aws::Auth::AWSCredentialsProvider
@@ -239,6 +247,14 @@ struct CredentialsConfiguration
     bool anonymous_fallback_for_server_credentials = false;
 };
 
+class GeneralHTTPCredentialsProvider : public Aws::Auth::GeneralHTTPCredentialsProvider
+{
+public:
+    using Aws::Auth::GeneralHTTPCredentialsProvider::GeneralHTTPCredentialsProvider;
+
+    Aws::Auth::AWSCredentials GetAWSCredentials() override;
+};
+
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
 {
 public:
@@ -246,6 +262,13 @@ public:
         const DB::S3::PocoHTTPClientConfiguration & configuration,
         const Aws::Auth::AWSCredentials & credentials,
         const CredentialsConfiguration & credentials_configuration);
+
+    Aws::Auth::AWSCredentials GetAWSCredentials() override;
+    void SetNeedRefresh() override;
+
+private:
+    Silk::FiberMutex mutex;
+    std::shared_ptr<Aws::Auth::AWSCredentialsProvider> cached_provider;
 };
 
 class AssumeRoleRequest : public Aws::AmazonSerializableWebServiceRequest

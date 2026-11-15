@@ -1,0 +1,40 @@
+results are identical
+big:hash:INNER_ALL 19827
+big:hash:LEFT_ALL 62458
+big:hash:RIGHT_ALL 64558
+big:hash:FULL_ALL 107189
+big:hash:INNER_ANY 13724
+big:hash:LEFT_ANY 60000
+big:hash:RIGHT_ANY 60000
+big:hash:LEFT_ANTI 42631
+big:hash:RIGHT_SEMI 15269
+big:hash:LEFT_SEMI 17369
+big:hash:RIGHT_ANTI 44731
+big:hash:LEFT_ASOF 60000
+big:hash:INNER_ASOF 17368
+big:hash:filter_INNER_ALL 13286
+big:hash:filter_LEFT_ALL 61099
+big:hash:filter_RIGHT_ALL 62369
+big:hash:filter_FULL_ALL 110182
+big:hash:filter_LEFT_SEMI 12187
+big:hash:filter_LEFT_ANTI 47813
+big:hash:use_nulls_LEFT_ALL 62458
+big:hash:use_nulls_RIGHT_ALL 64558
+big:hash:use_nulls_FULL_ALL 107189
+big:hash:or_INNER_ALL 6009825
+big:hash:or_RIGHT_ALL 6046542
+big:hash:or_LEFT_ANY 60000
+big:hash:or_LEFT_SEMI 19845
+big:hspill:INNER_ALL 19827
+big:hspill:LEFT_ALL 62458
+big:hspill:RIGHT_ALL 64558
+big:hspill:FULL_ALL 107189
+big:hspill:INNER_ANY 13724
+big:hspill:LEFT_ANY 60000
+big:hspill:RIGHT_ANY 60000
+big:hspill:LEFT_ANTI 42631
+big:hspill:RIGHT_SEMI 15269
+big:hspill:LEFT_SEMI 17369
+big:hspill:RIGHT_ANTI 44731
+queries	off	37	0
+queries	on	39	37

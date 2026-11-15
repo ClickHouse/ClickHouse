@@ -9,7 +9,6 @@ sidebarTitle: 'Monitoring Kubernetes'
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 import DemoArchitecture from '/snippets/_demo.mdx';
 
 Collect logs and metrics from your Kubernetes cluster and send them to **ClickHouse Observability**. Use existing workloads or deploy the optional demo application below. The demo architecture and application deployment are the same for fully managed and self-managed deployments.
@@ -62,7 +61,15 @@ Open your ClickHouse Observability service and go to **Team Settings â†’ Data â†
 
 Use these connection details to configure the Kubernetes collectors in the following steps.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry showing the OTLP endpoint and API key connection details" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry showing the OTLP endpoint and API key connection details](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Store your connection details" id="create-api-key-kubernetes-secret">
 
@@ -639,14 +646,38 @@ Open your ClickHouse Observability service. In [Search](/clickstack/observabilit
 
 The example below shows logs from a local Kubernetes cluster, including a `sample-logs` workload emitting `Kubernetes documentation test` messages. Your service names and log messages will depend on your workloads.
 
-<Image img="/images/clickstack/getting-started/observability-kubernetes-logs.png" alt="Search showing sample workload and Kubernetes system logs arriving from a local cluster" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Search showing sample workload and Kubernetes system logs arriving from a local cluster](/images/clickstack/getting-started/observability-kubernetes-logs.png)
+
+</Frame>
+
+</div>
 
 In **Chart Explorer**, select **Time Series** and the **Metrics** source. Choose **Average** of `k8s.pod.memory.usage`, group by `ResourceAttributes['k8s.pod.name']`, and leave **Delta** unchecked. Select a time range that includes when the collectors were running, then select **Run** to compare memory usage across pods. If the chart has gaps, choose a time granularity at least as large as the collection interval.
 
-<Image img="/images/clickstack/getting-started/observability-kubernetes-metrics.png" alt="Chart Explorer showing average Kubernetes pod memory usage grouped by pod name" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Chart Explorer showing average Kubernetes pod memory usage grouped by pod name](/images/clickstack/getting-started/observability-kubernetes-metrics.png)
+
+</Frame>
+
+</div>
 
 To explore the prebuilt Kubernetes dashboard, open **Dashboards** in the sidebar and select **Kubernetes** under **Preset Dashboards**. Select the **Logs** and **Metrics** sources and a time range that includes when the collectors were running.
 
 Use the **Pods**, **Nodes**, and **Namespaces** tabs to explore your cluster. You can narrow the view using the pod, deployment, node, namespace, and cluster filters.
 
-<Image img="/images/clickstack/getting-started/observability-kubernetes-dashboard.png" alt="Kubernetes dashboard showing pod CPU and memory usage, pod status, and Kubernetes warning events" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Kubernetes dashboard showing pod CPU and memory usage, pod status, and Kubernetes warning events](/images/clickstack/getting-started/observability-kubernetes-dashboard.png)
+
+</Frame>
+
+</div>
