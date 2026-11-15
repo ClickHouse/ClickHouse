@@ -55,6 +55,26 @@ FileLogStreamSource::FileLogStreamSource(
 
 FileLogStreamSource::~FileLogStreamSource() = default;
 
+namespace
+{
+
+/// A record starts at the beginning of a file or after a newline.
+bool isRecordStart(const String & file_path, Int64 offset)
+{
+    if (offset == 0)
+        return true;
+
+    std::ifstream reader(file_path, std::ios::binary);
+    reader.seekg(offset - 1);
+    char c = 0;
+    reader.get(c);
+    if (!reader.good())
+        throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Cannot read file {} at offset {}", file_path, offset - 1);
+    return c == '\n';
+}
+
+}
+
 void FileLogStreamSource::updateFiles(bool initial)
 {
     const bool bounded = !stream_settings.subscribe_for_updates;
@@ -83,19 +103,33 @@ void FileLogStreamSource::updateFiles(bool initial)
             FileState state;
             state.inode = inode;
 
-            if (stream_settings.cursor && stream_settings.cursor->hasSubtree(file_name))
-                throw Exception(ErrorCodes::INVALID_CURSOR_LOOKUP,
-                    "The cursor of a FileLog table must map a file name to an offset, but it has a subtree for file {}", file_name);
-
             /// The cursor is read only at the start: a file that appears later is a new file.
+            /// The entry of a file is either the offset, or {'offset': ..., 'inode': ...}, as reported by a bounded stream.
+            /// With the inode, a file replaced by another one with the same name (e.g. by log rotation) is read from the beginning.
+            std::optional<Int64> offset;
             if (initial && stream_settings.cursor && stream_settings.cursor->hasValue(file_name))
+                offset = stream_settings.cursor->getValue(file_name);
+            else if (initial && stream_settings.cursor && stream_settings.cursor->hasSubtree(file_name))
             {
-                const Int64 offset = stream_settings.cursor->getValue(file_name);
-                if (offset < 0 || static_cast<UInt64>(offset) >= size)
+                const auto & entry = stream_settings.cursor->getSubtree(file_name);
+                offset = entry->getValue("offset");
+                if (entry->hasValue("inode") && static_cast<UInt64>(entry->getValue("inode")) != inode)
+                {
+                    LOG_DEBUG(log, "File {} was replaced since the cursor, reading it from the beginning", file_name);
+                    offset.reset();
+                }
+            }
+
+            if (offset)
+            {
+                if (*offset < 0 || static_cast<UInt64>(*offset) >= size)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Offset {} in the cursor for file {} is outside the file of size {}", offset, file_name, size);
-                state.last_offset = offset;
-                state.position = offset;
+                        "Offset {} in the cursor for file {} is outside the file of size {}", *offset, file_name, size);
+                if (!isRecordStart(file_path, *offset))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Offset {} in the cursor for file {} is not the beginning of a record", *offset, file_name);
+                state.last_offset = *offset;
+                state.position = *offset;
                 state.skip_record_at_position = true;
             }
 
@@ -104,9 +138,9 @@ void FileLogStreamSource::updateFiles(bool initial)
 
             files.emplace(file_name, std::move(state));
         }
-        else if (it->second.inode != inode)
+        else if (it->second.inode != inode || size < it->second.position)
         {
-            /// The file was replaced by another one with the same name (e.g. by log rotation): read the new file.
+            /// The file was replaced by another one with the same name or truncated (e.g. by log rotation): read the new file.
             LOG_DEBUG(log, "File {} was replaced, reading it from the beginning", file_name);
             FileState state;
             state.inode = inode;
@@ -124,10 +158,26 @@ void FileLogStreamSource::reportFinalCursor() const
     /// Keep the entries of the cursor of the query for the files that do not exist anymore.
     auto cursor = stream_settings.cursor ? stream_settings.cursor->clone() : std::make_shared<CursorTreeNode>();
     for (const auto & [file_name, state] : files)
-        if (state.last_offset >= 0)
-            cursor->setValue(file_name, state.last_offset);
+    {
+        if (state.last_offset < 0)
+            continue;
+        auto entry = std::make_shared<CursorTreeNode>();
+        entry->setValue("offset", state.last_offset);
+        entry->setValue("inode", static_cast<Int64>(state.inode));
+        cursor->setSubtree(file_name, std::move(entry));
+    }
 
     streaming_cursor->merge(cursor);
+}
+
+std::optional<Chunk> FileLogStreamSource::tryGenerate()
+{
+    /// An idle stream returns an empty chunk after a poll, so that the thread runs other processors in the meantime
+    /// (e.g. the other tables of a `Merge` table) instead of waiting here.
+    auto chunk = generate();
+    if (!chunk && (stream_finished || isCancelled()))
+        return std::nullopt;
+    return chunk;
 }
 
 Chunk FileLogStreamSource::generate()
@@ -270,6 +320,7 @@ Chunk FileLogStreamSource::generate()
             std::this_thread::sleep_for(std::chrono::milliseconds(std::min<UInt64>(100, poll_timeout_ms - watch.elapsedMilliseconds())));
 
         updateFiles(/* initial = */ false);
+        break;
     }
 
     if (!total_rows)

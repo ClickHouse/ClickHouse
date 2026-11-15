@@ -232,14 +232,16 @@ void mergeCursors(const CursorTreeNodePtr & into, const CursorTreeNodePtr & from
 {
     for (const auto & [key, value] : *from)
     {
+        /// An entry of `from` replaces an entry of another kind in `into`, e.g. an offset of a file
+        /// written by a user is replaced by an offset with an inode reported by a read.
         if (std::holds_alternative<Int64>(value))
         {
-            chassert(!into->hasSubtree(key));
             into->setValue(key, std::get<Int64>(value));
         }
         else
         {
-            chassert(!into->hasValue(key));
+            if (into->hasValue(key))
+                into->setSubtree(key, std::make_shared<CursorTreeNode>());
             mergeCursors(into->getSubtreeOrCreate(key), std::get<CursorTreeNodePtr>(value));
         }
     }

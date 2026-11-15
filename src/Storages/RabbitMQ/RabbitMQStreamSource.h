@@ -12,6 +12,7 @@
 #include <deque>
 #include <map>
 #include <memory>
+#include <optional>
 
 
 namespace DB
@@ -58,6 +59,7 @@ public:
     String getName() const override { return "RabbitMQStreamSource"; }
 
     Chunk generate() override;
+    std::optional<Chunk> tryGenerate() override;
 
 private:
     struct Message

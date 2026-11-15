@@ -12,6 +12,7 @@
 #include <nats.h>
 
 #include <memory>
+#include <optional>
 
 
 namespace DB
@@ -56,6 +57,7 @@ public:
     String getName() const override { return "NATSStreamSource"; }
 
     Chunk generate() override;
+    std::optional<Chunk> tryGenerate() override;
 
 private:
     void start();
@@ -76,6 +78,8 @@ private:
 
     /// The stream sequence of the last read message (or of the cursor), 0 if nothing was read.
     UInt64 last_sequence = 0;
+    /// The number of messages received by the consumer.
+    UInt64 received_messages = 0;
     bool started = false;
     bool stream_finished = false;
 };

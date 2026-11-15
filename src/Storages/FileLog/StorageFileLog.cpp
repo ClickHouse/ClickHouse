@@ -1206,6 +1206,16 @@ app.log.2.gz    older files, compressed
 
 A table on `FileLog('/var/lib/clickhouse/user_files/my_app/*.log', 'JSONEachRow')` reads `app.log`; after the rotation it keeps reading `app.log.1`, so the lines the application writes there before it reopens its log are not lost, and it never reads the compressed files. Make sure the glob does not match the compressed file names.
 
+## Streaming queries {#streaming-queries}
+
+A streaming query (`SELECT ... FROM file_log STREAM`, an experimental feature enabled by `enable_streaming_queries`) reads the files with its own readers. Unlike a direct `SELECT`, it does not move the read positions stored in the metadata of the table and does not need `stream_like_engine_allow_direct_select`. The cursor is a map from the file name to the offset of the last read record, and can be reconstructed from the `_filename` and `_offset` virtual columns:
+
+```sql
+SELECT _filename, _offset, * FROM file_log STREAM CURSOR {'app.log': 1024}
+```
+
+An entry may also be `{'offset': <offset>, 'inode': <inode>}`, which is how a bounded stream reports its final cursor: a file whose inode differs, e.g. replaced by log rotation, is read from the beginning. A file without an entry in the cursor is read from the beginning, and only complete records (ending with a newline) are read. An unbounded stream checks the files for new data every `poll_timeout_ms`; a file replaced by another one with the same name is read from the beginning. `STREAM BOUNDED` reads the files up to their sizes at the start of the query. `WATERMARK` is not supported.
+
 ## Virtual columns {#virtual-columns}
 
 - `_filename` - Name of the log file. Data type: `LowCardinality(String)`.

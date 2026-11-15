@@ -14,6 +14,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 
 
 namespace DB
@@ -59,6 +60,7 @@ public:
     String getName() const override { return "KafkaStreamSource"; }
 
     Chunk generate() override;
+    std::optional<Chunk> tryGenerate() override;
 
 private:
     struct PartitionState
@@ -67,6 +69,8 @@ private:
         Int64 last_offset = -1;
         /// The end of the partition is reached (for a bounded stream).
         bool reached_end = false;
+        /// The high watermark at the start of a bounded stream.
+        Int64 end_offset = 0;
     };
 
     using TopicPartition = std::pair<String, Int32>;

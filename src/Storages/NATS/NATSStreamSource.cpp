@@ -138,7 +138,8 @@ bool NATSStreamSource::hasNothingPending()
         throw Exception(ErrorCodes::CANNOT_CONNECT_NATS,
             "Failed to get the information of the consumer of the NATS stream {}: {}", params.stream_name, natsStatus_GetText(status));
 
-    return info->NumPending == 0 && info->Delivered.Stream <= last_sequence;
+    /// The consumer sequence counts the messages delivered to the consumer, so all of them were received.
+    return info->NumPending == 0 && info->Delivered.Consumer <= received_messages;
 }
 
 void NATSStreamSource::reportFinalCursor() const
@@ -151,6 +152,16 @@ void NATSStreamSource::reportFinalCursor() const
     if (last_sequence > 0)
         cursor->setValue(params.stream_name, static_cast<Int64>(last_sequence));
     streaming_cursor->merge(cursor);
+}
+
+std::optional<Chunk> NATSStreamSource::tryGenerate()
+{
+    /// An idle stream returns an empty chunk after a poll, so that the thread runs other processors in the meantime
+    /// (e.g. the other tables of a `Merge` table) instead of waiting here.
+    auto chunk = generate();
+    if (!chunk && (stream_finished || isCancelled()))
+        return std::nullopt;
+    return chunk;
 }
 
 Chunk NATSStreamSource::generate()
@@ -211,9 +222,8 @@ Chunk NATSStreamSource::generate()
             {
                 reportFinalCursor();
                 stream_finished = true;
-                break;
             }
-            continue;
+            break;
         }
 
         if (status != NATS_OK)
@@ -228,6 +238,7 @@ Chunk NATSStreamSource::generate()
                 "Failed to get the metadata of a message of the NATS stream {}: {}", params.stream_name, natsStatus_GetText(meta_status));
 
         const UInt64 sequence = meta->Sequence.Stream;
+        ++received_messages;
         const bool caught_up = meta->NumPending == 0;
 
         exception_message.reset();

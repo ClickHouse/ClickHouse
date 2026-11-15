@@ -47,6 +47,7 @@ public:
     String getName() const override { return "FileLogStreamSource"; }
 
     Chunk generate() override;
+    std::optional<Chunk> tryGenerate() override;
 
 private:
     struct FileState

@@ -137,6 +137,16 @@ void RabbitMQStreamSource::reportFinalCursor() const
     streaming_cursor->merge(cursor);
 }
 
+std::optional<Chunk> RabbitMQStreamSource::tryGenerate()
+{
+    /// An idle stream returns an empty chunk after a poll, so that the thread runs other processors in the meantime
+    /// (e.g. the other tables of a `Merge` table) instead of waiting here.
+    auto chunk = generate();
+    if (!chunk && (stream_finished || isCancelled()))
+        return std::nullopt;
+    return chunk;
+}
+
 Chunk RabbitMQStreamSource::generate()
 {
     if (stream_finished)
@@ -201,14 +211,17 @@ Chunk RabbitMQStreamSource::generate()
                 {
                     reportFinalCursor();
                     stream_finished = true;
-                    break;
                 }
-                continue;
+                break;
             }
         }
 
         auto message = std::move(received.front());
         received.pop_front();
+
+        if (message.offset < 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "A message of queue {} has no `x-stream-offset` header, so the queue is not a stream queue", message.queue);
 
         /// A stream queue does not remove an acknowledged message; the acknowledgement only grants credit for more messages.
         channel->ack(message.delivery_tag);

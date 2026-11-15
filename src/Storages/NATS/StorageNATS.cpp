@@ -1728,9 +1728,20 @@ ATTACH TABLE consumer;
 
 If you want to change the target table by using `ALTER`, we recommend disabling the material view to avoid discrepancies between the target table and the data from the view.
 
+## Streaming queries {#streaming-queries}
+
+A streaming query (`SELECT ... FROM nats_table STREAM`, an experimental feature enabled by `enable_streaming_queries`) is supported for a table that reads a JetStream stream (`nats_stream`). It reads the subjects of the table with its own ephemeral ordered consumer, which does not acknowledge the messages of the durable consumer of the table. The cursor is a map from the stream name to the stream sequence of the last read message, and can be reconstructed from the `_sequence` virtual column:
+
+```sql
+SELECT _sequence, * FROM nats_table STREAM CURSOR {'events_stream': 41}
+```
+
+Without the cursor, the stream is read from the beginning. `STREAM BOUNDED` finishes once it has read the messages pending at its start. The core NATS keeps no messages, so a table without `nats_stream` does not support `STREAM`. `WATERMARK` is not supported.
+
 ## Virtual columns {#virtual-columns}
 
 - `_subject` - NATS message subject. Data type: `String`.
+- `_sequence` - The stream sequence of a JetStream message, for a table with `nats_stream`. Filled only by a streaming query (`STREAM`), otherwise `0`. Data type: `UInt64`.
 
 Additional virtual columns when `nats_handle_error_mode='stream'`:
 

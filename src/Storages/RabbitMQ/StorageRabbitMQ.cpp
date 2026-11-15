@@ -1882,11 +1882,23 @@ CREATE MATERIALIZED VIEW consumer TO daily
 SELECT key, value FROM daily ORDER BY key;
 ```
 
+## Streaming queries {#streaming-queries}
+
+A streaming query (`SELECT ... FROM rabbitmq_table STREAM`, an experimental feature enabled by `enable_streaming_queries`) is supported for a table with stream queues (`rabbitmq_queue_settings_list = 'x-queue-type=stream'`), which keep their messages after they are consumed. It reads the queues with its own connection, starting at the offsets of the cursor. The cursor is a map from the queue name to the offset of the last read message, and can be reconstructed from the `_queue` and `_offset` virtual columns:
+
+```sql
+SELECT _queue, _offset, * FROM rabbitmq_table STREAM CURSOR {'1_events': 41}
+```
+
+A queue without an entry in the cursor is read from the beginning. RabbitMQ does not report the end of a stream queue, so `STREAM BOUNDED` finishes once no message arrives during `stream_poll_timeout_ms`. A classic queue does not keep its messages, so a table without stream queues does not support `STREAM`. `WATERMARK` is not supported.
+
 ## Virtual columns {#virtual-columns}
 
 - `_exchange_name` - RabbitMQ exchange name. Data type: `String`.
 - `_channel_id` - ChannelID, on which consumer, who received the message, was declared. Data type: `String`.
 - `_delivery_tag` - DeliveryTag of the received message. Scoped per channel. Data type: `UInt64`.
+- `_queue` - The name of the queue, for a table with stream queues. Filled only by a streaming query (`STREAM`), otherwise empty. Data type: `String`.
+- `_offset` - The offset of the message in the stream queue, for a table with stream queues. Filled only by a streaming query (`STREAM`), otherwise `0`. Data type: `Int64`.
 - `_redelivered` - `redelivered` flag of the message. Data type: `UInt8`.
 - `_message_id` - messageID of the received message; non-empty if was set, when message was published. Data type: `String`.
 - `_timestamp` - timestamp of the received message; non-empty if was set, when message was published. Data type: `UInt64`.

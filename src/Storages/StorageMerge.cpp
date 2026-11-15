@@ -3470,6 +3470,17 @@ SELECT * FROM WatchLog;
 └────────────┴────────┴───────────┴─────┘
 ```
 
+## Streaming queries {#streaming-queries}
+
+A streaming query (`SELECT ... FROM merge_table STREAM`, an experimental feature enabled by `enable_streaming_queries`) reads every underlying table with `STREAM`, so all of them must support it. The cursor of a `Merge` table is a map from the database name to a map from the table name to the cursor of the table, and can be reconstructed from the `_database` and `_table` virtual columns and the cursor virtual columns of the tables:
+
+```sql
+SELECT _table, _block_number, _block_offset, * FROM merge_table
+STREAM CURSOR {'db': {'t1': {'all': {'block_number': 5, 'block_offset': 99}}}}
+```
+
+A table without an entry in the cursor is read from the beginning. The set of tables is determined at the start of the query. `WATERMARK` is not supported.
+
 ## Virtual columns {#virtual-columns}
 
 - `_table` — The name of the table from which data was read. Type: [String](/reference/data-types/string).

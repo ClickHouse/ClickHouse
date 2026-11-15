@@ -829,6 +829,16 @@ Example:
 </kafka>
 ```
 
+## Streaming queries {#streaming-queries}
+
+A streaming query (`SELECT ... FROM kafka_table STREAM`, an experimental feature enabled by `enable_streaming_queries`) reads all partitions of the topics with its own consumer. Unlike a direct `SELECT`, it does not join the consumer group, does not use the offsets stored for the group and never stores offsets, so it does not take the messages away from the materialized views of the table and does not need `stream_like_engine_allow_direct_select`. The cursor is a map from the topic to a map from the partition to the offset of the last read message, and can be reconstructed from the `_topic`, `_partition` and `_offset` virtual columns:
+
+```sql
+SELECT _topic, _partition, _offset, * FROM kafka_table STREAM CURSOR {'events': {'0': 41, '1': 17}}
+```
+
+A partition without an entry in the cursor is read from the beginning. `STREAM BOUNDED` finishes after reaching the end of every partition, so a `Kafka` table can be the source of an incremental refreshable materialized view (`APPEND INCREMENTAL`). `WATERMARK` is not supported.
+
 ## Virtual columns {#virtual-columns}
 
 - `_topic` — Kafka topic. Data type: `LowCardinality(String)`.

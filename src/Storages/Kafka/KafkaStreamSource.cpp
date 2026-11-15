@@ -99,6 +99,16 @@ void KafkaStreamSource::start()
                     "Invalid offset {} in the cursor for partition {} of topic {}", state.last_offset, partition_key, topic);
 
             const Int64 start_offset = state.last_offset >= 0 ? state.last_offset + 1 : cppkafka::TopicPartition::OFFSET_BEGINNING;
+
+            /// A bounded stream reads the messages that exist at its start: up to the high watermark, unless it gets
+            /// the end of the partition event first (e.g. when the last offsets are taken by transaction markers).
+            if (!stream_settings.subscribe_for_updates)
+            {
+                const auto [low, high] = consumer->query_offsets(cppkafka::TopicPartition(topic, partition), METADATA_TIMEOUT);
+                state.end_offset = high;
+                if (high <= low || (state.last_offset >= 0 && state.last_offset + 1 >= high))
+                    state.reached_end = true;
+            }
             assignment.emplace_back(topic, partition, start_offset);
             partitions.emplace(TopicPartition{topic, partition}, state);
 
@@ -131,6 +141,16 @@ void KafkaStreamSource::reportFinalCursor() const
             cursor->getSubtreeOrCreate(topic_partition.first)->setValue(toString(topic_partition.second), state.last_offset);
 
     streaming_cursor->merge(cursor);
+}
+
+std::optional<Chunk> KafkaStreamSource::tryGenerate()
+{
+    /// An idle stream returns an empty chunk after a poll, so that the thread runs other processors in the meantime
+    /// (e.g. the other tables of a `Merge` table) instead of waiting here.
+    auto chunk = generate();
+    if (!chunk && (stream_finished || isCancelled()))
+        return std::nullopt;
+    return chunk;
 }
 
 Chunk KafkaStreamSource::generate()
@@ -249,6 +269,11 @@ Chunk KafkaStreamSource::generate()
             }
 
             it->second.last_offset = message.get_offset();
+            if (bounded && it->second.last_offset + 1 >= it->second.end_offset)
+            {
+                it->second.reached_end = true;
+                consumer->pause_partitions({cppkafka::TopicPartition(message.get_topic(), message.get_partition())});
+            }
 
             if (new_rows)
             {
@@ -327,8 +352,8 @@ Chunk KafkaStreamSource::generate()
         current_message = nullptr;
 
         /// Return the rows as soon as there are some: a streaming query should not delay them.
-        if (total_rows)
-            break;
+        /// Without rows, return after one poll as well, see `tryGenerate`.
+        break;
     }
 
     if (!total_rows)
