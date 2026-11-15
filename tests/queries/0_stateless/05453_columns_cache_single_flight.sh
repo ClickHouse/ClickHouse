@@ -111,6 +111,10 @@ read_while_claimed "${ID}_5" "${ID}_6"
 echo "-- without columns_cache_wait_for_concurrent_fills the second read does not wait"
 read_while_claimed "${ID}_7" "${ID}_8" ", columns_cache_wait_for_concurrent_fills = 0"
 
+echo "-- older compatibility versions do not wait"
+$CLICKHOUSE_CLIENT --query "SELECT getSetting('columns_cache_wait_for_concurrent_fills')"
+$CLICKHOUSE_CLIENT --query "SET compatibility = '26.10'; SELECT getSetting('columns_cache_wait_for_concurrent_fills')"
+
 echo "-- a stripe another read wrote after this read looked its range up is served from the cache"
 # Three stripes. The first read claims the first one and stops; meanwhile a second read claims and writes
 # the other two; then the first read goes on, and has to find both in the cache although its range was
