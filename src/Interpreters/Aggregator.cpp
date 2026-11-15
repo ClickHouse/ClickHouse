@@ -2401,7 +2401,6 @@ void Aggregator::prepareAggregateInstructions(
             = params.keys_size == 0 && aggregate_columns[i].size() == 1 && aggregate_functions[i]->ignoresRepeatedValues();
         bool has_low_cardinality_argument = false;
 
-        /// Without keys, constant arguments are copied to at most `max_bytes_of_constant_copy` instead of the rows of the block.
         size_t constant_argument_rows = 0;
         if (params.keys_size == 0 && !aggregate_columns[i].empty())
         {
