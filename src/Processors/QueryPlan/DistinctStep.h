@@ -101,8 +101,22 @@ public:
     void preserveInputOrder() { preserve_input_order = true; }
     bool preservesInputOrder() const { return preserve_input_order; }
 
+    /// Allow final deduplication to run in parallel by partitioning streams by the hash of the `DISTINCT`
+    /// columns. Input-order requirements and sorted deduplication take precedence.
+    void enableParallelDistinct() { parallel_distinct = true; }
+
+    /// Merge the small output chunks of a preliminary step before a parallel final step scatters them (see
+    /// `DistinctTransform`). The transform bounds the delay by the input rows it consumes, so this is enabled
+    /// only when the input comes straight from a read and cannot stall behind a step that suppresses rows.
+    /// This affects only performance, so it is not serialized.
+    void coalesceOutput() { coalesce_output = true; }
+
 private:
     void updateOutputHeader() override;
+
+    /// Partition by the hash of the `DISTINCT` keys when there are multiple streams, threads, and
+    /// non-constant keys. Return whether partitioning was applied; otherwise leave the pipeline intact.
+    bool tryScatterStreams(QueryPipelineBuilder & pipeline) const;
 
     Settings settings;
     UInt64 limit_hint;
@@ -110,7 +124,9 @@ private:
     bool pre_distinct;
     SortDescription distinct_sort_desc;
     bool skip_stream_merging = false;
+    bool parallel_distinct = false;
     bool preserve_input_order = false;
+    bool coalesce_output = false;
 };
 
 }

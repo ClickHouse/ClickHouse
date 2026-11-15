@@ -21,7 +21,7 @@ pip install "clickhouse-connect[rust,numpy]"   # NumPy results
 pip install "clickhouse-connect[rust,pandas]"  # Pandas results and inserts
 ```
 
-Core wheel 包已针对 Linux、macOS 和 Windows 平台上的 CPython 3.10 至 3.14 以及自由线程版 CPython 3.14t 发布。在自由线程版 Python 中，导入 core 扩展模块不会重新启用 GIL。
+Core wheel 包已针对 Linux、macOS 和 Windows 平台上的 CPython 3.10 至 3.15 以及自由线程版 CPython 3.14t 和 3.15t 发布。在自由线程版 Python 中，导入 core 扩展模块不会重新启用 GIL。
 
 常规的 Rust NumPy 和 Pandas 输出无需 PyArrow 或任何其他 Arrow 包，这包括 `query_np`、`query_df` 及其流式变体，以及 `query(..., use_numpy=True)`。NumPy 查询也无需 Pandas。如需使用异步客户端，请添加 `async` extra。
 
@@ -81,13 +81,15 @@ Rust 编解码器最适用于包含文本、容器和复杂类型 (如 `String`�
 
 在采用该编解码器之前，请针对自身的工作负载进行基准测试。测量时请使用 `native_codec="rust_strict"`，这样遇到不受支持的选项或缺失的依赖时会直接抛出异常，而不会悄悄将查询转由 Python 处理。
 
-## Fallback 规则 {#fallback-rules}
+## 回退规则 {#fallback-rules}
 
-Fallback 决策在读取或发送任何字节之前就已完成，因此绝不会出现流中途切换编解码器的情况。对于查询，该选择发生在读取 response body 之前。对于插入，只有当所有列类型都受支持时才会选用 Rust 编码器，否则整个 insert 都在 Python 编解码器上执行。
+回退决策在读取或发送任何字节之前就已完成，因此绝不会出现流中途切换编解码器的情况。对于查询，该选择发生在读取 response body 之前。对于插入，只有当所有列类型都受支持时才会选用 Rust 编码器，否则整个插入都在 Python 编解码器上执行。
 
 当 `naive_datetime_insert="server"` 生效时，`rust` 会将包含任何 `DateTime` 或 `DateTime64` 列的插入操作路由到 Python 编解码器，以便应用声明的列时区或服务器时区。`rust_strict` 则会拒绝这种组合。默认的 `naive_datetime_insert="local"` 模式仍使用 Rust 编码器。
 
-driver 内部的 metadata 查询，包括 SQLAlchemy dialect 的 reflection 语句，在所有模式下都会静默使用 Python 编解码器。
+对于 Python 行查询和列查询 (`query`、`query_row_block_stream`、`query_column_block_stream` 和 `query_rows_stream`) ，如果其中不带时区的 `DateTime` 或 `DateTime64` 列以非 UTC 的、由运行环境提供的时区 (即服务器时区或本地时区) 进行渲染，那么只要已安装的 core 支持，就会使用 Rust 编解码器，所得结果值与 Python 编解码器一致。本地时区仅在能解析为 IANA 名称时 (即设置了 `TZ` 或安装了 `tzlocal`) 才符合条件；否则它只是一个没有 IANA 名称的固定偏移，会路由到 Python 编解码器。对于使用非 UTC 运行环境时区的 NumPy 和 Pandas 查询 (`query_np`、`query_df` 及其流式变体) ，以及设置了 `query_tz`、`column_tzs`、非默认 `tz_mode` 或收到服务器时区请求头的查询，仍会路由到 Python 编解码器。`rust_strict` 会拒绝这些情况。
+
+驱动程序内部的元数据查询，包括 SQLAlchemy dialect 的 reflection 语句，在所有模式下都会静默使用 Python 编解码器。
 
 Rust 编解码器检测到格式错误的 Native payloads 时会引发 `DataError`。
 
@@ -100,6 +102,8 @@ pip install --upgrade clickhouse-connect-core
 ```
 
 编译后编解码器的修复和性能提升会随 `clickhouse-connect-core` 发行版一同发布，只需将 core wheel 升级到兼容版本即可获取。而对驱动程序的 Rust 集成所做的更改，则需要升级 `clickhouse-connect`。
+
+当由运行环境提供的时区不是 UTC 时，若要通过 Rust 支持 Python 行查询和列查询，需要 `clickhouse-connect>=1.11.0` 和 `clickhouse-connect-core>=0.2.3`。请同时升级这两个软件包以启用该功能。对于较旧的兼容 core 版本，`rust` 模式仍会沿用现有的 Python 回退行为，`rust_strict` 模式则仍会拒绝此类查询。
 
 ## 已知行为差异 {#known-behavior-differences}
 

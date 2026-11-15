@@ -9,7 +9,6 @@
 -- at the candidate limit, but that path replicates and so has always resized the filter.
 -- `join_use_nulls` decides whether the right key becomes `Nullable`, which selects which of the two
 -- errors below is raised, so it is pinned per query.
-SET enable_analyzer = 1;
 SET query_plan_join_swap_table = false;
 SET use_query_cache = 0;
 

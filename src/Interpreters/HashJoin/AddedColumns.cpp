@@ -56,22 +56,28 @@ const UInt8 * buildRowSkipDataImpl(
 
 }
 
-const UInt8 * JoinOnKeyColumns::buildRowSkipData(IColumn::Filter & buffer, size_t range_begin, size_t range_size) const
+const UInt8 * buildRowSkipData(
+    ConstNullMapPtr null_map, const JoinCommon::JoinMask & mask, IColumn::Filter & buffer, size_t range_begin, size_t range_size)
 {
-    return buildRowSkipDataImpl(null_map, join_mask_column, buffer, [&](auto && set_at)
+    return buildRowSkipDataImpl(null_map, mask, buffer, [&](auto && set_at)
     {
         for (size_t i = range_begin; i < range_begin + range_size; ++i)
             set_at(i);
     });
 }
 
-const UInt8 * JoinOnKeyColumns::buildRowSkipData(IColumn::Filter & buffer, const ScatteredBlock::Indexes & indexes) const
+const UInt8 * JoinOnKeyColumns::buildRowSkipData(IColumn::Filter & buffer, size_t range_begin, size_t range_size) const
 {
-    return buildRowSkipDataImpl(null_map, join_mask_column, buffer, [&](auto && set_at)
-    {
-        for (size_t i : indexes.getData())
-            set_at(i);
-    });
+    return DB::buildRowSkipData(null_map, join_mask_column, buffer, range_begin, range_size);
+}
+
+void LazyOutput::addRef(UInt64 ref_word)
+{
+    chassert(ref_word != 0);
+    row_refs.emplace_back(ref_word);
+    const auto rows = refWordRows(ref_word);
+    row_count += rows;
+    hash_table_matches += rows;
 }
 
 size_t LazyOutput::buildOutput(
@@ -194,7 +200,10 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
                     total_byte_size += left_sizes[left_idx];
 
                     if (row_store_row_length)
-                        total_byte_size += *row_store_row_length;
+                    {
+                        const StoredBlock * block = stored_columns[refWordBlockNo(ref_word)];
+                        total_byte_size += block->row_store->byteSizeAt(refWordRowNo(ref_word));
+                    }
 
                     if (has_columns)
                     {
@@ -271,17 +280,6 @@ planJoinEmit(const HashJoin::RightTableData & data, std::span<const size_t> posi
     for (size_t dst_idx = 0; dst_idx < positions.size(); ++dst_idx)
         plan.gather[dst_idx] = gather_by_position[positions[dst_idx]];
     return plan;
-}
-
-void AddedColumns::appendFromBlock(UInt64 ref_word)
-{
-#ifndef NDEBUG
-    /// `ref_word` may be an inline single ref or a list word (pointer + count); firstWord yields
-    /// the head ref of either, whose block is valid for the column-structure assertion.
-    checkColumns(*lazy_output.stored_columns[refWordBlockNo(RowRefList::fromWord(ref_word).firstWord())]);
-#endif
-    if (record_row_refs)
-        lazy_output.addRef(ref_word);
 }
 
 }

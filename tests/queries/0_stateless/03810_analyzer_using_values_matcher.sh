@@ -7,7 +7,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 func_name="f1_${CLICKHOUSE_DATABASE}"
 
 $CLICKHOUSE_CLIENT --query "
-    SET enable_analyzer = 1;
     DROP FUNCTION IF EXISTS ${func_name};
     DROP TABLE IF EXISTS t1;
 

@@ -38,7 +38,7 @@ The `Client.raw_insert` method allows direct inserts of `bytes` objects or `byte
 |-----------|------|---------|-------------|
 | `table` | str | Required | Simple or database-qualified target table. |
 | `column_names` | Sequence[str] | `None` | Column names for the insert block. Required when `fmt` does not include names. |
-| `insert_block` | str, bytes, generator, or `BinaryIO` | Required | Data to insert. Strings are encoded with the client encoding. |
+| `insert_block` | str, bytes, generator, or `BinaryIO` | Required | Data to insert. Strings are encoded with the client encoding. `AsyncClient.raw_insert` takes an async iterable, such as an async generator, instead of a generator. |
 | `settings` | dict | `None` | See [Settings argument](/integrations/language-clients/python/driver-api#settings-argument-1). |
 | `fmt` | str | `None` | ClickHouse input format of the `insert_block` payload. `Native` is used when no format is specified. |
 | `compression` | str | `None` | Compression already applied to `insert_block`, such as `"gzip"`, `"lz4"`, or `"zstd"`. |
@@ -171,6 +171,20 @@ ClickHouse Connect uses `urllib3` connection pools to handle the underlying HTTP
 
 The default socket options enable TCP keepalive and `TCP_NODELAY`. The operating system manages socket send and receive buffer sizes.
 
+Pass `dedicated_pool=True` when a synchronous client's connections should be released when that client closes:
+
+```python
+import clickhouse_connect
+
+with clickhouse_connect.get_client(dedicated_pool=True) as client:
+    result = client.query("SELECT 13")
+    print(result.first_row)
+```
+
+The client owns a separate pool with the configured proxy and TLS options. Dedicated pools are not shared, including when a proxy is configured. `client.close()` closes idle connections immediately. Active responses can finish, and their connections close when returned to the pool. Closing the client does not cancel running queries.
+
+Use a dedicated client for the lifetime of a job or application component and reuse it for multiple queries. Each dedicated client creates its own connections and performs its own TLS setup for HTTPS. Avoid creating many short-lived dedicated clients. The default `dedicated_pool=False` keeps the existing pool selection rules, including separate pools for custom TLS options. Combining `dedicated_pool=True` with `pool_mgr` raises `ProgrammingError`.
+
 For large multi-threaded applications, separate connection pools may be appropriate. Customized connection pools can be provided as the `pool_mgr` keyword argument to the main `clickhouse_connect.get_client` function:
 
 ```python
@@ -187,6 +201,6 @@ Clients can share a pool manager, or each client can use a separate manager. For
 
 To set socket options, pass `socket_options` to `httputil.get_pool_manager` or `httputil.get_pool_manager_options`. This replaces the entire default list, including keepalive options and `TCP_NODELAY`. Pass `[]` or `None` to apply no explicit socket options.
 
-The async client owns an aiohttp pool rather than using `urllib3`. Configure it through `connector_limit`, `connector_limit_per_host`, and `keepalive_timeout` on `get_async_client`. Calling `await async_client.close_connections()` rotates the pool without interrupting in-flight requests.
+The async client owns an aiohttp pool rather than using `urllib3`. It accepts `dedicated_pool` without effect. Each async client owns its connector for either flag value, so `dedicated_pool=False` does not enable sharing. Configure the pool through `connector_limit`, `connector_limit_per_host`, and `keepalive_timeout` on `get_async_client`. Calling `await async_client.close_connections()` rotates the pool without interrupting in-flight requests.
 
 For async queries and inserts, waiting for a free pool slot has no timeout. Fully read or close streaming responses to release their pool slots. `connect_timeout` starts after a slot is available and covers DNS resolution, TCP and TLS setup, and proxy negotiation. `send_receive_timeout` limits socket reads. To set a deadline for the whole operation, including pool waiting, use `asyncio.wait_for`, for example `await asyncio.wait_for(client.query("SELECT 13"), timeout=30)`.

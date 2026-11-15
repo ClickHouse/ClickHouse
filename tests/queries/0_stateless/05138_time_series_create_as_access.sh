@@ -3,6 +3,7 @@
 # `CREATE TABLE ... AS <TimeSeries table>` reads the definition of the other table, so it requires the SHOW COLUMNS
 # privilege on that table. The definition keeps all the types (the `id` type of an external tags table is recorded in
 # the `id_type` setting), so the external target tables of the other table are not read and need no privileges.
+# The copy keeps the inherited `id` type in its inner columns, the settings themselves are not copied.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -12,6 +13,7 @@ user="user_${CLICKHOUSE_DATABASE}"
 db="${CLICKHOUSE_DATABASE}"
 
 # All the target tables holding types are external here: `timestamp` is DateTime64(6) and `id` is UUID in them.
+# The source table is pinned to version 9, the last version supporting external target tables; the copy gets the latest version.
 ${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table 1 -q "
     DROP USER IF EXISTS ${user};
     CREATE USER ${user};
@@ -22,14 +24,14 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table 1 -q "
     CREATE TABLE ${db}.ext_tags (id UUID, metric_name LowCardinality(String), tags Map(LowCardinality(String), String))
         ENGINE = MergeTree ORDER BY (metric_name, id);
     CREATE TABLE ${db}.ts_src ENGINE = TimeSeries
-        SETTINGS store_time_ranges = 0, recent_samples_ttl_seconds = 0
+        SETTINGS version = 9, store_time_ranges = 0, recent_samples_ttl_seconds = 0
         DATA ${db}.ext_data TAGS ${db}.ext_tags;
 "
 
-create_copy="CREATE TABLE ${db}.ts_copy AS ${db}.ts_src ENGINE = TimeSeries
-    DATA ENGINE = MergeTree ORDER BY (id, timestamp) TAGS ENGINE = AggregatingMergeTree ORDER BY (metric_name, id)"
+# The external targets of the source table are not copied, the copy gets generated inner tables instead.
+create_copy="CREATE TABLE ${db}.ts_copy AS ${db}.ts_src ENGINE = TimeSeries"
 
-# Prints the privileges of the user and either the error or the inner columns and the `id` settings of the created copy.
+# Prints the privileges of the user and either the error or the inner columns of the created copy.
 function try_create_copy()
 {
     echo "-- with ${1}:"
@@ -37,9 +39,7 @@ function try_create_copy()
         | grep -oE "Not enough privileges.*grant SHOW COLUMNS ON ${db}\.[a-z_]+" | head -n 1 | sed "s/${db}/db/"
     ${CLICKHOUSE_CLIENT} -q "
         SELECT extract(create_table_query, 'SAMPLES INNER COLUMNS \\((.*?)\\) SAMPLES INNER ENGINE'),
-               extract(create_table_query, 'TAGS INNER COLUMNS \\((.*?)\\) TAGS INNER ENGINE'),
-               extract(create_table_query, 'id_type = ''(.*?)'''),
-               extract(create_table_query, 'id_generator = ''(.*?)''')
+               extract(create_table_query, 'TAGS INNER COLUMNS \\((.*?)\\) TAGS INNER ENGINE')
         FROM system.tables WHERE database = '${db}' AND name = 'ts_copy'
         FORMAT TSVRaw;
     "

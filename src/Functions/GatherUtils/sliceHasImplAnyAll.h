@@ -79,6 +79,9 @@ inline ALWAYS_INLINE bool hasNull(const UInt8 * null_map, size_t null_map_size)
 
 /// Searches `value` in blocks of 128 bytes. A block is a few whole-vector comparisons and one test of the combined mask,
 /// so the search exits early without a branch per element. A 32-byte vector is one AVX2 register or two NEON registers.
+///
+/// On AArch64, long slices of 4 and 8-byte elements are searched in chunks of 512 bytes by a plain loop instead, which the
+/// compiler unrolls to 8 or 16 NEON comparisons per iteration.
 template <bool has_null_map, typename T>
 ALWAYS_INLINE bool sliceContains(const NumericArraySlice<T> & slice, const UInt8 * null_map, T value)
 {
@@ -98,52 +101,111 @@ ALWAYS_INLINE bool sliceContains(const NumericArraySlice<T> & slice, const UInt8
     }
     const auto significant = reinterpret_cast<SearchMask<32>>(significant_lanes);
 
-    /// Without `ALWAYS_INLINE` the lambda can stay a call in the probe of `sliceHasAllBytes`.
+    /// Without `ALWAYS_INLINE` the lambdas can stay a call in the probe of `sliceHasAllBytes`.
+    auto vector_matches = [&](size_t begin) ALWAYS_INLINE
+    {
+        Vector elements;
+        memcpy(&elements, slice.data + begin, sizeof(elements));
+        auto equal = equalLanes(elements, needle);
+        if constexpr (has_null_map)
+        {
+            NullBytes nulls;
+            memcpy(&nulls, null_map + begin, sizeof(nulls));
+            /// Subtracting one turns the flags into masks; comparing them with zero instead made x86 narrow the 8-byte
+            /// comparison results to 4 bytes with two extra shuffles per vector. A null-map byte can be any nonzero value
+            /// (`if` uses its condition), so a null lane keeps at most its low byte, which `significant` excludes.
+            if constexpr (sizeof(T) == 1)
+                equal &= ~reinterpret_cast<Vector>(nonZeroLanes(nulls));
+            else
+                equal &= __builtin_convertvector(nulls, decltype(equal)) - 1;
+        }
+        return reinterpret_cast<SearchMask<32>>(equal);
+    };
+
+    auto vector_contains = [&](size_t begin) ALWAYS_INLINE { return anyLaneSet(vector_matches(begin) & significant); };
+
     auto block_contains = [&](size_t begin) ALWAYS_INLINE
     {
         SearchMask<32> found{};
         /// The loop counts from zero so that its trip count is a constant and it is fully unrolled. With `begin + block_size`
         /// as the bound, the compiler cannot rule out an overflow and on AArch64 rebuilt the mask lane by lane.
         for (size_t offset = 0; offset < block_size; offset += lanes)
-        {
-            Vector elements;
-            memcpy(&elements, slice.data + begin + offset, sizeof(elements));
-            auto equal = equalLanes(elements, needle);
-            if constexpr (has_null_map)
-            {
-                NullBytes nulls;
-                memcpy(&nulls, null_map + begin + offset, sizeof(nulls));
-                /// Subtracting one turns the flags into masks; comparing them with zero instead made x86 narrow the 8-byte
-                /// comparison results to 4 bytes with two extra shuffles per vector. A null-map byte can be any nonzero value
-                /// (`if` uses its condition), so a null lane keeps at most its low byte, which `significant` excludes.
-                if constexpr (sizeof(T) == 1)
-                    equal &= ~reinterpret_cast<Vector>(nonZeroLanes(nulls));
-                else
-                    equal &= __builtin_convertvector(nulls, decltype(equal)) - 1;
-            }
-            found |= reinterpret_cast<SearchMask<32>>(equal);
-        }
+            found |= vector_matches(begin + offset);
         return anyLaneSet(found & significant);
     };
 
-    size_t i = 0;
+#if defined(__aarch64__)
+    if constexpr (sizeof(T) >= 4)
+    {
+        /// Larger chunks were not faster and do more work when the value is near the front.
+        static constexpr size_t chunk = 512 / sizeof(T);
+        auto chunk_contains = [&](size_t begin) ALWAYS_INLINE
+        {
+            bool found = false;
+            /// Debug builds and sanitizer instrumentation of the loads prevent vectorization, and a requested but failed one is
+            /// an error (`-Wpass-failed`).
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+#pragma clang loop vectorize(enable) vectorize_width(16) interleave_count(2)
+#endif
+            for (size_t i = begin; i < begin + chunk; ++i)
+                found |= (slice.data[i] == value) & (!has_null_map || !null_map[i]);
+            return found;
+        };
+
+        if (slice.size >= lanes + chunk)
+        {
+            if (vector_contains(0))
+                return true;
+
+            size_t i = lanes;
+            for (; i + chunk <= slice.size; i += chunk)
+            {
+                if (chunk_contains(i))
+                    return true;
+            }
+
+            /// The last chunk overlaps the previous one.
+            return i < slice.size && chunk_contains(slice.size - chunk);
+        }
+    }
+#endif
+
+    if (slice.size < lanes)
+    {
+        bool found = false;
+        for (size_t i = 0; i < slice.size; ++i)
+            found |= (slice.data[i] == value) & (!has_null_map || !null_map[i]);
+        return found;
+    }
+
+    /// A value near the front is common (tag and id lists), and a whole block would be compared before it could be found.
+    if (vector_contains(0))
+        return true;
+
+    /// One test per vector; the last vector overlaps the previous one, checking an element twice does not change the result.
+    size_t i = lanes;
+    if (slice.size < block_size)
+    {
+        for (; i + lanes <= slice.size; i += lanes)
+        {
+            if (vector_contains(i))
+                return true;
+        }
+        return i < slice.size && vector_contains(slice.size - lanes);
+    }
+
+#if defined(__aarch64__)
+    /// Opaque start: otherwise the index reuses the register of the test above and every block load waits for that test.
+    __asm__("" : "+r"(i));
+#endif
     for (; i + block_size <= slice.size; i += block_size)
     {
         if (block_contains(i))
             return true;
     }
 
-    if (i == slice.size)
-        return false;
-
-    /// The last block overlaps the previous one; checking an element twice does not change the result.
-    if (slice.size >= block_size)
-        return block_contains(slice.size - block_size);
-
-    bool found = false;
-    for (; i < slice.size; ++i)
-        found |= (slice.data[i] == value) & (!has_null_map || !null_map[i]);
-    return found;
+    /// The last block overlaps the previous one, possibly the first vector.
+    return i < slice.size && block_contains(slice.size - block_size);
 }
 
 template <ArraySearchType search_type, bool has_first_null_map, typename T>
