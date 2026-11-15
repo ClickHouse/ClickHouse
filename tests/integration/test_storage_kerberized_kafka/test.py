@@ -1,20 +1,9 @@
-import json
 import logging
-import os.path as p
-import random
-import socket
-import subprocess
-import threading
 import time
 
-import kafka.errors
 import pytest
-from kafka import BrokerConnection, KafkaAdminClient, KafkaConsumer, KafkaProducer
-from kafka.admin import NewTopic
-from kafka.protocol.admin import DescribeGroupsRequest_v1, DescribeGroupsResponse_v1
-from kafka.protocol.group import MemberAssignment
+from kafka import KafkaProducer
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV
@@ -212,8 +201,9 @@ def test_kafka_json_as_string_no_kdc(kafka_cluster):
             source = node.ip_address
             destination = kafka_cluster.get_instance_ip(other_node)
             logging.debug(f"partitioning source {source}, destination {destination}")
-            pm._add_rule(
+            pm.add_rule(
                 {
+                    "instance": node,
                     "source": source,
                     "destination": destination,
                     "action": "REJECT",

@@ -1,0 +1,30 @@
+-- Case 5: duplicate predicate removed
+0	0
+1	1
+2	2
+3	3
+4	4
+-- Case 5: EXPLAIN shows single clause
+        Clauses: [(__table2.x) = (__table1.x)]
+-- Case 6: two equivalence classes - correctness
+10
+10
+-- Case 6: two equivalence classes - values
+a0	c0
+a1	c1
+a2	c2
+a3	c3
+a4	c4
+a0	c0
+a1	c1
+a2	c2
+a3	c3
+a4	c4
+-- Case 6b: EXPLAIN two classes
+        Type: INNER
+        Clauses: [(__table2.x, __table2.y) = (__table3.x, __table3.y)]
+              Type: INNER
+              Clauses: [(__table2.x, __table2.y) = (__table1.x, __table1.y)]
+                    ReadFromMergeTree (default.db)
+                    ReadFromMergeTree (default.da)
+              ReadFromMergeTree (default.dc)

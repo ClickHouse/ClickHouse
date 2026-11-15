@@ -4,10 +4,16 @@
 #include <IO/ReadBuffer.h>
 #include <Server/HTTP/HTTPRequest.h>
 #include <Server/HTTP/HTTPContext.h>
+#include <Common/StackTrace.h>
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
-#include "config.h"
+#include <config.h>
 
 #include <Poco/Net/HTTPServerSession.h>
+
+#include <memory>
+#include <mutex>
 
 namespace DB
 {
@@ -15,6 +21,7 @@ namespace DB
 class X509Certificate;
 class HTTPServerResponse;
 class ReadBufferFromPocoSocket;
+struct HTTPConnectionRegistration;
 
 class HTTPServerRequest : public HTTPRequest
 {
@@ -26,10 +33,12 @@ public:
     ///        since we also need it in other places.
 
     /// Returns the input stream for reading the request body.
-    ReadBuffer & getStream()
+    ReadBufferPtr getStream()
     {
+        std::lock_guard lock(get_stream_mutex);
         poco_check_ptr(stream);
-        return *stream;
+        LOG_TEST(getLogger("HTTPServerRequest"), "Returning request input stream with ref count {}", stream.use_count());
+        return stream;
     }
 
     bool checkPeerConnected() const;
@@ -49,11 +58,35 @@ public:
 
     bool canKeepAlive() const
     {
-        if (stream && stream_is_bounded)
-            return !stream->isCanceled() && stream->eof();
+        std::lock_guard lock(get_stream_mutex);
 
-        return false;
+        if (!stream)
+            return true;
+
+        if (!stream_is_bounded)
+            return false;
+
+        if (stream.use_count() > 1)
+        {
+            LOG_ERROR(getLogger("HTTPServerRequest"), "Request stream is shared by multiple threads. HTTP keep alive is not possible. Use count {}", stream.use_count());
+            return false;
+        }
+        else
+        {
+            LOG_TEST(getLogger("HTTPServerRequest"), "Request stream is not shared, can keep alive connection");
+        }
+
+        /// only this instance possesses the stream it is safe to read from it
+        return !stream->isCanceled() && stream->eof();
     }
+
+    std::string toStringForLogging() const;
+
+    /// The registration of the connection of this request in `system.connections`.
+    /// On a keep-alive connection, the registration stays after this request.
+    /// Null if `HTTPServerConnection` does not serve the request.
+    HTTPConnectionRegistration * getConnectionRegistration() const { return connection_registration; }
+    void setConnectionRegistration(HTTPConnectionRegistration * connection_registration_) { connection_registration = connection_registration_; }
 
 private:
     /// Limits for basic sanity checks when reading a header
@@ -67,14 +100,18 @@ private:
     const size_t max_fields_number;
     const size_t max_field_name_size;
     const size_t max_field_value_size;
+    const size_t max_request_header_size;
 
-    std::unique_ptr<ReadBuffer> stream;
+    mutable std::mutex get_stream_mutex;
+    ReadBufferPtr stream TSA_GUARDED_BY(get_stream_mutex);
     Poco::Net::SocketImpl * socket;
     Poco::Net::SocketAddress client_address;
     Poco::Net::SocketAddress server_address;
 
     bool stream_is_bounded = false;
     bool secure;
+
+    HTTPConnectionRegistration * connection_registration = nullptr;
 
     void readRequest(ReadBuffer & in);
 };

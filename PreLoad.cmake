@@ -100,6 +100,8 @@ if (OS MATCHES "Linux"
         set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-s390x.cmake" CACHE INTERNAL "")
     elseif (ARCH MATCHES "^(loongarch64.*|LOONGARCH64.*)")
         set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-loongarch64.cmake" CACHE INTERNAL "")
+    elseif (ARCH MATCHES "^(e2k.*|E2K.*)")
+        set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-e2k.cmake" CACHE INTERNAL "")
     else ()
         message (FATAL_ERROR "Unsupported architecture: ${ARCH}")
     endif ()

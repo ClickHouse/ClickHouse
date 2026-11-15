@@ -19,7 +19,7 @@ REGISTER_FUNCTION(ToYearNumSinceEpoch)
     FunctionDocumentation::IntroducedIn introduced_in = {25, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
 
-    factory.registerFunction<FunctionToYearNumSinceEpoch>({description, syntax, arguments, returned_value, examples, introduced_in, category});
+    factory.registerFunction<FunctionToYearNumSinceEpoch>({description, syntax, arguments, {}, returned_value, examples, introduced_in, category});
 }
 
 }

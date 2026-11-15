@@ -1,4 +1,3 @@
-import time
 
 import pytest
 
@@ -156,9 +155,9 @@ def test_drop_replica(start_cluster):
         "SYSTEM DROP REPLICA 'node_1_1' FROM ZKPATH '/clickhouse/tables/test'"
     )
 
-    node_1_1.query("DETACH DATABASE test")
+    node_1_1.query("DETACH DATABASE test SYNC")
     for i in range(1, 5):
-        node_1_1.query("DETACH DATABASE test{}".format(i))
+        node_1_1.query("DETACH DATABASE test{} SYNC".format(i))
 
     assert "does not exist" in node_1_3.query_and_get_error(
         "SYSTEM DROP REPLICA 'node_1_1' FROM TABLE test.test_table"

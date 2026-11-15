@@ -26,16 +26,16 @@ SELECT max(i1)
 FROM remote('localhost', currentDatabase(), test_view)
 SETTINGS log_comment = 'THIS IS A COMMENT TO MARK THE INITIAL QUERY';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT columns
 FROM system.query_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     initial_query_id = (
         SELECT query_id
         FROM system.query_log
-        WHERE
-            current_database = currentDatabase()
+        WHERE event_date >= yesterday() AND event_time >= now() - 600
+            AND current_database = currentDatabase()
             AND log_comment = 'THIS IS A COMMENT TO MARK THE INITIAL QUERY'
         LIMIT 1)
     AND type = 'QueryFinish'

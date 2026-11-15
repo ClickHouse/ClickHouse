@@ -18,13 +18,6 @@ if(NOT ENABLE_PROTOBUF)
     return()
 endif()
 
-# To supress the following warning:
-# CMake Warning (dev) at contrib/google-cloud-cpp/cmake/CompileProtos.cmake:354 (install):
-#   Policy CMP0177 is not set: install() DESTINATION paths are normalized.  Run
-#   "cmake --help-policy CMP0177" for policy details.  Use the cmake_policy
-#   command to set the policy and suppress this warning.
-cmake_policy(SET CMP0177 OLD)
-
 # Gather sources and options.
 set(GOOGLE_CLOUD_CPP_SOURCES)
 set(GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES)
@@ -50,8 +43,14 @@ set(GOOGLE_CLOUD_CPP_ENABLE_GRPC ON)
 set(PROJECT_VERSION "1")
 set(PROJECT_VERSION_MAJOR "1")
 set(PROTO_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src")
-set(Protobuf_PROTOC_EXECUTABLE $<TARGET_FILE:protoc>)
-set(GOOGLE_CLOUD_CPP_GRPC_PLUGIN_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
+
+if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR OR USE_MUSL)
+    set(Protobuf_PROTOC_EXECUTABLE "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
+    set(GOOGLE_CLOUD_CPP_GRPC_PLUGIN_EXECUTABLE "${PROJECT_BINARY_DIR}/native/contrib/grpc-cmake/grpc_cpp_plugin")
+else ()
+    set(Protobuf_PROTOC_EXECUTABLE $<TARGET_FILE:protoc>)
+    set(GOOGLE_CLOUD_CPP_GRPC_PLUGIN_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
+endif()
 
 include(GoogleApis)
 
@@ -79,8 +78,7 @@ google_cloud_cpp_add_library_protos(storage)
 
 # Storage needs rest_internal, and both need nlohmann_json
 
-# Let google_cloud_cpp use our own version of curl and crc32c
-add_library(CURL::libcurl ALIAS _curl)
+# Let google_cloud_cpp use our own version of crc32c
 add_library(Crc32c::crc32c ALIAS _crc32c)
 add_library(nlohmann_json::nlohmann_json ALIAS _nlohmann_json)
 
@@ -102,34 +100,35 @@ list(APPEND GOOGLE_CLOUD_CPP_PRIVATE_LIBS
     google_cloud_cpp_rest_internal
     google_cloud_cpp_storage
     google_cloud_cpp_storage_protos
+)
+
+list(APPEND GOOGLE_CLOUD_CPP_PRIVATE_LIBS_EXTRA
     ch_contrib::crc32c
-    ch_contrib::curl
     ch_contrib::nlohmann_json
 )
 
 if(ENABLE_GOOGLE_CLOUD_CPP_KMS)
     list(APPEND GOOGLE_CLOUD_CPP_SOURCES ${GOOGLE_CLOUD_CPP_KMS_SRC})
-    add_library(_gcloud ${GOOGLE_CLOUD_CPP_SOURCES})
+    add_library(_google_cloud_cpp_kms ${GOOGLE_CLOUD_CPP_SOURCES})
+    set(GOOGLE_CLOUD_CPP_KMS_DEPS google_cloud_cpp_grpc_utils google_cloud_cpp_kms_protos google_cloud_cpp_iam_v1_iam_policy_protos google_cloud_cpp_cloud_location_locations_protos)
 
-    list(APPEND GOOGLE_CLOUD_CPP_PRIVATE_LIBS
-        google_cloud_cpp_grpc_utils
-        google_cloud_cpp_kms_protos
-        google_cloud_cpp_cloud_location_locations_protos
-        google_cloud_cpp_iam_v1_iam_policy_protos
-    )
+    add_dependencies(_google_cloud_cpp_kms ${GOOGLE_CLOUD_CPP_KMS_DEPS})
+    list(APPEND GOOGLE_CLOUD_CPP_PRIVATE_LIBS _google_cloud_cpp_kms ${GOOGLE_CLOUD_CPP_KMS_DEPS})
 
-    # The library is large - avoid bloat.
-    if(OMIT_HEAVY_DEBUG_SYMBOLS)
-        target_compile_options(_gcloud PRIVATE -g0)
-    endif()
+    target_include_directories(_google_cloud_cpp_kms SYSTEM PRIVATE ${GOOGLE_CLOUD_CPP_PRIVATE_INCLUDES})
+    target_include_directories(_google_cloud_cpp_kms SYSTEM PUBLIC ${GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES})
+    target_link_libraries(_google_cloud_cpp_kms absl::optional ch_contrib::protobuf)
+endif()
 
-    target_include_directories(_gcloud SYSTEM PRIVATE ${GOOGLE_CLOUD_CPP_PRIVATE_INCLUDES})
-    target_include_directories(_gcloud SYSTEM PUBLIC ${GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES})
-    target_link_libraries(_gcloud PRIVATE ${GOOGLE_CLOUD_CPP_PRIVATE_LIBS})
-else()
-    add_library(_gcloud INTERFACE)
-    target_include_directories(_gcloud SYSTEM INTERFACE ${GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES})
-    target_link_libraries(_gcloud INTERFACE ${GOOGLE_CLOUD_CPP_PRIVATE_LIBS})
+add_library(_gcloud INTERFACE)
+target_include_directories(_gcloud SYSTEM INTERFACE ${GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES})
+target_link_libraries(_gcloud INTERFACE ${GOOGLE_CLOUD_CPP_PRIVATE_LIBS} ${GOOGLE_CLOUD_CPP_PRIVATE_LIBS_EXTRA})
+
+# The library is large - avoid bloat.
+if(OMIT_HEAVY_DEBUG_SYMBOLS)
+    foreach(lib ${GOOGLE_CLOUD_CPP_PRIVATE_LIBS})
+        target_compile_options(${lib} PRIVATE -g1)
+    endforeach()
 endif()
 
 add_library(ch_contrib::google_cloud_cpp ALIAS _gcloud)

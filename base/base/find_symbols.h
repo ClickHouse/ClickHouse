@@ -11,6 +11,9 @@
 #if defined(__SSE4_2__)
     #include <nmmintrin.h>
 #endif
+#if defined(__aarch64__)
+    #include <arm_neon.h>
+#endif
 
 
 /** find_first_symbols<c1, c2, ...>(begin, end):
@@ -40,51 +43,9 @@
   * Count the number of symbols of the set in a string.
   */
 
-struct SearchSymbols
-{
-    static constexpr auto BUFFER_SIZE = 16;
-
-    SearchSymbols() = default;
-
-    explicit SearchSymbols(std::string in)
-        : str(std::move(in))
-    {
-#if defined(__SSE4_2__)
-        if (str.size() > BUFFER_SIZE)
-        {
-            throw std::runtime_error("SearchSymbols may contain at most " + std::to_string(BUFFER_SIZE) + " symbols but " + std::to_string(str.size()) + " symbols were provided");
-        }
-
-        char tmp_safety_buffer[BUFFER_SIZE] = {0};
-
-        memcpy(tmp_safety_buffer, str.data(), str.size());
-
-        simd_vector = _mm_loadu_si128(reinterpret_cast<const __m128i *>(tmp_safety_buffer));
-#endif
-    }
-
-#if defined(__SSE4_2__)
-    __m128i simd_vector;
-#endif
-    std::string str;
-};
-
 namespace detail
 {
 template <char ...chars> constexpr bool is_in(char x) { return ((x == chars) || ...); } // NOLINT(misc-redundant-expression)
-
-static bool is_in(char c, const char * symbols, size_t num_chars)
-{
-    for (size_t i = 0u; i < num_chars; ++i)
-    {
-        if (c == symbols[i])
-        {
-            return true;
-        }
-    }
-
-    return false;
-}
 
 #if defined(__SSE2__)
 template <char s0>
@@ -102,41 +63,33 @@ inline __m128i mm_is_in(__m128i bytes)
     return _mm_or_si128(eq0, eq);
 }
 
-inline __m128i mm_is_in(__m128i bytes, const char * symbols, size_t num_chars)
-{
-    __m128i accumulator = _mm_setzero_si128();
-    for (size_t i = 0; i < num_chars; ++i)
-    {
-        __m128i eq = _mm_cmpeq_epi8(bytes, _mm_set1_epi8(symbols[i]));
-        accumulator = _mm_or_si128(accumulator, eq);
-    }
+#endif
 
-    return accumulator;
+#if defined(__aarch64__)
+/// On AArch64 we use NEON. There is no direct equivalent of pmovmskb, so we
+/// use the well-known shrn-by-4 trick to compress a 16-byte vector of all-0/all-1
+/// bytes into a 64-bit value where each input byte is represented by a 4-bit
+/// nibble. The position of the lowest (or highest) matching byte is then
+/// recovered as `__builtin_ctzll(mask) >> 2` (or `__builtin_clzll(mask) >> 2`).
+template <char s0>
+inline uint8x16_t neon_is_in(uint8x16_t bytes)
+{
+    return vceqq_u8(bytes, vdupq_n_u8(static_cast<uint8_t>(s0)));
 }
 
-inline std::array<__m128i, 16u> mm_is_in_prepare(const char * symbols, size_t num_chars)
+template <char s0, char s1, char... tail>
+inline uint8x16_t neon_is_in(uint8x16_t bytes)
 {
-    std::array<__m128i, 16u> result {};
-
-    for (size_t i = 0; i < num_chars; ++i)
-    {
-        result[i] = _mm_set1_epi8(symbols[i]);
-    }
-
-    return result;
+    uint8x16_t eq0 = vceqq_u8(bytes, vdupq_n_u8(static_cast<uint8_t>(s0)));
+    uint8x16_t eq = neon_is_in<s1, tail...>(bytes);
+    return vorrq_u8(eq0, eq);
 }
 
-inline __m128i mm_is_in_execute(__m128i bytes, const std::array<__m128i, 16u> & needles)
+/// Compresses a 16-byte all-0/all-1 vector into a 64-bit value where each input
+/// byte occupies a 4-bit nibble (all bits set if matched, all clear otherwise).
+inline uint64_t neon_to_bitmask(uint8x16_t eq)
 {
-    __m128i accumulator = _mm_setzero_si128();
-
-    for (const auto & needle : needles)
-    {
-        __m128i eq = _mm_cmpeq_epi8(bytes, needle);
-        accumulator = _mm_or_si128(accumulator, eq);
-    }
-
-    return accumulator;
+    return vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(vreinterpretq_u16_u8(eq), 4)), 0);
 }
 #endif
 
@@ -149,14 +102,70 @@ constexpr uint16_t maybe_negate(uint16_t x)
     if constexpr (positive)
         return x;
     else
-        return ~x;
+        return static_cast<uint16_t>(~x);
 }
+
+#if defined(__aarch64__)
+template <bool positive>
+inline uint8x16_t maybe_negate(uint8x16_t x)
+{
+    if constexpr (positive)
+        return x;
+    else
+        return vmvnq_u8(x);
+}
+#endif
 
 enum class ReturnMode : uint8_t
 {
     End,
     Nullptr,
 };
+
+
+#if defined(__aarch64__)
+/// NEON body for long haystacks (>= 16 bytes), kept out-of-line so the inline
+/// dispatcher above stays small enough for the compiler to keep auto-vectorising
+/// the scalar fast path and avoid extra branches in callers that handle one
+/// short string per row (e.g. `trim`).
+template <bool positive, ReturnMode return_mode, char... symbols>
+[[gnu::noinline]] const char * find_first_symbols_neon_long(const char * pos, const char * const end)
+{
+    /// Many callers (CSV/TSV/JSON format readers, URL parsers) find a
+    /// match within the first few bytes of the haystack. In that case the
+    /// per-iteration NEON cost (load + 3-4 vceqq + vorrq + shrn + ctz)
+    /// exceeds what a handful of byte compares would do, so an unguarded
+    /// SIMD body regresses such workloads. An 8-byte scalar pre-check
+    /// covers the common short-distance hit and leaves the SIMD body for
+    /// the sparse case.
+    if (maybe_negate<positive>(is_in<symbols...>(pos[0]))) return pos;
+    if (maybe_negate<positive>(is_in<symbols...>(pos[1]))) return pos + 1;
+    if (maybe_negate<positive>(is_in<symbols...>(pos[2]))) return pos + 2;
+    if (maybe_negate<positive>(is_in<symbols...>(pos[3]))) return pos + 3;
+    if (maybe_negate<positive>(is_in<symbols...>(pos[4]))) return pos + 4;
+    if (maybe_negate<positive>(is_in<symbols...>(pos[5]))) return pos + 5;
+    if (maybe_negate<positive>(is_in<symbols...>(pos[6]))) return pos + 6;
+    if (maybe_negate<positive>(is_in<symbols...>(pos[7]))) return pos + 7;
+    pos += 8;
+
+    for (; pos + 15 < end; pos += 16)
+    {
+        uint8x16_t bytes = vld1q_u8(reinterpret_cast<const uint8_t *>(pos));
+
+        uint8x16_t eq = maybe_negate<positive>(neon_is_in<symbols...>(bytes));
+
+        uint64_t bit_mask = neon_to_bitmask(eq);
+        if (bit_mask)
+            return pos + (__builtin_ctzll(bit_mask) >> 2);
+    }
+
+    for (; pos < end; ++pos)
+        if (maybe_negate<positive>(is_in<symbols...>(*pos)))
+            return pos;
+
+    return return_mode == ReturnMode::End ? end : nullptr;
+}
+#endif
 
 
 template <bool positive, ReturnMode return_mode, char... symbols>
@@ -175,6 +184,12 @@ inline const char * find_first_symbols_sse2(const char * const begin, const char
         if (bit_mask)
             return pos + __builtin_ctz(bit_mask);
     }
+#elif defined(__aarch64__)
+    /// Short haystacks (< 16 bytes) dominate many callers (e.g. `trim` on
+    /// `toString(number)`). Tail-call the out-of-line NEON helper so the
+    /// inline body collapses to the original scalar loop on master.
+    if (end - begin >= 16) [[unlikely]]
+        return find_first_symbols_neon_long<positive, return_mode, symbols...>(begin, end);
 #endif
 
     for (; pos < end; ++pos)
@@ -184,31 +199,42 @@ inline const char * find_first_symbols_sse2(const char * const begin, const char
     return return_mode == ReturnMode::End ? end : nullptr;
 }
 
-template <bool positive, ReturnMode return_mode>
-inline const char * find_first_symbols_sse2(const char * const begin, const char * const end, const char * symbols, size_t num_chars)
+#if defined(__aarch64__)
+/// See the forward variant above. Out-of-lined for the same reason.
+/// Always returns either a matching pointer or `nullptr`; the inline caller
+/// translates `nullptr` to `end` when `return_mode == End`.
+template <bool positive, char... symbols>
+[[gnu::noinline]] const char * find_last_symbols_neon_long(const char * const begin, const char * pos)
 {
-    const char * pos = begin;
+    if (maybe_negate<positive>(is_in<symbols...>(pos[-1]))) return pos - 1;
+    if (maybe_negate<positive>(is_in<symbols...>(pos[-2]))) return pos - 2;
+    if (maybe_negate<positive>(is_in<symbols...>(pos[-3]))) return pos - 3;
+    if (maybe_negate<positive>(is_in<symbols...>(pos[-4]))) return pos - 4;
+    if (maybe_negate<positive>(is_in<symbols...>(pos[-5]))) return pos - 5;
+    if (maybe_negate<positive>(is_in<symbols...>(pos[-6]))) return pos - 6;
+    if (maybe_negate<positive>(is_in<symbols...>(pos[-7]))) return pos - 7;
+    if (maybe_negate<positive>(is_in<symbols...>(pos[-8]))) return pos - 8;
+    pos -= 8;
 
-#if defined(__SSE2__)
-    const auto needles = mm_is_in_prepare(symbols, num_chars);
-    for (; pos + 15 < end; pos += 16)
+    for (; pos - 16 >= begin; pos -= 16)
     {
-        __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
+        uint8x16_t bytes = vld1q_u8(reinterpret_cast<const uint8_t *>(pos - 16));
 
-        __m128i eq = mm_is_in_execute(bytes, needles);
+        uint8x16_t eq = maybe_negate<positive>(neon_is_in<symbols...>(bytes));
 
-        uint16_t bit_mask = maybe_negate<positive>(uint16_t(_mm_movemask_epi8(eq)));
+        uint64_t bit_mask = neon_to_bitmask(eq);
         if (bit_mask)
-            return pos + __builtin_ctz(bit_mask);
+            return pos - 1 - (__builtin_clzll(bit_mask) >> 2);
     }
-#endif
 
-    for (; pos < end; ++pos)
-        if (maybe_negate<positive>(is_in(*pos, symbols, num_chars)))
+    --pos;
+    for (; pos >= begin; --pos)
+        if (maybe_negate<positive>(is_in<symbols...>(*pos)))
             return pos;
 
-    return return_mode == ReturnMode::End ? end : nullptr;
+    return nullptr;
 }
+#endif
 
 
 template <bool positive, ReturnMode return_mode, char... symbols>
@@ -227,38 +253,19 @@ inline const char * find_last_symbols_sse2(const char * const begin, const char 
         if (bit_mask)
             return pos - 1 - (__builtin_clz(bit_mask) - 16);    /// because __builtin_clz works with mask as uint32.
     }
-#endif
-
-    --pos;
-    for (; pos >= begin; --pos)
-        if (maybe_negate<positive>(is_in<symbols...>(*pos)))
-            return pos;
-
-    return return_mode == ReturnMode::End ? end : nullptr;
-}
-
-template <bool positive, ReturnMode return_mode>
-inline const char * find_last_symbols_sse2(const char * const begin, const char * const end, const char * symbols, size_t num_chars)
-{
-    const char * pos = end;
-
-#if defined(__SSE2__)
-    const auto needles = mm_is_in_prepare(symbols, num_chars);
-    for (; pos - 16 >= begin; pos -= 16)
+#elif defined(__aarch64__)
+    if (end - begin >= 16) [[unlikely]]
     {
-        __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos - 16));
-
-        __m128i eq = mm_is_in_execute(bytes, needles);
-
-        uint16_t bit_mask = maybe_negate<positive>(uint16_t(_mm_movemask_epi8(eq)));
-        if (bit_mask)
-            return pos - 1 - (__builtin_clz(bit_mask) - 16);    /// because __builtin_clz works with mask as uint32.
+        const char * found = find_last_symbols_neon_long<positive, symbols...>(begin, end);
+        if (found)
+            return found;
+        return return_mode == ReturnMode::End ? end : nullptr;
     }
 #endif
 
     --pos;
     for (; pos >= begin; --pos)
-        if (maybe_negate<positive>(is_in(*pos, symbols, num_chars)))
+        if (maybe_negate<positive>(is_in<symbols...>(*pos)))
             return pos;
 
     return return_mode == ReturnMode::End ? end : nullptr;
@@ -316,42 +323,6 @@ inline const char * find_first_symbols_sse42(const char * const begin, const cha
     return return_mode == ReturnMode::End ? end : nullptr;
 }
 
-template <bool positive, ReturnMode return_mode>
-inline const char * find_first_symbols_sse42(const char * const begin, const char * const end, const SearchSymbols & symbols)
-{
-    const char * pos = begin;
-
-    const auto num_chars = symbols.str.size();
-
-#if defined(__SSE4_2__)
-    constexpr int mode = _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_LEAST_SIGNIFICANT;
-
-    const __m128i set = symbols.simd_vector;
-
-    for (; pos + 15 < end; pos += 16)
-    {
-        __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
-
-        if constexpr (positive)
-        {
-            if (_mm_cmpestrc(set, num_chars, bytes, 16, mode))
-                return pos + _mm_cmpestri(set, num_chars, bytes, 16, mode);
-        }
-        else
-        {
-            if (_mm_cmpestrc(set, num_chars, bytes, 16, mode | _SIDD_NEGATIVE_POLARITY))
-                return pos + _mm_cmpestri(set, num_chars, bytes, 16, mode | _SIDD_NEGATIVE_POLARITY);
-        }
-    }
-#endif
-
-    for (; pos < end; ++pos)
-        if (maybe_negate<positive>(is_in(*pos, symbols.str.data(), num_chars)))
-            return pos;
-
-    return return_mode == ReturnMode::End ? end : nullptr;
-}
-
 /// NOTE No SSE 4.2 implementation for find_last_symbols_or_null. Not worth to do.
 
 template <bool positive, ReturnMode return_mode, char... symbols>
@@ -365,27 +336,11 @@ inline const char * find_first_symbols_dispatch(const char * begin, const char *
     return find_first_symbols_sse2<positive, return_mode, symbols...>(begin, end);
 }
 
-template <bool positive, ReturnMode return_mode>
-inline const char * find_first_symbols_dispatch(const std::string_view haystack, const SearchSymbols & symbols)
-{
-#if defined(__SSE4_2__)
-    if (symbols.str.size() >= 5)
-        return find_first_symbols_sse42<positive, return_mode>(haystack.data(), haystack.data() + haystack.size(), symbols);
-#endif
-    return find_first_symbols_sse2<positive, return_mode>(haystack.data(), haystack.data() + haystack.size(), symbols.str.data(), symbols.str.size());
-}
-
 template <bool positive, ReturnMode return_mode, char... symbols>
 inline const char * find_last_symbols_dispatch(const char * begin, const char * end)
     requires(0 <= sizeof...(symbols) && sizeof...(symbols) <= 16)
 {
     return find_last_symbols_sse2<positive, return_mode, symbols...>(begin, end);
-}
-
-template <bool positive, ReturnMode return_mode>
-inline const char * find_last_symbols_dispatch(const std::string_view haystack, const SearchSymbols & symbols)
-{
-    return find_last_symbols_sse2<positive, return_mode>(haystack.data(), haystack.data() + haystack.size(), symbols.str.data(), symbols.str.size());
 }
 
 }
@@ -405,11 +360,6 @@ inline char * find_first_symbols(char * begin, char * end)
     return const_cast<char *>(detail::find_first_symbols_dispatch<true, detail::ReturnMode::End, symbols...>(begin, end));
 }
 
-inline const char * find_first_symbols(std::string_view haystack, const SearchSymbols & symbols)
-{
-    return detail::find_first_symbols_dispatch<true, detail::ReturnMode::End>(haystack, symbols);
-}
-
 template <char... symbols>
 inline const char * find_first_not_symbols(const char * begin, const char * end)
 {
@@ -420,11 +370,6 @@ template <char... symbols>
 inline char * find_first_not_symbols(char * begin, char * end)
 {
     return const_cast<char *>(detail::find_first_symbols_dispatch<false, detail::ReturnMode::End, symbols...>(begin, end));
-}
-
-inline const char * find_first_not_symbols(std::string_view haystack, const SearchSymbols & symbols)
-{
-    return detail::find_first_symbols_dispatch<false, detail::ReturnMode::End>(haystack, symbols);
 }
 
 template <char... symbols>
@@ -439,11 +384,6 @@ inline char * find_first_symbols_or_null(char * begin, char * end)
     return const_cast<char *>(detail::find_first_symbols_dispatch<true, detail::ReturnMode::Nullptr, symbols...>(begin, end));
 }
 
-inline const char * find_first_symbols_or_null(std::string_view haystack, const SearchSymbols & symbols)
-{
-    return detail::find_first_symbols_dispatch<true, detail::ReturnMode::Nullptr>(haystack, symbols);
-}
-
 template <char... symbols>
 inline const char * find_first_not_symbols_or_null(const char * begin, const char * end)
 {
@@ -454,11 +394,6 @@ template <char... symbols>
 inline char * find_first_not_symbols_or_null(char * begin, char * end)
 {
     return const_cast<char *>(detail::find_first_symbols_dispatch<false, detail::ReturnMode::Nullptr, symbols...>(begin, end));
-}
-
-inline const char * find_first_not_symbols_or_null(std::string_view haystack, const SearchSymbols & symbols)
-{
-    return detail::find_first_symbols_dispatch<false, detail::ReturnMode::Nullptr>(haystack, symbols);
 }
 
 template <char... symbols>
@@ -473,11 +408,6 @@ inline char * find_last_symbols_or_null(char * begin, char * end)
     return const_cast<char *>(detail::find_last_symbols_dispatch<true, detail::ReturnMode::Nullptr, symbols...>(begin, end));
 }
 
-inline const char * find_last_symbols_or_null(std::string_view haystack, const SearchSymbols & symbols)
-{
-    return detail::find_last_symbols_dispatch<true, detail::ReturnMode::Nullptr>(haystack, symbols);
-}
-
 template <char... symbols>
 inline const char * find_last_not_symbols_or_null(const char * begin, const char * end)
 {
@@ -488,11 +418,6 @@ template <char... symbols>
 inline char * find_last_not_symbols_or_null(char * begin, char * end)
 {
     return const_cast<char *>(detail::find_last_symbols_dispatch<false, detail::ReturnMode::Nullptr, symbols...>(begin, end));
-}
-
-inline const char * find_last_not_symbols_or_null(std::string_view haystack, const SearchSymbols & symbols)
-{
-    return detail::find_last_symbols_dispatch<false, detail::ReturnMode::Nullptr>(haystack, symbols);
 }
 
 template <char... symbols>

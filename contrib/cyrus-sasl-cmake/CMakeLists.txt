@@ -50,7 +50,7 @@ target_include_directories(_sasl2 PRIVATE
     "${CYRUS_SASL_SOURCE_DIR}/tests"
 )
 
-target_compile_definitions(_sasl2 PUBLIC
+target_compile_definitions(_sasl2 PRIVATE
     HAVE_CONFIG_H
     # PLUGINDIR="/usr/local/lib/sasl2"
     PLUGINDIR=""
@@ -61,7 +61,6 @@ target_compile_definitions(_sasl2 PUBLIC
     # CONFIGDIR="/usr/local/lib/sasl2:/usr/local/etc/sasl2"
     CONFIGDIR=""
     OBSOLETE_DIGEST_ATTR=1
-    LIBSASL_EXPORTS=1
 )
 
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/sasl")

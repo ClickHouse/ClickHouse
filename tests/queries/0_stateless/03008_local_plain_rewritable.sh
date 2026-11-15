@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-random-settings, no-object-storage, no-replicated-database, no-shared-merge-tree
 # Tag no-random-settings: enable after root causing flakiness
+# Tag no-replicated-database: plain rewritable should not be shared between replicas
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -36,11 +37,12 @@ select count(*) from 03008_test_local_mt;
 select (*) from 03008_test_local_mt order by tuple(a, b) limit 10;
 "
 
-${CLICKHOUSE_CLIENT} -m --query "
+${CLICKHOUSE_CLIENT} -m --mutations_sync 1 --query "
 alter table 03008_test_local_mt update c = 0 where a % 2 = 1;
 alter table 03008_test_local_mt add column d Int64 after c;
 alter table 03008_test_local_mt drop column c;
-" 2>&1 | grep -Fq "SUPPORT_IS_DISABLED"
+select count(), sum(d) from 03008_test_local_mt;
+"
 
 ${CLICKHOUSE_CLIENT} -m --query "
 truncate table 03008_test_local_mt;

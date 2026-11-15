@@ -39,3 +39,9 @@ SELECT toDecimalString('256.256'::Decimal256(45), *); -- {serverError ILLEGAL_CO
 SELECT toDecimalString('128.128'::Decimal128(30), 'str'); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 SELECT toDecimalString('64.64'::Decimal64(10)); -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
 SELECT toDecimalString('64.64'::Decimal64(10), 3, 3); -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
+
+-- Zero precision checks
+SELECT toDecimalString(1, 0);
+SELECT toDecimalString(1.123456, 0);  -- rounding
+SELECT toDecimalString(-1, 0);
+SELECT toDecimalString(-1.123456, 0);  -- rounding

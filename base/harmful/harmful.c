@@ -3,8 +3,10 @@
   * (by terminating the program immediately).
   */
 
-/// It is only enabled in debug build (its intended use is for CI checks).
-#if !defined(NDEBUG)
+#include <base/sanitizer_defs.h>
+
+/// We check for "harmful" functions if it's a debug build or with a sanitizer.
+#if defined(DEBUG_OR_SANITIZER_BUILD)
 
 #pragma clang diagnostic ignored "-Wincompatible-library-redeclaration"
 
@@ -36,14 +38,11 @@ TRAP(ecvt)
 TRAP(encrypt)
 TRAP(endfsent)
 TRAP(endgrent)
-TRAP(endhostent)
 TRAP(endnetent)
 TRAP(endnetgrent)
-TRAP(endprotoent)
 TRAP(endpwent)
 TRAP(endservent)
 TRAP(endutent)
-TRAP(endutxent)
 TRAP(erand48)
 TRAP(error_at_line)
 ///TRAP(exit)
@@ -119,7 +118,9 @@ TRAP(mblen)
 TRAP(mbrlen)
 TRAP(mbrtowc)
 TRAP(mbsnrtowcs)
-TRAP(mbsrtowcs)
+#if !defined(USE_MUSL)
+TRAP(mbsrtowcs) // musl libc uses it internally in getaddrinfo()
+#endif
 //TRAP(mbtowc) // Used by Standard C++ library
 TRAP(mcheck)
 TRAP(mprobe)
@@ -140,22 +141,21 @@ TRAP(seed48)
 //TRAP(setenv)
 TRAP(setfsent)
 TRAP(setgrent)
-TRAP(sethostent)
 TRAP(sethostid)
 TRAP(setkey)
 //TRAP(setlocale) // Used by replxx at startup
 TRAP(setnetent)
 TRAP(setnetgrent)
-TRAP(setprotoent)
 TRAP(setpwent)
 TRAP(setservent)
 TRAP(setutent)
-TRAP(setutxent)
 TRAP(siginterrupt)
 TRAP(sigpause)
 //TRAP(sigprocmask)
 TRAP(sigsuspend)
-TRAP(sleep)
+#if !USE_FUZZING_MODE
+TRAP(sleep) // Used by libFuzzer
+#endif
 TRAP(srand48)
 //TRAP(strerror) // Used by RocksDB and many other libraries, unfortunately.
 //TRAP(strsignal) // This function is imported from Musl and is thread safe.
@@ -173,7 +173,13 @@ TRAP(vlimit)
 //TRAP(wcrtomb) // Used by Standard C++ library
 TRAP(wcsnrtombs)
 TRAP(wcsrtombs)
+#ifndef USE_MUSL
+/// In a static musl link this trap wins over musl's own definition and is then reached from
+/// inside libc itself: musl's iconv calls wctomb when converting to UTF-8 (used by libarchive
+/// for pax headers during BACKUP to tar archives). musl's implementation is a stateless
+/// wrapper around wcrtomb (musl has no shift states), so it is not harmful there.
 TRAP(wctomb)
+#endif
 TRAP(basename)
 TRAP(catgets)
 TRAP(dbm_clearerr)
@@ -196,7 +202,12 @@ TRAP(lgamma)
 TRAP(lgammaf)
 TRAP(lgammal)
 TRAP(nftw)
+#ifndef USE_MUSL
+/// In a static musl link this trap wins over musl's own definition and is then reached from
+/// inside libc itself: musl's strptime calls nl_langinfo for locale-dependent formats.
+/// musl's implementation returns pointers to constant strings, so it is not harmful there.
 TRAP(nl_langinfo)
+#endif
 TRAP(putc_unlocked)
 /** In  the current POSIX.1 specification (POSIX.1-2008), readdir() is not required to be thread-safe.  However, in modern
   * implementations (including the glibc implementation), concurrent calls to readdir() that specify different directory streams
@@ -249,7 +260,6 @@ TRAP(mq_timedreceive)
 
 /// These functions are also unused by ClickHouse.
 TRAP(wordexp)
-TRAP(wordfree)
 
 /// C11 threading primitives are not supported by ThreadSanitizer.
 /// Also we should avoid using them for compatibility with old libc.
@@ -285,6 +295,13 @@ TRAP(tss_delete)
 #ifndef USE_MUSL
 /// These produce duplicate symbol errors when statically linking with musl.
 /// Maybe we can remove them from the musl fork.
+TRAP(endhostent)
+TRAP(endprotoent)
+TRAP(endutxent)
+TRAP(sethostent)
+TRAP(setprotoent)
+TRAP(setutxent)
+TRAP(wordfree)
 TRAP(getopt)
 TRAP(putenv)
 TRAP(setlogmask)

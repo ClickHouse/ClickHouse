@@ -1,5 +1,5 @@
 DROP TABLE IF EXISTS t_lwu_on_fly SYNC;
-SET allow_experimental_lightweight_update = 1;
+SET enable_lightweight_update = 1;
 
 CREATE TABLE t_lwu_on_fly (id UInt64, a UInt64, b UInt64, c UInt64)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_lwu_on_fly', '1') ORDER BY id
@@ -15,6 +15,10 @@ SET apply_mutations_on_fly = 1;
 UPDATE t_lwu_on_fly SET a = 2 WHERE id = 2;
 
 ALTER TABLE t_lwu_on_fly UPDATE b = 20 WHERE a = 2 SETTINGS mutations_sync = 0;
+
+-- Ensure the mutation entry is fetched from ZooKeeper into the local replica's queue,
+-- so that `apply_mutations_on_fly` can see it when the next UPDATE evaluates its WHERE clause.
+SYSTEM SYNC REPLICA t_lwu_on_fly PULL;
 
 UPDATE t_lwu_on_fly SET c = 200 WHERE b = 20;
 

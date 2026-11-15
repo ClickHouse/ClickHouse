@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 
 
@@ -9,6 +10,7 @@ namespace DB
 
 class WriteBuffer;
 class Context;
+class IDataType;
 
 
 /** Stream to output data in format "each value in separate row".
@@ -53,10 +55,11 @@ private:
     size_t field_number = 0;
     size_t row_number = 0;
 
-    using NamesAndPaddings = std::vector<String>;
+    using NamesAndPaddings = VectorWithMemoryTracking<String>;
     NamesAndPaddings names_and_paddings;
 
-    std::vector<UInt8> is_number;
+    VectorWithMemoryTracking<UInt8> is_number;
+    VectorWithMemoryTracking<UInt8> is_json;
     bool color;
 };
 

@@ -58,7 +58,7 @@ void CheckSortedTransform::transform(Chunk & chunk)
     /// ColumnVector tries to cast the rhs column to the same type (ColumnVector) in compareAt method.
     /// And it doesn't care about the possible incompatibilities in data types
     /// (for example in case when the right column is ColumnSparse)
-    convertToFullIfSparse(chunk);
+    removeSpecialColumnRepresentations(chunk);
 
     const auto & chunk_columns = chunk.getColumns();
 

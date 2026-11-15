@@ -272,7 +272,7 @@ s390x_kimd:
 	llgfr	%r0,%r4
 	lgr	%r1,%r5
 
-	.long	0xb93e0002	# kimd %r0,%r2
+	.long	0xb93e8002	# kimd %r0,%r2[,M3]
 	brc	1,.-4		# pay attention to "partial completion"
 
 	br	%r14
@@ -284,7 +284,7 @@ s390x_klmd:
 	llgfr	%r0,%r6
 	lg	%r1,160(%r15)
 
-	.long	0xb93f0042	# klmd %r4,%r2
+	.long	0xb93f8042	# klmd %r4,%r2[,M3]
 	brc	1,.-4		# pay attention to "partial completion"
 
 	br	%r14
@@ -424,5 +424,3 @@ s390x_flip_endian64:
 	lmg	%r6,%r9,6*8(%r15)
 	br	%r14
 .size	s390x_flip_endian64,.-s390x_flip_endian64
-.section	.init
-	brasl	%r14,OPENSSL_cpuid_setup

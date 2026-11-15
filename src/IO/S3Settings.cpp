@@ -61,6 +61,12 @@ void S3Settings::updateIfChanged(const S3Settings & settings)
     request_settings.updateIfChanged(settings.request_settings);
 }
 
+bool S3Settings::hasChangesAffectingClient(const S3Settings & settings) const
+{
+    return auth_settings.hasUpdates(settings.auth_settings)
+        || request_settings.hasChangesAffectingClient(settings.request_settings);
+}
+
 void S3SettingsByEndpoint::loadFromConfig(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
@@ -113,6 +119,20 @@ std::optional<S3Settings> S3SettingsByEndpoint::getSettings(
     }
 
     return {};
+}
+
+void S3Settings::serialize(WriteBuffer & os, ContextPtr context) const
+{
+    auth_settings.serialize(os, context);
+    request_settings.serialize(os, context);
+}
+
+S3Settings S3Settings::deserialize(ReadBuffer & is, ContextPtr context)
+{
+    S3Settings result;
+    result.auth_settings = S3::S3AuthSettings::deserialize(is, context);
+    result.request_settings = S3::S3RequestSettings::deserialize(is, context);
+    return result;
 }
 
 }

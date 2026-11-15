@@ -28,6 +28,9 @@ SOFTWARE.
 
 SET max_insert_threads = 0, output_format_pretty_row_numbers = 0;
 
+-- The wide row below falls back to the Vertical format; keep control characters raw to preserve the reference.
+SET output_format_pretty_display_control_characters = 0;
+
 DROP TABLE IF EXISTS test;
 
 CREATE TABLE test
@@ -542,7 +545,7 @@ CREATE TABLE test
   "گچپژ" String,
   "{% print 'x' * 64 * 1024**3 %}" String,
   "{{ \"\".__class__.__mro__[2].__subclasses__()[40](\"/etc/passwd\").read() }}" String
-) ENGINE = MergeTree ORDER BY "{{ \"\".__class__.__mro__[2].__subclasses__()[40](\"/etc/passwd\").read() }}" SETTINGS min_bytes_for_wide_part = '100G';
+) ENGINE = MergeTree ORDER BY "{{ \"\".__class__.__mro__[2].__subclasses__()[40](\"/etc/passwd\").read() }}" SETTINGS min_bytes_for_wide_part = '100G', replace_long_file_name_to_hash = 1;
 
 INSERT INTO test ("0") SELECT 'Hello, world!';
 SELECT count() FROM test;
@@ -558,9 +561,9 @@ SELECT count() FROM test;
 DROP TABLE IF EXISTS test_r1 SYNC;
 DROP TABLE IF EXISTS test_r2 SYNC;
 
-CREATE TABLE test_r1 AS test ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test_01666', 'r1') ORDER BY "\\" SETTINGS min_bytes_for_wide_part = '100G';
+CREATE TABLE test_r1 AS test ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test_01666', 'r1') ORDER BY "\\" SETTINGS min_bytes_for_wide_part = '100G', replace_long_file_name_to_hash = 1;
 INSERT INTO test_r1 SELECT * FROM test;
-CREATE TABLE test_r2 AS test ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test_01666', 'r2') ORDER BY "\\" SETTINGS min_bytes_for_wide_part = '100G';
+CREATE TABLE test_r2 AS test ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test_01666', 'r2') ORDER BY "\\" SETTINGS min_bytes_for_wide_part = '100G', replace_long_file_name_to_hash = 1;
 
 SYSTEM SYNC REPLICA test_r2 STRICT;
 

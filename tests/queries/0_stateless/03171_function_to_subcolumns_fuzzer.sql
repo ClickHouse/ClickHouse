@@ -1,5 +1,4 @@
 SET optimize_functions_to_subcolumns = 1;
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_func_to_subcolumns_map_2;
 
@@ -34,7 +33,8 @@ FULL OUTER JOIN
         3 AS id,
         'www'
 ) AS right USING (id)
-WHERE empty(arr);
+WHERE empty(arr)
+ORDER BY id;
 
 DROP TABLE t_func_to_subcolumns_join;
 

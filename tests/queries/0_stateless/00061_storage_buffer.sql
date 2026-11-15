@@ -1,4 +1,5 @@
--- Tags: stateful
+-- Tags: stateful, no-parallel
+-- no-parallel: the synchronous OPTIMIZE buffer flush is slow under parallel CI load and can hit the 300s client receive_timeout.
 DROP TABLE IF EXISTS hits_dst;
 DROP TABLE IF EXISTS hits_buffer;
 

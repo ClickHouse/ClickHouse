@@ -1,0 +1,3 @@
+split groups all partitions into the target tasks 1
+distributed plan 6500	21154250
+plain plan 6500	21154250

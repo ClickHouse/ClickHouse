@@ -1,74 +1,105 @@
 #pragma once
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
-#include <Common/HashTable/Hash.h>
+#include <Storages/MergeTree/PatchParts/PatchJoinCache.h>
+#include <Columns/IColumn.h>
 #include <Common/PODArray.h>
 #include <Core/Block.h>
-#include <absl/container/flat_hash_map.h>
 
 namespace DB
 {
 
-struct PatchToApply
-{
-    PaddedPODArray<UInt64> result_indices;
-    PaddedPODArray<UInt64> patch_indices;
-    Block patch_block;
+struct KeyDescription;
 
-    bool empty() const
+/// Represents a patch that can be applied to the result block to update the data.
+struct PatchIndices
+{
+    /// Blocks with data from patch parts.
+    Blocks patch_blocks;
+    /// Index of row to update in the result block.
+    PaddedPODArray<UInt64> result_row_indices;
+    /// Index of patch block to take the updated row from.
+    PaddedPODArray<UInt64> patch_block_indices;
+    /// Index of row in patch block to take the updated row from.
+    PaddedPODArray<UInt64> patch_row_indices;
+
+    bool empty() const { return patch_blocks.empty(); }
+    size_t getNumSources() const { return patch_blocks.size(); }
+
+    size_t getNumRows() const
     {
-        chassert(result_indices.size() == patch_indices.size());
-        return result_indices.empty();
-    }
-
-    size_t rows() const
-    {
-        chassert(result_indices.size() == patch_indices.size());
-        return result_indices.size();
+        chassert(result_row_indices.size() == patch_row_indices.size());
+        return result_row_indices.size();
     }
 };
 
-using PatchToApplyPtr = std::shared_ptr<const PatchToApply>;
-using PatchesToApply = std::vector<PatchToApplyPtr>;
+using PatchIndicesPtr = std::shared_ptr<const PatchIndices>;
+using PatchesIndices = std::vector<PatchIndicesPtr>;
 
-struct PatchSharedData
+struct PatchReadResult
 {
-    virtual ~PatchSharedData() = default;
+    virtual ~PatchReadResult() = default;
+    virtual bool empty() const = 0;
 };
 
-using PatchSharedDataPtr = std::shared_ptr<const PatchSharedData>;
+using PatchReadResultPtr = std::shared_ptr<const PatchReadResult>;
 
-struct PatchMergeSharedData : public PatchSharedData
+struct PatchMergeReadResult : public PatchReadResult
 {
+    Block block;
+    /// Offsets of the source part covered by the read range. Not set if the range has no rows of that part.
+    std::optional<UInt64> min_part_offset;
+    std::optional<UInt64> max_part_offset;
+
+    bool empty() const override { return block.rows() == 0; }
 };
 
-/// We use two-level hash map (_block_number -> (_block_offset -> row_number)).
-/// Block number are usually the same for the large ranges of consecutive rows.
-/// Therefore we switch between hash maps for blocks rarely.
-/// It makes two-level hash map more cache-friendly than single-level ((_block_number, _block_offset) -> row_number).
-using OffsetsHashMap = absl::flat_hash_map<UInt64, UInt64, DefaultHash<UInt64>>;
-using PatchHashMap = absl::flat_hash_map<UInt64, OffsetsHashMap, DefaultHash<UInt64>>;
-
-struct PatchJoinSharedData : public PatchSharedData
+struct PatchJoinReadResult : public PatchReadResult
 {
-    PatchHashMap hash_map;
-    UInt64 min_block = 0;
-    UInt64 max_block = 0;
+    PatchJoinCache::Entries entries;
+
+    bool empty() const override { return entries.empty(); }
 };
 
-/// Builds a hash table from patch_block.
-/// It stores a mapping (_block_number, _block_offset) -> number of row in block.
-std::shared_ptr<PatchJoinSharedData> buildPatchJoinData(const Block & patch_block);
+/// v2 patch-read result. Sort-key result columns are materialized on `block` by the reader.
+struct PatchMergeOnKeyReadResult : public PatchReadResult
+{
+    Block block;
 
-/// Applies patch. Returns indices in result and patch blocks for rows that should be updated.
-PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_block, const PatchPartInfoForReader & patch);
-PatchToApplyPtr applyPatchJoin(const Block & result_block, const Block & patch_block, const PatchJoinSharedData & join_data);
+    bool empty() const override { return block.rows() == 0; }
+};
 
-/// Updates rows in result_block from patch_block at specified indices.
-/// versions_block is a shared block with current versions of rows for each updated column.
+/// A read result of a patch part with the set of result-block columns updated from it.
+struct PatchReadResultToApply
+{
+    PatchPartInfoForReader patch;
+    PatchReadResultPtr read_result;
+    Names updated_columns;
+};
+
+/// Builds patches of all modes from patch read results and applies them to result_block.
+/// Patches updating the same set of columns are combined and applied together.
+/// `key_columns` supplies the sorting key columns used for MergeOnKey key comparisons.
 void applyPatchesToBlock(
     Block & result_block,
     Block & versions_block,
-    const PatchesToApply & patches,
+    const Block & key_columns,
+    const std::vector<PatchReadResultToApply> & patch_read_results,
+    UInt64 source_data_version);
+
+/// Helpers defined in applyPatches.cpp, shared with the legacy formats (applyPatchesLegacy.cpp).
+const PaddedPODArray<UInt64> & getColumnUInt64Data(const Block & block, const String & column_name);
+PaddedPODArray<UInt64> & getColumnUInt64Data(Block & block, const String & column_name);
+bool canApplyPatchInplace(const IColumn & column);
+IColumn::Versions & addDataVersionForColumn(Block & block, const String & column_name, UInt64 num_rows, UInt64 data_version);
+Block getUpdatedHeader(const PatchesIndices & patches);
+
+/// Applies each patch as-is, without combining row indices across patches.
+/// Patches may have multiple source blocks (e.g. built by applyPatchesMergeOnKey).
+void applyPatchesIndices(
+    Block & result_block,
+    Block & versions_block,
+    const PatchesIndices & patches,
+    const Block & updated_header,
     UInt64 source_data_version);
 
 }

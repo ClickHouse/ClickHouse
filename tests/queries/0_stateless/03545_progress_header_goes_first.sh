@@ -4,7 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-CLICKHOUSE_URL="${CLICKHOUSE_URL}&max_block_size=10000"
+SETTINGS="max_block_size=10000&send_progress_in_http_headers=1&http_headers_progress_interval_ms=0"
 
 (
     echo "insert into function null('_ Int') format TSV"
@@ -16,6 +16,6 @@ CLICKHOUSE_URL="${CLICKHOUSE_URL}&max_block_size=10000"
             echo $y
         done
     done
-) | ${CLICKHOUSE_CURL} -v -S -X POST "${CLICKHOUSE_URL}&send_progress_in_http_headers=1&http_headers_progress_interval_ms=0" --data-binary @- |& {
+) | ${CLICKHOUSE_CURL} -v -S -X POST "${CLICKHOUSE_URL}&${SETTINGS}" --data-binary @- |& {
     grep -F -e X-ClickHouse-Progress: -e X-ClickHouse-Summary: -e Connection: | sed 's/: {.*}//' | uniq
 }

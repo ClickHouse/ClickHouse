@@ -25,14 +25,37 @@ public:
     }
 
     /// Use `amount` tokens on all throttlers
-    UInt64 add(size_t amount) override
+    bool throttle(size_t amount, size_t max_block_ns) override
     {
-        UInt64 total_sleep_ns = 0;
+        bool result = false;
         for (const auto & throttler : throttlers)
         {
-            total_sleep_ns += throttler->add(amount);
+            bool blocked = throttler->throttle(amount, max_block_ns);
+            result = result || blocked;
         }
-        return total_sleep_ns;
+        return result;
+    }
+
+    /// Use `amount` tokens on all throttlers, telling them that the data came from the OS page cache
+    bool throttleOSPageCacheRead(size_t amount, size_t max_block_ns) override
+    {
+        bool result = false;
+        for (const auto & throttler : throttlers)
+        {
+            bool blocked = throttler->throttleOSPageCacheRead(amount, max_block_ns);
+            result = result || blocked;
+        }
+        return result;
+    }
+
+    bool ignoresOSPageCacheReads() const override
+    {
+        for (const auto & throttler : throttlers)
+        {
+            if (throttler->ignoresOSPageCacheReads())
+                return true;
+        }
+        return false;
     }
 
     /// Check if any throttler is currently throttling

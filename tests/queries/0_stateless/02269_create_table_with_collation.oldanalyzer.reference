@@ -1,5 +1,0 @@
-CREATE TABLE t
-(
-    `x` varchar(255) NOT NULL COLLATE binary
-)
-ENGINE = Memory

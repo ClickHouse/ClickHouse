@@ -1,3 +1,4 @@
+#include <IO/CompressionLibraryErrors.h>
 #include <IO/LZMADeflatingWriteBuffer.h>
 
 namespace DB
@@ -20,7 +21,7 @@ void LZMADeflatingWriteBuffer::initialize(int compression_level)
     // options for further compression
     lzma_options_lzma opt_lzma2;
     if (lzma_lzma_preset(&opt_lzma2, compression_level))
-        throw Exception(ErrorCodes::LZMA_STREAM_ENCODER_FAILED, "lzma preset failed: lzma version: {}", LZMA_VERSION_STRING);
+        throw Exception(ErrorCodes::LZMA_STREAM_ENCODER_FAILED, "Compression level {} is out of range for xz", compression_level);
 
 
     // LZMA_FILTER_X86 -
@@ -37,14 +38,14 @@ void LZMADeflatingWriteBuffer::initialize(int compression_level)
     if (ret != LZMA_OK)
         throw Exception(
             ErrorCodes::LZMA_STREAM_ENCODER_FAILED,
-            "lzma stream encoder init failed: error code: {} lzma version: {}",
-            ret,
+            "lzma stream encoder init failed: {}; lzma version: {}",
+            lzmaErrorToString(ret, /* is_encoder= */ true),
             LZMA_VERSION_STRING);
 }
 
 LZMADeflatingWriteBuffer::~LZMADeflatingWriteBuffer()
 {
-    /// It is OK to call deflateEnd() twice (one from the finalizeAfter())
+    /// It is OK to call deflateEnd() twice (one from the finalFlushAfter())
     lzma_end(&lstr);
 }
 
@@ -74,8 +75,8 @@ void LZMADeflatingWriteBuffer::nextImpl()
             if (ret != LZMA_OK)
                 throw Exception(
                     ErrorCodes::LZMA_STREAM_ENCODER_FAILED,
-                    "lzma stream encoding failed: error code: {}; lzma_version: {}",
-                    ret,
+                    "lzma stream encoding failed: {}; lzma version: {}",
+                    lzmaErrorToString(ret, /* is_encoder= */ true),
                     LZMA_VERSION_STRING);
 
         } while (lstr.avail_in > 0 || lstr.avail_out == 0);
@@ -88,7 +89,7 @@ void LZMADeflatingWriteBuffer::nextImpl()
     }
 }
 
-void LZMADeflatingWriteBuffer::finalizeBefore()
+void LZMADeflatingWriteBuffer::finalFlushBefore()
 {
     next();
 
@@ -113,14 +114,14 @@ void LZMADeflatingWriteBuffer::finalizeBefore()
         if (ret != LZMA_OK)
             throw Exception(
                 ErrorCodes::LZMA_STREAM_ENCODER_FAILED,
-                "lzma stream encoding failed: error code: {}; lzma version: {}",
-                ret,
+                "lzma stream encoding failed: {}; lzma version: {}",
+                lzmaErrorToString(ret, /* is_encoder= */ true),
                 LZMA_VERSION_STRING);
 
     } while (lstr.avail_out == 0);
 }
 
-void LZMADeflatingWriteBuffer::finalizeAfter()
+void LZMADeflatingWriteBuffer::finalFlushAfter()
 {
     lzma_end(&lstr);
 }

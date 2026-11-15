@@ -10,6 +10,8 @@
 #include <cppkafka/topic_partition_list.h>
 #include <Common/CurrentMetrics.h>
 
+#include <unordered_set>
+
 namespace CurrentMetrics
 {
 extern const Metric KafkaConsumers;
@@ -72,7 +74,7 @@ public:
         CurrentOffsetsMap current_offsets;
         std::string consumer_id;
         std::string rdkafka_stat;
-        UInt64 num_messages_read;
+        UInt64 num_messages_read{};
         ExceptionsBuffer exceptions_buffer;
     };
 
@@ -84,7 +86,13 @@ public:
         size_t partition_count;
     };
 
-    KafkaConsumer2(LoggerPtr log_, size_t max_batch_size, size_t poll_timeout_, const std::atomic<bool> & stopped_, const Names & topics_);
+    KafkaConsumer2(
+        LoggerPtr log_,
+        size_t max_batch_size,
+        size_t poll_timeout_,
+        const std::atomic<bool> & stopped_,
+        const Names & topics_,
+        size_t skip_bytes_ = 0);
 
     ~KafkaConsumer2() override;
 
@@ -102,10 +110,14 @@ public:
 
     inline bool isStalled() const { return stalled_status != StalledStatus::NOT_STALLED; }
 
+    /// True when the last `consume` was cut short by a stop, leaving the batch incomplete.
+    inline bool wasStoppedWhileConsuming() const { return stalled_status == StalledStatus::CONSUMER_STOPPED; }
+
     void updateOffsets(TopicPartitionOffsets && topic_partition_offsets);
 
     /// Polls batch of messages from the given topic-partition and returns read buffer containing the next message or
-    /// nullptr when there are no messages to process.
+    /// nullptr when there are no messages to process. A single poll pulls at most
+    /// `min(message_count, batch_size)` messages into the consumer.
     ReadBufferPtr consume(const TopicPartition & topic_partition, const std::optional<uint64_t> & message_count);
 
     void commit(const TopicPartitionOffset & topic_partition_offset);
@@ -155,6 +167,7 @@ private:
     LoggerPtr log;
     const size_t batch_size = 1;
     const size_t poll_timeout = 0;
+    const size_t skip_bytes = 0;
 
     StalledStatus stalled_status = StalledStatus::NO_MESSAGES_RETURNED;
 
@@ -166,6 +179,9 @@ private:
 
     // order is important, need to be destructed before consumer
     std::unordered_map<TopicPartition, cppkafka::Queue, TopicPartitionHash, TopicPartitionEquality> queues;
+    /// Partitions paused by `initializeQueues` when they were removed from the assignment. They have to be resumed
+    /// if they are assigned again, because librdkafka clears only its own pause flag on unassign.
+    std::unordered_set<TopicPartition, TopicPartitionHash, TopicPartitionEquality> paused_partitions;
     const Names topics;
 
     bool polledDataUnusable(const TopicPartition & topic_partition) const;
