@@ -41,4 +41,16 @@ SELECT count() > 0, countIf(Settings['cluster_table_function_pushed_down_filter'
                 AND query LIKE '%icebergLocalCluster%');
 DROP TABLE t_index_hint_iceberg;
 
+-- Plan-based parallel replicas ship the sets of `indexHint` with the fragment, so an unshippable one keeps the read local.
+-- `generateRandom` cannot be serialized; with `max_string_length = 0` it returns only empty strings.
+SET enable_parallel_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3,
+    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_plan_based = 1, automatic_parallel_replicas_mode = 0;
+SELECT sum(b), count() FROM t_index_hint_serialized WHERE indexHint(a IN (SELECT length(x) FROM generateRandom('x String', 1, 0, 1) LIMIT 3));
+SELECT sum(b), count() FROM t_index_hint_serialized WHERE indexHint(b IN (SELECT length(x) FROM generateRandom('x String', 1, 0, 1) LIMIT 3));
+SELECT sum(b), count() FROM t_index_hint_serialized WHERE arrayExists(y -> indexHint(y IN (SELECT length(x) FROM generateRandom('x String', 1, 0, 1) LIMIT 3)), [a]);
+SELECT sum(b), count() FROM t_index_hint_serialized WHERE b IN (SELECT a FROM t_index_hint_serialized WHERE indexHint(a IN (SELECT length(x) FROM generateRandom('x String', 1, 0, 1) LIMIT 3)));
+SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') = 0 FROM (EXPLAIN SELECT sum(b) FROM t_index_hint_serialized WHERE indexHint(a IN (SELECT length(x) FROM generateRandom('x String', 1, 0, 1) LIMIT 3)));
+SELECT sum(b), count() FROM t_index_hint_serialized WHERE indexHint(a IN (SELECT number FROM numbers(10)));
+SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 FROM (EXPLAIN SELECT sum(b) FROM t_index_hint_serialized WHERE indexHint(a IN (SELECT number FROM numbers(10))));
+
 DROP TABLE t_index_hint_serialized;
