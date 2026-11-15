@@ -58,7 +58,7 @@ namespace DB {
 
         /// Reads and allocates node from ReadBuffer's data (doesn't set next)
         static Node *read(ReadBuffer &buf, Arena *arena) {
-            UInt64 size;
+            UInt64 size = 0;
             readVarUInt(size, buf);
             Node *node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + size, alignof(Node)));
             node->size = size;
@@ -171,7 +171,7 @@ namespace DB {
 
         void deserialize(AggregateDataPtr __restrict place, ReadBuffer &buf, std::optional<size_t> version,
                          Arena *arena) const override {
-            UInt64 elems;
+            UInt64 elems = 0;
             readVarUInt(elems, buf);
 
             if (unlikely(elems == 0))
