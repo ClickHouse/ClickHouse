@@ -420,6 +420,8 @@ private:
     /// thread and all assignees. Idempotent. Used after `shutdown_called` is set, both by `shutdown` and by a
     /// `startup` or an `ALTER` that armed some tasks and then observed a concurrent `shutdown`.
     void stopAllBackgroundTasks();
+    /// The implementation of `shutdown`. Non-virtual, so that the destructor can call it.
+    void shutdownImpl(bool is_drop);
     void enableBackgroundWorkers() noexcept;
     void disableBackgroundWorkers() noexcept;
     /// Schedules the merge/mutate and move assignees, the cleanup thread, and the outdated and

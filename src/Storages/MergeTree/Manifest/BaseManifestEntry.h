@@ -14,7 +14,7 @@ class WriteBuffer;
 struct BaseManifestEntry
 {
     String name;
-    Int32 state;
+    Int32 state = 0;
     String disk_name;
     String disk_path;
     String part_uuid;
