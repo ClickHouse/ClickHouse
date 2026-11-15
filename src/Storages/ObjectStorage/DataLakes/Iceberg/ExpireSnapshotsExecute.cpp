@@ -392,7 +392,6 @@ ExpiredFiles collectExpiredFiles(
     std::unordered_set<String> unresolved_paths;
     auto is_kept_or_collected = [&](const String & object)
     { return retained_objects.contains(object) || collected_objects.contains(object); };
-    /// For a data or delete file: whether it is to be deleted; marks it collected.
     auto collect = [&](const Iceberg::IcebergPathFromMetadata & path)
     {
         String object;
