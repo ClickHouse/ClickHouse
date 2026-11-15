@@ -345,6 +345,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , polling_min_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
     , polling_max_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_max_timeout_ms])
     , polling_backoff_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_backoff_ms])
+    , idle_unregister_threshold_ms((*queue_settings_)[ObjectStorageQueueSetting::idle_unregister_threshold_ms])
     , list_objects_batch_size((*queue_settings_)[ObjectStorageQueueSetting::list_objects_batch_size])
     , enable_hash_ring_filtering((*queue_settings_)[ObjectStorageQueueSetting::enable_hash_ring_filtering])
     , commit_settings(CommitSettings{
@@ -989,7 +990,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
         LOG_TRACE(log, "Reschedule processing thread in {} ms", reschedule_interval_ms);
         task->scheduleAfter(reschedule_interval_ms);
 
-        if (reschedule_interval_ms > 5000) /// TODO: Add a setting
+        if (idle_unregister_threshold_ms > 0 && reschedule_interval_ms > idle_unregister_threshold_ms)
         {
             try
             {
@@ -1472,6 +1473,7 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "polling_min_timeout_ms",
     "polling_max_timeout_ms",
     "polling_backoff_ms",
+    "idle_unregister_threshold_ms",
     "max_processed_files_before_commit",
     "max_processed_rows_before_commit",
     "max_processed_bytes_before_commit",
@@ -1507,6 +1509,7 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "polling_min_timeout_ms",
     "polling_max_timeout_ms",
     "polling_backoff_ms",
+    "idle_unregister_threshold_ms",
     "max_processed_files_before_commit",
     "max_processed_rows_before_commit",
     "max_processed_bytes_before_commit",
@@ -1545,6 +1548,7 @@ static const std::unordered_set<std::string_view> changeable_settings_exclusive_
     "polling_min_timeout_ms",
     "polling_max_timeout_ms",
     "polling_backoff_ms",
+    "idle_unregister_threshold_ms",
     "max_processed_files_before_commit",
     "max_processed_rows_before_commit",
     "max_processed_bytes_before_commit",
@@ -1894,6 +1898,8 @@ void StorageObjectStorageQueue::alter(
                 polling_max_timeout_ms = change.value.safeGet<UInt64>();
             else if (change.name == "polling_backoff_ms")
                 polling_backoff_ms = change.value.safeGet<UInt64>();
+            else if (change.name == "idle_unregister_threshold_ms")
+                idle_unregister_threshold_ms = change.value.safeGet<UInt64>();
             else if (change.name == "max_processed_files_before_commit")
                 commit_settings.max_processed_files_before_commit = change.value.safeGet<UInt64>();
             else if (change.name == "max_processed_rows_before_commit")
