@@ -16,6 +16,10 @@ control: id = 1	1
 rand	1
 id < 10 AND rand	1
 rand, index used	0
+id < 10 AND rand > 1, per granule	1
+-- minmax index and primary key on a column named rand()
+minmax, rand > 1	1
+primary key, rand > 1	1
 -- text index on map keys: 4000 rows have the key, about 40 of the others pass through rand
 map element	1
 map subcolumn	1

@@ -4603,6 +4603,10 @@ bool KeyCondition::tryMatchKeyColumnThroughMonotonicChainImpl(
     DataTypePtr & out_key_column_type,
     std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain)
 {
+    /// A key expression is always deterministic, so a column named like `rand()` must not stand in for a call to `rand`.
+    if (node.isFunction() && !node.toFunctionNode().getFunctionBase()->isDeterministicInScopeOfQuery())
+        return false;
+
     /** By itself, the key column can be a functional expression. for example, `intHash32(UserID)`.
       * Therefore, use the full name of the expression for search.
       */

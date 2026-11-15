@@ -1,14 +1,16 @@
 -- Tags: no-fasttest
 -- no-fasttest: the JSON case needs the JSON type.
 
--- A skip index must not skip granules because of a function that can return another value on each evaluation,
--- such as `rand`: the index computes the condition on the values it stores, not on the rows.
+-- A skip index or the primary key must not skip granules because of a function that can return another value on each
+-- evaluation, such as `rand`: the index computes the condition on the values it stores, not on the rows.
 -- https://github.com/ClickHouse/ClickHouse/issues/89615
 
 DROP TABLE IF EXISTS t_set;
 DROP TABLE IF EXISTS t_map;
 DROP TABLE IF EXISTS t_json;
 DROP TABLE IF EXISTS t_name;
+DROP TABLE IF EXISTS t_name_minmax;
+DROP TABLE IF EXISTS t_name_key;
 
 -- One value of `id` per granule: a granule skipped by mistake loses all of its rows.
 CREATE TABLE t_set (id UInt64, INDEX s_idx id TYPE set(0) GRANULARITY 1)
@@ -42,6 +44,23 @@ SELECT '-- set index on a column named rand()';
 SELECT 'rand', count() BETWEEN 3500 AND 4500 FROM t_name WHERE rand() % 2 = 0;
 SELECT 'id < 10 AND rand', count() BETWEEN 3500 AND 4500 FROM t_name WHERE id < 10 AND rand() % 2 = 0;
 SELECT 'rand, index used', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_name WHERE rand() % 2 = 0 SETTINGS enable_parallel_replicas = 0, use_query_condition_cache = 0) WHERE explain LIKE '%Name: r_idx%';
+SELECT 'id < 10 AND rand > 1, per granule', count() > 7000 FROM t_name WHERE id < 10 AND rand() > 1 SETTINGS secondary_indices_enable_bulk_filtering = 0;
+
+-- Every second granule stores 1 in `rand()`, the others 2.
+CREATE TABLE t_name_minmax (id UInt64, `rand()` UInt32, INDEX r_idx `rand()` TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_name_minmax SELECT number, 1 + intDiv(number, 8) % 2 FROM numbers(8000);
+
+-- The first half of the rows has `rand()` = 1, the second half 2.
+CREATE TABLE t_name_key (`rand()` UInt32, id UInt64)
+ENGINE = MergeTree ORDER BY `rand()`
+SETTINGS index_granularity = 8, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_name_key SELECT 1 + intDiv(number, 4000), number FROM numbers(8000);
+
+SELECT '-- minmax index and primary key on a column named rand()';
+SELECT 'minmax, rand > 1', count() > 7000 FROM t_name_minmax WHERE rand() > 1;
+SELECT 'primary key, rand > 1', count() > 7000 FROM t_name_key WHERE rand() > 1;
 
 -- Every second granule has the key 'k', the others only the key 'z'.
 CREATE TABLE t_map (id UInt64, m Map(String, String), INDEX ki mapKeys(m) TYPE text(tokenizer = 'array') GRANULARITY 1)
@@ -72,3 +91,5 @@ DROP TABLE t_set;
 DROP TABLE t_map;
 DROP TABLE t_json;
 DROP TABLE t_name;
+DROP TABLE t_name_minmax;
+DROP TABLE t_name_key;
