@@ -14,3 +14,14 @@ SETTINGS max_threads = 1;
 SELECT finalizeAggregation(CAST(unhex('03302C310200010203'), 'AggregateFunction(groupConcat(\',\', 2), String)'));
 SELECT finalizeAggregation(CAST(unhex('00808080808020'), 'AggregateFunction(groupConcat(\',\', 1), String)'))
 SETTINGS max_memory_usage = 1000000000; -- { serverError ATTEMPT_TO_READ_AFTER_EOF }
+
+-- A `groupConcat` state that claims a 4 GiB string and has no data fails on the missing data without allocating for it.
+SELECT finalizeAggregation(CAST(unhex('8080808010') AS AggregateFunction(groupConcat, String)))
+SETTINGS max_memory_usage = 10000000; -- { serverError CANNOT_READ_ALL_DATA }
+
+-- Wide weights are checked in their own type: one that does not fit in `UInt64` is rejected instead of narrowed.
+SELECT quantileExactWeightedInterpolated(0.5)(x, w), quantileExactWeighted(0.5)(x, w), quantileTimingWeighted(0.5)(x, w)
+FROM values('x UInt8, w UInt128', (1, 1), (2, 3));
+SELECT quantileExactWeighted(0.5)(x, w) FROM values('x UInt8, w UInt256', (1, 1), (2, 3));
+SELECT quantileExactWeightedInterpolated(0.5)(x, w) FROM values('x UInt8, w UInt128', (1, 1), (2, 18446744073709551616)); -- { serverError BAD_ARGUMENTS }
+SELECT quantileExactWeighted(0.5)(x, w) FROM values('x UInt8, w UInt256', (1, 1), (2, 18446744073709551616)); -- { serverError BAD_ARGUMENTS }

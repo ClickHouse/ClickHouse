@@ -190,10 +190,17 @@ void GroupConcatImpl<has_limit>::deserialize(AggregateDataPtr __restrict place, 
             temp_size,
             max_data_size);
 
-    cur_data.checkAndUpdateSize(temp_size, arena);
-
-    buf.readStrict(cur_data.data, temp_size);
-    cur_data.data_size = temp_size;
+    /// Grown as the payload arrives (the buffer doubles), so that a huge size in a malformed state does not allocate
+    /// before the data proves it.
+    static constexpr UInt64 max_chunk_size = UInt64{1} << 20;
+    cur_data.data_size = 0;
+    while (cur_data.data_size < temp_size)
+    {
+        const UInt64 chunk_size = std::min(max_chunk_size, temp_size - cur_data.data_size);
+        cur_data.checkAndUpdateSize(chunk_size, arena);
+        buf.readStrict(cur_data.data + cur_data.data_size, chunk_size);
+        cur_data.data_size += chunk_size;
+    }
 
     if constexpr (has_limit)
     {

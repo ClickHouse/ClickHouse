@@ -104,13 +104,10 @@ private:
         return LUTIndex{index};
     }
 
+    /// Branchless: the additive operators of `LUTIndex` below go through it in hot functions such as `toISOWeek`.
     static LUTIndex normalizeLUTIndex(Int64 index)
     {
-        if (unlikely(index < 0))
-            return LUTIndex(0);
-        if (index >= DATE_LUT_SIZE)
-            return LUTIndex(DATE_LUT_SIZE - 1);
-        return LUTIndex{static_cast<UInt32>(index)};
+        return LUTIndex{static_cast<UInt32>(std::clamp<Int64>(index, 0, DATE_LUT_SIZE - 1))};
     }
 
     /// The additive operators compute in `Int64`, so that a result below zero saturates to the first index
