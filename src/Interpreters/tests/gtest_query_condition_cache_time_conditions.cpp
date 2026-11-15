@@ -273,8 +273,9 @@ TEST(QueryConditionCacheTimeConditions, DateTime64NearInt64MinDoesNotOverflowFra
         Field constant = DecimalField<DateTime64>(DateTime64(std::numeric_limits<Int64>::min() + 1), scale);
         ComparisonCase test("greaterOrEquals", std::static_pointer_cast<const IDataType>(type), constant);
 
-        /// Floor-rounded ticks for INT64_MIN + 1 overflow Int64 multiplication, so derivation must safely return nullopt without signed overflow.
+        /// Floor-rounded ticks for INT64_MIN + 1 overflow Int64 multiplication (Weaken returns nullopt),
+        /// while ceil-rounded ticks (Strengthen) remain representable and succeed without signed overflow.
         EXPECT_FALSE(deriveDeterministicTimeCondition(test.condition, TimeConditionRounding::Weaken, 1.0, now));
-        EXPECT_FALSE(deriveDeterministicTimeCondition(test.condition, TimeConditionRounding::Strengthen, 1.0, now));
+        EXPECT_TRUE(deriveDeterministicTimeCondition(test.condition, TimeConditionRounding::Strengthen, 1.0, now));
     }
 }
