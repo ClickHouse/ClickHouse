@@ -136,6 +136,7 @@ public:
         const std::string & path_prefix,
         std::shared_ptr<const S3::Client> client_,
         size_t max_list_size,
+        bool with_metadata_,
         bool with_tags_,
         const std::optional<std::string> & start_after_)
         : IObjectStorageIteratorAsync(
@@ -145,6 +146,7 @@ public:
             ThreadName::S3_LIST_POOL)
         , client(client_)
         , request(std::make_unique<S3::ListObjectsV2Request>())
+        , with_metadata(with_metadata_)
         , with_tags(with_tags_)
         , start_after_set(start_after_.has_value() && !start_after_->empty())
         , description(fmt::format("Bucket: {}, Prefix: {}", bucket_, path_prefix))
@@ -199,6 +201,11 @@ private:
             auto objects = outcome.GetResult().GetContents();
             for (const auto & object : objects)
             {
+                if (!with_metadata)
+                {
+                    batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object.GetKey()));
+                    continue;
+                }
                 ObjectMetadata metadata{
                     .size_bytes = static_cast<uint64_t>(object.GetSize()),
                     .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
@@ -223,6 +230,7 @@ private:
 
     std::shared_ptr<const S3::Client> client;
     std::unique_ptr<S3::ListObjectsV2Request> request;
+    const bool with_metadata;
     const bool with_tags;
     bool start_after_set;
     const std::string description;
@@ -379,7 +387,9 @@ ObjectStorageIteratorPtr S3ObjectStorage::iterate(
     auto settings_ptr = s3_settings.get();
     if (!max_keys)
         max_keys = settings_ptr->request_settings[S3RequestSetting::list_object_keys_size];
-    return std::make_shared<S3IteratorAsync>(uri.bucket, path_prefix, client.get(), max_keys, with_tags, start_after);
+    /// `ListObjectsV2` describes the current version of each object, not the one a URL with `versionId` reads.
+    const bool with_metadata = uri.version_id.empty();
+    return std::make_shared<S3IteratorAsync>(uri.bucket, path_prefix, client.get(), max_keys, with_metadata, with_tags, start_after);
 }
 
 void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const

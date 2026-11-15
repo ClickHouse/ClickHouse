@@ -3112,6 +3112,24 @@ def test_read_object_version(started_cluster):
             f"SELECT count(), max(id) FROM {s3('size.parquet', 'Parquet', 'id UInt64', version_id)} "
             "SETTINGS s3_ignore_file_doesnt_exist = 1"
         )
+    # A glob lists only the latest version, so the old one is read with its own metadata too.
+    assert f"100000\t99999\t{old_size}\n" == instance.query(
+        f"SELECT count(), max(id), any(_size) FROM {s3('size.parq*', 'Parquet', 'id UInt64', old)}"
+    )
+    # A key listed before it, without that version, is skipped.
+    put_version("size-other.parquet", "Parquet", "id UInt64", "SELECT number FROM numbers(5)")
+    assert "100000\t99999\n" == instance.query(
+        f"SELECT count(), max(id) FROM {s3('size*.parquet', 'Parquet', 'id UInt64', old)} "
+        "SETTINGS s3_ignore_file_doesnt_exist = 1, max_threads = 1"
+    )
+    for version_id, value in [(old, "old"), (None, "latest")]:
+        tags = Tags(for_object=True)
+        tags["version"] = value
+        minio_client.set_object_tags(bucket, f"{prefix}-size.parquet", tags, version_id=version_id)
+    for key in ["size.parquet", "size.parq*"]:
+        assert "{'version':'old'}\n" == instance.query(
+            f"SELECT DISTINCT _tags FROM {s3(key, 'Parquet', 'id UInt64', old)}"
+        )
 
     # Versions of equal size (page checksums would make them differ): the footer of the latest version,
     # cached by the first query, does not describe the old one.
@@ -3131,6 +3149,10 @@ def test_read_object_version(started_cluster):
             f"SELECT count() FROM {s3('footer.parquet', 'Parquet', 'id UInt64', version_id)} WHERE id = 0 "
             "SETTINGS use_parquet_metadata_cache = 1"
         )
+    assert "1\n" == instance.query(
+        f"SELECT count() FROM {s3('footer.parq*', 'Parquet', 'id UInt64', old)} WHERE id = 0 "
+        "SETTINGS use_parquet_metadata_cache = 1"
+    )
 
     # Versions of equal size: the bytes of the latest version, cached by the first query, are not the old one's.
     for i, settings in enumerate(
