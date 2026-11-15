@@ -14,6 +14,7 @@ Keys:
 - `--hilite` or `--highlight` — Add syntax highlight with ANSI terminal escape sequences.
 - `--oneline` — Format in single line.
 - `--max_line_length` — Format in single line queries with length less than specified.
+- `--line_length` — Wrap multiline queries at the specified display width (default: `120`). Set to `0` to disable wrapping. This does not affect queries formatted in a single line by `--oneline` or `--max_line_length`.
 - `--comments` — Keep comments in the output.
 - `--quiet` or `-q` — Just check syntax, no output on success.
 - `--multiquery` or `-n` — Allow multiple queries in the same file.
@@ -21,6 +22,10 @@ Keys:
 - `--seed <string>` — Seed arbitrary string that determines the result of obfuscation.
 - `--backslash` — Add a backslash at the end of each line of the formatted query. Can be useful when you copy a query from web or somewhere else with multiple lines, and want to execute it in command line.
 - `--semicolons_inline` — In multiquery mode, write semicolons on last line of query instead of a new line.
+
+Line wrapping uses the query structure to split long argument lists and expressions, with four spaces per nesting level. Queries whose formatted lines already fit keep the same layout as with `--line_length 0`.
+
+Quoted strings, identifiers, query parameters, and SQL keyword phrases are kept intact. The width is a soft limit: indivisible fragments and deeply nested indentation can exceed it. Unicode character widths are taken into account. The limit applies before backslashes and inline semicolons are appended. Comments retained by `--comments` and data following `INSERT ... VALUES` are not wrapped.
 
 ## Examples {#examples}
 
@@ -100,4 +105,22 @@ FROM  \
     UNION DISTINCT \
     SELECT 3 \
 )
+```
+
+6. Wrapping long expressions:
+
+```bash title="Query"
+$ clickhouse-format --line_length 40 --query "SELECT concat(first_name, ' ', middle_name, ' ', last_name) FROM people"
+```
+
+```sql title="Response"
+SELECT
+    concat(
+        first_name,
+        ' ',
+        middle_name,
+        ' ',
+        last_name
+    )
+FROM people
 ```

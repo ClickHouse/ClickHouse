@@ -1,7 +1,9 @@
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFormatting.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/Operators.h>
+#include <optional>
 
 
 namespace DB
@@ -33,8 +35,9 @@ void ASTExpressionList::readJSON(const Poco::JSON::Object & json)
 
 void ASTExpressionList::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    ASTFormattingGroup group(ostr, state);
     if (frame.expression_list_prepend_whitespace)
-        ostr << ' ';
+        writeASTFormattingBreak(ostr, state, 4 * (frame.indent + 1));
 
     for (size_t i = 0, size = children.size(); i < size; ++i)
     {
@@ -42,10 +45,12 @@ void ASTExpressionList::formatImpl(WriteBuffer & ostr, const FormatSettings & se
         {
             if (char sep = getSeparator())
                 ostr << sep;
-            ostr << ' ';
+            writeASTFormattingBreak(ostr, state, 4 * (frame.indent + 1));
         }
 
         FormatStateStacked frame_nested = frame;
+        if (group)
+            ++frame_nested.indent;
         frame_nested.surround_each_list_element_with_parens = false;
         frame_nested.list_element_index = i;
 
@@ -63,11 +68,14 @@ void ASTExpressionList::formatImplMultiline(WriteBuffer & ostr, const FormatSett
 {
     ++frame.indent;
     std::string indent_str = "\n" + std::string(4 * frame.indent, ' ');
+    std::optional<ASTFormattingGroup> group;
+    if (children.size() == 1 && !frame.expression_list_always_start_on_new_line)
+        group.emplace(ostr, state);
 
     if (frame.expression_list_prepend_whitespace)
     {
         if (!(children.size() > 1 || frame.expression_list_always_start_on_new_line))
-            ostr << ' ';
+            writeASTFormattingBreak(ostr, state, 4 * frame.indent);
     }
 
     for (size_t i = 0, size = children.size(); i < size; ++i)

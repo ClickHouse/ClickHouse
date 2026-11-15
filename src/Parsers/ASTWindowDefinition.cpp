@@ -1,4 +1,5 @@
 #include <Parsers/ASTWindowDefinition.h>
+#include <Parsers/ASTFormatting.h>
 
 #include <Common/SipHash.h>
 #include <Parsers/ASTExpressionList.h>
@@ -83,6 +84,7 @@ void ASTWindowDefinition::updateTreeHashImpl(SipHash & hash_state, bool ignore_a
 void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & settings,
                                      FormatState & state, FormatStateStacked format_frame) const
 {
+    ASTFormattingGroup formatting_group(ostr, state);
     format_frame.expression_list_prepend_whitespace = false;
     bool need_space = false;
 
@@ -97,7 +99,7 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
     {
         if (need_space)
         {
-            ostr << " ";
+            writeASTFormattingBreak(ostr, state, 4 * format_frame.indent);
         }
 
         ostr << "PARTITION BY ";
@@ -110,7 +112,7 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
     {
         if (need_space)
         {
-            ostr << " ";
+            writeASTFormattingBreak(ostr, state, 4 * format_frame.indent);
         }
 
         ostr << "ORDER BY ";
@@ -122,7 +124,7 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
     if (!frame_is_default)
     {
         if (need_space)
-            ostr << " ";
+            writeASTFormattingBreak(ostr, state, 4 * format_frame.indent);
 
         /// The frame offset grammar requires the offset to be wrapped in parentheses
         /// when it is an aliased expression (e.g. `((1 + 1) AS x) PRECEDING`),
@@ -147,7 +149,8 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
             ostr << " "
                 << (!frame_begin_preceding ? "FOLLOWING" : "PRECEDING");
         }
-        ostr << " AND ";
+        writeASTFormattingBreak(ostr, state, 4 * format_frame.indent);
+        ostr << "AND ";
         if (frame_end_type == WindowFrame::BoundaryType::Current)
         {
             ostr << "CURRENT ROW";

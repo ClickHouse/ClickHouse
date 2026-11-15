@@ -1,4 +1,5 @@
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTFormatting.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTFromJSON.h>
@@ -129,8 +130,9 @@ void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) 
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
-void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const
+void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState & state, FormatStateStacked frame) const
 {
+    ASTFormattingGroup formatting_group(ostr, state);
     if (is_standalone)
         ostr << "SET ";
 
@@ -139,7 +141,10 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
     for (const auto & change : changes)
     {
         if (!first)
-            ostr << ", ";
+        {
+            ostr << ',';
+            writeASTFormattingBreak(ostr, state, 4 * (frame.indent + 1));
+        }
         else
             first = false;
 
@@ -169,7 +174,10 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
     for (const auto & setting_name : default_settings)
     {
         if (!first)
-            ostr << ", ";
+        {
+            ostr << ',';
+            writeASTFormattingBreak(ostr, state, 4 * (frame.indent + 1));
+        }
         else
             first = false;
 
@@ -180,7 +188,10 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
     for (const auto & [name, value] : query_parameters)
     {
         if (!first)
-            ostr << ", ";
+        {
+            ostr << ',';
+            writeASTFormattingBreak(ostr, state, 4 * (frame.indent + 1));
+        }
         else
             first = false;
 

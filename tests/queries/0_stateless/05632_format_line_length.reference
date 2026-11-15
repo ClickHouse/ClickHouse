@@ -1,0 +1,167 @@
+Default width
+SELECT
+    multiIf(number = 0, 'zero', number = 1, 'one', number = 2, 'two', number = 3, 'three', number = 4, 'four', 'other')
+FROM numbers(6)
+Long expression
+Long expression width OK
+Argument list
+SELECT
+    f(
+        a,
+        b,
+        c,
+        d,
+        e,
+        f,
+        g,
+        h,
+        i,
+        j,
+        k,
+        l,
+        m,
+        n,
+        o,
+        p,
+        q,
+        r,
+        s,
+        t,
+        u,
+        v,
+        w,
+        x,
+        y,
+        z
+    )
+Narrow width
+SELECT
+    multiIf(
+        number = 0,
+        'zero',
+        number = 1,
+        'one',
+        number = 2,
+        'two',
+        number = 3,
+        'three',
+        number = 4,
+        'four',
+        'other'
+    )
+FROM numbers(6)
+Disabled wrapping
+SELECT multiIf(number = 0, 'zero', number = 1, 'one', number = 2, 'two', number = 3, 'three', number = 4, 'four', 'other')
+FROM numbers(6)
+Boundary widths
+SELECT
+    concat('a', 'b')
+SELECT concat('a', 'b')
+SELECT concat('a', 'b')
+Existing indentation
+SELECT
+    number,
+    concat(
+        'first',
+        'second',
+        'third',
+        'fourth'
+    ) AS result
+FROM numbers(1)
+Quoted tokens
+SELECT
+    concat(
+        'spaces inside a very long string',
+        'x'
+    )
+    AS `spaces inside a very long identifier`
+Unicode width
+SELECT
+    concat(
+        '你好',
+        '世界',
+        '🙂',
+        'é'
+    )
+Unicode boundary widths
+SELECT '乌龟走着走着，找到了辣椒'
+SELECT '乌龟走着走着，找到了辣椒'
+SELECT
+    '乌龟走着走着，找到了辣椒'
+Nested literals
+SELECT
+    [
+        [1, 2, 3],
+        [4, 5, 6],
+        [7, 8, 9],
+        [10, 11, 12]
+    ],
+    tuple(
+        tuple(),
+        tuple(1),
+        tuple(1, tuple(2, 3))
+    )
+Window clauses
+SELECT
+    first_value(number) IGNORE NULLS
+    OVER (
+        PARTITION BY number % 2
+        ORDER BY number ASC
+        ROWS BETWEEN 2 PRECEDING
+        AND CURRENT ROW
+    )
+FROM numbers(10)
+Single line takes precedence
+SELECT concat('first', 'second')
+SELECT concat('first', 'second')
+Backslash continuation
+SELECT \
+    concat( \
+        'first', \
+        'second', \
+        'third' \
+    )
+Multiple queries
+SELECT
+    concat(
+        'first',
+        'second'
+    );
+
+SELECT
+    concat(
+        'third',
+        'fourth'
+    );
+
+Semicolons on separate lines
+SELECT
+    concat(
+        'first',
+        'second'
+    )
+;
+
+SELECT
+    concat(
+        'third',
+        'fourth'
+    )
+;
+
+Insert payload
+INSERT INTO a_long_table_name
+(
+    a_long_column_name,
+    another_long_column_name
+) VALUES ('spaces inside payload', 123)
+Round trips OK
+Empty parameters OK
+Nested call widths OK
+Structural boundaries OK
+Input whitespace OK
+Fitting output preserved
+Line length validation OK
+Highlight and backslash OK
+Hidden secrets OK
+Invalid UTF-8 OK

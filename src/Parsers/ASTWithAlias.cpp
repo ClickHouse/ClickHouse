@@ -1,9 +1,11 @@
 #include <Common/SipHash.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/ASTFormatting.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <iostream>
+#include <optional>
 
 namespace DB
 {
@@ -13,15 +15,21 @@ ASTWithAlias::~ASTWithAlias() = default;
 ASTWithAlias::ASTWithAlias(const ASTWithAlias &) = default;
 ASTWithAlias & ASTWithAlias::operator=(const ASTWithAlias &) = default;
 
-static void writeAlias(const String & name, WriteBuffer & ostr, const ASTWithAlias::FormatSettings & settings)
+static void writeAlias(const String & name, WriteBuffer & ostr, const ASTWithAlias::FormatSettings & settings,
+    IASTFormatState & state, size_t indent)
 {
-    ostr << " AS ";
+    writeASTFormattingOptionalBreak(ostr, state, 4 * indent);
+    ostr << "AS ";
     settings.writeIdentifier(ostr, name, /*ambiguous=*/false);
 }
 
 
 void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    std::optional<ASTFormattingGroup> group;
+    if (!alias.empty())
+        group.emplace(ostr, state);
+
     /// This is needed for distributed queries with the old analyzer. Remove it after removing the old analyzer.
     /// If we have previously output this node elsewhere in the query, now it is enough to output only the alias.
     if (settings.collapse_identical_nodes_to_aliases && !alias.empty() && !state.printed_asts_with_alias.emplace(frame.current_select, alias, getTreeHash(/*ignore_aliases=*/ true)).second)
@@ -41,7 +49,7 @@ void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
         inner.need_parens = false;
         formatImplWithoutAlias(ostr, settings, state, inner);
         ostr.write(')');
-        writeAlias(alias, ostr, settings);
+        writeAlias(alias, ostr, settings, state, frame.indent);
     }
     else
     {
@@ -63,7 +71,7 @@ void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
         }
         formatImplWithoutAlias(ostr, settings, state, frame);
         if (!alias.empty())
-            writeAlias(alias, ostr, settings);
+            writeAlias(alias, ostr, settings, state, frame.indent);
         if (wrap_around_alias)
             ostr.write(')');
     }
