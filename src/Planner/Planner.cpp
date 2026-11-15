@@ -89,7 +89,6 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TrivialGroupByLimit.h>
 #include <Analyzer/UnionNode.h>
-#include <Analyzer/traverseQueryTree.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
