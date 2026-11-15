@@ -41,6 +41,12 @@ public:
     /// The position right after the parsed query (before the trailing semicolon, if any).
     const char * getParsedEnd() const { return parsed_end; }
 
+    /// Whether the parser has examined the end of input as the current token and not moved since.
+    /// After `parse` throws a syntax error, this tells whether the error is about input missing at
+    /// the end, i.e. the query is unfinished, rather than about a construct read in full that
+    /// fails validation, e.g. `re(a,b)` (see `LogsQLLexer::hasExaminedEnd`).
+    bool hasExaminedEnd() const { return lex.hasExaminedEnd(); }
+
 private:
     /// An intermediate representation of one SELECT level.
     struct Layer

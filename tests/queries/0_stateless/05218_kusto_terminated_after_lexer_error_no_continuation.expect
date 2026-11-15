@@ -1,0 +1,61 @@
+#!/usr/bin/expect -f
+
+# Regression test: under the Kusto dialect, a statement that the user has
+# explicitly terminated with `;` must be submitted on <ENTER> even when the
+# KQL lexer stops on a malformed literal before that `;`. `1x` is not a valid
+# number or timespan, so `KQLLexer` produces an `Error` token there and stops;
+# the terminator scan of the continuation probe has to resume past it to see the
+# `;`. Otherwise the unclosed `(` in front of the error would be taken as "still
+# being typed" and the buffer would be kept open forever.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --format PrettyCompact --allow_experimental_kusto_dialect 1 --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+expect ":) "
+
+# The dialect switches to Kusto mid-buffer; the second statement has an unclosed
+# `(`, a malformed literal and an explicit `;` after it. <ENTER> must submit the
+# buffer: the `SET` runs and the KQL statement reports its syntax error.
+send -- "SET dialect = 'kusto'; print (1x; SELECT 1\r"
+expect "Syntax error"
+expect ":) "
+
+# The `SET` was executed, so the session is in Kusto now, and a complete KQL
+# statement still works.
+send -- "print 42\r"
+expect -re {│ +42 │}
+expect ":) "
+
+# The bracket heuristic is intact for a genuinely unfinished statement in the
+# same lexical situation: without the `;`, the malformed literal after the
+# unclosed `(` still keeps the buffer open, and `;` on the next line submits it.
+send -- "print (1x\r"
+# Give the client time to react to the <ENTER> on its own: two lines sent back to
+# back arrive in a single read and are inserted as one pasted block, which would
+# fold the buffer regardless of what the continuation probe decides.
+sleep 1
+send -- ";\r"
+expect "Syntax error"
+expect ":) "
+
+send -- "\4"
+expect eof

@@ -1,0 +1,71 @@
+#!/usr/bin/expect -f
+
+# Regression test: `ParserQuery` can succeed on a prefix of a statement after an
+# optional suffix fails at the end of input, e.g. on the `SELECT 1` of
+# `SELECT 1 UNION ALL`. The single-line continuation probe must still see that
+# the suffix is being typed: <ENTER> keeps the buffer open, and the `INSERT`
+# before it is not executed early. Completing the suffix gives a valid query;
+# discarding the buffer leaves the table untouched.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    -i $any_spawn_id eof { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+foreach implicit_select {0 1} {
+    spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --output-format PrettyCompact --implicit_select $implicit_select --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+    expect ":) "
+
+    send -- "CREATE TABLE t_suffix (x UInt8) ENGINE = Memory\r"
+    expect ":) "
+
+    # Complete the `UNION ALL` on the continuation line. Give the client time to
+    # react to the <ENTER> on its own: two lines sent back to back arrive in a
+    # single read and are inserted as one pasted block.
+    send -- "INSERT INTO t_suffix VALUES (1); SELECT 1 AS a UNION ALL\r"
+    sleep 1
+    send -- "SELECT 2 AS a\r"
+    expect {
+        "Syntax error" { exit 1 }
+        -re {│ +2 │} {}
+    }
+    expect ":) "
+
+    # Discard buffers with an `INSERT` prefix: the `INSERT` must not have run.
+    send -- "INSERT INTO t_suffix VALUES (2); SELECT * FROM numbers(1) AS l LEFT JOIN\r"
+    sleep 1
+    # Ctrl-C
+    send -- "\3"
+    expect ":) "
+
+    send -- "INSERT INTO t_suffix VALUES (3); SELECT 1 PARALLEL WITH\r"
+    sleep 1
+    send -- "\3"
+    expect ":) "
+
+    send -- "SELECT count(), sum(x) FROM t_suffix\r"
+    expect -re {│ +1 │ +1 │}
+    expect ":) "
+
+    # A `;` still submits the unfinished statement, so its syntax error is reported.
+    send -- "SELECT 1 UNION ALL;\r"
+    expect "Syntax error"
+    expect ":) "
+
+    send -- "\4"
+    expect eof
+}
