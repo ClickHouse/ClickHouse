@@ -7,5 +7,5 @@ alter delete	1
 lightweight delete	0
 tuple subcolumn	1
 lambda parameter	1
-local storage id	2
+local storage id	1
 real column override	2

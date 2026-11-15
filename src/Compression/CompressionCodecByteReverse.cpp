@@ -91,7 +91,7 @@ void), reverseCopyImpl, MULTITARGET_FUNCTION_BODY((const char * __restrict sourc
 
 void reverseCopy(const char * source, UInt32 size, char * dest)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         reverseCopyImpl_x86_64_v4(source, size, dest);

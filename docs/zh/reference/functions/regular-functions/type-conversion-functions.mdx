@@ -350,6 +350,8 @@ SELECT accurateCastOrDefault('abc', 'UInt32')
 
 此函数结合了 [`accurateCast`](#accurateCast) 的安全性以及更平稳的错误处理方式。
 
+Trino、Spark、Snowflake 和 SQL Server 的 SQL 方言中的 `TRY_CAST(x AS T)` 语法等价于 `accurateCastOrNull(x, 'T')`。
+
 **语法**
 
 ```sql
@@ -2878,6 +2880,7 @@ toBool('FALSE'):         false
 
 将输入值转换为 [`Date`](/zh/reference/data-types/date) 类型。
 支持从 String、FixedString、DateTime 或数值类型转换。
+超出该类型范围的数值将按照 [`date_time_overflow_behavior`](/zh/reference/settings/formats/date-time#date_time_overflow_behavior) 设置进行处理：在默认的 `ignore` 模式和 `saturate` 模式下，这些值会被饱和截断至范围边界；在 `throw` 模式下则会抛出异常。
 
 **语法**
 
@@ -2932,6 +2935,7 @@ SELECT toDate(20297)
 将参数转换为 [Date32](/zh/reference/data-types/date32) 数据类型。
 如果值超出 `[0000-01-01, 9999-12-31]` 范围，`toDate32` 会返回 [Date32](/zh/reference/data-types/date32) 支持的边界值。
 如果参数类型为 [`Date`](/zh/reference/data-types/date)，则会考虑其取值边界。
+超出该类型范围的数值遵循 [`date_time_overflow_behavior`](/zh/reference/settings/formats/date-time#date_time_overflow_behavior) 设置：在默认的 `ignore` 模式和 `saturate` 模式下，这些值会被截断到范围边界；在 `throw` 模式下则会抛出异常。
 
 **语法**
 
@@ -3241,6 +3245,8 @@ SELECT toDateOrZero('2025-12-30'), toDateOrZero('')
   因此，由于存在歧义，较短数字的字符串表示形式 (最多 4 位) 会明确禁用解析。例如，字符串 `'1999'` 既可能表示年份 (Date / DateTime 的不完整字符串表示形式) ，也可能是 Unix 时间戳。更长的数字字符串则允许解析。
 </Note>
 
+超出该类型范围 (`1970-01-01 00:00:00` 至 `2106-02-07 06:28:15`) 的数值遵循 [`date_time_overflow_behavior`](/zh/reference/settings/formats/date-time#date_time_overflow_behavior) 设置：在默认的 `ignore` 模式和 `saturate` 模式下，这些值会被饱和截断到范围边界；在 `throw` 模式下则会抛出异常。
+
 如果 `expr` 是 [Time](/zh/reference/data-types/time) 或 [Time64](/zh/reference/data-types/time64) 值，则会将其解释为自 Unix 纪元开始以来的秒数：`Time64` 的小数部分会向负无穷方向取整，超出 `DateTime` 范围的值则遵循 `date_time_overflow_behavior` 设置。
 
 **语法**
@@ -3281,8 +3287,8 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
 将输入值转换为 `DateTime` 类型。
 支持从 `String`、`FixedString`、`Date`、`Date32`、`Time`、`Time64`、`DateTime`、`DateTime64` 或数值类型 (`(U)Int8`、`(U)Int16`、`(U)Int32`、`(U)Int64`、`(U)Int128`、`(U)Int256`、`BFloat16`、`Float32`、`Float64`) 转换。`Decimal` 值不受支持，会引发异常。
 `DateTime32` 是 `DateTime` 的别名，支持 `1970-01-01 00:00:00` 至 `2106-02-07 06:28:15` 范围内的日期时间。
-从字符串或上述可饱和的数值类型转换时，超出此范围的值会被饱和到范围边界。非有限浮点值 (`NaN`、`inf`、`-inf`) 无法转换，会引发异常。
-从 `Date32`、`DateTime64`、`Time` 或 `Time64` 等其他日期时间类型转换时，遵循 `date_time_overflow_behavior` 设置：默认的 `ignore` 模式可能产生回绕值，`saturate` 会将值限制在范围边界内，而 `throw` 会引发异常。`Time64` 值会先向负无穷取整到整秒。
+从字符串转换时，超出此范围的值会被饱和到范围边界。
+从上述数值类型以及 `Date32`、`DateTime64`、`Time` 或 `Time64` 等其他日期时间类型转换时，遵循 [`date_time_overflow_behavior`](/zh/reference/settings/formats/date-time#date_time_overflow_behavior) 设置：默认的 `ignore` 模式会对数值进行饱和处理，但对日期时间类型的源值可能产生回绕值；`saturate` 会将值限制在范围边界内；`throw` 则会抛出异常。`Time64` 值会先向负无穷取整到整秒。非有限浮点值 (`NaN`、`inf`、`-inf`) 无法转换，会引发异常。
 
 **语法**
 
@@ -3342,6 +3348,7 @@ SELECT toDateTime32('2025-01-01 00:00:00', 'Asia/Istanbul') AS value, toTypeName
 引入版本：v20.1.0
 
 将输入值转换为 [`DateTime64`](/zh/reference/data-types/datetime64) 类型的值。
+超出该类型范围的数值按 [`date_time_overflow_behavior`](/zh/reference/settings/formats/date-time#date_time_overflow_behavior) 设置处理：在默认的 `ignore` 模式和 `saturate` 模式下，这些值会被饱和截断到范围边界 (即所请求 `scale` 下最后一个可表示的 tick) ；在 `throw` 模式下则会抛出异常。
 
 **语法**
 
@@ -6978,8 +6985,8 @@ SELECT
 
 将输入值转换为 [Time](/zh/reference/data-types/time) 类型。
 支持从 String、FixedString、DateTime、DateTime64、Time64 或表示自午夜起经过秒数的数值类型进行转换。
-超出该类型范围的数值 (`-999:59:59` 至 `999:59:59`，即 `-3599999` 至 `3599999` 秒) 将被限制在范围边界内；非有限浮点值 (`NaN`、`inf`、`-inf`) 无法转换，并会引发异常。
-`Time64` 值会向负无穷方向取整到整秒，并同样被限制在该范围内。
+超出该类型范围的数值 (`-999:59:59` 至 `999:59:59`，即 `-3599999` 至 `3599999` 秒) 的处理方式取决于 [`date_time_overflow_behavior`](/zh/reference/settings/formats/date-time#date_time_overflow_behavior) 设置：在默认的 `ignore` 模式和 `saturate` 模式下，这些值会被钳制到范围边界；在 `throw` 模式下则会抛出异常。非有限浮点值 (`NaN`、`inf`、`-inf`) 无法转换，并会引发异常。
+`Time64` 值会向负无穷方向取整到整秒，并同样被钳制到范围边界。
 
 <Note title="旧版 `toTime`">
   在 v25.5 之前，`toTime` 是另一个函数，用于将日期时间转换为固定日期 (`1970-01-02`) ，同时保留
@@ -7050,6 +7057,7 @@ SELECT toTime(toDateTime(52225, 'UTC'))
 将输入值转换为 [Time64](/zh/reference/data-types/time64) 类型。
 支持从 String、FixedString、DateTime64，或表示自午夜起经过秒数的数值类型进行转换。
 可为时间值提供子秒级精度，最多支持 `scale` 位小数。
+超出该类型范围 (`-999:59:59.999999999` 到 `999:59:59.999999999`) 的数值，其处理方式由 [`date_time_overflow_behavior`](/zh/reference/settings/formats/date-time#date_time_overflow_behavior) 设置决定：在默认的 `ignore` 模式和 `saturate` 模式下，这些值会被钳制到范围边界；在 `throw` 模式下则抛出异常。
 
 **语法**
 

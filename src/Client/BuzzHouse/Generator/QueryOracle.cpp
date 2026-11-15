@@ -1047,7 +1047,7 @@ void QueryOracle::generateExportQuery(
         gen.columnPathRef(entry, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
     }
     gen.entries.clear();
-    ff->set_format(rg.pickRandomly(can_test_oracle_result ? QueryOracle::oracleFormats : fc.out_formats));
+    ff->set_format(can_test_oracle_result ? rg.pickRandomly(QueryOracle::oracleFormats) : fc.pickFormat(rg, fc.out_formats));
     if (rg.nextSmallNumber() < 4)
     {
         ff->set_fcomp(rg.pickRandomly(compressionMethods));
@@ -1857,8 +1857,14 @@ void QueryOracle::maybeUpdateOracleSelectQuery(RandomGenerator & rg, StatementGe
                                 /// Replace table with table function call
                                 const SQLTable & t = gen.tables.at(tkey);
 
+                                /// The table function's `structure` lists the columns in arbitrary order, which `SELECT *`
+                                /// would expose, so only swap a table whose structure has a single entry.
+                                gen.flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
+                                const bool single_structure_entry = gen.remote_entries.size() <= 1;
+                                gen.remote_entries.clear();
+
                                 gen.setAllowNotDetermistic(false);
-                                if (t.isEngineReplaceable() && rg.nextSmallNumber() < 5)
+                                if (single_structure_entry && t.isEngineReplaceable() && rg.nextSmallNumber() < 5)
                                 {
                                     gen.setTableFunction(rg, TableFunctionUsage::EngineReplace, t, tf->mutable_tfunc());
                                 }

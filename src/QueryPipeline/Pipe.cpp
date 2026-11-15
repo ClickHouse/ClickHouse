@@ -312,6 +312,10 @@ Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors, bool allow
     if (pipes.empty())
         return res;
 
+    for (const auto & pipe : pipes)
+        if (pipe.extremes_detached)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite Pipe with detached extremes");
+
     if (pipes.size() == 1)
         return std::move(pipes[0]);
 
@@ -428,6 +432,52 @@ void Pipe::dropExtremes()
 void Pipe::dropTotalsAndExtremes()
 {
     dropStreams(totals_port != nullptr, extremes_port != nullptr);
+}
+
+void Pipe::detachExtremes()
+{
+    if (extremes_detached)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Extremes were already detached from Pipe");
+
+    extremes_detached = true;
+    detached_extremes_port = extremes_port;
+    extremes_port = nullptr;
+}
+
+void Pipe::attachExtremes(ProcessorPtr converting)
+{
+    if (!extremes_detached)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Extremes were not detached from Pipe");
+
+    if (extremes_port)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot attach extremes to Pipe which already has extremes");
+
+    OutputPort * port = detached_extremes_port;
+    extremes_detached = false;
+    detached_extremes_port = nullptr;
+
+    if (!port)
+    {
+        if (converting)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert extremes which were not detached from Pipe");
+        return;
+    }
+
+    if (converting)
+    {
+        if (converting->getInputs().size() != 1 || converting->getOutputs().size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Transform converting extremes must have one input and one output");
+
+        connect(*port, converting->getInputs().front());
+        port = &converting->getOutputs().front();
+
+        if (collected_processors)
+            collected_processors->emplace_back(converting);
+        processors->emplace_back(std::move(converting));
+    }
+
+    assertBlocksHaveEqualStructure(*header, port->getHeader(), "Pipe extremes");
+    extremes_port = port;
 }
 
 void Pipe::dropStreams(bool drop_totals, bool drop_extremes)
