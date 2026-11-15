@@ -15,10 +15,13 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <Formats/FormatSettings.h>
+#include <IO/WriteBufferFromString.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/DateLUT.h>
 #include <Common/intExp.h>
 #include <Common/assert_cast.h>
-#include <base/arithmeticOverflow.h>
 #include <base/unaligned.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
@@ -723,13 +726,30 @@ private:
 class IntegerColumnWriter final : public PrimitiveColumnWriter
 {
 public:
-    IntegerColumnWriter(const Type & type, WriterContext & context_)
+    IntegerColumnWriter(const Type & type, const DataTypePtr & data_type, WriterContext & context_)
         : PrimitiveColumnWriter(type, context_)
         , data_stream(context.compressor, context.block_size)
         , encoder(data_stream, true)
         , is_date(type.getKind() == DATE)
     {
         encoding_kind = Proto::ColumnEncodingKind::DIRECT_V2;
+        /// ORC has no time-of-day type: `Time` and `Time64` are written as a `LONG` of microseconds
+        /// since midnight, as Iceberg writes its `time` (see `ORCBlockOutputFormat::getORCType`).
+        if (type.getKind() == LONG)
+        {
+            const WhichDataType which(data_type);
+            if (which.isTime())
+                time_multiplier = 1'000'000;
+            else if (which.isTime64())
+            {
+                const UInt32 scale = getDecimalScale(*data_type);
+                if (scale > 6)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type {} for an ORC time of day", data_type->getName());
+                time_multiplier = intExp10OfSize<Int64>(6 - scale);
+            }
+            if (time_multiplier)
+                time_type = data_type;
+        }
         init();
     }
 
@@ -750,6 +770,8 @@ public:
             Int64 value = (is_date && width == 2)
                 ? unalignedLoad<UInt16>(data + (offset + i) * sizeof(UInt16))
                 : readSignedValue(data, width, offset + i);
+            if (time_multiplier)
+                value = toTimeOfDayMicroseconds(column, offset + i, value);
             encoder.write(value);
             if (is_date)
                 index_statistics.updateDate(static_cast<Int32>(value));
@@ -774,9 +796,29 @@ protected:
     void resetStreams() override { data_stream.reset(); }
 
 private:
+    /// A time of day has to be in the range [00:00:00, 24:00:00).
+    Int64 toTimeOfDayMicroseconds(const IColumn & column, size_t row, Int64 value) const
+    {
+        static constexpr Int64 microseconds_per_day = 24LL * 60 * 60 * 1'000'000;
+        Int64 microseconds = 0;
+        if (common::mulOverflow(value, time_multiplier, microseconds) || microseconds < 0 || microseconds >= microseconds_per_day)
+        {
+            WriteBufferFromOwnString text;
+            time_type->getDefaultSerialization()->serializeText(column, row, text, FormatSettings{});
+            throw Exception(
+                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                "Value {} of type {} is out of range [00:00:00, 24:00:00) of a time of day for ORC output format",
+                text.str(), time_type->getName());
+        }
+        return microseconds;
+    }
+
     OutputByteStream data_stream;
     IntRleEncoderV2 encoder;
     const bool is_date;
+    /// Not zero for `Time` and `Time64`: the multiplier of their values to microseconds.
+    Int64 time_multiplier = 0;
+    DataTypePtr time_type;
 };
 
 template <typename ItemType>
@@ -1289,7 +1331,7 @@ std::unique_ptr<ColumnWriter> buildColumnWriter(const Type & type, const DataTyp
         case INT:
         case LONG:
         case DATE:
-            return std::make_unique<IntegerColumnWriter>(type, context);
+            return std::make_unique<IntegerColumnWriter>(type, data_type, context);
         case FLOAT:
             return std::make_unique<FloatingColumnWriter<float>>(type, context);
         case DOUBLE:

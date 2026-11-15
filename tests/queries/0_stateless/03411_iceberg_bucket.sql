@@ -21,6 +21,11 @@ WITH
     toDateTime64('1970-01-01 22:31:08', 6, 'UTC') AS ts,
     toUnixTimestamp64Micro(ts) AS microseconds_since_day_start
 SELECT icebergHash(microseconds_since_day_start);
+-- Iceberg Appendix B: time 22:31:08 -> hashLong(microsecsFromMidnight) = -662762989
+SELECT icebergHash(toTime('22:31:08'));
+SELECT icebergHash(toTime64('22:31:08', 0));
+SELECT icebergHash(toTime64('22:31:08', 3));
+SELECT icebergHash(toTime64('22:31:08', 6));
 SELECT icebergHash(toDateTime64('2017-11-16T22:31:08', 6, 'UTC'));
 SELECT icebergHash(toDateTime64('2017-11-16T22:31:08.000001', 6, 'UTC'));
 SELECT icebergHash(toDateTime64('2017-11-16T22:31:08', 9, 'UTC'));
@@ -54,6 +59,10 @@ WITH
     toDateTime64('1970-01-01 22:31:08', 6, 'UTC') AS ts,
     toUnixTimestamp64Micro(ts) AS microseconds_since_day_start
 SELECT icebergBucket(5, microseconds_since_day_start);
+SELECT icebergBucket(5, toTime('22:31:08'));
+SELECT icebergBucket(5, toTime64('22:31:08', 0));
+SELECT icebergBucket(5, toTime64('22:31:08', 3));
+SELECT icebergBucket(5, toTime64('22:31:08', 6));
 SELECT icebergBucket(5, toDateTime64('2017-11-16T22:31:08', 6, 'UTC'));
 SELECT icebergBucket(5, toDateTime64('2017-11-16T22:31:08.000001', 6, 'UTC'));
 SELECT icebergBucket(5, toDateTime64('2017-11-16T22:31:08', 9, 'UTC'));
@@ -87,6 +96,10 @@ WITH
     toDateTime64('1970-01-01 22:31:08', 6, 'UTC') AS ts,
     toUnixTimestamp64Micro(ts) AS microseconds_since_day_start
 SELECT icebergBucket(13, microseconds_since_day_start);
+SELECT icebergBucket(13, toTime('22:31:08'));
+SELECT icebergBucket(13, toTime64('22:31:08', 0));
+SELECT icebergBucket(13, toTime64('22:31:08', 3));
+SELECT icebergBucket(13, toTime64('22:31:08', 6));
 SELECT icebergBucket(13, toDateTime64('2017-11-16T22:31:08', 6, 'UTC'));
 SELECT icebergBucket(13, toDateTime64('2017-11-16T22:31:08.000001', 6, 'UTC'));
 SELECT icebergBucket(13, toDateTime64('2017-11-16T22:31:08', 9, 'UTC'));

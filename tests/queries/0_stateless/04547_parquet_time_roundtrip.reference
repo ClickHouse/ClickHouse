@@ -1,0 +1,9 @@
+--- schema inference ---
+Time64(6)	12:00:00.000000
+Time64(6)	12:00:00.000000
+Time64(9)	12:00:00.000000000
+DateTime64(3, \'UTC\')	2023-01-01 12:00:00.000
+--- local_time_as_utc=0 must not shift TIME ---
+Time64(6)	12:00:00.000000
+--- typed Time64 hint ---
+12:00:00.000000

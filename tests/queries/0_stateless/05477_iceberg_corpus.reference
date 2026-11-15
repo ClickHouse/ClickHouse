@@ -121,7 +121,7 @@ iceberg/py_v1_all_types content	30	ok
 iceberg/py_v1_all_types content snapshot 1 append	20	ok
 iceberg/py_v1_all_types count()	ok
 iceberg/py_v1_all_types count() snapshot 1 append	ok
-iceberg/py_v1_all_types types	Int64, Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(9, 3)), Nullable(Decimal(38, 10)), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Bool), Nullable(Date32), Nullable(Int64), Nullable(DateTime64(6)), Nullable(DateTime64(6, \'UTC\')), Nullable(UUID), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int64)), Map(String, Nullable(Int32))
+iceberg/py_v1_all_types types	Int64, Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(9, 3)), Nullable(Decimal(38, 10)), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Bool), Nullable(Date32), Nullable(Time64(6)), Nullable(DateTime64(6)), Nullable(DateTime64(6, \'UTC\')), Nullable(UUID), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int64)), Map(String, Nullable(Int32))
 iceberg/py_v1_month_day WHERE `id` < 10	ok
 iceberg/py_v1_month_day WHERE `id` = 7	ok
 iceberg/py_v1_month_day WHERE `id` >= 25	ok
@@ -162,7 +162,7 @@ iceberg/py_v2_all_types content	30	ok
 iceberg/py_v2_all_types content snapshot 1 append	20	ok
 iceberg/py_v2_all_types count()	ok
 iceberg/py_v2_all_types count() snapshot 1 append	ok
-iceberg/py_v2_all_types types	Int64, Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(9, 3)), Nullable(Decimal(38, 10)), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Bool), Nullable(Date32), Nullable(Int64), Nullable(DateTime64(6)), Nullable(DateTime64(6, \'UTC\')), Nullable(UUID), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int64)), Map(String, Nullable(Int32))
+iceberg/py_v2_all_types types	Int64, Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(9, 3)), Nullable(Decimal(38, 10)), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Bool), Nullable(Date32), Nullable(Time64(6)), Nullable(DateTime64(6)), Nullable(DateTime64(6, \'UTC\')), Nullable(UUID), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int64)), Map(String, Nullable(Int32))
 iceberg/py_v2_name_mapping WHERE `id` < 10	ok
 iceberg/py_v2_name_mapping WHERE `id` = 7	ok
 iceberg/py_v2_name_mapping WHERE `id` >= 25	ok
