@@ -50,23 +50,41 @@ ReadType: InOrder
 10
 20
 30
---- Merge over MergeTree
+--- Merge and wrapper sources
+1
+ReadType: InOrder
 ReadType: InOrder
 ReadType: InReverseOrder
+ReadType: InReverseOrder
 10
+15
 20
 30
 40
+35
+30
+ReadType: InOrder
+10
+20
+30
+ReadType: InOrder
+10
+20
 30
 ReadType: InOrder
 10
 20
 30
 --- controls
-0
-0
+1
+1
 1
 2
 ReadType: Default
 2
 3
+ReadType: Default
+2
+3
+ReadType: Default
+10

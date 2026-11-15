@@ -2,13 +2,15 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Functions/FunctionHelpers.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -42,11 +44,16 @@
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/StorageMerge.h>
 #include <Common/typeid_cast.h>
 
+#include <algorithm>
+#include <optional>
 #include <stack>
+#include <string_view>
+#include <unordered_set>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -255,6 +262,15 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
 /// Fixed columns are 'x' and 'y'.
 using FixedColumns = std::unordered_set<const ActionsDAG::Node *>;
 
+struct FixedColumnsState
+{
+    FixedColumns columns;
+    /// Expressions compared equal to integer constant `0` (or `IN (0)`).
+    /// Used to recover fixed parent `String` columns when `empty(s)` / `length(s) = 0`
+    /// was rewritten to `s.size = 0` or `getSubcolumn(s, 'size') = 0`.
+    FixedColumns zero_columns;
+};
+
 /// Whether the type is a `Variant` or `Dynamic`, also as an element of a `Tuple` or of a nested `Tuple`: `equals` compares tuples
 /// element by element, but `Array` and `Map` values of one type with `compareAt`, which tells apart the types stored in a `Dynamic`.
 bool isVariantOrDynamicThroughTuples(const DataTypePtr & type_with_wrappers)
@@ -368,91 +384,104 @@ bool isSingleElementSetForProbe(const ActionsDAG::Node & set_node, const Actions
     return probe_type->equals(*set_type);
 }
 
+bool isInjectiveStringCast(const ActionsDAG::Node & node)
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION || node.children.size() != 2 || !node.function_base)
+        return false;
+
+    const auto & name = node.function_base->getName();
+    if (name != "_CAST" && name != "CAST")
+        return false;
+
+    const auto * arg = node.children[0];
+    if (arg->column || !node.children[1]->column)
+        return false;
+
+    return isString(removeLowCardinalityAndNullable(arg->result_type))
+        && isString(removeLowCardinalityAndNullable(node.result_type))
+        && (!isNullableOrLowCardinalityNullable(arg->result_type) || isNullableOrLowCardinalityNullable(node.result_type));
+}
+
+bool isZeroIntegerColumnValue(ColumnPtr column, const DataTypePtr & type_with_wrappers)
+{
+    if (!column)
+        return false;
+
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
+        column = column_const->getDataColumnPtr();
+
+    if (column->size() != 1 || column->isNullAt(0))
+        return false;
+
+    auto type = removeLowCardinalityAndNullable(type_with_wrappers);
+    if (!isInteger(type))
+        return false;
+
+    column = removeNullable(column->convertToFullColumnIfLowCardinality());
+    return column->isDefaultAt(0);
+}
+
+bool isSingleElementZeroIntegerSet(const ActionsDAG::Node & set_node)
+{
+    if (set_node.type != ActionsDAG::ActionType::COLUMN || !set_node.column)
+        return false;
+
+    const auto * column_set = checkAndGetColumn<const ColumnSet>(&set_node.column->getDataColumn());
+    if (!column_set)
+        return false;
+
+    const auto * set_from_tuple = typeid_cast<const FutureSetFromTuple *>(column_set->getData().get());
+    if (!set_from_tuple)
+        return false;
+
+    auto set = set_from_tuple->get();
+    if (!set || !set->isCreated() || set->getTotalRowCount() != 1 || set->hasNull())
+        return false;
+
+    const auto & element_types = set->getElementsTypes();
+    const auto columns = set_from_tuple->getUniqueKeyColumns();
+    if (columns.size() != 1 || element_types.size() != 1)
+        return false;
+
+    return isZeroIntegerColumnValue(columns.front(), element_types.front());
+}
+
 void addFixedColumn(const ActionsDAG::Node * fixed_column, FixedColumns & fixed_columns)
 {
     fixed_columns.insert(fixed_column);
 
-    /// Support injective functions chain.
+    /// Support aliases and injective functions chain.
     const ActionsDAG::Node * maybe_injective = fixed_column;
-    while (maybe_injective->type == ActionsDAG::ActionType::FUNCTION
-        && maybe_injective->children.size() == 1
-        && maybe_injective->function_base->isInjective(getFunctionArgumentColumns(*maybe_injective)))
+    while (true)
     {
-        maybe_injective = maybe_injective->children.front();
-        fixed_columns.insert(maybe_injective);
+        if (maybe_injective->type == ActionsDAG::ActionType::ALIAS && !maybe_injective->children.empty())
+        {
+            maybe_injective = maybe_injective->children.front();
+            fixed_columns.insert(maybe_injective);
+        }
+        else if (maybe_injective->type == ActionsDAG::ActionType::FUNCTION
+            && maybe_injective->children.size() == 1
+            && maybe_injective->function_base->isInjective(getFunctionArgumentColumns(*maybe_injective)))
+        {
+            maybe_injective = maybe_injective->children.front();
+            fixed_columns.insert(maybe_injective);
+        }
+        else if (isInjectiveStringCast(*maybe_injective))
+        {
+            maybe_injective = maybe_injective->children.front();
+            fixed_columns.insert(maybe_injective);
+        }
+        else
+        {
+            break;
+        }
     }
 }
 
 /// Right now we find only simple cases like 'and(..., and(..., and(column = value, ...), ...'
 /// A single-element `IN`, like `column IN (value)`, fixes the column the same way as `column = value`.
 /// Injective functions are supported here. For a condition 'injectiveFunction(x) = 5' column 'x' is fixed.
-bool isZeroIntegerConstant(ColumnPtr constant, const DataTypePtr & constant_type_with_wrappers)
-{
-    if (!constant)
-        return false;
-    if (const auto * column_const = typeid_cast<const ColumnConst *>(constant.get()))
-        constant = column_const->getDataColumnPtr();
-    chassert(constant->size() == 1);
-    if (constant->isNullAt(0))
-        return false;
-    constant = removeNullable(constant->convertToFullColumnIfLowCardinality());
-
-    auto constant_type = removeLowCardinalityAndNullable(constant_type_with_wrappers);
-    if (!isInteger(constant_type))
-        return false;
-
-    Field value;
-    constant->get(0, value);
-    return (value.getType() == Field::Types::UInt64 && value.safeGet<UInt64>() == 0)
-        || (value.getType() == Field::Types::Int64 && value.safeGet<Int64>() == 0);
-}
-
-/// `FunctionToSubcolumnsPass` rewrites `empty(s)` to `s.size = 0` when the source table's own
-/// metadata does not list `s` in a key (e.g. a `Merge` table wrapping `MergeTree` children).
-/// A `.size` subcolumn equal to `0` uniquely fixes a `String` column `s` to `''`.
-void addFixedStringColumnFromSizeSubcolumn(
-    ActionsDAG & dag, const ActionsDAG::Node * fixed_column, FixedColumns & fixed_columns)
-{
-    const ActionsDAG::Node * node = fixed_column;
-    while (true)
-    {
-        if (node->type == ActionsDAG::ActionType::ALIAS)
-            node = node->children.front();
-        else if (node->type == ActionsDAG::ActionType::FUNCTION
-            && node->children.size() == 1
-            && node->function_base->isInjective(getFunctionArgumentColumns(*node)))
-            node = node->children.front();
-        else
-            break;
-    }
-
-    if (node->type != ActionsDAG::ActionType::INPUT)
-        return;
-
-    if (!WhichDataType(removeLowCardinalityAndNullable(node->result_type)).isUInt64())
-        return;
-
-    constexpr std::string_view size_suffix = ".size";
-    std::string_view name = node->result_name;
-    if (name.size() <= size_suffix.size() || !name.ends_with(size_suffix))
-        return;
-
-    std::string_view column_name = name.substr(0, name.size() - size_suffix.size());
-    for (const auto & dag_node : dag.getNodes())
-    {
-        if (dag_node.type == ActionsDAG::ActionType::INPUT && dag_node.result_name == column_name)
-        {
-            if (isString(removeLowCardinalityAndNullable(dag_node.result_type)))
-                fixed_columns.insert(&dag_node);
-            return;
-        }
-    }
-
-    const auto * string_input = &dag.addInput(String(column_name), std::make_shared<DataTypeString>());
-    fixed_columns.insert(string_input);
-}
-
-void appendFixedColumnsFromFilterExpression(ActionsDAG & dag, const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns)
+void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expression, FixedColumnsState & fixed_state)
 {
     std::stack<const ActionsDAG::Node *> stack;
     stack.push(&filter_expression);
@@ -490,22 +519,26 @@ void appendFixedColumnsFromFilterExpression(ActionsDAG & dag, const ActionsDAG::
                 if (maybe_fixed_column && num_constant_columns + 1 == node->children.size()
                     && !equalsMatchesSeveralValues(maybe_fixed_column->result_type, constant->column, constant->result_type))
                 {
-                    addFixedColumn(maybe_fixed_column, fixed_columns);
-                    if (isZeroIntegerConstant(constant->column, constant->result_type))
-                        addFixedStringColumnFromSizeSubcolumn(dag, maybe_fixed_column, fixed_columns);
+                    addFixedColumn(maybe_fixed_column, fixed_state.columns);
+                    if (isZeroIntegerColumnValue(constant->column, constant->result_type))
+                        fixed_state.zero_columns.insert(maybe_fixed_column);
                 }
             }
             else if (name == "empty")
             {
                 if (node->children.size() == 1 && !node->children[0]->column
                     && isStringOrFixedString(removeNullable(removeLowCardinality(node->children[0]->result_type))))
-                    addFixedColumn(node->children[0], fixed_columns);
+                    addFixedColumn(node->children[0], fixed_state.columns);
             }
             else if (name == "in" || name == "globalIn" || name == "nullIn" || name == "globalNullIn")
             {
                 if (node->children.size() == 2 && !node->children[0]->column
                     && isSingleElementSetForProbe(*node->children[1], *node->children[0]))
-                    addFixedColumn(node->children[0], fixed_columns);
+                {
+                    addFixedColumn(node->children[0], fixed_state.columns);
+                    if (isSingleElementZeroIntegerSet(*node->children[1]))
+                        fixed_state.zero_columns.insert(node->children[0]);
+                }
             }
         }
     }
@@ -521,7 +554,7 @@ void appendExpression(std::optional<ActionsDAG> & dag, const ActionsDAG & expres
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
 /// Additionally, build a set of fixed columns.
-void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & dag, FixedColumns & fixed_columns, size_t & limit)
+void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & dag, FixedColumnsState & fixed_state, size_t & limit)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
@@ -533,7 +566,7 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
 
             appendExpression(dag, prewhere_info->prewhere_actions);
             if (const auto * filter_expression = dag->tryFindInOutputs(prewhere_info->prewhere_column_name))
-                appendFixedColumnsFromFilterExpression(*dag, *filter_expression, fixed_columns);
+                appendFixedColumnsFromFilterExpression(*filter_expression, fixed_state);
 
         }
         if (const auto row_level_filter = reading->getRowLevelFilter())
@@ -543,7 +576,7 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
 
             appendExpression(dag, row_level_filter->actions);
             if (const auto * filter_expression = dag->tryFindInOutputs(row_level_filter->column_name))
-                appendFixedColumnsFromFilterExpression(*dag, *filter_expression, fixed_columns);
+                appendFixedColumnsFromFilterExpression(*filter_expression, fixed_state);
 
         }
         return;
@@ -557,7 +590,7 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
     if (node.children.empty())
         return;
 
-    buildSortingDAG(*node.children.front(), dag, fixed_columns, limit);
+    buildSortingDAG(*node.children.front(), dag, fixed_state, limit);
 
     if (typeid_cast<const DistinctStep *>(step))
     {
@@ -582,7 +615,7 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
 
         appendExpression(dag, filter->getExpression());
         if (const auto * filter_expression = dag->tryFindInOutputs(filter->getFilterColumnName()))
-            appendFixedColumnsFromFilterExpression(*dag, *filter_expression, fixed_columns);
+            appendFixedColumnsFromFilterExpression(*filter_expression, fixed_state);
     }
 
     if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(step))
@@ -723,14 +756,211 @@ struct SortingInputOrder
     std::optional<ActionsDAG> virtual_row_conversion{};
 };
 
+bool isSameSubstream(const ISerialization::Substream & lhs, const ISerialization::Substream & rhs)
+{
+    return lhs.type == rhs.type
+        && lhs.name_of_substream == rhs.name_of_substream
+        && lhs.variant_element_name == rhs.variant_element_name
+        && lhs.object_path_name == rhs.object_path_name
+        && lhs.bucket == rhs.bucket;
+}
+
+/// If `subcolumn_name` resolves in `storage_columns` to the `.size` subcolumn of a `String` or `Nullable(String)`
+/// column (or subcolumn), returns that parent column/subcolumn name so `s.size = 0` fixes `s` to `''`.
+/// Rejects physical/alias columns literally named `s.size` as well as shadowed tuple/JSON paths.
+std::optional<String> tryGetParentStringColumnFromSizesSubcolumn(
+    const ColumnsDescription & storage_columns, std::string_view subcolumn_name)
+{
+    constexpr std::string_view size_suffix = ".size";
+    if (!subcolumn_name.ends_with(size_suffix) || subcolumn_name.size() <= size_suffix.size())
+        return std::nullopt;
+
+    const String subcolumn_str(subcolumn_name);
+    if (storage_columns.has(subcolumn_str))
+        return std::nullopt;
+
+    const auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+    auto subcolumn = storage_columns.tryGetColumn(options, subcolumn_str);
+    if (!subcolumn || !subcolumn->isSubcolumn())
+        return std::nullopt;
+
+    if (!isUInt64(removeNullable(subcolumn->type)))
+        return std::nullopt;
+
+    auto subcolumn_info = subcolumn->getTypeInStorage()->tryGetSubcolumnInfo(subcolumn->getSubcolumnName());
+    if (!subcolumn_info || !SerializationString::isStringSizesSubcolumn(subcolumn_info->substreams_path))
+        return std::nullopt;
+
+    String parent_name(subcolumn_name.substr(0, subcolumn_name.size() - size_suffix.size()));
+    auto parent = storage_columns.tryGetColumn(options, parent_name);
+    if (!parent || parent->getNameInStorage() != subcolumn->getNameInStorage())
+        return std::nullopt;
+
+    if (!isString(removeNullable(parent->type)) || parent->type->isNullable() != subcolumn->type->isNullable())
+        return std::nullopt;
+
+    ISerialization::SubstreamPath parent_path;
+    if (parent->isSubcolumn())
+    {
+        auto parent_info = parent->getTypeInStorage()->tryGetSubcolumnInfo(parent->getSubcolumnName());
+        if (!parent_info)
+            return std::nullopt;
+        parent_path = std::move(parent_info->substreams_path);
+    }
+
+    const auto & target_path = subcolumn_info->substreams_path;
+    if (target_path.size() <= parent_path.size()
+        || !std::equal(parent_path.begin(), parent_path.end(), target_path.begin(), isSameSubstream))
+        return std::nullopt;
+
+    for (size_t i = parent_path.size(); i + 1 < target_path.size(); ++i)
+    {
+        if (target_path[i].type != ISerialization::Substream::NullableElements)
+            return std::nullopt;
+    }
+
+    return parent_name;
+}
+
+const FixedColumns & matchAndCollectFixedKeyColumns(
+    const FixedColumnsState & fixed_state,
+    const ActionsDAG & dag,
+    const ActionsDAG & sorting_key_dag,
+    const ColumnsDescription * storage_columns,
+    MatchedTrees::Matches & matches,
+    FixedColumns & fixed_key_columns,
+    FixedColumns & expanded_fixed_columns)
+{
+    bool has_extra_fixed_columns = false;
+    auto ensure_expanded = [&]() -> FixedColumns &
+    {
+        if (!has_extra_fixed_columns)
+        {
+            expanded_fixed_columns = fixed_state.columns;
+            has_extra_fixed_columns = true;
+        }
+        return expanded_fixed_columns;
+    };
+
+    std::unordered_set<String> fixed_parent_input_names;
+    for (const auto * zero_node : fixed_state.zero_columns)
+    {
+        const auto * curr = zero_node;
+        while (curr)
+        {
+            if (curr->type == ActionsDAG::ActionType::ALIAS && !curr->children.empty())
+            {
+                curr = curr->children.front();
+            }
+            else if (curr->type == ActionsDAG::ActionType::FUNCTION && curr->function_base)
+            {
+                const auto & fn_name = curr->function_base->getName();
+                if (curr->children.size() == 1
+                    && (fn_name == "materialize" || fn_name == "identity" || fn_name == "toNullable"))
+                {
+                    curr = curr->children.front();
+                }
+                else if ((fn_name == "_CAST" || fn_name == "CAST")
+                    && curr->children.size() == 2 && !curr->children[0]->column && curr->children[1]->column)
+                {
+                    const auto * arg = curr->children[0];
+                    if (isUInt64(removeLowCardinalityAndNullable(arg->result_type))
+                        && isUInt64(removeLowCardinalityAndNullable(curr->result_type))
+                        && (!isNullableOrLowCardinalityNullable(arg->result_type)
+                            || isNullableOrLowCardinalityNullable(curr->result_type)))
+                        curr = arg;
+                    else
+                        break;
+                }
+                else
+                {
+                    break;
+                }
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        if (!curr)
+            continue;
+
+        if (curr->type == ActionsDAG::ActionType::FUNCTION && curr->function_base)
+        {
+            const auto & fn_name = curr->function_base->getName();
+            if (fn_name == "getSubcolumn" && curr->children.size() == 2
+                && !curr->children[0]->column && curr->children[1]->column)
+            {
+                const auto * arg0 = curr->children[0];
+                const auto * subcol_data = checkAndGetColumnConstData<ColumnString>(curr->children[1]->column.get());
+                auto unwrapped_lc = removeLowCardinality(arg0->result_type);
+                if (subcol_data && subcol_data->size() == 1 && isString(removeNullable(unwrapped_lc)))
+                {
+                    auto info = unwrapped_lc->tryGetSubcolumnInfo(subcol_data->getDataAt(0));
+                    if (info && SerializationString::isStringSizesSubcolumn(info->substreams_path))
+                        addFixedColumn(arg0, ensure_expanded());
+                }
+            }
+            else if (fn_name == "length" && curr->children.size() == 1 && !curr->children[0]->column)
+            {
+                const auto * arg0 = curr->children[0];
+                if (isString(removeLowCardinalityAndNullable(arg0->result_type)))
+                    addFixedColumn(arg0, ensure_expanded());
+            }
+        }
+        else if (curr->type == ActionsDAG::ActionType::INPUT && storage_columns)
+        {
+            if (auto parent_name = tryGetParentStringColumnFromSizesSubcolumn(*storage_columns, curr->result_name))
+                fixed_parent_input_names.insert(std::move(*parent_name));
+        }
+    }
+
+    if (!fixed_parent_input_names.empty())
+    {
+        for (const auto & node : dag.getNodes())
+        {
+            if (node.type == ActionsDAG::ActionType::INPUT && fixed_parent_input_names.contains(node.result_name))
+                ensure_expanded().insert(&node);
+        }
+
+        for (const auto & node : sorting_key_dag.getNodes())
+        {
+            if (node.type == ActionsDAG::ActionType::INPUT && fixed_parent_input_names.contains(node.result_name))
+                fixed_key_columns.insert(&node);
+        }
+    }
+
+    if (has_extra_fixed_columns)
+        enrichFixedColumns(dag, expanded_fixed_columns);
+
+    const FixedColumns & active_fixed_columns = has_extra_fixed_columns ? expanded_fixed_columns : fixed_state.columns;
+
+    matches = matchTrees(sorting_key_dag.getOutputs(), dag);
+    for (const auto & [node, match] : matches)
+    {
+        //std::cerr << "------- matching " << static_cast<const void *>(node) << " " << node->result_name
+        //    << " to " << static_cast<const void *>(match.node) << " " << (match.node ? match.node->result_name : "") << std::endl;
+        if (!match.monotonicity || match.monotonicity->strict)
+        {
+            if (match.node && active_fixed_columns.contains(node))
+                fixed_key_columns.insert(match.node);
+        }
+    }
+
+    enrichFixedColumns(sorting_key_dag, fixed_key_columns);
+    return active_fixed_columns;
+}
+
 /// For the case when the order of keys is important (ORDER BY keys).
 SortingInputOrder buildInputOrderFromSortDescription(
-    const FixedColumns & fixed_columns,
+    const FixedColumnsState & fixed_state,
     const std::optional<ActionsDAG> & dag,
     const SortDescription & description,
     const KeyDescription & sorting_key,
     const Names & pk_column_names,
-    size_t limit)
+    size_t limit,
+    const ColumnsDescription * storage_columns)
 {
     //std::cerr << "------- buildInputOrderInfo " << std::endl;
     SortDescription order_key_prefix_descr;
@@ -738,30 +968,15 @@ SortingInputOrder buildInputOrderFromSortDescription(
 
     MatchedTrees::Matches matches;
     FixedColumns fixed_key_columns;
+    FixedColumns expanded_fixed_columns;
+    const FixedColumns * active_fixed_columns = &fixed_state.columns;
 
     const auto & sorting_key_dag = sorting_key.expression->getActionsDAG();
 
     if (dag)
     {
-        matches = matchTrees(sorting_key_dag.getOutputs(), *dag);
-
-        for (const auto & [node, match] : matches)
-        {
-            //std::cerr << "------- matching " << static_cast<const void *>(node) << " " << node->result_name
-            //    << " to " << static_cast<const void *>(match.node) << " " << (match.node ? match.node->result_name : "") << std::endl;
-            if (!match.monotonicity || match.monotonicity->strict)
-            {
-                const bool compatible_input = node->type != ActionsDAG::ActionType::INPUT
-                    || !match.node
-                    || match.node->type != ActionsDAG::ActionType::INPUT
-                    || !isString(removeLowCardinalityAndNullable(node->result_type))
-                    || isStringOrFixedString(removeLowCardinalityAndNullable(match.node->result_type));
-                if (match.node && compatible_input && fixed_columns.contains(node))
-                    fixed_key_columns.insert(match.node);
-            }
-        }
-
-        enrichFixedColumns(sorting_key_dag, fixed_key_columns);
+        active_fixed_columns = &matchAndCollectFixedKeyColumns(
+            fixed_state, *dag, sorting_key_dag, storage_columns, matches, fixed_key_columns, expanded_fixed_columns);
     }
 
     /// This is a result direction we will read from MergeTree
@@ -867,7 +1082,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
                 /// don't let it determine read direction - skip to next columns.
                 /// Example: ORDER BY tenant, event_time DESC with WHERE tenant='42'
                 /// tenant is constant, so read direction should come from event_time DESC.
-                if (fixed_columns.contains(sort_node))
+                if (active_fixed_columns->contains(sort_node))
                 {
                     /// Virtual row for fixed column from order by is not supported now.
                     can_optimize_virtual_row = false;
@@ -916,8 +1131,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
             }
             else
             {
-                //std::cerr << "====== Check for fixed const : " << bool(sort_node->column) << " fixed : " << fixed_columns.contains(sort_node) << std::endl;
-                bool is_fixed_column = sort_node->column || fixed_columns.contains(sort_node);
+                //std::cerr << "====== Check for fixed const : " << bool(sort_node->column) << " fixed : " << active_fixed_columns->contains(sort_node) << std::endl;
+                bool is_fixed_column = sort_node->column || active_fixed_columns->contains(sort_node);
                 if (!is_fixed_column)
                     break;
 
@@ -1054,15 +1269,17 @@ struct InputOrder
 
 /// For the case when the order of keys is not important (GROUP BY / DISTINCT)
 InputOrder buildInputOrderFromUnorderedKeys(
-    const FixedColumns & fixed_columns,
+    const FixedColumnsState & fixed_state,
     const std::optional<ActionsDAG> & dag,
     const Names & unordered_keys,
     const ActionsDAG & sorting_key_dag,
     const Names & sorting_key_columns,
-    const std::vector<bool> & sorting_key_reverse_flags)
+    const std::vector<bool> & sorting_key_reverse_flags,
+    const ColumnsDescription * storage_columns)
 {
     MatchedTrees::Matches matches;
     FixedColumns fixed_key_columns;
+    FixedColumns expanded_fixed_columns;
 
     /// For every column in PK find any match from GROUP BY key.
     using ReverseMatches = std::unordered_map<const ActionsDAG::Node *, MatchedTrees::Matches::const_iterator>;
@@ -1071,23 +1288,8 @@ InputOrder buildInputOrderFromUnorderedKeys(
 
     if (dag)
     {
-        matches = matchTrees(sorting_key_dag.getOutputs(), *dag);
-
-        for (const auto & [node, match] : matches)
-        {
-            if (!match.monotonicity || match.monotonicity->strict)
-            {
-                const bool compatible_input = node->type != ActionsDAG::ActionType::INPUT
-                    || !match.node
-                    || match.node->type != ActionsDAG::ActionType::INPUT
-                    || !isString(removeLowCardinalityAndNullable(node->result_type))
-                    || isStringOrFixedString(removeLowCardinalityAndNullable(match.node->result_type));
-                if (match.node && compatible_input && fixed_columns.contains(node))
-                    fixed_key_columns.insert(match.node);
-            }
-        }
-
-        enrichFixedColumns(sorting_key_dag, fixed_key_columns);
+        matchAndCollectFixedKeyColumns(
+            fixed_state, *dag, sorting_key_dag, storage_columns, matches, fixed_key_columns, expanded_fixed_columns);
 
         for (const auto * output : dag->getOutputs())
         {
@@ -1262,38 +1464,42 @@ InputOrder buildInputOrderFromUnorderedKeys(
 
 SortingInputOrder buildInputOrderFromSortDescription(
     const ReadFromMergeTree * reading,
-    const FixedColumns & fixed_columns,
+    const FixedColumnsState & fixed_state,
     const std::optional<ActionsDAG> & dag,
     const SortDescription & description,
     size_t limit)
 {
-    const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
-    const auto & pk_column_names = reading->getStorageMetadata()->getPrimaryKey().column_names;
+    const auto & metadata = reading->getStorageMetadata();
+    const auto & sorting_key = metadata->getSortingKey();
+    const auto & pk_column_names = metadata->getPrimaryKey().column_names;
 
     return buildInputOrderFromSortDescription(
-        fixed_columns,
+        fixed_state,
         dag, description,
         sorting_key,
         pk_column_names,
-        limit);
+        limit,
+        &metadata->getColumns());
 }
 
 SortingInputOrder buildInputOrderFromSortDescription(
     const ReadFromObjectStorageStep * reading,
-    const FixedColumns & fixed_columns,
+    const FixedColumnsState & fixed_state,
     const std::optional<ActionsDAG> & dag,
     const SortDescription & description,
     size_t limit)
 {
-    const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
+    const auto & metadata = reading->getStorageMetadata();
+    const auto & sorting_key = metadata->getSortingKey();
     const auto & pk_column_names = sorting_key.column_names;
 
     return buildInputOrderFromSortDescription(
-        fixed_columns,
+        fixed_state,
         dag, description,
         sorting_key,
         pk_column_names,
-        limit);
+        limit,
+        &metadata->getColumns());
 }
 
 
@@ -1307,8 +1513,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
 ///    lives entirely inside the merge node — this is the chain we recover here.
 /// 2. Clone the outer DAG (which originally lives in the caller and outlives this call) and
 ///    merge it on top using `mergeInplace`, recording the input remapping it performs.
-/// 3. Remap the original `outer_fixed_columns` through the clone mapping plus the
-///    `mergeInplace` input remapping, so the resulting `FixedColumns` point at the right
+/// 3. Remap the original `outer_fixed_state` through the clone mapping plus the
+///    `mergeInplace` input remapping, so the resulting `FixedColumnsState` points at the right
 ///    nodes in the combined DAG.
 ///
 /// `matchTrees` itself looks through `materialize`/`identity` wrappers, so we do not need
@@ -1316,55 +1522,58 @@ SortingInputOrder buildInputOrderFromSortDescription(
 void buildCombinedDAGForMergeChildPlan(
     QueryPlan * child_plan,
     const std::optional<ActionsDAG> & outer_dag,
-    const FixedColumns & outer_fixed_columns,
+    const FixedColumnsState & outer_fixed_state,
     std::optional<ActionsDAG> & combined_dag,
-    FixedColumns & combined_fixed_columns,
+    FixedColumnsState & combined_fixed_state,
     size_t & limit)
 {
     if (child_plan && child_plan->isInitialized())
-        buildSortingDAG(*child_plan->getRootNode(), combined_dag, combined_fixed_columns, limit);
+        buildSortingDAG(*child_plan->getRootNode(), combined_dag, combined_fixed_state, limit);
 
     if (outer_dag)
     {
         ActionsDAG::NodeMapping clone_mapping;
         ActionsDAG outer_clone = outer_dag->clone(clone_mapping);
 
-        if (!combined_dag)
+        auto remap_nodes = [&](const FixedColumns & src, FixedColumns & dst, const ActionsDAG::NodeMapping * inputs_map)
         {
-            combined_dag.emplace(std::move(outer_clone));
-
-            for (const auto * outer_node : outer_fixed_columns)
-            {
-                auto it = clone_mapping.find(outer_node);
-                if (it != clone_mapping.end())
-                    combined_fixed_columns.insert(it->second);
-            }
-        }
-        else
-        {
-            ActionsDAG::NodeMapping inputs_map;
-            combined_dag->mergeInplace(std::move(outer_clone), inputs_map, /*remove_dangling_inputs=*/ false);
-
-            for (const auto * outer_node : outer_fixed_columns)
+            for (const auto * outer_node : src)
             {
                 auto it = clone_mapping.find(outer_node);
                 if (it == clone_mapping.end())
                     continue;
                 const auto * mapped = it->second;
-                if (auto remap_it = inputs_map.find(mapped); remap_it != inputs_map.end())
-                    mapped = remap_it->second;
-                combined_fixed_columns.insert(mapped);
+                if (inputs_map)
+                {
+                    if (auto remap_it = inputs_map->find(mapped); remap_it != inputs_map->end())
+                        mapped = remap_it->second;
+                }
+                dst.insert(mapped);
             }
+        };
+
+        if (!combined_dag)
+        {
+            combined_dag.emplace(std::move(outer_clone));
+            remap_nodes(outer_fixed_state.columns, combined_fixed_state.columns, nullptr);
+            remap_nodes(outer_fixed_state.zero_columns, combined_fixed_state.zero_columns, nullptr);
+        }
+        else
+        {
+            ActionsDAG::NodeMapping inputs_map;
+            combined_dag->mergeInplace(std::move(outer_clone), inputs_map, /*remove_dangling_inputs=*/ false);
+            remap_nodes(outer_fixed_state.columns, combined_fixed_state.columns, &inputs_map);
+            remap_nodes(outer_fixed_state.zero_columns, combined_fixed_state.zero_columns, &inputs_map);
         }
     }
 
-    if (combined_dag && !combined_fixed_columns.empty())
-        enrichFixedColumns(*combined_dag, combined_fixed_columns);
+    if (combined_dag && !combined_fixed_state.columns.empty())
+        enrichFixedColumns(*combined_dag, combined_fixed_state.columns);
 }
 
 SortingInputOrder buildInputOrderFromSortDescription(
     ReadFromMerge * merge,
-    const FixedColumns & outer_fixed_columns,
+    const FixedColumnsState & outer_fixed_state,
     const std::optional<ActionsDAG> & outer_dag,
     const SortDescription & description,
     size_t outer_limit)
@@ -1385,18 +1594,19 @@ SortingInputOrder buildInputOrderFromSortDescription(
             return {};
 
         std::optional<ActionsDAG> combined_dag;
-        FixedColumns combined_fixed_columns;
+        FixedColumnsState combined_fixed_state;
         size_t combined_limit = outer_limit;
         QueryPlan * child_plan = (table_idx < child_plans.size()) ? child_plans[table_idx] : nullptr;
         buildCombinedDAGForMergeChildPlan(
-            child_plan, outer_dag, outer_fixed_columns, combined_dag, combined_fixed_columns, combined_limit);
+            child_plan, outer_dag, outer_fixed_state, combined_dag, combined_fixed_state, combined_limit);
 
         auto table_order_info = buildInputOrderFromSortDescription(
-            combined_fixed_columns,
+            combined_fixed_state,
             combined_dag, description,
             sorting_key,
             {},
-            combined_limit);
+            combined_limit,
+            &metadata->getColumns());
 
         if (!table_order_info.input_order)
             return {};
@@ -1414,37 +1624,41 @@ SortingInputOrder buildInputOrderFromSortDescription(
 
 InputOrder buildInputOrderFromUnorderedKeys(
     ReadFromMergeTree * reading,
-    const FixedColumns & fixed_columns,
+    const FixedColumnsState & fixed_state,
     const std::optional<ActionsDAG> & dag,
     const Names & unordered_keys)
 {
-    const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
+    const auto & metadata = reading->getStorageMetadata();
+    const auto & sorting_key = metadata->getSortingKey();
     const auto & sorting_key_columns = sorting_key.column_names;
 
     return buildInputOrderFromUnorderedKeys(
-        fixed_columns,
+        fixed_state,
         dag, unordered_keys,
-        sorting_key.expression->getActionsDAG(), sorting_key_columns, sorting_key.reverse_flags);
+        sorting_key.expression->getActionsDAG(), sorting_key_columns, sorting_key.reverse_flags,
+        &metadata->getColumns());
 }
 
 InputOrder buildInputOrderFromUnorderedKeys(
     ReadFromObjectStorageStep * reading,
-    const FixedColumns & fixed_columns,
+    const FixedColumnsState & fixed_state,
     const std::optional<ActionsDAG> & dag,
     const Names & unordered_keys)
 {
-    const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
+    const auto & metadata = reading->getStorageMetadata();
+    const auto & sorting_key = metadata->getSortingKey();
     const auto & sorting_key_columns = sorting_key.column_names;
 
     return buildInputOrderFromUnorderedKeys(
-        fixed_columns,
+        fixed_state,
         dag, unordered_keys,
-        sorting_key.expression->getActionsDAG(), sorting_key_columns, sorting_key.reverse_flags);
+        sorting_key.expression->getActionsDAG(), sorting_key_columns, sorting_key.reverse_flags,
+        &metadata->getColumns());
 }
 
 InputOrder buildInputOrderFromUnorderedKeys(
     ReadFromMerge * merge,
-    const FixedColumns & outer_fixed_columns,
+    const FixedColumnsState & outer_fixed_state,
     const std::optional<ActionsDAG> & outer_dag,
     const Names & unordered_keys)
 {
@@ -1464,16 +1678,17 @@ InputOrder buildInputOrderFromUnorderedKeys(
             return {};
 
         std::optional<ActionsDAG> combined_dag;
-        FixedColumns combined_fixed_columns;
+        FixedColumnsState combined_fixed_state;
         size_t unused_limit = 0;
         QueryPlan * child_plan = (table_idx < child_plans.size()) ? child_plans[table_idx] : nullptr;
         buildCombinedDAGForMergeChildPlan(
-            child_plan, outer_dag, outer_fixed_columns, combined_dag, combined_fixed_columns, unused_limit);
+            child_plan, outer_dag, outer_fixed_state, combined_dag, combined_fixed_state, unused_limit);
 
         auto table_order_info = buildInputOrderFromUnorderedKeys(
-            combined_fixed_columns,
+            combined_fixed_state,
             combined_dag, unordered_keys,
-            sorting_key.expression->getActionsDAG(), sorting_key_columns, sorting_key.reverse_flags);
+            sorting_key.expression->getActionsDAG(), sorting_key_columns, sorting_key.reverse_flags,
+            &storage_metadata->getColumns());
 
         if (!table_order_info.input_order)
             return {};
@@ -1512,11 +1727,11 @@ InputOrderInfoPtr buildInputOrderInfo(
     const size_t query_limit = limit;
 
     std::optional<ActionsDAG> dag;
-    FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns, limit);
+    FixedColumnsState fixed_state;
+    buildSortingDAG(node, dag, fixed_state, limit);
 
-    if (dag && !fixed_columns.empty())
-        enrichFixedColumns(*dag, fixed_columns);
+    if (dag && !fixed_state.columns.empty())
+        enrichFixedColumns(*dag, fixed_state.columns);
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
@@ -1531,7 +1746,7 @@ InputOrderInfoPtr buildInputOrderInfo(
 
         auto order_info = buildInputOrderFromSortDescription(
             reading,
-            fixed_columns,
+            fixed_state,
             dag, description,
             limit);
 
@@ -1592,7 +1807,7 @@ InputOrderInfoPtr buildInputOrderInfo(
     {
         auto order_info = buildInputOrderFromSortDescription(
             merge,
-            fixed_columns,
+            fixed_state,
             dag, description,
             limit);
 
@@ -1612,7 +1827,7 @@ InputOrderInfoPtr buildInputOrderInfo(
     {
         auto order_info = buildInputOrderFromSortDescription(
             object_storage_step,
-            fixed_columns,
+            fixed_state,
             dag, description,
             limit);
 
@@ -1655,11 +1870,11 @@ InputOrder buildInputOrderInfo(
     size_t limit = 0;
 
     std::optional<ActionsDAG> dag;
-    FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns, limit);
+    FixedColumnsState fixed_state;
+    buildSortingDAG(node, dag, fixed_state, limit);
 
-    if (dag && !fixed_columns.empty())
-        enrichFixedColumns(*dag, fixed_columns);
+    if (dag && !fixed_state.columns.empty())
+        enrichFixedColumns(*dag, fixed_state.columns);
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
@@ -1674,7 +1889,7 @@ InputOrder buildInputOrderInfo(
 
         auto order_info = buildInputOrderFromUnorderedKeys(
             reading,
-            fixed_columns,
+            fixed_state,
             dag, keys);
 
         if (order_info.input_order && request_reading)
@@ -1696,7 +1911,7 @@ InputOrder buildInputOrderInfo(
     {
         auto order_info = buildInputOrderFromUnorderedKeys(
             merge,
-            fixed_columns,
+            fixed_state,
             dag, keys);
 
         /// Aggregation in order merges the children's streams with a single direction-aware
@@ -1720,7 +1935,7 @@ InputOrder buildInputOrderInfo(
     {
         auto order_info = buildInputOrderFromUnorderedKeys(
             object_storage_step,
-            fixed_columns,
+            fixed_state,
             dag, keys);
 
         if (order_info.input_order)
@@ -1801,11 +2016,11 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
     size_t limit = 0;
 
     std::optional<ActionsDAG> dag;
-    FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns, limit);
+    FixedColumnsState fixed_state;
+    buildSortingDAG(node, dag, fixed_state, limit);
 
-    if (dag && !fixed_columns.empty())
-        enrichFixedColumns(*dag, fixed_columns);
+    if (dag && !fixed_state.columns.empty())
+        enrichFixedColumns(*dag, fixed_state.columns);
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
@@ -1816,7 +2031,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
 
         auto order_info = buildInputOrderFromUnorderedKeys(
             reading,
-            fixed_columns,
+            fixed_state,
             dag, keys);
 
         /// Decline before the in-order read is requested, so that no needless in-order read is left behind.
@@ -1840,7 +2055,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
     {
         auto order_info = buildInputOrderFromUnorderedKeys(
             merge,
-            fixed_columns,
+            fixed_state,
             dag, keys);
 
         /// Decline before the in-order read is requested, so that no needless in-order read is left behind.
@@ -1862,7 +2077,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
     {
         auto order_info = buildInputOrderFromUnorderedKeys(
             object_storage_step,
-            fixed_columns,
+            fixed_state,
             dag, keys);
 
         /// Decline before the in-order read is requested, so that no needless in-order read is left behind.
@@ -1906,11 +2121,11 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
     size_t limit = 0;
 
     std::optional<ActionsDAG> dag;
-    FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns, limit);
+    FixedColumnsState fixed_state;
+    buildSortingDAG(node, dag, fixed_state, limit);
 
-    if (dag && !fixed_columns.empty())
-        enrichFixedColumns(*dag, fixed_columns);
+    if (dag && !fixed_state.columns.empty())
+        enrichFixedColumns(*dag, fixed_state.columns);
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
@@ -1918,7 +2133,7 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
         if (reading->isParallelReadingFromReplicas())
             return {};
 
-        auto order_info = buildInputOrderFromUnorderedKeys(reading, fixed_columns, dag, keys);
+        auto order_info = buildInputOrderFromUnorderedKeys(reading, fixed_state, dag, keys);
 
         /// The order of BY columns does not matter for LIMIT BY
         if (getCollationAwareSortPrefixInColumns(order_info.sort_description, keys, *limit_by.getInputHeaders().front()).size()
@@ -1939,7 +2154,7 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
 
     if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
     {
-        auto order_info = buildInputOrderFromUnorderedKeys(merge, fixed_columns, dag, keys);
+        auto order_info = buildInputOrderFromUnorderedKeys(merge, fixed_state, dag, keys);
 
         /// The order of BY columns does not matter for LIMIT BY
         if (getCollationAwareSortPrefixInColumns(order_info.sort_description, keys, *limit_by.getInputHeaders().front()).size()
@@ -1987,7 +2202,8 @@ QueryPlan::Node * findReadingStepForReadInOrder(QueryPlan::Node & node, bool rea
 InputOrderInfoPtr getInputOrderIfReadInOrderIsUseful(
     const SortingStep & sorting,
     const KeyDescription & sorting_key,
-    const QueryPlan::Node & subtree_above_reading)
+    const QueryPlan::Node & subtree_above_reading,
+    const ColumnsDescription * storage_columns)
 {
     if (sorting.getType() != SortingStep::Type::Full)
         return nullptr;
@@ -1995,20 +2211,21 @@ InputOrderInfoPtr getInputOrderIfReadInOrderIsUseful(
         return nullptr;
 
     std::optional<ActionsDAG> dag;
-    FixedColumns fixed_columns;
+    FixedColumnsState fixed_state;
     size_t limit = sorting.getLimit();
-    buildSortingDAG(subtree_above_reading, dag, fixed_columns, limit);
+    buildSortingDAG(subtree_above_reading, dag, fixed_state, limit);
 
-    if (dag && !fixed_columns.empty())
-        enrichFixedColumns(*dag, fixed_columns);
+    if (dag && !fixed_state.columns.empty())
+        enrichFixedColumns(*dag, fixed_state.columns);
 
     auto order_info = buildInputOrderFromSortDescription(
-        fixed_columns,
+        fixed_state,
         dag,
         sorting.getSortDescription(),
         sorting_key,
         sorting_key.column_names,
-        limit);
+        limit,
+        storage_columns);
 
     return order_info.input_order;
 }
@@ -2022,18 +2239,18 @@ InputOrderInfoPtr getInputOrderIfReadInOrderIsUseful(
         return nullptr;
 
     std::optional<ActionsDAG> dag;
-    FixedColumns fixed_columns;
+    FixedColumnsState fixed_state;
     size_t limit = sorting.getLimit();
-    buildSortingDAG(subtree_above_reading, dag, fixed_columns, limit);
+    buildSortingDAG(subtree_above_reading, dag, fixed_state, limit);
 
-    if (dag && !fixed_columns.empty())
-        enrichFixedColumns(*dag, fixed_columns);
+    if (dag && !fixed_state.columns.empty())
+        enrichFixedColumns(*dag, fixed_state.columns);
 
     /// The same matching as in `optimizeReadInOrder` itself: every child's sorting key against the sort
     /// description, through the renaming that the child plan performs on top of the child table.
     auto order_info = buildInputOrderFromSortDescription(
         &merge,
-        fixed_columns,
+        fixed_state,
         dag,
         sorting.getSortDescription(),
         limit);

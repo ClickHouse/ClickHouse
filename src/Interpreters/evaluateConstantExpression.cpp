@@ -10,12 +10,11 @@
 #include <Analyzer/TableNode.h>
 #include <Core/Block.h>
 #include <Core/ConstantValue.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
@@ -552,12 +551,12 @@ namespace
 
     ColumnPtr tryCastColumn(ColumnPtr col, const DataTypePtr & from_type, const DataTypePtr & to_type)
     {
-        auto to_type_no_lc = removeNullable(recursiveRemoveLowCardinality(to_type));
-        // std::cerr << ".. casting " << from_type->getName() << " -> " << to_type_no_lc->getName() << std::endl;
-        if (!to_type_no_lc->canBeInsideNullable())
+        auto to_type_unwrapped = removeNullable(recursiveRemoveLowCardinality(to_type));
+        // std::cerr << ".. casting " << from_type->getName() << " -> " << to_type_unwrapped->getName() << std::endl;
+        if (!to_type_unwrapped->canBeInsideNullable())
             return {};
 
-        auto res = castColumnAccurateOrNull({col, from_type, std::string()}, makeNullable(to_type_no_lc));
+        auto res = castColumnAccurateOrNull({col, from_type, std::string()}, makeNullable(to_type_unwrapped));
         if (res->onlyNull())
             return nullptr;
 
@@ -766,12 +765,11 @@ namespace
             else if (node->function_base->getName() == "empty" && node->children.size() == 1)
             {
                 const auto * arg_node = node->children.at(0);
-                auto unwrapped_type = removeNullable(removeLowCardinality(arg_node->result_type));
-                if (isStringOrFixedString(unwrapped_type))
+                if (isStringOrFixedString(removeNullable(removeLowCardinality(arg_node->result_type))))
                 {
                     ActionsDAG::Node empty_const;
                     empty_const.type = ActionsDAG::ActionType::COLUMN;
-                    empty_const.result_type = isString(unwrapped_type) ? arg_node->result_type : std::make_shared<DataTypeString>();
+                    empty_const.result_type = arg_node->result_type;
                     empty_const.column = empty_const.result_type->createColumnConst(1, Field(String{}));
                     if (auto val = analyzeConstant(arg_node, &empty_const, matches))
                         return DisjunctionList{ConjunctionMap{std::move(*val)}};

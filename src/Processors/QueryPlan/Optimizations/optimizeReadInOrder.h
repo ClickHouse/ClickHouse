@@ -7,6 +7,7 @@
 namespace DB
 {
 
+class ColumnsDescription;
 class ReadFromMerge;
 class SortingStep;
 struct KeyDescription;
@@ -27,7 +28,8 @@ QueryPlan::Node * findReadingStepForReadInOrder(QueryPlan::Node & node, bool rea
 InputOrderInfoPtr getInputOrderIfReadInOrderIsUseful(
     const SortingStep & sorting,
     const KeyDescription & sorting_key,
-    const QueryPlan::Node & subtree_above_reading);
+    const QueryPlan::Node & subtree_above_reading,
+    const ColumnsDescription * storage_columns = nullptr);
 
 /// The same for a `Merge` table: the input order that `optimizeReadInOrder` would request from every selected child table,
 /// or `nullptr` if reading in order would not be useful for some child or the children would be read in different orders.
