@@ -36,7 +36,7 @@ struct PhrasePattern
     VectorWithMemoryTracking<size_t> failure;
 };
 
-using PhrasePatterns = std::vector<PhrasePattern>;
+using PhrasePatterns = VectorWithMemoryTracking<PhrasePattern>;
 
 /// Precomputed phrases plus a flag telling whether the result is unconditionally 0.
 /// `result_is_always_zero` covers:

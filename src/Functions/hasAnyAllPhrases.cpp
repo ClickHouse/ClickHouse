@@ -144,8 +144,8 @@ void executeMatchPhrases(
     /// Per-phrase mutable matcher state, reused across rows to avoid reallocation.
     /// `matched`/`remaining` track which phrases are still pending; they are only read in `All` mode
     /// (in `Any` mode the first full match returns immediately), hence `[[maybe_unused]]`.
-    std::vector<size_t> positions(num_phrases, 0);
-    [[maybe_unused]] std::vector<UInt8> matched;
+    VectorWithMemoryTracking<size_t> positions(num_phrases, 0);
+    [[maybe_unused]] VectorWithMemoryTracking<UInt8> matched;
     if constexpr (Traits::mode == HasAnyAllPhrasesMode::All)
         matched.assign(num_phrases, 0);
 
