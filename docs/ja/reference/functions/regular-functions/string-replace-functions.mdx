@@ -108,9 +108,9 @@ SELECT overlay('My father is from Mexico.', 'mother', 4) AS res;
 ```
 
 ```response title=Response
-┌─res──────────────────────┐
-│ My mother is from Mexico.│
-└──────────────────────────┘
+┌─res───────────────────────┐
+│ My mother is from Mexico. │
+└───────────────────────────┘
 ```
 
 **長さを指定する置換**
@@ -120,9 +120,9 @@ SELECT overlay('My father is from Mexico.', 'dad', 4, 6) AS res;
 ```
 
 ```response title=Response
-┌─res───────────────────┐
-│ My dad is from Mexico.│
-└───────────────────────┘
+┌─res────────────────────┐
+│ My dad is from Mexico. │
+└────────────────────────┘
 ```
 
 <div id="overlayUTF8">
@@ -161,9 +161,9 @@ SELECT overlayUTF8('Mein Vater ist aus Österreich.', 'der Türkei', 20) AS res;
 ```
 
 ```response title=Response
-┌─res───────────────────────────┐
-│ Mein Vater ist aus der Türkei.│
-└───────────────────────────────┘
+┌─res────────────────────────────┐
+│ Mein Vater ist aus der Türkei. │
+└────────────────────────────────┘
 ```
 
 <div id="printf">
@@ -359,9 +359,9 @@ SELECT replaceRegexpAll('Hello123', '.', '\\0\\0') AS res
 ```
 
 ```response title=Response
-┌─res──────────────────┐
-│ HHeelllloo112233     │
-└──────────────────────┘
+┌─res──────────────┐
+│ HHeelllloo112233 │
+└──────────────────┘
 ```
 
 **空文字列の置換例**

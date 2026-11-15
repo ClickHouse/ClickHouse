@@ -54,12 +54,12 @@ TEST(ThreadGroup, BorrowedChildrenRetainParent)
 
         checkBorrowedChildRetainsParent([](ContextPtr, const ThreadGroupPtr & parent)
         {
-            return std::make_shared<ThreadGroup>(parent);
+            return ThreadGroup::createForExplainAnalyze(parent);
         });
 
         checkBorrowedChildRetainsParent([](ContextPtr context, const ThreadGroupPtr & parent)
         {
-            return std::make_shared<ThreadGroup>(context, parent);
+            return ThreadGroup::createForFlushAsyncInsertQueue(context, parent);
         });
     });
     thread.join();

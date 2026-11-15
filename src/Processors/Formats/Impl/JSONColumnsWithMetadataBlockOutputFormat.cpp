@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/JSONColumnsWithMetadataBlockOutputFormat.h>
+#include <Core/Block.h>
 #include <Formats/JSONUtils.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteHelpers.h>
@@ -116,6 +117,16 @@ void registerOutputFormatJSONColumnsWithMetadata(FormatFactory & factory)
     factory.markFormatHasNoAppendSupport("JSONColumnsWithMetadata");
     factory.setContentType("JSONColumnsWithMetadata", "application/json; charset=UTF-8");
 
+    /// The `meta.type` strings are written from the header type names and are only UTF-8 validated
+    /// when the output adaptor installs the validating buffer, so a non-UTF-8 type name can leak.
+    /// It is knowable from the header, so text framings reject or base64-encode the output.
+    factory.registerOutputFormatMayProduceRawBytesChecker(
+        "JSONColumnsWithMetadata",
+        [](const FormatSettings & settings, const Block & header)
+        {
+            return JSONUtils::metadataTypeNamesMayProduceRawBytesInJSON(header, settings);
+        });
+
     factory.setDocumentation("JSONColumnsWithMetadata", Documentation{
         .description = R"DOCS_MD(
 | Input | Output | Alias |
@@ -126,9 +137,9 @@ void registerOutputFormatJSONColumnsWithMetadata(FormatFactory & factory)
 
 Differs from the [`JSONColumns`](/reference/formats/JSON/JSONColumns) format in that it also contains some metadata and statistics (similar to the [`JSON`](/reference/formats/JSON/JSON) format).
 
-:::note
+<Note>
 The `JSONColumnsWithMetadata` format buffers all data in memory and then outputs it as a single block, so, it can lead to high memory consumption.
-:::
+</Note>
 
 ## Example usage {#example-usage}
 

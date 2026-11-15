@@ -1,4 +1,9 @@
 <test>
+    <settings>
+        <allow_statistics>1</allow_statistics>
+        <materialize_statistics_on_insert>1</materialize_statistics_on_insert>
+    </settings>
+
     <create_query>
         CREATE TABLE t_basic_stats_src(c1 UInt64, c2 UInt64, c3 UInt64, c4 UInt64, c5 UInt64, c6 UInt64, c7 UInt64, c8 UInt64, c9 UInt64, c10 UInt64)
         ENGINE = Memory;
@@ -7,6 +12,26 @@
     <create_query>
         CREATE TABLE t_basic_stats(c1 UInt64 STATISTICS(basic), c2 UInt64 STATISTICS(basic), c3 UInt64 STATISTICS(basic), c4 UInt64 STATISTICS(basic), c5 UInt64 STATISTICS(basic), c6 UInt64 STATISTICS(basic), c7 UInt64 STATISTICS(basic), c8 UInt64 STATISTICS(basic), c9 UInt64 STATISTICS(basic), c10 UInt64 STATISTICS(basic))
         ENGINE = MergeTree ORDER BY c1;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_minmax_stats_uint64(c1 UInt64 STATISTICS(minmax), c2 UInt64 STATISTICS(minmax), c3 UInt64 STATISTICS(minmax), c4 UInt64 STATISTICS(minmax), c5 UInt64 STATISTICS(minmax), c6 UInt64 STATISTICS(minmax), c7 UInt64 STATISTICS(minmax), c8 UInt64 STATISTICS(minmax), c9 UInt64 STATISTICS(minmax), c10 UInt64 STATISTICS(minmax))
+        ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = '';
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_minmax_stats_float64_src(c1 Float64, c2 Float64, c3 Float64, c4 Float64, c5 Float64, c6 Float64, c7 Float64, c8 Float64, c9 Float64, c10 Float64)
+        ENGINE = Memory;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_minmax_stats_float64(c1 Float64 STATISTICS(minmax), c2 Float64 STATISTICS(minmax), c3 Float64 STATISTICS(minmax), c4 Float64 STATISTICS(minmax), c5 Float64 STATISTICS(minmax), c6 Float64 STATISTICS(minmax), c7 Float64 STATISTICS(minmax), c8 Float64 STATISTICS(minmax), c9 Float64 STATISTICS(minmax), c10 Float64 STATISTICS(minmax))
+        ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = '';
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_basic_stats_float64(c1 Float64 STATISTICS(basic), c2 Float64 STATISTICS(basic), c3 Float64 STATISTICS(basic), c4 Float64 STATISTICS(basic), c5 Float64 STATISTICS(basic), c6 Float64 STATISTICS(basic), c7 Float64 STATISTICS(basic), c8 Float64 STATISTICS(basic), c9 Float64 STATISTICS(basic), c10 Float64 STATISTICS(basic))
+        ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = '';
     </create_query>
 
     <create_query>
@@ -19,18 +44,67 @@
         ENGINE = MergeTree ORDER BY c1;
     </create_query>
 
+    <create_query>
+        CREATE TABLE t_uniq_v2_uint64_src(c1 UInt64)
+        ENGINE = Memory;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_uniq_v2_uint64(c1 UInt64 STATISTICS(uniq_v2))
+        ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = '';
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_uniq_v2_float64_src(c1 Float64)
+        ENGINE = Memory;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_uniq_v2_float64(c1 Float64 STATISTICS(uniq_v2))
+        ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = '';
+    </create_query>
+
     <fill_query>INSERT INTO t_basic_stats_src SELECT rand(), rand(), rand(), rand(), rand(), rand(), rand(), rand(), rand(), rand() FROM numbers(1000000)</fill_query>
     <fill_query>SYSTEM STOP MERGES t_basic_stats</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_minmax_stats_uint64</fill_query>
+
+    <fill_query>INSERT INTO t_minmax_stats_float64_src SELECT toFloat64(number), toFloat64(number + 1) / 10, toFloat64(number + 2) / 10, toFloat64(number + 3) / 10, toFloat64(number + 4) / 10, toFloat64(number + 5) / 10, toFloat64(number + 6) / 10, toFloat64(number + 7) / 10, toFloat64(number + 8) / 10, toFloat64(number + 9) / 10 FROM numbers(1000000)</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_minmax_stats_float64</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_basic_stats_float64</fill_query>
 
     <fill_query>INSERT INTO t_uniq_stats_src SELECT rand(), rand() % 10, rand() % 100, rand() % 1000, rand() % 100000 FROM numbers(1000000)</fill_query>
     <fill_query>SYSTEM STOP MERGES t_uniq_stats</fill_query>
 
+    <fill_query>INSERT INTO t_uniq_v2_uint64_src SELECT number FROM numbers(1000000)</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_uniq_v2_uint64</fill_query>
+
+    <fill_query>INSERT INTO t_uniq_v2_float64_src SELECT toFloat64(number) / 10 FROM numbers(1000000)</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_uniq_v2_float64</fill_query>
+
     <query>INSERT INTO t_basic_stats SELECT * FROM t_basic_stats_src</query>
+    <query>INSERT INTO t_minmax_stats_uint64 SELECT * FROM t_basic_stats_src</query>
+    <query>INSERT INTO t_minmax_stats_float64 SELECT * FROM t_minmax_stats_float64_src</query>
+    <query>INSERT INTO t_basic_stats_float64 SELECT * FROM t_minmax_stats_float64_src</query>
     <query>INSERT INTO t_uniq_stats SELECT * FROM t_uniq_stats_src</query>
+    <query>INSERT INTO t_uniq_v2_uint64 SELECT * FROM t_uniq_v2_uint64_src</query>
+    <query>INSERT INTO t_uniq_v2_float64 SELECT * FROM t_uniq_v2_float64_src</query>
 
     <drop_query>DROP TABLE IF EXISTS t_basic_stats</drop_query>
     <drop_query>DROP TABLE IF EXISTS t_basic_stats_src</drop_query>
 
+    <drop_query>DROP TABLE IF EXISTS t_minmax_stats_uint64</drop_query>
+
+    <drop_query>DROP TABLE IF EXISTS t_minmax_stats_float64</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_minmax_stats_float64_src</drop_query>
+
+    <drop_query>DROP TABLE IF EXISTS t_basic_stats_float64</drop_query>
+
     <drop_query>DROP TABLE IF EXISTS t_uniq_stats</drop_query>
     <drop_query>DROP TABLE IF EXISTS t_uniq_stats_src</drop_query>
+
+    <drop_query>DROP TABLE IF EXISTS t_uniq_v2_uint64</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_uniq_v2_uint64_src</drop_query>
+
+    <drop_query>DROP TABLE IF EXISTS t_uniq_v2_float64</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_uniq_v2_float64_src</drop_query>
 </test>

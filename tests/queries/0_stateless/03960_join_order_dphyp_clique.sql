@@ -3,7 +3,6 @@
 -- subset having a direct edge.
 -- count() = 3 because only rows where all four ids coincide survive.
 
-SET allow_experimental_analyzer = 1;
 SET use_statistics = 1;
 SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;

@@ -22,7 +22,7 @@ namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const QueryPlanSerializationSettingsBool collect_hash_table_stats_during_aggregation;
-    extern const QueryPlanSerializationSettingsUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_entries_for_hash_table_stats;
     extern const QueryPlanSerializationSettingsUInt64 max_size_to_preallocate_for_aggregation;
     extern const QueryPlanSerializationSettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
@@ -85,12 +85,39 @@ MergingAggregatedStep::MergingAggregatedStep(
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
     , memory_bound_merging_of_aggregation_results_enabled(memory_bound_merging_of_aggregation_results_enabled_)
 {
+    /// The parallel-replicas and distributed rewrites build this step from the params of an
+    /// `AggregatingStep`, which may carry the top-K threshold merge set by the first optimization
+    /// pass. The merging transforms go through `Aggregator::mergeBlocks` and never reach
+    /// `Aggregator::mergeAndConvertOneBucketToChunk`, so it would be a silent no-op here. Drop it,
+    /// so that the plan does not claim an optimization the pipeline does not perform.
+    params.threshold_top_k.reset();
+
+    /// The bucket-local Top-K conversion (`bucket_top_k`) is consumed by
+    /// `Aggregator::convertOneBucketToChunk`, which the ordinary merging path reaches, but
+    /// `MergingAggregatedMemoryEfficientTransform` converts through `Aggregator::mergeBlocks` and
+    /// never selects the best groups. Drop it there for the same reason.
+    if (memory_efficient_aggregation)
+        params.bucket_top_k = 0;
+
+    /// The ordinary merging path (`MergingAggregatedTransform` -> `Aggregator::convertToChunks`) does
+    /// not count the merged groups of each bucket before pruning them, unlike
+    /// `ConvertingAggregatedToChunksWithMergingSource`. With a `throw` group limit, pruning there could
+    /// return rows instead of throwing on the true merged group count. Drop it in that case.
+    if (params.max_rows_to_group_by != 0 && params.group_by_overflow_mode == OverflowMode::THROW)
+        params.bucket_top_k = 0;
 }
 
 void MergingAggregatedStep::applyOrder(SortDescription input_sort_description)
 {
     /// Columns might be reordered during optimization, so we better to update sort description.
     group_by_sort_description = std::move(input_sort_description);
+
+    /// The memory-bound merging path (`FinishAggregatingInOrderTransform`, `MergingAggregatedBucketTransform`)
+    /// converts through `Aggregator::mergeBlocks` and never reaches `Aggregator::convertOneBucketToChunkTopK`,
+    /// so the bucket-local Top-K conversion would be a silent no-op there. Drop it, like the constructor does
+    /// for the memory-efficient merging.
+    if (memoryBoundMergingWillBeUsed())
+        params.bucket_top_k = 0;
 }
 
 void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
@@ -109,6 +136,9 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
         memory_efficient_merge_threads = settings.aggregation_memory_efficient_merge_threads;
     if (memory_efficient_merge_threads == 0)
         memory_efficient_merge_threads = max_threads;
+
+    /// Forget about current totals and extremes. They will be calculated again after the merge if needed.
+    pipeline.dropTotalsAndExtremes();
 
     if (memoryBoundMergingWillBeUsed())
     {
@@ -151,7 +181,8 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
         pipeline.resize(1);
 
         /// Now merge the aggregated blocks
-        auto transform = std::make_shared<MergingAggregatedTransform>(pipeline.getSharedHeader(), params, final, grouping_sets_params);
+        auto transform = std::make_shared<MergingAggregatedTransform>(pipeline.getSharedHeader(), params, final, grouping_sets_params,
+        should_produce_results_in_order_of_bucket_number ? 1 : max_threads);
         pipeline.addTransform(std::move(transform));
     }
     else
@@ -174,6 +205,11 @@ void MergingAggregatedStep::describeActions(FormatSettings & settings) const
 {
     params.explain(settings);
 
+    /// The memory-efficient mode merges bucket by bucket via `GroupingAggregatedTransform`
+    /// instead of collecting everything into one hash table; make the planned mode visible.
+    if (memory_efficient_aggregation)
+        settings.out << settings.detail_prefix << "Mode: memory-efficient\n";
+
     if (!group_by_sort_description.empty())
     {
         const String & prefix = settings.detail_prefix;
@@ -186,6 +222,8 @@ void MergingAggregatedStep::describeActions(FormatSettings & settings) const
 void MergingAggregatedStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     params.explain(map);
+    if (memory_efficient_aggregation)
+        map.add("Mode", "memory-efficient");
     if (!group_by_sort_description.empty())
         map.add("Order", dumpSortDescription(group_by_sort_description));
 }
@@ -194,6 +232,33 @@ void MergingAggregatedStep::updateOutputHeader()
 {
     const auto & in_header = input_headers.front();
     output_header = std::make_shared<const Block>(MergingAggregatedTransform::appendGroupingIfNeeded(*in_header, params.getHeader(*in_header, final)));
+}
+
+QueryPlanStepPtr MergingAggregatedStep::clone() const
+{
+    return cloneImpl(memory_efficient_aggregation);
+}
+
+QueryPlanStepPtr MergingAggregatedStep::cloneWithoutMemoryEfficientAggregation() const
+{
+    return cloneImpl(false);
+}
+
+std::unique_ptr<MergingAggregatedStep> MergingAggregatedStep::cloneImpl(bool memory_efficient_aggregation_) const
+{
+    auto cloned = std::make_unique<MergingAggregatedStep>(
+        input_headers.front(),
+        params,
+        grouping_sets_params,
+        final,
+        memory_efficient_aggregation_,
+        memory_efficient_merge_threads,
+        should_produce_results_in_order_of_bucket_number,
+        max_block_size,
+        memory_bound_merging_max_block_bytes,
+        memory_bound_merging_of_aggregation_results_enabled);
+    cloned->group_by_sort_description = group_by_sort_description;
+    return cloned;
 }
 
 bool MergingAggregatedStep::memoryBoundMergingWillBeUsed() const
@@ -218,6 +283,7 @@ void MergingAggregatedStep::serializeSettings(QueryPlanSerializationSettings & s
     settings[QueryPlanSerializationSetting::max_entries_for_hash_table_stats] = params.stats_collecting_params.max_entries_for_hash_table_stats;
     settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation] = params.stats_collecting_params.max_size_to_preallocate;
     settings[QueryPlanSerializationSetting::distributed_aggregation_memory_efficient] = memory_efficient_aggregation;
+    settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte] = params.serialize_string_with_zero_byte;
 
     /// A peer whose query-plan serialization version knows the name receives the value whenever the legacy method is
     /// requested; towards an older peer it is written only when this step can actually choose the single-`String`
@@ -258,7 +324,7 @@ void MergingAggregatedStep::serialize(Serialization & ctx) const
 
     writeVarUInt(params.keys.size(), ctx.out);
     for (const auto & key : params.keys)
-        writeStringBinary(key, ctx.out);
+        ctx.writeColumnName(key);
 
     if (!grouping_sets_params.empty())
     {
@@ -268,13 +334,13 @@ void MergingAggregatedStep::serialize(Serialization & ctx) const
             /// Only used keys are needed.
             writeVarUInt(grouping_set.used_keys.size(), ctx.out);
             for (const auto & used_key : grouping_set.used_keys)
-                writeStringBinary(used_key, ctx.out);
+                ctx.writeColumnName(used_key);
         }
     }
 
-    serializeAggregateDescriptions(params.aggregates, ctx.out);
+    serializeAggregateDescriptions(params.aggregates, ctx.out, ctx.for_cache_key, ctx.input_header);
 
-    serializeSortDescription(group_by_sort_description, ctx.out);
+    serializeSortDescription(group_by_sort_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
 
     if (params.stats_collecting_params.isCollectionAndUseEnabled())
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
@@ -330,7 +396,7 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
     deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
 
     SortDescription group_by_sort_description;
-    deserializeSortDescription(group_by_sort_description, ctx.in);
+    deserializeSortDescription(group_by_sort_description, ctx.in, ctx.version, ctx.max_type_complexity);
 
     UInt64 stats_key = 0;
     if (has_stats_key)

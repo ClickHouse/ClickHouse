@@ -10,8 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <Info>
   PlanetScale for Postgres сейчас доступен в рамках [раннего доступа](https://planetscale.com/postgres).
 </Info>
@@ -40,7 +38,15 @@ ClickPipes поддерживает Postgres версии 12 и новее.
 
    По умолчанию результат должен быть `logical`. Если это не так, войдите в консоль PlanetScale, перейдите в `Cluster configuration->Parameters` и прокрутите вниз до `Write-ahead log`, чтобы изменить этот параметр.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp" alt="Настройка wal_level в консоли PlanetScale" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Настройка wal_level в консоли PlanetScale](/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp)
+
+</Frame>
+
+</div>
 
 <Warning>
   Изменение этого параметра в консоли PlanetScale ПРИВЕДЁТ к перезапуску.
@@ -48,7 +54,15 @@ ClickPipes поддерживает Postgres версии 12 и новее.
 
 2. Кроме того, рекомендуется увеличить значение параметра `max_slot_wal_keep_size` по сравнению со значением по умолчанию 4GB. Это также делается через консоль PlanetScale: перейдите в `Cluster configuration->Parameters`, затем прокрутите вниз до `Write-ahead log`. Чтобы подобрать новое значение, ознакомьтесь с рекомендациями [здесь](/ru/integrations/clickpipes/postgres/faq#recommended-max_slot_wal_keep_size-settings).
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp" alt="Настройка max_slot_wal_keep_size в консоли PlanetScale" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Настройка max_slot_wal_keep_size в консоли PlanetScale](/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp)
+
+</Frame>
+
+</div>
 
 <div id="creating-a-user-with-permissions-and-publication">
   ## Создание пользователя, назначение разрешений и создание публикации

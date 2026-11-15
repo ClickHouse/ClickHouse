@@ -53,7 +53,6 @@ MergeTreeDataPartBuilder::MergeTreeDataPartBuilder(
 std::shared_ptr<IMergeTreeDataPart> MergeTreeDataPartBuilder::build()
 {
     using PartType = MergeTreeDataPartType;
-    using PartStorageType = MergeTreeDataPartStorageType;
 
     /// Route every allocation produced while constructing the part (the `IMergeTreeDataPart`
     /// object itself, its initializer-list members `Poco::LRUCache<String, ColumnSize>`,
@@ -82,14 +81,9 @@ std::shared_ptr<IMergeTreeDataPart> MergeTreeDataPartBuilder::build()
     if (parent_part && data.format_version == MERGE_TREE_DATA_OLD_FORMAT_VERSION)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create projection part in MergeTree table created in old syntax");
 
-    auto part_storage_type = part_storage->getType();
-    if (!data.canUsePolymorphicParts() &&
-        (part_type != PartType::Wide || part_storage_type != PartStorageType::Full))
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Cannot create part with type {} and storage type {} because table does not support polymorphic parts",
-            part_type->toString(), part_storage_type.toString());
-    }
+    /// No polymorphic-parts policy check here: it governs only the format of NEW parts and is
+    /// enforced by MergeTreeData::choosePartFormat. The type reaching build() otherwise belongs to
+    /// an existing part (loaded from disk, or inherited by a mutation), where it is a physical fact.
 
     if (!part_info)
         part_info = MergeTreePartInfo::fromPartName(name, data.format_version);
@@ -208,6 +202,22 @@ MergeTreeDataPartBuilder::getPartStorageAndMarkType(
     }
 
     return {};
+}
+
+MutableDataPartStoragePtr MergeTreeDataPartBuilder::getPartStorageForRemoval(
+    const VolumePtr & volume_,
+    const String & root_path_,
+    const String & part_dir_,
+    const ReadSettings & read_settings)
+{
+    using Type = MergeTreeDataPartStorageType;
+    for (auto it = volume_->getDisk()->iterateDirectory(fs::path(root_path_) / part_dir_); it->isValid(); it->next())
+    {
+        if (it->name() == DataPartStorageOnDiskPacked::DATA_FILE_NAME)
+            return getPartStorageByType(Type::Packed, volume_, root_path_, part_dir_, /*initialize=*/false, read_settings);
+    }
+
+    return getPartStorageByType(Type::Full, volume_, root_path_, part_dir_, /*initialize=*/false, read_settings);
 }
 
 MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromDisk()

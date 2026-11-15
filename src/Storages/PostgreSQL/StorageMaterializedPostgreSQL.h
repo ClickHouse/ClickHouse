@@ -83,6 +83,7 @@ public:
         std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings);
 
     String getName() const override { return "MaterializedPostgreSQL"; }
+    bool hasUnreplicatedTableDataOnDisk() const override { return true; }
 
     void shutdown(bool is_drop) override;
 
@@ -105,9 +106,10 @@ public:
     bool supportedPrewhereColumnsIncludeSubcolumns() const override;
     bool supportsSubcolumns() const override;
     bool supportsOptimizationToSubcolumns() const override;
+    bool hasBucketedMapSerialization() const override;
 
     ColumnSizeByName getColumnSizes() const override;
-    ColumnSizeByName getColumnSizes(const Names & columns) const override;
+    ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;

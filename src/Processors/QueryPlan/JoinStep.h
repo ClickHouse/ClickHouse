@@ -1,7 +1,10 @@
 #pragma once
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPlan/JoinEstimation.h>
 #include <Core/Joins.h>
 
 namespace DB
@@ -13,8 +16,9 @@ using JoinPtr = std::shared_ptr<IJoin>;
 struct LogicalJoinInfo
 {
     String readable_relation_name;
-    std::optional<UInt64> result_rows_estimation;
+    JoinEstimation estimation;
     JoinLocality locality{};
+    UInt64 cluster_id = 0;
 };
 
 /// Join two data streams.
@@ -38,7 +42,6 @@ public:
         size_t min_block_size_bytes_,
         size_t max_streams_,
         NameSet required_output_,
-        bool keep_left_read_in_order_,
         bool use_new_analyzer_,
         bool use_join_disjunctions_push_down_ = false);
 
@@ -73,7 +76,7 @@ public:
         std::string rhs_name;
     };
 
-    struct PrimaryKeySharding : std::vector<PrimaryKeyNamesPair>
+    struct PrimaryKeySharding : VectorWithMemoryTracking<PrimaryKeyNamesPair>
     {
         bool is_reverse_order = false;
     };
@@ -81,37 +84,69 @@ public:
     /// Set names of PK columns for optimized for JOIN sharder by PK ranges.
     /// Names are required for EXPLAIN only.
     void enableJoinByLayers(PrimaryKeySharding sharding) { primary_key_sharding = std::move(sharding); }
+
+    /// Gate the probe-side reads on the build completion seal carrying the given runtime
+    /// filter. Set by markSealGatedReading; not serialized (the key is per-plan-build).
+    void enableSealGatedProbeReading(const String & runtime_filter_key) { seal_gate = runtime_filter_key; }
+
+    /// What the query plan guarantees about the left input streams.
+    enum class LeftPipelineOrder : uint8_t
+    {
+        None, /// The left pipe may be resized to max_streams.
+        KeepLayout, /// The left streams are not resized in `joinPipelinesRightLeft`, e.g. to keep shards intact.
+        KeepOrder, /// The layout is kept AND the join must emit the left rows in their original order.
+    };
+
+    /// The query plan REQUIRES the left stream's row order (`LeftPipelineOrder::KeepOrder`):
+    /// keeps the left pipe layout, and asks the join to keep the left row order. Throws a logical
+    /// error when the join cannot honor the request - the caller must check
+    /// `IJoin::canPreserveLeftBlockOrder` first.
     void keepLeftPipelineInOrder(bool disable_squashing = false);
+
+    /// Keeps only the left pipe layout (`LeftPipelineOrder::KeepLayout`), without any requirement
+    /// on the join itself. Does not downgrade an already required order.
+    void keepLeftPipelineLayout();
 
     bool isOptimized() const { return optimized; }
     void setOptimized() { optimized = true; }
 
-    std::vector<size_t> getStepGroups() const override;
+    VectorWithMemoryTracking<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
+
+    StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
+
+    const JoinEstimation & getEstimation() const { return estimation; }
+    UInt64 getClusterId() const { return cluster_id; }
 
 private:
     bool optimized = false;
     void updateOutputHeader() override;
+
+    JoinAnalysisCounters collectMergeJoinCounters(StepProcessors step_processors) const;
 
     /// Header that expected to be returned from IJoin
     SharedHeader join_algorithm_header;
     String join_readable_relation_name;
 
     JoinPtr join;
-    std::optional<size_t> result_rows_estimation;
+    JoinEstimation estimation;
+    UInt64 cluster_id = 0;
     size_t max_block_size;
     size_t min_block_size_rows;
     size_t min_block_size_bytes;
     size_t max_streams;
 
     const NameSet required_output;
-    std::set<size_t> columns_to_remove;
+    SetWithMemoryTracking<size_t> columns_to_remove;
     JoinLocality locality = JoinLocality::Unspecified;
-    bool keep_left_read_in_order;
+    LeftPipelineOrder left_pipeline_order = LeftPipelineOrder::None;
     bool use_new_analyzer = false;
     bool use_join_disjunctions_push_down;
     bool disjunctions_optimization_applied = false;    /// Flag that indicates that disjunction optimization was already applied
     /// to prevent infinite optimization loop
+
+    /// See enableSealGatedProbeReading.
+    std::optional<String> seal_gate;
 
 public:
     /// Check if disjunction optimization was already applied to this JoinStep
@@ -142,6 +177,8 @@ public:
 
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
+
+    StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
 
 private:
     void updateOutputHeader() override;

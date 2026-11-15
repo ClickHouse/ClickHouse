@@ -1,0 +1,5 @@
+tables and columns visible with the global grant:
+t_cc_revoke_visible	['id']
+tables and columns visible to the owner:
+t_cc_revoke_hidden	['id','secret']
+t_cc_revoke_visible	['id','secret']

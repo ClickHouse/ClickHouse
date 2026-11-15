@@ -1,11 +1,14 @@
 export const GlobalSearch = ({ placeholder = "ClickHouse 문서 검색..." }) => {
   // Mintlify는 가져온 컴포넌트를 독립 실행형 함수로 평가하므로,
   // 컴포넌트에서 사용하는 헬퍼는 컴포넌트 스코프 내에 위치해야 합니다.
+  // 기존 *.mintlify.app 소스는 호스트 루트에서 페이지를 노출했으나,
+  // *.mintlify.site 소스는 /docs 접두사를 포함합니다.
+  const previewUrlPattern = /^https?:\/\/private-7c7dfe99\.mintlify\.(?:app|site)\/(?:docs(?:\/|(?=[?#]|$)))?/
   const transformSource = (source) => {
     let url = source.url || ""
-    const isPreview = url.indexOf("private-7c7dfe99.mintlify.app") !== -1
+    const isPreview = previewUrlPattern.test(url)
     if (isPreview) {
-      url = url.replace(/^https?:\/\/private-7c7dfe99\.mintlify\.app\//, "https://clickhouse.com/docs/")
+      url = url.replace(previewUrlPattern, "https://clickhouse.com/docs/")
     }
     const tabs = []
     if (isPreview || /clickhouse\.com\/docs(\/|$)/.test(url)) {
@@ -29,7 +32,7 @@ export const GlobalSearch = ({ placeholder = "ClickHouse 문서 검색..." }) =>
     // 공개 클라이언트 측 Inkeep 키로, inkeep-init.js에서도 사용됩니다.
     const keyStaging = "d3e2792740610240ff7bcf2c2a78a33012812eb4f3e34d54"
     const keyLocal = "b25e5cf856ec9da60d250578b59dace8417359feeedcbc6b"
-    const apiKey = /\.mintlify\.app$/.test(window.location.hostname) ? keyStaging : keyLocal
+    const apiKey = /\.mintlify\.(?:app|site)$/.test(window.location.hostname) ? keyStaging : keyLocal
     const embedUrl = "https://cdn.jsdelivr.net/npm/@inkeep/cxkit-js@0.5/dist/embed.js"
     const config = {
       baseSettings: {

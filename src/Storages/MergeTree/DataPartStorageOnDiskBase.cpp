@@ -169,22 +169,41 @@ String DataPartStorageOnDiskBase::getPartDirForPrefix(const String & prefix, boo
     if (!prefix.empty() && !prefix.ends_with("_"))
         res += "_";
 
-    /// During RESTORE temporary part directories are created with names like "tmp_restore_all_2_2_0-XXXXXXXX".
-    /// To detach such a directory we need to rename it replacing "tmp_restore_" with a specified prefix,
-    /// and a random suffix with an attempt number.
+    /** The part's directory is usually a bare name, but it can be a relative path: the `ATTACH_PART`
+      * executor builds its candidate part with `detached/attaching_<name>` so that it can read the
+      * candidate straight out of `detached/`. Prefixing that whole path names a directory inside a
+      * `broken_detached/` subdirectory that nothing ever creates, so the quarantine rename of a broken
+      * detached part failed with ENOENT and the part kept its valid name in `detached/` - failing every
+      * later attach the same way. Only the last component is the part's own directory name.
+      */
+    const String part_dir_name = fs::path(part_dir).filename();
+
+    /** That name can still be a temporary rename of the part rather than the part's own name, and a
+      * temporary marker has to be dropped rather than prefixed: a detached directory must remain a name
+      * `DetachedPartInfo::parseDetachedPartName` can parse, or `system.detached_parts` reports it with a
+      * `NULL` `reason` and `partition_id` while partition-scoped `DROP DETACHED` and `ATTACH PARTITION`
+      * skip it - the part becomes impossible to inspect or to get rid of. RESTORE names its temporary
+      * directories "tmp_restore_all_2_2_0-XXXXXXXX", where the random suffix goes away together with the
+      * prefix; the `ATTACH_PART` candidate above is `attaching_<name>`, so its quarantined directory has
+      * to become a plain `broken_<name>`.
+      */
     String part_name;
-    if (detached && part_dir.starts_with("tmp_restore_"))
+    if (detached && part_dir_name.starts_with("tmp_restore_"))
     {
-        part_name = part_dir.substr(strlen("tmp_restore_"));
+        part_name = part_dir_name.substr(strlen("tmp_restore_"));
         size_t endpos = part_name.find('-');
         if (endpos != String::npos)
             part_name.erase(endpos, String::npos);
+    }
+    else if (detached && part_dir_name.starts_with("attaching_"))
+    {
+        part_name = part_dir_name.substr(strlen("attaching_"));
     }
 
     if (!part_name.empty())
         res += part_name;
     else
-        res += part_dir;
+        res += part_dir_name;
 
     if (try_no)
         res += DetachedPartInfo::TRY_N_SUFFIX + DB::toString(try_no);
@@ -252,6 +271,7 @@ void DataPartStorageOnDiskBase::setRelativePath(const std::string & path)
         std::lock_guard lock(skip_indices_packed_mutex);
         skip_indices_packed_probed = false;
         skip_indices_packed_reader.reset();
+        skip_indices_packed_unsupported = false;
     }
 }
 
@@ -991,9 +1011,9 @@ void DataPartStorageOnDiskBase::clearDirectory(
     /// Sometimes we add something to checksums.files before actually writing checksums and columns on disk.
     /// Also sometimes we write checksums.txt and columns.txt in arbitrary order, so this check becomes complex...
     bool incomplete_temporary_part = is_temp && (!disk->existsFile(fs::path(dir) / "checksums.txt") || !disk->existsFile(fs::path(dir) / "columns.txt"));
-    if (checksums.empty() || incomplete_temporary_part)
+    if (checksums.empty() || incomplete_temporary_part || disk->prefersRecursiveRemoval())
     {
-        /// If the part is not completely written, we cannot use fast path by listing files.
+        /// The fast path by listing files cannot be used for an incomplete part and is not faster on this disk.
         try
         {
             disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
@@ -1218,7 +1238,10 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndic
         Expect404ResponseScope scope;
         try
         {
-            skip_indices_packed_reader = std::make_shared<PackedFilesReader>(disk, packed_path, ReadSettings{});
+            auto buf = disk->readFile(packed_path, ReadSettings{}.adjustBufferSize(4096));
+            auto index = readSkipIndicesPackedIndex(*buf, packed_path);
+            skip_indices_packed_unsupported = !index;
+            skip_indices_packed_reader = std::make_shared<PackedFilesReader>(index ? std::move(*index) : PackedFilesIO::Index{});
         }
         catch (const Exception &)
         {
@@ -1230,6 +1253,23 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndic
 
     skip_indices_packed_probed = true;
     return skip_indices_packed_reader;
+}
+
+std::optional<PackedFilesIO::Index> DataPartStorageOnDiskBase::readSkipIndicesPackedIndex(ReadBuffer & in, const String & archive_path)
+{
+    /// An empty buffer is left to readIndex, which reports the truncated archive.
+    if (!in.eof())
+    {
+        const auto version = static_cast<UInt8>(*in.position());
+        if (version > PackedFilesIO::MAX_VERSION)
+        {
+            LOG_DEBUG(getLogger("DataPartStorageOnDiskBase"),
+                "Skip indices archive {} has format version {}, newer than the supported {}. Skip indices stored in it will not be used",
+                archive_path, static_cast<UInt32>(version), static_cast<UInt32>(PackedFilesIO::MAX_VERSION));
+            return std::nullopt;
+        }
+    }
+    return PackedFilesReader::readIndex(in);
 }
 
 void DataPartStorageOnDiskBase::seedSkipIndicesPackedReader(const PackedFilesIO::Index & index) const
@@ -1263,6 +1303,14 @@ bool DataPartStorageOnDiskBase::isFileInPackedSkipIndicesArchive(const std::stri
 bool DataPartStorageOnDiskBase::hasSkipIndicesPackedArchive() const
 {
     return getSkipIndicesPackedReader() != nullptr;
+}
+
+bool DataPartStorageOnDiskBase::hasUnsupportedSkipIndicesPackedArchive() const
+{
+    if (!getSkipIndicesPackedReader())
+        return false;
+    std::lock_guard lock(skip_indices_packed_mutex);
+    return skip_indices_packed_unsupported;
 }
 
 void DataPartStorageOnDiskBase::copyArchiveEntryTo(

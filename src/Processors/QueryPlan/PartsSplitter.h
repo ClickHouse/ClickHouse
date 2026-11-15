@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <optional>
 
 #include <Interpreters/Context_fwd.h>
@@ -22,6 +23,9 @@ struct SplitPartsRangesResult
 /// Check if the primary key types are safe for splitting (no floats with NaN, etc.).
 bool isSafePrimaryKey(const KeyDescription & primary_key);
 
+/// The same check for a single key column, for a consumer that splits by a primary key prefix.
+bool isSafePrimaryDataKeyType(const IDataType & data_type);
+
 /// Derives whether parts are read in descending primary-key order from the sorting key's reverse
 /// flags. Returns nullopt when the primary-key columns mix ascending and descending order, in which
 /// case primary-key-range splitting is not possible.
@@ -35,6 +39,9 @@ struct SplitPartsWithRangesByPrimaryKeyResult
 {
     RangesInDataParts non_intersecting_parts_ranges;
     Pipes merging_pipes;
+    /// Borders between consecutive `merging_pipes` in the table's key order (see `SplitPartsByRanges::borders`);
+    /// empty when the intersecting ranges were not split into layers.
+    VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> borders;
 };
 
 /** Splits parts ranges into:
@@ -70,10 +77,10 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndex(
 
 struct SplitPartsByRanges
 {
-    using Values = std::vector<Field>;
+    using Values = VectorWithMemoryTracking<Field>;
 
-    std::vector<RangesInDataParts> layers;
-    std::vector<Values> borders;
+    VectorWithMemoryTracking<RangesInDataParts> layers;
+    VectorWithMemoryTracking<Values> borders;
     bool in_reverse_order = false;
 };
 
@@ -97,7 +104,7 @@ Pipes readByLayers(
 void addLayerRangeFilterToPipe(
     Pipe & pipe,
     const KeyDescription & primary_key,
-    const std::vector<std::vector<Field>> & borders,
+    const VectorWithMemoryTracking<SplitPartsByRanges::Values> & borders,
     size_t layer_index,
     bool in_reverse_order,
     ContextPtr context);
