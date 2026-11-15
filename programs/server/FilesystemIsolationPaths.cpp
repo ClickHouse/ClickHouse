@@ -74,6 +74,13 @@ constexpr std::array system_paths = {
     "/usr/local/share/ca-certificates",
     /// The separate debug info of the executable, for the symbols in stack traces.
     "/usr/lib/debug",
+    /// The secrets that container runtimes mount: Kubernetes projects the tokens of the service accounts into
+    /// `/var/run/secrets`, as `/var/run/secrets/eks.amazonaws.com/serviceaccount/token` for the IAM roles of EKS, which
+    /// an AWS profile can name in `web_identity_token_file`, and Docker mounts its secrets into `/run/secrets`. Each of
+    /// them is a mount of its own, and the directories rather than the files are visible, because the kubelet rotates
+    /// the tokens by replacing the files.
+    "/run/secrets",
+    "/var/run/secrets",
 };
 
 /// The directories of the CA certificates of the system, which can be links to certificates elsewhere.
@@ -166,6 +173,7 @@ public:
         addLogs();
         addCertificates();
         addKerberosProfiles();
+        addCloudCredentials();
         addBridge();
         addJemallocProfiles();
         addExtraPaths();
@@ -825,6 +833,32 @@ private:
                 addKeyLocation(fmt::format("ldap_servers.{}.{}", server, name), Access::ReadOnly, runtime_directory);
             addCertificateAuthorityKey(fmt::format("ldap_servers.{}.tls_ca_cert_dir", server));
         }
+    }
+
+    /// The credentials of the clouds that the clients of S3 and Azure read from files named by environment variables,
+    /// as the token of the service account that Kubernetes projects into a pod for `AssumeRoleWithWebIdentity`
+    /// (`AWS_WEB_IDENTITY_TOKEN_FILE`, set by EKS, as `/var/run/secrets/eks.amazonaws.com/serviceaccount/token`),
+    /// for EKS Pod Identity and for the workload identity of Azure. The kubelet rotates such a token: the file is a
+    /// link to `..data/token`, and it points `..data` at a new directory, so the directories of the file and of the
+    /// targets of the links are visible rather than the file. A relative path is relative to the working directory.
+    void addCloudCredentials()
+    {
+        for (const char * name : {
+                 "AWS_WEB_IDENTITY_TOKEN_FILE",
+                 "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE",
+                 "AWS_CONFIG_FILE",
+                 "AWS_SHARED_CREDENTIALS_FILE",
+                 "AZURE_FEDERATED_TOKEN_FILE"})
+        {
+            const char * value = std::getenv(name); // NOLINT(concurrency-mt-unsafe)
+            if (value && *value)
+                addLocation(absolute(value, runtime_directory), Access::ReadOnly, fmt::format("the environment variable {}", name));
+        }
+
+        /// The default location of the configuration and the credentials of the AWS SDK, `~/.aws/config` and
+        /// `~/.aws/credentials`, as `Aws::FileSystem::GetHomeDirectory` finds it.
+        if (const char * home = std::getenv("HOME"); home && *home == '/') // NOLINT(concurrency-mt-unsafe)
+            add(absolute(home, "/") / ".aws", Access::ReadOnly, "the configuration of the AWS SDK in the home directory");
     }
 
     /// The profiles of Kerberos at the default paths of the bundled MIT Kerberos (`DEFAULT_PROFILE_PATH`), with the

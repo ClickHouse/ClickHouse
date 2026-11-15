@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# Tags: no-fasttest
+# The container of the fast test is not privileged, so it does not allow the namespaces of the isolation.
+
+# A server with `filesystem_isolation` sees the token of the service account that Kubernetes projects into a pod for the
+# IAM roles of EKS, named by `AWS_WEB_IDENTITY_TOKEN_FILE`, also after the kubelet rotates it: the token is a link
+# `token -> ..data/token`, and the kubelet writes the new one into a new directory and points `..data` at it.
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+EXPECTED="token: first
+rotated token: second"
+
+# The configuration of the tests enables the isolation only where the container allows the namespaces: see
+# `tests/config/install.sh`.
+if [ "$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'filesystem_isolation'")" != "enforce" ]; then
+    echo "$EXPECTED"
+    exit 0
+fi
+
+DIR="${CLICKHOUSE_TMP}/filesystem_isolation_web_identity_token"
+rm -rf "$DIR"
+mkdir -p "$DIR/conf" "$DIR/data" "$DIR/serviceaccount/..2026_01_01_00_00_00.1"
+echo first > "$DIR/serviceaccount/..2026_01_01_00_00_00.1/token"
+ln -s "..2026_01_01_00_00_00.1" "$DIR/serviceaccount/..data"
+ln -s "..data/token" "$DIR/serviceaccount/token"
+
+cat > "$DIR/conf/config.xml" <<EOF
+<clickhouse>
+    <logger>
+        <level>information</level>
+        <log>$DIR/data/server.log</log>
+        <errorlog>$DIR/data/server.err.log</errorlog>
+    </logger>
+    <path>$DIR/data/</path>
+    <!-- Any free port: nothing connects to this server. -->
+    <tcp_port>0</tcp_port>
+    <filesystem_isolation>enforce</filesystem_isolation>
+    <users><default><password></password><profile>default</profile><quota>default</quota></default></users>
+    <profiles><default/></profiles>
+    <quotas><default/></quotas>
+</clickhouse>
+EOF
+
+PID=
+function finish()
+{
+    [ -n "$PID" ] && kill "$PID" 2>/dev/null
+    wait
+}
+trap finish EXIT
+
+AWS_WEB_IDENTITY_TOKEN_FILE="$DIR/serviceaccount/token" $CLICKHOUSE_BINARY server --config-file "$DIR/conf/config.xml" > "$DIR/server.out" 2>&1 &
+PID=$!
+
+for _ in {1..600}; do
+    grep -q 'Ready for connections' "$DIR/data/server.log" 2>/dev/null && break
+    kill -0 "$PID" 2>/dev/null || break
+    sleep 0.1
+done
+
+if ! grep -q 'Ready for connections' "$DIR/data/server.log" 2>/dev/null || ! grep -q 'Isolated the filesystem' "$DIR/data/server.log"; then
+    echo "The server did not start with an isolated filesystem"
+    cat "$DIR/server.out" "$DIR/data/server.err.log" >&2
+    exit 1
+fi
+
+echo "token: $(cat "/proc/$PID/root$DIR/serviceaccount/token" 2>&1)"
+
+# As the kubelet does it (`AtomicWriter`): the new token in a new directory, a new link to it renamed over `..data`,
+# and the old directory removed.
+mkdir "$DIR/serviceaccount/..2026_01_02_00_00_00.2"
+echo second > "$DIR/serviceaccount/..2026_01_02_00_00_00.2/token"
+ln -s "..2026_01_02_00_00_00.2" "$DIR/serviceaccount/..data_tmp"
+mv -T "$DIR/serviceaccount/..data_tmp" "$DIR/serviceaccount/..data"
+rm -rf "$DIR/serviceaccount/..2026_01_01_00_00_00.1"
+
+echo "rotated token: $(cat "/proc/$PID/root$DIR/serviceaccount/token" 2>&1)"
