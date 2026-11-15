@@ -46,8 +46,9 @@ using PatchReadResultPtr = std::shared_ptr<const PatchReadResult>;
 struct PatchMergeReadResult : public PatchReadResult
 {
     Block block;
-    UInt64 min_part_offset = 0;
-    UInt64 max_part_offset = 0;
+    /// Offsets of the source part covered by the read range. Not set if the range has no rows of that part.
+    std::optional<UInt64> min_part_offset;
+    std::optional<UInt64> max_part_offset;
 
     bool empty() const override { return block.rows() == 0; }
 };
@@ -77,9 +78,11 @@ struct PatchReadResultToApply
 
 /// Builds patches of all modes from patch read results and applies them to result_block.
 /// Patches updating the same set of columns are combined and applied together.
+/// `key_columns` supplies the sorting key columns used for MergeOnKey key comparisons.
 void applyPatchesToBlock(
     Block & result_block,
     Block & versions_block,
+    const Block & key_columns,
     const std::vector<PatchReadResultToApply> & patch_read_results,
     UInt64 source_data_version);
 

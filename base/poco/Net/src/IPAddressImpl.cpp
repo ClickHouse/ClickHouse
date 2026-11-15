@@ -406,7 +406,7 @@ std::string IPv6AddressImpl::toString() const
 		else
 			result.append("::ffff:");
 		const UInt8* bytes = reinterpret_cast<const UInt8*>(&_addr);
-		if (bytes[12] != 0) // only 0.0.0.0 can start with zero
+		if (words[5] != 0 || bytes[12] != 0 || bytes[13] != 0 || bytes[14] != 0 || bytes[15] != 0) // plain :: has no IPv4 part
 		{
 			NumberFormatter::append(result, bytes[12]);
 			result.append(".");

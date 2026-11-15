@@ -8,7 +8,7 @@ export const PrivatePreviewBadge = () => {
                 <path fillRule="evenodd" clipRule="evenodd" d="M11.333 14H4.66634C3.92967 14 3.33301 13.4033 3.33301 12.6666V7.99996C3.33301 7.26329 3.92967 6.66663 4.66634 6.66663H11.333C12.0697 6.66663 12.6663 7.26329 12.6663 7.99996V12.6666C12.6663 13.4033 12.0697 14 11.333 14Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
         </div>
-            {'ClickHouse Cloud でのプライベートプレビュー'}
+            {'プライベートプレビュー'}
         </div>
     )
 }

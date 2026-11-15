@@ -1,5 +1,4 @@
--- Tags: no-old-analyzer, no-flaky-check
--- no-old-analyzer: distributed planning requires the analyzer.
+-- Tags: no-flaky-check
 -- no-flaky-check: the distributed-plan queries take tens of seconds on a TSan build, and the
 -- flaky check runs all new tests at once, so the runs at peak load exceed its per-run time limit.
 
@@ -33,12 +32,13 @@ SET log_processors_profiles = 1;
 SELECT '-- 1. single-source scatter under global aggregation';
 EXPLAIN SELECT sum(v) FROM t_any_scatter SETTINGS distributed_plan_default_shuffle_join_bucket_count = 4;
 SELECT sum(v) FROM t_any_scatter
-  SETTINGS distributed_plan_default_shuffle_join_bucket_count = 4, log_comment = '04505_scatter_single_source';
+  SETTINGS distributed_plan_default_shuffle_join_bucket_count = 4, log_comment = '04505_scatter_single_source',
+           distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- 2. scatter into a join stage over an expression join key';
 SELECT count() FROM t_any_scatter AS a, t_any_scatter AS b WHERE a.k = (b.k + 1) % 50
   SETTINGS distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 2,
-           log_comment = '04505_scatter_multi_source';
+           log_comment = '04505_scatter_multi_source', distributed_plan_fallback_to_local_execution = 0;
 
 -- The log introspection below is not the subject of the test; a distributed read of the
 -- constantly merging system log tables can fail on parts replaced after planning.

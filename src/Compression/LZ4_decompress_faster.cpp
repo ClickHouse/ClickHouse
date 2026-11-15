@@ -165,7 +165,7 @@ template <>
   * Explanation:
   *
   * https://stackoverflow.com/questions/33692969/assembler-mmx-errors
-  * https://software.intel.com/en-us/node/524274
+  * https://web.archive.org/web/20190117031545/https://software.intel.com/en-us/node/524274
   *
   * Actually it's possible to use 'emms' instruction after decompression routine.
   * But it's more easy to just use 'xmm' registers and avoid using 'mm' registers.
@@ -459,7 +459,7 @@ template <>
 #endif
 }
 
-template <size_t copy_amount, bool branchless = false>
+template <size_t copy_amount, bool branchless = false, bool short_pairs = false>
 bool NO_INLINE decompressImpl(const char * const source, char * const dest, size_t source_size, size_t dest_size)
 {
     const UInt8 * ip = reinterpret_cast<const UInt8 *>(source);
@@ -491,7 +491,30 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
         length = token >> 4;
 
         UInt8 * copy_end = nullptr;
-        size_t real_length = 0;
+
+        if constexpr (short_pairs)
+        {
+            /// Decode a short literal/match pair with one set of buffer bounds checks.
+            /// Keep small offsets and extended lengths on the existing overlap-copy path.
+            /// The margins cover 14 literals plus the offset, and 14 literals plus a match of up to 18 bytes.
+            if (length < 15 && (token & 0x0F) < 15 && input_end - ip >= 16 && output_end - op >= 32)
+            {
+                const size_t offset = LZ4_readLE16(ip + length);
+                if (offset >= 8 && offset <= static_cast<size_t>(op - output_begin) + length)
+                {
+                    __builtin_memcpy(op, ip, 16);
+                    ip += length + 2;
+                    op += length;
+                    const UInt8 * match = op - offset;
+                    /// Separate copies preserve matches whose offset is between 8 and 17.
+                    __builtin_memcpy(op, match, 8);
+                    __builtin_memcpy(op + 8, match + 8, 8);
+                    __builtin_memcpy(op + 16, match + 16, 2);
+                    op += (token & 0x0F) + 4;
+                    continue;
+                }
+            }
+        }
 
         /// It might be true fairly often for well-compressed columns.
         /// ATST it may hurt performance in other cases because this condition is hard to predict (especially if the number of zeros is ~50%).
@@ -503,14 +526,16 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
 
         if (length == 0x0F)
         {
-            if (unlikely(ip + 1 >= input_end))
+            /// At least two more bytes have to be available. The check is written as a distance rather
+            /// than as `ip + 1 >= input_end`, because `ip` is allowed to be exactly `input_end` here, and
+            /// then `ip + 1` would be two past the end of the payload - out-of-range pointer arithmetic.
+            /// The same applies to the other availability checks below.
+            if (unlikely(input_end - ip < 2))
                 return false;
             continue_read_length();
         }
 
         /// Copy literals.
-
-        copy_end = op + length;
 
         /// input: Hello, world
         ///        ^-ip
@@ -523,21 +548,27 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
         /// output: xyzHello, w
         ///                  ^-op (we will overwrite excessive bytes on next iteration)
 
-        if (unlikely(copy_end > output_end))
+        /// The literal has to fit in what is left of the output. `length` is attacker-controlled and
+        /// bounded only by `255 * source_size`, so the check is a distance rather than
+        /// `op + length > output_end`: the latter would form `copy_end` megabytes outside of the
+        /// destination before rejecting it, which is out-of-range pointer arithmetic.
+        if (unlikely(length > static_cast<size_t>(output_end - op)))
             return false;
 
-        // Due to implementation specifics the copy length is always a multiple of copy_amount
-        real_length = 0;
+        copy_end = op + length;
 
-        static_assert(copy_amount == 8 || copy_amount == 16 || copy_amount == 32);
-        if constexpr (copy_amount == 8)
-            real_length = (((length >> 3) + 1) * 8);
-        else if constexpr (copy_amount == 16)
-            real_length = (((length >> 4) + 1) * 16);
-        else if constexpr (copy_amount == 32)
-            real_length = (((length >> 5) + 1) * 32);
-
-        if (unlikely(ip + real_length >= input_end + ADDITIONAL_BYTES_AT_END_OF_BUFFER))
+        /// The literal has to be entirely inside the compressed payload.
+        ///
+        /// It is not enough to check that the copy stays within the `ADDITIONAL_BYTES_AT_END_OF_BUFFER`
+        /// slack reserved after the payload: that slack is uninitialized memory (`PODArray::resize` does
+        /// not zero it), so a crafted block declaring a literal longer than the bytes it actually carries
+        /// would copy uninitialized heap into the decompressed block and still report success. Only the
+        /// unconditional over-read of `wildCopyFromInput` may touch the slack - it exceeds the literal by
+        /// less than `copy_amount` bytes, which is always less than `ADDITIONAL_BYTES_AT_END_OF_BUFFER`,
+        /// and those bytes always land after `copy_end`, where they are either overwritten by the next
+        /// iteration or fall outside of `size_decompressed`.
+        static_assert(copy_amount <= ADDITIONAL_BYTES_AT_END_OF_BUFFER);
+        if (unlikely(length > static_cast<size_t>(input_end - ip)))
             return false;
 
         wildCopyFromInput<copy_amount>(op, ip, copy_end - op); /// Here we can write up to copy_amount - 1 bytes after buffer.
@@ -550,7 +581,7 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
 
     decompress_match:
 
-        if (unlikely(ip + 1 >= input_end))
+        if (unlikely(input_end - ip < 2))
             return false;
 
         /// Get match offset.
@@ -577,7 +608,7 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
         length = token & 0x0F;
         if (length == 0x0F)
         {
-            if (unlikely(ip + 1 >= input_end))
+            if (unlikely(input_end - ip < 2))
                 return false;
             continue_read_length();
         }
@@ -585,10 +616,11 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
 
         /// Copy match within block, that produce overlapping pattern. Match may replicate itself.
 
-        copy_end = op + length;
-
-        if (unlikely(copy_end > output_end))
+        /// A distance check, for the same reason as for the literal above.
+        if (unlikely(length > static_cast<size_t>(output_end - op)))
             return false;
+
+        copy_end = op + length;
 
         /** Here we can write up to copy_amount - 1 - 4 * 2 bytes after buffer.
           * The worst case when offset = 1 and length = 4
@@ -676,7 +708,7 @@ bool decompress(
     /// When a specific method is forced, always use it regardless of block size.
     /// The size threshold below only applies to the adaptive bandit algorithm
     /// where timing very small blocks would add too much noise.
-    if (statistics.choose_method >= 0 || dest_size >= 32768)
+    if (statistics.choose_method >= 0 || dest_size >= MIN_BLOCK_SIZE_TO_CHOOSE_VARIANT)
     {
         size_t variant_size = PerformanceStatistics::NUM_ELEMENTS;
         size_t best_variant = statistics.select(variant_size);
@@ -704,6 +736,9 @@ bool decompress(
     /// (AMD 7950X3D), sweeping it from 0 to 32K changes the oracle total by only 0.003%,
     /// because variant 0 is available in the bandit anyway and would be selected for
     /// the same files. The threshold is purely a noise-reduction measure.
+    /// Avoid the extra short-pair checks for tiny blocks and highly compressed runs.
+    if (dest_size >= 1024 && source_size >= dest_size / 2)
+        return decompressImpl<8, false, true>(source, dest, source_size, dest_size);
     return decompressImpl<8>(source, dest, source_size, dest_size);
 }
 

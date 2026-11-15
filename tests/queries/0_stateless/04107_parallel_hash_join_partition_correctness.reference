@@ -77,3 +77,13 @@
 3	2025-01-01 00:11:00	2025-01-01 00:09:30	ar19
 3	2025-01-01 00:15:00	2025-01-01 00:09:30	ar19
 3	2025-01-01 00:19:00	2025-01-01 00:09:30	ar19
+04107_inner	1	1
+04107_inner_reverse	1	1
+04107_left	1	1
+04107_left_reverse	1	1
+04107_right	1	1
+04107_right_reverse	1	1
+04107_full	1	1
+04107_full_reverse	1	1
+04107_asof_left_serial	1	0
+04107_asof_left_parallel	0	1

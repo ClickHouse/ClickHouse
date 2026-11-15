@@ -43,16 +43,17 @@ HiveTextRowInputFormat::HiveTextRowInputFormat(
 }
 
 HiveTextFormatReader::HiveTextFormatReader(PeekableReadBuffer & buf_, const FormatSettings & format_settings_)
-    : CSVFormatReader(buf_, format_settings_), input_field_names(format_settings_.hive_text.input_field_names)
+    : CSVFormatReader(buf_, format_settings_)
+    , input_field_names(format_settings_.hive_text.input_field_names.begin(), format_settings_.hive_text.input_field_names.end())
 {
 }
 
-std::vector<String> HiveTextFormatReader::readNames()
+VectorWithMemoryTracking<String> HiveTextFormatReader::readNames()
 {
     return input_field_names;
 }
 
-std::vector<String> HiveTextFormatReader::readTypes()
+VectorWithMemoryTracking<String> HiveTextFormatReader::readTypes()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "HiveTextRowInputFormat::readTypes is not implemented");
 }
@@ -64,7 +65,7 @@ void registerInputFormatHiveText(FormatFactory & factory)
         "HiveText", [](ReadBuffer & buf, const Block & sample, const RowInputFormatParams & params, const FormatSettings & settings)
         {
             return std::make_shared<HiveTextRowInputFormat>(std::make_unique<const Block>(sample), buf, params, settings);
-        });
+        }, /*supports_reset_parser=*/ true);
 
     /// The structured documentation for `HiveText` is registered unconditionally alongside the
     /// output format (see `registerOutputFormatHiveText`), because the output format is compiled

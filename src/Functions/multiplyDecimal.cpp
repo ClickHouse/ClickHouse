@@ -63,10 +63,10 @@ REGISTER_FUNCTION(MultiplyDecimals)
 Performs multiplication on two decimals. Result value will be of type [Decimal256](/reference/data-types/decimal).
 Result scale can be explicitly specified by `result_scale` argument (const Integer in range `[0, 76]`). If not specified, the result scale is the max scale of given arguments.
 
-:::note
+<Note>
 These functions work significantly slower than usual `multiply`.
 In case you don't really need controlled precision and/or need fast computation, consider using [multiply](#multiply)
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "multiplyDecimal(a, b[, result_scale])";
     FunctionDocumentation::Arguments arguments = {

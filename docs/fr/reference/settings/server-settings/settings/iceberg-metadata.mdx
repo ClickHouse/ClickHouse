@@ -12,27 +12,19 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 
 Ces paramètres configurent le serveur ClickHouse et sont générés automatiquement à partir du code source de ClickHouse.
 
-<div id="iceberg_metadata_files_cache_max_entries">
-  ## iceberg_metadata_files_cache_max_entries
-</div>
+## iceberg_metadata_files_cache_max_entries {#iceberg_metadata_files_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="No" />Nombre maximal d’entrées du cache des fichiers de métadonnées Iceberg. Zéro signifie désactivé.
 
-<div id="iceberg_metadata_files_cache_policy">
-  ## iceberg_metadata_files_cache_policy
-</div>
+## iceberg_metadata_files_cache_policy {#iceberg_metadata_files_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nom de la politique du cache de métadonnées Iceberg.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nom de la politique d&#39;éviction du cache de métadonnées Iceberg. Valeurs possibles : `LRU`, `SLRU`, `SIEVE`.
 
-<div id="iceberg_metadata_files_cache_size">
-  ## iceberg_metadata_files_cache_size
-</div>
+## iceberg_metadata_files_cache_size {#iceberg_metadata_files_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="134217728" changeable_without_restart="Yes" />Taille maximale du cache des métadonnées Iceberg, en octets. Zéro signifie que le cache est désactivé.
 
-<div id="iceberg_metadata_files_cache_size_ratio">
-  ## iceberg_metadata_files_cache_size_ratio
-</div>
+## iceberg_metadata_files_cache_size_ratio {#iceberg_metadata_files_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />La taille de la file protégée (dans le cas de la politique SLRU) du cache de métadonnées Iceberg, par rapport à la taille totale du cache.
 

@@ -95,6 +95,8 @@ Poco::Net::HTTPClientSession::ProxyConfig proxyConfigurationToPocoProxyConfig(co
     poco_proxy_config.tunnel = proxy_configuration.tunneling;
     poco_proxy_config.originalRequestProtocol = DB::ProxyConfiguration::protocolToString(proxy_configuration.original_request_protocol);
     poco_proxy_config.nonProxyHosts = proxy_configuration.no_proxy_hosts;
+    poco_proxy_config.username = proxy_configuration.username;
+    poco_proxy_config.password = proxy_configuration.password;
 
     return poco_proxy_config;
 }

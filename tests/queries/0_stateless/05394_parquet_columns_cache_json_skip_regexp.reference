@@ -1,0 +1,21 @@
+--- partial match, from the cache
+1	{"a":1,"s":"hello"}
+2	{"a":300,"tags":["x","y"]}
+3	{}
+4	{}
+5	{}
+6	{"a":5,"b":{"d":1}}
+--- full match, with the cache
+1	{"a":1,"b":{"c":"x"},"s":"hello"}
+2	{"a":300,"tags":["x","y"]}
+3	{}
+4	{}
+5	{}
+6	{"a":5,"b":{"c":"y","d":1}}
+--- full match, without the cache
+1	{"a":1,"b":{"c":"x"},"s":"hello"}
+2	{"a":300,"tags":["x","y"]}
+3	{}
+4	{}
+5	{}
+6	{"a":5,"b":{"c":"y","d":1}}

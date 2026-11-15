@@ -576,7 +576,7 @@ def test_materialized_postgresql_database_ssl(started_cluster):
                                         sslmode = 'verify-full', sslrootcert_pem = '{quote_pem(ca_pem)}')
         SETTINGS materialized_postgresql_tables_list = 'mat_table'
         """,
-        settings={"allow_experimental_database_materialized_postgresql": 1},
+        settings={"enable_database_materialized_postgresql": 1},
     )
 
     wait_for(
@@ -619,7 +619,7 @@ def test_materialized_postgresql_table_engine_ssl(started_cluster):
                                         sslmode = 'verify-full', sslrootcert_pem = '{quote_pem(ca_pem)}')
         ORDER BY key
         """,
-        settings={"allow_experimental_materialized_postgresql_table": 1},
+        settings={"enable_materialized_postgresql_table": 1},
     )
 
     wait_for(
@@ -664,7 +664,7 @@ def test_materialized_postgresql_table_engine_client_certificate(started_cluster
                                         sslcert_pem = '{quote_pem(client_cert_pem)}', sslkey_pem = '{quote_pem(client_key_pem)}')
         ORDER BY key
         """,
-        settings={"allow_experimental_materialized_postgresql_table": 1},
+        settings={"enable_materialized_postgresql_table": 1},
     )
 
     wait_for(
@@ -716,7 +716,7 @@ def test_materialized_postgresql_client_certificate(started_cluster):
                                         sslcert_pem = '{quote_pem(client_cert_pem)}', sslkey_pem = '{quote_pem(client_key_pem)}')
         SETTINGS materialized_postgresql_tables_list = 'mpg_cert_table'
         """,
-        settings={"allow_experimental_database_materialized_postgresql": 1},
+        settings={"enable_database_materialized_postgresql": 1},
     )
 
     wait_for(
@@ -762,7 +762,7 @@ def test_materialized_postgresql_table_engine_wrong_ca_is_rejected(started_clust
                                         sslmode = 'verify-full', sslrootcert_pem = '{quote_pem(wrong_ca_pem)}')
         ORDER BY key
         """,
-        settings={"allow_experimental_materialized_postgresql_table": 1},
+        settings={"enable_materialized_postgresql_table": 1},
     )
     assert "certificate verify failed" in error
     node.query("DROP TABLE IF EXISTS mpg_tbl_wrong_ca SYNC")
@@ -783,7 +783,7 @@ def test_materialized_postgresql_database_wrong_ca_is_rejected(started_cluster):
                                         sslmode = 'verify-full', sslrootcert_pem = '{quote_pem(wrong_ca_pem)}')
         SETTINGS materialized_postgresql_tables_list = 'db_wrong_ca_table'
         """,
-        settings={"allow_experimental_database_materialized_postgresql": 1},
+        settings={"enable_database_materialized_postgresql": 1},
     )
 
     # The startup task retries every 5 seconds, so a connection that libpq accepted
@@ -805,7 +805,7 @@ def test_materialized_postgresql_database_wrong_ca_is_rejected(started_cluster):
                                         sslmode = 'verify-full', sslrootcert_pem = '{quote_pem(ca_pem)}')
         SETTINGS materialized_postgresql_tables_list = 'db_wrong_ca_table'
         """,
-        settings={"allow_experimental_database_materialized_postgresql": 1},
+        settings={"enable_database_materialized_postgresql": 1},
     )
     wait_for(
         lambda: node.query("SELECT count() FROM mpg_right_ca.db_wrong_ca_table").strip() == "20",

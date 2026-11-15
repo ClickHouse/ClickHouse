@@ -137,9 +137,9 @@ void registerOutputFormatJSONColumnsWithMetadata(FormatFactory & factory)
 
 Differs from the [`JSONColumns`](/reference/formats/JSON/JSONColumns) format in that it also contains some metadata and statistics (similar to the [`JSON`](/reference/formats/JSON/JSON) format).
 
-:::note
+<Note>
 The `JSONColumnsWithMetadata` format buffers all data in memory and then outputs it as a single block, so, it can lead to high memory consumption.
-:::
+</Note>
 
 ## Example usage {#example-usage}
 
