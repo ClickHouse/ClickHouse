@@ -6,10 +6,10 @@
 #include <Processors/Formats/Impl/ArrowIPC/SchemaConverter.h>
 #include <Formats/FormatSettings.h>
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <memory>
 #include <string>
-#include <vector>
 
 namespace DB::ErrorCodes
 {
@@ -162,8 +162,8 @@ struct ExportedSchema
     std::string name;
     std::string metadata;
     /// A consumer may move a child out, leaving it released here; the children still owned are released with the parent.
-    std::vector<std::unique_ptr<::ArrowSchema>> children;
-    std::vector<::ArrowSchema *> children_pointers;
+    VectorWithMemoryTracking<std::unique_ptr<::ArrowSchema>> children;
+    VectorWithMemoryTracking<::ArrowSchema *> children_pointers;
 
     ~ExportedSchema()
     {
@@ -222,10 +222,10 @@ struct ExportedArray
 {
     /// The body of the encoded record batch, shared by all arrays of the tree.
     std::shared_ptr<const PODArray<char>> body;
-    std::vector<const void *> buffers;
+    VectorWithMemoryTracking<const void *> buffers;
     /// A consumer may move a child out, leaving it released here; the children still owned are released with the parent.
-    std::vector<std::unique_ptr<::ArrowArray>> children;
-    std::vector<::ArrowArray *> children_pointers;
+    VectorWithMemoryTracking<std::unique_ptr<::ArrowArray>> children;
+    VectorWithMemoryTracking<::ArrowArray *> children_pointers;
 
     ~ExportedArray()
     {
