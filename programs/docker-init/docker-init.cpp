@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <csignal>
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -634,8 +635,8 @@ bool initClickHouseDB(
     /// client must connect to the shifted port. A zero port is never shifted, like in the server.
     if (std::string port_offset = extractConfigValue(config_file, "port_offset"); !port_offset.empty())
     {
-        long long port = 0;
-        long long offset = 0;
+        int64_t port = 0;
+        int64_t offset = 0;
         try
         {
             port = std::stoll(native_port);
@@ -648,7 +649,7 @@ bool initClickHouseDB(
         }
         if (port != 0)
         {
-            const long long effective_port = port + offset;
+            const int64_t effective_port = port + offset;
             if (effective_port < 1 || effective_port > 65535)
             {
                 std::cerr << "docker-init: tcp_port " << port << " with port_offset " << offset
