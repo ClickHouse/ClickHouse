@@ -49,6 +49,7 @@
 #if USE_PARQUET
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 #endif
+#include <Formats/ParseError.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -166,19 +167,23 @@ namespace ErrorCodes
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int CANNOT_STAT;
     extern const int LOGICAL_ERROR;
-    extern const int MEMORY_LIMIT_EXCEEDED;
-    extern const int CANNOT_ALLOCATE_MEMORY;
-    extern const int CANNOT_MUNMAP;
-    extern const int CANNOT_MREMAP;
-    extern const int QUERY_WAS_CANCELLED;
-    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
-    extern const int ABORTED;
-    extern const int TOO_SLOW;
-    extern const int TOO_MANY_BYTES;
-    extern const int TOO_MANY_ROWS_OR_BYTES;
-    extern const int QUOTA_EXCEEDED;
-    extern const int LIMIT_EXCEEDED;
-    extern const int CANNOT_SCHEDULE_TASK;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int UNEXPECTED_END_OF_FILE;
+    extern const int CANNOT_PARSE_TEXT;
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+    extern const int CANNOT_SEEK_THROUGH_FILE;
+    extern const int CANNOT_DECOMPRESS;
+    extern const int CORRUPTED_DATA;
+    extern const int CHECKSUM_DOESNT_MATCH;
+    extern const int ZLIB_INFLATE_FAILED;
+    extern const int LZMA_STREAM_DECODER_FAILED;
+    extern const int ZSTD_DECODER_FAILED;
+    extern const int BZIP2_STREAM_DECODER_FAILED;
+    extern const int LZ4_DECODER_FAILED;
+    extern const int SNAPPY_UNCOMPRESS_FAILED;
+    extern const int BROTLI_READ_FAILED;
+    extern const int CANNOT_UNPACK_ARCHIVE;
     extern const int CANNOT_APPEND_TO_FILE;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int CANNOT_DETECT_FORMAT;
@@ -864,9 +869,8 @@ namespace
                     return {nullptr, cached_columns, format};
             }
 
-            /// Note: engine_file_skip_failed_data_files setting only protects data reading (generate function),
-            /// not schema inference. If schema detection is needed (no explicit format),
-            /// corrupted files will still cause errors here. Users should specify format explicitly.
+            /// Note: `engine_file_skip_failed_data_files` only protects data reading (`StorageFileSource::generate`),
+            /// not schema or format inference: a corrupted file read here still fails the query.
             return {createReadBuffer(path, file_stat, false, -1, compression_method, getContext()), std::nullopt, format};
         }
 
@@ -1979,31 +1983,34 @@ bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
 
 namespace
 {
-    /// Errors that `engine_file_skip_failed_data_files` must never skip. These are query-level
-    /// conditions - internal invariant violations, resource limits, cancellation, timeouts -
-    /// that are not caused by the contents of the file being read. Everything else thrown from
-    /// the per-file read scope (opening, decompression, format parsing, archive enumeration)
-    /// is attributed to a broken file and may be skipped. Classifying the fatal side keeps the
-    /// list stable as new compression methods and formats are added to the project; only new
-    /// query-control errors - a much rarer event - would need to be added here.
-    bool isFatalForSkipFailedFiles(int code)
+    /// Errors that `engine_file_skip_failed_data_files` may skip: those caused by a file that
+    /// cannot be opened or whose contents are broken - open and stat failures, truncated input,
+    /// decompression failures, unreadable archives, and format parse errors. Every other error
+    /// (a query-level limit, cancellation, a bad setting, an exception in a default expression,
+    /// a logical error, ...) is not attributable to the file and always propagates.
+    bool isBrokenFileError(int code)
     {
-        return code == ErrorCodes::LOGICAL_ERROR
-            || code == ErrorCodes::MEMORY_LIMIT_EXCEEDED
-            || code == ErrorCodes::CANNOT_ALLOCATE_MEMORY
-            || code == ErrorCodes::CANNOT_MUNMAP
-            || code == ErrorCodes::CANNOT_MREMAP
-            || code == ErrorCodes::QUERY_WAS_CANCELLED
-            || code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
-            || code == ErrorCodes::ABORTED
-            || code == ErrorCodes::TIMEOUT_EXCEEDED
-            || code == ErrorCodes::TOO_SLOW
-            || code == ErrorCodes::TOO_MANY_ROWS
-            || code == ErrorCodes::TOO_MANY_BYTES
-            || code == ErrorCodes::TOO_MANY_ROWS_OR_BYTES
-            || code == ErrorCodes::QUOTA_EXCEEDED
-            || code == ErrorCodes::LIMIT_EXCEEDED
-            || code == ErrorCodes::CANNOT_SCHEDULE_TASK;
+        return isParseError(code)
+            || code == ErrorCodes::CANNOT_PARSE_TEXT
+            || code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
+            || code == ErrorCodes::UNEXPECTED_END_OF_FILE
+            || code == ErrorCodes::FILE_DOESNT_EXIST
+            || code == ErrorCodes::CANNOT_OPEN_FILE
+            || code == ErrorCodes::CANNOT_STAT
+            || code == ErrorCodes::CANNOT_FSTAT
+            || code == ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR
+            || code == ErrorCodes::CANNOT_SEEK_THROUGH_FILE
+            || code == ErrorCodes::CANNOT_DECOMPRESS
+            || code == ErrorCodes::CORRUPTED_DATA
+            || code == ErrorCodes::CHECKSUM_DOESNT_MATCH
+            || code == ErrorCodes::ZLIB_INFLATE_FAILED
+            || code == ErrorCodes::LZMA_STREAM_DECODER_FAILED
+            || code == ErrorCodes::ZSTD_DECODER_FAILED
+            || code == ErrorCodes::BZIP2_STREAM_DECODER_FAILED
+            || code == ErrorCodes::LZ4_DECODER_FAILED
+            || code == ErrorCodes::SNAPPY_UNCOMPRESS_FAILED
+            || code == ErrorCodes::BROTLI_READ_FAILED
+            || code == ErrorCodes::CANNOT_UNPACK_ARCHIVE;
     }
 }
 
@@ -2015,7 +2022,7 @@ Chunk StorageFileSource::generate()
     /// and the error can be attributed to a broken file. Must be invoked from within a `catch` block.
     auto rethrow_unless_skippable = [&](int error_code)
     {
-        if (isFatalForSkipFailedFiles(error_code) || !getContext()->getSettingsRef()[Setting::engine_file_skip_failed_data_files])
+        if (!isBrokenFileError(error_code) || !getContext()->getSettingsRef()[Setting::engine_file_skip_failed_data_files])
             throw;
     };
 
@@ -2026,6 +2033,8 @@ Chunk StorageFileSource::generate()
     {
         rethrow_unless_skippable(error_code);
         LOG_WARNING(storage->log, "Skipping file {} due to an error: {}", current_path, getCurrentExceptionMessage(false));
+        /// The rows of a skipped file do not contribute to the `ORDER BY ... LIMIT` threshold.
+        checkTopKQueryConditionCacheKeyHolds(/*still_holds=*/ false);
         total_rows_in_file = 0;
         current_file_index.reset();
         reader.reset();
@@ -2048,7 +2057,7 @@ Chunk StorageFileSource::generate()
                 }
                 catch (const Exception & e)
                 {
-                    if (isFatalForSkipFailedFiles(e.code()))
+                    if (!isBrokenFileError(e.code()))
                         throw;
                     file_enumerator = nullptr;
                     archive_reader.reset();
@@ -2062,7 +2071,7 @@ Chunk StorageFileSource::generate()
                 }
                 catch (const Exception & e)
                 {
-                    if (isFatalForSkipFailedFiles(e.code()))
+                    if (!isBrokenFileError(e.code()))
                         throw;
                     file_enumerator = nullptr;
                     archive_reader.reset();
@@ -2104,16 +2113,16 @@ Chunk StorageFileSource::generate()
                             return {};
 
                         current_path = archive;
-                        if (!existsOrFileNameTooLong([&] { return fs::exists(archive); }))
-                        {
-                            if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
-                                continue;
-
-                            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", archive);
-                        }
-
                         try
                         {
+                            if (!existsOrFileNameTooLong([&] { return fs::exists(archive); }))
+                            {
+                                if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
+                                    continue;
+
+                                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", archive);
+                            }
+
                             auto file_stat = getFileStat(archive, storage->use_table_fd, storage->table_fd, storage->getName());
                             if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                                 continue;
@@ -2267,6 +2276,14 @@ Chunk StorageFileSource::generate()
                         if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                         {
                             /// The file existed when the TopK key was made, so it has changed since.
+                            checkTopKQueryConditionCacheKeyHolds(/*still_holds=*/ false);
+                            continue;
+                        }
+
+                        /// E.g. the file was removed after the glob was expanded. Nothing is open yet.
+                        if (getContext()->getSettingsRef()[Setting::engine_file_skip_failed_data_files])
+                        {
+                            LOG_WARNING(storage->log, "Skipping file {} because it doesn't exist", current_path);
                             checkTopKQueryConditionCacheKeyHolds(/*still_holds=*/ false);
                             continue;
                         }
@@ -3047,6 +3064,11 @@ bool ReadFromFile::canUseLazyMaterialization() const
     if (need_only_count)
         return false;
 
+    /// The lazy pass reads the rows recorded by the main pass and cannot skip a file that turns out
+    /// to be broken only there without breaking the alignment of the main and the lazy rows.
+    if (getContext()->getSettingsRef()[Setting::engine_file_skip_failed_data_files])
+        return false;
+
     /// The global row index requires per-row file row numbers (ChunkInfoRowNumbers), and the lazy
     /// branch requires reading an explicit set of rows (FormatFilterInfo::rows_to_read).
     /// Only the Parquet and Vortex readers support both.
@@ -3304,6 +3326,7 @@ StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(
     if (max_num_streams < 2 || need_only_count || format_filter_info->min_max_from_statistics
         || top_k_filter || lazy_row_index_registry
         || !context->getSettingsRef()[Setting::parallelize_output_from_storages]
+        || context->getSettingsRef()[Setting::engine_file_skip_failed_data_files]
         || storage->use_table_fd || storage->archive_info || storage->distributed_processing
         || !FormatFactory::instance().checkIfFormatHasSplitter(storage->format_name)
         || !storage->parallelizeOutputAfterReading(context))

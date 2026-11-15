@@ -7720,10 +7720,11 @@ Possible values:
 - 1 — `SELECT` skips files that cannot be read and returns results only from files that were read successfully.
 
 Notes:
-- Errors caused by reading the file are skipped: open and stat failures, decompression errors, format parse errors, and unreadable archives. Query-level errors (e.g. memory limits, timeouts, quota violations, query cancellation, logical errors) always propagate.
+- Only errors caused by a broken or missing file are skipped: open and stat failures, files that no longer exist, truncated input, decompression errors, format parse errors, and unreadable archives. All other errors (e.g. memory limits, timeouts, quota violations, query cancellation, exceptions in default expressions, invalid settings, logical errors) always propagate.
 - If a file fails in the middle of reading, the rows already read from it are kept in the result; only the rest of the file is skipped.
 - A corrupted archive container (e.g. an unreadable `tar` or `zip`) is skipped as a whole.
-- The setting applies only to data reading. If format is not specified, schema inference on a corrupted file will still cause an error, so specify the format explicitly.
+- With the setting enabled, a single file is not split between several reading streams, and lazy materialization (`query_plan_optimize_lazy_materialization_for_file`) is not used.
+- The setting does not apply during schema or format inference. Specify both the format and the table structure to avoid reading damaged input during inference.
 )", 0, \
         {"26.11", false, false, "New setting to skip files that fail to open or read in `File` engine tables."}) \
     DECLARE(Bool, engine_url_skip_empty_files, false, R"(

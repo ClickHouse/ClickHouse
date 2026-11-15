@@ -1,0 +1,8 @@
+-- the number of lazy read steps in the plan
+1
+-- with the setting enabled
+0
+-- the result is the same
+val_0
+val_1
+val_2
