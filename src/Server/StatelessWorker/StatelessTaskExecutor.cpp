@@ -16,6 +16,7 @@
 #include <Common/logger_useful.h>
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 #include <Columns/IColumn.h>
@@ -43,6 +44,7 @@ namespace Setting
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
     extern const SettingsUInt64 distributed_plan_max_buffered_log_rows;
+    extern const SettingsMaxThreads max_threads;
 }
 
 /// TODO: move
@@ -108,6 +110,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
         ClientInfo client_info = query_context->getClientInfo();
         client_info.current_query_id = unique_task_id;
         client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+        client_info.distributed_depth = 1;
         client_info.initial_query_id = task_description.initial_query_id;
         /// The start request's trace context becomes the task's trace context.
         client_info.client_trace_context = OpenTelemetry::CurrentContext();
@@ -121,6 +124,10 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
     query_context->applySettingsChanges(task_description.settings_changes);
     query_context->setSetting("make_distributed_plan", false);
     query_context->setSetting("enable_cascades_optimizer", false);
+
+    /// The initiator sends `max_threads` only as the user's cap, which may still exceed this worker's cores.
+    if (const UInt64 worker_cores = getNumberOfCPUCoresToUse(); query_context->getSettingsRef()[Setting::max_threads] > worker_cores)
+        query_context->setSetting("max_threads", worker_cores);
 
     auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(unique_temp_file_path, query_context);
 

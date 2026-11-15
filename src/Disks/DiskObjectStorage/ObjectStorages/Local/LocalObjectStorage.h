@@ -99,6 +99,9 @@ public:
 
     bool isRemote() const override { return false; }
 
+    /// With `object_storage_write_atomically` the data is written to a temporary file which is then renamed.
+    bool supportsAtomicWrite() const override { return true; }
+
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
 
     ObjectStoragePtr cloneImpl() const override;

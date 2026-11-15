@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Analyzer/TableNode.h>
 
@@ -26,6 +27,7 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MaterializedCTE.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/StorageMemory.h>
@@ -48,6 +50,8 @@
 #include <unordered_set>
 
 #include <fmt/ranges.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace DB
 {
@@ -91,7 +95,7 @@ struct MemorySourceFilter
         NamesAndTypesList input_columns;
     };
 
-    std::vector<Step> steps;
+    VectorWithMemoryTracking<Step> steps;
 
     /// The columns of the output header that are requested physical columns, in header order.
     /// Those not produced by the steps are read after all steps, only for the passing rows.
@@ -135,7 +139,7 @@ using MemorySourceFilterPtr = std::shared_ptr<const MemorySourceFilter>;
 static constexpr auto global_row_index_column_name = "__global_row_index";
 
 /// The number of the first row of each block in the snapshot, for the global row index of lazy materialization.
-using BlockStartRows = std::vector<UInt64>;
+using BlockStartRows = VectorWithMemoryTracking<UInt64>;
 using BlockStartRowsPtr = std::shared_ptr<const BlockStartRows>;
 
 static BlockStartRowsPtr makeBlockStartRows(const Blocks & blocks)
@@ -187,8 +191,8 @@ static const ColumnWithTypeAndName * findSizesSource(const Block & src, const Na
 static void fillColumnsMissingFromBlock(const Block & src, const NamesAndTypesList & columns_to_read, Columns & columns, const Names & nested_arrays)
 {
     NamesAndTypesList columns_without_sizes;
-    std::vector<size_t> positions_without_sizes;
-    std::unordered_map<const ColumnWithTypeAndName *, ColumnPtr> offsets_of_sources;
+    VectorWithMemoryTracking<size_t> positions_without_sizes;
+    UnorderedMapWithMemoryTracking<const ColumnWithTypeAndName *, ColumnPtr> offsets_of_sources;
 
     auto column_it = columns_to_read.begin();
     for (size_t i = 0; i < columns.size(); ++i, ++column_it)
@@ -239,7 +243,7 @@ static void fillColumnsMissingFromBlock(const Block & src, const NamesAndTypesLi
 /// A column that is read together with some of its subcolumns is decompressed once, and the subcolumns are taken from it.
 static Columns readColumnsFromBlock(const Block & src, const NamesAndTypesList & columns_to_read, const Names & nested_arrays)
 {
-    std::unordered_set<String> parents_of_subcolumns;
+    UnorderedSetWithMemoryTracking<String> parents_of_subcolumns;
     for (const auto & column : columns_to_read)
     {
         if (column.isSubcolumn())
@@ -699,7 +703,7 @@ public:
         SharedHeader header,
         NamesAndTypesList columns_,
         std::shared_ptr<const Blocks> data_,
-        std::vector<MemoryLazyBlockRows> block_rows_,
+        VectorWithMemoryTracking<MemoryLazyBlockRows> block_rows_,
         Names nested_arrays_)
         : ISource(std::move(header))
         , columns(std::move(columns_))
@@ -711,6 +715,16 @@ public:
 
     String getName() const override { return "LazyReadFromMemoryBlocks"; }
 
+    void cancel(CancelReason reason) noexcept override
+    {
+        /// A partial result must still get the deferred columns of the rows already selected by the main branch.
+        if (reason == CancelReason::PartialResult)
+            return;
+
+        ISource::cancel(reason);
+    }
+    using ISource::cancel;
+
 protected:
     Chunk generate() override
     {
@@ -719,27 +733,45 @@ protected:
 
         MutableColumns result_columns = getPort().getHeader().cloneEmptyColumns();
         size_t num_rows = 0;
+        /// The size of the whole deferred columns materialized from the blocks.
+        size_t num_read_bytes = 0;
 
         for (const auto & [block_index, rows_in_block] : block_rows)
         {
+            /// The range can span many blocks, so stop rereading them as soon as the query is cancelled.
+            if (isCancelled())
+                return {};
+
             const Block & src = (*data)[block_index];
 
             Columns block_columns = readColumnsFromBlock(src, columns, nested_arrays);
 
             for (size_t i = 0; i < block_columns.size(); ++i)
+            {
+                num_read_bytes += block_columns[i]->byteSize();
                 result_columns[i]->insertRangeFrom(*block_columns[i]->index(*rows_in_block, 0), 0, rows_in_block->size());
+            }
 
             num_rows += rows_in_block->size();
         }
 
         block_rows.clear();
+
+        /// Reports the read progress explicitly, because the automatic accounting of `ISource` uses
+        /// the returned chunk, which holds only the requested rows, while the deferred columns of each
+        /// block are materialized as a whole (and decompressed for a table with `compress = true`).
+        /// The rows are already counted by the main branch, so only the requested rows are reported here,
+        /// the same as the automatic accounting would do.
+        progress(num_rows, num_read_bytes);
+
         return Chunk(std::move(result_columns), num_rows);
     }
 
 private:
     const NamesAndTypesList columns;
     std::shared_ptr<const Blocks> data;
-    std::vector<MemoryLazyBlockRows> block_rows;
+    VectorWithMemoryTracking<MemoryLazyBlockRows> block_rows;
+    /// The same as in `MemorySource`, so that a missing member of a `Nested` gets the same sizes in both branches.
     const Names nested_arrays;
 };
 
@@ -811,13 +843,13 @@ public:
         const auto rows = std::move(lazy_materializing_rows);
         lazy_materializing_rows.reset();
 
-        std::vector<MemoryLazyBlockRows> block_rows = groupRowsByBlock(rows->rows);
+        VectorWithMemoryTracking<MemoryLazyBlockRows> block_rows = groupRowsByBlock(rows->rows);
 
         Processors sources;
         const size_t num_sources = std::min(std::max<size_t>(num_streams, 1), block_rows.size());
         for (size_t i = 0; i < num_sources; ++i)
         {
-            std::vector<MemoryLazyBlockRows> source_block_rows(
+            VectorWithMemoryTracking<MemoryLazyBlockRows> source_block_rows(
                 std::make_move_iterator(block_rows.begin() + i * block_rows.size() / num_sources),
                 std::make_move_iterator(block_rows.begin() + (i + 1) * block_rows.size() / num_sources));
 
@@ -837,9 +869,9 @@ public:
     }
 
 private:
-    std::vector<MemoryLazyBlockRows> groupRowsByBlock(const PaddedPODArray<UInt64> & rows) const
+    VectorWithMemoryTracking<MemoryLazyBlockRows> groupRowsByBlock(const PaddedPODArray<UInt64> & rows) const
     {
-        std::vector<MemoryLazyBlockRows> res;
+        VectorWithMemoryTracking<MemoryLazyBlockRows> res;
         if (rows.empty())
             return res;
 
@@ -981,7 +1013,19 @@ bool ReadFromMemoryStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAn
         return false;
 
     const auto column = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), sort_column.name);
-    if (!column)
+    if (!column || !column->type->equals(*sort_column.type))
+        return false;
+
+    /// The threshold is computed from the output column, while the filter reads the physical column
+    /// of the same name. They are the same only if the in-source filters pass it through unchanged.
+    auto is_shadowed = [&](const ActionsDAG & dag)
+    {
+        const auto * node = dag.tryFindInOutputs(sort_column.name);
+        return node && node->type != ActionsDAG::ActionType::INPUT;
+    };
+    if (query_info.row_level_filter && is_shadowed(query_info.row_level_filter->actions))
+        return false;
+    if (query_info.prewhere_info && is_shadowed(query_info.prewhere_info->prewhere_actions))
         return false;
 
     /// The source fills a column that a block does not have (e.g. one added by `ALTER TABLE ADD COLUMN`
@@ -1037,18 +1081,55 @@ std::unique_ptr<LazilyReadFromMemoryStorage> ReadFromMemoryStorageStep::keepOnly
     if (!canUseLazyMaterialization())
         return {};
 
-    /// The in-source filters run in the main branch.
+    /// The in-source filters run in the main branch. A column they output as a computed node may shadow
+    /// the physical column of the same name, and the lazy branch would read the physical one instead,
+    /// so such columns also stay in the main branch.
     NameSet names_to_keep = required_names;
+    auto keep_columns_of_filter = [&](const ActionsDAG & dag)
+    {
+        for (const auto & column : dag.getRequiredColumns())
+            names_to_keep.insert(column.name);
+        for (const auto * output : dag.getOutputs())
+            if (output->type != ActionsDAG::ActionType::INPUT)
+                names_to_keep.insert(output->result_name);
+    };
     if (query_info.row_level_filter)
-        for (const auto & column : query_info.row_level_filter->actions.getRequiredColumns())
-            names_to_keep.insert(column.name);
+        keep_columns_of_filter(query_info.row_level_filter->actions);
     if (query_info.prewhere_info)
-        for (const auto & column : query_info.prewhere_info->prewhere_actions.getRequiredColumns())
-            names_to_keep.insert(column.name);
+        keep_columns_of_filter(query_info.prewhere_info->prewhere_actions);
     if (top_k_filter)
         names_to_keep.insert(top_k_filter->column_name);
 
     const auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+
+    /// The source fills a column that a block does not have (e.g. one added by `ALTER TABLE ADD COLUMN`
+    /// after the block was inserted) with the defaults of the type in both branches, not by evaluating
+    /// the `DEFAULT` expression. Do not rely on that, the same way `supportsTopKDynamicFilter` does:
+    /// a column with a default expression and the transitive inputs of the expression stay in the main branch.
+    const auto & column_defaults = storage_snapshot->metadata->getColumns().getDefaults();
+    NameSet names_in_default_expressions;
+    VectorWithMemoryTracking<String> names_to_visit;
+    for (const auto & column_name : columns_to_read)
+    {
+        auto column = storage_snapshot->tryGetColumn(options, column_name);
+        if (column && column_defaults.contains(column->getNameInStorage()) && names_in_default_expressions.insert(column->getNameInStorage()).second)
+            names_to_visit.push_back(column->getNameInStorage());
+    }
+    while (!names_to_visit.empty())
+    {
+        const auto it = column_defaults.find(names_to_visit.back());
+        names_to_visit.pop_back();
+        if (it == column_defaults.end() || !it->second.expression)
+            continue;
+
+        RequiredSourceColumnsVisitor::Data columns_context;
+        auto expression = it->second.expression->clone();
+        RequiredSourceColumnsVisitor(columns_context).visit(expression);
+        for (const auto & required_name : columns_context.requiredColumns())
+            if (names_in_default_expressions.insert(required_name).second)
+                names_to_visit.push_back(required_name);
+    }
+
     Names main_columns;
     NamesAndTypesList lazy_columns;
     for (const auto & column_name : columns_to_read)
@@ -1058,7 +1139,8 @@ std::unique_ptr<LazilyReadFromMemoryStorage> ReadFromMemoryStorageStep::keepOnly
             return {};
 
         auto column = storage_snapshot->tryGetColumn(options, column_name);
-        if (column && !names_to_keep.contains(column_name) && output_header->has(column_name))
+        if (column && !names_to_keep.contains(column_name) && output_header->has(column_name)
+            && !names_in_default_expressions.contains(column_name) && !names_in_default_expressions.contains(column->getNameInStorage()))
             lazy_columns.push_back(*column);
         else
             main_columns.push_back(column_name);
@@ -1151,8 +1233,7 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
                 query_info.prewhere_info,
                 actions_settings,
                 prewhere_steps,
-                /*force_short_circuit_execution*/ false,
-                &storage_snapshot->metadata->getColumns()))
+                /*force_short_circuit_execution*/ false))
         {
             for (const auto & step : prewhere_steps.steps)
             {

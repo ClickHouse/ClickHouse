@@ -27,6 +27,7 @@ namespace Setting
     extern const SettingsBool hdfs_ignore_file_doesnt_exist;
     extern const SettingsUInt64 hdfs_replication;
     extern const SettingsBool hdfs_skip_empty_files;
+    extern const SettingsBool hdfs_skip_hidden_files;
     extern const SettingsBool hdfs_throw_on_zero_files_match;
     extern const SettingsBool hdfs_truncate_on_insert;
     extern const SettingsUInt64 remote_read_min_bytes_for_seek;
@@ -55,6 +56,7 @@ ObjectStoragePtr StorageHDFSConfiguration::createObjectStorage( /// NOLINT
     assertInitialized();
     const auto & settings = context->getSettingsRef();
     auto hdfs_settings = std::make_unique<HDFSObjectStorageSettings>(settings[Setting::remote_read_min_bytes_for_seek], settings[Setting::hdfs_replication]);
+    hdfs_settings->read_only = read_only;
     return std::make_shared<HDFSObjectStorage>(
         url, std::move(hdfs_settings), context->getConfigRef(), /* lazy_initialize */true);
 }
@@ -71,6 +73,7 @@ StorageObjectStorageQuerySettings StorageHDFSConfiguration::getQuerySettings(con
         .list_object_keys_size = 0, /// HDFS does not support listing in batches.
         .throw_on_zero_files_match = settings[Setting::hdfs_throw_on_zero_files_match],
         .ignore_non_existent_file = settings[Setting::hdfs_ignore_file_doesnt_exist],
+        .skip_hidden_files = settings[Setting::hdfs_skip_hidden_files],
     };
 }
 
@@ -139,7 +142,7 @@ void StorageHDFSConfiguration::setURL(const std::string & url_)
         path = '/' + path.path;
 
     url = url_.substr(0, pos);
-    paths = {path};
+    setPaths({path});
 
     LOG_TRACE(getLogger("StorageHDFSConfiguration"), "Using URL: {}, path: {}", url, path.path);
 }

@@ -13,7 +13,7 @@ Você pode rastrear o tempo de CPU e o tempo de relógio gasto, incluindo o temp
 O profiler de consulta é habilitado automaticamente no ClickHouse Cloud.
 A consulta de exemplo a seguir encontra os stack traces mais frequentes de uma consulta analisada pelo profiler, com nomes de funções resolvidos e localizações no código-fonte.
 
-Por padrão, o profiler simboliza os stack traces no momento da coleta e armazena os resultados nas colunas `symbols` e `lines` de [`system.trace_log`](/pt-BR/reference/system-tables/trace_log), portanto, os exemplos abaixo leem essas colunas diretamente e não exigem funções de introspecção. A simbolização é controlada pela configuração `symbolize` na seção de configuração do servidor `trace_log` (habilitada por padrão) e é compatível com plataformas ELF (como Linux) e macOS; no FreeBSD, as colunas `symbols` e `lines` estão sempre vazias. Os nomes de funções em `symbols` vêm da tabela de símbolos do binário e estão disponíveis por padrão. As localizações no código-fonte em `lines` são obtidas da melhor forma possível: elas exigem informações de depuração (no macOS, um pacote `.dSYM` ao lado do binário) e, em plataformas ELF, apenas os frames dentro do binário principal do ClickHouse são resolvidos; portanto, as entradas de frames que não podem ser resolvidos (por exemplo, em bibliotecas compartilhadas) ficam vazias. Se a simbolização estiver desabilitada, use as [funções de introspecção](/pt-BR/reference/functions/regular-functions/introspection) `addressToSymbol`, `demangle` e `addressToLine` para resolver os endereços brutos na coluna `trace`. Essas funções estão disponíveis nas mesmas plataformas que a simbolização (plataformas ELF, como Linux, e macOS); no FreeBSD, elas também não são compiladas, portanto, os endereços em `trace` precisam ser resolvidos fora do servidor.
+Por padrão, o profiler simboliza os stack traces no momento da coleta e armazena os resultados nas colunas `symbols` e `lines` de [`system.trace_log`](/pt-BR/reference/system-tables/trace_log), portanto, os exemplos abaixo leem essas colunas diretamente e não exigem funções de introspecção. A simbolização é controlada pela configuração `symbolize` na seção de configuração do servidor `trace_log` (habilitada por padrão) e é compatível com plataformas ELF (como Linux) e macOS; no FreeBSD, as colunas `symbols` e `lines` estão sempre vazias. Os nomes de funções em `symbols` vêm da tabela de símbolos do binário e estão disponíveis por padrão. As localizações no código-fonte em `lines` são obtidas da melhor forma possível: elas exigem informações de depuração (no macOS, um pacote `.dSYM` ao lado do binário) e são resolvidas para o objeto carregado (o binário principal do ClickHouse ou uma biblioteca compartilhada) que contiver o endereço do frame; portanto, as entradas de frames sem informações de depuração ficam vazias. Se a simbolização estiver desabilitada, use as [funções de introspecção](/pt-BR/reference/functions/regular-functions/introspection) `addressToSymbol`, `demangle` e `addressToLine` para resolver os endereços brutos na coluna `trace`. Essas funções estão disponíveis nas mesmas plataformas que a simbolização (plataformas ELF, como Linux, e macOS); no FreeBSD, elas também não são compiladas, portanto, os endereços em `trace` precisam ser resolvidos fora do servidor.
 
 <Tip>
   Substitua o valor de `query_id` pelo ID da consulta que você quer analisar com o profiler.
@@ -51,9 +51,7 @@ Por padrão, o profiler simboliza os stack traces no momento da coleta e armazen
   </Tab>
 </Tabs>
 
-<div id="self-managed-query-profiler">
-  ## Usando o profiler de consulta em implantações autogerenciadas
-</div>
+## Usando o profiler de consulta em implantações autogerenciadas {#self-managed-query-profiler}
 
 Em implantações autogerenciadas, para usar o profiler de consulta, siga as etapas abaixo:
 
@@ -90,7 +88,7 @@ Em implantações autogerenciadas, para usar o profiler de consulta, siga as eta
 
     Esta seção configura a tabela de sistema [trace&#95;log](/pt-BR/reference/system-tables/trace_log), que contém os resultados do funcionamento do profiler.
     A opção `symbolize` (habilitada por padrão) faz com que o ClickHouse resolva cada frame da pilha no momento da coleta e armazene os nomes de função desmangleados e as localizações no código-fonte nas colunas `symbols` e `lines`.
-    Os nomes de função em `symbols` vêm da tabela de símbolos e estão disponíveis por padrão, enquanto as localizações no código-fonte em `lines` exigem informações de depuração (um pacote `.dSYM` no macOS) e, em plataformas ELF, são resolvidas apenas para frames dentro do binário principal do ClickHouse; frames não resolvidos têm entradas vazias em `lines`.
+    Os nomes de função em `symbols` vêm da tabela de símbolos e estão disponíveis por padrão, enquanto as localizações no código-fonte em `lines` exigem informações de depuração (um pacote `.dSYM` no macOS) e são resolvidas para o objeto carregado (o binário principal do ClickHouse ou uma biblioteca compartilhada) que contiver o endereço do frame; frames não resolvidos têm entradas vazias em `lines`.
 
     Observe que os endereços brutos na coluna `trace` são menos estáveis entre reinicializações e upgrades do que as colunas pré-simbolizadas.
     Em plataformas ELF, exceto no FreeBSD, os frames no binário principal do ClickHouse são armazenados como offsets físicos no arquivo, portanto permanecem resolvíveis entre reinicializações, desde que o binário não seja alterado; no macOS e no FreeBSD, eles são armazenados como endereços virtuais de tempo de execução que podem se tornar inválidos após uma reinicialização.
@@ -115,7 +113,7 @@ Em implantações autogerenciadas, para usar o profiler de consulta, siga as eta
     Para obter um perfil de alguma consulta, você precisa agregar dados da tabela `trace_log`.
     Você pode agregar os dados por função individual ou pelos stack traces completos.
 
-    Quando a simbolização está habilitada (o padrão), os nomes de funções desmangleados e as localizações no código-fonte já estão disponíveis nas colunas `symbols` e `lines`, portanto nenhuma configuração adicional é necessária. A simbolização não é compatível com FreeBSD, onde essas colunas estão sempre vazias. As entradas de `lines` podem estar vazias para frames que não têm informações de depuração ou que estão fora do binário principal do ClickHouse (consulte [acima](#server-config)).
+    Quando a simbolização está habilitada (o padrão), os nomes de funções desmangleados e as localizações no código-fonte já estão disponíveis nas colunas `symbols` e `lines`, portanto nenhuma configuração adicional é necessária. A simbolização não é compatível com FreeBSD, onde essas colunas estão sempre vazias. As entradas de `lines` podem estar vazias para frames que não têm informações de depuração (consulte [acima](#server-config)).
 
     Se a simbolização estiver desabilitada ou se você quiser resolver dinamicamente os endereços brutos na coluna `trace` (por exemplo, para expandir frames inline), habilite as funções de introspecção com a configuração [`allow_introspection_functions`](/pt-BR/reference/settings/session-settings/allow#allow_introspection_functions):
 
@@ -135,9 +133,7 @@ Em implantações autogerenciadas, para usar o profiler de consulta, siga as eta
   </Step>
 </Steps>
 
-<div id="flamegraph">
-  ## Criando flame graphs com a função `flameGraph`
-</div>
+## Criando flame graphs com a função `flameGraph` {#flamegraph}
 
 O ClickHouse fornece a [função de agregação `flameGraph`](/pt-BR/reference/functions/aggregate-functions/flame_graph), que cria um flame graph diretamente a partir de stack traces armazenados em `trace_log`.
 A saída é um array de strings em formato compatível com [flamegraph.pl](https://github.com/brendangregg/FlameGraph).
@@ -158,9 +154,7 @@ Quando `ptr` é diferente de zero, `flameGraph` associa alocações (`size > 0`)
 Somente as alocações que não foram liberadas são mostradas.
 Desalocações sem correspondência são ignoradas.
 
-<div id="cpu-flame-graph">
-  ### Flame graph da CPU
-</div>
+### Flame graph da CPU {#cpu-flame-graph}
 
 <Note>
   As consultas abaixo exigem que você tenha o [flamegraph.pl](https://github.com/brendangregg/FlameGraph) instalado.
@@ -190,9 +184,7 @@ clickhouse client --allow_introspection_functions=1 \
     | flamegraph.pl > flame_cpu.svg
 ```
 
-<div id="memory-flame-graph-all">
-  ### Flame graph de memória — todas as alocações
-</div>
+### Flame graph de memória — todas as alocações {#memory-flame-graph-all}
 
 ```sql
 SET memory_profiler_sample_probability = 1, max_untracked_memory = 1;
@@ -208,9 +200,7 @@ clickhouse client --allow_introspection_functions=1 \
     | flamegraph.pl --countname=bytes --color=mem > flame_mem.svg
 ```
 
-<div id="memory-flame-graph-unfreed">
-  ### Flame graph de memória — alocações não liberadas
-</div>
+### Flame graph de memória — alocações não liberadas {#memory-flame-graph-unfreed}
 
 Esta variante cruza alocações com desalocações por ponteiro e mostra apenas a memória que não foi liberada durante a consulta.
 
@@ -231,9 +221,7 @@ clickhouse client --allow_introspection_functions=1 \
     | flamegraph.pl --countname=bytes --color=mem > flame_mem_unfreed.svg
 ```
 
-<div id="memory-flame-graph-time-point">
-  ### Flame graph de memória — alocações ativas em um determinado momento
-</div>
+### Flame graph de memória — alocações ativas em um determinado momento {#memory-flame-graph-time-point}
 
 Essa abordagem permite identificar o uso máximo de memória e visualizar o que foi alocado naquele momento.
 
@@ -241,9 +229,7 @@ Essa abordagem permite identificar o uso máximo de memória e visualizar o que 
 SET memory_profiler_sample_probability = 1, max_untracked_memory = 1;
 ```
 
-<div id="find-memory-usage-over-time">
-  #### Encontre o uso de memória ao longo do tempo
-</div>
+#### Encontre o uso de memória ao longo do tempo {#find-memory-usage-over-time}
 
 ```sql
 SELECT
@@ -260,9 +246,7 @@ GROUP BY event_time
 ORDER BY event_time;
 ```
 
-<div id="find-time-point-maximum-memory-usage">
-  #### Encontre o instante com o maior uso de memória
-</div>
+#### Encontre o instante com o maior uso de memória {#find-time-point-maximum-memory-usage}
 
 ```sql
 SELECT
@@ -277,9 +261,7 @@ FROM (
 );
 ```
 
-<div id="build-flame-graph">
-  #### Crie um flame graph das alocações ativas naquele momento
-</div>
+#### Crie um flame graph das alocações ativas naquele momento {#build-flame-graph}
 
 ```bash
 clickhouse client --allow_introspection_functions=1 \
@@ -294,9 +276,7 @@ clickhouse client --allow_introspection_functions=1 \
     | flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_pos.svg
 ```
 
-<div id="build-flame-graph-deallocations">
-  #### Crie um flame graph de desalocações após esse momento (para entender o que foi liberado posteriormente)
-</div>
+#### Crie um flame graph de desalocações após esse momento (para entender o que foi liberado posteriormente) {#build-flame-graph-deallocations}
 
 ```bash
 clickhouse client --allow_introspection_functions=1 \
@@ -311,9 +291,7 @@ clickhouse client --allow_introspection_functions=1 \
     | flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_neg.svg
 ```
 
-<div id="example">
-  ## Exemplo
-</div>
+## Exemplo {#example}
 
 O trecho de código abaixo:
 

@@ -4,8 +4,6 @@
 -- The output of EXPLAIN ANALYZE carries timings and is non-deterministic, so the
 -- test asserts only invariants of the `Execution` line of the query summary.
 
-SET enable_analyzer = 1;
-
 -- 1. The line is printed exactly once with `time = 1` and has three parts.
 SELECT countIf(explain LIKE '  Execution:   in steps %· outside steps %· idle %') = 1
 FROM (EXPLAIN ANALYZE time = 1 SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP BY k);

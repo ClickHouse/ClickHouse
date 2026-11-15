@@ -4,6 +4,7 @@
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Functions/extractKeyValuePairs.h>
@@ -26,6 +27,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
+    extern const int TYPE_MISMATCH;
 }
 
 namespace HivePartitioningUtils
@@ -77,6 +79,25 @@ std::string_view getPartitionValueFromPath(
             path);
     }
     return it->second;
+}
+
+Field convertPartitionValueToType(
+    std::string_view value,
+    const IDataType & type,
+    const std::string & column_name,
+    const std::string & path,
+    const FormatSettings & hive_format_settings)
+{
+    Field field = convertFieldToType(Field(String(value)), type, nullptr, hive_format_settings);
+    if (field.isNull() && !canContainNull(type))
+        throw Exception(
+            ErrorCodes::TYPE_MISMATCH,
+            "Cannot convert '{}' from the path {} to type {} for the Hive partition column `{}`",
+            value,
+            path,
+            type.getName(),
+            column_name);
+    return field;
 }
 
 FormatSettings buildHiveFormatSettings(const std::optional<FormatSettings> & format_settings, const ContextPtr & context)
@@ -146,7 +167,8 @@ void addPartitionColumnsToChunk(
         const auto value = getPartitionValueFromPath(hive_map, column.getNameInStorage(), path);
 
         const auto & type = column.getTypeInStorage();
-        ColumnPtr chunk_column = type->createColumnConst(chunk.getNumRows(), convertFieldToType(Field(String(value)), *type, nullptr, hive_format_settings));
+        ColumnPtr chunk_column = type->createColumnConst(
+            chunk.getNumRows(), convertPartitionValueToType(value, *type, column.getNameInStorage(), path, hive_format_settings));
         if (column.isSubcolumn())
             chunk_column = type->getSubcolumn(column.getSubcolumnName(), chunk_column);
         chunk.addColumn(chunk_column->convertToFullColumnIfConst());

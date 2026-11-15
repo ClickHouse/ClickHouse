@@ -2,8 +2,6 @@
 -- so `throwIf` never fires. This is checked with `throwIf` rather than with a
 -- timeout, because a timeout makes the test flaky on a loaded machine.
 
-set enable_analyzer = 1;
-
 WITH (
         SELECT throwIf(1)
     ) AS res

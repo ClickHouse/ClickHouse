@@ -6,8 +6,6 @@ CREATE TABLE t2 (x UInt32, y String) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t1 VALUES (1, 3.14), (2, 2.72);
 INSERT INTO t2 VALUES (1, 'hello'), (2, 'world');
 
-SET enable_analyzer = 1;
-
 -- `b` also names the scalar column `t1.b`, but `b.*` must expand the table aliased `b` (t2).
 SELECT a, b.* FROM t1 JOIN t2 AS b ON t1.a = b.x ORDER BY a;
 

@@ -1,12 +1,8 @@
 #pragma once
 
 #include <base/types.h>
-#include <Common/HiddenSecret.h>
-#include <Common/maskURIPassword.h>
 
-#include <functional>
 #include <optional>
-#include <unordered_map>
 
 namespace DB
 {
@@ -16,53 +12,11 @@ class Field;
 namespace DB::CoreSettings
 {
 
-/// Rewrites the value in place and returns whether anything was masked.
-using ValueMaskingFunc = std::function<bool(String &)>;
-
-/// A URL carries its credential either as `user:password@` userinfo or, when it is presigned, in the
-/// query parameters, and either form can appear in the same setting.
-///
-/// Scanning for a presigned parameter is only sound on a value that is one whole URL: such a value
-/// ends at `&`, at `#` or at the end of the text, so on a URL embedded in a longer string it would
-/// run past the end of the URL. Every setting masked with this holds one whole URL, so the
-/// precondition holds by construction and needs no check.
-inline bool maskURLCredentials(String & value)
-{
-    /// A statement is masked for logging before its settings are validated, so a value that no URI
-    /// parser can read still reaches a log.
-    if (findURIAuthority(value) == String::npos && value.contains('@'))
-    {
-        value = HIDDEN_SECRET;
-        return true;
-    }
-
-    /// `maskURIUserinfo` ends the authority where the RFC does, but the consumer of the value may read a
-    /// wider userinfo, as the MongoDB driver does in `mongodb://u:1?pw@1@host`.
-    bool masked = maskURIUserinfo(value) || maskURIPassword(&value);
-    masked |= maskPresignedURLParameters(value);
-    return masked;
-}
-
-/// The settings of the query-level `Settings` collection whose value can carry a credential, and how
-/// each one is masked. `system.query_log.query` shows
+/// Masks the credential in the value of a query-level setting that can carry one, such as
+/// `format_avro_schema_registry_url`, `url_base` or `s3_base`. `system.query_log.query` shows
 /// `format_avro_schema_registry_url = 'http://[HIDDEN]@registry:8080'`, so every other place that
-/// prints the same value hides the same secret through this map.
-///
-/// Mirrors the per-engine `SETTINGS_TO_HIDE` maps (`Kafka_fwd.h`, `NATS_fwd.h`, ...), which do this
-/// for table engine settings.
-static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
-{
-    {"format_avro_schema_registry_url", maskURLCredentials},
-    {"url_base", maskURLCredentials},
-    {"s3_base", maskURLCredentials},
-};
-
-/// Returns whether anything was masked.
-inline bool maskSettingValue(const String & setting_name, String & value)
-{
-    auto it = SETTINGS_TO_HIDE.find(setting_name);
-    return it != SETTINGS_TO_HIDE.end() && it->second(value);
-}
+/// prints the same value hides the same secret through this. Returns whether anything was masked.
+bool maskSettingValue(const String & setting_name, String & value);
 
 /// Same as above, for a sink that also has the raw `Field`. A setting value can be an AST rather
 /// than a literal, e.g. `custom_x = disk(type = 's3', secret_access_key = '...')`, and no plain
