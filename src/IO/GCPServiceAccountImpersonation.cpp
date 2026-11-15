@@ -54,7 +54,7 @@ void validateServiceAccountIdentifier(const std::string & service_account, std::
     }
 }
 
-static constexpr std::string_view resource_prefix = "projects/-/serviceAccounts/";
+constexpr std::string_view resource_prefix = "projects/-/serviceAccounts/";
 
 /// Accept both bare identifiers and `projects/-/serviceAccounts/<id>` resource names.
 std::string toBareServiceAccountIdentifier(const std::string & service_account, std::string_view what)
@@ -120,7 +120,7 @@ void validateEndpointQuery(const std::string & query)
     for (size_t i = 0; i < query.size(); ++i)
     {
         const char c = query[i];
-        if (isAlphaNumericASCII(c) || allowed_punctuation.find(c) != std::string_view::npos)
+        if (isAlphaNumericASCII(c) || allowed_punctuation.contains(c))
             continue;
 
         if (c == '%' && i + 2 < query.size() && isHexDigit(query[i + 1]) && isHexDigit(query[i + 2]))

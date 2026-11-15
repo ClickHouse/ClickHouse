@@ -5,3 +5,5 @@
 # The page is reachable, but CI runners get exactly this error for it: HTTP 520 from Cloudflare.
 https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
 https://oauth2.googleapis.com/token
+# The GCP IAM Credentials API endpoint, not a page: its root answers HTTP 404.
+https://iamcredentials.googleapis.com
