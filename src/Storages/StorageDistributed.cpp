@@ -2193,12 +2193,24 @@ ClusterPtr StorageDistributed::getCluster() const
     return owned_cluster ? owned_cluster : getContext()->getCluster(cluster_name);
 }
 
-std::shared_ptr<const Cluster::SlotToShard> StorageDistributed::getSlotToShard(const ClusterPtr & cluster) const
+std::shared_ptr<const Cluster::SlotToShard> StorageDistributed::getSlotToShard(const ClusterPtr & cluster, const ContextPtr & insert_context) const
 {
     if (!bucket_map_watcher)
         return std::shared_ptr<const Cluster::SlotToShard>(cluster, &cluster->getSlotToShard());
 
-    auto map = bucket_map_watcher->get();
+    DistributedBucketMapPtr map;
+    if (auto query = insert_context ? insert_context->getProcessListElementSafe() : nullptr)
+    {
+        std::lock_guard lock(insert_bucket_maps_mutex);
+        std::erase_if(insert_bucket_maps, [](const auto & entry) { return entry.first.expired(); });
+        auto & query_map = insert_bucket_maps[query];
+        if (!query_map)
+            query_map = bucket_map_watcher->get();
+        map = query_map;
+    }
+    else
+        map = bucket_map_watcher->get();
+
     size_t num_shards = cluster->getShardsInfo().size();
     if (map->max_shard_num > num_shards)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
