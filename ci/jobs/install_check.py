@@ -212,11 +212,9 @@ def test_install_tgz(image: DockerImage, debug_symbols: bool) -> List[Result]:
         if debug_symbols
         else "clickhouse-{common-static,client,server}-[0-9]*tgz"
     )
-    keeper_packages = (
-        "clickhouse-{common-static,keeper}*tgz"
-        if debug_symbols
-        else "clickhouse-{common-static,keeper}-[0-9]*tgz"
-    )
+    # There is no separate debug symbols package for `clickhouse-keeper` anymore, and
+    # `clickhouse-common-static-dbg` is already covered by the server test.
+    keeper_packages = "clickhouse-{common-static,keeper}-[0-9]*tgz"
     tests = {
         f"Install server tgz in {image}": r"""#!/bin/bash -ex
 [ -f /etc/debian_version ] && CONFIGURE=configure || CONFIGURE=
