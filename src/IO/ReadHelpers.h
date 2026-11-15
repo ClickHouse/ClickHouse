@@ -11,7 +11,6 @@
 #include <Common/FramePointers.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
 #include <Common/transformEndianness.h>
@@ -1123,7 +1122,7 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf, const DateLU
             minute = (s[4] - '0') * 10 + (s[5] - '0');
             second = (s[7] - '0') * 10 + (s[8] - '0');
 
-            time = date_lut.makeTime(hour, minute, second) * negative_multiplier;
+            time = makeTime(date_lut, hour, minute, second) * negative_multiplier;
             buf.position() += 9;
 
             return ReturnType(true);
@@ -1139,7 +1138,7 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf, const DateLU
             minute = (s[3] - '0') * 10 + (s[4] - '0');
             second = (s[6] - '0') * 10 + (s[7] - '0');
 
-            time = date_lut.makeTime(hour, minute, second) * negative_multiplier;
+            time = makeTime(date_lut, hour, minute, second) * negative_multiplier;
             buf.position() += 8;
 
             return ReturnType(true);
@@ -1155,7 +1154,7 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf, const DateLU
             minute = (s[2] - '0') * 10 + (s[3] - '0');
             second = (s[5] - '0') * 10 + (s[6] - '0');
 
-            time = date_lut.makeTime(hour, minute, second) * negative_multiplier;
+            time = makeTime(date_lut, hour, minute, second) * negative_multiplier;
             buf.position() += 7;
 
             return ReturnType(true);
@@ -1169,7 +1168,7 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf, const DateLU
             minute = (s[0] - '0') * 10 + (s[1] - '0');
             second = (s[3] - '0') * 10 + (s[4] - '0');
 
-            time = date_lut.makeTime(hour, minute, second) * negative_multiplier;
+            time = makeTime(date_lut, hour, minute, second) * negative_multiplier;
             buf.position() += 5;
 
             return ReturnType(true);
@@ -1183,7 +1182,7 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf, const DateLU
             minute = s[0] - '0';
             second = (s[2] - '0') * 10 + (s[3] - '0');
 
-            time = date_lut.makeTime(hour, minute, second) * negative_multiplier;
+            time = makeTime(date_lut, hour, minute, second) * negative_multiplier;
             buf.position() += 4;
 
             return ReturnType(true);
@@ -1195,7 +1194,7 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf, const DateLU
             minute = 0;
             second = (s[0] - '0') * 10 + (s[1] - '0');
 
-            time = date_lut.makeTime(hour, minute, second) * negative_multiplier;
+            time = makeTime(date_lut, hour, minute, second) * negative_multiplier;
             buf.position() += 2;
 
             return ReturnType(true);
@@ -1207,7 +1206,7 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf, const DateLU
             minute = 0;
             second = s[0] - '0';
 
-            time = date_lut.makeTime(hour, minute, second) * negative_multiplier;
+            time = makeTime(date_lut, hour, minute, second) * negative_multiplier;
             buf.position() += 1;
 
             return ReturnType(true);

@@ -1,10 +1,10 @@
 #pragma once
 
+#include <algorithm>
 #include <string>
 #include <cstring>
 #include <stdexcept>
 #include <Common/DateLUT.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/LocalDate.h>
 
 /**
@@ -30,16 +30,21 @@ private:
      * @param time Time in `time_t` format.
      * @param time_zone Time zone information.
      */
-    void init(time_t time, const DateLUTImpl & time_zone)
+    void init(time_t time, [[maybe_unused]] const DateLUTImpl & time_zone)
     {
-        const auto components = time_zone.toTimeComponents(
-            static_cast<DateLUTImpl::Time>(time));
+        /// A `Time` does not depend on the time zone.
+        constexpr Int64 max_time = 1000 * 3600 - 1;
 
-        is_negative = components.is_negative;
+        Int64 t = time;
+        is_negative = t < 0;
 
-        m_hour = components.hour;
-        m_minute = components.minute;
-        m_second = components.second;
+        t = std::clamp(t, -max_time, max_time);
+        if (is_negative)
+            t = -t;
+
+        m_hour = static_cast<uint64_t>(t / 3600);
+        m_minute = static_cast<unsigned char>(t / 60 % 60);
+        m_second = static_cast<unsigned char>(t % 60);
     }
 
     /**

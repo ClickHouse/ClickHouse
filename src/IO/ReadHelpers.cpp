@@ -12,6 +12,7 @@
 #include <IO/readFloatText.h>
 #include <IO/readDecimalText.h>
 #include <IO/Operators.h>
+#include <Common/DateLUTImpl.h>
 #include <cstdint>
 #include <cstdlib>
 #include <bit>

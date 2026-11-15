@@ -26,6 +26,7 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
+#include <Common/DateLUTImpl.h>
 #include <Poco/String.h>
 
 #include <IO/WriteBufferFromString.h>

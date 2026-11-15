@@ -8,6 +8,7 @@
 #include <Columns/ColumnsNumber.h>
 
 #include <Common/assert_cast.h>
+#include <Common/DateLUTImpl.h>
 
 namespace DB
 {

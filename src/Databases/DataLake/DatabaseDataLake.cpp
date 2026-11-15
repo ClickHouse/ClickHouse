@@ -14,6 +14,7 @@
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Databases/DataLake/StaticStorageCredentials.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>

@@ -27,6 +27,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/DateLUTImpl.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 

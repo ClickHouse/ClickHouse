@@ -127,6 +127,7 @@
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Common/DateLUTImpl.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 

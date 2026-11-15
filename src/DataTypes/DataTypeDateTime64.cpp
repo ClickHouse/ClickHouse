@@ -1,5 +1,6 @@
 #include <Common/DateLUT.h>
 #include <Common/SipHash.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/Serializations/SerializationDateTime64.h>
 #include <IO/Operators.h>
