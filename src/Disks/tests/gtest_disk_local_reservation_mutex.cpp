@@ -51,8 +51,8 @@ TEST(DiskLocalReservation, SlowDiskDoesNotStallReservationsOnOtherDisks)
 
     ReservationPtr reservation_on_slow_disk;
     ReservationPtr reservation_on_other_disk;
-    long long elapsed_ms = 0;
-    long long slow_reserve_ms = 0;
+    Int64 elapsed_ms = 0;
+    Int64 slow_reserve_ms = 0;
 
     {
         auto slow_disk = std::make_shared<SlowSpaceDisk>("slow_probe", slow_disk_dir->getPath());
