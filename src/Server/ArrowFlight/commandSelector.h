@@ -1,11 +1,17 @@
 #pragma once
 
+#include <Core/Block.h>
+#include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
-#include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
+#include <Processors/Chunk.h>
+#include <Processors/Formats/Impl/ArrowIPC/ArrowIPCMessages.h>
+#include <Server/ArrowFlight/FlightStatus.h>
 
-#include <arrow/flight/types.h>
-#include <arrow/type.h>
+#include <arrow/flight/Flight.pb.h>
 #include <google/protobuf/any.pb.h>
+
+#include <functional>
+#include <variant>
 
 
 namespace DB
@@ -14,7 +20,11 @@ namespace DB
 namespace ArrowFlight
 {
 
-using SchemaModifier = std::function<arrow::Result<std::shared_ptr<arrow::Schema>>(std::shared_ptr<arrow::Schema>)>;
+/// The data of a flight, encoded in the Arrow IPC format: the schema and the record batches.
+using Table = ArrowIPC::EncodedStream;
+using TablePtr = std::shared_ptr<const Table>;
+
+using SchemaModifier = std::function<Result<ArrowIPC::ArrowSchema>(ArrowIPC::ArrowSchema)>;
 using BlockModifier = std::function<void(ContextPtr, Block &)>;
 
 struct SQLSet
@@ -24,25 +34,25 @@ struct SQLSet
     BlockModifier block_modifier;
 };
 
-struct CommandSelectorResult : private std::variant<SQLSet, arrow::Result<std::shared_ptr<arrow::Table>>>
+struct CommandSelectorResult : private std::variant<SQLSet, Result<TablePtr>>
 {
     // NOLINTNEXTLINE(google-explicit-constructor)
-    CommandSelectorResult(const SQLSet & sql_set) : std::variant<SQLSet, arrow::Result<std::shared_ptr<arrow::Table>>>(sql_set) {}
+    CommandSelectorResult(const SQLSet & sql_set) : std::variant<SQLSet, Result<TablePtr>>(sql_set) {}
     // NOLINTNEXTLINE(google-explicit-constructor)
-    CommandSelectorResult(const arrow::Result<std::shared_ptr<arrow::Table>> & table) : std::variant<SQLSet, arrow::Result<std::shared_ptr<arrow::Table>>>(table) {}
+    CommandSelectorResult(const Result<TablePtr> & table) : std::variant<SQLSet, Result<TablePtr>>(table) {}
     // NOLINTNEXTLINE(google-explicit-constructor)
-    CommandSelectorResult(const arrow::Status & status) : std::variant<SQLSet, arrow::Result<std::shared_ptr<arrow::Table>>>(status) {}
+    CommandSelectorResult(const Status & status) : std::variant<SQLSet, Result<TablePtr>>(Result<TablePtr>(status)) {}
     // NOLINTNEXTLINE(google-explicit-constructor)
-    CommandSelectorResult(std::shared_ptr<arrow::Table> table) : std::variant<SQLSet, arrow::Result<std::shared_ptr<arrow::Table>>>(table) {}
+    CommandSelectorResult(TablePtr table) : std::variant<SQLSet, Result<TablePtr>>(Result<TablePtr>(std::move(table))) {}
 
     SQLSet * getSQLSet()
     {
         return std::get_if<SQLSet>(this);
     }
 
-    arrow::Result<std::shared_ptr<arrow::Table>> * getTable()
+    Result<TablePtr> * getTable()
     {
-        return std::get_if<arrow::Result<std::shared_ptr<arrow::Table>>>(this);
+        return std::get_if<Result<TablePtr>>(this);
     }
 };
 
@@ -51,7 +61,6 @@ inline bool isArrowFlightSql(const google::protobuf::Any & any_msg)
     const auto & type_url = any_msg.type_url();
     const auto slash_pos = type_url.find_last_of('/');
     const auto type_name = (slash_pos == std::string::npos) ? type_url : type_url.substr(slash_pos + 1);
-
     return type_name.starts_with("arrow.flight.protocol.sql.");
 }
 
@@ -65,24 +74,49 @@ inline bool cmdIsArrowFlightSql(const std::string & cmd)
     return isArrowFlightSql(any_msg);
 }
 
-inline bool flightDescriptorIsArrowFlightSqlCommand(const arrow::flight::FlightDescriptor & descriptor)
+inline bool flightDescriptorIsArrowFlightSqlCommand(const arrow::flight::protocol::FlightDescriptor & descriptor)
 {
-    if (descriptor.type != arrow::flight::FlightDescriptor::CMD)
+    if (descriptor.type() != arrow::flight::protocol::FlightDescriptor::CMD)
         return false;
-    return cmdIsArrowFlightSql(descriptor.cmd);
+    return cmdIsArrowFlightSql(descriptor.cmd());
 }
 
-/// The Arrow conversion settings every Arrow Flight surface uses, resolved from a query context. The
-/// format settings are the query's own, so that a type with no Arrow mapping is serialized exactly as the
-/// native Arrow IPC writer would serialize it for the same query.
-CHColumnToArrowColumn::Settings arrowConversionSettings(const ContextPtr & context);
+/// The format settings every Arrow Flight surface encodes with, resolved from a query context.
+///
+/// Arrow Flight pins the canonical Arrow mapping and follows exactly one output setting: what to do with a type
+/// that has no canonical mapping. The other `output_format_arrow_*` settings are deliberately not read from the
+/// context, so a Flight schema does not track `FORMAT Arrow` for the same query.
+///
+/// That is a conformance requirement rather than a simplification. This same conversion builds the Flight SQL
+/// metadata responses, whose schemas the specification fixes - `CommandGetTables` is `catalog_name: utf8,
+/// db_schema_name: utf8, table_name: utf8 not null, table_type: utf8 not null, table_schema: bytes not null` - so
+/// honoring `output_format_arrow_string_as_string = 0` would answer a driver with `binary` where the specification
+/// requires `utf8`, and would change the per-table schema ClickHouse advertises inside `table_schema`.
+/// `output_format_arrow_date_as_uint16` is a ClickHouse backward-compatibility knob in the same way: a client
+/// handed `uint16` for a `Date` has no way to tell it is a date. The schema also travels separately from the data -
+/// `GetFlightInfo`, `GetSchema` and `DoGet` are distinct calls, each building its own query context from the
+/// session - so every setting that can move the schema is another way for the advertised schema and the delivered
+/// stream to disagree.
+///
+/// `output_format_arrow_unsupported_types` is the exception because `JSON`, `Dynamic`, `QBit` and
+/// `AggregateFunction` have no canonical Arrow mapping at all. ClickHouse has to invent one, only the user can say
+/// whether they want text or bytes, and the `clickhouse.opaque` field metadata tells the client that the column is
+/// an invention rather than a native Arrow type.
+FormatSettings flightFormatSettings(const ContextPtr & context);
 
-/// commandSelector accepts arrow flight sql command buffer and produces either resulting arrow::Table
+/// The schema of the result of a query with the header `header`, serialized as Arrow Flight does, after
+/// `schema_modifier`.
+Result<String> flightSchema(const Block & header, const ContextPtr & context, const SchemaModifier & schema_modifier = {});
+
+/// Encodes chunks of `header` as the data of a flight with the schema `schema` (see `flightSchema`).
+TablePtr flightTable(const Block & header, const Chunks & chunks, const ContextPtr & context, const String & schema);
+
+/// commandSelector accepts arrow flight sql command buffer and produces either resulting table
 /// (and if schema_only == true then table can be empty - only schema is requested) or set of sql query - which will be executed,
 /// and, if resulting table requires modification, possible schema_modifier and block_modifier - they should consistently
 /// manipulate schema and blocks to produce compatible results. In case command is invalid, an error should be returned
-/// in arrow::Result<std::shared_ptr<arrow::Table>> variant - in practice, return arrow::Status::<...> -
-/// CommandSelectorResult has an implicit constructor for arrow::Status.
+/// in Result<TablePtr> variant - in practice, return Status::<...> - CommandSelectorResult has an implicit constructor
+/// for Status.
 CommandSelectorResult commandSelector(const std::string & cmd, bool schema_only = false);
 
 }

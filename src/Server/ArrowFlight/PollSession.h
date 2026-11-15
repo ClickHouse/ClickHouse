@@ -10,7 +10,6 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/BlockIO.h>
 
-#include <arrow/type.h>
 
 #include <optional>
 
@@ -40,7 +39,8 @@ public:
     ContextPtr queryContext();
 
     ThreadGroupPtr getThreadGroup() const;
-    std::shared_ptr<arrow::Schema> getSchema() const;
+    /// The schema of the query, serialized as Arrow Flight does.
+    const String & getSchema() const;
     bool getNextBlock(Block & block);
     void onFinish();
     void onException();
@@ -51,7 +51,7 @@ private:
     ThreadGroupPtr thread_group;
     BlockIO block_io;
     std::optional<PullingPipelineExecutor> executor;
-    std::shared_ptr<arrow::Schema> schema;
+    String schema;
     BlockModifier block_modifier;
 };
 
