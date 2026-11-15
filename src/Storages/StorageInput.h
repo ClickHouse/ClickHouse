@@ -21,6 +21,10 @@ public:
     /// A table will read from this stream.
     void setPipe(Pipe pipe_);
 
+    /// A source reading the blocks of data sent by the client, with the input callbacks of the query context.
+    /// The input must be initialized with `Context::initializeInput` before.
+    static Pipe createInputFromClient(ContextPtr query_context, SharedHeader header);
+
     void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,

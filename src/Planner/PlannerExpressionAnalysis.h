@@ -52,6 +52,10 @@ struct SortAnalysisResult
     ActionsAndProjectInputsFlagPtr before_order_by_actions;
     bool has_with_fill = false;
     ActionsAndProjectInputsFlagPtr before_interpolate_actions;
+    /// INTERPOLATE target name -> name of the column `before_interpolate_actions` interpolates for it.
+    NameToNameMap interpolated_column_names;
+    /// INTERPOLATE target name -> name of its column in the `FillingStep` header; the target name unless another column has it.
+    NameToNameMap interpolate_target_column_names;
 };
 
 struct LimitByAnalysisResult
@@ -94,7 +98,8 @@ public:
 
     bool hasAggregation() const
     {
-        return !aggregation_analysis_result.aggregation_keys.empty() || !aggregation_analysis_result.aggregate_descriptions.empty();
+        return !aggregation_analysis_result.aggregation_keys.empty() || !aggregation_analysis_result.aggregate_descriptions.empty()
+            || !aggregation_analysis_result.grouping_sets_parameters_list.empty();
     }
 
     AggregationAnalysisResult & getAggregation()

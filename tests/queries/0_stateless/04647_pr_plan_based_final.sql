@@ -12,7 +12,6 @@ INSERT INTO t_pr_final_1 SELECT number, 1 FROM numbers(1000);
 INSERT INTO t_pr_final_1 SELECT number, 2 FROM numbers(1000);  -- duplicate keys; FINAL keeps one per key
 INSERT INTO t_pr_final_2 SELECT number + 1000 FROM numbers(1000);
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';

@@ -7,8 +7,6 @@ keywords: ['stratégies de déduplication', 'déduplication des données', 'upse
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 **La déduplication** désigne le processus de ***suppression des lignes en double d’un jeu de données***. Dans une base de données OLTP, cela se fait facilement, car chaque ligne possède une clé primaire unique, mais au prix d’insertions plus lentes. Chaque ligne insérée doit d’abord être recherchée et, si elle est trouvée, remplacée.
 
 ClickHouse est conçu pour la rapidité d’insertion des données. Les fichiers de stockage sont immuables et ClickHouse ne vérifie pas l’existence d’une clé primaire avant d’insérer une ligne ; la déduplication demande donc un peu plus d’efforts. Cela signifie aussi que la déduplication n’est pas immédiate : elle est **différée**, ce qui entraîne quelques effets secondaires :
@@ -20,7 +18,7 @@ ClickHouse est conçu pour la rapidité d’insertion des données. Les fichiers
 <div class="transparent-table">
   |                                                                                                    |                                                                                                                                                                                                                                                                                         |
   | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | <Image img="/images/guides/developer/de_duplication.webp" alt="Logo de déduplication" size="sm" /> | ClickHouse propose une formation gratuite sur la déduplication et de nombreux autres sujets. Le [Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) constitue un bon point de départ. |
+  | <span className="ch-image-sm"><Frame>![Logo de déduplication](/images/guides/developer/de_duplication.webp)</Frame></span> | ClickHouse propose une formation gratuite sur la déduplication et de nombreux autres sujets. Le [Deleting and Updating Data training module](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461) constitue un bon point de départ. |
 </div>
 
 <div id="options-for-deduplication">
@@ -33,7 +31,7 @@ La déduplication est mise en œuvre dans ClickHouse à l’aide des moteurs de 
 
 2. Collapsing de lignes : les moteurs de table `CollapsingMergeTree` et `VersionedCollapsingMergeTree` utilisent une logique dans laquelle une ligne existante est « annulée » et une nouvelle ligne est insérée. Ils sont plus complexes à mettre en œuvre que `ReplacingMergeTree`, mais vos requêtes et agrégations peuvent être plus simples à écrire, sans avoir à vous soucier de savoir si les données ont déjà été fusionnées ou non. Ces deux moteurs de table sont utiles lorsque vous devez mettre à jour fréquemment les données.
 
-Nous présentons ces deux techniques ci-dessous. Pour plus de détails, consultez notre [module de formation Deleting and Updating Data](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs), gratuit et disponible à la demande.
+Nous présentons ces deux techniques ci-dessous. Pour plus de détails, consultez notre [module de formation Deleting and Updating Data](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461), gratuit et disponible à la demande.
 
 <div id="using-replacingmergetree-for-upserts">
   ## Utilisation de ReplacingMergeTree pour les upserts
@@ -164,7 +162,7 @@ GROUP BY (id, author, comment)
 
 Le regroupement, comme dans la requête ci-dessus, peut en réalité être plus efficace (en termes de performances des requêtes) que l’utilisation du mot-clé `FINAL`.
 
-Notre [module de formation Deleting and Updating Data](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) approfondit cet exemple, notamment en expliquant comment utiliser une colonne `version` avec `ReplacingMergeTree`.
+Notre [module de formation Deleting and Updating Data](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461) approfondit cet exemple, notamment en expliquant comment utiliser une colonne `version` avec `ReplacingMergeTree`.
 
 <div id="using-collapsingmergetree-for-updating-columns-frequently">
   ## Utiliser CollapsingMergeTree pour mettre à jour fréquemment des colonnes

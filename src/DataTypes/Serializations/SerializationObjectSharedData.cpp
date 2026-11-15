@@ -111,14 +111,14 @@ struct DeserializeBinaryBulkStateObjectSharedData : public ISerialization::Deser
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> bucket_map_states;
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> bucket_structure_states;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateObjectSharedData>(*this);
-        new_state->map_state = map_state ? map_state->clone() : nullptr;
+        new_state->map_state = map_state ? map_state->clone(context) : nullptr;
         for (size_t bucket = 0; bucket != bucket_map_states.size(); ++bucket)
-            new_state->bucket_map_states[bucket] = bucket_map_states[bucket] ? bucket_map_states[bucket]->clone() : nullptr;
+            new_state->bucket_map_states[bucket] = bucket_map_states[bucket] ? bucket_map_states[bucket]->clone(context) : nullptr;
         for (size_t bucket = 0; bucket != bucket_structure_states.size(); ++bucket)
-            new_state->bucket_structure_states[bucket] = bucket_structure_states[bucket] ? bucket_structure_states[bucket]->clone() : nullptr;
+            new_state->bucket_structure_states[bucket] = bucket_structure_states[bucket] ? bucket_structure_states[bucket]->clone(context) : nullptr;
         return new_state;
     }
 };
@@ -372,23 +372,9 @@ ChunkBucketSerializationMetadata serializeChunkBucketData(
     metadata.paths_substreams.reserve(flattened_paths.size());
     metadata.paths_substreams_marks.reserve(flattened_paths.size());
 
-    /// Configure serialization settings as in Compact part.
-    ISerialization::SerializeBinaryBulkSettings data_serialization_settings;
-    data_serialization_settings.data_part_type = MergeTreeDataPartType::Compact;
-    data_serialization_settings.position_independent_encoding = true;
-    data_serialization_settings.low_cardinality_max_dictionary_size = 0;
-    data_serialization_settings.use_specialized_prefixes_and_suffixes_substreams = true;
-    data_serialization_settings.use_compact_variant_discriminators_serialization = true;
-    data_serialization_settings.dynamic_serialization_version = MergeTreeDynamicSerializationVersion::V3;
-    data_serialization_settings.object_serialization_version = MergeTreeObjectSerializationVersion::V3;
-    /// Also use the same serialization version for nested Object types
-    data_serialization_settings.object_shared_data_serialization_version = nested_shared_data_version;
-    data_serialization_settings.object_shared_data_target_chunk_rows = settings.object_shared_data_target_chunk_rows;
-    /// Don't write any dynamic statistics.
-    data_serialization_settings.write_statistics = ISerialization::SerializeBinaryBulkSettings::StatisticsMode::NONE;
+    /// Also use the same serialization version for nested Object types.
+    auto data_serialization_settings = getObjectPathDataSerializationSettings(settings, nested_shared_data_version);
     data_serialization_settings.stream_mark_getter = [&](const ISerialization::SubstreamPath &) -> MarkInCompressedFile { return settings.stream_mark_getter(settings.path); };
-    /// Inherit the min_compress_block_size setting.
-    data_serialization_settings.min_compress_block_size = settings.min_compress_block_size;
 
     ISerialization::StreamFileNameSettings stream_file_name_settings;
     stream_file_name_settings.escape_variant_substreams = false;
@@ -560,6 +546,38 @@ void writeCopyIndexesForChunk(
     indexes_type->getDefaultSerialization()->serializeBinaryBulk(*indexes_column, stream, 0, nested_end - nested_offset);
 }
 
+/// Requests every stream a chunk writes without writing anything. Used for an empty range in Wide parts,
+/// which writes no chunk: the writer's substreams dry run still has to see the streams.
+void requestChunkStreams(ISerialization::SerializeBinaryBulkSettings & settings, size_t buckets)
+{
+    using Substream = ISerialization::Substream;
+
+    auto request = [&](Substream::Type type)
+    {
+        settings.path.push_back(type);
+        settings.getter(settings.path);
+        settings.path.pop_back();
+    };
+
+    Substream::Type structure_prefix_type = settings.use_specialized_prefixes_and_suffixes_substreams ? Substream::ObjectSharedDataStructurePrefix : Substream::ObjectSharedDataStructure;
+    Substream::Type structure_suffix_type = settings.use_specialized_prefixes_and_suffixes_substreams ? Substream::ObjectSharedDataStructureSuffix : Substream::ObjectSharedDataStructure;
+
+    for (size_t bucket = 0; bucket != buckets; ++bucket)
+    {
+        settings.path.push_back(Substream::Bucket);
+        settings.path.back().bucket = bucket;
+        for (auto type : {structure_prefix_type, Substream::ObjectSharedDataData, Substream::ObjectSharedDataPathsMarks, Substream::ObjectSharedDataSubstreams,
+                          Substream::ObjectSharedDataSubstreamsMarks, Substream::ObjectSharedDataPathsSubstreamsMetadata, structure_suffix_type})
+            request(type);
+        settings.path.pop_back();
+    }
+
+    settings.path.push_back(Substream::ObjectSharedDataCopy);
+    for (auto type : {Substream::ObjectSharedDataCopySizes, Substream::ObjectSharedDataCopyPathsIndexes, Substream::ObjectSharedDataCopyValues})
+        request(type);
+    settings.path.pop_back();
+}
+
 void writeChunkCopySection(
     const IColumn & column,
     size_t offset, size_t end,
@@ -663,6 +681,15 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
     else if (serialization_version.value == SerializationVersion::ADVANCED)
     {
         size_t end = limit && offset + limit < column.size() ? offset + limit : column.size();
+
+        /// In Wide parts an empty range completes a granule and writes no chunk. The Compact reader expects
+        /// a chunk in every granule, so Compact parts keep writing an empty one.
+        if (end == offset && settings.data_part_type == MergeTreeDataPartType::Wide)
+        {
+            requestChunkStreams(settings, buckets);
+            return;
+        }
+
         /// Per-bucket path names for the copy section.
         /// We save them separately because each bucket's flattened columns
         /// are freed after serialization to reduce peak memory.
@@ -886,6 +913,13 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
         }
         else
         {
+            /// An empty range completes a granule and writes no chunk.
+            if (end == offset && settings.data_part_type == MergeTreeDataPartType::Wide)
+            {
+                requestChunkStreams(settings, buckets);
+                return;
+            }
+
             /// Wide parts: chunk-then-streams layout.
             /// For each chunk, process all buckets (structure + data + metadata), then write copy.
             for (size_t chunk_idx = 0; chunk_idx < num_chunks; ++chunk_idx)
@@ -1372,7 +1406,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataChunks> SerializationObj
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot read paths from object shared data with ADVANCED serialization version because seek_stream_to_mark_callback is not initialized");
 
     DeserializeBinaryBulkSettings deserialization_settings;
-    deserialization_settings.object_and_dynamic_read_statistics = false;
+    deserialization_settings.read_statistics = false;
     deserialization_settings.position_independent_encoding = true;
     deserialization_settings.use_specialized_prefixes_and_suffixes_substreams = true;
     deserialization_settings.data_part_type = MergeTreeDataPartType::Compact;
@@ -1624,7 +1658,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for object shared data data");
 
                 DeserializeBinaryBulkSettings deserialization_settings;
-                deserialization_settings.object_and_dynamic_read_statistics = false;
+                deserialization_settings.read_statistics = false;
                 deserialization_settings.position_independent_encoding = true;
                 deserialization_settings.use_specialized_prefixes_and_suffixes_substreams = true;
                 deserialization_settings.data_part_type = MergeTreeDataPartType::Compact;

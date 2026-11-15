@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <span>
 
 #include <Client/LineReader.h>
@@ -12,6 +13,11 @@ namespace DB
 class ReplxxLineReader : public LineReader
 {
 public:
+    /// The highlighter callback of replxx, which also reports whether the last token of the
+    /// query is a delimiter: it sets `last_is_delimiter` to true or false, or leaves it intact
+    /// when this cannot be determined (e.g. the query ends with whitespace).
+    using Highlighter = std::function<void(const String & query, std::vector<replxx::Replxx::Color> & colors, int cursor_position, bool & last_is_delimiter)>;
+
     struct Options
     {
         Suggest & suggest;
@@ -31,10 +37,11 @@ public:
         /// `clickhouse-disks` reuse this reader and have commands of their own, so a leading `/`
         /// means something else there (the beginning of a path).
         bool enable_slash_commands = false;
+        bool vim = false;
         Patterns extenders;
         Patterns delimiters;
         std::span<char> word_break_characters;
-        replxx::Replxx::highlighter_callback_with_pos_t highlighter;
+        Highlighter highlighter;
         std::istream & input_stream = std::cin;
         std::ostream & output_stream = std::cout;
         int in_fd = STDIN_FILENO;
@@ -48,12 +55,9 @@ public:
     void enableBracketedPaste() override;
     void disableBracketedPaste() override;
 
-    /// If highlight is on, we will set a flag to denote whether the last token is a delimiter.
-    /// This is useful to determine the behavior of <ENTER> key when multiline is enabled.
-    static void setLastIsDelimiter(bool flag);
-
     /// Set text to be prepopulated in the next readLine call
     void setInitialText(const String & text) override;
+
 private:
     InputStatus readOneLine(const String & prompt) override;
     void addToHistory(const String & line) override;
@@ -72,6 +76,39 @@ private:
     /// for it shows nothing (see `suppress_hints_for_text`).
     void suppressHintsForDisplayedLine();
 
+    /// Bind the vim-style normal/operator/motion keymap. Defined in VimMode.cpp.
+    void setupVimKeybindings(bool allow_editor);
+    /// Run `func` on the cursor position and text of the input, both in code points.
+    void withVimState(const std::function<void(int &, std::u32string &)> & func);
+    /// Clear any pending vim command and start the next input in insert mode.
+    void resetVimForNewInput();
+    void vimCharwise(int & pos, std::u32string & text, int oldpos, bool allow_empty = false);
+    void vimLinewise(int & pos, std::u32string & text, int oldpos);
+    /// If a characterwise delete of `[start, end)` becomes linewise, like in vim, delete the lines and return true.
+    bool vimDeleteLinewise(int & pos, std::u32string & text, int start, int end);
+    /// `dvd` and `cvc`.
+    void vimForcedDoubledOperator(int & pos, std::u32string & text);
+    /// `cc`, also used by `S`.
+    void vimChangeLines(int & pos, std::u32string & text);
+    /// The `$` motion, also used by `D` and `C`.
+    void vimDollar(int & pos, std::u32string & text);
+    void fixTrailingNewline(int * pos, std::u32string * text);
+    void resetVim(int * pos = nullptr, std::u32string * text = nullptr);
+    template <typename T>
+    replxx::Replxx::key_press_handler_t vimHandler(T && func);
+    template <typename T>
+    void bindKey(char32_t key, T && func, int mode);
+    /// Bind `func` to every key without its own binding in `mode`.
+    template <typename T>
+    void bindDefaultKey(T && func, int mode);
+    void recomputeCurswant(int pos, std::u32string & text);
+    int vimReps() const;
+    void vimWordMotion(int & pos, std::u32string & text, char motion);
+    void vimWordObject(int & pos, std::u32string & text, bool bigword);
+    void vimBracketObject(int & pos, std::u32string & text, char32_t open_char, char32_t close_char);
+    void vimForcedBracketObject(int & pos, std::u32string & text, int open, int close, bool around);
+    void find(std::u32string & text, int & pos, char direction, char32_t c, bool repeat);
+
     /// Whether the text cursor is at the very end of the input (where as-you-type hints render).
     bool isCursorAtEndOfInput();
     /// Whether the as-you-type hint "popup" is currently navigable here: hints are shown and the
@@ -84,7 +121,13 @@ private:
     bool hintChosen();
 
     replxx::Replxx rx;
-    replxx::Replxx::highlighter_callback_with_pos_t highlighter;
+    Highlighter highlighter;
+
+    /// If highlight is on, the highlighter reports whether the last token is a delimiter.
+    /// This is used to determine the behavior of <ENTER> key when multiline is enabled.
+    /// It is a member rather than a global, because several readers can work concurrently
+    /// in one process (client sessions embedded into the server).
+    bool last_is_delimiter = false;
 
     /// Suggestion dictionary; used both for Tab completion and as-you-type hints, and updated
     /// with identifiers from committed queries to prioritize recently-used words.
@@ -137,6 +180,46 @@ private:
     replxx::Replxx::completions_t hint_completions;
     std::string hint_completions_context;
     int hint_completions_context_size = 0;
+
+    /// Vim keymap state. `vimbuffer` accumulates the count typed before an operator (e.g. the 3 in
+    /// `3w`), `vimbufferinner` the count typed after an operator (the 2 in `d2w`); the effective
+    /// repeat is their product. The editing mode itself is stored in replxx (see set_editing_mode)
+    /// and encodes the pending operator and motion prefix as a bitfield of the flags below.
+    enum
+    {
+        MODE_INSERT,
+        MODE_NORMAL,
+        MODE_FIND,
+        MODE_REPLACE,
+        MODE_G,
+        MODE_END,
+    };
+
+    enum
+    {
+        OPERATOR_C = 1,
+        OPERATOR_D,
+    };
+
+    enum
+    {
+        FLAG_INSIDE = 0x1,
+        FLAG_AROUND = 0x2,
+    };
+
+    uint64_t vimbuffer = 0;
+    uint64_t vimbufferinner = 0;
+    int32_t flag = 0;
+    char find_direction = 0;
+    int32_t op = 0;
+    int curswant = 0;
+    /* The sought-for column after `$`: the end of any line. Small enough that adding a position does not overflow. */
+    static constexpr int CURSWANT_LINE_END = 1 << 29;
+    int inclusivity_flip = 0;
+
+    bool vim = false;
+    char32_t last_find_char = 0;
+    char last_find_direction = 0;
 };
 
 }

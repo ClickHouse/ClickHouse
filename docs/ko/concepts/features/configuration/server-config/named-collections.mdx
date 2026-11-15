@@ -1,38 +1,36 @@
 ---
-description: '이름이 지정된 컬렉션에 대한 문서'
-sidebarTitle: '이름이 지정된 컬렉션'
+description: '명명된 컬렉션에 대한 문서'
+sidebarTitle: '명명된 컬렉션'
 slug: /operations/named-collections
-title: '이름이 지정된 컬렉션'
-doc_type: '참고'
+title: '명명된 컬렉션'
+doc_type: 'reference'
 ---
 
-이름이 지정된 컬렉션은 외부 소스와의 통합을 구성할 때 사용할
-key-value 쌍 모음을 저장하는 방법을 제공합니다. 이름이 지정된 컬렉션은
+명명된 컬렉션은 외부 소스와의 통합을 구성할 때 사용할
+key-value 쌍 모음을 저장하는 방법을 제공합니다. 명명된 컬렉션은
 딕셔너리, 테이블, 테이블 함수, 객체 스토리지와 함께 사용할 수 있습니다.
 
 <Note>
-  DDL로 생성된 이름이 지정된 컬렉션은 일부 ClickHouse Cloud 서비스에서 활성화할 수 있습니다. 사용 가능 여부를 확인하려면 Support에 문의하십시오. ClickHouse Cloud에서는 사용자가 서버 설정 파일을 수정할 수 없으므로 설정 파일에 정의된 이름이 지정된 컬렉션은 사용할 수 없습니다.
+  DDL로 생성된 명명된 컬렉션은 일부 ClickHouse Cloud 서비스에서 활성화할 수 있습니다. 사용 가능 여부를 확인하려면 Support에 문의하십시오. ClickHouse Cloud에서는 사용자가 서버 설정 파일을 수정할 수 없으므로 설정 파일에 정의된 명명된 컬렉션은 사용할 수 없습니다.
 </Note>
 
-이름이 지정된 컬렉션은 DDL 또는 설정 파일에서 구성할 수 있으며,
+명명된 컬렉션은 DDL 또는 설정 파일에서 구성할 수 있으며,
 ClickHouse가 시작될 때 적용됩니다. 이를 통해 객체를 더 쉽게 생성할 수 있고,
 관리자 권한이 없는 사용자에게 자격 증명을 숨길 수 있습니다.
 
-이름이 지정된 컬렉션의 키는 해당
+명명된 컬렉션의 키는 해당
 함수, 테이블 엔진, 데이터베이스 등의 매개변수 이름과 일치해야 합니다. 아래 예시에서는
 각 유형별 매개변수 목록으로 연결되는 링크를 제공합니다.
 
-이름이 지정된 컬렉션에 설정된 매개변수는 SQL에서 재정의할 수 있으며, 이는 아래 예시에서
-확인할 수 있습니다. 이 기능은 `[NOT] OVERRIDABLE` 키워드와 XML 속성
-및/또는 구성 옵션 `allow_named_collection_override_by_default`를 사용해 제한할 수 있습니다.
+명명된 컬렉션에 저장된 매개변수를 재정의하려면 해당 컬렉션에 대한 `SHOW NAMED COLLECTIONS SECRETS` 권한이 필요하며, 이는 매개변수가 `OVERRIDABLE`로 표시된 경우에도 마찬가지입니다. SQL에서 `NOT OVERRIDABLE`로 표시되거나 XML에서 `overridable="false"`로 표시된 키는 재정의할 수 없습니다. 컬렉션에 저장되어 있지 않은 매개변수를 추가할 때는 이 추가 권한이 필요하지 않습니다. `host`에 대한 `addresses_expr`과 같은 별칭을 사용하는 것도 저장된 매개변수를 재정의하는 것으로 간주됩니다.
 
-<Warning>
-  재정의가 허용되면 관리자 권한이 없는 사용자도
-  숨기려는 자격 증명을 알아낼 수 있습니다.
-  이러한 목적으로 이름이 지정된 컬렉션을 사용한다면,
-  `allow_named_collection_override_by_default`를 비활성화해야 합니다
-  (기본적으로 활성화되어 있습니다).
-</Warning>
+```sql
+GRANT SHOW NAMED COLLECTIONS SECRETS ON my_collection TO my_user;
+```
+
+이 검사에는 권한만 있으면 되며, 시크릿 표시 여부를 제어하는 설정과는 무관합니다. `allow_named_collection_override_by_default` 설정은 더 이상 사용되지 않으며 아무런 효과가 없습니다.
+
+딕셔너리 소스에도 동일한 규칙이 적용됩니다. 권한은 딕셔너리를 생성하거나, ATTACH하거나, 복원할 때 검사됩니다. 딕셔너리를 로드할 때는 `NOT OVERRIDABLE`로 표시된 키에만 제한이 적용됩니다.
 
 ## system 데이터베이스에 이름이 지정된 컬렉션 저장하기 {#storing-named-collections-in-the-system-database}
 
@@ -47,9 +45,9 @@ url = 'https://connection.url/'
 
 위 예시에서는 다음과 같습니다:
 
-* `key_1`은 항상 재정의할 수 있습니다.
+* `key_1`은 해당 컬렉션에 대해 `SHOW NAMED COLLECTIONS SECRETS` 권한이 있는 사용자가 재정의할 수 있습니다.
 * `key_2`는 절대 재정의할 수 없습니다.
-* `url`은 `allow_named_collection_override_by_default` 값에 따라 재정의할 수도 있고 할 수 없을 수도 있습니다.
+* `url`은 해당 컬렉션에 대해 `SHOW NAMED COLLECTIONS SECRETS` 권한이 있는 사용자가 재정의할 수 있습니다.
 
 ### DDL로 이름이 지정된 컬렉션을 생성하기 위한 권한 {#permissions-to-create-named-collections-with-ddl}
 
@@ -129,9 +127,9 @@ WHERE name = 'named_collections_storage.type';
 
 위 예시에서:
 
-* `key_1`은 항상 재정의할 수 있습니다.
+* `key_1`은 해당 컬렉션에 대해 `SHOW NAMED COLLECTIONS SECRETS` 권한이 있는 사용자가 재정의할 수 있습니다.
 * `key_2`는 절대 재정의할 수 없습니다.
-* `url`은 `allow_named_collection_override_by_default` 값에 따라 재정의할 수도 있고 재정의할 수 없을 수도 있습니다.
+* `url`은 해당 컬렉션에 대해 `SHOW NAMED COLLECTIONS SECRETS` 권한이 있는 사용자가 재정의할 수 있습니다.
 
 ## 이름이 지정된 컬렉션 수정하기 {#modifying-named-collections}
 
@@ -504,9 +502,16 @@ SELECT * FROM remote(remote1, database = default, table = test);
 ### 소스로 ClickHouse를 사용하는 딕셔너리에서 이름이 지정된 컬렉션을 사용하는 예시 {#example-of-using-named-collections-with-a-dictionary-with-source-clickhouse}
 
 ```sql
+CREATE NAMED COLLECTION remote_dict AS
+host = 'localhost',
+port = 9000,
+database = 'default',
+user = 'default',
+password = '';
+
 CREATE DICTIONARY dict(a Int64, b String)
 PRIMARY KEY a
-SOURCE(CLICKHOUSE(NAME remote1 TABLE test DB default))
+SOURCE(CLICKHOUSE(NAME remote_dict TABLE test))
 LIFETIME(MIN 1 MAX 2)
 LAYOUT(HASHED());
 
@@ -690,7 +695,7 @@ CREATE DICTIONARY dict
     `b` String
 )
 PRIMARY KEY a
-SOURCE(MONGODB(NAME mymongo COLLECTION my_dict))
+SOURCE(MONGODB(NAME mymongo))
 LIFETIME(MIN 1 MAX 2)
 LAYOUT(HASHED())
 
@@ -702,5 +707,5 @@ SELECT dictGet('dict', 'b', 2);
 ```
 
 <Note>
-  이름이 지정된 컬렉션에서는 컬렉션 이름으로 `my_collection`을 지정합니다. 함수 호출에서는 다른 컬렉션을 선택하기 위해 `collection = 'my_dict'`로 이를 덮어씁니다.
+  딕셔너리는 명명된 컬렉션에서 지정한 `my_collection`을 사용합니다. 다른 MongoDB 컬렉션을 사용하려면 해당 값을 지정한 별도의 명명된 컬렉션을 정의하십시오.
 </Note>
