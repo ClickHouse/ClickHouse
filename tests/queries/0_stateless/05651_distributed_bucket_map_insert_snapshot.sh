@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel
+# Tags: zookeeper, no-parallel, no-fasttest
 # no-parallel: uses the global shard_0 / shard_1 databases of test_cluster_two_shards_different_databases
-# and a server-wide failpoint.
+# and a server-wide failpoint. no-fasttest: tests that run alone are kept out of the fast test.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
