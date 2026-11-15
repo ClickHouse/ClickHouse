@@ -442,6 +442,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_common_pool_size;
     extern const ServerSettingsUInt64 background_distributed_schedule_pool_size;
     extern const ServerSettingsUInt64 background_fetches_pool_size;
+    extern const ServerSettingsFloat background_fetches_concurrency_ratio;
     extern const ServerSettingsFloat background_merges_mutations_concurrency_ratio;
     extern const ServerSettingsString background_merges_mutations_scheduling_policy;
     extern const ServerSettingsUInt64 background_message_broker_schedule_pool_size;
@@ -9961,6 +9962,8 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     String background_merges_mutations_scheduling_policy = server_settings[ServerSetting::background_merges_mutations_scheduling_policy];
     size_t background_move_pool_size = server_settings[ServerSetting::background_move_pool_size];
     size_t background_fetches_pool_size = server_settings[ServerSetting::background_fetches_pool_size];
+    auto background_fetches_concurrency_ratio = server_settings[ServerSetting::background_fetches_concurrency_ratio];
+    auto background_fetches_max_tasks_count = static_cast<size_t>(static_cast<double>(background_fetches_pool_size) * static_cast<double>(background_fetches_concurrency_ratio));
     size_t background_common_pool_size = server_settings[ServerSetting::background_common_pool_size];
 
     /// With this executor we can execute more tasks than threads we have
@@ -9998,7 +10001,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     (
         ThreadName::MERGETREE_FETCH,
         background_fetches_pool_size,
-        background_fetches_pool_size,
+        background_fetches_max_tasks_count,
         CurrentMetrics::BackgroundFetchesPoolTask,
         CurrentMetrics::BackgroundFetchesPoolSize,
         ProfileEvents::FetchBackgroundExecutorTaskExecuteStepMicroseconds,
@@ -10006,7 +10009,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         ProfileEvents::FetchBackgroundExecutorTaskResetMicroseconds,
         ProfileEvents::FetchBackgroundExecutorWaitMicroseconds
     );
-    LOG_INFO(shared->log, "Initialized background executor for fetches with num_threads={}, num_tasks={}", background_fetches_pool_size, background_fetches_pool_size);
+    LOG_INFO(shared->log, "Initialized background executor for fetches with num_threads={}, num_tasks={}", background_fetches_pool_size, background_fetches_max_tasks_count);
 
     shared->common_executor = std::make_shared<OrdinaryBackgroundExecutor>
     (

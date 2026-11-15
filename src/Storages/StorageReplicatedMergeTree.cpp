@@ -32,6 +32,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerUUID.h>
 #include <Core/SettingsFields.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 
@@ -208,6 +209,11 @@ namespace Setting
     extern const SettingsBool update_sequential_consistency;
 }
 
+
+namespace ServerSetting
+{
+    extern const ServerSettingsFloat reserve_fetch_queue_slot_for_sync_replica_ratio;
+}
 
 namespace MergeTreeSetting
 {
@@ -2651,6 +2657,9 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
                 entry.znode_name,
                 entry.new_part_name);
         }
+
+        if (entry.is_covered_by_future_part)
+            return false;
     }
 
     if (entry.type == LogEntry::ATTACH_PART)
@@ -4395,6 +4404,20 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobsAssigne
     return true;
 }
 
+size_t StorageReplicatedMergeTree::getFetchPoolSizeLimit(const ReplicatedMergeTreeLogEntry & entry) const
+{
+    auto replicated_fetches_pool_size = getContext()->getFetchesExecutor()->getMaxTasksCount();
+    auto replicated_fetches_pool_threads= getContext()->getFetchesExecutor()->getMaxThreads();
+    size_t reserved_for_priority = static_cast<size_t>(static_cast<double>(getContext()->getServerSettings()[ServerSetting::reserve_fetch_queue_slot_for_sync_replica_ratio]) * static_cast<double>(replicated_fetches_pool_size));
+
+    /// We only allow priority slots in queue, not priority threads, so number of priority slots cannot exceeds number of waiting queue slots
+    reserved_for_priority = std::min(reserved_for_priority, replicated_fetches_pool_size - replicated_fetches_pool_threads);
+
+    /// If the entry has living priority tag, we could use priority slots
+    return entry.hasPriority() ? replicated_fetches_pool_size : replicated_fetches_pool_size - reserved_for_priority;
+
+}
+
 
 bool StorageReplicatedMergeTree::canExecuteFetch(const ReplicatedMergeTreeLogEntry & entry, String & disable_reason) const
 {
@@ -4404,11 +4427,12 @@ bool StorageReplicatedMergeTree::canExecuteFetch(const ReplicatedMergeTreeLogEnt
         return false;
     }
 
-    auto replicated_fetches_pool_size = getContext()->getFetchesExecutor()->getMaxTasksCount();
+    auto fetches_pool_size_limit = getFetchPoolSizeLimit(entry);
     size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundFetchesPoolTask].load(std::memory_order_relaxed);
-    if (busy_threads_in_pool >= replicated_fetches_pool_size)
+
+    if (busy_threads_in_pool >= fetches_pool_size_limit)
     {
-        disable_reason = fmt::format("Not executing fetch of part {} because {} fetches already executing, max {}.", entry.new_part_name, busy_threads_in_pool, replicated_fetches_pool_size);
+        disable_reason = fmt::format("Not executing fetch of part {} because {} fetches already executing, max {}.", entry.new_part_name, busy_threads_in_pool, fetches_pool_size_limit);
         return false;
     }
 
@@ -10665,6 +10689,7 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
     background_operations_assignee.trigger();
 
     std::unordered_set<String> wait_for_ids;
+    LogEntryPriorityTags wait_for_priority_tags;
     std::atomic_bool was_interrupted = false;
 
     Poco::Event target_entry_event;
@@ -10692,8 +10717,7 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
         if (wait_for_ids.empty())
             target_entry_event.set();
     };
-
-    const auto handler = queue.addSubscriber(std::move(callback), wait_for_ids, sync_mode, source_replicas);
+    const auto handler = queue.addSubscriber(std::move(callback), wait_for_ids, wait_for_priority_tags, sync_mode, source_replicas);
 
     QueryStatusPtr process_list_element;
     if (CurrentThread::isInitialized())

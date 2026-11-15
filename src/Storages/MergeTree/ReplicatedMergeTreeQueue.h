@@ -244,7 +244,7 @@ private:
       * Called under the state_mutex.
       */
     bool shouldExecuteLogEntry(
-        const LogEntry & entry,
+        LogEntry & entry,
         String & out_postpone_reason,
         MergeTreeDataMergerMutator & merger_mutator,
         MergeTreeData & data,
@@ -520,7 +520,7 @@ public:
     ActionBlocker pull_log_blocker;
 
     /// Adds a subscriber
-    SubscriberHandler addSubscriber(SubscriberCallBack && callback, std::unordered_set<String> & out_entry_names, SyncReplicaMode sync_mode, std::unordered_set<String> src_replicas);
+    SubscriberHandler addSubscriber(SubscriberCallBack && callback, std::unordered_set<String> & out_entry_names, LogEntryPriorityTags & out_entry_priority_tags, SyncReplicaMode sync_mode, std::unordered_set<String> src_replicas);
 
     void notifySubscribersOnPartialShutdown();
 

@@ -239,6 +239,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_common_pool_size;
     extern const ServerSettingsUInt64 background_distributed_schedule_pool_size;
     extern const ServerSettingsUInt64 background_fetches_pool_size;
+    extern const ServerSettingsFloat background_fetches_concurrency_ratio;
     extern const ServerSettingsFloat background_merges_mutations_concurrency_ratio;
     extern const ServerSettingsString background_merges_mutations_scheduling_policy;
     extern const ServerSettingsUInt64 background_message_broker_schedule_pool_size;
@@ -3017,7 +3018,8 @@ try
             if (global_context->areBackgroundExecutorsInitialized())
             {
                 const auto & new_pool_size = new_server_settings[ServerSetting::background_fetches_pool_size];
-                global_context->getFetchesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
+                const auto & new_ratio = new_server_settings[ServerSetting::background_fetches_concurrency_ratio];
+                global_context->getFetchesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, static_cast<size_t>(static_cast<double>(new_pool_size) * static_cast<double>(new_ratio)));
             }
 
             if (global_context->areBackgroundExecutorsInitialized())
