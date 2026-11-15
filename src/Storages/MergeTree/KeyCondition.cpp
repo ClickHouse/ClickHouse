@@ -2508,23 +2508,45 @@ bool floatValuesMissKeyValues(
     return !castValuesAreTheOnlyMatches<Float64>(*compared_floats, *converted_cast_values, *converted_below, *converted_above);
 }
 
-/// A comparison of a `DateTime` with a `Date32`, also as `Tuple` elements, converts both to a zone-less
-/// `DateTime64(0)`, so it reads the date in the session time zone, not in the zone of the `DateTime`.
+/// The type the comparison with a value of `input_type` converts a constant of `constant_type` to: a `Tuple` element by
+/// element, a pair of date types to their least supertype. A `DateTime` and a `Date32` meet in a zone-less `DateTime64(0)`,
+/// which reads the date in the session time zone, not in the zone of the `DateTime`.
+static DataTypePtr getComparisonTypeOfConstant(const DataTypePtr & input_type, const DataTypePtr & constant_type)
+{
+    const auto input = removeLowCardinalityAndNullable(input_type);
+    const auto constant = removeLowCardinalityAndNullable(constant_type);
+    const auto * input_tuple = typeid_cast<const DataTypeTuple *>(input.get());
+    const auto * constant_tuple = typeid_cast<const DataTypeTuple *>(constant.get());
+
+    DataTypePtr result;
+    if (input_tuple && constant_tuple && input_tuple->getElements().size() == constant_tuple->getElements().size())
+    {
+        DataTypes elements;
+        for (size_t i = 0; i < constant_tuple->getElements().size(); ++i)
+            elements.push_back(getComparisonTypeOfConstant(input_tuple->getElements()[i], constant_tuple->getElements()[i]));
+        result = constant_tuple->hasExplicitNames() ? std::make_shared<DataTypeTuple>(elements, constant_tuple->getElementNames())
+                                                    : std::make_shared<DataTypeTuple>(elements);
+    }
+    else if (isDateOrDate32OrDateTimeOrDateTime64(input) && isDateOrDate32OrDateTimeOrDateTime64(constant))
+    {
+        result = tryGetLeastSupertype(DataTypes{input, constant});
+        if (!result || result->equals(*input) || result->equals(*constant))
+            return constant_type;
+    }
+    else
+        return constant_type;
+
+    return isNullableOrLowCardinalityNullable(constant_type) ? makeNullable(result) : result;
+}
+
 static void convertDateConstantToComparisonSupertype(const DataTypePtr & transform_input_type, ColumnWithTypeAndName & constant)
 {
-    const auto has_date = [](const IDataType & type)
-    { return anyInTypeTree(type, [](const IDataType & node) { return isDateOrDate32OrDateTimeOrDateTime64(node); }); };
-    const auto input_type = removeLowCardinalityAndNullable(transform_input_type);
-    const auto constant_type = removeLowCardinalityAndNullable(constant.type);
-    if (!has_date(*input_type) || !has_date(*constant_type))
+    const auto type = getComparisonTypeOfConstant(transform_input_type, constant.type);
+    if (type->equals(*constant.type))
         return;
 
-    const auto supertype = tryGetLeastSupertype(DataTypes{input_type, constant_type});
-    if (!supertype || supertype->equals(*input_type) || supertype->equals(*constant_type))
-        return;
-
-    constant.column = castColumn(constant, supertype);
-    constant.type = supertype;
+    constant.column = castColumn(constant, type);
+    constant.type = type;
 }
 
 /// Over a type of consecutive integers (the integers, `Date`, `Date32` and `DateTime`), the strict
