@@ -1630,7 +1630,7 @@ private:
         PaddedPODArray<Int8> length_cmp;
         /// Total number of gathered element pairs.
         size_t num_elements = 0;
-        /// The side (0 or 1) of a constant array whose elements contain arrays, or -1. Its elements are not gathered,
+        /// The side (0 or 1) of a constant array with large elements, or -1. Its elements are not gathered,
         /// because each of them can be large and would be copied once per input row: `element_args` of this side
         /// holds the elements of the single row of the constant, and `deferred_positions` the position in it of
         /// every gathered element.
@@ -1710,17 +1710,22 @@ private:
         DataTypePtr nested_type0 = recursiveRemoveLowCardinality(assert_cast<const DataTypeArray &>(*column_type_name0.type).getNestedType());
         DataTypePtr nested_type1 = recursiveRemoveLowCardinality(assert_cast<const DataTypeArray &>(*column_type_name1.type).getNestedType());
 
-        /// An element of a constant that contains arrays is not copied for every input row (see `deferred_side`).
+        /// A large element of a constant is not copied for every input row (see `deferred_side`). Whatever carries
+        /// the payload (a long `FixedString`, a nested array, a `Dynamic` or `Variant` holding an array), the size of
+        /// the elements of the constant decides, because the copy is proportional to it. A constant of small
+        /// elements is gathered as usual, to compare all pairs at once rather than one position at a time.
         /// Both constants have one row, so there is nothing to defer.
-        auto contains_array = [](const DataTypePtr & type)
+        auto has_large_elements = [](const ColumnArray & column_array)
         {
-            return anyInTypeTree(*type, [](const IDataType & t) { return isArray(t) || isMap(t); });
+            static constexpr size_t max_gathered_constant_element_bytes = 64;
+            const auto & elements = column_array.getData();
+            return !elements.empty() && elements.byteSize() > max_gathered_constant_element_bytes * elements.size();
         };
         if (is_const0 != is_const1)
         {
-            if (is_const0 && contains_array(nested_type0))
+            if (is_const0 && has_large_elements(column_array0))
                 gathered.deferred_side = 0;
-            else if (is_const1 && contains_array(nested_type1))
+            else if (is_const1 && has_large_elements(column_array1))
                 gathered.deferred_side = 1;
         }
 
