@@ -7,6 +7,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/NaNUtils.h>
 
+#include <limits>
 #include <numeric>
 #include <base/arithmeticOverflow.h>
 
@@ -427,17 +428,27 @@ private:
         Float64 higher_coef;
     };
 
-    /// The `Float64 -> size_t` position casts below are undefined for a weight sum near
-    /// `UInt64::max`.
-    InterpolationEndpoints NO_SANITIZE_UNDEFINED
-    interpolationEndpoints(const Pair * array, size_t size, Float64 position) const
+    /// A rank as `size_t`, saturated: a weight sum near the maximum of `UInt64` rounds up to 2^64 as `Float64`, which a
+    /// plain conversion cannot represent.
+    static size_t rankFromPosition(Float64 position)
+    {
+        if (!(position > 0))
+            return 0;
+        if (position >= static_cast<Float64>(std::numeric_limits<size_t>::max()))
+            return std::numeric_limits<size_t>::max();
+        return static_cast<size_t>(position);
+    }
+
+    InterpolationEndpoints interpolationEndpoints(const Pair * array, size_t size, Float64 position) const
     requires interpolated
     {
-        size_t lower = static_cast<size_t>(std::floor(position));
-        size_t higher = static_cast<size_t>(std::ceil(position));
+        size_t lower = rankFromPosition(std::floor(position));
+        size_t higher = rankFromPosition(std::ceil(position));
 
-        const auto * lower_it = std::lower_bound(array, array + size, lower + 1, [](const Pair & a, size_t b) { return a.second < b; });
-        const auto * higher_it = std::lower_bound(array, array + size, higher + 1, [](const Pair & a, size_t b) { return a.second < b; });
+        /// The first cumulative weight above the rank, as `a.second < rank + 1` without the addition, which wraps for the
+        /// maximum rank.
+        const auto * lower_it = std::lower_bound(array, array + size, lower, [](const Pair & a, size_t b) { return a.second <= b; });
+        const auto * higher_it = std::lower_bound(array, array + size, higher, [](const Pair & a, size_t b) { return a.second <= b; });
         if (lower_it == array + size)
             lower_it = array + size - 1;
         if (higher_it == array + size)

@@ -336,7 +336,16 @@ void NpyRowInputFormat::readPrefix()
     /// 1 + d1 + d1*d2 + ... + d1*...*d(k-1), one sum term per nesting level.
     {
         size_t elements_per_row = header.shape[0] != 0 ? total_elements / header.shape[0] : total_elements;
-        size_t data_bytes_per_row = elements_per_row * element_size;
+        /// An element takes the memory of the destination column: a `String` adds an offset to its bytes even when empty,
+        /// and a fixed-size value (e.g. `FixedString` padding) takes at least its size.
+        size_t bytes_per_element = element_size;
+        if (isString(nested_type))
+            bytes_per_element += sizeof(UInt64);
+        else if (nested_type->haveMaximumSizeOfValue())
+            bytes_per_element = std::max(bytes_per_element, nested_type->getMaximumSizeOfValueInMemory());
+        size_t data_bytes_per_row = 0;
+        if (common::mulOverflow(elements_per_row, bytes_per_element, data_bytes_per_row))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Npy row size is too large: data byte count overflows");
 
         size_t total_offsets_per_row = 0;
         size_t cumulative_product = 1;
