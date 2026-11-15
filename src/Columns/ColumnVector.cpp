@@ -46,7 +46,6 @@
 
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
-#include <llvm/IR/IRBuilder.h>
 #endif
 
 
@@ -227,28 +226,10 @@ bool ColumnVector<T>::isComparatorCompilable() const
 template <typename T>
 llvm::Value * ColumnVector<T>::compileComparator(llvm::IRBuilderBase & builder, llvm::Value * lhs, llvm::Value * rhs, llvm::Value *) const
 {
-    llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
-
     if constexpr (std::is_integral_v<T>)
-    {
-        // a > b ? 1 : (a < b ? -1 : 0);
-
-        bool is_signed = std::is_signed_v<T>;
-
-        auto * lhs_greater_than_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), 1);
-        auto * lhs_less_than_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), -1);
-        auto * lhs_equals_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), 0);
-
-        auto * lhs_greater_than_rhs = is_signed ? b.CreateICmpSGT(lhs, rhs) : b.CreateICmpUGT(lhs, rhs);
-        auto * lhs_less_than_rhs = is_signed ? b.CreateICmpSLT(lhs, rhs) : b.CreateICmpULT(lhs, rhs);
-        auto * if_lhs_less_than_rhs_result = b.CreateSelect(lhs_less_than_rhs, lhs_less_than_rhs_result, lhs_equals_rhs_result);
-
-        return b.CreateSelect(lhs_greater_than_rhs, lhs_greater_than_rhs_result, if_lhs_less_than_rhs_result);
-    }
+        return compileIntegerComparator(builder, lhs, rhs, std::is_signed_v<T>);
     else
-    {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method compileComparator is not supported for type {}", TypeName<T>);
-    }
 }
 
 #endif
