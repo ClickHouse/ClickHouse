@@ -264,9 +264,17 @@ std::unordered_map<String, UInt64> estimateDistinctValuesFromLowCardinalityDicti
         for (const auto * part : largest_parts)
         {
             /// A part without the column (added by `ALTER`) has only defaults in it.
-            if (!part->getColumns().contains(column.name))
+            const auto part_column = part->getColumns().tryGetByName(column.name);
+            if (!part_column)
                 continue;
-            const auto part_distinct_values = readLowCardinalityDictionarySize(*part, column);
+            /// The part has the dictionary of its own type, which differs from the type of the table until a mutation
+            /// of `ALTER MODIFY COLUMN` rewrites it, and the dictionary of another type has no number for this one.
+            if (!part_column->type->equals(*column.type))
+            {
+                complete = false;
+                break;
+            }
+            const auto part_distinct_values = readLowCardinalityDictionarySize(*part, *part_column);
             if (!part_distinct_values)
             {
                 complete = false;
