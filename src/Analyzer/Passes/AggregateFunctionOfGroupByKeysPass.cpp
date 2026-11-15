@@ -1,10 +1,12 @@
 #include <Analyzer/Passes/AggregateFunctionOfGroupByKeysPass.h>
 
+#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/SortNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
@@ -37,13 +39,30 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<EliminateFunctionVisitor>;
     using Base::Base;
 
-    using GroupByKeysStack = std::vector<QueryTreeNodePtrWithHashSet>;
+    struct GroupByKeys
+    {
+        QueryTreeNodePtrWithHashSet keys;
+        /// Keys that are not in every grouping set, and the subexpressions of all keys. Other keys have default values in the sets
+        /// without them, also if they are functions of `keys`: neither `max(negate(x))` nor `negate(max(x))` may become the key
+        /// `negate(x)`. And `max(x) + y` may not become the key `x + y` if `y` is such a key.
+        QueryTreeNodePtrWithHashIgnoreAliasesSet parts_of_other_keys;
+        /// `WITH FILL` generates different values for a key and for an aggregate function of it. Filters are calculated before that.
+        bool only_in_filters = false;
+    };
+
+    using GroupByKeysStack = std::vector<GroupByKeys>;
 
     bool collecting_output_nodes = true;
 
     void enterImpl(QueryTreeNodePtr & node)
     {
         bool is_filter_root = std::exchange(entering_filter_section, false);
+
+        if (isArrayJoinFunction(node))
+            ++array_join_depth;
+        if (mustStayEqualToOutput(node))
+            ++equal_to_output_depth;
+
         if (!getSettings()[Setting::optimize_aggregators_of_group_by_keys])
             return;
 
@@ -64,6 +83,15 @@ public:
             {
                 if (!filter_root)
                     output_nodes.insert(node.get());
+            }
+            else if (
+                filter_root && group_by_keys_stack.back().only_in_filters && output_nodes.contains(node.get())
+                && hasAggregateFunctionNodes(node) && !containsCorrelatedSubquery(node))
+            {
+                /// An alias shared with an output position, which is not rewritten: rewrite a copy.
+                node = node->clone();
+                if (is_filter_root)
+                    filter_root = node.get();
             }
             else if (filter_root && output_nodes.contains(node.get()))
             {
@@ -95,12 +123,15 @@ public:
         else
         {
             QueryTreeNodePtrWithHashSet group_by_keys;
+            QueryTreeNodePtrWithHashSet keys_of_some_sets;
             bool first_grouping_set = true;
             for (auto & group_key : query_node->getGroupBy().getNodes())
             {
                 /// For grouping sets case collect only keys that are presented in every set.
                 if (auto * list = group_key->as<ListNode>())
                 {
+                    keys_of_some_sets.insert(list->getNodes().begin(), list->getNodes().end());
+
                     if (first_grouping_set)
                     {
                         for (auto & group_elem : list->getNodes())
@@ -123,13 +154,52 @@ public:
                     group_by_keys.insert(group_key);
                 }
             }
-            group_by_keys_stack.push_back(std::move(group_by_keys));
+
+            for (const auto & group_key : group_by_keys)
+                keys_of_some_sets.erase(group_key);
+
+            QueryTreeNodePtrWithHashIgnoreAliasesSet parts_of_other_keys;
+            QueryTreeNodes nodes_to_visit;
+            for (const auto & group_key : keys_of_some_sets)
+                nodes_to_visit.push_back(group_key.node);
+
+            if (!keys_of_some_sets.empty())
+            {
+                for (const auto & group_key : group_by_keys)
+                    for (const auto & child : group_key.node->getChildren())
+                        if (child)
+                            nodes_to_visit.push_back(child);
+            }
+
+            while (!nodes_to_visit.empty())
+            {
+                auto part = std::move(nodes_to_visit.back());
+                nodes_to_visit.pop_back();
+
+                if (!parts_of_other_keys.insert(part).second)
+                    continue;
+
+                for (const auto & child : part->getChildren())
+                    if (child)
+                        nodes_to_visit.push_back(child);
+            }
+
+            const bool has_with_fill = std::ranges::any_of(
+                query_node->getOrderBy().getNodes(),
+                [](const QueryTreeNodePtr & sort_node) { return sort_node->as<SortNode &>().withFill(); });
+
+            group_by_keys_stack.push_back({std::move(group_by_keys), std::move(parts_of_other_keys), has_with_fill});
         }
     }
 
     /// Now we visit all nodes in QueryNode, we should remove group_by_keys from stack.
     void leaveImpl(QueryTreeNodePtr & node)
     {
+        if (isArrayJoinFunction(node))
+            --array_join_depth;
+        if (mustStayEqualToOutput(node))
+            --equal_to_output_depth;
+
         if (!getSettings()[Setting::optimize_aggregators_of_group_by_keys])
             return;
 
@@ -155,7 +225,7 @@ public:
         if (!collecting_output_nodes && node_type == QueryTreeNodeType::FUNCTION)
         {
             auto * function_node = node->as<FunctionNode>();
-            if (aggregationCanBeEliminated(node, group_by_keys_stack.back()))
+            if (array_join_depth == 0 && aggregationCanBeEliminated(node, group_by_keys_stack.back()))
             {
                 /// min(LowCardinality(String)) is String: a filter keeps the bare key for the pushdown,
                 /// an output position casts it back to keep the observable type.
@@ -199,6 +269,24 @@ public:
     }
 
 private:
+
+    static bool isArrayJoinFunction(const QueryTreeNodePtr & node)
+    {
+        const auto * function_node = node->as<FunctionNode>();
+        return function_node && function_node->getFunctionName() == "arrayJoin";
+    }
+
+    /// Whether the function cannot be rewritten only in a filter: `rand(max(x))` in a filter and in the output is the same value,
+    /// and an alias (it is kept in the body of a lambda function) cannot have different definitions.
+    static bool mustStayEqualToOutput(const QueryTreeNodePtr & node)
+    {
+        const auto * function_node = node->as<FunctionNode>();
+        if (!function_node || function_node->isAggregateFunction())
+            return false;
+
+        const auto function = function_node->getFunction();
+        return node->hasAlias() || !function || !function->isDeterministicInScopeOfQuery() || function->isStateful();
+    }
 
     struct NodeWithInfo
     {
@@ -248,9 +336,12 @@ private:
         return adaptor->getFunction()->useDefaultImplementationForLowCardinalityColumns();
     }
 
-    bool aggregationCanBeEliminated(QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & group_by_keys)
+    bool aggregationCanBeEliminated(QueryTreeNodePtr & node, const GroupByKeys & group_by_keys)
     {
-        if (group_by_keys.empty())
+        if (group_by_keys.keys.empty())
+            return false;
+
+        if (group_by_keys.only_in_filters && (!filter_root || equal_to_output_depth != 0))
             return false;
 
         auto * function = node->as<FunctionNode>();
@@ -289,7 +380,9 @@ private:
         if (function_arguments.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a single argument of function '{}' but received {}", function->getFunctionName(), function_arguments.size());
 
-        if (!recursiveRemoveLowCardinality(function->getResultType())->equals(*recursiveRemoveLowCardinality(function_arguments[0]->getResultType())))
+        /// Compare names, because types with a custom name, like `Bool`, are equal to the types without it.
+        if (recursiveRemoveLowCardinality(function->getResultType())->getName()
+            != recursiveRemoveLowCardinality(function_arguments[0]->getResultType())->getName())
             return false;
 
         candidates.push_back({ function_arguments[0], true });
@@ -300,7 +393,14 @@ private:
             auto [candidate, parents_are_only_deterministic] = candidates.back();
             candidates.pop_back();
 
-            bool found = group_by_keys.contains(candidate);
+            if (!group_by_keys.parts_of_other_keys.empty() && group_by_keys.parts_of_other_keys.contains(candidate))
+                return false;
+
+            bool found = group_by_keys.keys.contains(candidate);
+
+            /// For example, `arrayJoin` of a key has several values in a group.
+            if (found && !parents_are_only_deterministic)
+                return false;
 
             switch (candidate->getNodeType())
             {
@@ -337,6 +437,10 @@ private:
     }
 
     GroupByKeysStack group_by_keys_stack;
+
+    /// Equal `arrayJoin` functions are the same one, so `arrayJoin(max(x))` may not become `arrayJoin(x)`.
+    size_t array_join_depth = 0;
+    size_t equal_to_output_depth = 0;
 
     /// Root of the WHERE/PREWHERE/HAVING/QUALIFY section of the current query being visited, if any.
     const IQueryTreeNode * filter_root = nullptr;

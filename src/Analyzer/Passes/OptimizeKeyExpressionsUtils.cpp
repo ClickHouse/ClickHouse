@@ -42,10 +42,14 @@ bool keyArgumentTypesAreAllowed(const ColumnsWithTypeAndName & columns, bool all
 
 }
 
-bool isExpressionFunctionOfKeys(const QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & keys)
+bool isExpressionFunctionOfKeys(
+    const QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & keys, const QueryTreeNodes & aggregation_keys)
 {
+    auto is_aggregation_key = [&](const QueryTreeNodePtr & candidate)
+    { return !aggregation_keys.empty() && isGroupByKeyAfterAggregation(candidate, aggregation_keys); };
+
     auto * function = node->as<FunctionNode>();
-    if (!function || function->getArguments().getNodes().empty())
+    if (!function || function->getArguments().getNodes().empty() || is_aggregation_key(node))
         return false;
 
     /// Aggregate and window functions are allowed as keys (for example in LIMIT BY), but they are
@@ -82,7 +86,7 @@ bool isExpressionFunctionOfKeys(const QueryTreeNodePtr & node, const QueryTreeNo
             {
                 auto * func = candidate->as<FunctionNode>();
                 auto & arguments = func->getArguments().getNodes();
-                if (arguments.empty())
+                if (arguments.empty() || (!found && is_aggregation_key(candidate)))
                     return false;
 
                 if (!found)
@@ -114,7 +118,8 @@ bool isExpressionFunctionOfKeys(const QueryTreeNodePtr & node, const QueryTreeNo
     return found_at_least_one_usage;
 }
 
-void removeKeysThatAreFunctionsOfOtherKeys(QueryTreeNodes & keys)
+void removeKeysThatAreFunctionsOfOtherKeys(
+    QueryTreeNodes & keys, const QueryTreeNodes & aggregation_keys, const QueryTreeNodePtrWithHashIgnoreAliasesSet & keys_to_keep)
 {
     QueryTreeNodePtrWithHashSet key_set(keys.begin(), keys.end());
 
@@ -122,7 +127,7 @@ void removeKeysThatAreFunctionsOfOtherKeys(QueryTreeNodes & keys)
     new_keys.reserve(keys.size());
     for (auto & key : keys)
     {
-        if (!isExpressionFunctionOfKeys(key, key_set))
+        if ((!keys_to_keep.empty() && keys_to_keep.contains(key)) || !isExpressionFunctionOfKeys(key, key_set, aggregation_keys))
             new_keys.push_back(key);
     }
 
@@ -176,6 +181,33 @@ QueryTreeNodes unwrapInjectiveFunctionsInKeys(
     }
 
     return new_keys;
+}
+
+QueryTreeNodePtrWithHashIgnoreAliasesSet getGroupingFunctionArguments(const QueryNode & query_node)
+{
+    QueryTreeNodePtrWithHashIgnoreAliasesSet arguments;
+    QueryTreeNodes nodes_to_visit;
+    for (const auto & clause : query_node.getChildren())
+        if (clause != query_node.getJoinTreeNode())
+            nodes_to_visit.push_back(clause);
+
+    while (!nodes_to_visit.empty())
+    {
+        auto node = std::move(nodes_to_visit.back());
+        nodes_to_visit.pop_back();
+
+        if (!node || node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION)
+            continue;
+
+        /// The name after `GroupingFunctionsResolvePass`, if there are no subtotals.
+        const auto * function_node = node->as<FunctionNode>();
+        if (function_node && function_node->getFunctionName() == "__groupingOrdinary")
+            arguments.insert(function_node->getArguments().begin(), function_node->getArguments().end());
+
+        nodes_to_visit.insert(nodes_to_visit.end(), node->getChildren().begin(), node->getChildren().end());
+    }
+
+    return arguments;
 }
 
 QueryTreeNodes getGroupByKeys(const QueryNode & query_node)
