@@ -139,6 +139,13 @@ process_library() {
 
         echo -e "$LIB_NAME\t$LICENSE_TYPE\t$RELATIVE_PATH"
     fi
+
+    # Some libraries keep the licenses of the components they bundle (e.g. `rapidhash` in `zxc`)
+    # in a separate file next to the main license; list it as well so that these notices are not lost.
+    if [ -f "${LIB}/THIRD_PARTY_NOTICES" ]
+    then
+        echo -e "$LIB_NAME\tThird-party notices\t$(to_relative_path "${LIB}/THIRD_PARTY_NOTICES")"
+    fi
 }
 
 # Function to process a single Rust crate

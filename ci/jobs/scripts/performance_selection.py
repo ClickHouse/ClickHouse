@@ -4,6 +4,8 @@ import difflib
 import hashlib
 import json
 import re
+import subprocess
+import urllib.error
 import urllib.parse
 import urllib.request
 from collections import defaultdict
@@ -74,8 +76,6 @@ def full_suite_reason(info, build_type):
         return "Requested by ci-force-all"
     # Missing inputs fail in `select`, not in the pre-hook that starts the whole workflow.
     changed = [f.removeprefix("./") for f in info.get_changed_files() or []]
-    # `PerformanceSelection.source` reads every changed file at two revisions through the GitHub API, in every
-    # shard, so a wider change exhausts the API rate limit and no test runs at all.
     if len(changed) > MAX_SELECTION_CHANGED_FILES:
         return f"Too many changed files for test selection: {len(changed)} > {MAX_SELECTION_CHANGED_FILES}"
     # Labels and automatic full-suite requests use ARM; AMD keeps query coverage selection.
@@ -263,29 +263,57 @@ def coverage_identity(manifest):
     )
 
 
+def coverage_published(manifest):
+    if manifest.get("publication_version") == 1:
+        return manifest.get("coverage_published") is True
+    if "publication_version" in manifest:
+        raise ValueError("Unsupported performance coverage publication version")
+    return manifest.get("complete") is True
+
+
 def coverage_cohort(jobs, read_manifest):
-    """Take the freshest complete set of compatible shards, including retries."""
+    """Take the freshest published set of compatible shards, including failures."""
     groups, seen_urls, superseded = defaultdict(dict), set(), []
     for job in sorted(
-        jobs, key=lambda row: timestamp(row["check_start_time"]), reverse=True
+        jobs,
+        key=lambda row: (
+            timestamp(row["check_start_time"]),
+            row.get("check_status", "success") == "success",
+        ),
+        reverse=True,
     ):
         url = manifest_url(job)
         if url in seen_urls:
             continue
         seen_urls.add(url)
-        manifest = read_manifest(url)
+        try:
+            manifest = read_manifest(url)
+        except urllib.error.HTTPError as error:
+            if job.get("check_status", "success") != "success" and error.code in (
+                403,
+                404,
+            ):
+                superseded.append({**job, "reason": "No published coverage manifest"})
+                continue
+            raise
         if (
             manifest["sha"] != job["commit_sha"]
             or manifest["check_name"] != job["check_name"]
         ):
-            raise ValueError("Manifest does not belong to the successful coverage job")
+            raise ValueError("Manifest does not belong to the coverage job")
         if manifest["check_start_time"] != job["check_start_time"]:
             # Re-running a job at the same SHA replaces its artifact. Never bind
             # the new manifest to an older successful publication in CIDB.
             superseded.append(job)
             continue
-        if not manifest["complete"]:
-            raise ValueError("Successful coverage job has an incomplete manifest")
+        if not coverage_published(manifest):
+            superseded.append({**job, "reason": "Coverage export did not complete"})
+            continue
+        if (
+            job.get("check_status", "success") != "success"
+            and manifest.get("publication_version") != 1
+        ):
+            continue
         plan = manifest["sharding"]
         shard = re.search(r", (\d+)/(\d+)\)$", job["check_name"])
         if (
@@ -313,8 +341,8 @@ def validate_manifests(manifests, cutoff):
         )
     identities, snapshots, tests, assignment = set(), [], {}, {}
     for manifest in manifests:
-        if not manifest["complete"] or manifest["warm_runs"] != 1:
-            raise ValueError("Incomplete coverage or changed repetition policy")
+        if not coverage_published(manifest) or manifest["warm_runs"] != 1:
+            raise ValueError("Unpublished coverage or changed repetition policy")
         plan = manifest["sharding"]
         identities.add(coverage_identity(manifest))
         collected = 0
@@ -322,7 +350,10 @@ def validate_manifests(manifests, cutoff):
             if name in assignment:
                 raise ValueError(f"Duplicate coverage test: {name}")
             assignment[name] = plan["shard"]
-            if state["status"] == "skipped":
+            if state["status"] == "skipped" or (
+                manifest.get("publication_version") == 1
+                and state["status"] in ("failed", "not_run")
+            ):
                 continue
             if state["status"] != "collected":
                 raise ValueError(f"Unfinished coverage test: {name}")
@@ -344,7 +375,13 @@ def validate_manifests(manifests, cutoff):
         != manifests[0]["sharding"]["assignment_sha256"]
     ):
         raise ValueError("Coverage test universe differs from its assignment hash")
-    validate_snapshots(snapshots, cutoff, performance_config(SELECTION_CONFIG))
+    # A shard may have no completed tests. Its exact assignment remains known;
+    # every uncovered XML is mandatory in select, including the entire shard.
+    validate_snapshots(
+        snapshots,
+        cutoff,
+        replace(performance_config(SELECTION_CONFIG), min_exported_tests_per_shard=0),
+    )
     return snapshots, tests
 
 
@@ -359,6 +396,11 @@ def validate_phases(rows, manifests):
             raise ValueError("Duplicate coverage phase")
         actual[key][row["test_name"]] = row
     for manifest in manifests:
+        if (
+            manifest.get("publication_version") == 1
+            and manifest.get("phase_manifest_version") != 1
+        ):
+            raise ValueError("Published performance coverage requires phase checksums")
         if manifest.get("phase_manifest_version") not in (None, 1):
             raise ValueError("Unsupported performance phase manifest version")
         key = manifest["check_start_time"], manifest["check_name"]
@@ -433,10 +475,10 @@ class PerformanceSelection(Targeting):
     def snapshot(self):
         cutoff = self.selection_cutoff()
         jobs = self.rows(f"""
-            SELECT DISTINCT commit_sha, head_ref, check_name, check_start_time, task_url
+            SELECT DISTINCT commit_sha, head_ref, check_name, check_start_time, task_url, check_status
             FROM checks
             WHERE workflow_name = 'NightlyCoverage' AND test_name = ''
-              AND check_name LIKE {sql_string(COVERAGE_CHECK)} AND check_status = 'success'
+              AND check_name LIKE {sql_string(COVERAGE_CHECK)} AND check_status IN ('success', 'failure', 'error')
               AND check_start_time > toDateTime({sql_string(cutoff)}, 'UTC') - INTERVAL 72 HOUR
               AND check_start_time + toIntervalSecond(ceil(check_duration_ms / 1000)) < toDateTime({sql_string(cutoff)}, 'UTC')
             ORDER BY check_start_time DESC FORMAT JSONEachRow
@@ -464,6 +506,12 @@ class PerformanceSelection(Targeting):
             "assignment_sha256": manifests[0]["sharding"]["assignment_sha256"],
             "source_identity": manifests[0]["source_identity"],
             "tests": len(tests),
+            "uncovered_tests": {
+                name: state
+                for manifest in manifests
+                for name, state in manifest["tests"].items()
+                if state["status"] != "collected"
+            },
             "phases": len(rows),
             "phase_identity_checksums": all(
                 m.get("phase_manifest_version") == 1 for m in manifests
@@ -477,24 +525,28 @@ class PerformanceSelection(Targeting):
         }
         return snapshots, tests, manifests[0]["binary_sha"]
 
-    def source(self, revision, path):
-        import requests
+    def fetch_revisions(self, *revisions):
+        """The checkout is shallow: fetch the revisions `source` reads, without history."""
+        subprocess.run(
+            ["git", "fetch", "--depth=1", "--no-tags", "--no-recurse-submodules", "origin", *revisions],
+            check=True,
+        )
 
+    def source(self, revision, path):
         key = revision, path
         if key not in self._sources:
-            try:
-                response = self._github_get(
-                    f"contents/{urllib.parse.quote(path, safe='/')}?ref={revision}",
-                    accept="application/vnd.github.raw+json",
-                )
-            except requests.HTTPError as error:
-                if error.response.status_code != 404:
-                    raise
+            if subprocess.run(["git", "cat-file", "-e", f"{revision}:{path}"], stderr=subprocess.DEVNULL).returncode:
                 # A file added after collection has no source coordinates in
                 # that binary. It is reported as unmapped, never as coverage.
                 self._sources[key] = []
             else:
-                self._sources[key] = response.text.splitlines()
+                self._sources[key] = subprocess.run(
+                    ["git", "show", f"{revision}:{path}"],
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    text=True,
+                    errors="replace",
+                ).stdout.splitlines()
         return self._sources[key]
 
     def select(self, test_files, directory=Path("tests/performance")):
@@ -511,6 +563,7 @@ class PerformanceSelection(Targeting):
         compare = f"compare/{metadata['base']['sha']}...{self.info.sha}"
         base = self._github_get(compare).json()["merge_base_commit"]["sha"]
         diff = self._github_get(compare, accept="application/vnd.github.diff").text
+        self.fetch_revisions(base, binary_sha)
         # Added files have no old text. They are explicitly recorded as unmapped,
         # not attributed to arbitrary nearby code or a fabricated full-suite rule.
         added = {m[1] for m in re.finditer(r"--- /dev/null\n\+\+\+ b/(.+)", diff)}
