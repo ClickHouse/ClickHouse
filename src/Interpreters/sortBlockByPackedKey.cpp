@@ -289,13 +289,14 @@ bool inSortOrder(const IColumn & column, size_t rows, bool descending, bool * st
 
 constexpr size_t max_grouped_order_bits = 18;
 
-/// Whether a column never decreases (never increases if `descending`) within each group of rows equal on the packed
-/// columns: `last` holds the last value per packed key, starting below every value. If `strictly` is set, it is the
-/// result for strictly increasing (decreasing) values; a first value equal to the start counts as a repeat. With
-/// `stop_at_equal`, equal values end the check, which then returns false.
+/// The rows of a column that decrease (increase if `descending`) within each group of rows equal on the packed columns,
+/// counted until there are more than `limit`: `last` holds the last value per packed key, starting below every value.
+/// If `strictly` is set, it is whether no value repeats; a first value equal to the start counts as a repeat. With
+/// `stop_at_equal`, equal values end the count at `limit + 1`.
 template <typename GetBits, bool detect_equal, bool stop_at_equal = false>
-NO_INLINE bool inSortOrderWithinPackedKeys(
-    const std::vector<PackedSortColumn> & packed_columns, size_t total_bits, const char * data, size_t rows, bool descending, bool * strictly)
+NO_INLINE size_t rowsOutOfOrderWithinPackedKeys(
+    const std::vector<PackedSortColumn> & packed_columns, size_t total_bits, const char * data, size_t rows, bool descending,
+    size_t limit, bool * strictly)
 {
     using Bits = OrderedBits<GetBits>;
     PaddedPODArray<Bits> last;
@@ -305,6 +306,7 @@ NO_INLINE bool inSortOrderWithinPackedKeys(
     size_t positions[chunk];
     UInt64 keys[chunk];
     UInt8 any_equal = 0;
+    size_t out_of_order = 0;
     for (size_t begin = 0; begin < rows; begin += chunk)
     {
         const size_t size = std::min(chunk, rows - begin);
@@ -316,63 +318,51 @@ NO_INLINE bool inSortOrderWithinPackedKeys(
         for (const auto & column : packed_columns)
             column.append_at(column, keys, positions, size);
 
-        UInt8 out_of_order = 0;
         for (size_t j = 0; j < size; ++j)
         {
             const Bits value = valueAt<GetBits>(data, begin + j);
             Bits & previous = last[keys[j]];
-            out_of_order |= static_cast<UInt8>(descending ? previous < value : value < previous);
+            out_of_order += static_cast<size_t>(descending ? previous < value : value < previous);
             if constexpr (detect_equal)
                 any_equal |= static_cast<UInt8>(value == previous);
             previous = value;
         }
-        if (out_of_order)
-            return false;
+        if (out_of_order > limit)
+            return out_of_order;
         if constexpr (stop_at_equal)
             if (any_equal)
-                return false;
+                return limit + 1;
     }
     if constexpr (detect_equal)
         *strictly = !any_equal;
-    return true;
+    return out_of_order;
 }
 
-bool inSortOrderWithinPackedKeys(
+/// `limit + 1` if the column cannot be checked; `strictly` is then false.
+size_t rowsOutOfOrderWithinPackedKeys(
     const std::vector<PackedSortColumn> & packed_columns, size_t total_bits, const IColumn & column, size_t rows, bool descending,
-    bool * strictly = nullptr)
+    size_t limit, bool * strictly = nullptr, bool stop_at_equal = false)
 {
     const char * data = column.getRawData().data();
-    bool in_order = false;
+    size_t out_of_order = limit + 1;
+    if (strictly != nullptr)
+        *strictly = false;
     callWithPackableOrderedBits(column, [&](auto get_bits)
     {
         using GetBits = decltype(get_bits);
         if constexpr (sizeof(OrderedBits<GetBits>) <= sizeof(UInt64))
         {
-            if (strictly != nullptr)
-                in_order = inSortOrderWithinPackedKeys<GetBits, true>(packed_columns, total_bits, data, rows, descending, strictly);
+            if (strictly == nullptr)
+                out_of_order = rowsOutOfOrderWithinPackedKeys<GetBits, false>(packed_columns, total_bits, data, rows, descending, limit, nullptr);
+            else if (stop_at_equal)
+                out_of_order = rowsOutOfOrderWithinPackedKeys<GetBits, true, true>(packed_columns, total_bits, data, rows, descending, limit, strictly);
             else
-                in_order = inSortOrderWithinPackedKeys<GetBits, false>(packed_columns, total_bits, data, rows, descending, nullptr);
+                out_of_order = rowsOutOfOrderWithinPackedKeys<GetBits, true>(packed_columns, total_bits, data, rows, descending, limit, strictly);
         }
     });
-    if (!in_order && strictly != nullptr)
+    if (out_of_order != 0 && strictly != nullptr)
         *strictly = false;
-    return in_order;
-}
-
-/// Whether a column strictly increases (decreases if `descending`) within each group of rows equal on the packed columns.
-bool strictlyInSortOrderWithinPackedKeys(
-    const std::vector<PackedSortColumn> & packed_columns, size_t total_bits, const IColumn & column, size_t rows, bool descending)
-{
-    const char * data = column.getRawData().data();
-    bool in_order = false;
-    bool strictly = false;
-    callWithPackableOrderedBits(column, [&](auto get_bits)
-    {
-        using GetBits = decltype(get_bits);
-        if constexpr (sizeof(OrderedBits<GetBits>) <= sizeof(UInt64))
-            in_order = inSortOrderWithinPackedKeys<GetBits, true, true>(packed_columns, total_bits, data, rows, descending, &strictly);
-    });
-    return in_order && strictly;
+    return out_of_order;
 }
 
 constexpr size_t max_rank_bits = 16;
@@ -916,6 +906,8 @@ size_t trySortByPackedKey(
     size_t sorted_entries = 0;
     size_t total_bits = 0;
     const size_t index_bits = std::bit_width(rows - 1);
+    /// Up to this many rows out of order, the column sort of values that are otherwise in order beats the packed sort.
+    const size_t max_rows_out_of_order = rows / 8;
     bool last_column_in_order = false;
     /// The last column is in the reverse order within each range of rows equal on the packed columns.
     bool last_column_reversed = false;
@@ -974,6 +966,7 @@ size_t trySortByPackedKey(
 
         /// So does a middle column whose values strictly increase or decrease within each group of rows equal on the packed
         /// columns, such as time series rows in arrival order; it is checked if spread rows show a trend through the block.
+        /// One with a few rows out of that order is left to the column sort where it compares values.
         if (i != first_non_const && i != last_non_const && !need_equal_ranges && total_bits > 0
             && total_bits <= max_grouped_order_bits && (size_t(1) << total_bits) <= rows)
         {
@@ -981,11 +974,19 @@ size_t trySortByPackedKey(
             {
                 /// The direction of the trend is the order within the groups, if any.
                 const bool trend_in_order = (trend > 0) != descending;
-                if (strictlyInSortOrderWithinPackedKeys(
-                        packed_columns, total_bits, *column.column, rows, trend_in_order ? descending : !descending))
+                bool strictly = false;
+                const size_t out_of_order = rowsOutOfOrderWithinPackedKeys(
+                    packed_columns, total_bits, *column.column, rows, trend_in_order ? descending : !descending,
+                    max_rows_out_of_order, &strictly, /*stop_at_equal=*/ true);
+                if (out_of_order == 0 && strictly)
                 {
                     (trend_in_order ? last_column_in_order : last_column_reversed) = true;
                     sorted_entries = columns.size();
+                    break;
+                }
+                if (out_of_order <= max_rows_out_of_order && (!stable || descending))
+                {
+                    keep_ties_in_order = true;
                     break;
                 }
             }
@@ -1022,26 +1023,45 @@ size_t trySortByPackedKey(
                 && packedColumnsRepeatRarely(packed_columns, rows))
                 break;
 
-            /// A last column in order within each group of equal packed keys (time series in arrival order) stays in order too.
-            if (total_bits > 0 && total_bits <= max_grouped_order_bits && (size_t(1) << total_bits) <= rows && !need_equal_ranges
-                && inSortOrderWithinPackedKeys(packed_columns, total_bits, *column.column, rows, descending))
+            if (total_bits > 0 && total_bits <= max_grouped_order_bits && (size_t(1) << total_bits) <= rows)
             {
-                last_column_in_order = true;
-                sorted_entries = columns.size();
-                break;
-            }
+                /// Where the column sort compares the values, the rows out of order within each group of equal packed keys
+                /// are counted in the direction of the trend through the block, if any.
+                const int trend = (!stable || descending) ? sampledTrend(*column.column, rows) : 0;
+                const bool trend_in_order = (trend > 0) != descending;
+                const size_t in_order_limit = trend != 0 && trend_in_order ? max_rows_out_of_order : 0;
+                const size_t reversed_limit = trend != 0 && !trend_in_order ? max_rows_out_of_order : 0;
 
-            /// Nor is a last column in the reverse order within each such group, which is reversed as through the whole block.
-            if (total_bits > 0 && total_bits <= max_grouped_order_bits && (size_t(1) << total_bits) <= rows
-                && inSortOrderWithinPackedKeys(packed_columns, total_bits, *column.column, rows, !descending, stable ? &strictly : nullptr))
-            {
-                if (!need_equal_ranges)
+                /// A last column in order within each such group (time series in arrival order) stays in order too.
+                const size_t out_of_order
+                    = rowsOutOfOrderWithinPackedKeys(packed_columns, total_bits, *column.column, rows, descending, in_order_limit);
+                if (out_of_order == 0 && !need_equal_ranges)
                 {
-                    last_column_reversed = true;
-                    keep_equal_values_in_order = stable && !strictly;
+                    last_column_in_order = true;
                     sorted_entries = columns.size();
+                    break;
                 }
-                break;
+
+                /// Nor is a last column in the reverse order within each such group, which is reversed as through the whole block.
+                const size_t out_of_reverse_order = rowsOutOfOrderWithinPackedKeys(
+                    packed_columns, total_bits, *column.column, rows, !descending, reversed_limit, stable ? &strictly : nullptr);
+                if (out_of_reverse_order == 0)
+                {
+                    if (!need_equal_ranges)
+                    {
+                        last_column_reversed = true;
+                        keep_equal_values_in_order = stable && !strictly;
+                        sorted_entries = columns.size();
+                    }
+                    break;
+                }
+
+                /// Nor is one with a few rows out of that order (late rows of time series): the column sort is fast on it.
+                if (trend != 0 && (trend_in_order ? out_of_order : out_of_reverse_order) <= max_rows_out_of_order)
+                {
+                    keep_ties_in_order = true;
+                    break;
+                }
             }
         }
 

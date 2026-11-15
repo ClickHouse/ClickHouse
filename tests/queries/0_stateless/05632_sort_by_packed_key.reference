@@ -69,11 +69,16 @@ cat, uh, jit DESC, wide	1
 cat, jlate DESC, wide	1
 cat, tj DESC, wide	1
 uid, jit DESC, wide	1
+cat, late1 DESC	1
+cat, jlate DESC	1
+small, jlate DESC	1
+cat, jlate, wide	1
 cat, tj DESC	1
 small, tj DESC	1
 b, inc DESC	1
 cat, inc DESC	1
 b, uinc DESC	1
+cat, tjlate DESC	1
 INSERT uid, ts	1
 INSERT uid, cat	1
 INSERT uh, ts	1
@@ -132,4 +137,8 @@ INSERT cat, tj DESC, wide	1
 INSERT cat, jlate DESC, wide	1
 INSERT uid, jit DESC, wide	1
 INSERT cat, uh, jit DESC, wide	1
+INSERT cat, jlate DESC	1
+INSERT small, jlate DESC	1
+INSERT cat, tjlate DESC	1
+INSERT cat, late1 DESC	1
 DISTINCT cat, uh	1
