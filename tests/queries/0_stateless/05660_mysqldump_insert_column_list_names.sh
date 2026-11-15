@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# The column list of a MySQL dump `INSERT` can use double-quoted names (mysqldump --compatible=ansi), span several lines
-# or differ in case from `CREATE TABLE`. The values must still be read into the right columns.
+# The column list of a MySQL dump `INSERT` can use double-quoted names (mysqldump --compatible=ansi), span several lines,
+# differ in case from `CREATE TABLE` (also for non-ASCII names) or escape a quote by doubling it. The values must still be
+# read into the right columns, and a name not in `CREATE TABLE` must follow input_format_skip_unknown_fields.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -23,3 +24,21 @@ ${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}', MySQLDump) ORDER
 
 printf 'INSERT INTO "t1" ("id", "b") VALUES (1,100),(2,200);\n' > "${DATA_FILE}"
 ${CLICKHOUSE_LOCAL} --query "DESC file('${DATA_FILE}', MySQLDump)"
+
+printf 'CREATE TABLE t1 (id int NOT NULL, `\xc3\x84` int DEFAULT NULL);\nINSERT INTO t1 (`\xc3\xa4`, id) VALUES (100,1),(200,2);\n' > "${DATA_FILE}"
+${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}', MySQLDump) ORDER BY id"
+
+printf 'CREATE TABLE t1 (id int NOT NULL, b int DEFAULT NULL);\nINSERT INTO t1 (id, c) VALUES (1,100),(2,200);\n' > "${DATA_FILE}"
+${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}', MySQLDump) SETTINGS input_format_skip_unknown_fields = 0" 2>&1 | grep -q -F "INCORRECT_DATA" && echo "unknown field rejected"
+
+printf 'CREATE TABLE "t1" ("a""b" int NOT NULL, "c" int DEFAULT NULL);\nINSERT INTO "t1" ("c", "a""b") VALUES (100,1),(200,2);\n' > "${DATA_FILE}"
+${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}', MySQLDump) ORDER BY ALL"
+
+printf 'CREATE TABLE `t1` (`a``b` int NOT NULL, c int DEFAULT NULL);\nINSERT INTO `t1` (c, `a``b`) VALUES (100,1),(200,2);\n' > "${DATA_FILE}"
+${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}', MySQLDump) ORDER BY ALL"
+
+printf 'INSERT INTO "t1" ("a""b", "c") VALUES (1,100),(2,200);\n' > "${DATA_FILE}"
+${CLICKHOUSE_LOCAL} --query "DESC file('${DATA_FILE}', MySQLDump)"
+
+printf 'CREATE TABLE "t0" ("x" int);\nINSERT INTO "t0" VALUES (5);\nCREATE TABLE "t1" ("id" int NOT NULL, "b" int DEFAULT NULL);\nINSERT INTO "t1" ("b", "id") VALUES (100,1),(200,2);\n' > "${DATA_FILE}"
+${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}', MySQLDump) ORDER BY id SETTINGS input_format_mysql_dump_table_name = 't1'"

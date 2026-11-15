@@ -23,6 +23,7 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Storages/IStorage.h>
 
+#include <Poco/UTF8String.h>
 #include <boost/algorithm/string.hpp>
 #include <base/find_symbols.h>
 
@@ -65,7 +66,9 @@ static String readTableName(ReadBuffer & in)
 
     String table_name;
     if (*in.position() == '`')
-        readBackQuotedString(table_name, in);
+        readBackQuotedStringWithSQLStyle(table_name, in);
+    else if (*in.position() == '"')
+        readDoubleQuotedStringWithSQLStyle(table_name, in);
     else
         readStringUntilWhitespace(table_name, in);
     return table_name;
@@ -299,9 +302,9 @@ static void tryReadColumnNames(ReadBuffer & in, Names * column_names)
 
         String name;
         if (!in.eof() && *in.position() == '`')
-            readBackQuotedString(name, in);
+            readBackQuotedStringWithSQLStyle(name, in);
         else if (!in.eof() && *in.position() == '"')
-            readDoubleQuotedString(name, in);
+            readDoubleQuotedStringWithSQLStyle(name, in);
         else
             readUnquotedColumnName(name, in);
 
@@ -460,15 +463,14 @@ static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name
     if (insert_column_names.empty())
         return;
 
-    /// MySQL column names are case-insensitive, so take the spelling from CREATE. If a name is not in CREATE, keep the CREATE order.
+    /// MySQL column names are case-insensitive, so take the spelling from CREATE. A name not in CREATE stays as is.
     if (!structure_from_create.empty())
     {
         for (auto & name : insert_column_names)
         {
-            auto it = std::ranges::find_if(column_names, [&](const String & create_name) { return boost::iequals(create_name, name); });
-            if (it == column_names.end())
-                return;
-            name = *it;
+            auto it = std::ranges::find_if(column_names, [&](const String & create_name) { return Poco::UTF8::icompare(create_name, name) == 0; });
+            if (it != column_names.end())
+                name = *it;
         }
     }
 
