@@ -6,13 +6,19 @@ keywords: ['可刷新materialized view', '刷新', 'materialized views', '加速
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 [可刷新materialized view](/zh/reference/statements/create/view#refreshable-materialized-view)在概念上类似于传统 OLTP 数据库中的 materialized view：它会存储指定查询的结果，以便快速检索，并减少重复执行高资源消耗查询的需要。与 ClickHouse 的[增量materialized view](/zh/concepts/features/materialized-views/incremental-materialized-view)不同，这类视图需要定期针对完整数据集执行查询，并将结果存储在目标表中供后续查询。从理论上讲，这个结果集应小于原始数据集，从而让后续查询执行得更快。
 
 下图说明了可刷新materialized view的工作方式：
 
-<Image img="/images/materialized-view/refreshable-materialized-view-diagram.webp" size="lg" alt="可刷新materialized view示意图" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![可刷新materialized view示意图](/images/materialized-view/refreshable-materialized-view-diagram.webp)
+
+</Frame>
+
+</div>
 
 你也可以观看以下视频：
 

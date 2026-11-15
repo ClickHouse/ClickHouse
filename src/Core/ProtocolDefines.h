@@ -241,6 +241,8 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIO
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT = 19;
 /// First query-plan serialization version that knows the validation-only hierarchical-merge setting.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HIERARCHICAL_MERGE_VALIDATION = 21;
+/// First global query-plan version that writes version 2 of `Distinct` and `PreDistinct`, adding the limit hint.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_DISTINCT_LIMIT_HINT = 21;
 /// First global query-plan version that writes version 1 of `ReadFromMergeTree`, which carries the
 /// `allow_query_condition_cache` flag bit. A read whose query-condition cache was disabled for
 /// correctness cannot be shipped to a peer below this version: the peer would ignore the bit and

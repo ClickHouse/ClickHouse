@@ -6,8 +6,6 @@ keywords: ['aws', 'azure', 'gcp', 'google cloud', 'マーケットプレイス',
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickHouse Cloud は、AWS、GCP、Azure のマーケットプレイスから申し込むことができます。これにより、ClickHouse Cloud の料金を現在ご利用中のクラウドプロバイダーの請求にまとめて支払えます。
 
 マーケットプレイス経由では、従量課金制 (PAYG) を利用することも、ClickHouse Cloud のコミットメント契約を結ぶこともできます。請求はクラウドプロバイダーによって行われ、すべてのクラウドサービスに対する請求書を 1 つにまとめて受け取れます。
@@ -44,7 +42,15 @@ ClickHouse Cloud コンソールの左下のメニューから組織を切り替
 
 クラウドプロバイダーのマーケットプレイス経由で ClickHouse Cloud に登録する必要があります。マーケットプレイスでの登録を完了し、ClickHouse Cloud にリダイレクトされると、既存の ClickHouse Cloud 組織 をマーケットプレイス請求にリンクするオプションが表示されます。それ以降は、既存のリソースがマーケットプレイス経由で請求されるようになります。
 
-<Image img="/images/cloud/manage/billing/marketplace/marketplace_signup_and_org_linking.webp" size="md" alt="マーケットプレイス登録と 組織 のリンク" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![マーケットプレイス登録と 組織 のリンク](/images/cloud/manage/billing/marketplace/marketplace_signup_and_org_linking.webp)
+
+</Frame>
+
+</div>
 
 組織 の Billing ページで、請求が実際にマーケットプレイスにリンクされていることを確認できます。問題が発生した場合は、[ClickHouse Cloud Support](https://clickhouse.com/support/program) までお問い合わせください。
 

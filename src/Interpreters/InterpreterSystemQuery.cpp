@@ -3546,15 +3546,19 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM);
             break;
         }
-        /// The parser cases of the failpoint statements and of SYSTEM SET COVERAGE TEST never read an
-        /// ON CLUSTER clause, so those cluster spellings do not parse and reach no host. UNKNOWN and
-        /// END are not statements.
+        /// The parser cases of the failpoint statements, of SYSTEM SET COVERAGE TEST and of the Amber
+        /// statements never read an ON CLUSTER clause, so those cluster spellings do not parse and reach
+        /// no host. UNKNOWN and END are not statements.
         case Type::ENABLE_FAILPOINT:
         case Type::WAIT_FAILPOINT:
         case Type::NOTIFY_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::DISABLE_ALL_FAILPOINTS:
         case Type::SET_COVERAGE_TEST:
+        case Type::DROP_AMBER_NODE:
+        case Type::ALLOCATE_AMBER_VOLUME:
+        case Type::CREATE_AMBER_VOLUME:
+        case Type::DROP_AMBER_VOLUME:
         case Type::UNKNOWN:
         case Type::END: break;
     }

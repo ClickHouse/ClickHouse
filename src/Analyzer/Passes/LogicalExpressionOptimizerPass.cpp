@@ -399,7 +399,7 @@ struct ComparisonFilterInfo
     ComparisonFunction function;
     QueryTreeNodePtr original_node;          /// Original query tree node of this comparison.
     std::optional<Field> converted_value;    /// Constant converted to the column type.
-    size_t original_index = 0;               /// Position in the original AND argument list (for stable ordering).
+    size_t original_index = 0;               /// Slot in the AND argument list: its own position, or the earliest one of the filters it replaced.
     /// (e.g. for an Int32 column, `i < 3.5` is internally rewritten to `i <= 3`, with
     /// `function = LESS_OR_EQUALS` and `converted_value = 3`).  In that case `original_node`
     /// still references the old literal (3.5) and any later rebuild must substitute it with
@@ -942,6 +942,12 @@ static AddComparisonFilterResult addComparisonFilter(
         return result;
     }
 
+    /// A filter that replaces others takes the earliest of their slots, ahead of the operands they may guard.
+    auto take_slot = [&new_filter](const ComparisonFilterInfo & removed)
+    {
+        new_filter.original_index = std::min(new_filter.original_index, removed.original_index);
+    };
+
     /// Step 3: compare against the existing equals/range filters.
     auto & range_filters = filters.range_filters;
     for (size_t i = 0; i < range_filters.size(); ++i)
@@ -950,6 +956,7 @@ static AddComparisonFilterResult addComparisonFilter(
         switch (result)
         {
         case ValueComparisonResult::PRUNE_LEFT:
+            take_slot(range_filters[i]);
             range_filters.erase(range_filters.begin() + static_cast<std::ptrdiff_t>(i));
             --i;
             break;
@@ -978,6 +985,7 @@ static AddComparisonFilterResult addComparisonFilter(
         case ValueComparisonResult::STRENGTHEN_RIGHT:
             new_filter.function = strengthenComparison(new_filter.function);
             rebuildComparisonNode(new_filter, context);
+            take_slot(range_filters[i]);
             range_filters.erase(range_filters.begin() + static_cast<std::ptrdiff_t>(i));
             --i;
             break;
@@ -990,6 +998,12 @@ static AddComparisonFilterResult addComparisonFilter(
 
     auto & not_equals_filters = filters.not_equals_filters;
     Field key = canonicalizeNotEqualsKey(*new_filter.converted_value);
+    auto erase_not_equals = [&](auto first, auto last)
+    {
+        for (auto it = first; it != last; ++it)
+            take_slot(it->second);
+        not_equals_filters.erase(first, last);
+    };
 
     /// notEquals interact only through exact duplicates: one lookup replaces the pairwise scan,
     /// which was quadratic for long `x != c1 AND x != c2 ...` chains.
@@ -1008,7 +1022,7 @@ static AddComparisonFilterResult addComparisonFilter(
         /// `expr = c AND expr != c` is always false; any other `expr != v` is implied.
         if (not_equals_filters.contains(key))
             return AddComparisonFilterResult::ALWAYS_FALSE;
-        not_equals_filters.clear();
+        erase_not_equals(not_equals_filters.begin(), not_equals_filters.end());
     }
     else
     {
@@ -1016,27 +1030,29 @@ static AddComparisonFilterResult addComparisonFilter(
         {
         case ComparisonFunction::LESS:
             /// `expr < c` makes `expr != v` redundant for all v >= c; similar below.
-            not_equals_filters.erase(not_equals_filters.lower_bound(key), not_equals_filters.end());
+            erase_not_equals(not_equals_filters.lower_bound(key), not_equals_filters.end());
             break;
         case ComparisonFunction::LESS_OR_EQUALS:
-            not_equals_filters.erase(not_equals_filters.upper_bound(key), not_equals_filters.end());
+            erase_not_equals(not_equals_filters.upper_bound(key), not_equals_filters.end());
             /// `expr != c AND expr <= c` tightens to `expr < c`.
             if (auto it = not_equals_filters.find(key); it != not_equals_filters.end())
             {
                 new_filter.function = strengthenComparison(new_filter.function);
                 rebuildComparisonNode(new_filter, context);
+                take_slot(it->second);
                 not_equals_filters.erase(it);
             }
             break;
         case ComparisonFunction::GREATER:
-            not_equals_filters.erase(not_equals_filters.begin(), not_equals_filters.upper_bound(key));
+            erase_not_equals(not_equals_filters.begin(), not_equals_filters.upper_bound(key));
             break;
         case ComparisonFunction::GREATER_OR_EQUALS:
-            not_equals_filters.erase(not_equals_filters.begin(), not_equals_filters.lower_bound(key));
+            erase_not_equals(not_equals_filters.begin(), not_equals_filters.lower_bound(key));
             if (auto it = not_equals_filters.find(key); it != not_equals_filters.end())
             {
                 new_filter.function = strengthenComparison(new_filter.function);
                 rebuildComparisonNode(new_filter, context);
+                take_slot(it->second);
                 not_equals_filters.erase(it);
             }
             break;
@@ -1347,10 +1363,10 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
     QueryTreeNodes new_or_arguments;
     bool has_completely_extracted_and_expression = false;
 
-    for (auto & or_argument : or_argument_nodes)
+    for (const auto & original_or_argument : or_argument_nodes)
     {
-        if (auto it = flattened_ands.find(or_argument); it != flattened_ands.end())
-            or_argument = it->second;
+        auto it = flattened_ands.find(original_or_argument);
+        const auto & or_argument = it != flattened_ands.end() ? it->second : original_or_argument;
 
         // Avoid changing the original tree, it might be used later
         const auto & and_node = or_argument->as<FunctionNode &>();
@@ -1842,6 +1858,9 @@ public:
         return result;
     }
 
+    /// Shared nodes (identifier resolve cache) are rewritten once, after their arguments, and every reference reuses the result.
+    std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr> visited_nodes;
+
     /// a conjunct over these can't leave ON, and full_sorting_merge rejects it there
     TableExpressionNodes preserved_join_tables;
     /// the join evaluates an input-less conjunct of ON with its left side
@@ -1896,6 +1915,12 @@ public:
 
     bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
     {
+        if (auto it = visited_nodes.find(child); it != visited_nodes.end())
+        {
+            child = it->second;
+            return false;
+        }
+
         /// a subquery is a separate query, the sides of a join around it do not apply
         if (isQueryOrUnionNode(child))
         {
@@ -1943,9 +1968,11 @@ public:
             auto * function_node = node->as<FunctionNode>();
             if (function_node && function_node->getFunctionName() == "and" && getSettings()[Setting::optimize_and_compare_chain])
                 tryOptimizeAndCompareChain(node);
-            return;
         }
+    }
 
+    void rewriteFunction(QueryTreeNodePtr & node)
+    {
         auto * function_node = node->as<FunctionNode>();
 
         if (!function_node)
@@ -1972,6 +1999,11 @@ public:
 
     void leaveImpl(QueryTreeNodePtr & node)
     {
+        auto original_node = node;
+        if (mode == Mode::OTHER_REWRITES)
+            rewriteFunction(node);
+        visited_nodes.emplace(std::move(original_node), node);
+
         if (mode == Mode::JOIN_ON_AND_COMPARE_CHAIN)
             return;
 
@@ -2524,10 +2556,7 @@ private:
         QueryTreeNodePtrWithHashMap<std::unordered_set<const ConstantNode *>> equal_funcs;
 
         /// Conjuncts already present in the AND, used to keep this optimization idempotent: a derived
-        /// transitive conjunct is appended only if an equal one is not already there. The identifier
-        /// resolve cache can hand the same node to several use sites, and the pass visitor is not
-        /// deduplicating, so a shared AND would otherwise accumulate the same derived conjunct once per
-        /// visit and desync from a singly-referenced copy (e.g. a GROUP BY key matched by formatted name).
+        /// transitive conjunct is appended only if an equal one is not already there.
         /// `indexHint(X)` is not interchangeable with plain `X`: a hint dedupes only hint-destined
         /// derivations, while contradictions and cross-source conjuncts must still materialize.
         QueryTreeNodePtrWithHashSet existing_plain_conjuncts;

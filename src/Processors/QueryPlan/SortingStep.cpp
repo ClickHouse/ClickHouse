@@ -1,5 +1,6 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SettingsQuirks.h>
 #include <DataTypes/TypeTree.h>
 #include <IO/Operators.h>
@@ -1047,7 +1048,7 @@ QueryPlanStepPtr SortingStep::clone() const
     return cloned;
 }
 
-std::vector<size_t> SortingStep::getStepGroups() const
+VectorWithMemoryTracking<size_t> SortingStep::getStepGroups() const
 {
     return { static_cast<size_t>(SortingStage::Scatter),
         static_cast<size_t>(SortingStage::Sort),
