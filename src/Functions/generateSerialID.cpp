@@ -2,6 +2,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/escapeForFileName.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -12,6 +14,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <base/StringViewHash.h>
 
 #include <filesystem>
 
@@ -39,7 +42,7 @@ namespace Setting
 namespace
 {
 
-class FunctionSerial : public IFunction
+class FunctionSerial final : public IFunction
 {
 private:
     ContextPtr context;
@@ -49,15 +52,16 @@ private:
 public:
     static constexpr auto name = "generateSerialID";
 
-    explicit FunctionSerial(ContextPtr context_) : context(context_)
+    explicit FunctionSerial(ContextPtr context_)
+        : context(context_)
     {
-        keeper_path = context->getServerSettings()[ServerSetting::series_keeper_path];
-        max_series = context->getSettingsRef()[Setting::max_autoincrement_series];
+        keeper_path = context_->getServerSettings()[ServerSetting::series_keeper_path];
+        max_series = context_->getSettingsRef()[Setting::max_autoincrement_series];
     }
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextPtr context_)
     {
-        return std::make_shared<FunctionSerial>(std::move(context));
+        return std::make_shared<FunctionSerial>(std::move(context_));
     }
 
     String getName() const override { return name; }
@@ -73,20 +77,9 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args
-        {
-            {"series_identifier", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
-        };
-
-        FunctionArgumentDescriptors optional_args{
-            {"start_value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), &isColumnConst, "const UInt*"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        return std::make_shared<DataTypeUInt64>();
+        return "(String, [const UInt]) -> UInt64";
     }
 
     /// Increments the counter and returns the old counter.
@@ -140,6 +133,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        auto component_guard = Coordination::setCurrentComponent("FunctionSerial::executeImpl");
         auto col_res = ColumnUInt64::create();
         typename ColumnUInt64::Container & vec_to = col_res->getData();
         vec_to.resize(input_rows_count);
@@ -182,7 +176,7 @@ public:
                 UInt64 num_rows = 0;
                 UInt64 old_value = 0;
             };
-            std::unordered_map<StringRef, Series, StringRefHash> series;
+            UnorderedMapWithMemoryTracking<std::string_view, Series, StringViewHash> series;
 
             /// Count the number of rows for each name:
             for (size_t i = 0; i < input_rows_count; ++i)
@@ -190,7 +184,7 @@ public:
 
             /// Update counters in Keeper:
             for (auto & [series_name, values] : series)
-                values.old_value = update(series_name.toString(), start_value, current_series, values.num_rows, keeper);
+                values.old_value = update(std::string{series_name}, start_value, current_series, values.num_rows, keeper);
 
             /// Populate the result:
             for (size_t i = 0; i < input_rows_count; ++i)
@@ -209,7 +203,7 @@ REGISTER_FUNCTION(Serial)
 Generates and returns sequential numbers starting from the previous counter value.
 This function takes a string argument - a series identifier, and an optional starting value.
 The server should be configured with Keeper.
-The series are stored in Keeper nodes under the path, which can be configured in [`series_keeper_path`](/operations/server-configuration-parameters/settings#series_keeper_path) in the server configuration.
+The series are stored in Keeper nodes under the path, which can be configured in [`series_keeper_path`](/reference/settings/server-settings/settings/other#series_keeper_path) in the server configuration.
     )";
     FunctionDocumentation::Syntax syntax = "generateSerialID(series_identifier[, start_value])";
     FunctionDocumentation::Arguments arguments = {
@@ -225,9 +219,9 @@ The series are stored in Keeper nodes under the path, which can be configured in
 SELECT generateSerialID('id1')
         )",
         R"(
-┌─generateSerialID('id1')──┐
-│                        1 │
-└──────────────────────────┘
+┌─generateSerialID('id1')─┐
+│                       0 │
+└─────────────────────────┘
         )"
     },
     {
@@ -236,24 +230,27 @@ SELECT generateSerialID('id1')
 SELECT generateSerialID('id1')
         )",
         R"(
-┌─generateSerialID('id1')──┐
-│                        2 │
-└──────────────────────────┘
+┌─generateSerialID('id1')─┐
+│                       1 │
+└─────────────────────────┘
         )"
     },
     {
         "column call",
         R"(
+CREATE TABLE test_table (CounterID UInt32, UserID UInt32, ver UInt32) ENGINE = Memory;
+INSERT INTO test_table VALUES (1, 3, 3), (1, 1, 1), (1, 2, 2), (1, 5, 5), (1, 4, 4);
+
 SELECT *, generateSerialID('id1') FROM test_table
         )",
         R"(
-┌─CounterID─┬─UserID─┬─ver─┬─generateSerialID('id1')──┐
-│         1 │      3 │   3 │                        3 │
-│         1 │      1 │   1 │                        4 │
-│         1 │      2 │   2 │                        5 │
-│         1 │      5 │   5 │                        6 │
-│         1 │      4 │   4 │                        7 │
-└───────────┴────────┴─────┴──────────────────────────┘
+┌─CounterID─┬─UserID─┬─ver─┬─generateSerialID('id1')─┐
+│         1 │      3 │   3 │                       2 │
+│         1 │      1 │   1 │                       3 │
+│         1 │      2 │   2 │                       4 │
+│         1 │      5 │   5 │                       5 │
+│         1 │      4 │   4 │                       6 │
+└───────────┴────────┴─────┴─────────────────────────┘
         )"
     },
     {
@@ -262,9 +259,9 @@ SELECT *, generateSerialID('id1') FROM test_table
 SELECT generateSerialID('id2', 100)
         )",
         R"(
-┌─generateSerialID('id2', 100)──┐
-│                           100 │
-└───────────────────────────────┘
+┌─generateSerialID('id2', 100)─┐
+│                          100 │
+└──────────────────────────────┘
         )"
     },
     {
@@ -273,15 +270,15 @@ SELECT generateSerialID('id2', 100)
 SELECT generateSerialID('id2', 100)
         )",
         R"(
-┌─generateSerialID('id2', 100)──┐
-│                           101 │
-└───────────────────────────────┘
+┌─generateSerialID('id2', 100)─┐
+│                          101 │
+└──────────────────────────────┘
         )"
 }
 };
 FunctionDocumentation::IntroducedIn introduced_in = {25, 1};
 FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
 factory.registerFunction<FunctionSerial>(documentation);
 }

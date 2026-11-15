@@ -1,0 +1,10 @@
+a correlated EXISTS under ie_join
+14
+86
+483
+483
+an ANY LEFT JOIN filtered on the right side under ie_join,full_sorting_merge
+33
+the strictness under auto and default
+Strictness: SEMI
+Strictness: SEMI

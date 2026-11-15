@@ -1,0 +1,331 @@
+---
+title: '性能模式 (compat_mode)'
+sidebarTitle: '性能模式'
+slug: /chdb/configuration/performance-mode
+description: '以 SQL 为先的性能模式，禁用 Pandas 兼容性带来的额外开销，以实现最大吞吐量'
+keywords: ['chdb', 'datastore', 'performance', 'mode', 'compat', 'sql-first', 'optimization']
+doc_type: 'guide'
+---
+
+DataStore 提供两种兼容模式，用于控制输出是按 pandas 兼容方式组织，还是针对原生 SQL 性能进行优化。
+
+<div id="overview">
+  ## 概览
+</div>
+
+| 模式               | `compat_mode` 值 | 描述                                                                                          |
+| ---------------- | --------------- | ------------------------------------------------------------------------------------------- |
+| **Pandas** (默认)  | `"pandas"`      | 完整兼容 pandas 的行为。保留行顺序，支持 MultiIndex、set&#95;index、dtype 修正、稳定排序的并列值判定，以及 `-If`/`isNaN` 包装器。 |
+| **Performance**  | `"performance"` | 采用 SQL 优先执行。移除所有 pandas 兼容性开销。吞吐量最高，但结果结构可能与 pandas 不一致。                                    |
+
+<div id="what-it-disables">
+  ### 性能模式会禁用哪些功能
+</div>
+
+| 开销                             | Pandas 模式行为                                                    | 性能模式行为                                        |
+| ------------------------------ | -------------------------------------------------------------- | --------------------------------------------- |
+| **保留行顺序**                      | 注入 `_row_id`、`rowNumberInAllBlocks()` 和 `__orig_row_num__` 子查询 | 已禁用——不保证行顺序                                   |
+| **稳定排序的并列值决胜规则**               | 在 ORDER BY 后追加 `rowNumberInAllBlocks() ASC`                    | 已禁用——并列值的顺序可能是任意的                             |
+| **Parquet preserve&#95;order** | `input_format_parquet_preserve_order=1`                        | 已禁用——允许并行读取 Parquet                           |
+| **GroupBy 自动 ORDER BY**        | 添加 `ORDER BY group_key` (pandas 默认为 `sort=True`)               | 已禁用——返回的分组顺序可能是任意的                            |
+| **GroupBy dropna WHERE**       | 添加 `WHERE key IS NOT NULL` (pandas 默认为 `dropna=True`)          | 已禁用——包含 NULL 分组                               |
+| **GroupBy set&#95;index**      | 将分组键设为索引                                                       | 已禁用——分组键保留为列                                  |
+| **MultiIndex 列**               | `agg({'col': ['sum','mean']})` 返回 MultiIndex 列                 | 已禁用——使用扁平列名 (`col_sum`、`col_mean`)            |
+| **`-If`/`isNaN` wrapper**      | 为 skipna 使用 `sumIf(col, NOT isNaN(col))`                       | 已禁用——直接使用 `sum(col)` (ClickHouse 原生会跳过 NULL)  |
+| **对 count 使用 `toInt64`**       | 使用 `toInt64(count())` 以匹配 pandas int64                         | 已禁用——返回原生 SQL Dtype                           |
+| **对全为 NaN 的求和使用 `fillna(0)`**  | 全为 NaN 时，求和结果返回 0 (pandas 行为)                                  | 已禁用——返回 NULL                                  |
+| **Dtype 修正**                   | `abs()` unsigned→signed 等                                      | 已禁用——原生 SQL Dtype                             |
+| **索引保留**                       | SQL 执行后恢复原始索引                                                  | 已禁用                                           |
+| **`first()`/`last()`**         | `argMin/argMax(col, rowNumberInAllBlocks())`                   | `any(col)` / `anyLast(col)`——更快，但具有非确定性       |
+| **单 SQL 聚合**                   | ColumnExpr groupby 会物化中间 DataFrame                             | 将 `LazyGroupByAgg` 注入 lazy 操作链——生成单条 SQL 查询   |
+
+***
+
+<div id="enabling">
+  ## 启用性能模式
+</div>
+
+<div id="using-config">
+  ### 使用配置对象
+</div>
+
+```python
+from chdb.datastore.config import config
+
+# Enable performance mode
+config.use_performance_mode()
+
+# Back to pandas compatibility
+config.use_pandas_compat()
+
+# Check current mode
+print(config.compat_mode)  # 'pandas' or 'performance'
+```
+
+<div id="using-functions">
+  ### 使用模块级函数
+</div>
+
+```python
+from chdb.datastore.config import set_compat_mode, CompatMode, is_performance_mode
+
+# Enable performance mode
+set_compat_mode(CompatMode.PERFORMANCE)
+
+# Check
+print(is_performance_mode())  # True
+
+# Back to default
+set_compat_mode(CompatMode.PANDAS)
+```
+
+<div id="using-imports">
+  ### 使用便捷导入方式
+</div>
+
+```python
+from chdb import use_performance_mode, use_pandas_compat
+
+use_performance_mode()
+# ... high-performance operations ...
+use_pandas_compat()
+```
+
+<Note>
+  启用性能模式后，执行引擎会自动设为 `chdb`。您无需单独调用 `config.use_chdb()`。
+</Note>
+
+***
+
+<div id="when-to-use">
+  ## 何时使用性能模式
+</div>
+
+**在以下情况下使用性能模式：**
+
+* 处理大型数据集 (数十万到数百万行)
+* 运行以聚合为主的工作负载 (groupby、sum、mean、count)
+* 行顺序并不重要 (例如聚合结果、报表、仪表盘)
+* 你希望获得最高的 SQL 吞吐量和尽可能低的额外开销
+* 你关心内存占用 (并行读取 Parquet，无中间 DataFrames)
+
+**在以下情况下应继续使用 pandas 模式：**
+
+* 你需要完全一致的 pandas 行为 (行顺序、MultiIndex、dtypes)
+* 你依赖 `first()`/`last()` 返回真正的第一行/最后一行
+* 你使用依赖行顺序的 `shift()`、`diff()`、`cumsum()`
+* 你在编写测试，将 DataStore 的输出与 pandas 进行比较
+
+***
+
+<div id="behavior-differences">
+  ## 行为差异
+</div>
+
+<div id="row-order">
+  ### 行顺序
+</div>
+
+在性能模式下，任何操作的行顺序都**无法保证**。这包括：
+
+* 过滤器结果
+* GroupBy 聚合结果
+* 未显式调用 `sort_values()` 时的 `head()` / `tail()`
+* `first()` / `last()` 聚合
+
+如果需要有序结果，请显式添加 `sort_values()`：
+
+```python
+config.use_performance_mode()
+
+ds = pd.read_csv("data.csv")
+
+# Unordered (fast)
+result = ds.groupby("region")["revenue"].sum()
+
+# Ordered (still fast, just adds ORDER BY)
+result = ds.groupby("region")["revenue"].sum().sort_values()
+```
+
+<div id="groupby-results">
+  ### GroupBy 结果
+</div>
+
+| 方面                 | Pandas 模式              | 性能模式                        |
+| ------------------ | ---------------------- | --------------------------- |
+| 分组键所在位置            | 索引 (通过 `set_index`)    | 普通列                         |
+| 分组顺序               | 默认按键排序                 | 任意顺序                        |
+| NULL 分组            | 排除 (默认 `dropna=True`)  | 包含                          |
+| 列名格式               | 多重聚合时使用 MultiIndex     | 扁平名称 (`col_func`)           |
+| `first()`/`last()` | 确定性 (按行顺序)             | 非确定性 (`any()`/`anyLast()`)  |
+
+<div id="aggregation">
+  ### 聚合
+</div>
+
+```python
+config.use_performance_mode()
+
+# Sum of all-NaN group returns NULL (not 0)
+# Count returns native uint64 (not forced int64)
+# No -If wrappers: sum() instead of sumIf()
+result = ds.groupby("cat")["val"].sum()
+```
+
+<div id="single-sql">
+  ### 单条 SQL 执行
+</div>
+
+在性能模式下，`ColumnExpr` 的 groupby 聚合 (例如 `ds[condition].groupby('col')['val'].sum()`) 会作为**单条 SQL 查询**执行，而不是像 pandas 模式那样分两步执行：
+
+```python
+config.use_performance_mode()
+
+# Pandas mode: two SQL queries (filter → materialize → groupby)
+# Performance mode: one SQL query (WHERE + GROUP BY in same query)
+result = ds[ds["rating"] > 3.5].groupby("category")["revenue"].sum()
+
+# Generated SQL (single query):
+# SELECT category, sum(revenue) FROM data WHERE rating > 3.5 GROUP BY category
+```
+
+这避免了中间 DataFrame 的物化过程，并可显著减少内存占用和执行时间。
+
+***
+
+<div id="vs-execution-engine">
+  ## 与执行引擎的对比
+</div>
+
+性能模式 (`compat_mode`) 和执行引擎 (`execution_engine`) 是**相互独立的配置维度**：
+
+| 配置项                | 控制内容                        | 取值                       |
+| ------------------ | --------------------------- | ------------------------ |
+| `execution_engine` | **由哪个引擎**执行计算               | `auto`, `chdb`, `pandas` |
+| `compat_mode`      | **是否**为实现 Pandas 兼容性而调整输出形态 | `pandas`, `performance`  |
+
+将 `compat_mode='performance'` 设为性能模式时，`execution_engine` 也会自动设为 `chdb`，因为性能模式是专为 SQL 执行设计的。
+
+```python
+from chdb.datastore.config import config
+
+# These are independent
+config.use_chdb()              # Force chDB engine, keep pandas compat
+config.use_performance_mode()  # Force chDB + remove pandas overhead
+```
+
+***
+
+<div id="testing">
+  ## 在性能模式下测试
+</div>
+
+为性能模式编写测试时，结果的行顺序和结构格式可能与 pandas 不同。请使用以下策略：
+
+<div id="sort-then-compare">
+  ### 排序后比较 (聚合、过滤)
+</div>
+
+```python
+# Sort both sides by the same columns before comparing
+ds_result = ds.groupby("cat")["val"].sum()
+pd_result = pd_df.groupby("cat")["val"].sum()
+
+ds_sorted = ds_result.sort_index()
+pd_sorted = pd_result.sort_index()
+np.testing.assert_array_equal(ds_sorted.values, pd_sorted.values)
+```
+
+<div id="value-range-check">
+  ### 值域检查 (首项/末项)
+</div>
+
+```python
+# first() with any() returns an arbitrary element from the group
+result = ds.groupby("cat")["val"].first()
+for group_key in groups:
+    assert result.loc[group_key] in group_values[group_key]
+```
+
+<div id="schema-and-count">
+  ### schema 与计数 (不带 ORDER BY 的 LIMIT)
+</div>
+
+```python
+# head() without sort_values: row set is non-deterministic
+result = ds.head(5)
+assert len(result) == 5
+assert set(result.columns) == expected_columns
+```
+
+***
+
+<div id="best-practices">
+  ## 最佳实践
+</div>
+
+<div id="enable-early">
+  ### 1. 尽早在脚本中启用
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.use_performance_mode()
+
+# All subsequent operations benefit
+ds = pd.read_parquet("data.parquet")
+result = ds[ds["amount"] > 100].groupby("region")["amount"].sum()
+```
+
+<div id="explicit-sort">
+  ### 2. 顺序很重要时，请显式排序
+</div>
+
+```python
+# For display or downstream processing that expects order
+result = (ds
+    .groupby("region")["revenue"].sum()
+    .sort_values(ascending=False)
+)
+```
+
+<div id="batch-etl">
+  ### 3. 适用于批处理/ETL 工作负载
+</div>
+
+```python
+config.use_performance_mode()
+
+# ETL pipeline — order doesn't matter, throughput does
+summary = (ds
+    .filter(ds["date"] >= "2024-01-01")
+    .groupby(["region", "product"])
+    .agg({"revenue": "sum", "quantity": "sum", "rating": "mean"})
+)
+summary.to_df().to_parquet("summary.parquet")
+```
+
+<div id="switch-modes">
+  ### 4. 在会话内切换模式
+</div>
+
+```python
+# Performance mode for heavy computation
+config.use_performance_mode()
+aggregated = ds.groupby("cat")["val"].sum()
+
+# Back to pandas mode for exact-match comparison
+config.use_pandas_compat()
+detailed = ds[ds["val"] > 100].head(10)
+```
+
+***
+
+<div id="related">
+  ## 相关文档
+</div>
+
+* [执行引擎](/zh/chdb/configuration/execution-engine) — 引擎选择 (auto/chdb/pandas)
+* [性能指南](/zh/chdb/guides/pandas-performance) — 通用优化建议
+* [与 pandas 的关键区别](/zh/chdb/guides/pandas-differences) — 行为差异

@@ -6,7 +6,7 @@ Expression ((Project names + (Projection + )))
 Header: name String
   Expression (Post Join Actions)
   Header: __table1.name String
-    Join
+    Join (JOIN FillRightFirst)
     Header: __table1.name String
       Expression (Left Pre Join Actions)
       Header: __table1.name String
@@ -46,7 +46,7 @@ Expression ((Project names + (Projection + )))
 Header: name String
   Expression (Post Join Actions)
   Header: __table1.name String
-    Join
+    Join (JOIN FillRightFirst)
     Header: __table1.name String
       Expression (Left Pre Join Actions)
       Header: __table1.name String
@@ -86,7 +86,7 @@ Expression ((Project names + (Projection + )))
 Header: name String
   Expression (Post Join Actions)
   Header: __table2.name String
-    Join
+    Join (JOIN FillRightFirst)
     Header: __table2.name String
       Expression (Left Pre Join Actions)
       Header: __table1.name String

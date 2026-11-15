@@ -1,0 +1,13 @@
+{
+  "groups": [
+    {
+      "group": "关于 ClickHouse",
+      "pages": [
+        "zh/resources/about/index",
+        "zh/resources/about/adopters",
+        "zh/resources/about/support"
+      ]
+    }
+  ],
+  "item": "关于"
+}

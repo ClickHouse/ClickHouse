@@ -1,5 +1,4 @@
--- Tags: no-object-storage, no-fasttest, no-cpu-aarch64, no-cpu-s390x
--- no-cpu-aarch64 and no-cpu-s390x because DEFLATE_QPL is x86-only
+-- Tags: no-object-storage, no-fasttest
 select * from system.codecs order by all;
 
 select count() from system.codecs;

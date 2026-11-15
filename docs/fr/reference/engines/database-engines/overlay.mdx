@@ -1,0 +1,53 @@
+---
+description: 'Le moteur de base de données Overlay expose l’union des tables de plusieurs bases de données existantes.'
+sidebarTitle: 'Overlay'
+slug: /engines/database-engines/overlay
+title: 'Overlay'
+doc_type: 'reference'
+---
+
+Le moteur de base de données `Overlay` expose l’union des tables de plusieurs bases de données existantes.
+
+## Créer une base de données {#creating-a-database}
+
+```sql
+CREATE DATABASE overlay_db
+ENGINE = Overlay(db1[, db2, ...]);
+```
+
+Un nom de table est résolu dans les bases de données sources dans l&#39;ordre où elles sont indiquées : la première base de données contenant une table portant ce nom l&#39;emporte.
+
+La base de données ne possède aucune table. Chaque table de la base de données de surcouche se comporte comme une table [`Alias`](/fr/reference/engines/table-engines/special/alias) pointant vers la table de la base de données source : les lectures et les écritures sont redirigées vers la table source.
+Les opérations `CREATE`, `DROP`, `RENAME`, `ATTACH` et `DETACH` sur les tables de la base de données de surcouche ne sont pas prises en charge.
+
+Les bases de données sources sont résolues par leur nom à chaque accès : lorsqu&#39;une base de données source est supprimée, ses tables disparaissent de la base de données de surcouche, puis réapparaissent lorsqu&#39;elle est recréée.
+Une base de données `Overlay` ne peut pas servir de source à une autre base de données `Overlay`.
+
+## Contrôle d&#39;accès {#access-control}
+
+Comme pour une table `Alias`, l&#39;utilisation d&#39;une table de la base de données de surcouche nécessite les grants à la fois sur la base de données de surcouche et sur la table source, et les politiques de ligne des deux s&#39;appliquent.
+Une table de la base de données de surcouche n&#39;est visible que par un utilisateur capable de voir à la fois la base de données de surcouche et la table source (privilège `SHOW TABLES` sur les deux).
+Un nom est résolu dans la première base de données source où l&#39;utilisateur peut voir une table portant ce nom : une table masquée pour l&#39;utilisateur est ignorée, comme si elle n&#39;existait pas.
+
+## Exemple {#example}
+
+```sql
+CREATE DATABASE db1;
+CREATE DATABASE db2;
+CREATE TABLE db1.a (x UInt8) ENGINE = Memory;
+CREATE TABLE db2.b (y String) ENGINE = Memory;
+INSERT INTO db2.b VALUES ('Hello');
+CREATE DATABASE overlay_db ENGINE = Overlay(db1, db2);
+SELECT name, engine FROM system.tables WHERE database = 'overlay_db' ORDER BY name;
+SELECT * FROM overlay_db.b;
+```
+
+```response
+┌─name─┬─engine─┐
+│ a    │ Alias  │
+│ b    │ Alias  │
+└──────┴────────┘
+┌─y─────┐
+│ Hello │
+└───────┘
+```

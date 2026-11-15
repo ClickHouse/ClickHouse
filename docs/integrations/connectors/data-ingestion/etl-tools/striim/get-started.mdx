@@ -1,0 +1,215 @@
+---
+title: "Get started with Striim for ClickHouse"
+sidebarTitle: "Get started"
+slug: /integrations/connectors/data-ingestion/etl-tools/striim/get-started
+description: "Sign up for Striim for ClickHouse, configure your source and ClickHouse target, and start a replication pipeline."
+doc_type: guide
+keywords: ['striim', 'clickhouse', 'cdc', 'data ingestion', 'real-time replication']
+---
+
+Use this guide to sign up and start replicating data from your source database to your ClickHouse instance. For a complete example, see the [SQL Server sample pipeline](/integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline).
+
+## Prerequisites {#prerequisites}
+
+| **You need** | **Details** |
+| --- | --- |
+| ClickHouse | A running ClickHouse Cloud service or self-managed deployment, with administrator access to create a database and user. `CoalescingMergeTree` requires ClickHouse server 25.6 or later. |
+| Source | Administrator access to the source data system to configure CDC and the required reader permissions. |
+| Network path | An approved network path from Striim on AWS to your source and to ClickHouse. If required, Striim for ClickHouse allows private connectivity using IP allowlisting, AWS PrivateLink or SSH Tunneling. See Striim documentation on [Security and Networking](https://www.striim.com/docs/striimforclickhouse/en/security-and-networking-for-striim.html) for more details |
+
+## Create your Striim account {#create-your-striim-account}
+
+Sign up directly with Striim or through AWS Marketplace. Your 14-day free trial starts when you activate your account. No credit card is required for the trial.
+
+1. Open the [Striim for ClickHouse signup form](https://go2.striim.com/trial-clickhouse), enter the required details and select **Sign up**.
+2. Open the account activation email, activate the account and sign in to the Striim cloud console.
+
+If your organization purchases through AWS Marketplace, follow [Subscribe and sign up](https://www.striim.com/docs/striimforclickhouse/en/subscribe-and-sign-up.html#id211623) and complete the Striim account setup after subscribing to Striim for ClickHouse on AWS Marketplace.
+
+## Create your service {#create-your-service}
+
+A service is a managed Striim environment on AWS where you build, run and monitor pipelines that write to ClickHouse. Your account can have only one active Striim for ClickHouse service at a time.
+
+1. On your first sign-in to Striim for ClickHouse, select **Get Started**. Alternatively, select **Marketplace** in the sidebar. Under **Striim for ClickHouse**, select **Create**.
+2. Configure the following:
+   - **Service Name:** A name that identifies the workload or environment.
+   - **AWS Region:** The region where the service runs. Select your ClickHouse region where available to reduce latency and cross-region transfer charges. Otherwise, select the closest available region.
+3. The name and region cannot be changed after creation. To change either, you have to delete the service and create a new one.
+4. Select **Create a service**. Provisioning can take several minutes. Your new services use the **Premium** plan by default. You can change the plan on the **Billing** page.
+5. When the service is ready, choose how to launch it:
+   - **Start building with Striim Clara AI:** Launch with Striim-managed Clara AI. No API key is required.
+   - **Review your service settings before launch:** Configure your own AI provider, manage users, or set up SSH or AWS PrivateLink before launch.
+
+On subsequent sign-ins, open the service from the **Services** list to build pipelines or manage its settings.
+
+![Create a Striim for ClickHouse service](/images/integrations/striim/create-service.png)
+
+## Prepare your ClickHouse target {#prepare-your-clickhouse-target}
+
+<Steps>
+<Step title="Get your connection details" id="get-connection-details">
+In ClickHouse Cloud, select your service, select **Connect**, then choose **HTTPS** to see the host and port (8443). For self-managed ClickHouse, get the host and port from your administrator.
+</Step>
+<Step title="Choose or create the target database" id="create-target-database">
+Striim does not create the target database, and the application halts at startup if it is missing. Use an existing database or create one:
+
+```sql
+CREATE DATABASE IF NOT EXISTS <your_database>;
+```
+
+</Step>
+<Step title="Create a dedicated user for Striim" id="create-target-user">
+Use a dedicated user instead of the default administrative user:
+
+```sql
+CREATE USER <user> IDENTIFIED BY '<password>';
+```
+
+For self-managed ClickHouse, you can also configure SSL X.509 authentication.
+</Step>
+<Step title="Grant the required privileges" id="grant-target-privileges">
+Grant the user the following privileges, as listed in the [Striim documentation](https://www.striim.com/docs/striimforclickhouse/en/initial-setup-to-write-to-clickhouse.html):
+
+```sql
+GRANT CREATE TABLE ON <your_database>.* TO <user>;
+GRANT ALTER TABLE ON <your_database>.* TO <user>;
+GRANT DROP TABLE ON <your_database>.* TO <user>;
+GRANT TRUNCATE ON <your_database>.* TO <user>;
+GRANT CREATE DATABASE ON *.* TO <user>;
+GRANT SHOW TABLES ON *.* TO <user>;
+GRANT SHOW DATABASES ON *.* TO <user>;
+GRANT SELECT ON information_schema.* TO <user>;
+GRANT SELECT ON system.tables TO <user>;
+GRANT SELECT ON system.columns TO <user>;
+GRANT SELECT ON system.parts TO <user>;
+GRANT SELECT, INSERT, UPDATE, DELETE ON <your_database>.* TO <user>;
+```
+
+</Step>
+</Steps>
+
+### Recommended ClickHouse configuration {#recommended-clickhouse-configuration}
+
+| Setting | **ClickHouse Cloud** | **Self-managed** |
+| --- | --- | --- |
+| Port | 8443 (open by default; managed by ClickHouse Cloud) | Open as needed: 8123 (HTTP), 9000 (native), 8443 (HTTPS), 9440 (TLS) |
+| Encryption | Always TLS | Configure TLS yourself; enable it in the connection profile with the `EnableSSL` property |
+| Database engine | `Shared` | `Atomic` (default) |
+| Authentication | Username and password | Username and password, or SSL X.509 (mutual TLS) |
+| Private connectivity | AWS PrivateLink (ClickHouse Cloud Scale and Enterprise plans only) | SSH tunnel or IP allowlisting |
+
+## Create a connection profile {#create-a-connection-profile}
+
+Create a ClickHouse connection profile for pipelines to reference by name. In the connection profile wizard, configure the following:
+
+| **Property** | **Value** |
+| --- | --- |
+| Connection URL | `jdbc:clickhouse://<host>:<port>` using the host and port from the previous section (port 8443 for ClickHouse Cloud) |
+| Authentication Type | Password (default) or SSL X.509 |
+| Username / Password | Dedicated Striim for ClickHouse user details you created in the previous step to prepare your ClickHouse target. |
+| Client SSL Certificate, Client SSL Key, CA Certificate | Required for SSL X.509 only. The private key must be PKCS#8 PEM. |
+
+To rotate credentials or certificates, open **Connection Profiles**, edit the profile and save the changes.
+
+For AWS PrivateLink, keep the Connection URL provided by ClickHouse Cloud. Configure a Route 53 private hosted zone so the hostname resolves to the private endpoint from your Striim service. See [Initial setup to write to ClickHouse](https://www.striim.com/docs/striimforclickhouse/en/initial-setup-to-write-to-clickhouse.html).
+
+## Prepare your source {#prepare-your-source}
+
+Each source type has its own setup. Find your source under [Sources](https://www.striim.com/docs/striimforclickhouse/en/sources.html) in the Striim for ClickHouse documentation and follow its configuration topic. For CDC capable sources you may need to enable change capture on the source and create a dedicated user for Striim with the privileges listed for that source. Note the following before you continue:
+
+- Host, port, and credentials for the Striim user.
+- The schemas and tables you want to replicate. Select specific tables rather than whole schemas where you can.
+- Confirmation that Striim can reach the source from AWS (firewall, VPC, PrivateLink, SSH or IP allowlist).
+- Your plan: CDC for Oracle, SQL Server, Snowflake and Salesforce requires Premium.
+
+## Build and start a pipeline {#build-and-start-a-pipeline}
+
+You can create a pipeline using one of the following methods:
+
+- **Striim Clara AI:** Select **Ask Clara** and describe the pipeline. For example: “Build a pipeline from &lt;source&gt; to ClickHouse for &lt;schema.table&gt;.” Clara prompts for the read strategy and connection details, then generates a TQL plan. Review the plan, select **Accept TQL**, then select **Deploy and Start this App**. See [Build your first application](https://www.striim.com/docs/striimforclickhouse/en/build-your-first-application.html).
+- **Automated pipeline wizard:** Create two linked applications: one for initial load and one for CDC. Striim starts the CDC application automatically when the initial load completes. [See the procedure below](#using-the-automated-pipeline-wizard).
+- **Flow Designer:** Create and edit applications visually, and add transformations before data reaches ClickHouse. You can also export an application’s TQL, edit it and import the updated configuration.
+
+### Using the automated pipeline wizard {#using-the-automated-pipeline-wizard}
+
+1. Select **Apps &gt; Create an App**, then search for and select your source.
+2. Select **Get Started** and choose the automated pipeline (initial load plus CDC), where offered for your source.
+3. Enter a pipeline name, select a namespace, and select **Next**.
+4. Enter your source connection properties. Inline help appears next to each setting. Striim validates the connection; you must resolve any failures before you can continue.
+5. Select the schemas to replicate, excluding system schemas, then select **Next**.
+6. Select the tables in each schema, then select **Next**.
+7. Select your ClickHouse connection profile and a **Table Engine**. See [How data lands in ClickHouse](#how-data-lands-in-clickhouse) for engine behavior.
+8. Review the table mappings. Edit them if required, then select **Save &amp; Start**.
+
+Striim runs the initial load first. When it completes, Striim quiesces the initial load application and automatically starts the linked CDC application.
+
+Do not run DDL statements on the source tables during the initial load. Retain the source change logs or streams from the start of initial load until the CDC application has caught up. If the pipeline halts, review the error and any suggested corrective actions before resuming.
+
+## Verify data in ClickHouse {#verify-data-in-clickhouse}
+
+1. In the Striim monitoring view, confirm events are being read and written. You can also ask Clara for the current lag.
+2. In ClickHouse, inspect the table Striim created:
+
+   ```sql
+   SHOW CREATE TABLE <your_database>.<your_table>;
+   ```
+
+3. Compare row counts with the source. For `ReplacingMergeTree` tables use the query shown in the next section.
+4. Make a small change in the source (an insert, update and delete on a test row) and confirm it appears in ClickHouse.
+
+## How data lands in ClickHouse {#how-data-lands-in-clickhouse}
+
+Select **Table Engine** when configuring the ClickHouse target. ClickHouse Writer defaults to **`MergeTree`**. The engine determines how changes are applied and whether Striim can create the target table.
+
+| **Table engine** | **Behavior** | **Best for** |
+| --- | --- | --- |
+| `ReplacingMergeTree` | Updates and deletes written as new rows with a version and a soft-delete flag; deduplicated by background merges or `FINAL`. | CDC sources that send a full row image on update. Simplest, highest-throughput CDC pattern; replay-safe. |
+| `MergeTree` | Append-only by default. With Mode = `MERGE`, updates and deletes are applied to the table (lightweight or mutation delete). | Initial loads, logs and events, or CDC when you want physically removed rows and no extra columns. |
+| `CollapsingMergeTree` | Writes a sign column: +1 for current state, -1 to cancel. | CDC sources that send both before and after images. Not safe to replay after recovery. |
+| `CoalescingMergeTree` | Partial-row updates; `NULL` means "leave unchanged". Requires server 25.6 or later and `Nullable` non-key columns. | CDC sources that send partial rows. |
+| `SummingMergeTree` | Insert only. The application halts on `UPDATE` or `DELETE`. | Append-only numeric aggregates such as counters. |
+| `AggregatingMergeTree`, `Replicated`, `Distributed` | Data writes only. You create the target tables yourself before deploying. | Materialized-view backing tables; clustered and sharded self-managed deployments. |
+
+For automatic schema creation and schema evolution, use `MergeTree`, `ReplacingMergeTree`, `CollapsingMergeTree`, `CoalescingMergeTree` or `SummingMergeTree`. For `ReplacingMergeTree`, Striim adds `__STRIIM_VERSION` and `__STRIIM_ISDELETED` columns; for `CollapsingMergeTree`, `__STRIIM_SIGN`. Query `ReplacingMergeTree` tables with `FINAL` and exclude soft-deleted rows:
+
+```sql
+SELECT * FROM <your_database>.<your_table> FINAL WHERE __STRIIM_ISDELETED = 0;
+```
+
+Source data types are mapped to ClickHouse types automatically. See [Supported data types](https://www.striim.com/docs/striimforclickhouse/en/clickhouse-writer-programmer-s-reference.html#supported-data-types-787538).
+
+## Monitor your pipeline {#monitor-your-pipeline}
+
+Striim publishes ClickHouse Writer metrics in the web UI, including events accepted, events acknowledged by ClickHouse, target freshness, last write activity, batch counts and per-table merge times. System alerts are enabled automatically; add custom alerts by email, Slack or Microsoft Teams. You can also ask Clara, for example "What is the current lag on my application?"
+
+## Troubleshooting {#troubleshooting}
+
+<Accordion title="Application halts at startup naming a missing database">
+Striim does not create the target database. Create it in ClickHouse and restart.
+</Accordion>
+
+<Accordion title="Table or column not found, but the same schema works elsewhere">
+Column names are always case-sensitive; database and table names follow the server file system (case-sensitive on typical Linux). Use the exact case defined in ClickHouse.
+</Accordion>
+
+<Accordion title="CollapsingMergeTree shows duplicates or negative sums after a restart">
+Delivery is at-least-once and this engine has no deduplication. Prefer `ReplacingMergeTree`, or `MergeTree` with Mode = `MERGE`, if you use recovery.
+</Accordion>
+
+<Accordion title="PrivateLink: Connection timed out">
+Check the VPC endpoint security group allows inbound 443, 8443, 9440 and 3306 and that outbound rules allow the connection.
+</Accordion>
+
+<Accordion title="PrivateLink: Connection reset by peer">
+Add the AWS endpoint ID to the service allow list in ClickHouse Cloud.
+</Accordion>
+
+<Accordion title="Application fails with an exception you do not recognize">
+Ask Clara to explain the error and suggest fixes. Review its recommendations before changing production.
+</Accordion>
+
+## Next steps {#next-steps}
+
+- Sample pipeline: [SQL Server to ClickHouse](/integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline)
+- [Striim for ClickHouse documentation](https://www.striim.com/docs/striimforclickhouse/en/index-en.html) for sources, transformations and schema evolution
+- Need to replicate data to more targets in addition to ClickHouse? See [Striim Platform](https://www.striim.com/striim-platform/) or [Striim Cloud](https://www.striim.com/striim-cloud/).

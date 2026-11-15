@@ -46,13 +46,8 @@ struct IReadBufferIterator
     /// Used for caching number of rows from files metadata during schema inference.
     virtual void setNumRowsToLastFile(size_t /*num_rows*/) {}
 
-    /// Set schema inferred from last file. Used for UNION mode to cache schema
-    /// per file.
+    /// Set schema inferred from last file.
     virtual void setSchemaToLastFile(const ColumnsDescription & /*columns*/) {}
-
-    /// Set resulting inferred schema. Used for DEFAULT mode to cache schema
-    /// for all files.
-    virtual void setResultingSchema(const ColumnsDescription & /*columns*/) {}
 
     /// Set auto detected format name.
     virtual void setFormatName(const String & /*format_name*/) {}
@@ -136,5 +131,10 @@ std::pair<ColumnsDescription, String> detectFormatAndReadSchema(
 
 SchemaCache::Key getKeyForSchemaCache(const String & source, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
 SchemaCache::Keys getKeysForSchemaCache(const Strings & sources, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
+
+/// Whether the number of rows of a file can be taken from or stored to the schema cache (`use_cache_for_count_from_files`).
+/// With `input_format_allow_errors_num`/`_ratio` the number of read rows depends on which rows fail to parse with the
+/// requested structure, and the structure is not a part of the cache key.
+bool canUseNumRowsFromSchemaCache(const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
 
 }

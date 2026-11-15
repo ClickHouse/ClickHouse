@@ -35,15 +35,15 @@ Like [multiSearchAnyUTF8](#multiSearchAnyUTF8) but ignores case.
         "Given a UTF-8 string 'Здравствуйте', check if character 'з' (lowercase) is present",
         "SELECT multiSearchAnyCaseInsensitiveUTF8('Здравствуйте',['з'])",
         R"(
-┌─multiSearchA⋯те', ['з'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchAnyCaseInsensitiveUTF8('Здравствуйте', ['з'])─┐
+│                                                        1 │
+└──────────────────────────────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMultiSearchCaseInsensitiveUTF8>(documentation);
 }

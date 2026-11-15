@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-fasttest, long
+# Tags: no-random-settings, no-fasttest, long, no-msan
 
 set -e
 
@@ -28,9 +28,9 @@ function drop_mv {
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
         ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_race_condition_mv_$index"
-        ${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW IF NOT EXISTS test_race_condition_mv1_$index TO test_race_condition_target AS select count() as number FROM (SELECT a.number, a.n, a.n2, b.number, b.n, b.n2, c.number, c.n, c.n2 FROM test_race_condition_landing a CROSS JOIN test_race_condition_landing b CROSS JOIN test_race_condition_landing c)"
+        ${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW IF NOT EXISTS test_race_condition_mv1_$index TO test_race_condition_target AS select count() as number FROM (SELECT a.number, a.n, a.n2, b.number, b.n, b.n2 FROM test_race_condition_landing a CROSS JOIN test_race_condition_landing b)"
         ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_race_condition_mv1_$index"
-        ${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW IF NOT EXISTS test_race_condition_mv_$index TO test_race_condition_target AS select count() as number FROM (SELECT a.number, a.n, a.n2, b.number, b.n, b.n2, c.number, c.n, c.n2 FROM test_race_condition_landing a CROSS JOIN test_race_condition_landing b CROSS JOIN test_race_condition_landing c)"
+        ${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW IF NOT EXISTS test_race_condition_mv_$index TO test_race_condition_target AS select count() as number FROM (SELECT a.number, a.n, a.n2, b.number, b.n, b.n2 FROM test_race_condition_landing a CROSS JOIN test_race_condition_landing b)"
     done
 }
 

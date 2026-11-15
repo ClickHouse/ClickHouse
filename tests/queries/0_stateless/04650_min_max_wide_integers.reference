@@ -1,0 +1,30 @@
+value-vs-sort	Decimal128	1
+value-vs-sort	Decimal256	1
+value-vs-sort	Int128	1
+value-vs-sort	Int256	1
+value-vs-sort	UInt128	1
+value-vs-sort	UInt256	1
+minIf-maxIf	Decimal128	1
+minIf-maxIf	Int128	1
+minIf-maxIf	UInt256	1
+nullable	Decimal128	1
+nullable	Int128	1
+nullable	Int256	1
+extremes	1	1	1	1	1	1	1	1
+limb-boundary	0	18446744073709551616
+sign-boundary	-18446744073709551616	18446744073709551616
+empty	0	0	0
+single	-5	-5	7	-3
+all-null	\N	\N
+if-none	0	0
+all-equal	42	42
+group-by	93936143917980099063	18357939450601640226642
+argmin-argmax	Decimal128	1
+argmin-argmax	Int128	1
+argmin-argmax	UInt256	1
+order-limit1	1	1
+array-minmax	Int128	1
+array-minmax	Int256	1
+array-minmax	UInt128	1
+array-minmax	UInt256	1
+array-empty	[0,-7,0,-7]	[0,3,0,3]

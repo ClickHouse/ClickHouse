@@ -25,7 +25,7 @@ include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsFeatureTests.cmake")
 include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsThreadAffinity.cmake")
 include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsThreadName.cmake")
 include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsSIMD.cmake")
-include("${ClickHouse_SOURCE_DIR}/contrib/aws-crt-cpp/cmake/AwsGetVersion.cmake")
+include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsGetVersion.cmake")
 
 set (AWS_STUBS "${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/aws_stubs.cpp")
 
@@ -82,8 +82,8 @@ file(GLOB AWS_SDK_CORE_SRC
     "${AWS_SDK_CORE_DIR}/source/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/auth/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/auth/bearer-token-provider/*.cpp"
-    "${AWS_SDK_CORE_DIR}/source/auth/signer/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/auth/signer-provider/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/auth/signer/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/client/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/config/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/config/defaults/*.cpp"
@@ -99,16 +99,22 @@ file(GLOB AWS_SDK_CORE_SRC
     "${AWS_SDK_CORE_DIR}/source/net/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/net/linux-shared/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/platform/linux-shared/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/smithy/client/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/smithy/client/schema/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/smithy/identity/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/smithy/tracing/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/base64/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/utils/cbor/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/utils/checksum/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/component-registry/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/crypto/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/crypto/crt/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/crypto/factory/*.cpp"
-    "${AWS_SDK_CORE_DIR}/source/utils/crypto/openssl/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/event/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/json/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/utils/local/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/utils/local/stream/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/logging/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/memory/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/memory/stl/*.cpp"
@@ -130,8 +136,6 @@ configure_file("${AWS_SDK_CORE_DIR}/include/aws/core/SDKConfig.h.in"
     "${CMAKE_CURRENT_BINARY_DIR}/include/aws/core/SDKConfig.h" @ONLY)
 
 aws_get_version(AWS_CRT_CPP_VERSION_MAJOR AWS_CRT_CPP_VERSION_MINOR AWS_CRT_CPP_VERSION_PATCH FULL_VERSION GIT_HASH)
-# Don't include the hash of HEAD in a config file. It's just terrible for build caching and useless
-set(GIT_HASH "")
 set(FULL_VERSION "${AWS_CRT_CPP_VERSION_MAJOR}.${AWS_CRT_CPP_VERSION_MINOR}.${AWS_CRT_CPP_VERSION_PATCH}-clickhouse")
 configure_file("${AWS_CRT_DIR}/include/aws/crt/Config.h.in" "${CMAKE_CURRENT_BINARY_DIR}/include/aws/crt/Config.h" @ONLY)
 
@@ -310,6 +314,13 @@ endif()
 list(APPEND AWS_SOURCES ${AWS_IO_SRC} ${AWS_IO_OS_SRC})
 list(APPEND AWS_PUBLIC_INCLUDES "${AWS_IO_DIR}/include/")
 
+# Since aws-c-io 0.27 the TLS channel handler installs a backend vtable at library init and aborts
+# ("No TLS implementation available.") when neither s2n, SecureTransport nor SChannel is compiled in.
+# ClickHouse does TLS through Poco (PocoHTTPClientFactory, tlsConnectionOptions_create_fn returns nullptr),
+# so build this one file in BYO_CRYPTO mode: init/cleanup become no-ops and the TLS context/handler
+# constructors are never reached. The remaining TLS symbols come from aws_stubs.cpp.
+set_source_files_properties("${AWS_IO_DIR}/source/tls_channel_handler.c" PROPERTIES COMPILE_DEFINITIONS BYO_CRYPTO)
+
 
 # aws-crt-cpp
 file(GLOB AWS_CRT_SRC
@@ -320,6 +331,7 @@ file(GLOB AWS_CRT_SRC
     "${AWS_CRT_DIR}/source/external/*.cpp"
     "${AWS_CRT_DIR}/source/http/*.cpp"
     "${AWS_CRT_DIR}/source/io/*.cpp"
+    "${AWS_CRT_DIR}/source/cbor/*.cpp"
     "${AWS_CRT_DIR}/source/checksum/*.cpp"
 )
 
@@ -397,7 +409,7 @@ aws_set_thread_name_method(_aws)
 
 # The library is large - avoid bloat.
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    target_compile_options (_aws PRIVATE -g0)
+    target_compile_options (_aws PRIVATE -g1)
 endif()
 
 add_library(ch_contrib::aws_s3 ALIAS _aws)

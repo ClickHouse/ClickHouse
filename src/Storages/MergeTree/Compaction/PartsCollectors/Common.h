@@ -55,7 +55,10 @@ std::expected<void, PreformattedMessage> checkAllPartsSatisfyPredicate(const std
 }
 
 PartsRanges constructPartsRanges(
-    std::vector<MergeTreeDataPartsVector> && ranges, const StorageMetadataPtr & metadata_snapshot, const time_t & current_time);
+    std::vector<MergeTreeDataPartsVector> && ranges,
+    const StorageMetadataPtr & metadata_snapshot,
+    const StoragePolicyPtr & storage_policy,
+    const time_t & current_time);
 
 MergeTreeDataPartsVector filterByPartitions(
     MergeTreeDataPartsVector && parts, const std::optional<PartitionIdsHint> & partitions_to_keep);

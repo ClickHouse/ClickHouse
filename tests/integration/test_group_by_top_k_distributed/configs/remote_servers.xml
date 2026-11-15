@@ -1,0 +1,37 @@
+<clickhouse>
+    <remote_servers>
+        <!-- Two shards, no replication. Used to exercise the partial -> final
+             aggregation path that the heap optimization is currently gated from. -->
+        <two_shards>
+            <shard>
+                <internal_replication>false</internal_replication>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <internal_replication>false</internal_replication>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </two_shards>
+
+        <!-- Single shard with two replicas, for parallel replicas. -->
+        <one_shard_two_replicas>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </one_shard_two_replicas>
+    </remote_servers>
+</clickhouse>

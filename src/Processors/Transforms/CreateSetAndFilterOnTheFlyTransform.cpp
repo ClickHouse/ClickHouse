@@ -1,7 +1,7 @@
 #include <Processors/Transforms/CreateSetAndFilterOnTheFlyTransform.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <cstddef>
-#include <mutex>
 
 #include <Interpreters/SetWithState.h>
 #include <Common/Stopwatch.h>
@@ -27,15 +27,15 @@ namespace ErrorCodes
 namespace
 {
 
-std::vector<size_t> getColumnIndices(const Block & block, const Names & column_names)
+VectorWithMemoryTracking<size_t> getColumnIndices(const Block & block, const Names & column_names)
 {
-    std::vector<size_t> indices;
+    VectorWithMemoryTracking<size_t> indices;
     for (const auto & name : column_names)
         indices.push_back(block.getPositionByName(name));
     return indices;
 }
 
-Columns getColumnsByIndices(const Chunk & chunk, const std::vector<size_t> & indices)
+Columns getColumnsByIndices(const Chunk & chunk, const VectorWithMemoryTracking<size_t> & indices)
 {
     Columns columns;
     const Columns & all_cols = chunk.getColumns();
@@ -48,7 +48,7 @@ Columns getColumnsByIndices(const Chunk & chunk, const std::vector<size_t> & ind
     return columns;
 }
 
-ColumnsWithTypeAndName getColumnsByIndices(const Block & sample_block, const Chunk & chunk, const std::vector<size_t> & indices)
+ColumnsWithTypeAndName getColumnsByIndices(const Block & sample_block, const Chunk & chunk, const VectorWithMemoryTracking<size_t> & indices)
 {
     Block block = sample_block.cloneEmpty();
     block.setColumns(getColumnsByIndices(chunk, indices));
@@ -158,7 +158,7 @@ IProcessor::Status FilterBySetOnTheFlyTransform::prepare()
             LOG_DEBUG(log, "Finished {} by [{}]: consumed {} rows in total, {} rows bypassed, result {} rows, {:.2f}% filtered",
                 Poco::toLower(getDescription()), fmt::join(column_names, ", "),
                 stat.consumed_rows, stat.consumed_rows_before_set, stat.result_rows,
-                stat.consumed_rows > 0 ? (100 - 100.0 * stat.result_rows / stat.consumed_rows) : 0);
+                stat.consumed_rows > 0 ? (100 - 100.0 * static_cast<double>(stat.result_rows) / static_cast<double>(stat.consumed_rows)) : 0);
         }
         else
         {

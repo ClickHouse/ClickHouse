@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <cmath>
 #include <cfloat>
+#include <Common/NaNUtils.h>
 
 
 /// This function is used in implementations of different T-Tests.
@@ -114,7 +115,7 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         Float64 value = columns[0]->getFloat64(row_num);
-        UInt8 is_second = columns[1]->getUInt(row_num);
+        bool is_second = columns[1]->getUInt(row_num);
 
         if (is_second)
             this->data(place).addY(value);
@@ -122,7 +123,7 @@ public:
             this->data(place).addX(value);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
@@ -162,8 +163,9 @@ public:
 
         auto [t_statistic, p_value] = data.getResult();
 
-        /// Because p-value is a probability.
-        p_value = std::min(1.0, std::max(0.0, p_value));
+        /// Because p-value is a probability. A NaN p-value is kept, as `std::max` would turn it into zero.
+        if (!isNaN(p_value))
+            p_value = std::min(1.0, std::max(0.0, p_value));
 
         auto & column_stat = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(0));
         auto & column_value = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(1));
