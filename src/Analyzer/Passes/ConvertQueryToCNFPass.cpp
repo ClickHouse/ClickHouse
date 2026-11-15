@@ -297,6 +297,11 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
     Analyzer::CNF::OrGroup result;
     for (const auto & atom : group)
     {
+        /// A negated ordered comparison - `NOT (A < C)`, which is not `A >= C` when an argument can be a
+        /// `NaN` - says nothing about where `A` sits relative to `C`, so no hint follows from it.
+        if (atom.negative)
+            return {};
+
         const auto * function_node = atom.node_with_hash.node->as<FunctionNode>();
         if (!function_node || !getRelationMap().contains(function_node->getFunctionName()))
             continue;
@@ -341,7 +346,7 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
     return result;
 }
 
-void addIndexConstraint(Analyzer::CNF & cnf, const QueryTreeNodes & table_expressions, const ContextPtr & context)
+void addIndexConstraint(Analyzer::CNF & cnf, const TableExpressionNodes & table_expressions, const ContextPtr & context)
 {
     for (const auto & table_expression : table_expressions)
     {
@@ -584,7 +589,7 @@ void bruteForce(
     }
 }
 
-void substituteColumns(QueryNode & query_node, const QueryTreeNodes & table_expressions, const ContextPtr & context)
+void substituteColumns(QueryNode & query_node, const TableExpressionNodes & table_expressions, const ContextPtr & context)
 {
     static constexpr UInt64 COLUMN_PENALTY = 10 * 1024 * 1024;
     static constexpr Int64 INDEX_PRICE = -1'000'000'000'000'000'000;
@@ -685,7 +690,7 @@ void substituteColumns(QueryNode & query_node, const QueryTreeNodes & table_expr
     }
 }
 
-void optimizeWithConstraints(Analyzer::CNF & cnf, const QueryTreeNodes & table_expressions, const ContextPtr & context)
+void optimizeWithConstraints(Analyzer::CNF & cnf, const TableExpressionNodes & table_expressions, const ContextPtr & context)
 {
     cnf.pullNotOutFunctions(context);
 
@@ -723,9 +728,19 @@ void optimizeWithConstraints(Analyzer::CNF & cnf, const QueryTreeNodes & table_e
         addIndexConstraint(cnf, table_expressions, context);
 }
 
-void optimizeNode(QueryTreeNodePtr & node, const QueryTreeNodes & table_expressions, const ContextPtr & context)
+void optimizeNode(QueryTreeNodePtr & node, const TableExpressionNodes & table_expressions, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
+
+    /// Converting to CNF distributes OR terms over AND, and `CNF::toQueryTree` clones each atom for
+    /// every group it ends up in. When an atom holds a correlated subquery (e.g. `exists((SELECT ...))`
+    /// referencing an outer column), this produces several independent copies of the subquery that
+    /// share one action name. Decorrelation then adds the same synthetic column (e.g. `exists(__table2)`)
+    /// on both sides of the generated join, and `HashJoin::getNonJoinedBlocks` fails the column-count
+    /// check. A correlated subquery must be evaluated exactly once, so skip the conversion for such a
+    /// filter and keep the original expression - it executes correctly without CNF conversion.
+    if (containsCorrelatedSubquery(node))
+        return;
 
     auto cnf = tryConvertQueryToCNF(node, context);
     if (!cnf)
@@ -766,7 +781,7 @@ public:
         if (!query_node)
             return;
 
-        auto table_expressions = extractTableExpressions(query_node->getJoinTree());
+        auto table_expressions = extractTableExpressions(query_node->getJoinTreeNodeTyped());
 
         const auto & context = getContext();
         const auto & settings = context->getSettingsRef();

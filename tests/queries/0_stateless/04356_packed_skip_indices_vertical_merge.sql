@@ -15,6 +15,8 @@
 -- the lowest possible activation thresholds; merge_algorithm is asserted from system.part_log so
 -- the test fails (rather than silently going horizontal) if vertical merge stops engaging.
 
+SET explain_query_plan_default = 'legacy';
+
 DROP TABLE IF EXISTS t_vert_packed;
 CREATE TABLE t_vert_packed
 (
@@ -55,12 +57,12 @@ SELECT 'm_a_filters', countIf(
     splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
     < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_vert_packed WHERE a = 700) AS s
-WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%';
 SELECT 'm_b_filters', countIf(
     splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
     < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_vert_packed WHERE b = 1100) AS s
-WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%';
 
 -- Both predicates return the right rows through the merged packed indices.
 SELECT 'm_a_lookup', count() FROM t_vert_packed WHERE a = 700;

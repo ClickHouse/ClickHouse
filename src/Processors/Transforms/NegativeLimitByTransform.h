@@ -1,8 +1,12 @@
 #pragma once
 
 #include <deque>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <list>
 #include <Columns/IColumn.h>
+#include <Core/SortDescription.h>
 #include <Interpreters/AggregatedDataVariants.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/IInflatingTransform.h>
@@ -55,12 +59,12 @@ private:
     void consume(Chunk chunk) override;
     Chunk generate() override;
 
-    using CandidateList = std::list<ChunkSlice>;
+    using CandidateList = ListWithMemoryTracking<ChunkSlice>;
     using CandidateIt = CandidateList::iterator;
 
     struct GroupWindow
     {
-        std::deque<CandidateIt> slices;
+        DequeWithMemoryTracking<CandidateIt> slices;
         UInt64 window_rows = 0;
     };
 
@@ -71,9 +75,16 @@ private:
     void appendRun(const ChunkSlice::ColumnsPtr & columns_ptr, UInt64 start, UInt64 length, size_t group_idx);
 
     template <typename Method>
+    requires MapAggregationMethod<Method>
     void consumeImpl(Method & method, const ColumnRawPtrs & key_columns, const ChunkSlice::ColumnsPtr & columns_ptr, UInt64 num_rows);
 
-    std::vector<size_t> key_positions;
+    /// Keeps a group index in the cell's mapped slot, so a set method cannot be used. This overload exists
+    /// only because the dispatch macro is generated over every `AggregatedDataVariants::Type`.
+    template <typename Method>
+    requires SetAggregationMethod<Method>
+    void consumeImpl(Method & method, const ColumnRawPtrs & key_columns, const ChunkSlice::ColumnsPtr & columns_ptr, UInt64 num_rows);
+
+    VectorWithMemoryTracking<size_t> key_positions;
     const UInt64 group_offset;
     const UInt64 group_window_size;
 
@@ -81,7 +92,7 @@ private:
     CandidateList candidate_list;
 
     /// Holds the references to the ChunkSlices inside `candidate_list` per grouping key.
-    std::vector<GroupWindow> group_windows;
+    VectorWithMemoryTracking<GroupWindow> group_windows;
 
     AggregatedDataVariants data;
     ColumnsHashing::HashMethodContextPtr hash_method_context;
@@ -109,7 +120,7 @@ private:
 class NegativeLimitBySortedStreamTransform final : public IInflatingTransform
 {
 public:
-    NegativeLimitBySortedStreamTransform(SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const Names & column_names);
+    NegativeLimitBySortedStreamTransform(SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const SortDescription & sorted_columns_descr);
 
     String getName() const override { return "NegativeLimitBySortedStreamTransform"; }
 
@@ -121,18 +132,20 @@ private:
 
     struct GroupWindow
     {
-        std::deque<ChunkSlice> slices;
+        DequeWithMemoryTracking<ChunkSlice> slices;
         UInt64 window_rows = 0;
     };
 
     bool sameAsPrevChunkKey(const Columns & cols, UInt64 row) const;
-    bool sameAsRowBefore(const Columns & cols, UInt64 row) const;
     void rememberKey(const Columns & cols, UInt64 row);
     void dropExcessRows(GroupWindow & window) const;
     void dropOffsetRows(GroupWindow & window) const;
+    void appendToPending(const ChunkSlice::ColumnsPtr & columns, UInt64 start, UInt64 length);
     void finalizeWindow(GroupWindow & window);
 
-    std::vector<size_t> key_positions;
+    /// Positions of the non-constant grouping key columns in the chunk header, in physical sort order so
+    /// that every column probed by `getEqualRangeEndAssumeSorted` is contiguous within the range.
+    VectorWithMemoryTracking<size_t> key_positions;
     const UInt64 group_offset;
     const UInt64 group_window_size;
 
@@ -141,7 +154,8 @@ private:
 
     /// Slices staged for output. `generate()` coalesces consecutive slices
     /// sharing one source chunk into a single output chunk.
-    std::deque<ChunkSlice> pending;
+    /// Adjacent rows of one chunk are kept as one slice.
+    DequeWithMemoryTracking<ChunkSlice> pending;
 };
 
 }

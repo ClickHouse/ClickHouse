@@ -1,0 +1,4 @@
+count(n) IS NULL:	0
+count(n) IS NOT NULL:	2000
+rewrite count(n):	0
+rewrite count():	1

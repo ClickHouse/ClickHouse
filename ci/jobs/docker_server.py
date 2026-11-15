@@ -4,11 +4,24 @@ import json
 import logging
 import os
 import tempfile
-import traceback
 from pathlib import Path
 from typing import Dict, List
 
+from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.clickhouse_version import CHVersion
+from ci.jobs.scripts.buildx import (
+    BUILDX_RETRIES,
+    BUILDX_RETRY_ERRORS,
+    build_rotating_apt_mirrors,
+    buildx_timeout,
+    with_timeout,
+)
+from ci.jobs.scripts.docker_server.docker_library import (
+    changed_tests,
+    test_docker_library,
+    validate_bugfix_tests,
+)
+from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika import Secret
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -18,7 +31,6 @@ ARCH = ("amd64", "arm64")
 
 temp_path = Path(f"{Utils.cwd()}/ci/tmp")
 
-GITHUB_SERVER_URL = os.getenv("GITHUB_SERVER_URL", "https://github.com")
 with tempfile.NamedTemporaryFile("w", delete=False) as f:
     GIT_KNOWN_HOSTS_FILE = f.name
     GIT_PREFIX = (  # All commits to remote are done as robot-clickhouse
@@ -61,7 +73,9 @@ def docker_login(relogin: bool = True) -> None:
             "docker login --username 'robotclickhouse' --password-stdin",
             strict=True,
             stdin_str=Secret.Config(
-                "dockerhub_robot_password", type=Secret.Type.AWS_SSM_PARAMETER
+                "dockerhub_robot_password",
+                type=Secret.Type.AWS_SSM_PARAMETER,
+                region="us-east-1",
             ).get_value(),
             encoding="utf-8",
         )
@@ -128,6 +142,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="allows binaries built on different branch if source digest matches current repo state",
     )
+    parser.add_argument(
+        "--apt-mirror-region",
+        type=str,
+        default="",
+        help="if set, point apt at the in-region AWS Ubuntu mirror for this region "
+        "(e.g. us-east-1) instead of Canonical's archive.ubuntu.com / "
+        "ports.ubuntu.com, which are frequently unreachable from the runners. "
+        "An image that fails on an apt download failure is then immediately "
+        "rebuilt against Canonical, for the days when the in-region mirror is the "
+        "broken one. Empty means use the Dockerfile default (canonical mirror) "
+        "with no second attempt.",
+    )
 
     return parser.parse_args()
 
@@ -171,15 +197,22 @@ def buildx_args(
     version: str,
     sha: str,
     action_url: str,
+    attest: bool,
 ) -> List[str]:
     args = [
-        "--provenance=true",
-        "--sbom=true",
         f"--platform=linux/{arch}",
         f"--label=build-url={action_url}",
         f"--label=com.clickhouse.build.githash={sha}",
         f"--label=com.clickhouse.build.version={version}",
     ]
+    # Attestations survive only in pushed manifests (the local docker exporter
+    # drops them), while the SBOM scan of a multi-GB image OOMs smaller runners,
+    # so generate them only for pushed images.
+    # The scanner is pinned because the floating stable-1 tag can silently move
+    # to a version whose scan of a multi-GB image exceeds the runner's memory.
+    if attest:
+        args.append("--provenance=true")
+        args.append("--attest=type=sbom,generator=docker/buildkit-syft-scanner:1.11")
     if direct_urls:
         args.append(f"--build-arg=DIRECT_DOWNLOAD_URLS='{' '.join(direct_urls)}'")
     elif urls:
@@ -199,6 +232,10 @@ def build_and_push_image(
     direct_urls: Dict[str, List[str]],
     run_url: str,
     sha: str,
+    apt_mirror_region: str,
+    # Required: a default here silently selects the fixed bound.
+    sw: Utils.Stopwatch,
+    job_timeout: int,
 ) -> List[Result]:
     result = []
     if os != "ubuntu":
@@ -219,7 +256,6 @@ def build_and_push_image(
         arch_tag = f"{tag}-{arch}"
         metadata_path = temp_path / arch_tag
         dockerfile = f"{image.path}/Dockerfile.{os}"
-        cmd_args = list(init_args)
         urls = []
         if direct_urls:
             # distroless and ubuntu-server use an Ubuntu builder with dpkg, so they
@@ -241,6 +277,7 @@ def build_and_push_image(
                     urls = [url for url in tgz_urls if "clickhouse-keeper" in url]
                 else:
                     urls = tgz_urls
+        cmd_args = list(init_args)
         cmd_args.extend(
             buildx_args(
                 repo_urls,
@@ -249,6 +286,7 @@ def build_and_push_image(
                 version=version,
                 action_url=run_url,
                 sha=sha,
+                attest=push,
             )
         )
         if not push:
@@ -258,15 +296,29 @@ def build_and_push_image(
                 f"--metadata-file={metadata_path}",
                 f"--build-arg=VERSION='{version}'",
                 "--progress=plain",
-                f"--file={dockerfile}",
-                Path(image.path).as_posix(),
             ]
         )
-        cmd = " ".join(cmd_args)
-        logging.info("Building image %s:%s for arch %s: %s", image.name, tag, arch, cmd)
-        result.append(
-            Result.from_commands_run(name=f"{image.name}:{tag}-{arch}", command=cmd)
+        # Distroless Dockerfiles have a multi-stage build with both production
+        # (no shell) and debug (busybox) targets. Build the production target
+        # explicitly to ensure the published image has no shell.
+        if os == "distroless":
+            cmd_args.append("--target=production")
+        build_result = build_rotating_apt_mirrors(
+            f"{image.name}:{tag}-{arch}",
+            apt_mirror_region,
+            lambda apt_mirror_args: with_timeout(
+                " ".join(
+                    [
+                        *cmd_args,
+                        *apt_mirror_args,
+                        f"--file={dockerfile}",
+                        Path(image.path).as_posix(),
+                    ]
+                ),
+                buildx_timeout(sw.duration, job_timeout),
+            ),
         )
+        result.append(build_result)
         if not result[-1].is_ok():
             return result
         with open(metadata_path, "rb") as m:
@@ -278,7 +330,14 @@ def build_and_push_image(
             f"--tag {image.name}:{tag} {' '.join(digests)}"
         )
         logging.info("Pushing merged %s:%s image: %s", image.name, tag, cmd)
-        result.append(Result.from_commands_run(name=f"{image.name}:{tag}", command=cmd))
+        result.append(
+            Result.from_commands_run(
+                name=f"{image.name}:{tag}",
+                command=with_timeout(cmd, buildx_timeout(sw.duration, job_timeout)),
+                retries=BUILDX_RETRIES,
+                retry_errors=BUILDX_RETRY_ERRORS,
+            )
+        )
         if not result[-1].is_ok():
             return result
     else:
@@ -287,44 +346,6 @@ def build_and_push_image(
             f"{image.name}:{tag}-$arch",
         )
     return result
-
-
-def test_docker_library(test_results) -> None:
-    """we test our images vs the official docker library repository to track integrity"""
-    arch = "amd64" if Utils.is_amd() else "arm64"
-    check_images = [tr.name for tr in test_results if tr.name.endswith(f"-{arch}")]
-    if not check_images:
-        return
-    test_name = "docker library image test"
-    try:
-        repo = "docker-library/official-images"
-        logging.info("Cloning %s repository to run tests for 'clickhouse' image", repo)
-        repo_path = temp_path / repo
-        config_override = (
-            Path(Utils.cwd()) / "ci/jobs/scripts/docker_server/config.sh"
-        ).absolute()
-        if not Shell.check(
-            f"git clone --depth 1 {GITHUB_SERVER_URL}/{repo} {repo_path}",
-            verbose=True,
-            retries=3,
-        ):
-            raise RuntimeError(f"Failed to clone {repo}")
-        run_sh = (repo_path / "test/run.sh").absolute()
-        for image in check_images:
-            cmd = f"{run_sh} {image} -c {repo_path / 'test/config.sh'} -c {config_override}"
-            test_results.append(
-                Result.from_commands_run(name=f"{test_name} ({image})", command=cmd)
-            )
-
-    except Exception as e:
-        logging.error("Failed while testing the docker library image: %s", e)
-        test_results.append(
-            Result(
-                name=test_name,
-                status=Result.Status.FAIL,
-                info=f"Exception while testing docker library: {traceback.format_exc()}",
-            )
-        )
 
 
 def check_server_readme(image_path: str) -> Result:
@@ -351,11 +372,16 @@ def main():
     args = parse_args()
     info = Info()
 
-    version_dict = None
+    version = None
     if not info.is_local_run:
-        version_dict = info.get_kv_data("version")
-    if not version_dict:
-        version_dict = CHVersion.get_current_version_as_dict()
+        version = CHVersion.get_current_version_from_ci_pipeline()
+    if not version:
+        # Repo-read fallback: the merge-queue workflow runs no version_log hook,
+        # so KV storage is empty and this is the only path. The checkout is
+        # shallow there, so the tweak cannot be counted from git history -- read
+        # non-strict and let it degrade to the placeholder tweak instead of
+        # raising, matching the pre-refactor behavior.
+        version = CHVersion.get_current_version(no_strict=True)
         if not info.is_local_run:
             print(
                 "WARNING: ClickHouse version has not been found in workflow kv storage - read from repo"
@@ -363,7 +389,7 @@ def main():
             info.add_workflow_warning(
                 "ClickHouse version has not been found in workflow kv storage"
             )
-    assert version_dict
+    assert version
 
     if not info.is_local_run:
         assert not args.image_path and not args.image_repo
@@ -371,16 +397,20 @@ def main():
     if "server image" in info.job_name:
         image_path = args.image_path or "docker/server"
         image_repo = args.image_repo or "clickhouse/clickhouse-server"
+        job_timeout = JobConfigs.docker_server.timeout
     elif "keeper image" in info.job_name:
         image_path = args.image_path or "docker/keeper"
         image_repo = args.image_repo or "clickhouse/clickhouse-keeper"
+        job_timeout = JobConfigs.docker_keeper.timeout
     else:
         assert False, f"Unexpected job name [{info.job_name}]"
 
     push = args.push
+    apt_mirror_region = args.apt_mirror_region
     del args.image_path
     del args.image_repo
     del args.push
+    del args.apt_mirror_region
 
     if (
         info.is_push_event
@@ -392,7 +422,7 @@ def main():
         push = True
 
     image = DockerImageData(image_repo, image_path)
-    tags = gen_tags(version_dict["string"], args.tag_type)
+    tags = gen_tags(version.string, args.tag_type)
     repo_urls = {}
     direct_urls: Dict[str, List[str]] = {}
 
@@ -419,7 +449,7 @@ def main():
             else:
                 assert False, "BUG"
             urls = read_build_urls(build_name)
-            assert urls, f"URLS has not been read from build report"
+            assert urls, "URLS has not been read from build report"
             direct_urls[arch] = [
                 url
                 for url in urls
@@ -448,21 +478,41 @@ def main():
                     repo_urls,
                     os_,
                     tag,
-                    version_dict["describe"],
+                    version.describe,
                     direct_urls,
                     run_url=info.run_url,
                     sha=info.sha,
+                    apt_mirror_region=apt_mirror_region,
+                    sw=sw,
+                    job_timeout=job_timeout,
                 )
             )
 
+    # The server image job validates the tests of both images. Only on a PR to master: a backported fix is in master's `head`.
+    bugfix_tests = []
+    if not push and info.workflow_name == "PR" and "server image" in info.job_name:
+        bugfix_tests = changed_tests(info.get_changed_files())
     if not push:
         # The image is built locally only when we don't push it
         # See `--output=type=docker`
         test_docker_library(test_results)
+        if bugfix_tests and any(
+            label in info.pr_labels
+            for label in (Labels.PR_BUGFIX, Labels.PR_CRITICAL_BUGFIX)
+        ):
+            master_images = [
+                f"{repo}:head{suffix}"
+                for repo in ("clickhouse/clickhouse-server", "clickhouse/clickhouse-keeper")
+                for suffix in ("", "-alpine", "-distroless")
+            ]
+            validate_bugfix_tests(test_results, master_images, bugfix_tests)
 
     test_results.append(check_server_readme(image.path))
 
-    Result.create_from(results=test_results, stopwatch=sw).complete_job()
+    # Not cached with changed tests: the PR can become a bug fix later, and the `head` images move with master.
+    Result.create_from(results=test_results, stopwatch=sw).complete_job(
+        do_not_cache=bool(bugfix_tests)
+    )
 
 
 if __name__ == "__main__":

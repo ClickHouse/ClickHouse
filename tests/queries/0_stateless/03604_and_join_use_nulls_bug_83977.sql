@@ -15,5 +15,5 @@ FROM (
     LEFT JOIN C AS `t1` ON AA.`key` = `t1`.`key`
 )
 ORDER BY ALL
-SETTINGS join_use_nulls = 1, enable_analyzer = 1
+SETTINGS join_use_nulls = 1
 ;

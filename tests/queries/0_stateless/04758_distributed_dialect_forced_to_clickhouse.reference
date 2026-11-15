@@ -1,0 +1,5 @@
+select_multiplexed: 2
+select_hedged: 2
+direct_query_as_that_user: SYNTAX_ERROR
+insert_remote: OK
+count_after_insert: 2

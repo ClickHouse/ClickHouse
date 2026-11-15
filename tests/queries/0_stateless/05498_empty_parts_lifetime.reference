@@ -1,0 +1,8 @@
+truncate	1
+0
+default	1	0
+young	1	0
+young	2	1
+replicated	1
+old	1	0
+old	2	0
