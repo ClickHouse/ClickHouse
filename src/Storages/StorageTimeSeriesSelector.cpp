@@ -280,6 +280,7 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     }
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
+    const size_t num_table_arguments = argument_index;
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
@@ -308,6 +309,7 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
 
     Configuration config;
     config.time_series_storage_id = std::move(time_series_storage_id);
+    config.num_table_arguments = num_table_arguments;
     config.table_id_type = std::move(table_id_type);
     config.table_timestamp_type = std::move(table_timestamp_type);
     config.table_value_type = std::move(table_value_type);
