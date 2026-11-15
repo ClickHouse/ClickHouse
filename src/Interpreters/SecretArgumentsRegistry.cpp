@@ -10,6 +10,8 @@
 #include <Storages/StorageFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
+#include <Poco/String.h>
+
 namespace DB
 {
 
@@ -57,6 +59,9 @@ SecretArgumentsResult SecretArgumentsRegistry::find(ASTFunction::Kind kind, cons
             break;
         case ASTFunction::Kind::TABLE_FUNCTION:
             spec = TableFunctionFactory::instance().tryGetSecretArgumentsSpec(name);
+            /// `unnest(...)` in `FROM` is desugared to `arrayJoin`, which takes no secrets.
+            if (!spec && Poco::toLower(name) == "unnest")
+                return {};
             break;
         case ASTFunction::Kind::TABLE_ENGINE:
             spec = StorageFactory::instance().tryGetSecretArgumentsSpec(name);

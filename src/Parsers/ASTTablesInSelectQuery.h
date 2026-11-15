@@ -59,6 +59,9 @@ struct ASTTableExpression : public IAST
     /// Column aliases for the table expression (AS t(a, b))
     ASTPtr column_aliases;
 
+    /// `func(...) WITH ORDINALITY`
+    bool with_ordinality = false;
+
     using IAST::IAST;
     String getID(char) const override { return "TableExpression"; }
     ASTPtr clone() const override;

@@ -34,6 +34,7 @@ while (false)
 void ASTTableExpression::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(final);
+    hash_state.update(with_ordinality);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -136,7 +137,20 @@ void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & s
     else if (table_function && !(table_function->as<ASTFunction>()->preferSubqueryToFunctionFormatting() && subquery))
     {
         ostr << " ";
-        table_function->format(ostr, settings, state, frame);
+        if (with_ordinality)
+        {
+            /// The alias follows `WITH ORDINALITY`: `unnest(arr) WITH ORDINALITY AS u(x, n)`.
+            const auto & function = table_function->as<const ASTFunction &>();
+            static_cast<const ASTWithAlias &>(function).formatImplWithoutAlias(ostr, settings, state, frame);
+            ostr << " WITH ORDINALITY";
+            if (!function.alias.empty())
+            {
+                ostr << " AS ";
+                settings.writeIdentifier(ostr, function.alias, /*ambiguous=*/false);
+            }
+        }
+        else
+            table_function->format(ostr, settings, state, frame);
     }
     else if (subquery)
     {
@@ -361,6 +375,8 @@ void ASTTableExpression::writeJSON(WriteBuffer & out) const
     JSONObjectWriter w(out, "TableExpression");
     if (final)
         w.writeBool("final", true);
+    if (with_ordinality)
+        w.writeBool("with_ordinality", true);
     w.writeChild("database_and_table_name", database_and_table_name);
     w.writeChild("table_function", table_function);
     w.writeChild("subquery", subquery);
@@ -482,6 +498,7 @@ void ASTTableExpression::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     final = r.getBool("final");
+    with_ordinality = r.getBool("with_ordinality");
 
     /// `database_and_table_name` is parser-produced as an `ASTTableIdentifier`: default-database
     /// injection visits only `ASTTableIdentifier`, and `StorageID(const ASTPtr &)` throws
@@ -568,6 +585,11 @@ void ASTTableExpression::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "ASTTableExpression must have exactly one of 'database_and_table_name', 'table_function' or 'subquery', "
             "but has {} during AST JSON deserialization", num_sources);
+
+    /// The parser accepts `WITH ORDINALITY` only after a table function.
+    if (with_ordinality && !table_function)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`with_ordinality` requires `table_function` during AST JSON deserialization");
 }
 
 void ASTTableJoin::readJSON(const Poco::JSON::Object & json)
