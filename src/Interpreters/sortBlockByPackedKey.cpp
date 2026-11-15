@@ -158,22 +158,31 @@ void initPackedSortColumn(const char * data, size_t rows, bool descending, Packe
     column.append_at = descending ? &appendToPackedKeyAt<GetBits, true> : &appendToPackedKeyAt<GetBits, false>;
 }
 
-/// 1 if the values strictly increase through the block, -1 if they strictly decrease, judged first by 17 rows spread
-/// over the block (0 if these do not), then by all rows (2 or -2 if only the spread rows do).
+/// 1 if the values at 17 rows spread over the block strictly increase, -1 if they strictly decrease, 0 otherwise.
 template <typename GetBits>
-int strictOrder(const char * data, size_t rows)
+int sampledTrend(const char * data, size_t rows)
 {
-    using Bits = OrderedBits<GetBits>;
     int direction = 0;
     for (size_t k = 1; k <= 16; ++k)
     {
-        const Bits prev = valueAt<GetBits>(data, (k - 1) * (rows - 1) / 16);
-        const Bits value = valueAt<GetBits>(data, k * (rows - 1) / 16);
+        const auto prev = valueAt<GetBits>(data, (k - 1) * (rows - 1) / 16);
+        const auto value = valueAt<GetBits>(data, k * (rows - 1) / 16);
         const int step = prev < value ? 1 : (value < prev ? -1 : 0);
         if (step == 0 || (direction != 0 && step != direction))
             return 0;
         direction = step;
     }
+    return direction;
+}
+
+/// 1 if the values strictly increase through the block, -1 if they strictly decrease, judged first by `sampledTrend`
+/// (0 if it finds none), then by all rows (2 or -2 if only the spread rows do).
+template <typename GetBits>
+int strictOrder(const char * data, size_t rows)
+{
+    const int direction = sampledTrend<GetBits>(data, rows);
+    if (direction == 0)
+        return 0;
 
     size_t i = 1;
     if (direction > 0)
@@ -183,6 +192,23 @@ int strictOrder(const char * data, size_t rows)
         while (i < rows && valueAt<GetBits>(data, i) < valueAt<GetBits>(data, i - 1))
             ++i;
     return i == rows ? direction : 2 * direction;
+}
+
+int sampledTrend(const IColumn & column, size_t rows)
+{
+    const PackedSortType type = getPackedSortType(column);
+    if (type != PackedSortType::Range && type != PackedSortType::RangeOrRank)
+        return 0;
+
+    const char * data = column.getRawData().data();
+    int direction = 0;
+    callWithPackableOrderedBits(column, [&](auto get_bits)
+    {
+        using GetBits = decltype(get_bits);
+        if constexpr (sizeof(OrderedBits<GetBits>) <= sizeof(UInt64))
+            direction = sampledTrend<GetBits>(data, rows);
+    });
+    return direction;
 }
 
 int strictOrder(const IColumn & column, size_t rows)
@@ -265,8 +291,9 @@ constexpr size_t max_grouped_order_bits = 18;
 
 /// Whether a column never decreases (never increases if `descending`) within each group of rows equal on the packed
 /// columns: `last` holds the last value per packed key, starting below every value. If `strictly` is set, it is the
-/// result for strictly increasing (decreasing) values; a first value equal to the start counts as a repeat.
-template <typename GetBits, bool detect_equal>
+/// result for strictly increasing (decreasing) values; a first value equal to the start counts as a repeat. With
+/// `stop_at_equal`, equal values end the check, which then returns false.
+template <typename GetBits, bool detect_equal, bool stop_at_equal = false>
 NO_INLINE bool inSortOrderWithinPackedKeys(
     const std::vector<PackedSortColumn> & packed_columns, size_t total_bits, const char * data, size_t rows, bool descending, bool * strictly)
 {
@@ -301,6 +328,9 @@ NO_INLINE bool inSortOrderWithinPackedKeys(
         }
         if (out_of_order)
             return false;
+        if constexpr (stop_at_equal)
+            if (any_equal)
+                return false;
     }
     if constexpr (detect_equal)
         *strictly = !any_equal;
@@ -327,6 +357,22 @@ bool inSortOrderWithinPackedKeys(
     if (!in_order && strictly != nullptr)
         *strictly = false;
     return in_order;
+}
+
+/// Whether a column strictly increases (decreases if `descending`) within each group of rows equal on the packed columns.
+bool strictlyInSortOrderWithinPackedKeys(
+    const std::vector<PackedSortColumn> & packed_columns, size_t total_bits, const IColumn & column, size_t rows, bool descending)
+{
+    const char * data = column.getRawData().data();
+    bool in_order = false;
+    bool strictly = false;
+    callWithPackableOrderedBits(column, [&](auto get_bits)
+    {
+        using GetBits = decltype(get_bits);
+        if constexpr (sizeof(OrderedBits<GetBits>) <= sizeof(UInt64))
+            in_order = inSortOrderWithinPackedKeys<GetBits, true, true>(packed_columns, total_bits, data, rows, descending, &strictly);
+    });
+    return in_order && strictly;
 }
 
 constexpr size_t max_rank_bits = 16;
@@ -907,12 +953,42 @@ size_t trySortByPackedKey(
         const bool descending = column.description.direction == -1;
 
         /// A middle column in order or reversed is left to the column sort where it compares values (unstable or descending
-        /// sort): sorted stably by the columns before it, it stays presorted.
-        if (i != first_non_const && i != last_non_const && (!stable || descending)
-            && (inSortOrder(*column.column, rows, descending) || inSortOrder(*column.column, rows, !descending)))
+        /// sort): sorted stably by the columns before it, it stays presorted. If its values strictly increase or decrease,
+        /// they tell the rows apart, so the columns after it do not matter: it is sorted as a last column in order or reversed.
+        if (i != first_non_const && i != last_non_const && (!stable || descending))
         {
-            keep_ties_in_order = true;
-            break;
+            bool strictly = false;
+            const bool in_order = inSortOrder(*column.column, rows, descending, &strictly);
+            if (in_order || inSortOrder(*column.column, rows, !descending, &strictly))
+            {
+                if (strictly && !need_equal_ranges && (in_order || (total_bits > 0 && total_bits <= 32)))
+                {
+                    (in_order ? last_column_in_order : last_column_reversed) = true;
+                    sorted_entries = columns.size();
+                }
+                else
+                    keep_ties_in_order = true;
+                break;
+            }
+        }
+
+        /// So does a middle column whose values strictly increase or decrease within each group of rows equal on the packed
+        /// columns, such as time series rows in arrival order; it is checked if spread rows show a trend through the block.
+        if (i != first_non_const && i != last_non_const && !need_equal_ranges && total_bits > 0
+            && total_bits <= max_grouped_order_bits && (size_t(1) << total_bits) <= rows)
+        {
+            if (const int trend = sampledTrend(*column.column, rows))
+            {
+                /// The direction of the trend is the order within the groups, if any.
+                const bool trend_in_order = (trend > 0) != descending;
+                if (strictlyInSortOrderWithinPackedKeys(
+                        packed_columns, total_bits, *column.column, rows, trend_in_order ? descending : !descending))
+                {
+                    (trend_in_order ? last_column_in_order : last_column_reversed) = true;
+                    sorted_entries = columns.size();
+                    break;
+                }
+            }
         }
 
         if (i == last_non_const && i != first_non_const)
