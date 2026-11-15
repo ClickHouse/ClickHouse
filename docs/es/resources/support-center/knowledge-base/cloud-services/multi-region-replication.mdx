@@ -1,0 +1,15 @@
+---
+slug: /faq/operations/multi-region-replication
+title: '¿ClickHouse admite la replicación multirregional?'
+toc_hidden: true
+toc_priority: 30
+description: 'Esta página responde a la pregunta de si ClickHouse admite la replicación multirregional'
+doc_type: 'reference'
+keywords: ['multirregional', 'replicación', 'geo-distribuido', 'sistemas distribuidos', 'sincronización de datos']
+---
+
+La respuesta corta es &quot;sí&quot;. Sin embargo, recomendamos mantener la latencia entre todas las regiones/centros de datos en el rango de dos dígitos; de lo contrario, el rendimiento de escritura se resentirá, ya que las escrituras pasan por un protocolo de consenso distribuido. Por ejemplo, la replicación entre las costas de EE. UU. probablemente funcione bien, pero entre EE. UU. y Europa no.
+
+En términos de configuración, no hay ninguna diferencia con respecto a la replicación en una sola región; simplemente use hosts ubicados en distintas ubicaciones para las réplicas.
+
+Para obtener más información, consulte el [artículo completo sobre la replicación de datos](/es/reference/engines/table-engines/mergetree-family/replication).

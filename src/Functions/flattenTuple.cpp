@@ -19,7 +19,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionFlattenTuple : public IFunction
+class FunctionFlattenTuple final : public IFunction
 {
 public:
     static constexpr auto name = "flattenTuple";
@@ -30,6 +30,23 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }
+
+    /// Documentation-only — the input must be a named non-empty tuple; the
+    /// result is a flat tuple whose element names are the dot-joined paths.
+    /// The flattened layout isn't expressible in the DSL, so the override
+    /// below redirects the `ColumnsWithTypeAndName` path past the DSL.
+    String getSignatureString() const override
+    {
+        return "(MaybeNullable(NonEmptyTuple)) -> Tuple";
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -50,7 +67,17 @@ public:
                 "Tuple argument for function '{}' must be named. Got '{}'",
                 getName(), type->getName());
 
-        return flattenTuple(type);
+        auto result_type = flattenTuple(type);
+        const auto * result_tuple = checkAndGetDataType<DataTypeTuple>(removeNullable(result_type).get());
+        if (!result_tuple || result_tuple->getElements().empty())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Argument for function '{}' has no scalar columns to flatten: '{}'. "
+                "Flattening produced an empty tuple because all leaf types are themselves empty tuples",
+                getName(),
+                type->getName());
+
+        return result_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
@@ -88,9 +115,10 @@ INSERT INTO tab VALUES ((3, ('c', 4)));
 SELECT flattenTuple(t) FROM tab;
         )",
         R"(
-┌─flattenTuple(t)┐
-│ (3, 'c', 4)    │
-└────────────────┘
+┌─flattenTuple(t)─┐
+├──a─┬─b.c──┬─b.d─┤
+│  3 │ c    │   4 │
+└────┴──────┴─────┘
         )"
     }
     };

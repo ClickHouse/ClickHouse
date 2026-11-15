@@ -1,0 +1,19 @@
+<clickhouse>
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+
+    <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>8001</port>
+
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+        <errors>true</errors>
+        <labels>
+            <environment>staging</environment>
+            <!-- Resolved from the PROM_SHARD environment variable to exercise the from_env path. -->
+            <shard from_env="PROM_SHARD"></shard>
+        </labels>
+    </prometheus>
+</clickhouse>

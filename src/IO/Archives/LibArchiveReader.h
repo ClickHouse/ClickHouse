@@ -42,8 +42,8 @@ public:
     std::unique_ptr<FileEnumerator> nextFile(std::unique_ptr<ReadBuffer> read_buffer) override;
     std::unique_ptr<FileEnumerator> currentFile(std::unique_ptr<ReadBuffer> read_buffer) override;
 
-    std::vector<std::string> getAllFiles() override;
-    std::vector<std::string> getAllFiles(NameFilter filter) override;
+    Strings getAllFiles() override;
+    Strings getAllFiles(NameFilter filter) override;
 
     /// Sets password used to decrypt the contents of the files in the archive.
     void setPassword(const String & password_) override;

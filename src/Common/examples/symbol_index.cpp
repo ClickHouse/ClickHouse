@@ -1,4 +1,6 @@
 #include <iostream>
+#include <string_view>
+#include <fmt/format.h>
 #include <dlfcn.h>
 #include <Core/Defines.h>
 #include <base/demangle.h>
@@ -6,13 +8,14 @@
 #include <Common/Elf.h>
 #include <Common/StackTrace.h>
 #include <Common/SymbolIndex.h>
+#include <Examples/clickhouse_examples.h>
 
 [[maybe_unused]] static NO_INLINE const void * getAddress()
 {
     return __builtin_return_address(0);
 }
 
-int main(int argc, char ** argv)
+int mainEntryExampleSymbolIndex(int argc, char ** argv)
 {
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     using namespace DB;
@@ -25,21 +28,25 @@ int main(int argc, char ** argv)
 
     const SymbolIndex & symbol_index = SymbolIndex::instance();
 
-    for (const auto & elem : symbol_index.symbols())
-        std::cout << elem.name << ": " << elem.offset_begin << " ... " << elem.offset_end << "\n";
+    auto iterator = symbol_index.iterateSymbols();
+    const SymbolIndex::Symbol * elem = nullptr;
+    std::string_view name;
+    while (iterator.next(elem, name))
+        std::cout << fmt::format("{}: {:#x} ... {:#x}\n", name, reinterpret_cast<uintptr_t>(elem->offset_begin), reinterpret_cast<uintptr_t>(elem->offset_end));
     std::cout << "\n";
 
     const void * address = reinterpret_cast<void*>(std::stoull(argv[1], nullptr, 16));
 
     const auto * symbol = symbol_index.findSymbol(address);
-    if (symbol)
-        std::cerr << symbol->name << ": " << symbol->offset_begin << " ... " << symbol->offset_end << "\n";
+    std::string_view symbol_name = symbol ? symbol_index.getSymbolName(*symbol) : std::string_view("");
+    if (!symbol_name.empty())
+        std::cerr << fmt::format("{}: {:#x} ... {:#x}\n", symbol_name, reinterpret_cast<uintptr_t>(symbol->offset_begin), reinterpret_cast<uintptr_t>(symbol->offset_end));
     else
         std::cerr << "SymbolIndex: Not found\n";
 
     Dl_info info;
     if (dladdr(address, &info) && info.dli_sname)
-        std::cerr << demangle(info.dli_sname) << ": " << info.dli_saddr << "\n";
+        std::cerr << fmt::format("{}: {:#x}\n", demangle(info.dli_sname), reinterpret_cast<uintptr_t>(info.dli_saddr));
     else
         std::cerr << "dladdr: Not found\n";
 
@@ -47,7 +54,7 @@ int main(int argc, char ** argv)
     Dwarf dwarf(object->elf);
 
     Dwarf::LocationInfo location;
-    std::vector<Dwarf::SymbolizedFrame> frames;
+    VectorWithMemoryTracking<Dwarf::SymbolizedFrame> frames;
     if (dwarf.findAddress(uintptr_t(address) - uintptr_t(info.dli_fbase), location, Dwarf::LocationInfoMode::FAST, frames))
         std::cerr << location.file.toString() << ":" << location.line << "\n";
     else

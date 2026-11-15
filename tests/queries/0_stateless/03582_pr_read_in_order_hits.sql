@@ -1,4 +1,5 @@
--- Tags: stateful
+-- Tags: stateful, long
+
 SET max_threads = 0; -- let's reset to automatic detection of the number of threads, otherwise test can be slow.
 
 SELECT '--- In order ---';
