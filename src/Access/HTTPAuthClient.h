@@ -9,6 +9,7 @@
 #include <IO/HTTPCommon.h>
 
 #include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/Net/OAuth20Credentials.h>
 
 namespace DB
 {
@@ -29,12 +30,12 @@ struct HTTPAuthClientParams
 };
 
 template <typename TResponseParser>
-class HTTPAuthClient
+class HTTPAuthClientBase
 {
 public:
     using Result = TResponseParser::Result;
 
-    explicit HTTPAuthClient(const HTTPAuthClientParams & params, const TResponseParser & parser_ = TResponseParser{})
+    explicit HTTPAuthClientBase(const HTTPAuthClientParams & params, const TResponseParser & parser_ = TResponseParser{})
         : timeouts{params.timeouts}
         , max_tries{params.max_tries}
         , retry_initial_backoff_ms{params.retry_initial_backoff_ms}
@@ -88,32 +89,50 @@ private:
 
 
 template <typename TResponseParser>
-class HTTPBasicAuthClient : private HTTPAuthClient<TResponseParser>
+class HTTPAuthClient : private HTTPAuthClientBase<TResponseParser>
 {
 public:
-    using HTTPAuthClient<TResponseParser>::HTTPAuthClient;
-    using Result = HTTPAuthClient<TResponseParser>::Result;
+    using HTTPAuthClientBase<TResponseParser>::HTTPAuthClientBase;
+    using Result = HTTPAuthClientBase<TResponseParser>::Result;
+    using Headers = std::map<String, String, HTTPFieldLess>;
 
-    Result authenticate(const String & user_name, const String & password, const std::map<String, String, HTTPFieldLess> & headers) const
+    Result authenticateBasic(const String & user_name, const String & password, const Headers & headers) const
     {
         Poco::Net::HTTPRequest request{
             Poco::Net::HTTPRequest::HTTP_GET, this->getURI().getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1};
-
-        for (const auto & k : headers)
-        {
-            if (!this->getForwardHeaders().contains(k.first))
-                continue;
-            /// Poco writes header values verbatim, so a line break would let the value inject extra headers
-            /// (e.g. an `Authorization` placed before ours) into the request to the authentication server.
-            if (k.second.find_first_of(std::string_view("\r\n\0", 3)) != std::string::npos)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Forwarded HTTP header \"{}\" contains CR, LF or NUL", k.first);
-            request.add(k.first, k.second);
-        }
+        setHeaders(request, headers);
 
         Poco::Net::HTTPBasicCredentials basic_credentials{user_name, password};
         basic_credentials.authenticate(request);
 
         return this->authenticateRequest(request);
+    }
+
+    Result authenticateBearer(const String & token, const Headers & headers) const
+    {
+        Poco::Net::HTTPRequest request{
+            Poco::Net::HTTPRequest::HTTP_GET, this->getURI().getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1};
+        setHeaders(request, headers);
+
+        Poco::Net::OAuth20Credentials credentials{token};
+        credentials.authenticate(request);
+
+        return this->authenticateRequest(request);
+    }
+
+private:
+    void setHeaders(Poco::Net::HTTPRequest & request, const Headers & headers) const
+    {
+        for (const auto & [name, value] : headers)
+        {
+            if (!this->getForwardHeaders().contains(name))
+                continue;
+            /// Poco writes header values verbatim, so a line break would let the value inject extra headers
+            /// (e.g. an `Authorization` placed before ours) into the request to the authentication server.
+            if (value.find_first_of(std::string_view("\r\n\0", 3)) != std::string::npos)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Forwarded HTTP header \"{}\" contains CR, LF or NUL", name);
+            request.add(name, value);
+        }
     }
 };
 

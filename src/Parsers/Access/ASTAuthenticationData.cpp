@@ -168,6 +168,12 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
                 parameter = true;
                 break;
             }
+            case AuthenticationType::JWKS:
+            {
+                prefix = "BY";
+                parameter = true;
+                break;
+            }
             case AuthenticationType::LDAP:
             {
                 prefix = "SERVER";

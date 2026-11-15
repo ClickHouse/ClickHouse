@@ -118,16 +118,17 @@ bool authenticateUserByHTTP(
     std::string user = request.get("X-ClickHouse-User", "");
     std::string password = request.get("X-ClickHouse-Key", "");
     std::string quota_key = request.get("X-ClickHouse-Quota", "");
-    bool has_auth_headers = !user.empty() || !password.empty();
+    const bool has_auth_headers = !user.empty() || !password.empty();
 
     /// The header 'X-ClickHouse-SSL-Certificate-Auth: on' enables checking the common name
     /// extracted from the SSL certificate used for this connection instead of checking password.
-    bool has_ssl_certificate_auth = (request.get("X-ClickHouse-SSL-Certificate-Auth", "") == "on");
-    bool has_config_credentials = config_credentials.has_value();
+    const bool has_ssl_certificate_auth = (request.get("X-ClickHouse-SSL-Certificate-Auth", "") == "on");
+    const bool has_config_credentials = config_credentials.has_value();
 
     /// User name and password can be passed using HTTP Basic auth or query parameters
     /// (both methods are insecure).
     bool has_credentials_in_query_params = params.has("user") || params.has("password");
+    String bearer_token;
 
     /// Whether the request carries an `Authorization` header that should be treated as
     /// credentials. The sentinel value `never` (which `play.html` sets on the requests it can
@@ -263,6 +264,12 @@ bool authenticateUserByHTTP(
                 user = default_session_user;
             checkUserNameNotEmptyAndServerHasEnoughMemory(user, "Authorization HTTP header", global_context, session, client_address);
         }
+        else if (Poco::icompare(scheme, "Bearer") == 0)
+        {
+            bearer_token = auth_info;
+            if (bearer_token.empty())
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: Bearer token is empty");
+        }
         else if (Poco::icompare(scheme, "Negotiate") == 0)
         {
             spnego_challenge = auth_info;
@@ -346,6 +353,34 @@ bool authenticateUserByHTTP(
         }
     }
 #endif
+    else if (!bearer_token.empty())
+    {
+        if (current_credentials)
+        {
+            auto * bearer_credentials = dynamic_cast<BearerCredentials *>(current_credentials.get());
+            if (!bearer_credentials)
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: expected 'Bearer' HTTP Authorization scheme");
+            if (bearer_credentials->getToken() != bearer_token)
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: token mismatch");
+        }
+        else
+        {
+            // There's no info here if we should check token ourself or pass it to IDENTIFIED WITH http SERVER 'http_server' SCHEME 'bearer'.
+            // So we create BaererCredentials and transform it to JWTCredentials later if needed
+
+            // Extract the user name from the "X-ClickHouse-User" HTTP header. Try to get JWT's subject if header is not set.
+            if (user.empty())
+            {
+                if (auto jwt = std::make_unique<JWTCredentials>(bearer_token))
+                    user = jwt->getUserName();
+                checkUserNameNotEmptyAndServerHasEnoughMemory(user, "Authorization HTTP header (Bearer)", global_context, session, client_address);
+            }
+
+            auto bearer_credentials = std::make_unique<BearerCredentials>(user);
+            bearer_credentials->setToken(bearer_token);
+            current_credentials = std::move(bearer_credentials);
+        }
+    }
     else // I.e., now using user name and password strings ("Basic").
     {
         if (!current_credentials)

@@ -95,6 +95,7 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::DOUBLE_SHA1_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::LDAP),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::JWT),
+            AUTH_TYPE_NAME_AND_VALUE(AuthType::JWKS),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::KERBEROS),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SSH_KEY),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SSL_CERTIFICATE),
@@ -104,7 +105,7 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::NO_AUTHENTICATION),
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
-    static_assert(static_cast<int>(AuthenticationType::MAX) == 13);
+    static_assert(static_cast<int>(AuthenticationType::MAX) == 14);
 
     auto lc_string_datatype = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 

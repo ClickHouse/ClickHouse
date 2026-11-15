@@ -69,6 +69,8 @@ def clone_submodules():
         "contrib/corrosion",
         "contrib/StringZilla",
         "contrib/rust_vendor",
+        "contrib/jwt-cpp",
+        "contrib/openssl",
         "contrib/clickstack",
         "contrib/heks",
         "contrib/sql-console",
@@ -314,7 +316,7 @@ def main():
                 -DBUILD_STRIPPED_BINARY=1 \
                 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 \
                 -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1 \
-                -DENABLE_PARQUET=1 \
+                -DENABLE_PARQUET=1 -DENABLE_JWT_CPP=1 \
                 -B {build_dir_normalized}",
                 workdir=repo_path_normalized,
             )

@@ -185,6 +185,9 @@ namespace
         const auto password_plaintext_config = auth_method_path + ".password";
         bool has_password_plaintext = config.has(password_plaintext_config);
 
+        const auto jwks_config = auth_method_path + ".jwks";
+        bool has_jwks = config.has(jwks_config);
+
         const auto password_sha256_hex_config = auth_method_path + ".password_sha256_hex";
         bool has_password_sha256_hex = config.has(password_sha256_hex_config);
 
@@ -210,7 +213,7 @@ namespace
         bool has_http_auth = config.has(http_auth_config);
 
         size_t num_authentication_types = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex
-            + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth + has_scram_password_sha256_hex;
+            + has_jwks + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth + has_scram_password_sha256_hex;
 
         if (num_authentication_types > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -219,7 +222,7 @@ namespace
 
         if (num_authentication_types < 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "At least one authentication type (one of 'password', "
-                "'password_sha256_hex', 'password_scram_sha256_hex', 'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', "
+                "'password_sha256_hex', 'password_scram_sha256_hex', 'password_double_sha1_hex', 'no_password', 'jwks', 'ldap', 'kerberos', "
                 "'ssl_certificates', 'ssh_keys', 'http_authentication') must be specified for user {} in path {}.", user_name, auth_method_path);
 
         AuthenticationData auth_data;
@@ -251,6 +254,12 @@ namespace
         {
             const auto password = config.getString(password_double_sha1_hex_config);
             auth_data = createPasswordAuthData(AuthenticationType::DOUBLE_SHA1_PASSWORD, password, otp_secret, validate, true);
+        }
+        else if (has_jwks)
+        {
+            const String jwks_named_collection = config.getString(jwks_config);
+            auth_data = AuthenticationData(AuthenticationType::JWKS);
+            auth_data.setNamedCollection(jwks_named_collection);
         }
         else if (has_ldap)
         {

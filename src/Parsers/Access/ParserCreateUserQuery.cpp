@@ -155,6 +155,7 @@ namespace
             bool expect_ssl_cert_subjects = false;
             bool expect_public_ssh_key = false;
             bool expect_http_auth_server = false;
+            bool expect_jwks = false;
 
             auto parse_non_password_based_type = [&](auto check_type)
             {
@@ -177,6 +178,8 @@ namespace
                         expect_http_auth_server = true;
                     else if (check_type == AuthenticationType::JWT)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "CREATE USER is not supported for JWT");
+                    else if (check_type == AuthenticationType::JWKS)
+                        expect_jwks = true;
                     else if (check_type != AuthenticationType::NO_PASSWORD)
                         expect_password = true;
 
@@ -236,6 +239,7 @@ namespace
             ASTPtr public_ssh_keys;
             ASTPtr http_auth_scheme;
             ASTPtr ssl_cert_subjects;
+            ASTPtr jwks_name;
             std::optional<String> ssl_cert_subject_type;
 
             if (expect_password || expect_hash)
@@ -301,6 +305,14 @@ namespace
                         return false;
                 }
             }
+            else if (expect_jwks)
+            {
+                if (!ParserKeyword{Keyword::BY}.ignore(pos, expected))
+                    return false;
+
+                if (!ParserStringAndSubstitution{}.parse(pos, jwks_name, expected))
+                    return false;
+            }
 
             auth_data = make_intrusive<ASTAuthenticationData>();
 
@@ -325,6 +337,9 @@ namespace
 
             if (http_auth_scheme)
                 auth_data->children.push_back(std::move(http_auth_scheme));
+
+            if (jwks_name)
+                auth_data->children.push_back(std::move(jwks_name));
 
             ASTPtr method_valid_until;
             if (parseAuthenticationValidUntil(pos, expected, method_valid_until, auth_data->valid_until_is_interval))
