@@ -2,11 +2,13 @@
 #include <IO/ReadHelpers.h>
 
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnSparse.h>
 #include <Core/ProtocolDefines.h>
 
 #include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
-#include <Common/FieldVisitorToString.h>
 
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -88,12 +90,10 @@ bool DataTypeAggregateFunction::isVersioned() const
     return function->isVersioned();
 }
 
-String DataTypeAggregateFunction::formatParameters(const IAggregateFunction & function, const Array & parameters)
+String DataTypeAggregateFunction::formatParameters(const Array & parameters)
 {
     if (parameters.empty())
         return {};
-
-    const bool with_types = function.shouldPrintParametersWithTypes();
 
     WriteBufferFromOwnString stream;
     stream << '(';
@@ -101,10 +101,7 @@ String DataTypeAggregateFunction::formatParameters(const IAggregateFunction & fu
     {
         if (i)
             stream << ", ";
-        if (with_types)
-            stream << applyVisitor(FieldVisitorToCastedLiteral(), parameters[i]);
-        else
-            stream << applyVisitor(FieldVisitorToString(), parameters[i]);
+        stream << applyVisitor(FieldVisitorToCastedLiteral(), parameters[i]);
     }
     stream << ')';
     return stream.str();
@@ -120,7 +117,7 @@ String DataTypeAggregateFunction::getNameImpl(bool with_version) const
     if (with_version && data_type_version)
         stream << data_type_version << ", ";
     stream << function->getName();
-    stream << formatParameters(*function, parameters);
+    stream << formatParameters(parameters);
 
     for (const auto & argument_type : argument_types)
         stream << ", " << argument_type->getName();
@@ -177,6 +174,11 @@ bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type,
     if (lhs_state->function->getName() != rhs_state->function->getName())
         return false;
 
+    /// Different versions of the same state (e.g. `AggregateFunction(uniq, ...)` and `AggregateFunction(1, uniq, ...)`)
+    /// are serialized differently, so a column cannot pass from one type to the other as it is.
+    if (lhs_state->getVersion() != rhs_state->getVersion())
+        return false;
+
     if (lhs_state->parameters.size() != rhs_state->parameters.size())
         return false;
 
@@ -188,8 +190,18 @@ bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type,
         return false;
 
     for (size_t i = 0; i < lhs_state->argument_types.size(); ++i)
-        if (!lhs_state->argument_types[i]->equals(*rhs_state->argument_types[i]))
+    {
+        const auto & lhs_argument = lhs_state->argument_types[i];
+        const auto & rhs_argument = rhs_state->argument_types[i];
+        /// An argument can be a state itself (for example the element states of `-Tuple`), whose layout must be ignored too.
+        if (ignore_variant && typeid_cast<const DataTypeAggregateFunction *>(lhs_argument.get()))
+        {
+            if (!strictEquals(lhs_argument, rhs_argument, /*ignore_variant=*/ true))
+                return false;
+        }
+        else if (!lhs_argument->equals(*rhs_argument))
             return false;
+    }
 
     return true;
 }
@@ -553,6 +565,42 @@ combinator.
 bool hasAggregateFunctionType(const DataTypePtr & type)
 {
     return anyInTypeTree(*type, [](const IDataType & t) { return WhichDataType(t).isAggregateFunction(); });
+}
+
+namespace
+{
+
+/// The state versions of all `AggregateFunction` types in `type` (including nested ones), in a fixed traversal order.
+std::vector<size_t> getAggregateStateVersions(const IDataType & type)
+{
+    std::vector<size_t> versions;
+    forEachInTypeTree(type, [&](const IDataType & child)
+    {
+        if (const auto * aggregate_type = typeid_cast<const DataTypeAggregateFunction *>(&child))
+            versions.push_back(aggregate_type->getVersion());
+    });
+    return versions;
+}
+
+}
+
+bool haveSameAggregateStateVersions(const IDataType & lhs, const IDataType & rhs)
+{
+    return getAggregateStateVersions(lhs) == getAggregateStateVersions(rhs);
+}
+
+ColumnPtr relabelAggregateStateVersions(const ColumnPtr & column, const DataTypePtr & type)
+{
+    if (const auto * const_column = typeid_cast<const ColumnConst *>(column.get()))
+        return ColumnConst::create(relabelAggregateStateVersions(const_column->getDataColumnPtr(), type), column->size());
+
+    if (const auto * replicated_column = typeid_cast<const ColumnReplicated *>(column.get()))
+        return ColumnReplicated::create(
+            relabelAggregateStateVersions(replicated_column->getNestedColumn(), type), replicated_column->getIndexesColumn());
+
+    auto relabelled_column = type->createColumn();
+    relabelled_column->insertRangeFrom(*recursiveRemoveSparse(column), 0, column->size());
+    return relabelled_column;
 }
 
 }

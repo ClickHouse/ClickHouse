@@ -27,6 +27,7 @@ SETTINGS table_disk = true, index_granularity_bytes = 10485760,
       type = object_storage,
       object_storage_type = local,
       metadata_type = plain_rewritable,
+      metadata_snapshot_write_delay_ms = 0, -- the readers see the snapshot of the state right after every commit
       path = '${disk_path}')
 "
 
@@ -79,6 +80,7 @@ SETTINGS table_disk = true, index_granularity_bytes = 10485760,
       type = object_storage,
       object_storage_type = local,
       metadata_type = plain_rewritable,
+      metadata_snapshot_write_delay_ms = 0, -- the readers see the snapshot of the state right after every commit
       path = '${disk_path_desc}')
 "
 
@@ -110,7 +112,7 @@ split_read()
     ${CLICKHOUSE_CLIENT} --query "
     SELECT count(), sum(key) FROM $1 SETTINGS
         merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 1,
-        max_threads = 8, use_query_condition_cache = 0, enable_parallel_replicas = 0"
+        max_threads = 8, use_query_condition_cache = 0, enable_parallel_replicas = 0, use_statistics_for_sum_avg_aggregation = 0"
 }
 
 # The error names the offending part, so assert that and not only the code.

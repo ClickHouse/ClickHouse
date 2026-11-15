@@ -25,7 +25,6 @@ ORDER BY EventId;
 
 INSERT INTO attributes SELECT number AS EventId, concat('Attribute_', toString(number)) AS Attribute FROM numbers(320);
 
-SET enable_analyzer = 1;
 SET join_algorithm = 'direct';
 SET optimize_move_to_prewhere = 1;
 

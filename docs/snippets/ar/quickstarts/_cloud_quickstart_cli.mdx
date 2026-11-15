@@ -2,27 +2,29 @@
 title: البدء السريع مع واجهة سطر أوامر Cloud
 ---
 
-تغطي هذه الصفحة توفير خدمة ClickHouse Cloud والاتصال بها وتحميل البيانات، وكل ذلك من سطر الأوامر باستخدام [واجهة سطر أوامر ClickHouse](/ar/products/cloud/features/cli) (`clickhousectl`). الأوامر غير تفاعلية، ويُخرج `clickhousectl` بيانات JSON باستخدام `--json`.
+تغطي هذه الصفحة تجهيز خدمة ClickHouse Cloud والاتصال بها وتحميل البيانات، وكل ذلك من سطر الأوامر باستخدام [واجهة سطر أوامر ClickHouse](/ar/concepts/features/interfaces/cli) (`clickhousectl`). الأوامر غير تفاعلية، باستثناء تسجيل الدخول الاختياري عبر `--interactive`. ويُخرج `clickhousectl` بيانات JSON عند استخدام `--json`، كما يُخرجها تلقائيًا عندما يشغّله وكيل برمجة.
 
-## المتطلبات الأساسية {#prerequisites}
+## المتطلبات المسبقة {#prerequisites}
 
-ثبّت واجهة سطر أوامر ClickHouse:
+ثبّت واجهة سطر الأوامر لـ ClickHouse:
 
 ```bash
-curl https://clickhouse.com/cli | sh
+curl -fsSL https://clickhouse.com/cli | sh
 ```
+
+يثبّت البرنامج النصي `~/.local/bin/clickhousectl` واسمًا بديلًا له هو `chctl`. تأكّد من إضافة `~/.local/bin` إلى متغير `PATH` لديك.
 
 ستحتاج أيضًا إلى `jq`.
 
-تحتاج إلى حساب ClickHouse Cloud. إذا لم يكن لديك حساب بعد، فسيؤدي الأمر `clickhousectl cloud auth signup` إلى فتح صفحة التسجيل في متصفحك.
+ستحتاج كذلك إلى حساب ClickHouse Cloud. وإن لم يكن لديك حساب بعد، فإن الأمر `clickhousectl cloud auth signup` يفتح صفحة التسجيل في متصفحك.
 
-تتطلب عمليات الكتابة (الإنشاء والحذف) [مصادقة بمفتاح API](/ar/products/cloud/features/admin-features/api/openapi)، بينما يقتصر تسجيل الدخول عبر OAuth على القراءة فقط:
+يمنح تسجيل الدخول عبر المتصفح (`clickhousectl cloud auth login`) صلاحية القراءة فقط. أما إنشاء خدمة وحذفها، وتشغيل استعلامات SQL عبر واجهة برمجة تطبيقات الاستعلام، فيتطلّب [مفتاح API](/ar/products/cloud/features/admin-features/api/openapi) يملك دوره صلاحية إنشاء الخدمات وإدارة نقاط نهاية API للاستعلامات؛ ويعرض الخيار `--help` لكل أمر الصلاحيات التي يحتاجها. سجّل الدخول باستخدام المفتاح؛ إذ يطالبك الخيار `--interactive` بإدخال المفتاح والـ secret، فلا يُحفَظ الـ secret في سجل الـ shell لديك:
 
 ```bash
-clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+clickhousectl cloud auth login --interactive
 ```
 
-بدلًا من ذلك، عيّن متغيرَي البيئة `CLICKHOUSE_CLOUD_API_KEY` و`CLICKHOUSE_CLOUD_API_SECRET`. تحقّق باستخدام `clickhousectl cloud auth status`؛ ويُفترض أن يظهر إدخال بنطاق `read/write`.
+بدلاً من ذلك، يمكنك تمرير `--api-key` و`--api-secret`، أو ضبط متغيرات البيئة `CLICKHOUSE_CLOUD_API_KEY` و`CLICKHOUSE_CLOUD_API_SECRET`. ويُفضَّل أن يعتمد وكيل البرمجة أو البرنامج النصي على متغيرات البيئة. يتحقق تسجيل الدخول من صحة المفتاح ويعرض الهوية المرتبطة به، ويمكنك التحقق من بيانات الاعتماد النشطة في أي وقت باستخدام `clickhousectl cloud auth whoami`. إذا كنت تنتمي إلى أكثر من مؤسسة، فأضف `--org-id <org-id>` (أو `--org-name <name>`) إلى كل أمر `cloud` في هذا الدليل.
 
 ## أنشئ خدمة ClickHouse {#create-service}
 
@@ -87,31 +89,33 @@ while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "
 done
 ```
 
-## شغّل SQL باستخدام واجهة برمجة تطبيقات الاستعلام {#run-sql}
+## تشغيل SQL باستخدام واجهة برمجة تطبيقات الاستعلام {#run-sql}
 
-يشغّل `clickhousectl cloud service query` استعلامات SQL عبر HTTP، دون الحاجة إلى ملف تنفيذي لـ `clickhouse` محلي أو كلمة مرور الخدمة. ينشئ الاستدعاء الأول تلقائيًا نقطة نهاية لواجهة برمجة تطبيقات الاستعلام ومفتاح واجهة برمجة تطبيقات مقيّدًا بالخدمة:
+يُشغّل الأمر `clickhousectl cloud service query` استعلامات SQL عبر HTTP، دون الحاجة إلى ملف تنفيذي محلي لـ `clickhouse` أو إلى كلمة مرور الخدمة. عند الاستدعاء الأول، يضيف clickhousectl مفتاح API الخاص بك إلى نقطة نهاية API للاستعلام الخاصة بالخدمة، وينشئ نقطة النهاية إن لم تكن موجودة، دون إنشاء أي مفتاح جديد. ولجعل الأمر يفشل بدلاً من ذلك، مرّر الخيار `--no-auto-enable`:
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --json --query "SHOW databases"
+clickhousectl cloud service query "$CH_ID" --json --query "SHOW databases"
 ```
 
+يُوجَّه السطر الأول من الإخراج أدناه إلى stderr، ولا يظهر إلا عندما تُغيّر واجهة سطر الأوامر نقطة النهاية:
+
 ```text
-Provisioning Query API endpoint + key for service 'quickstart-ch'...
+Binding the authenticated API key to the Query API endpoint for service 'quickstart-ch'...
 {"name":"INFORMATION_SCHEMA"}
 {"name":"default"}
 {"name":"information_schema"}
 {"name":"system"}
 ```
 
-يكون الإخراج افتراضيًا بتنسيق `PrettyCompact` على الطرفية و`TabSeparated` عند تمريره عبر أنبوب. ويحدّد `--json`، المستخدم أعلاه، التنسيق `JSONEachRow`؛ ولأي تنسيق آخر، مرّر `--format` بدلًا منه (لا يمكن الجمع بين `--json` و`--format`).
+يكون الإخراج افتراضيًا بصيغة `PrettyCompact` عند العرض في طرفية، وبصيغة `TabSeparated` عند توجيهه عبر أنبوب (pipe)، وبصيغة `JSONEachRow` عندما يشغّل وكيل برمجة الأمر. يختار الخيار `--json` المستخدم أعلاه صيغة `JSONEachRow`؛ أما لأي صيغة أخرى، فمرّر `--format` بدلًا منه (لا يمكن الجمع بين `--json` و`--format`). ولذلك ينبغي لأي برنامج نصي يحلّل الإخراج أن يمرّر أحدهما دائمًا.
 
 ## إنشاء قاعدة بيانات وجدول {#create-database-and-table}
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
+clickhousectl cloud service query "$CH_ID" \
   --query "CREATE DATABASE IF NOT EXISTS helloworld"
 
-clickhousectl cloud service query --id "$CH_ID" \
+clickhousectl cloud service query "$CH_ID" \
   --query "CREATE TABLE helloworld.my_first_table (
     user_id UInt32,
     message String,
@@ -121,21 +125,22 @@ clickhousectl cloud service query --id "$CH_ID" \
   PRIMARY KEY (user_id, timestamp)"
 ```
 
-يطبع كلا الأمرين `OK`. أدرج بضعة صفوف:
+يطبع كل أمر `OK` على stderr. أدرج بضعة صفوف:
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
-  --query "INSERT INTO helloworld.my_first_table (user_id, message, timestamp, metric) VALUES
-    (101, 'Hello, ClickHouse!', now(), -1.0),
-    (102, 'Insert a lot of rows per batch', yesterday(), 1.41421),
-    (102, 'Sort your data based on your commonly-used queries', today(), 2.718),
-    (101, 'Granules are the smallest chunks of data read', now() + 5, 3.14159)"
+clickhousectl cloud service query "$CH_ID" <<'SQL'
+INSERT INTO helloworld.my_first_table (user_id, message, timestamp, metric) VALUES
+  (101, 'Hello, ClickHouse!', now(), -1.0),
+  (102, 'Insert a lot of rows per batch', yesterday(), 1.41421),
+  (102, 'Sort your data based on your commonly-used queries', today(), 2.718),
+  (101, 'Granules are the smallest chunks of data read', now() + 5, 3.14159)
+SQL
 ```
 
 تحقّق من نجاح العملية:
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --json \
+clickhousectl cloud service query "$CH_ID" --json \
   --query "SELECT * FROM helloworld.my_first_table ORDER BY timestamp"
 ```
 
@@ -162,13 +167,15 @@ clickhousectl cloud service query --id "$CH_ID" --json \
 
 ```bash
 printf 'INSERT INTO helloworld.my_first_table FORMAT CSV\n' | cat - data.csv \
-  | clickhousectl cloud service query --id "$CH_ID"
+  | clickhousectl cloud service query "$CH_ID"
 ```
+
+تتوقف واجهة برمجة تطبيقات الاستعلام عن الانتظار بعد نحو 30 ثانية، وقد يكون أمر `INSERT` الذي انتهت مهلته قد نُفِّذ فعلًا، لذا افحص عدد الصفوف قبل إعادة المحاولة. أما الملفات الكبيرة، فاستخدم لها [`clickhouse client`](#native-client) بدلًا من ذلك.
 
 تحقّق من إدراج الصفوف الجديدة:
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --json \
+clickhousectl cloud service query "$CH_ID" --json \
   --query "SELECT count() FROM helloworld.my_first_table"
 ```
 
@@ -184,7 +191,7 @@ clickhousectl cloud service query --id "$CH_ID" --json \
 clickhousectl local use latest
 ```
 
-يثبّت هذا أحدث ملف تنفيذي لـ `clickhouse` وينشئ رابطًا رمزيًا له في `~/.local/bin/clickhouse`، بحيث يصبح أمر `clickhouse` متاحًا عموميًا ضمن `PATH`.
+يثبّت هذا أحدث إصدار من ClickHouse وينشئ رابطًا رمزيًا له في `~/.local/bin/clickhouse`، بحيث يمكنك تشغيل أمر `clickhouse` مباشرةً بمجرد أن يكون `~/.local/bin` ضمن `PATH` (يطبع الأمر ملاحظة إذا لم يكن كذلك).
 
 بعد ذلك، اتصل باستخدام اسم المضيف وكلمة المرور الواردين في استجابة الإنشاء. عند استخدام `--query`، تُطبع النتيجة ثم ينهي العميل عمله؛ أما بدونه، فستظهر لك موجّه الأوامر التفاعلي (`:)`) الذي يمكنك الخروج منه باستخدام `exit`:
 
@@ -195,16 +202,16 @@ clickhouse client --host "$CH_HOST" --secure --port 9440 \
 ```
 
 ```text
+103	Use FORMAT to specify the format	2022-02-21 10:43:30	678.9
+102	This is data in a file	2022-02-22 10:43:28	123.45
+101	It is comma-separated	2022-02-23 00:00:00	456.78
 102	Insert a lot of rows per batch	2026-08-26 00:00:00	1.41421
 102	Sort your data based on your commonly-used queries	2026-08-27 00:00:00	2.718
 101	Hello, ClickHouse!	2026-08-27 10:41:28	-1
 101	Granules are the smallest chunks of data read	2026-08-27 10:41:33	3.14159
-103	Use FORMAT to specify the format	2022-02-21 10:43:30	678.9
-102	This is data in a file	2022-02-22 10:43:28	123.45
-101	It is comma-separated	2022-02-23 00:00:00	456.78
 ```
 
-يتيح نموذج الأمر نفسه تحميل الملفات:
+يتيح نموذج الأمر نفسه تحميل الملفات. ولا يخضع لمهلة واجهة برمجة تطبيقات الاستعلام، لذا استخدمه مع الملفات الكبيرة:
 
 ```bash
 clickhouse client --host "$CH_HOST" --secure --port 9440 \
@@ -212,9 +219,11 @@ clickhouse client --host "$CH_HOST" --secure --port 9440 \
   --query='INSERT INTO helloworld.my_first_table FORMAT CSV' < data.csv
 ```
 
+تُزيل ClickHouse Cloud التكرارات من الكتل المُدرَجة المتطابقة، لذا فإن تحميل الملف `data.csv` نفسه مرة أخرى لن يضيف أي صفوف.
+
 ## التنظيف {#cleanup}
 
-يؤدي حذف الخدمة إلى إزالة جميع بياناتها نهائيًا. يوقف الخيار `--force` الخدمة قيد التشغيل أولًا:
+يؤدي حذف الخدمة إلى إزالة جميع بياناتها نهائيًا. يوقف الخيار `--force` الخدمة قيد التشغيل أولًا وينتظر اكتمال إيقافها، وقد يستغرق ذلك عدة دقائق:
 
 ```bash
 clickhousectl cloud service delete "$CH_ID" --force

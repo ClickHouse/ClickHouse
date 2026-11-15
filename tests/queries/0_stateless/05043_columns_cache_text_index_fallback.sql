@@ -9,7 +9,6 @@
 -- `system.columns_cache`, while an ordinary read of `id` in the same environment
 -- does populate the cache.
 
-SET enable_analyzer = 1;
 SET max_threads = 1;
 
 -- Force the direct read from the text index; CI may inject these as false, in
@@ -24,6 +23,7 @@ SET use_text_index_like_evaluation_by_dictionary_scan = 1;
 -- list, so the pattern query is bypassed and the fallback evaluation on the
 -- physical column takes over.
 SET text_index_like_max_postings_to_read = 0;
+SET use_statistics_for_sum_avg_aggregation = 0;
 
 DROP TABLE IF EXISTS t_cache_text_fallback;
 

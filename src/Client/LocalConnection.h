@@ -51,7 +51,7 @@ struct LocalQueryState
     String logsql_table;
     String logsql_time_column;
     String logsql_message_column;
-    bool allow_experimental_logsql_dialect = false;
+    bool enable_logsql_dialect = false;
     /// AST-size limits used only by the JSON dialect.
     UInt64 json_ast_max_depth = 0;
     UInt64 json_ast_max_elements = 0;
@@ -75,8 +75,8 @@ struct LocalQueryState
     std::shared_ptr<ColumnsDescription> columns_description;
     std::optional<ProfileInfo> profile_info;
 
-    /// Is request cancelled
-    bool is_cancelled = false;
+    /// Is request cancelled. Atomic: the interactive cancel callback may set it on a pipeline thread.
+    std::atomic_bool is_cancelled = false;
     bool is_finished = false;
 
     bool sent_totals = false;

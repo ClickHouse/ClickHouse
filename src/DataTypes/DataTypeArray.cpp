@@ -138,6 +138,9 @@ You can also use `[]`.
 []
 ```
 
+The array constructor syntax of the SQL standard, PostgreSQL, and Trino is supported too: `ARRAY[1, 2]` is the same as `[1, 2]`.
+The data type can also be written as `ARRAY(T)`.
+
 Example of creating an array:
 
 ```sql

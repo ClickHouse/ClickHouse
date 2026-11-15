@@ -61,7 +61,7 @@ Si une application consomme les blocs bien plus lentement que le serveur ne les 
 
 ### StreamContexts {#streamcontexts}
 
-Chacune des méthodes `query_*_stream` (comme `query_row_block_stream`) renvoie un objet ClickHouse `StreamContext`, qui combine un contexte Python et un générateur. Voici l’utilisation de base :
+Chacune des méthodes `query_*_stream` (comme `query_row_block_stream`) renvoie un objet ClickHouse `StreamContext`, qui combine un contexte Python et un générateur. Voici l’utilisation de base :
 
 ```python
 with client.query_row_block_stream(
@@ -72,11 +72,15 @@ with client.query_row_block_stream(
             process_trip(row)
 ```
 
-Notez qu’essayer d’utiliser un StreamContext sans bloc `with` provoquera une erreur. L’utilisation d’un contexte Python garantit que le flux (dans ce cas, une réponse HTTP en streaming) sera correctement fermé, même si toutes les données ne sont pas consommées et/ou si une exception est levée pendant le traitement. De plus, les `StreamContext` ne peuvent être utilisés qu’une seule fois pour consommer le flux. Essayer d’utiliser un `StreamContext` après avoir quitté son contexte produira une `StreamClosedError`.
+Notez qu’essayer d’utiliser un StreamContext sans statement `with` provoquera une erreur. L’utilisation d’un contexte Python garantit que le flux (dans ce cas, une réponse HTTP en streaming) sera correctement fermé, même si toutes les données ne sont pas consommées et/ou si une exception est levée pendant le traitement. De plus, les `StreamContext` ne peuvent être utilisés qu’une seule fois pour consommer le flux. Essayer d’utiliser un `StreamContext` après avoir quitté son contexte produira une `StreamClosedError`.
+
+Pour les flux HTTP synchrones au format Native, la sortie du contexte attend la fin de toute lecture en cours, puis lit et ignore le reste de la réponse. Cela concerne les flux de lignes, de colonnes, NumPy et Pandas, avec le codec Python comme avec le codec Rust. Une requête lente peut retarder ce nettoyage. `send_receive_timeout` limite chaque lecture sur le socket ; il ne fixe donc pas de délai maximal pour la sortie du contexte.
+
+Pour les flux `AsyncClient` qui utilisent le codec Rust, la sortie du bloc `async with` attend la fin du nettoyage de la réponse. Si la tâche de consommation est annulée, le nettoyage se termine avant que l’annulation ne soit levée à nouveau.
 
 Si la connexion échoue pendant la lecture d’un résultat, une `StreamFailureError` est levée au lieu de renvoyer silencieusement un résultat tronqué. Son message respecte le paramètre `show_clickhouse_errors` du client.
 
-Vous pouvez utiliser la propriété `source` du `StreamContext` pour accéder à l’objet résultat parent, qui inclut les noms de colonnes et les types. Pour la plupart des flux, il s’agit d’un `QueryResult` ; les méthodes `query_np_stream` et `query_df_stream` exposent à la place un `NumpyResult`.
+Vous pouvez utiliser la propriété `source` du `StreamContext` pour accéder à l’objet résultat parent, qui inclut les noms de colonnes et les types. Pour la plupart des flux, il s’agit d’un `QueryResult` ; les méthodes `query_np_stream` et `query_df_stream` exposent à la place un `NumpyResult`.
 
 ### Types de flux {#stream-types}
 

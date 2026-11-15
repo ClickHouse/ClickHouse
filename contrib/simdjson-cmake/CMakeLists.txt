@@ -14,7 +14,7 @@ target_include_directories(_simdjson SYSTEM PUBLIC "${SIMDJSON_INCLUDE_DIR}" PRI
 
 # A ClickHouse `String` is a byte string with no encoding contract, so a JSON document built from one
 # need not be valid UTF-8, while simdjson rejects such a document by default. This is simdjson's own
-# switch for that check. The scalar `fallback` backend ignores it and still validates.
+# switch for that check.
 target_compile_definitions(_simdjson PRIVATE SIMDJSON_UTF8VALIDATION=0)
 
 # For x86-64-v2 (and lower), simdjson uses its own CPU dispatching and gets

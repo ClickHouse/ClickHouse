@@ -1,5 +1,7 @@
 #include <Storages/BigQuery/BigQueryConfiguration.h>
 
+#include <IO/HTTPHeaderEntries.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -7,6 +9,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Poco/URI.h>
 #include <Common/Exception.h>
+#include <Common/HTTPHeaderFilter.h>
 
 #include <array>
 #include <unordered_map>
@@ -215,6 +218,16 @@ BigQueryConfiguration BigQueryConfiguration::fromArguments(ASTs & args, ContextP
 
     validate(configuration);
     return configuration;
+}
+
+void BigQueryConfiguration::checkHeaders(const ContextPtr & context) const
+{
+    HTTPHeaderEntries headers;
+    if (!access_token.empty())
+        headers.emplace_back("Authorization", "Bearer " + access_token);
+    if (!billing_project.empty())
+        headers.emplace_back("X-Goog-User-Project", billing_project);
+    context->getHTTPHeaderFilter().checkHeaders(headers);
 }
 
 }

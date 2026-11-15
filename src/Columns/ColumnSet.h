@@ -29,6 +29,15 @@ public:
     TypeIndex getDataType() const override { return TypeIndex::Set; }
     MutableColumnPtr cloneDummy(size_t s_) const override { return ColumnSet::create(s_, data); }
 
+    /// insertRangeFrom only grows size and keeps the destination FutureSet. Same set instance only.
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        const auto * rhs_set = typeid_cast<const ColumnSet *>(&rhs);
+        if (!rhs_set)
+            return false;
+        return data.get() == rhs_set->data.get();
+    }
+
     FutureSetPtr getData() const { return data; }
     void setData(FutureSetPtr data_) { data = std::move(data_); }
 

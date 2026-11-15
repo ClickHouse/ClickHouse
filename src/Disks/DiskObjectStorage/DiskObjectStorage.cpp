@@ -775,6 +775,24 @@ bool DiskObjectStorage::prefersRecursiveRemoval() const
     return metadata_storage->getType() == MetadataStorageType::PlainRewritable;
 }
 
+bool DiskObjectStorage::supportsAtomicFileCreation() const
+{
+    if (metadata_storage->getType() != MetadataStorageType::PlainRewritable)
+        return false;
+
+    /// `plain_rewritable` writes a new file and, in a directory with an explicit file list, its `prefix.path`, with
+    /// ordinary writes, which S3 and Azure Blob Storage publish at once.
+    const auto object_storage = object_storages->takePointingTo(cluster->getLocalLocation());
+    switch (object_storage->getType())
+    {
+        case ObjectStorageType::S3:
+        case ObjectStorageType::Azure:
+            return object_storage->supportsAtomicWrite();
+        default:
+            return false;
+    }
+}
+
 bool DiskObjectStorage::isSharedCompatible() const
 {
     switch (object_storages->takePointingTo(cluster->getLocalLocation())->getType())
@@ -801,7 +819,7 @@ bool DiskObjectStorage::isSharedCompatible() const
 
 bool DiskObjectStorage::supportsHardLinks() const
 {
-    return !metadata_storage->isWriteOnce() && !metadata_storage->isPlain();
+    return metadata_storage->supportsHardLinks();
 }
 
 String DiskObjectStorage::getReadResourceNameNoLock() const
