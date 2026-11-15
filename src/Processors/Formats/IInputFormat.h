@@ -133,13 +133,12 @@ public:
     virtual Chunk read() = 0;
 
     virtual void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read);
-    /** In some usecase (hello Kafka) we need to read a lot of tiny streams in exactly the same format.
-     * The recreating of parser for each small stream takes too long, so we introduce a method
-     * resetParser() which allow to reset the state of parser to continue reading of
-     * source stream without recreating that.
-     * That should be called after current buffer was fully read.
-     */
+    /// Prepares the format to read the next input. Called only for formats registered with
+    /// `supports_reset_parser` (see `FormatFactory::registerInputFormat`), which must reset every
+    /// per-input field; other formats are created anew for each input.
     virtual void resetParser();
+    bool supportsResetParser() const { return supports_reset_parser; }
+    void setSupportsResetParser(bool value) { supports_reset_parser = value; }
 
     virtual void setReadBuffer(ReadBuffer & in_);
     virtual void resetReadBuffer() { in = nullptr; resetOwnedBuffers(); }
@@ -208,6 +207,8 @@ private:
     void resetOwnedBuffers();
 
     VectorWithMemoryTracking<std::unique_ptr<ReadBuffer>> owned_buffers;
+
+    bool supports_reset_parser = false;
 };
 
 using InputFormatPtr = std::shared_ptr<IInputFormat>;

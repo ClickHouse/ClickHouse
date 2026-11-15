@@ -3229,7 +3229,7 @@ void registerInputFormatORC(FormatFactory & factory)
             const size_t min_bytes_for_seek = use_prefetch ? read_settings.remote_fs_settings.min_bytes_for_seek : 0;
             return std::make_shared<NativeORCBlockInputFormat>(
                 buf, std::make_shared<const Block>(sample), settings, use_prefetch, min_bytes_for_seek, format_filter_info);
-        });
+        }, /*supports_reset_parser=*/ true);
     factory.markFormatSupportsSubsetOfColumns("ORC");
 
     factory.setDocumentation("ORC", Documentation{
