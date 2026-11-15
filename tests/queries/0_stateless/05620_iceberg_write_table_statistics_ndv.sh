@@ -91,6 +91,41 @@ local_query "CREATE TABLE t_stale ENGINE = IcebergLocal('${WORK_DIR}/t_stale/');
     INSERT INTO t_stale SELECT number + 1000, toString(number % 10 + 10) FROM numbers(1000);"
 stats t_stale "id s"
 
+# $1: table, $2: `zero_theta` or `truncated`. Corrupts the sketch of `id` (field 1) in the statistics file of $1.
+corrupt_id_sketch()
+{
+    python3 - "$(find "${WORK_DIR}/$1/metadata/" -name '*.stats')" "$2" <<'EOF'
+import json, struct, sys
+path, mode = sys.argv[1], sys.argv[2]
+data = open(path, 'rb').read()
+start = len(data) - 12 - struct.unpack('<i', data[-12:-8])[0]
+footer = json.loads(data[start:-12])
+out = b'PFA1'
+for blob in footer['blobs']:
+    sketch = data[blob['offset']:blob['offset'] + blob['length']]
+    if blob['fields'] == [1]:
+        if mode == 'zero_theta':
+            # Three preamble longs instead of two: the third one, after the count, is theta.
+            sketch = bytes([sketch[0] & 0xC0 | 3]) + sketch[1:16] + bytes(8) + sketch[16:]
+        else:
+            sketch = sketch[:-1]
+    blob['offset'], blob['length'] = len(out), len(sketch)
+    out += sketch
+payload = json.dumps(footer).encode()
+open(path, 'wb').write(out + b'PFA1' + payload + struct.pack('<i', len(payload)) + data[-8:])
+EOF
+}
+
+for corruption in zero_theta; do
+    echo "a delete on a parent sketch with a ${corruption//_/ } commits without statistics"
+    local_query "CREATE TABLE t_${corruption} (id Int64, s String) ENGINE = IcebergLocal('${WORK_DIR}/t_${corruption}/');
+        INSERT INTO t_${corruption} SELECT number, toString(number % 10) FROM numbers(1000);"
+    corrupt_id_sketch "t_${corruption}" "${corruption}"
+    local_query "CREATE TABLE t_${corruption} ENGINE = IcebergLocal('${WORK_DIR}/t_${corruption}/');
+        ALTER TABLE t_${corruption} DELETE WHERE id < 10; SELECT count() FROM t_${corruption};"
+    stats "t_${corruption}" "id s"
+done
+
 echo "a delete keeps the parent's sketches"
 run t_delete "INSERT INTO t_delete $(values 0 20000); ALTER TABLE t_delete DELETE WHERE id < 10000;"
 stats t_delete "${NAMES}"

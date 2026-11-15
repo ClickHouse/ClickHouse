@@ -24,6 +24,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/transformEndianness.h>
@@ -44,6 +45,11 @@ namespace Setting
 
 #if USE_DATASKETCHES
 
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 namespace
 {
 
@@ -56,6 +62,18 @@ struct ParentSketches
     bool has_rows = false;
     SketchByFieldId sketches;
 };
+
+datasketches::compact_theta_sketch deserializeParentSketch(const String & bytes)
+{
+    auto sketch = datasketches::compact_theta_sketch::deserialize(bytes.data(), bytes.size());
+    /// A zero theta, or hashes not below theta, give an estimate that the `ndv` property cannot hold as UInt64.
+    /// A union of checked sketches keeps its distinct hashes below theta, so its estimate is below 2^63.
+    const double estimate = sketch.get_estimate();
+    if (!(estimate < 0x1p64))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid theta sketch: theta {}, {} hashes, estimate {}",
+            sketch.get_theta64(), sketch.get_num_retained(), estimate);
+    return sketch;
+}
 
 /// The NDV statistics file of a snapshot that a commit adds to the table metadata.
 class SnapshotStatisticsNdv
@@ -99,7 +117,7 @@ public:
                 continue;
             const auto bytes = reader.readBlob(blob);
             if (bytes)
-                parent.sketches.emplace(blob.fields[0], datasketches::compact_theta_sketch::deserialize(bytes->data(), bytes->size()));
+                parent.sketches.emplace(blob.fields[0], deserializeParentSketch(*bytes));
         }
         return parent;
     }
