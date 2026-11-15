@@ -20,6 +20,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/TypeTree.h>
 
+#include <algorithm>
 #include <string_view>
 #include <unordered_set>
 
@@ -142,7 +143,9 @@ SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & des
         if (!column_in_header || !column_in_header->type || comparisonCanMergeDistinctValues(*column_in_header->type))
             break;
 
-        prefix.emplace_back(sort_column_desc);
+        /// A repeated column must not count twice in the size of the prefix.
+        if (std::ranges::none_of(prefix, [&](const auto & desc) { return desc.column_name == sort_column_desc.column_name; }))
+            prefix.emplace_back(sort_column_desc);
     }
 
     return prefix;

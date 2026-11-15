@@ -38,9 +38,14 @@ public:
                     continue;
                 }
 
-                auto [_, inserted] = unique_expressions_nodes_set.emplace(sort_node_typed.getExpression().get());
-                if (inserted)
-                    result_nodes.push_back(sort_node);
+                const auto * expression = sort_node_typed.getExpression().get();
+                if (unique_expressions_nodes_set.contains(expression))
+                    continue;
+
+                /// Different values can be equal with a collation, so the following keys are not redundant after it.
+                if (!sort_node_typed.getCollator())
+                    unique_expressions_nodes_set.emplace(expression);
+                result_nodes.push_back(sort_node);
             }
 
             query_order_by_nodes = std::move(result_nodes);
