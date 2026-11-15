@@ -2375,6 +2375,13 @@ private:
         if (other_type->isNullable())
             return {};
 
+        /// An `Enum` is ordered against a `FixedString` constant by its name (see `FunctionComparison::executeGeneric`),
+        /// while a typed `Enum` constant would put the edge into the order of the ordinals. The two orders differ
+        /// in general (`Enum8('a' = 2, 'b' = 1)`), so only an equality or inequality joins the chain.
+        if (function_name != "equals" && function_name != "notEquals"
+            && isFixedString(removeNullable(constant_type)) && isEnum(other_type))
+            return {};
+
         const auto * constant_node = lhs_constant ? lhs_constant : rhs_constant;
         Field converted;
         if (isStringOrFixedString(constant_type) && !isStringOrFixedString(other_type))
