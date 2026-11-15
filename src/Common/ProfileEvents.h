@@ -8,6 +8,7 @@
 #include <base/strong_typedef.h>
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <new>
 #include <cstddef>
 
@@ -93,7 +94,10 @@ namespace ProfileEvents
         std::atomic<Count> prev_cpu_wait_microseconds = 0;
         std::atomic<Count> prev_cpu_virtual_time_microseconds = 0;
 
-        /// Lazily allocated on first setTraceProfileEvent()
+        /// Lazily allocated on first setTraceProfileEvent().
+        /// The thread which allocates a buffer and updates the should_trace_array pointer
+        /// should synchronize-with any thread that reads the pointer and reads from the buffer.
+        /// Therefore, should_trace_array requires acquire-release.
         std::atomic<std::atomic_bool *> should_trace_array = nullptr;
         std::unique_ptr<std::atomic_bool[]> should_trace_holder;
         std::atomic_bool trace_all_profile_events = false;
@@ -215,6 +219,9 @@ namespace ProfileEvents
 
     /// Get ProfileEvent by its name
     Event getByName(std::string_view name);
+
+    /// Get ProfileEvent by its name. Returns std::nullopt if there is no event with such name.
+    std::optional<Event> tryGetByName(std::string_view name);
 
     /// Get value type of event by identifier. Returns enum value.
     ValueType getValueType(Event event);

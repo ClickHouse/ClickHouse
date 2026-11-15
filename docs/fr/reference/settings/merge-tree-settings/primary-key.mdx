@@ -12,25 +12,19 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 
 Ces paramètres sont disponibles dans [system.merge&#95;tree&#95;settings](/fr/reference/system-tables/merge_tree_settings) et sont générés automatiquement à partir des sources de ClickHouse.
 
-<div id="primary_key_compress_block_size">
-  ## primary_key_compress_block_size
-</div>
+## primary_key_compress_block_size {#primary_key_compress_block_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="65536" />
 
-Taille du bloc de compression de la clé primaire, c’est-à-dire la taille réelle du bloc à compresser.
+Taille, en octets non compressés, des blocs utilisés lors de l’écriture d’un index de clé primaire compressé pour les parts nouvelles ou réécrites. S’applique uniquement lorsque `compress_primary_key` est activé. Ce paramètre contrôle le tramage de la compression et la mise en tampon ; il ne modifie ni la clé primaire ni la granularité de l’index.
 
-<div id="primary_key_compression_codec">
-  ## primary_key_compression_codec
-</div>
+## primary_key_compression_codec {#primary_key_compression_codec}
 
 <SettingsInfoBlock type="String" default_value="ZSTD(3)" />
 
 Codec de compression utilisé pour la clé primaire. La clé primaire étant suffisamment petite et mise en cache, la compression par défaut est donc ZSTD(3).
 
-<div id="primary_key_lazy_load">
-  ## primary_key_lazy_load
-</div>
+## primary_key_lazy_load {#primary_key_lazy_load}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -38,9 +32,7 @@ Charge la clé primaire en mémoire lors de la
 première utilisation plutôt qu&#39;à l&#39;initialisation de la table. Cela peut économiser de la mémoire en
 présence d&#39;un grand nombre de tables.
 
-<div id="primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns">
-  ## primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns
-</div>
+## primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns {#primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns}
 
 <SettingsInfoBlock type="Float" default_value="0.9" />
 

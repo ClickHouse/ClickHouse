@@ -1,6 +1,9 @@
 #include <Storages/Statistics/Statistics.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Core/Field.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -50,6 +53,28 @@ bool StatisticsUtils::isSame(const IAggregateFunction & a, const IAggregateFunct
         if (!a_types[i]->equals(*b_types[i]))
             return false;
     return true;
+}
+
+void StatisticsUtils::updateMin(Field & accumulator, const Field & value)
+{
+    if (value.isNull())
+        return;
+
+    if (accumulator.isNull() || isNaNField(accumulator))
+        accumulator = value;
+    else if (!isNaNField(value) && value < accumulator)
+        accumulator = value;
+}
+
+void StatisticsUtils::updateMax(Field & accumulator, const Field & value)
+{
+    if (value.isNull())
+        return;
+
+    if (accumulator.isNull() || isNaNField(accumulator))
+        accumulator = value;
+    else if (!isNaNField(value) && accumulator < value)
+        accumulator = value;
 }
 
 std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value, const DataTypePtr & data_type)
@@ -175,6 +200,46 @@ IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
 {
 }
 
+size_t IStatistics::fieldAllocatedBytes(const Field & field)
+{
+    /// A node of `std::map` holds the value and three pointers and a color.
+    static constexpr size_t map_node_overhead = 4 * sizeof(void *);
+
+    auto vector_allocated_bytes = [](const FieldVector & vector)
+    {
+        size_t res = vector.capacity() * sizeof(Field);
+        for (const auto & element : vector)
+            res += fieldAllocatedBytes(element);
+        return res;
+    };
+
+    switch (field.getType())
+    {
+        case Field::Types::String:
+            return field.safeGet<String>().capacity();
+        case Field::Types::Array:
+            return vector_allocated_bytes(field.safeGet<Array>());
+        case Field::Types::Tuple:
+            return vector_allocated_bytes(field.safeGet<Tuple>());
+        case Field::Types::Map:
+            return vector_allocated_bytes(field.safeGet<Map>());
+        case Field::Types::Object:
+        {
+            size_t res = 0;
+            for (const auto & [key, value] : field.safeGet<Object>())
+                res += sizeof(Object::value_type) + map_node_overhead + key.capacity() + fieldAllocatedBytes(value);
+            return res;
+        }
+        case Field::Types::AggregateFunctionState:
+        {
+            const auto & state = field.safeGet<AggregateFunctionStateData>();
+            return state.name.capacity() + state.data.capacity();
+        }
+        default:
+            return 0;
+    }
+}
+
 ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_)
     : stats_desc(stats_desc_)
 {
@@ -238,7 +303,16 @@ bool ColumnStatistics::structureEquals(const ColumnStatistics & other) const
 
 std::shared_ptr<ColumnStatistics> ColumnStatistics::cloneEmpty() const
 {
-    return MergeTreeStatisticsFactory::instance().get(stats_desc);
+    /// The statistics are recreated from their descriptions, which does not reproduce the structure of
+    /// statistics deserialized from an older format (e.g. `basic` without a default-value count), so
+    /// copy it explicitly: the clone must be compatible with the original (see `structureEquals`).
+    auto result = MergeTreeStatisticsFactory::instance().get(stats_desc);
+    for (const auto & [type, single_stats] : result->stats)
+    {
+        if (auto it = stats.find(type); it != stats.end())
+            single_stats->copyStructureFrom(*it->second);
+    }
+    return result;
 }
 
 UInt64 IStatistics::estimateCardinality() const
@@ -327,14 +401,14 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
         return stats.at(StatisticsType::CountMinSketch)->estimateEqual(val);
     }
 #endif
-    if (uniq_stats != nullptr)
+    if (hasCardinality())
     {
-        UInt64 cardinality = uniq_stats->estimateCardinality();
-        if (cardinality == 0 || rows == 0)
+        UInt64 distinct_values = estimateCardinality();
+        if (distinct_values == 0 || rows == 0)
             return 0;
         /// Uniq ignores NULLs, so divide non-NULL row count by distinct values.
         /// `getNonNullRowCount` returns `rows` when null-count tracking is absent.
-        return static_cast<Float64>(getNonNullRowCount()) / static_cast<Float64>(cardinality);
+        return static_cast<Float64>(getNonNullRowCount()) / static_cast<Float64>(distinct_values);
     }
 
     return std::nullopt;
@@ -364,8 +438,15 @@ std::optional<Float64> ColumnStatistics::estimateRange(const Range & range) cons
     return *right_count - *left_count;
 }
 
+bool ColumnStatistics::hasCardinality() const
+{
+    return external_cardinality || findUniqStats(stats) != nullptr;
+}
+
 UInt64 ColumnStatistics::estimateCardinality() const
 {
+    if (external_cardinality)
+        return *external_cardinality;
     if (const IStatistics * uniq_stats = findUniqStats(stats))
     {
         return uniq_stats->estimateCardinality();
@@ -390,6 +471,12 @@ bool ColumnStatistics::hasMinMax() const
     return false;
 }
 
+bool ColumnStatistics::hasSum() const
+{
+    auto it = stats.find(StatisticsType::Basic);
+    return it != stats.end() && assert_cast<const StatisticsBasic &>(*it->second).hasSum();
+}
+
 UInt64 ColumnStatistics::getNullCount() const
 {
     if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
@@ -399,6 +486,17 @@ UInt64 ColumnStatistics::getNullCount() const
             return basic.getNullCount();
     }
     return 0;
+}
+
+std::optional<Float64> ColumnStatistics::getAvgStringBytes() const
+{
+    if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
+    {
+        const auto & basic = assert_cast<const StatisticsBasic &>(*it->second);
+        if (basic.hasStringLengthAvg())
+            return static_cast<Float64>(basic.getStringLengthAvg());
+    }
+    return std::nullopt;
 }
 
 UInt64 ColumnStatistics::getNonNullRowCount() const
@@ -465,6 +563,8 @@ Estimate ColumnStatistics::getEstimate() const
             info.estimated_null_count = basic_stats.getNullCount();
         if (basic_stats.hasDefaultCount())
             info.estimated_default_count = basic_stats.getDefaultCount();
+        if (basic_stats.hasSum())
+            info.estimated_sum = basic_stats.getSum();
     }
     else if (auto minmax_it = stats.find(StatisticsType::MinMax); minmax_it != stats.end())
     {
@@ -501,9 +601,27 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
     /// As the column row count is always useful, save it in any case
     writeIntBinary(rows, buf);
 
-    /// Write each statistics blob with a length prefix, by serializing into a temp buffer first.
+    /// Write each statistics blob with a length prefix. Statistics that can compute their exact
+    /// serialized size can stream directly to the destination; the others keep the temp-buffer
+    /// fallback needed for the V4 prefix.
     for (const auto & [type, stat_ptr] : stats)
     {
+        if (std::optional<UInt64> serialized_size = stat_ptr->getSerializedSize())
+        {
+            writeIntBinary(*serialized_size, buf);
+
+            const auto count_before = buf.count();
+            stat_ptr->serialize(buf);
+            const auto written = static_cast<UInt64>(buf.count() - count_before);
+            if (written != *serialized_size)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Statistics serialization for type {} wrote {} bytes but declared {} bytes",
+                    statisticsTypeToString(type), written, *serialized_size);
+
+            continue;
+        }
+
         String temp_data;
         WriteBufferFromString temp_buf(temp_data);
         stat_ptr->serialize(temp_buf);
@@ -514,21 +632,31 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
     }
 }
 
+std::shared_ptr<ColumnStatistics> ColumnStatistics::createBasicFromSummary(
+    const DataTypePtr & data_type, UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count)
+{
+    SingleStatisticsDescription basic_desc(StatisticsType::Basic, nullptr, /*is_implicit_=*/ true);
+    ColumnStatisticsDescription stats_desc;
+    stats_desc.data_type = data_type;
+    stats_desc.types_to_desc.emplace(StatisticsType::Basic, basic_desc);
+
+    auto basic = std::make_shared<StatisticsBasic>(basic_desc, data_type);
+    basic->build(rows, min_value, max_value, null_count);
+
+    auto column_stats = std::make_shared<ColumnStatistics>(stats_desc);
+    column_stats->stats.emplace(StatisticsType::Basic, std::move(basic));
+    column_stats->rows = rows;
+    return column_stats;
+}
+
 std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf, const DataTypePtr & data_type)
 {
     UInt16 version_raw{};
     readIntBinary(version_raw, buf);
     auto version = static_cast<StatisticsFileVersion>(version_raw);
 
-    /// `V3` was briefly written by reverted PR #102356 and is permanently reserved. Refuse to read it
-    /// rather than silently misinterpret a `V3` payload as `V4`.
-    if (version == StatisticsFileVersion::V3)
-        throw Exception(
-            ErrorCodes::ILLEGAL_STATISTICS,
-            "Statistics file version V3 is reserved and is never produced by any released build. "
-            "Please run `ALTER TABLE [db.]table MATERIALIZE STATISTICS ALL` to regenerate the statistics.");
-
-    if (version != StatisticsFileVersion::V1 && version != StatisticsFileVersion::V2 && version != StatisticsFileVersion::V4)
+    if (version != StatisticsFileVersion::V1 && version != StatisticsFileVersion::V2
+        && version != StatisticsFileVersion::V3 && version != StatisticsFileVersion::V4)
         throw Exception(
             ErrorCodes::ILLEGAL_STATISTICS,
             "Tried to read statistics file with unsupported format version {}. "
@@ -542,22 +670,31 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
     ColumnStatisticsDescription stats_desc;
     stats_desc.data_type = data_type;
 
-    if (version == StatisticsFileVersion::V4)
+    /// V4 layout: stored_type_name, then per-stat size prefix. Return nullptr if the stored
+    /// column type differs from the current type — statistics built on a different type are
+    /// stale (e.g. a MODIFY COLUMN mutation is in progress) and must not be used.
+    /// V3 is the same layout without `stored_type_name`, so it has no such guard, exactly like
+    /// V1 / V2.
+    ///
+    /// V3 layout: same layout as V4 but without the `stored_type_name` field, and the only
+    /// conflict is bit 4 of `stat_types_mask`, which meant the reverted `NullCount` in V3
+    /// and means `Basic` in V4 — the deserializer skips it.
+    if (version == StatisticsFileVersion::V3 || version == StatisticsFileVersion::V4)
     {
-        /// V4 layout: stored_type_name, then per-stat size prefix. Return nullptr if the stored
-        /// column type differs from the current type — statistics built on a different type are
-        /// stale (e.g. a MODIFY COLUMN mutation is in progress) and must not be used.
-        String stored_type_name;
-        readStringBinary(stored_type_name, buf);
-        if (stored_type_name != data_type->getName())
+        if (version == StatisticsFileVersion::V4)
         {
-            LOG_TRACE(
-                getLogger("ColumnStatistics"),
-                "Skipping statistics: stored type {} does not match current column type {}. "
-                "Statistics will be ignored until rematerialized after the MODIFY COLUMN mutation completes.",
-                stored_type_name,
-                data_type->getName());
-            return nullptr;
+            String stored_type_name;
+            readStringBinary(stored_type_name, buf);
+            if (stored_type_name != data_type->getName())
+            {
+                LOG_TRACE(
+                    getLogger("ColumnStatistics"),
+                    "Skipping statistics: stored type {} does not match current column type {}. "
+                    "Statistics will be ignored until rematerialized after the MODIFY COLUMN mutation completes.",
+                    stored_type_name,
+                    data_type->getName());
+                return nullptr;
+            }
         }
 
         UInt64 rows_value = 0;
@@ -575,6 +712,14 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
             readIntBinary(stat_size, buf);
 
             auto type = static_cast<StatisticsType>(i);
+
+            if (version == StatisticsFileVersion::V3 && type == StatisticsType::Basic)
+            {
+                /// In V3, this was the NullCount statistics -> ignore
+                buf.ignore(stat_size);
+                continue;
+            }
+
             if (auto stat_ptr = factory.tryCreateSingle(type, data_type))
             {
                 /// Track bytes consumed so we can detect a per-stat parser drift and either pad the
@@ -623,6 +768,19 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
         desc->deserialize(buf, version);
 
     return result;
+}
+
+size_t ColumnStatistics::allocatedBytes() const
+{
+    /// A node of `std::map` holds the value and three pointers and a color.
+    static constexpr size_t map_node_overhead = 4 * sizeof(void *);
+
+    size_t res = sizeof(*this);
+    for (const auto & [type, desc] : stats_desc.types_to_desc)
+        res += sizeof(ColumnStatisticsDescription::StatisticsTypeDescMap::value_type) + map_node_overhead + desc.allocatedBytes();
+    for (const auto & [type, single_stats] : stats)
+        res += sizeof(StatsMap::value_type) + map_node_overhead + single_stats->allocatedBytes() + single_stats->descriptionAllocatedBytes();
+    return res;
 }
 
 String ColumnStatistics::getNameForLogs() const
@@ -941,6 +1099,16 @@ void addImplicitStatistics(ColumnsDescription & columns, const String & statisti
                 { column_desc.statistics.merge(stats_desc, column.name, column.type, /*if_not_exists=*/true); });
         }
     }
+}
+
+bool canStatisticsTrackMinMax(const DataTypePtr & data_type)
+{
+    return removeLowCardinalityAndNullable(removeNullable(data_type))->isValueRepresentedByNumber();
+}
+
+bool canStatisticsTrackSum(const DataTypePtr & data_type)
+{
+    return WhichDataType(data_type).isIntegerOrDecimal();
 }
 
 }

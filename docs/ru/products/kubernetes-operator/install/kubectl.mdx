@@ -84,14 +84,18 @@ keeperclusters.clickhouse.com        2025-01-06T00:00:00Z
 Если вы хотите настроить параметры развертывания оператора, выполните следующие шаги.
 
 <Steps>
-  <Step title="Клонируйте репозиторий" id="clone-the-repository">
+  <Step>
+    ### Клонируйте репозиторий
+
     ```bash
     git clone https://github.com/ClickHouse/clickhouse-operator.git
     cd clickhouse-operator
     ```
   </Step>
 
-  <Step title="Настройте параметры установки" id="configure-installation-options">
+  <Step>
+    ### Настройте параметры установки
+
     Измените config/default/kustomization.yaml, чтобы включить или отключить нужные возможности.
 
     * Чтобы отключить вебхуки, закомментируйте разделы `[WEBHOOK]` и `[CERTMANAGER]`.
@@ -100,7 +104,9 @@ keeperclusters.clickhouse.com        2025-01-06T00:00:00Z
     * Чтобы включить сетевые политики оператора, раскомментируйте раздел `[NETWORK POLICY]`.
   </Step>
 
-  <Step title="Сборка и развертывание" id="build-and-deploy">
+  <Step>
+    ### Сборка и развертывание
+
     Соберите манифесты оператора и примените их:
 
     ```bash

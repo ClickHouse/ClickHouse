@@ -8,9 +8,7 @@ doc_type: 'reference'
 
 테이블 함수는 테이블을 생성하는 방법입니다.
 
-<div id="usage">
-  ## 사용법
-</div>
+## 사용법 {#usage}
 
 테이블 함수는 `SELECT` 쿼리의 [`FROM`](/ko/reference/statements/select/from)
 절에서 사용할 수 있습니다. 예를 들어, `file` 테이블 함수를 사용하면 로컬
@@ -88,5 +86,7 @@ cat numbers.csv
 ```
 
 <Note>
-  [allow&#95;ddl](/ko/reference/settings/session-settings/allow#allow_ddl) 설정이 비활성화된 경우 테이블 함수를 사용할 수 없습니다.
+  대부분의 테이블 함수는 실행하는 데 `CREATE TEMPORARY TABLE` 권한이 필요하므로,
+  [`readonly`](/ko/concepts/features/configuration/settings/permissions-for-queries#readonly)이 1로 설정되어 있으면
+  이러한 함수를 실행하는 `SELECT` 또는 `INSERT`는 거부됩니다.
 </Note>

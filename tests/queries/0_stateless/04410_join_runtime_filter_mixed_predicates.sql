@@ -3,7 +3,6 @@
 -- The filter is an over-approximation: rows that pass the Bloom filter on the
 -- equality key but fail the range condition are rejected at join time.
 
-SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
 SET enable_parallel_replicas = 0;
 SET join_algorithm = 'hash';

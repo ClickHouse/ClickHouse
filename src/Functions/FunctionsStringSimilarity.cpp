@@ -218,7 +218,10 @@ struct NgramDistanceImpl
                 ++ngram_stats[hash];
             }
             i = 0;
-        } while (start < end && (found = read_code_points(cp, start, end)));
+            if (start >= end)
+                break;
+            found = read_code_points(cp, start, end);
+        } while (found);
 
         return len;
     }
@@ -259,7 +262,10 @@ struct NgramDistanceImpl
                 --ngram_stats[hash];
             }
             iter = 0;
-        } while (start < end && (found = read_code_points(cp, start, end)));
+            if (start >= end)
+                break;
+            found = read_code_points(cp, start, end);
+        } while (found);
 
         /// Return the state of hash map to its initial.
         if constexpr (reuse_stats)
@@ -571,7 +577,7 @@ For case-insensitive search or/and in UTF8 format use functions [`ngramDistanceC
         "SELECT ngramDistance('ClickHouse', 'ClickHouses')",
         R"(
 ┌─ngramDistance('ClickHouse', 'ClickHouses')─┐
-│                                        0.1 │
+│                                 0.06666667 │
 └────────────────────────────────────────────┘
         )"
     }
@@ -622,9 +628,9 @@ The smaller the returned value, the more similar the strings are.
         "Case-insensitive 4-gram distance",
         "SELECT ngramDistanceCaseInsensitive('ClickHouse','clickhouse')",
         R"(
-┌─ngramDistanceCaseInsensitive('ClickHouse','clickhouse')─┐
-│                                                       0 │
-└─────────────────────────────────────────────────────────┘
+┌─ngramDistanceCaseInsensitive('ClickHouse', 'clickhouse')─┐
+│                                                        0 │
+└──────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -676,9 +682,9 @@ The smaller the returned value, the more similar the strings are.
         "Case-insensitive UTF-8 3-gram distance",
         "SELECT ngramDistanceCaseInsensitiveUTF8('abcde','CDE')",
         R"(
-┌─ngramDistanceCaseInsensitiveUTF8('abcde','CDE')─┐
-│                                             0.5 │
-└─────────────────────────────────────────────────┘
+┌─ngramDistanceCaseInsensitiveUTF8('abcde', 'CDE')─┐
+│                                              0.5 │
+└──────────────────────────────────────────────────┘
         )"
     }
     };
@@ -729,7 +735,7 @@ Checks if the 3-gram distance between two UTF-8 strings is less than or equal to
         "SELECT ngramSearchUTF8('абвгдеёжз', 'гдеёзд')",
         R"(
 ┌─ngramSearchUTF8('абвгдеёжз', 'гдеёзд')─┐
-│                                      1 │
+│                                    0.5 │
 └────────────────────────────────────────┘
         )"
     }
@@ -755,7 +761,7 @@ Checks if the 3-gram distance between two UTF-8 strings is less than or equal to
         "SELECT ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз')",
         R"(
 ┌─ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз')─┐
-│                                                        1 │
+│                                               0.57142854 │
 └──────────────────────────────────────────────────────────┘
         )"
     }

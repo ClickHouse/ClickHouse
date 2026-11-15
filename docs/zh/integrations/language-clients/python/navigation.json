@@ -9,6 +9,7 @@
     "zh/integrations/language-clients/python/advanced-querying",
     "zh/integrations/language-clients/python/advanced-inserting",
     "zh/integrations/language-clients/python/advanced-usage",
+    "zh/integrations/language-clients/python/rust-codec",
     "zh/integrations/language-clients/python/sqlalchemy"
   ]
 }

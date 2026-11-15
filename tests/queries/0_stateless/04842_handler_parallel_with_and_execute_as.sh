@@ -45,12 +45,13 @@ $CLICKHOUSE_CLIENT -q "SELECT methods FROM system.handlers WHERE name = '${H}_ok
 
 echo "=== it is not served over GET or HEAD ==="
 # The handler does not declare GET, so neither GET nor the implicit HEAD alias routes to it: a liveness probe
-# or crawler hitting the URL gets the generic not-found response and never triggers the backups. The status code
-# alone cannot prove that: a request routed to the query would fail too, and the exception may map to the same
-# 404 status (`UNKNOWN_TABLE` does). So assert on the not-found body, and for the bodyless HEAD response on the
-# absence of the exception header that every routed error response carries.
-${CLICKHOUSE_CURL} -sS "${BASE}${P}/ok" | grep -o "There is no handle" | head -1
-${CLICKHOUSE_CURL} -sS --head "${BASE}${P}/ok" | grep -c "X-ClickHouse-Exception-Code" || true
+# or crawler hitting the URL never triggers the backups. What answers instead depends on the server config: with
+# `http_allow_path_requests` off the generic not-found handler does, and with it on the unmatched path is
+# interpreted as `/database/table` and fails with `UNKNOWN_DATABASE`. Both are 404 and neither runs the backup,
+# so assert on what they have in common - a 404 whose response never mentions the handler's tables.
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{http_code}\n' "${BASE}${P}/ok"
+${CLICKHOUSE_CURL} -sS "${BASE}${P}/ok" | grep -c "t04842" || true
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{http_code}\n' --head "${BASE}${P}/ok"
 
 echo "=== the same URL over POST does reach query execution ==="
 # The tables do not exist, so execution fails with an exception - which proves the request was routed to the

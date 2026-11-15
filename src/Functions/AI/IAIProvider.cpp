@@ -2,6 +2,8 @@
 #include <Functions/AI/OpenAIProvider.h>
 #include <Functions/AI/AnthropicProvider.h>
 #include <Common/Exception.h>
+#include <Common/HTTPHeaderFilter.h>
+#include <Interpreters/Context.h>
 
 #include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Object.h>
@@ -16,20 +18,13 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 }
 
-namespace
-{
-
-/// Replace control characters (including `\t \n \r`) with spaces so a provider's response cannot
-/// forge log lines or corrupt a terminal when embedded in a logged exception.
-String sanitizeForLog(std::string_view input)
+String sanitize(std::string_view input)
 {
     String output;
     output.reserve(input.size());
     for (unsigned char ch : input)
         output.push_back((ch < 0x20 || ch == 0x7F) ? ' ' : static_cast<char>(ch));
     return output;
-}
-
 }
 
 /// Prefers the structured `error.message`/`error.type` fields, falling back to the first 256
@@ -50,7 +45,7 @@ String formatProviderError(int status_code, const String & response_body)
                 String msg = err->optValue<String>("message", "");
                 String type = err->optValue<String>("type", "");
                 if (!msg.empty())
-                    return fmt::format("HTTP {} [{}]: {}", status_code, sanitizeForLog(type), sanitizeForLog(msg));
+                    return fmt::format("HTTP {} [{}]: {}", status_code, sanitize(type), sanitize(msg));
             }
         }
     }
@@ -60,7 +55,7 @@ String formatProviderError(int status_code, const String & response_body)
 
     constexpr size_t max_len = 256;
     const std::string_view snippet = std::string_view(response_body).substr(0, max_len);
-    return fmt::format("HTTP {}: {}", status_code, sanitizeForLog(snippet));
+    return fmt::format("HTTP {}: {}", status_code, sanitize(snippet));
 }
 
 AIProviderHTTPException::AIProviderHTTPException(Poco::Net::HTTPResponse::HTTPStatus http_status_, PreformattedMessage msg)
@@ -69,20 +64,28 @@ AIProviderHTTPException::AIProviderHTTPException(Poco::Net::HTTPResponse::HTTPSt
 {
 }
 
-AIEmbeddingResponse IAIProvider::embed(const AIEmbeddingRequest & /*ai_embedding_request*/, const ConnectionTimeouts & /*timeouts*/)
+void IAIProvider::embed(
+    const AIEmbeddingRequest & /*ai_embedding_request*/, const ConnectionTimeouts & /*timeouts*/, AIEmbeddingResponse & /*response*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This AI provider does not support embeddings");
 }
 
-AIProviderPtr createAIProvider(const String & provider_name, const String & endpoint, const String & api_key, const String & api_version)
+AIProviderPtr createAIProvider(
+    const ContextPtr & context, const String & provider_name, const String & endpoint, const String & api_key, const String & api_version)
 {
+    AIProviderPtr provider;
     if (provider_name == "openai" || provider_name == "huggingface" || provider_name == "tei")
-        return std::make_unique<OpenAIProvider>(endpoint, api_key);
+        provider = std::make_unique<OpenAIProvider>(endpoint, api_key);
     else if (provider_name == "anthropic")
-        return std::make_unique<AnthropicProvider>(endpoint, api_key, api_version);
+        provider = std::make_unique<AnthropicProvider>(endpoint, api_key, api_version);
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Unknown AI provider '{}'. Supported: 'openai', 'anthropic', 'huggingface', 'tei'", provider_name);
+
+    /// Rejects forbidden headers and CR/LF in values (the key comes from a named collection).
+    auto headers = provider->getHeaders();
+    context->getHTTPHeaderFilter().checkHeaders(headers);
+    return provider;
 }
 
 }

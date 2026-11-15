@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/StorageValues.h>
@@ -72,10 +73,10 @@ void TableFunctionUnnest::parseArguments(const ASTPtr & ast_function, ContextPtr
             "Table function '{}' requires exactly one Array or Nullable(Array) argument",
             getName());
 
-    const auto [column, type] = evaluateConstantExpressionAsColumn(function->arguments->children[0], context);
+    const auto constant = evaluateConstantExpressionAsColumn(function->arguments->children[0], context);
 
-    DataTypePtr argument_type = type;
-    ColumnPtr argument_column = column->convertToFullColumnIfConst();
+    DataTypePtr argument_type = constant.getType();
+    ColumnPtr argument_column = constant.getColumn()->convertToFullColumnIfConst();
 
     bool is_null = false;
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(argument_type.get()))
@@ -95,7 +96,7 @@ void TableFunctionUnnest::parseArguments(const ASTPtr & ast_function, ContextPtr
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Table function '{}' requires an Array or Nullable(Array) argument, got {}",
             getName(),
-            type->getName());
+            constant.getType()->getName());
 
     unnest_type = array_type->getNestedType();
 
@@ -151,6 +152,7 @@ void registerTableFunctionUnnest(TableFunctionFactory & factory)
             .introduced_in = {26, 8},
             .category = FunctionDocumentation::Category::TableFunction,
         },
+        SecretArgumentsSpec{},
         {.allow_readonly = true},
         TableFunctionFactory::Case::Insensitive);
 }

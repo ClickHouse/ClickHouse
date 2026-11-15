@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/CaseAwareBlockNameMap.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/RowInputFormatWithDiagnosticInfo.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -64,7 +65,7 @@ private:
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
     void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) override;
 
-    void tryDetectHeader(std::vector<String> & column_names, std::vector<String> & type_names);
+    void tryDetectHeader(VectorWithMemoryTracking<String> & column_names, VectorWithMemoryTracking<String> & type_names);
 
 protected:
     bool with_names;
@@ -87,8 +88,14 @@ class FormatWithNamesAndTypesReader
 public:
     explicit FormatWithNamesAndTypesReader(ReadBuffer & in_, const FormatSettings & format_settings_) : in(&in_), format_settings(format_settings_) {}
 
+    /// Called once, before any row is read, with the types of the header columns. A reader can use
+    /// it to work out per-column decisions here instead of deriving them from the type of every
+    /// single field while parsing.
+    virtual void setDataTypes(const DataTypes &) {}
+
     /// Read single field from input. Return false if there was no real value and we inserted default value.
-    virtual bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) = 0;
+    /// `column_index` is the index of the column in the header, i.e. the index `setDataTypes` saw.
+    virtual bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name, size_t column_index) = 0;
 
     /// Methods for parsing with diagnostic info.
     virtual void checkNullValueForNonNullable(DataTypePtr) {}
@@ -100,12 +107,12 @@ public:
     virtual bool isGarbageAfterField(size_t, ReadBuffer::Position) { return false; }
 
     /// Read row with names and return the list of them.
-    virtual std::vector<String> readNames() = 0;
+    virtual VectorWithMemoryTracking<String> readNames() = 0;
     /// Read row with types and return the list of them.
-    virtual std::vector<String> readTypes() = 0;
+    virtual VectorWithMemoryTracking<String> readTypes() = 0;
 
     /// Read row with raw values.
-    virtual std::vector<String> readRowForHeaderDetection()
+    virtual VectorWithMemoryTracking<String> readRowForHeaderDetection()
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetFieldsAndDataTypes is not implemented for format reader");
     }
@@ -187,7 +194,7 @@ protected:
     }
 
     /// Return column fields with inferred types. In case of no more rows, return nullopt.
-    virtual std::optional<std::pair<std::vector<String>, DataTypes>> readRowAndGetFieldsAndDataTypes()
+    virtual std::optional<std::pair<VectorWithMemoryTracking<String>, DataTypes>> readRowAndGetFieldsAndDataTypes()
     {
         throw Exception{ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetFieldsAndDataTypes is not implemented"};
     }
@@ -196,8 +203,8 @@ protected:
     bool with_types;
 
 private:
-    void tryDetectHeader(std::vector<String> & column_names_out, std::vector<String> & type_names_out);
-    std::vector<String> readNamesFromFields(const std::vector<String> & fields);
+    void tryDetectHeader(VectorWithMemoryTracking<String> & column_names_out, VectorWithMemoryTracking<String> & type_names_out);
+    VectorWithMemoryTracking<String> readNamesFromFields(const VectorWithMemoryTracking<String> & fields);
 
     FormatWithNamesAndTypesReader * format_reader;
     bool try_detect_header;

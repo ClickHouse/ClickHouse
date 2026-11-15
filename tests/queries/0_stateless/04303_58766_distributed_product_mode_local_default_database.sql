@@ -8,8 +8,7 @@
 -- "failed at position 98 ('``')", because the subquery rewriter produced an unqualified table
 -- reference like `` ``.`smaller_table` `` with empty backticks for the database name.
 --
--- The analyzer (`enable_analyzer = 1`) handles this correctly. This test guards against a
--- regression on the analyzer path.
+-- The analyzer handles this correctly. This test guards against a regression.
 
 DROP TABLE IF EXISTS dist_smaller_58766;
 DROP TABLE IF EXISTS dist_larger_58766;
@@ -52,13 +51,13 @@ FROM
         FROM dist_smaller_58766 AS rt
     )
 )
-SETTINGS distributed_product_mode = 'local', enable_analyzer = 1;
+SETTINGS distributed_product_mode = 'local';
 
 -- `JOIN` variant — the issue notes the same error also fires for joins on `Distributed` tables.
 SELECT count()
 FROM dist_larger_58766 AS lt
 INNER JOIN dist_smaller_58766 AS rt ON lt.key = rt.key
-SETTINGS distributed_product_mode = 'local', enable_analyzer = 1;
+SETTINGS distributed_product_mode = 'local';
 
 DROP TABLE dist_smaller_58766;
 DROP TABLE dist_larger_58766;

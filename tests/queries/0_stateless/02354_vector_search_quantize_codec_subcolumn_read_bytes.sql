@@ -1,6 +1,6 @@
 -- Ensure that quantized sub column read does not fetch the full column.
 
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 
 DROP TABLE IF EXISTS quantize_subcolumn_read_bytes;
 
