@@ -1,0 +1,17 @@
+B
+B
+B
+B
+AggregateFunction(1, sequenceNextNode(\'forward\', \'head\'), UInt64, String, UInt8, UInt8)
+AggregateFunction(sequenceNextNode(\'forward\', \'head\'), DateTime, String, UInt8, UInt8)
+B
+B
+0102014400000000010000000000000001014101000000000000000000000000
+B
+B
+A
+A
+[1,2]	A
+[2,1]	A
+A
+0	1
