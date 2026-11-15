@@ -320,17 +320,16 @@ def main():
     is_private = (
         "PRIVATE_BUILDS_TO_CMAKE" in vars() or "PRIVATE_BUILDS_TO_CMAKE" in globals()
     )
-    # A PR without the performance comparison on a release build builds it without ThinLTO,
-    # PGO and BOLT, see `configure_release_thinlto`. Its compile commands are then those of
-    # the `*_binary` build, so the compiler cache that master fills for that build serves it.
-    from ci.jobs.scripts.workflow_hooks.filter_job import RELEASE_BUILDS_WITHOUT_THINLTO_KV
+    # A PR build may skip ThinLTO, PGO and BOLT when it is not used for a performance
+    # comparison, see `record_thinlto_choice`. The compile commands of a release build are
+    # then those of the `*_binary` build, so the compiler cache that master fills for that
+    # build serves it.
+    from ci.jobs.scripts.workflow_hooks.filter_job import BUILDS_WITHOUT_THINLTO_KV
 
-    without_thinlto = build_type in (
-        info.get_kv_data(RELEASE_BUILDS_WITHOUT_THINLTO_KV) or []
-    )
+    without_thinlto = build_type in (info.get_kv_data(BUILDS_WITHOUT_THINLTO_KV) or [])
     if without_thinlto:
         assert info.pr_number > 0, "only PR builds may skip ThinLTO"
-        print("NOTE: no performance comparison on this build in this PR - build without ThinLTO, PGO and BOLT")
+        print("NOTE: no performance comparison on this build - build without ThinLTO, PGO and BOLT")
         assert "-DENABLE_THINLTO=1" in cmake_cmd
         cmake_cmd = cmake_cmd.replace("-DENABLE_THINLTO=1", "-DENABLE_THINLTO=0")
 
