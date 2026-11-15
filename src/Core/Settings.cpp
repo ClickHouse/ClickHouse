@@ -10265,7 +10265,7 @@ The column must meet these conditions:
 The last condition is checked once per part. The array sizes are read the first time a query reads the column of that part this way.
 
 The part must be a Wide part. The setting has no effect when the uncompressed cache or the columns cache is used.
-)", 0, \
+)", EXPERIMENTAL, \
         {"26.11", false, false, "New setting."}) \
     DECLARE(Bool, vector_search_with_rescoring, false, R"(
 If ClickHouse performs rescoring for queries that use the vector similarity index.
