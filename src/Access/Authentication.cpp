@@ -310,7 +310,7 @@ namespace
                 constexpr const char * jwks_col_key = "jwks";
 
                 NamedCollectionFactory::instance().loadIfNot();
-                const String collection_name = authentication_method.getNamedCollection();
+                const String & collection_name = authentication_method.getNamedCollection();
                 NamedCollectionPtr collection = NamedCollectionFactory::instance().tryGet(collection_name);
                 if (!collection || !collection->has(jwks_col_key))
                     return false;
