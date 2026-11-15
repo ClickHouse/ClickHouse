@@ -193,6 +193,7 @@ namespace DB::ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int TCP_CONNECTION_LIMIT_REACHED;
     extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int QUERY_WAS_CANCELLED;
 
     // We have to distinguish the case when query is killed by `KILL QUERY` statement
     // and when it is killed by `Protocol::Client::Cancel` packet.
@@ -334,8 +335,8 @@ Block convertColumnsToBLOBs(
     return res;
 }
 
-/// For a query that fails with the exception being handled: `cancel` rethrows the exception of the cancelled execution,
-/// which can be caused by the cancellation itself, and it must not replace the one being handled.
+/// For a query that fails with the exception being handled, `cancel` rethrows the exception of the cancelled execution.
+/// `QUERY_WAS_CANCELLED` can be caused by this cancellation itself, so it must not replace the one being handled.
 template <typename Executor>
 void cancelExecutorOnException(Executor & executor, const LoggerPtr & log)
 {
@@ -345,7 +346,9 @@ void cancelExecutorOnException(Executor & executor, const LoggerPtr & log)
     }
     catch (...)
     {
-        tryLogCurrentException(log, "Exception of the cancelled query execution", LogsLevel::debug);
+        if (getCurrentExceptionCode() != ErrorCodes::QUERY_WAS_CANCELLED)
+            throw;
+        LOG_DEBUG(log, "Exception of the cancelled query execution: {}", getCurrentExceptionMessage(/* with_stacktrace */ false));
     }
 }
 }
