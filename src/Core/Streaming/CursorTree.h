@@ -1,13 +1,13 @@
 #pragma once
 
 #include <Core/Field.h>
+#include <Core/Names.h>
 
 #include <base/types.h>
 #include <Common/MapWithMemoryTracking.h>
 
 #include <memory>
 #include <variant>
-#include <vector>
 
 namespace DB
 {
@@ -55,6 +55,6 @@ void mergeCursors(const CursorTreeNodePtr & into, const CursorTreeNodePtr & from
 
 /// The subtree of `cursor` at `path`, or nullptr if `cursor` is nullptr or has no such subtree.
 /// Throws if `path` leads to a value instead of a subtree.
-CursorTreeNodePtr getCursorSubtree(const CursorTreeNodePtr & cursor, const std::vector<String> & path);
+CursorTreeNodePtr getCursorSubtree(const CursorTreeNodePtr & cursor, const Strings & path);
 
 }

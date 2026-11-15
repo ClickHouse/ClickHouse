@@ -28,7 +28,6 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int CANNOT_STAT;
 extern const int CANNOT_OPEN_FILE;
-extern const int INVALID_CURSOR_LOOKUP;
 }
 
 FileLogStreamSource::FileLogStreamSource(

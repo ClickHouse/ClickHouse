@@ -247,7 +247,7 @@ void mergeCursors(const CursorTreeNodePtr & into, const CursorTreeNodePtr & from
     }
 }
 
-CursorTreeNodePtr getCursorSubtree(const CursorTreeNodePtr & cursor, const std::vector<String> & path)
+CursorTreeNodePtr getCursorSubtree(const CursorTreeNodePtr & cursor, const Strings & path)
 {
     CursorTreeNodePtr node = cursor;
     for (const auto & key : path)
