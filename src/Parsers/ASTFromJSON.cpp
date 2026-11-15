@@ -368,6 +368,26 @@ void dismantleJSON(const Poco::Dynamic::Var & root)
 
 }
 
+namespace
+{
+
+/// The SQL parser builds a parameterized function name only for the table function of a table
+/// expression, see `ASTFunction::query_parameter_name`. Reject it anywhere else, so a JSON AST
+/// cannot hold a shape the parser never produces, such as `{f:Identifier}(x)` in an expression.
+void rejectMisplacedParameterizedFunctionName(const IAST & ast, bool is_table_function)
+{
+    checkStackSize();
+    if (const auto * function = ast.as<ASTFunction>(); function && function->query_parameter_name && !is_table_function)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'query_parameter_name' is allowed only for the table function of a table expression during AST JSON deserialization");
+
+    const auto * table_expression = ast.as<ASTTableExpression>();
+    for (const auto & child : ast.children)
+        rejectMisplacedParameterizedFunctionName(*child, table_expression && child == table_expression->table_function);
+}
+
+}
+
 ASTPtr IAST::createFromJSON(const String & json)
 {
     /// The budget is a safe multiple of the effective depth limit (the JSON encoding adds bracket
@@ -420,6 +440,7 @@ ASTPtr IAST::createFromJSON(const String & json)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a JSON object for AST deserialization");
 
         ast = createFromJSON(*obj);
+        rejectMisplacedParameterizedFunctionName(*ast, /*is_table_function=*/ false);
     }
     catch (...)
     {

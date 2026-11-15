@@ -93,6 +93,26 @@ void ASTIdentifier::writeJSON(WriteBuffer & out) const
     w.writeAlias(*this);
 }
 
+namespace
+{
+
+/// A placeholder child of an identifier must be `{name:Identifier}`: the SQL parser accepts no other
+/// parameter type there (see `ParserIdentifier`), and `ReplaceQueryParameterVisitor::visitIdentifier`
+/// casts the child to `ASTQueryParameter` unconditionally.
+void checkIdentifierParameterChild(const IAST & child, const char * identifier_kind)
+{
+    const auto * parameter = child.as<ASTQueryParameter>();
+    if (!parameter)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "{} JSON placeholder child must be an ASTQueryParameter during AST JSON deserialization", identifier_kind);
+    if (parameter->type != "Identifier")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "{} JSON placeholder child must be an Identifier query parameter, got type '{}' during AST JSON deserialization",
+            identifier_kind, parameter->type);
+}
+
+}
+
 void ASTIdentifier::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
@@ -110,13 +130,8 @@ void ASTIdentifier::readJSON(const Poco::JSON::Object & json)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "ASTIdentifier JSON has {} empty 'name_parts' placeholder(s) but {} child parameter(s) during AST JSON deserialization",
                 empty_parts, children.size());
-        /// Every placeholder child must be an `ASTQueryParameter`: visitors such as
-        /// `ReplaceQueryParameterVisitor::visitIdentifier` cast children to `ASTQueryParameter`
-        /// unconditionally, so a non-parameter child here would later throw a logical error.
         for (const auto & child : children)
-            if (!child->as<ASTQueryParameter>())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "ASTIdentifier JSON 'name_parts' placeholder child must be an ASTQueryParameter during AST JSON deserialization");
+            checkIdentifierParameterChild(*child, "ASTIdentifier");
         name_parts = std::move(parts);
         /// Match the parametrised-compound ctor: leave `full_name` empty when there are
         /// query-parameter children, otherwise compute it from `name_parts`.
@@ -141,16 +156,11 @@ void ASTIdentifier::readJSON(const Poco::JSON::Object & json)
         if (name.empty())
         {
             /// Empty short name is only valid for a single-parameter identifier (`{x:Identifier}`).
-            /// The child must be an `ASTQueryParameter`, like the compound placeholder branch above:
-            /// `ReplaceQueryParameterVisitor::visitIdentifier` casts it unconditionally, so a literal
-            /// or function child here would later throw a logical error.
             if (children.size() != 1)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "ASTIdentifier JSON with empty 'name' must have exactly one parameter child, got {}",
                     children.size());
-            if (!children[0]->as<ASTQueryParameter>())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "ASTIdentifier JSON with empty 'name' must have an ASTQueryParameter child during AST JSON deserialization");
+            checkIdentifierParameterChild(*children[0], "ASTIdentifier");
             full_name.clear();
             name_parts = {""};
         }
@@ -355,11 +365,8 @@ void ASTTableIdentifier::readJSON(const Poco::JSON::Object & json)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "ASTTableIdentifier JSON has {} empty 'name_parts' placeholder(s) but {} child parameter(s) during AST JSON deserialization",
                 empty_parts, children.size());
-        /// Every placeholder child must be an `ASTQueryParameter` (see `ASTIdentifier::readJSON`).
         for (const auto & child : children)
-            if (!child->as<ASTQueryParameter>())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "ASTTableIdentifier JSON 'name_parts' placeholder child must be an ASTQueryParameter during AST JSON deserialization");
+            checkIdentifierParameterChild(*child, "ASTTableIdentifier");
         name_parts = std::move(parts);
         /// `ASTTableIdentifier` can only represent a one- or two-part table name
         /// (`table` or `database.table`): `ParserCompoundIdentifier` rejects `parts.size() > 2`
@@ -384,15 +391,11 @@ void ASTTableIdentifier::readJSON(const Poco::JSON::Object & json)
         String name = r.getString("name");
         if (name.empty())
         {
-            /// As in `ASTIdentifier::readJSON`, the single child of an empty-name identifier must be an
-            /// `ASTQueryParameter`; query-parameter visitors downcast it unconditionally.
             if (children.size() != 1)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "ASTTableIdentifier JSON with empty 'name' must have exactly one parameter child, got {}",
                     children.size());
-            if (!children[0]->as<ASTQueryParameter>())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "ASTTableIdentifier JSON with empty 'name' must have an ASTQueryParameter child during AST JSON deserialization");
+            checkIdentifierParameterChild(*children[0], "ASTTableIdentifier");
             full_name.clear();
             name_parts = {""};
         }
