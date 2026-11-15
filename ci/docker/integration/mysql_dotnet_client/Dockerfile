@@ -17,14 +17,19 @@ RUN find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -print0 | xa
 RUN apt-get update \
     && apt-get install -y software-properties-common build-essential dotnet-sdk-8.0 curl
 
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 MSBUILDDISABLENODEREUSE=1
+
 # MySQL client app
 WORKDIR /testapp
 COPY testapp.csproj testapp.csproj
 RUN dotnet restore
 COPY Program.cs Program.cs
+# The tests run the published out/testapp.dll; nothing is built at test time.
+RUN dotnet publish -c Release -o /testapp/out && rm -rf /testapp/obj /testapp/bin
 
 # PostgreSQL client app
 WORKDIR /pg_testapp
 COPY pg/testapp.csproj testapp.csproj
 RUN dotnet restore
 COPY pg/Program.cs Program.cs
+RUN dotnet publish -c Release -o /pg_testapp/out && rm -rf /pg_testapp/obj /pg_testapp/bin
