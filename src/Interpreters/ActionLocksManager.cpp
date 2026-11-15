@@ -84,9 +84,10 @@ void ActionLocksManager::remove(const StoragePtr & table, StorageActionBlockType
 
 bool ActionLocksManager::hasAny(const StoragePtr & table) const
 {
+    const auto * key = lockKey(table);
     std::lock_guard lock(mutex);
 
-    auto it = storage_locks.find(table.get());
+    auto it = storage_locks.find(key);
     if (it == storage_locks.end())
         return false;
 
