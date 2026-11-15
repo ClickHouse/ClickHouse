@@ -2007,14 +2007,12 @@ void NO_INLINE Aggregator::executeImplBatch(
                 skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, key_start, key_end);
         }
 
-        /// After a row whose key is found, the next rows are looked up by `findRunOfKnownKeys` up to the first new key: only in
-        /// a single-level table that fits in the cache, and for states whose `emplaceKey` is `HashMethodBase`'s.
+        /// Only for a single-level table that fits in the cache, and states whose `emplaceKey` is `HashMethodBase`'s.
         static constexpr bool may_look_up_known_keys = !prefetch && !top_k && State::has_cheap_key_holder
             && !Method::low_cardinality_optimization && !requires { Method::Data::NUM_BUCKETS; };
         [[maybe_unused]] size_t known_keys_end = 0;
         if constexpr (may_look_up_known_keys)
         {
-            /// The test that selects prefetching; `prefetch` is also false when prefetching is disabled by the setting.
             if (bytesForPrefetch(method.data) <= minBytesForPrefetch<typename Method::Data, State::has_mapped>(min_bytes_for_prefetch))
                 known_keys_end = key_end;
         }
@@ -2093,7 +2091,6 @@ void NO_INLINE Aggregator::executeImplBatch(
                     if (i + 1 < known_keys_end)
                     {
                         places[i] = aggregate_data;
-                        /// The loop resumes at the first row whose key is not in the table.
                         i = findRunOfKnownKeys(method.data, state, places.get(), i + 1, known_keys_end, *aggregates_pool) - 1;
                         continue;
                     }

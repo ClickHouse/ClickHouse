@@ -358,8 +358,7 @@ public:
         }
     }
 
-    /// For a key in the table, the result and the cache update of `emplaceKey`. A new key is reported as not found and
-    /// changes nothing, so that `emplaceKey` can then insert it as if this call had not been made.
+    /// Like `emplaceKey` for a key in the table; a new key is reported as not found and leaves the state unchanged.
     template <typename Data>
     ALWAYS_INLINE FindResult findKnownKey(Data & data, size_t row, Arena & pool)
     {
@@ -511,7 +510,6 @@ protected:
             return FindResult(cache.found, 0);
     }
 
-    /// The updates of the consecutive-keys cache that `emplaceKey` makes for the NULL key and for a cell it finds or inserts.
     ALWAYS_INLINE void cacheNullKey()
     {
         if (!cache.is_null)
