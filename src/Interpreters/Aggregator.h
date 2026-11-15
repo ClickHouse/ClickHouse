@@ -564,6 +564,8 @@ public:
         bool can_optimize_equal_keys_ranges = true;
         /// The only argument is a `LowCardinality` column whose used values are added once (aggregation without keys).
         bool has_low_cardinality_argument = false;
+        /// The only argument is the one-row data of a constant, which is added once (aggregation without keys).
+        bool has_constant_argument = false;
     };
 
     /// Used for optimize_aggregation_in_order:

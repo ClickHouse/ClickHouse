@@ -2260,7 +2260,9 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
         if (use_compiled_functions && is_aggregate_function_compiled[i])
             continue;
 #endif
-        if (inst->has_low_cardinality_argument)
+        if (inst->has_constant_argument)
+            inst->batch_that->addBatchSinglePlace(0, 1, res + inst->state_offset, inst->batch_arguments, arena);
+        else if (inst->has_low_cardinality_argument)
         {
             const IColumn * argument = inst->batch_arguments[0];
             auto it = std::find_if(
@@ -2407,11 +2409,22 @@ void Aggregator::prepareAggregateInstructions(
         const bool allow_low_cardinality_argument
             = params.keys_size == 0 && aggregate_columns[i].size() == 1 && aggregate_functions[i]->ignoresRepeatedValues();
         bool has_low_cardinality_argument = false;
+        bool has_constant_argument = false;
 
         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
         {
             const auto pos = aggregates_positions[i][j];
             aggregate_columns[i][j] = columns.at(pos).get();
+
+            /// A constant is added once: the function ignores repeated values.
+            const auto * column_const = allow_low_cardinality_argument ? typeid_cast<const ColumnConst *>(aggregate_columns[i][j]) : nullptr;
+            if (column_const)
+            {
+                materialized_columns.push_back(recursiveRemoveLowCardinality(column_const->getDataColumnPtr()->convertToFullIfWrapped()));
+                aggregate_columns[i][j] = materialized_columns.back().get();
+                has_constant_argument = true;
+                continue;
+            }
 
             /// Only the converted columns have to be held here, the original ones are held by the caller.
             auto converted_column = columns.at(pos)->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
@@ -2457,6 +2470,7 @@ void Aggregator::prepareAggregateInstructions(
 
         buildAggregateFunctionInstruction(i, has_sparse_arguments, aggregate_columns, aggregate_functions_instructions, nested_columns_holder);
         aggregate_functions_instructions[i].has_low_cardinality_argument = has_low_cardinality_argument;
+        aggregate_functions_instructions[i].has_constant_argument = has_constant_argument;
     }
 }
 
