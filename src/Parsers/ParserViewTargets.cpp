@@ -73,6 +73,7 @@ namespace
         {
             /// Skip optional INNER before ENGINE.
             /// We support both syntaxes, e.g. `TAGS ENGINE` and `TAGS INNER ENGINE`.
+            auto before_inner = pos;
             ParserKeyword{Keyword::INNER}.ignore(pos, expected);
 
             if (ParserStorage{ParserStorage::TABLE_ENGINE}.parse(pos, ast, expected))
@@ -82,6 +83,7 @@ namespace
                 res->setInnerEngine(kind, ast);
                 return true;
             }
+            pos = before_inner;
         }
 
         if (!res || !res->getTableID(kind))
