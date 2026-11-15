@@ -449,6 +449,11 @@ FieldDictionaryValues dictionaryValuesFor(const ArrowField & field, const Dictio
 /// `n.d Array(Int32)` while this field's own type is the element); those layers are peeled so the hint
 /// matches this field, exactly as the parent-derived chain unwraps one Array per list. A type with fewer
 /// layers does not describe this field: no hint.
+/// The dotted name is not looked up when an enclosing field is requested itself (e.g. `t` along with `t.s`):
+/// the decoded column then serves that request too, whose type does not describe this field (otherwise
+/// the parent would have derived a hint), and the post-decode rewrite, which follows only the requested
+/// type of the column, could not reconcile a leaf converted by the dotted hint. The subcolumn is
+/// converted by that rewrite after it is extracted instead.
 DataTypePtr resolveHint(
     const DataTypePtr & parent_hint, const String & path, size_t list_depth,
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * types)
@@ -457,6 +462,9 @@ DataTypePtr resolveHint(
         return parent_hint;
     if (!types)
         return nullptr;
+    for (size_t pos = path.find('.'); pos != String::npos; pos = path.find('.', pos + 1))
+        if (types->contains(path.substr(0, pos)))
+            return nullptr;
     auto it = types->find(path);
     if (it == types->end())
         return nullptr;
