@@ -12,21 +12,15 @@ integration:
 
 import ConnectionDetails from '/snippets/ja/_gather_your_details_native.mdx';
 
-<div id="quick-start">
-  ## クイックスタート
-</div>
+## クイックスタート {#quick-start}
 
 まずは簡単な例から始めましょう。ここでは ClickHouse に接続し、system データベースから SELECT を実行します。始めるには、接続情報が必要です。
 
-<div id="connection-details">
-  ### 接続情報
-</div>
+### 接続情報 {#connection-details}
 
 <ConnectionDetails />
 
-<div id="initialize-a-module">
-  ### モジュールを初期化
-</div>
+### モジュールを初期化 {#initialize-a-module}
 
 ```bash
 mkdir clickhouse-golang-example
@@ -34,9 +28,7 @@ cd clickhouse-golang-example
 go mod init clickhouse-golang-example
 ```
 
-<div id="copy-in-some-sample-code">
-  ### サンプルコードをコピーする
-</div>
+### サンプルコードをコピーする {#copy-in-some-sample-code}
 
 このコードを `clickhouse-golang-example` ディレクトリに `main.go` としてコピーします。
 
@@ -122,17 +114,13 @@ func connect() (driver.Conn, error) {
 }
 ```
 
-<div id="run-go-mod-tidy">
-  ### go mod tidy を実行
-</div>
+### go mod tidy を実行 {#run-go-mod-tidy}
 
 ```bash
 go mod tidy
 ```
 
-<div id="set-your-connection-details">
-  ### 接続情報を設定する
-</div>
+### 接続情報を設定する {#set-your-connection-details}
 
 先ほど確認した接続情報を、`main.go` の `connect()` 関数に設定します。
 
@@ -149,9 +137,7 @@ func connect() (driver.Conn, error) {
       },
 ```
 
-<div id="run-the-example">
-  ### 例を実行する
-</div>
+### 例を実行する {#run-the-example}
 
 ```bash
 go run .
@@ -165,15 +151,11 @@ go run .
 2023/03/06 14:18:33 name: hourly_data, uuid: a4e36bd4-1e82-45b3-be77-74a0fe65c52b
 ```
 
-<div id="learn-more">
-  ### さらに詳しく
-</div>
+### さらに詳しく {#learn-more}
 
 このカテゴリの以降のドキュメントでは、ClickHouse Go client の詳細を説明します。
 
-<div id="overview">
-  ## 概要
-</div>
+## 概要 {#overview}
 
 ClickHouse は 2 つの公式 Go クライアントをサポートしています。これらのクライアントは相互補完的であり、それぞれ異なるユースケースに対応するよう意図的に設計されています。
 
@@ -184,9 +166,7 @@ clickhouse-go は高水準のインターフェイスを提供し、ユーザー
 
 バージョン 2.3 以降、clickhouse-go はエンコード、デコード、圧縮などの低水準機能に ch-go を利用しています。両クライアントは最適なパフォーマンスを実現するためにエンコードに Native format を使用しており、ネイティブ ClickHouse プロトコルで通信できます。clickhouse-go は、ユーザーがトラフィックをプロキシまたはロードバランスする必要がある場合に備えて、転送メカニズムとして HTTP もサポートしています。
 
-<div id="four-ways-to-connect">
-  ### 接続方法は4通り
-</div>
+### 接続方法は4通り {#four-ways-to-connect}
 
 clickhouse-go では、**どの API** を使うかと **どの転送方式** を使うかという、独立した 2 つの選択肢があります。これらの組み合わせで、接続モードは 4 通りになります。
 
@@ -206,9 +186,7 @@ clickhouse-go では、**どの API** を使うかと **どの転送方式** を
 |   ClickHouse API   |       ✅       |       ✅       |        ✅       |      ✅     |         ✅         |      ✅      |          ✅         |
 | `database/sql` API |       ✅       |       ✅       |        ✅       |      ✅     |                   |      ✅      |                    |
 
-<div id="choosing-a-client">
-  ### クライアントの選択
-</div>
+### クライアントの選択 {#choosing-a-client}
 
 クライアントライブラリの選定は、利用パターンと求めるパフォーマンスによって異なります。1 秒あたり数百万件の insert が必要な、insert 負荷の高いユースケースでは、低レベルクライアントの [ch-go](https://github.com/ClickHouse/ch-go) の使用を推奨します。このクライアントは、ClickHouse の Native format で必要となる、行指向フォーマットからカラムへのデータ変換に伴うオーバーヘッドを回避します。さらに、使いやすさを保つために、リフレクションや `interface{}` (`any`) 型も使用しません。
 
@@ -219,9 +197,7 @@ clickhouse-go では、**どの API** を使うかと **どの転送方式** を
 | clickhouse-go |      ✅      |      ✅     |     ✅     |    ✅    |     ✅     |   ✅   |  ✅  |      ✅      |
 |     ch-go     |      ✅      |      ✅     |           |         |     ✅     |       |  ✅  |             |
 
-<div id="installation">
-  ## インストール
-</div>
+## インストール {#installation}
 
 ドライバーの v1 は非推奨であり、今後、機能更新や新しい ClickHouse 型のサポートは行われません。より高いパフォーマンスを備えた v2 への移行を推奨します。
 
@@ -268,24 +244,18 @@ go run main.go
 
 ```
 
-<div id="versioning">
-  ### バージョニング
-</div>
+### バージョニング {#versioning}
 
 このクライアントは、ClickHouseとは独立してリリースされています。2.x は現在開発中のメジャーバージョンです。2.x のすべてのバージョンは相互に互換性がある想定です。
 
-<div id="clickhouse-compatibility">
-  #### ClickHouse 互換性
-</div>
+#### ClickHouse 互換性 {#clickhouse-compatibility}
 
 このクライアントは、以下をサポートしています。
 
 * [こちら](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md)に記載されている、現在サポート対象の ClickHouse のすべてのバージョン。ClickHouse の各バージョンはサポート対象外になると、そのクライアントリリースに対するアクティブなテストも行われなくなります。
 * クライアントのリリース日からさかのぼって 2 年以内にリリースされた、すべてのバージョンの ClickHouse。なお、アクティブにテストされるのは LTS バージョンのみです。
 
-<div id="golang-compatibility">
-  #### Golangの互換性
-</div>
+#### Golangの互換性 {#golang-compatibility}
 
 |     クライアントのバージョン     | Golangのバージョン |
 | :------------------: | :----------: |
@@ -294,9 +264,7 @@ go run main.go
 |      &gt;= 2.41      |     1.21+    |
 |      &gt;= 2.43      |     1.24+    |
 
-<div id="best-practices">
-  ## ベストプラクティス
-</div>
+## ベストプラクティス {#best-practices}
 
 * 可能であれば、特にプリミティブ型では ClickHouse API を利用してください。これにより、大量のリフレクションや間接処理を避けられます。
 * 大規模なデータセットを読み取る場合は、[`BlockBufferSize`](/ja/integrations/language-clients/go/configuration#connection-settings) の変更を検討してください。これによりメモリ使用量は増えますが、行の反復処理中により多くのブロックを並列にデコードできるようになります。デフォルト値の 2 は控えめな設定で、メモリオーバーヘッドを最小限に抑えます。値を大きくすると、メモリ上に保持されるブロックも増えます。クエリによってブロックサイズは異なるため、テストが必要です。そのため、Context を介して [クエリレベル](/ja/integrations/language-clients/go/clickhouse-api#using-context) で設定できます。
@@ -304,9 +272,7 @@ go run main.go
 * 可能であれば、カラム指向の挿入を使用してください。これらについても厳密に型を指定し、クライアント側で値を変換する必要がないようにしてください。
 * 最適な挿入パフォーマンスを得るために、ClickHouse の[推奨事項](/ja/reference/statements/insert-into#performance-considerations)に従ってください。
 
-<div id="next-steps">
-  ## 次のステップ
-</div>
+## 次のステップ {#next-steps}
 
 * [設定](/ja/integrations/language-clients/go/configuration) — 接続設定、TLS、認証、ログ、圧縮
 * [ClickHouse API](/ja/integrations/language-clients/go/clickhouse-api) — クエリ実行とデータ挿入のためのネイティブなGo API

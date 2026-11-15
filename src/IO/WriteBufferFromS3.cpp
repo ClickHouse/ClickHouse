@@ -8,6 +8,7 @@
 
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPoolTaskTracker.h>
+#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Throttler.h>
@@ -18,6 +19,8 @@
 #include <IO/S3/Requests.h>
 #include <IO/S3/getObjectInfo.h>
 #include <Common/BlobStorageLogWriter.h>
+#include <Common/getRandomASCIIString.h>
+#include <Common/HTTPConnectionInfo.h>
 
 #include <utility>
 
@@ -51,10 +54,12 @@ namespace S3RequestSetting
     extern const S3RequestSettingsUInt64 max_part_number;
     extern const S3RequestSettingsUInt64 max_single_part_upload_size;
     extern const S3RequestSettingsUInt64 max_unexpected_write_error_retries;
+    extern const S3RequestSettingsBool use_idempotency_id;
     extern const S3RequestSettingsUInt64 max_upload_part_size;
     extern const S3RequestSettingsUInt64 min_upload_part_size;
     extern const S3RequestSettingsString storage_class_name;
     extern const S3RequestSettingsUInt64 strict_upload_part_size;
+    extern const S3RequestSettingsString upload_checksum_algorithm;
     extern const S3RequestSettingsUInt64 upload_part_size_multiply_factor;
     extern const S3RequestSettingsUInt64 upload_part_size_multiply_parts_count_threshold;
 }
@@ -115,6 +120,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , write_settings(write_settings_)
     , client_ptr(std::move(client_ptr_))
     , object_metadata(std::move(object_metadata_))
+    , idempotency_id(request_settings[S3RequestSetting::use_idempotency_id] ? getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH) : "")
     , buffer_allocation_policy(createBufferAllocationPolicy(request_settings))
     , task_tracker(
           std::make_unique<TaskTracker>(
@@ -178,6 +184,16 @@ void WriteBufferFromS3::preFinalize()
     {
         if (detached_part_data.empty() || detached_part_data.front().data_size <= request_settings[S3RequestSetting::max_single_part_upload_size])
             do_single_part_upload = true;
+    }
+
+    if (!do_single_part_upload && client_ptr->isClientForGCS() && write_settings.object_storage_write_if_none_match == "*")
+    {
+        if (!write_settings.object_storage_write_if_none_match_best_effort)
+            throw S3Exception(
+                Aws::S3::S3Errors::UNKNOWN,
+                "GCS conditional create of {} must be a single PUT. CompleteMultipartUpload ignores preconditions.",
+                key);
+        LOG_DEBUG(log, "GCS cannot condition a multipart upload, so {} is written unconditionally", key);
     }
 
     if (do_single_part_upload)
@@ -289,7 +305,7 @@ WriteBufferFromS3::~WriteBufferFromS3()
         {
             LOG_INFO(
                 log,
-                "WriteBufferFromS3 was canceled."
+                "WriteBufferFromS3 was canceled. "
                 "The file might not be written to S3. "
                 "{}.",
                 getVerboseLogDetails());
@@ -415,13 +431,15 @@ void WriteBufferFromS3::createMultipartUpload()
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
-    if (object_metadata.has_value())
-        req.SetMetadata(object_metadata.value());
+    req.SetMetadata(metadataWithIdempotencyId());
 
     /// The storage class of a multipart-uploaded object is determined by the CreateMultipartUpload
     /// request; it cannot be set on UploadPart or CompleteMultipartUpload. See issue #68551.
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
-        req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
+        req.SetStorageClass(S3::getStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
+
+    if (auto checksum_algorithm = getUploadChecksumAlgorithm(); checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*checksum_algorithm))
+        req.setUploadChecksumAlgorithm(*checksum_algorithm);
 
     client_ptr->setKMSHeaders(req);
 
@@ -429,6 +447,7 @@ void WriteBufferFromS3::createMultipartUpload()
     if (client_ptr->isClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskS3CreateMultipartUpload);
 
+    HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
     Stopwatch watch;
     auto outcome = client_ptr->CreateMultipartUpload(req);
     auto elapsed = watch.elapsedMicroseconds();
@@ -467,6 +486,9 @@ void WriteBufferFromS3::abortMultipartUpload()
         return;
     }
 
+    /// Keep the retries of this cleanup when the query or merge is cancelled. The in-flight parts are already waited for.
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
+
     LOG_INFO(log, "Abort multipart upload. {}", getVerboseLogDetails());
 
     S3::AbortMultipartUploadRequest req;
@@ -478,6 +500,7 @@ void WriteBufferFromS3::abortMultipartUpload()
     if (client_ptr->isClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskS3AbortMultipartUpload);
 
+    HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
     Stopwatch watch;
     auto outcome = client_ptr->AbortMultipartUpload(req);
     auto elapsed = watch.elapsedMicroseconds();
@@ -498,6 +521,19 @@ void WriteBufferFromS3::abortMultipartUpload()
     LOG_INFO(log, "Multipart upload has been aborted successfully. {}", getVerboseLogDetails());
 }
 
+std::optional<S3::RequestChecksum::Algorithm> WriteBufferFromS3::getUploadChecksumAlgorithm() const
+{
+    /// `GCS` does not accept the AWS flexible checksum headers (`x-amz-checksum-*`, `x-amz-sdk-checksum-algorithm`):
+    /// with `HMAC`/`SigV4` they are folded into the signed canonical request and `GCS` rejects the request with
+    /// `SignatureDoesNotMatch`. Fall back to the SDK's `Content-MD5` path, which `GCS` accepts (and which is silently
+    /// dropped under FIPS, leaving the upload with no checksum header - the safe pre-flexible-checksum behavior).
+    /// `GCS` is never an `S3Express` bucket, so this check can short-circuit before the `S3Express` handling.
+    if (client_ptr->isClientForGCS())
+        return std::nullopt;
+
+    return S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, client_ptr->isS3ExpressBucket());
+}
+
 S3::UploadPartRequest WriteBufferFromS3::getUploadRequest(size_t part_number, PartData & data)
 {
     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, data.data_size);
@@ -514,11 +550,13 @@ S3::UploadPartRequest WriteBufferFromS3::getUploadRequest(size_t part_number, Pa
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
-    /// Checksums need to be provided on CompleteMultipartUpload requests, so we calculate then manually and store in multipart_checksums
-    if (client_ptr->isS3ExpressBucket())
+    /// Checksums need to be provided on CompleteMultipartUpload requests, so we calculate them manually and store in multipart_checksums.
+    const auto checksum_algorithm = getUploadChecksumAlgorithm();
+    if (checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*checksum_algorithm))
     {
-        auto checksum = S3::RequestChecksum::calculateChecksum(req);
-        S3::RequestChecksum::setRequestChecksum(req, checksum);
+        req.setUploadChecksumAlgorithm(*checksum_algorithm);
+        auto checksum = S3::RequestChecksum::calculateFlexibleChecksum(req, *checksum_algorithm);
+        S3::RequestChecksum::setChecksum(req, *checksum_algorithm, checksum);
         multipart_checksums.push_back(std::move(checksum));
     }
 
@@ -588,6 +626,7 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
         CurrentThread::IOSchedulingScope io_scope(write_settings.io_scheduling);
         CurrentThread::WriteThrottlingScope write_throttling_scope(write_settings.remote_throttler);
 
+        HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
         Stopwatch watch;
         auto outcome = client_ptr->UploadPart(request);
         auto elapsed = watch.elapsedMicroseconds();
@@ -639,20 +678,24 @@ bool WriteBufferFromS3::completeMultipartUpload()
     req.SetBucket(bucket);
     req.SetKey(key);
     req.SetUploadId(multipart_upload_id);
+    req.setIdempotencyId(idempotency_id);
 
-    if (!write_settings.object_storage_write_if_none_match.empty())
+    /// GCS evaluates no precondition on a multipart upload: it ignores `If-None-Match`
+    /// and rejects its `x-goog-if-generation-match` translation.
+    if (!write_settings.object_storage_write_if_none_match.empty() && !client_ptr->isClientForGCS())
         req.SetIfNoneMatch(write_settings.object_storage_write_if_none_match);
 
     if (!write_settings.object_storage_write_if_match.empty())
         req.SetIfMatch(write_settings.object_storage_write_if_match);
 
     Aws::S3::Model::CompletedMultipartUpload multipart_upload;
+    const auto checksum_algorithm = getUploadChecksumAlgorithm();
     for (size_t i = 0; i < multipart_tags.size(); ++i)
     {
         Aws::S3::Model::CompletedPart part;
         part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1));
-        if (!multipart_checksums.empty())
-            S3::RequestChecksum::setPartChecksum(part, multipart_checksums.at(i));
+        if (checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*checksum_algorithm))
+            S3::RequestChecksum::setChecksum(part, *checksum_algorithm, multipart_checksums.at(i));
         multipart_upload.AddParts(part);
     }
 
@@ -667,6 +710,7 @@ bool WriteBufferFromS3::completeMultipartUpload()
         if (client_ptr->isClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
 
+        HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
         Stopwatch watch;
         auto outcome = client_ptr->CompleteMultipartUpload(req);
         auto elapsed = watch.elapsedMicroseconds();
@@ -687,6 +731,7 @@ bool WriteBufferFromS3::completeMultipartUpload()
         ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
 
         const auto & error = outcome.GetError();
+
         if (isTransientCompleteMultipartUploadError(error))
         {
             last_error_type = error.GetErrorType();
@@ -719,10 +764,13 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     req.SetKey(key);
     req.SetContentLength(data.data_size);
     req.SetBody(data.createAwsBuffer());
-    if (object_metadata.has_value())
-        req.SetMetadata(object_metadata.value());
+    req.SetMetadata(metadataWithIdempotencyId());
+    req.setIdempotencyId(idempotency_id);
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
-        req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
+        req.SetStorageClass(S3::getStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
+
+    if (auto checksum_algorithm = getUploadChecksumAlgorithm(); checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*checksum_algorithm))
+        req.setUploadChecksumAlgorithm(*checksum_algorithm);
 
     if (!write_settings.object_storage_write_if_none_match.empty())
         req.SetIfNoneMatch(write_settings.object_storage_write_if_none_match);
@@ -736,6 +784,14 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     client_ptr->setKMSHeaders(req);
 
     return req;
+}
+
+ObjectAttributes WriteBufferFromS3::metadataWithIdempotencyId() const
+{
+    auto metadata = object_metadata.value_or(ObjectAttributes{});
+    if (!idempotency_id.empty())
+        metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
+    return metadata;
 }
 
 void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data)
@@ -762,6 +818,7 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
             CurrentThread::IOSchedulingScope io_scope(write_settings.io_scheduling);
             CurrentThread::WriteThrottlingScope write_throttling_scope(write_settings.remote_throttler);
 
+            HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
             Stopwatch watch;
             auto outcome = client_ptr->PutObject(request);
             auto elapsed = watch.elapsedMicroseconds();
@@ -789,7 +846,7 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
             else
             {
                 /// PreconditionFailed is an expected response for conditional writes (e.g. If-None-Match: *),
-                /// not a genuine error — the caller handles it.
+                /// not a genuine error — the caller handles it. A replay of our own write never reaches here.
                 if (outcome.GetError().GetExceptionName() == "PreconditionFailed")
                     LOG_INFO(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
                               outcome.GetError().GetExceptionName(), outcome.GetError().GetMessage(), bucket, key, content_length);

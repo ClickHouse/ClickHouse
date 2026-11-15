@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['ClickStack Helm 图表', 'Helm ClickHouse 部署', 'HyperDX Helm 安装', 'Kubernetes 可观测性堆栈', 'ClickStack Kubernetes 部署']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import JSONSupport from '/snippets/zh/_json_support.mdx';
 
 <Warning>
@@ -51,17 +49,13 @@ v2.x 图表 采用**两阶段安装**。首先通过 `clickstack-operators` 图�
 <br />
 
 <Steps>
-  <Step>
-    ### 前置条件
-
+  <Step title="前置条件" id="prerequisites">
     * [Helm](https://helm.sh/) v3+
     * Kubernetes 集群 (推荐使用 v1.20+)
     * 已配置为与集群交互的 `kubectl`
   </Step>
 
-  <Step>
-    ### 添加 ClickStack Helm 仓库
-
+  <Step title="添加 ClickStack Helm 仓库" id="add-the-clickstack-helm-repository">
     添加 ClickStack Helm 仓库：
 
     ```shell
@@ -70,9 +64,7 @@ v2.x 图表 采用**两阶段安装**。首先通过 `clickstack-operators` 图�
     ```
   </Step>
 
-  <Step>
-    ### 安装 Operator
-
+  <Step title="安装 Operator" id="install-the-operators">
     请先安装 operator chart。这会注册主 chart 所需的 CRD：
 
     ```shell
@@ -86,9 +78,7 @@ v2.x 图表 采用**两阶段安装**。首先通过 `clickstack-operators` 图�
     ```
   </Step>
 
-  <Step>
-    ### 安装 ClickStack
-
+  <Step title="安装 ClickStack" id="installing-clickstack">
     operator 运行起来后，安装主 Chart：
 
     ```shell
@@ -96,9 +86,7 @@ v2.x 图表 采用**两阶段安装**。首先通过 `clickstack-operators` 图�
     ```
   </Step>
 
-  <Step>
-    ### 验证安装
-
+  <Step title="验证安装" id="verify-the-installation">
     请验证安装是否成功：
 
     ```shell
@@ -108,9 +96,7 @@ v2.x 图表 采用**两阶段安装**。首先通过 `clickstack-operators` 图�
     当所有 Pod (容器组) 都处于就绪状态后，请继续。
   </Step>
 
-  <Step>
-    ### 端口转发
-
+  <Step title="端口转发" id="forward-ports">
     端口转发可让我们访问并配置 HyperDX。部署到生产环境时，用户应改为通过入口或负载均衡器暴露该服务，以确保合适的网络访问、TLS 终止和可扩展性。端口转发更适合本地开发或一次性的管理操作，不适用于长期运行或高可用环境。
 
     ```shell
@@ -126,14 +112,20 @@ v2.x 图表 采用**两阶段安装**。首先通过 `clickstack-operators` 图�
     </Tip>
   </Step>
 
-  <Step>
-    ### 进入 UI
-
+  <Step title="进入 UI" id="navigate-to-the-ui">
     访问 [http://localhost:8080](http://localhost:8080) 以访问 HyperDX UI。
 
     创建用户，并输入符合要求的用户名和密码。
 
-    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![HyperDX UI](/images/use-cases/observability/hyperdx-login.webp)
+
+    </Frame>
+
+    </div>
 
     点击 `Create` 后，将为通过 Helm 图表部署的 ClickHouse 实例创建数据源。
 
@@ -144,9 +136,7 @@ v2.x 图表 采用**两阶段安装**。首先通过 `clickstack-operators` 图�
     </Info>
   </Step>
 
-  <Step>
-    ### 自定义值 (可选)
-
+  <Step title="自定义值 (可选)" id="customizing-values">
     您可以使用 `--set` 参数来自定义设置。例如：
 
     ```shell
@@ -188,9 +178,7 @@ v2.x 图表 采用**两阶段安装**。首先通过 `clickstack-operators` 图�
     ```
   </Step>
 
-  <Step>
-    ### 使用 secrets (可选)
-
+  <Step title="使用 secrets (可选)" id="using-secrets">
     v2.x chart 使用一个统一的 secret (`clickstack-secret`) ，其内容从 values 中的 `hyperdx.secrets` 填充。所有敏感环境变量——包括 ClickHouse 密码、MongoDB 密码和 HyperDX API key——都会通过这一个 secret 统一传递。
 
     如需覆盖 secret 中的值：

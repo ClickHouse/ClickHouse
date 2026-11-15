@@ -9,8 +9,8 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import GatherCredentials from '/snippets/zh/clickstack/_gather_credentials.mdx';
+
 import CreateIngestionUser from '/snippets/zh/clickstack/_create_ingestion_user.mdx';
 
 本指南将带你从一个空白的托管 ClickStack 服务开始，一路完成从真实应用接入日志、指标、链路追踪和会话回放。你将为自己的服务部署一个新的 OpenTelemetry collector (如果你已经有，也可以改造现有的) ，在不修改业务逻辑的前提下为一个示例 Node.js 应用接入遥测，然后在 ClickStack UI 中查看这些遥测数据。
@@ -30,21 +30,15 @@ import CreateIngestionUser from '/snippets/zh/clickstack/_create_ingestion_user.
 * 如果你还没有 collector，且想按下文的新 collector 路径操作，则需要 **Docker**。
 
 <Steps>
-  <Step>
-    ## 准备好您的凭据
-
+  <Step title="准备好您的凭据" id="gather-credentials">
     <GatherCredentials />
   </Step>
 
-  <Step>
-    ## 创建摄取用户
-
+  <Step title="创建摄取用户" id="create-ingestion-user">
     <CreateIngestionUser />
   </Step>
 
-  <Step>
-    ## 部署 collector
-
+  <Step title="部署 collector" id="deploy-collector">
     请根据您的实际情况选择对应选项。
 
     <Info>
@@ -199,9 +193,7 @@ import CreateIngestionUser from '/snippets/zh/clickstack/_create_ingestion_user.
     </Tabs>
   </Step>
 
-  <Step>
-    ## 克隆并运行应用程序
-
+  <Step title="克隆并运行应用程序" id="clone-and-run-the-application">
     克隆代码仓库，安装依赖项，并创建 `.env` 文件：
 
     ```bash
@@ -219,14 +211,20 @@ import CreateIngestionUser from '/snippets/zh/clickstack/_create_ingestion_user.
 
     打开 [http://localhost:5001](http://localhost:5001)。你会看到年份选择器、汇总统计信息、活动图表、热门用户表和域名表，以及一个搜索框。可以随意点击体验：切换年份，点开具体故事查看详情。
 
-    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="在本地运行的 HackerNews Analyzer 应用" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![在本地运行的 HackerNews Analyzer 应用](/images/clickstack/getting-started/hackernews_main.webp)
+
+    </Frame>
+
+    </div>
 
     此时，应用程序已经在运行，但尚未接入埋点。ClickStack 中还没有任何数据：它正在等待遥测数据。这就是“before”状态。
   </Step>
 
-  <Step>
-    ## 将应用程序连接到您的采集器
-
+  <Step title="将应用程序连接到您的采集器" id="connect-the-application">
     应用程序需要以下两个值，才能连接到您在上面部署的采集器：
 
     * `OTEL_EXPORTER_OTLP_ENDPOINT`：您的采集器对外暴露的 OTLP 端点 (OTLP over HTTPS 通常使用端口 `4318`) 。
@@ -243,9 +241,7 @@ import CreateIngestionUser from '/snippets/zh/clickstack/_create_ingestion_user.
     SDK 使用 `OTEL_EXPORTER_OTLP_HEADERS` 为三种信号设置授权请求头：链路追踪、指标和日志。如果你的 collector 在本地运行且不要求身份验证，可以将该值留空 (`OTEL_EXPORTER_OTLP_HEADERS=authorization=`) ，但该变量必须存在；如果未设置或值完全为空，SDK 将完全跳过初始化。最后，如果在不使用 TLS 的情况下运行 collector，请确保使用正确的 HTTP protocol (例如：`http://localhost:4318`) 。
   </Step>
 
-  <Step>
-    ## 为应用添加埋点
-
+  <Step title="为应用添加埋点" id="instrument-the-application">
     埋点分为三个部分：安装 SDKs、切换启动命令，以及启用浏览器 SDK。这些操作都不会改变应用程序的业务逻辑。
 
     ### 安装 SDKs
@@ -298,10 +294,8 @@ import CreateIngestionUser from '/snippets/zh/clickstack/_create_ingestion_user.
     </Warning>
   </Step>
 
-  <Step>
-    ## 生成流量
-
-    重启应用程序，使新的启动命令和刚构建好的浏览器打包产物生效：
+  <Step title="生成流量" id="generate-traffic">
+    重启应用程序，让新的启动命令和刚构建的浏览器打包产物生效：
 
     ```bash
     # Ctrl-C the previous run, then:
@@ -311,36 +305,82 @@ import CreateIngestionUser from '/snippets/zh/clickstack/_create_ingestion_user.
     重新加载浏览器选项卡，让 Vite 提供更新后的打包产物；然后多刷新几次应用，切换年份，并点开故事以产生流量。每次交互都会通过你的 collector 将日志、指标、链路追踪和 session replay 事件发送到 ClickStack。
   </Step>
 
-  <Step>
-    ## 启动 ClickStack 并探索你的遥测数据
-
+  <Step title="启动 ClickStack 并探索你的遥测数据" id="launch-clickstack">
     在 [ClickHouse Cloud 控制台](https://console.clickhouse.cloud) 中打开你的服务，从左侧菜单选择 **ClickStack**，然后点击 **开始摄取**。
 
-    <Image img="/images/use-cases/observability/clickstack-cloud-first-time.webp" size="lg" alt="启动 ClickStack" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![启动 ClickStack](/images/use-cases/observability/clickstack-cloud-first-time.webp)
+
+    </Frame>
+
+    </div>
 
     下一步可以跳过，因为你已经配置好了 collector。点击 **启动 ClickStack** 继续。
 
     ClickStack 会在新选项卡中打开，你应会被自动带到 **Getting Started** 页面。如果没有，请从左侧菜单选择 **Getting Started**，然后依次点击 **开始摄取** 和 **下一步**。
 
-    <Image img="/images/use-cases/observability/clickstack-start-ingestion.webp" size="lg" alt="ClickStack 开始摄取" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![ClickStack 开始摄取](/images/use-cases/observability/clickstack-start-ingestion.webp)
+
+    </Frame>
+
+    </div>
 
     ClickStack 应该会自动检测你的表和遥测数据，让你可以继续。选择 **开始探索**，开始查看你的数据。
 
-    <Image img="/images/use-cases/observability/clickstack-start-exploring.webp" size="lg" alt="ClickStack 开始探索" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![ClickStack 开始探索](/images/use-cases/observability/clickstack-start-exploring.webp)
+
+    </Frame>
+
+    </div>
 
     现在来查看应用程序正在生成的数据：
 
     1. 前往 **搜索**，将时间范围过滤为最近 5 分钟。你会看到 `hn-analyzer-api` 的日志持续流入。
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="ClickStack 日志" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![ClickStack 日志](/images/clickstack/getting-started/instrument_app_clickstack_logs.webp)
+
+    </Frame>
+
+    </div>
 
     2. 点开某个请求，沿着 trace 逐级查看。你会看到 Express handler span、一个指向 ClickHouse cluster 且包含真实网络耗时的子 HTTP span，以及同一 trace 上已关联的 `console.log` 记录。
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="ClickStack 链路追踪" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![ClickStack 链路追踪](/images/clickstack/getting-started/instrument_app_clickstack_traces.webp)
+
+    </Frame>
+
+    </div>
 
     3. 打开 **Session Replay**，回放浏览器会话视频，并可拖动时间轴查看；它会与 trace 时间线保持同步。
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="ClickStack 会话" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![ClickStack 会话](/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp)
+
+    </Frame>
+
+    </div>
 
     日志、指标、链路追踪和会话回放都会汇集到同一个 UI 中，使用相同的查询语言，并自动完成关联。
 
@@ -356,8 +396,8 @@ import CreateIngestionUser from '/snippets/zh/clickstack/_create_ingestion_user.
   ## 延伸阅读
 </div>
 
-* [监控 Kubernetes](/zh/clickstack/managed-onboarding/monitoring-kubernetes)：从集群收集日志、基础设施指标和 Kubernetes 事件。
+* [监控 Kubernetes](/zh/clickstack/managed-onboarding/monitoring-kubernetes)：从集群中收集日志、基础设施指标和 Kubernetes 事件。
 * [监控 AWS CloudWatch 日志](/zh/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs)：通过 OpenTelemetry CloudWatch receiver 转发 CloudWatch 日志。
-* [调优托管 ClickStack](/zh/clickstack/managed-onboarding/tuning-clickstack-schema)：优化 schema，以提升查询性能和存储效率。
-* [保护 collector](/zh/clickstack/ingesting-data/collector#securing-the-collector)：为 OTLP 端点启用 TLS，并使用最小权限的摄取用户。
-* [进入生产环境](/zh/clickstack/managing/production)：查看生产环境部署建议。
+* [调优托管 ClickStack](/zh/clickstack/managed-onboarding/tuning-clickstack-schema)：优化你的 schema，以提升查询性能和存储效率。
+* [保护 collector](/zh/clickstack/ingesting-data/collector#securing-the-collector)：为 OTLP 端点启用 TLS，并使用遵循最小权限原则的摄取用户。
+* [进入生产环境](/zh/clickstack/managing/production)：了解生产环境部署的相关建议。

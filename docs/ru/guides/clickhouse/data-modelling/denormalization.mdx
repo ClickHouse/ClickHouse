@@ -6,8 +6,6 @@ keywords: ['денормализация данных', 'денормализо�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Денормализация данных — это метод в ClickHouse, при котором используются плоские таблицы, чтобы минимизировать задержку выполнения запросов, избегая операций JOIN.
 
 <div id="comparing-normalized-vs-denormalized-schemas">
@@ -18,7 +16,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Этот подход снижает потребность в сложных JOIN во время выполнения запроса и может значительно ускорить операции чтения, поэтому он хорошо подходит для приложений с высокой нагрузкой на чтение и сложными запросами. Однако он может усложнить запись и сопровождение данных, поскольку любые изменения в дублируемых данных нужно распространять на все экземпляры, чтобы сохранять согласованность.
 
-<Image img="/images/data-modeling/denormalization-diagram.webp" size="lg" alt="Денормализация в ClickHouse" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Денормализация в ClickHouse](/images/data-modeling/denormalization-diagram.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -87,7 +93,7 @@ CREATE TABLE votes
 ENGINE = MergeTree
 ORDER BY (VoteTypeId, CreationDate, PostId)
 
-INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
+INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -147,7 +153,15 @@ LIMIT 5
 
 Теперь рассмотрим наши `Users` и `Badges`:
 
-<Image img="/images/data-modeling/denormalization-schema.webp" size="lg" alt="схема Users и Badges" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![схема Users и Badges](/images/data-modeling/denormalization-schema.webp)
+
+</Frame>
+
+</div>
 
 <p />
 
@@ -188,7 +202,7 @@ CREATE TABLE badges
 ENGINE = MergeTree
 ORDER BY UserId
 
-INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet')
+INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet', NOSIGN)
 ```
 
 ```response
@@ -196,7 +210,7 @@ INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.
 ```
 
 ```sql
-INSERT INTO badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+INSERT INTO badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet', NOSIGN)
 ```
 
 ```response
@@ -241,7 +255,7 @@ CREATE TABLE postlinks
 ENGINE = MergeTree
 ORDER BY (PostId, RelatedPostId)
 
-INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet')
+INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet', NOSIGN)
 ```
 
 ```response
@@ -267,7 +281,7 @@ ORDER BY c DESC LIMIT 5
 └──────────┴─────┘
 ```
 
-Аналогично, эти связи не относятся к событиям, которые происходят слишком часто:
+Аналогично, эти связи возникают не слишком часто:
 
 ```sql
 SELECT
@@ -417,4 +431,4 @@ DuplicatePosts: [('2017-04-11 12:18:37.260',3922739),('2017-04-11 12:18:37.260',
   ### Стриминг
 </div>
 
-В качестве альтернативы это можно делать вне ClickHouse, до вставки, с помощью стриминговых технологий, таких как [Apache Flink](/ru/integrations/connectors/data-ingestion/apache-flink). Также для выполнения этого процесса по мере вставки данных можно использовать инкрементальные [materialized views](/ru/concepts/features/materialized-views/cascading-materialized-views).
+В качестве альтернативы это можно выполнить вне ClickHouse, до вставки, с помощью технологий стриминга, таких как [Apache Flink](/ru/integrations/connectors/data-ingestion/apache-flink). Также для выполнения этого процесса по мере вставки данных можно использовать инкрементальные [materialized views](/ru/concepts/features/materialized-views/cascading-materialized-views).

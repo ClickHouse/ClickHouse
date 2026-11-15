@@ -12,7 +12,7 @@ const Icon = () => {
 export const CommunityMaintainedBadge = () => {
     return (
         <div className="CommunityMaintainedBadge">
-            <Icon />Community Maintained
+            <Icon />Community maintained
         </div>
     )
 }

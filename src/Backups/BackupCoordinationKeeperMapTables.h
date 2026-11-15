@@ -10,6 +10,7 @@ struct BackupCoordinationKeeperMapTables
 {
     void addTable(const std::string & table_zookeeper_root_path, const std::string & table_id, const std::string & data_path_in_backup);
     std::string getDataPath(const std::string & table_zookeeper_root_path) const;
+    std::string getTableId(const std::string & table_zookeeper_root_path) const;
 
     struct KeeperMapTableInfo
     {

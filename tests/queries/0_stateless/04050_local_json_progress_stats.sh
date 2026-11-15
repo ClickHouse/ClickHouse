@@ -10,4 +10,4 @@ echo "#1 simple query"
 ${CLICKHOUSE_LOCAL} --query="SELECT count() FROM numbers(100) FORMAT JSON" | grep -o '"rows_read": [0-9]*'
 
 echo "#2 scalar subquery"
-${CLICKHOUSE_LOCAL} --query="SELECT (SELECT count() FROM numbers(100000)) SETTINGS enable_analyzer = 1 FORMAT JSON" | grep -o '"rows_read": [0-9]*'
+${CLICKHOUSE_LOCAL} --query="SELECT (SELECT count() FROM numbers(100000)) FORMAT JSON" | grep -o '"rows_read": [0-9]*'

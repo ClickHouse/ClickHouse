@@ -1,0 +1,396 @@
+---
+title: 'Python 用户自定义函数 (UDF)'
+sidebar_label: 'Python UDF'
+sidebar_position: 4
+sidebarTitle: 'Python UDF'
+slug: /chdb/guides/python-udf
+description: '在 chDB 中创建支持类型化参数、NULL 处理和异常控制的原生 Python UDF。'
+keywords: ['chdb', 'udf', 'python', '用户自定义函数']
+doc_type: 'guide'
+---
+
+chDB 支持将 Python 函数注册为可通过 SQL 调用的 UDF。这些函数以原生方式在进程内运行，无需创建子进程，也没有序列化开销。函数具备类型安全性，支持根据 Python 注解自动类型推断，并提供可配置的 NULL 和异常处理。
+
+<div id="quick-start">
+  ## 快速入门
+</div>
+
+```python
+from chdb import query, func
+from chdb.sqltypes import INT64
+
+@func([INT64, INT64], INT64)
+def add(a, b):
+    return a + b
+
+result = query("SELECT add(2, 3)")
+print(result)  # 5
+```
+
+<Note>
+  本指南中的示例使用默认的 CSV 输出格式运行 `query()`。行内注释显示逻辑结果值；原始输出会将 `NULL` 显示为 `\N`，并按 CSV 规则为字符串和日期值添加引号 (例如 `"Hello, world!"`) 。
+</Note>
+
+<div id="registration-methods">
+  ## 注册方式
+</div>
+
+<div id="func-decorator">
+  ### `@func` 装饰器
+</div>
+
+注册 UDF 的最简单方法。函数的 `__name__` 将作为 SQL 函数名。
+
+```python
+from chdb import func
+from chdb.sqltypes import INT64, STRING
+
+# Explicit types
+@func([INT64, INT64], INT64)
+def add(a, b):
+    return a + b
+
+# Types inferred from annotations
+@func()
+def multiply(a: int, b: int) -> int:
+    return a * b
+
+# Explicit return_type, arg_types inferred from annotations
+@func(return_type=STRING)
+def greet(name: str):
+    return f"Hello, {name}!"
+```
+
+经过装饰的函数仍可像普通 Python 函数一样调用：
+
+```python
+add(2, 3)       # 5 (Python call)
+query("SELECT add(2, 3)")  # 5 (SQL call)
+```
+
+<div id="create-function">
+  ### `create_function`
+</div>
+
+为任何可调用对象 (lambda、函数、method) 指定名称并注册：
+
+```python
+from chdb import create_function, query
+from chdb.sqltypes import INT64, STRING
+
+create_function("strlen", len, arg_types=[STRING], return_type=INT64)
+query("SELECT strlen('hello')")  # 5
+
+create_function("double", lambda x: x * 2, arg_types=[INT64], return_type=INT64)
+query("SELECT double(21)")  # 42
+```
+
+<div id="drop-function">
+  ### `drop_function`
+</div>
+
+移除已注册的 UDF。删除未注册的名称不会有任何影响，因此可以放心地无条件调用：
+
+```python
+from chdb import drop_function
+
+drop_function("strlen")
+# query("SELECT strlen('hello')")  # Error: function not found
+```
+
+<Note>
+  注册已注册的名称会引发错误——UDF 不会被静默替换。若要重新注册函数，请先调用 `drop_function(name)`，例如重新运行 notebook 单元时。
+</Note>
+
+<div id="type-system">
+  ## 类型系统
+</div>
+
+<div id="available-types">
+  ### 可用类型
+</div>
+
+所有类型均可从 `chdb.sqltypes` 导入：
+
+```python
+from chdb.sqltypes import (
+    # Boolean
+    BOOL,
+    # Signed integers
+    INT8, INT16, INT32, INT64, INT128, INT256,
+    # Unsigned integers
+    UINT8, UINT16, UINT32, UINT64, UINT128, UINT256,
+    # Floating point
+    FLOAT32, FLOAT64,
+    # String
+    STRING,
+    # Date and time
+    DATE, DATE32, DATETIME, DATETIME64,
+)
+```
+
+<div id="specifying-types">
+  ### 指定类型
+</div>
+
+可通过以下四种方式指定类型：
+
+| 方法               | 示例                                     | 描述                                           |
+| ---------------- | -------------------------------------- | -------------------------------------------- |
+| `ChdbType` 常量    | `INT64`, `STRING`                      | 从 `chdb.sqltypes` 导入                         |
+| ClickHouse 类型字符串 | `"Int64"`, `"String"`                  | 标准 ClickHouse 类型名称                           |
+| 参数化字符串           | `"DateTime('UTC')"`, `"DateTime64(6)"` | 用于带参数的类型                                     |
+| Python 类型        | `int`, `str`, `float`                  | 直接传入 `arg_types`/`return_type`，或在函数签名中用作类型注解 |
+
+```python
+from chdb import create_function, func
+from chdb.sqltypes import INT64
+
+# All equivalent:
+create_function("f1", lambda x: x * 2, arg_types=[INT64], return_type=INT64)
+create_function("f2", lambda x: x * 2, arg_types=["Int64"], return_type="Int64")
+create_function("f3", lambda x: x * 2, arg_types=[int], return_type=int)
+
+@func()
+def f4(x: int) -> int:
+    return x * 2
+```
+
+<div id="automatic-type-inference">
+  ### 自动类型推断
+</div>
+
+省略 `arg_types` 或 `return_type` 时，chDB 会根据 Python 类型注解自动推断类型：
+
+| Python 类型           | ClickHouse 类型   |
+| ------------------- | --------------- |
+| `bool`              | `Bool`          |
+| `int`               | `Int64`         |
+| `float`             | `Float64`       |
+| `str`               | `String`        |
+| `bytes`             | `String`        |
+| `bytearray`         | `String`        |
+| `datetime.date`     | `Date`          |
+| `datetime.datetime` | `DateTime64(6)` |
+
+```python
+@func()
+def process(name: str, age: int) -> str:
+    return f"{name} is {age} years old"
+
+# Equivalent to:
+# @func([STRING, INT64], STRING)
+```
+
+<Note>
+  如果显式提供 `arg_types`，则必须涵盖**所有**参数——不支持部分显式指定、部分自动推断。这同时适用于 `create_function` 和 `@func` 装饰器：要么为所有参数指定类型，要么完全省略，由 chDB 根据注解自动推断。
+</Note>
+
+始终必须指定返回类型：如果省略 `return_type`，且函数没有返回类型注解，则注册会失败。相比之下，参数类型是可选的——既未显式指定类型，也没有注解的参数，可动态接受任何受支持的输入类型。
+
+<div id="null-handling">
+  ## NULL 处理
+</div>
+
+`on_null` 参数用于控制任一输入参数为 NULL 时的行为。
+
+| 值              | 行为                                |
+| -------------- | --------------------------------- |
+| `"skip"` (默认)  | 不调用函数，立即返回 NULL                   |
+| `"pass"`       | 将 NULL 转换为 Python `None`，然后正常调用函数 |
+
+也可以使用枚举：`chdb.NullHandling.SKIP` / `chdb.NullHandling.PASS`。
+
+<div id="null-skip">
+  ### 示例：default (跳过)
+</div>
+
+```python
+@func(return_type="Int64")
+def increment(x: int) -> int:
+    return x + 1
+
+query("SELECT increment(NULL)")  # NULL
+query("SELECT increment(5)")     # 6
+```
+
+<div id="null-pass">
+  ### 示例：将 NULL 传递为 `None`
+</div>
+
+```python
+@func(return_type="Int64", on_null="pass")
+def null_to_zero(x):
+    return 0 if x is None else x + 1
+
+query("SELECT null_to_zero(NULL)")  # 0
+query("SELECT null_to_zero(5)")     # 6
+```
+
+<div id="null-multiple-args">
+  ### 示例：多个参数
+</div>
+
+```python
+@func(arg_types=["Int64", "Int64"], return_type="Int64", on_null="pass")
+def add_or_zero(a, b):
+    return (a or 0) + (b or 0)
+
+query("SELECT add_or_zero(NULL, 5)")    # 5
+query("SELECT add_or_zero(NULL, NULL)") # 0
+query("SELECT add_or_zero(3, 7)")       # 10
+```
+
+<div id="exception-handling">
+  ## 异常处理
+</div>
+
+`on_error` 参数用于控制 Python 函数引发异常时的行为。
+
+| 值                   | 行为               |
+| ------------------- | ---------------- |
+| `"propagate"` (默认)  | 将异常作为 SQL 错误抛出   |
+| `"ignore"`          | 捕获异常，并为该行返回 NULL |
+
+也可以使用枚举：`chdb.ExceptionHandling.PROPAGATE` / `chdb.ExceptionHandling.IGNORE`。
+
+<div id="exception-propagate">
+  ### 示例：default (向上传播)
+</div>
+
+```python
+@func(arg_types=["Int64", "Int64"], return_type="Int64")
+def divide(a, b):
+    return a // b
+
+query("SELECT divide(10, 2)")  # 5
+query("SELECT divide(1, 0)")   # Error: ZeroDivisionError
+```
+
+<div id="exception-ignore">
+  ### 示例：忽略错误
+</div>
+
+```python
+@func(arg_types=["Int64", "Int64"], return_type="Int64", on_error="ignore")
+def safe_divide(a, b):
+    return a // b
+
+query("SELECT safe_divide(10, 2)")  # 5
+query("SELECT safe_divide(1, 0)")   # NULL
+```
+
+<div id="combining-null-and-exception">
+  ## 组合使用 NULL 和异常处理
+</div>
+
+`on_null` 和 `on_error` 选项可以组合使用：
+
+| on&#95;null | on&#95;error  | NULL 输入         | 异常      |
+| ----------- | ------------- | --------------- | ------- |
+| `"skip"`    | `"propagate"` | 返回 NULL         | 抛出错误    |
+| `"skip"`    | `"ignore"`    | 返回 NULL         | 返回 NULL |
+| `"pass"`    | `"propagate"` | 以 `None` 作为参数调用 | 抛出错误    |
+| `"pass"`    | `"ignore"`    | 以 `None` 作为参数调用 | 返回 NULL |
+
+```python
+@func(
+    arg_types=["Int64", "Int64"],
+    return_type="Int64",
+    on_null="pass",
+    on_error="ignore",
+)
+def robust_divide(a, b):
+    if a is None or b is None:
+        return -1
+    return a // b
+
+query("SELECT robust_divide(10, 2)")     # 5
+query("SELECT robust_divide(NULL, 2)")   # -1
+query("SELECT robust_divide(1, 0)")      # NULL (exception caught)
+```
+
+<div id="datetime-and-timezone">
+  ## 日期时间和时区支持
+</div>
+
+UDFs 完全支持具有时区信息的日期和时间类型。
+
+<div id="date-types">
+  ### Date 类型
+</div>
+
+```python
+from datetime import date, timedelta
+
+@func()
+def next_day(d: date) -> date:
+    return d + timedelta(days=1)
+
+@func()
+def get_year(d: date) -> int:
+    return d.year
+
+query("SELECT next_day(toDate('2024-06-15'))")  # 2024-06-16
+query("SELECT get_year(toDate('2024-06-15'))")  # 2024
+```
+
+<div id="datetime-with-timezones">
+  ### 带时区的 DateTime
+</div>
+
+```python
+from datetime import timedelta
+
+@func(arg_types=["DateTime('UTC')"], return_type="DateTime('UTC')")
+def add_one_hour(dt):
+    return dt + timedelta(hours=1)
+
+query("SELECT add_one_hour(toDateTime('2024-01-01 12:00:00', 'UTC'))")  # 2024-01-01 13:00:00
+```
+
+<div id="datetime64">
+  ### DateTime64 (高精度)
+</div>
+
+`DATETIME64` 的默认标度为 6 (微秒) ：
+
+```python
+from datetime import timedelta
+
+@func(arg_types=["DateTime64(6, 'UTC')"], return_type="DateTime64(6, 'UTC')")
+def add_microsecond(dt):
+    return dt + timedelta(microseconds=1)
+
+query("SELECT add_microsecond(toDateTime64('2024-01-01 12:00:00.000000', 6, 'UTC'))")  # 2024-01-01 12:00:00.000001
+```
+
+<Note>
+  * 输入的 `DateTime`/`DateTime64` 值会携带 ClickHouse 中的时区信息
+  * 输出的 `datetime` 对象会保留时区信息
+  * 时区转换会自动完成
+</Note>
+
+<div id="using-udfs-with-sessions">
+  ## 在 session 中使用 UDF
+</div>
+
+UDF 会全局注册，同一进程中的所有 session 均可使用：
+
+```python
+from chdb import session as chs, func
+from chdb.sqltypes import INT64
+
+@func([INT64], INT64)
+def double(x):
+    return x * 2
+
+sess = chs.Session()
+sess.query("CREATE TABLE t (x Int64) ENGINE = Memory")
+sess.query("INSERT INTO t VALUES (1), (2), (3)")
+result = sess.query("SELECT double(x) FROM t ORDER BY x", "CSV")
+print(result)
+# 2
+# 4
+# 6
+```

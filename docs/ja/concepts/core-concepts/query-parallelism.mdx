@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['並列処理', 'クエリ最適化', 'パフォーマンス', 'スレッド', 'ベストプラクティス']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickHouse は[高速化を前提に設計](/ja/get-started/about/why-clickhouse-is-so-fast)されています。利用可能なすべての CPU コアを使い、データを処理レーンに分散し、ハードウェア性能を限界近くまで引き出しながら、クエリを高い並列性で実行します。
 
 このガイドでは、ClickHouse におけるクエリ並列化の仕組みと、大規模なワークロードでパフォーマンスを向上させるために、それをどのように調整・監視できるかを順を追って説明します。
@@ -21,7 +19,15 @@ ClickHouse は[高速化を前提に設計](/ja/get-started/about/why-clickhouse
 
 ClickHouse ① は、テーブルの主キーに対するフィルタを含む集計クエリを実行する際、② 処理が必要なグラニュールと安全にスキップできるグラニュールを特定するために、③ プライマリインデックスをメモリに読み込みます。
 
-<Image img="/images/guides/best-practices/query-parallelism_01.webp" size="md" alt="索引解析" />
+<div className="ch-image-md">
+
+<Frame>
+
+![索引解析](/images/guides/best-practices/query-parallelism_01.webp)
+
+</Frame>
+
+</div>
 
 <div id="distributing-work-across-processing-lanes">
   ### 処理レーン間での作業の分散
@@ -29,17 +35,33 @@ ClickHouse ① は、テーブルの主キーに対するフィルタを含む�
 
 選択したデータはその後、[動的に](#load-balancing-across-processing-lanes)`n` 本の並列[処理レーン](/ja/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization)に分散され、各レーンがデータを[ブロック](/ja/resources/develop-contribute/introduction/architecture#block)単位でストリーミング処理して、最終結果へとまとめます。
 
-<Image img="/images/guides/best-practices/query-parallelism_02.webp" size="md" alt="4 本の並列処理レーン" />
+<div className="ch-image-md">
+
+<Frame>
+
+![4 本の並列処理レーン](/images/guides/best-practices/query-parallelism_02.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 <br />
 
-`n` 本の並列処理レーンの数は、[`max_threads`](/ja/reference/settings/session-settings#max_threads) 設定で制御されます。デフォルトでは、server 上で ClickHouse が使用できる単一 CPU のコア数 (スレッド数) に一致します。上の例では、`4` コアを想定しています。
+`n` 本の並列処理レーンの数は、[`max_threads`](/ja/reference/settings/session-settings/max-threads#max_threads) 設定で制御されます。デフォルトでは、server 上で ClickHouse が使用できる単一 CPU のコア数 (スレッド数) に一致します。上の例では、`4` コアを想定しています。
 
 `8` コアのマシンでは、より多くのレーンが並列にデータを処理できるため、クエリ処理のスループットはおおよそ 2 倍になります (ただし、それに応じてメモリ使用量も増加します) 。
 
-<Image img="/images/guides/best-practices/query-parallelism_03.webp" size="md" alt="8 本の並列処理レーン" />
+<div className="ch-image-md">
+
+<Frame>
+
+![8 本の並列処理レーン](/images/guides/best-practices/query-parallelism_03.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -53,7 +75,15 @@ CPU 使用率を最大化し、クエリ全体の実行時間を短縮するに�
 
 テーブルデータが複数のサーバーに[分片](/ja/guides/oss/deployment-and-scaling/shards)として分散されている場合、各サーバーはそれぞれの分片を並列に処理します。各サーバー内では、前述のとおり、ローカルデータが並列処理レーンを使って処理されます。
 
-<Image img="/images/guides/best-practices/query-parallelism_04.webp" size="md" alt="分散レーン" />
+<div className="ch-image-md">
+
+<Frame>
+
+![分散レーン](/images/guides/best-practices/query-parallelism_04.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -70,12 +100,12 @@ CPU 使用率を最大化し、クエリ全体の実行時間を短縮するに�
 </Info>
 
 <div id="monitoring-query-parallelism">
-  ## クエリ並列性の監視
+  ## クエリ並列化の監視
 </div>
 
 クエリが利用可能な CPU リソースを十分に使い切れているかを確認し、使い切れていない場合にその原因を診断するには、これらのツールを使用します。
 
-ここでは 59 個の CPU コアを備えたテストサーバーで実行しており、ClickHouse のクエリ並列性を十分に引き出せるようにしています。
+ここでは 59 個の CPU コアを備えたテストサーバーで実行しており、ClickHouse のクエリ並列化を十分に引き出せるようにしています。
 
 この例のクエリがどのように実行されるかを確認するため、集計クエリの実行中にトレースレベルのログエントリをすべて返すよう ClickHouseサーバーに指示できます。今回のデモでは、クエリのフィルタ条件を削除しました。これを残すと処理されるグラニュールは 3 つだけになり、ClickHouse が数本を超える並列処理レーンを活用するにはデータ量が不十分だからです。
 
@@ -127,7 +157,15 @@ FROM
 
 ClickHouse&#39;s [組み込み web UI](/ja/concepts/features/interfaces/http) (`/play` エンドポイントで利用可能) では、上記の物理プランをグラフィカルに可視化できます。この例では、可視化をコンパクトに保つために `max_threads` を `4` に設定し、4 本の並列処理レーンだけを表示しています。
 
-<Image img="/images/guides/best-practices/query-parallelism_05.webp" alt="クエリパイプライン" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![クエリパイプライン](/images/guides/best-practices/query-parallelism_05.webp)
+
+</Frame>
+
+</div>
 
 注: 可視化は左から右に向かって読んでください。各行は 1 本の並列処理レーンを表しており、データブロックをブロック単位でストリーミングしながら、フィルタリング、集約、最終処理ステージなどの変換を適用します。この例では、`max_threads = 4` の設定に対応する 4 本の並列レーンを確認できます。
 
@@ -225,17 +263,17 @@ WHERE town = 'LONDON';
 
 shared-nothing クラスターの場合:
 
-* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read](/ja/reference/settings/session-settings#merge_tree_min_rows_for_concurrent_read)
-* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read](/ja/reference/settings/session-settings#merge_tree_min_bytes_for_concurrent_read)
+* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read](/ja/reference/settings/session-settings/merge-tree#merge_tree_min_rows_for_concurrent_read)
+* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read](/ja/reference/settings/session-settings/merge-tree#merge_tree_min_bytes_for_concurrent_read)
 
 共有ストレージを使用するクラスター (例: ClickHouse Cloud) の場合:
 
-* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/ja/reference/settings/session-settings#merge_tree_min_rows_for_concurrent_read_for_remote_filesystem)
-* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/ja/reference/settings/session-settings#merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem)
+* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/ja/reference/settings/session-settings/merge-tree#merge_tree_min_rows_for_concurrent_read_for_remote_filesystem)
+* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/ja/reference/settings/session-settings/merge-tree#merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem)
 
-さらに、読み取り task size には厳格な下限があり、次の設定で制御されます:
+さらに、読み取りタスクサイズには厳格な下限があり、次の設定で制御されます:
 
-* [Merge&#95;tree&#95;min&#95;read&#95;task&#95;size](/ja/reference/settings/session-settings#merge_tree_min_read_task_size) + [merge&#95;tree&#95;min&#95;bytes&#95;per&#95;task&#95;for&#95;remote&#95;reading](/ja/reference/settings/session-settings#merge_tree_min_bytes_per_task_for_remote_reading)
+* [merge&#95;tree&#95;min&#95;read&#95;task&#95;size](/ja/reference/settings/session-settings/merge-tree#merge_tree_min_read_task_size) + [merge&#95;tree&#95;min&#95;bytes&#95;per&#95;task&#95;for&#95;remote&#95;reading](/ja/reference/settings/session-settings/merge-tree#merge_tree_min_bytes_per_task_for_remote_reading)
 
 <Warning>
   **これらの設定は変更しないでください**

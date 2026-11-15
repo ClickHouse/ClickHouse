@@ -10,8 +10,6 @@ integration:
    - category: 'data_ingestion'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Esta é uma das maneiras mais eficientes e diretas de copiar dados do
 Azure Blob Storage ou do Azure Data Lake Storage para o ClickHouse. Com essa função de tabela,
 você pode instruir o ClickHouse a se conectar diretamente ao armazenamento do Azure e
@@ -34,15 +32,31 @@ consulte a documentação oficial:
 
 Para permitir que o ClickHouse acesse seu Azure Blob Storage, você precisará de uma string de conexão com uma chave de acesso.
 
-1. No Portal do Azure, navegue até sua **Conta de Armazenamento**.
+1. No portal do Azure, navegue até sua **Conta de Armazenamento**.
 
 2. No menu à esquerda, selecione **Chaves de acesso** na seção **Segurança +
    rede**.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp" size="lg" alt="Configurações do armazenamento de dados do Azure" border />
+   <div className="ch-image-lg">
+
+   <Frame>
+
+   ![Configurações do armazenamento de dados do Azure](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp)
+
+   </Frame>
+
+   </div>
 
 3. Escolha **key1** ou **key2** e clique no botão **Mostrar** ao lado do
    campo **String de conexão**.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp" size="lg" alt="Chaves de acesso do armazenamento de dados do Azure" border />
+   <div className="ch-image-lg">
+
+   <Frame>
+
+   ![Chaves de acesso do armazenamento de dados do Azure](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp)
+
+   </Frame>
+
+   </div>
 
 4. Copie a string de conexão — você a usará como parâmetro na função de tabela azureBlobStorage.
 
@@ -159,10 +173,10 @@ armazenado no Azure Blob Storage.
   ## Recursos adicionais
 </div>
 
-Esta é apenas uma introdução básica ao uso da função de tabela azureBlobStorage. Para
-conhecer opções mais avançadas e detalhes de configuração, consulte a
-documentação oficial:
+Esta é apenas uma introdução básica ao uso da função `azureBlobStorage`. Para
+opções mais avançadas e detalhes de configuração, consulte a documentação
+oficial:
 
 * [Função de tabela azureBlobStorage](/pt-BR/reference/functions/table-functions/azureBlobStorage)
 * [Formatos para dados de entrada e saída](/pt-BR/reference/formats/index)
-* [Inferência automática de esquema a partir de dados de entrada](/pt-BR/concepts/features/interfaces/schema-inference)
+* [Inferência automática de esquema a partir dos dados de entrada](/pt-BR/concepts/features/interfaces/schema-inference)

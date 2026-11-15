@@ -1,0 +1,91 @@
+--- no predicate
+1000999
+1000998
+1000997
+1000999
+1000998
+1000997
+1000999
+1000998
+1000997
+1000996
+200000	1199900000
+0
+0
+0
+--- with a predicate
+1000998	1000998
+1000995	1000995
+1000992	1000992
+1000998	1000998
+1000995	1000995
+1000992	1000992
+66798
+--- one file of the glob is rewritten
+100999
+100998
+100997
+100998	100998
+100995	100995
+100992	100992
+--- a filter on _file
+100999
+100998
+100997
+100999
+100998
+100997
+100999
+100998
+100997
+--- external sorting
+100999
+100998
+100997
+100996
+100999
+100998
+100997
+100996
+--- a file changes after the cache was used
+1000
+100999
+100998
+100997
+FILE_CHANGED_DURING_READ
+100999
+100998
+100997
+--- use_query_condition_cache_for_top_k = 0
+100999
+100998
+100997
+100996
+100995
+100999
+100998
+100997
+100996
+100995
+--- query condition cache lookups
+nowhere_1	1	0
+nowhere_2	1	1
+nowhere_limit	1	0
+nowhere_asc	1	0
+where_1	1	0
+where_2	1	1
+rewritten_nowhere	1	0
+rewritten_where	1	0
+file_b_1	1	0
+file_b_2	1	1
+file_b_after_a_changed	1	1
+external_1	1	0
+external_2	1	1
+gate_1	0	0
+gate_2	0	0
+--- a single stream
+2000
+1000
+999
+998
+101

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <cstdint>
 #include <base/defines.h>
+#include <base/types.h>
 
 #if defined(OS_LINUX)
 #include <sched.h>
@@ -13,18 +13,51 @@ namespace PerCPU
 /// Hard upper bound on the kernel cpu_id we'll route to. The BSS-backed per-CPU storage in
 /// callers is sized with this constant, so it must be a compile-time value — but only the
 /// first `getNumCPUs()` shards are used at runtime (and only those get faulted in).
-constexpr uint32_t MAX_CPUS = 1024;
+constexpr UInt32 MAX_CPUS = 1024;
 
-/// Runtime CPU count, capped at `MAX_CPUS`. Cached on first call.
-/// Returns `min(get_nprocs_conf(), MAX_CPUS)`, or 1 on non-Linux.
-uint32_t getNumCPUs() noexcept;
+/// Sanity bound on the possible-CPU count, so that a malformed sysfs file cannot make dynamically
+/// sized per-CPU storage huge. The largest `CONFIG_NR_CPUS` the kernel accepts on any architecture.
+constexpr UInt32 MAX_POSSIBLE_CPUS = 8192;
 
-/// Current CPU id via `sched_getcpu` (read from TLS).
-/// Returns -1 on error or non-Linux.
-ALWAYS_INLINE inline int32_t getCurrentCPU()
+/// Number of CPU ids `getCurrentCPU` can return, capped at `MAX_POSSIBLE_CPUS`. Cached on first call.
+/// For dynamically allocated per-CPU storage; fixed-size storage uses `getNumCPUs` instead.
+/// On Linux the kernel's possible-CPU count (`/sys/devices/system/cpu/possible`, the bound on the
+/// ids `sched_getcpu` returns; falls back to `get_nprocs_conf()` without sysfs), so that it does not
+/// depend on the libc: musl's `sysconf(_SC_NPROCESSORS_CONF)` counts the affinity mask, which is
+/// smaller than the ids under a cpuset. `sysconf(_SC_NPROCESSORS_ONLN)` on Darwin; 1 on platforms
+/// where `getCurrentCPU` is unimplemented (routing collapses to one shard there) or if unavailable.
+UInt32 getNumPossibleCPUs() noexcept;
+
+/// `getNumPossibleCPUs` capped at `MAX_CPUS`, for storage sized with that constant.
+UInt32 getNumCPUs() noexcept;
+
+/// Current CPU id, or -1 if unavailable (callers must treat a negative value as "unknown" and
+/// fall back to a fixed shard). Nothing here guarantees that the id is below `getNumCPUs` or
+/// `getNumPossibleCPUs`: the kernel bounds it by the possible-CPU count, but the count may be capped,
+/// come from the libc fallback, or (on Darwin) disagree with the register the id is read from. Callers
+/// must bound it (`cpu % N` or `cpu < N ? cpu : 0`). Cheap on every supported platform (no syscall).
+ALWAYS_INLINE inline Int32 getCurrentCPU()
 {
 #if defined(OS_LINUX)
+    /// TLS read via glibc rseq on modern kernels (see glibc-compatibility/musl/sched_getcpu.c).
     return sched_getcpu();
+#elif defined(OS_DARWIN) && defined(__aarch64__)
+    /// macOS has no `sched_getcpu`. XNU exposes the current CPU number to userspace in the low 12
+    /// bits of a per-CPU register, extracted exactly as libsyscall's `_os_cpu_number` (up to 4096
+    /// CPUs): https://github.com/apple-oss-distributions/xnu/blob/1031c584a5e37aff177559b9f69dbd3c8c3fd30a/libsyscall/os/tsd.h
+    /// The layout is Apple-internal and documented there as "subject to change"; e.g. macOS 11
+    /// kept the CPU number in `TPIDRRO_EL0` instead, so there this reads unrelated TLS bits. Callers
+    /// bound the value, so on such systems the worst case is degraded sharding, not incorrectness.
+    UInt64 tpidr;
+    __asm__ volatile("mrs %0, TPIDR_EL0" : "=r"(tpidr));
+    return static_cast<Int32>(tpidr & 0xfff);
+#elif defined(OS_DARWIN) && defined(__x86_64__)
+    /// Same source as above (`_os_cpu_number`): XNU encodes the CPU number in the low 12 bits of the
+    /// per-CPU IDTR *limit* (the first word `sidt` stores: 16-bit limit + low 48 bits of the base),
+    /// so masking the first word matches Apple's implementation exactly.
+    struct { UInt64 limit_and_base_low; UInt64 base_high; } idtr;
+    __asm__ volatile("sidt %0" : "=m"(idtr));
+    return static_cast<Int32>(idtr.limit_and_base_low & 0xfff);
 #else
     return -1;
 #endif

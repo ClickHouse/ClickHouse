@@ -1,0 +1,5 @@
+query_limit_memory (MEMORY_LIMIT_EXCEEDED)
+query_limit_disk 10 1 the projected growth of the set exceeds the memory left under the spill threshold
+user_ratio 10 1 the projected growth of the set exceeds the memory left under the spill threshold
+arena_String 64 1 the projected growth of the set exceeds the memory left under the spill threshold
+arena_FixedString 64 1 the projected growth of the set exceeds the memory left under the spill threshold

@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['systemd', 'journald', 'journal', 'OTEL', 'ClickStack', 'system logs', 'systemctl']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -34,9 +32,7 @@ OpenTelemetry Collector を journald receiver とともに実行すると、既�
 * 監視対象システムに Docker または Docker Compose がインストールされていること
 
 <Steps>
-  <Step>
-    #### ClickStack API key を取得する
-
+  <Step title="ClickStack API key を取得する" id="get-api-key">
     OpenTelemetry Collector はデータを ClickStack の OTLP エンドポイント に送信しますが、その際に認証が必要です。
 
     1. ClickStack の URL (例: http://localhost:8080) で HyperDX を開きます
@@ -44,7 +40,15 @@ OpenTelemetry Collector を journald receiver とともに実行すると、既�
     3. **Team Settings → API Keys** に移動します
     4. **インジェスト API key** をコピーします
 
-    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![ClickStack API Key](/images/clickstack/api-key.webp)
+
+    </Frame>
+
+    </div>
 
     5. 環境変数として設定します。
 
@@ -53,10 +57,8 @@ OpenTelemetry Collector を journald receiver とともに実行すると、既�
     ```
   </Step>
 
-  <Step>
-    #### systemd journal が動作していることを確認する
-
-    システムで systemd が使用されており、journal ログが存在することを確認します。
+  <Step title="systemd ジャーナル が動作していることを確認する" id="verify-systemd">
+    システムで systemd が使用されており、ジャーナル ログが存在することを確認します。
 
     ```bash
     # systemd のバージョンを確認
@@ -69,7 +71,7 @@ OpenTelemetry Collector を journald receiver とともに実行すると、既�
     journalctl --disk-usage
     ```
 
-    journal の保存先がメモリー上のみの場合は、永続ストレージを有効にします。
+    ジャーナル の保存先がメモリー上のみの場合は、永続ストレージを有効にします。
 
     ```bash
     sudo mkdir -p /var/log/journal
@@ -78,9 +80,7 @@ OpenTelemetry Collector を journald receiver とともに実行すると、既�
     ```
   </Step>
 
-  <Step>
-    #### OpenTelemetry Collector の設定を作成する
-
+  <Step title="OpenTelemetry Collector の設定を作成する" id="create-otel-config">
     OpenTelemetry Collector 用の設定ファイルを作成します。
 
     ```yaml
@@ -135,11 +135,9 @@ OpenTelemetry Collector を journald receiver とともに実行すると、既�
     ```
   </Step>
 
-  <Step>
-    #### Docker Compose でデプロイする
-
+  <Step title="Docker Compose でデプロイする" id="deploy-docker-compose">
     <Note>
-      `journald` receiver が journal ファイルを読み取るには、`journalctl` binary が必要です。公式の `otel/opentelemetry-collector-contrib` イメージには、デフォルトでは `journalctl` が含まれていません。
+      `journald` receiver が ジャーナル ファイルを読み取るには、`journalctl` binary が必要です。公式の `otel/opentelemetry-collector-contrib` イメージには、デフォルトでは `journalctl` が含まれていません。
 
       コンテナー環境でデプロイする場合は、collector をホストに直接インストールするか、systemd utilities を含むカスタムイメージをビルドしてください。詳しくは、[トラブルシューティングのセクション](#journalctl-not-found) を参照してください。
     </Note>
@@ -185,19 +183,33 @@ OpenTelemetry Collector を journald receiver とともに実行すると、既�
     ```
   </Step>
 
-  <Step>
-    #### HyperDX でログを確認する
-
+  <Step title="HyperDX でログを確認する" id="verifying-logs">
     設定後、HyperDX にログインしてログが取り込まれていることを確認します。
 
-    1. Search view に移動します
+    1. Searchビュー に移動します
     2. source を Logs に設定します
     3. `service.name:systemd-logs` でフィルタします
     4. `unit`、`priority`、`MESSAGE`、`_HOSTNAME` などのフィールドを含む構造化されたログエントリが表示されるはずです
 
-    <Image img="/images/clickstack/systemd/systemd-search-view.webp" alt="Log search view" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/systemd/systemd-log-view.webp" alt="Log view" />
+    <Frame>
+
+    ![Log search view](/images/clickstack/systemd/systemd-search-view.webp)
+
+    </Frame>
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Log view](/images/clickstack/systemd/systemd-log-view.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 </Steps>
 
@@ -205,12 +217,10 @@ OpenTelemetry Collector を journald receiver とともに実行すると、既�
   ## デモデータセット
 </div>
 
-本番環境を設定する前に systemdログのインテグレーションを試したいユーザー向けに、実際に近いパターンを含む、事前生成済みの systemdログのサンプルデータセットを提供しています。
+本番環境を構成する前に systemd ログ のインテグレーションを試したいユーザー向けに、実際の傾向に近いパターンを含む、事前生成済みの systemd ログ のサンプルデータセットを提供しています。
 
 <Steps>
-  <Step>
-    #### サンプルデータセットをダウンロードする
-
+  <Step title="サンプルデータセットをダウンロードする" id="download-sample">
     サンプルのログファイルをダウンロードします。
 
     ```bash
@@ -218,9 +228,7 @@ OpenTelemetry Collector を journald receiver とともに実行すると、既�
     ```
   </Step>
 
-  <Step>
-    #### デモ用の collector 設定を作成する
-
+  <Step title="デモ用の collector 設定を作成する" id="demo-config">
     デモ用の設定ファイルを作成します。
 
     ```bash
@@ -256,9 +264,7 @@ OpenTelemetry Collector を journald receiver とともに実行すると、既�
     ```
   </Step>
 
-  <Step>
-    #### デモデータで ClickStack を実行する
-
+  <Step title="デモデータで ClickStack を実行する" id="run-demo">
     デモログを使って ClickStack を起動します。
 
     ```bash
@@ -275,18 +281,32 @@ OpenTelemetry Collector を journald receiver とともに実行すると、既�
     </Note>
   </Step>
 
-  <Step>
-    #### HyperDX でログを確認する
-
+  <Step title="HyperDX でログを確認する" id="verify-demo-logs">
     ClickStack の起動後、以下を実行します。
 
     1. [HyperDX](http://localhost:8080/) を開き、アカウントにログインします
     2. Searchビューに移動し、ソースを `Logs` に設定します
     3. 時間範囲を **2025-11-14 00:00:00 - 2025-11-17 00:00:00** に設定します
 
-    <Image img="/images/clickstack/systemd/systemd-search-view.webp" alt="ログ検索ビュー" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/systemd/systemd-log-view.webp" alt="ログビュー" />
+    <Frame>
+
+    ![ログ検索ビュー](/images/clickstack/systemd/systemd-search-view.webp)
+
+    </Frame>
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![ログビュー](/images/clickstack/systemd/systemd-log-view.webp)
+
+    </Frame>
+
+    </div>
 
     <Info>
       **タイムゾーン表示**
@@ -300,29 +320,41 @@ OpenTelemetry Collector を journald receiver とともに実行すると、既�
   ## ダッシュボードと可視化
 </div>
 
-ClickStack で systemd ログの監視をすぐに始められるように、systemd journal データ向けの主要な可視化を用意しています。
+ClickStack で systemd ログの監視をすぐに始められるように、systemd ジャーナル データ向けの主要な可視化を用意しています。
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/systemd-logs-dashboard.json'} download="systemd-logs-dashboard.json" eventName="docs.systemd_logs_monitoring.dashboard_download">ダウンロード</TrackedLink>してダッシュボード設定を取得する
+  <Step title="ダッシュボード設定をダウンロードする" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/systemd-logs-dashboard.json'} download="systemd-logs-dashboard.json" eventName="docs.systemd_logs_monitoring.dashboard_download">ダッシュボード設定ファイルをダウンロード</TrackedLink>。
   </Step>
 
-  <Step>
-    #### あらかじめ用意されたダッシュボードをインポートする
-
+  <Step title="あらかじめ用意されたダッシュボードをインポートする" id="import-dashboard">
     1. HyperDX を開き、Dashboards セクションに移動します
     2. 右上の三点メニューから **Import Dashboard** をクリックします
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="ダッシュボードのインポートボタン" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![ダッシュボードのインポートボタン](/images/clickstack/import-dashboard.webp)
+
+    </Frame>
+
+    </div>
 
     3. `systemd-logs-dashboard.json` ファイルをアップロードし、**Finish Import** をクリックします
 
-    <Image img="/images/clickstack/systemd/finish-import-systemd.webp" alt="インポートの完了" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![インポートの完了](/images/clickstack/systemd/finish-import-systemd.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
-  <Step>
-    #### ダッシュボードを表示する
-
+  <Step title="ダッシュボードを表示する" id="created-dashboard">
     このダッシュボードには、次の可視化が含まれています:
 
     * 時系列のログ量
@@ -331,7 +363,15 @@ ClickStack で systemd ログの監視をすぐに始められるように、sys
     * サービス障害
     * エラー率
 
-    <Image img="/images/clickstack/systemd/systemd-logs-dashboard.webp" alt="ダッシュボードの例" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![ダッシュボードの例](/images/clickstack/systemd/systemd-logs-dashboard.webp)
+
+    </Frame>
+
+    </div>
 
     <Note>
       デモデータセットを使用する場合は、時間範囲を **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)** に設定してください (ローカルのタイムゾーンに応じて調整してください) 。
@@ -394,12 +434,12 @@ otelcol-contrib --config=otel-config.yaml
   ## 本番環境への移行
 </div>
 
-このガイドでは、systemd ログを読み取り、ClickStack の OTLP エンドポイントに送信するために、別の OpenTelemetry Collector を使用します。これは、本番環境で推奨される構成です。
+このガイドでは、systemd ログを読み取って ClickStack の OTLP エンドポイントに送信するために、別個の OpenTelemetry Collector を使用します。これは、本番環境で推奨される構成パターンです。
 
-複数ホストの本番環境では、次を検討してください。
+複数のホストがある本番環境では、次を検討してください。
 
 * Kubernetes で collector をデーモンセットとしてデプロイする
 * 各ホストで collector を systemd サービスとして実行する
-* 自動デプロイに OpenTelemetry Operator を使用する
+* 自動デプロイのために OpenTelemetry Operator を使用する
 
-本番環境向けのデプロイパターンについては、[OpenTelemetry で取り込む](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。
+本番環境向けのデプロイパターンについては、[OpenTelemetry を使用した取り込み](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。

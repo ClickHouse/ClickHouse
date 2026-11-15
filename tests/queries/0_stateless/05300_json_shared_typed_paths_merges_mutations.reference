@@ -1,0 +1,118 @@
+-- w: merges, mutations rewriting and hardlinking the column, indexes and columns from a SHARED path, deletes, rename, drop
+t_w [json]	1
+t_w [(json.a, json.c.size0)]	1
+t_w parts	1	40
+t_w [json]	1
+t_w [(json.b, json)]	1
+1
+t_w [json]	1
+t_w [(json.a, json.c.size0, json.d)]	1
+1
+t_w [(y, json)]	1
+t_w [json.b]	1
+t_w index	1
+t_w [json]	1
+t_w materialized column	1
+t_w [(json, json.a)]	1
+1
+t_w [json] WHERE json.a >= 50	1
+t_w [(json.c.size0, json.b)] WHERE json.a >= 50	1
+t_w after lightweight delete	35
+t_w [json] WHERE json.a >= 50 AND json.b != \'	1
+t_w [(json.a, json)] WHERE json.a >= 50 AND json.b != \'	1
+t_w after delete	30
+t_w text index	5
+t_w [json] WHERE json.a >= 50 AND json.b != \'	1
+t_w renamed	1	6650
+1
+t_w dropped	30	9650
+1
+-- cn: merges, mutations rewriting and hardlinking the column, indexes and columns from a SHARED path, deletes, rename, drop
+t_cn [json]	1
+t_cn [(json.a, json.c.size0)]	1
+t_cn parts	1	40
+t_cn [json]	1
+t_cn [(json.b, json)]	1
+1
+t_cn [json]	1
+t_cn [(json.a, json.c.size0, json.d)]	1
+1
+t_cn [(y, json)]	1
+t_cn [json.b]	1
+t_cn index	1
+t_cn [json]	1
+t_cn materialized column	1
+t_cn [(json, json.a)]	1
+1
+t_cn [json] WHERE json.a >= 50	1
+t_cn [(json.c.size0, json.b)] WHERE json.a >= 50	1
+t_cn after lightweight delete	35
+t_cn [json] WHERE json.a >= 50 AND json.b != \'	1
+t_cn [(json.a, json)] WHERE json.a >= 50 AND json.b != \'	1
+t_cn after delete	30
+t_cn text index	5
+t_cn [json] WHERE json.a >= 50 AND json.b != \'	1
+t_cn renamed	1	6650
+1
+t_cn dropped	30	9650
+1
+-- vertical merges, with the SHARED path in the sorting key
+v_w parts	1	40	Wide
+v_w [json]	1
+v_w [(json.a, json.b)]	1
+v_w [(json.c.size0, json)] WHERE json.a >= 100 AND json.a < 300	1
+v_w order	1
+1
+v_cm parts	1	40	Compact
+v_cm [json]	1
+v_cm [(json.a, json.b)]	1
+v_cm [(json.c.size0, json)] WHERE json.a >= 100 AND json.a < 300	1
+v_cm order	1
+1
+-- an emptied part, an insert of no rows, a row count that is a multiple of the granularity
+e_w emptied	0	1
+e_w [json]	1
+e_w [(json.a, json)]	1
+e_w [json]	1
+1
+e_w marks	40	11
+e_cw [json]	1
+e_cn emptied	0	1
+e_cn [json]	1
+e_cn [(json.a, json)]	1
+e_cn [json]	1
+1
+e_cn marks	40	11
+-- ALTER MODIFY COLUMN from String to JSON(SHARED d Dynamic) in merge blocks of different Dynamic structures
+c_w	24	60	15	6	6	276	['0','s1','[2]','true']
+c_w whole	1
+1
+c_cn	24	60	15	6	6	276	['0','s1','[2]','true']
+c_cn whole	1
+1
+-- ReplacingMergeTree with FINAL, with and without functions to subcolumns
+r FINAL optimize_functions_to_subcolumns = 0	40	7820	60	20	60
+r FINAL whole optimize_functions_to_subcolumns = 0	1
+r FINAL optimize_functions_to_subcolumns = 1	40	7820	60	20	60
+r FINAL whole optimize_functions_to_subcolumns = 1	1
+-- a Compact and a Wide part merged into a Wide one
+mx parts before	['Compact','Wide']
+mx [json]	1
+mx [(json.a, json)]	1
+mx parts after	['Wide']
+mx [json]	1
+mx [(json.c.size0, json.b)]	1
+1
+-- a materialized view parsing a String source into a SHARED target
+dst [json]	1
+dst [(json.a, json.c.size0)]	1
+-- a projection holding the whole column, and a lightweight update through patch parts
+pr by y	8	1640
+pr projection used	1
+pr by y after optimize	8	1640
+pr [(y, json)]	1
+pr lightweight update	{"a":1000,"b":"upd","c":[7]}	1000	upd	1
+pr patch parts	1
+pr sum after update	8730	40
+pr sum after apply	8730	40	{"a":1000,"b":"upd","c":[7]}
+1
