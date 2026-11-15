@@ -3239,11 +3239,10 @@ void Planner::buildPlanForQueryNode()
     /// but on followers the rewritten `SELECT` uses fully qualified names and the follower's current
     /// database is the initiator's user-default DB, so the filter match is unreliable. Rather than
     /// patch the match (which differs case by case), disable the combination on the analyzer path.
-    /// The check is skipped when the filter travels inside a shipped plan: on the plan-based path, or
-    /// with `serialize_query_plan` and a local plan, which a leaf timeout the local replica cannot
-    /// honor rules out. With `serialize_query_plan` and no local plan only the entries a follower
-    /// would match differently are refused, see `hasSessionRelativeAdditionalFilter`, and only when
-    /// some table of the query can be read with replicas.
+    /// Skipped when the filter travels inside a shipped plan: on the plan-based path, or with
+    /// `serialize_query_plan` and a local plan, which a leaf timeout the local replica cannot honor
+    /// rules out. Otherwise, with `serialize_query_plan`, only an entry a follower would match differently
+    /// is refused (`hasSessionRelativeAdditionalFilter`), and only if a table can be read with replicas.
     if (query_context->canUseParallelReplicasOnInitiator()
         && !settings[Setting::parallel_replicas_plan_based]
         && (!settings[Setting::serialize_query_plan]
