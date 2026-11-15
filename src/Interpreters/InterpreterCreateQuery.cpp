@@ -1099,9 +1099,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 = !(create.is_ordinary_view || create.is_materialized_view_with_external_target());
             properties.columns = getColumnsDescription(
                 *create.columns_list, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns);
-            /// The definition can differ from the one the existing parts were written with.
-            if (is_full_user_attach)
-                checkNoUncompressedFixedArrayColumns(properties.columns, "ATTACH TABLE with a definition");
         }
         else if (create.columns_list->codec_declarations)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec declarations require a list of columns");
@@ -1415,6 +1412,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     if (!as_table_saved.empty())
         create.is_create_empty = false;
 
+
+    /// The definition, whether declared or copied with `AS`, can differ from the one the existing parts were written with.
+    if (is_full_user_attach)
+        checkNoUncompressedFixedArrayColumns(properties.columns, "ATTACH TABLE with a definition");
     return properties;
 }
 

@@ -4,7 +4,7 @@
 
 # The parts of a table with a column with the setting `uncompressed_fixed_array_size` are read at positions computed from
 # the setting, so the operations that bring in parts that the table did not write are not supported: `RESTORE` of data
-# and `ATTACH TABLE` with a definition.
+# and `ATTACH TABLE` with a definition, declared or copied from another table with `AS`.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -17,6 +17,8 @@ $CLICKHOUSE_CLIENT -m -q "
     CREATE TABLE tab (id UInt32, vec Array(Float32) SETTINGS (uncompressed_fixed_array_size = 2))
     ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
     INSERT INTO tab SELECT number, [toFloat32(number), number + 1] FROM numbers(10);
+    DROP TABLE IF EXISTS tab_template;
+    CREATE TABLE tab_template AS tab;
 "
 
 echo "backup"
@@ -36,7 +38,13 @@ uuid=$($CLICKHOUSE_CLIENT -q "SELECT uuid FROM system.tables WHERE database = cu
 $CLICKHOUSE_CLIENT -q "DETACH TABLE tab"
 $CLICKHOUSE_CLIENT -q "ATTACH TABLE tab UUID '$uuid' (id UInt32, vec Array(Float32) SETTINGS (uncompressed_fixed_array_size = 2))
     ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
+
+echo "attach with a definition copied from another table"
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE tab UUID '$uuid' ENGINE = MergeTree ORDER BY id AS tab_template" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
+
+echo "attach with the stored definition"
 $CLICKHOUSE_CLIENT -q "ATTACH TABLE tab"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM tab"
+$CLICKHOUSE_CLIENT -q "DROP TABLE tab_template"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE tab"

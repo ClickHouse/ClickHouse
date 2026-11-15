@@ -201,6 +201,8 @@ CREATE TABLE tab_rejected (id UInt32, vec Array(Float32) SETTINGS (uncompressed_
 CREATE TABLE tab_rejected (id UInt32, vec Array(Float32) SETTINGS (uncompressed_fixed_array_size = 100000000)) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE tab_rejected (id UInt32, vec Array(Float32) CODEC(LZ4) SETTINGS (uncompressed_fixed_array_size = 64)) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE tab_rejected (id UInt32, vec Array(Float32) CODEC(NONE, LZ4) SETTINGS (uncompressed_fixed_array_size = 64)) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+-- A chain of codecs adds a header to every block, even of codecs that store the data as is.
+CREATE TABLE tab_rejected (id UInt32, vec Array(Float32) CODEC(NONE, NONE) SETTINGS (uncompressed_fixed_array_size = 64)) ENGINE = MergeTree ORDER BY id SETTINGS allow_suspicious_codecs = 1; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE tab_rejected (id UInt32, vec Array(Float32) SETTINGS (uncompressed_fixed_array_size = 64, max_compress_block_size = 256)) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE tab_rejected (id UInt32, vec Array(Float32) ALIAS [toFloat32(id)] SETTINGS (uncompressed_fixed_array_size = 1)) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 -- An expired TTL would replace the values with the default.

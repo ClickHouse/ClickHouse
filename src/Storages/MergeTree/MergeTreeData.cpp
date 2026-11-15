@@ -10615,11 +10615,6 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     if (!restorer.isNonEmptyTableAllowed() && getTotalActiveSizeInBytes() && backup->hasFiles(data_path_in_backup))
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
-    {
-        const auto metadata_for_restore = getInMemoryMetadataPtr(getContext(), false);
-        checkNoUncompressedFixedArrayColumns(metadata_for_restore->getColumns(), "RESTORE of data");
-    }
-
     restorePartsFromBackup(restorer, data_path_in_backup, partitions);
 }
 
@@ -10714,6 +10709,13 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
     auto backup = restorer.getBackup();
     Strings part_names = backup->listFiles(data_path_in_backup, /*recursive*/ false);
     std::erase(part_names, "mutations");
+
+    /// Called by the restore of all the engines, also `StorageReplicatedMergeTree`.
+    if (!part_names.empty())
+    {
+        const auto metadata_for_restore = getInMemoryMetadataPtr(getContext(), false);
+        checkNoUncompressedFixedArrayColumns(metadata_for_restore->getColumns(), "RESTORE of data");
+    }
 
     bool restore_broken_parts_as_detached = restorer.getRestoreSettings().restore_broken_parts_as_detached;
 

@@ -52,8 +52,9 @@ UInt64 getOneRowPerBlockHeaderBytes()
 
 bool declaredCodecStoresDataVerbatim(const ASTPtr & codec_desc)
 {
+    /// A chain of several codecs is stored with another header for each block, even of codecs that store the data verbatim.
     const auto * codec_func = codec_desc ? codec_desc->as<ASTFunction>() : nullptr;
-    if (!codec_func || !codec_func->arguments || codec_func->arguments->children.empty())
+    if (!codec_func || !codec_func->arguments || codec_func->arguments->children.size() != 1)
         return false;
 
     for (const auto & codec : codec_func->arguments->children)
@@ -108,7 +109,7 @@ void validateUncompressedFixedArraySize(const ColumnDescription & column)
         throw error("the column is not stored");
 
     if (column.codec && !declaredCodecStoresDataVerbatim(column.codec))
-        throw error("it has a codec that compresses the data, only `NONE` and `Quantized` are allowed");
+        throw error("its codec must be a single `NONE` or `Quantized` codec, which store the data as is");
 
     if (!column.subcolumn_codecs.empty())
         throw error("it has codecs of subcolumns");

@@ -41,8 +41,8 @@ UInt64 getOneRowPerBlockHeaderBytes();
 /// Whether a column of `type` can have the layout: `Array(BFloat16)`, `Array(Float32)`, `Array(Float64)` or `Array(Int8)`.
 bool canHaveOneRowPerBlockLayout(const DataTypePtr & type);
 
-/// Whether every codec of the declared codec of a column stores the data verbatim: `NONE`, or `Quantized`, which only adds
-/// another stream. Returns false for a column without a declared codec.
+/// Whether the declared codec of a column is a single codec that stores the data verbatim: `NONE`, or `Quantized`, which
+/// only adds another stream. Returns false for a chain of several codecs and for a column without a declared codec.
 bool declaredCodecStoresDataVerbatim(const ASTPtr & codec_desc);
 
 /// The column-level setting that declares the number of elements of every row of a column and makes the elements of every
