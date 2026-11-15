@@ -3659,6 +3659,21 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait Minio to start")
 
+    def wait_seaweedfs_writable(self, minio_client, deadline):
+        # SeaweedFS fails writes until it has allocated its first volume
+        while True:
+            try:
+                minio_client.put_object(
+                    self.minio_bucket, "write_probe", io.BytesIO(b"ready"), 5
+                )
+                minio_client.remove_object(self.minio_bucket, "write_probe")
+                return
+            except Exception as ex:
+                if time.time() >= deadline:
+                    raise
+                logging.debug("SeaweedFS is not writable yet: %s", str(ex))
+                time.sleep(1)
+
     def wait_minio_to_start(self, timeout=180, secure=False):
         self.minio_ip = self.get_instance_ip(self.minio_host)
         if self.s3_server == "minio":
@@ -3703,11 +3718,8 @@ class ClickHouseCluster:
                     logging.debug("S3 bucket '%s' created", bucket)
 
                 if self.s3_server == "seaweedfs":
-                    # SeaweedFS fails writes until it has allocated its first volume
-                    minio_client.put_object(
-                        self.minio_bucket, "write_probe", io.BytesIO(b"ready"), 5
-                    )
-                    minio_client.remove_object(self.minio_bucket, "write_probe")
+                    # Own retry: re-running this loop fails on the created buckets
+                    self.wait_seaweedfs_writable(minio_client, start + timeout)
 
                 self.minio_client = minio_client
                 return
