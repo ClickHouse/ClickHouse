@@ -11,6 +11,8 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ErrnoException.h>
+#include <Common/LockMemoryExceptionInThread.h>
+#include <Common/scope_guard_safe.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -86,26 +88,46 @@ static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_millisecond
 
     int res = 0;
 
+    /// Account against one anchor in microseconds: the per-iteration millisecond stopwatch this
+    /// replaces truncated a sub-millisecond interruption to 0, so a signal arriving faster than once
+    /// per millisecond - the query profiler under load - left the budget untouched and the poll never
+    /// expired. Same accounting as `ReadBufferFromFileDescriptor::poll` and `Epoll::getManyReady`.
+    /// Clamp before scaling: `timeout_milliseconds` comes from the unrestricted `command_read_timeout` /
+    /// `command_write_timeout` settings, so a huge value would wrap in the multiplication and could then
+    /// round a non-zero remainder down to zero.
+    const UInt64 timeout_microseconds
+        = std::min<UInt64>(timeout_milliseconds, std::numeric_limits<UInt64>::max() / 1000) * 1000;
+    UInt64 remaining_microseconds = timeout_microseconds;
+    Stopwatch watch;
+
     while (true)
     {
-        Stopwatch watch;
-
         LOG_TEST(logger, "Polling descriptors: {}", fmt::join(std::span(pfds, pfds + num) | std::views::transform(describe_fd), ", "));
 
-        res = poll(pfds, static_cast<nfds_t>(num), static_cast<int>(timeout_milliseconds));
+        res = poll(
+            pfds,
+            static_cast<nfds_t>(num),
+            static_cast<int>(std::min<UInt64>(
+                (remaining_microseconds + 999) / 1000, static_cast<UInt64>(std::numeric_limits<int>::max()))));
 
         if (res < 0)
         {
             if (errno != EINTR)
                 throw ErrnoException(ErrorCodes::CANNOT_POLL, "Cannot poll");
 
-            const auto elapsed = watch.elapsedMilliseconds();
-            if (timeout_milliseconds <= elapsed)
+            /// A zero timeout is a non-blocking readiness probe, so there is no deadline to exhaust:
+            /// retry it rather than letting a signal report the descriptor as not ready.
+            if (timeout_microseconds == 0)
+                continue;
+
+            const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
+            if (elapsed_microseconds >= timeout_microseconds)
             {
-                LOG_TEST(logger, "Timeout exceeded: elapsed={}, timeout={}", elapsed, timeout_milliseconds);
+                LOG_TEST(logger, "Timeout exceeded: elapsed={}us, timeout={}us", elapsed_microseconds, timeout_microseconds);
+                res = 0;
                 break;
             }
-            timeout_milliseconds -= elapsed;
+            remaining_microseconds = timeout_microseconds - elapsed_microseconds;
         }
         else
         {
@@ -274,18 +296,40 @@ public:
                 {
                     bytes_read += res;
                     if (sampler)
+                    {
                         sampler->recordOutputBytes(static_cast<size_t>(res));
+                        /// The child produced this output, so it was running; sample its subtree VmHWM.
+                        /// It may have already exited (short-lived UDF) — then the read finds no VmHWM
+                        /// and this is a harmless no-op. Also a no-op on the pool path (executable_root_pid <= 0).
+                        sampler->sampleExecutablePeak();
+                    }
                 }
             }
         }
 
         if (bytes_read > 0)
         {
-            working_buffer = internal_buffer;
+            setWorkingBufferFromInternal();
             working_buffer.resize(bytes_read);
         }
         else
         {
+            /// Concluding best-effort tail sample. The function has closed stdout, so
+            /// this is the last point it is typically still alive; take one final
+            /// subtree sample (bypassing the throttle) to catch a peak reached after
+            /// the last IO sample but before EOF. Fired once; a no-op on the pool path
+            /// and harmless if the child has already exited. This is a single tail
+            /// attempt, not continuous sampling during the post-output reap.
+            /// This concluding sample is best-effort and is intentionally NOT covered
+            /// by a deterministic test — whether the child is still resident when EOF
+            /// is detected is timing-dependent, so any assertion on it would be
+            /// flaky; the deterministic guarantees (output-phase capture, max-not-sum,
+            /// parent-independence) are covered by the integration tests.
+            if (sampler && !final_sample_taken)
+            {
+                final_sample_taken = true;
+                sampler->sampleExecutablePeak(/*is_final=*/true);
+            }
             return false;
         }
 
@@ -294,8 +338,9 @@ public:
 
     ~TimeoutReadBufferFromFileDescriptor() override
     {
-        tryMakeFdBlocking(stdout_fd);
-        tryMakeFdBlocking(stderr_fd);
+        /// Do not touch stdout_fd/stderr_fd here: they are owned by the ShellCommand, which may
+        /// already have closed them (`ShellCommand::wait` closes the streams), and the numbers may
+        /// be recycled by another thread. An fcntl on them would corrupt an unrelated descriptor.
 
         // Handle LOG_FIRST and LOG_LAST cases with circular buffer
         if (!stderr_result_buf.empty())
@@ -340,6 +385,7 @@ private:
     size_t timeout_milliseconds;
     ExternalCommandStderrReaction stderr_reaction;
     UDFProcessSubtreeSampler * sampler;
+    bool final_sample_taken = false;
 
     static constexpr size_t BUFFER_SIZE = 4_KiB;
     static constexpr size_t MAX_STDERR_SIZE = 1_MiB;  /// Safety limit for stderr accumulation
@@ -380,19 +426,24 @@ public:
             {
                 bytes_written += res;
                 if (sampler)
+                {
                     sampler->recordInputBytes(static_cast<size_t>(res));
+                    /// The child's stdin is still open (this write succeeded), so it was
+                    /// running; sample its subtree VmHWM. It may exit before we sample — a
+                    /// harmless no-op. Also a no-op on the pool path (executable_root_pid <= 0).
+                    sampler->sampleExecutablePeak();
+                }
             }
         }
     }
 
+    /// Restore blocking mode before the command is returned to the process pool.
+    /// Safe only while the fd is provably open (the send-data task calls this right
+    /// before closing/returning); the destructor must not do it, see
+    /// ~TimeoutReadBufferFromFileDescriptor.
     void reset() const
     {
         makeFdBlocking(fd);
-    }
-
-    ~TimeoutWriteBufferFromFileDescriptor() override
-    {
-        tryMakeFdBlocking(fd);
     }
 
 private:
@@ -440,7 +491,7 @@ namespace
     {
     public:
 
-        using SendDataTask = std::function<void(void)>;
+        using SendDataTask = std::function<void()>;
 
         ShellCommandSource(
             ContextPtr context_,
@@ -450,38 +501,40 @@ namespace
             bool check_exit_code_,
             SharedHeader sample_block_,
             std::unique_ptr<ShellCommand> && command_,
-            std::vector<SendDataTask> && send_data_tasks = {},
+            VectorWithMemoryTracking<SendDataTask> && send_data_tasks = {},
             const ShellCommandSourceConfiguration & configuration_ = {},
             std::unique_ptr<ShellCommandHolder> && command_holder_ = nullptr,
             std::shared_ptr<ProcessPool> process_pool_ = nullptr)
-            : ISource(sample_block_)
+            : ISource(std::make_shared<const Block>(sample_block_->cloneEmpty()))
             , context(context_)
             , format(format_)
             , sample_block(sample_block_)
             , command(std::move(command_))
             , configuration(configuration_)
             , timeout_command_out(command->out.getFD(), command->err.getFD(), command_read_timeout_milliseconds, stderr_reaction, configuration_.sampler.get())
-            , command_holder(std::move(command_holder_))
             , process_pool(process_pool_)
             , check_exit_code(check_exit_code_)
         {
-            auto context_for_reading = Context::createCopy(context);
-            /// Currently parallel parsing input format cannot read exactly max_block_size rows from input,
-            /// so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
-            if (configuration.read_fixed_number_of_rows)
-                context_for_reading->setSetting("input_format_parallel_parsing", false);
-            /// Here header auto detection can only cause troubles, since if it
-            /// will find "header" the number of input and output rows will not
-            /// match.
-            context_for_reading->setSetting("input_format_csv_detect_header", false);
-            context_for_reading->setSetting("input_format_tsv_detect_header", false);
-            context_for_reading->setSetting("input_format_custom_detect_header", false);
-            context = context_for_reading;
-
-            auto thread_group = CurrentThread::getGroup();
-
             try
             {
+                /// Not in the initializer list: if a member throws, the caller still owns the holder and returns it.
+                command_holder = std::move(command_holder_);
+
+                auto context_for_reading = Context::createCopy(context);
+                /// Currently parallel parsing input format cannot read exactly max_block_size rows from input,
+                /// so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
+                if (configuration.read_fixed_number_of_rows)
+                    context_for_reading->setSetting("input_format_parallel_parsing", false);
+                /// Here header auto detection can only cause troubles, since if it
+                /// will find "header" the number of input and output rows will not
+                /// match.
+                context_for_reading->setSetting("input_format_csv_detect_header", false);
+                context_for_reading->setSetting("input_format_tsv_detect_header", false);
+                context_for_reading->setSetting("input_format_custom_detect_header", false);
+                context = context_for_reading;
+
+                auto thread_group = CurrentThread::getGroup();
+
                 for (auto && send_data_task : send_data_tasks)
                 {
                     send_data_threads.emplace_back([thread_group, task = std::move(send_data_task), this]() mutable
@@ -521,6 +574,7 @@ namespace
                 }
 
                 pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, *sample_block, max_block_size)));
+                pipeline.disableProfileEventUpdate();
                 executor = std::make_unique<PullingPipelineExecutor>(pipeline);
             }
             catch (...)
@@ -542,22 +596,61 @@ namespace
                 if (thread.joinable())
                     thread.join();
 
-            /// Resource accounting must observe the borrow's resident set before
-            /// the worker is torn down or the slot is handed back to the pool —
-            /// either path destroys `/proc/<pid>/{stat,status}` and the sampler
-            /// would then read zero CPU and zero `VmHWM`.
-            /// `recordReleased` reads procfs and may throw, but `cleanup` is
-            /// called from the destructor — swallow any exception so the
-            /// destructor stays noexcept.
+            /// Record this borrow's resource usage before the child is gone. The two
+            /// executable UDF types measure it differently.
             if (configuration.sampler)
             {
-                try
+                if (process_pool)
                 {
-                    configuration.sampler->recordReleased();
+                    /// Resource accounting must observe the borrow's resident set before
+                    /// the worker is torn down or the slot is handed back to the pool —
+                    /// either path destroys `/proc/<pid>/{stat,status}` and the sampler
+                    /// would then read zero CPU and zero `VmHWM`.
+                    /// `recordReleased` reads procfs and may throw, but `cleanup` is
+                    /// called from the destructor — swallow any exception so the
+                    /// destructor stays noexcept.
+                    try
+                    {
+                        configuration.sampler->recordReleased();
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException("ShellCommandSource");
+                    }
                 }
-                catch (...)
+                else if (command)
                 {
-                    tryLogCurrentException("ShellCommandSource");
+                    /// Peak memory was sampled from /proc VmHWM during IO, while the child
+                    /// was provably alive; by cleanup the child has closed stdout and is
+                    /// exiting, so its `/proc` mm fields are gone — no useful sample here.
+                    ///
+                    /// Capture wait4 rusage for CPU. When `prepare` already waited the child
+                    /// via its blocking `wait` (`check_exit_code=true`), `isWaitCalled()` is
+                    /// true and this is skipped. A child lingering past the poll budget is left
+                    /// to `~ShellCommand`'s bounded `command_termination_timeout` + SIGTERM, so
+                    /// profiling cannot turn cleanup into a query hang. No status check: a
+                    /// non-zero exit must not raise CHILD_WAS_NOT_EXITED_NORMALLY here.
+                    if (!command->isWaitCalled())
+                    {
+                        try
+                        {
+                            command->tryWaitWithoutStatusCheck();
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException("ShellCommandSource");
+                        }
+                    }
+
+                    /// Peak memory is independent of the wait: it comes from /proc VmHWM
+                    /// sampled during IO and stamped by recordExecutableElapsed. CPU requires
+                    /// the wait4 rusage and is recorded only when the wait succeeded.
+                    configuration.sampler->recordExecutableElapsed();
+
+                    if (command->wasChildResourceUsageCaptured())
+                        configuration.sampler->recordExecutableFinished(
+                            command->getChildUserTimeMicroseconds(),
+                            command->getChildSystemTimeMicroseconds());
                 }
             }
 
@@ -566,12 +659,27 @@ namespace
 
             if (command_holder && process_pool)
             {
-                bool valid_command = configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read;
+                /// The default row count is not final until the output header has been read.
+                /// `prepare` intentionally keeps the old check: it must not wait on a live pooled worker.
+                bool valid_command = configuration.read_fixed_number_of_rows
+                    && (!configuration.read_number_of_rows_from_process_output || executor)
+                    && current_read_rows >= configuration.number_of_rows_to_read;
 
+                LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+
+                /// A worker that will not be reused is reaped before its slot is published.
                 if (command && valid_command)
                     command_holder->returnCommand(std::move(command));
-
-                process_pool->returnObject(std::move(command_holder));
+                else
+                    command = nullptr;
+                try
+                {
+                    process_pool->returnObject(std::move(command_holder));
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("ShellCommandSource");
+                }
             }
         }
 
@@ -593,6 +701,7 @@ namespace
 
                         size_t max_block_size = configuration.number_of_rows_to_read;
                         pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, *sample_block, max_block_size)));
+                        pipeline.disableProfileEventUpdate();
                         executor = std::make_unique<PullingPipelineExecutor>(pipeline);
                     }
 
@@ -632,7 +741,8 @@ namespace
                                   "Executable generates stderr: {}", timeout_command_out.getStderr());
                 }
 
-                if (check_exit_code)
+                /// Do not wait for a command whose output was not read to the end: it may never exit while its pipes stay open.
+                if (check_exit_code && finished)
                 {
                     try
                     {
@@ -697,7 +807,7 @@ namespace
         QueryPipeline pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;
 
-        std::vector<ThreadFromGlobalPool> send_data_threads;
+        VectorWithMemoryTracking<ThreadFromGlobalPool> send_data_threads;
 
         std::mutex send_data_lock;
         std::exception_ptr exception_during_send_data;
@@ -740,21 +850,32 @@ ShellCommandSourceCoordinator::ShellCommandSourceCoordinator(const Configuration
 Pipe ShellCommandSourceCoordinator::createPipe(
     const std::string & command,
     const VectorWithMemoryTracking<std::string> & arguments,
-    std::vector<Pipe> && input_pipes,
+    Pipes && input_pipes,
     Block sample_block,
     ContextPtr context,
     const ShellCommandSourceConfiguration & source_configuration)
 {
     ShellCommand::Config command_config(command);
     command_config.arguments = arguments;
+    command_config.pipe_capacity = configuration.command_pipe_capacity;
     for (size_t i = 1; i < input_pipes.size(); ++i)
         command_config.write_fds.emplace_back(i + 2);
 
     std::unique_ptr<ShellCommand> process;
     std::unique_ptr<ShellCommandHolder> process_holder;
 
+    SCOPE_EXIT_SAFE({
+        if (process_holder && process_pool)
+        {
+            process.reset();
+            process_pool->returnObject(std::move(process_holder));
+        }
+    });
+
     auto destructor_strategy = ShellCommand::DestructorStrategy{true /*terminate_in_destructor*/, SIGTERM, configuration.command_termination_timeout_seconds};
     command_config.terminate_in_destructor_strategy = destructor_strategy;
+
+    command_config.register_in_udf_process_registry = configuration.is_user_defined_function;
 
     bool is_executable_pool = (process_pool != nullptr);
     if (is_executable_pool)
@@ -774,7 +895,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
 
                 return std::make_unique<ShellCommandHolder>(std::move(func));
             },
-            configuration.max_command_execution_time_seconds * 10000);
+            configuration.max_command_execution_time_seconds * 1000);
 
         /// Pool wait is frozen here on both the success and the timeout-failure
         /// paths so that `PoolWaitMicroseconds` always records contention for a
@@ -817,13 +938,19 @@ Pipe ShellCommandSourceCoordinator::createPipe(
     }
     else
     {
+        command_config.collect_resource_usage = (source_configuration.sampler != nullptr);
         if (configuration.execute_direct)
             process = ShellCommand::executeDirect(command_config);
         else
             process = ShellCommand::execute(command_config);
+
+        /// Record the child pid so sampleExecutablePeak can walk the subtree
+        /// during IO. No-op when sampler is null.
+        if (source_configuration.sampler)
+            source_configuration.sampler->recordExecutablePid(process->getPid());
     }
 
-    std::vector<ShellCommandSource::SendDataTask> tasks;
+    VectorWithMemoryTracking<ShellCommandSource::SendDataTask> tasks;
     tasks.reserve(input_pipes.size());
 
     for (size_t i = 0; i < input_pipes.size(); ++i)

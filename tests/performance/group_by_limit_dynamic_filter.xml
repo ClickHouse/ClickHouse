@@ -1,0 +1,20 @@
+<test>
+    <!-- `GROUP BY key [ORDER BY key] LIMIT n` (ClickBench Q16-Q18): the top-K heap of the aggregation
+         publishes its boundary to the reading step, which drops rows beyond it before reading the
+         other columns and skips granules through the primary index. -->
+    <substitutions>
+        <substitution>
+            <name>dynamic</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT UserID, count() FROM hits_100m_single GROUP BY UserID LIMIT 10 SETTINGS enable_group_by_top_k_dynamic_filtering = {dynamic}</query>
+    <query>SELECT UserID, SearchPhrase, count() FROM hits_100m_single GROUP BY UserID, SearchPhrase LIMIT 10 SETTINGS enable_group_by_top_k_dynamic_filtering = {dynamic}</query>
+    <query>SELECT UserID, extract(minute FROM EventTime) AS m, SearchPhrase, count() FROM hits_100m_single GROUP BY UserID, m, SearchPhrase LIMIT 10 SETTINGS enable_group_by_top_k_dynamic_filtering = {dynamic}</query>
+    <query>SELECT UserID, count() FROM hits_100m_single GROUP BY UserID ORDER BY UserID LIMIT 10 SETTINGS enable_group_by_top_k_dynamic_filtering = {dynamic}</query>
+    <query>SELECT CounterID, count() FROM hits_100m_single GROUP BY CounterID ORDER BY CounterID DESC LIMIT 10 SETTINGS enable_group_by_top_k_dynamic_filtering = {dynamic}</query>
+</test>

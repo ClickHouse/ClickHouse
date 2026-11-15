@@ -28,8 +28,8 @@ toISOYear(toDate('2024/10/02')) as year1,
 toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
         )",
         R"(
-┌─week1─┬─week2─┐
-│    40 │    40 │
+┌─year1─┬─year2─┐
+│  2024 │  2024 │
 └───────┴───────┘
         )"}
     };
@@ -38,6 +38,7 @@ toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToISOYear>(documentation);
+    factory.registerAlias("YEAR_OF_WEEK", "toISOYear", FunctionFactory::Case::Insensitive);
 }
 
 }

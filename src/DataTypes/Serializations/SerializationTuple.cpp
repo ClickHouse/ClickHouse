@@ -7,10 +7,13 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
 #include <Formats/JSONUtils.h>
+#include <Formats/ParseError.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -146,6 +149,10 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
         restore_elements();
         if constexpr (throw_exception)
             throw;
+        /// Only a genuine parse failure means "this value did not parse"; other errors
+        /// (e.g. MEMORY_LIMIT_EXCEEDED) must propagate instead of being reported as a
+        /// failed parse and silently turned into a default/skip.
+        rethrowIfNotParseError();
         return ReturnType(false);
     }
 
@@ -157,15 +164,29 @@ void SerializationTuple::readElementsSafe(DB::IColumn & column, std::function<vo
     addElementSafe<void>(assert_cast<ColumnTuple &>(column).getColumns().size(), column, [&](){ read_func(); return true; });
 }
 
-SerializationPtr SerializationTuple::create(ElementSerializations elems_, bool has_explicit_names_)
+SerializationTuple::SerializationTuple(ElementSerializations elems_, DataTypes elem_types_, bool has_explicit_names_)
+    : elems(std::move(elems_))
+    , elem_types(std::move(elem_types_))
+    , has_explicit_names(has_explicit_names_)
+    , elems_support_pooling(std::ranges::all_of(elems, [](const auto & elem) { return elem->supportsPooling(); }))
+{
+    chassert(elem_types.size() == elems.size());
+}
+
+SerializationPtr SerializationTuple::create(ElementSerializations elems_, DataTypes elem_types_, bool has_explicit_names_)
 {
     for (const auto & elem : elems_)
     {
         if (!elem->supportsPooling())
-            return std::shared_ptr<ISerialization>(new SerializationTuple(std::move(elems_), has_explicit_names_));
+            return std::shared_ptr<ISerialization>(new SerializationTuple(std::move(elems_), std::move(elem_types_), has_explicit_names_));
     }
     auto hash = getHash(elems_, has_explicit_names_);
-    return ISerialization::pooled(hash, [e = std::move(elems_), has_explicit_names_]() mutable { return new SerializationTuple(std::move(e), has_explicit_names_); });
+    return ISerialization::pooled(hash, [e = std::move(elems_), t = std::move(elem_types_), has_explicit_names_]() mutable { return new SerializationTuple(std::move(e), std::move(t), has_explicit_names_); });
+}
+
+bool SerializationTuple::isElementSubcolumn(const SubstreamPath & path, const String & element_name)
+{
+    return !path.empty() && path.back().type == Substream::TupleElement && path.back().name_of_substream == element_name;
 }
 
 void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -176,6 +197,23 @@ void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, 
             elems[i]->deserializeBinary(extractElementColumn(column, i), istr, settings);
         return true;
     });
+}
+
+void SerializationTuple::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const size_t level = settings.hive_text.nesting_level;
+    const char separator = getHiveTextDelimiter(settings, level);
+
+    auto child_settings = settings;
+    child_settings.hive_text.nesting_level = level + 1;
+
+    for (size_t i = 0; i < elems.size(); ++i)
+    {
+        if (i != 0)
+            writeChar(separator, ostr);
+
+        elems[i]->serializeTextHive(extractElementColumn(column, i), row_num, ostr, child_settings);
+    }
 }
 
 void SerializationTuple::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -510,7 +548,10 @@ ReturnType SerializationTuple::deserializeTupleJSONImpl(IColumn & column, ReadBu
                     }
 
                     auto & element_column = extractElementColumn(column, element_pos);
-                    element_column.insertDefault();
+                    if (elem_types[element_pos]->isDefaultInsertTrivial())
+                        element_column.insertDefault();
+                    else
+                        elem_types[element_pos]->insertDefaultInto(element_column);
                 }
             }
 
@@ -725,12 +766,12 @@ struct DeserializeBinaryBulkStateTuple : public ISerialization::DeserializeBinar
 {
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> states;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateTuple>();
         new_state->states.reserve(states.size());
         for (const auto & state : states)
-            new_state->states.push_back(state ? state->clone() : nullptr);
+            new_state->states.push_back(state ? state->clone(context) : nullptr);
 
         return new_state;
     }
@@ -835,8 +876,7 @@ void SerializationTuple::serializeBinaryBulkWithMultipleStreams(
 }
 
 void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
-    size_t rows_offset,
+    IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -850,13 +890,10 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
         }
         else if (ReadBuffer * stream = settings.getter(settings.path))
         {
-            size_t prev_size = column->size();
-            auto mutable_column = column->assumeMutable();
-            auto ignored_size = stream->tryIgnore(rows_offset + limit);
-            auto delta = ignored_size < rows_offset ? 0 : ignored_size - rows_offset;
-            typeid_cast<ColumnTuple &>(*mutable_column).addSize(delta);
-            column = std::move(mutable_column);
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
+            size_t prev_size = column.size();
+            auto ignored_size = stream->tryIgnore(limit);
+            typeid_cast<ColumnTuple &>(column).addSize(ignored_size);
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), column.size() - prev_size);
         }
 
         return;
@@ -864,13 +901,12 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
 
     auto * tuple_state = checkAndGetState<DeserializeBinaryBulkStateTuple>(state);
 
-    auto mutable_column = column->assumeMutable();
-    auto & column_tuple = assert_cast<ColumnTuple &>(*mutable_column);
+    auto & column_tuple = assert_cast<ColumnTuple &>(column);
 
     for (size_t i = 0; i < elems.size(); ++i)
     {
         elems[i]->deserializeBinaryBulkWithMultipleStreams(
-            column_tuple.getColumnPtr(i), rows_offset, limit, settings, tuple_state->states[i], cache);
+            column_tuple.getColumn(i), limit, settings, tuple_state->states[i], cache);
     }
 
     /// Verify that all Tuple elements have the same size.
@@ -881,7 +917,7 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
             throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of tuple element {}: {}. Expected size: {}", i, column_tuple.getColumn(i).size(), expected_size);
     }
 
-    typeid_cast<ColumnTuple &>(*mutable_column).addSize(column_tuple.getColumn(0).size());
+    column_tuple.addSize(column_tuple.getColumn(0).size());
 }
 
 size_t SerializationTuple::getPositionByName(const String & name) const
@@ -897,15 +933,29 @@ size_t SerializationTuple::allocatedBytes() const
 {
     size_t bytes = sizeof(*this);
     bytes += elems.capacity() * sizeof(ElementSerializationPtr);
+    bytes += elem_types.capacity() * sizeof(DataTypePtr);
     return bytes;
 }
 
 bool SerializationTuple::supportsPooling() const
 {
-    for (const auto & elem : elems)
-        if (!elem->supportsPooling())
-            return false;
-    return true;
+    return elems_support_pooling;
+}
+
+MutableColumnPtr SerializationTuple::wrapColumnForDeserialization(MutableColumnPtr column) const
+{
+    /// Rebuild the tuple with each element wrapped by its own serialization (element serializations are
+    /// SerializationNamed wrappers that forward to the real element serialization, so kinds compose).
+    const auto & tuple = assert_cast<const ColumnTuple &>(*column);
+    if (elems.empty())
+        return column;
+
+    MutableColumns wrapped;
+    wrapped.reserve(elems.size());
+    for (size_t i = 0; i != elems.size(); ++i)
+        wrapped.push_back(elems[i]->wrapColumnForDeserialization(tuple.getColumn(i).cloneEmpty()));
+
+    return ColumnTuple::create(std::move(wrapped));
 }
 
 }

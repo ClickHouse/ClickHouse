@@ -1,0 +1,11 @@
+---
+title: Compatibilidad con JSON
+---
+
+<div id="schema-choice-map-vs-json">
+  ## Elección del esquema: Map vs JSON
+</div>
+
+ClickStack almacena los atributos como columnas `Map(LowCardinality(String), String)` de forma predeterminada. Este es el esquema recomendado para las cargas de trabajo de observabilidad. En combinación con la [serialización de mapas por buckets](/es/reference/data-types/map#bucketed-map-serialization) y los índices de texto sobre las claves y los valores del mapa, ofrece lookups selectivos sin la sobrecarga de ingesta por clave de las subcolumnas JSON dinámicas.
+
+También hay disponible, en fase beta, un esquema de tipo `JSON` para evaluarlo en cargas de trabajo con un conjunto pequeño y estable de claves de atributos. **No se recomienda** como opción predeterminada. Consulta [Map vs tipo JSON](/es/clickstack/ingesting-data/schema/map-vs-json) para ver la comparación completa y las variables de entorno necesarias para habilitar la compatibilidad con JSON.

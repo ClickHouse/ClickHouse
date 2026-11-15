@@ -1,0 +1,49 @@
+-- UInt32 timestamps
+Row 1:
+──────
+inside:               [(110,2),(120,3)]
+whole:                [(100,1),(110,2),(120,3),(130,4)]
+wider:                [(100,1),(110,2),(120,3),(130,4)]
+before:               []
+after:                []
+min_greater_than_max: []
+single_point:         [(110,2)]
+empty_array:          []
+-- duplicate timestamps are all kept: the function does not deduplicate
+[(110,2),(110,3)]
+-- DateTime and DateTime64 timestamps, bounds of other types are converted to the type of the timestamps
+[('1970-01-01 00:01:50',2)]
+Row 1:
+──────
+datetime64_bounds:  [('2025-06-01 00:00:30.000',2),('2025-06-01 00:01:00.000',3)]
+datetime_bounds:    [('2025-06-01 00:00:30.000',2)]
+integer_bounds:     [('2025-06-01 00:00:00.000',1),('2025-06-01 00:00:30.000',2)]
+fractional_bounds:  [('2025-06-01 00:00:30.000',2)]
+other_scale_bounds: [('2025-06-01 00:00:30.000',2)]
+-- the names of the tuple elements are kept
+[(110,2)]	Array(Tuple(\n    timestamp UInt32,\n    value Float64))
+-- non-constant arrays and bounds
+0	[(0,0),(10,1)]
+1	[(10,1),(20,2)]
+2	[(20,2),(30,3)]
+3	[(30,3),(40,4)]
+-- a constant bound together with a non-constant one
+0	[]
+1	[(10,1)]
+2	[(10,1),(20,2)]
+3	[(10,1),(20,2),(30,3)]
+-- consecutive rows: slices before and after the interval, a partial slice, an empty array and a whole array
+0	[]
+1	[(110,1),(120,2)]
+2	[]
+3	[(300,0),(310,1),(320,2)]
+4	[]
+-- every slice is a whole array
+0	[(0,0),(10,1),(20,2)]
+1	[(100,0),(110,1),(120,2)]
+2	[(200,0),(210,1),(220,2)]
+-- a column of an aggregating table
+[('2025-06-01 00:00:30.000',2),('2025-06-01 00:01:00.000',3)]	Array(Tuple(\n    timestamp DateTime64(3),\n    value Float64))
+[('2025-06-01 00:00:45.000',2.5)]	Array(Tuple(\n    timestamp DateTime64(3),\n    value Float64))
+[('2025-06-01 00:00:30.000',2),('2025-06-01 00:00:45.000',2.5),('2025-06-01 00:01:00.000',3)]	Array(Tuple(\n    timestamp DateTime64(3),\n    value Float64))
+-- errors

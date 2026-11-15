@@ -1,0 +1,8 @@
+PrettyCompact NBSP data row matches expected bytes
+PrettyCompact default data row matches expected bytes
+Pretty NBSP data row matches expected bytes
+PrettySpace NBSP data row matches expected bytes
+Row-number left pad on single-digit row is NBSP
+Pretty NBSP header row matches expected bytes
+Pretty NBSP footer row matches expected bytes
+ASCII charset suppresses NBSP

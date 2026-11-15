@@ -1,0 +1,32 @@
+outer WHERE
+1
+1
+1
+1
+1
+1
+2
+1
+2
+1
+2
+not in
+8
+8
+8
+still pushed down
+4
+2
+additional_table_filters
+1
+1
+1
+1
+1
+2
+1
+2
+1
+2
+8
+8

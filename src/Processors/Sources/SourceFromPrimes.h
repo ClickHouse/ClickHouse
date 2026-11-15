@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -60,6 +61,12 @@ protected:
 
         while (written < target)
         {
+            /// A large step (or limit) makes this loop call `next` a huge number of times without
+            /// yielding, so a cancelled/timed-out query keeps running. Observe cancellation here so
+            /// `KILL` / `max_execution_time` / shutdown can abort generation promptly.
+            if (isCancelled())
+                return {};
+
             auto prime = prime_generator.next();
 
             const UInt64 cur_prime_index = prime_index;
@@ -109,7 +116,7 @@ class PrimesSimpleRangedSource final : public ISource
 {
 public:
     PrimesSimpleRangedSource(
-        UInt64 block_size_, std::vector<Interval> intervals_, std::optional<UInt64> limit_, const std::string & column_name)
+        UInt64 block_size_, VectorWithMemoryTracking<Interval> intervals_, std::optional<UInt64> limit_, const std::string & column_name)
         : ISource(PrimesSource::createHeader(column_name))
         , block_size(block_size_)
         , intervals(std::move(intervals_))
@@ -159,6 +166,10 @@ protected:
 
         while (written < target)
         {
+            /// See `PrimesSource::generate`: bail out of this potentially very long loop on cancellation.
+            if (isCancelled())
+                return {};
+
             if (interval_idx >= intervals.size())
                 break;
 
@@ -188,7 +199,7 @@ protected:
 private:
     UInt64 block_size;
 
-    std::vector<Interval> intervals;
+    VectorWithMemoryTracking<Interval> intervals;
     size_t interval_idx = 0;
 
     std::optional<UInt64> limit;

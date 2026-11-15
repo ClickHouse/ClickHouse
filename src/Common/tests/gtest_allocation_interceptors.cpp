@@ -1,18 +1,37 @@
 #if !defined(SANITIZER)
 
+#include "config.h"
+
 #include <gtest/gtest.h>
 
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
+#include <Common/memory.h>
+#include <base/getPageSize.h>
+#include <base/scope_guard.h>
+#include <fmt/format.h>
+#include <cerrno>
+#include <cstdlib>
 #include <limits>
+#include <new>
+#include <optional>
+#include <string>
 
 namespace DB::ErrorCodes
 {
     extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+namespace ProfileEvents
+{
+    extern const Event GlobalMemoryLimitExceeded;
+    extern const Event QueryMemoryLimitExceeded;
 }
 
 using namespace DB;
@@ -155,6 +174,66 @@ TEST(AllocationInterceptors, MallocZeroFreeDoesNotCauseNegativeDrift)
     EXPECT_GE(total_memory_tracker.get() - before_global, -64 * 1024);
 }
 
+/// Sized `operator delete` credits the size class computed from the size it is given, not the one jemalloc
+/// reports for the pointer, so it must match what `operator new` charged, also for over-page alignments.
+TEST(AllocationInterceptors, SizedDeleteCreditsWhatNewCharged)
+{
+    MainThreadStatus::getInstance();
+#if USE_JEMALLOC
+    /// jemalloc's page can be larger than the OS page (64 KiB by default on aarch64).
+    const size_t page_size = Jemalloc::getValue<size_t>("arenas.page");
+#else
+    const size_t page_size = getPageSize();
+#endif
+
+    auto check = [](size_t size, std::optional<size_t> alignment, bool sized)
+    {
+        const std::string context = fmt::format("size {}, alignment {}, sized {}", size, alignment.value_or(0), sized);
+
+        CurrentThread::flushUntrackedMemory();
+        const Int64 before = CurrentThread::get().memory_tracker.get();
+
+        void * ptr = alignment ? ::operator new(size, std::align_val_t{*alignment}) : ::operator new(size);
+        useMisterPointer(ptr);
+
+#if USE_JEMALLOC
+        /// The size class of the allocation itself must be the one that is charged, and that sized delete
+        /// credits and passes to `je_sdallocx`; otherwise the counters balance but `je_sdallocx` frees
+        /// with a wrong size class.
+        const size_t charged = alignment ? Memory::getActualAllocationSize(size, std::align_val_t{*alignment})
+                                         : Memory::getActualAllocationSize(size);
+        EXPECT_EQ(je_sallocx(ptr, 0), charged) << context;
+#endif
+
+        if (alignment && sized)
+            ::operator delete(ptr, size, std::align_val_t{*alignment});
+        else if (alignment)
+            ::operator delete(ptr, std::align_val_t{*alignment});
+        else if (sized)
+            ::operator delete(ptr, size);
+        else
+            ::operator delete(ptr);
+
+        CurrentThread::flushUntrackedMemory();
+        EXPECT_EQ(CurrentThread::get().memory_tracker.get(), before) << context;
+    };
+
+#if USE_JEMALLOC
+    for (bool sized : {true, false})
+#else
+    /// Without jemalloc, unsized delete credits `malloc_usable_size`, which includes padding that is not charged.
+    for (bool sized : {true})
+#endif
+    {
+        check(100, {}, sized);
+        check(100000, {}, sized);
+        check(100, 64, sized);
+        /// With `size` rounded up to `alignment` before allocating, these got a larger size class than charged.
+        check(1, 8 * page_size, sized);
+        check(4 * page_size + 1, 2 * page_size, sized);
+    }
+}
+
 namespace
 {
 
@@ -222,6 +301,53 @@ TEST(AllocationInterceptors, MinAllocSizeToThrowDoesNotAffectExplicitAllocPath)
     }, DB::Exception);
 }
 
+TEST(AllocationInterceptors, GlobalMemoryLimitExceededOnlyIncrementsForGlobalTracker)
+{
+    MainThreadStatus::getInstance();
+
+    MemoryLimitGuard limit_guard;
+    auto & thread_tracker = CurrentThread::get().memory_tracker;
+    MemoryTracker query_tracker(&total_memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor=*/ false);
+    MemoryTracker * prev_parent = thread_tracker.getParent();
+    Int64 prev_hard_limit = thread_tracker.getHardLimit();
+    const auto reset_test_counters = [&]
+    {
+        total_memory_tracker.resetCounters();
+        thread_tracker.resetCounters();
+        query_tracker.resetCounters();
+        CurrentThread::getProfileEvents().resetCounters();
+    };
+
+    CurrentThread::flushUntrackedMemory();
+
+    SCOPE_EXIT({
+        CurrentThread::flushUntrackedMemory();
+        reset_test_counters();
+        thread_tracker.setHardLimit(prev_hard_limit);
+        thread_tracker.setParent(prev_parent);
+    });
+
+    thread_tracker.setParent(&query_tracker);
+
+    reset_test_counters();
+
+    query_tracker.setHardLimit(query_tracker.get() + 1024);
+    EXPECT_THROW({
+        std::ignore = CurrentMemoryTracker::alloc(allocation_size);
+    }, DB::Exception);
+    EXPECT_EQ(1, CurrentThread::getProfileEvents()[ProfileEvents::QueryMemoryLimitExceeded]);
+    EXPECT_EQ(0, CurrentThread::getProfileEvents()[ProfileEvents::GlobalMemoryLimitExceeded]);
+
+    reset_test_counters();
+
+    total_memory_tracker.setHardLimit(total_memory_tracker.get() + 1024);
+    EXPECT_THROW({
+        std::ignore = CurrentMemoryTracker::alloc(allocation_size);
+    }, DB::Exception);
+    EXPECT_EQ(1, CurrentThread::getProfileEvents()[ProfileEvents::QueryMemoryLimitExceeded]);
+    EXPECT_EQ(1, CurrentThread::getProfileEvents()[ProfileEvents::GlobalMemoryLimitExceeded]);
+}
+
 TEST(AllocationInterceptors, MinAllocSizeToThrowDoesNotAffectMalloc)
 {
     MemoryLimitGuard guard;
@@ -264,6 +390,43 @@ TEST(AllocationInterceptors, MinAllocSizeToThrowRespectsLockMemoryExceptionInThr
     *ptr = 'a';
     delete[] ptr;
 }
+
+/// The strict aligned_alloc override lives in src/Common/malloc.cpp only under this condition;
+/// without it glibc's lenient aligned_alloc(4096, 47808) succeeds and these assertions do not hold.
+#if USE_JEMALLOC && (defined(OS_LINUX) || defined(OS_FREEBSD))
+
+/// Our aligned_alloc override (src/Common/malloc.cpp) strictly enforces the C11 rule that size
+/// be a multiple of alignment, unlike glibc's lenient implementation. ThreadStack::getSize() can
+/// produce a non-page-aligned size (MINSIGSTKSZ on glibc >= 2.34 is a runtime sysconf value, e.g.
+/// 47808 on Sapphire Rapids/AMX), which used to abort startup via this override (issue #108811).
+TEST(AllocationInterceptors, AlignedAllocRejectsNonMultipleOfAlignment)
+{
+    const size_t page_size = getPageSize();
+    /// A size between 32 KiB and the next page boundary, not a multiple of the page size.
+    const size_t unaligned_size = 47808;
+    ASSERT_NE(unaligned_size % page_size, 0u);
+
+    errno = 0;
+    void * ptr = aligned_alloc(page_size, unaligned_size);
+    EXPECT_EQ(ptr, nullptr);
+    EXPECT_EQ(errno, EINVAL);
+    free(ptr);
+}
+
+TEST(AllocationInterceptors, AlignedAllocAcceptsPageRoundedSize)
+{
+    const size_t page_size = getPageSize();
+    /// The fix rounds the requested size up to a page multiple before allocating.
+    const size_t rounded_size = ::Memory::alignUp(static_cast<size_t>(47808), page_size);
+    ASSERT_EQ(rounded_size % page_size, 0u);
+
+    void * ptr = aligned_alloc(page_size, rounded_size);
+    ASSERT_NE(ptr, nullptr);
+    useMisterPointer(ptr);
+    free(ptr);
+}
+
+#endif // USE_JEMALLOC && (OS_LINUX || OS_FREEBSD)
 
 /// NOLINTEND
 

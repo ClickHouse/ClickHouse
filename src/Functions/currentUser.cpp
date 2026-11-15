@@ -35,9 +35,9 @@ public:
         return 0;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    String getSignatureString() const override
     {
-        return std::make_shared<DataTypeString>();
+        return "() -> String";
     }
 
     bool isDeterministic() const override { return false; }
@@ -90,6 +90,7 @@ SELECT CURRENT_USER
     factory.registerFunction<FunctionCurrentUser>(documentation);
     factory.registerAlias("user", FunctionCurrentUser::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_user", FunctionCurrentUser::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("session_user", FunctionCurrentUser::name, FunctionFactory::Case::Insensitive);
 }
 
 }
