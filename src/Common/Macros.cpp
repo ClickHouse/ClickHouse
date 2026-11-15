@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Core/ServerUUID.h>
+#include <Core/UUID.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -42,7 +43,7 @@ Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & 
     : Macros(config, root_key, log.get())
 {}
 
-Macros::Macros(std::map<String, String> map)
+Macros::Macros(std::map<String, String, std::less<>> map)
 {
     macros = std::move(map);
 }
@@ -51,7 +52,7 @@ String Macros::expand(const String & s,
                       MacroExpansionInfo & info) const
 {
     /// Do not allow recursion if we expand only special macros, because it will be infinite recursion
-    assert(info.level == 0 || !info.expand_special_macros_only);
+    chassert(info.level == 0 || !info.expand_special_macros_only);
 
     if (!s.contains('{'))
         return s;
@@ -165,14 +166,14 @@ String Macros::expand(const String & s,
     return expand(res, info);
 }
 
-String Macros::getValue(const String & key) const
+String Macros::getValue(std::string_view key) const
 {
     if (auto it = macros.find(key); it != macros.end())
         return it->second;
     throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No macro {} in config", key);
 }
 
-std::optional<String> Macros::tryGetValue(const String & key) const
+std::optional<String> Macros::tryGetValue(std::string_view key) const
 {
     if (auto it = macros.find(key); it != macros.end())
         return it->second;

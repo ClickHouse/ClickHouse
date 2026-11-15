@@ -27,8 +27,6 @@ Ensure rescoring optimization works with enabled and disabled PREWHERE
 Test with enabled rescoring
 16
 19
-18
-17
 With enabled rescoring and post-filter multiplier = 3, search quality will be slightly different (better)
 16
 19

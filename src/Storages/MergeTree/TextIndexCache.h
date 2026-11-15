@@ -2,15 +2,17 @@
 
 #include <Interpreters/BloomFilter.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-
-#include <vector>
+#include <Storages/MergeTree/PostingListSegment.h>
 
 #include <absl/container/flat_hash_map.h>
 
+#include <utility>
+#include <variant>
+
 namespace ProfileEvents
 {
-    extern const Event TextIndexDictionaryBlockCacheHits;
-    extern const Event TextIndexDictionaryBlockCacheMisses;
+    extern const Event TextIndexTokensCacheHits;
+    extern const Event TextIndexTokensCacheMisses;
     extern const Event TextIndexHeaderCacheHits;
     extern const Event TextIndexHeaderCacheMisses;
     extern const Event TextIndexPostingsCacheHits;
@@ -19,8 +21,8 @@ namespace ProfileEvents
 
 namespace CurrentMetrics
 {
-    extern const Metric TextIndexDictionaryBlockCacheBytes;
-    extern const Metric TextIndexDictionaryBlockCacheCells;
+    extern const Metric TextIndexTokensCacheBytes;
+    extern const Metric TextIndexTokensCacheCells;
     extern const Metric TextIndexHeaderCacheBytes;
     extern const Metric TextIndexHeaderCacheCells;
     extern const Metric TextIndexPostingsCacheBytes;
@@ -30,70 +32,30 @@ namespace CurrentMetrics
 namespace DB
 {
 
-class TextIndexDictionaryBlockCacheEntry
+/// Estimate of the memory usage (bytes) of a token info in cache
+struct TextIndexTokensWeightFunction
 {
-public:
-    TextIndexDictionaryBlockCacheEntry() = default;
-
-    explicit TextIndexDictionaryBlockCacheEntry(DictionaryBlock && dictionary_block)
+    size_t operator()(const TokenPostingsInfo & token_info) const
     {
-        const auto & tokens = assert_cast<const ColumnString &>(*dictionary_block.tokens);
-        auto num_tokens = tokens.size();
-        token_infos.reserve(num_tokens);
-        for (size_t i = 0; i < num_tokens; ++i)
-            token_infos.emplace(tokens.getDataAt(i), std::move(dictionary_block.token_infos[i]));
-    }
-
-    TokenPostingsInfo * getTokenInfo(std::string_view token)
-    {
-        if (auto it = token_infos.find(token); it != token_infos.end())
-            return &it->second;
-        return {};
-    }
-
-    size_t approximateMemoryUsage() const
-    {
-        static constexpr size_t embedded_posting_lists_size = 8; /// Assuming each embedded posting list has 8 entries.
-        static constexpr size_t token_length = 5; /// Assuming each token is 5 chars long.
-
-        const auto tokens_byte_size = token_infos.size() * sizeof(String) * token_length;
-        /// We estimate 30% of postings lists are embedded
-        const auto embedded_posting_lists = static_cast<size_t>(std::ceil(token_infos.size() * 0.3));
-        const auto posting_lists_byte_size
-            = (token_infos.size() * sizeof(TokenPostingsInfo)) + (embedded_posting_lists * embedded_posting_lists_size);
-        return tokens_byte_size + posting_lists_byte_size;
-    }
-
-private:
-    /// TokenPostingsInfo contains either an offset of a larger posting list or an array of rows directly in case
-    /// of a posting list is small enough. In the latter case, the posting list will be cached as well.
-    absl::flat_hash_map<String, TokenPostingsInfo> token_infos;
-};
-
-/// Estimate of the memory usage (bytes) of a dictionary block in cache
-struct TextIndexDictionaryBlockWeightFunction
-{
-    /// We spent additional bytes on key in hashmap, linked lists, shared pointers, etc ...
-    static constexpr size_t DICTIONARY_BLOCK_CACHE_OVERHEAD = sizeof(absl::flat_hash_map<String, TokenPostingsInfo>);
-
-    size_t operator()(const TextIndexDictionaryBlockCacheEntry & dictionary_block) const
-    {
-        return dictionary_block.approximateMemoryUsage() + DICTIONARY_BLOCK_CACHE_OVERHEAD;
+        return token_info.bytesAllocated();
     }
 };
 
-class TextIndexDictionaryBlockCache : public CacheBase<UInt128, TextIndexDictionaryBlockCacheEntry, UInt128TrivialHash, TextIndexDictionaryBlockWeightFunction>
+class TextIndexTokensCache : public CacheBase<UInt128, TokenPostingsInfo, UInt128TrivialHash, TextIndexTokensWeightFunction>
 {
 public:
-    TextIndexDictionaryBlockCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
-        : CacheBase(cache_policy, CurrentMetrics::TextIndexDictionaryBlockCacheBytes, CurrentMetrics::TextIndexDictionaryBlockCacheCells, max_size_in_bytes, max_count, size_ratio)
-    {}
+    TextIndexTokensCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
+        : CacheBase(cache_policy, CurrentMetrics::TextIndexTokensCacheBytes, CurrentMetrics::TextIndexTokensCacheCells, max_size_in_bytes, max_count, size_ratio)
+    {
+    }
 
-    template <typename... ARGS>
-    static UInt128 hash(ARGS... args)
+    static UInt128 hash(std::string_view index_id, std::string_view token)
     {
         SipHash hasher;
-        (hasher.update(args),...);
+        hasher.update(UInt8{0}); /// Token postings, including negative cache entries.
+        hasher.update(index_id.size());
+        hasher.update(index_id);
+        hasher.update(token);
         return hasher.get128();
     }
 
@@ -102,10 +64,55 @@ public:
     {
         auto [cache_entry, cache_miss] = CacheBase::getOrSet(key, load_func);
         if (cache_miss)
-            ProfileEvents::increment(ProfileEvents::TextIndexDictionaryBlockCacheMisses);
+            ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheMisses);
         else
-            ProfileEvents::increment(ProfileEvents::TextIndexDictionaryBlockCacheHits);
+            ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheHits);
         return std::move(cache_entry);
+    }
+
+    void setNotFound(UInt128 key)
+    {
+        set(key, notFoundEntry());
+    }
+
+    void setPatternBypass(UInt128 key)
+    {
+        set(key, patternBypassEntry());
+    }
+
+    static bool isNotFound(const MappedPtr & entry)
+    {
+        return entry == notFoundEntry();
+    }
+
+    static bool isPatternBypass(const MappedPtr & entry)
+    {
+        return entry == patternBypassEntry();
+    }
+
+    static UInt128 hashPatternBypass(const String & index_id, UInt128 patterns_hash, UInt64 max_postings_to_read)
+    {
+        SipHash hasher;
+        hasher.update(UInt8{1}); /// Pattern bypass entries must not alias arbitrary token bytes.
+        hasher.update(index_id);
+        hasher.update(patterns_hash);
+        hasher.update(max_postings_to_read);
+        return hasher.get128();
+    }
+
+private:
+    static const MappedPtr & notFoundEntry()
+    {
+        static const auto entry = std::make_shared<TokenPostingsInfo>();
+        return entry;
+    }
+
+    static const MappedPtr & patternBypassEntry()
+    {
+        /// An empty TokenPostingsInfo has a nonzero weight, so sentinel entries
+        /// remain bounded by both the byte and entry-count cache limits.
+        static const auto entry = std::make_shared<TokenPostingsInfo>();
+        return entry;
     }
 };
 
@@ -114,7 +121,7 @@ struct TextIndexHeaderWeightFunction
 {
     size_t operator()(const TextIndexHeader & header) const
     {
-        return header.memoryUsageBytes();
+        return header.sparse_index.memoryUsageBytes();
     }
 };
 
@@ -125,8 +132,8 @@ public:
         : CacheBase(cache_policy, CurrentMetrics::TextIndexHeaderCacheBytes, CurrentMetrics::TextIndexHeaderCacheCells, max_size_in_bytes, max_count, size_ratio)
     {}
 
-    template <typename... ARGS>
-    static UInt128 hash(ARGS... args)
+    template <typename... Args>
+    static UInt128 hash(Args... args)
     {
         SipHash hasher;
         (hasher.update(args),...);
@@ -145,24 +152,73 @@ public:
     }
 };
 
-/// Estimate of the memory usage (bytes) of a text index posting list in cache
+/// Discriminators mixed into the cache key so the cell kinds occupy disjoint key spaces.
+enum class TextIndexPostingsCacheKind : UInt8
+{
+    Roaring = 0,
+    Segment = 1,
+    Phrase = 2, /// phrase-search result of an aligned chunk of rows, a sorted array of row ids
+};
+
+/// A single cell of TextIndexPostingsCache. It holds one of:
+///   - PostingListPtr:        a decoded Roaring bitmap of one posting-list block;
+///   - PaddedPODArrayPtr:     a sorted array of row ids of a phrase-search result;
+///   - PostingListSegmentPtr: a decoded segment (payload + per-block index) of a compressed posting list (lazy cursor).
+/// Every payload is held by shared_ptr, so a consumer keeps its data alive by copying the inner pointer
+/// out of the cell — the data then outlives eviction of the (bounded) cache independently of the cell.
+struct TextIndexPostingsCacheCell
+{
+    explicit TextIndexPostingsCacheCell(PostingListPtr postings)
+        : value(std::move(postings))
+    {
+    }
+
+    explicit TextIndexPostingsCacheCell(PaddedPODArrayPtr array)
+        : value(std::move(array))
+    {
+    }
+
+    explicit TextIndexPostingsCacheCell(PostingListSegmentPtr segment)
+        : value(std::move(segment))
+    {
+    }
+
+    std::variant<PostingListPtr, PaddedPODArrayPtr, PostingListSegmentPtr> value;
+};
+
+/// Estimate of the memory usage (bytes) of a posting cache cell
 struct TextIndexPostingsWeightFunction
 {
-    size_t operator()(const PostingList & postings) const
+    size_t operator()(const TextIndexPostingsCacheCell & cell) const
     {
-        return postings.getSizeInBytes();
+        return std::visit([](const auto & payload) -> size_t
+        {
+            using T = std::decay_t<decltype(payload)>;
+
+            if (!payload)
+                return 0;
+
+            if constexpr (std::is_same_v<T, PostingListPtr>)
+                return payload->getSizeInBytes();
+            else if constexpr (std::is_same_v<T, PaddedPODArrayPtr>)
+                return sizeof(*payload) + payload->allocated_bytes();
+            else if constexpr (std::is_same_v<T, PostingListSegmentPtr>)
+                return payload->bytesAllocated();
+            else
+                static_assert(false, "Unhandled variant type");
+        }, cell.value);
     }
 };
 
-class TextIndexPostingsCache : public CacheBase<UInt128, PostingList, UInt128TrivialHash, TextIndexPostingsWeightFunction>
+class TextIndexPostingsCache : public CacheBase<UInt128, TextIndexPostingsCacheCell, UInt128TrivialHash, TextIndexPostingsWeightFunction>
 {
 public:
     TextIndexPostingsCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
         : CacheBase(cache_policy, CurrentMetrics::TextIndexPostingsCacheBytes, CurrentMetrics::TextIndexPostingsCacheCells, max_size_in_bytes, max_count, size_ratio)
     {}
 
-    template <typename... ARGS>
-    static UInt128 hash(ARGS... args)
+    template <typename... Args>
+    static UInt128 hash(Args... args)
     {
         SipHash hasher;
         (hasher.update(args),...);
@@ -181,9 +237,32 @@ public:
     }
 };
 
-using TextIndexDictionaryBlockCacheEntryPtr = std::shared_ptr<TextIndexDictionaryBlockCacheEntry>;
-using TextIndexDictionaryBlockCachePtr = std::shared_ptr<TextIndexDictionaryBlockCache>;
-
+using TextIndexTokensCachePtr = std::shared_ptr<TextIndexTokensCache>;
 using TextIndexHeaderCachePtr = std::shared_ptr<TextIndexHeaderCache>;
 using TextIndexPostingsCachePtr = std::shared_ptr<TextIndexPostingsCache>;
+
+class TokensCardinalitiesCache
+{
+public:
+    explicit TokensCardinalitiesCache(std::vector<String> all_search_tokens_);
+
+    void update(const TokenToPostingsInfosMap & token_infos, const absl::flat_hash_set<String> & missing_tokens, size_t total_rows);
+    void sortTokens(std::vector<String> & tokens) const;
+
+private:
+    const std::vector<String> all_search_tokens;
+
+    struct CardinalityAggregate
+    {
+        size_t cardinality = 0;
+        size_t checked_rows = 0;
+
+        bool operator==(const CardinalityAggregate & other) const = default;
+    };
+
+    mutable std::mutex mutex;
+    using CardinalitiesMap = std::unordered_map<String, CardinalityAggregate>;
+    CardinalitiesMap cardinalities TSA_GUARDED_BY(mutex);
+};
+
 }

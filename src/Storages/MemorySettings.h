@@ -2,14 +2,12 @@
 
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsFields.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
 class ASTStorage;
 struct MemorySettingsImpl;
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 class SettingsChanges;
 
@@ -35,7 +33,7 @@ struct MemorySettings
     MEMORY_SETTINGS_SUPPORTED_TYPES(MemorySettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
     void loadFromQuery(ASTStorage & storage_def);
-    ASTPtr getSettingsChangesQuery();
+    ASTPtr getSettingsChangesQuery() const;
     void sanityCheck() const;
     void applyChanges(const SettingsChanges & changes);
 

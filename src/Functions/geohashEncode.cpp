@@ -23,7 +23,7 @@ namespace
 {
 
 // geohashEncode(lon float32/64, lat float32/64, length UInt8) => string
-class FunctionGeohashEncode : public IFunction
+class FunctionGeohashEncode final : public IFunction
 {
 public:
     static constexpr auto name = "geohashEncode";
@@ -39,18 +39,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"longitude", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
-            {"latitude", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"}
-        };
-        FunctionArgumentDescriptors optional_args{
-            {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "(U)Int*"}
-        };
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        return std::make_shared<DataTypeString>();
+        return "(Float, Float, [Integer]) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -93,7 +84,7 @@ private:
             const Float64 latitude_value = lat_column->getFloat64(i);
             const UInt64 precision_value = std::min<UInt64>(precision_column->get64(i), GEOHASH_MAX_TEXT_LENGTH);
 
-            const size_t encoded_size = geohashEncode(longitude_value, latitude_value, precision_value, pos);
+            const size_t encoded_size = geohashEncode(longitude_value, latitude_value, static_cast<UInt8>(precision_value), pos);
 
             pos += encoded_size;
             out_offsets[i] = pos - begin;
@@ -143,7 +134,7 @@ For the `precision` parameter, any value less than `1` or greater than `12` is s
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionGeohashEncode>(documentation);
 }
 

@@ -1,4 +1,8 @@
 #include <Columns/IColumn.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/DataTypeString.h>
+#include <Core/NamesAndTypes.h>
 #include <Storages/System/StorageSystemTableFunctions.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -29,10 +33,12 @@ void StorageSystemTableFunctions::fillData(MutableColumns & res_columns, Context
     {
         res_columns[0]->insert(function_name);
 
+        auto documentation = factory.tryGetDocumentation(function_name);
         auto properties = factory.tryGetProperties(function_name);
-        if (properties)
+
+        if (documentation && properties)
         {
-            res_columns[1]->insert(properties->documentation.description);
+            res_columns[1]->insert(documentation->description);
             res_columns[2]->insert(properties->allow_readonly);
         }
         else
@@ -41,3 +47,6 @@ void StorageSystemTableFunctions::fillData(MutableColumns & res_columns, Context
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemTableFunctions) }

@@ -1,0 +1,12 @@
+-- empty seed is non-deterministic: rejected by the query cache by default
+0
+-- non-empty seed is deterministic: cacheable
+8
+1
+-- empty seed in an inner SETTINGS overrides an outer non-empty seed: rejected
+0
+-- non-empty seed in an inner SETTINGS makes the result reproducible: cacheable
+8
+1
+-- DEFAULT in an inner SETTINGS resets the seed to the empty one: rejected
+0

@@ -34,15 +34,15 @@ REGISTER_FUNCTION(MultiSearchAllPositionsCaseInsensitiveUTF8)
         "Case-insensitive UTF-8 search",
         "SELECT multiSearchAllPositionsCaseInsensitiveUTF8('Здравствуй, мир!', ['здравствуй', 'МИР']);",
         R"(
-┌─multiSearchA⋯й', 'МИР'])─┐
-│ [1, 13]                  │
-└──────────────────────────┘
+┌─multiSearchAllPositionsCaseInsensitiveUTF8('Здравствуй, мир!', ['здравствуй', 'МИР'])─┐
+│ [1,13]                                                                                │
+└───────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMultiSearchAllPositionsCaseInsensitiveUTF8>(documentation);
 }

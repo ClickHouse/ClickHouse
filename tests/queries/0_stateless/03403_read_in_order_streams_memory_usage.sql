@@ -14,7 +14,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT *
 FROM system.query_log
-WHERE Settings['max_streams_to_max_threads_ratio'] = '10000000'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND Settings['max_streams_to_max_threads_ratio'] = '10000000'
   AND query like '%FROM 03403_data%'
   AND type = 'QueryFinish'
   AND memory_usage > 20_000_000

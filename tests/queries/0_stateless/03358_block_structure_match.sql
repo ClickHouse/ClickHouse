@@ -1,4 +1,3 @@
-SET enable_analyzer=1;
 
 SELECT * FROM (SELECT 1 AS a, 2 AS b FROM system.one INNER JOIN system.one USING (dummy) UNION ALL SELECT 3 AS a, 4 AS b FROM system.one) WHERE a != 10 ORDER BY a ASC, a != 10 ASC, b ASC;
 
@@ -27,5 +26,4 @@ FROM
     SELECT materialize(2)
 )
 WHERE a
-ORDER BY (75, ((tuple(((67, (67, (tuple((tuple(toLowCardinality(toLowCardinality(1))), 1)), toNullable(1))), (tuple(toUInt256(1)), 1)), 1)), 1), 1), toNullable(1)) ASC
-FORMAT Pretty;
+ORDER BY (75, ((tuple(((67, (67, (tuple((tuple(toLowCardinality(toLowCardinality(1))), 1)), toNullable(1))), (tuple(toUInt256(1)), 1)), 1)), 1), 1), toNullable(1)) ASC;

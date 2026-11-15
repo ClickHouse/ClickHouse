@@ -7,7 +7,7 @@ namespace DB
 
 ASTPtr ASTDropWorkloadQuery::clone() const
 {
-    return std::make_shared<ASTDropWorkloadQuery>(*this);
+    return make_intrusive<ASTDropWorkloadQuery>(*this);
 }
 
 void ASTDropWorkloadQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const

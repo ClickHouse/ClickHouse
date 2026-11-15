@@ -16,14 +16,13 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
 {
 
 /// Return enum with type name for each row in Variant column.
-class FunctionVariantType : public IFunction
+class FunctionVariantType final : public IFunction
 {
 public:
     static constexpr auto name = "variantType";
@@ -37,24 +36,36 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Documentation-only — the result Enum8 is built dynamically from the
+    /// variant's type-name list, so the exact set of enum values varies.
+    String getSignatureString() const override
+    {
+        return "(Variant) -> Enum8";
+    }
+
+    /// The signature is documentation-only because the Enum8 members are
+    /// derived from the Variant alternatives. Route the types-only path to the
+    /// same resolver instead of attempting to construct a bare Enum8.
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty() || arguments.size() > 1)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1",
-                getName(), arguments.empty());
+        FunctionArgumentDescriptors mandatory_args{
+            {"variant", isVariant, nullptr, "Variant"}
+        };
 
-        const DataTypeVariant * variant_type = checkAndGetDataType<DataTypeVariant>(arguments[0].type.get());
+        validateFunctionArguments(*this, arguments, mandatory_args);
 
-        if (!variant_type)
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be Variant, got {} instead",
-                getName(), arguments[0].type->getName());
-
+        const auto * variant_type = checkAndGetDataType<DataTypeVariant>(arguments[0].type.get());
         const auto & variants = variant_type->getVariants();
-        std::vector<std::pair<String, Int8>> enum_values;
+        DataTypeEnum<Int8>::Values enum_values;
         enum_values.reserve(variants.size() + 1);
         for (ColumnVariant::Discriminator i = 0; i != variants.size(); ++i)
             enum_values.emplace_back(variants[i]->getName(), i);
@@ -112,7 +123,7 @@ SELECT variantType(v) FROM test;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionVariantType>(documentation);
 }

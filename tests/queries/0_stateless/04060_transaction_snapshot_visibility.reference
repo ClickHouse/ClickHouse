@@ -1,0 +1,7 @@
+rows_after_commit	3
+rows_at_snapshot_1	2
+rows_after_rollback	3
+rolled_back_part_csn	1
+rows_in_txn_before_drop	4
+rows_in_txn_after_drop	0
+rows_after_drop_rollback	3

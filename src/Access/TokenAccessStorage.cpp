@@ -50,9 +50,10 @@ TokenAccessStorage::TokenAccessStorage(const String & storage_name_, AccessContr
     granted_role_ids.clear();
 
     role_change_subscription = access_control.subscribeForChanges<Role>(
-            [this] (const UUID & id, const AccessEntityPtr & entity)
+            [this] (const std::vector<AccessChangesNotifier::Change> & changes)
             {
-                this->processRoleChange(id, entity);
+                for (const auto & change : changes)
+                    this->processRoleChange(change.id, change.entity);
             }
     );
 }
@@ -397,7 +398,7 @@ std::optional<AuthResult> TokenAccessStorage::authenticateImpl(
     }
 
     if (id)
-        return AuthResult{ .user_id = *id, .authentication_data = AuthenticationData(AuthenticationType::JWT) };
+        return AuthResult{ .user_id = *id, .authentication_data = AuthenticationData(AuthenticationType::JWT), .user_name = credentials.getUserName() };
     return std::nullopt;
 }
 

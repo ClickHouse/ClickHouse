@@ -36,12 +36,6 @@ def create_database(node, db_name: str, engine: str, comment: str):
         )
         return
 
-    if engine == "Lazy":
-        node.query(
-            f"CREATE DATABASE {db_name} ON CLUSTER test_cluster ENGINE = Lazy(1) COMMENT '{comment}'"
-        )
-        return
-
     if engine == "Memory":
         node.query(
             f"CREATE DATABASE {db_name} ON CLUSTER test_cluster ENGINE = Memory COMMENT '{comment}'"
@@ -59,7 +53,7 @@ def create_database(node, db_name: str, engine: str, comment: str):
     raise QueryRuntimeException(f"Not supported engine {engine}")
 
 
-@pytest.mark.parametrize("engine", ["Atomic", "Lazy", "Memory", "Replicated"])
+@pytest.mark.parametrize("engine", ["Atomic", "Memory", "Replicated"])
 def test_alter_database_comment(started_cluster, engine):
     node1.query("DROP DATABASE IF EXISTS test")
     node2.query("DROP DATABASE IF EXISTS test")
@@ -80,7 +74,7 @@ def test_alter_database_comment(started_cluster, engine):
         == modified_comment
     )
 
-    node1.query(f"DETACH DATABASE test ON CLUSTER test_cluster")
+    node1.query("DETACH DATABASE test ON CLUSTER test_cluster")
 
     assert (
         node1.query("SELECT count() FROM system.databases WHERE name='test'").strip()
@@ -91,7 +85,7 @@ def test_alter_database_comment(started_cluster, engine):
         == "0"
     )
 
-    node1.query(f"ATTACH DATABASE test ON CLUSTER test_cluster")
+    node1.query("ATTACH DATABASE test ON CLUSTER test_cluster")
 
     assert (
         node1.query("SELECT comment FROM system.databases WHERE name='test'").strip()

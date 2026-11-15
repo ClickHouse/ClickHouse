@@ -44,35 +44,33 @@ MergeTreeInReverseOrderSelectAlgorithm::readFromTask(MergeTreeReadTask & task)
         return res;
     }
 
+    /// The whole task is read here, so the rows it read are reported here. A chunk that is still
+    /// buffered when the query stops early is never emitted, so progress left attached to it would
+    /// never be reported at all.
+    size_t num_read_rows = 0;
+    size_t num_read_bytes = 0;
+
     while (!task.isFinished())
-        chunks.push_back(task.read());
+    {
+        auto & chunk = chunks.emplace_back(task.read());
+        num_read_rows += std::exchange(chunk.num_read_rows, 0);
+        num_read_bytes += std::exchange(chunk.num_read_bytes, 0);
+    }
 
     if (chunks.empty())
         return {};
 
     res = std::move(chunks.back());
     chunks.pop_back();
+    res.num_read_rows = num_read_rows;
+    res.num_read_bytes = num_read_bytes;
     return res;
 }
 
-MergeTreeReadTaskPtr MergeTreeProjectionIndexSelectAlgorithm::getNewTask(IMergeTreeReadPool & pool, MergeTreeReadTask * /* previous_task */)
+MergeTreeReadTaskPtr
+MergeTreeProjectionIndexSelectAlgorithm::getNewTask(IMergeTreeReadPool & /* pool */, MergeTreeReadTask * /* previous_task */)
 {
-    /// There is no part to read
-    if (!part)
-        return nullptr;
-
-    if (auto * projection_index_read_pool = dynamic_cast<MergeTreeReadPoolProjectionIndex *>(&pool))
-    {
-        auto task = projection_index_read_pool->getTask(*std::exchange(part, nullptr));
-        return task;
-    }
-    else
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "MergeTreeProjectionIndexSelectAlgorithm requires read pool ProjectionIndex, got: {}",
-            pool.getName());
-    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeProjectionIndexSelectAlgorithm cannot be used to generate new tasks");
 }
 
 }

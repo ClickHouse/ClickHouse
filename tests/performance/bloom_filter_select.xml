@@ -4,8 +4,8 @@
 
     <fill_query>INSERT INTO test_bf_indexOf SELECT number AS id, [CAST(id, 'String'), CAST(id + 1, 'String'), CAST(id + 2, 'String')] FROM numbers(1000000)</fill_query>
 
-    <query short="1">SELECT count() FROM test_bf_indexOf WHERE indexOf(ary, '1') = 2</query>
-    <query short="1">SELECT count() FROM test_bf_indexOf WHERE indexOf(ary, '1') > 0</query>
+    <query>SELECT count() FROM test_bf_indexOf WHERE indexOf(ary, '1') = 2</query>
+    <query>SELECT count() FROM test_bf_indexOf WHERE indexOf(ary, '1') > 0</query>
 
     <drop_query>DROP TABLE IF EXISTS test_bf_indexOf</drop_query>
 </test>

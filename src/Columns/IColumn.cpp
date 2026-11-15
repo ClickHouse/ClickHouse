@@ -9,27 +9,31 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnFunction.h>
-#include <Columns/ColumnLazy.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnQBit.h>
-#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsCommon.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Columns/IColumnDummy.h>
 #include <Columns/IColumn_fwd.h>
-#include <Core/Field.h>
 #include <Core/Block.h>
+#include <Core/Field.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/HashJoin/ScatteredBlock.h>
+#include <Interpreters/RowDataStore.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
-#include <Interpreters/RowRefs.h>
+#include <base/types.h>
+#include <Common/Exception.h>
 #include <Common/SipHash.h>
 
 using Hash = CityHash_v1_0_2::uint128;
@@ -46,17 +50,32 @@ extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 }
 
-std::pair<String, DataTypePtr> IColumn::getValueNameAndType(size_t n, const Options & options) const
+void throwCannotPopBack(size_t n, const std::string & column_name, size_t column_size)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, column_name, column_size);
+}
+
+void throwColumnConvertNotSupported(std::string_view type_name, const char * as_type)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as {}", type_name, as_type);
+}
+
+bool IColumn::Options::notFull(WriteBufferFromOwnString & buf) const
+{
+    return optimize_const_name_size < 0 || static_cast<Int64>(buf.count()) <= optimize_const_name_size;
+}
+
+String IColumn::getValueName(size_t n, const Options & options) const
 {
     WriteBufferFromOwnString name_buf;
-    const auto & type = getValueNameAndTypeImpl(name_buf, n, options);
+    getValueNameImpl(name_buf, n, options);
     if (options.notFull(name_buf))
-        return {name_buf.str(), type};
+        return name_buf.str();
 
     HashState h;
     updateHashWithValue(n, h);
     auto p = getSipHash128AsPair(h);
-    return {fmt::format("{}_{}", p.high64, p.low64), type};
+    return fmt::format("{}_{}", p.high64, p.low64);
 }
 
 String IColumn::dumpStructure() const
@@ -80,6 +99,12 @@ void IColumn::doInsertFrom(const IColumn & src, size_t n)
 #endif
 {
     insert(src[n]);
+}
+
+void IColumn::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    for (size_t i = begin; i < end; ++i)
+        updateHashWithValue(i, hash);
 }
 
 ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
@@ -154,38 +179,44 @@ bool IColumn::getBool(size_t /*n*/) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getBool is not supported for {}", getName());
 }
 
-StringRef IColumn::serializeValueIntoArena(size_t /* n */, Arena & /* arena */, char const *& /* begin */) const
+std::string_view IColumn::serializeValueIntoArena(size_t /* n */, Arena & /* arena */, char const *& /* begin */, const IColumn::SerializationSettings * /* settings */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoArena is not supported for {}", getName());
 }
 
-char * IColumn::serializeValueIntoMemory(size_t /* n */, char * /* memory */) const
+char * IColumn::serializeValueIntoMemory(size_t /* n */, char * /* memory */, const IColumn::SerializationSettings * /* settings */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemory is not supported for {}", getName());
 }
 
-void IColumn::batchSerializeValueIntoMemory(std::vector<char *> & /* memories */) const
+void IColumn::batchSerializeValueIntoMemory(std::span<char *> /* memories */, size_t /* start_row */, const IColumn::SerializationSettings * /* settings */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method batchSerializeValueIntoMemory is not supported for {}", getName());
 }
 
-StringRef
-IColumn::serializeValueIntoArenaWithNull(size_t /* n */, Arena & /* arena */, char const *& /* begin */, const UInt8 * /* is_null */) const
+std::string_view IColumn::serializeValueIntoArenaWithNull(
+    size_t /* n */,
+    Arena & /* arena */,
+    char const *& /* begin */,
+    const UInt8 * /* is_null */,
+    const IColumn::SerializationSettings * /* settings */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoArenaWithNull is not supported for {}", getName());
 }
 
-char * IColumn::serializeValueIntoMemoryWithNull(size_t /* n */, char * /* memory */, const UInt8 * /* is_null */) const
+char * IColumn::serializeValueIntoMemoryWithNull(
+    size_t /* n */, char * /* memory */, const UInt8 * /* is_null */, const IColumn::SerializationSettings * /* settings */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemoryWithNull is not supported for {}", getName());
 }
 
-void IColumn::batchSerializeValueIntoMemoryWithNull(std::vector<char *> & /* memories */, const UInt8 * /* is_null */) const
+void IColumn::batchSerializeValueIntoMemoryWithNull(
+    std::span<char *> /* memories */, size_t /* start_row */, const UInt8 * /* is_null */, const IColumn::SerializationSettings * /* settings */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method batchSerializeValueIntoMemoryWithNull is not supported for {}", getName());
 }
 
-void IColumn::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const
+void IColumn::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const SerializationSettings *) const
 {
     size_t rows = size();
     if (sizes.empty())
@@ -205,9 +236,33 @@ void IColumn::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const 
     }
 }
 
+void IColumn::serializeAsComparable(size_t /* n */, String & /* out */) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeAsComparable is not supported for {}", getName());
+}
+
+void IColumn::batchSerializeAsComparable(
+    size_t num_rows,
+    VectorWithMemoryTracking<String> & out,
+    const Permutation * permutation,
+    const UInt8 * null_map) const
+{
+    batchSerializeAsComparableImpl(
+        num_rows, out, permutation, null_map,
+        [this](size_t src, String & dst) { serializeAsComparable(src, dst); });
+}
+
 void IColumn::updateAt(const IColumn &, size_t, size_t)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateAt is not supported for {}", getName());
+}
+
+size_t IColumn::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const
+{
+    /// Every probe is a virtual compareAt call, which is expensive, so keep the linear probe short.
+    static constexpr size_t linear_probe = 8;
+    return findEqualRangeEndAssumeSorted(
+        begin, end, linear_probe, [&](size_t r) { return compareAt(r, begin, *this, nan_direction_hint) == 0; });
 }
 
 #if USE_EMBEDDED_COMPILER
@@ -285,18 +340,18 @@ bool isColumnNullableOrLowCardinalityNullable(const IColumn & column)
     return isColumnNullable(column) || isColumnLowCardinalityNullable(column);
 }
 
+bool canContainNull(const IColumn & column)
+{
+    return isColumnNullableOrLowCardinalityNullable(column) || checkColumn<ColumnVariant>(column) || checkColumn<ColumnDynamic>(column);
+}
+
 bool isColumnConst(const IColumn & column)
 {
     return checkColumn<ColumnConst>(column);
 }
 
-bool isColumnLazy(const IColumn & column)
-{
-    return checkColumn<ColumnLazy>(column);
-}
-
 template <typename Derived, typename Parent>
-MutableColumns IColumnHelper<Derived, Parent>::scatter(size_t num_columns, const IColumn::Selector & selector) const
+VectorWithMemoryTracking<MutableColumnPtr> IColumnHelper<Derived, Parent>::scatter(size_t num_columns, const IColumn::Selector & selector) const
 {
     const auto & self = static_cast<const Derived &>(*this);
     size_t num_rows = self.size();
@@ -304,16 +359,15 @@ MutableColumns IColumnHelper<Derived, Parent>::scatter(size_t num_columns, const
     if (num_rows != selector.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of selector: {} doesn't match size of column: {}", selector.size(), num_rows);
 
-    MutableColumns columns(num_columns);
+    VectorWithMemoryTracking<MutableColumnPtr> columns(num_columns);
     for (auto & column : columns)
         column = self.cloneEmpty();
 
+    const auto counts = countColumnsSizeInSelector(num_columns, selector);
+    for (size_t i = 0; i < num_columns; ++i)
     {
-        size_t reserve_size = static_cast<size_t>(num_rows * 1.1 / num_columns);    /// 1.1 is just a guess. Better to use n-sigma rule.
-
-        if (reserve_size > 1)
-            for (auto & column : columns)
-                column->reserve(reserve_size);
+        if (counts[i] > 1)
+            columns[i]->reserve(counts[i]);
     }
 
     for (size_t i = 0; i < num_rows; ++i)
@@ -329,7 +383,7 @@ void IColumnHelper<Derived, Parent>::gather(ColumnGathererStream & gatherer)
 }
 
 template <typename Derived, bool reversed>
-void compareImpl(
+void compareColumnImpl(
     const Derived & lhs,
     const Derived & rhs,
     size_t rhs_row_num,
@@ -350,7 +404,7 @@ void compareImpl(
     for (size_t row = 0; row < num_rows; ++row)
     {
         int res = lhs.compareAt(row, rhs_row_num, rhs, nan_direction_hint);
-        assert(res == 1 || res == -1 || res == 0);
+        chassert(res == 1 || res == -1 || res == 0);
         compare_results[row] = static_cast<Int8>(res);
 
         if constexpr (reversed)
@@ -381,7 +435,7 @@ void compareWithIndexImpl(
     for (auto row : *row_indexes)
     {
         int res = lhs.compareAt(row, rhs_row_num, rhs, nan_direction_hint);
-        assert(res == 1 || res == -1 || res == 0);
+        chassert(res == 1 || res == -1 || res == 0);
         compare_results[row] = static_cast<Int8>(res);
 
         if constexpr (reversed)
@@ -414,7 +468,7 @@ void IColumnHelper<Derived, Parent>::compareColumn(
         if (row_indexes)
             compareWithIndexImpl<Derived, true>(lhs, rhs, rhs_row_num, row_indexes, compare_results, nan_direction_hint);
         else
-            compareImpl<Derived, true>(lhs, rhs, rhs_row_num, row_indexes, compare_results, nan_direction_hint);
+            compareColumnImpl<Derived, true>(lhs, rhs, rhs_row_num, row_indexes, compare_results, nan_direction_hint);
     }
     else if (row_indexes)
     {
@@ -422,7 +476,7 @@ void IColumnHelper<Derived, Parent>::compareColumn(
     }
     else
     {
-        compareImpl<Derived, false>(lhs, rhs, rhs_row_num, row_indexes, compare_results, nan_direction_hint);
+        compareColumnImpl<Derived, false>(lhs, rhs, rhs_row_num, row_indexes, compare_results, nan_direction_hint);
     }
 }
 
@@ -439,6 +493,24 @@ bool IColumnHelper<Derived, Parent>::hasEqualValues() const
     return true;
 }
 
+/// Compare once, then find the end of the run of lesser rows on the lesser side by galloping.
+/// Both sides are cast to the concrete column type (rhs must match by the compareAt contract),
+/// so the probes and the size calls devirtualize, and compareAt inlines when its definition is
+/// visible — hence the linear probe can be fairly long.
+template <typename Derived, typename Parent>
+Int64 IColumnHelper<Derived, Parent>::compareTrackAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
+{
+    constexpr size_t linear_probe = 16;
+    const auto & lhs = static_cast<const Derived &>(*this);
+    const auto & rhs = assert_cast<const Derived &>(rhs_);
+
+    return compareTrackAtImpl(
+        lhs.compareAt(n, m, rhs, nan_direction_hint),
+        n, m, lhs.size(), rhs.size(), linear_probe,
+        [&](size_t row) { return lhs.compareAt(row, m, rhs, nan_direction_hint) < 0; },
+        [&](size_t row) { return lhs.compareAt(n, row, rhs, nan_direction_hint) > 0; });
+}
+
 template <typename Derived, typename Parent>
 double IColumnHelper<Derived, Parent>::getRatioOfDefaultRows(double sample_ratio) const
 {
@@ -450,7 +522,7 @@ double IColumnHelper<Derived, Parent>::getRatioOfDefaultRows(double sample_ratio
 
     const auto & self = static_cast<const Derived &>(*this);
     size_t num_rows = self.size();
-    size_t num_sampled_rows = std::min(static_cast<size_t>(num_rows * sample_ratio), num_rows);
+    size_t num_sampled_rows = std::min(static_cast<size_t>(static_cast<double>(num_rows) * sample_ratio), num_rows);
     size_t num_checked_rows = 0;
     size_t res = 0;
 
@@ -475,7 +547,7 @@ double IColumnHelper<Derived, Parent>::getRatioOfDefaultRows(double sample_ratio
     if (num_checked_rows == 0)
         return 0.0;
 
-    return static_cast<double>(res) / num_checked_rows;
+    return static_cast<double>(res) / static_cast<double>(num_checked_rows);
 }
 
 template <typename Derived, typename Parent>
@@ -487,6 +559,17 @@ UInt64 IColumnHelper<Derived, Parent>::getNumberOfDefaultRows() const
     for (size_t i = 0; i < num_rows; ++i)
         res += self.isDefaultAt(i);
     return res;
+}
+
+template <typename Derived, typename Parent>
+bool IColumnHelper<Derived, Parent>::hasOnlyTypeDefaults() const
+{
+    const auto & self = static_cast<const Derived &>(*this);
+    size_t num_rows = self.size();
+    for (size_t i = 0; i < num_rows; ++i)
+        if (!self.isDefaultAt(i))
+            return false;
+    return true;
 }
 
 template <typename Derived, typename Parent>
@@ -503,115 +586,183 @@ void IColumnHelper<Derived, Parent>::getIndicesOfNonDefaultRows(IColumn::Offsets
     }
 }
 
-/// Fills column values from RowRefList
-/// Implementation with concrete column type allows to de-virtualize col->insertFrom() calls
-template <bool row_refs_are_ranges, typename ColumnType>
-static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, const size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end)
+/// Fills columns from resolved row pointers. Fixed-size columns without missing rows grow once,
+/// so the copy loop does not update their size or check capacity for every value.
+template <bool has_defaults, bool with_null_map, bool range_mode, typename ColumnType>
+static void fillColumnFromRowStorePtrs(ColumnType * col, const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> * null_map, size_t begin, size_t count)
 {
-    for (const UInt64 * row_ref = row_refs_begin; row_ref != row_refs_end; ++row_ref)
+    size_t value_offset = with_null_map ? field_offset + 1 : field_offset;
+    size_t value_size = with_null_map ? field_size - 1 : field_size;
+
+    UInt8 * null_dst = nullptr;
+    if constexpr (with_null_map)
     {
-        if (*row_ref)
+        size_t old_size = null_map->size();
+        null_map->resize(old_size + count);
+        null_dst = null_map->data() + old_size;
+    }
+
+    [[maybe_unused]] const char * const base_ptr = row_store_ptrs.base_ptr;
+    [[maybe_unused]] const size_t row_length = row_store_ptrs.row_length;
+
+    constexpr bool copy_fixed_values = !has_defaults && std::is_base_of_v<ColumnFixedSizeHelper, ColumnType>;
+    char * values_dst = nullptr;
+    if constexpr (copy_fixed_values)
+    {
+        const size_t column_value_size = col->sizeOfValueIfFixed();
+        chassert(value_size == column_value_size);
+        value_size = column_value_size;
+        values_dst = col->insertRawUninitialized(count).data();
+    }
+    else
+        col->reserve(col->size() + count);
+    for (size_t i = 0; i < count; ++i)
+    {
+        /// TODO: try prefetching row store rows.
+        const char * row_store_ptr = nullptr;
+        if constexpr (range_mode)
+            row_store_ptr = base_ptr + (begin + i) * row_length;
+        else
+            row_store_ptr = row_store_ptrs.ptrs[begin + i];
+        chassert(has_defaults || row_store_ptr != nullptr);
+        if constexpr (has_defaults)
         {
-            const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(*row_ref);
-            if constexpr (row_refs_are_ranges)
+            if (!row_store_ptr)
             {
-                row_ref_list->assertIsRange();
-                if (const auto * source_replicated = row_ref_list->columns_info->replicated_columns[source_column_index_in_block])
-                {
-                    const auto & source_nested_column = source_replicated->getNestedColumn();
-                    const auto & source_indexes = source_replicated->getIndexes();
-                    for (size_t i = row_ref_list->row_num; i != row_ref_list->row_num + row_ref_list->rows; ++i)
-                        col->insertFrom(*source_nested_column, source_indexes.getIndexAt(i));
-                }
-                else
-                {
-                    col->insertRangeFrom(*row_ref_list->columns_info->columns[source_column_index_in_block], row_ref_list->row_num, row_ref_list->rows);
-                }
-            }
-            else
-            {
-                for (auto it = row_ref_list->begin(); it.ok(); ++it)
-                {
-                    if (const auto * source_replicated = it->columns_info->replicated_columns[source_column_index_in_block])
-                        col->insertFrom(*source_replicated->getNestedColumn(), source_replicated->getIndexes().getIndexAt(it->row_num));
-                    else
-                        col->insertFrom(*it->columns_info->columns[source_column_index_in_block], it->row_num);
-                }
+                if constexpr (with_null_map)
+                    null_dst[i] = 1;
+                type->insertDefaultInto(*col);
+                continue;
             }
         }
+
+        if constexpr (with_null_map)
+            null_dst[i] = *reinterpret_cast<const UInt8 *>(row_store_ptr + field_offset);
+        if constexpr (copy_fixed_values)
+            memcpy(values_dst + i * value_size, row_store_ptr + value_offset, value_size);
         else
-            type->insertDefaultInto(*col);
+            col->insertData(row_store_ptr + value_offset, value_size);
     }
 }
 
-/// Fills column values from RowRefsList
-void IColumn::fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges)
-{
-    if (row_refs_are_ranges)
-        fillColumnFromRowRefs<true>(this, type, source_column_index_in_block, row_refs_begin, row_refs_end);
-    else
-        fillColumnFromRowRefs<false>(this, type, source_column_index_in_block, row_refs_begin, row_refs_end);
-}
-
-/// Fills column values from RowRefsList
-template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges)
-{
-    auto & self = static_cast<Derived &>(*this);
-    if (row_refs_are_ranges)
-        fillColumnFromRowRefs<true>(&self, type, source_column_index_in_block, row_refs_begin, row_refs_end);
-    else
-        fillColumnFromRowRefs<false>(&self, type, source_column_index_in_block, row_refs_begin, row_refs_end);
-}
-
-/// Fills column values from list of blocks and row numbers
-/// Implementation with concrete column type allows to de-virtualize col->insertFrom() calls
 template <typename ColumnType>
-static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePtr & type, size_t source_column_index_in_block, ColumnsWithRowNumbers columns_with_row_numbers)
+static void dispatchFillColumnFromRowStorePtrs(ColumnType * col, const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> * null_map, size_t begin, size_t count)
 {
-    const auto & columns = columns_with_row_numbers.columns;
-    const auto & row_numbers = columns_with_row_numbers.row_numbers;
-    chassert(columns.size() == row_numbers.size());
-
-    col->reserve(col->size() + columns.size());
-    for (size_t j = 0; j < columns.size(); ++j)
+    if (row_store_ptrs.base_ptr != nullptr)
     {
-        if (columns[j])
-        {
-            if (const auto * source_replicated = columns[j]->replicated_columns[source_column_index_in_block])
-                col->insertFrom(*source_replicated->getNestedColumn(), source_replicated->getIndexes().getIndexAt(row_numbers[j]));
-            else
-                col->insertFrom(*columns[j]->columns[source_column_index_in_block], row_numbers[j]);
-        }
+        if (null_map)
+            fillColumnFromRowStorePtrs</*has_defaults=*/ false, /*with_null_map=*/ true, /*range_mode=*/ true>(col, /*type=*/ nullptr, row_store_ptrs, field_offset, field_size, null_map, begin, count);
         else
-        {
-            type->insertDefaultInto(*col);
-        }
+            fillColumnFromRowStorePtrs</*has_defaults=*/ false, /*with_null_map=*/ false, /*range_mode=*/ true>(col, /*type=*/ nullptr, row_store_ptrs, field_offset, field_size, nullptr, begin, count);
+    }
+    else if (row_store_ptrs.has_defaults)
+    {
+        if (null_map)
+            fillColumnFromRowStorePtrs</*has_defaults=*/ true, /*with_null_map=*/ true, /*range_mode=*/ false>(col, type, row_store_ptrs, field_offset, field_size, null_map, begin, count);
+        else
+            fillColumnFromRowStorePtrs</*has_defaults=*/ true, /*with_null_map=*/ false, /*range_mode=*/ false>(col, type, row_store_ptrs, field_offset, field_size, nullptr, begin, count);
+    }
+    else
+    {
+        if (null_map)
+            fillColumnFromRowStorePtrs</*has_defaults=*/ false, /*with_null_map=*/ true, /*range_mode=*/ false>(col, /*type=*/ nullptr, row_store_ptrs, field_offset, field_size, null_map, begin, count);
+        else
+            fillColumnFromRowStorePtrs</*has_defaults=*/ false, /*with_null_map=*/ false, /*range_mode=*/ false>(col, /*type=*/ nullptr, row_store_ptrs, field_offset, field_size, nullptr, begin, count);
     }
 }
 
-/// Fills column values from list of blocks and row numbers
-void IColumn::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, ColumnsWithRowNumbers columns_with_row_numbers)
+#define APPLY_FOR_FIELD_SIZES(M) \
+    M(1) M(2) M(3) M(4) M(5) M(6) M(7) M(8) \
+    M(9) M(10) M(11) M(12) M(13) M(14) M(15) M(16) \
+    M(17) M(18) M(19) M(20) M(21) M(22) M(23) M(24) \
+    M(25) M(26) M(27) M(28) M(29) M(30) M(31) M(32)
+
+template <size_t value_size, bool nullable, typename SourceRow, typename DestinationRow>
+static void gatherField(
+    const char * __restrict values,
+    const UInt8 * __restrict null_map,
+    size_t runtime_value_size,
+    size_t count,
+    SourceRow source_row,
+    DestinationRow destination_row)
 {
-    fillColumnFromBlocksAndRowNumbers(this, type, source_column_index_in_block, columns_with_row_numbers);
+    const size_t bytes = value_size ? value_size : runtime_value_size;
+    for (size_t i = 0; i < count; ++i)
+    {
+        const size_t row = source_row(i);
+        char * dst = destination_row(i);
+        if constexpr (nullable)
+            *dst++ = static_cast<char>(null_map[row]);
+        memcpy(dst, values + row * bytes, bytes);
+    }
 }
 
-/// Fills column values from list of blocks and row numbers
+template <bool nullable, typename SourceRow, typename DestinationRow>
+static void gatherColumn(const IColumn & values, const UInt8 * null_map, size_t count, SourceRow source_row, DestinationRow destination_row)
+{
+    chassert(values.isFixedAndContiguous());
+    const size_t value_size = values.sizeOfValueIfFixed();
+    const char * data = values.getRawData().data();
+    switch (value_size)
+    {
+#define M(N) \
+        case N: \
+            gatherField<N, nullable>(data, null_map, value_size, count, source_row, destination_row); \
+            break;
+        APPLY_FOR_FIELD_SIZES(M)
+#undef M
+        default:
+            gatherField<0, nullable>(data, null_map, value_size, count, source_row, destination_row);
+    }
+}
+
+#undef APPLY_FOR_FIELD_SIZES
+
+void IColumn::fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map)
+{
+    dispatchFillColumnFromRowStorePtrs<IColumn>(this, type, row_store_ptrs, field_offset, field_size, null_map, begin, count);
+}
+
+void IColumn::gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *&, const UInt8 * null_map) const
+{
+    if (!isFixedAndContiguous())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} cannot be stored in the hash join row store", getName());
+    auto source_row = [start](size_t row) { return start + row; };
+    auto destination_row = [rows, row_length, field_offset](size_t row) { return rows + row * row_length + field_offset; };
+    if (null_map)
+        gatherColumn<true>(*this, null_map, count, source_row, destination_row);
+    else
+        gatherColumn<false>(*this, nullptr, count, source_row, destination_row);
+}
+
+void IColumn::gatherSelectedIntoRows(std::span<const UInt32> source_rows, std::span<char * const> destination_rows, size_t field_offset, const UInt8 * null_map) const
+{
+    if (!isFixedAndContiguous())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} cannot be gathered into rows", getName());
+    chassert(source_rows.size() == destination_rows.size());
+    auto source_row = [source_rows](size_t row) { return source_rows[row]; };
+    auto destination_row = [destination_rows, field_offset](size_t row) { return destination_rows[row] + field_offset; };
+    if (null_map)
+        gatherColumn<true>(*this, null_map, source_rows.size(), source_row, destination_row);
+    else
+        gatherColumn<false>(*this, nullptr, source_rows.size(), source_row, destination_row);
+}
+
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, ColumnsWithRowNumbers columns_with_row_numbers)
+void IColumnHelper<Derived, Parent>::fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map)
 {
     auto & self = static_cast<Derived &>(*this);
-    fillColumnFromBlocksAndRowNumbers(&self, type, source_column_index_in_block, columns_with_row_numbers);
+    dispatchFillColumnFromRowStorePtrs<Derived>(&self, type, row_store_ptrs, field_offset, field_size, null_map, begin, count);
 }
 
 template <typename Derived, typename Parent>
-StringRef
-IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const
+std::string_view IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull(
+    size_t n, Arena & arena, char const *& begin, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
 {
     const auto & self = static_cast<const Derived &>(*this);
     if (is_null)
     {
-        char * memory;
+        char * memory = nullptr;
         if (is_null[n])
         {
             memory = arena.allocContinue(1, begin);
@@ -619,40 +770,41 @@ IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull(size_t n, Arena 
             return {memory, 1};
         }
 
-        auto serialized_value_size = self.getSerializedValueSize(n);
+        auto serialized_value_size = self.getSerializedValueSize(n, settings);
         if (serialized_value_size)
         {
             size_t total_size = *serialized_value_size + 1 /* null map byte */;
             memory = arena.allocContinue(total_size, begin);
             *memory = 0;
-            self.serializeValueIntoMemory(n, memory + 1);
+            self.serializeValueIntoMemory(n, memory + 1, settings);
             return {memory, total_size};
         }
 
         memory = arena.allocContinue(1, begin);
         *memory = 0;
-        auto res = self.serializeValueIntoArena(n, arena, begin);
-        return StringRef(res.data - 1, res.size + 1);
+        auto res = self.serializeValueIntoArena(n, arena, begin, settings);
+        return std::string_view(res.data() - 1, res.size() + 1);
     }
 
-    return self.serializeValueIntoArena(n, arena, begin);
+    return self.serializeValueIntoArena(n, arena, begin, settings);
 }
 
 template <typename Derived, typename Parent>
-StringRef IColumnHelper<Derived, Parent>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view IColumnHelper<Derived, Parent>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     if constexpr (!std::is_base_of_v<ColumnFixedSizeHelper, Derived>)
-        return IColumn::serializeValueIntoArena(n, arena, begin);
+        return IColumn::serializeValueIntoArena(n, arena, begin, settings);
 
     const auto & self = static_cast<const Derived &>(*this);
     size_t sz = self.byteSizeAt(n);
     char * memory = arena.allocContinue(sz, begin);
-    self.serializeValueIntoMemory(n, memory);
+    self.serializeValueIntoMemory(n, memory, settings);
     return {memory, sz};
 }
 
 template <typename Derived, typename Parent>
-ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const
+ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemoryWithNull(
+    size_t n, char * memory, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
 {
     const auto & self = static_cast<const Derived &>(*this);
     if (is_null)
@@ -663,57 +815,59 @@ ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemoryWit
             return memory;
     }
 
-    return self.serializeValueIntoMemory(n, memory);
+    return self.serializeValueIntoMemory(n, memory, settings);
 }
 
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemoryWithNull(std::vector<char *> & memories, const UInt8 * is_null) const
+void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemoryWithNull(
+    std::span<char *> memories, size_t start_row, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
 {
     const auto & self = static_cast<const Derived &>(*this);
-    chassert(memories.size() == self.size());
+    chassert(start_row + memories.size() <= self.size());
 
     if (!is_null)
     {
-        self.batchSerializeValueIntoMemory(memories);
+        self.batchSerializeValueIntoMemory(memories, start_row, settings);
         return;
     }
 
-    size_t rows = self.size();
-    for (size_t i = 0; i < rows; ++i)
+    for (size_t i = 0; i < memories.size(); ++i)
     {
-        *memories[i] = is_null[i];
+        const size_t row = start_row + i;
+        *memories[i] = is_null[row];
         ++memories[i];
-        if (!is_null[i])
-            memories[i] = self.serializeValueIntoMemory(i, memories[i]);
+        if (!is_null[row])
+            memories[i] = self.serializeValueIntoMemory(row, memories[i], settings);
     }
 }
 
 template <typename Derived, typename Parent>
-ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemory(size_t n, char * memory) const
+ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
     if constexpr (!std::is_base_of_v<ColumnFixedSizeHelper, Derived>)
-        return IColumn::serializeValueIntoMemory(n, memory);
+        return IColumn::serializeValueIntoMemory(n, memory, settings);
 
     const auto & self = static_cast<const Derived &>(*this);
     auto raw_data = self.getDataAt(n);
-    memcpy(memory, raw_data.data, raw_data.size);
-    return memory + raw_data.size;
+    memcpy(memory, raw_data.data(), raw_data.size());
+    return memory + raw_data.size();
 }
 
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemory(std::vector<char *> & memories) const
+void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemory(
+    std::span<char *> memories, size_t start_row, const IColumn::SerializationSettings * settings) const
 {
     const auto & self = static_cast<const Derived &>(*this);
-    chassert(memories.size() == self.size());
-    for (size_t i = 0; i < self.size(); ++i)
-        memories[i] = self.serializeValueIntoMemory(i, memories[i]);
+    chassert(start_row + memories.size() <= self.size());
+    for (size_t i = 0; i < memories.size(); ++i)
+        memories[i] = self.serializeValueIntoMemory(start_row + i, memories[i], settings);
 }
 
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const
+void IColumnHelper<Derived, Parent>::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
 {
     if constexpr (!std::is_base_of_v<ColumnFixedSizeHelper, Derived>)
-        return IColumn::collectSerializedValueSizes(sizes, is_null);
+        return IColumn::collectSerializedValueSizes(sizes, is_null, settings);
 
     const auto & self = static_cast<const Derived &>(*this);
     size_t rows = self.size();
@@ -773,6 +927,14 @@ static ColumnPtr updateFrom(const Derived & dst, const IColumn::Patch & patch)
 
         if (src_version > patch.dst_versions[dst_row])
         {
+            /// Destination indices originate from on-disk data (_part_offset of a patch part).
+            /// A duplicate or descending index would make the range below negative, so it must
+            /// be rejected before the subtraction wraps around and reads out of bounds.
+            if (dst_row < current_row)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Destination row indices in patch must be strictly increasing, got {} after {}",
+                    dst_row, current_row - 1);
+
             patch.dst_versions[dst_row] = src_version;
 
             res_typed.insertRangeFrom(dst, current_row, dst_row - current_row);
@@ -822,6 +984,17 @@ static void assertPatch(const Derived & dst, const IColumn::Patch & patch)
             "Size of destination versions ({}) doesn't match the size of destination column ({})",
             patch.dst_versions.size(), dst.size());
 
+    /// Indices originate from on-disk data (_part_offset of a patch part), so validate
+    /// their contents and not only their sizes: updateAt and dst_versions are written
+    /// with these indices without any further bounds check.
+    for (auto dst_row : patch.dst_row_indices)
+    {
+        if (dst_row >= dst.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Destination row index {} in patch is out of bounds of destination column with {} rows",
+                dst_row, dst.size());
+    }
+
     if (patch.sources.size() != 1 && !patch.src_col_indices)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Have {} sources for patch, but column indices are not provided",
@@ -852,6 +1025,7 @@ void IColumnHelper<Derived, Parent>::updateInplaceFrom(const IColumn::Patch & pa
     else
         updateInplaceFrom<false>(dst, patch);
 }
+
 
 template class IColumnHelper<ColumnVector<UInt8>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<UInt16>, ColumnFixedSizeHelper>;
@@ -905,13 +1079,19 @@ template class IColumnHelper<ColumnBLOB, IColumn>;
 void intrusive_ptr_add_ref(const IColumn * c)
 {
     BOOST_ASSERT(c != nullptr);
-    boost::sp_adl_block::intrusive_ptr_add_ref(dynamic_cast<const boost::intrusive_ref_counter<IColumn> *>(c));
+    boost::sp_adl_block::intrusive_ptr_add_ref<IColumn, boost::thread_safe_counter>(c);
 }
 
 void intrusive_ptr_release(const IColumn * c)
 {
     BOOST_ASSERT(c != nullptr);
-    boost::sp_adl_block::intrusive_ptr_release(dynamic_cast<const boost::intrusive_ref_counter<IColumn> *>(c));
+    boost::sp_adl_block::intrusive_ptr_release<IColumn, boost::thread_safe_counter>(c);
 }
 
+ColumnPlanes IColumn::getPlanes() const
+{
+    if (!isFixedAndContiguous())
+        return ColumnPlanes(ColumnPlanes::Shape::Rows, this);
+    return ColumnPlanes(ColumnPlanes::Shape::Fixed, getRawData().data(), nullptr, sizeOfValueIfFixed());
+}
 }
