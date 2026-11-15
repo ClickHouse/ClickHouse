@@ -230,7 +230,7 @@ protected:
 
     void makeContext(HTTPServerRequest & request)
     {
-        context = session->makeQueryContext();
+        context = session->makeQueryContext(ClientInfo{session->getClientInfo()});
 
         /// Anything else beside HTTP POST should be readonly queries.
         setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
@@ -498,7 +498,7 @@ public:
         /// Some parameters (default_format, everything used in the code above) do not belong to the
         /// Settings class. `limit` is defined by Prometheus on these endpoints, so it must not fall through to the ClickHouse setting.
         static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "limit_per_metric", "metric", "lookback_delta", "database", "table"};
-        return !reserved_param_names.contains(name);
+        return ImplWithContext::isSettingLikeParameter(name) && !reserved_param_names.contains(name);
     }
 
     bool isQueryTextParameter(const String & name) const override

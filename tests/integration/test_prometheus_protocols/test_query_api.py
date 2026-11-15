@@ -511,3 +511,80 @@ def test_rfc3339_times_invalid(time):
         node.ip_address, 9093, "/api/v1/query", "rfc3339_metric", params={"time": time}, expect_error=True
     )
     assert "Cannot parse a timestamp" in error
+# Context-level HTTP parameters handled by `ImplWithContext` (`role`, `query_id`,
+# `stacktrace`, `quota_key`) are not ClickHouse settings and must not fall through
+# to `SettingsChanges` on `/api/v1/query` for either GET or form-encoded POST.
+def test_query_context_parameters_get_and_post():
+    host, port = node.ip_address, 9093
+    url = f"http://{host}:{port}/api/v1/query"
+    expected = execute_query_via_http_api(
+        host, port, "/api/v1/query", "post_body_metric", timestamp=1000
+    )
+
+    suffix = uuid.uuid4().hex[:8]
+    user_name = f"prom_ctx_user_{suffix}"
+    role_name = f"prom_ctx_role_{suffix}"
+    quota_name = f"prom_ctx_quota_{suffix}"
+
+    node.query(f"DROP QUOTA IF EXISTS {quota_name}")
+    node.query(f"DROP USER IF EXISTS {user_name}")
+    node.query(f"DROP ROLE IF EXISTS {role_name}")
+    node.query(f"CREATE ROLE {role_name}")
+    # PromQL runs with `enable_materialized_cte=1`, which needs `CREATE TEMPORARY TABLE`.
+    node.query(
+        f"GRANT SELECT ON default.*, CREATE TEMPORARY TABLE ON *.* TO {role_name}"
+    )
+    node.query(
+        f"CREATE USER {user_name} IDENTIFIED WITH no_password DEFAULT ROLE NONE"
+    )
+    node.query(f"GRANT {role_name} TO {user_name}")
+    node.query(f"CREATE QUOTA {quota_name} KEYED BY client_key TO {role_name}")
+
+    try:
+        denied_error = execute_query_via_http_api(
+            host,
+            port,
+            "/api/v1/query",
+            "post_body_metric",
+            timestamp=1000,
+            params={"user": user_name},
+            expect_error=True,
+        )
+        assert "Not enough privileges" in denied_error
+
+        for method, stacktrace in (("GET", "0"), ("POST", "1")):
+            query_id = f"promql-ctx-{method.lower()}-{uuid.uuid4()}"
+            quota_key = f"promql-quota-{method.lower()}"
+            req_params = {
+                "query": "post_body_metric",
+                "time": "1000",
+                "user": user_name,
+                "role": role_name,
+                "query_id": query_id,
+                "stacktrace": stacktrace,
+                "quota_key": quota_key,
+            }
+            if method == "GET":
+                response = requests.get(url, params=req_params)
+            else:
+                response = requests.post(
+                    url,
+                    data=req_params,
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                )
+
+            assert extract_data_from_http_api_response(response) == expected
+
+            node.query("SYSTEM FLUSH LOGS query_log")
+            assert_eq_with_retry(
+                node,
+                "SELECT quota_key "
+                f"FROM system.query_log WHERE type = 'QueryFinish' AND query_id = '{query_id}'",
+                f"{quota_key}\n",
+                retry_count=30,
+                sleep_time=1,
+            )
+    finally:
+        node.query(f"DROP QUOTA IF EXISTS {quota_name}")
+        node.query(f"DROP USER IF EXISTS {user_name}")
+        node.query(f"DROP ROLE IF EXISTS {role_name}")
