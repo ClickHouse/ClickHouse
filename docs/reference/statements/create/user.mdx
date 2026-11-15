@@ -298,6 +298,18 @@ Create the user account `john` and allow him to grant his privileges to the user
 CREATE USER john GRANTEES jack;
 ```
 
+Create the user account `john` with a default database:
+
+```sql
+CREATE USER john DEFAULT DATABASE database1
+```
+
+`DEFAULT DATABASE NONE` leaves the default database unset. To use a database named `NONE`, quote its name with backticks:
+
+```sql
+DEFAULT DATABASE `NONE`
+```
+
 Use a query parameter to create the user account `john`:
 
 ```sql

@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-msan
 -- Behavior of the top-K heap under stress: heavy eviction across aggregation
 -- methods, boundary ties (bitwise-distinct keys that compare equal), the
 -- adaptive freeze, tie overflow, and aggregate-state arena-slot reuse.

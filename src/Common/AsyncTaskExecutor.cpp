@@ -6,10 +6,14 @@
 namespace DB
 {
 
-AsyncTaskExecutor::AsyncTaskExecutor(std::unique_ptr<AsyncTask> task_, String operation_name_)
+AsyncTaskExecutor::AsyncTaskExecutor(
+    std::unique_ptr<AsyncTask> task_,
+    String operation_name_,
+    std::optional<OpenTelemetry::TracingContextOnThread> external_trace_context_)
     : task(std::move(task_))
     , operation_name(std::move(operation_name_))
     , parent_trace_context(OpenTelemetry::CurrentContext())
+    , external_trace_context(std::move(external_trace_context_))
 {
 }
 
@@ -86,8 +90,14 @@ struct AsyncTaskExecutor::Routine
 
     void operator()(SuspendCallback suspend_callback)
     {
-        /// Stores the fiber-local tracing context from the thread that created the executor and open one span per task execution.
-        OpenTelemetry::TracingContextHolder trace_context_holder(executor.operation_name, executor.parent_trace_context);
+        /// Either run inside the caller-owned span, or seed the fiber-local tracing context from the
+        /// thread that created the executor and open one span per task execution.
+        std::optional<OpenTelemetry::TracingContextGuard> trace_context_guard;
+        std::optional<OpenTelemetry::TracingContextHolder> trace_context_holder;
+        if (executor.external_trace_context)
+            trace_context_guard.emplace(*executor.external_trace_context);
+        else
+            trace_context_holder.emplace(executor.operation_name, executor.parent_trace_context);
 
         auto async_callback = AsyncCallback{executor, suspend_callback};
         try

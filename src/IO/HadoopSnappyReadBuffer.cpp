@@ -193,6 +193,13 @@ bool HadoopSnappyReadBuffer::nextImpl()
     /// `SnappyFramedReadBuffer` skips zero-length chunks.
     while (true)
     {
+        /// The output cursor is set up once per block, not per attempt: `readBlock` can decompress
+        /// some subblocks of a block and then ask for more input, and starting the retry at the
+        /// beginning of the buffer would write the rest of the block over the bytes already produced,
+        /// dropping the earlier subblocks from the stream.
+        out_capacity = internal_buffer.size();
+        out_data = internal_buffer.begin();
+
         do
         {
             if (!in_available)
@@ -211,8 +218,6 @@ bool HadoopSnappyReadBuffer::nextImpl()
                     getExceptionEntryWithFileName(*in));
             }
 
-            out_capacity = internal_buffer.size();
-            out_data = internal_buffer.begin();
             decoder->result = decoder->readBlock(&in_available, &in_data, &out_capacity, &out_data);
 
             in->position() = in->buffer().end() - in_available;

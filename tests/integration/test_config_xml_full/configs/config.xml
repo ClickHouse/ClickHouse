@@ -203,9 +203,6 @@
         <!-- Send/receive message size limits in bytes. -1 means unlimited -->
         <max_send_message_size>-1</max_send_message_size>
         <max_receive_message_size>-1</max_receive_message_size>
-
-        <!-- Enable if you want very detailed logs -->
-        <verbose_logs>false</verbose_logs>
     </grpc>
 
     <!-- Used with https_port and tcp_port_secure. Full ssl options list: https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71 -->
@@ -776,11 +773,8 @@
             global order that we can use to e.g. retry insertion into some external
             system.
         -->
-        <engine>
-            engine MergeTree
-            partition by toYYYYMM(finish_date)
-            order by (finish_date, finish_time_us, trace_id)
-        </engine>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <order_by>event_date, finish_time_us</order_by>
         <database>system</database>
         <table>opentelemetry_span_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>

@@ -1,15 +1,14 @@
 #pragma once
 
-#include <Dictionaries/CassandraHelpers.h>
-#include <QueryPipeline/BlockIO.h>
+#include "config.h"
 
 #if USE_CASSANDRA
 
+#include <Dictionaries/CassandraClient.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/ExternalQueryBuilder.h>
-#include <Interpreters/Context_fwd.h>
-#include <mutex>
+#include <QueryPipeline/BlockIO.h>
 
 namespace DB
 {
@@ -17,21 +16,28 @@ namespace DB
 class CassandraDictionarySource final : public IDictionarySource
 {
 public:
+    static constexpr UInt16 DEFAULT_PORT = 9042;
+
+    /// Splits a comma-separated list of hosts.
+    static VectorWithMemoryTracking<String> splitHosts(const String & hosts);
 
     struct Configuration
     {
+        /// A comma-separated list of hosts.
         String host;
         UInt16 port;
         String user;
         String password;
+        bool secure;
+        Cassandra::Compression compression;
         String db;
         String table;
         String query;
 
-        CassConsistency consistency{};
+        Cassandra::Consistency consistency = Cassandra::Consistency::One;
         bool allow_filtering;
-        /// TODO get information about key from the driver
         size_t partition_key_prefix;
+        /// The maximum number of idle connections to keep.
         size_t max_threads;
         String where;
 
@@ -74,18 +80,13 @@ public:
 
 private:
     void maybeAllowFiltering(String & query) const;
-    CassSessionShared getSession();
 
     LoggerPtr log;
     const DictionaryStructure dict_struct;
     const Configuration configuration;
     SharedHeader sample_block;
     ExternalQueryBuilder query_builder;
-
-    CassClusterPtr cluster;
-
-    std::mutex connect_mutex;
-    CassSessionWeak maybe_session TSA_GUARDED_BY(connect_mutex);
+    Cassandra::ConnectionPoolPtr pool;
 };
 }
 

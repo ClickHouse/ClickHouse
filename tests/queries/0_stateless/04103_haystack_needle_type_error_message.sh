@@ -13,7 +13,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #     Illegal type UInt8 of argument of function locate
 
 extract_bad_type() {
-    grep -m1 -o 'Illegal type .* of argument' | sed 's/ of argument$//'
+    # The error names the offending argument's type. Accept both the legacy
+    # "Illegal type X of argument" phrasing and the declarative-signature
+    # "argument N has type X that is not ..." phrasing, normalising to "Illegal type X".
+    grep -m1 -oE 'Illegal type [^ ]+ of argument|has type [^ ]+ that is not' \
+        | sed -E 's/Illegal type ([^ ]+) of argument/Illegal type \1/; s/has type ([^ ]+) that is not/Illegal type \1/'
 }
 
 # Default order: locate(needle, haystack[, start_pos])

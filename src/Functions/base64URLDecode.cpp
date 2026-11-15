@@ -45,6 +45,7 @@ Throws an exception in case of error.
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBase64Decode>(documentation);
+    factory.registerAlias("from_base64url", "base64URLDecode", FunctionFactory::Case::Insensitive);
 }
 
 }

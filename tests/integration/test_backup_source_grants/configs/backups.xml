@@ -1,5 +1,14 @@
 <clickhouse>
+    <storage_configuration>
+        <disks>
+            <backup_disk>
+                <type>local</type>
+                <path>/var/lib/clickhouse/disks/backup_disk/</path>
+            </backup_disk>
+        </disks>
+    </storage_configuration>
     <backups>
         <allowed_path>/var/lib/clickhouse/backups</allowed_path>
+        <allowed_disk>backup_disk</allowed_disk>
     </backups>
 </clickhouse>
