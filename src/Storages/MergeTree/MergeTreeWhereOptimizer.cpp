@@ -24,6 +24,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -1011,6 +1012,12 @@ static bool isConstantDeterministicInScopeOfQuery(const RPNBuilderTreeNode & nod
     return allColumnFunctions(*dag_node->column, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
 }
 
+static bool readsUnspecifiedValueUnderNull(const RPNBuilderTreeNode & node)
+{
+    const auto * dag_node = node.getDAGNode();
+    return dag_node && QueryPlanOptimizations::nodeFunctionReadsUnspecifiedValueUnderNull(*dag_node->getWithoutAlias());
+}
+
 static bool isFunctionDeterministicInScopeOfQuery(const RPNBuilderFunctionTreeNode & function_node, const ContextPtr & context)
 {
     if (auto function_base = function_node.getFunctionBase())
@@ -1042,7 +1049,8 @@ bool MergeTreeWhereOptimizer::isDeterministicExpressionOverSortingKey(const RPNB
 
         /// functions like rand can give different results for row versions of the same key,
         /// query-scoped-stable ones (e.g. runtime filters) are fine to evaluate before the merge
-        if (!isFunctionDeterministicInScopeOfQuery(function_node, context))
+        /// every NULL is one key for FINAL, but `assumeNotNull` returns the value stored under each one
+        if (!isFunctionDeterministicInScopeOfQuery(function_node, context) || readsUnspecifiedValueUnderNull(node))
             return false;
 
         size_t arguments_size = function_node.getArgumentsSize();
@@ -1055,7 +1063,7 @@ bool MergeTreeWhereOptimizer::isDeterministicExpressionOverSortingKey(const RPNB
             if (argument.isConstant())
             {
                 /// a folded lambda hides its body behind a constant
-                if (!isConstantDeterministicInScopeOfQuery(argument))
+                if (!isConstantDeterministicInScopeOfQuery(argument) || readsUnspecifiedValueUnderNull(argument))
                     return false;
                 continue;
             }

@@ -57,6 +57,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
 #include <Processors/QueryPlan/MergeTreeFinalMerge.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -169,6 +170,9 @@ bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting
 {
     if (sorting_key_set.contains(node->result_name))
         return true;
+    /// every NULL is one key for FINAL, but `assumeNotNull` returns the value stored under each one
+    if (QueryPlanOptimizations::nodeFunctionReadsUnspecifiedValueUnderNull(*node))
+        return false;
     if (node->type == ActionsDAG::ActionType::COLUMN)
         return true; // constants are fine
     if (node->type == ActionsDAG::ActionType::INPUT || node->type == ActionsDAG::ActionType::PLACEHOLDER)
@@ -3497,10 +3501,12 @@ void ReadFromMergeTree::buildIndexes(
                                                     && MergeTreeDataSelectExecutor::isRPNSizeAllowedForSkipIndexesForDisjunctions(
                                                         indexes->key_condition_rpn_template->generateUnsubstituted().getRPN().size(), settings);
 
+    /// `filter_dag` is what the skip indexes analyze, with the arguments of `indexHint` expanded into it
     indexes->use_skip_indexes_if_final_exact_mode = indexes->use_skip_indexes && !skip_indexes.empty()
                                                         && query_info_.isFinal()
                                                         && settings[Setting::use_skip_indexes_if_final_exact_mode]
-                                                        && !areAllSkipIndexColumnsInPrimaryKey(primary_key, skip_indexes);
+                                                        && (!areAllSkipIndexColumnsInPrimaryKey(primary_key, skip_indexes)
+                                                            || (filter_dag.dag && QueryPlanOptimizations::dagReadsUnspecifiedValueUnderNull(*filter_dag.dag)));
 
     indexes->skip_indexes = std::move(skip_indexes);
 }
@@ -3637,7 +3643,11 @@ void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
                 return anyInTypeTree(*col.type, [](const IDataType & type) { return WhichDataType(type).isFloat(); });
             });
 
-        skip_partition_pruning = (!exprs_match && !columns_match) || reads_float_column;
+        /// so is a NULL key column whose stored value `assumeNotNull` puts into the partition expression
+        bool reads_value_under_null = !exprs_match
+            && QueryPlanOptimizations::dagReadsUnspecifiedValueUnderNull(partition_key.expression->getActionsDAG());
+
+        skip_partition_pruning = (!exprs_match && !columns_match) || reads_float_column || reads_value_under_null;
     }
 }
 
