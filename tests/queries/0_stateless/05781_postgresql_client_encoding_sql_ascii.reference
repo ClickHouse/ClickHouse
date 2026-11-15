@@ -1,0 +1,4 @@
+SQL_ASCII: client_encoding=SQL_ASCII, row=['ok'], tag=SELECT 1
+sql_ascii: client_encoding=sql_ascii, row=['ok'], tag=SELECT 1
+sql-ascii: client_encoding=sql-ascii, row=['ok'], tag=SELECT 1
+LATIN1: error 0A000 Only UTF8 client_encoding is supported.

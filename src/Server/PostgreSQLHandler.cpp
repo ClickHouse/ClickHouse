@@ -1044,12 +1044,13 @@ bool PostgreSQLHandler::startup()
         /// PostgreSQLWire serializes text as UTF8 without transcoding. Accepting another client encoding
         /// would tell clients to decode those UTF8 bytes using a different encoding.
         /// Normalize the name like PostgreSQL does: ignore non-alphanumeric characters and case,
-        /// so `UTF8`, `utf-8`, `UTF_8` and the documented alias `UNICODE` are all accepted.
+        /// so `UTF8`, `utf-8`, `UTF_8`, `UNICODE`, and `SQL_ASCII` (which disables encoding conversion
+        /// and is sent by interactive `psql` under the `C`/`POSIX` locale) are all accepted.
         String normalized_encoding;
         for (char c : client_encoding_it->second)
             if (isAlphaNumericASCII(c))
                 normalized_encoding += toUpperASCII(c);
-        if (normalized_encoding != "UTF8" && normalized_encoding != "UNICODE")
+        if (normalized_encoding != "UTF8" && normalized_encoding != "UNICODE" && normalized_encoding != "SQLASCII")
         {
             message_transport->send(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
