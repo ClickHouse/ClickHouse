@@ -1,6 +1,5 @@
 #pragma once
 
-#include <map>
 #include <Common/UniqueLock.h>
 
 #include <atomic>
@@ -274,10 +273,6 @@ public:
     /// before are read. The result may contain the estimates of other columns as well.
     Estimates getEstimates(const NameSet & required_columns = {}) const;
     void setEstimates(const Estimates & new_estimates);
-
-    /// Whether every row of the array column `column_name` has exactly `array_size` elements.
-    /// Cached in  `one_row_per_block_array_sizes` with a associated mutex.
-    bool hasOneRowPerBlockArraySizes(const String & column_name, UInt64 array_size, const std::function<bool()> & check) const;
     /// Whether `loadStatistics(required_columns, cache)` would not read anything from disk,
     /// because the statistics of these columns are cached or the part has none for them.
     bool areStatisticsCached(const NameSet & required_columns, const StatisticsCache * cache) const;
@@ -854,10 +849,6 @@ protected:
 
 private:
     void calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked() const TSA_REQUIRES(columns_and_secondary_indices_sizes_mutex);
-
-    /// See `hasOneRowPerBlockArraySizes`.
-    mutable std::mutex one_row_per_block_array_sizes_mutex;
-    mutable std::map<std::pair<String, UInt64>, bool> one_row_per_block_array_sizes TSA_GUARDED_BY(one_row_per_block_array_sizes_mutex);
 
     /// Columns and secondary indices sizes can be calculated lazily on first request.
     mutable std::mutex columns_and_secondary_indices_sizes_mutex;

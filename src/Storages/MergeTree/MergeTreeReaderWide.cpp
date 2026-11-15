@@ -371,13 +371,6 @@ void MergeTreeReaderWide::setSelectedRows(const PaddedPODArray<UInt64> & rows)
         if (!layouts[pos])
             continue;
 
-        /// Whether every row has `array_size` elements is known only from the sizes of the arrays, which are read when
-        /// a query first reads the column of the part this way.
-        const auto & column = columns_to_read[pos];
-        const UInt64 array_size = layouts[pos]->array_size;
-        if (!part->hasOneRowPerBlockArraySizes(column.name, array_size, [&] { return checkOneRowPerBlockArraySizes(*part, column, array_size, settings.read_settings); }))
-            continue;
-
         auto path_for_logs = (fs::path(part->getDataPartStorage().getRelativePath()) / layouts[pos]->file_name).string();
         readers[pos] = std::make_unique<MergeTreeOneRowPerBlockReader>(std::move(*layouts[pos]), part->rows_count, std::move(path_for_logs));
         has_readers = true;

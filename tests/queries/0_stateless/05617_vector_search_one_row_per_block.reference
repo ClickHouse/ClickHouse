@@ -72,12 +72,46 @@ same sizes, setting on
 389	64	0.034
 3187	64	0.595
 2573	64	-0.219
+other block sizes, setting on
+1785	178500
+390	39000
+389	38900
+181	18100
+298	29800
 other block sizes, setting off
 1785	178500
 390	39000
 389	38900
 181	18100
 298	29800
+adaptive write buffer, setting on
+1	1	1	800
+adaptive write buffer, setting off
+1	1	1	800
+merged part, setting on
+1785	0.869
+390	0.936
+389	0.034
+181	-0.468
+298	0.323
+mutated part, setting on
+1785	0.869	1
+390	0.936	1
+389	0.034	1
+181	-0.468	1
+298	0.323	1
+mutated vectors, setting on
+1785	1.869	1
+390	1.936	1
+389	1.034	1
+181	0.532	1
+298	1.323	1
+mutated vectors, setting off
+1785	1.869	1
+390	1.936	1
+389	1.034	1
+181	0.532	1
+298	1.323	1
 compressed, setting on
 1785	6	256
 390	6	256
@@ -91,12 +125,17 @@ compressed, setting off
 181	6	256
 298	6	256
 codes in few blocks	1
+05617_adaptive_on	0
 05617_lz4_on	0
+05617_merged_on	5
+05617_mutated_on	5
 05617_one_part_off	0
 05617_one_part_on	100
+05617_other_block_sizes_on	0
 05617_same_sizes_on	3
 05617_several_rows_per_block_on	0
 05617_sizes_off	0
 05617_sizes_on	0
 05617_two_parts_off	0
 05617_two_parts_on	49
+05617_vec_mutated_on	5

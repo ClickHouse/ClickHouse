@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Core/NamesAndTypes.h>
-#include <IO/ReadSettings.h>
+#include <Parsers/IAST_fwd.h>
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <base/types.h>
 
 #include <optional>
@@ -31,29 +32,50 @@ struct OneRowPerBlockLayout
     UInt64 block_bytes = 0;
 };
 
+/// The number of bytes before the elements in every block: the checksum and the compressed block header.
+UInt64 getOneRowPerBlockHeaderBytes();
+
 /// Whether a column of `type` can have the layout: `Array(BFloat16)`, `Array(Float32)`, `Array(Float64)` or `Array(Int8)`.
 bool canHaveOneRowPerBlockLayout(const DataTypePtr & type);
 
-/// Returns the layout that `column` of `part` has if every row of it has the same number of elements, or `std::nullopt`
-/// if it cannot have the layout, in which case the column must be read with the usual readers.
+/// Whether every codec of the declared codec of a column stores the data verbatim: `NONE`, or `Quantized`, which only adds
+/// another stream. A column without a declared codec uses the default codec, which compresses.
+bool declaredCodecStoresDataVerbatim(const ASTPtr & codec_desc);
+
+/// The layout is recorded when a part is written, not inferred from the column settings when it is read: the settings
+/// describe the parts written from now on, and a part written before they were changed, or with other buffers, can have
+/// other blocks whose sizes add up to the same totals, so a computed position would land in the middle of another row.
+///
+/// The writer of a Wide part checks the blocks it wrote to the file of the array elements of a column: exactly one block
+/// per row, every block of `row_bytes` stored without compression, and every row of `array_size` elements. Only then it
+/// writes a marker file, which is in the checksums of the part. The marker holds `row_bytes`, `array_size`, and the size and
+/// the hash of the file of the elements it describes.
+///
+/// The name of the marker contains the hash of that file, e.g. `vec.<hash>.one_row_per_block`. A marker is valid exactly
+/// for the bytes it was written for, which is what makes it safe to carry over as is: a mutation that keeps the file of the
+/// elements keeps its marker, and one that rewrites the file writes a marker of another name, so it never writes into a
+/// marker hardlinked from the source part. A marker of a file that is not in the part any more is not used.
+constexpr auto ONE_ROW_PER_BLOCK_MARKER_EXTENSION = ".one_row_per_block";
+
+/// The name of the marker of the file of array elements of `stream_name` with checksum `data_checksum`.
+String getOneRowPerBlockMarkerName(const String & stream_name, const MergeTreeDataPartChecksum & data_checksum);
+
+/// The content of the marker of a file of array elements with checksum `data_checksum`.
+String makeOneRowPerBlockMarker(UInt64 row_bytes, UInt64 array_size, const MergeTreeDataPartChecksum & data_checksum);
+
+/// The checksum of a marker file with `content`, as recorded in the checksums of the part.
+MergeTreeDataPartChecksum getOneRowPerBlockMarkerChecksum(const String & content);
+
+/// Returns the layout of `column` in `part`, or `std::nullopt`, in which case the column must be read with the usual
+/// readers.
 ///
 /// The column must have the column-level settings `min_compress_block_size` and `max_compress_block_size` both equal to
-/// the size of a row in `metadata`, which gives the number of elements of a row, and the sizes of the file of the array
-/// elements recorded in the checksums of the part must be those of one block per row. Nothing is read from disk, so the
-/// caller must still check that every row has `array_size` elements, see `checkOneRowPerBlockArraySizes`.
+/// the size of a row in `metadata`, which gives the number of elements of a row, and the part must have the marker written
+/// for exactly this layout and this file of elements. The marker is checked against its checksum in the checksums of the
+/// part, so nothing is read from disk.
 std::optional<OneRowPerBlockLayout> tryGetOneRowPerBlockLayout(
     const IMergeTreeDataPart & part,
     const NameAndTypePair & column,
     const StorageInMemoryMetadata & metadata);
-
-/// Whether every row of `column` in `part` has exactly `array_size` elements, the second condition of the layout, which the
-/// sizes of the files checked by `tryGetOneRowPerBlockLayout` cannot tell: rows of different lengths whose total is the
-/// same also fill a file of the same size, e.g. rows of 63 and 65 elements in blocks of 64, and then the block at the
-/// position of a row would hold parts of other rows, read without any error.
-///
-/// Reads the sizes of the arrays, the stream `.size0` with one `UInt64` per row, until the first row of another size.
-/// The stream is read with a buffer of its own, so the streams of the readers of the part keep their positions.
-bool checkOneRowPerBlockArraySizes(
-    const IMergeTreeDataPart & part, const NameAndTypePair & column, UInt64 array_size, const ReadSettings & read_settings);
 
 }

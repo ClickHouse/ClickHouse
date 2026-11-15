@@ -12,7 +12,8 @@ SET use_skip_indexes_on_data_read = 0;
 -- The setting has no effect with the columns cache or the uncompressed cache.
 SET use_columns_cache = 0;
 SET use_uncompressed_cache = 0;
--- Enough candidates that rescoring always finds the exact nearest neighbours, whatever the approximation of the index.
+-- Enough candidates (`LIMIT 10` * 100, at most 1000, so all 500 rows) that rescoring always finds the exact nearest
+-- neighbours, whatever the approximation of the index.
 SET vector_search_index_fetch_multiplier = 100;
 SET hnsw_candidate_list_size_for_search = 2048;
 
@@ -26,7 +27,8 @@ DROP TABLE IF EXISTS tab_other_default;
 DROP TABLE IF EXISTS tab_qualified;
 DROP TABLE IF EXISTS tab_dotted;
 
--- 64 `Float32` elements are 256 bytes, so every row is one block.
+-- 64 `Float32` elements are 256 bytes, so every row is one block. The tables are small, because the thread fuzzer of CI
+-- makes every lock taken while building the indexes slow.
 CREATE TABLE tab
 (
     id UInt32,
@@ -37,7 +39,7 @@ ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, index_granularity = 128;
 
 INSERT INTO tab SELECT number, arrayMap(j -> toFloat32(sipHash64(number, j) % 2000 / 1000.0 - 1.0), range(64))
-FROM numbers(2000);
+FROM numbers(500);
 
 SELECT 'setting on';
 WITH (SELECT vec FROM tab WHERE id = 123) AS ref
@@ -165,7 +167,7 @@ ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, index_granularity = 128;
 
 INSERT INTO tab_prefetch SELECT number, arrayMap(j -> toFloat32(sipHash64(number, j) % 2000 / 1000.0 - 1.0), range(64))
-FROM numbers(20000);
+FROM numbers(4000);
 
 SELECT 'reused reader';
 WITH (SELECT vec FROM tab_prefetch WHERE id = 123) AS ref

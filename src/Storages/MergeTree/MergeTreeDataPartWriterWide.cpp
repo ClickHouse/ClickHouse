@@ -1,14 +1,17 @@
 #include <algorithm>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnSparse.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressionCodecQuantized.h>
 #include <Compression/CompressionFactory.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
+#include <Storages/MergeTree/MergeTreeOneRowPerBlockLayout.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
@@ -291,6 +294,17 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
 
         full_name_to_stream_name.emplace(full_stream_name, stream_name);
         stream_name_to_full_name.emplace(stream_name, full_stream_name);
+
+        /// The elements of a top-level `Array` of numbers: the path is `ArrayElements`, `Regular`.
+        if (substream_path.size() == 2 && substream_path[0].type == ISerialization::Substream::ArrayElements
+            && substream_path[1].type == ISerialization::Substream::Regular && !name_and_type.isSubcolumn() && canHaveOneRowPerBlockLayout(name_and_type.type)
+            && column_desc && declaredCodecStoresDataVerbatim(column_desc->codec))
+        {
+            OneRowPerBlockCandidate candidate;
+            candidate.stream_name = stream_name;
+            candidate.element_bytes = assert_cast<const DataTypeArray &>(*name_and_type.type).getNestedType()->getSizeOfValueInMemory();
+            one_row_per_block_candidates.emplace(name_and_type.name, std::move(candidate));
+        }
     };
 
     auto serialization = getSerialization(name_and_type.name);
@@ -662,6 +676,8 @@ void MergeTreeDataPartWriterWide::writeColumn(
 
     auto serialize_settings = getSerializationSettingsForColumn(name_and_type, offset_substreams);
 
+    updateOneRowPerBlockCandidate(name, column);
+
     /// Some vector codecs (e.g., SZ3) used for compressing arrays like Array<Float> require the array
     /// dimension to be set before compression starts (for 1D arrays it's simply the length). The dimension
     /// is a property of the whole column, so compute it once here rather than rescanning the entire column
@@ -929,12 +945,87 @@ void MergeTreeDataPartWriterWide::fillDataChecksums(MergeTreeDataPartChecksums &
         stream->preFinalize();
         stream->addToChecksums(checksums, true);
     }
+
+    fillOneRowPerBlockMarkers(checksums);
+}
+
+void MergeTreeDataPartWriterWide::updateOneRowPerBlockCandidate(const String & column_name, const IColumn & column)
+{
+    auto it = one_row_per_block_candidates.find(column_name);
+    if (it == one_row_per_block_candidates.end() || !it->second.all_rows_have_array_size)
+        return;
+
+    auto & candidate = it->second;
+    const auto * column_array = typeid_cast<const ColumnArray *>(&column);
+    if (!column_array)
+    {
+        candidate.all_rows_have_array_size = false;
+        return;
+    }
+
+    const auto & offsets = column_array->getOffsets();
+    for (size_t row = 0; row < offsets.size(); ++row)
+    {
+        const UInt64 size = offsets[row] - offsets[ssize_t(row) - 1];
+        if (!candidate.array_size)
+            candidate.array_size = size;
+        if (size != *candidate.array_size)
+        {
+            candidate.all_rows_have_array_size = false;
+            return;
+        }
+    }
+    candidate.rows += offsets.size();
+}
+
+void MergeTreeDataPartWriterWide::fillOneRowPerBlockMarkers(MergeTreeDataPartChecksums & checksums)
+{
+    for (const auto & [column_name, candidate] : one_row_per_block_candidates)
+    {
+        if (!candidate.all_rows_have_array_size || !candidate.array_size || *candidate.array_size == 0 || candidate.rows == 0)
+            continue;
+
+        auto stream_it = column_streams.find(candidate.stream_name);
+        if (stream_it == column_streams.end())
+            continue;
+
+        /// Exactly one block per row, every block of the elements of one row. With all rows of `array_size` elements,
+        /// the block of row `i` then holds exactly the elements of row `i`.
+        const UInt64 row_bytes = *candidate.array_size * candidate.element_bytes;
+        const auto statistics = stream_it->second->compressor.getBlockStatistics();
+        if (statistics.blocks != candidate.rows || statistics.min_uncompressed_bytes != row_bytes || statistics.max_uncompressed_bytes != row_bytes)
+            continue;
+
+        /// And every block stored without compression.
+        const auto data_checksum_it = checksums.files.find(candidate.stream_name + DATA_FILE_EXTENSION);
+        if (data_checksum_it == checksums.files.end()
+            || data_checksum_it->second.file_size != candidate.rows * (getOneRowPerBlockHeaderBytes() + row_bytes))
+            continue;
+
+        String marker = makeOneRowPerBlockMarker(row_bytes, *candidate.array_size, data_checksum_it->second);
+        String marker_name = getOneRowPerBlockMarkerName(candidate.stream_name, data_checksum_it->second);
+        checksums.files[marker_name] = getOneRowPerBlockMarkerChecksum(marker);
+        one_row_per_block_markers.emplace_back(std::move(marker_name), std::move(marker));
+    }
 }
 
 void MergeTreeDataPartWriterWide::finishDataSerialization(bool sync)
 {
     for (auto & stream : column_streams)
         stream.second->finalize();
+
+    for (const auto & [marker_name, marker] : one_row_per_block_markers)
+    {
+        /// A file of this name can only be hardlinked from another part with the same content, see
+        /// `getOneRowPerBlockMarkerName`. It is removed anyway, so that the file of the other part is never written.
+        data_part_storage->removeFileIfExists(marker_name);
+        auto out = data_part_storage->writeFile(marker_name, marker.size(), settings.query_write_settings);
+        out->write(marker.data(), marker.size());
+        out->finalize();
+        if (sync)
+            out->sync();
+    }
+    one_row_per_block_markers.clear();
 
     if (sync)
     {
@@ -996,6 +1087,7 @@ void MergeTreeDataPartWriterWide::cancel() noexcept
 
     column_streams.clear();
     serialization_states.clear();
+    one_row_per_block_markers.clear();
 
     Base::cancel();
 }

@@ -10262,9 +10262,10 @@ The column must meet these conditions:
 - Its column-level settings `min_compress_block_size` and `max_compress_block_size` both equal the size of one row.
 - All its rows have the same number of elements.
 
-The last condition is checked once per part. The array sizes are read the first time a query reads the column of that part this way.
-
-The part must be a Wide part. The setting has no effect when the uncompressed cache or the columns cache is used.
+The part must be a Wide part. When a part is written, ClickHouse checks that every row of the column is exactly one block and
+records it in the part. Only such parts are read this way. Other parts are read as usual, for example parts written before the
+column-level settings were set, or with rows of different sizes. The setting has no effect when the uncompressed cache or the
+columns cache is used.
 )", EXPERIMENTAL, \
         {"26.11", false, false, "New setting."}) \
     DECLARE(Bool, vector_search_with_rescoring, false, R"(

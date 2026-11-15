@@ -18,6 +18,8 @@ DROP TABLE IF EXISTS tab_one_row_per_block;
 DROP TABLE IF EXISTS tab_several_rows_per_block;
 DROP TABLE IF EXISTS tab_sizes;
 DROP TABLE IF EXISTS tab_other_block_sizes;
+DROP TABLE IF EXISTS tab_adaptive;
+DROP TABLE IF EXISTS tab_merged;
 DROP TABLE IF EXISTS tab_lz4;
 
 -- 64 `Float32` elements are 256 bytes, so every row is one block.
@@ -83,8 +85,8 @@ SELECT id FROM tab_several_rows_per_block ORDER BY L2Distance(vec, ref) LIMIT 10
 SETTINGS merge_tree_use_one_row_per_block_layout = 1, log_comment = '05617_several_rows_per_block_on';
 
 -- The queries below are sorted by an expression other than the sorting key, so that the vectors are read lazily.
--- Rows of 63 and 65 elements: the file of the elements has the size of one block of 64 elements per row, so only the
--- sizes of the arrays show that the rows cross the blocks, and the usual readers are used.
+-- Rows of 63 and 65 elements: the file of the elements has the size of one block of 64 elements per row, but the rows
+-- cross the blocks. The writer sees rows of different sizes and does not record the layout, so the usual readers are used.
 CREATE TABLE tab_sizes
 (
     id UInt32,
@@ -110,8 +112,8 @@ SELECT id, length(vec), vec[1] FROM tab_one_row_per_block ORDER BY sipHash64(id)
 SETTINGS merge_tree_use_one_row_per_block_layout = 1, log_comment = '05617_same_sizes_on';
 
 -- A part written with other block sizes than the column has now: blocks of 260 and 252 bytes, which add up to the size of
--- one block per row. Neither the settings nor the sizes of the files show it, so the query fails, with an explanation.
--- With the setting off, the part is read as usual.
+-- one block per row. Neither the settings nor the sizes of the files show it, but the writer did not record the layout,
+-- so the part is read as usual.
 CREATE TABLE tab_other_block_sizes
 (
     id UInt32,
@@ -123,11 +125,72 @@ SETTINGS min_bytes_for_wide_part = 0, index_granularity = 2, index_granularity_b
 INSERT INTO tab_other_block_sizes SELECT number, arrayMap(j -> toFloat32(number * 100 + j), range(64)) FROM numbers(2000);
 ALTER TABLE tab_other_block_sizes MODIFY COLUMN vec Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256);
 
+SELECT 'other block sizes, setting on';
 SELECT id, vec[1] FROM tab_other_block_sizes ORDER BY sipHash64(id) LIMIT 5
-SETTINGS merge_tree_use_one_row_per_block_layout = 1; -- { serverError UNKNOWN_CODEC, CHECKSUM_DOESNT_MATCH, CORRUPTED_DATA }
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, log_comment = '05617_other_block_sizes_on';
 
 SELECT 'other block sizes, setting off';
 SELECT id, vec[1] FROM tab_other_block_sizes ORDER BY sipHash64(id) LIMIT 5
+SETTINGS merge_tree_use_one_row_per_block_layout = 0;
+
+-- A part written with an adaptive write buffer, whose blocks grow from 100 bytes. After the column-level settings are
+-- changed, the files have the sizes of one block of 3200 bytes per row, and the position computed for row 1 would be a
+-- block that starts in row 0. The writer did not record the layout, so the part is read as usual.
+CREATE TABLE tab_adaptive
+(
+    id UInt32,
+    vec Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 1, max_compress_block_size = 6400)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 2, index_granularity_bytes = 0,
+    min_columns_to_activate_adaptive_write_buffer = 1, adaptive_write_buffer_initial_size = 100;
+
+INSERT INTO tab_adaptive SELECT number, arrayMap(x -> toFloat32(number), range(800)) FROM numbers(12);
+ALTER TABLE tab_adaptive MODIFY COLUMN vec Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 3200, max_compress_block_size = 3200);
+
+SELECT 'adaptive write buffer, setting on';
+SELECT id, vec[1], vec[-1], length(vec) FROM tab_adaptive ORDER BY abs(toInt64(id) - 1) LIMIT 1
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, log_comment = '05617_adaptive_on';
+
+SELECT 'adaptive write buffer, setting off';
+SELECT id, vec[1], vec[-1], length(vec) FROM tab_adaptive ORDER BY abs(toInt64(id) - 1) LIMIT 1
+SETTINGS merge_tree_use_one_row_per_block_layout = 0;
+
+-- A merge writes the layout of the merged part again, a mutation of another column keeps the file of the vectors and its
+-- record, and a mutation of the vectors writes both again, so all these parts are read this way.
+CREATE TABLE tab_merged
+(
+    id UInt32,
+    vec Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256),
+    x UInt8
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO tab_merged SELECT number, arrayMap(j -> toFloat32(sipHash64(number, j) % 2000 / 1000.0 - 1.0), range(64)), 0
+FROM numbers(1000);
+INSERT INTO tab_merged SELECT number, arrayMap(j -> toFloat32(sipHash64(number, j) % 2000 / 1000.0 - 1.0), range(64)), 0
+FROM numbers(1000, 1000);
+OPTIMIZE TABLE tab_merged FINAL;
+
+SELECT 'merged part, setting on';
+SELECT id, vec[1] FROM tab_merged ORDER BY sipHash64(id) LIMIT 5
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, log_comment = '05617_merged_on';
+
+ALTER TABLE tab_merged UPDATE x = 1 WHERE 1 SETTINGS mutations_sync = 2;
+
+SELECT 'mutated part, setting on';
+SELECT id, vec[1], x FROM tab_merged ORDER BY sipHash64(id) LIMIT 5
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, log_comment = '05617_mutated_on';
+
+ALTER TABLE tab_merged UPDATE vec = arrayMap(v -> v + 1, vec) WHERE 1 SETTINGS mutations_sync = 2;
+
+SELECT 'mutated vectors, setting on';
+SELECT id, vec[1], x FROM tab_merged ORDER BY sipHash64(id) LIMIT 5
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, log_comment = '05617_vec_mutated_on';
+
+SELECT 'mutated vectors, setting off';
+SELECT id, vec[1], x FROM tab_merged ORDER BY sipHash64(id) LIMIT 5
 SETTINGS merge_tree_use_one_row_per_block_layout = 0;
 
 -- A codec that compresses is not supported, even when every compressed block happens to have the size of a row,
@@ -158,15 +221,19 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comm
 
 -- The shortlist has 10 * 10 = 100 rows. With one part with the layout, all of them are read this way.
 -- With a second part that is Compact, only the rows of the first part are. Without the layout or with the setting off, none are.
+-- The queries sorted by `sipHash64(id)` read the 5 rows of their result.
 SELECT log_comment, ProfileEvents['MergeTreeOneRowPerBlockReadRows'] AS rows_read_by_blocks
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
     AND log_comment IN ('05617_one_part_on', '05617_one_part_off', '05617_two_parts_on', '05617_two_parts_off', '05617_several_rows_per_block_on',
-        '05617_sizes_on', '05617_sizes_off', '05617_same_sizes_on', '05617_lz4_on')
+        '05617_sizes_on', '05617_sizes_off', '05617_same_sizes_on', '05617_lz4_on', '05617_other_block_sizes_on', '05617_adaptive_on',
+        '05617_merged_on', '05617_mutated_on', '05617_vec_mutated_on')
 ORDER BY log_comment;
 
 DROP TABLE tab_one_row_per_block;
 DROP TABLE tab_several_rows_per_block;
 DROP TABLE tab_sizes;
 DROP TABLE tab_other_block_sizes;
+DROP TABLE tab_adaptive;
+DROP TABLE tab_merged;
 DROP TABLE tab_lz4;
