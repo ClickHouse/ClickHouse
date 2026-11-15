@@ -7,8 +7,10 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/setThreadName.h>
 
+#include <atomic>
 #include <chrono>
 #include <future>
+#include <stdexcept>
 #include <thread>
 
 using namespace DB;
@@ -254,5 +256,115 @@ TEST(SchedulerCPULeaseAllocation, UnparkAfterShutdown)
     master_slot.reset();
     worker1_slot.reset();
     worker2_slot.reset();
+    scheduler.stop();
+}
+
+/// A thread releases its slot while another thread of the query is preempted (the query thread of index analysis
+/// finishes while a worker still holds a part). The released slot is allocated, but no running thread uses it,
+/// so it must resume the preempted thread instead of leaving it to wait for one more grant.
+TEST(SchedulerCPULeaseAllocation, ReleaseResumesPreemptedThread)
+{
+    TimeSharedScheduler scheduler;
+    auto semaphore = std::make_shared<SemaphoreConstraint>(scheduler.event_queue, SchedulerNodeInfo{}, /*max_requests=*/ 2);
+    auto queue = std::make_shared<RequestQueue>(scheduler.event_queue, SchedulerNodeInfo{});
+    queue->basename = "queue";
+    semaphore->attachChild(queue);
+    scheduler.attachChild(semaphore);
+    scheduler.start(ThreadName::TEST_SCHEDULER);
+
+    CPULeaseSettings settings;
+    settings.preemption_timeout = std::chrono::milliseconds::max(); // Like index analysis, the worker does not stop
+    ResourceLink link;
+    link.queue = queue.get();
+
+    // Another query holds one slot, the query gets the other one, and its second request waits in the queue
+    auto other = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 1, link, link, settings);
+    while (semaphore->getInflights().first != 1)
+        std::this_thread::yield();
+    auto allocation = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 2, link, link, settings);
+    while (semaphore->getInflights().first != 2 || queue->getQueueLengthAndCost().first != 1)
+        std::this_thread::yield();
+
+    auto master_slot = allocation->acquire();
+    auto worker_slot = allocation->acquire();
+    ASSERT_EQ(worker_slot->slot_id, 1u);
+    const auto preempted_before = CurrentMetrics::get(CurrentMetrics::ConcurrencyControlPreempted);
+    auto worker_thread = std::async(std::launch::async, [&, slot = std::move(worker_slot)]() mutable
+    {
+        auto * worker = dynamic_cast<ISlotLease *>(slot.get());
+        worker->startConsumption();
+        burnCPU(settings.quantum_ns);
+        EXPECT_TRUE(worker->renew());
+        slot.reset();
+    });
+
+    // The worker consumes the granted quantum and is preempted. The second request is granted, the master thread
+    // runs on it, and the third request waits in the queue.
+    EXPECT_TRUE(waitUntil([&] { return CurrentMetrics::get(CurrentMetrics::ConcurrencyControlPreempted) > preempted_before; }));
+    EXPECT_TRUE(waitUntil([&] { return queue->dequeued_requests.load() == 3 && queue->getQueueLengthAndCost().first == 1; }));
+
+    // The master thread stops without consuming the granted quantum
+    dynamic_cast<ISlotLease *>(master_slot.get())->startConsumption();
+    master_slot.reset();
+
+    bool resumed = worker_thread.wait_for(std::chrono::seconds(30)) == std::future_status::ready;
+    if (!resumed)
+        other->free(); // The next grant resumes the worker, so the test fails instead of hanging
+    EXPECT_TRUE(resumed) << "a preempted thread is not resumed on the slot released by another thread";
+
+    worker_thread.get();
+    allocation->free();
+    other->free();
+    scheduler.stop();
+}
+
+/// A preempted master thread calls `on_master_wait` periodically while it waits for a slot (index analysis serves the
+/// client's cancellation there), and an exception from it stops the wait. Another query holds the only slot here.
+TEST(SchedulerCPULeaseAllocation, MasterWaitCallbackStopsWait)
+{
+    TimeSharedScheduler scheduler;
+    auto semaphore = std::make_shared<SemaphoreConstraint>(scheduler.event_queue, SchedulerNodeInfo{}, /*max_requests=*/ 1);
+    auto queue = std::make_shared<RequestQueue>(scheduler.event_queue, SchedulerNodeInfo{});
+    queue->basename = "queue";
+    semaphore->attachChild(queue);
+    scheduler.attachChild(semaphore);
+    scheduler.start(ThreadName::TEST_SCHEDULER);
+
+    ResourceLink link;
+    link.queue = queue.get();
+    auto other = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 1, link, link, CPULeaseSettings{});
+    while (semaphore->getInflights().first != 1)
+        std::this_thread::yield();
+
+    std::atomic<size_t> calls = 0;
+    CPULeaseSettings settings;
+    settings.master_wait_period = std::chrono::milliseconds(10);
+    settings.on_master_wait = [&]
+    {
+        if (++calls == 3)
+            throw std::runtime_error("cancelled");
+    };
+    auto allocation = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 1, link, link, settings);
+    while (queue->getQueueLengthAndCost().first != 1)
+        std::this_thread::yield();
+
+    auto master_thread = std::async(std::launch::async, [&, slot = allocation->acquire()]() mutable
+    {
+        auto * master = dynamic_cast<ISlotLease *>(slot.get());
+        master->startConsumption();
+        burnCPU(settings.quantum_ns);
+        EXPECT_THROW(master->renew(), std::runtime_error);
+        slot.reset();
+    });
+
+    bool stopped = master_thread.wait_for(std::chrono::seconds(30)) == std::future_status::ready;
+    if (!stopped)
+        other->free(); // Grants the slot and wakes the thread, so the test fails instead of hanging
+    EXPECT_TRUE(stopped) << "an exception from on_master_wait did not stop the wait of the master thread";
+    master_thread.get();
+    EXPECT_EQ(calls.load(), 3u);
+
+    allocation->free();
+    other->free();
     scheduler.stop();
 }

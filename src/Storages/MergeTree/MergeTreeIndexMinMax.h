@@ -5,6 +5,8 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
+#include <functional>
+
 
 namespace DB
 {
@@ -125,7 +127,7 @@ struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranul
                                               size_t index_granularity_, int direction_, size_t size_hint_, size_t last_part_granule_, bool store_map_ = false);
     void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    void getTopKMarks(size_t n, bool handle_ties, std::vector<MinMaxGranule> & result);
+    void getTopKMarks(size_t n, bool handle_ties, std::vector<MinMaxGranule> & result, const std::function<void()> & on_granule = {});
     static void getTopKMarks(int direction, size_t n, size_t index_granularity, bool handle_ties,
                                 const std::vector<std::vector<MinMaxGranule>> & parts, std::vector<MarkRanges> & result);
 
@@ -134,7 +136,7 @@ struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranul
 
 private:
     template<bool handle_ties>
-    void getTopKMarks(size_t n, std::vector<MinMaxGranule> & result);
+    void getTopKMarks(size_t n, std::vector<MinMaxGranule> & result, const std::function<void()> & on_granule);
 
     template<bool handle_ties>
     static void getTopKMarks(int direction, size_t n, size_t index_granularity, const std::vector<std::vector<MinMaxGranule>> & parts, std::vector<MarkRanges> & result);
