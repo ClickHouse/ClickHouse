@@ -1,0 +1,62 @@
+---
+slug: /concepts/features/operations/insert/async-insert-select
+sidebarTitle: '异步 INSERT ... SELECT'
+title: '异步 INSERT ... SELECT'
+description: 'INSERT ... SELECT 如何通过异步插入队列执行，以及适用于它的路由、统计和取消规则。'
+keywords: ['异步插入', 'async_insert', 'insert select', 'async_insert_select_as_async_insert']
+doc_type: 'guide'
+---
+
+除了普通的 `INSERT ... VALUES`，`INSERT ... SELECT` 同样可以通过[异步插入](/zh/optimize/asynchronous-inserts)队列执行。本页介绍它在什么情况下会走这条路径、写入端如何统计，以及查询被取消或超时后会发生什么。
+
+## 适用条件与路由 {#eligibility-and-routing}
+
+只有在同时满足以下所有条件时，`INSERT ... SELECT` 才会走异步队列路径：
+
+* `async_insert = 1`。
+* `async_insert_select_as_async_insert = 1` (默认值) 。这是总开关：关闭后，无论 `async_insert` 如何设置，`INSERT ... SELECT` 始终同步执行。将 `compatibility` 设置为 26.10 之前的版本会使其默认值变为 `0`；显式设置 `async_insert_select_as_async_insert = 1` 即可重新启用。
+* 整个 `SELECT` 结果为单个块，且大小不超过 `async_insert_max_data_size`。
+* 目标端是 `MergeTree` 家族的表 (进行此检查时，别名会被解析为其实际指向的目标) 。
+
+即使满足上述所有条件，只要出现以下任一情况，插入仍会回退到同步路径：
+
+* 结果跨越多个块、超过 `async_insert_max_data_size`，或为空。
+* 使用了非并行 quorum：设置了 `insert_quorum` 且 `insert_quorum_parallel = 0`。
+* 目标端存在依赖的 materialized view。
+* 目标端本身是 materialized view。`MergeTree` 检查针对的是该视图本身，而非其 target table，因此不符合条件。
+* 目标端是表函数，或 `Distributed` 等远程表引擎。
+* `SELECT` 读取的正是其自身的目标表 (`INSERT INTO t SELECT ... FROM t`) 。
+* `insert_null_as_default` 需要为写入非 `Nullable` 目标列的 `Nullable` `SELECT` 列替换默认值。
+* 插入为内部操作 (可刷新materialized view 的刷新、`POPULATE` 或 `CREATE TABLE ... AS SELECT`) 。这些操作始终同步执行，并忽略 `async_insert_select_as_async_insert` 和 `async_insert`。
+
+事务则另当别论。当查询在事务中运行时 (显式事务，或 `implicit_transaction = 1`) ，异步路径不受支持，且默认情况下 ClickHouse 会直接引发 `NOT_IMPLEMENTED`，而不会回退。只有设置了 `throw_on_unsupported_query_inside_transaction = 0`，查询才会回退为同步插入。
+
+在异步判定之前已确定的路由优先生效，因此仅凭 `SELECT` 端就可能排除异步路径。启用 `parallel_distributed_insert_select` (默认开启) 时，从 `s3Cluster` 等集群数据源读取并写入复制表的 `INSERT ... SELECT` 会走分布式插入路径，根本不会进入异步队列。并行副本的情况同样如此。
+
+## 返回模式与等待 {#return-mode-and-waiting}
+
+`wait_for_async_insert` 的行为与其他异步插入一致：`1` (默认值) 表示等待刷写完成；`0` 表示块进入队列后立即返回。
+
+要让 `SELECT` 生成异步路径所需的单个块，可借助 [`optimize_trivial_insert_select`](/zh/reference/settings/session-settings/optimize-trivial#optimize_trivial_insert_select)：对于在不同表之间执行的简单 `INSERT INTO dest SELECT ... FROM source`，该设置会将读取线程数限制为 [`max_insert_threads`](/zh/reference/settings/session-settings/max-insert#max_insert_threads)。将 `max_insert_threads` 设为 `1` 后，`SELECT` 通常只会生成一个块。
+
+## 写入统计与可观测性 {#write-accounting-and-observability}
+
+写入端的统计计入刷写查询，而非原始的 `INSERT ... SELECT`：
+
+* 写入相关的 `ProfileEvents` (`InsertedRows`、`InsertedBytes`) 归属于刷写查询，刷写查询还会在 `system.query_log` 中单独生成一条写入端记录。原始 `INSERT ... SELECT` 记录中这些 `ProfileEvents` 的值为 `0`。如需查看刷写本身的写入数据，请查询其在 `system.query_log` 和 `system.asynchronous_insert_log` 中对应的记录。
+* 当 `wait_for_async_insert = 1` (默认值) 时，查询自身的 `written_rows` 和 `written_bytes` (以及 HTTP `X-ClickHouse-Summary` 请求头) 反映的是从 `SELECT` 接收的行数和字节数，而非刷写查询自身的总量。如果刷写失败，错误仍会返回给客户端。
+* 当 `wait_for_async_insert = 0` 时，不会报告这些数值，因为查询在刷写结果产生之前就已返回。
+* `WRITTEN_BYTES` 配额仅在刷写路径上扣除一次，即使刷写失败也不会回滚。
+
+## 取消与超时 {#cancellation-and-timeouts}
+
+块在开始等待刷写之前就已进入队列，因此取消查询只会让客户端停止等待，而不会阻止队列执行刷写。
+
+* 执行 `KILL QUERY`，或在等待期间达到 `max_execution_time`，都会向客户端返回错误，但这些行仍可能被写入。在此路径下，不能因为查询已被取消或已超时，就认定没有数据写入。
+* 当设置 `timeout_overflow_mode = 'break'` 时，既不会报错，也不会提前返回：即使超过 `max_execution_time`，查询仍会继续等待刷写完成，最长等待 `wait_for_async_insert_timeout`。如果提前中断，就会在写入尚未确认时报告成功。
+
+## 决策何时确定 {#when-decisions-are-bound}
+
+是否走异步路径，是在查询开始时 (块进入队列之前) 一次性决定的；同时，预先执行的访问检查会提前拒绝未经授权的插入。`INSERT ... SELECT` 是否走异步路径，取决于结果的块形态，而不仅仅取决于 `async_insert`。
+
+随后，目标端表的查找和绑定授权检查会在刷写时执行，这一点与[所有异步插入](/zh/optimize/asynchronous-inserts)相同：如果从进入队列到刷写期间，目标端新附加了 materialized view，或某项授权被撤销，都会影响此次刷写。

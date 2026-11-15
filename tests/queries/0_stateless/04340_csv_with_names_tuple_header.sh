@@ -60,12 +60,12 @@ SELECT '-- Nullable(Tuple(...)): kept as a single CSV field (NOT flattened) so N
 SELECT materialize(if(number % 2, CAST(NULL, 'Nullable(Tuple(ID UInt64, Name String))'), CAST((1, 'a'), 'Nullable(Tuple(ID UInt64, Name String))'))) AS User
 FROM numbers(4)
 FORMAT CSVWithNamesAndTypes
-SETTINGS allow_experimental_nullable_tuple_type = 1;
+SETTINGS enable_nullable_tuple_type = 1;
 
 SELECT '-- nested Nullable(Tuple(..., Tuple(...))): still one CSV field';
 SELECT materialize(CAST((1, (2, 3)), 'Nullable(Tuple(a UInt8, b Tuple(c UInt8, d UInt8)))')) AS t
 FORMAT CSVWithNames
-SETTINGS allow_experimental_nullable_tuple_type = 1;
+SETTINGS enable_nullable_tuple_type = 1;
 
 SELECT '-- scalar Nullable column: stays one cell with the full Nullable type name';
 SELECT CAST(1, 'Nullable(UInt64)') AS n, 'x' AS s
@@ -143,9 +143,9 @@ ${CLICKHOUSE_LOCAL} --query "
 INSERT INTO FUNCTION file('${NTUP_FILE}', CSVWithNames)
 SELECT materialize(if(number % 2, CAST(NULL, 'Nullable(Tuple(ID UInt64, Name String))'), CAST((1, 'a'), 'Nullable(Tuple(ID UInt64, Name String))'))) AS User
 FROM numbers(4)
-SETTINGS engine_file_truncate_on_insert = 1, allow_experimental_nullable_tuple_type = 1"
+SETTINGS engine_file_truncate_on_insert = 1, enable_nullable_tuple_type = 1"
 ${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${NTUP_FILE}', CSVWithNames, 'User Nullable(Tuple(ID UInt64, Name String))')
-SETTINGS allow_experimental_nullable_tuple_type = 1"
+SETTINGS enable_nullable_tuple_type = 1"
 
 # A Nullable(Tuple()) value is written as a single quoted field ("()"), so a genuinely empty
 # input field is no longer a valid tuple value: with input_format_csv_empty_as_default = 1
@@ -153,17 +153,17 @@ SETTINGS allow_experimental_nullable_tuple_type = 1"
 # "()" / "(5)" fields still parse into the empty / non-empty tuple value, so it is not always NULL.
 echo '-- empty input field into Nullable(Tuple()): empty_as_default=1 (default) gives NULL, "()" parses'
 printf '\n"()"\n' | ${CLICKHOUSE_LOCAL} --query "SELECT c0 FROM file('/dev/stdin', CSV, 'c0 Nullable(Tuple())')
-SETTINGS allow_experimental_nullable_tuple_type = 1"
+SETTINGS enable_nullable_tuple_type = 1"
 echo '-- empty input field into Nullable(Tuple(Int32)): NULL, "(5)" parses'
 printf '\n"(5)"\n' | ${CLICKHOUSE_LOCAL} --query "SELECT c0 FROM file('/dev/stdin', CSV, 'c0 Nullable(Tuple(a Int32))')
-SETTINGS allow_experimental_nullable_tuple_type = 1"
+SETTINGS enable_nullable_tuple_type = 1"
 
 # Nullable(Tuple) is written as a single CSV field and is read back only from a single field,
 # never from separate columns, regardless of input_format_csv_deserialize_separate_columns_into_tuple
 # (separate-columns parsing is unsupported for Nullable(Tuple) because a leading \N is ambiguous).
 echo '-- input: new single-field encoding reads (with NULL rows), setting = 1 (default)'
 printf '"(1,\x27a\x27)"\n\\N\n"(2,\x27b\x27)"\n' | ${CLICKHOUSE_LOCAL} --query "SELECT c1 FROM file('/dev/stdin', CSV, 'c1 Nullable(Tuple(ID UInt64, Name String))')
-SETTINGS allow_experimental_nullable_tuple_type = 1"
+SETTINGS enable_nullable_tuple_type = 1"
 echo '-- input: single-field encoding reads the same with the separate-columns setting = 0'
 printf '"(3,\x27c\x27)"\n\\N\n' | ${CLICKHOUSE_LOCAL} --query "SELECT c1 FROM file('/dev/stdin', CSV, 'c1 Nullable(Tuple(ID UInt64, Name String))')
-SETTINGS allow_experimental_nullable_tuple_type = 1, input_format_csv_deserialize_separate_columns_into_tuple = 0"
+SETTINGS enable_nullable_tuple_type = 1, input_format_csv_deserialize_separate_columns_into_tuple = 0"

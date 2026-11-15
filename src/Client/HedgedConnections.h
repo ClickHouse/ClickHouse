@@ -1,5 +1,5 @@
 #pragma once
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <functional>
 #include <queue>
@@ -217,7 +217,7 @@ private:
 
     Packet last_received_packet;
 
-    Epoll epoll;
+    Epoll epoll{EpollNesting::HedgedConnections};
     ContextPtr context;
     const Settings & settings;
     ThrottlerPtr throttler;

@@ -54,6 +54,30 @@ public:
             return {1, 2};
     }
 
+    /// Signature opt-in:
+    /// - SimHash: `(String, [const UInt]) -> UInt64`.
+    /// - MinHash (non-arg): `(String, [const UInt], [const UInt]) ->
+    ///   Tuple(UInt64, UInt64)`.
+    /// - MinHashArg variants: no signature is advertised. The natural shape
+    ///   `(String, [const UInt], [const UInt]) ->
+    ///   Tuple(Tuple(String, ...), Tuple(String, ...))` has a `...` on the
+    ///   return side with no argument-side ellipsis to supply its size, so the
+    ///   type-only `getReturnTypeImpl(DataTypes)` fallback would raise
+    ///   `BAD_FUNCTION_SIGNATURE` when it parses and applies it. Keep it empty
+    ///   until variable-length tuple returns are expressible; the
+    ///   `ColumnsWithTypeAndName` path below stays authoritative.
+    /// Value bounds (`shingle_size > 0`, `num_hashes ≤ 25`, etc.) are still
+    /// enforced separately at execute time.
+    String getSignatureString() const override
+    {
+        if constexpr (is_arg)
+            return "";
+        else if constexpr (is_simhash)
+            return "(String, [const UInt]) -> UInt64";
+        else
+            return "(String, [const UInt], [const UInt]) -> Tuple(UInt64, UInt64)";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty())

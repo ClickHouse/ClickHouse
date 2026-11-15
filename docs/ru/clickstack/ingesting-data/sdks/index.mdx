@@ -4,8 +4,7 @@ description: 'Языковые SDK для ClickStack — стека обсерв
 title: 'Языковые SDK'
 sidebarTitle: 'Обзор'
 doc_type: 'guide'
-keywords: ['SDK ClickStack', 'языковые SDK ClickStack', 'SDK OpenTelemetry для ClickStack', 'SDK для инструментирования приложений
-', 'SDK для сбора телеметрии']
+keywords: ['SDK ClickStack', 'языковые SDK ClickStack', 'SDK OpenTelemetry для ClickStack', 'SDK для инструментирования приложений', 'SDK для сбора телеметрии']
 ---
 
 Данные обычно отправляются в ClickStack через **OpenTelemetry Collector (OTel)** — либо напрямую из языковых SDK, либо через промежуточный OpenTelemetry Collector, выступающий в роли агента, например для сбора инфраструктурных метрик и журналов.
@@ -14,17 +13,13 @@ keywords: ['SDK ClickStack', 'языковые SDK ClickStack', 'SDK OpenTelemet
 
 В браузерных средах SDK также могут отвечать за сбор **данных сеанса**, включая события интерфейса, клики и навигацию, что позволяет воспроизводить пользовательские сеансы.
 
-<div id="how-it-works">
-  ## Как это работает
-</div>
+## Как это работает {#how-it-works}
 
 1. Ваше приложение использует SDK ClickStack (например, для Node.js, Python, Go). Эти SDK основаны на SDK OpenTelemetry и включают дополнительные возможности и улучшения удобства использования.
 2. SDK собирает и экспортирует трассировки и журналы через OTLP (HTTP или gRPC).
 3. OpenTelemetry Collector получает телеметрию и записывает её в ClickHouse через настроенные экспортеры.
 
-<div id="supported-languages">
-  ## Поддерживаемые языки
-</div>
+## Поддерживаемые языки {#supported-languages}
 
 <Info>
   **Совместимость с OpenTelemetry**
@@ -49,14 +44,12 @@ keywords: ['SDK ClickStack', 'языковые SDK ClickStack', 'SDK OpenTelemet
 | React Native | Мобильные приложения на React Native                 | [Документация](/ru/clickstack/ingesting-data/sdks/react-native) |
 | Ruby         | Приложения на Ruby on Rails и веб-сервисы            | [Документация](/ru/clickstack/ingesting-data/sdks/ruby)         |
 
-<div id="securing-api-key">
-  ## Защита с помощью API key
-</div>
+## Защита с помощью ключа API {#securing-api-key}
 
 <Info>
   **Не требуется для Управляемого ClickStack**
 
-  Для Управляемого ClickStack API key не нужен.
+  Для Управляемого ClickStack ключ API не нужен.
 </Info>
 
 Чтобы отправлять данные в ClickStack через OTel collector, SDKs должны указывать ключ API для приёма данных. Его можно задать либо с помощью функции `init` в SDK, либо через переменную окружения `OTEL_EXPORTER_OTLP_HEADERS`:
@@ -70,12 +63,10 @@ OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
 Для большинства [языковых SDK](/ru/clickstack/ingesting-data/sdks/index) и библиотек телеметрии, поддерживающих OpenTelemetry, достаточно задать переменную окружения `OTEL_EXPORTER_OTLP_ENDPOINT` в приложении или указать её при инициализации SDK:
 
 ```shell
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>
 ```
 
-<div id="kubernetes-integration">
-  ## Интеграция с Kubernetes
-</div>
+## Интеграция с Kubernetes {#kubernetes-integration}
 
 Все SDK поддерживают автоматическую корреляцию с метаданными Kubernetes (имя пода, пространство имен и т. д.) при работе в среде Kubernetes. Это позволяет:
 

@@ -6,8 +6,6 @@ keywords: ['الفهرس الأساسي المتناثر', 'الفهرس الأ�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <Tip>
   **هل تبحث عن تفاصيل متقدمة حول الفهرسة؟**
 
@@ -32,7 +30,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 وللتذكير [بما سبق](/ar/concepts/core-concepts/parts)، في ① جدول المثال لدينا ذي المفتاح الأساسي (town, street)، تُخزَّن ② البيانات المُدرجة ③ على القرص، مرتبةً حسب قيم أعمدة المفتاح الأساسي، ومضغوطةً، في ملفات منفصلة لكل عمود:
 
-<Image img="/images/managing-data/core-concepts/primary-index-light_01.webp" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![](/images/managing-data/core-concepts/primary-index-light_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -42,7 +48,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 وهذا التقسيم إلى حبيبات هو أيضًا ما يجعل الفهرس الأساسي **متناثرًا**: فبدلًا من فهرسة كل صف، يخزّن ClickHouse ⑤ قيم المفتاح الأساسي من صف واحد فقط لكل حبيبة—وتحديدًا الصف الأول. وينتج عن ذلك مُدخل فهرس واحد لكل حبيبة:
 
-<Image img="/images/managing-data/core-concepts/primary-index-light_02.webp" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![](/images/managing-data/core-concepts/primary-index-light_02.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -56,7 +70,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 نوضح بإيجاز كيف يُستخدم الفهرس الأساسي المتناثر لتسريع الاستعلام من خلال رسم متحرك آخر:
 
-<Image img="/images/managing-data/core-concepts/primary-index-light_03.webp" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![](/images/managing-data/core-concepts/primary-index-light_03.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
