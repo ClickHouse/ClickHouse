@@ -1,0 +1,15 @@
+--- without SHOW FILESYSTEM CACHES ---
+0
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+--- with SHOW FILESYSTEM CACHES ---
+SELECT	system	filesystem_cache_settings
+SHOW FILESYSTEM CACHES	\N	\N
+1
+show ok
+There is no cache by name
+select ok
+--- it is a global privilege ---
+INVALID_GRANT
+--- no privilege group other than NONE is empty ---
