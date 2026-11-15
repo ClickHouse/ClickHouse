@@ -9,7 +9,6 @@
 -- The return type of the cosineDistance/L2Distance function will vary
 -- based on the data type of the 2 input arguments.
 
-SET enable_analyzer = 1;
 SET vector_search_with_rescoring = 0;
 
 SELECT 'Create tables with Array(Float32) and Array(BFloat16) column';

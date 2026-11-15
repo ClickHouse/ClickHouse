@@ -25,7 +25,7 @@ public:
 private:
     bool nextImpl() override;
 
-    LZ4F_dctx* dctx;
+    LZ4F_dctx* dctx{};
 
     bool in_eof = false;
 };

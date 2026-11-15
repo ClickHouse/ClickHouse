@@ -1,4 +1,8 @@
 #include <string_view>
+#include <Storages/System/SystemTableSourceRegistry.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/DataTypeString.h>
+#include <Core/NamesAndTypes.h>
 #include <Storages/System/StorageSystemDashboards.h>
 #include <Common/StringUtils.h>
 #include <Interpreters/Context.h>
@@ -16,12 +20,20 @@ ColumnsDescription StorageSystemDashboards::getColumnsDescription()
     };
 }
 
-String trim(const char * text)
+static String trim(const char * text)
 {
     std::string_view view(text);
     ::trim(view, '\n');
     return String(view);
 }
+
+/// Defined in StorageSystemDashboardsFilesystemCache.cpp.
+const std::vector<std::map<String, String>> & getFilesystemCacheDashboards();
+
+#if ENABLE_DISTRIBUTED_CACHE
+/// Defined in StorageSystemDashboardsDistributedCache.cpp, which exists only in the private repo.
+const std::vector<std::map<String, String>> & getDistributedCacheDashboards();
+#endif
 
 void StorageSystemDashboards::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
@@ -197,6 +209,7 @@ FROM merge('system', '^metric_log')
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
 GROUP BY t
 ORDER BY t WITH FILL STEP {rounding:UInt32}
+SETTINGS asterisk_include_alias_columns = 1
 )EOQ") }
         },
         {
@@ -454,6 +467,7 @@ FROM merge('system', '^metric_log')
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
 GROUP BY t, hostname
 ORDER BY t WITH FILL STEP {rounding:UInt32}
+SETTINGS asterisk_include_alias_columns = 1
 )EOQ") }
         },
         {
@@ -562,6 +576,7 @@ FROM merge('system', '^metric_log')
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
 GROUP BY t, hostname
 ORDER BY t WITH FILL STEP {rounding:UInt32}
+SETTINGS asterisk_include_alias_columns = 1
 )EOQ") }
         },
         {
@@ -973,7 +988,7 @@ FROM (
   GROUP BY event_time
 )
 GROUP BY t
-ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1, asterisk_include_alias_columns = 1
 )EOQ") }
         },
         {
@@ -1024,6 +1039,82 @@ SELECT
   avg(metric)
 FROM (
   SELECT event_time, sum(ProfileEvent_InsertedRows) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+  GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud overview" },
+            { "title", "Inserted Bytes/sec" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_InsertedBytes) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+  GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud overview" },
+            { "title", "Merged Rows/sec" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_MergedRows) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+  GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud overview" },
+            { "title", "Delayed inserts/sec" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_DelayedInserts) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+  GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud overview" },
+            { "title", "Delayed inserts wait (seconds)" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_DelayedInsertsMilliseconds) / 1000 AS metric
   FROM clusterAllReplicas(default, merge('system', '^metric_log'))
   WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
   GROUP BY event_time
@@ -1174,6 +1265,9 @@ GROUP BY t
 ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
 )EOQ") }
         },
+        /// With `asynchronous_metrics_key_values_mode = 'both'` every network interface is published twice:
+        /// as `NetworkReceiveBytes` with a key and as the legacy `NetworkReceiveBytes_eth0`, and summing the
+        /// LIKE pattern counts every byte twice. Prefer the key-value form, fall back to the legacy names.
         {
             { "dashboard", "Cloud overview" },
             { "title", "Network receive bytes/sec" },
@@ -1182,7 +1276,7 @@ WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
     toDateTimeOrDefault({to:String}, '', now()) AS to
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)
 FROM (
-  SELECT event_time, sum(value) AS value
+  SELECT event_time, if(countIf(metric = 'NetworkReceiveBytes') != 0, sumIf(value, metric = 'NetworkReceiveBytes'), sum(value)) AS value
   FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
   WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
     AND metric LIKE 'NetworkReceiveBytes%'
@@ -1200,7 +1294,7 @@ WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
     toDateTimeOrDefault({to:String}, '', now()) AS to
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)
 FROM (
-  SELECT event_time, sum(value) AS value
+  SELECT event_time, if(countIf(metric = 'NetworkSendBytes') != 0, sumIf(value, metric = 'NetworkSendBytes'), sum(value)) AS value
   FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
   WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
     AND metric LIKE 'NetworkSendBytes%'
@@ -1225,6 +1319,241 @@ FROM (
     FROM clusterAllReplicas(default, merge('system', '^metric_log'))
     WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
     GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud overview" },
+            { "title", "ZooKeeper Transactions/sec" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_ZooKeeperTransactions) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+  GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud overview" },
+            { "title", "ZooKeeper Wait (seconds)" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_ZooKeeperWaitMicroseconds) / 1000000 AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+  GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud overview" },
+            { "title", "ZooKeeper Sent Bytes/sec" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_ZooKeeperBytesSent) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+  GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud overview" },
+            { "title", "ZooKeeper Received Bytes/sec" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_ZooKeeperBytesReceived) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+  GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud overview" },
+            { "title", "Disk Metadata From Keeper Cache Hits/sec" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_MetadataFromKeeperCacheHit) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+  GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud overview" },
+            { "title", "Disk Metadata From Keeper Cache Misses/sec" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_MetadataFromKeeperCacheMiss) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+  GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud overview" },
+            { "title", "Disk Metadata From Keeper Tx Commits/sec" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_MetadataFromKeeperTransactionCommit) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+  GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud overview" },
+            { "title", "Disk Metadata From Keeper Operations/sec" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_MetadataFromKeeperOperations) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+  GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud overview" },
+            { "title", "Disk Metadata From Keeper Cache Update Wait (seconds)" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_MetadataFromKeeperCacheUpdateMicroseconds) / 1000000 AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+  GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud overview" },
+            { "title", "Disk Metadata From Keeper Cache Objects Count" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(CurrentMetric_MetadataFromKeeperCacheObjects) AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+  GROUP BY event_time
+)
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud overview" },
+            { "title", "Primary Index Cache Bytes (max/server)" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, max(CurrentMetric_PrimaryIndexCacheBytes)
+FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud overview" },
+            { "title", "Primary Index Cache Files (max/server)" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, max(CurrentMetric_PrimaryIndexCacheFiles)
+FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud overview" },
+            { "title", "Logger Elapsed Time (seconds)" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT
+  toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+  avg(metric)
+FROM (
+  SELECT event_time, sum(ProfileEvent_LoggerElapsedNanoseconds) / 1000000000 AS metric
+  FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+  WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+  GROUP BY event_time
 )
 GROUP BY t
 ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
@@ -1513,7 +1842,7 @@ FROM (
   GROUP BY event_time, hostname
 )
 GROUP BY t, hostname
-ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1, asterisk_include_alias_columns = 1
 )EOQ") }
         },
         {
@@ -1731,7 +2060,7 @@ WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
     toDateTimeOrDefault({to:String}, '', now()) AS to
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
 FROM (
-  SELECT event_time, hostname, sum(value) AS value
+  SELECT event_time, hostname, if(countIf(metric = 'NetworkReceiveBytes') != 0, sumIf(value, metric = 'NetworkReceiveBytes'), sum(value)) AS value
   FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
   WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
     AND metric LIKE 'NetworkReceiveBytes%'
@@ -1749,7 +2078,7 @@ WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
     toDateTimeOrDefault({to:String}, '', now()) AS to
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
 FROM (
-  SELECT event_time, hostname, sum(value) AS value
+  SELECT event_time, hostname, if(countIf(metric = 'NetworkSendBytes') != 0, sumIf(value, metric = 'NetworkSendBytes'), sum(value)) AS value
   FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
   WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
     AND metric LIKE 'NetworkSendBytes%'
@@ -1799,7 +2128,7 @@ FROM clusterAllReplicas(default, merge('system', '^metric_log'))
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
 GROUP BY t, hostname
 ORDER BY t WITH FILL STEP {rounding:UInt32}
-SETTINGS skip_unavailable_shards = 1
+SETTINGS skip_unavailable_shards = 1, asterisk_include_alias_columns = 1
 )EOQ") }
         },
         {
@@ -1962,9 +2291,20 @@ SETTINGS skip_unavailable_shards = 1
 
     const auto & context_dashboards = context->getDashboards();
     if (context_dashboards.has_value())
+    {
         add_dashboards(*context_dashboards);
+    }
     else
+    {
         add_dashboards(default_dashboards);
+        add_dashboards(getFilesystemCacheDashboards());
+#if ENABLE_DISTRIBUTED_CACHE
+        add_dashboards(getDistributedCacheDashboards());
+#endif
+    }
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDashboards) }

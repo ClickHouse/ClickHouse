@@ -1,4 +1,5 @@
 #include <Functions/FunctionFactory.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/FunctionsVisitParam.h>
 #include <Functions/FunctionsStringSearchToString.h>
 
@@ -8,7 +9,9 @@ namespace DB
 
 struct ExtractString
 {
-    static void extract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars & res_data)
+    struct Scratch {};
+
+    static void extract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars & res_data, Scratch &)
     {
         size_t old_size = res_data.size();
         ReadBufferFromMemory in(pos, end - pos);
@@ -65,7 +68,7 @@ SELECT simpleJSONExtractString(json, 'foo') FROM jsons ORDER BY json;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
 
     factory.registerFunction<FunctionSimpleJSONExtractString>(documentation);
     factory.registerAlias("visitParamExtractString", "simpleJSONExtractString");

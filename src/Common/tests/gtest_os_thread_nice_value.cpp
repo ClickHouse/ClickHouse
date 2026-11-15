@@ -5,6 +5,7 @@
 #include <sys/resource.h>
 #include <linux/capability.h>
 #include <Common/hasLinuxCapability.h>
+#include <Common/ErrnoException.h>
 
 using namespace DB;
 
@@ -14,7 +15,7 @@ namespace DB::ErrorCodes
     extern const int CANNOT_GET_THREAD_PRIORITY;
 }
 
-int getCurrentNiceValue(UInt32 thread_id = 0)
+static int getCurrentNiceValue(UInt32 thread_id = 0)
 {
     errno = 0;
     const int value = getpriority(PRIO_PROCESS, thread_id);

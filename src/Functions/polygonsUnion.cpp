@@ -23,7 +23,7 @@ namespace
 {
 
 template <typename Point>
-class FunctionPolygonsUnion : public IFunction
+class FunctionPolygonsUnion final : public IFunction
 {
 public:
     static inline const char * name;
@@ -50,9 +50,9 @@ public:
         return 2;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    String getSignatureString() const override
     {
-        return DataTypeFactory::instance().get("MultiPolygon");
+        return "(Any, Any) -> MultiPolygon";
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -75,22 +75,20 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be LineString", getName());
             else if constexpr (std::is_same_v<ColumnToMultiLineStringsConverter<Point>, LeftConverter> || std::is_same_v<ColumnToMultiLineStringsConverter<Point>, RightConverter>)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be MultiLineString", getName());
+            else if constexpr (std::is_same_v<ColumnToMultiPointsConverter<Point>, LeftConverter> || std::is_same_v<ColumnToMultiPointsConverter<Point>, RightConverter>)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be MultiPoint", getName());
             else
             {
-                auto first = LeftConverter::convert(arguments[0].column->convertToFullColumnIfConst());
-                auto second = RightConverter::convert(arguments[1].column->convertToFullColumnIfConst());
+                CorrectedGeometries<LeftConverter> first(arguments[0].column);
+                CorrectedGeometries<RightConverter> second(arguments[1].column);
 
                 /// We are not interested in some pitfalls in third-party libraries
                 /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    /// Orient the polygons correctly.
-                    boost::geometry::correct(first[i]);
-                    boost::geometry::correct(second[i]);
-
                     MultiPolygon<Point> polygons_union{};
                     /// Main work here.
-                    boost::geometry::union_(first[i], second[i], polygons_union);
+                    boost::geometry::union_(first.get(i), second.get(i), polygons_union);
 
                     serializer.add(polygons_union);
                 }
@@ -116,8 +114,59 @@ const char * FunctionPolygonsUnion<SphericalPoint>::name = "polygonsUnionSpheric
 
 REGISTER_FUNCTION(PolygonsUnion)
 {
-    factory.registerFunction<FunctionPolygonsUnion<CartesianPoint>>();
-    factory.registerFunction<FunctionPolygonsUnion<SphericalPoint>>();
+    FunctionDocumentation::Description description_cartesian = R"(
+Calculates the union of polygons.
+    )";
+    FunctionDocumentation::Syntax syntax_cartesian = "polygonsUnionCartesian(polygon1, polygon2)";
+    FunctionDocumentation::Arguments arguments_cartesian = {
+        {"polygon1", "The first Polygon.", {"Polygon"}},
+        {"polygon2", "The second Polygon.", {"Polygon"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_cartesian = {"Returns the union of the polygons as a MultiPolygon.", {"MultiPolygon"}};
+    FunctionDocumentation::Examples examples_cartesian =
+    {
+    {
+        "Usage example",
+        R"(
+SELECT wkt(polygonsUnionCartesian([[[(0., 0.), (0., 3.), (1., 2.9), (2., 2.6), (2.6, 2.), (2.9, 1), (3., 0.), (0., 0.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]]))
+        )",
+        R"(
+MULTIPOLYGON(((1 2.9,1 4,4 4,4 1,2.9 1,3 0,0 0,0 3,1 2.9)))
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_cartesian = {21, 4};
+    FunctionDocumentation::Category category_cartesian = FunctionDocumentation::Category::GeoPolygon;
+    FunctionDocumentation function_documentation_cartesian = {description_cartesian, syntax_cartesian, arguments_cartesian, {}, returned_value_cartesian, examples_cartesian, introduced_in_cartesian, category_cartesian};
+
+    factory.registerFunction<FunctionPolygonsUnion<CartesianPoint>>(function_documentation_cartesian);
+
+    FunctionDocumentation::Description description_spherical = R"(
+Calculates a union (OR) of polygons.
+    )";
+    FunctionDocumentation::Syntax syntax_spherical = "polygonsUnionSpherical(polygon1, polygon2)";
+    FunctionDocumentation::Arguments arguments_spherical = {
+        {"polygon1", "The first Polygon.", {"Polygon"}},
+        {"polygon2", "The second Polygon.", {"Polygon"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_spherical = {"Returns the union of the polygons as a MultiPolygon.", {"MultiPolygon"}};
+    FunctionDocumentation::Examples examples_spherical =
+    {
+    {
+        "Usage example",
+        R"(
+SELECT wkt(arrayMap(a -> arrayMap(b -> arrayMap(c -> (round(c.1, 6), round(c.2, 6)), b), a), polygonsUnionSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]], [[[(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]]])))
+        )",
+        R"(
+MULTIPOLYGON(((4.366605 50.843374,4.366227 50.840809,4.344961 50.833264,4.338074 50.848677,4.346693 50.858306,4.35268 50.856658,4.361358 50.865182,4.361315 50.865128,4.390454 50.856487,4.38303 50.842885,4.366605 50.843374)))
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_spherical = {21, 4};
+    FunctionDocumentation::Category category_spherical = FunctionDocumentation::Category::GeoPolygon;
+    FunctionDocumentation function_documentation_spherical = {description_spherical, syntax_spherical, arguments_spherical, {}, returned_value_spherical, examples_spherical, introduced_in_spherical, category_spherical};
+
+    factory.registerFunction<FunctionPolygonsUnion<SphericalPoint>>(function_documentation_spherical);
 }
 
 }

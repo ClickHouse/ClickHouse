@@ -9,7 +9,7 @@ from helpers.iceberg_utils import (
 
 @pytest.mark.parametrize(
     "storage_type, run_on_cluster",
-    [("s3", False), ("s3", True), ("azure", False), ("local", False)],
+    [("s3", False), ("s3", True), ("azure", False), ("local", False), ("local", True)],
 )
 def test_partition_pruning(started_cluster_iceberg_with_spark, storage_type, run_on_cluster):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
@@ -23,6 +23,7 @@ def test_partition_pruning(started_cluster_iceberg_with_spark, storage_type, run
             storage_type,
             TABLE_NAME,
             query,
+            additional_nodes=["node2", "node3"] if storage_type=="local" else [],
         )
 
     execute_spark_query(
@@ -138,9 +139,15 @@ def test_partition_pruning(started_cluster_iceberg_with_spark, storage_type, run
         == 1
     )
 
+    # `icebergTruncate` is not monotonic on `Int64`, so a range filter prunes these files by the column bounds.
     assert (
-        check_validity_and_get_prunned_files(
-            f"SELECT * FROM {creation_expression} WHERE number <= 5 ORDER BY ALL"
+        check_validity_and_get_prunned_files_general(
+            instance,
+            TABLE_NAME,
+            {"use_iceberg_partition_pruning": 0},
+            {"use_iceberg_partition_pruning": 1},
+            "IcebergMinMaxIndexPrunedFiles",
+            f"SELECT * FROM {creation_expression} WHERE number <= 5 ORDER BY ALL",
         )
         == 3
     )

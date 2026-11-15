@@ -15,10 +15,10 @@ decimal32	Decimal(9, 5)
 decimal64	Decimal(18, 5)					
 0	0	0	0
 1.2	0.7692307692307692	3.33333	333.33333
-date	UInt16					
+date	Date32					
 date32	Date32					
-0	1970-01-01
-1	1970-01-02
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
 str	String					
 fixed_string	FixedString(3)					
 Str: 0	100
@@ -49,10 +49,10 @@ decimal32	Decimal(9, 5)
 decimal64	Decimal(18, 5)					
 0	0	0	0
 1.2	0.7692307692307692	3.33333	333.33333
-date	UInt16					
+date	Date32					
 date32	Date32					
-0	1970-01-01
-1	1970-01-02
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
 str	String					
 fixed_string	FixedString(3)					
 Str: 0	100
@@ -126,12 +126,12 @@ fixed_string	Nullable(String)
 Str: 0	100
 Str: 1	200
 array	Array(Nullable(Int64))					
-tuple	Tuple(\n    `1` Nullable(Int64),\n    `2` Nullable(String))					
+tuple	Nullable(Tuple(`1` Nullable(Int64), `2` Nullable(String)))					
 map	Map(String, Nullable(Int64))					
 [0,1]	(0,'0')	{'0':0}
 [1,2]	(1,'1')	{'1':1}
-nested1	Array(Tuple(\n    `1` Array(Nullable(Int64)),\n    `2` Map(String, Nullable(Int64))))					
-nested2	Tuple(\n    `1` Tuple(\n        `1` Array(Array(Nullable(Int64))),\n        `2` Map(Int64, Array(Tuple(\n            `1` Nullable(Int64),\n            `2` Nullable(String))))),\n    `2` Nullable(Int8))					
+nested1	Array(Nullable(Tuple(`1` Array(Nullable(Int64)), `2` Map(String, Nullable(Int64)))))					
+nested2	Nullable(Tuple(`1` Nullable(Tuple(`1` Array(Array(Nullable(Int64))), `2` Map(Int64, Array(Nullable(Tuple(`1` Nullable(Int64), `2` Nullable(String))))))), `2` Nullable(Int8)))					
 [([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
 [([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
 Native

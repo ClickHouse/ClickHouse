@@ -1,0 +1,37 @@
+-- a parameterized view may be joined without an alias
+1
+1
+1
+1
+-- its columns may be qualified with the view name
+1
+1
+t1
+1
+1
+1
+-- matcher-expanded columns are qualified with the view name
+tenant_id	String					
+host_id	UInt64					
+pv.tenant_id	String					
+pv.host_id	UInt64					
+tenant_id	String					
+host_id	UInt64					
+pv.host_id	UInt64					
+-- control: a real table function contributes no qualifier
+tenant_id	String					
+host_id	UInt64					
+number	UInt64					
+-- the parameter type is irrelevant
+1
+-- controls: an alias or no qualifier always worked
+1
+1
+-- controls: a regular table function and an ordinary view must not gain a bindable name
+tenant_id	String					
+host_id	UInt64					
+tenant_id	String					
+-- a view in another database binds by the view name too
+1
+1
+-- control: qualifying with a database that does not hold the view does not bind

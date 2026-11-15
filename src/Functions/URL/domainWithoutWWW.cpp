@@ -38,7 +38,7 @@ SELECT domainWithoutWWW('http://paul@www.example.com:80/');
     };
     FunctionDocumentation::IntroducedIn introduced_in_domainWithoutWWW = {1, 1};
     FunctionDocumentation::Category category_domainWithoutWWW = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_domainWithoutWWW = {description_domainWithoutWWW, syntax_domainWithoutWWW, arguments_domainWithoutWWW, returned_value_domainWithoutWWW, examples_domainWithoutWWW, introduced_in_domainWithoutWWW, category_domainWithoutWWW};
+    FunctionDocumentation documentation_domainWithoutWWW = {description_domainWithoutWWW, syntax_domainWithoutWWW, arguments_domainWithoutWWW, {}, returned_value_domainWithoutWWW, examples_domainWithoutWWW, introduced_in_domainWithoutWWW, category_domainWithoutWWW};
 
     factory.registerFunction<FunctionDomainWithoutWWW>(documentation_domainWithoutWWW);
 
@@ -68,7 +68,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_domainWithoutWWWRFC = {1, 1};
     FunctionDocumentation::Category category_domainWithoutWWWRFC = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_domainWithoutWWWRFC = {description_domainWithoutWWWRFC, syntax_domainWithoutWWWRFC, arguments_domainWithoutWWWRFC, returned_value_domainWithoutWWWRFC, examples_domainWithoutWWWRFC, introduced_in_domainWithoutWWWRFC, category_domainWithoutWWWRFC};
+    FunctionDocumentation documentation_domainWithoutWWWRFC = {description_domainWithoutWWWRFC, syntax_domainWithoutWWWRFC, arguments_domainWithoutWWWRFC, {}, returned_value_domainWithoutWWWRFC, examples_domainWithoutWWWRFC, introduced_in_domainWithoutWWWRFC, category_domainWithoutWWWRFC};
 
     factory.registerFunction<FunctionDomainWithoutWWWRFC>(documentation_domainWithoutWWWRFC);
 }

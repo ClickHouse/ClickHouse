@@ -125,6 +125,11 @@ public:
         return max_size_in_bytes;
     }
 
+    size_t maxCount() const override
+    {
+        return max_count;
+    }
+
     void setMaxCount(size_t max_count_) override
     {
         /// lazy behavior: the cache only shrinks upon the next insert
@@ -206,6 +211,11 @@ public:
     {
         chassert(mapped.get());
 
+        /// A limit of 0 means that the cache stores nothing. Otherwise an entry with a weight of 0 would fit into a cache with
+        /// `max_size_in_bytes = 0`.
+        if (max_size_in_bytes == 0 || max_count == 0)
+            return;
+
         const size_t old_size_in_bytes = size_in_bytes;
         const size_t old_size = cache.size();
         const size_t entry_size_in_bytes = weight_function(*mapped);
@@ -228,6 +238,7 @@ public:
         {
             /// Remove stale entries
             for (auto it = cache.begin(); it != cache.end();)
+            {
                 if (is_stale_function(it->first))
                 {
                     size_t sz = weight_function(*it->second);
@@ -238,6 +249,7 @@ public:
                 }
                 else
                     ++it;
+            }
         }
 
         if (sufficient_space_in_cache() && sufficient_space_in_cache_for_user())

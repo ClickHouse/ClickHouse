@@ -25,7 +25,7 @@ namespace ErrorCodes
 
 // compareSubstrings(str1, str2, offset1, offset2, num_bytes):
 // - Compare str1 from offset1 to offset1 + num_bytes with str2 from offset2 to offset2 + num_bytes.
-class FunctionCompareSubstrings : public IFunction
+class FunctionCompareSubstrings final : public IFunction
 {
 public:
     static constexpr auto name = "compareSubstrings";
@@ -37,18 +37,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"string1", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String"},
-            {"string2", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String"},
-            {"string1_offset", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), isColumnConst, "const UInt*"},
-            {"string2_offset", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), isColumnConst, "const UInt*"},
-            {"num_bytes", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), isColumnConst, "const UInt*"},
-        };
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
-        return std::make_shared<DataTypeInt8>();
+        return "(StringOrFixedString, StringOrFixedString, const UnsignedInteger, const UnsignedInteger, const UnsignedInteger) -> Int8";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeInt8>(); }
@@ -89,9 +80,9 @@ public:
         if (col_str1 && col_str2)
             executeStringString(*col_str1, *col_str2, str1_offset, str2_offset, num_bytes, input_rows_count, result);
         else if (col_str1 && col_str2_const)
-            executeStringConst<false>(*col_str1, col_str2_const->getDataAt(0).toView(), str1_offset, str2_offset, num_bytes, input_rows_count, result);
+            executeStringConst<false>(*col_str1, col_str2_const->getDataAt(0), str1_offset, str2_offset, num_bytes, input_rows_count, result);
         else if (col_str1_const && col_str2)
-            executeStringConst<true>(*col_str2, col_str1_const->getDataAt(0).toView(), str2_offset, str1_offset, num_bytes, input_rows_count, result);
+            executeStringConst<true>(*col_str2, col_str1_const->getDataAt(0), str2_offset, str1_offset, num_bytes, input_rows_count, result);
         else if (fixed_str1_col && fixed_str2_col)
             executeFixedStringFixedString(*fixed_str1_col, *fixed_str2_col, str1_offset, str2_offset, num_bytes, input_rows_count, result);
         else if (col_str1 && fixed_str2_col)
@@ -99,9 +90,9 @@ public:
         else if (fixed_str1_col && col_str2)
             executeFixedStringString<false>(*fixed_str1_col, *col_str2, str1_offset, str2_offset, num_bytes, input_rows_count, result);
         else if (fixed_str1_col && col_str2_const)
-            executeFixedStringConst<false>(*fixed_str1_col, col_str2_const->getDataAt(0).toView(), str1_offset, str2_offset, num_bytes, input_rows_count, result);
+            executeFixedStringConst<false>(*fixed_str1_col, col_str2_const->getDataAt(0), str1_offset, str2_offset, num_bytes, input_rows_count, result);
         else if (col_str1_const && fixed_str2_col)
-            executeFixedStringConst<true>(*fixed_str2_col, col_str1_const->getDataAt(0).toView(), str2_offset, str1_offset, num_bytes, input_rows_count, result);
+            executeFixedStringConst<true>(*fixed_str2_col, col_str1_const->getDataAt(0), str2_offset, str1_offset, num_bytes, input_rows_count, result);
         else
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -209,14 +200,15 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset + str1_offset);
             size_t str1_length = str1_offsets[i] - str1_data_offset;
-
-            const auto * str2 = reinterpret_cast<const char *>(str2_data.data() + str2_data_offset + str2_offset);
             size_t str2_length = str2_offsets[i] - str2_data_offset;
 
             if (!isOverflowComparison<false>(str1_length, str1_offset, str2_length, str2_offset, result[i]))
             {
+                /// Form the pointers only after the overflow check, otherwise an out-of-range offset
+                /// would make the pointer arithmetic itself out of bounds (undefined behavior).
+                const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset + str1_offset);
+                const auto * str2 = reinterpret_cast<const char *>(str2_data.data() + str2_data_offset + str2_offset);
                 size_t str1_adjusted_length = std::min(num_bytes, str1_length - str1_offset);
                 size_t str2_adjusted_length = std::min(num_bytes, str2_length - str2_offset);
                 result[i] = normalComparison<false>(
@@ -322,14 +314,15 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset);
-            auto str1_adjusted_length = std::min(num_bytes, str1_length - str1_offset);
-
-            const auto * str2 = reinterpret_cast<const char *>(str2_data.data() + str2_data_offset + str2_offset);
             size_t str2_length = str2_offsets[i] - str2_data_offset;
 
             if (!isOverflowComparison<reverse>(str1_length, str1_offset, str2_length, str2_offset, result[i]))
             {
+                /// Form the pointers only after the overflow check, otherwise an out-of-range offset
+                /// would make the pointer arithmetic itself out of bounds (undefined behavior).
+                const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset);
+                const auto * str2 = reinterpret_cast<const char *>(str2_data.data() + str2_data_offset + str2_offset);
+                auto str1_adjusted_length = std::min(num_bytes, str1_length - str1_offset);
                 auto str2_adjusted_length = str2_offset >= str2_length ? 0 : std::min(num_bytes, str2_length - str2_offset);
                 result[i] = normalComparison<reverse>(
                     str1, str1_adjusted_length,
@@ -407,7 +400,7 @@ Returns:
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionCompareSubstrings>(documentation);
 }

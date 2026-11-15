@@ -1,0 +1,62 @@
+-- With primary key skipping, searching for '' should read only the first
+-- granule (which contains '') and skip all granules that start with a
+-- non-empty string.  Searching for non-empty strings should skip the
+-- granule that starts with ''.
+
+-- { echo }
+EXPLAIN indexes = 1
+SELECT * FROM t_empty_pk WHERE empty(s);
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.t_empty_pk)
+    Indexes:
+      PrimaryKey
+        Keys:
+          s
+        Condition: (s in [\'\', \'\'])
+        Parts: 1/1
+        Granules: 1/4
+        Search Algorithm: binary search
+      Ranges: 1
+EXPLAIN indexes = 1
+SELECT * FROM t_empty_pk WHERE s = '';
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.t_empty_pk)
+    Indexes:
+      PrimaryKey
+        Keys:
+          s
+        Condition: (s in [\'\', \'\'])
+        Parts: 1/1
+        Granules: 1/4
+        Search Algorithm: binary search
+      Ranges: 1
+EXPLAIN indexes = 1
+SELECT * FROM t_empty_pk WHERE notEmpty(s);
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.t_empty_pk)
+    Indexes:
+      PrimaryKey
+        Keys:
+          s
+        Condition: (s not in [\'\', \'\'])
+        Parts: 1/1
+        Granules: 4/4
+        Search Algorithm: generic exclusion search
+      Ranges: 1
+EXPLAIN indexes = 1
+SELECT * FROM t_empty_pk WHERE s != '';
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.t_empty_pk)
+    Indexes:
+      PrimaryKey
+        Keys:
+          s
+        Condition: (s not in [\'\', \'\'])
+        Parts: 1/1
+        Granules: 4/4
+        Search Algorithm: generic exclusion search
+      Ranges: 1
